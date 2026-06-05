@@ -49,7 +49,7 @@ def upgrade() -> None:
     """)
     op.execute("""
         GRANT SELECT ON
-            "MemoryPolicies"
+            "MemoryPolicy"
         TO runtime_writer;
     """)
     op.execute("""

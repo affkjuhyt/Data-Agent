@@ -149,6 +149,45 @@ curl -sf -X PUT "$KONG_ADMIN/services/aeroflow-backend/routes/api-route" \
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
 
+# ── 3a. workflow-runtime + flow-builder services ───────────────────────
+echo "📡 Creating workflow-runtime service..."
+curl -sf -X PUT "$KONG_ADMIN/services/workflow-runtime" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "workflow-runtime",
+    "url": "http://workflow-runtime:8001",
+    "connect_timeout": 5000,
+    "read_timeout": 60000
+  }' | json_field name | xargs -I{} echo "  → service: {}"
+
+curl -sf -X PUT "$KONG_ADMIN/services/workflow-runtime/routes/runtime-route" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "runtime-route",
+    "paths": ["/api/conversations", "/api/traces", "/api/nodes", "/api/llm-providers", "/api/kb-connections", "/api/system-prompts"],
+    "strip_path": false,
+    "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
+  }' | json_field name | xargs -I{} echo "  → route: {}"
+
+echo "📡 Creating flow-builder service..."
+curl -sf -X PUT "$KONG_ADMIN/services/flow-builder" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "flow-builder",
+    "url": "http://flow-builder:8002",
+    "connect_timeout": 5000,
+    "read_timeout": 30000
+  }' | json_field name | xargs -I{} echo "  → service: {}"
+
+curl -sf -X PUT "$KONG_ADMIN/services/flow-builder/routes/builder-route" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "builder-route",
+    "paths": ["/api/agents", "/api/workflows", "/api/workflow-versions"],
+    "strip_path": false,
+    "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
+  }' | json_field name | xargs -I{} echo "  → route: {}"
+
 # ── 3b. Create auth-api service + route ────────────────────────────────
 echo "📡 Creating auth-api service..."
 curl -sf -X PUT "$KONG_ADMIN/services/auth-api" \
@@ -248,6 +287,16 @@ upsert_plugin "$KONG_ADMIN/services/aeroflow-backend/plugins" \
   "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"jwks_refresh_interval\":300}}" \
   "aeroflow-jwks"
 
+echo "🔐 Enabling aeroflow-jwks plugin on workflow-runtime..."
+upsert_plugin "$KONG_ADMIN/services/workflow-runtime/plugins" \
+  "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"jwks_refresh_interval\":300}}" \
+  "aeroflow-jwks"
+
+echo "🔐 Enabling aeroflow-jwks plugin on flow-builder..."
+upsert_plugin "$KONG_ADMIN/services/flow-builder/plugins" \
+  "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"jwks_refresh_interval\":300}}" \
+  "aeroflow-jwks"
+
 # ── 4b. aeroflow-jwks on release-worker ────────────────────────────────
 echo "🔐 Enabling aeroflow-jwks plugin on release-worker..."
 upsert_plugin "$KONG_ADMIN/services/release-worker/plugins" \
@@ -270,6 +319,12 @@ _IP_DEFAULT='{"name":"ip-restriction","config":{"allow":["0.0.0.0/0","::/0"]}}'
 
 echo "🛡️  Enabling IP restriction on aeroflow-backend..."
 upsert_plugin "$KONG_ADMIN/services/aeroflow-backend/plugins" "$_IP_DEFAULT" "ip-restriction"
+
+echo "🛡️  Enabling IP restriction on workflow-runtime..."
+upsert_plugin "$KONG_ADMIN/services/workflow-runtime/plugins" "$_IP_DEFAULT" "ip-restriction"
+
+echo "🛡️  Enabling IP restriction on flow-builder..."
+upsert_plugin "$KONG_ADMIN/services/flow-builder/plugins" "$_IP_DEFAULT" "ip-restriction"
 
 echo "🛡️  Enabling IP restriction on release-worker..."
 upsert_plugin "$KONG_ADMIN/services/release-worker/plugins" "$_IP_DEFAULT" "ip-restriction"
@@ -297,8 +352,18 @@ upsert_plugin "$KONG_ADMIN/plugins" \
   "correlation-id"
 
 # ── 9. Rate limiting ───────────────────────────────────────────────────
-echo "⏱️  Enabling rate-limiting..."
+echo "⏱️  Enabling rate-limiting on aeroflow-backend..."
 upsert_plugin "$KONG_ADMIN/services/aeroflow-backend/plugins" \
+  '{"name":"rate-limiting","config":{"minute":300,"policy":"local"}}' \
+  "rate-limiting"
+
+echo "⏱️  Enabling rate-limiting on workflow-runtime..."
+upsert_plugin "$KONG_ADMIN/services/workflow-runtime/plugins" \
+  '{"name":"rate-limiting","config":{"minute":300,"policy":"local"}}' \
+  "rate-limiting"
+
+echo "⏱️  Enabling rate-limiting on flow-builder..."
+upsert_plugin "$KONG_ADMIN/services/flow-builder/plugins" \
   '{"name":"rate-limiting","config":{"minute":300,"policy":"local"}}' \
   "rate-limiting"
 
