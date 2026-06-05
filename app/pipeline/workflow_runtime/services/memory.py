@@ -10,6 +10,7 @@ from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
 
 from services.database_connector.postgres_connector import client
+
 from basemodel.services_databaseconnector.postgres_orm.workflow_orm import AgentMemoriesORM, MemoryPolicyORM
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,10 @@ _EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "1536"))
 _COLLECTION    = "agent_memories"
 
 _qdrant: Optional[AsyncQdrantClient] = None
+
+_PROMPT_DIR = os.path.join(os.path.dirname(__file__), "..", "prompts")
+with open(os.path.join(_PROMPT_DIR, "memory_extract.txt")) as _f:
+    _EXTRACT_PROMPT = _f.read()
 
 
 async def init_qdrant():
@@ -49,13 +54,7 @@ async def close_qdrant():
         logger.info("qdrant | closed")
 
 
-_PROMPT_DIR = os.path.join(os.path.dirname(__file__), "prompts")
-with open(os.path.join(_PROMPT_DIR, "memory_extract.txt")) as _f:
-    _EXTRACT_PROMPT = _f.read()
-
-
 async def _extract_memory_content(query: str, response: str) -> Optional[str]:
-    """Dùng LLM trích xuất facts/preferences đáng nhớ. Trả None nếu không có gì."""
     try:
         async with httpx.AsyncClient(timeout=20) as client:
             resp = await client.post(
@@ -94,7 +93,6 @@ async def _embed(text: str) -> Optional[list]:
 
 
 def _rrf(vec_ids: list, fts_ids: list, k: int = 60) -> list:
-    """Reciprocal Rank Fusion — combine vector and full-text search results."""
     scores: dict = {}
     for rank, id_ in enumerate(vec_ids):
         scores[id_] = scores.get(id_, 0.0) + 1 / (k + rank + 1)
@@ -150,7 +148,6 @@ async def retrieve_memories(
             rows = (await session.execute(fts_q.limit(limit * 2))).fetchall()
             return rows
 
-        # Chạy song song Qdrant + PostgreSQL
         async with client.get_client() as session:
             vec_ids, fts_rows = await asyncio.gather(
                 _vector_search(),
@@ -160,7 +157,6 @@ async def retrieve_memories(
             fts_ids   = [str(r.id) for r in fts_rows]
             rows_by_id = {str(r.id): r._asdict() for r in fts_rows}
 
-            # Fetch PostgreSQL rows cho vec_ids chưa có trong fts
             missing = [id_ for id_ in vec_ids if id_ not in rows_by_id]
             if missing:
                 extra = await session.execute(
@@ -170,7 +166,6 @@ async def retrieve_memories(
                 for r in extra.fetchall():
                     rows_by_id[str(r.id)] = r._asdict()
 
-            # RRF — merge và rank
             ranked_ids = _rrf(vec_ids, fts_ids)[:limit] if (vec_ids or fts_ids) else []
             memories   = [rows_by_id[id_] for id_ in ranked_ids if id_ in rows_by_id]
             logger.info("memory | retrieved %d (vec=%d fts=%d) for agent=%s",
@@ -202,9 +197,8 @@ async def apply_memory_policy(state: dict, agent_id: str, tenant_id: str, user_r
 
                     content = await _extract_memory_content(query, response)
                     if not content:
-                        continue  # LLM đánh giá không có gì đáng nhớ
+                        continue
 
-                    # Dedup: skip nếu exact content đã tồn tại cho cùng agent/tenant/user
                     scope = (condition or {}).get("scope", "user")
                     dedup_q = (
                         select(AgentMemoriesORM.id)
@@ -233,7 +227,6 @@ async def apply_memory_policy(state: dict, agent_id: str, tenant_id: str, user_r
                     session.add(memory)
                     await session.flush()
 
-                    # Save vector to Qdrant
                     if _qdrant:
                         vector = await _embed(content)
                         if vector:
@@ -251,7 +244,6 @@ async def apply_memory_policy(state: dict, agent_id: str, tenant_id: str, user_r
                             )
 
                     logger.info("memory | saved for agent=%s", agent_id)
-                # TODO: update, delete, summarize
 
             await session.commit()
     except Exception as e:

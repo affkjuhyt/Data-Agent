@@ -8,33 +8,32 @@ import litellm
 import unicodedata
 
 try:
-    import regex as re_lib  # supports timeout param → prevents ReDoS
-    _REGEX_TIMEOUT = 0.1    # seconds per pattern
+    import regex as re_lib
+    _REGEX_TIMEOUT = 0.1
 except ImportError:
-    import re as re_lib     # fallback, no timeout
+    import re as re_lib
     _REGEX_TIMEOUT = None
 
-from state import AgentState
+from app.pipeline.workflow_runtime.state import AgentState
 
 logger = logging.getLogger(__name__)
 
 _LITELLM_BASE = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
 _LITELLM_KEY  = os.environ.get("LITELLM_API_KEY", "sk-dev")
-_MAX_CHECK_CHARS = 2000  # giới hạn độ dài text trước khi check regex
+_MAX_CHECK_CHARS = 2000
 
 _PROMPTS_DIR    = os.path.join(os.path.dirname(__file__), "..", "prompts")
 _GUARDRAIL_SYSTEM = open(os.path.join(_PROMPTS_DIR, "guardrail_system.txt")).read()
 
 
 def _normalize(text: str) -> str:
-    text = unicodedata.normalize("NFC", text)   # chuẩn hóa Unicode (tránh NFD bypass)
-    text = re_lib.sub(r"\s+", " ", text).strip() # collapse whitespace
+    text = unicodedata.normalize("NFC", text)
+    text = re_lib.sub(r"\s+", " ", text).strip()
     return text.lower()
 
 
 @functools.lru_cache(maxsize=64)
 def _compile_patterns(patterns_tuple: tuple) -> list[tuple[str, str, object]]:
-    """Compile và cache regex patterns lúc startup. patterns_tuple = ((id, pattern_str), ...)"""
     compiled = []
     for pid, p in patterns_tuple:
         try:
@@ -45,7 +44,7 @@ def _compile_patterns(patterns_tuple: tuple) -> list[tuple[str, str, object]]:
 
 
 def _regex_check(text: str, patterns: list) -> tuple[bool, str, dict | None]:
-    text = _normalize(text)[:_MAX_CHECK_CHARS]  # normalize + giới hạn độ dài
+    text = _normalize(text)[:_MAX_CHECK_CHARS]
     patterns_tuple = tuple((item["id"], item["pattern"]) for item in patterns)
     compiled = _compile_patterns(patterns_tuple)
 

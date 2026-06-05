@@ -4,7 +4,7 @@ import logging
 import litellm
 from pydantic import BaseModel, ValidationError  # noqa: F401
 
-from state import AgentState
+from app.pipeline.workflow_runtime.state import AgentState
 
 
 class _ToolCall(BaseModel):

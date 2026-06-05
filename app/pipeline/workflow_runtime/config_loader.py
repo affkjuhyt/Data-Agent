@@ -58,7 +58,7 @@ DEV_CONFIG = {
 
 async def load_agent_config(agent_id: str) -> dict:
     from services.database_connector.postgres_connector import client
-    from mongo_client import load_flow_nodes
+    from services.database_connector.mongo_connector import client as mongo_client
 
     if not client.is_connected():
         logger.debug("DB not available — using DEV_CONFIG")
@@ -66,7 +66,6 @@ async def load_agent_config(agent_id: str) -> dict:
 
     try:
         async with client.get_client() as session:
-            # 1. Load published agent_version với responder model + system prompt
             row = (await session.execute(text("""
                 SELECT
                     av.id                          AS agent_version_id,
@@ -93,7 +92,6 @@ async def load_agent_config(agent_id: str) -> dict:
             retrieval_config = dict(row.retrieval_config or {})
             wv_id            = str(row.workflow_version_id) if row.workflow_version_id else None
 
-            # 2. KB connections
             kb_rows = (await session.execute(text("""
                 SELECT kc.endpoint_url, kc.api_key_ref
                 FROM "AgentKB" ak
@@ -104,7 +102,6 @@ async def load_agent_config(agent_id: str) -> dict:
 
             kb_endpoint = kb_rows[0].endpoint_url if kb_rows else DEV_CONFIG["kb_endpoint"]
 
-            # 3. MCP endpoints
             mcp_rows = (await session.execute(text("""
                 SELECT m.name, m.endpoint_url, m.api_key_ref, m.capabilities
                 FROM "AgentMCP" am
@@ -122,7 +119,6 @@ async def load_agent_config(agent_id: str) -> dict:
                 for r in mcp_rows
             ]
 
-            # 4. Guardrail config
             guardrail_cfg = _extract_guardrail_defaults()
             if row.guardrail_id:
                 g_row = (await session.execute(text("""
@@ -146,36 +142,26 @@ async def load_agent_config(agent_id: str) -> dict:
                         "guardrail_id":              str(row.guardrail_id),
                     }
 
-        # 5. Load flow_nodes từ MongoDB
-        flow_nodes = await load_flow_nodes(wv_id) if wv_id else []
+        flow_nodes = await mongo_client.load_flow_nodes(wv_id) if wv_id else []
         node_cfg   = _extract_node_config(flow_nodes)
 
         return {
             **DEV_CONFIG,
-            # identity
             "agent_id":         agent_id,
             "agent_version_id": str(row.agent_version_id),
-            # responder
             "responder_model":      row.responder_model or DEV_CONFIG["responder_model"],
             "responder_temperature": llm_config.get("temperature", DEV_CONFIG["responder_temperature"]),
             "responder_max_tokens":  llm_config.get("max_tokens",  DEV_CONFIG["responder_max_tokens"]),
             "responder_stream":      llm_config.get("stream",      True),
-            # system prompt
             "system_prompt": row.system_prompt or DEV_CONFIG["system_prompt"],
-            # kb
             "kb_endpoint": kb_endpoint,
             "kb_mode":     retrieval_config.get("mode",      DEV_CONFIG["kb_mode"]),
             "top_k":       retrieval_config.get("top_k",     DEV_CONFIG["top_k"]),
             "max_depth":   retrieval_config.get("max_depth", DEV_CONFIG["max_depth"]),
-            # memory
             "memory_enabled": bool(row.memory_enabled),
-            # mcp
             "mcp_endpoints": mcp_endpoints,
-            # guardrail
             **guardrail_cfg,
-            # node-level config từ canvas
             **node_cfg,
-            # flow_nodes cho dynamic graph
             "flow_nodes": flow_nodes,
         }
 
@@ -198,7 +184,6 @@ def _extract_guardrail_defaults() -> dict:
 
 
 def _extract_node_config(flow_nodes: list[dict]) -> dict:
-    """Đọc config từng node canvas — override retrieval_config nếu user tùy chỉnh."""
     cfg = {}
     for node in flow_nodes:
         t = node.get("data", {}).get("nodeType") or node.get("type", "")

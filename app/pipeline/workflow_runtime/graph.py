@@ -1,12 +1,12 @@
 from langgraph.graph import StateGraph, START, END
-from state import AgentState
-from nodes.guardrail import guardrail_input_node, guardrail_output_node
-from nodes.model_harness.planner import planner_node
-from nodes.model_harness.responder import responder_node
-from nodes.model_harness.rrf_ranking import rrf_ranking_node
-from nodes.model_harness.reranker import reranker_node
-from nodes.sandbox.kb_search import kb_search_node
-from nodes.sandbox.mcp import mcp_node
+from app.pipeline.workflow_runtime.state import AgentState
+from app.pipeline.workflow_runtime.nodes.guardrail import guardrail_input_node, guardrail_output_node
+from app.pipeline.workflow_runtime.nodes.model_harness.planner import planner_node
+from app.pipeline.workflow_runtime.nodes.model_harness.responder import responder_node
+from app.pipeline.workflow_runtime.nodes.model_harness.rrf_ranking import rrf_ranking_node
+from app.pipeline.workflow_runtime.nodes.model_harness.reranker import reranker_node
+from app.pipeline.workflow_runtime.nodes.sandbox.kb_search import kb_search_node
+from app.pipeline.workflow_runtime.nodes.sandbox.mcp import mcp_node
 
 NODE_TYPE_MAP = {
     "planner":     planner_node,
@@ -40,10 +40,6 @@ def join_retrieval_node(state: AgentState) -> dict:
 
 
 def build_graph(flow_nodes: list[dict] | None = None):
-    """Build LangGraph graph.
-    flow_nodes=None → default hardcoded graph (backward compat).
-    flow_nodes=[...] → dynamic graph từ canvas MongoDB.
-    """
     if not flow_nodes:
         return _build_default_graph()
     return _build_dynamic_graph(flow_nodes)
@@ -81,7 +77,6 @@ def _build_default_graph():
 
 
 def _build_dynamic_graph(flow_nodes: list[dict]):
-    # Canvas lưu type React Flow ("flowNode"), nodeType thật nằm trong data.nodeType
     node_types = {
         (n.get("data", {}).get("nodeType") or n.get("type", ""))
         for n in flow_nodes
@@ -90,7 +85,6 @@ def _build_dynamic_graph(flow_nodes: list[dict]):
 
     builder = StateGraph(AgentState)
 
-    # Guardrail luôn có dù canvas không vẽ
     builder.add_node("guardrail_input",  guardrail_input_node)
     builder.add_node("guardrail_output", guardrail_output_node)
 
@@ -104,7 +98,6 @@ def _build_dynamic_graph(flow_nodes: list[dict]):
     for nt in node_types:
         builder.add_node(nt, NODE_TYPE_MAP[nt])
 
-    # planner luôn có
     if "planner" not in node_types:
         builder.add_node("planner", planner_node)
 

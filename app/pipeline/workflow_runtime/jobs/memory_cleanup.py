@@ -1,13 +1,13 @@
 """
 Chạy hàng ngày — xóa memories đã hết hạn hoặc quá RETENTION_DAYS.
-Dùng: python jobs/memory_cleanup.py
+Dùng: python app/pipeline/workflow_runtime/jobs/memory_cleanup.py
 """
 import asyncio
 import logging
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))))
 
 from dotenv import load_dotenv, find_dotenv
 from sqlalchemy import delete, func, select, text

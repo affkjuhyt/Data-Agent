@@ -3,7 +3,7 @@ import httpx
 from pydantic import BaseModel, ValidationError
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
 
-from state import AgentState
+from app.pipeline.workflow_runtime.state import AgentState
 
 logger = logging.getLogger(__name__)
 

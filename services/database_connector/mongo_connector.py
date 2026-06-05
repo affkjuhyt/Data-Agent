@@ -98,5 +98,45 @@ class MongoClient:
         except ConnectionError as e:
             log.warning("Mongo reconnect failed: %s", e)
 
+    # ── Canvas methods (flow-builder) ─────────────────────────────────────────
+
+    async def save_canvas(self, workflow_version_id: str, nodes: list, edges: list) -> None:
+        db = self.get_client()
+        await db.flow_nodes.delete_many({"workflow_version_id": workflow_version_id})
+        await db.flow_edges.delete_many({"workflow_version_id": workflow_version_id})
+        if nodes:
+            await db.flow_nodes.insert_many([
+                {**n, "workflow_version_id": workflow_version_id} for n in nodes
+            ])
+        if edges:
+            await db.flow_edges.insert_many([
+                {**e, "workflow_version_id": workflow_version_id} for e in edges
+            ])
+
+    async def load_canvas(self, workflow_version_id: str) -> dict:
+        db = self.get_client()
+        nodes = await db.flow_nodes.find(
+            {"workflow_version_id": workflow_version_id}, {"_id": 0}
+        ).to_list(None)
+        edges = await db.flow_edges.find(
+            {"workflow_version_id": workflow_version_id}, {"_id": 0}
+        ).to_list(None)
+        return {"nodes": nodes, "edges": edges}
+
+    # ── Flow nodes method (workflow-runtime) ──────────────────────────────────
+
+    async def load_flow_nodes(self, workflow_version_id: str) -> list[dict]:
+        if not self.is_connected() or not workflow_version_id:
+            return []
+        try:
+            db = self.get_client()
+            nodes = await db.flow_nodes.find(
+                {"workflow_version_id": workflow_version_id}, {"_id": 0}
+            ).to_list(None)
+            return nodes
+        except Exception as e:
+            log.warning("mongo load_flow_nodes failed: %s", e)
+            return []
+
 
 client = MongoClient()

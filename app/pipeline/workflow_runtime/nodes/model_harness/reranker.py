@@ -2,7 +2,7 @@ import logging
 import os
 import litellm
 
-from state import AgentState
+from app.pipeline.workflow_runtime.state import AgentState
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,5 @@ def reranker_node(state: AgentState) -> dict:
         logger.info("reranker | reranked %d → top %d", len(rrf_results), len(top_chunks))
         return {"reranked_chunks": top_chunks}
     except Exception as e:
-        # reranker not available (no embedder model that supports rerank) — fallback to rrf order
         logger.warning("reranker | failed: %s — using rrf order as fallback", e)
         return {"reranked_chunks": rrf_results[:top_n]}

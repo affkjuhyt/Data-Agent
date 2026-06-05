@@ -16,6 +16,6 @@ class AgentState(TypedDict):
     response: str
     guardrail_triggered: bool
     guardrail_message: str
-    guardrail_stage: Optional[str]    # "input" | "output"
-    guardrail_reason: Optional[str]   # lý do chi tiết từ LLM hoặc regex pattern matched
+    guardrail_stage: Optional[str]
+    guardrail_reason: Optional[str]
     config: dict

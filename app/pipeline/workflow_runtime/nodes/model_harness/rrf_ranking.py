@@ -1,5 +1,5 @@
 import logging
-from state import AgentState
+from app.pipeline.workflow_runtime.state import AgentState
 
 logger = logging.getLogger(__name__)
 

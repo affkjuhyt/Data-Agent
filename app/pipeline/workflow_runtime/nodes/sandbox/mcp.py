@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 import httpx
 from pydantic import BaseModel, Field, ValidationError
 
-from state import AgentState
+from app.pipeline.workflow_runtime.state import AgentState
 
 logger = logging.getLogger(__name__)
 

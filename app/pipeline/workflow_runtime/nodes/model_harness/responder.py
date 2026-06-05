@@ -5,7 +5,7 @@ import logging
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
-from state import AgentState
+from app.pipeline.workflow_runtime.state import AgentState
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,6 @@ async def responder_node(state: AgentState) -> dict:
         m for m in state.get("messages", [])
         if m.get("role") in ("user", "assistant")
     ])
-    # tránh duplicate nếu query đã có trong message cuối
     if history and isinstance(history[-1], HumanMessage) and history[-1].content == state["query"]:
         history = history[:-1]
 
