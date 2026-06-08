@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from services.database_connector.postgres_connector import client
 from basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
-    AgentsORM, WorkflowsORM, WorkflowVersionsORM, AgentVersionsORM,
+    AgentsORM, WorkflowsORM, WorkflowVersionsORM, AgentVersionsORM, AgentKBORM,
 )
 from basemodel.services_databaseconnector.postgres_model import (
     AgentsDelete, AgentVersionsDelete, WorkflowVersionsDelete,
@@ -399,27 +399,27 @@ async def delete_agent(agent_id: str) -> list[str]:
     return version_ids
 
 
-async def publish_agent(agent_id: str, workflow_id: str) -> dict:
+async def publish_agent(agent_id: str, workflow_id: str, kb_connection_id: str | None = None) -> dict:
     async with client.get_client() as session:
         async with session.begin():
+            # 1. Verify workflow belongs to agent
             wf = await session.get(WorkflowsORM, UUID(workflow_id))
             if not wf or str(wf.agent_id) != agent_id:
-                raise ValueError("workflow_id does not belong to agent_id")
+                raise ValueError("workflow does not belong to agent")
 
+            # 2. Find published version (not draft)
             wv_result = await session.execute(
                 select(WorkflowVersionsORM)
                 .where(WorkflowVersionsORM.workflow_id == UUID(workflow_id))
-                .where(WorkflowVersionsORM.status == "draft")
+                .where(WorkflowVersionsORM.status == "published")
                 .order_by(WorkflowVersionsORM.version.desc())
                 .limit(1)
             )
             wv = wv_result.scalar_one_or_none()
             if not wv:
-                raise ValueError("No draft workflow_version found")
+                raise ValueError("No published workflow_version found — publish a workflow version first")
 
-            wv.status = "published"
-            wv.published_at = func.now()
-
+            # 3. Get settings from draft agent version
             av_result = await session.execute(
                 select(AgentVersionsORM)
                 .where(AgentVersionsORM.agent_id == UUID(agent_id))
@@ -429,29 +429,36 @@ async def publish_agent(agent_id: str, workflow_id: str) -> dict:
             )
             av_draft = av_result.scalar_one_or_none()
 
-            new_version        = (av_draft.version + 1) if av_draft else 1
-            responder_model_id = av_draft.responder_model_id if av_draft else UUID(_DEV_RESPONDER_MODEL_ID)
-            system_prompt_id   = av_draft.system_prompt_id if av_draft else None
-            guardrail_id       = av_draft.guardrail_id if av_draft else None
-            memory_enabled     = av_draft.memory_enabled if av_draft else False
-            llm_config         = av_draft.llm_config if av_draft else {}
-            retrieval_config   = av_draft.retrieval_config if av_draft else {}
+            # 4. Get next version number
+            max_ver = (await session.execute(
+                select(func.max(AgentVersionsORM.version))
+                .where(AgentVersionsORM.agent_id == UUID(agent_id))
+            )).scalar() or 0
 
             new_av = AgentVersionsORM(
                 agent_id=UUID(agent_id),
-                version=new_version,
+                version=max_ver + 1,
                 status="published",
                 workflow_version_id=wv.id,
-                responder_model_id=responder_model_id,
-                system_prompt_id=system_prompt_id,
-                guardrail_id=guardrail_id,
-                memory_enabled=memory_enabled,
-                llm_config=llm_config,
-                retrieval_config=retrieval_config,
+                responder_model_id=av_draft.responder_model_id if av_draft else UUID(_DEV_RESPONDER_MODEL_ID),
+                system_prompt_id=av_draft.system_prompt_id if av_draft else None,
+                guardrail_id=av_draft.guardrail_id if av_draft else None,
+                memory_enabled=av_draft.memory_enabled if av_draft else False,
+                llm_config=av_draft.llm_config if av_draft else {},
+                retrieval_config=av_draft.retrieval_config if av_draft else {},
+                published_at=func.now(),
             )
             session.add(new_av)
             await session.flush()
 
+            # 5. Insert AgentKB if kb_connection_id provided
+            if kb_connection_id:
+                session.add(AgentKBORM(
+                    version_id=new_av.id,
+                    kb_connection_id=UUID(kb_connection_id),
+                ))
+
+            # 6. Update agent published pointer
             await session.execute(
                 sa_update(AgentsORM)
                 .where(AgentsORM.id == UUID(agent_id))

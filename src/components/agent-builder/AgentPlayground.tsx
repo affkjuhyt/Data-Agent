@@ -44,7 +44,7 @@ interface Message {
 interface AgentOption {
   id: string;
   label: string;
-  type: 'agent' | 'workflow';
+  description: string;
 }
 
 /* ─── Helpers ───────────────────────────────────────────────── */
@@ -118,14 +118,6 @@ function mapObservations(obs: any[]): TraceStep[] {
     }));
 }
 
-/* ─── Mock data ─────────────────────────────────────────────── */
-
-const AGENTS: AgentOption[] = [
-  { id: 'rag-agent',        label: 'RAG Agent (Qwen3-4B)',        type: 'agent' },
-  { id: 'full-agent',       label: 'Full Agent (Qwen3.6-27B)',    type: 'agent' },
-  { id: 'wf-tender',        label: 'Tender Analysis Workflow',    type: 'workflow' },
-  { id: 'wf-compliance',    label: 'Compliance Check Workflow',   type: 'workflow' },
-];
 
 
 /* ─── Sub-components ────────────────────────────────────────── */
@@ -231,7 +223,9 @@ function ChatBubble({ msg }: { msg: Message }) {
 
 export default function AgentPlayground({ embedded = false }: { embedded?: boolean }) {
   const [debugOn, setDebugOn] = useState(true);
-  const [selectedAgent, setSelectedAgent] = useState(AGENTS[0].id);
+  const [agents, setAgents] = useState<AgentOption[]>([]);
+  const [agentsLoading, setAgentsLoading] = useState(true);
+  const [selectedAgent, setSelectedAgent] = useState('');
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -254,12 +248,33 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
 
 
   useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/catalog/agents`, {
+          headers: { 'X-Tenant-ID': import.meta.env.VITE_TENANT_ID ?? 'tenant-dev' },
+        });
+        const data: { id: string; name: string; description: string }[] = await res.json();
+        const opts: AgentOption[] = data.map(a => ({
+          id:          a.id,
+          label:       a.name,
+          description: a.description,
+        }));
+        setAgents(opts);
+      } catch {
+        // backend chưa chạy — giữ danh sách rỗng
+      } finally {
+        setAgentsLoading(false);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
   const handleSend = async () => {
     const text = input.trim();
-    if (!text || sending) return;
+    if (!text || sending || !selectedAgent) return;
 
     const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
     const userMsg: Message = { id: Date.now().toString(), role: 'user', content: text, timestamp: now };
@@ -342,7 +357,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     }
   };
 
-  const agentLabel = AGENTS.find(a => a.id === selectedAgent)?.label ?? 'Agent';
+  const agentLabel = agents.find(a => a.id === selectedAgent)?.label ?? 'Agent';
 
   return (
     <div className={cn(
@@ -363,9 +378,12 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
           <div className="relative" ref={selectorRef}>
             <button
               onClick={() => setSelectorOpen(v => !v)}
-              className="flex items-center gap-2 bg-white/[0.06] border border-white/10 text-white/70 text-xs rounded-lg pl-3 pr-2.5 py-1.5 hover:border-white/20 transition-colors min-w-[190px]"
+              disabled={agentsLoading}
+              className="flex items-center gap-2 bg-white/[0.06] border border-white/10 text-white/70 text-xs rounded-lg pl-3 pr-2.5 py-1.5 hover:border-white/20 transition-colors min-w-[190px] disabled:opacity-50"
             >
-              <span className="flex-1 text-left truncate">{AGENTS.find(a => a.id === selectedAgent)?.label}</span>
+              <span className="flex-1 text-left truncate">
+                {agentsLoading ? 'Loading…' : (agents.find(a => a.id === selectedAgent)?.label ?? 'Select agent')}
+              </span>
               <ChevronDown size={12} className={cn('text-white/40 transition-transform shrink-0', selectorOpen && 'rotate-180')} />
             </button>
 
@@ -379,23 +397,10 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                   className="absolute right-0 top-full mt-1 w-56 bg-[#1C1C1C] border border-white/15 rounded-xl shadow-2xl z-50 overflow-hidden py-1"
                 >
                   <p className="px-3 pt-1.5 pb-1 text-[10px] uppercase tracking-wider text-white/30">Agents</p>
-                  {AGENTS.filter(a => a.type === 'agent').map(a => (
-                    <button
-                      key={a.id}
-                      onClick={() => { setSelectedAgent(a.id); setSelectorOpen(false); }}
-                      className={cn(
-                        'w-full text-left px-3 py-2 text-xs transition-colors',
-                        selectedAgent === a.id
-                          ? 'text-indigo-300 bg-indigo-500/15'
-                          : 'text-white/60 hover:bg-white/[0.06] hover:text-white/80',
-                      )}
-                    >
-                      {a.label}
-                    </button>
-                  ))}
-                  <div className="mx-3 my-1 border-t border-white/10" />
-                  <p className="px-3 pt-1 pb-1 text-[10px] uppercase tracking-wider text-white/30">Workflows</p>
-                  {AGENTS.filter(a => a.type === 'workflow').map(a => (
+                  {agents.length === 0 && (
+                    <p className="px-3 py-2 text-xs text-white/30">No agents found</p>
+                  )}
+                  {agents.map(a => (
                     <button
                       key={a.id}
                       onClick={() => { setSelectedAgent(a.id); setSelectorOpen(false); }}
@@ -487,7 +492,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
               />
               <button
                 onClick={handleSend}
-                disabled={!input.trim() || sending}
+                disabled={!input.trim() || sending || !selectedAgent}
                 className="shrink-0 w-8 h-8 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-colors"
               >
                 <Send size={13} className="text-white" />

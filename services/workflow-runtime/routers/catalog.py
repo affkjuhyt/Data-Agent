@@ -1,10 +1,15 @@
+import os
 from typing import Optional
 
 from fastapi import APIRouter, Request
+from sqlalchemy import text
 
 from node_registry import NODE_REGISTRY
 
 router = APIRouter()
+
+_DEV_AGENT_ID  = os.getenv("DEV_AGENT_ID",  "00000000-0000-0000-0000-000000000030")
+_DEV_TENANT_ID = os.getenv("DEV_TENANT_ID", "00000000-0000-0000-0000-000000000001")
 
 LLM_PROVIDERS = [
     {"id": "llm-planner", "name": "Claude Haiku", "model_id": "planner", "type": "chat", "is_default": False},
@@ -19,6 +24,43 @@ SYSTEM_PROMPTS = [
         "content": "You are a helpful assistant for GTEL platform.",
     },
 ]
+
+
+def _resolve_tenant(header: str | None) -> str:
+    """Return header if it looks like a UUID, otherwise fall back to dev tenant."""
+    if header:
+        try:
+            from uuid import UUID
+            UUID(header)
+            return header
+        except ValueError:
+            pass
+    return _DEV_TENANT_ID
+
+
+@router.get("/api/catalog/agents")
+async def list_agents(request: Request):
+    tenant_id = _resolve_tenant(request.headers.get("X-Tenant-ID"))
+    try:
+        from services.database_connector.postgres_connector import client
+        if not client.is_connected():
+            raise RuntimeError("db not connected")
+        async with client.get_client() as session:
+            rows = (await session.execute(text("""
+                SELECT a.id, a.name, a.description
+                FROM "Agents" a
+                WHERE a.tenant_id            = :tenant_id
+                  AND a.is_active            = true
+                  AND a.deleted_at           IS NULL
+                  AND a.published_version_id IS NOT NULL
+                ORDER BY a.created_at DESC
+            """), {"tenant_id": tenant_id})).fetchall()
+        return [
+            {"id": str(r.id), "name": r.name, "description": r.description or ""}
+            for r in rows
+        ]
+    except Exception:
+        return [{"id": _DEV_AGENT_ID, "name": "Dev Agent", "description": "", "has_published_version": False}]
 
 
 @router.get("/api/nodes/registry")

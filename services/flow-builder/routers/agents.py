@@ -81,7 +81,7 @@ async def api_update_agent(agent_id: str, body: UpdateDraftRequest):
 async def api_publish_agent(agent_id: str, body: PublishRequest):
     ensure_db_available()
     try:
-        return await publish_agent(agent_id, body.workflow_id)
+        return await publish_agent(agent_id, body.workflow_id, body.kb_connection_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:

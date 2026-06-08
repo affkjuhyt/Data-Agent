@@ -136,24 +136,48 @@ echo "  → Public key extracted (${#PEM_KEY} chars)"
 # Helper: extract first occurrence of a string field from JSON (no jq/Python needed)
 json_field() { grep -o "\"$1\":\"[^\"]*\"" | head -1 | sed 's/.*":"//;s/"$//'; }
 
-# ── 2. Create upstream service ─────────────────────────────────────────
-echo "📡 Creating backend service..."
-curl -sf -X PUT "$KONG_ADMIN/services/aeroflow-backend" \
+# ── 2. Create upstream services ────────────────────────────────────────
+echo "📡 Creating workflow-runtime service..."
+curl -sf -X PUT "$KONG_ADMIN/services/workflow-runtime" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "aeroflow-backend",
-    "url": "http://host.docker.internal:8888",
+    "name": "workflow-runtime",
+    "host": "workflow-runtime",
+    "port": 8001,
+    "protocol": "http",
+    "connect_timeout": 5000,
+    "read_timeout": 60000
+  }' | json_field name | xargs -I{} echo "  → service: {}"
+
+echo "📡 Creating flow-builder service..."
+curl -sf -X PUT "$KONG_ADMIN/services/flow-builder" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "flow-builder",
+    "host": "flow-builder",
+    "port": 8002,
+    "protocol": "http",
     "connect_timeout": 5000,
     "read_timeout": 30000
   }' | json_field name | xargs -I{} echo "  → service: {}"
 
-# ── 3. Create route ────────────────────────────────────────────────────
-echo "🛣️  Creating API route..."
-curl -sf -X PUT "$KONG_ADMIN/services/aeroflow-backend/routes/api-route" \
+# ── 3. Create routes ───────────────────────────────────────────────────
+echo "🛣️  Creating flow-builder route (canvas + agent CRUD)..."
+curl -sf -X PUT "$KONG_ADMIN/services/flow-builder/routes/builder-route" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "api-route",
-    "paths": ["/api"],
+    "name": "builder-route",
+    "paths": ["/api/agents", "/api/workflows", "/api/workflow-versions"],
+    "strip_path": false,
+    "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
+  }' | json_field name | xargs -I{} echo "  → route: {}"
+
+echo "🛣️  Creating workflow-runtime route (conversations + catalog + nodes)..."
+curl -sf -X PUT "$KONG_ADMIN/services/workflow-runtime/routes/runtime-route" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "runtime-route",
+    "paths": ["/api/conversations", "/api/traces", "/api/nodes", "/api/llm-providers", "/api/kb-connections", "/api/system-prompts", "/api/catalog"],
     "strip_path": false,
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
@@ -273,9 +297,14 @@ JWKS_URI="$KONG_KC_HOST/realms/$REALM/protocol/openid-connect/certs"
 KONG_GRACE=600   # seconds; matches Keycloak default access-token TTL (15m floor)
 KONG_REFRESH=300
 
-echo "🔐 Enabling aeroflow-jwks plugin on aeroflow-backend (aud=aeroflow-backend)..."
-upsert_plugin "$KONG_ADMIN/services/aeroflow-backend/plugins" \
-  "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"aeroflow-backend\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE}}" \
+echo "🔐 Enabling aeroflow-jwks plugin on workflow-runtime..."
+upsert_plugin "$KONG_ADMIN/services/workflow-runtime/plugins" \
+  "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"workflow-runtime\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE}}" \
+  "aeroflow-jwks"
+
+echo "🔐 Enabling aeroflow-jwks plugin on flow-builder..."
+upsert_plugin "$KONG_ADMIN/services/flow-builder/plugins" \
+  "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"flow-builder\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE}}" \
   "aeroflow-jwks"
 
 # ── 4b. aeroflow-jwks on release-worker ────────────────────────────────
@@ -298,8 +327,11 @@ upsert_plugin "$KONG_ADMIN/services/auth-api/plugins" \
 # Switch to restricted via PUT /api/auth/ip-allowlist/config {"mode":"allowlist"}.
 _IP_DEFAULT='{"name":"ip-restriction","config":{"allow":["0.0.0.0/0","::/0"]}}'
 
-echo "🛡️  Enabling IP restriction on aeroflow-backend..."
-upsert_plugin "$KONG_ADMIN/services/aeroflow-backend/plugins" "$_IP_DEFAULT" "ip-restriction"
+echo "🛡️  Enabling IP restriction on workflow-runtime..."
+upsert_plugin "$KONG_ADMIN/services/workflow-runtime/plugins" "$_IP_DEFAULT" "ip-restriction"
+
+echo "🛡️  Enabling IP restriction on flow-builder..."
+upsert_plugin "$KONG_ADMIN/services/flow-builder/plugins" "$_IP_DEFAULT" "ip-restriction"
 
 echo "🛡️  Enabling IP restriction on release-worker..."
 upsert_plugin "$KONG_ADMIN/services/release-worker/plugins" "$_IP_DEFAULT" "ip-restriction"
@@ -320,15 +352,28 @@ else
   echo "  → no global ip-restriction found"
 fi
 
-# ── 8. Correlation ID (tracing) ────────────────────────────────────────
+# ── 8. CORS (browser preflight) ───────────────────────────────────────
+# Global plugin — applies to all routes. Priority 2000 runs before JWT (1010)
+# so OPTIONS preflight returns 200 without needing a token.
+echo "🌐 Enabling global CORS plugin..."
+upsert_plugin "$KONG_ADMIN/plugins" \
+  '{"name":"cors","config":{"origins":["http://localhost:3000","http://localhost:5173"],"methods":["GET","POST","PUT","PATCH","DELETE","OPTIONS"],"headers":["Content-Type","Authorization","X-Tenant-ID","X-Conversation-Id","Accept"],"exposed_headers":["X-Conversation-Id","X-Kong-Request-Id"],"credentials":false,"max_age":3600,"preflight_continue":false}}' \
+  "cors"
+
+# ── 9. Correlation ID (tracing) ────────────────────────────────────────
 echo "📝 Enabling correlation-id..."
 upsert_plugin "$KONG_ADMIN/plugins" \
   '{"name":"correlation-id","config":{"header_name":"X-Request-ID","generator":"uuid#counter","echo_downstream":true}}' \
   "correlation-id"
 
-# ── 9. Rate limiting ───────────────────────────────────────────────────
-echo "⏱️  Enabling rate-limiting..."
-upsert_plugin "$KONG_ADMIN/services/aeroflow-backend/plugins" \
+# ── 10. Rate limiting ──────────────────────────────────────────────────
+echo "⏱️  Enabling rate-limiting on workflow-runtime..."
+upsert_plugin "$KONG_ADMIN/services/workflow-runtime/plugins" \
+  '{"name":"rate-limiting","config":{"minute":300,"policy":"local"}}' \
+  "rate-limiting"
+
+echo "⏱️  Enabling rate-limiting on flow-builder..."
+upsert_plugin "$KONG_ADMIN/services/flow-builder/plugins" \
   '{"name":"rate-limiting","config":{"minute":300,"policy":"local"}}' \
   "rate-limiting"
 
@@ -364,12 +409,14 @@ if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ] && [ -f "$CA_FILE" ]; then
     -d "{\"cert\":$(echo "$CERT_CONTENT" | "$PY_RUN" -c 'import json,sys;print(json.dumps(sys.stdin.read()))'),\"key\":$(echo "$KEY_CONTENT" | "$PY_RUN" -c 'import json,sys;print(json.dumps(sys.stdin.read()))')}" \
     | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
 
-  # Attach client cert to the backend service
-  curl -sf -X PATCH "$KONG_ADMIN/services/aeroflow-backend" \
-    -H "Content-Type: application/json" \
-    -d "{\"client_certificate\":{\"id\":\"$CLIENT_CERT_ID\"}}" > /dev/null
-  echo "  → Kong client cert attached to service aeroflow-backend: $CLIENT_CERT_ID"
-  echo "  → Backend must verify client cert against infra/certs/ca.crt"
+  # Attach client cert to backend services
+  for svc in workflow-runtime flow-builder; do
+    curl -sf -X PATCH "$KONG_ADMIN/services/$svc" \
+      -H "Content-Type: application/json" \
+      -d "{\"client_certificate\":{\"id\":\"$CLIENT_CERT_ID\"}}" > /dev/null
+    echo "  → Kong client cert attached to service $svc: $CLIENT_CERT_ID"
+  done
+  echo "  → Backends must verify client cert against infra/certs/ca.crt"
 else
   echo "ℹ️  mTLS certs not found — skipping client cert setup."
   echo "   Run: bash infra/certs/gen-certs.sh   to generate, then re-run this script."
@@ -482,10 +529,11 @@ echo "✅ Kong configuration complete"
 echo ""
 echo "  Proxy :  http://localhost:8000"
 echo "  Admin :  internal only (kong-admin-net 172.30.0.10:8001)"
-echo "  Konga :  http://localhost:1337"
 echo ""
 echo "  JWT:    RS256, issuer=$ISSUER"
-echo "  Route:  /api → aeroflow-backend"
+echo "  Routes: /api/agents|workflows|workflow-versions  -> flow-builder:8002"
+echo "          /api/conversations|traces|nodes|catalog  -> workflow-runtime:8001"
+echo "  CORS:   localhost:3000, localhost:5173"
 MTLS_STATUS="NOT configured (run infra/certs/gen-certs.sh first)"
 [ -f "$CERT_FILE" ] && MTLS_STATUS="Configured (Kong presents client cert)"
 echo "  mTLS:   $MTLS_STATUS"
