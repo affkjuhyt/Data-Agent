@@ -37,6 +37,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         graph = _default_graph
 
     tenant_id = request.headers.get("X-Tenant-ID", _DEV_TENANT_ID)
+    cfg["tenant_id"] = tenant_id
     if not await validate_agent_tenant(agent_id, tenant_id):
         return JSONResponse(status_code=403, content={"detail": "Agent not found or access denied"})
 

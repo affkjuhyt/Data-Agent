@@ -49,8 +49,6 @@ export interface FlowNodeData extends Record<string, unknown> {
   nodeType: FlowNodeType;
   label: string;
   locked?: boolean;
-  kbEndpoint?: string;
-  kbName?: string;
   mcpServerUrl?: string;
   allowedTools?: string[];
   rerankerModel?: string;
@@ -421,7 +419,7 @@ export const TEMPLATE_FLOWS: Record<TemplateId, { nodes: Node<FlowNodeData>[]; e
   rag: {
     nodes: [
       mkNode('planner',     'planner',     'Planner',     240, 0),
-      mkNode('kb_search',   'kb_search',   'KB Search',   240, 110, { kbEndpoint: 'http://knowledge-space/api/kb/', kbName: 'kb_a05_violations' }),
+      mkNode('kb_search',   'kb_search',   'KB Search',   240, 110, ),
       mkNode('rrf_ranking', 'rrf_ranking', 'RRF Ranking', 240, 220),
       mkNode('reranker',    'reranker',    'Reranker',    240, 330, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
       mkNode('responder',   'responder',   'Responder',   240, 440, { systemPromptName: 'prompt_default', temperature: 0.2, maxTokens: 1000 }),
@@ -437,7 +435,7 @@ export const TEMPLATE_FLOWS: Record<TemplateId, { nodes: Node<FlowNodeData>[]; e
   'multi-agent': {
     nodes: [
       mkNode('planner',     'planner',     'Planner',     240, 0),
-      mkNode('kb_search',   'kb_search',   'KB Search',   40,  130, { kbEndpoint: 'http://knowledge-space/api/kb/', kbName: 'kb_a05_violations' }),
+      mkNode('kb_search',   'kb_search',   'KB Search',   40,  130, ),
       mkNode('mcp_tool',    'mcp_tool',    'MCP Tool',    440, 130, { mcpServerUrl: 'http://mcp.tenant.gov.vn/sse', allowedTools: ['tra_cuu_phat_nguoi', 'query_dashboard'] }),
       mkNode('rrf_ranking', 'rrf_ranking', 'RRF Ranking', 240, 270),
       mkNode('reranker',    'reranker',    'Reranker',    240, 380, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
@@ -456,7 +454,7 @@ export const TEMPLATE_FLOWS: Record<TemplateId, { nodes: Node<FlowNodeData>[]; e
   hitl: {
     nodes: [
       mkNode('planner',        'planner',        'Planner',        240, 0),
-      mkNode('kb_search',      'kb_search',      'KB Search',      40,  130, { kbEndpoint: 'http://knowledge-space/api/kb/', kbName: 'kb_a05_violations' }),
+      mkNode('kb_search',      'kb_search',      'KB Search',      40,  130, ),
       mkNode('mcp_tool',       'mcp_tool',       'MCP Tool',       440, 130, { mcpServerUrl: 'http://mcp.tenant.gov.vn/sse', allowedTools: ['tra_cuu_phat_nguoi', 'query_dashboard'] }),
       mkNode('rrf_ranking',    'rrf_ranking',    'RRF Ranking',    240, 270),
       mkNode('reranker',       'reranker',       'Reranker',       240, 380, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
@@ -608,15 +606,7 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
         )}
 
         {d.nodeType === 'kb_search' && (
-          <>
-            <Field label="KB Endpoint">
-              <TextInput value={(d.kbEndpoint as string) || ''} onChange={v => upd('kbEndpoint', v)} placeholder="http://knowledge-space/api/kb/" />
-            </Field>
-            <Field label="KB Name">
-              <TextInput value={(d.kbName as string) || ''} onChange={v => upd('kbName', v)} placeholder="kb_a05_violations" />
-            </Field>
-            <InfoNote text="Knowledge Space API tá»± biáº¿t search mode" />
-          </>
+          <InfoNote text="Tự động tìm kiếm knowledge base của tenant hiện tại. Không cần cấu hình thêm." />
         )}
 
         {d.nodeType === 'mcp_tool' && (

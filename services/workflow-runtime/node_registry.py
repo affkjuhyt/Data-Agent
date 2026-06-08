@@ -30,37 +30,7 @@ NODE_REGISTRY = {
         "display":  "KB Search",
         "category": "default",
         "locked":   False,
-        "schema": {
-            "kb_connection_id": {
-                "type": "dropdown", "source": "/api/kb-connections",
-                "required": True,
-                "description": "Knowledge base cần tìm kiếm",
-                "advanced": False,
-            },
-            "mode": {
-                "type": "dropdown",
-                "options": ["naive", "local", "global", "hybrid"],
-                "default": "hybrid",
-                "required": False,
-                "description": "Chế độ tìm kiếm LightRAG: naive=keyword, local=vector, global=graph, hybrid=kết hợp",
-                "advanced": False,
-            },
-            "top_k": {
-                "type": "number", "default": 10,
-                "min": 1, "max": 50,
-                "required": False,
-                "description": "Số chunks trả về tối đa",
-                "advanced": False,
-            },
-            "max_depth": {
-                "type": "number", "default": 3,
-                "min": 1, "max": 5,
-                "required": False,
-                "description": "Độ sâu graph traversal (chỉ dùng với mode global/hybrid)",
-                "advanced": True,
-                "depends_on": {"mode": ["global", "hybrid"]},
-            },
-        },
+        "schema":   {},
     },
     "mcp": {
         "display":  "MCP Tool",

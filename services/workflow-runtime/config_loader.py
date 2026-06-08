@@ -10,9 +10,6 @@ logger = logging.getLogger(__name__)
 
 DEV_CONFIG = {
     "kb_endpoint": os.environ.get("KB_ENDPOINT", "http://localhost:8080"),
-    "kb_mode": os.environ.get("KB_MODE", "hybrid"),
-    "top_k": int(os.environ.get("KB_TOP_K", "10")),
-    "max_depth": int(os.environ.get("KB_MAX_DEPTH", "3")),
     "planner_model": "openai/planner",
     "planner_temperature": 0,
     "planner_max_tokens": 256,
@@ -166,9 +163,6 @@ async def load_agent_config(agent_id: str) -> dict:
             "system_prompt": row.system_prompt or DEV_CONFIG["system_prompt"],
             # kb
             "kb_endpoint": kb_endpoint,
-            "kb_mode":     retrieval_config.get("mode",      DEV_CONFIG["kb_mode"]),
-            "top_k":       retrieval_config.get("top_k",     DEV_CONFIG["top_k"]),
-            "max_depth":   retrieval_config.get("max_depth", DEV_CONFIG["max_depth"]),
             # memory
             "memory_enabled": bool(row.memory_enabled),
             # mcp
@@ -206,11 +200,7 @@ def _extract_node_config(flow_nodes: list[dict]) -> dict:
     for node in flow_nodes:
         t = node.get("data", {}).get("nodeType") or node.get("type", "")
         c = node.get("data", {}) or node.get("config", {})
-        if t == "kb_search":
-            if "mode"      in c: cfg["kb_mode"]   = c["mode"]
-            if "top_k"     in c: cfg["top_k"]      = c["top_k"]
-            if "max_depth" in c: cfg["max_depth"]  = c["max_depth"]
-        elif t == "rrf_ranking":
+        if t == "rrf_ranking":
             if "top_n" in c: cfg["rrf_top_n"] = c["top_n"]
         elif t == "reranker":
             if "top_n"     in c: cfg["reranker_top_n"] = c["top_n"]
