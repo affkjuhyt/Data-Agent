@@ -117,8 +117,7 @@ async def validate_agent_tenant(agent_id: str, tenant_id: str) -> bool:
     """Return True if agent_id belongs to tenant_id and is active."""
     if not client.is_connected():
         return True  # dev bypass
-    async with client.get_client() as session:
-        await session.execute(text("SELECT set_config('app.tenant_id', :tid, true)"), {"tid": str(tenant_id)})
+    async with client.get_client(tenant_id=tenant_id) as session:
         result = await session.execute(
             select(AgentsORM.id)
             .where(AgentsORM.id == UUID(agent_id))
@@ -133,7 +132,7 @@ async def _has_role(tenant_id: str, user_ref: str, min_role: str) -> bool:
     """Return True if user_ref is an active member of tenant_id with at least min_role."""
     if user_ref == "anonymous":
         return True  # dev bypass
-    async with client.get_client() as session:
+    async with client.get_client(tenant_id=tenant_id) as session:
         result = await session.execute(
             select(MembersORM.tenant_role)
             .where(MembersORM.tenant_id == UUID(tenant_id))

@@ -23,7 +23,8 @@ _default_graph = build_graph()
 
 
 async def run_conversation_stream(req: RunRequest, request: Request):
-    cfg = await load_agent_config(req.agent_id)
+    tenant_id = request.headers.get("X-Tenant-ID", _DEV_TENANT_ID)
+    cfg = await load_agent_config(req.agent_id, tenant_id=tenant_id)
     agent_id = cfg.get("agent_id", _DEV_AGENT_ID)
 
     flow_nodes = cfg.get("flow_nodes") or []
@@ -35,8 +36,6 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         graph = _graph_cache[cache_key]
     else:
         graph = _default_graph
-
-    tenant_id = request.headers.get("X-Tenant-ID", _DEV_TENANT_ID)
     cfg["tenant_id"] = tenant_id
     if not await validate_agent_tenant(agent_id, tenant_id):
         return JSONResponse(status_code=403, content={"detail": "Agent not found or access denied"})

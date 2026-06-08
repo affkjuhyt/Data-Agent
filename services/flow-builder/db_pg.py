@@ -36,7 +36,7 @@ async def close_db():
 
 
 async def create_agent(name: str, description: str, tenant_id: str) -> dict:
-    async with client.get_client() as session:
+    async with client.get_client(tenant_id=tenant_id) as session:
         async with session.begin():
             agent = AgentsORM(
                 tenant_id=UUID(tenant_id),
@@ -83,7 +83,7 @@ async def create_agent(name: str, description: str, tenant_id: str) -> dict:
 
 
 async def list_agents(tenant_id: str) -> list[dict]:
-    async with client.get_client() as session:
+    async with client.get_client(tenant_id=tenant_id) as session:
         result = await session.execute(
             select(AgentsORM)
             .where(AgentsORM.tenant_id == UUID(tenant_id))

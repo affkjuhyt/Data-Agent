@@ -151,7 +151,7 @@ async def retrieve_memories(
             return rows
 
         # Chạy song song Qdrant + PostgreSQL
-        async with client.get_client() as session:
+        async with client.get_client(tenant_id=tenant_id) as session:
             vec_ids, fts_rows = await asyncio.gather(
                 _vector_search(),
                 _fts_search(session),
@@ -186,7 +186,7 @@ async def apply_memory_policy(state: dict, agent_id: str, tenant_id: str, user_r
     if not client.is_connected():
         return
     try:
-        async with client.get_client() as session:
+        async with client.get_client(tenant_id=tenant_id) as session:
             policies = (await session.execute(
                 select(MemoryPolicyORM.action_type, MemoryPolicyORM.condition)
                 .where(MemoryPolicyORM.agent_id == UUID(agent_id))

@@ -54,7 +54,7 @@ DEV_CONFIG = {
 }
 
 
-async def load_agent_config(agent_id: str) -> dict:
+async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict:
     from services.database_connector.postgres_connector import client
     from mongo_client import load_flow_nodes, load_flow_edges
 
@@ -63,7 +63,7 @@ async def load_agent_config(agent_id: str) -> dict:
         return {**DEV_CONFIG, "agent_id": agent_id}
 
     try:
-        async with client.get_client() as session:
+        async with client.get_client(tenant_id=tenant_id) as session:
             # 1. Load published agent_version với responder model + system prompt
             row = (await session.execute(text("""
                 SELECT

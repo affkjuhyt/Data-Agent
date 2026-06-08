@@ -285,6 +285,18 @@ class PostgresTransaction:
                 return ResponseModel(code=400, error=f"Transaction rolled back: {e}")
 
 
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def _tenant_session(factory, tenant_id: str):
+    async with factory() as session:
+        await session.execute(text("SELECT set_config('app.tenant_id', :tid, false)"), {"tid": str(tenant_id)})
+        try:
+            yield session
+        finally:
+            await session.execute(text("SELECT set_config('app.tenant_id', '', false)"))
+
+
 class PostgresClient:
     __slots__ = ("_engine", "_session_factory", "_connection_wait", "_healthy", "_connected", "_timeout", "_url",)
 
@@ -354,10 +366,12 @@ class PostgresClient:
     def is_connected(self) -> bool:
         return self._connected
 
-    def get_client(self) -> AsyncSession:
+    def get_client(self, tenant_id: str | None = None):
         if self._session_factory is None:
             raise RuntimeError("PostgresClient is not open — call open() first")
-        return self._session_factory()
+        if tenant_id is None:
+            return self._session_factory()
+        return _tenant_session(self._session_factory, tenant_id)
 
     async def _check_health(self, config: HealthCheckLoopConfig) -> None:
         async with self._engine.connect() as conn:
@@ -385,7 +399,8 @@ class PostgresClient:
         except AttributeError as e:
             return ResponseModel(code=400, error=str(e))
 
-        async with self.get_client() as session:
+        tenant_id = str(getattr(data, "tenant_id", None) or "")
+        async with self.get_client(tenant_id=tenant_id or None) as session:
             session.add(prep.instance)
             try:
                 await session.commit()

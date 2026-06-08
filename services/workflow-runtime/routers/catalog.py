@@ -45,8 +45,7 @@ async def list_agents(request: Request):
         from services.database_connector.postgres_connector import client
         if not client.is_connected():
             raise RuntimeError("db not connected")
-        async with client.get_client() as session:
-            await session.execute(text("SELECT set_config('app.tenant_id', :tid, true)"), {"tid": tenant_id})
+        async with client.get_client(tenant_id=tenant_id) as session:
             rows = (await session.execute(text("""
                 SELECT a.id, a.name, a.description
                 FROM "Agents" a
