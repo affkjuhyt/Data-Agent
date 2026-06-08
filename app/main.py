@@ -9,31 +9,28 @@ from sqlalchemy.ext.asyncio import create_async_engine
 import basemodel.services_databaseconnector.postgres_orm  # noqa: F401 — registers ORM models
 from basemodel.services_databaseconnector.postgres_orm.base import Base
 
+import services.database_connector.postgres.db_client as _pg
+import services.database_connector.neo4j.db_client as _neo
+import services.database_connector.qdrant.db_client as _qd
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     pg_url = os.environ.get(
         "POSTGRES_URL",
-        "postgresql+asyncpg://aeroflow:aeroflow_secret@postgres/aeroflow_kb",
+        "postgresql+asyncpg://admin:dev123@postgres/dataagent",
     )
 
-    # Step 1: create aeroflow_kb database if it doesn't exist.
-    # Must connect to the default 'aeroflow' DB to run CREATE DATABASE.
-    admin_url = pg_url.rsplit("/", 1)[0] + "/aeroflow"
-    admin_engine = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
-    async with admin_engine.connect() as conn:
-        exists = await conn.scalar(
-            text("SELECT 1 FROM pg_database WHERE datname = 'aeroflow_kb'")
-        )
-        if not exists:
-            await conn.execute(text("CREATE DATABASE aeroflow_kb"))
-    await admin_engine.dispose()
-
-    # Step 2: create all ORM-registered tables in aeroflow_kb.
+    # Create all ORM-registered tables in the target database.
     kb_engine = create_async_engine(pg_url)
     async with kb_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await kb_engine.dispose()
+
+    # Step 3: initialize db clients used by router.py.
+    _pg.init(pg_url)
+    await _neo.init(os.environ.get("NEO4J_URI", "bolt://neo4j:7687"))
+    _qd.init(os.environ.get("QDRANT_URL", "http://qdrant:6333"))
 
     yield
 
