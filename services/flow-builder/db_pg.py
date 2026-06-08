@@ -110,7 +110,8 @@ async def get_agent(agent_id: str) -> Optional[dict]:
             select(AgentsORM)
             .options(
                 selectinload(AgentsORM.published_version).selectinload(AgentVersionsORM.workflow_version)
-                .selectinload(WorkflowVersionsORM.workflow)
+                .selectinload(WorkflowVersionsORM.workflow),
+                selectinload(AgentsORM.draft_version),
             )
             .where(AgentsORM.id == UUID(agent_id))
             .where(AgentsORM.deleted_at.is_(None))
@@ -127,6 +128,7 @@ async def get_agent(agent_id: str) -> Optional[dict]:
             active_workflow = str(wf.id)
             active_workflow_name = wf.name
 
+    dv = agent.draft_version
     return {
         "id": str(agent.id),
         "name": agent.name,
@@ -138,6 +140,10 @@ async def get_agent(agent_id: str) -> Optional[dict]:
         "updated_at": agent.updated_at,
         "active_workflow_id": active_workflow,
         "active_workflow_name": active_workflow_name,
+        # draft config fields — used by Settings tab
+        "responder_model_id": str(dv.responder_model_id) if dv and dv.responder_model_id else None,
+        "system_prompt_id":   str(dv.system_prompt_id)   if dv and dv.system_prompt_id   else None,
+        "memory_enabled":     bool(dv.memory_enabled)     if dv else False,
     }
 
 
@@ -219,6 +225,25 @@ async def update_agent_draft(agent_id: str, fields: dict) -> dict:
                 )
 
     return {"agent_id": agent_id, "updated": list(fields.keys())}
+
+
+async def unpublish_agent(agent_id: str) -> dict:
+    async with client.get_client() as session:
+        async with session.begin():
+            result = await session.execute(
+                select(AgentsORM).where(AgentsORM.id == UUID(agent_id))
+            )
+            agent = result.scalar_one_or_none()
+            if not agent:
+                raise ValueError("Agent not found")
+            if not agent.published_version_id:
+                raise ValueError("Agent is not published")
+            await session.execute(
+                sa_update(AgentsORM)
+                .where(AgentsORM.id == UUID(agent_id))
+                .values(published_version_id=None, updated_at=func.now())
+            )
+    return {"agent_id": agent_id, "published": False}
 
 
 async def publish_workflow_version(workflow_version_id: str, changelog: str | None = None) -> dict:

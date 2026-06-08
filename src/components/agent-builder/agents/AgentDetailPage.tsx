@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import {
   ArrowLeft, GitMerge, Plus, Settings2, Trash2, Upload,
-  CheckCircle2, Clock, Edit3, Save, X, Zap, ChevronDown, RotateCcw,
+  CheckCircle2, Clock, Edit3, Save, X, Zap, ChevronDown, RotateCcw, PowerOff,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import WorkflowBuilder from '../workflow/Builder';
@@ -30,6 +30,9 @@ interface ApiAgent {
   active_workflow_id: string | null;
   active_workflow_name: string | null;
   workflows?: ApiWorkflow[];
+  responder_model_id: string | null;
+  system_prompt_id: string | null;
+  memory_enabled: boolean;
 }
 
 interface LLMProvider { id: string; name: string; model_id: string; type: string; }
@@ -106,6 +109,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
     responder_model_id: '', system_prompt_id: '', memory_enabled: false,
   });
   const [savingSettings, setSavingSettings] = useState(false);
+  const [unpublishing, setUnpublishing]     = useState(false);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -153,8 +157,11 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
     setAgent(data);
     setSettingsForm(f => ({
       ...f,
-      name: data.name,
-      description: data.description || '',
+      name:                data.name,
+      description:         data.description || '',
+      responder_model_id:  data.responder_model_id  ?? '',
+      system_prompt_id:    data.system_prompt_id    ?? '',
+      memory_enabled:      data.memory_enabled      ?? false,
     }));
     // Fetch versions cho tất cả workflows
     (data.workflows ?? []).forEach(wf => {
@@ -293,6 +300,17 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
     } catch { showToast('Xóa thất bại'); }
   };
 
+  const handleUnpublish = async () => {
+    setUnpublishing(true);
+    try {
+      const res = await fetch(`${FLOW_BUILDER_URL}/api/agents/${agentId}/unpublish`, { method: 'POST' });
+      if (!res.ok) { const e = await res.json(); showToast(e.detail || 'Unpublish thất bại'); return; }
+      showToast('✓ Agent đã được unpublish');
+      fetchAgent();
+    } catch { showToast('Unpublish thất bại'); }
+    finally { setUnpublishing(false); }
+  };
+
   const handleSaveSettings = async () => {
     setSavingSettings(true);
     try {
@@ -357,13 +375,26 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
             </div>
           </div>
         </div>
-        <button
-          onClick={openPublishWizard}
-          className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-colors"
-        >
-          <Upload className="w-3.5 h-3.5" />
-          Publish
-        </button>
+        <div className="flex items-center gap-2">
+          {isPublished && (
+            <button
+              onClick={handleUnpublish}
+              disabled={unpublishing}
+              title="Gỡ agent khỏi playground ngay lập tức"
+              className="flex items-center gap-1.5 px-3 py-2 border border-red-300 text-red-600 hover:bg-red-50 rounded-xl text-xs font-bold transition-colors disabled:opacity-50"
+            >
+              <PowerOff className="w-3.5 h-3.5" />
+              {unpublishing ? 'Đang gỡ…' : 'Unpublish'}
+            </button>
+          )}
+          <button
+            onClick={openPublishWizard}
+            className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-colors"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            {isPublished ? 'Re-publish' : 'Publish'}
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}

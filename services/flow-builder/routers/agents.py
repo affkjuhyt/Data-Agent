@@ -11,6 +11,7 @@ from db_pg import (
     list_agents,
     list_workflows,
     publish_agent,
+    unpublish_agent,
     update_agent_draft,
 )
 from dependencies import ensure_db_available
@@ -86,4 +87,16 @@ async def api_publish_agent(agent_id: str, body: PublishRequest):
         raise HTTPException(400, str(e))
     except Exception as e:
         logger.exception("publish_agent failed")
+        raise HTTPException(500, str(e))
+
+
+@router.post("/api/agents/{agent_id}/unpublish")
+async def api_unpublish_agent(agent_id: str):
+    ensure_db_available()
+    try:
+        return await unpublish_agent(agent_id)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        logger.exception("unpublish_agent failed")
         raise HTTPException(500, str(e))
