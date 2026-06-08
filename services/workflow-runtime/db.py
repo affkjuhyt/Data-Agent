@@ -13,7 +13,7 @@ try:
 except ImportError:
     _NUMPY = False
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from services.database_connector.postgres_connector import client
 from basemodel.services_databaseconnector.postgres_orm.workflow_orm import AgentsORM
@@ -118,6 +118,7 @@ async def validate_agent_tenant(agent_id: str, tenant_id: str) -> bool:
     if not client.is_connected():
         return True  # dev bypass
     async with client.get_client() as session:
+        await session.execute(text("SELECT set_config('app.tenant_id', :tid, true)"), {"tid": str(tenant_id)})
         result = await session.execute(
             select(AgentsORM.id)
             .where(AgentsORM.id == UUID(agent_id))

@@ -111,7 +111,7 @@ def _validate_order_by(order_by, allowed_tables: set[str]) -> None:
 def _prepare_insert(data: BaseModel) -> DMLPreparation:
     table_name, orm_cls = _resolve(data)
     return DMLPreparation(
-        instance=orm_cls(**data.model_dump(mode="json")),
+        instance=orm_cls(**data.model_dump(mode="python")),
         orm_cls=orm_cls,
         table_name=table_name,
     )

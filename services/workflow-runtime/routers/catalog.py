@@ -46,6 +46,7 @@ async def list_agents(request: Request):
         if not client.is_connected():
             raise RuntimeError("db not connected")
         async with client.get_client() as session:
+            await session.execute(text("SELECT set_config('app.tenant_id', :tid, true)"), {"tid": tenant_id})
             rows = (await session.execute(text("""
                 SELECT a.id, a.name, a.description
                 FROM "Agents" a
@@ -59,7 +60,9 @@ async def list_agents(request: Request):
             {"id": str(r.id), "name": r.name, "description": r.description or ""}
             for r in rows
         ]
-    except Exception:
+    except Exception as e:
+        import logging, traceback
+        logging.getLogger(__name__).error("catalog/agents failed: %s\n%s", e, traceback.format_exc())
         return [{"id": _DEV_AGENT_ID, "name": "Dev Agent", "description": "", "has_published_version": False}]
 
 
