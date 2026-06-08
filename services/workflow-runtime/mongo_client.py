@@ -27,3 +27,17 @@ async def load_flow_nodes(workflow_version_id: str) -> list[dict]:
     except Exception as e:
         logger.warning("mongo load_flow_nodes failed: %s", e)
         return []
+
+
+async def load_flow_edges(workflow_version_id: str) -> list[dict]:
+    if not client.is_connected() or not workflow_version_id:
+        return []
+    try:
+        db = client.get_client()
+        edges = await db.flow_edges.find(
+            {"workflow_version_id": workflow_version_id}, {"_id": 0}
+        ).to_list(None)
+        return edges
+    except Exception as e:
+        logger.warning("mongo load_flow_edges failed: %s", e)
+        return []

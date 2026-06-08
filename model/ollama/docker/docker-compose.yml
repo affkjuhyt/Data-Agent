@@ -20,7 +20,7 @@ services:
       resources:
         limits:
           cpus: "8"
-          memory: 6G
+          memory: 10G
         reservations:
           memory: 1G
     ulimits:
@@ -36,3 +36,18 @@ services:
       timeout: 10s
       start_period: 90s
       retries: 3
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml
+    command:
+      - "--config"
+      - "/app/config.yaml"
+      - "--port"
+      - "4000"
+    depends_on:
+      - llama
+    restart: unless-stopped

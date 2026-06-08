@@ -25,7 +25,10 @@ async def lifespan(app: FastAPI):
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, model.load)
     _cache = KVCacheManager(model)
-    log.info("Model ready. No system prompts registered yet — call POST /api/system first.")
+    # Capture the clean initial state so direct API calls work without pre-registering
+    # a system prompt. POST /api/system can still be used for KV cache optimization.
+    await loop.run_in_executor(None, _cache.init_empty_state)
+    log.info("Model ready. Direct calls work immediately; POST /api/system enables KV caching.")
     yield
     _cache = None
 
@@ -111,6 +114,23 @@ async def api_generate(request: Request):
     return JSONResponse(await loop.run_in_executor(
         None, lambda: cache.completion(payload, system_type)
     ))
+
+
+@app.post("/api/embeddings")
+async def api_embeddings(request: Request):
+    """Ollama-compatible embeddings endpoint. LiteLLM routes embedding calls here."""
+    cache = _get_cache()
+    body: dict[str, Any] = await request.json()
+    prompt = body.get("prompt", "")
+    if not prompt:
+        raise HTTPException(status_code=422, detail="'prompt' is required")
+    loop = asyncio.get_event_loop()
+    try:
+        embedding = await loop.run_in_executor(None, lambda: cache.embed(prompt))
+    except Exception as exc:
+        log.error("Embedding failed: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Embedding failed: {exc}")
+    return JSONResponse({"model": "llama3", "embedding": embedding})
 
 
 @app.get("/api/tags")

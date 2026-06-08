@@ -53,12 +53,13 @@ DEV_CONFIG = {
     "agent_id": os.environ.get("DEV_AGENT_ID", "00000000-0000-0000-0000-000000000030"),
     "agent_version_id": None,
     "flow_nodes": [],
+    "flow_edges": [],
 }
 
 
 async def load_agent_config(agent_id: str) -> dict:
     from services.database_connector.postgres_connector import client
-    from mongo_client import load_flow_nodes
+    from mongo_client import load_flow_nodes, load_flow_edges
 
     if not client.is_connected():
         logger.debug("DB not available — using DEV_CONFIG")
@@ -146,8 +147,9 @@ async def load_agent_config(agent_id: str) -> dict:
                         "guardrail_id":              str(row.guardrail_id),
                     }
 
-        # 5. Load flow_nodes từ MongoDB
+        # 5. Load flow_nodes + flow_edges từ MongoDB
         flow_nodes = await load_flow_nodes(wv_id) if wv_id else []
+        flow_edges = await load_flow_edges(wv_id) if wv_id else []
         node_cfg   = _extract_node_config(flow_nodes)
 
         return {
@@ -175,8 +177,9 @@ async def load_agent_config(agent_id: str) -> dict:
             **guardrail_cfg,
             # node-level config từ canvas
             **node_cfg,
-            # flow_nodes cho dynamic graph
+            # flow_nodes + flow_edges cho dynamic graph
             "flow_nodes": flow_nodes,
+            "flow_edges": flow_edges,
         }
 
     except Exception as e:

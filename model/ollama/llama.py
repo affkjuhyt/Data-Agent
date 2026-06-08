@@ -50,13 +50,18 @@ class UserPrompt:
 
 
 class UserMessageList:
-    def __init__(self, messages: list[dict[str, str]], offset: int = 0) -> None:
+    def __init__(self, messages: list[dict[str, str]], offset: int = 0, include_system: bool = False) -> None:
         self.messages = messages
         self._offset = offset  # messages[offset:] are new — everything before is already in KV
+        self._include_system = include_system
 
     def to_text(self, model: Llama) -> str:
-        conversation = [m for m in self.messages[self._offset:] if m.get("role") != "system"]
-        return _render_chat_template(model, conversation, add_generation_prompt=True)
+        msgs = self.messages[self._offset:]
+        # When a pre-cached system KV snapshot is loaded, the system tokens are already
+        # in context — skip them here. When starting fresh (no snapshot), include them.
+        if not self._include_system:
+            msgs = [m for m in msgs if m.get("role") != "system"]
+        return _render_chat_template(model, msgs, add_generation_prompt=True)
 
 
 class Formatter:
@@ -274,6 +279,12 @@ class Llama3Model:
     ) -> Iterator[dict[str, Any]]:
         self.prefill(user_input)
         yield from self.stream_decode_reply(formatter, gen_kwargs, max_tokens)
+
+    def embed(self, text: str) -> list[float]:
+        """Return a float embedding for the given text using the model's token representations."""
+        assert self._model is not None
+        result = self._model.create_embedding(text)
+        return result["data"][0]["embedding"]
 
     def health(self) -> dict[str, Any]:
         return {

@@ -27,10 +27,12 @@ async def run_conversation_stream(req: RunRequest, request: Request):
     agent_id = cfg.get("agent_id", _DEV_AGENT_ID)
 
     flow_nodes = cfg.get("flow_nodes") or []
+    flow_edges = cfg.get("flow_edges") or []
     if flow_nodes:
-        if req.agent_id not in _graph_cache:
-            _graph_cache[req.agent_id] = build_graph(flow_nodes)
-        graph = _graph_cache[req.agent_id]
+        cache_key = cfg.get("agent_version_id") or req.agent_id
+        if cache_key not in _graph_cache:
+            _graph_cache[cache_key] = build_graph(flow_nodes, flow_edges)
+        graph = _graph_cache[cache_key]
     else:
         graph = _default_graph
 

@@ -285,6 +285,50 @@ const EdgeWithDelete = (props: EdgeProps) => {
 const nodeTypes = { flowNode: CustomFlowNode };
 const edgeTypes = { wfEdge: EdgeWithDelete };
 
+// ── Guardrail Banner ──────────────────────────────────────────────────────────
+
+const GuardrailBanner = ({ position }: { position: 'top' | 'bottom' }) => (
+  <div
+    style={{
+      position: 'absolute',
+      [position]: 0,
+      left: 0,
+      right: 0,
+      zIndex: 10,
+      pointerEvents: 'none',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '8px 16px',
+      background: position === 'top'
+        ? 'linear-gradient(to bottom, #0f172a 40%, transparent)'
+        : 'linear-gradient(to top, #0f172a 40%, transparent)',
+    }}
+  >
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 7,
+      background: 'rgba(239,68,68,0.07)',
+      border: '1px solid rgba(239,68,68,0.18)',
+      borderRadius: 20,
+      padding: '4px 14px',
+    }}>
+      <ShieldCheck size={10} color="#EF4444" />
+      <span style={{
+        fontSize: 9,
+        fontWeight: 900,
+        letterSpacing: '0.18em',
+        textTransform: 'uppercase',
+        color: '#EF4444',
+        opacity: 0.75,
+      }}>
+        Guardrail {position === 'top' ? 'Input' : 'Output'}
+      </span>
+    </div>
+  </div>
+);
+
 // â”€â”€â”€ Edge Helpers (all use type 'wfEdge') â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const solidEdge = (id: string, src: string, tgt: string, color = '#ffffff22'): Edge => ({
@@ -370,87 +414,63 @@ function transformWorkflowToFlow(workflow: Workflow): { nodes: Node<FlowNodeData
 export const TEMPLATE_FLOWS: Record<TemplateId, { nodes: Node<FlowNodeData>[]; edges: Edge[] }> = {
 
   blank: {
-    nodes: [mkNode('trigger', 'trigger', 'Start', 300, 200)],
+    nodes: [],
     edges: [],
   },
 
   rag: {
     nodes: [
-      mkNode('trigger',       'trigger',   'User Input',         360, 0),
-      mkLockedNode('guardrail_in',  'guardrail', 'Guardrail — Input',  360, 110),
-      mkNode('planner',       'planner',   'Planner',            360, 220),
-      mkNode('kb_search',     'kb_search', 'KB Search',          360, 330, { kbEndpoint: 'http://knowledge-space/api/kb/', kbName: 'kb_a05_violations' }),
-      mkNode('rrf_ranking',   'rrf_ranking','RRF Ranking',       360, 440),
-      mkNode('reranker',      'reranker',  'Reranker',           360, 550, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
-      mkNode('responder',     'responder', 'Responder',          360, 660, { systemPromptName: 'prompt_default', temperature: 0.2, maxTokens: 1000 }),
-      mkLockedNode('guardrail_out', 'guardrail', 'Guardrail — Output', 360, 770),
-      mkNode('output',        'output',    'Response',           360, 880),
+      mkNode('planner',     'planner',     'Planner',     240, 0),
+      mkNode('kb_search',   'kb_search',   'KB Search',   240, 110, { kbEndpoint: 'http://knowledge-space/api/kb/', kbName: 'kb_a05_violations' }),
+      mkNode('rrf_ranking', 'rrf_ranking', 'RRF Ranking', 240, 220),
+      mkNode('reranker',    'reranker',    'Reranker',    240, 330, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
+      mkNode('responder',   'responder',   'Responder',   240, 440, { systemPromptName: 'prompt_default', temperature: 0.2, maxTokens: 1000 }),
     ],
     edges: [
-      lockedEdge('e1', 'trigger',       'guardrail_in'),
-      lockedEdge('e2', 'guardrail_in',  'planner'),
-      solidEdge ('e3', 'planner',       'kb_search',     '#3B82F666'),
-      solidEdge ('e4', 'kb_search',     'rrf_ranking',   '#10B98166'),
-      solidEdge ('e5', 'rrf_ranking',   'reranker',      '#8B5CF666'),
-      solidEdge ('e6', 'reranker',      'responder',     '#8B5CF666'),
-      lockedEdge('e7', 'responder',     'guardrail_out'),
-      lockedEdge('e8', 'guardrail_out', 'output'),
+      solidEdge('e1', 'planner',     'kb_search',   '#3B82F666'),
+      solidEdge('e2', 'kb_search',   'rrf_ranking', '#10B98166'),
+      solidEdge('e3', 'rrf_ranking', 'reranker',    '#8B5CF666'),
+      solidEdge('e4', 'reranker',    'responder',   '#8B5CF666'),
     ],
   },
 
   'multi-agent': {
     nodes: [
-      mkNode('trigger',       'trigger',    'User Input',         360, 0),
-      mkLockedNode('guardrail_in',  'guardrail', 'Guardrail — Input',  360, 110),
-      mkNode('planner',       'planner',    'Planner',            360, 220),
-      mkNode('kb_search',     'kb_search',  'KB Search',          160, 350, { kbEndpoint: 'http://knowledge-space/api/kb/', kbName: 'kb_a05_violations' }),
-      mkNode('mcp_tool',      'mcp_tool',   'MCP Tool',           560, 350, { mcpServerUrl: 'http://mcp.tenant.gov.vn/sse', allowedTools: ['tra_cuu_phat_nguoi', 'query_dashboard'] }),
-      mkNode('rrf_ranking',   'rrf_ranking','RRF Ranking',        360, 490),
-      mkNode('reranker',      'reranker',   'Reranker',           360, 600, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
-      mkNode('responder',     'responder',  'Responder',          360, 710, { systemPromptName: 'prompt_default', temperature: 0.2, maxTokens: 1000 }),
-      mkLockedNode('guardrail_out', 'guardrail', 'Guardrail — Output', 360, 820),
-      mkNode('output',        'output',     'Response',           360, 930),
+      mkNode('planner',     'planner',     'Planner',     240, 0),
+      mkNode('kb_search',   'kb_search',   'KB Search',   40,  130, { kbEndpoint: 'http://knowledge-space/api/kb/', kbName: 'kb_a05_violations' }),
+      mkNode('mcp_tool',    'mcp_tool',    'MCP Tool',    440, 130, { mcpServerUrl: 'http://mcp.tenant.gov.vn/sse', allowedTools: ['tra_cuu_phat_nguoi', 'query_dashboard'] }),
+      mkNode('rrf_ranking', 'rrf_ranking', 'RRF Ranking', 240, 270),
+      mkNode('reranker',    'reranker',    'Reranker',    240, 380, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
+      mkNode('responder',   'responder',   'Responder',   240, 490, { systemPromptName: 'prompt_default', temperature: 0.2, maxTokens: 1000 }),
     ],
     edges: [
-      lockedEdge  ('e1',  'trigger',       'guardrail_in'),
-      lockedEdge  ('e2',  'guardrail_in',  'planner'),
-      labeledSolid('e3',  'planner',       'kb_search',     'always',        '#10B98199'),
-      dashedEdge  ('e4',  'planner',       'mcp_tool',      'if tool_calls', '#F59E0B99'),
-      solidEdge   ('e5',  'kb_search',     'rrf_ranking',   '#10B98166'),
-      solidEdge   ('e6',  'mcp_tool',      'rrf_ranking',   '#F59E0B66'),
-      solidEdge   ('e7',  'rrf_ranking',   'reranker',      '#8B5CF666'),
-      solidEdge   ('e8',  'reranker',      'responder',     '#8B5CF666'),
-      lockedEdge  ('e9',  'responder',     'guardrail_out'),
-      lockedEdge  ('e10', 'guardrail_out', 'output'),
+      labeledSolid('e1', 'planner',     'kb_search',   'always',        '#10B98199'),
+      dashedEdge  ('e2', 'planner',     'mcp_tool',    'if tool_calls', '#F59E0B99'),
+      solidEdge   ('e3', 'kb_search',   'rrf_ranking', '#10B98166'),
+      solidEdge   ('e4', 'mcp_tool',    'rrf_ranking', '#F59E0B66'),
+      solidEdge   ('e5', 'rrf_ranking', 'reranker',    '#8B5CF666'),
+      solidEdge   ('e6', 'reranker',    'responder',   '#8B5CF666'),
     ],
   },
 
   hitl: {
     nodes: [
-      mkNode('trigger',        'trigger',        'User Input',         360, 0),
-      mkLockedNode('guardrail_in',  'guardrail', 'Guardrail — Input',  360, 110),
-      mkNode('planner',        'planner',        'Planner',            360, 220),
-      mkNode('kb_search',      'kb_search',      'KB Search',          160, 350, { kbEndpoint: 'http://knowledge-space/api/kb/', kbName: 'kb_a05_violations' }),
-      mkNode('mcp_tool',       'mcp_tool',       'MCP Tool',           560, 350, { mcpServerUrl: 'http://mcp.tenant.gov.vn/sse', allowedTools: ['tra_cuu_phat_nguoi', 'query_dashboard'] }),
-      mkNode('rrf_ranking',    'rrf_ranking',    'RRF Ranking',        360, 490),
-      mkNode('reranker',       'reranker',       'Reranker',           360, 600, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
-      mkNode('responder',      'responder',      'Responder',          360, 710, { systemPromptName: 'prompt_default', temperature: 0.2, maxTokens: 1000 }),
-      mkLockedNode('guardrail_out', 'guardrail', 'Guardrail — Output', 360, 820),
-      mkNode('human_approval', 'human_approval', 'Human Review',       360, 930, { approverRole: 'MANAGER' }),
-      mkNode('output',         'output',         'Response',           360, 1040),
+      mkNode('planner',        'planner',        'Planner',        240, 0),
+      mkNode('kb_search',      'kb_search',      'KB Search',      40,  130, { kbEndpoint: 'http://knowledge-space/api/kb/', kbName: 'kb_a05_violations' }),
+      mkNode('mcp_tool',       'mcp_tool',       'MCP Tool',       440, 130, { mcpServerUrl: 'http://mcp.tenant.gov.vn/sse', allowedTools: ['tra_cuu_phat_nguoi', 'query_dashboard'] }),
+      mkNode('rrf_ranking',    'rrf_ranking',    'RRF Ranking',    240, 270),
+      mkNode('reranker',       'reranker',       'Reranker',       240, 380, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
+      mkNode('responder',      'responder',      'Responder',      240, 490, { systemPromptName: 'prompt_default', temperature: 0.2, maxTokens: 1000 }),
+      mkNode('human_approval', 'human_approval', 'Human Review',   240, 600, { approverRole: 'MANAGER' }),
     ],
     edges: [
-      lockedEdge  ('e1',  'trigger',        'guardrail_in'),
-      lockedEdge  ('e2',  'guardrail_in',   'planner'),
-      labeledSolid('e3',  'planner',        'kb_search',      'always',        '#10B98199'),
-      dashedEdge  ('e4',  'planner',        'mcp_tool',       'if tool_calls', '#F59E0B99'),
-      solidEdge   ('e5',  'kb_search',      'rrf_ranking',    '#10B98166'),
-      solidEdge   ('e6',  'mcp_tool',       'rrf_ranking',    '#F59E0B66'),
-      solidEdge   ('e7',  'rrf_ranking',    'reranker',       '#8B5CF666'),
-      solidEdge   ('e8',  'reranker',       'responder',      '#8B5CF666'),
-      lockedEdge  ('e9',  'responder',      'guardrail_out'),
-      lockedEdge  ('e10', 'guardrail_out',  'human_approval'),
-      solidEdge   ('e11', 'human_approval', 'output',         '#D9B86C66'),
+      labeledSolid('e1', 'planner',        'kb_search',      'always',        '#10B98199'),
+      dashedEdge  ('e2', 'planner',        'mcp_tool',       'if tool_calls', '#F59E0B99'),
+      solidEdge   ('e3', 'kb_search',      'rrf_ranking',    '#10B98166'),
+      solidEdge   ('e4', 'mcp_tool',       'rrf_ranking',    '#F59E0B66'),
+      solidEdge   ('e5', 'rrf_ranking',    'reranker',       '#8B5CF666'),
+      solidEdge   ('e6', 'reranker',       'responder',      '#8B5CF666'),
+      solidEdge   ('e7', 'responder',      'human_approval', '#D9B86C66'),
     ],
   },
 };
@@ -862,8 +882,19 @@ export interface BuilderProps {
   sourceVersionId?: string;
 }
 
-// Đảm bảo node/edge nào có data.locked=true đều có deletable:false,
-// bất kể source (DB, initialNodes, sourceVersion canvas).
+// System nodes không phải user-designed, bỏ khi load từ DB (guardrail là banner, không phải RF node)
+const SYSTEM_NODE_TYPES = new Set(['guardrail', 'trigger', 'output']);
+
+const stripSystemNodes = (nodes: any[], edges: any[]) => {
+  const sysIds = new Set(
+    nodes.filter(n => SYSTEM_NODE_TYPES.has(n.data?.nodeType)).map((n: any) => n.id),
+  );
+  return {
+    nodes: nodes.filter(n => !sysIds.has(n.id)),
+    edges: edges.filter(e => !sysIds.has(e.source) && !sysIds.has(e.target)),
+  };
+};
+
 const withLockedNodes = (nodes: any[]): any[] =>
   nodes.map(n => n.data?.locked ? { ...n, deletable: false } : n);
 
@@ -905,22 +936,25 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
       .then(data => {
         const hasDbCanvas = data.nodes?.length > 0 || data.edges?.length > 0;
         if (hasDbCanvas) {
-          // Existing draft đã có canvas trong DB
-          setNodes(withLockedNodes(data.nodes));
-          setEdges(withLockedEdges(data.edges ?? []));
-          savedSnapshot.current = snap(data.nodes, data.edges ?? []);
+          // Existing draft đã có canvas trong DB — strip system nodes (guardrail/trigger/output)
+          const cleaned = stripSystemNodes(data.nodes, data.edges ?? []);
+          setNodes(withLockedNodes(cleaned.nodes));
+          setEdges(withLockedEdges(cleaned.edges));
+          savedSnapshot.current = snap(cleaned.nodes, cleaned.edges);
         } else if (initialNodes || initialEdges) {
           // Workflow mới: load template vào React state, DB vẫn rỗng
-          setNodes(withLockedNodes(initialNodes ?? []));
-          setEdges(withLockedEdges(initialEdges ?? []));
+          const cleaned = stripSystemNodes(initialNodes ?? [], initialEdges ?? []);
+          setNodes(withLockedNodes(cleaned.nodes));
+          setEdges(withLockedEdges(cleaned.edges));
           savedSnapshot.current = JSON.stringify({ nodes: [], edges: [] });
         } else if (sourceVersionId) {
           // Draft mới: load canvas từ published version vào React state, DB vẫn rỗng
           fetch(`${FLOW_BUILDER_URL}/api/workflow-versions/${sourceVersionId}/canvas`)
             .then(r => r.json())
             .then(src => {
-              setNodes(withLockedNodes(src.nodes ?? []));
-              setEdges(withLockedEdges(src.edges ?? []));
+              const cleaned = stripSystemNodes(src.nodes ?? [], src.edges ?? []);
+              setNodes(withLockedNodes(cleaned.nodes));
+              setEdges(withLockedEdges(cleaned.edges));
               savedSnapshot.current = JSON.stringify({ nodes: [], edges: [] });
             })
             .catch(() => {});
@@ -1263,6 +1297,8 @@ ${edges.map(e => `  - from: "${e.source}"  to: "${e.target}"`).join('\n')}`;
             onDragOver={onDragOver}
             onDrop={onDrop}
           >
+            <GuardrailBanner position="top" />
+            <GuardrailBanner position="bottom" />
             <AnimatePresence mode="wait">
               {viewMode === 'VISUAL' ? (
                 <motion.div
