@@ -40,7 +40,7 @@ const LOCKED_NODE_TYPES    = new Set(['guardrail_input', 'guardrail_output', 'gu
 export type TemplateId = 'blank' | 'rag' | 'multi-agent' | 'hitl';
 
 type FlowNodeType =
-  | 'trigger' | 'guardrail' | 'planner' | 'kb_search' | 'mcp_tool'
+  | 'trigger' | 'guardrail' | 'planner' | 'kb_search' | 'mcp'
   | 'rrf_ranking' | 'reranker' | 'responder' | 'output'
   | 'human_approval' | 'condition' | 'db_query'
   | 'send_notification' | 'loop';
@@ -70,7 +70,7 @@ const NODE_STYLE: Record<string, { typeLabel: string; Icon: any; color: string }
   guardrail:         { typeLabel: 'Guardrail',       Icon: ShieldCheck, color: '#EF4444' },
   planner:           { typeLabel: 'Planner',        Icon: Bot,         color: '#3B82F6' },
   kb_search:         { typeLabel: 'KB Search',      Icon: Database,    color: '#10B981' },
-  mcp_tool:          { typeLabel: 'MCP Tool',       Icon: Wrench,      color: '#F59E0B' },
+  mcp:               { typeLabel: 'MCP Tool',       Icon: Wrench,      color: '#F59E0B' },
   rrf_ranking:       { typeLabel: 'RRF Ranking',    Icon: Layers,      color: '#8B5CF6' },
   reranker:          { typeLabel: 'Reranker',       Icon: Filter,      color: '#8B5CF6' },
   responder:         { typeLabel: 'Responder',      Icon: Cpu,         color: '#3B82F6' },
@@ -297,29 +297,29 @@ const GuardrailBanner = ({ position }: { position: 'top' | 'bottom' }) => (
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: '8px 16px',
+      padding: '12px 16px',
       background: position === 'top'
-        ? 'linear-gradient(to bottom, #0f172a 40%, transparent)'
-        : 'linear-gradient(to top, #0f172a 40%, transparent)',
+        ? 'linear-gradient(to bottom, #0f172a 50%, transparent)'
+        : 'linear-gradient(to top, #0f172a 50%, transparent)',
     }}
   >
     <div style={{
       display: 'flex',
       alignItems: 'center',
-      gap: 7,
-      background: 'rgba(239,68,68,0.07)',
-      border: '1px solid rgba(239,68,68,0.18)',
+      gap: 8,
+      background: 'rgba(239,68,68,0.09)',
+      border: '1px solid rgba(239,68,68,0.25)',
       borderRadius: 20,
-      padding: '4px 14px',
+      padding: '6px 18px',
     }}>
-      <ShieldCheck size={10} color="#EF4444" />
+      <ShieldCheck size={13} color="#EF4444" />
       <span style={{
-        fontSize: 9,
+        fontSize: 11,
         fontWeight: 900,
         letterSpacing: '0.18em',
         textTransform: 'uppercase',
         color: '#EF4444',
-        opacity: 0.75,
+        opacity: 0.85,
       }}>
         Guardrail {position === 'top' ? 'Input' : 'Output'}
       </span>
@@ -436,16 +436,16 @@ export const TEMPLATE_FLOWS: Record<TemplateId, { nodes: Node<FlowNodeData>[]; e
     nodes: [
       mkNode('planner',     'planner',     'Planner',     240, 0),
       mkNode('kb_search',   'kb_search',   'KB Search',   40,  130, ),
-      mkNode('mcp_tool',    'mcp_tool',    'MCP Tool',    440, 130, { mcpServerUrl: 'http://mcp.tenant.gov.vn/sse', allowedTools: ['tra_cuu_phat_nguoi', 'query_dashboard'] }),
+      mkNode('mcp',    'mcp',    'MCP Tool',    440, 130, { mcpServerUrl: 'http://mcp.tenant.gov.vn/sse', allowedTools: ['tra_cuu_phat_nguoi', 'query_dashboard'] }),
       mkNode('rrf_ranking', 'rrf_ranking', 'RRF Ranking', 240, 270),
       mkNode('reranker',    'reranker',    'Reranker',    240, 380, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
       mkNode('responder',   'responder',   'Responder',   240, 490, { systemPromptName: 'prompt_default', temperature: 0.2, maxTokens: 1000 }),
     ],
     edges: [
       labeledSolid('e1', 'planner',     'kb_search',   'always',        '#10B98199'),
-      dashedEdge  ('e2', 'planner',     'mcp_tool',    'if tool_calls', '#F59E0B99'),
+      dashedEdge  ('e2', 'planner',     'mcp',    'if tool_calls', '#F59E0B99'),
       solidEdge   ('e3', 'kb_search',   'rrf_ranking', '#10B98166'),
-      solidEdge   ('e4', 'mcp_tool',    'rrf_ranking', '#F59E0B66'),
+      solidEdge   ('e4', 'mcp',    'rrf_ranking', '#F59E0B66'),
       solidEdge   ('e5', 'rrf_ranking', 'reranker',    '#8B5CF666'),
       solidEdge   ('e6', 'reranker',    'responder',   '#8B5CF666'),
     ],
@@ -455,7 +455,7 @@ export const TEMPLATE_FLOWS: Record<TemplateId, { nodes: Node<FlowNodeData>[]; e
     nodes: [
       mkNode('planner',        'planner',        'Planner',        240, 0),
       mkNode('kb_search',      'kb_search',      'KB Search',      40,  130, ),
-      mkNode('mcp_tool',       'mcp_tool',       'MCP Tool',       440, 130, { mcpServerUrl: 'http://mcp.tenant.gov.vn/sse', allowedTools: ['tra_cuu_phat_nguoi', 'query_dashboard'] }),
+      mkNode('mcp',       'mcp',       'MCP Tool',       440, 130, { mcpServerUrl: 'http://mcp.tenant.gov.vn/sse', allowedTools: ['tra_cuu_phat_nguoi', 'query_dashboard'] }),
       mkNode('rrf_ranking',    'rrf_ranking',    'RRF Ranking',    240, 270),
       mkNode('reranker',       'reranker',       'Reranker',       240, 380, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
       mkNode('responder',      'responder',      'Responder',      240, 490, { systemPromptName: 'prompt_default', temperature: 0.2, maxTokens: 1000 }),
@@ -463,9 +463,9 @@ export const TEMPLATE_FLOWS: Record<TemplateId, { nodes: Node<FlowNodeData>[]; e
     ],
     edges: [
       labeledSolid('e1', 'planner',        'kb_search',      'always',        '#10B98199'),
-      dashedEdge  ('e2', 'planner',        'mcp_tool',       'if tool_calls', '#F59E0B99'),
+      dashedEdge  ('e2', 'planner',        'mcp',       'if tool_calls', '#F59E0B99'),
       solidEdge   ('e3', 'kb_search',      'rrf_ranking',    '#10B98166'),
-      solidEdge   ('e4', 'mcp_tool',       'rrf_ranking',    '#F59E0B66'),
+      solidEdge   ('e4', 'mcp',       'rrf_ranking',    '#F59E0B66'),
       solidEdge   ('e5', 'rrf_ranking',    'reranker',       '#8B5CF666'),
       solidEdge   ('e6', 'reranker',       'responder',      '#8B5CF666'),
       solidEdge   ('e7', 'responder',      'human_approval', '#D9B86C66'),
@@ -609,7 +609,7 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
           <InfoNote text="Tự động tìm kiếm knowledge base của tenant hiện tại. Không cần cấu hình thêm." />
         )}
 
-        {d.nodeType === 'mcp_tool' && (
+        {d.nodeType === 'mcp' && (
           <>
             <Field label="MCP Server URL">
               <TextInput value={(d.mcpServerUrl as string) || ''} onChange={v => upd('mcpServerUrl', v)} placeholder="http://mcp.tenant.gov.vn/sse" />
@@ -694,7 +694,7 @@ const ALL_LIBRARY_NODES: Array<{
 }> = [
   { nodeType: 'planner',           label: 'Planner',           color: '#3B82F6', Icon: Bot,         allowMultiple: false },
   { nodeType: 'kb_search',         label: 'KB Search',         color: '#10B981', Icon: Database,    allowMultiple: true  },
-  { nodeType: 'mcp_tool',          label: 'MCP Tool',          color: '#F59E0B', Icon: Wrench,      allowMultiple: true  },
+  { nodeType: 'mcp',          label: 'MCP Tool',          color: '#F59E0B', Icon: Wrench,      allowMultiple: true  },
   { nodeType: 'rrf_ranking',       label: 'RRF Ranking',       color: '#8B5CF6', Icon: Layers,      allowMultiple: false },
   { nodeType: 'reranker',          label: 'Reranker',          color: '#8B5CF6', Icon: Filter,      allowMultiple: false },
   { nodeType: 'responder',         label: 'Responder',         color: '#3B82F6', Icon: Cpu,         allowMultiple: false },
