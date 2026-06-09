@@ -362,8 +362,8 @@ async def create_draft_version(workflow_id: str) -> dict:
     }
 
 
-async def delete_workflow_version(version_id: str) -> None:
-    async with client.get_client() as session:
+async def delete_workflow_version(version_id: str, tenant_id: str | None = None) -> None:
+    async with client.get_client(tenant_id=tenant_id) as session:
         async with session.begin():
             wv = await session.get(WorkflowVersionsORM, UUID(version_id))
             if not wv:
@@ -373,23 +373,33 @@ async def delete_workflow_version(version_id: str) -> None:
             await session.delete(wv)
 
 
-async def delete_workflow(workflow_id: str) -> None:
-    async with client.get_client() as session:
+async def delete_workflow(workflow_id: str, tenant_id: str | None = None) -> list[str]:
+    async with client.get_client(tenant_id=tenant_id) as session:
         async with session.begin():
             wf = await session.get(WorkflowsORM, UUID(workflow_id))
             if not wf:
                 raise ValueError("workflow not found")
-            # Lấy tất cả version IDs để frontend có thể xóa MongoDB canvas
             versions_result = await session.execute(
                 select(WorkflowVersionsORM)
                 .where(WorkflowVersionsORM.workflow_id == UUID(workflow_id))
             )
             versions = versions_result.scalars().all()
             version_ids = [str(v.id) for v in versions]
+
+            # NULL out AgentVersions.workflow_version_id trước khi xóa WorkflowVersions
+            # (AgentVersions FK → WorkflowVersions.id, không có cascade)
+            wv_ids = [v.id for v in versions]
+            if wv_ids:
+                await session.execute(
+                    sa_update(AgentVersionsORM)
+                    .where(AgentVersionsORM.workflow_version_id.in_(wv_ids))
+                    .values(workflow_version_id=None)
+                )
+
             for v in versions:
                 await session.delete(v)
             await session.delete(wf)
-    return version_ids
+        return version_ids
 
 
 async def delete_agent(agent_id: str, tenant_id: str | None = None) -> list[str]:
@@ -400,13 +410,17 @@ async def delete_agent(agent_id: str, tenant_id: str | None = None) -> list[str]
             if not agent:
                 raise ValueError("agent not found")
 
-            # Lấy tất cả workflows của agent
+            # Phá circular FK: Agents.published_version_id / draft_version_id → AgentVersions.id
+            agent.published_version_id = None
+            agent.draft_version_id = None
+            await session.flush()
+
+            # Xóa workflow_versions + workflows, thu thập version_ids cho MongoDB
             wf_result = await session.execute(
                 select(WorkflowsORM).where(WorkflowsORM.agent_id == UUID(agent_id))
             )
             workflows = wf_result.scalars().all()
 
-            # Xóa tất cả workflow_versions và thu thập version_ids cho MongoDB
             version_ids: list[str] = []
             for wf in workflows:
                 wv_result = await session.execute(
@@ -418,6 +432,13 @@ async def delete_agent(agent_id: str, tenant_id: str | None = None) -> list[str]
                     version_ids.append(str(v.id))
                     await session.delete(v)
                 await session.delete(wf)
+
+            # Xóa AgentVersions tường minh (async không lazy-load cascade)
+            av_result = await session.execute(
+                select(AgentVersionsORM).where(AgentVersionsORM.agent_id == UUID(agent_id))
+            )
+            for av in av_result.scalars().all():
+                await session.delete(av)
 
             await session.delete(agent)
 
