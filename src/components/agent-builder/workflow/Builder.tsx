@@ -896,7 +896,7 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
   const [ctxMenu, setCtxMenu]           = useState<CtxMenuState | null>(null);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [saving, setSaving]             = useState(false);
-  const [canvasLoading, setCanvasLoading] = useState(!!activeVersionId && !initialNodes?.length);
+  const [canvasLoading, setCanvasLoading] = useState(!!workflowVersionId && !initialNodes?.length);
   const [libraryNodes, setLibraryNodes] = useState(ALL_LIBRARY_NODES);
   const rfInstance                       = useRef<ReactFlowInstance<Node<FlowNodeData>, Edge> | null>(null);
   const [versions, setVersions]         = useState<WorkflowVersion[]>([]);
