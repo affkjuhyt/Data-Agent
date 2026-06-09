@@ -28,25 +28,14 @@ DEV_CONFIG = {
     "context_max_chars": 4000,
     "memory_enabled": False,
     "mcp_endpoints": [],
-    "guardrail_input_patterns": [
-        {"id": "ip1", "pattern": "fuck"},
-        {"id": "ip2", "pattern": "kill"},
-        {"id": "ip3", "pattern": "bomb"},
-        {"id": "ip4", "pattern": "hack"},
-        {"id": "ip5", "pattern": "tấn công"},
-    ],
-    "guardrail_output_patterns": [
-        {"id": "op1", "pattern": "mật khẩu"},
-        {"id": "op2", "pattern": "password"},
-        {"id": "op3", "pattern": "secret"},
-        {"id": "op4", "pattern": "token"},
-    ],
-    "guardrail_llm_enabled": True,
-    "guardrail_model": "openai/guardrail",
-    "guardrail_max_tokens": 64,
-    "guardrail_timeout": 5,
-    "guardrail_allowed_topics": [],
-    "guardrail_id": None,
+    "guardrail_input_patterns":  [],
+    "guardrail_output_patterns": [],
+    "guardrail_llm_enabled":     False,
+    "guardrail_model":           "guardrail",
+    "guardrail_max_tokens":      128,
+    "guardrail_timeout":         10,
+    "guardrail_allowed_topics":  [],
+    "guardrail_id":              None,
     "agent_id": os.environ.get("DEV_AGENT_ID", "00000000-0000-0000-0000-000000000030"),
     "agent_version_id": None,
     "flow_nodes": [],
@@ -72,7 +61,6 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
                     av.memory_enabled,
                     av.llm_config,
                     av.retrieval_config,
-                    av.guardrail_id,
                     lp.model_id                    AS responder_model,
                     sp.content                     AS system_prompt
                 FROM "Agents" a
@@ -120,29 +108,35 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
                 for r in mcp_rows
             ]
 
-            # 4. Guardrail config
-            guardrail_cfg = _extract_guardrail_defaults()
-            if row.guardrail_id:
-                g_row = (await session.execute(text("""
-                    SELECT g.conditions, g.action,
-                           lp.model_id AS guardrail_model
-                    FROM "Guardrails" g
-                    LEFT JOIN "LLMProviders" lp ON lp.id = g.guardrail_model_id
-                    WHERE g.id = :gid
-                """), {"gid": str(row.guardrail_id)})).fetchone()
+            # 4. Guardrail — platform-wide, always from DB
+            g_row = (await session.execute(text("""
+                SELECT g.id, g.conditions,
+                       lp.model_id AS guardrail_model
+                FROM "Guardrails" g
+                LEFT JOIN "LLMProviders" lp ON lp.id = g.guardrail_model_id
+                ORDER BY g.priority DESC
+                LIMIT 1
+            """))).fetchone()
 
-                if g_row:
-                    cond = dict(g_row.conditions or {})
-                    guardrail_cfg = {
-                        "guardrail_input_patterns":  cond.get("input_patterns",  []),
-                        "guardrail_output_patterns": cond.get("output_patterns", []),
-                        "guardrail_llm_enabled":     cond.get("llm_enabled",     True),
-                        "guardrail_allowed_topics":  cond.get("allowed_topics",  []),
-                        "guardrail_model":           g_row.guardrail_model or DEV_CONFIG["guardrail_model"],
-                        "guardrail_max_tokens":      cond.get("max_tokens",      64),
-                        "guardrail_timeout":         cond.get("timeout",         5),
-                        "guardrail_id":              str(row.guardrail_id),
-                    }
+            if g_row:
+                cond = dict(g_row.conditions or {})
+                guardrail_cfg = {
+                    "guardrail_input_patterns":  cond.get("input_patterns",  []),
+                    "guardrail_output_patterns": cond.get("output_patterns", []),
+                    "guardrail_llm_enabled":     cond.get("llm_enabled",     True),
+                    "guardrail_allowed_topics":  cond.get("allowed_topics",  []),
+                    "guardrail_model":           g_row.guardrail_model or DEV_CONFIG["guardrail_model"],
+                    "guardrail_max_tokens":      cond.get("max_tokens",      128),
+                    "guardrail_timeout":         cond.get("timeout",         10),
+                    "guardrail_id":              str(g_row.id),
+                }
+            else:
+                guardrail_cfg = {k: DEV_CONFIG[k] for k in (
+                    "guardrail_input_patterns", "guardrail_output_patterns",
+                    "guardrail_llm_enabled", "guardrail_model",
+                    "guardrail_max_tokens", "guardrail_timeout",
+                    "guardrail_allowed_topics", "guardrail_id",
+                )}
 
         # 5. Load flow_nodes + flow_edges từ MongoDB
         flow_nodes = await load_flow_nodes(wv_id) if wv_id else []
@@ -179,19 +173,6 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
     except Exception as e:
         logger.warning("load_agent_config DB failed: %s — fallback DEV_CONFIG", e)
         return {**DEV_CONFIG, "agent_id": agent_id}
-
-
-def _extract_guardrail_defaults() -> dict:
-    return {
-        "guardrail_input_patterns":  DEV_CONFIG["guardrail_input_patterns"],
-        "guardrail_output_patterns": DEV_CONFIG["guardrail_output_patterns"],
-        "guardrail_llm_enabled":     DEV_CONFIG["guardrail_llm_enabled"],
-        "guardrail_model":           DEV_CONFIG["guardrail_model"],
-        "guardrail_max_tokens":      DEV_CONFIG["guardrail_max_tokens"],
-        "guardrail_timeout":         DEV_CONFIG["guardrail_timeout"],
-        "guardrail_allowed_topics":  DEV_CONFIG["guardrail_allowed_topics"],
-        "guardrail_id":              None,
-    }
 
 
 def _extract_node_config(flow_nodes: list[dict]) -> dict:
