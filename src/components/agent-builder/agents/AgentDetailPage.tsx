@@ -876,6 +876,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                       <p className="text-xs text-[#8A8A7A] mb-3">Chọn workflow agent sẽ sử dụng. Chỉ hiển thị workflow đã có published version.</p>
                       {publishable.map(wf => {
                         const pubV = (wfVersions[wf.id] ?? []).find(v => v.status === 'published');
+                        const isActive = wf.id === agent?.active_workflow_id;
                         return (
                           <button
                             key={wf.id}
@@ -883,7 +884,12 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                             className="w-full text-left px-4 py-3 rounded-xl border border-[#ECE7DA] hover:border-[#BFA66A] hover:bg-[#FAFAF5] transition-colors"
                           >
                             <div className="flex items-center justify-between">
-                              <span className="text-sm font-semibold text-[#111111]">{wf.name}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-semibold text-[#111111]">{wf.name}</span>
+                                {isActive && (
+                                  <span className="text-[10px] px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full font-semibold">● đang dùng</span>
+                                )}
+                              </div>
                               <span className="text-[10px] px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full font-semibold">
                                 v{pubV?.version ?? '?'} published
                               </span>
