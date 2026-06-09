@@ -104,8 +104,8 @@ async def list_agents(tenant_id: str) -> list[dict]:
     ]
 
 
-async def get_agent(agent_id: str) -> Optional[dict]:
-    async with client.get_client() as session:
+async def get_agent(agent_id: str, tenant_id: str | None = None) -> Optional[dict]:
+    async with client.get_client(tenant_id=tenant_id) as session:
         result = await session.execute(
             select(AgentsORM)
             .options(
@@ -197,12 +197,12 @@ async def list_workflows(agent_id: str) -> list[dict]:
     ]
 
 
-async def update_agent_draft(agent_id: str, fields: dict) -> dict:
+async def update_agent_draft(agent_id: str, fields: dict, tenant_id: str | None = None) -> dict:
     agent_fields = {k: v for k, v in fields.items() if k in ("name", "description")}
     av_fields = {k: v for k, v in fields.items()
                  if k in ("responder_model_id", "system_prompt_id", "guardrail_id", "memory_enabled")}
 
-    async with client.get_client() as session:
+    async with client.get_client(tenant_id=tenant_id) as session:
         async with session.begin():
             if agent_fields:
                 await session.execute(
@@ -227,8 +227,8 @@ async def update_agent_draft(agent_id: str, fields: dict) -> dict:
     return {"agent_id": agent_id, "updated": list(fields.keys())}
 
 
-async def unpublish_agent(agent_id: str) -> dict:
-    async with client.get_client() as session:
+async def unpublish_agent(agent_id: str, tenant_id: str | None = None) -> dict:
+    async with client.get_client(tenant_id=tenant_id) as session:
         async with session.begin():
             result = await session.execute(
                 select(AgentsORM).where(AgentsORM.id == UUID(agent_id))
@@ -392,9 +392,9 @@ async def delete_workflow(workflow_id: str) -> None:
     return version_ids
 
 
-async def delete_agent(agent_id: str) -> list[str]:
+async def delete_agent(agent_id: str, tenant_id: str | None = None) -> list[str]:
     """Hard delete agent + cascade workflows + versions. Trả về version_ids để xóa MongoDB canvas."""
-    async with client.get_client() as session:
+    async with client.get_client(tenant_id=tenant_id) as session:
         async with session.begin():
             agent = await session.get(AgentsORM, UUID(agent_id))
             if not agent:
@@ -424,8 +424,8 @@ async def delete_agent(agent_id: str) -> list[str]:
     return version_ids
 
 
-async def publish_agent(agent_id: str, workflow_id: str, kb_connection_id: str | None = None) -> dict:
-    async with client.get_client() as session:
+async def publish_agent(agent_id: str, workflow_id: str, kb_connection_id: str | None = None, tenant_id: str | None = None) -> dict:
+    async with client.get_client(tenant_id=tenant_id) as session:
         async with session.begin():
             # 1. Verify workflow belongs to agent
             wf = await session.get(WorkflowsORM, UUID(workflow_id))

@@ -291,10 +291,12 @@ from contextlib import asynccontextmanager
 async def _tenant_session(factory, tenant_id: str):
     async with factory() as session:
         await session.execute(text("SELECT set_config('app.tenant_id', :tid, false)"), {"tid": str(tenant_id)})
+        await session.commit()
         try:
             yield session
         finally:
             await session.execute(text("SELECT set_config('app.tenant_id', '', false)"))
+            await session.commit()
 
 
 class PostgresClient:

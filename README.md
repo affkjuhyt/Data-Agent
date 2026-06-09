@@ -106,6 +106,110 @@ Stop the test fixture:
 docker compose -f docker/docker-compose.test.yml down -v
 ```
 
+## Chạy trên VM / Dev Server (Linux)
+
+### Shell alias (chạy 1 lần)
+
+```bash
+source ~/.bashrc   # nếu chưa load alias dc
+# hoặc thêm thủ công vào ~/.bashrc:
+alias dc='docker compose -f ~/Data-Agent/docker/docker-compose.yml \
+                         -f ~/Data-Agent/docker/docker-compose.local.yml \
+                         -f ~/Data-Agent/docker/docker-compose.llm.yml'
+```
+
+---
+
+### Khởi động llama-server (local LLM)
+
+llama-server chạy trực tiếp trên host (không qua Docker), cần bật **trước** khi start stack:
+
+```bash
+# Tải model lần đầu (chỉ chạy 1 lần)
+bash scripts/download-model.sh
+
+# Khởi động llama-server ở port 8088
+bash scripts/start-llama.sh &
+
+# Kiểm tra
+curl http://localhost:8088/health
+```
+
+Tắt llama-server:
+```bash
+pkill -f llama-server
+```
+
+---
+
+### Khởi động full stack
+
+```bash
+dc up -d --build
+```
+
+---
+
+### Sau khi stack up lần đầu — chạy Kong setup
+
+Kong cần được config 1 lần sau khi start (CORS, routes, JWT plugin...):
+
+```bash
+docker compose \
+  -f docker/docker-compose.yml \
+  -f docker/docker-compose.local.yml \
+  -f docker/docker-compose.security.yml \
+  --profile setup run --rm kong-setup
+```
+
+> Cần chạy lại nếu `down -v` (xóa volume Kong DB).
+
+---
+
+### Cấp quyền cho runtime_writer (chạy 1 lần sau migrate)
+
+```bash
+docker exec -i dataagent-postgres psql -U admin -d dataagent \
+  < infra/sql/grant-runtime-writer.sql
+```
+
+---
+
+### Rebuild 1 service
+
+```bash
+dc up -d --build workflow-runtime
+dc up -d --build flow-builder
+dc up -d --build litellm
+```
+
+---
+
+### Tắt stack
+
+Giữ data:
+```bash
+dc down
+```
+
+Xóa toàn bộ volume (fresh start):
+```bash
+dc down -v
+```
+
+---
+
+### URLs khi chạy trên VM (thay `localhost` bằng IP VM)
+
+| Service | URL |
+|---|---|
+| Frontend | http://10.10.55.11:3000 |
+| Kong proxy | http://10.10.55.11:8000 |
+| Langfuse | http://10.10.55.11:3001 |
+| llama-server | http://10.10.55.11:8088 |
+
+---
+
 ## Runtime Shape
 
 The current base stack includes these service groups:
