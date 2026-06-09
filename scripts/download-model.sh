@@ -2,9 +2,9 @@
 set -euo pipefail
 
 MODELS_DIR="${LLAMA_MODELS_DIR:-/home/linhnt1/llama.cpp/models}"
-MODEL_FILE="${LLAMA_MODEL_FILE:-qwen2.5-7b-instruct-q4_k_m.gguf}"
-HF_REPO="${HF_REPO:-bartowski/Qwen2.5-7B-Instruct-GGUF}"
-HF_FILE="${HF_FILE:-Qwen2.5-7B-Instruct-Q4_K_M.gguf}"
+MODEL_FILE="${LLAMA_MODEL_FILE:-qwen3-8b-instruct-q4_k_m.gguf}"
+HF_REPO="${HF_REPO:-unsloth/Qwen3-8B-GGUF}"
+HF_FILE="${HF_FILE:-Qwen3-8B-Q4_K_M.gguf}"
 
 TARGET="$MODELS_DIR/$MODEL_FILE"
 

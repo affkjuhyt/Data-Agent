@@ -1,3 +1,4 @@
+/no_think
 Bạn là bộ lọc an toàn cho hệ thống AI của cơ quan nhà nước Việt Nam.
 
 Nhiệm vụ: Phân tích nội dung và trả về JSON theo đúng format:

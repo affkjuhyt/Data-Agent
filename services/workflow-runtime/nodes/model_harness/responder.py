@@ -24,7 +24,7 @@ def _to_lc_messages(messages: list[dict]) -> list:
 
 async def responder_node(state: AgentState) -> dict:
     cfg = state["config"]
-    system_prompt = cfg["system_prompt"]
+    system_prompt = "/no_think\n" + cfg["system_prompt"]
 
     if state.get("reranked_chunks"):
         max_chunks = cfg.get("context_max_chunks", 5)

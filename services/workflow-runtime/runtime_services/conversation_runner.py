@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 
@@ -115,14 +116,16 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                     if token:
                         full_response.append(token)
                         if not has_output_guardrail:
-                            yield f"data: {token}\n\n"
+                            yield f"data: {json.dumps(token)}\n\n"
+                        else:
+                            yield ": heartbeat\n\n"
 
             if guardrail_triggered:
-                yield f"data: {guardrail_msg}\n\n"
+                yield f"data: {json.dumps(guardrail_msg)}\n\n"
             elif has_output_guardrail:
                 combined = "".join(full_response)
                 if combined:
-                    yield f"data: {combined}\n\n"
+                    yield f"data: {json.dumps(combined)}\n\n"
 
             yield "data: [DONE]\n\n"
 

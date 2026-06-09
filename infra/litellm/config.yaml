@@ -1,21 +1,27 @@
 model_list:
   - model_name: planner
     litellm_params:
-      model: openai/qwen2.5-7b-instruct
+      model: openai/qwen3-8b-instruct
       api_base: http://host.docker.internal:8088/v1
       api_key: not-needed
+      extra_body:
+        enable_thinking: false
 
   - model_name: responder
     litellm_params:
-      model: openai/qwen2.5-7b-instruct
+      model: openai/qwen3-8b-instruct
       api_base: http://host.docker.internal:8088/v1
       api_key: not-needed
+      extra_body:
+        enable_thinking: false
 
   - model_name: guardrail
     litellm_params:
-      model: openai/qwen2.5-7b-instruct
+      model: openai/qwen3-8b-instruct
       api_base: http://host.docker.internal:8088/v1
       api_key: not-needed
+      extra_body:
+        enable_thinking: false
 
   - model_name: embedder
     litellm_params:
@@ -25,15 +31,19 @@ model_list:
   # Local LLM via llama.cpp server (CPU-only, run docker-compose.llm.yml first)
   - model_name: local-qwen
     litellm_params:
-      model: openai/qwen2.5-7b-instruct
+      model: openai/qwen3-8b-instruct
       api_base: http://host.docker.internal:8088/v1
       api_key: not-needed
+      extra_body:
+        enable_thinking: false
 
   - model_name: local
     litellm_params:
-      model: openai/qwen2.5-7b-instruct
+      model: openai/qwen3-8b-instruct
       api_base: http://host.docker.internal:8088/v1
       api_key: not-needed
+      extra_body:
+        enable_thinking: false
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY

@@ -299,6 +299,32 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
 
       const convId = res.headers.get('X-Conversation-Id');
 
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value);
+        for (const line of chunk.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6);
+          if (data === '[DONE]') continue;
+          if (data.startsWith('[ERROR]')) {
+            fullText = data.slice(7).trim() || 'Đã xảy ra lỗi, vui lòng thử lại.';
+            setMessages(prev => prev.map(m =>
+              m.id === placeholderId ? { ...m, content: fullText } : m,
+            ));
+            break;
+          }
+          try { fullText += JSON.parse(data); } catch { fullText += data; }
+          setMessages(prev => prev.map(m =>
+            m.id === placeholderId ? { ...m, content: fullText } : m,
+          ));
+        }
+      }
+
       if (convId) {
         setTraceLoading(true);
         (async () => {
@@ -320,32 +346,6 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
           }
           setTraceLoading(false);
         })();
-      }
-
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let fullText = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value);
-        for (const line of chunk.split('\n')) {
-          if (!line.startsWith('data: ')) continue;
-          const data = line.slice(6);
-          if (data === '[DONE]') continue;
-          if (data.startsWith('[ERROR]')) {
-            fullText = data.slice(7).trim() || 'Đã xảy ra lỗi, vui lòng thử lại.';
-            setMessages(prev => prev.map(m =>
-              m.id === placeholderId ? { ...m, content: fullText } : m,
-            ));
-            break;
-          }
-          fullText += data;
-          setMessages(prev => prev.map(m =>
-            m.id === placeholderId ? { ...m, content: fullText } : m,
-          ));
-        }
       }
 
     } catch {

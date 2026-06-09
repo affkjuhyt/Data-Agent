@@ -1,3 +1,4 @@
+/no_think
 Analyze the query and decide which tools are needed. Return a JSON object with this exact schema:
 
 {
