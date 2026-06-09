@@ -385,10 +385,20 @@ async def delete_workflow(workflow_id: str, tenant_id: str | None = None) -> lis
             )
             versions = versions_result.scalars().all()
             version_ids = [str(v.id) for v in versions]
+            wv_ids = [v.id for v in versions]
+
+            # Block xóa nếu workflow đang được published agent sử dụng
+            if wv_ids:
+                in_use = await session.execute(
+                    select(AgentVersionsORM)
+                    .where(AgentVersionsORM.workflow_version_id.in_(wv_ids))
+                    .where(AgentVersionsORM.status == "published")
+                    .limit(1)
+                )
+                if in_use.scalar_one_or_none():
+                    raise ValueError("Workflow đang được agent sử dụng. Hãy republish agent với workflow khác trước.")
 
             # NULL out AgentVersions.workflow_version_id trước khi xóa WorkflowVersions
-            # (AgentVersions FK → WorkflowVersions.id, không có cascade)
-            wv_ids = [v.id for v in versions]
             if wv_ids:
                 await session.execute(
                     sa_update(AgentVersionsORM)

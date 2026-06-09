@@ -473,7 +473,13 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                           <Plus className="w-3 h-3" /> New Draft
                         </button>
                         <button
-                          onClick={() => setDeleteWfConfirm(wf.id)}
+                          onClick={() => {
+                            if (wf.id === agent?.active_workflow_id) {
+                              showToast('Workflow đang được agent sử dụng — hãy republish agent với workflow khác trước.');
+                              return;
+                            }
+                            setDeleteWfConfirm(wf.id);
+                          }}
                           title="Xóa workflow"
                           className="p-1.5 border border-red-200 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
                         >
