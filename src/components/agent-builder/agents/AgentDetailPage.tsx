@@ -330,7 +330,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
   if (builder) {
     return (
       <WorkflowBuilder
-        onClose={() => { setBuilder(null); fetchAgent(); }}
+        onClose={() => { setBuilder(null); setAgent(null); setWfVersions({}); fetchAgent(); }}
         workflow={null}
         agentId={agentId}
         workflowVersionId={builder.workflowVersionId}
@@ -345,6 +345,8 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
             await fetch(`${FLOW_BUILDER_URL}/api/workflows/${builder.workflowId}`, { method: 'DELETE' });
           }
           setBuilder(null);
+          setAgent(null);
+          setWfVersions({});
           setNewWfName(builder.workflowName ?? '');
           setShowCreateWf(true);
           fetchAgent();
