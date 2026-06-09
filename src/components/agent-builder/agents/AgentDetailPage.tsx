@@ -448,6 +448,9 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                       <div className="flex items-center gap-2">
                         <GitMerge className="w-4 h-4 text-blue-500" />
                         <span className="text-sm font-semibold text-[#111111]">{wf.name}</span>
+                        {isPublished && wf.id === agent?.active_workflow_id && (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded font-semibold">● đang dùng</span>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         <button
