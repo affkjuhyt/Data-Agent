@@ -320,7 +320,7 @@ const GuardrailBanner = ({ position }: { position: 'top' | 'bottom' }) => (
         color: '#EF4444',
         opacity: 0.85,
       }}>
-        Guardrail {position === 'top' ? 'Input' : 'Output'}
+        Guardrail
       </span>
     </div>
   </div>
