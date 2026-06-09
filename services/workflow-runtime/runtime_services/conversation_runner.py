@@ -20,23 +20,25 @@ from schemas import RunRequest
 logger = logging.getLogger(__name__)
 
 _graph_cache: dict[str, object] = {}
-_default_graph = build_graph()
 
 
 async def run_conversation_stream(req: RunRequest, request: Request):
     tenant_id = request.headers.get("X-Tenant-ID", _DEV_TENANT_ID)
     cfg = await load_agent_config(req.agent_id, tenant_id=tenant_id)
+    if cfg is None:
+        async def _err():
+            yield "data: [ERROR] Agent chưa được publish.\n\n"
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(_err(), media_type="text/event-stream")
     agent_id = cfg.get("agent_id", _DEV_AGENT_ID)
 
-    flow_nodes = cfg.get("flow_nodes") or []
-    flow_edges = cfg.get("flow_edges") or []
-    if flow_nodes:
-        cache_key = cfg.get("agent_version_id") or req.agent_id
-        if cache_key not in _graph_cache:
-            _graph_cache[cache_key] = build_graph(flow_nodes, flow_edges)
-        graph = _graph_cache[cache_key]
-    else:
-        graph = _default_graph
+    cache_key = cfg.get("agent_version_id") or req.agent_id
+    if cache_key not in _graph_cache:
+        _graph_cache[cache_key] = build_graph(
+            cfg.get("flow_nodes") or None,
+            cfg.get("flow_edges") or None,
+        )
+    graph = _graph_cache[cache_key]
     cfg["tenant_id"] = tenant_id
     if not await validate_agent_tenant(agent_id, tenant_id):
         return JSONResponse(status_code=403, content={"detail": "Agent not found or access denied"})
@@ -88,7 +90,6 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         },
     )
     callbacks = [handler] if handler else []
-    has_output_guardrail = bool(cfg.get("guardrail_output_patterns"))
 
     async def event_stream():
         full_response: list[str] = []
@@ -103,7 +104,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                 kind = event["event"]
                 node = event.get("metadata", {}).get("langgraph_node", "")
 
-                if kind == "on_chain_end" and node in ("guardrail_input", "guardrail_output"):
+                if kind == "on_chain_end" and node == "guardrail_input":
                     output = event["data"].get("output", {})
                     if isinstance(output, dict) and output.get("guardrail_triggered"):
                         guardrail_triggered = True
@@ -115,17 +116,10 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                     token = event["data"]["chunk"].content or ""
                     if token:
                         full_response.append(token)
-                        if not has_output_guardrail:
-                            yield f"data: {json.dumps(token)}\n\n"
-                        else:
-                            yield ": heartbeat\n\n"
+                        yield f"data: {json.dumps(token)}\n\n"
 
             if guardrail_triggered:
                 yield f"data: {json.dumps(guardrail_msg)}\n\n"
-            elif has_output_guardrail:
-                combined = "".join(full_response)
-                if combined:
-                    yield f"data: {json.dumps(combined)}\n\n"
 
             yield "data: [DONE]\n\n"
 

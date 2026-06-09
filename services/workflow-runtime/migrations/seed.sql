@@ -85,13 +85,6 @@ VALUES (
       {"id": "i05", "pattern": "(?i)\\b(fuck|motherfucker|chó\\s*chết|địt\\s*mẹ|đéo\\s*mày)\\b"},
       {"id": "i06", "pattern": "giết\\s*(người|tôi|mày|hắn|nó)"}
     ],
-    "output_patterns": [
-      {"id": "o01", "pattern": "(?i)(password|passwd|mật\\s*khẩu)\\s*[=:]\\s*\\S{4,}"},
-      {"id": "o02", "pattern": "(?i)(api[_\\-]?key|secret[_\\-]?key|private[_\\-]?key)\\s*[=:]\\s*\\S{8,}"},
-      {"id": "o03", "pattern": "\\bsk-[A-Za-z0-9]{20,}\\b"},
-      {"id": "o04", "pattern": "\\beyJ[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+\\b"},
-      {"id": "o05", "pattern": "(?i)(postgres|mysql|mongodb|redis|mssql)://\\S{10,}"}
-    ],
     "llm_enabled": true,
     "allowed_topics": [],
     "max_tokens": 128,

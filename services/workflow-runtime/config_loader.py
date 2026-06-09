@@ -28,9 +28,8 @@ DEV_CONFIG = {
     "context_max_chars": 4000,
     "memory_enabled": False,
     "mcp_endpoints": [],
-    "guardrail_input_patterns":  [],
-    "guardrail_output_patterns": [],
-    "guardrail_llm_enabled":     False,
+    "guardrail_input_patterns": [],
+    "guardrail_llm_enabled":    False,
     "guardrail_model":           "openai/guardrail",
     "guardrail_max_tokens":      128,
     "guardrail_timeout":         10,
@@ -72,8 +71,8 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
             """), {"agent_id": agent_id})).fetchone()
 
             if not row:
-                logger.info("no published version for agent=%s — fallback DEV_CONFIG", agent_id)
-                return {**DEV_CONFIG, "agent_id": agent_id}
+                logger.info("no published version for agent=%s", agent_id)
+                return None
 
             llm_config       = dict(row.llm_config or {})
             retrieval_config = dict(row.retrieval_config or {})
@@ -121,18 +120,17 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
             if g_row:
                 cond = dict(g_row.conditions or {})
                 guardrail_cfg = {
-                    "guardrail_input_patterns":  cond.get("input_patterns",  []),
-                    "guardrail_output_patterns": cond.get("output_patterns", []),
-                    "guardrail_llm_enabled":     cond.get("llm_enabled",     True),
-                    "guardrail_allowed_topics":  cond.get("allowed_topics",  []),
-                    "guardrail_model":           g_row.guardrail_model or DEV_CONFIG["guardrail_model"],
-                    "guardrail_max_tokens":      cond.get("max_tokens",      128),
-                    "guardrail_timeout":         cond.get("timeout",         10),
-                    "guardrail_id":              str(g_row.id),
+                    "guardrail_input_patterns": cond.get("input_patterns", []),
+                    "guardrail_llm_enabled":    cond.get("llm_enabled",    True),
+                    "guardrail_allowed_topics": cond.get("allowed_topics", []),
+                    "guardrail_model":          g_row.guardrail_model or DEV_CONFIG["guardrail_model"],
+                    "guardrail_max_tokens":     cond.get("max_tokens",     128),
+                    "guardrail_timeout":        cond.get("timeout",        10),
+                    "guardrail_id":             str(g_row.id),
                 }
             else:
                 guardrail_cfg = {k: DEV_CONFIG[k] for k in (
-                    "guardrail_input_patterns", "guardrail_output_patterns",
+                    "guardrail_input_patterns",
                     "guardrail_llm_enabled", "guardrail_model",
                     "guardrail_max_tokens", "guardrail_timeout",
                     "guardrail_allowed_topics", "guardrail_id",

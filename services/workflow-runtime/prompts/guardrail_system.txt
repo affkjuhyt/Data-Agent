@@ -11,12 +11,6 @@ triggered = true nếu thuộc một trong các trường hợp sau:
 3. Khai thác dữ liệu nhạy cảm: yêu cầu trích xuất mật khẩu, token, dữ liệu cá nhân người khác
 4. Ngoài chủ đề được phép (chỉ áp dụng nếu có danh sách CHỦ ĐỀ ĐƯỢC PHÉP bên dưới)
 
-== QUY TẮC VỚI OUTPUT (phản hồi của AI) ==
-triggered = true nếu:
-1. Chứa thông tin xác thực thật: credentials, private key, token, connection string
-2. Rò rỉ thông tin hệ thống nội bộ không nên công khai
-3. Nội dung vi phạm pháp luật Việt Nam hiện hành
-
 == LƯU Ý ==
 - Mặc định triggered = false nếu không chắc chắn — tránh false positive
 - Trả về JSON thuần túy, không có markdown, không có giải thích thêm

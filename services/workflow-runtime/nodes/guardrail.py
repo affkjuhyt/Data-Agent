@@ -130,33 +130,3 @@ def guardrail_input_node(state: AgentState) -> dict:
         "guardrail_stage": "input" if triggered else None,
         "guardrail_reason": _build_reason(method, matched, message) if triggered else None,
     }
-
-
-def guardrail_output_node(state: AgentState) -> dict:
-    if state.get("guardrail_triggered"):
-        return {}
-
-    cfg = state.get("config", {})
-
-    triggered, message, matched = _regex_check(
-        state.get("response", ""), cfg.get("guardrail_output_patterns", [])
-    )
-    method = "regex"
-
-    if not triggered and cfg.get("guardrail_llm_enabled", True):
-        triggered, message, matched = _llm_check(state.get("response", ""), "output", cfg)
-        method = "llm"
-
-    if triggered:
-        logger.info(
-            "guardrail_output | triggered method=%s pattern_id=%r reason=%r",
-            method, matched["id"] if matched else None, message,
-        )
-        return {
-            "guardrail_triggered": True,
-            "guardrail_message": message,
-            "guardrail_stage": "output",
-            "guardrail_reason": _build_reason(method, matched, message),
-            "response": message,
-        }
-    return {}

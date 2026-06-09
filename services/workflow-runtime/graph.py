@@ -1,7 +1,7 @@
 from collections import defaultdict
 from langgraph.graph import StateGraph, START, END
 from state import AgentState
-from nodes.guardrail import guardrail_input_node, guardrail_output_node
+from nodes.guardrail import guardrail_input_node
 from nodes.model_harness.planner import planner_node
 from nodes.model_harness.responder import responder_node
 from nodes.model_harness.rrf_ranking import rrf_ranking_node
@@ -18,11 +18,22 @@ NODE_TYPE_MAP = {
     "responder":   responder_node,
 }
 
-_DEFAULT_NODE_ORDER = ["planner", "kb_search", "mcp", "rrf_ranking", "reranker", "responder"]
+_DEFAULT_FLOW_NODES = [
+    {"id": t, "data": {"nodeType": t}}
+    for t in ("planner", "kb_search", "mcp", "rrf_ranking", "reranker", "responder")
+]
+_DEFAULT_FLOW_EDGES = [
+    {"source": "planner",     "target": "kb_search"},
+    {"source": "planner",     "target": "mcp"},
+    {"source": "kb_search",   "target": "rrf_ranking"},
+    {"source": "mcp",         "target": "rrf_ranking"},
+    {"source": "rrf_ranking", "target": "reranker"},
+    {"source": "reranker",    "target": "responder"},
+]
 
 
 def _route_after_guardrail_input(state: AgentState) -> str:
-    return "guardrail_output" if state.get("guardrail_triggered") else "planner"
+    return "blocked" if state.get("guardrail_triggered") else "planner"
 
 
 def route_after_planner(state: AgentState) -> list[str]:
@@ -41,44 +52,10 @@ def join_retrieval_node(state: AgentState) -> dict:
 
 
 def build_graph(flow_nodes: list[dict] | None = None, flow_edges: list[dict] | None = None):
-    """Build LangGraph graph.
-    flow_nodes=None → default hardcoded graph (backward compat).
-    flow_nodes+flow_edges → dynamic graph theo topology user vẽ trên canvas.
-    """
-    if not flow_nodes:
-        return _build_default_graph()
-    return _build_dynamic_graph(flow_nodes, flow_edges or [])
-
-
-def _build_default_graph():
-    builder = StateGraph(AgentState)
-
-    builder.add_node("guardrail_input",  guardrail_input_node)
-    builder.add_node("planner",          planner_node)
-    builder.add_node("kb_search",        kb_search_node)
-    builder.add_node("mcp",              mcp_node)
-    builder.add_node("join_retrieval",   join_retrieval_node)
-    builder.add_node("rrf_ranking",      rrf_ranking_node)
-    builder.add_node("reranker",         reranker_node)
-    builder.add_node("responder",        responder_node)
-    builder.add_node("guardrail_output", guardrail_output_node)
-
-    builder.add_edge(START, "guardrail_input")
-    builder.add_conditional_edges(
-        "guardrail_input",
-        _route_after_guardrail_input,
-        {"planner": "planner", "guardrail_output": "guardrail_output"},
+    return _build_dynamic_graph(
+        flow_nodes or _DEFAULT_FLOW_NODES,
+        flow_edges if flow_nodes else _DEFAULT_FLOW_EDGES,
     )
-    builder.add_conditional_edges("planner", route_after_planner, ["kb_search", "mcp"])
-    builder.add_edge("kb_search",        "join_retrieval")
-    builder.add_edge("mcp",              "join_retrieval")
-    builder.add_edge("join_retrieval",   "rrf_ranking")
-    builder.add_edge("rrf_ranking",      "reranker")
-    builder.add_edge("reranker",         "responder")
-    builder.add_edge("responder",        "guardrail_output")
-    builder.add_edge("guardrail_output", END)
-
-    return builder.compile()
 
 
 def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict]):
@@ -103,9 +80,8 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict]):
 
     builder = StateGraph(AgentState)
 
-    # Guardrail luôn có (locked)
-    builder.add_node("guardrail_input",  guardrail_input_node)
-    builder.add_node("guardrail_output", guardrail_output_node)
+    # Guardrail input luôn có (locked); output guardrail đã bỏ
+    builder.add_node("guardrail_input", guardrail_input_node)
 
     for nt in node_types:
         builder.add_node(nt, NODE_TYPE_MAP[nt])
@@ -114,12 +90,12 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict]):
     if "planner" not in node_types:
         builder.add_node("planner", planner_node)
 
-    # START → guardrail_input → planner (hoặc guardrail_output nếu bị chặn)
+    # START → guardrail_input → planner (hoặc END nếu bị chặn)
     builder.add_edge(START, "guardrail_input")
     builder.add_conditional_edges(
         "guardrail_input",
         _route_after_guardrail_input,
-        {"planner": "planner", "guardrail_output": "guardrail_output"},
+        {"planner": "planner", "blocked": END},
     )
 
     # Tìm retrieval nodes mà planner nối tới trên canvas
@@ -143,7 +119,7 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict]):
         for tgt in non_retrieval_planner_targets:
             builder.add_edge("planner", tgt)
     else:
-        builder.add_edge("planner", "guardrail_output")
+        builder.add_edge("planner", END)
 
     # Tính incoming edges của từng node (để detect fan-in)
     incoming: dict[str, set[str]] = defaultdict(set)
@@ -151,7 +127,7 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict]):
         incoming[tgt].add(src)
 
     # Node có >1 nguồn (không tính retrieval_nodes đã xử lý) → cần join tự động
-    handled_sources = retrieval_nodes | {"planner", "guardrail_input", "guardrail_output"}
+    handled_sources = retrieval_nodes | {"planner", "guardrail_input"}
     fan_in_nodes = {
         tgt for tgt, srcs in incoming.items()
         if len(srcs) > 1 and tgt not in handled_sources and tgt in node_types
@@ -174,13 +150,11 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict]):
             continue  # đã thêm qua join node ở trên
         builder.add_edge(src, tgt)
 
-    # Node nào không có outgoing edge trên canvas → nối vào guardrail_output
+    # Node nào không có outgoing edge trên canvas → nối thẳng vào END
     all_canvas_types = node_types | {"planner"}
     has_outgoing = {src for src, _ in type_edges}
     terminal_nodes = all_canvas_types - handled_sources - has_outgoing
     for tn in terminal_nodes:
-        builder.add_edge(tn, "guardrail_output")
-
-    builder.add_edge("guardrail_output", END)
+        builder.add_edge(tn, END)
 
     return builder.compile()
