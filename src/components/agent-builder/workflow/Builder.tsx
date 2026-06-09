@@ -1022,9 +1022,11 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
 
   // â”€â”€ Flow state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const initFlow = useMemo(() => {
+    // Nếu load từ DB (workflowVersionId có), useEffect sẽ set nodes/edges sau — khởi tạo rỗng tránh flash template
+    if (workflowVersionId) return { nodes: [], edges: [] };
     if (workflow && workflow.nodes.length > 0) return transformWorkflowToFlow(workflow);
     return TEMPLATE_FLOWS[template] ?? TEMPLATE_FLOWS['multi-agent'];
-  }, [workflow, template]);
+  }, [workflow, template, workflowVersionId]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initFlow.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initFlow.edges);
