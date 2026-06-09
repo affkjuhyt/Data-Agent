@@ -1209,6 +1209,14 @@ ${edges.map(e => `  - from: "${e.source}"  to: "${e.target}"`).join('\n')}`;
         className="fixed inset-0 z-[100] flex flex-col bg-[#0d1117] text-slate-200"
         onClick={() => setCtxMenu(null)}
       >
+        {canvasLoading && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#0d1117]">
+            <div className="flex items-center gap-2.5 text-slate-400 text-sm">
+              <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+              Loading canvas…
+            </div>
+          </div>
+        )}
         {/* â”€â”€ Toolbar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <div className="h-14 border-b border-white/10 bg-[#0d1117] flex items-center justify-between px-5 shrink-0">
           <div className="flex items-center gap-4">
@@ -1302,14 +1310,6 @@ ${edges.map(e => `  - from: "${e.source}"  to: "${e.target}"`).join('\n')}`;
                   transition={{ duration: 0.12 }}
                   className="absolute inset-0"
                 >
-                  {canvasLoading && (
-                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#0f172a]/70 backdrop-blur-[2px]">
-                      <div className="flex items-center gap-2.5 text-slate-300 text-sm">
-                        <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-                        Loading canvas…
-                      </div>
-                    </div>
-                  )}
                   <ReactFlow
                     nodes={nodes}
                     edges={edges}
