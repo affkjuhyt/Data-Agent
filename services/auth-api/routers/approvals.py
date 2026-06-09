@@ -125,32 +125,30 @@ def _set_kc_user_enabled(user_id: str, enabled: bool) -> None:
 
 
 def _assign_kc_user_role_tenant(user_id: str, role: str, tenant_id: str) -> None:
-    """Set role_id and tenant_id user attributes and enable the Keycloak account."""
+    """Set role_id and tenant_id user attributes and enable the Keycloak account.
+
+    Raises on any failure so callers can roll back the DB transaction.
+    """
     import logging
-    try:
-        user_rep = _kc_get(f"/admin/realms/{KC_REALM}/users/{user_id}")
-        if not isinstance(user_rep, dict):
-            logging.warning("assign_kc: user %s not found or not a dict", user_id)
-            return
-        # Build a clean representation with only safe scalar fields to avoid
-        # Keycloak rejecting the PUT due to special characters in name fields.
-        clean = {
-            "id":            user_rep.get("id"),
-            "username":      user_rep.get("username"),
-            "email":         user_rep.get("email", ""),
-            "emailVerified": True,
-            "enabled":       True,
-            "attributes":    {
-                **(user_rep.get("attributes") or {}),
-                "role_id":   [role],
-                "tenant_id": [tenant_id],
-            },
-        }
-        _kc_put(f"/admin/realms/{KC_REALM}/users/{user_id}", clean)
-        logging.info("assign_kc: set role=%s tenant=%s for user %s", role, tenant_id, user_id)
-    except Exception as exc:
-        import logging as _l
-        _l.error("assign_kc_user_role_tenant failed for %s: %s", user_id, exc)
+    user_rep = _kc_get(f"/admin/realms/{KC_REALM}/users/{user_id}")
+    if not isinstance(user_rep, dict):
+        raise ValueError(f"User {user_id} not found in Keycloak")
+    # Build a clean representation with only safe scalar fields to avoid
+    # Keycloak rejecting the PUT due to special characters in name fields.
+    clean = {
+        "id":            user_rep.get("id"),
+        "username":      user_rep.get("username"),
+        "email":         user_rep.get("email", ""),
+        "emailVerified": True,
+        "enabled":       True,
+        "attributes":    {
+            **(user_rep.get("attributes") or {}),
+            "role_id":   [role],
+            "tenant_id": [tenant_id],
+        },
+    }
+    _kc_put(f"/admin/realms/{KC_REALM}/users/{user_id}", clean)
+    logging.info("assign_kc: set role=%s tenant=%s for user %s", role, tenant_id, user_id)
 
 
 def _can_approve(actor: dict, requested_tenant_id: str) -> bool:
@@ -354,6 +352,14 @@ def approve_user(
                 detail="Only platform-admin or tenant-admin of the matching tenant can approve",
             )
 
+        # Update Keycloak first — if it fails the exception propagates and
+        # we never commit, keeping DB and Keycloak in sync.
+        _assign_kc_user_role_tenant(
+            user_id,
+            row["requested_role"]      or "",
+            row["requested_tenant_id"] or "",
+        )
+
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -367,11 +373,6 @@ def approve_user(
     finally:
         conn.close()
 
-    _assign_kc_user_role_tenant(
-        user_id,
-        row["requested_role"]      or "",
-        row["requested_tenant_id"] or "",
-    )
     return {"ok": True, "user_id": user_id, "status": "approved"}
 
 

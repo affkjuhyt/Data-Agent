@@ -22,6 +22,8 @@ def upgrade() -> None:
         sa.Column('email', sa.Text(), nullable=False),
         sa.Column('display_name', sa.Text(), server_default='', nullable=False),
         sa.Column('status', sa.Text(), server_default='pending', nullable=False),
+        sa.Column('requested_role', sa.Text(), nullable=True),
+        sa.Column('requested_tenant_id', sa.Text(), nullable=True),
         sa.Column('reviewed_by', sa.Text(), nullable=True),
         sa.Column('reviewed_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),

@@ -241,6 +241,9 @@ def ensure_microsoft_sso(token):
     _ensure_post_broker_mfa_flow(token)
 
     base_auth = f"https://login.microsoftonline.com/{MS_TENANT_ID}/oauth2/v2.0"
+    # Personal MS accounts use a fixed GUID as issuer; org tenants use their own UUID.
+    _CONSUMERS_GUID = "9188040d-6c67-4c5b-b112-36a304b66dad"
+    issuer_tenant = _CONSUMERS_GUID if MS_TENANT_ID == "consumers" else MS_TENANT_ID
     post(f"{KC}/admin/realms/{REALM}/identity-provider/instances", token, {
         "alias":        "microsoft",
         "displayName":  "Microsoft",
@@ -257,9 +260,7 @@ def ensure_microsoft_sso(token):
             "tokenUrl":           f"{base_auth}/token",
             "authorizationUrl":   f"{base_auth}/authorize",
             "jwksUrl":            f"https://login.microsoftonline.com/{MS_TENANT_ID}/discovery/v2.0/keys",
-            # Personal MS accounts ("consumers" tenant) use a fixed GUID as issuer,
-            # not the /consumers/ slug. Using the GUID avoids issuer mismatch rejection.
-            "issuer":             "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0",
+            "issuer":             f"https://login.microsoftonline.com/{issuer_tenant}/v2.0",
             "defaultScopes":      "openid email profile",
             "validateSignature":  "true",
             "useJwksUrl":         "true",

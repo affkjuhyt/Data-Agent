@@ -48,8 +48,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const { status, since } = await fetchMyStatus();
       setGateSince(since);
       setGateStatus(status as ApprovalGateStatus);
-    } catch {
-      setGateStatus('active');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to verify approval status');
+      setGateStatus('checking');
     }
   };
 

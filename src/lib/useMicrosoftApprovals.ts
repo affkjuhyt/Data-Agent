@@ -84,8 +84,7 @@ export async function fetchMyStatus(): Promise<{ status: string; since?: string 
   const res = await fetch(`${API}/api/auth/me`, {
     headers: { Authorization: `Bearer ${keycloak.token}` },
   });
-  if (res.status === 401 || res.status === 403) throw new Error(`HTTP ${res.status}`);
-  if (!res.ok) return { status: 'active' };
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
