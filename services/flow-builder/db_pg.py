@@ -74,12 +74,12 @@ async def create_agent(name: str, description: str, tenant_id: str) -> dict:
 
             agent.draft_version_id = av.id
 
-    return {
-        "agent_id": str(agent.id),
-        "workflow_id": str(workflow.id),
-        "workflow_version_id": str(wv.id),
-        "agent_version_id": str(av.id),
-    }
+            return {
+                "agent_id": str(agent.id),
+                "workflow_id": str(workflow.id),
+                "workflow_version_id": str(wv.id),
+                "agent_version_id": str(av.id),
+            }
 
 
 async def list_agents(tenant_id: str) -> list[dict]:
@@ -91,17 +91,17 @@ async def list_agents(tenant_id: str) -> list[dict]:
             .order_by(AgentsORM.created_at.desc())
         )
         rows = result.scalars().all()
-    return [
-        {
-            "id": str(r.id),
-            "name": r.name,
-            "description": r.description,
-            "published_version_id": str(r.published_version_id) if r.published_version_id else None,
-            "draft_version_id": str(r.draft_version_id) if r.draft_version_id else None,
-            "created_at": r.created_at,
-        }
-        for r in rows
-    ]
+        return [
+            {
+                "id": str(r.id),
+                "name": r.name,
+                "description": r.description,
+                "published_version_id": str(r.published_version_id) if r.published_version_id else None,
+                "draft_version_id": str(r.draft_version_id) if r.draft_version_id else None,
+                "created_at": r.created_at,
+            }
+            for r in rows
+        ]
 
 
 async def get_agent(agent_id: str, tenant_id: str | None = None) -> Optional[dict]:
@@ -117,34 +117,34 @@ async def get_agent(agent_id: str, tenant_id: str | None = None) -> Optional[dic
             .where(AgentsORM.deleted_at.is_(None))
         )
         agent = result.scalar_one_or_none()
-    if not agent:
-        return None
+        if not agent:
+            return None
 
-    active_workflow = None
-    active_workflow_name = None
-    if agent.published_version and agent.published_version.workflow_version:
-        wf = agent.published_version.workflow_version.workflow
-        if wf:
-            active_workflow = str(wf.id)
-            active_workflow_name = wf.name
+        active_workflow = None
+        active_workflow_name = None
+        if agent.published_version and agent.published_version.workflow_version:
+            wf = agent.published_version.workflow_version.workflow
+            if wf:
+                active_workflow = str(wf.id)
+                active_workflow_name = wf.name
 
-    dv = agent.draft_version
-    return {
-        "id": str(agent.id),
-        "name": agent.name,
-        "description": agent.description,
-        "published_version_id": str(agent.published_version_id) if agent.published_version_id else None,
-        "draft_version_id": str(agent.draft_version_id) if agent.draft_version_id else None,
-        "tenant_id": str(agent.tenant_id),
-        "created_at": agent.created_at,
-        "updated_at": agent.updated_at,
-        "active_workflow_id": active_workflow,
-        "active_workflow_name": active_workflow_name,
-        # draft config fields — used by Settings tab
-        "responder_model_id": str(dv.responder_model_id) if dv and dv.responder_model_id else None,
-        "system_prompt_id":   str(dv.system_prompt_id)   if dv and dv.system_prompt_id   else None,
-        "memory_enabled":     bool(dv.memory_enabled)     if dv else False,
-    }
+        dv = agent.draft_version
+        return {
+            "id": str(agent.id),
+            "name": agent.name,
+            "description": agent.description,
+            "published_version_id": str(agent.published_version_id) if agent.published_version_id else None,
+            "draft_version_id": str(agent.draft_version_id) if agent.draft_version_id else None,
+            "tenant_id": str(agent.tenant_id),
+            "created_at": agent.created_at,
+            "updated_at": agent.updated_at,
+            "active_workflow_id": active_workflow,
+            "active_workflow_name": active_workflow_name,
+            # draft config fields — used by Settings tab
+            "responder_model_id": str(dv.responder_model_id) if dv and dv.responder_model_id else None,
+            "system_prompt_id":   str(dv.system_prompt_id)   if dv and dv.system_prompt_id   else None,
+            "memory_enabled":     bool(dv.memory_enabled)     if dv else False,
+        }
 
 
 async def create_workflow(agent_id: str, name: str, description: str = "") -> dict:
@@ -166,7 +166,7 @@ async def create_workflow(agent_id: str, name: str, description: str = "") -> di
             session.add(wv)
             await session.flush()
 
-    return {"workflow_id": str(wf.id), "workflow_version_id": str(wv.id)}
+            return {"workflow_id": str(wf.id), "workflow_version_id": str(wv.id)}
 
 
 async def list_workflows(agent_id: str) -> list[dict]:
@@ -179,22 +179,22 @@ async def list_workflows(agent_id: str) -> list[dict]:
         )
         rows = result.scalars().all()
 
-    def _pick_version(versions, status):
-        matches = [v for v in versions if v.status == status]
-        return str(max(matches, key=lambda v: v.version).id) if matches else None
+        def _pick_version(versions, status):
+            matches = [v for v in versions if v.status == status]
+            return str(max(matches, key=lambda v: v.version).id) if matches else None
 
-    return [
-        {
-            "id": str(r.id),
-            "name": r.name,
-            "description": r.description,
-            "is_active": r.is_active,
-            "created_at": r.created_at,
-            "draft_version_id": _pick_version(r.workflow_versions, "draft"),
-            "published_version_id": _pick_version(r.workflow_versions, "published"),
-        }
-        for r in rows
-    ]
+        return [
+            {
+                "id": str(r.id),
+                "name": r.name,
+                "description": r.description,
+                "is_active": r.is_active,
+                "created_at": r.created_at,
+                "draft_version_id": _pick_version(r.workflow_versions, "draft"),
+                "published_version_id": _pick_version(r.workflow_versions, "published"),
+            }
+            for r in rows
+        ]
 
 
 async def update_agent_draft(agent_id: str, fields: dict, tenant_id: str | None = None) -> dict:
@@ -301,18 +301,18 @@ async def list_workflow_versions(workflow_id: str) -> list[dict]:
             .order_by(WorkflowVersionsORM.version.desc())
         )
         rows = result.scalars().all()
-    return [
-        {
-            "id": str(r.id),
-            "workflow_id": str(r.workflow_id),
-            "version": r.version,
-            "status": r.status,
-            "changelog": r.changelog,
-            "created_at": r.created_at,
-            "published_at": r.published_at,
-        }
-        for r in rows
-    ]
+        return [
+            {
+                "id": str(r.id),
+                "workflow_id": str(r.workflow_id),
+                "version": r.version,
+                "status": r.status,
+                "changelog": r.changelog,
+                "created_at": r.created_at,
+                "published_at": r.published_at,
+            }
+            for r in rows
+        ]
 
 
 async def create_draft_version(workflow_id: str) -> dict:
@@ -352,10 +352,10 @@ async def create_draft_version(workflow_id: str) -> dict:
             session.add(wv)
             await session.flush()
 
-    return {
-        "workflow_version_id": str(wv.id),
-        "version": wv.version,
-        "source_version_id": str(published.id) if published else None,
+        return {
+            "workflow_version_id": str(wv.id),
+            "version": wv.version,
+            "source_version_id": str(published.id) if published else None,
         # Canvas KHÔNG được copy vào MongoDB ở đây.
         # Frontend nhận source_version_id, load canvas vào React state,
         # và chỉ POST lên MongoDB khi user ấn Save.
@@ -490,8 +490,8 @@ async def publish_agent(agent_id: str, workflow_id: str, kb_connection_id: str |
                 .values(published_version_id=new_av.id, updated_at=func.now())
             )
 
-    return {
-        "agent_id": agent_id,
-        "agent_version_id": str(new_av.id),
-        "workflow_version_id": str(wv.id),
-    }
+            return {
+                "agent_id": agent_id,
+                "agent_version_id": str(new_av.id),
+                "workflow_version_id": str(wv.id),
+            }

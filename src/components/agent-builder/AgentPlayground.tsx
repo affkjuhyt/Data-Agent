@@ -450,29 +450,24 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
           {/* Messages */}
           <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
             <AnimatePresence initial={false}>
-              {messages.map(msg => <ChatBubble key={msg.id} msg={msg} />)}
+              {messages.map(msg =>
+                msg.content === '' && msg.role === 'assistant'
+                  ? (
+                    <motion.div key={msg.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex gap-2.5">
+                      <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 bg-white/10">
+                        <Bot size={13} className="text-white/60" />
+                      </div>
+                      <div className="bg-white/[0.07] rounded-xl rounded-tl-sm px-3.5 py-2.5 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce [animation-delay:0ms]" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce [animation-delay:150ms]" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce [animation-delay:300ms]" />
+                      </div>
+                    </motion.div>
+                  )
+                  : <ChatBubble key={msg.id} msg={msg} />
+              )}
             </AnimatePresence>
 
-            {sending && (
-              <motion.div
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="flex gap-2.5"
-              >
-                <div className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center">
-                  <Bot size={13} className="text-white/60" />
-                </div>
-                <div className="bg-white/[0.07] rounded-xl rounded-tl-sm px-4 py-2.5 flex items-center gap-1.5">
-                  {[0, 1, 2].map(i => (
-                    <span
-                      key={i}
-                      className="w-1.5 h-1.5 rounded-full bg-white/30 animate-bounce"
-                      style={{ animationDelay: `${i * 0.15}s` }}
-                    />
-                  ))}
-                </div>
-              </motion.div>
-            )}
             <div ref={bottomRef} />
           </div>
 

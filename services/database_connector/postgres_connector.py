@@ -295,8 +295,12 @@ async def _tenant_session(factory, tenant_id: str):
         try:
             yield session
         finally:
-            await session.execute(text("SELECT set_config('app.tenant_id', '', false)"))
-            await session.commit()
+            try:
+                await session.rollback()
+                await session.execute(text("SELECT set_config('app.tenant_id', '', false)"))
+                await session.commit()
+            except Exception:
+                pass
 
 
 class PostgresClient:
@@ -410,9 +414,9 @@ class PostgresClient:
             except IntegrityError:
                 await session.rollback()
                 return ResponseModel(code=409, error=f"Record already exists in {prep.table_name}")
-        pks = [col.name for col in prep.orm_cls.__table__.primary_key]
-        return ResponseModel(code=200, data={pk: str(getattr(prep.instance, pk)) for pk in pks if
-                                             getattr(prep.instance, pk) is not None})
+            pks = [col.name for col in prep.orm_cls.__table__.primary_key]
+            return ResponseModel(code=200, data={pk: str(getattr(prep.instance, pk)) for pk in pks if
+                                                 getattr(prep.instance, pk) is not None})
 
     async def soft_delete(self, data: BaseModel) -> ResponseModel:
         try:

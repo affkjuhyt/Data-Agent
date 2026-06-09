@@ -29,6 +29,7 @@ services:
       - ../infra/postgres/init.sql:/docker-entrypoint-initdb.d/02-kb-tables.sql:ro
       - ../infra/sql/init.sql:/docker-entrypoint-initdb.d/03-app-schema.sql:ro
       - ../infra/sql/release-init.sql:/docker-entrypoint-initdb.d/04-release-schema.sql:ro
+      - ../infra/sql/grant-runtime-writer.sql:/docker-entrypoint-initdb.d/05-grants.sql:ro
     ports:
       - "5432:5432"
     healthcheck:

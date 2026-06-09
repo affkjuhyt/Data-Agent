@@ -23,6 +23,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KONG_ADMIN="${KONG_ADMIN_URL:-http://localhost:8001}"
 KC_BASE="${KEYCLOAK_URL:-http://localhost:8080}"
 REALM="${KEYCLOAK_REALM:-aeroflow}"
+# Set SKIP_JWT=1 to skip JWT plugin registration (useful for dev with VITE_MOCK_AUTH=true)
+SKIP_JWT="${SKIP_JWT:-0}"
 
 # ── Wait for Kong ──────────────────────────────────────────────────────
 echo "⏳ Waiting for Kong Admin API at $KONG_ADMIN ..."
@@ -161,6 +163,18 @@ curl -sf -X PUT "$KONG_ADMIN/services/flow-builder" \
     "read_timeout": 30000
   }' | json_field name | xargs -I{} echo "  → service: {}"
 
+echo "📡 Creating kb-backend service..."
+curl -sf -X PUT "$KONG_ADMIN/services/kb-backend" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "kb-backend",
+    "host": "kb-backend",
+    "port": 8000,
+    "protocol": "http",
+    "connect_timeout": 5000,
+    "read_timeout": 30000
+  }' | json_field name | xargs -I{} echo "  → service: {}"
+
 # ── 3. Create routes ───────────────────────────────────────────────────
 echo "🛣️  Creating flow-builder route (canvas + agent CRUD)..."
 curl -sf -X PUT "$KONG_ADMIN/services/flow-builder/routes/builder-route" \
@@ -178,6 +192,16 @@ curl -sf -X PUT "$KONG_ADMIN/services/workflow-runtime/routes/runtime-route" \
   -d '{
     "name": "runtime-route",
     "paths": ["/api/conversations", "/api/traces", "/api/nodes", "/api/llm-providers", "/api/kb-connections", "/api/system-prompts", "/api/catalog"],
+    "strip_path": false,
+    "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
+  }' | json_field name | xargs -I{} echo "  → route: {}"
+
+echo "🛣️  Creating kb-backend route (knowledge base data)..."
+curl -sf -X PUT "$KONG_ADMIN/services/kb-backend/routes/kb-route" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "kb-route",
+    "paths": ["/api/data"],
     "strip_path": false,
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
@@ -297,27 +321,40 @@ JWKS_URI="$KONG_KC_HOST/realms/$REALM/protocol/openid-connect/certs"
 KONG_GRACE=600   # seconds; matches Keycloak default access-token TTL (15m floor)
 KONG_REFRESH=300
 
-echo "🔐 Enabling aeroflow-jwks plugin on workflow-runtime..."
-upsert_plugin "$KONG_ADMIN/services/workflow-runtime/plugins" \
-  "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"workflow-runtime\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE}}" \
-  "aeroflow-jwks"
+if [ "$SKIP_JWT" = "1" ]; then
+  echo "⚠️  SKIP_JWT=1 — removing aeroflow-jwks plugins if present (dev mode)"
+  curl -sf "$KONG_ADMIN/plugins?size=100" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for p in data.get('data', []):
+    if p.get('name') == 'aeroflow-jwks':
+        print(p['id'])
+" | while read -r pid; do
+    curl -sf -X DELETE "$KONG_ADMIN/plugins/$pid" && echo "  → removed aeroflow-jwks plugin $pid"
+  done
+else
+  echo "🔐 Enabling aeroflow-jwks plugin on workflow-runtime..."
+  upsert_plugin "$KONG_ADMIN/services/workflow-runtime/plugins" \
+    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"workflow-runtime\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE}}" \
+    "aeroflow-jwks"
 
-echo "🔐 Enabling aeroflow-jwks plugin on flow-builder..."
-upsert_plugin "$KONG_ADMIN/services/flow-builder/plugins" \
-  "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"flow-builder\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE}}" \
-  "aeroflow-jwks"
+  echo "🔐 Enabling aeroflow-jwks plugin on flow-builder..."
+  upsert_plugin "$KONG_ADMIN/services/flow-builder/plugins" \
+    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"flow-builder\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE}}" \
+    "aeroflow-jwks"
 
-# ── 4b. aeroflow-jwks on release-worker ────────────────────────────────
-echo "🔐 Enabling aeroflow-jwks plugin on release-worker (aud=release-worker)..."
-upsert_plugin "$KONG_ADMIN/services/release-worker/plugins" \
-  "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"release-worker\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE}}" \
-  "aeroflow-jwks"
+  # ── 4b. aeroflow-jwks on release-worker ────────────────────────────────
+  echo "🔐 Enabling aeroflow-jwks plugin on release-worker (aud=release-worker)..."
+  upsert_plugin "$KONG_ADMIN/services/release-worker/plugins" \
+    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"release-worker\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE}}" \
+    "aeroflow-jwks"
 
-# ── 4c. aeroflow-jwks on auth-api ──────────────────────────────────────
-echo "🔐 Enabling aeroflow-jwks plugin on auth-api (aud=auth-api)..."
-upsert_plugin "$KONG_ADMIN/services/auth-api/plugins" \
-  "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"auth-api\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE}}" \
-  "aeroflow-jwks"
+  # ── 4c. aeroflow-jwks on auth-api ──────────────────────────────────────
+  echo "🔐 Enabling aeroflow-jwks plugin on auth-api (aud=auth-api)..."
+  upsert_plugin "$KONG_ADMIN/services/auth-api/plugins" \
+    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"auth-api\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE}}" \
+    "aeroflow-jwks"
+fi
 
 # ── 5. IP restriction ─────────────────────────────────────────────────
 # Applied to: aeroflow-backend (data API), release-worker, auth-api-keys-route.
@@ -357,7 +394,7 @@ fi
 # so OPTIONS preflight returns 200 without needing a token.
 echo "🌐 Enabling global CORS plugin..."
 upsert_plugin "$KONG_ADMIN/plugins" \
-  '{"name":"cors","config":{"origins":["http://localhost:3000","http://localhost:5173"],"methods":["GET","POST","PUT","PATCH","DELETE","OPTIONS"],"headers":["Content-Type","Authorization","X-Tenant-ID","X-Conversation-Id","Accept"],"exposed_headers":["X-Conversation-Id","X-Kong-Request-Id"],"credentials":false,"max_age":3600,"preflight_continue":false}}' \
+  '{"name":"cors","config":{"origins":["http://localhost:3000","http://localhost:5173"],"methods":["GET","POST","PUT","PATCH","DELETE","OPTIONS"],"headers":["Content-Type","Authorization","X-Tenant-ID","X-Conversation-Id","Accept","X-Role"],"exposed_headers":["X-Conversation-Id","X-Kong-Request-Id"],"credentials":false,"max_age":3600,"preflight_continue":false}}' \
   "cors"
 
 # ── 9. Correlation ID (tracing) ────────────────────────────────────────

@@ -19,3 +19,6 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO ru
 
 -- RLS enforced: app code tự set tenant context qua get_client(tenant_id=...).
 ALTER ROLE runtime_writer NOBYPASSRLS;
+
+-- Re-grant on tables created after initial setup (e.g. by SQLAlchemy migrations).
+GRANT SELECT ON "Agents" TO runtime_writer;
