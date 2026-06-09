@@ -896,6 +896,7 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
   const [ctxMenu, setCtxMenu]           = useState<CtxMenuState | null>(null);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [saving, setSaving]             = useState(false);
+  const [canvasLoading, setCanvasLoading] = useState(!!activeVersionId && !initialNodes?.length);
   const [libraryNodes, setLibraryNodes] = useState(ALL_LIBRARY_NODES);
   const rfInstance                       = useRef<ReactFlowInstance<Node<FlowNodeData>, Edge> | null>(null);
   const [versions, setVersions]         = useState<WorkflowVersion[]>([]);
@@ -925,19 +926,18 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
       .then(data => {
         const hasDbCanvas = data.nodes?.length > 0 || data.edges?.length > 0;
         if (hasDbCanvas) {
-          // Existing draft đã có canvas trong DB — strip system nodes (guardrail/trigger/output)
           const cleaned = stripSystemNodes(data.nodes, data.edges ?? []);
           setNodes(withLockedNodes(cleaned.nodes));
           setEdges(withLockedEdges(cleaned.edges));
           savedSnapshot.current = snap(cleaned.nodes, cleaned.edges);
+          setCanvasLoading(false);
         } else if (initialNodes || initialEdges) {
-          // Workflow mới: load template vào React state, DB vẫn rỗng
           const cleaned = stripSystemNodes(initialNodes ?? [], initialEdges ?? []);
           setNodes(withLockedNodes(cleaned.nodes));
           setEdges(withLockedEdges(cleaned.edges));
           savedSnapshot.current = JSON.stringify({ nodes: [], edges: [] });
+          setCanvasLoading(false);
         } else if (sourceVersionId) {
-          // Draft mới: load canvas từ published version vào React state, DB vẫn rỗng
           fetch(`${FLOW_BUILDER_URL}/api/workflow-versions/${sourceVersionId}/canvas`)
             .then(r => r.json())
             .then(src => {
@@ -945,15 +945,17 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
               setNodes(withLockedNodes(cleaned.nodes));
               setEdges(withLockedEdges(cleaned.edges));
               savedSnapshot.current = JSON.stringify({ nodes: [], edges: [] });
+              setCanvasLoading(false);
             })
-            .catch(() => {});
+            .catch(() => { setCanvasLoading(false); });
         } else {
           setNodes([]);
           setEdges([]);
           savedSnapshot.current = JSON.stringify({ nodes: [], edges: [] });
+          setCanvasLoading(false);
         }
       })
-      .catch(() => {});
+      .catch(() => { setCanvasLoading(false); });
   }, [activeVersionId]);
 
   // Fetch node registry từ workflow-runtime
@@ -1300,6 +1302,14 @@ ${edges.map(e => `  - from: "${e.source}"  to: "${e.target}"`).join('\n')}`;
                   transition={{ duration: 0.12 }}
                   className="absolute inset-0"
                 >
+                  {canvasLoading && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#0f172a]/70 backdrop-blur-[2px]">
+                      <div className="flex items-center gap-2.5 text-slate-300 text-sm">
+                        <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                        Loading canvas…
+                      </div>
+                    </div>
+                  )}
                   <ReactFlow
                     nodes={nodes}
                     edges={edges}
