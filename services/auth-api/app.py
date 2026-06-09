@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from auth_core import startup as run_startup_tasks
-from routers import api_keys, governance, health, ip_allowlist, secrets
+from routers import api_keys, approvals, governance, health, ip_allowlist, secrets
 
 structlog.configure(processors=[structlog.processors.JSONRenderer()])
 
@@ -13,6 +13,7 @@ def create_app() -> FastAPI:
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
     app.include_router(health.router)
+    app.include_router(approvals.router)
     app.include_router(ip_allowlist.router)
     app.include_router(api_keys.router)
     app.include_router(secrets.router)

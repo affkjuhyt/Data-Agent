@@ -34,10 +34,8 @@ export const useKeycloakUsers = (isAdmin: boolean): Result => {
     try {
       await keycloak.updateToken(30).catch(() => {});
 
-      // Scope user list to the current tenant via tenant_id attribute search.
-      // Keycloak attribute query: q=tenant_id:<value> returns only users
-      // whose tenant_id attribute matches — prevents cross-tenant visibility.
-      const tenantId = (keycloak.tokenParsed as any)?.tenant_id ?? '';
+      const p = keycloak.tokenParsed as any;
+      const tenantId = p?.tenant_id ?? '';
       const qs = tenantId
         ? `q=tenant_id%3A${encodeURIComponent(tenantId)}&max=200`
         : 'max=200';
@@ -57,6 +55,12 @@ export const useKeycloakUsers = (isAdmin: boolean): Result => {
   }, [isAdmin, keycloak.token]);
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
+
+  useEffect(() => {
+    const handler = () => fetchUsers();
+    window.addEventListener('sso-approval-changed', handler);
+    return () => window.removeEventListener('sso-approval-changed', handler);
+  }, [fetchUsers]);
 
   return { users, loading, error, refetch: fetchUsers };
 };

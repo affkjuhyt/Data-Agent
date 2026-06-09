@@ -1,5 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import keycloak from './keycloak';
+import { fetchMyStatus, submitProfile } from './useMicrosoftApprovals';
+import { PendingApproval } from '../components/PendingApproval';
+import { ProfileSetup } from '../components/ProfileSetup';
 
 interface AuthUser {
   id:    string;
@@ -14,6 +17,8 @@ interface AuthCtx {
   loading: boolean;
   logout:  () => void;
 }
+
+type ApprovalGateStatus = 'checking' | 'active' | 'needs_profile' | 'pending_approval' | 'rejected';
 
 const Ctx = createContext<AuthCtx>({ user: null, loading: true, logout: () => {} });
 
@@ -32,21 +37,36 @@ const buildUser = (): AuthUser | null => {
 };
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser]       = useState<AuthUser | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState<string | null>(null);
+  const [user, setUser]               = useState<AuthUser | null>(null);
+  const [loading, setLoading]         = useState(true);
+  const [error, setError]             = useState<string | null>(null);
+  const [gateStatus, setGateStatus]   = useState<ApprovalGateStatus>('checking');
+  const [gateSince, setGateSince]     = useState<string | undefined>(undefined);
+
+  const checkApprovalGate = async () => {
+    try {
+      const { status, since } = await fetchMyStatus();
+      setGateSince(since);
+      setGateStatus(status as ApprovalGateStatus);
+    } catch {
+      setGateStatus('active');
+    }
+  };
 
   useEffect(() => {
     // Dev bypass: VITE_MOCK_AUTH=true trong .env.local → bỏ qua Keycloak
     if (import.meta.env.VITE_MOCK_AUTH === 'true') {
       setUser({ id: 'u_123', name: 'Alex Rivera', email: 'alex.rivera@globalcorp.ai', roles: ['AI_ENGINEER'], token: 'mock-token' });
+      setGateStatus('active');
       setLoading(false);
       return;
     }
 
     if ((keycloak as any).didInitialize) {
-      setUser(buildUser());
-      setLoading(false);
+      const u = buildUser();
+      setUser(u);
+      if (u) checkApprovalGate().finally(() => setLoading(false));
+      else setLoading(false);
       return;
     }
 
@@ -56,9 +76,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         checkLoginIframe: false,
         pkceMethod:       'S256',
       })
-      .then(authenticated => {
+      .then(async authenticated => {
         if (authenticated) {
-          setUser(buildUser());
+          const u = buildUser();
+          setUser(u);
+          if (u) await checkApprovalGate();
         } else {
           keycloak?.login();
         }
@@ -105,6 +127,51 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }
 
   if (!user) return null;
+
+  if (gateStatus === 'needs_profile') {
+    return (
+      <ProfileSetup
+        email={user.email}
+        onSubmit={async (role, tenantId) => {
+          await submitProfile(role, tenantId);
+          await checkApprovalGate();
+        }}
+      />
+    );
+  }
+
+  if (gateStatus === 'pending_approval') {
+    return (
+      <PendingApproval
+        email={user.email}
+        since={gateSince}
+        onRetry={() => {
+          setGateStatus('checking');
+          checkApprovalGate();
+        }}
+      />
+    );
+  }
+
+  if (gateStatus === 'rejected') {
+    return (
+      <div className="h-screen flex items-center justify-center bg-[#FAF6ED]">
+        <div className="flex flex-col items-center gap-4 max-w-sm text-center p-6">
+          <div className="text-2xl">🚫</div>
+          <p className="text-sm font-semibold text-[#111]">Access denied</p>
+          <p className="text-sm text-[#5A5A5A]">
+            Your Microsoft account access request was rejected by an administrator.
+          </p>
+          <button
+            onClick={() => keycloak.logout({ redirectUri: window.location.origin })}
+            className="px-4 py-2 bg-[#111111] text-white rounded-lg text-sm"
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Ctx.Provider value={{ user, loading, logout }}>

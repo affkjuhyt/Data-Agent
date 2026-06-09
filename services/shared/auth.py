@@ -5,10 +5,15 @@ def get_current_user(
     x_user_id: str = Header(..., alias="X-User-Id"),
     x_user_roles: str = Header(..., alias="X-User-Roles"),
     x_kong_verified: str = Header(default="", alias="X-Kong-Verified"),
+    x_tenant_id: str = Header(default="", alias="X-Tenant-Id"),
 ) -> dict:
     if x_kong_verified != "true":
         raise HTTPException(status_code=401, detail="Request not verified by Kong gateway")
-    return {"user_id": x_user_id, "roles": x_user_roles.split(",")}
+    return {
+        "user_id":   x_user_id,
+        "roles":     [r for r in x_user_roles.split(",") if r],
+        "tenant_id": x_tenant_id,
+    }
 
 
 def require_role(*roles: str):

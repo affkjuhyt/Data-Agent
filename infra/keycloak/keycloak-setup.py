@@ -16,6 +16,11 @@ MFA_FLOW               = "Browser MFA"
 MFA_SUBFLOW            = "Browser MFA - forms"
 PLATFORM_ADMIN_PASSWORD = os.environ.get("PLATFORM_ADMIN_PASSWORD", "Admin@123456")
 
+# Microsoft Entra ID / Azure AD SSO — optional, only configured when all three are set
+MS_CLIENT_ID     = os.environ.get("MS_SSO_CLIENT_ID",     "")
+MS_CLIENT_SECRET = os.environ.get("MS_SSO_CLIENT_SECRET", "")
+MS_TENANT_ID     = os.environ.get("MS_SSO_TENANT_ID",     "common")
+
 
 def get(url, token):
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
@@ -167,6 +172,217 @@ def ensure_mfa_browser_flow(token):
         print(f"[keycloak-setup] browserFlow → '{MFA_FLOW}'.")
 
 
+def delete(url, token):
+    req = urllib.request.Request(
+        url, headers={"Authorization": f"Bearer {token}"}, method="DELETE"
+    )
+    with urllib.request.urlopen(req) as r:
+        return r.status
+
+
+def _ensure_post_broker_mfa_flow(token):
+    """Create 'Post Broker MFA' flow with a REQUIRED OTP step.
+
+    This flow is assigned as postBrokerLoginFlowAlias on the Microsoft IDP so
+    that every SSO login is challenged with TOTP, matching the MFA policy for
+    local logins.
+    """
+    flows = get(f"{KC}/admin/realms/{REALM}/authentication/flows", token)
+    if any(f.get("alias") == "Post Broker MFA" for f in flows):
+        print("[keycloak-setup] Post Broker MFA flow already exists, skipping.")
+        return
+
+    post(f"{KC}/admin/realms/{REALM}/authentication/flows", token, {
+        "alias":       "Post Broker MFA",
+        "description": "Enforce TOTP after Microsoft SSO login",
+        "providerId":  "basic-flow",
+        "topLevel":    True,
+        "builtIn":     False,
+    })
+
+    post(
+        f"{KC}/admin/realms/{REALM}/authentication/flows/Post%20Broker%20MFA/executions/execution",
+        token,
+        {"provider": "auth-otp-form"},
+    )
+
+    executions = get(
+        f"{KC}/admin/realms/{REALM}/authentication/flows/Post%20Broker%20MFA/executions", token
+    )
+    if executions:
+        exec_id = executions[0]["id"]
+        put(f"{KC}/admin/realms/{REALM}/authentication/flows/Post%20Broker%20MFA/executions", token, {
+            "id":           exec_id,
+            "requirement":  "REQUIRED",
+            "displayName":  "OTP Form",
+            "providerId":   "auth-otp-form",
+            "level":        0,
+            "index":        0,
+        })
+    print("[keycloak-setup] Post Broker MFA flow created with REQUIRED OTP.")
+
+
+def ensure_microsoft_sso(token):
+    """Configure Microsoft Entra ID as an OIDC Identity Provider in Keycloak.
+
+    Skipped when MS_SSO_CLIENT_ID / MS_SSO_CLIENT_SECRET are not set.
+    Idempotent — safe to re-run; existing IDP is left unchanged.
+    """
+    if not MS_CLIENT_ID or not MS_CLIENT_SECRET:
+        print("[keycloak-setup] MS_SSO_CLIENT_ID/SECRET not set — skipping Microsoft IDP.")
+        return
+
+    idps = get(f"{KC}/admin/realms/{REALM}/identity-provider/instances", token)
+    if any(p.get("alias") == "microsoft" for p in idps):
+        print("[keycloak-setup] Microsoft IDP already configured, skipping.")
+        _ensure_microsoft_idp_mappers(token)
+        return
+
+    _ensure_post_broker_mfa_flow(token)
+
+    base_auth = f"https://login.microsoftonline.com/{MS_TENANT_ID}/oauth2/v2.0"
+    post(f"{KC}/admin/realms/{REALM}/identity-provider/instances", token, {
+        "alias":        "microsoft",
+        "displayName":  "Microsoft",
+        "providerId":   "oidc",
+        "enabled":      True,
+        "trustEmail":   True,
+        "storeToken":   False,
+        "addReadTokenRoleOnCreate": False,
+        "firstBrokerLoginFlowAlias": "first broker login",
+        "postBrokerLoginFlowAlias":  "Post Broker MFA",
+        "config": {
+            "clientId":           MS_CLIENT_ID,
+            "clientSecret":       MS_CLIENT_SECRET,
+            "tokenUrl":           f"{base_auth}/token",
+            "authorizationUrl":   f"{base_auth}/authorize",
+            "jwksUrl":            f"https://login.microsoftonline.com/{MS_TENANT_ID}/discovery/v2.0/keys",
+            # Personal MS accounts ("consumers" tenant) use a fixed GUID as issuer,
+            # not the /consumers/ slug. Using the GUID avoids issuer mismatch rejection.
+            "issuer":             "https://login.microsoftonline.com/9188040d-6c67-4c5b-b112-36a304b66dad/v2.0",
+            "defaultScopes":      "openid email profile",
+            "validateSignature":  "true",
+            "useJwksUrl":         "true",
+            "syncMode":           "IMPORT",
+            "pkceEnabled":        "true",
+            "pkceMethod":         "S256",
+        },
+    })
+    print("[keycloak-setup] Microsoft Entra ID IDP created.")
+    _ensure_microsoft_idp_mappers(token)
+    _ensure_idp_provider_protocol_mapper(token)
+
+
+def _ensure_microsoft_idp_mappers(token):
+    """Add user-attribute mapper so new MS users get idp_provider=microsoft."""
+    mappers_url = f"{KC}/admin/realms/{REALM}/identity-provider/instances/microsoft/mappers"
+    existing = get(mappers_url, token)
+    if any(m.get("name") == "set-idp-provider-attr" for m in existing):
+        return
+    post(mappers_url, token, {
+        "name":                   "set-idp-provider-attr",
+        "identityProviderAlias":  "microsoft",
+        "identityProviderMapper": "hardcoded-attribute-idp-mapper",
+        "config": {
+            "syncMode":        "INHERIT",
+            "attribute":       "idp_provider",
+            "attribute.value": "microsoft",
+        },
+    })
+    print("[keycloak-setup] Microsoft IDP attribute mapper created.")
+
+
+def _ensure_idp_provider_protocol_mapper(token):
+    """Add a protocol mapper on the frontend client that emits idp_provider claim."""
+    clients = get(
+        f"{KC}/admin/realms/{REALM}/clients?clientId=aeroflow-frontend&search=false", token
+    )
+    if not clients:
+        print("[keycloak-setup] aeroflow-frontend client not found — skipping protocol mapper.")
+        return
+    client_uuid = clients[0]["id"]
+    mappers = get(f"{KC}/admin/realms/{REALM}/clients/{client_uuid}/protocol-mappers/models", token)
+    if any(m.get("name") == "idp-provider-claim" for m in mappers):
+        return
+    post(f"{KC}/admin/realms/{REALM}/clients/{client_uuid}/protocol-mappers/models", token, {
+        "name":           "idp-provider-claim",
+        "protocol":       "openid-connect",
+        "protocolMapper": "oidc-usermodel-attribute-mapper",
+        "consentRequired": False,
+        "config": {
+            "userinfo.token.claim":  "true",
+            "user.attribute":        "idp_provider",
+            "id.token.claim":        "true",
+            "access.token.claim":    "true",
+            "claim.name":            "idp_provider",
+            "jsonType.label":        "String",
+        },
+    })
+    print("[keycloak-setup] idp_provider protocol mapper added to aeroflow-frontend.")
+
+
+def _ensure_audience_mappers(token):
+    """Add oidc-audience-mapper for each Kong-protected backend service.
+
+    Kong's aeroflow-jwks plugin enforces aud == <service-name> on each route.
+    Without these mappers the frontend token only contains aud=["account"] and
+    every API call returns 401 Audience mismatch.
+    """
+    clients = get(
+        f"{KC}/admin/realms/{REALM}/clients?clientId=aeroflow-frontend&search=false", token
+    )
+    if not clients:
+        print("[keycloak-setup] aeroflow-frontend client not found — skipping audience mappers.")
+        return
+    client_uuid = clients[0]["id"]
+    mappers_url = f"{KC}/admin/realms/{REALM}/clients/{client_uuid}/protocol-mappers/models"
+    existing = {m["name"] for m in get(mappers_url, token)}
+
+    for audience in ("auth-api", "aeroflow-backend", "release-worker"):
+        mapper_name = f"audience-{audience}"
+        if mapper_name in existing:
+            continue
+        post(mappers_url, token, {
+            "name":            mapper_name,
+            "protocol":        "openid-connect",
+            "protocolMapper":  "oidc-audience-mapper",
+            "consentRequired": False,
+            "config": {
+                "included.custom.audience": audience,
+                "access.token.claim":       "true",
+                "id.token.claim":           "false",
+            },
+        })
+        print(f"[keycloak-setup] audience mapper added: {audience}")
+
+
+def _ensure_user_profile_attributes(token):
+    """Declare role_id and tenant_id in the realm user profile so Admin API PUT can set them.
+
+    Keycloak's declarative user profile silently drops unknown attributes unless
+    they are declared here or unmanagedAttributePolicy is set to ENABLED/ADMIN_EDIT.
+    """
+    profile_url = f"{KC}/admin/realms/{REALM}/users/profile"
+    profile = get(profile_url, token)
+    existing = {a["name"] for a in profile.get("attributes", [])}
+    changed = False
+    for attr_name in ("role_id", "tenant_id"):
+        if attr_name not in existing:
+            profile.setdefault("attributes", []).append({
+                "name":        attr_name,
+                "displayName": attr_name,
+                "permissions": {"view": ["admin", "user"], "edit": ["admin"]},
+                "multivalued": False,
+                "required":    {"roles": []},
+                "validations": {},
+                "annotations": {},
+            })
+            changed = True
+            print(f"[keycloak-setup] user profile: declared attribute '{attr_name}'")
+    if changed:
+        put(profile_url, token, profile)
+
+
 def main():
     wait_for_keycloak()
     token = get_token()
@@ -209,8 +425,17 @@ def main():
     # ── Ensure platform-admin password + TOTP action are consistent ──────
     ensure_platform_admin_ready(token, user_id)
 
+    # ── Declare custom user attributes in profile schema ──────────────────
+    _ensure_user_profile_attributes(token)
+
     # ── Ensure MFA browser flow is active ─────────────────────────────────
     ensure_mfa_browser_flow(token)
+
+    # ── Configure Microsoft Entra ID SSO (if credentials are set) ─────────
+    ensure_microsoft_sso(token)
+
+    # ── Ensure audience mappers exist for all Kong-protected services ──────
+    _ensure_audience_mappers(token)
 
     print("[keycloak-setup] Done.")
 

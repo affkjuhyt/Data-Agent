@@ -585,6 +585,107 @@ Chạy trên stack live (Docker Compose, Windows 11). Môi trường: `localhost
 | TC-MT07 | Audit log isolation | ✅ PASS | T1 audit (20 entries): 0 HELIOS entries; T2 audit (2 entries): 0 AeroFlow entries; tested 2026-05-30 |
 | TC-MT08 | T2 own data fully operational | ✅ PASS | T2 reveal, sign, rotate, API key create all work on own resources; tested 2026-05-30 |
 | TC-MT09 | JWT tenant binding | ✅ PASS | helios-admin JWT: tenant_id=b0000000-..., role_id=platform-admin (confirmed via token decode) |
+| TC-MS01 | Microsoft IDP configured | ✅ PASS | keycloak-setup.py → IDP alias=microsoft, mapper set, protocol mapper added; tested 2026-06-09 |
+| TC-MS02 | Microsoft SSO first login → pending | ⏳ PENDING | Cần account Microsoft thật để test E2E |
+| TC-MS03 | Admin approve → user active | ⏳ PENDING | Depends on TC-MS02 |
+| TC-MS04 | Subsequent login no approval needed | ⏳ PENDING | Depends on TC-MS03 |
+| TC-MS05 | Reject → Keycloak account disabled | ⏳ PENDING | Depends on TC-MS02 |
+
+---
+
+## Microsoft SSO — Hướng dẫn Test
+
+### Setup (chạy một lần)
+
+```bash
+# Chạy keycloak-setup với MS SSO credentials
+docker run --rm --network data-agent-network \
+  -e KC_URL=http://keycloak-lb:8080 \
+  -e KC_REALM=aeroflow \
+  -e KC_ADMIN_USER=admin \
+  -e KC_ADMIN_PASSWORD=admin \
+  -e MS_SSO_CLIENT_ID=<client-id> \
+  -e "MS_SSO_CLIENT_SECRET=<client-secret>" \
+  -e MS_SSO_TENANT_ID=consumers \
+  -v "$(pwd)/infra/keycloak:/scripts:ro" \
+  python:3-alpine sh -c "python /scripts/keycloak-setup.py"
+```
+
+Kết quả mong đợi:
+```
+[keycloak-setup] Microsoft Entra ID IDP created.
+[keycloak-setup] Microsoft IDP attribute mapper created.
+[keycloak-setup] idp_provider protocol mapper added to aeroflow-frontend.
+[keycloak-setup] Done.
+```
+
+### Kiểm tra IDP đã được tạo
+
+```bash
+ADMIN_TOKEN=$(curl -s http://localhost:8080/realms/master/protocol/openid-connect/token \
+  -d "client_id=admin-cli&grant_type=password&username=admin&password=admin" \
+  | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
+
+# Xác nhận microsoft IDP tồn tại
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "http://localhost:8080/admin/realms/aeroflow/identity-provider/instances" \
+  | python3 -c "import sys,json; idps=json.load(sys.stdin); print([i['alias'] for i in idps])"
+# Kết quả mong đợi: ['microsoft']
+
+# Kiểm tra mappers
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "http://localhost:8080/admin/realms/aeroflow/identity-provider/instances/microsoft/mappers" \
+  | python3 -c "import sys,json; m=json.load(sys.stdin); print([x['name'] for x in m])"
+# Kết quả mong đợi: ['set-idp-provider-attr']
+```
+
+### TC-MS01 — Kiểm tra Microsoft login button trên UI
+
+1. Truy cập `http://localhost:5173` → redirect sang Keycloak login
+2. Keycloak login page phải hiển thị nút **"Microsoft"** hoặc **"Sign in with Microsoft"**
+3. Nếu không thấy → vào Keycloak Admin → Identity Providers → kiểm tra `microsoft` enabled
+
+### TC-MS02 — First Login Flow (cần Microsoft account)
+
+1. Click nút Microsoft trên Keycloak login page
+2. Đăng nhập bằng Microsoft account (personal Outlook/Hotmail)
+3. Sau khi auth xong → frontend nhận JWT từ Keycloak
+4. `AuthProvider` gọi `GET /api/auth/me` → response `{status: "pending_approval"}`
+5. Frontend hiển thị màn hình **"Waiting for admin approval"**
+
+```bash
+# Verify DB có pending record
+docker exec dataagent-postgres psql -U admin -d dataagent \
+  -c "SELECT email, display_name, status, created_at FROM microsoft_sso_approvals ORDER BY created_at DESC LIMIT 5;"
+```
+
+### TC-MS03 — Admin Approve
+
+1. Đăng nhập với `platform-admin` account
+2. Vào **Settings → Auth & SSO → MS Approvals**
+3. Thấy user Microsoft trong danh sách Pending
+4. Click **Approve** → user được enable trong Keycloak + status=approved trong DB
+
+```bash
+# Verify approval via API
+curl -s http://localhost:8000/api/auth/approvals?status=approved \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | python3 -m json.tool
+```
+
+### TC-MS04 — Subsequent Login (không cần approval)
+
+1. User Microsoft login lại lần 2
+2. `GET /api/auth/me` trả `{status: "active"}` ngay (DB lookup, không gọi Keycloak Admin API)
+3. Frontend render app bình thường
+
+### TC-MS05 — Reject Flow
+
+```bash
+# Admin reject một pending user
+curl -s -X POST http://localhost:8000/api/auth/approvals/<keycloak_user_id>/reject \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+# Keycloak account bị disable, user không login được nữa
+```
 
 ---
 

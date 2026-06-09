@@ -11,6 +11,7 @@ import { StatusBadge } from '../shared/StatusBadge';
 import { DataTable } from '../shared/DataTable';
 import { useAuth } from '../../lib/AuthProvider';
 import { useKeycloakUsers, KcUser } from '../../lib/useKeycloakUsers';
+import keycloak from '../../lib/keycloak';
 
 const displayName = (u: KcUser) =>
   [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || u.email;
@@ -44,7 +45,7 @@ export const IAMSection = () => {
           name: authUser.name || authUser.email,
           email: authUser.email,
           enabled: true,
-          emailVerified: true,
+          emailVerified: (keycloak.tokenParsed as any)?.email_verified ?? false,
           joinedAt: '—',
           isCurrentUser: true,
         }]
