@@ -235,6 +235,14 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
   const [traceLoading, setTraceLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const selectorRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const adjustHeight = () => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  };
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -280,6 +288,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     const userMsg: Message = { id: Date.now().toString(), role: 'user', content: text, timestamp: now };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
+    if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setSending(true);
 
     const placeholderId = (Date.now() + 1).toString();
@@ -475,15 +484,15 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
           <div className="px-4 pb-4 pt-2 shrink-0">
             <div className="flex gap-2 items-end bg-white/[0.05] border border-white/10 rounded-xl px-3 py-2 focus-within:border-indigo-500/40 transition-colors">
               <textarea
+                ref={textareaRef}
                 value={input}
-                onChange={e => setInput(e.target.value)}
+                onChange={e => { setInput(e.target.value); adjustHeight(); }}
                 onKeyDown={e => {
                   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
                 }}
                 placeholder="Ask the agent anything… (Enter to send, Shift+Enter for newline)"
-                rows={1}
-                className="flex-1 bg-transparent text-sm text-white/80 placeholder-white/25 resize-none focus:outline-none leading-relaxed"
-                style={{ maxHeight: 120 }}
+                className="flex-1 bg-transparent text-sm text-white/80 placeholder-white/25 resize-none focus:outline-none leading-relaxed overflow-y-auto"
+                style={{ height: '24px', maxHeight: '120px' }}
               />
               <button
                 onClick={handleSend}

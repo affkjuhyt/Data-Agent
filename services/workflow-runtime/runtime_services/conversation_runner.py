@@ -119,7 +119,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                         yield f"data: {json.dumps(token)}\n\n"
 
             if guardrail_triggered:
-                yield f"data: {json.dumps(guardrail_msg)}\n\n"
+                yield f"data: {json.dumps('Xin lỗi, tôi không thể trả lời câu hỏi này.')}\n\n"
 
             yield "data: [DONE]\n\n"
 
