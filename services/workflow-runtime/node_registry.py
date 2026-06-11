@@ -119,70 +119,23 @@ NODE_REGISTRY = {
             },
         },
     },
-    "human_approval": {
-        "display":  "Human Approval",
-        "category": "optional",
-        "locked":   False,
-        "schema": {
-            "timeout_minutes": {
-                "type": "number", "default": 30,
-                "min": 1, "max": 1440,
-                "required": False,
-                "description": "Thời gian chờ duyệt tối đa (phút). Hết thời gian → tự động từ chối",
-                "advanced": False,
-            },
-        },
-    },
-    "condition": {
-        "display":  "Condition",
-        "category": "optional",
-        "locked":   False,
-        "schema": {
-            "expression": {
-                "type": "text",
-                "required": True,
-                "description": "Biểu thức điều kiện (Python expression). Ví dụ: state['score'] > 0.8",
-                "advanced": False,
-            },
-            "branches": {
-                "type": "list",
-                "required": True,
-                "description": "Danh sách branch khi condition đúng/sai",
-                "advanced": False,
-            },
-        },
-    },
-    "loop": {
-        "display":  "Loop",
-        "category": "optional",
-        "locked":   False,
-        "schema": {
-            "max_iterations": {
-                "type": "number", "default": 3,
-                "min": 1, "max": 10,
-                "required": False,
-                "description": "Số lần lặp tối đa để tránh vòng lặp vô hạn",
-                "advanced": False,
-            },
-        },
-    },
-    "notification": {
-        "display":  "Notification",
-        "category": "optional",
-        "locked":   False,
-        "schema": {
-            "event_type": {
-                "type": "text",
-                "required": True,
-                "description": "Loại sự kiện gửi đi. Ví dụ: alert.high_risk, report.daily",
-                "advanced": False,
-            },
-            "payload_template": {
-                "type": "json",
-                "required": False,
-                "description": "Template JSON cho payload. Dùng {{variable}} để inject giá trị từ state",
-                "advanced": True,
-            },
-        },
-    },
 }
+
+# Các tính năng không phải node trên canvas:
+#
+# human_approval — middleware, chạy trước mcp_node
+#   config: human_approval_enabled, mcp_require_approval[]
+#
+# loop — middleware, chạy sau reranker
+#   config: loop_enabled, loop_max_iterations
+#
+# rewrite_message — middleware, chạy trước planner
+#   config: rewrite_enabled
+#
+# suggestion — background job, chạy song song
+#   config: suggestion_enabled
+#
+# condition — edge property trong flow_edges MongoDB
+#   field: "condition": "no_results" | "has_results" | "mcp_failed" | "low_confidence"
+#
+# notification — bỏ khỏi scope, chưa có use case đủ rõ

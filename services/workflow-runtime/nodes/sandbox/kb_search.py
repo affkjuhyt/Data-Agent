@@ -28,6 +28,12 @@ async def kb_search_node(state: AgentState) -> dict:
 
     timeout = httpx.Timeout(connect=5.0, read=30.0, write=5.0, pool=5.0)
 
+    kb_call = next(
+        (tc for tc in state.get("tool_calls", []) if tc.get("type") == "kb_search"),
+        None,
+    )
+    search_query = (kb_call or {}).get("query") or state["query"]
+
     try:
         async for attempt in AsyncRetrying(
             retry=retry_if_exception(_RETRYABLE),
@@ -44,7 +50,7 @@ async def kb_search_node(state: AgentState) -> dict:
                             "X-Tenant-Id": tenant_id,
                         },
                         json={
-                            "query":     state["query"],
+                            "query":     search_query,
                             "tenant_id": tenant_id,
                         },
                     )

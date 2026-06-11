@@ -62,6 +62,9 @@ infra/certs/admin-keys.env
 # Model weights — large binary files, download separately
 model/ollama/weights/*.gguf
 
+# UI design files — reference only, không commit
+Data_Agent_UI/
+
 # Kafka credential files — contain real passwords; use *.example templates instead
 infra/kafka/kafka-broker-jaas.config
 infra/kafka/admin_release.props
