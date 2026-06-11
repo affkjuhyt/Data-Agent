@@ -78,12 +78,38 @@ VALUES (
   'combined',
   $guardrail${
     "input_patterns": [
-      {"id": "i01", "pattern": "\\b(bomb|bom\\s*xăng|chất\\s*nổ|vũ\\s*khí|khủng\\s*bố|giết\\s*người)\\b"},
-      {"id": "i02", "pattern": "(?i)\\b(ddos|sql\\s+injection|xss|shellcode|reverse\\s+shell|exploit\\s+code)\\b"},
-      {"id": "i03", "pattern": "(?i)(ignore\\s+previous\\s+instructions|act\\s+as\\s+dan|jailbreak|override\\s+system\\s+prompt)"},
-      {"id": "i04", "pattern": "(?i)\\b(dump\\s+database|extract\\s+all\\s+(user|data)|leak\\s+all\\s+(data|record))\\b"},
-      {"id": "i05", "pattern": "(?i)\\b(fuck|motherfucker|chó\\s*chết|địt\\s*mẹ|đéo\\s*mày)\\b"},
-      {"id": "i06", "pattern": "giết\\s*(người|tôi|mày|hắn|nó)"}
+      {
+        "id": "h01", "confidence": "high",
+        "pattern": "(?i)(ignore\\s+previous\\s+instructions|act\\s+as\\s+dan|jailbreak|override\\s+system\\s+prompt|bỏ\\s*qua\\s*(hướng\\s*dẫn|quy\\s*tắc|giới\\s*hạn|lệnh)|giả\\s*vờ\\s*(bạn|mày)\\s*là|hãy\\s*đóng\\s*vai|từ\\s*bây\\s*giờ\\s*(bạn|mày)\\s*là|không\\s*có\\s*giới\\s*hạn\\s*nào|bỏ\\s*qua\\s*mọi\\s*(quy\\s*tắc|giới\\s*hạn))"
+      },
+      {
+        "id": "h02", "confidence": "high",
+        "pattern": "(?i)\\b(shellcode|reverse\\s+shell|exploit\\s+code|sql\\s+injection|xss\\s+payload)\\b"
+      },
+      {
+        "id": "h03", "confidence": "high",
+        "pattern": "(?i)(\\b(dump\\s+database|extract\\s+all\\s+(user|data)|leak\\s+all\\s+(data|record))\\b|xuất\\s*toàn\\s*bộ\\s*(dữ\\s*liệu|database|db)|lấy\\s*hết\\s*(thông\\s*tin|dữ\\s*liệu)\\s*(người\\s*dùng|tài\\s*khoản|user)|liệt\\s*kê\\s*tất\\s*cả\\s*(tài\\s*khoản|người\\s*dùng)|trích\\s*xuất\\s*toàn\\s*bộ)"
+      },
+      {
+        "id": "h04", "confidence": "high",
+        "pattern": "(?i)\\b(fuck|motherfucker|chó\\s*chết|địt\\s*mẹ|đéo\\s*mày)\\b"
+      },
+      {
+        "id": "l01", "confidence": "low",
+        "pattern": "(?i)(chế\\s*tạo|tổng\\s*hợp|làm\\s*ra|hướng\\s*dẫn\\s*làm).{0,30}(bom|chất\\s*nổ|vũ\\s*khí|chất\\s*độc)"
+      },
+      {
+        "id": "l02", "confidence": "low",
+        "pattern": "giết\\s*(người|tôi|mày|hắn|nó|chúng)"
+      },
+      {
+        "id": "l03", "confidence": "low",
+        "pattern": "(?i)(hướng\\s*dẫn|cách|dạy\\s*tôi).{0,20}(tấn\\s*công|hack|xâm\\s*nhập|phá\\s*hoại)"
+      },
+      {
+        "id": "l04", "confidence": "low",
+        "pattern": "(?i)(ddos|tấn\\s*công).{0,30}(server|website|hệ\\s*thống|máy\\s*chủ)"
+      }
     ],
     "llm_enabled": true,
     "allowed_topics": [],
