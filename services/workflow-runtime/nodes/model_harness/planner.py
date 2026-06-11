@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+from typing import Optional
 import litellm
 from pydantic import BaseModel, ValidationError  # noqa: F401
 
@@ -17,8 +18,13 @@ class _ToolCall(BaseModel):
     parallel: bool = True
     depends_on: list[int] = []
 
+class _ClarifyOutput(BaseModel):
+    question: str
+    options: list[str]
+
 class _PlannerOutput(BaseModel):
-    tool_calls: list[_ToolCall]
+    tool_calls: list[_ToolCall] = []
+    clarify: Optional[_ClarifyOutput] = None
 
 logger = logging.getLogger(__name__)
 
@@ -72,11 +78,20 @@ def planner_node(state: AgentState) -> dict:
 
     raw = response.choices[0].message.content or ""
     try:
-        tool_calls = _PlannerOutput.model_validate_json(raw).model_dump()["tool_calls"]
+        parsed = _PlannerOutput.model_validate_json(raw)
+        if parsed.clarify:
+            return {
+                "tool_calls": [],
+                "clarify_question": parsed.clarify.question,
+                "clarify_options": parsed.clarify.options[:3],
+            }
+        return {
+            "tool_calls": parsed.model_dump()["tool_calls"],
+            "clarify_question": None,
+            "clarify_options": None,
+        }
     except (ValidationError, Exception):
         logger.warning("planner | failed to validate response, using fallback. raw=%r", raw)
         fallback = _FALLBACK_TOOL_CALLS.copy()
         fallback[0] = {**fallback[0], "query": state["query"]}
-        tool_calls = fallback
-
-    return {"tool_calls": tool_calls}
+        return {"tool_calls": fallback, "clarify_question": None, "clarify_options": None}

@@ -16,7 +16,7 @@ except ImportError:
 from sqlalchemy import select, text
 
 from services.database_connector.postgres_connector import client
-from basemodel.services_databaseconnector.postgres_orm.workflow_orm import AgentsORM
+from basemodel.services_databaseconnector.postgres_orm.workflow_orm import AgentsORM, MessagesORM, ConversationsORM
 from basemodel.services_databaseconnector.postgres_orm.auth_release_orm import MembersORM
 from basemodel.services_databaseconnector.postgres_model import (
     ConversationsInsert, MessagesInsert, AgentTracesInsert,
@@ -165,6 +165,29 @@ async def create_conversation(
         logger.error("create_conversation failed: %s", result.error)
         return None
     return result.data.get("id")
+
+
+async def get_messages(conversation_id: str, tenant_id: str = _DEV_TENANT_ID, limit: int = 20) -> list[dict]:
+    """Load message history từ DB cho conversation đã có."""
+    if not client.is_connected():
+        return []
+    try:
+        async with client.get_client(tenant_id=tenant_id) as session:
+            result = await session.execute(
+                select(MessagesORM.role, MessagesORM.content)
+                .where(MessagesORM.conversation_id == UUID(conversation_id))
+                .order_by(MessagesORM.created_at.asc())
+                .limit(limit)
+            )
+            rows = result.fetchall()
+            return [
+                {"role": row.role, "content": (row.content or {}).get("text", "")}
+                for row in rows
+                if row.role in ("user", "assistant")
+            ]
+    except Exception as e:
+        logger.warning("get_messages failed conv_id=%s: %s", conversation_id, e)
+        return []
 
 
 async def save_message(

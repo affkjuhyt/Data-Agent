@@ -1,12 +1,16 @@
+import asyncio
 import json
 import logging
+import re
 import time
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from config_loader import load_agent_config
-from db import create_conversation, save_message, save_trace, validate_agent_tenant
+from nodes.model_harness.suggestion import generate_suggestions
+from db import create_conversation, get_messages, save_message, save_trace, validate_agent_tenant
+from redis_cache import cache_get_messages, cache_append_messages, cache_set_messages
 from graph import build_graph
 from memory_middleware import (
     _DEV_AGENT_ID,
@@ -54,6 +58,17 @@ async def run_conversation_stream(req: RunRequest, request: Request):
             query=req.query,
         )
 
+    # Load history: Redis → DB → client fallback
+    if req.conversation_id:
+        history = await cache_get_messages(req.conversation_id)
+        if history is None:
+            history = await get_messages(req.conversation_id, tenant_id=tenant_id)
+            if history:
+                await cache_set_messages(req.conversation_id, history)
+        history = history or [m.model_dump() for m in req.messages]
+    else:
+        history = [m.model_dump() for m in req.messages]
+
     conv_id = req.conversation_id or await create_conversation(
         agent_version_id=cfg.get("agent_version_id", None),
         user_ref=user_ref,
@@ -63,7 +78,8 @@ async def run_conversation_stream(req: RunRequest, request: Request):
 
     state = {
         "query": req.query,
-        "messages": [message.model_dump() for message in req.messages],
+        "original_query": None,
+        "messages": history,
         "memory_context": memory_context,
         "tool_calls": [],
         "kb_chunks": [],
@@ -75,6 +91,8 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         "guardrail_message": "",
         "guardrail_stage": None,
         "guardrail_reason": None,
+        "clarify_question": None,
+        "clarify_options": None,
         "config": cfg,
     }
 
@@ -91,13 +109,25 @@ async def run_conversation_stream(req: RunRequest, request: Request):
     )
     callbacks = [handler] if handler else []
 
+    _OPTIONS_OPEN  = "<OPTIONS>"
+    _OPTIONS_CLOSE = "</OPTIONS>"
+
     async def event_stream():
         full_response: list[str] = []
         guardrail_triggered = False
         guardrail_msg = ""
         guardrail_stage = None
         guardrail_reason = None
+        clarify_data: dict | None = None
+        # selective buffering để chặn <OPTIONS> tag khỏi frontend
+        pending = ""           # giữ tạm token cuối để detect prefix của <OPTIONS>
+        options_mode = False   # True khi đã qua <OPTIONS>
+        options_buffer = ""    # nội dung sau <OPTIONS>
         started_at = time.monotonic()
+
+        suggestion_task = asyncio.create_task(
+            generate_suggestions(req.query, req.messages or [], cfg)
+        )
 
         try:
             async for event in graph.astream_events(state, version="v2", config={"callbacks": callbacks}):
@@ -112,18 +142,82 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                         guardrail_stage = output.get("guardrail_stage")
                         guardrail_reason = output.get("guardrail_reason")
 
+                elif kind == "on_chain_end" and node == "planner":
+                    output = event["data"].get("output", {})
+                    if isinstance(output, dict) and output.get("clarify_question"):
+                        clarify_data = {
+                            "question": output["clarify_question"],
+                            "options": output.get("clarify_options") or [],
+                        }
+
                 elif kind == "on_chat_model_stream" and node == "responder":
                     token = event["data"]["chunk"].content or ""
-                    if token:
-                        full_response.append(token)
-                        yield f"data: {json.dumps(token)}\n\n"
+                    if not token:
+                        continue
+
+                    if options_mode:
+                        options_buffer += token
+                    else:
+                        pending += token
+                        tag_pos = pending.find(_OPTIONS_OPEN)
+                        if tag_pos != -1:
+                            # flush text trước tag, bắt đầu buffer options
+                            before = pending[:tag_pos]
+                            if before:
+                                full_response.append(before)
+                                yield f"data: {json.dumps(before)}\n\n"
+                            options_mode = True
+                            options_buffer = pending[tag_pos + len(_OPTIONS_OPEN):]
+                            pending = ""
+                        else:
+                            # flush phần chắc chắn không phải prefix của <OPTIONS>
+                            max_hold = len(_OPTIONS_OPEN) - 1
+                            flush_to = len(pending)
+                            for hold in range(min(max_hold, len(pending)), 0, -1):
+                                if _OPTIONS_OPEN.startswith(pending[-hold:]):
+                                    flush_to = len(pending) - hold
+                                    break
+                            to_send = pending[:flush_to]
+                            if to_send:
+                                full_response.append(to_send)
+                                yield f"data: {json.dumps(to_send)}\n\n"
+                            pending = pending[flush_to:]
+
+            # flush pending còn lại (không phải <OPTIONS>)
+            if pending:
+                full_response.append(pending)
+                yield f"data: {json.dumps(pending)}\n\n"
+
+            # parse responder options nếu có
+            responder_options: list[str] | None = None
+            if options_mode:
+                close_pos = options_buffer.find(_OPTIONS_CLOSE)
+                if close_pos != -1:
+                    try:
+                        parsed = json.loads(options_buffer[:close_pos].strip())
+                        if isinstance(parsed, list) and parsed:
+                            responder_options = [str(o) for o in parsed[:3]]
+                    except (json.JSONDecodeError, Exception):
+                        pass
 
             if guardrail_triggered:
+                suggestion_task.cancel()
                 yield f"data: {json.dumps('Xin lỗi, tôi không thể trả lời câu hỏi này.')}\n\n"
+            elif clarify_data:
+                suggestion_task.cancel()
+                yield f"data: {json.dumps({'__clarify': clarify_data})}\n\n"
+            elif responder_options:
+                suggestion_task.cancel()
+                yield f"data: {json.dumps({'__options': responder_options})}\n\n"
+            else:
+                topics = await suggestion_task
+                if topics:
+                    yield f"data: {json.dumps({'__suggestions': topics})}\n\n"
 
             yield "data: [DONE]\n\n"
 
         except Exception:
+            suggestion_task.cancel()
             logger.exception("event_stream error")
             yield "data: [ERROR] Đã xảy ra lỗi, vui lòng thử lại.\n\n"
         finally:
@@ -132,30 +226,36 @@ async def run_conversation_stream(req: RunRequest, request: Request):
 
             if conv_id:
                 await save_message(conv_id, "user", req.query)
-                assistant_msg_id = await save_message(
-                    conv_id,
-                    "assistant",
-                    assistant_text,
-                    latency_ms=latency,
-                    metadata={
-                        "guardrail": {
-                            "triggered": guardrail_triggered,
-                            "stage": guardrail_stage,
-                            "reason": guardrail_reason,
-                        }
-                    },
-                )
-                if assistant_msg_id:
-                    await save_trace(
-                        message_id=assistant_msg_id,
-                        trace_index=0,
-                        tool_name="responder",
-                        input={"query": req.query},
-                        output={"response": assistant_text, "guardrail_triggered": guardrail_triggered},
+                # clarify: không save assistant message — UI prompt, không phải câu trả lời thật
+                if not clarify_data:
+                    assistant_msg_id = await save_message(
+                        conv_id,
+                        "assistant",
+                        assistant_text,
                         latency_ms=latency,
+                        metadata={
+                            "guardrail": {
+                                "triggered": guardrail_triggered,
+                                "stage": guardrail_stage,
+                                "reason": guardrail_reason,
+                            }
+                        },
                     )
+                    await cache_append_messages(conv_id, [
+                        {"role": "user",      "content": req.query},
+                        {"role": "assistant", "content": assistant_text},
+                    ])
+                    if assistant_msg_id:
+                        await save_trace(
+                            message_id=assistant_msg_id,
+                            trace_index=0,
+                            tool_name="responder",
+                            input={"query": req.query},
+                            output={"response": assistant_text, "guardrail_triggered": guardrail_triggered},
+                            latency_ms=latency,
+                        )
 
-            if cfg.get("memory_enabled") and not guardrail_triggered:
+            if cfg.get("memory_enabled") and not guardrail_triggered and not clarify_data:
                 final_state = {**state, "response": assistant_text}
                 await apply_memory_policy(final_state, agent_id, tenant_id, user_ref)
 

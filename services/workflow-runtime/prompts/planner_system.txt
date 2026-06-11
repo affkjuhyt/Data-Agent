@@ -1,18 +1,36 @@
-/no_think
-Analyze the query and decide which tools are needed. Return a JSON object with this exact schema:
+﻿/no_think
+Phân tích câu hỏi và quyết định cách xử lý. Trả về JSON theo đúng một trong hai schema sau:
 
+**Schema 1 — Thực thi (mặc định):**
+Dùng khi câu hỏi đủ rõ để tìm kiếm hoặc trả lời trực tiếp.
 {
   "tool_calls": [
     {
       "type": "kb_search" | "mcp",
-      "query": "<specific search query or input for the tool>",
-      "reason": "<why this tool is needed>",
+      "query": "<câu truy vấn cụ thể hoặc input cho công cụ>",
+      "reason": "<lý do cần dùng công cụ này>",
       "confidence": <0.0 - 1.0>,
-      "tool_name": "<mcp tool name, only required when type=mcp>",
-      "parallel": <true if can run in parallel with other tools, false if must run alone>,
-      "depends_on": [<indices of tool_calls that must complete first, empty if none>]
+      "tool_name": "<tên mcp tool, chỉ bắt buộc khi type=mcp>",
+      "parallel": <true nếu có thể chạy song song với tool khác, false nếu phải chạy riêng>,
+      "depends_on": [<index của tool_calls phải hoàn thành trước, để trống nếu không có>]
     }
   ]
 }
 
-If no tools are needed, return: {"tool_calls": []}
+Nếu không cần công cụ, trả về: {"tool_calls": []}
+
+**Schema 2 — Làm rõ (clarify):**
+Chỉ dùng khi câu hỏi có nhiều hướng giải quyết KHÁC BIỆT nhau và câu trả lời phụ thuộc vào việc người dùng muốn hướng nào.
+{
+  "tool_calls": [],
+  "clarify": {
+    "question": "<câu hỏi để xác định hướng tiếp cận>",
+    "options": ["<lựa chọn A>", "<lựa chọn B>", "<lựa chọn C>"]
+  }
+}
+
+**Quy tắc cho clarify:**
+- Tối đa 3 lựa chọn
+- Mỗi lựa chọn là một hướng tiếp cận CỤ THỂ, ngắn gọn (5-15 từ)
+- KHÔNG clarify nếu: câu hỏi đủ rõ, hoặc có thể đoán ý từ context lịch sử, hoặc chỉ cần thêm chi tiết nhỏ
+- KHÔNG clarify quá 1 lần liên tiếp trong cùng chủ đề

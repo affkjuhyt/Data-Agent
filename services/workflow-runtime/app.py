@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import CORS_ORIGINS
 from db import close_db, init_db
 from memory_middleware import close_qdrant, init_qdrant
+from redis_cache import init_redis, close_redis
 from mongo_client import close_mongo, init_mongo
 from routers import catalog, conversations, health, traces
 from services.database_connector.mongo_connector import client as mongo_client
@@ -22,6 +23,7 @@ async def lifespan(app: FastAPI):
     await init_db()
     await init_qdrant()
     await init_mongo()
+    await init_redis()
 
     tasks = [
         asyncio.create_task(pg_client.health_check_loop()),
@@ -40,6 +42,7 @@ async def lifespan(app: FastAPI):
     await close_mongo()
     await close_qdrant()
     await close_db()
+    await close_redis()
 
 
 def create_app() -> FastAPI:

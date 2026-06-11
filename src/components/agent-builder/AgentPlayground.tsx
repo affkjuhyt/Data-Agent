@@ -34,11 +34,19 @@ interface TraceStep {
   output: string;
 }
 
+interface ClarifyData {
+  question: string;
+  options: string[];
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+  suggestions?: string[];
+  clarify?: ClarifyData;
+  options?: string[];
 }
 
 interface AgentOption {
@@ -180,7 +188,67 @@ function TraceStepCard({ step }: { step: TraceStep }) {
   );
 }
 
-function ChatBubble({ msg }: { msg: Message }) {
+function OptionList({ options, onSelect, onFreeText }: {
+  options: string[];
+  onSelect: (opt: string) => void;
+  onFreeText: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      {options.map((opt, i) => (
+        <button
+          key={i}
+          onClick={() => onSelect(opt)}
+          className="w-full text-left px-3.5 py-2 rounded-lg border border-indigo-500/25 bg-indigo-500/[0.08] text-sm text-indigo-200 hover:bg-indigo-500/[0.18] hover:border-indigo-500/45 transition-colors"
+        >
+          {opt}
+        </button>
+      ))}
+      <button
+        onClick={onFreeText}
+        className="w-full text-left px-3.5 py-2 rounded-lg border border-white/10 bg-white/[0.04] text-sm text-white/35 hover:bg-white/[0.07] hover:text-white/60 transition-colors italic"
+      >
+        Tự nhập câu trả lời...
+      </button>
+    </div>
+  );
+}
+
+function ClarifyCard({ data, onSelect, onFreeText }: {
+  data: ClarifyData;
+  onSelect: (opt: string) => void;
+  onFreeText: () => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="flex gap-2.5"
+    >
+      <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 bg-white/10">
+        <Bot size={13} className="text-white/60" />
+      </div>
+      <div className="max-w-[82%] flex flex-col gap-2">
+        <div className="bg-white/[0.07] rounded-xl rounded-tl-sm px-3.5 py-3 space-y-3">
+          <p className="text-sm text-white/80 leading-relaxed">{data.question}</p>
+          <OptionList options={data.options} onSelect={onSelect} onFreeText={onFreeText} />
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function ChatBubble({
+  msg,
+  onSuggestionClick,
+  onOptionClick,
+  onFreeText,
+}: {
+  msg: Message;
+  onSuggestionClick?: (topic: string) => void;
+  onOptionClick?: (opt: string) => void;
+  onFreeText?: () => void;
+}) {
   const isUser = msg.role === 'user';
 
   const renderContent = (text: string) => {
@@ -204,16 +272,43 @@ function ChatBubble({ msg }: { msg: Message }) {
       )}>
         {isUser ? <User size={13} className="text-indigo-300" /> : <Bot size={13} className="text-white/60" />}
       </div>
-      <div className={cn(
-        'max-w-[78%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed',
-        isUser
-          ? 'bg-indigo-600/30 text-white/90 rounded-tr-sm'
-          : 'bg-white/[0.07] text-white/75 rounded-tl-sm',
-      )}>
-        {msg.content.split('\n').map((line, i) => (
-          <p key={i} className={i > 0 ? 'mt-1' : ''}>{renderContent(line)}</p>
-        ))}
-        <p className="text-[10px] text-white/25 mt-1.5">{msg.timestamp}</p>
+      <div className="max-w-[78%] flex flex-col gap-2">
+        <div className={cn(
+          'rounded-xl px-3.5 py-2.5 text-sm leading-relaxed',
+          isUser
+            ? 'bg-indigo-600/30 text-white/90 rounded-tr-sm'
+            : 'bg-white/[0.07] text-white/75 rounded-tl-sm',
+        )}>
+          {msg.content.split('\n').map((line, i) => (
+            <p key={i} className={i > 0 ? 'mt-1' : ''}>{renderContent(line)}</p>
+          ))}
+          <p className="text-[10px] text-white/25 mt-1.5">{msg.timestamp}</p>
+        </div>
+
+        {!isUser && msg.suggestions && msg.suggestions.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 pl-0.5">
+            {msg.suggestions.map((topic, i) => (
+              <button
+                key={i}
+                onClick={() => onSuggestionClick?.(topic)}
+                className="text-[11px] px-2.5 py-1 rounded-full border border-indigo-500/30 bg-indigo-500/10 text-indigo-300 hover:bg-indigo-500/20 hover:border-indigo-500/50 transition-colors"
+              >
+                {topic}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {!isUser && msg.options && msg.options.length > 0 && onOptionClick && onFreeText && (
+          <div className="pl-0.5">
+            <OptionList
+              options={msg.options}
+              onSelect={onOptionClick}
+              onFreeText={onFreeText}
+            />
+          </div>
+        )}
+
       </div>
     </motion.div>
   );
@@ -233,6 +328,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
   const [traceSteps, setTraceSteps] = useState<TraceStep[]>([]);
   const [traceMeta, setTraceMeta] = useState({ latency: 0, tokens: 0 });
   const [traceLoading, setTraceLoading] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const selectorRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -280,8 +376,8 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSend = async () => {
-    const text = input.trim();
+  const handleSend = async (override?: string) => {
+    const text = (override ?? input).trim();
     if (!text || sending || !selectedAgent) return;
 
     const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
@@ -302,11 +398,13 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
         body: JSON.stringify({
           query: text,
           agent_id: selectedAgent,
+          conversation_id: conversationId,
           messages: messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
         }),
       });
 
       const convId = res.headers.get('X-Conversation-Id');
+      if (convId && !conversationId) setConversationId(convId);
 
       const reader = res.body!.getReader();
       const decoder = new TextDecoder();
@@ -327,10 +425,32 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
             ));
             break;
           }
-          try { fullText += JSON.parse(data); } catch { fullText += data; }
-          setMessages(prev => prev.map(m =>
-            m.id === placeholderId ? { ...m, content: fullText } : m,
-          ));
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed && typeof parsed === 'object' && parsed.__suggestions) {
+              setMessages(prev => prev.map(m =>
+                m.id === placeholderId ? { ...m, suggestions: parsed.__suggestions } : m,
+              ));
+            } else if (parsed && typeof parsed === 'object' && parsed.__clarify) {
+              setMessages(prev => prev.map(m =>
+                m.id === placeholderId ? { ...m, clarify: parsed.__clarify } : m,
+              ));
+            } else if (parsed && typeof parsed === 'object' && parsed.__options) {
+              setMessages(prev => prev.map(m =>
+                m.id === placeholderId ? { ...m, options: parsed.__options } : m,
+              ));
+            } else {
+              fullText += parsed;
+              setMessages(prev => prev.map(m =>
+                m.id === placeholderId ? { ...m, content: fullText } : m,
+              ));
+            }
+          } catch {
+            fullText += data;
+            setMessages(prev => prev.map(m =>
+              m.id === placeholderId ? { ...m, content: fullText } : m,
+            ));
+          }
         }
       }
 
@@ -367,6 +487,10 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
   };
 
   const agentLabel = agents.find(a => a.id === selectedAgent)?.label ?? 'Agent';
+
+  const handleSuggestionClick = (topic: string) => {
+    handleSend(topic);
+  };
 
   return (
     <div className={cn(
@@ -412,7 +536,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                   {agents.map(a => (
                     <button
                       key={a.id}
-                      onClick={() => { setSelectedAgent(a.id); setSelectorOpen(false); }}
+                      onClick={() => { setSelectedAgent(a.id); setSelectorOpen(false); setConversationId(null); setMessages([]); }}
                       className={cn(
                         'w-full text-left px-3 py-2 text-xs transition-colors',
                         selectedAgent === a.id
@@ -459,9 +583,19 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
           {/* Messages */}
           <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
             <AnimatePresence initial={false}>
-              {messages.map(msg =>
-                msg.content === '' && msg.role === 'assistant'
-                  ? (
+              {messages.map(msg => {
+                if (msg.role === 'assistant' && msg.clarify) {
+                  return (
+                    <ClarifyCard
+                      key={msg.id}
+                      data={msg.clarify}
+                      onSelect={(opt) => handleSend(opt)}
+                      onFreeText={() => textareaRef.current?.focus()}
+                    />
+                  );
+                }
+                if (msg.content === '' && msg.role === 'assistant') {
+                  return (
                     <motion.div key={msg.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="flex gap-2.5">
                       <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5 bg-white/10">
                         <Bot size={13} className="text-white/60" />
@@ -472,9 +606,18 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                         <span className="w-1.5 h-1.5 rounded-full bg-white/40 animate-bounce [animation-delay:300ms]" />
                       </div>
                     </motion.div>
-                  )
-                  : <ChatBubble key={msg.id} msg={msg} />
-              )}
+                  );
+                }
+                return (
+                  <ChatBubble
+                    key={msg.id}
+                    msg={msg}
+                    onSuggestionClick={handleSuggestionClick}
+                    onOptionClick={(opt) => handleSend(opt)}
+                    onFreeText={() => textareaRef.current?.focus()}
+                  />
+                );
+              })}
             </AnimatePresence>
 
             <div ref={bottomRef} />

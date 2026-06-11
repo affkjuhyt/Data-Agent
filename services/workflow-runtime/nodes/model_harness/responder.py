@@ -12,6 +12,9 @@ logger = logging.getLogger(__name__)
 _LITELLM_BASE = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
 _LITELLM_KEY  = os.environ.get("LITELLM_API_KEY",  "sk-dev")
 
+_PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "prompts")
+_OPTIONS_SUFFIX = open(os.path.join(_PROMPTS_DIR, "responder_options_suffix.txt"), encoding="utf-8").read()
+
 
 def _to_lc_messages(messages: list[dict]) -> list:
     role_map = {"user": HumanMessage, "assistant": AIMessage}
@@ -24,7 +27,7 @@ def _to_lc_messages(messages: list[dict]) -> list:
 
 async def responder_node(state: AgentState) -> dict:
     cfg = state["config"]
-    system_prompt = "/no_think\n" + cfg["system_prompt"]
+    system_prompt = "/no_think\n" + cfg["system_prompt"] + "\n\n" + _OPTIONS_SUFFIX
 
     if state.get("reranked_chunks"):
         max_chunks = cfg.get("context_max_chunks", 5)

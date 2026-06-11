@@ -4,6 +4,7 @@ from typing_extensions import TypedDict
 
 class AgentState(TypedDict):
     query: str
+    original_query: Optional[str]
     messages: List[dict]
     memory_context: List[dict]
     tool_calls: List[dict]
@@ -18,4 +19,6 @@ class AgentState(TypedDict):
     guardrail_message: str
     guardrail_stage: Optional[str]    # always "input"
     guardrail_reason: Optional[str]   # lý do chi tiết từ LLM hoặc regex pattern matched
+    clarify_question: Optional[str]
+    clarify_options: Optional[List[str]]
     config: dict

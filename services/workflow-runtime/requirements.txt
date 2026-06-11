@@ -16,3 +16,4 @@ sqlalchemy[asyncio]>=2.0
 regex>=2024.0
 qdrant-client>=1.13.0,<1.14.0
 motor>=3.3
+redis[asyncio]>=5.0

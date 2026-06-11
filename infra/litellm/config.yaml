@@ -23,6 +23,22 @@ model_list:
       extra_body:
         enable_thinking: false
 
+  - model_name: rewriter
+    litellm_params:
+      model: openai/qwen3-8b-instruct
+      api_base: http://host.docker.internal:8088/v1
+      api_key: not-needed
+      extra_body:
+        enable_thinking: false
+
+  - model_name: suggester
+    litellm_params:
+      model: openai/qwen3-8b-instruct
+      api_base: http://host.docker.internal:8088/v1
+      api_key: not-needed
+      extra_body:
+        enable_thinking: false
+
   - model_name: embedder
     litellm_params:
       model: openai/text-embedding-3-small
