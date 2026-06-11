@@ -37,9 +37,7 @@ def _route_after_guardrail_input(state: AgentState) -> str:
     return "blocked" if state.get("guardrail_triggered") else "rewrite"
 
 
-def route_after_planner(state: AgentState) -> list[str] | str:
-    if state.get("clarify_question"):
-        return END
+def route_after_planner(state: AgentState) -> list[str]:
     tool_calls = state.get("tool_calls", [])
     types = {tc.get("type") for tc in tool_calls}
     destinations = []
@@ -110,7 +108,7 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict]):
     if len(retrieval_nodes) > 1:
         # Nhiều retrieval node → cần join để sync parallel branches
         builder.add_node("join_retrieval", join_retrieval_node)
-        builder.add_conditional_edges("planner", route_after_planner, list(retrieval_nodes) + [END])
+        builder.add_conditional_edges("planner", route_after_planner, list(retrieval_nodes))
         for rn in retrieval_nodes:
             builder.add_edge(rn, "join_retrieval")
         # join_retrieval → node tiếp theo theo canvas (node mà retrieval nodes nối tới)
@@ -119,7 +117,7 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict]):
             builder.add_edge("join_retrieval", tgt)
     elif len(retrieval_nodes) == 1:
         # 1 retrieval node → dùng conditional để planner quyết định runtime
-        builder.add_conditional_edges("planner", route_after_planner, list(retrieval_nodes) + [END])
+        builder.add_conditional_edges("planner", route_after_planner, list(retrieval_nodes))
     elif non_retrieval_planner_targets:
         for tgt in non_retrieval_planner_targets:
             builder.add_edge("planner", tgt)

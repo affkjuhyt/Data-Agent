@@ -91,8 +91,6 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         "guardrail_message": "",
         "guardrail_stage": None,
         "guardrail_reason": None,
-        "clarify_question": None,
-        "clarify_options": None,
         "config": cfg,
     }
 
@@ -118,7 +116,6 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         guardrail_msg = ""
         guardrail_stage = None
         guardrail_reason = None
-        clarify_data: dict | None = None
         # selective buffering để chặn <OPTIONS> tag khỏi frontend
         pending = ""           # giữ tạm token cuối để detect prefix của <OPTIONS>
         options_mode = False   # True khi đã qua <OPTIONS>
@@ -141,14 +138,6 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                         guardrail_msg = output.get("guardrail_message", "")
                         guardrail_stage = output.get("guardrail_stage")
                         guardrail_reason = output.get("guardrail_reason")
-
-                elif kind == "on_chain_end" and node == "planner":
-                    output = event["data"].get("output", {})
-                    if isinstance(output, dict) and output.get("clarify_question"):
-                        clarify_data = {
-                            "question": output["clarify_question"],
-                            "options": output.get("clarify_options") or [],
-                        }
 
                 elif kind == "on_chat_model_stream" and node == "responder":
                     token = event["data"]["chunk"].content or ""
@@ -203,9 +192,6 @@ async def run_conversation_stream(req: RunRequest, request: Request):
             if guardrail_triggered:
                 suggestion_task.cancel()
                 yield f"data: {json.dumps('Xin lỗi, tôi không thể trả lời câu hỏi này.')}\n\n"
-            elif clarify_data:
-                suggestion_task.cancel()
-                yield f"data: {json.dumps({'__clarify': clarify_data})}\n\n"
             elif responder_options:
                 suggestion_task.cancel()
                 yield f"data: {json.dumps({'__options': responder_options})}\n\n"
@@ -226,36 +212,34 @@ async def run_conversation_stream(req: RunRequest, request: Request):
 
             if conv_id:
                 await save_message(conv_id, "user", req.query)
-                # clarify: không save assistant message — UI prompt, không phải câu trả lời thật
-                if not clarify_data:
-                    assistant_msg_id = await save_message(
-                        conv_id,
-                        "assistant",
-                        assistant_text,
+                assistant_msg_id = await save_message(
+                    conv_id,
+                    "assistant",
+                    assistant_text,
+                    latency_ms=latency,
+                    metadata={
+                        "guardrail": {
+                            "triggered": guardrail_triggered,
+                            "stage": guardrail_stage,
+                            "reason": guardrail_reason,
+                        }
+                    },
+                )
+                await cache_append_messages(conv_id, [
+                    {"role": "user",      "content": req.query},
+                    {"role": "assistant", "content": assistant_text},
+                ])
+                if assistant_msg_id:
+                    await save_trace(
+                        message_id=assistant_msg_id,
+                        trace_index=0,
+                        tool_name="responder",
+                        input={"query": req.query},
+                        output={"response": assistant_text, "guardrail_triggered": guardrail_triggered},
                         latency_ms=latency,
-                        metadata={
-                            "guardrail": {
-                                "triggered": guardrail_triggered,
-                                "stage": guardrail_stage,
-                                "reason": guardrail_reason,
-                            }
-                        },
                     )
-                    await cache_append_messages(conv_id, [
-                        {"role": "user",      "content": req.query},
-                        {"role": "assistant", "content": assistant_text},
-                    ])
-                    if assistant_msg_id:
-                        await save_trace(
-                            message_id=assistant_msg_id,
-                            trace_index=0,
-                            tool_name="responder",
-                            input={"query": req.query},
-                            output={"response": assistant_text, "guardrail_triggered": guardrail_triggered},
-                            latency_ms=latency,
-                        )
 
-            if cfg.get("memory_enabled") and not guardrail_triggered and not clarify_data:
+            if cfg.get("memory_enabled") and not guardrail_triggered:
                 final_state = {**state, "response": assistant_text}
                 await apply_memory_policy(final_state, agent_id, tenant_id, user_ref)
 
