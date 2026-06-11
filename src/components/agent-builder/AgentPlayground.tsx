@@ -491,8 +491,9 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
                 }}
                 placeholder="Ask the agent anything… (Enter to send, Shift+Enter for newline)"
-                className="flex-1 bg-transparent text-sm text-white/80 placeholder-white/25 resize-none focus:outline-none leading-relaxed overflow-y-auto"
-                style={{ height: '24px', maxHeight: '120px' }}
+                rows={1}
+                className="flex-1 bg-transparent text-sm text-white/80 placeholder-white/25 resize-none focus:outline-none leading-relaxed overflow-y-auto py-1"
+                style={{ maxHeight: '120px' }}
               />
               <button
                 onClick={handleSend}
