@@ -91,7 +91,9 @@ def _llm_check(text: str, check_type: str, cfg: dict) -> tuple[bool, str, None]:
         raw = response.choices[0].message.content or ""
         result = json.loads(raw)
         triggered = bool(result.get("triggered", False))
-        reason = result.get("reason", "") or "Yêu cầu không được phép."
+        reason = result.get("reason", "")
+        if triggered and not reason:
+            reason = "Yêu cầu không được phép."
         return triggered, reason, None
     except Exception as e:
         logger.warning("guardrail | LLM check failed, defaulting to pass. error=%s", e)
