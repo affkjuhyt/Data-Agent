@@ -293,6 +293,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
   const [traceLoading, setTraceLoading] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [pendingOptions, setPendingOptions] = useState<string[] | null>(null);
+  const [optionsSourceQuery, setOptionsSourceQuery] = useState<string>('');
   const bottomRef = useRef<HTMLDivElement>(null);
   const selectorRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -345,6 +346,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     if (!text || sending || !selectedAgent) return;
 
     setPendingOptions(null);
+    setOptionsSourceQuery('');
     const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
     const userMsg: Message = { id: Date.now().toString(), role: 'user', content: text, timestamp: now };
     setMessages(prev => [...prev, userMsg]);
@@ -398,6 +400,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
               ));
             } else if (parsed && typeof parsed === 'object' && parsed.__options) {
               setPendingOptions(parsed.__options);
+              setOptionsSourceQuery(text);
             } else {
               fullText += parsed;
               setMessages(prev => prev.map(m =>
@@ -578,6 +581,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                 onSelect={(opt) => handleSend(opt)}
                 onFreeText={() => {
                   setPendingOptions(null);
+                  setOptionsSourceQuery('');
                   textareaRef.current?.focus();
                 }}
               />
