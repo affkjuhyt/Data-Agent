@@ -8,6 +8,10 @@ import {
   Settings,
   Globe,
   Stethoscope,
+  FlaskConical,
+  Route,
+  Wrench,
+  ClipboardCheck,
   TrainFront,
   Building2,
   Lock,
@@ -53,7 +57,8 @@ export const NAV_ITEMS: NavItem[] = [
   // Core Modules
   { id: 'dashboard',          label: 'Executive Pulse',      icon: LayoutDashboard, roles: ['EXECUTIVE', 'PLATFORM_ADMIN'] },
   { id: 'knowledge-ops',      label: 'Knowledge Base',       icon: Database,        roles: ['PLATFORM_ADMIN', 'AI_ENGINEER'] },
-  { id: 'ai-runtime',         label: 'AI Runtime',           icon: Bot,             roles: ['AI_ENGINEER', 'PLATFORM_ADMIN'] },
+  { id: 'build',              label: 'Build',                icon: Package,         roles: ['AI_ENGINEER', 'PLATFORM_ADMIN'] },
+  { id: 'test',               label: 'Test',                 icon: FlaskConical,    roles: ['AI_ENGINEER', 'PLATFORM_ADMIN'] },
   { id: 'operations-center',  label: 'Operations Center',    icon: Activity,        roles: ['PLATFORM_ADMIN', 'AI_ENGINEER'] },
   { id: 'release-management', label: 'Deployment Center',    icon: Zap,             roles: ['AI_ENGINEER', 'PLATFORM_ADMIN'] },
   { id: 'governance',         label: 'Governance & Audit',   icon: ShieldCheck,     roles: ['PLATFORM_ADMIN', 'EXECUTIVE'] },
@@ -88,18 +93,16 @@ export const MODULE_SUB_ITEMS: Record<string, SubNavItem[]> = {
     { id: 'POLICY',    label: 'Policies',       icon: ShieldCheck },
   ],
 
-  'ai-runtime': [
-    { id: 'PLAYGROUND',    label: 'Playground',      icon: MessageSquare },
-    { id: 'AGENTS',        label: 'Agent Registry',  icon: Bot },
-    { id: 'NEW_AGENT',     label: 'New Agent',       icon: Plus },
-    { id: 'WORKFLOWS',     label: 'Workflow Engine', icon: Layers },
-    { id: 'CONVERSATIONS', label: 'Conversations',   icon: MessageCircle },
-    { id: 'LOGS',          label: 'Logs',            icon: ScrollText },
-    { id: 'CLI',           label: 'CLI',             icon: Terminal },
-    { id: 'CONFIG',        label: 'Config Registry', icon: Sliders },
-    { id: 'TRACES',        label: 'Recent Traces',   icon: History },
-    { id: 'PROVISION',     label: 'Quick Provision', icon: Zap },
-    { id: 'RUNS',          label: 'Run Registry',    icon: Activity },
+  'build': [
+    { id: 'AGENTS',    label: 'Agents',    icon: Bot      },
+    { id: 'ROUTER',    label: 'Router',    icon: Route    },
+    { id: 'KNOWLEDGE', label: 'Knowledge', icon: Database },
+    { id: 'TOOLS',     label: 'Tools',     icon: Wrench   },
+  ],
+
+  'test': [
+    { id: 'PLAYGROUND', label: 'Playground', icon: MessageSquare  },
+    { id: 'EVALS',      label: 'Evals',      icon: ClipboardCheck },
   ],
 
   'operations-center': [

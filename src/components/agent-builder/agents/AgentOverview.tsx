@@ -1,18 +1,33 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Bot, Cpu, Plus, Terminal, Search, Filter, Zap,
-  MoreHorizontal, Database, Network, Wrench, GitBranch,
-  ShieldAlert, Activity, BarChart3, Copy, Trash2, Settings2, X, CheckCircle2,
-} from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { cn } from '../../../lib/utils';
-import { AgentType, AgentStatus } from '../../../types/agent';
-import { MOCK_AGENTS } from '../../../constants/agentMock';
+import {
+  Bot, Cpu, Plus, Search, Activity, BarChart3, ShieldAlert, Zap,
+  Copy, Trash2, Settings2, X, CheckCircle2, MoreHorizontal,
+  SlidersHorizontal, SearchX,
+} from 'lucide-react';
 
 const FLOW_BUILDER_URL = (import.meta as any).env?.VITE_FLOW_BUILDER_URL ?? 'http://localhost:8002';
 
-interface ApiAgent { id: string; name: string; description: string; published_version_id: string | null; draft_version_id: string | null; created_at: string; }
+interface ApiAgent {
+  id: string;
+  name: string;
+  description: string;
+  published_version_id: string | null;
+  draft_version_id: string | null;
+  created_at: string;
+}
+
+type AgentStatus = 'ACTIVE' | 'IDLE';
+
+function deriveStatus(agent: ApiAgent): AgentStatus {
+  return agent.published_version_id ? 'ACTIVE' : 'IDLE';
+}
+
+const STATUS_CONFIG: Record<AgentStatus, { color: string; label: string }> = {
+  ACTIVE: { color: '#6B8E23', label: 'Active' },
+  IDLE:   { color: '#9AA1A8', label: 'Idle'   },
+};
 
 interface OverviewProps {
   onNewAgent: () => void;
@@ -23,10 +38,15 @@ interface OverviewProps {
 
 export const AgentRegistryOverview: React.FC<OverviewProps> = ({
   onNewAgent,
-  onOpenCLI,
-  onOpenProvision,
   onSelectAgent,
 }) => {
+  const [apiAgents, setApiAgents] = useState<ApiAgent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [fStatus, setFStatus] = useState<string>('ALL');
+  const filterRef = useRef<HTMLDivElement>(null);
+
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
   const [cloneTarget, setCloneTarget] = useState<{ id: string; name: string } | null>(null);
@@ -34,36 +54,22 @@ export const AgentRegistryOverview: React.FC<OverviewProps> = ({
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [apiAgents, setApiAgents] = useState<ApiAgent[]>([]);
 
   useEffect(() => {
     fetch(`${FLOW_BUILDER_URL}/api/agents`)
       .then(r => r.json())
       .then((d: ApiAgent[]) => setApiAgents(Array.isArray(d) ? d : []))
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setLoading(false));
   }, []);
 
-  const handleMenuOpen = useCallback((e: React.MouseEvent<HTMLButtonElement>, id: string) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
-    setOpenMenuId(id);
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
   }, []);
-
-  const handleDelete = async () => {
-    if (!deleteTarget) return;
-    setDeleting(true);
-    try {
-      const res = await fetch(`${FLOW_BUILDER_URL}/api/agents/${deleteTarget.id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error(`${res.status}`);
-      setApiAgents(prev => prev.filter(a => a.id !== deleteTarget.id));
-      setToast(`Đã xóa agent "${deleteTarget.name}"`);
-    } catch {
-      setToast('Xóa thất bại');
-    } finally {
-      setDeleting(false);
-      setDeleteTarget(null);
-    }
-  };
 
   useEffect(() => {
     if (!openMenuId) return;
@@ -78,313 +84,481 @@ export const AgentRegistryOverview: React.FC<OverviewProps> = ({
     return () => clearTimeout(t);
   }, [toast]);
 
-  useEffect(() => {
-    if (!cloneTarget) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setCloneTarget(null); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [cloneTarget]);
+  const handleMenuOpen = useCallback((e: React.MouseEvent<HTMLButtonElement>, id: string) => {
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    setOpenMenuId(id);
+  }, []);
 
-  const stats = {
-    total:     apiAgents.length,
-    active:    apiAgents.filter(a => a.published_version_id).length,
-    failed:    0,
-    totalCost: '--',
-  };
-
-  const getStatusStyle = (status: AgentStatus) => {
-    switch (status) {
-      case 'ACTIVE':           return 'bg-emerald-100 text-emerald-700 border-emerald-200';
-      case 'BUSY':             return 'bg-amber-100 text-amber-700 border-amber-200';
-      case 'FAILED':           return 'bg-red-100 text-red-700 border-red-200';
-      case 'IDLE':             return 'bg-gray-100 text-gray-500 border-gray-200';
-      case 'WAITING_APPROVAL': return 'bg-purple-100 text-purple-700 border-purple-200';
-      default:                 return 'bg-gray-50 text-gray-400 border-gray-100';
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`${FLOW_BUILDER_URL}/api/agents/${deleteTarget.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`${res.status}`);
+      setApiAgents(prev => prev.filter(a => a.id !== deleteTarget.id));
+      setToast(`Agent "${deleteTarget.name}" deleted`);
+    } catch {
+      setToast('Delete failed');
+    } finally {
+      setDeleting(false);
+      setDeleteTarget(null);
     }
   };
 
-  const getTypeIcon = (type: AgentType) => {
-    switch (type) {
-      case 'RAG':      return <Database className="w-4 h-4" />;
-      case 'GRAPHRAG': return <Network className="w-4 h-4" />;
-      case 'TOOL_USE': return <Wrench className="w-4 h-4" />;
-      case 'WORKFLOW': return <GitBranch className="w-4 h-4" />;
-      default:         return <Bot className="w-4 h-4" />;
-    }
-  };
+  const q = query.trim().toLowerCase();
+  const activeFilters = fStatus !== 'ALL' ? 1 : 0;
+  const agents = apiAgents.filter(a => {
+    const matchQ = !q || `${a.name} ${a.id} ${a.description ?? ''}`.toLowerCase().includes(q);
+    const matchStatus = fStatus === 'ALL' || deriveStatus(a) === fStatus;
+    return matchQ && matchStatus;
+  });
+
+  const activeCount = apiAgents.filter(a => a.published_version_id).length;
+
+  const stats = [
+    { label: 'Total Agents',      value: loading ? '—' : apiAgents.length, icon: Bot,        color: '#B88719' },
+    { label: 'Active Runtimes',   value: loading ? '—' : activeCount,       icon: Activity,   color: '#10B981' },
+    { label: 'Critical Failures', value: 0,                                  icon: ShieldAlert, color: '#DC2626' },
+    { label: 'Platform Health',   value: '94%',                              icon: Zap,        color: '#D9A040' },
+    { label: 'Daily Accrual',     value: '$—',                               icon: BarChart3,  color: '#8B5CF6' },
+  ];
 
   return (
     <>
-    <div className="space-y-5">
-      {/* Section header */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-[#B88719] text-[10px] font-bold font-mono tracking-widest uppercase mb-1.5">
-            <Cpu className="w-3.5 h-3.5" />
-            Control Plane / Registry
-          </div>
-          <h2 className="text-xl font-display font-bold text-[#111111]">Agent Inventory</h2>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={onOpenCLI} className="btn-secondary text-[10px]">
-            <Terminal className="w-3.5 h-3.5" /> CLI Tooling
-          </button>
-          <button onClick={onNewAgent} className="btn-primary">
-            <Plus className="w-4 h-4" /> New Agent
-          </button>
-        </div>
-      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        {[
-          { label: 'Total Agents',     val: stats.total,          icon: Bot,        color: 'text-[#B88719]' },
-          { label: 'Active Runtimes',  val: stats.active,         icon: Activity,   color: 'text-emerald-600' },
-          { label: 'Critical Failures',val: stats.failed,         icon: ShieldAlert,color: 'text-red-600' },
-          { label: 'Platform Health',  val: '94%',                icon: Zap,        color: 'text-amber-600' },
-          { label: 'Daily Accrual',    val: `$${stats.totalCost}`, icon: BarChart3,  color: 'text-purple-600', span: true },
-        ].map((s) => (
-          <div key={s.label} className={cn('warm-card rounded-xl p-4', s.span && 'col-span-2 lg:col-span-1')}>
-            <div className="flex justify-between items-start mb-3">
-              <s.icon className={cn('w-5 h-5', s.color)} />
-              <span className="text-[8px] font-bold text-[#8A8A7A] uppercase tracking-widest">Live</span>
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              color: '#B88719', fontSize: 10, fontWeight: 700,
+              fontFamily: 'var(--font-mono)', letterSpacing: '0.14em',
+              textTransform: 'uppercase', marginBottom: 6,
+            }}>
+              <Cpu size={13} />
+              Build / Agents
             </div>
-            <div className="text-2xl font-display font-bold text-[#111111]">{s.val}</div>
-            <div className="text-[9px] text-[#5A5A5A] mt-1 font-semibold uppercase tracking-wide">{s.label}</div>
+            <h2 style={{ fontSize: 20, fontWeight: 700, fontFamily: 'var(--font-display)', margin: 0 }}>
+              Agent Inventory
+            </h2>
           </div>
-        ))}
-      </div>
-
-      {/* Table container */}
-      <div className="warm-panel rounded-xl overflow-hidden">
-        {/* Toolbar */}
-        <div className="px-5 py-3.5 border-b border-[#BFA66A]/40 bg-[#FFF9E8] flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#8A8A7A]" />
-              <input
-                type="text"
-                placeholder="Query agents..."
-                className="w-56 bg-white border border-[#BFA66A]/60 rounded-lg pl-9 pr-3 py-1.5 text-xs text-[#111111] placeholder-[#8A8A7A] focus:outline-none focus:border-[#8A5A00]"
-              />
-            </div>
-            <button className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#BFA66A]/60 rounded-lg text-[10px] font-semibold text-[#5A5A5A] hover:border-[#8A5A00] transition-colors">
-              <Filter className="w-3 h-3" /> Filter Environments
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={onOpenProvision} className="btn-secondary text-[10px] py-1.5">
-              <Zap className="w-3.5 h-3.5" /> Quick Provision
-            </button>
-            <button className="p-1.5 bg-white border border-[#BFA66A]/60 rounded-lg hover:border-[#8A5A00] transition-colors">
-              <MoreHorizontal className="w-4 h-4 text-[#5A5A5A]" />
-            </button>
-          </div>
+          <button className="btn-primary" onClick={onNewAgent}>
+            <Plus size={15} />
+            New Agent
+          </button>
         </div>
 
-        {/* Desktop table */}
-        <div className="hidden lg:block">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-[#BFA66A]/30 bg-white">
-                {['Agent', 'Environment', 'KB', 'Latency / Health', 'Error Rate', 'Status', ''].map((h, i) => (
-                  <th key={h} className={cn('px-5 py-3 text-[10px] font-bold text-[#5A5A5A] uppercase tracking-widest', i === 6 && 'text-right')}>
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#BFA66A]/15">
-              {apiAgents.length === 0 && (
-                <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-[#8A8A7A]">
-                  {'Chưa có agent nào. Bấm + New Agent để tạo.'}
-                </td></tr>
-              )}
-              {apiAgents.map(agent => (
-                <tr
-                  key={agent.id}
-                  onClick={() => onSelectAgent(agent.id)}
-                  className="hover:bg-[#FFF9E8] transition-colors cursor-pointer group"
-                >
-                  <td className="px-5 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl flex items-center justify-center border shrink-0 bg-blue-50 border-blue-200 text-blue-600">
-                        <Bot className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="font-semibold text-[#111111] text-sm leading-snug">{agent.name}</div>
-                        <div className="text-[10px] font-mono text-[#B88719] mt-0.5">{agent.id.slice(0, 8)}...</div>
-                        <div className="text-[10px] text-[#8A8A7A] italic mt-0.5 truncate max-w-[180px]">{agent.description || '--'}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-5 py-4">
-                    <div className="text-sm font-semibold text-[#2A2A2A] leading-snug">Dev</div>
-                    <div className="inline-block mt-1 px-2 py-0.5 text-[9px] font-bold tracking-widest uppercase rounded bg-[#F3E2A7] text-[#7C5A0E] border border-[#BFA66A]/40">LOCAL</div>
-                  </td>
-                  <td className="px-5 py-4"><span className="text-[#8A8A7A] italic text-[11px]">--</span></td>
-                  <td className="px-5 py-4"><span className="text-[#8A8A7A] italic text-[11px]">--</span></td>
-                  <td className="px-5 py-4"><span className="text-[#8A8A7A] italic text-[11px]">--</span></td>
-                  <td className="px-5 py-4">
-                    <span className={cn(
-                      'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-bold uppercase tracking-wide border',
-                      agent.published_version_id
-                        ? 'bg-emerald-100 text-emerald-700 border-emerald-200'
-                        : 'bg-gray-100 text-gray-500 border-gray-200',
-                    )}>
-                      {agent.published_version_id && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />}
-                      {agent.published_version_id ? 'Published' : 'Draft'}
-                    </span>
-                  </td>
-                  <td className="px-5 py-4 text-right">
-                    <button
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onClick={(e) => { e.stopPropagation(); handleMenuOpen(e, agent.id); }}
-                      className="p-1.5 hover:bg-[#F3E2A7] rounded-lg transition-colors text-[#C8BCA8] hover:text-[#5A5A5A]"
-                    >
-                      <MoreHorizontal className="w-4 h-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Portal dropdown */}
-        {openMenuId && ReactDOM.createPortal(
-          <div
-            onMouseDown={(e) => e.stopPropagation()}
-            style={{ position: 'fixed', top: menuPos.top, right: menuPos.right, zIndex: 9999 }}
-            className="w-44 bg-white border border-[#BFA66A]/50 rounded-xl shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-1 duration-100"
-          >
-            {apiAgents.filter(a => a.id === openMenuId).map(agent => (
-              <React.Fragment key={agent.id}>
-                <button
-                  onClick={() => setOpenMenuId(null)}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[11px] font-semibold text-[#2A2A2A] hover:bg-[#FFF9E8] transition-colors"
-                >
-                  <Settings2 className="w-3.5 h-3.5 text-[#8A8A7A]" /> Edit
-                </button>
-                <button
-                  onClick={() => { setOpenMenuId(null); setCloneModalName(`Copy of ${agent.name}`); setCloneTarget({ id: agent.id, name: agent.name }); }}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[11px] font-semibold text-[#2A2A2A] hover:bg-[#FFF9E8] transition-colors"
-                >
-                  <Copy className="w-3.5 h-3.5 text-[#8A8A7A]" /> Clone
-                </button>
-                <div className="h-px bg-[#ECE7DA] mx-3" />
-                <button
-                  onClick={() => { setOpenMenuId(null); setDeleteTarget({ id: agent.id, name: agent.name }); }}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[11px] font-semibold text-red-600 hover:bg-red-50 transition-colors"
-                >
-                  <Trash2 className="w-3.5 h-3.5" /> Delete
-                </button>
-              </React.Fragment>
-            ))}
-          </div>,
-          document.body
-        )}
-
-        {/* Mobile/Tablet card list */}
-        <div className="lg:hidden divide-y divide-[#BFA66A]/20">
-          {MOCK_AGENTS.map(agent => (
-            <div
-              key={agent.id}
-              onClick={() => onSelectAgent(agent.id)}
-              className="p-5 hover:bg-[#FFF9E8] transition-colors cursor-pointer space-y-3"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={cn('p-2 rounded-xl border', getStatusStyle(agent.status))}>
-                    {getTypeIcon(agent.type)}
-                  </div>
-                  <div>
-                    <div className="font-semibold text-[#111111]">{agent.name}</div>
-                    <div className="text-[10px] text-[#5A5A5A] font-mono">{agent.id} Â· {agent.environment}</div>
-                  </div>
-                </div>
-                <span className={cn('px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide border', getStatusStyle(agent.status))}>
-                  {agent.status}
-                </span>
+        {/* Stats cards */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(148px, 1fr))', gap: 12 }}>
+          {stats.map(s => (
+            <div key={s.label} className="warm-card" style={{ borderRadius: 14, padding: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                <s.icon size={20} style={{ color: s.color }} />
+                <span style={{
+                  fontSize: 8, fontWeight: 700, color: '#8A8A7A',
+                  textTransform: 'uppercase', letterSpacing: '0.14em',
+                }}>Live</span>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-2.5 bg-[#F8F5EE] rounded-lg border border-[#BFA66A]/30">
-                  <div className="text-[8px] font-bold text-[#8A8A7A] uppercase tracking-widest mb-1">KB Connection</div>
-                  <div className="text-[10px] font-mono text-[#2A2A2A] truncate">{agent.kbConnection}</div>
-                </div>
-                <div className="p-2.5 bg-[#F8F5EE] rounded-lg border border-[#BFA66A]/30">
-                  <div className="text-[8px] font-bold text-[#8A8A7A] uppercase tracking-widest mb-1">Performance</div>
-                  <div className="text-[10px] font-mono text-[#2A2A2A]">{agent.latency} / {agent.errorRate}% err</div>
-                </div>
+              <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--font-display)', lineHeight: 1.1 }}>
+                {s.value}
+              </div>
+              <div style={{
+                fontSize: 9, color: '#5A5A5A', marginTop: 4,
+                fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em',
+              }}>
+                {s.label}
               </div>
             </div>
           ))}
         </div>
+
+        {/* Table panel */}
+        <div className="warm-panel" style={{ borderRadius: 14, overflow: 'hidden' }}>
+
+          {/* Toolbar */}
+          <div style={{
+            padding: '12px 16px',
+            background: '#FFF9E8',
+            borderBottom: '1px solid rgba(191,166,106,0.4)',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            gap: 12, flexWrap: 'wrap',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative' }}>
+                <Search size={13} style={{
+                  position: 'absolute', left: 11, top: '50%',
+                  transform: 'translateY(-50%)', color: '#8A8A7A',
+                }} />
+                <input
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  placeholder="Query agents..."
+                  style={{
+                    width: 216, background: '#fff',
+                    border: '1px solid rgba(191,166,106,0.6)',
+                    borderRadius: 8, padding: '7px 12px 7px 30px',
+                    fontSize: 12, outline: 'none', fontFamily: 'inherit',
+                  }}
+                />
+              </div>
+              <span style={{ fontSize: 11, color: '#8A8A7A', fontFamily: 'var(--font-mono)' }}>
+                {agents.length} of {apiAgents.length}
+              </span>
+            </div>
+
+            <div ref={filterRef} style={{ position: 'relative' }}>
+              <button
+                className="btn-secondary"
+                style={{ fontSize: 10, padding: '7px 12px', borderColor: activeFilters ? '#B88719' : undefined }}
+                onClick={() => setFilterOpen(o => !o)}
+              >
+                <SlidersHorizontal size={13} />
+                Filters
+                {activeFilters > 0 && (
+                  <span style={{
+                    marginLeft: 4, background: '#B88719', color: '#fff',
+                    borderRadius: 9999, fontSize: 9, fontWeight: 800, padding: '1px 6px',
+                  }}>
+                    {activeFilters}
+                  </span>
+                )}
+              </button>
+
+              {filterOpen && (
+                <div style={{
+                  position: 'absolute', right: 0, top: '100%', marginTop: 6,
+                  width: 196, background: '#fff', border: '1px solid #BFA66A',
+                  borderRadius: 12, boxShadow: '0 10px 30px rgba(0,0,0,0.14)',
+                  padding: 14, zIndex: 40,
+                }}>
+                  <div style={{ marginBottom: 10 }}>
+                    <label className="field-label" style={{ marginBottom: 5 }}>Status</label>
+                    <select
+                      className="field-select"
+                      value={fStatus}
+                      onChange={e => setFStatus(e.target.value)}
+                      style={{ fontSize: 12, padding: '7px 10px' }}
+                    >
+                      <option value="ALL">All</option>
+                      <option value="ACTIVE">Active</option>
+                      <option value="IDLE">Idle / Draft</option>
+                    </select>
+                  </div>
+                  {activeFilters > 0 && (
+                    <button
+                      className="btn-ghost"
+                      style={{ width: '100%', justifyContent: 'center', fontSize: 11 }}
+                      onClick={() => setFStatus('ALL')}
+                    >
+                      <X size={12} /> Clear filters
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Table */}
+          <table className="t-table">
+            <thead>
+              <tr>
+                <th>Agent</th>
+                <th>Environment</th>
+                <th>KB</th>
+                <th>Latency / Health</th>
+                <th>Error Rate</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '40px 20px', color: '#8A8A7A', fontSize: 13 }}>
+                    Loading agents…
+                  </td>
+                </tr>
+              ) : agents.length === 0 ? (
+                <tr>
+                  <td colSpan={7} style={{ padding: 0 }}>
+                    <div style={{
+                      display: 'flex', flexDirection: 'column', alignItems: 'center',
+                      justifyContent: 'center', padding: '48px 20px', gap: 10,
+                    }}>
+                      {(query || activeFilters > 0) ? (
+                        <>
+                          <SearchX size={32} style={{ color: '#BFA66A' }} />
+                          <div style={{ fontSize: 14, fontWeight: 600, color: '#3F3F3F' }}>No agents match</div>
+                          <div style={{ fontSize: 12, color: '#8A8A7A' }}>
+                            Try a different search term or clear your filters.
+                          </div>
+                          <button
+                            className="btn-ghost"
+                            style={{ fontSize: 11 }}
+                            onClick={() => { setQuery(''); setFStatus('ALL'); }}
+                          >
+                            <X size={12} /> Clear filters
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <Bot size={32} style={{ color: '#BFA66A' }} />
+                          <div style={{ fontSize: 14, fontWeight: 600, color: '#3F3F3F' }}>No agents yet</div>
+                          <div style={{ fontSize: 12, color: '#8A8A7A' }}>
+                            Click New Agent to create your first agent.
+                          </div>
+                          <button className="btn-primary" style={{ marginTop: 4 }} onClick={onNewAgent}>
+                            <Plus size={13} /> New Agent
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ) : agents.map(agent => {
+                const status = deriveStatus(agent);
+                const { color, label } = STATUS_CONFIG[status];
+                return (
+                  <tr key={agent.id} onClick={() => onSelectAgent(agent.id)} style={{ cursor: 'pointer' }}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                        <div style={{
+                          width: 36, height: 36, borderRadius: 10,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          background: '#EFF4FB', border: '1px solid #BFD3EC',
+                          color: '#2D6BB8', flexShrink: 0,
+                        }}>
+                          <Bot size={16} />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{
+                            fontWeight: 600, color: '#111',
+                            whiteSpace: 'nowrap', overflow: 'hidden',
+                            textOverflow: 'ellipsis', lineHeight: 1.3,
+                          }}>
+                            {agent.name}
+                          </div>
+                          <div style={{
+                            fontSize: 10, fontFamily: 'var(--font-mono)', color: '#B88719',
+                            marginTop: 2, whiteSpace: 'nowrap',
+                          }}>
+                            {agent.id.slice(0, 12)}…
+                          </div>
+                          {agent.description && (
+                            <div style={{
+                              fontSize: 10, color: '#8A8A7A', marginTop: 1,
+                              overflow: 'hidden', textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap', maxWidth: 220,
+                            }}>
+                              {agent.description}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <span style={{
+                        fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 4,
+                        background: '#F3E2A7', border: '1px solid rgba(191,166,106,0.5)',
+                        color: '#7C5A0E',
+                      }}>
+                        DEV
+                      </span>
+                    </td>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: '#A8A899' }}>—</td>
+                    <td style={{ fontSize: 12, color: '#A8A899' }}>—</td>
+                    <td style={{ fontSize: 12, color: '#A8A899' }}>—</td>
+                    <td>
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
+                        letterSpacing: '0.06em', color: '#2A2A2A',
+                      }}>
+                        <span
+                          className={status === 'ACTIVE' ? 'pulse-soft' : ''}
+                          style={{
+                            width: 7, height: 7, borderRadius: '50%',
+                            background: color, display: 'inline-block',
+                          }}
+                        />
+                        {label}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'right', paddingRight: 12 }}>
+                      <button
+                        onMouseDown={e => e.stopPropagation()}
+                        onClick={e => handleMenuOpen(e, agent.id)}
+                        style={{
+                          padding: '6px 8px', background: 'transparent', border: 'none',
+                          borderRadius: 8, cursor: 'pointer', color: '#C8BCA8', transition: 'all 0.12s',
+                        }}
+                        onMouseEnter={e => {
+                          (e.currentTarget as HTMLButtonElement).style.background = '#F3E2A7';
+                          (e.currentTarget as HTMLButtonElement).style.color = '#2A2A2A';
+                        }}
+                        onMouseLeave={e => {
+                          (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                          (e.currentTarget as HTMLButtonElement).style.color = '#C8BCA8';
+                        }}
+                      >
+                        <MoreHorizontal size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
+
+      {/* Context menu — portal */}
+      {openMenuId && ReactDOM.createPortal(
+        <div
+          onMouseDown={e => e.stopPropagation()}
+          style={{
+            position: 'fixed', top: menuPos.top, right: menuPos.right, zIndex: 9999,
+            width: 172, background: '#fff', border: '1px solid rgba(191,166,106,0.5)',
+            borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', overflow: 'hidden',
+          }}
+        >
+          {(() => {
+            const agent = apiAgents.find(a => a.id === openMenuId);
+            if (!agent) return null;
+            return (
+              <>
+                <button
+                  onClick={() => { setOpenMenuId(null); onSelectAgent(agent.id); }}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '10px 16px', fontSize: 12, fontWeight: 600, color: '#2A2A2A',
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#FFF9E8')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <Settings2 size={14} style={{ color: '#8A8A7A' }} /> Edit / View
+                </button>
+                <button
+                  onClick={() => {
+                    setOpenMenuId(null);
+                    setCloneModalName(`Copy of ${agent.name}`);
+                    setCloneTarget({ id: agent.id, name: agent.name });
+                  }}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '10px 16px', fontSize: 12, fontWeight: 600, color: '#2A2A2A',
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#FFF9E8')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <Copy size={14} style={{ color: '#8A8A7A' }} /> Clone
+                </button>
+                <div style={{ height: 1, background: '#ECE7DA', margin: '0 12px' }} />
+                <button
+                  onClick={() => {
+                    setOpenMenuId(null);
+                    setDeleteTarget({ id: agent.id, name: agent.name });
+                  }}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '10px 16px', fontSize: 12, fontWeight: 600, color: '#DC2626',
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#FFF5F5')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <Trash2 size={14} /> Delete
+                </button>
+              </>
+            );
+          })()}
+        </div>,
+        document.body,
+      )}
 
       {/* Toast */}
       <AnimatePresence>
         {toast && (
           <motion.div
-            initial={{ opacity: 0, y: -8 }}
+            initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            className="fixed top-5 right-5 z-[9999] flex items-center gap-2.5 px-4 py-3 bg-[#111111] text-white text-[12px] font-semibold rounded-xl shadow-xl"
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.18 }}
+            style={{
+              position: 'fixed', top: 20, right: 20, zIndex: 9999,
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '12px 16px', background: '#111', color: '#fff',
+              fontSize: 12, fontWeight: 600, borderRadius: 14,
+              boxShadow: '0 8px 32px rgba(0,0,0,0.28)', fontFamily: 'inherit',
+            }}
           >
-            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <CheckCircle2 size={15} style={{ color: '#6BD42B', flexShrink: 0 }} />
             {toast}
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Clone Agent Modal */}
+      {/* Clone Modal */}
       <AnimatePresence>
         {cloneTarget && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/30 backdrop-blur-sm"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 9998,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(0,0,0,0.28)', backdropFilter: 'blur(4px)',
+            }}
+            onClick={() => setCloneTarget(null)}
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-              className="bg-white border border-[#ECE7DA] rounded-2xl shadow-2xl p-6 w-[420px]"
+              transition={{ duration: 0.16 }}
+              onClick={e => e.stopPropagation()}
+              className="modal-shell"
+              style={{ width: 420 }}
             >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-base font-bold text-[#111111]">Clone Agent</h3>
-                <button onClick={() => setCloneTarget(null)} className="p-1.5 hover:bg-[#F3E2A7] rounded-lg transition-colors text-[#8A8A7A]">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <p className="text-xs text-[#8A8A7A] mb-4">Nháº­p tÃªn cho agent má»›i Ä'Æ°á»£c clone tá»« <span className="font-semibold text-[#2A2A2A]">{cloneTarget.name}</span></p>
-              <input
-                autoFocus
-                type="text"
-                value={cloneModalName}
-                onChange={(e) => setCloneModalName(e.target.value)}
-                className="w-full bg-[#FAFAF5] border border-[#ECE7DA] rounded-xl py-2.5 px-4 text-sm text-[#111111] focus:outline-none focus:border-[#BFA66A] mb-5"
-              />
-              <div className="flex justify-end gap-2">
+              <div className="modal-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 14, fontWeight: 700 }}>Clone Agent</span>
                 <button
                   onClick={() => setCloneTarget(null)}
-                  className="btn-secondary"
+                  style={{ padding: 6, background: 'transparent', border: 'none', borderRadius: 8, cursor: 'pointer', color: '#E5E5E5' }}
                 >
-                  Cancel
+                  <X size={16} />
                 </button>
-                <button
-                  onClick={() => {
-                    setToast(`Agent "${cloneModalName}" cloned successfully`);
-                    setCloneTarget(null);
+              </div>
+              <div className="modal-body">
+                <p style={{ fontSize: 13, color: '#5A5A5A', marginBottom: 16 }}>
+                  New agent cloned from <strong style={{ color: '#111' }}>{cloneTarget.name}</strong>
+                </p>
+                <label className="field-label">New Agent Name</label>
+                <input
+                  autoFocus
+                  value={cloneModalName}
+                  onChange={e => setCloneModalName(e.target.value)}
+                  className="field-input"
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && cloneModalName.trim()) {
+                      setToast(`Agent "${cloneModalName}" cloned`);
+                      setCloneTarget(null);
+                    }
                   }}
+                />
+              </div>
+              <div className="modal-footer">
+                <button className="btn-secondary" onClick={() => setCloneTarget(null)}>Cancel</button>
+                <button
+                  className="btn-primary"
                   disabled={!cloneModalName.trim()}
-                  className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => { setToast(`Agent "${cloneModalName}" cloned`); setCloneTarget(null); }}
                 >
-                  <Copy className="w-4 h-4" /> Clone
+                  <Copy size={14} /> Clone
                 </button>
               </div>
             </motion.div>
@@ -392,45 +566,48 @@ export const AgentRegistryOverview: React.FC<OverviewProps> = ({
         )}
       </AnimatePresence>
 
-      {/* Delete Confirm Modal */}
+      {/* Delete Modal */}
       <AnimatePresence>
         {deleteTarget && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/30 backdrop-blur-sm"
-            onClick={() => setDeleteTarget(null)}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 9998,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: 'rgba(0,0,0,0.28)', backdropFilter: 'blur(4px)',
+            }}
+            onClick={() => !deleting && setDeleteTarget(null)}
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ duration: 0.16 }}
               onClick={e => e.stopPropagation()}
-              onMouseDown={e => e.stopPropagation()}
-              className="bg-white border border-[#ECE7DA] rounded-2xl shadow-2xl p-6 w-[400px]"
+              className="modal-shell"
+              style={{ width: 400 }}
             >
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-base font-bold text-[#111111]">Xóa agent</h3>
-                <button onClick={() => setDeleteTarget(null)} className="p-1.5 hover:bg-[#F3E2A7] rounded-lg transition-colors text-[#8A8A7A]">
-                  <X className="w-4 h-4" />
+              <div className="modal-header danger" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 14, fontWeight: 700 }}>Delete Agent</span>
+                <button
+                  onClick={() => setDeleteTarget(null)}
+                  disabled={deleting}
+                  style={{ padding: 6, background: 'transparent', border: 'none', borderRadius: 8, cursor: 'pointer', color: '#E5E5E5' }}
+                >
+                  <X size={16} />
                 </button>
               </div>
-              <p className="text-sm text-[#8A8A7A] mb-5">
-                Bạn chắc chắn muốn xóa agent{' '}
-                <span className="font-semibold text-[#111111]">"{deleteTarget.name}"</span>?
-                Hành động này không thể hoàn tác.
-              </p>
-              <div className="flex justify-end gap-2">
-                <button onClick={() => setDeleteTarget(null)} className="btn-secondary" disabled={deleting}>
-                  Huỷ
+              <div className="modal-body">
+                <p style={{ fontSize: 13, color: '#5A5A5A', lineHeight: 1.6 }}>
+                  Delete <strong style={{ color: '#111' }}>"{deleteTarget.name}"</strong>? This will remove the agent and all its workflows. This action cannot be undone.
+                </p>
+              </div>
+              <div className="modal-footer">
+                <button className="btn-secondary" onClick={() => setDeleteTarget(null)} disabled={deleting}>
+                  Cancel
                 </button>
-                <button
-                  onClick={handleDelete}
-                  disabled={deleting}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition-all"
-                >
-                  {deleting ? 'Đang xóa...' : <><Trash2 className="w-3.5 h-3.5" /> Xóa</>}
+                <button className="btn-danger" onClick={handleDelete} disabled={deleting}>
+                  {deleting ? 'Deleting…' : <><Trash2 size={13} /> Delete</>}
                 </button>
               </div>
             </motion.div>

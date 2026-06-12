@@ -3,6 +3,7 @@ import { AppStateProvider, useAppState } from './AppStateContext';
 import { AppLayout } from './components/Layout';
 import KnowledgeOpsCenter from './components/knowledge/KnowledgeOpsCenter';
 import AIRuntimeCenter from './components/agent-builder/AIRuntimeCenter';
+import TestCenter from './components/test/TestCenter';
 import SettingsView from './components/Settings/Overview';
 
 const Placeholder = ({ module }: { module: string }) => (
@@ -18,8 +19,10 @@ function AppContent() {
     switch (activeModule) {
       case 'knowledge-ops':
         return <KnowledgeOpsCenter />;
-      case 'ai-runtime':
+      case 'build':
         return <AIRuntimeCenter />;
+      case 'test':
+        return <TestCenter />;
       case 'settings':
         return <SettingsView />;
       default:

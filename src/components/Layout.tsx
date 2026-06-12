@@ -15,7 +15,7 @@ const PALETTE_GROUPS = [
   { category: 'Modules', items: [
     { label: 'Executive Pulse',     module: 'dashboard' },
     { label: 'Knowledge Base',      module: 'knowledge-ops' },
-    { label: 'AI Runtime',          module: 'ai-runtime' },
+    { label: 'AI Runtime',          module: 'build' },
     { label: 'Operations Center',   module: 'operations-center' },
     { label: 'Deployment Center',   module: 'release-management' },
     { label: 'Governance & Audit',  module: 'governance' },
@@ -29,10 +29,10 @@ const PALETTE_GROUPS = [
     { label: 'Conflict Manager',    module: 'knowledge-ops', sub: 'CONFLICTS' },
   ]},
   { category: 'Agents', items: [
-    { label: 'Agent Registry',      module: 'ai-runtime', sub: 'AGENTS' },
-    { label: 'CLI',                 module: 'ai-runtime', sub: 'CLI' },
-    { label: 'Recent Traces',       module: 'ai-runtime', sub: 'TRACES' },
-    { label: 'Workflow Engine',     module: 'ai-runtime', sub: 'WORKFLOWS' },
+    { label: 'Agent Registry',      module: 'build', sub: 'AGENTS' },
+    { label: 'CLI',                 module: 'build', sub: 'CLI' },
+    { label: 'Recent Traces',       module: 'build', sub: 'TRACES' },
+    { label: 'Workflow Engine',     module: 'build', sub: 'WORKFLOWS' },
   ]},
   { category: 'Deployment', items: [
     { label: 'Deployments',    module: 'release-management', sub: 'DEPLOYMENTS' },
@@ -207,7 +207,7 @@ const LeftRail = () => {
 /* ─── Contextual hint text per module ────────────────────────────── */
 const CONTEXT_HINTS: Record<string, string> = {
   'knowledge-ops':      '12 conflicts pending · Fleet healthy',
-  'ai-runtime':         '482 agents active · 1.4s avg latency',
+  'build':         '482 agents active · 1.4s avg latency',
   'operations-center':  '99.9% health · 2 active alerts',
   'release-management': '3 deployments in progress',
   'governance':         '100% policy compliance · A+ score',
@@ -530,7 +530,7 @@ const BottomNav = () => {
   const items = [
     { id: 'dashboard',     label: 'Home',     icon: NAV_ITEMS.find(n => n.id === 'dashboard')?.icon ?? LayoutGrid },
     { id: 'knowledge-ops', label: 'Knowledge', icon: NAV_ITEMS.find(n => n.id === 'knowledge-ops')?.icon ?? LayoutGrid },
-    { id: 'ai-runtime',    label: 'AI',       icon: NAV_ITEMS.find(n => n.id === 'ai-runtime')?.icon ?? LayoutGrid },
+    { id: 'build',    label: 'AI',       icon: NAV_ITEMS.find(n => n.id === 'build')?.icon ?? LayoutGrid },
     { id: 'governance',    label: 'Govern',   icon: NAV_ITEMS.find(n => n.id === 'governance')?.icon ?? LayoutGrid },
     { id: 'settings',      label: 'Settings', icon: Settings },
   ];
