@@ -25,7 +25,7 @@ async def generate_suggestions(query: str, messages: list[dict], cfg: dict) -> l
 
     try:
         response = await litellm.acompletion(
-            model=cfg.get("suggestion_model", "suggester"),
+            model=cfg.get("suggestion_model", "openai/suggester"),
             api_base=_LITELLM_BASE,
             api_key=_LITELLM_KEY,
             messages=[

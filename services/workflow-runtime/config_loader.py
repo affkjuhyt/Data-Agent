@@ -17,6 +17,8 @@ DEV_CONFIG = {
     "planner_timeout": 60,
     "planner_num_retries": 0,
     "responder_model": "responder",
+    "suggestion_model": "openai/suggester",
+    "rewriter_model": "openai/rewriter",
     "responder_temperature": 0.2,
     "responder_max_tokens": 1000,
     "responder_stream": True,

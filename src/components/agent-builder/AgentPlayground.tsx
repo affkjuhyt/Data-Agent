@@ -739,7 +739,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
 
           {/* Input */}
           <div style={{ padding: '8px 12px 14px', flexShrink: 0 }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: '8px 10px' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: '8px 10px' }}>
               <textarea
                 ref={textareaRef}
                 value={input}
