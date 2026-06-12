@@ -20,7 +20,7 @@ DEV_CONFIG = {
     "responder_temperature": 0.2,
     "responder_max_tokens": 1000,
     "responder_stream": True,
-    "system_prompt": os.environ.get("DEV_SYSTEM_PROMPT", "You are a helpful assistant."),
+    "system_prompt": os.environ.get("DEV_SYSTEM_PROMPT", "You are a helpful assistant. Always respond in the same language the user writes in."),
     "rrf_top_n": 20,
     "reranker_model": "openai/reranker",
     "reranker_top_n": 5,

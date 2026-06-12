@@ -123,7 +123,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         started_at = time.monotonic()
 
         suggestion_task = asyncio.create_task(
-            generate_suggestions(req.query, req.messages or [], cfg)
+            generate_suggestions(req.query, state.get("messages", []), cfg)
         )
 
         try:

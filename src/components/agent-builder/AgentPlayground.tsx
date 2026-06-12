@@ -310,9 +310,8 @@ function TracePanel({ steps, traceLoading, traceId }: {
 
 /* ─── ChatBubble ─────────────────────────────────────────────── */
 
-function ChatBubble({ msg, onSuggestionClick }: {
+function ChatBubble({ msg }: {
   msg: Message;
-  onSuggestionClick?: (s: string) => void;
 }) {
   const isUser = msg.role === 'user';
   const renderContent = (text: string) =>
@@ -355,19 +354,6 @@ function ChatBubble({ msg, onSuggestionClick }: {
           ))}
           <p style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.25)', marginTop: 6 }}>{msg.timestamp}</p>
         </div>
-        {!isUser && msg.suggestions && msg.suggestions.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {msg.suggestions.map((s, i) => (
-              <button key={i} onClick={() => onSuggestionClick?.(s)} style={{
-                fontSize: 11, padding: '4px 10px', borderRadius: 9999,
-                background: 'rgba(235,208,124,0.10)', border: '1px solid rgba(235,208,124,0.3)',
-                color: '#EBD07C', cursor: 'pointer',
-              }}>
-                <Sparkles size={9} style={{ verticalAlign: '-1px', marginRight: 3 }} />{s}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );
@@ -701,26 +687,31 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                     </motion.div>
                   );
                 }
-                return <ChatBubble key={msg.id} msg={msg} onSuggestionClick={s => handleSend(s)} />;
+                return <ChatBubble key={msg.id} msg={msg} />;
               })}
             </AnimatePresence>
             <div ref={bottomRef} />
           </div>
 
-          {/* Suggestion pills — after last assistant message */}
-          {!sending && messages.length > 0 && messages[messages.length - 1].role === 'assistant' && !messages[messages.length - 1].suggestions && (
-            <div style={{ padding: '0 14px 8px', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {['Can you show me an example?', 'What are the next steps?', 'Summarize briefly'].map(s => (
-                <button key={s} onClick={() => handleSend(s)} style={{
-                  fontSize: 11, padding: '5px 11px', borderRadius: 9999,
-                  background: 'rgba(235,208,124,0.10)', border: '1px solid rgba(235,208,124,0.3)',
-                  color: '#EBD07C', cursor: 'pointer',
-                }}>
-                  <Sparkles size={9} style={{ verticalAlign: '-1px', marginRight: 4 }} />{s}
-                </button>
-              ))}
-            </div>
-          )}
+          {/* Suggestion chips — dynamic from backend, above input */}
+          {(() => {
+            const last = messages.length > 0 ? messages[messages.length - 1] : null;
+            const chips = !sending && last?.role === 'assistant' && last.suggestions?.length ? last.suggestions : null;
+            if (!chips) return null;
+            return (
+              <div style={{ padding: '0 14px 8px', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {chips.map((s, i) => (
+                  <button key={i} onClick={() => handleSend(s)} style={{
+                    fontSize: 11, padding: '5px 11px', borderRadius: 9999,
+                    background: 'rgba(235,208,124,0.10)', border: '1px solid rgba(235,208,124,0.3)',
+                    color: '#EBD07C', cursor: 'pointer',
+                  }}>
+                    <Sparkles size={9} style={{ verticalAlign: '-1px', marginRight: 4 }} />{s}
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
 
           {/* Options popup */}
           <AnimatePresence>

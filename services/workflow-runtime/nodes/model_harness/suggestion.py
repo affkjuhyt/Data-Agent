@@ -24,7 +24,7 @@ async def generate_suggestions(query: str, messages: list[dict], cfg: dict) -> l
     user_content = f"Lịch sử hội thoại:\n{history_block}\n\nCâu hỏi hiện tại: {query}" if history_block else f"Câu hỏi: {query}"
 
     try:
-        response = litellm.completion(
+        response = await litellm.acompletion(
             model=cfg.get("suggestion_model", "suggester"),
             api_base=_LITELLM_BASE,
             api_key=_LITELLM_KEY,
