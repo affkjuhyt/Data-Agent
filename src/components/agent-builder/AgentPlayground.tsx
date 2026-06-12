@@ -2,8 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   MessageSquare, Send, Bug, ChevronDown,
   Clock, Zap, Bot, User, Layers, Search,
-  Brain, FileOutput, AlertCircle, CheckCircle2,
-  Route, Sparkles, Copy,
+  Brain, FileOutput, AlertCircle,
+  Route, Sparkles, Copy, GripHorizontal,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
@@ -18,6 +18,7 @@ interface TraceStep {
   node: string;
   status: 'success' | 'error' | 'running';
   latencyMs: number;
+  startMs: number;
   tokens: number;
   input: string;
   output: string;
@@ -39,32 +40,27 @@ interface AgentOption {
   routing_keywords?: string[];
 }
 
-/* ─── Span palette (gold, Langfuse-style) ────────────────────── */
+/* ─── Span palette ───────────────────────────────────────────── */
 
 function spanType(node: string): { label: string; color: string; bg: string } {
   if (node === 'router')
     return { label: 'ROUTING',    color: '#F0B429', bg: 'rgba(240,180,41,0.18)' };
-  if (node.includes('planner') || node.includes('responder'))
-    return { label: 'GENERATION', color: '#EBD07C', bg: 'rgba(235,208,124,0.14)' };
-  if (node.includes('kb_search') || node.includes('rrf') || node.includes('reranker'))
-    return { label: 'RETRIEVAL',  color: '#F3E2A7', bg: 'rgba(243,226,167,0.10)' };
   if (node.includes('guardrail'))
-    return { label: 'EVENT',      color: '#D9B86C', bg: 'rgba(217,184,108,0.14)' };
+    return { label: 'GUARD',      color: '#F8A4A4', bg: 'rgba(248,164,164,0.14)' };
+  if (node.includes('planner') || node.includes('rewrite') || node.includes('responder') || node.includes('suggestion'))
+    return { label: 'GENERATION', color: '#EBD07C', bg: 'rgba(235,208,124,0.14)' };
+  if (node.includes('kb_search'))
+    return { label: 'RETRIEVAL',  color: '#93C5FD', bg: 'rgba(147,197,253,0.12)' };
+  if (node.includes('mcp'))
+    return { label: 'TOOL',       color: '#86EFAC', bg: 'rgba(134,239,172,0.12)' };
+  if (node.includes('rrf') || node.includes('reranker'))
+    return { label: 'RANK',       color: '#F3E2A7', bg: 'rgba(243,226,167,0.10)' };
   return   { label: 'SPAN',       color: '#BFA66A', bg: 'rgba(191,166,106,0.12)' };
 }
 
-/* ─── Existing helpers (keep as-is) ─────────────────────────── */
+/* ─── Helpers ────────────────────────────────────────────────── */
 
-const _SKIP_NODES = new Set(['LangGraph', '_route_after_guardrail_input', 'route_after_planner', 'join_retrieval_node']);
-
-function nodeIcon(name: string): React.ReactNode {
-  if (name.includes('guardrail'))  return <AlertCircle size={13} />;
-  if (name.includes('planner'))    return <Brain size={13} />;
-  if (name.includes('kb_search'))  return <Search size={13} />;
-  if (name.includes('reranker') || name.includes('rrf')) return <Layers size={13} />;
-  if (name.includes('responder'))  return <FileOutput size={13} />;
-  return <Zap size={13} />;
-}
+const _SKIP_NODES = new Set(['LangGraph', '_route_after_guardrail_input', 'route_after_planner', 'join_retrieval', 'join_end']);
 
 function trimInput(name: string, raw: any): string {
   if (!raw || typeof raw !== 'object') return String(raw ?? '');
@@ -82,23 +78,25 @@ function trimInput(name: string, raw: any): string {
 }
 
 function mapObservations(obs: any[]): TraceStep[] {
-  return obs
+  const filtered = obs
     .filter(o => !_SKIP_NODES.has(o.name) && o.type === 'SPAN')
-    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
-    .map(o => ({
-      id: o.id,
-      node: o.name,
-      status: o.level === 'ERROR' ? 'error' : 'success',
-      latencyMs: o.endTime ? Math.round(new Date(o.endTime).getTime() - new Date(o.startTime).getTime()) : 0,
-      tokens: o.usage ? ((o.usage.input ?? 0) + (o.usage.output ?? 0)) : 0,
-      input: trimInput(o.name, o.input),
-      output: o.level === 'ERROR' && o.statusMessage
-        ? o.statusMessage
-        : typeof o.output === 'object' ? JSON.stringify(o.output, null, 2) : String(o.output ?? ''),
-    }));
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+  const traceStart = filtered.length > 0 ? new Date(filtered[0].startTime).getTime() : 0;
+  return filtered.map(o => ({
+    id: o.id,
+    node: o.name,
+    status: o.level === 'ERROR' ? 'error' : 'success',
+    startMs: Math.round(new Date(o.startTime).getTime() - traceStart),
+    latencyMs: o.endTime ? Math.round(new Date(o.endTime).getTime() - new Date(o.startTime).getTime()) : 0,
+    tokens: o.usage ? ((o.usage.input ?? 0) + (o.usage.output ?? 0)) : 0,
+    input: trimInput(o.name, o.input),
+    output: o.level === 'ERROR' && o.statusMessage
+      ? o.statusMessage
+      : typeof o.output === 'object' ? JSON.stringify(o.output, null, 2) : String(o.output ?? ''),
+  }));
 }
 
-/* ─── Unified chat client-side routing ──────────────────────── */
+/* ─── Routing ────────────────────────────────────────────────── */
 
 function routeMessage(text: string, agents: AgentOption[]): { name: string; conf: number } {
   const q = text.toLowerCase();
@@ -185,20 +183,41 @@ function JsonView({ value }: { value: string | object }) {
 function TracePanel({ steps, traceLoading, traceId }: {
   steps: TraceStep[]; traceLoading: boolean; traceId: string | null;
 }) {
-  const [tab, setTab] = useState<'input' | 'output' | 'metadata'>('input');
+  const [tab, setTab]         = useState<'input' | 'output' | 'metadata'>('input');
   const [selected, setSelected] = useState(0);
-  useEffect(() => { if (selected >= steps.length && steps.length > 0) setSelected(0); }, [steps, selected]);
+  // splitPct = % height given to the waterfall section (clamped 20–75)
+  const [splitPct, setSplitPct] = useState(40);
+  const isDragging  = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  let cum = 0;
-  const starts = steps.map(s => { const v = cum; cum += s.latencyMs; return v; });
-  const totalMs  = Math.max(cum, 1);
+  useEffect(() => {
+    if (selected >= steps.length && steps.length > 0) setSelected(0);
+  }, [steps, selected]);
+
+  /* Drag handlers */
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!isDragging.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const pct  = ((e.clientY - rect.top) / rect.height) * 100;
+      setSplitPct(Math.min(75, Math.max(20, pct)));
+    };
+    const onUp = () => { isDragging.current = false; document.body.style.cursor = ''; };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, []);
+
+  const starts   = steps.map(s => s.startMs);
+  const totalMs  = Math.max(...steps.map(s => s.startMs + s.latencyMs), 1);
   const totalTok = steps.reduce((s, t) => s + t.tokens, 0);
   const sel = steps[selected];
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#0B0B0E', minWidth: 0 }}>
-      {/* Trace header */}
-      <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+
+      {/* ── Trace header ── */}
+      <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
           <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: 'rgba(235,208,124,0.18)', color: '#EBD07C', letterSpacing: '0.06em' }}>
             TRACE
@@ -222,8 +241,8 @@ function TracePanel({ steps, traceLoading, traceId }: {
         )}
       </div>
 
-      {/* KPI strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+      {/* ── KPI strip ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
         {[
           { k: 'latency', v: (totalMs / 1000).toFixed(2) + 's', c: '#F5F5F5' },
           { k: 'tokens',  v: totalTok.toLocaleString(),          c: '#EBD07C' },
@@ -237,82 +256,111 @@ function TracePanel({ steps, traceLoading, traceId }: {
         ))}
       </div>
 
-      {/* Observations label */}
-      <div style={{ padding: '8px 12px 4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.38)', fontWeight: 600 }}>
-          Observations
-        </span>
-        <span style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.28)', fontFamily: 'var(--font-mono)' }}>
-          {traceLoading ? 'streaming…' : steps.length + ' spans · ' + totalMs + 'ms'}
-        </span>
-      </div>
+      {/* ── Resizable split container ── */}
+      <div ref={containerRef} style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
 
-      {/* Waterfall */}
-      <div style={{ maxHeight: 210, overflowY: 'auto', padding: '2px 0 6px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        {traceLoading ? (
-          <div style={{ padding: '4px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-            {[0, 1, 2, 3].map(i => (
-              <div key={i} className="pulse-soft" style={{ height: 22, borderRadius: 4, background: 'rgba(255,255,255,0.04)', opacity: 1 - i * 0.18 }} />
-            ))}
-          </div>
-        ) : steps.length === 0 ? (
-          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', textAlign: 'center', padding: '20px 12px' }}>
-            Send a message to capture a trace
-          </p>
-        ) : steps.map((s, i) => (
-          <WaterfallRow
-            key={s.id}
-            step={s} index={i}
-            selected={selected === i}
-            onSelect={setSelected}
-            startMs={starts[i]}
-            totalMs={totalMs}
-          />
-        ))}
-      </div>
-
-      {/* Selected span detail */}
-      {!traceLoading && sel && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-          <div style={{ padding: '7px 14px 5px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            {(() => { const t = spanType(sel.node); return <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 5px', borderRadius: 3, background: t.bg, color: t.color }}>{t.label}</span>; })()}
-            <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.88)', fontWeight: 500 }}>{sel.node}</span>
-            <span style={{ marginLeft: 'auto', fontSize: 9.5, color: 'rgba(255,255,255,0.32)', fontFamily: 'var(--font-mono)' }}>
-              +{starts[selected]}ms → +{starts[selected] + sel.latencyMs}ms
+        {/* Waterfall section */}
+        <div style={{ height: splitPct + '%', display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+          {/* label */}
+          <div style={{ padding: '8px 12px 4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+            <span style={{ fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.38)', fontWeight: 600 }}>
+              Observations
+            </span>
+            <span style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.28)', fontFamily: 'var(--font-mono)' }}>
+              {traceLoading ? 'streaming…' : steps.length + ' spans · ' + totalMs + 'ms'}
             </span>
           </div>
-          <div style={{ padding: '0 14px 5px', display: 'flex', alignItems: 'center', gap: 12, fontSize: 10, color: 'rgba(255,255,255,0.4)', fontFamily: 'var(--font-mono)' }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Clock size={9} />{sel.latencyMs}ms</span>
-            {sel.tokens > 0 && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Zap size={9} />{sel.tokens} tok</span>}
-            <span style={{ color: sel.status === 'success' ? '#C5DD83' : '#F8A4A4' }}>● {sel.status}</span>
-          </div>
-          <div style={{ display: 'flex', padding: '0 14px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-            {(['input', 'output', 'metadata'] as const).map(k => (
-              <button key={k} onClick={() => setTab(k)} style={{
-                background: 'transparent', border: 'none',
-                padding: '6px 10px', fontSize: 11, fontWeight: 500,
-                color: tab === k ? '#F5F5F5' : 'rgba(255,255,255,0.38)',
-                borderBottom: tab === k ? '2px solid #EBD07C' : '2px solid transparent',
-                marginBottom: -1, cursor: 'pointer', textTransform: 'capitalize',
-              }}>{k}</button>
+          {/* rows */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '2px 0 4px' }}>
+            {traceLoading ? (
+              <div style={{ padding: '4px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                {[0, 1, 2, 3].map(i => (
+                  <div key={i} className="pulse-soft" style={{ height: 22, borderRadius: 4, background: 'rgba(255,255,255,0.04)', opacity: 1 - i * 0.18 }} />
+                ))}
+              </div>
+            ) : steps.length === 0 ? (
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', textAlign: 'center', padding: '20px 12px' }}>
+                Send a message to capture a trace
+              </p>
+            ) : steps.map((s, i) => (
+              <WaterfallRow
+                key={s.id} step={s} index={i}
+                selected={selected === i} onSelect={setSelected}
+                startMs={starts[i]} totalMs={totalMs}
+              />
             ))}
           </div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '10px 14px' }}>
-            {tab === 'input'    && <JsonView value={sel.input} />}
-            {tab === 'output'   && <JsonView value={sel.output} />}
-            {tab === 'metadata' && <JsonView value={{ node: sel.node, type: spanType(sel.node).label.toLowerCase(), status: sel.status, latency_ms: sel.latencyMs, tokens: sel.tokens }} />}
-          </div>
         </div>
-      )}
+
+        {/* ── Drag divider ── */}
+        <div
+          onMouseDown={() => { isDragging.current = true; document.body.style.cursor = 'row-resize'; }}
+          style={{
+            flexShrink: 0, height: 10, cursor: 'row-resize',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(255,255,255,0.02)',
+            borderTop: '1px solid rgba(255,255,255,0.07)',
+            borderBottom: '1px solid rgba(255,255,255,0.07)',
+            userSelect: 'none',
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(235,208,124,0.07)'; }}
+          onMouseLeave={e => { if (!isDragging.current) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.02)'; }}
+        >
+          <GripHorizontal size={12} style={{ color: 'rgba(255,255,255,0.2)', pointerEvents: 'none' }} />
+        </div>
+
+        {/* Span Detail section */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+          {!traceLoading && sel ? (
+            <>
+              {/* span header */}
+              <div style={{ padding: '7px 14px 5px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flexShrink: 0 }}>
+                {(() => { const t = spanType(sel.node); return <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 5px', borderRadius: 3, background: t.bg, color: t.color }}>{t.label}</span>; })()}
+                <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.88)', fontWeight: 500 }}>{sel.node}</span>
+                <span style={{ marginLeft: 'auto', fontSize: 9.5, color: 'rgba(255,255,255,0.32)', fontFamily: 'var(--font-mono)' }}>
+                  +{starts[selected]}ms → +{starts[selected] + sel.latencyMs}ms
+                </span>
+              </div>
+              {/* span meta row */}
+              <div style={{ padding: '0 14px 5px', display: 'flex', alignItems: 'center', gap: 12, fontSize: 10, color: 'rgba(255,255,255,0.4)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Clock size={9} />{sel.latencyMs}ms</span>
+                {sel.tokens > 0 && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Zap size={9} />{sel.tokens} tok</span>}
+                <span style={{ color: sel.status === 'success' ? '#C5DD83' : '#F8A4A4' }}>● {sel.status}</span>
+              </div>
+              {/* tabs */}
+              <div style={{ display: 'flex', padding: '0 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
+                {(['input', 'output', 'metadata'] as const).map(k => (
+                  <button key={k} onClick={() => setTab(k)} style={{
+                    background: 'transparent', border: 'none',
+                    padding: '6px 10px', fontSize: 11, fontWeight: 500,
+                    color: tab === k ? '#F5F5F5' : 'rgba(255,255,255,0.38)',
+                    borderBottom: tab === k ? '2px solid #EBD07C' : '2px solid transparent',
+                    marginBottom: -1, cursor: 'pointer', textTransform: 'capitalize',
+                  }}>{k}</button>
+                ))}
+              </div>
+              {/* tab content */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '10px 14px' }}>
+                {tab === 'input'    && <JsonView value={sel.input} />}
+                {tab === 'output'   && <JsonView value={sel.output} />}
+                {tab === 'metadata' && <JsonView value={{ node: sel.node, type: spanType(sel.node).label.toLowerCase(), status: sel.status, latency_ms: sel.latencyMs, tokens: sel.tokens }} />}
+              </div>
+            </>
+          ) : (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)' }}>Select a span to inspect</p>
+            </div>
+          )}
+        </div>
+
+      </div>
     </div>
   );
 }
 
 /* ─── ChatBubble ─────────────────────────────────────────────── */
 
-function ChatBubble({ msg }: {
-  msg: Message;
-}) {
+function ChatBubble({ msg }: { msg: Message }) {
   const isUser = msg.role === 'user';
   const renderContent = (text: string) =>
     text.split(/(\*\*[^*]+\*\*)/g).map((p, i) =>
@@ -327,9 +375,7 @@ function ChatBubble({ msg }: {
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         background: isUser ? 'rgba(235,208,124,0.22)' : 'rgba(255,255,255,0.1)',
       }}>
-        {isUser
-          ? <User size={13} style={{ color: '#EBD07C' }} />
-          : <Bot  size={13} style={{ color: 'rgba(255,255,255,0.6)' }} />}
+        {isUser ? <User size={13} style={{ color: '#EBD07C' }} /> : <Bot size={13} style={{ color: 'rgba(255,255,255,0.6)' }} />}
       </div>
       <div style={{ maxWidth: '78%', display: 'flex', flexDirection: 'column', gap: 6 }}>
         <div style={{
@@ -366,6 +412,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
   const [debugOn, setDebugOn]     = useState(true);
   const [agents, setAgents]       = useState<AgentOption[]>([]);
   const [agentsLoading, setAgentsLoading] = useState(true);
+  // blank by default — user must pick an agent before sending
   const [selectedAgent, setSelectedAgent] = useState('');
   const [selectorOpen, setSelectorOpen]   = useState(false);
   const [messages, setMessages]   = useState<Message[]>([]);
@@ -397,7 +444,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  /* Load agents from catalog */
+  /* Load agents — no auto-select */
   useEffect(() => {
     (async () => {
       try {
@@ -410,7 +457,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
           routing_keywords: a.routing_keywords,
         }));
         setAgents(opts);
-        if (opts.length > 0) setSelectedAgent(opts[0].id);
+        // intentionally NOT calling setSelectedAgent here — user picks manually
       } catch {
         /* backend not running */
       } finally {
@@ -421,16 +468,18 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  /* ── Send (Single Agent mode — real SSE backend) ── */
+  /* ── canSend ── */
+  const canSend = input.trim().length > 0 && !sending && (mode === 'unified' || !!selectedAgent);
+
+  /* ── Send Single ── */
   const handleSendSingle = async (text: string) => {
     const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: text, timestamp: now };
-    setMessages(prev => [...prev, userMsg]);
+    const userMsgId = Date.now().toString();
+    const placeholderId = (Date.now() + 1).toString();
+    setMessages(prev => [...prev, { id: userMsgId, role: 'user', content: text, timestamp: now }]);
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setSending(true);
-
-    const placeholderId = (Date.now() + 1).toString();
     setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', content: '', timestamp: now }]);
 
     try {
@@ -481,7 +530,6 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
         }
       }
 
-      /* Poll trace */
       if (convId) {
         setTraceLoading(true);
         (async () => {
@@ -506,7 +554,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     }
   };
 
-  /* ── Send (Unified Chat mode — mock routing) ── */
+  /* ── Send Unified ── */
   const handleSendUnified = (text: string) => {
     const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
     setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: text, timestamp: now }]);
@@ -519,32 +567,37 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
 
     setTimeout(() => {
       const reply: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
+        id: (Date.now() + 1).toString(), role: 'assistant',
         content: decision.conf > 0.5
           ? `Routed to **${decision.name}**. Based on its knowledge base I synthesized an answer with high confidence.`
           : "I'm not fully sure which specialist fits best here. Could you add a bit more detail?",
-        timestamp: now,
-        routed: decision,
+        timestamp: now, routed: decision,
         suggestions: ['Can you show me an example?', 'What are the next steps?', 'Summarize briefly'],
       };
       setMessages(prev => [...prev, reply]);
 
-      /* Prepend router span */
       const routerSpan: TraceStep = {
         id: 'router-' + Date.now(), node: 'router', status: 'success',
-        latencyMs: 90 + Math.round(Math.random() * 40),
-        tokens: 64,
+        startMs: 0, latencyMs: 90 + Math.round(Math.random() * 40), tokens: 64,
         input:  JSON.stringify({ message: text, strategy: 'HYBRID' }, null, 2),
         output: JSON.stringify({ routed_agent: decision.name, confidence: +decision.conf.toFixed(2) }, null, 2),
       };
-      const mockSpans: TraceStep[] = [
+      const t0 = routerSpan.latencyMs;
+      const tPlan = 160 + Math.round(Math.random() * 80);
+      const tKb   = 200 + Math.round(Math.random() * 120);
+      const tMcp  = 180 + Math.round(Math.random() * 100);
+      const tRrf  = 20, tRerank = 15;
+      const tRetrieve = Math.max(tKb, tMcp);
+      const tResp = 380 + Math.round(Math.random() * 200);
+      setTraceSteps([
         routerSpan,
-        { id: 'p-' + Date.now(), node: 'planner', status: 'success', latencyMs: 160 + Math.round(Math.random() * 80), tokens: 320, input: JSON.stringify({ query: text }, null, 2), output: '{"plan": "retrieve relevant docs, synthesize response"}' },
-        { id: 'kb-' + Date.now(), node: 'kb_search', status: 'success', latencyMs: 200 + Math.round(Math.random() * 120), tokens: 0, input: JSON.stringify({ query: text, top_k: 5 }, null, 2), output: '{"chunks": 4}' },
-        { id: 'r-' + Date.now(), node: 'responder', status: 'success', latencyMs: 380 + Math.round(Math.random() * 200), tokens: 640 + Math.round(Math.random() * 200), input: JSON.stringify({ query: text, chunks: 4 }, null, 2), output: reply.content },
-      ];
-      setTraceSteps(mockSpans);
+        { id: 'p-'  + Date.now(), node: 'planner',    status: 'success', startMs: t0,                                       latencyMs: tPlan,   tokens: 320, input: JSON.stringify({ query: text }, null, 2), output: '{"plan": "retrieve relevant docs, synthesize response"}' },
+        { id: 'kb-' + Date.now(), node: 'kb_search',   status: 'success', startMs: t0 + tPlan,                              latencyMs: tKb,     tokens: 0,   input: JSON.stringify({ query: text, top_k: 5 }, null, 2), output: '{"chunks": 4}' },
+        { id: 'mc-' + Date.now(), node: 'mcp',         status: 'success', startMs: t0 + tPlan,                              latencyMs: tMcp,    tokens: 0,   input: JSON.stringify({ query: text }, null, 2), output: '{"results": 2}' },
+        { id: 'rr-' + Date.now(), node: 'rrf_ranking', status: 'success', startMs: t0 + tPlan + tRetrieve,                  latencyMs: tRrf,    tokens: 0,   input: '{}', output: '{}' },
+        { id: 're-' + Date.now(), node: 'reranker',    status: 'success', startMs: t0 + tPlan + tRetrieve + tRrf,           latencyMs: tRerank, tokens: 0,   input: '{}', output: '{}' },
+        { id: 'r-'  + Date.now(), node: 'responder',   status: 'success', startMs: t0 + tPlan + tRetrieve + tRrf + tRerank, latencyMs: tResp,   tokens: 640 + Math.round(Math.random() * 200), input: JSON.stringify({ query: text, chunks: 4 }, null, 2), output: reply.content },
+      ]);
       setSending(false);
       setTraceLoading(false);
     }, 1200);
@@ -558,7 +611,14 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     handleSendSingle(text);
   };
 
-  const agentLabel = agents.find(a => a.id === selectedAgent)?.label ?? 'Agent';
+  /* ── Derived ── */
+  const selectedAgentObj = agents.find(a => a.id === selectedAgent);
+
+  /* ── Send button dimming logic ──
+     - no agent selected + single mode → show hint via placeholder, button dim
+     - typing but no agent → still dim, don't block typing
+  */
+  const sendBtnActive = canSend;
 
   return (
     <div style={{
@@ -568,6 +628,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
       borderRadius: 14, border: '1px solid rgba(255,255,255,0.1)',
       overflow: 'hidden', background: '#0D0D0D',
     }}>
+
       {/* ── Header ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', borderBottom: '1px solid rgba(255,255,255,0.1)', flexShrink: 0, gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -575,7 +636,6 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
             <MessageSquare size={15} style={{ color: '#EBD07C' }} />
             <span style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.8)' }}>Playground</span>
           </div>
-          {/* Mode toggle */}
           <div style={{ display: 'flex', gap: 2, padding: 3, background: 'rgba(255,255,255,0.06)', borderRadius: 9, border: '1px solid rgba(255,255,255,0.1)' }}>
             {([['unified', 'Unified Chat'], ['single', 'Single Agent']] as const).map(([id, label]) => (
               <button key={id} onClick={() => { setMode(id); setMessages([]); setTraceSteps([]); }} style={{
@@ -588,7 +648,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {/* Agent selector — Single Agent only */}
+          {/* Agent selector */}
           {mode === 'single' && (
             <div ref={selectorRef} style={{ position: 'relative' }}>
               <button
@@ -596,15 +656,17 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                 disabled={agentsLoading}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8,
-                  background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
-                  color: 'rgba(255,255,255,0.7)', fontSize: 11.5, borderRadius: 9,
+                  background: selectedAgent ? 'rgba(235,208,124,0.10)' : 'rgba(255,255,255,0.06)',
+                  border: '1px solid ' + (selectedAgent ? 'rgba(235,208,124,0.35)' : 'rgba(255,255,255,0.1)'),
+                  color: selectedAgent ? '#EBD07C' : 'rgba(255,255,255,0.35)',
+                  fontSize: 11.5, borderRadius: 9,
                   padding: '6px 10px', minWidth: 196, cursor: 'pointer',
                 }}
               >
                 <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {agentsLoading ? 'Loading…' : (agentLabel)}
+                  {agentsLoading ? 'Loading…' : (selectedAgentObj?.label ?? 'Select an agent…')}
                 </span>
-                <ChevronDown size={12} style={{ color: 'rgba(255,255,255,0.4)', transform: selectorOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }} />
+                <ChevronDown size={12} style={{ color: selectedAgent ? '#EBD07C' : 'rgba(255,255,255,0.3)', transform: selectorOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }} />
               </button>
               <AnimatePresence>
                 {selectorOpen && (
@@ -633,14 +695,12 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
               </AnimatePresence>
             </div>
           )}
-          {/* Unified Chat indicator */}
           {mode === 'unified' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(240,180,41,0.12)', border: '1px solid rgba(240,180,41,0.4)', borderRadius: 9, padding: '6px 11px' }}>
               <Route size={13} style={{ color: '#F0B429' }} />
               <span style={{ fontSize: 11, fontWeight: 600, color: '#F0B429' }}>Router picks agent</span>
             </div>
           )}
-          {/* Debug toggle */}
           <button
             onClick={() => setDebugOn(v => !v)}
             style={{
@@ -657,20 +717,37 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
       </div>
 
       {/* ── Body ── */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
+
         {/* Chat panel */}
-        <div style={{ flex: debugOn ? '0 0 55%' : '1', display: 'flex', flexDirection: 'column', borderRight: debugOn ? '1px solid rgba(255,255,255,0.1)' : 'none', minWidth: 0 }}>
+        <motion.div
+          animate={{ width: debugOn ? '55%' : '100%' }}
+          transition={{ duration: 0.25, ease: 'easeInOut' }}
+          style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden', borderRight: debugOn ? '1px solid rgba(255,255,255,0.1)' : 'none' }}
+        >
           {/* Context badge */}
           <div style={{ padding: '7px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
               {mode === 'unified'
                 ? <><Route size={11} />Unified chat — router selects an agent per message</>
-                : <><Bot size={11} />{agentLabel}</>}
+                : selectedAgentObj
+                  ? <><Bot size={11} />{selectedAgentObj.label}</>
+                  : <><Bot size={11} style={{ opacity: 0.4 }} /><span style={{ color: 'rgba(255,255,255,0.25)' }}>No agent selected</span></>
+              }
             </span>
           </div>
 
           {/* Messages */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '14px 14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {/* Empty state when no agent selected */}
+            {mode === 'single' && !selectedAgent && messages.length === 0 && (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, opacity: 0.5 }}>
+                <Bot size={28} style={{ color: 'rgba(255,255,255,0.2)' }} />
+                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', textAlign: 'center', margin: 0 }}>
+                  Select an agent from the dropdown<br />to start a conversation
+                </p>
+              </div>
+            )}
             <AnimatePresence initial={false}>
               {messages.map(msg => {
                 if (msg.content === '' && msg.role === 'assistant') {
@@ -693,7 +770,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
             <div ref={bottomRef} />
           </div>
 
-          {/* Suggestion chips — dynamic from backend, above input */}
+          {/* Suggestion chips */}
           {(() => {
             const last = messages.length > 0 ? messages[messages.length - 1] : null;
             const chips = !sending && last?.role === 'assistant' && last.suggestions?.length ? last.suggestions : null;
@@ -739,47 +816,66 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
 
           {/* Input */}
           <div style={{ padding: '8px 12px 14px', flexShrink: 0 }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: '8px 10px' }}>
+            {/* hint when no agent selected */}
+            {mode === 'single' && !selectedAgent && (
+              <p style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.25)', textAlign: 'center', margin: '0 0 6px', fontStyle: 'italic' }}>
+                Choose an agent above to enable sending
+              </p>
+            )}
+            <div style={{
+              display: 'flex', gap: 8, alignItems: 'center',
+              background: 'rgba(255,255,255,0.05)',
+              border: '1px solid ' + (mode === 'single' && !selectedAgent ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.1)'),
+              borderRadius: 12, padding: '8px 10px',
+              opacity: mode === 'single' && !selectedAgent ? 0.6 : 1,
+            }}>
               <textarea
                 ref={textareaRef}
                 value={input}
                 onChange={e => { setInput(e.target.value); adjustHeight(); }}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                placeholder={mode === 'unified' ? 'Ask anything — router picks the right agent…' : 'Ask the agent anything… (Enter to send)'}
+                placeholder={
+                  mode === 'unified'
+                    ? 'Ask anything — router picks the right agent…'
+                    : !selectedAgent
+                      ? 'Select an agent first…'
+                      : 'Ask the agent anything… (Enter to send)'
+                }
                 rows={1}
                 style={{ flex: 1, background: 'transparent', fontSize: 13, color: 'rgba(255,255,255,0.8)', resize: 'none', outline: 'none', border: 'none', lineHeight: 1.55, fontFamily: 'inherit', maxHeight: 120, overflowY: 'auto' }}
               />
               <button
                 onClick={() => handleSend()}
-                disabled={!input.trim() || sending || (mode === 'single' && !selectedAgent)}
+                disabled={!sendBtnActive}
                 style={{
                   flexShrink: 0, width: 32, height: 32, borderRadius: 9,
-                  background: (input.trim() && !sending) ? '#B88719' : 'rgba(184,135,25,0.25)',
+                  background: sendBtnActive ? '#B88719' : 'rgba(184,135,25,0.25)',
                   border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  cursor: (input.trim() && !sending) ? 'pointer' : 'not-allowed', color: '#fff',
+                  cursor: sendBtnActive ? 'pointer' : 'not-allowed', color: '#fff',
                 }}
               >
                 <Send size={13} />
               </button>
             </div>
           </div>
-        </div>
+        </motion.div>
 
-        {/* Trace panel */}
+        {/* Trace panel — slides in from right, out to right */}
         <AnimatePresence initial={false}>
           {debugOn && (
             <motion.div
               key="trace"
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: '45%', opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.22, ease: 'easeInOut' }}
-              style={{ overflow: 'hidden', display: 'flex' }}
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ duration: 0.25, ease: 'easeInOut' }}
+              style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: '45%', display: 'flex', overflow: 'hidden' }}
             >
               <TracePanel steps={traceSteps} traceLoading={traceLoading} traceId={conversationId} />
             </motion.div>
           )}
         </AnimatePresence>
+
       </div>
     </div>
   );
