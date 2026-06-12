@@ -15,6 +15,7 @@ class AgentState(TypedDict):
     rrf_results: List[dict]
     reranked_chunks: List[dict]
     response: str
+    suggestions: List[str]
     guardrail_triggered: bool
     guardrail_message: str
     guardrail_stage: Optional[str]    # always "input"

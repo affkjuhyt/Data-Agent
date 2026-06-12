@@ -12,16 +12,38 @@ _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "prompts")
 _SYSTEM = open(os.path.join(_PROMPTS_DIR, "suggestion_system.txt")).read()
 
 
-async def generate_suggestions(query: str, messages: list[dict], cfg: dict) -> list[str]:
+async def suggestion_node(state: dict) -> dict:
+    cfg    = state.get("config", {})
+    query  = state.get("query", "")
+    msgs   = state.get("messages", [])
+    chunks = state.get("reranked_chunks", [])
+    topics = await _generate(query, msgs, chunks, cfg)
+    return {"suggestions": topics}
+
+
+async def _generate(query: str, messages: list[dict], chunks: list[dict], cfg: dict) -> list[str]:
     history_lines = []
     for m in messages[-4:]:
-        role = m.get("role", "")
+        role    = m.get("role", "")
         content = (m.get("content") or "").strip()[:200]
         if role in ("user", "assistant"):
             history_lines.append(f"{role.capitalize()}: {content}")
 
-    history_block = "\n".join(history_lines)
-    user_content = f"Lịch sử hội thoại:\n{history_block}\n\nCâu hỏi hiện tại: {query}" if history_block else f"Câu hỏi: {query}"
+    parts = []
+    if history_lines:
+        parts.append("Lịch sử hội thoại:\n" + "\n".join(history_lines))
+    parts.append(f"Câu hỏi hiện tại: {query}")
+
+    if chunks:
+        snippets = [
+            (c.get("content") or c.get("text") or "")[:300]
+            for c in chunks[:3] if c
+        ]
+        snippets = [s for s in snippets if s]
+        if snippets:
+            parts.append("Tài liệu liên quan:\n" + "\n---\n".join(snippets))
+
+    user_content = "\n\n".join(parts)
 
     try:
         response = await litellm.acompletion(
@@ -33,11 +55,11 @@ async def generate_suggestions(query: str, messages: list[dict], cfg: dict) -> l
                 {"role": "user",   "content": user_content},
             ],
             temperature=0.3,
-            max_tokens=120,
+            max_tokens=150,
             response_format={"type": "json_object"},
             timeout=cfg.get("suggestion_timeout", 8),
         )
-        raw = response.choices[0].message.content or ""
+        raw    = response.choices[0].message.content or ""
         result = json.loads(raw)
         topics = result.get("topics", [])
         if isinstance(topics, list):

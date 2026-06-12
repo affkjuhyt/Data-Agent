@@ -7,6 +7,7 @@ from nodes.model_harness.planner import planner_node
 from nodes.model_harness.responder import responder_node
 from nodes.model_harness.rrf_ranking import rrf_ranking_node
 from nodes.model_harness.reranker import reranker_node
+from nodes.model_harness.suggestion import suggestion_node
 from nodes.sandbox.kb_search import kb_search_node
 from nodes.sandbox.mcp import mcp_node
 
@@ -153,10 +154,26 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict]):
             continue  # đã thêm qua join node ở trên
         builder.add_edge(src, tgt)
 
-    # Node nào không có outgoing edge trên canvas → nối thẳng vào END
+    # Node nào không có outgoing edge trên canvas → terminal
     all_canvas_types = node_types | {"planner"}
     has_outgoing = {src for src, _ in type_edges}
     terminal_nodes = all_canvas_types - handled_sources - has_outgoing
+
+    # Suggestion chạy song song với responder (nếu responder có trong graph)
+    if "responder" in terminal_nodes:
+        builder.add_node("suggestion", suggestion_node)
+        builder.add_node("join_end", lambda state: {})
+
+        # Tìm source của responder để fan-out suggestion từ cùng điểm
+        responder_sources = {src for src, tgt in type_edges if tgt == "responder"}
+        for src in responder_sources:
+            builder.add_edge(src, "suggestion")
+
+        builder.add_edge("responder", "join_end")
+        builder.add_edge("suggestion", "join_end")
+        builder.add_edge("join_end", END)
+        terminal_nodes = terminal_nodes - {"responder"}
+
     for tn in terminal_nodes:
         builder.add_edge(tn, END)
 

@@ -8,7 +8,6 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from config_loader import load_agent_config
-from nodes.model_harness.suggestion import generate_suggestions
 from db import create_conversation, get_messages, save_message, save_trace, validate_agent_tenant
 from redis_cache import cache_get_messages, cache_append_messages, cache_set_messages
 from graph import build_graph
@@ -87,6 +86,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         "rrf_results": [],
         "reranked_chunks": [],
         "response": "",
+        "suggestions": [],
         "guardrail_triggered": False,
         "guardrail_message": "",
         "guardrail_stage": None,
@@ -122,9 +122,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         options_buffer = ""    # nội dung sau <OPTIONS>
         started_at = time.monotonic()
 
-        suggestion_task = asyncio.create_task(
-            generate_suggestions(req.query, state.get("messages", []), cfg)
-        )
+        pending_suggestions: list[str] | None = None
 
         try:
             async for event in graph.astream_events(state, version="v2", config={"callbacks": callbacks}):
@@ -138,6 +136,13 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                         guardrail_msg = output.get("guardrail_message", "")
                         guardrail_stage = output.get("guardrail_stage")
                         guardrail_reason = output.get("guardrail_reason")
+
+                elif kind == "on_chain_end" and node == "suggestion":
+                    output = event["data"].get("output", {})
+                    if isinstance(output, dict):
+                        topics = output.get("suggestions", [])
+                        if topics:
+                            pending_suggestions = topics
 
                 elif kind == "on_chat_model_stream" and node == "responder":
                     token = event["data"]["chunk"].content or ""
@@ -190,20 +195,15 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                         pass
 
             if guardrail_triggered:
-                suggestion_task.cancel()
                 yield f"data: {json.dumps('Xin lỗi, tôi không thể trả lời câu hỏi này.')}\n\n"
             elif responder_options:
-                suggestion_task.cancel()
                 yield f"data: {json.dumps({'__options': responder_options})}\n\n"
-            else:
-                topics = await suggestion_task
-                if topics:
-                    yield f"data: {json.dumps({'__suggestions': topics})}\n\n"
+            elif pending_suggestions:
+                yield f"data: {json.dumps({'__suggestions': pending_suggestions})}\n\n"
 
             yield "data: [DONE]\n\n"
 
         except Exception:
-            suggestion_task.cancel()
             logger.exception("event_stream error")
             yield "data: [ERROR] Đã xảy ra lỗi, vui lòng thử lại.\n\n"
         finally:
