@@ -293,9 +293,10 @@ export const KnowledgeHubView = () => {
     }
     if (selectedDoc.subType === 'Warehouse') {
       setWarehouseConfigsLoading(true);
-      mockGet<Record<string, unknown>[]>(`/api/knowledge/warehouses/${selectedDoc.id}/configs`)
+      mockGet<Record<string, unknown>[] | { items: Record<string, unknown>[] }>(`/api/knowledge/warehouses/${selectedDoc.id}/configs`)
         .then(data => {
-          const list = (data ?? []).map((r, i) => normalizeWConfig(r, i));
+          const rows = Array.isArray(data) ? data : (data?.items ?? []);
+          const list = rows.map((r, i) => normalizeWConfig(r, i));
           setWarehouseConfigs(list);
           setSelectedConfig(list[0] ?? null);
         })
@@ -306,9 +307,10 @@ export const KnowledgeHubView = () => {
         .finally(() => setWarehouseConfigsLoading(false));
     } else {
       setChunksLoading(true);
-      mockGet<Chunk[]>(`/api/knowledge/documents/${selectedDoc.id}/chunks`)
+      mockGet<Chunk[] | { items: Chunk[] }>(`/api/knowledge/documents/${selectedDoc.id}/chunks`)
         .then(data => {
-          const list = (data ?? []).map(chunk => ({
+          const rows = Array.isArray(data) ? data : (data?.items ?? []);
+          const list = rows.map(chunk => ({
             ...chunk,
             versions: chunk.versions.map(v => ({
               ...v,
