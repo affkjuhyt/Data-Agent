@@ -123,13 +123,36 @@ async def get_schema(neo4j, postgres=None, tenant_id: str | None = None) -> dict
 
 
 async def run_cypher(neo4j, cypher: str) -> dict:
+    """Run a read-only Cypher query and return the matched subgraph as
+    {nodes, edges} — the same shape as /graph — so the UI can render the query
+    result straight onto the canvas. Returns an EMPTY subgraph (not an error)
+    when Neo4j is unavailable or the query yields no graph, so the client can
+    fall back to a local traversal of the already-loaded graph."""
     if any(cypher.strip().upper().startswith(kw) for kw in _READONLY_PREFIXES):
         raise HTTPException(status_code=400, detail="Only read-only Cypher queries are allowed")
+
+    def _nid(n) -> str:
+        return str(getattr(n, "element_id", None) or n.id)
+
     try:
         async with neo4j.get_client().session() as session:
             result = await session.run(cypher)
-            rows = await result.data()
-        return {"rows": rows[:200]}
+            graph = await result.graph()   # nodes + relationships traversed by the query
+
+        nodes = [
+            {"id": _nid(n), "name": n.get("name", ""), "description": n.get("description")}
+            for n in graph.nodes
+        ]
+        edges = [
+            {
+                "from":        _nid(r.start_node),
+                "to":          _nid(r.end_node),
+                "description": r.get("description"),
+                "score":       r.get("score"),
+            }
+            for r in graph.relationships
+        ]
+        return {"nodes": nodes, "edges": edges}
     except Exception as e:
-        log.error("neo4j_ops: cypher execution failed: %s", e)
-        raise HTTPException(status_code=400, detail="Query execution failed")
+        log.warning("neo4j_ops: cypher execution failed (%s) — returning empty subgraph", e)
+        return {"nodes": [], "edges": []}

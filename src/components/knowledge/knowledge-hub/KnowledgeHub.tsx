@@ -17,7 +17,7 @@ import {
   WTableEntry, WConfig, WConnection, getWarehouseConnection, formatRows, nextVersion,
   ChunkVersion, Chunk, QdrantCollection, QdrantPoint, QueryStep,
   GraphNode, GraphEdge, Neo4jSchema,
-  buildCypher, PAGE_SIZE,
+  buildCypher, traverseSubgraph, PAGE_SIZE,
 } from './knowledgeHub.data';
 function normalizeWConfig(raw: Record<string, unknown>, idx: number): WConfig {
   const tables = ((raw.tables ?? []) as Array<Record<string, unknown>>).map((t, ti) => ({
@@ -1568,23 +1568,30 @@ export const KnowledgeHubView = () => {
                   setCypher(generated);
                   setQueryRan(true);
                   setQueryRunning(true);
+
+                  // 1) Ask the backend to run the Cypher and return the matched subgraph.
+                  let sub: { nodes?: GraphNode[]; edges?: GraphEdge[] } | null = null;
                   try {
-                    await mockMutate('POST', '/api/knowledge/neo4j/query', { cypher: generated });
-                  } catch { /* ignore */ }
+                    sub = await mockMutate<{ nodes?: GraphNode[]; edges?: GraphEdge[] }>(
+                      'POST', '/api/knowledge/neo4j/query', { cypher: generated },
+                    );
+                  } catch { /* Neo4j offline — fall back to a local traversal below */ }
                   finally { setQueryRunning(false); }
 
-                  // Filter graph to the query path entities
-                  if (rawGraphNodes.length > 0) {
-                    const pathEntities = new Set([startNode, ...steps.map(s => s.nodeType)]);
-                    const pathNodes = rawGraphNodes.filter(n => pathEntities.has(n.name ?? ''));
-                    const pathNodeIds = new Set(pathNodes.map(n => n.id));
-                    const pathEdges = rawGraphEdges.filter(
-                      e => pathNodeIds.has(e.from) && pathNodeIds.has(e.to),
-                    );
-                    const hasFilter = pathNodes.length > 0 && pathNodes.length < rawGraphNodes.length;
-                    setFilteredNodes(hasFilter ? pathNodes : null);
-                    setFilteredEdges(hasFilter ? pathEdges : null);
-                    setGraphFiltered(hasFilter);
+                  // 2) Prefer the backend subgraph; otherwise traverse the loaded graph
+                  //    from the start node so the canvas always reflects the query.
+                  let nodes = sub?.nodes ?? [];
+                  let edges = sub?.edges ?? [];
+                  if (nodes.length === 0 && rawGraphNodes.length > 0) {
+                    const local = traverseSubgraph(rawGraphNodes, rawGraphEdges, startNode, steps.length);
+                    nodes = local.nodes;
+                    edges = local.edges;
+                  }
+                  if (nodes.length > 0) {
+                    setFilteredNodes(nodes);
+                    setFilteredEdges(edges);
+                    setGraphFiltered(true);
+                    setTimeout(() => fgRef.current?.zoomToFit(400, 40), 60);
                   }
                 }}
                 className="flex items-center gap-1.5 px-3 py-2 bg-[#B88719] text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-[#8A5A00] transition-all cursor-pointer">
@@ -1727,9 +1734,10 @@ export const KnowledgeHubView = () => {
                     setQueryRan(false);
                     setTimeout(() => fgRef.current?.zoomToFit(400, 40), 50);
                   }}
+                  title="Revert the canvas to the full graph"
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 border border-white/20 text-white/70 hover:bg-white/20 rounded-full text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer">
                   <RefreshCw className="w-3 h-3" />
-                  Full Graph
+                  Reset to Full Graph
                 </button>
               )}
               <span className="flex items-center gap-1.5 px-3 py-1.5 bg-[#B88719]/10 border border-[#B88719]/20 text-[#B88719] rounded-full text-[9px] font-black uppercase tracking-widest">

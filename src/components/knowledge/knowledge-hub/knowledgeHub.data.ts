@@ -208,4 +208,48 @@ export const buildCypher = (startNode: string, steps: QueryStep[]): string => {
   return c + `\nRETURN ${r.join(', ')}`;
 };
 
+/**
+ * Local fallback for the graph canvas when the backend can't run Cypher
+ * (e.g. Neo4j offline). Returns the subgraph reachable from the node(s) matching
+ * `startName`, expanding up to `hops` relationship steps in either direction, so
+ * "Run" always produces a meaningful, connected result instead of a no-op.
+ */
+export function traverseSubgraph(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  startName: string,
+  hops: number,
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const want = startName.trim().toLowerCase();
+  if (!want || nodes.length === 0) return { nodes: [], edges: [] };
+
+  const exact = nodes.filter(n => (n.name ?? '').toLowerCase() === want);
+  const seeds = exact.length ? exact : nodes.filter(n => (n.name ?? '').toLowerCase().includes(want));
+  if (!seeds.length) return { nodes: [], edges: [] };
+
+  const adj = new Map<string, GraphEdge[]>();
+  for (const e of edges) {
+    (adj.get(e.from) ?? adj.set(e.from, []).get(e.from)!).push(e);
+    (adj.get(e.to) ?? adj.set(e.to, []).get(e.to)!).push(e);
+  }
+
+  const keep = new Set(seeds.map(n => n.id));
+  let frontier = [...keep];
+  for (let d = 0; d < Math.max(hops, 1); d++) {
+    const next: string[] = [];
+    for (const id of frontier) {
+      for (const e of adj.get(id) ?? []) {
+        const other = e.from === id ? e.to : e.from;
+        if (!keep.has(other)) { keep.add(other); next.push(other); }
+      }
+    }
+    frontier = next;
+  }
+
+  return {
+    nodes: nodes.filter(n => keep.has(n.id)),
+    edges: edges.filter(e => keep.has(e.from) && keep.has(e.to)),
+  };
+}
+
 export const PAGE_SIZE = 20;
