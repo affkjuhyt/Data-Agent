@@ -20,4 +20,5 @@ class AgentState(TypedDict):
     guardrail_message: str
     guardrail_stage: Optional[str]    # always "input"
     guardrail_reason: Optional[str]   # lý do chi tiết từ LLM hoặc regex pattern matched
+    intent: Optional[str]             # "question" | "task" — set by planner
     config: dict

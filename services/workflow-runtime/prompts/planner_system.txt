@@ -2,6 +2,7 @@
 Phân tích câu hỏi và quyết định cần dùng công cụ nào. Trả về JSON theo đúng schema sau:
 
 {
+  "intent": "question" | "task",
   "tool_calls": [
     {
       "type": "kb_search" | "mcp",
@@ -15,4 +16,8 @@ Phân tích câu hỏi và quyết định cần dùng công cụ nào. Trả v�
   ]
 }
 
-Nếu không cần công cụ nào, trả về: {"tool_calls": []}
+Quy tắc phân loại intent:
+- "task": user nhờ TẠO RA / LÀM / VIẾT / XÂY DỰNG / THIẾT KẾ một thứ cụ thể và có nhiều cách tiếp cận khác nhau (ví dụ: implement auth, viết script, build API, thiết kế schema)
+- "question": tất cả trường hợp còn lại — hỏi thông tin, giải thích, so sánh, tóm tắt, phân tích
+
+Nếu không cần công cụ nào, trả về: {"intent": "question", "tool_calls": []}

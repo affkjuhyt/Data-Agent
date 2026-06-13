@@ -606,6 +606,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
   const handleSend = (override?: string) => {
     const text = (override ?? input).trim();
     if (!text || sending) return;
+    setPendingOptions(null);
     if (mode === 'unified') { handleSendUnified(text); return; }
     if (!selectedAgent) return;
     handleSendSingle(text);
@@ -679,7 +680,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                     {agents.length === 0 && <p style={{ padding: '8px 12px', fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>No agents found</p>}
                     {agents.map(a => (
                       <button key={a.id}
-                        onClick={() => { setSelectedAgent(a.id); setSelectorOpen(false); setConversationId(null); setMessages([]); }}
+                        onClick={() => { setSelectedAgent(a.id); setSelectorOpen(false); setConversationId(null); setMessages([]); setPendingOptions(null); }}
                         style={{
                           width: '100%', textAlign: 'left', padding: '8px 12px', fontSize: 11.5,
                           background: selectedAgent === a.id ? 'rgba(235,208,124,0.15)' : 'transparent',

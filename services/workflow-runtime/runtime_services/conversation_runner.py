@@ -91,6 +91,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         "guardrail_message": "",
         "guardrail_stage": None,
         "guardrail_reason": None,
+        "intent": None,
         "config": cfg,
     }
 
@@ -193,6 +194,12 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                             responder_options = [str(o) for o in parsed[:3]]
                     except (json.JSONDecodeError, Exception):
                         pass
+                # fallback: </OPTIONS> bị thiếu (LLM cắt giữa chừng / max_tokens hit)
+                if not responder_options:
+                    fallback = options_buffer.replace(_OPTIONS_CLOSE, "").strip()
+                    if fallback:
+                        full_response.append(fallback)
+                        yield f"data: {json.dumps(fallback)}\n\n"
 
             if guardrail_triggered:
                 yield f"data: {json.dumps('Xin lỗi, tôi không thể trả lời câu hỏi này.')}\n\n"
