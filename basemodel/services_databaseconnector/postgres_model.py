@@ -1335,7 +1335,7 @@ class SelectInLoadRequest(BaseModel):
     load_paths: list[str]               # table name dot-notation e.g. ["KBTextBlock.KBTextBlockVersion", "KBTable"]
     filters: list[WhereFilter] = []
     limit: int = 50
-    cursor: Optional[datetime.datetime] = None
+    cursor: Optional[dict] = None  # last row of prior page (keyset); see pagination.advance
     order_by: Optional[OrderBy] = None
 
 
@@ -1345,7 +1345,7 @@ class ReadJoinRequest(BaseModel):
     selected_columns: list[SelectedColumn] = []
     filters: list[WhereFilter] = []
     limit: int = 50
-    cursor: Optional[datetime.datetime] = None
+    cursor: Optional[dict] = None  # last row of prior page (keyset); see pagination.advance
     order_by: Optional[OrderBy] = None
 
     @model_validator(mode="after")

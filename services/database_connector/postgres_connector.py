@@ -2,7 +2,7 @@ import asyncio
 import uuid
 from typing import Any
 
-from sqlalchemy import select, update as sa_update, delete as sa_delete, text
+from sqlalchemy import select, update as sa_update, delete as sa_delete, text, tuple_
 from sqlalchemy.engine import CursorResult
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import selectinload, attributes as sa_attributes
@@ -116,6 +116,40 @@ def _validate_order_by(order_by, allowed_tables: set[str]) -> None:
             f"order_by column '{order_by.column}' does not exist on '{order_by.table_name}'"
         )
 
+def _apply_keyset(stmt, root_cls, cursor, order_by):
+    """Keyset pagination with a stable tiebreaker.
+
+    Orders by (inserted_at, <pk>) and, when a cursor (the last row of the prior
+    page) is given, filters WHERE (inserted_at, pk) > (cur_ts, cur_id). The pk
+    tiebreaker is essential: inserted_at is NOT unique (bulk-seeded rows share a
+    timestamp), so a single-column `inserted_at > cur` skips every row tied at
+    the boundary — that was the page-2-empty bug. The pk ordering is applied on
+    page 1 too, so the order the cursor is derived from matches the continuation.
+    """
+    pk_col  = sa_inspect(root_cls).primary_key[0]
+    pk_name = pk_col.name
+    pk_attr = getattr(root_cls, pk_name)
+    ks_attr = root_cls.inserted_at  # the column advance() records into the cursor
+    asc = order_by is None or str(order_by.order.value).upper() == "ASC"
+
+    if cursor is not None:
+        if isinstance(cursor, dict):
+            cur_ts, cur_id = cursor.get("inserted_at"), cursor.get(pk_name)
+        else:  # legacy single-column cursor (datetime)
+            cur_ts, cur_id = cursor, None
+        if cur_ts is not None and cur_id is not None:
+            boundary = tuple_(ks_attr, pk_attr)
+            stmt = stmt.where(boundary > (cur_ts, cur_id) if asc else boundary < (cur_ts, cur_id))
+        elif cur_ts is not None:
+            stmt = stmt.where(ks_attr > cur_ts if asc else ks_attr < cur_ts)
+
+    if order_by is not None:
+        primary = text(f'"{order_by.table_name}".{order_by.column} {order_by.order.value}')
+    else:
+        primary = ks_attr.asc()
+    return stmt.order_by(primary, pk_attr.asc() if asc else pk_attr.desc())
+
+
 def _prepare_insert(data: BaseModel) -> DMLPreparation:
     table_name, orm_cls = _resolve(data)
     return DMLPreparation(
@@ -142,13 +176,7 @@ def _prepare_deep_search(data: SelectInLoadRequest) -> DQLPreparation:
         stmt = stmt.where(orm_cls.tenant_id == tenant_uuid)
     for f in data.filters:
         stmt = stmt.where(_apply_op(getattr(orm_cls, f.column_name), f))
-    if data.cursor is not None:
-        stmt = stmt.where(orm_cls.inserted_at > data.cursor)
-
-    stmt = stmt.order_by(
-        text(
-            f'"{data.order_by.table_name}".{data.order_by.column} {data.order_by.order.value}') if data.order_by else orm_cls.inserted_at.asc()
-    ).limit(data.limit)
+    stmt = _apply_keyset(stmt, orm_cls, data.cursor, data.order_by).limit(data.limit)
     return DQLPreparation(compiled_query=stmt)
 
 
@@ -221,18 +249,13 @@ def _prepare_read(data: ReadJoinRequest) -> DQLPreparation:
         stmt = stmt.where(from_cls.tenant_id == tenant_uuid)
     for f in data.filters:
         stmt = stmt.where(_apply_op(getattr(orm_map[f.table_name], f.column_name), f))
-    if data.cursor is not None:
-        stmt = stmt.where(from_cls.inserted_at > data.cursor)
     # exclude soft-deleted rows if the root table supports it
     try:
         stmt = stmt.where(from_cls.is_deleted == False)
     except AttributeError:
         pass
 
-    stmt = stmt.order_by(
-        text(
-            f'"{data.order_by.table_name}".{data.order_by.column} {data.order_by.order.value}') if data.order_by else from_cls.inserted_at.asc()
-    )
+    stmt = _apply_keyset(stmt, from_cls, data.cursor, data.order_by)
     return DQLPreparation(compiled_query=stmt.limit(data.limit))
 
 
