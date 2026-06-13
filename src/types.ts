@@ -1,20 +1,22 @@
+import type {
+  Tier,
+  DocStatus,
+} from './lib/enums';
+
 export type Role = 'PLATFORM_ADMIN' | 'AI_ENGINEER' | 'EXECUTIVE';
 export type Industry = 'GENERAL' | 'GOVERNMENT' | 'BANKING' | 'RAILWAY' | 'HEALTHCARE';
 export type Environment = 'DEV' | 'UAT' | 'STAGING' | 'PROD';
 
-export type KnowledgeLayer = 'BRONZE' | 'SILVER' | 'GOLD';
-export type DocStatus = 
-  | 'RAW' 
-  | 'OCR_COMPLETE' 
-  | 'CLEANED'
-  | 'CHUNKING' 
-  | 'EMBEDDING' 
-  | 'GRAPH_EXTRACTING' 
-  | 'PUBLISHED' 
-  | 'FAILED'
-  | 'DEPRECATED'
-  | 'ARCHIVED'
-  | 'PENDING_APPROVAL';
+export interface PagedResponse<T> {
+  items: T[];
+  page: number;
+  page_size: number;
+  has_next: boolean;
+}
+
+// Canonical layer values match the postgres KBTier enum (lowercase).
+export type KnowledgeLayer = Tier;
+export type { DocStatus };
 
 export type ConnectorStatus = 'HEALTHY' | 'SYNCING' | 'ERROR' | 'PAUSED';
 export type ConnectorType = 'DOCUMENT' | 'ENTERPRISE' | 'COMMUNICATION' | 'DATABASE' | 'WEB' | 'MEDIA';
@@ -46,14 +48,29 @@ export interface User {
 }
 
 export interface KnowledgeDocument {
-  id: string;
+  data_id: string;
   name: string;
-  layer: KnowledgeLayer;
-  status: DocStatus;
-  version: string;
-  lastUpdated: string;
-  author: string;
-  metadata: Record<string, any>;
+  source_type: string;          // doc | web | image | video | warehouse
+  extension?: string | null;
+  current_tier: KnowledgeLayer; // bronze | silver | gold
+  status: DocStatus;            // derived server-side from current_tier
+  added_by?: string | null;     // user_id of uploader
+  added_on?: string | null;     // timestamp
+  abstract?: string | null;
+  metadata: {
+    doc_type?: string | null;   // computed from source_type + extension
+    language?: string | null;
+    access_role?: string | null;
+    url?: string | null;
+    author?: string | null;     // document's true author — NOT the uploader
+    published_date?: string | null;
+    warehouse_type?: string | null;
+    width?: number | null;
+    height?: number | null;
+    color_space?: string | null;
+    file_size?: number | null;
+    total_frame?: number | null;
+  };
   score?: number;
   conflicts?: boolean;
 }

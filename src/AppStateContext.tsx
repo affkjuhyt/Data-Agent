@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { Role, Industry, TenantContext, User, Environment, KnowledgeDocument } from './types';
+import { Role, Industry, TenantContext, User, Environment, KnowledgeDocument, PagedResponse } from './types';
 import { mockGet } from './lib/mockApi';
 import { useAuth } from './lib/AuthProvider';
 
@@ -132,8 +132,11 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
   const [docsLoading, setDocsLoading] = useState(true);
 
   useEffect(() => {
-    mockGet<KnowledgeDocument[]>('/api/data/documents')
-      .then(data => setDocuments(data ?? []))
+    mockGet<PagedResponse<KnowledgeDocument> | KnowledgeDocument[]>('/api/data/documents')
+      .then(data => {
+        const items = Array.isArray(data) ? data : (data as PagedResponse<KnowledgeDocument>).items ?? [];
+        setDocuments(items);
+      })
       .catch(() => setDocuments([]))
       .finally(() => setDocsLoading(false));
   }, []);
@@ -142,17 +145,17 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
     setDocuments(prev => [doc, ...prev]);
   }, []);
 
-  const updateDocument = useCallback((id: string, patch: Partial<KnowledgeDocument>) => {
+  const updateDocument = useCallback((data_id: string, patch: Partial<KnowledgeDocument>) => {
     setDocuments(prev => prev.map(d => {
-      if (d.id !== id) return d;
+      if (d.data_id !== data_id) return d;
       const updated = { ...d, ...patch };
       if (patch.metadata) updated.metadata = { ...d.metadata, ...patch.metadata };
       return updated;
     }));
   }, []);
 
-  const deleteDocument = useCallback((id: string) => {
-    setDocuments(prev => prev.filter(d => d.id !== id));
+  const deleteDocument = useCallback((data_id: string) => {
+    setDocuments(prev => prev.filter(d => d.data_id !== data_id));
   }, []);
 
   /* Wizard trigger */

@@ -34,11 +34,11 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../../lib/utils';
 import { useAppState } from '../../../AppStateContext';
-import { KnowledgeDocument, KnowledgeLayer } from '../../../types';
+import { KnowledgeDocument, KnowledgeLayer, PagedResponse } from '../../../types';
 import { mockGet, mockMutate } from '../../../lib/mockApi';
 import {
   ChunkVersion, Chunk, TableColumn, DocTable,
-  WarehouseConfigTable, WarehouseConfigVersion, MOCK_DISCOVERY,
+  WarehouseConfigTable, WarehouseConfigVersion,
 } from './inventory.data';
 
 interface AssetDetailWorkspaceProps {
@@ -56,11 +56,13 @@ export const AssetDetailWorkspace = ({
 }: AssetDetailWorkspaceProps) => {
   const { updateDocument } = useAppState();
 
-  const currentAccessRole = document.metadata.accessRole || 'all';
+  const currentAccessRole = document.metadata.access_role || 'all';
 
   // ── Chunks state ─────────────────────────────────────────────────
   const [chunks, setChunks] = useState<Chunk[]>([]);
   const [chunksLoading, setChunksLoading] = useState(false);
+  const [chunksPage, setChunksPage] = useState(1);
+  const [chunksHasNext, setChunksHasNext] = useState(false);
   const [selectedChunk, setSelectedChunk] = useState<Chunk | null>(null);
   const [selectedVersion, setSelectedVersion] = useState<ChunkVersion | null>(null);
   const [activatingSave, setActivatingSave] = useState(false);
@@ -69,6 +71,8 @@ export const AssetDetailWorkspace = ({
   // ── Tables state ─────────────────────────────────────────────────
   const [tables, setTables] = useState<DocTable[]>([]);
   const [tablesLoading, setTablesLoading] = useState(false);
+  const [tablesPage, setTablesPage] = useState(1);
+  const [tablesHasNext, setTablesHasNext] = useState(false);
   const [selectedTable, setSelectedTable] = useState<DocTable | null>(null);
   const [editingCell, setEditingCell] = useState<{ rowIndex: number; column: string } | null>(null);
   const [editingValue, setEditingValue] = useState('');
@@ -86,13 +90,18 @@ export const AssetDetailWorkspace = ({
   const [savingNewConfig, setSavingNewConfig] = useState(false);
   const [newConfigSaveStatus, setNewConfigSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
 
-  // Fetch chunks when tab is CHUNKS and doc changes
+  // Fetch chunks when tab is CHUNKS, doc changes, or page changes
   useEffect(() => {
-    if (activeTab !== 'CHUNKS' || document.layer === 'BRONZE') return;
+    if (activeTab !== 'CHUNKS' || document.current_tier === 'bronze') return;
     setChunksLoading(true);
-    mockGet<Chunk[]>(`/api/knowledge/documents/${document.id}/chunks`)
+    mockGet<PagedResponse<Chunk> | Chunk[]>(
+      `/api/knowledge/documents/${document.data_id}/chunks`,
+      { page: chunksPage },
+    )
       .then(data => {
-        const result = (data ?? []).map(chunk => ({
+        const raw = Array.isArray(data) ? data : (data as PagedResponse<Chunk>).items ?? [];
+        const hasN = Array.isArray(data) ? false : (data as PagedResponse<Chunk>).has_next ?? false;
+        const result = raw.map(chunk => ({
           ...chunk,
           versions: chunk.versions.map(v => ({
             ...v,
@@ -100,34 +109,68 @@ export const AssetDetailWorkspace = ({
           })),
         }));
         setChunks(result);
-        if (result.length > 0) {
+        setChunksHasNext(hasN);
+        if (chunksPage === 1 && result.length > 0) {
           setSelectedChunk(result[0]);
           setSelectedVersion(result[0].versions[0] ?? null);
         }
       })
-      .catch(() => setChunks([]))
+      .catch(() => { setChunks([]); setChunksHasNext(false); })
       .finally(() => setChunksLoading(false));
-  }, [activeTab, document.id, document.layer]);
+  }, [activeTab, document.data_id, document.current_tier, chunksPage]);
 
-  // Fetch tables when tab is TABLES and doc changes
+  // Reset chunk page when doc changes
+  useEffect(() => { setChunksPage(1); }, [document.data_id]);
+
+  // Fetch tables when tab is TABLES, doc changes, or page changes
   useEffect(() => {
-    if (activeTab !== 'TABLES' || document.layer === 'BRONZE') return;
+    if (activeTab !== 'TABLES' || document.current_tier === 'bronze') return;
     setTablesLoading(true);
-    mockGet<DocTable[]>(`/api/knowledge/documents/${document.id}/tables`)
+    mockGet<PagedResponse<DocTable> | DocTable[]>(
+      `/api/knowledge/documents/${document.data_id}/tables`,
+      { page: tablesPage },
+    )
       .then(data => {
-        const result = data && data.length > 0 ? data : [];
-        setTables(result);
-        if (result.length > 0) setSelectedTable(result[0]);
+        const raw = Array.isArray(data) ? data : (data as PagedResponse<DocTable>).items ?? [];
+        const hasN = Array.isArray(data) ? false : (data as PagedResponse<DocTable>).has_next ?? false;
+        setTables(raw);
+        setTablesHasNext(hasN);
+        if (tablesPage === 1 && raw.length > 0) setSelectedTable(raw[0]);
       })
-      .catch(() => setTables([]))
+      .catch(() => { setTables([]); setTablesHasNext(false); })
       .finally(() => setTablesLoading(false));
-  }, [activeTab, document.id, document.layer]);
+  }, [activeTab, document.data_id, document.current_tier, tablesPage]);
+
+  // Reset table page when doc changes
+  useEffect(() => { setTablesPage(1); }, [document.data_id]);
+
+  // ── History / Timeline state ─────────────────────────────────────
+  interface HistoryEntry {
+    history_id: string;
+    from_tier: string | null;
+    to_tier: string;
+    transitioned_at: string | null;
+    approved_by: string | null;
+    notes: string | null;
+    pipeline_metadata: Record<string, unknown> | null;
+  }
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  useEffect(() => {
+    if (activeTab !== 'TIMELINE') return;
+    setHistoryLoading(true);
+    mockGet<HistoryEntry[]>(`/api/knowledge/documents/${document.data_id}/history`)
+      .then(data => setHistoryEntries(data ?? []))
+      .catch(() => setHistoryEntries([]))
+      .finally(() => setHistoryLoading(false));
+  }, [activeTab, document.data_id]);
 
   // Fetch warehouse configs when CONFIGS tab active
   useEffect(() => {
     if (activeTab !== 'CONFIGS') return;
     setConfigsLoading(true);
-    mockGet<WarehouseConfigVersion[]>(`/api/knowledge/documents/${document.id}/configs`)
+    mockGet<WarehouseConfigVersion[]>(`/api/knowledge/documents/${document.data_id}/configs`)
       .then(data => {
         const result = data && data.length > 0 ? data : [];
         setConfigs(result);
@@ -135,13 +178,13 @@ export const AssetDetailWorkspace = ({
       })
       .catch(() => setConfigs([]))
       .finally(() => setConfigsLoading(false));
-  }, [activeTab, document.id]);
+  }, [activeTab, document.data_id]);
 
   const handleActivateConfig = async () => {
     if (!selectedConfig) return;
     setActivatingConfig(true);
     try {
-      await mockMutate('PATCH', `/api/knowledge/documents/${document.id}/configs/${selectedConfig.id}/activate`, {});
+      await mockMutate('PATCH', `/api/knowledge/documents/${document.data_id}/configs/${selectedConfig.id}/activate`, {});
       setConfigs(prev => prev.map(c => ({
         ...c, status: c.id === selectedConfig.id ? 'Active' : 'Inactive'
       })));
@@ -158,12 +201,21 @@ export const AssetDetailWorkspace = ({
   const startNewConfigFlow = () => {
     setShowNewConfigFlow(true);
     setDiscoveringNewTables(true);
-    const warehouseType = document.metadata?.warehouseType as string ?? 'snowflake';
-    const mockSource = MOCK_DISCOVERY[warehouseType] ?? MOCK_DISCOVERY['snowflake'];
+
+    // Collect unique tables from all existing configs (real data from backend).
+    const tableMap = new Map<string, WarehouseConfigTable>();
+    configs.forEach(cfg => {
+      cfg.tables.forEach(t => {
+        if (!tableMap.has(t.name)) tableMap.set(t.name, t);
+      });
+    });
+
+    const source: Omit<WarehouseConfigTable, 'description'>[] = Array.from(tableMap.values());
+
     setTimeout(() => {
       setDiscoveringNewTables(false);
-      setNewConfigTables(mockSource.map(t => ({ ...t, description: '', selected: false })));
-    }, 1400);
+      setNewConfigTables(source.map(t => ({ ...t, description: '', selected: false })));
+    }, 600);
   };
 
   const toggleNewConfigTable = (name: string) => {
@@ -178,17 +230,28 @@ export const AssetDetailWorkspace = ({
     const selected = newConfigTables.filter(t => t.selected);
     if (selected.length === 0) return;
     setSavingNewConfig(true);
-    const nextVersion = `v${(configs.length + 1).toFixed(1)}`;
+    const nextVersionNum = configs.length + 1;
+    const nextVersionLabel = `v${nextVersionNum}`;
+    const connection = selectedConfig?.connection ?? {};
+    const tables = selected.map(({ name, schema, rowCount, description }) => ({ name, schema, rowCount, description }));
     try {
-      const created = await mockMutate<WarehouseConfigVersion>(
+      const raw = await mockMutate<WarehouseConfigVersion>(
         'POST',
-        `/api/knowledge/documents/${document.id}/configs`,
-        {
-          version_number: nextVersion,
-          connection: selectedConfig?.connection ?? {},
-          tables: selected.map(({ name, schema, rowCount, description }) => ({ name, schema, rowCount, description })),
-        }
+        `/api/knowledge/documents/${document.data_id}/configs`,
+        { version_number: nextVersionLabel, connection, tables },
       );
+      // Backend may return a full WarehouseConfigVersion or just {config_id, version_number}.
+      // Normalise to a full shape in either case.
+      const created: WarehouseConfigVersion = raw.id
+        ? { ...raw, version_number: raw.version_number ?? nextVersionLabel }
+        : {
+            id: (raw as unknown as Record<string, string>).config_id ?? `cfg-${Date.now()}`,
+            version_number: nextVersionLabel,
+            status: 'Inactive',
+            created_at: new Date().toISOString(),
+            connection,
+            tables,
+          };
       setConfigs(prev => [created, ...prev]);
       setSelectedConfig(created);
       setNewConfigSaveStatus('saved');
@@ -219,7 +282,7 @@ export const AssetDetailWorkspace = ({
     try {
       await mockMutate(
         'PATCH',
-        `/api/knowledge/documents/${document.id}/chunks/${selectedChunk.id}/activate`,
+        `/api/knowledge/documents/${document.data_id}/chunks/${selectedChunk.id}/activate`,
         { version_number: selectedVersion.version_number }
       );
       // Update local state
@@ -257,7 +320,7 @@ export const AssetDetailWorkspace = ({
     try {
       await mockMutate(
         'PATCH',
-        `/api/knowledge/documents/${document.id}/tables/${selectedTable.id}/rows/${editingCell.rowIndex}`,
+        `/api/knowledge/documents/${document.data_id}/tables/${selectedTable.id}/rows/${editingCell.rowIndex}`,
         { column: editingCell.column, value: editingValue }
       );
       setTables(prev => prev.map(t => {
@@ -287,7 +350,7 @@ export const AssetDetailWorkspace = ({
 
   const extension = document.name.split('.').pop() || 'N/A';
   const language = document.metadata.language || 'English';
-  const sourceType = document.metadata.type || 'Raw Data';
+  const sourceType = document.metadata.doc_type || 'Raw Data';
   const isWarehouse = sourceType.startsWith('Warehouse/');
 
   const showFileMetadata = activeTab === 'PREVIEW' && !isWarehouse;
@@ -330,14 +393,14 @@ export const AssetDetailWorkspace = ({
 
                      <div className="flex flex-col">
                         <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Added On</span>
-                        <span className="text-xs text-slate-600 font-mono bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">{document.lastUpdated}</span>
+                        <span className="text-xs text-slate-600 font-mono bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">{document.added_on}</span>
                      </div>
 
                      <div className="flex flex-col">
                         <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Added By</span>
                         <div className="text-xs text-[#111111] font-medium bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)] flex items-center gap-2">
-                          <span className="w-5 h-5 rounded-full bg-[#B88719]/10 text-[#8A5A00] flex items-center justify-center text-[9px] font-black uppercase">{document.author[0]}</span>
-                          {document.author}
+                          <span className="w-5 h-5 rounded-full bg-[#B88719]/10 text-[#8A5A00] flex items-center justify-center text-[9px] font-black uppercase">{(document.metadata?.author ?? document.added_by ?? '')[0]}</span>
+                          {(document.metadata?.author ?? document.added_by ?? '')}
                         </div>
                      </div>
                   </div>
@@ -360,7 +423,7 @@ export const AssetDetailWorkspace = ({
                        <div className="flex flex-col">
                           <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Published Date</span>
                           <span className="text-xs text-slate-600 font-mono bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-                             {document.metadata.publishedDate || '2026-01-10'}
+                             {document.metadata.published_date || '2026-01-10'}
                           </span>
                        </div>
                      </>
@@ -386,13 +449,13 @@ export const AssetDetailWorkspace = ({
                        <div className="flex flex-col">
                           <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Color Space</span>
                           <span className="text-xs text-slate-600 font-mono bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-                             {document.metadata.colorSpace || 'sRGB (Display P3)'}
+                             {document.metadata.color_space || 'sRGB (Display P3)'}
                           </span>
                        </div>
                        <div className="flex flex-col">
                           <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">File Size</span>
                           <span className="text-xs text-slate-600 font-mono bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-                             {document.metadata.fileSize || '3.4 MB'}
+                             {document.metadata.file_size || '3.4 MB'}
                           </span>
                        </div>
                      </div>
@@ -409,13 +472,13 @@ export const AssetDetailWorkspace = ({
                        <div className="flex flex-col">
                           <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Extraction Frames</span>
                           <span className="text-xs text-slate-600 font-mono bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-                             {document.metadata.totalFrame || '24,800 frames'}
+                             {document.metadata.total_frame || '24,800 frames'}
                           </span>
                        </div>
                        <div className="flex flex-col">
                           <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Storage Allocation</span>
                           <span className="text-xs text-slate-600 font-mono bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
-                             {document.metadata.fileSize || '52.4 MB'}
+                             {document.metadata.file_size || '52.4 MB'}
                           </span>
                        </div>
                      </div>
@@ -424,7 +487,7 @@ export const AssetDetailWorkspace = ({
                </section>
 
                <section className="space-y-4 pt-6 border-t border-[#BFA66A]/20">
-                  {document.layer === 'BRONZE' ? (
+                  {document.current_tier === 'bronze' ? (
                     <div className="flex flex-col">
                        <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-2 flex items-center gap-1.5">
                          <Lock className="w-3.5 h-3.5 text-[#B88719]" />
@@ -434,8 +497,8 @@ export const AssetDetailWorkspace = ({
                           <select
                             value={currentAccessRole}
                             onChange={(e) => {
-                              updateDocument(document.id, {
-                                metadata: { accessRole: e.target.value }
+                              updateDocument(document.data_id, {
+                                metadata: { access_role: e.target.value }
                               });
                             }}
                             className="w-full bg-white border border-[#BFA66A]/40 hover:border-[#B88719]/60 rounded-xl px-3.5 py-2.5 text-xs text-[#111111] focus:outline-none focus:ring-1 focus:ring-[#B88719] appearance-none font-mono cursor-pointer shadow-xs"
@@ -491,7 +554,7 @@ export const AssetDetailWorkspace = ({
                           </div>
                        </div>
                        <div className="flex-1 p-10 overflow-y-auto custom-scrollbar flex justify-center bg-[#FCFBF7]/50">
-                          {document.layer === 'BRONZE' ? (
+                          {document.current_tier === 'bronze' ? (
                              <div className="max-w-2xl w-full bg-[#FFFFFF] rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.03)] p-12 text-slate-800 font-serif leading-relaxed min-h-[500px] border border-[#BFA66A]/30">
                                 <h1 className="text-2xl font-bold mb-8 border-b pb-4 border-slate-100 text-[#111111]">{document.name}</h1>
                                 <p className="mb-6 text-sm text-[#2A2A2A]">This structural pipeline resource serves as the direct source of truth for regional data ingestion. Raw strings and properties are cataloged on local, low-latency cold-storage sectors prior to chunking and token vectorizations.</p>
@@ -502,7 +565,7 @@ export const AssetDetailWorkspace = ({
                                 </div>
                                 <p className="mb-6 text-sm text-[#2A2A2A]">Future promotions to the Silver layer will automatically segment raw blocks into discrete semantic chunks, stripping metadata noise and scrubbing properties for candidate PII leaks.</p>
                              </div>
-                          ) : document.layer === 'SILVER' ? (
+                          ) : document.current_tier === 'silver' ? (
                              <div className="max-w-2xl w-full space-y-6">
                                 <div className="p-5 bg-[#FFF9E8] border border-[#BFA66A]/45 rounded-2xl text-[10px] font-black text-[#8A5A00] uppercase tracking-widest flex items-center justify-center gap-3 shadow-xs">
                                    <Zap className="w-4 h-4 text-[#B88719]" /> AI-Assisted Normalization Active
@@ -535,7 +598,7 @@ export const AssetDetailWorkspace = ({
                   )}
 
                   {/* ─── CHUNKS TAB — SILVER ─────────────────────────────────── */}
-                  {activeTab === 'CHUNKS' && document.layer === 'SILVER' && (
+                  {activeTab === 'CHUNKS' && document.current_tier === 'silver' && (
                     <motion.div
                       key="chunks-silver"
                       initial={false}
@@ -579,6 +642,21 @@ export const AssetDetailWorkspace = ({
                                 </div>
                              ))}
                           </div>
+                          {(chunksPage > 1 || chunksHasNext) && (
+                            <div className="flex items-center justify-between px-3 py-2 border-t border-[#BFA66A]/15 bg-[#FFFDF8]">
+                              <span className="text-[10px] font-mono text-slate-400">Pg {chunksPage}</span>
+                              <div className="flex gap-1">
+                                <button disabled={chunksPage === 1} onClick={() => setChunksPage(p => Math.max(1, p - 1))}
+                                  className={cn("px-2 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", chunksPage === 1 && "opacity-40 cursor-not-allowed")}>
+                                  ‹
+                                </button>
+                                <button disabled={!chunksHasNext} onClick={() => setChunksPage(p => p + 1)}
+                                  className={cn("px-2 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", !chunksHasNext && "opacity-40 cursor-not-allowed")}>
+                                  ›
+                                </button>
+                              </div>
+                            </div>
+                          )}
                        </div>
 
                        <div className="flex-1 border border-[#BFA66A]/30 rounded-3xl p-6 bg-white flex flex-col overflow-hidden shadow-xs">
@@ -606,7 +684,7 @@ export const AssetDetailWorkspace = ({
                   )}
 
                   {/* ─── CHUNKS TAB — GOLD ───────────────────────────────────── */}
-                  {activeTab === 'CHUNKS' && document.layer === 'GOLD' && (
+                  {activeTab === 'CHUNKS' && document.current_tier === 'gold' && (
                     <motion.div
                       key="chunks-gold"
                       initial={false}
@@ -649,6 +727,21 @@ export const AssetDetailWorkspace = ({
                                 </div>
                              ))}
                           </div>
+                          {(chunksPage > 1 || chunksHasNext) && (
+                            <div className="flex items-center justify-between px-3 py-2 border-t border-[#BFA66A]/15 bg-[#FFFDF8]">
+                              <span className="text-[10px] font-mono text-slate-400">Pg {chunksPage}</span>
+                              <div className="flex gap-1">
+                                <button disabled={chunksPage === 1} onClick={() => setChunksPage(p => Math.max(1, p - 1))}
+                                  className={cn("px-2 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", chunksPage === 1 && "opacity-40 cursor-not-allowed")}>
+                                  ‹
+                                </button>
+                                <button disabled={!chunksHasNext} onClick={() => setChunksPage(p => p + 1)}
+                                  className={cn("px-2 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", !chunksHasNext && "opacity-40 cursor-not-allowed")}>
+                                  ›
+                                </button>
+                              </div>
+                            </div>
+                          )}
                        </div>
 
                        <div className="flex-1 border border-[#BFA66A]/30 rounded-3xl p-6 bg-white flex flex-col overflow-hidden shadow-xs">
@@ -819,7 +912,7 @@ export const AssetDetailWorkspace = ({
                   )}
 
                   {/* ─── TABLES TAB ───────────────────────────────────────────── */}
-                  {activeTab === 'TABLES' && (document.layer === 'SILVER' || document.layer === 'GOLD') && (
+                  {activeTab === 'TABLES' && (document.current_tier === 'silver' || document.current_tier === 'gold') && (
                     <motion.div
                       key="tables"
                       initial={false}
@@ -866,6 +959,21 @@ export const AssetDetailWorkspace = ({
                             </div>
                           ))}
                         </div>
+                        {(tablesPage > 1 || tablesHasNext) && (
+                          <div className="flex items-center justify-between px-3 py-2 border-t border-[#BFA66A]/15 bg-[#FFFDF8]">
+                            <span className="text-[10px] font-mono text-slate-400">Pg {tablesPage}</span>
+                            <div className="flex gap-1">
+                              <button disabled={tablesPage === 1} onClick={() => setTablesPage(p => Math.max(1, p - 1))}
+                                className={cn("px-2 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", tablesPage === 1 && "opacity-40 cursor-not-allowed")}>
+                                ‹
+                              </button>
+                              <button disabled={!tablesHasNext} onClick={() => setTablesPage(p => p + 1)}
+                                className={cn("px-2 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", !tablesHasNext && "opacity-40 cursor-not-allowed")}>
+                                ›
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Right: selected table detail */}
@@ -891,7 +999,7 @@ export const AssetDetailWorkspace = ({
                                   <span className="text-[10px] font-bold text-red-600">Save failed</span>
                                 )}
                                 <span className="text-[9px] font-black uppercase text-[#B88719] bg-[#FFF9E9] border border-[#BFA66A]/30 px-2.5 py-1 rounded-lg">
-                                  {document.layer} EXTRACTED TABLE
+                                  {document.current_tier} EXTRACTED TABLE
                                 </span>
                               </div>
                             </div>
@@ -1032,21 +1140,21 @@ export const AssetDetailWorkspace = ({
                       <div className="max-w-md w-full space-y-5">
                         <div className={cn(
                           'flex items-center gap-4 p-6 rounded-2xl border',
-                          document.metadata?.warehouseType === 'snowflake'
+                          document.metadata?.warehouse_type === 'snowflake'
                             ? 'bg-blue-50 border-blue-200' : 'bg-red-50 border-red-200'
                         )}>
                           <div className={cn(
                             'w-14 h-14 rounded-2xl flex items-center justify-center border',
-                            document.metadata?.warehouseType === 'snowflake'
+                            document.metadata?.warehouse_type === 'snowflake'
                               ? 'bg-white border-blue-200' : 'bg-white border-red-200'
                           )}>
-                            {document.metadata?.warehouseType === 'snowflake'
+                            {document.metadata?.warehouse_type === 'snowflake'
                               ? <Database className="w-7 h-7 text-blue-500" />
                               : <Zap className="w-7 h-7 text-red-500" />}
                           </div>
                           <div>
                             <p className="text-sm font-black text-[#111111]">{document.name}</p>
-                            <p className="text-[11px] font-mono text-slate-500 uppercase mt-0.5">{document.metadata?.warehouseType}</p>
+                            <p className="text-[11px] font-mono text-slate-500 uppercase mt-0.5">{document.metadata?.warehouse_type}</p>
                             <span className={cn(
                               'text-[9px] font-black uppercase px-2 py-0.5 rounded border mt-1 inline-block',
                               document.status === 'PUBLISHED'
@@ -1106,7 +1214,7 @@ export const AssetDetailWorkspace = ({
                         {!readOnly && (
                           <div className="p-3 border-t border-[#BFA66A]/15 bg-[#FFFDF8]/60">
                             <button
-                              onClick={() => { setShowNewConfigFlow(true); startNewConfigFlow(); }}
+                              onClick={startNewConfigFlow}
                               className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 bg-[#B88719] text-white rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-[#8A5A00] transition-all cursor-pointer shadow-sm"
                             >
                               <Plus className="w-3.5 h-3.5" />
@@ -1135,7 +1243,7 @@ export const AssetDetailWorkspace = ({
                               {discoveringNewTables ? (
                                 <div className="h-full flex flex-col items-center justify-center gap-3 text-[#8A5A00]">
                                   <RefreshCw className="w-5 h-5 animate-spin text-[#B88719]" />
-                                  <p className="text-xs font-mono font-bold">Discovering tables from {document.metadata?.warehouseType}...</p>
+                                  <p className="text-xs font-mono font-bold">Discovering tables from {document.metadata?.warehouse_type}...</p>
                                 </div>
                               ) : (
                                 <div className="space-y-3">
@@ -1310,7 +1418,7 @@ export const AssetDetailWorkspace = ({
                             { t: '12:04:31', lvl: 'DEBUG', msg: 'Cleaning redundant whitespace and metadata headers', color: 'text-slate-500' },
                             { t: '12:04:32', lvl: 'INFO', msg: 'Starting PII scan (LLM-based detection)', color: 'text-amber-300/80' },
                             { t: '12:04:35', lvl: 'WARN', msg: 'Found potential email address in metadata field "author_mail". Auto-masking...', color: 'text-amber-500 font-bold' },
-                            { t: '12:04:38', lvl: 'SUCCESS', msg: `Pipeline stage ${document.layer} -> COMPLETED`, color: 'text-[#D9B86C] font-black' },
+                            { t: '12:04:38', lvl: 'SUCCESS', msg: `Pipeline stage ${document.current_tier} -> COMPLETED`, color: 'text-[#D9B86C] font-black' },
                           ].map((log, idx) => (
                             <div key={`${log.t}-${log.lvl}-${idx}`} className="flex gap-4 group">
                                <span className="text-slate-500 shrink-0">{log.t}</span>
@@ -1326,37 +1434,83 @@ export const AssetDetailWorkspace = ({
                   {activeTab === 'TIMELINE' && (
                     <motion.div key="timeline" className="h-full border border-[#BFA66A]/30 rounded-[2rem] bg-white overflow-hidden flex flex-col shadow-sm">
                        <div className="p-5 border-b border-[#BFA66A]/20 flex justify-between items-center bg-[#FFFDF8]">
-                          <div>
-                             <h4 className="text-[10px] font-black text-[#5A4209] uppercase tracking-widest">
-                                Ingestion Version Timeline
-                             </h4>
-                          </div>
+                          <h4 className="text-[10px] font-black text-[#5A4209] uppercase tracking-widest">
+                            Pipeline Lifecycle Timeline
+                          </h4>
                        </div>
-                       <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar relative bg-[#FCFBF7]/30">
-                          <div className="absolute left-[39px] top-6 bottom-6 w-0.5 bg-[#BFA66A]/20" />
-                          {[
-                            { ver: 'v4.2.0', date: 'Today, 12:04', title: `Promoted to ${document.layer} Layer`, actor: 'System (Sync Worker)', icon: Database, color: 'border-[#B88719] text-[#B88719]', current: true },
-                            { ver: 'v4.1.2', date: 'Today, 10:30', title: 'Metadata Configuration Registered', actor: document.author, icon: FileCode, color: 'border-amber-600 text-amber-600', current: false },
-                            { ver: 'v4.0.0', date: 'Yesterday, 14:22', title: 'Initial Ingestion & Hash Created', actor: 'Worker.04', icon: ChevronRight, color: 'border-slate-400 text-slate-500', current: false }
-                          ].map((evt) => (
-                             <div key={evt.ver} className="relative pl-12 group text-left">
-                                <div className={cn(
-                                   "absolute left-[32px] top-1.5 w-4.5 h-4.5 rounded-full border bg-white flex items-center justify-center z-10",
-                                   evt.color
-                                )}>
-                                   <div className="w-1.5 h-1.5 rounded-full bg-current" />
-                                </div>
-                                <div className="p-5 bg-white border border-[#BFA66A]/20 rounded-2xl shadow-2xs max-w-xl">
-                                   <div className="flex items-center gap-2">
-                                      <span className="text-xs font-mono font-black text-[#8A5A00]">{evt.ver}</span>
-                                      <span className="text-[10px] font-mono text-slate-500 uppercase">{evt.date}</span>
-                                      {evt.current && <span className="px-1.5 bg-[#FFF9E8] border border-[#BFA66A]/30 text-[#8A5A00] text-[9px] font-black rounded uppercase">Active State</span>}
-                                   </div>
-                                   <div className="text-xs font-black text-[#111111] mt-1.5">{evt.title}</div>
-                                   <div className="text-[10px] text-slate-500 mt-1">Triggered by: <span className="text-[#8A5A00] font-bold">{evt.actor}</span></div>
-                                </div>
-                             </div>
-                          ))}
+                       <div className="flex-1 overflow-y-auto p-8 custom-scrollbar relative bg-[#FCFBF7]/30">
+                          {historyLoading ? (
+                            <div className="flex items-center justify-center h-32 text-[#8A5A00] text-xs">Loading history…</div>
+                          ) : historyEntries.length === 0 ? (
+                            <div className="flex items-center justify-center h-32 text-slate-400 text-xs">No lifecycle events yet.</div>
+                          ) : (
+                            <div className="relative space-y-8">
+                              <div className="absolute left-[39px] top-2 bottom-2 w-0.5 bg-[#BFA66A]/20" />
+                              {historyEntries.map((entry, idx) => {
+                                const isFirst = idx === 0;
+                                const tierColor = entry.to_tier === 'gold'
+                                  ? 'border-[#B88719] text-[#B88719]'
+                                  : entry.to_tier === 'silver'
+                                    ? 'border-slate-500 text-slate-500'
+                                    : 'border-slate-400 text-slate-400';
+                                const meta = entry.pipeline_metadata ?? {};
+                                const ts = entry.transitioned_at
+                                  ? new Date(entry.transitioned_at).toLocaleString()
+                                  : '—';
+
+                                // Build pipeline stat badges from metadata
+                                const statBadges: { label: string; value: string | number; green?: boolean; red?: boolean }[] = [];
+                                if (meta.chunks_accepted != null)   statBadges.push({ label: 'accepted', value: meta.chunks_accepted as number, green: true });
+                                if (meta.chunks_rejected != null)   statBadges.push({ label: 'rejected', value: meta.chunks_rejected as number, red: (meta.chunks_rejected as number) > 0 });
+                                if (meta.chunks_committed != null)  statBadges.push({ label: 'committed', value: meta.chunks_committed as number, green: true });
+                                if (meta.chunks_conflicted != null) statBadges.push({ label: 'conflicts', value: meta.chunks_conflicted as number, red: (meta.chunks_conflicted as number) > 0 });
+                                if (meta.chunks_skipped != null)    statBadges.push({ label: 'skipped', value: meta.chunks_skipped as number });
+                                if (meta.chunks_failed != null)     statBadges.push({ label: 'failed', value: meta.chunks_failed as number, red: (meta.chunks_failed as number) > 0 });
+                                if (meta.tables_found != null)      statBadges.push({ label: 'tables', value: meta.tables_found as number });
+                                if (meta.file_size != null)         statBadges.push({ label: 'bytes', value: (meta.file_size as number).toLocaleString() });
+
+                                return (
+                                  <div key={entry.history_id} className="relative pl-12 text-left">
+                                    <div className={cn(
+                                      "absolute left-[32px] top-1.5 w-4.5 h-4.5 rounded-full border bg-white flex items-center justify-center z-10",
+                                      tierColor
+                                    )}>
+                                      <div className="w-1.5 h-1.5 rounded-full bg-current" />
+                                    </div>
+                                    <div className="p-5 bg-white border border-[#BFA66A]/20 rounded-2xl shadow-2xs max-w-xl">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-[10px] font-mono font-black text-[#8A5A00] uppercase">{entry.to_tier}</span>
+                                        <span className="text-[10px] font-mono text-slate-500">{ts}</span>
+                                        {isFirst && (
+                                          <span className="px-1.5 bg-[#FFF9E8] border border-[#BFA66A]/30 text-[#8A5A00] text-[9px] font-black rounded uppercase">Latest</span>
+                                        )}
+                                      </div>
+                                      <div className="text-xs font-black text-[#111111] mt-1.5">{entry.notes ?? `Transitioned to ${entry.to_tier}`}</div>
+                                      {entry.approved_by && (
+                                        <div className="text-[10px] text-slate-500 mt-1">
+                                          By: <span className="text-[#8A5A00] font-bold">{entry.approved_by}</span>
+                                        </div>
+                                      )}
+                                      {statBadges.length > 0 && (
+                                        <div className="flex flex-wrap gap-1.5 mt-3">
+                                          {statBadges.map(b => (
+                                            <span key={b.label} className={cn(
+                                              "px-2 py-0.5 rounded text-[9px] font-black uppercase border",
+                                              b.green ? "bg-green-50 border-green-200 text-green-700"
+                                                : b.red ? "bg-red-50 border-red-200 text-red-600"
+                                                  : "bg-slate-50 border-slate-200 text-slate-500"
+                                            )}>
+                                              {b.label}: {b.value}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                        </div>
                     </motion.div>
                   )}

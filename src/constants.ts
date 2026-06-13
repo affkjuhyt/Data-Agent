@@ -71,6 +71,7 @@ export interface SubNavItem {
   icon: any;
   badge?: number | string;
   comingSoon?: boolean;
+  action?: boolean;
 }
 
 /* Contextual sub-nav items shown in the secondary panel per module.
@@ -86,6 +87,8 @@ export const MODULE_SUB_ITEMS: Record<string, SubNavItem[]> = {
     { id: 'KNOWLEDGE', label: 'Knowledge Hub',  icon: Network },
     { id: 'CONFLICTS', label: 'Conflicts',      icon: ShieldAlert, badge: 12 },
     { id: 'POLICY',    label: 'Policies',       icon: ShieldCheck },
+    { id: 'ACTION_INGEST',    label: 'Add Document',  icon: Plus, action: true },
+    { id: 'ACTION_WAREHOUSE', label: 'Add Warehouse', icon: Package, action: true },
   ],
 
   'ai-runtime': [

@@ -216,7 +216,7 @@ const CONTEXT_HINTS: Record<string, string> = {
 
 /* ─── Secondary Contextual Nav ────────────────────────────────────── */
 const SecondaryNav = () => {
-  const { activeModule, subTab, setSubTab } = useAppState();
+  const { activeModule, subTab, setSubTab, setPendingAction } = useAppState();
   const currentModule = NAV_ITEMS.find(i => i.id === activeModule);
   const subItems = MODULE_SUB_ITEMS[activeModule] ?? [];
 
@@ -244,14 +244,21 @@ const SecondaryNav = () => {
 
       <div className="flex-1 overflow-y-auto custom-scrollbar py-2 px-2">
         <div className="space-y-0.5">
-          {subItems.map((item: SubNavItem) => {
+          {subItems.map((item: SubNavItem & { action?: boolean }) => {
             const isActive = item.id === activeSubId;
+            const handleClick = () => {
+              if (item.action) {
+                setPendingAction(item.id as any);
+              } else {
+                setSubTab(activeModule, item.id);
+              }
+            };
             return (
               <button
                 key={item.id}
-                onClick={() => setSubTab(activeModule, item.id)}
+                onClick={handleClick}
                 aria-current={isActive ? 'page' : undefined}
-                className={cn('subnav-item', isActive && 'active')}
+                className={cn('subnav-item', isActive && !item.action && 'active')}
               >
                 <item.icon className="subnav-icon w-3.5 h-3.5" />
                 <span className="flex-1 truncate">{item.label}</span>

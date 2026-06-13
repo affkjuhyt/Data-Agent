@@ -1,4 +1,5 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+import ForceGraph2D from 'react-force-graph-2d';
 import {
   Network, Database, Zap, Plus, Layers, Info, Code, Play,
   ArrowDown, Circle, CheckCircle2, Eye, ArrowLeft,
@@ -15,11 +16,32 @@ import {
   GraphHubTab, DBSubType, DBDocument, getSubType, DB_SUBTYPES,
   WTableEntry, WConfig, WConnection, getWarehouseConnection, formatRows, nextVersion,
   ChunkVersion, Chunk, QdrantCollection, QdrantPoint, QueryStep,
-  GraphNode, GraphEdge, LayoutNode, Neo4jSchema, computeGraphLayout,
-  FALLBACK_DOCS, FALLBACK_CHUNKS, ALL_AVAILABLE_TABLES, FALLBACK_WAREHOUSE_CONFIGS,
-  FALLBACK_QDRANT, AVAILABLE_NODES, FALLBACK_EDGES, FALLBACK_REL_LABELS,
-  FALLBACK_NODES, buildCypher, PAGE_SIZE,
+  GraphNode, GraphEdge, Neo4jSchema,
+  buildCypher, PAGE_SIZE,
 } from './knowledgeHub.data';
+function normalizeWConfig(raw: Record<string, unknown>, idx: number): WConfig {
+  const tables = ((raw.tables ?? []) as Array<Record<string, unknown>>).map((t, ti) => ({
+    id: (t.id as string) ?? `${String(raw.id)}-t-${ti}`,
+    schema: (t.schema as string) ?? '',
+    tableName: (t.tableName as string) ?? (t.name as string) ?? '',
+    rowCount: typeof t.rowCount === 'number'
+      ? t.rowCount
+      : parseInt(String(t.rowCount ?? '0').replace(/[^0-9]/g, ''), 10) || 0,
+    columns: (t.columns as number) ?? 0,
+  }));
+  const rawStatus = (raw.status as string) ?? '';
+  return {
+    id: raw.id as string,
+    name: (raw.name as string) ?? `Config ${idx + 1}`,
+    version: (raw.version as string) ?? (raw.version_number as string) ?? 'v1',
+    createdAt: (raw.createdAt as string) ?? (raw.created_at as string) ?? '',
+    status: rawStatus === 'Active' ? 'Active' : rawStatus === 'Archived' ? 'Archived' : 'Draft',
+    syncSchedule: (raw.syncSchedule as string) ?? (raw.sync_schedule as string) ?? 'Manual',
+    connection: raw.connection as Record<string, string> | undefined,
+    tables,
+  };
+}
+
 export const KnowledgeHubView = () => {
   const { documents, docsLoading } = useAppState();
   const [activeTab, setActiveTab] = useState<GraphHubTab>('DATABASE');
@@ -27,16 +49,16 @@ export const KnowledgeHubView = () => {
   /* â"€â"€ Database: derive GOLD docs from shared context (same source as Data Layers) â"€â"€ */
   const docs = useMemo<DBDocument[]>(
     () => documents
-      .filter(d => d.layer === 'GOLD')
+      .filter(d => d.current_tier === 'gold')
       .map(d => ({
-        id: d.id,
+        id: d.data_id,
         name: d.name,
-        type: d.metadata?.type ?? 'Unknown',
-        added_date: d.lastUpdated,
+        type: d.metadata?.doc_type ?? 'Unknown',
+        added_date: d.added_on ?? '',
         language: d.metadata?.language ?? 'N/A',
-        author: d.author,
-        version: d.version,
-        subType: getSubType(d.metadata?.type ?? ''),
+        author: d.metadata?.author ?? d.added_by ?? '',
+        version: '',
+        subType: getSubType(d.metadata?.doc_type ?? ''),
       })),
     [documents],
   );
@@ -66,6 +88,7 @@ export const KnowledgeHubView = () => {
   const [qdrantQuery, setQdrantQuery]                   = useState('');
   const [qdrantPoints, setQdrantPoints]                 = useState<QdrantPoint[]>([]);
   const [qdrantSearching, setQdrantSearching]           = useState(false);
+  const [qdrantTopK, setQdrantTopK]                     = useState(5);
 
   /* New-version form */
   const [newVerDrawerOpen, setNewVerDrawerOpen] = useState(false);
@@ -81,30 +104,64 @@ export const KnowledgeHubView = () => {
     [warehouseConfigs],
   );
 
-  /* â"€â"€ Query builder state â"€â"€ */
-  const [startNode, setStartNode] = useState(AVAILABLE_NODES[0]);
-  const [steps, setSteps]         = useState<QueryStep[]>([]);
-  const [cypher, setCypher]       = useState('');
-  const [queryRan, setQueryRan]   = useState(false);
-  const [queryRunning, setQueryRunning] = useState(false);
+  /* Derive discoverable tables from all loaded warehouse configs (union, de-duped by schema.tableName) */
+  const availableTablesForNewConfig = useMemo<WTableEntry[]>(() => {
+    const seen = new Set<string>();
+    const result: WTableEntry[] = [];
+    warehouseConfigs.forEach(cfg => {
+      cfg.tables.forEach(t => {
+        const key = `${t.schema}.${t.tableName}`;
+        if (!seen.has(key)) { seen.add(key); result.push(t); }
+      });
+    });
+    return result;
+  }, [warehouseConfigs]);
 
-  /* â"€â"€ Neo4j graph state (initialised from fallback, replaced by API data) â"€â"€ */
-  const [neoNodes,     setNeoNodes]     = useState<LayoutNode[]>(
-    FALLBACK_NODES.map((n, i) => ({ ...n, id: `fn-${i}` })),
-  );
-  const [neoEdges,     setNeoEdges]     = useState<Array<[number,number,number,number]>>(FALLBACK_EDGES);
-  const [neoRelLabels, setNeoRelLabels] = useState<Array<[number,number,string]>>(FALLBACK_REL_LABELS);
-  const [neoSchema,    setNeoSchema]    = useState<Neo4jSchema | null>(null);
-  const [neoLoading,   setNeoLoading]   = useState(false);
-  const [rawGraphNodes, setRawGraphNodes] = useState<GraphNode[]>([]);
-  const [rawGraphEdges, setRawGraphEdges] = useState<GraphEdge[]>([]);
-  const [graphFiltered, setGraphFiltered] = useState(false);
+  /* â"€â"€ Query builder state â"€â"€ */
+  const [startNode, setStartNode]         = useState('');
+  const [steps, setSteps]                 = useState<QueryStep[]>([]);
+  const [cypher, setCypher]               = useState('');
+  const [queryRan, setQueryRan]           = useState(false);
+  const [queryRunning, setQueryRunning]   = useState(false);
+  const [entitySearchQuery, setEntitySearchQuery] = useState('');
+  const [entitySearchOpen,  setEntitySearchOpen]  = useState(false);
+
+  /* â"€â"€ Neo4j graph state â"€â"€ */
+  const [neoSchema,      setNeoSchema]      = useState<Neo4jSchema | null>(null);
+  const [neoLoading,     setNeoLoading]     = useState(false);
+  const [rawGraphNodes,  setRawGraphNodes]  = useState<GraphNode[]>([]);
+  const [rawGraphEdges,  setRawGraphEdges]  = useState<GraphEdge[]>([]);
+  const [filteredNodes,  setFilteredNodes]  = useState<GraphNode[] | null>(null);
+  const [filteredEdges,  setFilteredEdges]  = useState<GraphEdge[] | null>(null);
+  const [graphFiltered,  setGraphFiltered]  = useState(false);
+  const [selectedNeoNode, setSelectedNeoNode] = useState<{ id: string; name: string; description?: string | null } | null>(null);
+
+  const fgRef              = useRef<any>(null);
+  const graphContainerRef  = useRef<HTMLDivElement>(null);
+  const [graphDims, setGraphDims] = useState({ w: 600, h: 540 });
+
+  /* Keep canvas sized to its container */
+  useEffect(() => {
+    const el = graphContainerRef.current;
+    if (!el) return;
+    const update = () => setGraphDims({ w: el.clientWidth, h: el.clientHeight });
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  /* Derived graph data for ForceGraph2D */
+  const graphData = useMemo(() => ({
+    nodes: (filteredNodes ?? rawGraphNodes).map(n => ({ ...n })),
+    links: (filteredEdges ?? rawGraphEdges).map(e => ({ source: e.from, target: e.to, description: e.description })),
+  }), [rawGraphNodes, rawGraphEdges, filteredNodes, filteredEdges]);
 
   /* â"€â"€ Fetch: Qdrant on mount â"€â"€ */
   useEffect(() => {
     mockGet<QdrantCollection[]>('/api/knowledge/qdrant/collections')
-      .then(setQdrantCollections)
-      .catch(() => setQdrantCollections(FALLBACK_QDRANT));
+      .then(data => setQdrantCollections(data ?? []))
+      .catch(() => setQdrantCollections([]));
   }, []);
 
   /* â"€â"€ Fetch: Neo4j graph + schema when NEO4J tab is active â"€â"€ */
@@ -117,22 +174,18 @@ export const KnowledgeHubView = () => {
     ])
       .then(([graphData, schema]) => {
         if (graphData?.nodes?.length) {
-          const nodes = graphData.nodes;
-          const edges = graphData.edges ?? [];
-          setRawGraphNodes(nodes);
-          setRawGraphEdges(edges);
+          setRawGraphNodes(graphData.nodes);
+          setRawGraphEdges(graphData.edges ?? []);
+          setFilteredNodes(null);
+          setFilteredEdges(null);
           setGraphFiltered(false);
-          const { layoutNodes, layoutEdges, layoutRelLabels } = computeGraphLayout(nodes, edges);
-          setNeoNodes(layoutNodes);
-          setNeoEdges(layoutEdges);
-          setNeoRelLabels(layoutRelLabels);
         }
         if (schema?.entities?.length) {
           setNeoSchema(schema);
-          setStartNode(schema.entities[0]);
+          setStartNode(prev => prev || schema.entities[0]);
         }
       })
-      .catch(() => {}) // keep fallback on error
+      .catch(() => {})
       .finally(() => setNeoLoading(false));
   }, [activeTab]);
 
@@ -221,7 +274,7 @@ export const KnowledgeHubView = () => {
       const points = await mockMutate<QdrantPoint[]>(
         'POST',
         `/api/knowledge/qdrant/collections/${selectedCollection.id}/search`,
-        { query: qdrantQuery.trim() },
+        { query: qdrantQuery.trim(), limit: qdrantTopK },
       );
       setQdrantPoints(points ?? []);
     } catch {
@@ -240,24 +293,22 @@ export const KnowledgeHubView = () => {
     }
     if (selectedDoc.subType === 'Warehouse') {
       setWarehouseConfigsLoading(true);
-      mockGet<WConfig[]>(`/api/knowledge/warehouses/${selectedDoc.id}/configs`)
+      mockGet<Record<string, unknown>[]>(`/api/knowledge/warehouses/${selectedDoc.id}/configs`)
         .then(data => {
-          const list = data?.length ? data : (FALLBACK_WAREHOUSE_CONFIGS[selectedDoc.id] ?? []);
+          const list = (data ?? []).map((r, i) => normalizeWConfig(r, i));
           setWarehouseConfigs(list);
           setSelectedConfig(list[0] ?? null);
         })
         .catch(() => {
-          const list = FALLBACK_WAREHOUSE_CONFIGS[selectedDoc.id] ?? [];
-          setWarehouseConfigs(list);
-          setSelectedConfig(list[0] ?? null);
+          setWarehouseConfigs([]);
+          setSelectedConfig(null);
         })
         .finally(() => setWarehouseConfigsLoading(false));
     } else {
       setChunksLoading(true);
       mockGet<Chunk[]>(`/api/knowledge/documents/${selectedDoc.id}/chunks`)
         .then(data => {
-          const raw = data.length ? data : FALLBACK_CHUNKS;
-          const list = raw.map(chunk => ({
+          const list = (data ?? []).map(chunk => ({
             ...chunk,
             versions: chunk.versions.map(v => ({
               ...v,
@@ -265,13 +316,13 @@ export const KnowledgeHubView = () => {
             })),
           }));
           setChunks(list);
-          setSelectedChunk(list[0]);
-          setSelectedVersion(list[0].versions[0]);
+          setSelectedChunk(list[0] ?? null);
+          setSelectedVersion(list[0]?.versions[0] ?? null);
         })
         .catch(() => {
-          setChunks(FALLBACK_CHUNKS);
-          setSelectedChunk(FALLBACK_CHUNKS[0]);
-          setSelectedVersion(FALLBACK_CHUNKS[0].versions[0]);
+          setChunks([]);
+          setSelectedChunk(null);
+          setSelectedVersion(null);
         })
         .finally(() => setChunksLoading(false));
     }
@@ -338,8 +389,7 @@ export const KnowledgeHubView = () => {
 
   const handleCreateConfig = () => {
     if (!newCfgName.trim() || newCfgSelectedIds.size === 0 || !selectedDoc) return;
-    const allTables = ALL_AVAILABLE_TABLES[selectedDoc.id] ?? [];
-    const pickedTables = allTables.filter(t => newCfgSelectedIds.has(t.id));
+    const pickedTables = availableTablesForNewConfig.filter(t => newCfgSelectedIds.has(t.id));
     const newCfg: WConfig = {
       id: `cfg-${Date.now()}`,
       name: newCfgName.trim(),
@@ -383,11 +433,15 @@ export const KnowledgeHubView = () => {
   /* reset to page 1 when filter or search changes */
   useEffect(() => { setDbPage(1); }, [dbSubType, dbSearch]);
 
-  /* â"€â"€ Query builder helpers â"€â"€ */
-  const allEntities = neoSchema?.entities ?? AVAILABLE_NODES;
+  /* ── Query builder helpers ── */
+  const allEntities = neoSchema?.entities ?? [];
+  const filteredEntityOptions = entitySearchQuery.trim()
+    ? allEntities.filter(e => e.toLowerCase().includes(entitySearchQuery.toLowerCase()))
+    : allEntities;
   const getTargets = (fromEntity: string) =>
-    neoSchema?.connections[fromEntity] ?? allEntities;
+    (neoSchema?.connections[fromEntity] ?? allEntities).filter(Boolean);
   const addStep = () => {
+    if (!allEntities.length) return;
     const prevEntity = steps.length ? steps[steps.length - 1].nodeType : startNode;
     const targets = getTargets(prevEntity);
     setSteps(p => [...p, { id: `s-${Date.now()}`, relationship: 'RELATED_TO', nodeType: targets[0] ?? allEntities[0] }]);
@@ -579,7 +633,7 @@ export const KnowledgeHubView = () => {
                               <div className="text-sm font-bold text-[#111111] group-hover:text-[#B88719] transition-colors uppercase tracking-tight truncate">
                                 {doc.name}
                               </div>
-                              <div className="text-[10px] text-slate-500 mt-0.5">{doc.version} Â· Added by {doc.author}</div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">Added by {doc.author || '—'}</div>
                             </div>
                           </div>
                         </td>
@@ -705,7 +759,7 @@ export const KnowledgeHubView = () => {
                   </div>
                 }>
                 {(() => {
-                  const available = ALL_AVAILABLE_TABLES[selectedDoc.id] ?? [];
+                  const available = availableTablesForNewConfig;
                   const schemas = ['All', ...Array.from(new Set(available.map(t => t.schema)))];
                   const visible = newCfgSchemaFilter === 'All' ? available : available.filter(t => t.schema === newCfgSchemaFilter);
                   return (
@@ -823,6 +877,13 @@ export const KnowledgeHubView = () => {
                       </button>
                     </div>
                     <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
+                      {warehouseConfigs.length === 0 && (
+                        <div className="flex flex-col items-center justify-center h-32 gap-2 text-center text-slate-400">
+                          <Layers3 className="w-6 h-6 opacity-30" />
+                          <p className="text-[11px] font-mono">No configs yet</p>
+                          <p className="text-[10px] text-slate-300">Click New to create one</p>
+                        </div>
+                      )}
                       {warehouseConfigs.map(cfg => (
                         <div key={cfg.id}
                           className={cn(
@@ -892,7 +953,7 @@ export const KnowledgeHubView = () => {
 
                         {/* Connection mini-row */}
                         {(() => {
-                          const conn = getWarehouseConnection(selectedDoc.type);
+                          const conn = getWarehouseConnection(selectedDoc.type, selectedConfig.connection);
                           const fields = [
                             conn.platform,
                             conn.host,
@@ -998,6 +1059,12 @@ export const KnowledgeHubView = () => {
                       </span>
                     </div>
                     <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar bg-[#FCFBF7]/30">
+                      {chunks.length === 0 && (
+                        <div className="flex flex-col items-center justify-center h-32 gap-2 text-center text-slate-400">
+                          <Layers3 className="w-6 h-6 opacity-30" />
+                          <p className="text-[11px] font-mono">No chunks for this document</p>
+                        </div>
+                      )}
                       {chunks.map(chunk => (
                         <div key={chunk.id}
                           className={cn(
@@ -1275,14 +1342,35 @@ export const KnowledgeHubView = () => {
                 <div className="flex-1 flex flex-col min-w-0">
                   {/* Query bar */}
                   <div className={cn('px-5 py-4 border-b border-[#BFA66A]/15 shrink-0', selectedCollection.active ? 'bg-[#FFFDF8]' : 'bg-slate-50')}>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-[#6B6B6B] mb-2">Semantic Search Â· Top 5 Points</p>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-[#6B6B6B]">
+                        Semantic Search &middot; Top {qdrantTopK} Points
+                      </p>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider">Top K</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={20}
+                          value={qdrantTopK}
+                          onChange={e => setQdrantTopK(Math.min(20, Math.max(1, Number(e.target.value) || 1)))}
+                          disabled={!selectedCollection.active}
+                          className={cn(
+                            'w-14 border rounded-lg px-2 py-0.5 text-xs font-mono text-center focus:outline-none transition-all',
+                            selectedCollection.active
+                              ? 'bg-white border-[#BFA66A]/30 text-[#2A2A2A] focus:border-[#B88719]'
+                              : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed',
+                          )}
+                        />
+                      </div>
+                    </div>
                     <div className="flex gap-2">
                       <input
                         type="text"
                         value={qdrantQuery}
                         onChange={e => selectedCollection.active && setQdrantQuery(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && selectedCollection.active && handleQdrantSearch()}
-                        placeholder={selectedCollection.active ? 'Ask a natural-language questionâ€¦' : 'Collection is inactive â€" activate to query'}
+                        placeholder={selectedCollection.active ? 'Ask a natural-language question…' : 'Collection is inactive — activate to query'}
                         disabled={!selectedCollection.active}
                         className={cn(
                           'flex-1 border rounded-xl px-4 py-2 text-xs font-mono placeholder-slate-400 focus:outline-none transition-all',
@@ -1315,7 +1403,7 @@ export const KnowledgeHubView = () => {
                     {selectedCollection.active && qdrantPoints.length === 0 && !qdrantSearching && (
                       <div className="flex flex-col items-center justify-center h-full gap-3 text-center text-slate-400">
                         <MessageSquare className="w-10 h-10 opacity-30" />
-                        <p className="text-xs font-medium">Enter a query above to retrieve the top 5 matching points from this collection.</p>
+                        <p className="text-xs font-medium">Enter a query above to retrieve the top {qdrantTopK} matching points from this collection.</p>
                       </div>
                     )}
                     {selectedCollection.active && qdrantSearching && (
@@ -1382,10 +1470,18 @@ export const KnowledgeHubView = () => {
             )}
           </DetailDrawer>
 
-          {/* â"€â"€ Collection grid â"€â"€ */}
+          {/* ── Collection grid ── */}
           <div className="space-y-4">
+            {qdrantCollections.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 gap-3 text-center text-slate-400">
+                <Layers className="w-10 h-10 opacity-30" />
+                <p className="text-sm font-medium">No Qdrant collections registered</p>
+                <p className="text-xs text-slate-400">Register a Qdrant connection to see collections here.</p>
+              </div>
+            ) : (
+              <>
             <p className="text-sm text-slate-500 font-medium">
-              {qdrantCollections.filter(c => c.active).length} active Â· {qdrantCollections.length} total collections â€" click a card to inspect
+              {qdrantCollections.filter(c => c.active).length} active · {qdrantCollections.length} total collections — click a card to inspect
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {qdrantCollections.map(col => (
@@ -1441,6 +1537,8 @@ export const KnowledgeHubView = () => {
                 </button>
               ))}
             </div>
+              </>
+            )}
           </div>
         </>
       )}
@@ -1476,19 +1574,15 @@ export const KnowledgeHubView = () => {
                   // Filter graph to the query path entities
                   if (rawGraphNodes.length > 0) {
                     const pathEntities = new Set([startNode, ...steps.map(s => s.nodeType)]);
-                    const filtered = rawGraphNodes.filter(n => pathEntities.has(n.name ?? ''));
-                    const filteredIds = new Set(filtered.map(n => n.id));
-                    const filteredEdges = rawGraphEdges.filter(
-                      e => filteredIds.has(e.from) && filteredIds.has(e.to),
+                    const pathNodes = rawGraphNodes.filter(n => pathEntities.has(n.name ?? ''));
+                    const pathNodeIds = new Set(pathNodes.map(n => n.id));
+                    const pathEdges = rawGraphEdges.filter(
+                      e => pathNodeIds.has(e.from) && pathNodeIds.has(e.to),
                     );
-                    const { layoutNodes, layoutEdges, layoutRelLabels } = computeGraphLayout(
-                      filtered.length ? filtered : rawGraphNodes,
-                      filtered.length ? filteredEdges : rawGraphEdges,
-                    );
-                    setNeoNodes(layoutNodes);
-                    setNeoEdges(layoutEdges);
-                    setNeoRelLabels(layoutRelLabels);
-                    setGraphFiltered(filtered.length > 0 && filtered.length < rawGraphNodes.length);
+                    const hasFilter = pathNodes.length > 0 && pathNodes.length < rawGraphNodes.length;
+                    setFilteredNodes(hasFilter ? pathNodes : null);
+                    setFilteredEdges(hasFilter ? pathEdges : null);
+                    setGraphFiltered(hasFilter);
                   }
                 }}
                 className="flex items-center gap-1.5 px-3 py-2 bg-[#B88719] text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-[#8A5A00] transition-all cursor-pointer">
@@ -1501,15 +1595,50 @@ export const KnowledgeHubView = () => {
 
             {/* Builder steps */}
             <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
-              {/* Start node â€" always present */}
-              <div className="flex items-center gap-2 px-3 py-2.5 bg-[#FFF9E8] border-2 border-[#B88719] rounded-xl">
-                <Circle className="w-3.5 h-3.5 text-[#B88719] shrink-0" />
-                <select value={startNode} onChange={e => { setStartNode(e.target.value); setSteps([]); setQueryRan(false); }}
-                  className="bg-transparent text-xs font-bold text-[#8A5A00] focus:outline-none cursor-pointer flex-1">
-                  {allEntities.map(n => <option key={n} value={n}>{n}</option>)}
-                </select>
-                <span className="text-[9px] font-mono text-[#8A5A00]/50 uppercase tracking-wider shrink-0">start</span>
-              </div>
+              {/* Start node — searchable combobox */}
+              {allEntities.length === 0 ? (
+                <div className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[10px] text-slate-400 font-mono text-center">
+                  No entities — Neo4j schema not loaded
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 px-3 py-2.5 bg-[#FFF9E8] border-2 border-[#B88719] rounded-xl relative">
+                  <Circle className="w-3.5 h-3.5 text-[#B88719] shrink-0" />
+                  <div className="relative flex-1">
+                    <input
+                      value={entitySearchOpen ? entitySearchQuery : startNode}
+                      onFocus={() => { setEntitySearchOpen(true); setEntitySearchQuery(''); }}
+                      onChange={e => { setEntitySearchQuery(e.target.value); setEntitySearchOpen(true); }}
+                      onBlur={() => setTimeout(() => { setEntitySearchOpen(false); setEntitySearchQuery(''); }, 160)}
+                      placeholder="Search entity…"
+                      className="bg-transparent text-xs font-bold text-[#8A5A00] focus:outline-none w-full placeholder:text-[#8A5A00]/40"
+                    />
+                    {entitySearchOpen && (
+                      <div className="absolute top-full left-0 z-50 mt-1.5 w-52 max-h-44 overflow-y-auto bg-white border border-[#BFA66A]/40 rounded-xl shadow-lg custom-scrollbar">
+                        {filteredEntityOptions.length === 0 ? (
+                          <div className="px-3 py-2 text-[10px] text-slate-400 font-mono">No match</div>
+                        ) : filteredEntityOptions.map(n => (
+                          <button
+                            key={n}
+                            onMouseDown={() => {
+                              setStartNode(n);
+                              setSteps([]);
+                              setQueryRan(false);
+                              setEntitySearchQuery('');
+                              setEntitySearchOpen(false);
+                            }}
+                            className={cn(
+                              'w-full text-left px-3 py-2 text-xs font-bold border-b border-[#BFA66A]/10 last:border-0 transition-colors cursor-pointer',
+                              n === startNode ? 'bg-[#FFF9E8] text-[#B88719]' : 'text-[#8A5A00] hover:bg-[#FFFDF8]',
+                            )}>
+                            {n}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-[9px] font-mono text-[#8A5A00]/50 uppercase tracking-wider shrink-0">start</span>
+                </div>
+              )}
 
               {/* Step rows â€" vertical */}
               {steps.map((step, si) => {
@@ -1565,7 +1694,7 @@ export const KnowledgeHubView = () => {
           </div>
 
           {/* â"€â"€ RIGHT: Graph Canvas â"€â"€ */}
-          <div className="flex-1 rounded-3xl relative overflow-hidden bg-[#0A0909] border border-white/6">
+          <div ref={graphContainerRef} className="flex-1 rounded-3xl relative overflow-hidden bg-[#0A0909] border border-white/6">
             {neoLoading && (
               <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#0A0909]/80 backdrop-blur-sm">
                 <div className="flex flex-col items-center gap-2">
@@ -1575,20 +1704,26 @@ export const KnowledgeHubView = () => {
               </div>
             )}
             <div className="absolute top-5 left-5 flex flex-col gap-1.5 z-10">
-              {['+','â€"','âŠ¡'].map((s,i) => (
-                <button key={i} className="w-8 h-8 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 text-slate-400 text-sm flex items-center justify-center font-mono">{s}</button>
+              {([
+                { label: '+', fn: () => fgRef.current?.zoom(fgRef.current.zoom() * 1.3, 300) },
+                { label: '−', fn: () => fgRef.current?.zoom(fgRef.current.zoom() / 1.3, 300) },
+                { label: '⊡', fn: () => fgRef.current?.zoomToFit(400, 40) },
+              ] as { label: string; fn: () => void }[]).map(({ label, fn }) => (
+                <button key={label} onClick={fn}
+                  className="w-8 h-8 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 text-slate-400 text-sm flex items-center justify-center font-mono cursor-pointer transition-colors">
+                  {label}
+                </button>
               ))}
             </div>
             <div className="absolute top-5 right-5 z-10 flex items-center gap-2">
               {graphFiltered && (
                 <button
                   onClick={() => {
-                    const { layoutNodes, layoutEdges, layoutRelLabels } = computeGraphLayout(rawGraphNodes, rawGraphEdges);
-                    setNeoNodes(layoutNodes);
-                    setNeoEdges(layoutEdges);
-                    setNeoRelLabels(layoutRelLabels);
+                    setFilteredNodes(null);
+                    setFilteredEdges(null);
                     setGraphFiltered(false);
                     setQueryRan(false);
+                    setTimeout(() => fgRef.current?.zoomToFit(400, 40), 50);
                   }}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 border border-white/20 text-white/70 hover:bg-white/20 rounded-full text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer">
                   <RefreshCw className="w-3 h-3" />
@@ -1600,36 +1735,59 @@ export const KnowledgeHubView = () => {
                 {graphFiltered ? 'Query Result' : 'Force Layout Active'}
               </span>
             </div>
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <svg viewBox="0 0 900 560" className="w-full h-full px-10 py-6">
-                <defs>
-                  <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stopColor="#B88719" stopOpacity="0.55" /><stop offset="100%" stopColor="#B88719" stopOpacity="0" />
-                  </radialGradient>
-                  <radialGradient id="subGlow" cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stopColor="#8A5A00" stopOpacity="0.35" /><stop offset="100%" stopColor="#8A5A00" stopOpacity="0" />
-                  </radialGradient>
-                  <marker id="arrow" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
-                    <polygon points="0 0, 7 2.5, 0 5" fill="rgba(184,135,25,0.35)" />
-                  </marker>
-                </defs>
-                {neoEdges.map((e,i) => (
-                  <motion.line key={`e-${i}`} x1={e[0]} y1={e[1]} x2={e[2]} y2={e[3]} stroke="rgba(184,135,25,0.22)" strokeWidth="1.5" markerEnd="url(#arrow)"
-                    initial={{opacity:0}} animate={{opacity:1}} transition={{delay:i*0.12,duration:0.5}} />
-                ))}
-                {neoRelLabels.map(([x,y,label],i) => (
-                  <motion.text key={`rl-${i}`} x={x} y={y} textAnchor="middle" fill="rgba(184,135,25,0.5)" fontSize="8" fontFamily="monospace" fontWeight="bold"
-                    initial={{opacity:0}} animate={{opacity:1}} transition={{delay:1.2+i*0.08}}>{label}</motion.text>
-                ))}
-                {neoNodes.map((node,i) => (
-                  <motion.g key={node.id} initial={{scale:0,opacity:0}} animate={{scale:1,opacity:1}} transition={{delay:i*0.1,type:'spring',stiffness:200,damping:18}}>
-                    <circle cx={node.x} cy={node.y} r={node.r*3.8} fill={node.core ? 'url(#coreGlow)' : 'url(#subGlow)'} />
-                    <circle cx={node.x} cy={node.y} r={node.r} fill={node.core ? '#B88719' : '#6B4400'} stroke={node.core ? 'rgba(255,220,120,0.4)' : 'rgba(184,135,25,0.25)'} strokeWidth="1.5" />
-                    <text x={node.x} y={node.y+node.r+13} textAnchor="middle" fill="rgba(255,255,255,0.45)" fontSize="9" fontFamily="monospace" fontWeight="bold">{node.label}</text>
-                  </motion.g>
-                ))}
-              </svg>
-            </div>
+            <ForceGraph2D
+              ref={fgRef}
+              graphData={graphData}
+              width={graphDims.w}
+              height={graphDims.h}
+              backgroundColor="#0A0909"
+              linkColor={() => 'rgba(184,135,25,0.3)'}
+              linkWidth={1.5}
+              linkDirectionalArrowLength={5}
+              linkDirectionalArrowRelPos={1}
+              linkDirectionalArrowColor={() => 'rgba(184,135,25,0.5)'}
+              linkLabel={(l: any) => l.description ?? ''}
+              onNodeClick={(node: any) => setSelectedNeoNode(
+                selectedNeoNode?.id === node.id ? null : { id: node.id, name: node.name ?? '', description: node.description },
+              )}
+              nodeCanvasObject={(node: any, ctx, globalScale) => {
+                const r = 5;
+                const isSel = node.id === selectedNeoNode?.id;
+                const grad = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, r * 4);
+                grad.addColorStop(0, isSel ? 'rgba(255,215,0,0.35)' : 'rgba(184,135,25,0.22)');
+                grad.addColorStop(1, 'transparent');
+                ctx.beginPath(); ctx.arc(node.x, node.y, r * 4, 0, 2 * Math.PI);
+                ctx.fillStyle = grad; ctx.fill();
+                ctx.beginPath(); ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
+                ctx.fillStyle = isSel ? '#FFD700' : '#B88719'; ctx.fill();
+                ctx.strokeStyle = isSel ? 'rgba(255,215,0,0.7)' : 'rgba(255,220,120,0.4)';
+                ctx.lineWidth = 1.5; ctx.stroke();
+                const fontSize = Math.max(8, 10 / globalScale);
+                ctx.font = `bold ${fontSize}px monospace`;
+                ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+                ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                ctx.fillText(node.name ?? '', node.x, node.y + r + 3);
+              }}
+              nodeCanvasObjectMode={() => 'replace'}
+              cooldownTicks={80}
+              onEngineStop={() => fgRef.current?.zoomToFit(400, 40)}
+            />
+            {/* Node info panel */}
+            {selectedNeoNode && (
+              <div className="absolute bottom-20 left-5 z-20 bg-[#12110E]/92 backdrop-blur-sm border border-[#B88719]/35 rounded-2xl p-4 max-w-[260px] shadow-[0_8px_32px_rgba(0,0,0,0.7)]">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-[#B88719] font-mono">Node Info</span>
+                  <button onClick={() => setSelectedNeoNode(null)} className="text-white/30 hover:text-white/60 transition-colors text-xs leading-none cursor-pointer">✕</button>
+                </div>
+                <p className="text-sm font-bold text-white font-mono">{selectedNeoNode.name}</p>
+                {selectedNeoNode.description && (
+                  <p className="text-[11px] text-white/50 leading-relaxed mt-1.5">{selectedNeoNode.description}</p>
+                )}
+                <div className="mt-3 pt-2 border-t border-white/10">
+                  <span className="text-[9px] text-white/20 font-mono break-all">{selectedNeoNode.id}</span>
+                </div>
+              </div>
+            )}
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-lg px-4">
               <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl flex gap-2 p-1.5 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
                 <input className="flex-1 bg-transparent px-4 py-2 text-xs text-white/70 focus:outline-none placeholder:text-white/20"
