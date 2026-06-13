@@ -29,24 +29,29 @@ class Neo4jClient:
     def set_url(self, url: str):
         self._url = url
 
+    async def _check_health(self, config: HealthCheckLoopConfig) -> None:
+        await asyncio.wait_for(
+            self._client.verify_connectivity(),
+            timeout=config.timeout_for_health_check,
+        )
+
+    async def _reconnect(self) -> None:
+        await self.close()
+        try:
+            self._create_connection()
+        except Exception as e:
+            log.warning(f"Neo4j reconnect failed: {e}")
+
     async def health_check_loop(self, config: HealthCheckLoopConfig):
         log.info("Neo4j health check loop started")
         while True:
             try:
-                if self._client is None:
-                    self._create_connection()
-
-                await asyncio.wait_for(
-                    self._client.verify_connectivity(),
-                    timeout=config.timeout_for_health_check
-                )
-
-                log.info("Neo4j health check successes")
+                await self._check_health(config)
                 self._healthy = True
-            except asyncio.TimeoutError as e:
-                log.info(f"Neo4j health check failed: {e}")
+            except Exception as e:
                 self._healthy = False
-
+                log.warning(f"Neo4j unhealthy: {e} — attempting reconnect")
+                await self._reconnect()
             await asyncio.sleep(config.interval)
 
     async def open(self, retry: RetryConfig) -> AsyncDriver:

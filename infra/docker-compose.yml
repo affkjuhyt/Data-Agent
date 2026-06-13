@@ -1,0 +1,626 @@
+networks:
+  default:
+    name: data-agent-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  mongo_data:
+  es_data:
+  audit_bridge_data:
+  jwks_refresher_data:
+  openbao_data:
+  qdrant_data:
+  neo4j_data:
+  neo4j_logs:
+
+services:
+  # Databases
+  postgres:
+    image: postgres:16-alpine
+    container_name: dataagent-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_DB: ${POSTGRES_DB:-dataagent}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/create-extra-dbs.sql:/docker-entrypoint-initdb.d/01-create-dbs.sql:ro
+      - ./Postgres/init.sql:/docker-entrypoint-initdb.d/02-kb-tables.sql:ro
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/03-app-schema.sql:ro
+      - ./sql/release-init.sql:/docker-entrypoint-initdb.d/04-release-schema.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-dataagent}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mongo:
+    image: mongo:7.0
+    container_name: dataagent-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: dataagent
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    container_name: dataagent-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.6
+    container_name: dataagent-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  neo4j:
+    build:
+      context: ./Neo4j
+    container_name: knowledge_graph_neo4j
+    restart: unless-stopped
+    expose:
+      - "7474"
+      - "7687"
+    environment:
+      NEO4J_AUTH: none
+
+      # For allocating 10gb for neo4j graph
+      NEO4J_server_memory_heap_initial__size: '4g'
+      NEO4J_server_memory_heap_max__size: '4g'
+      NEO4J_server_memory_pagecache_size: '3g'
+      NEO4J_server_jvm_additional: '-XX:+ExitOnOutOfMemoryError'
+
+      NEO4J_server_memory_pagecache_async: "true"
+      NEO4J_dbms_routing_driver_connection_pool_max__size: 50
+      NEO4J_dbms_cypher_forbid__exhaustive__shortestpath: "true"
+      NEO4J_db_track__query__cpu__time: "true"
+      NEO4J_db_logs_query_transaction_enabled: 'VERBOSE'
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: '10G'
+        reservations:
+          cpus: '4.0'
+          memory: '10G'
+
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://localhost:7474"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # KeyCloak
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: dataagent-keycloak
+    restart: unless-stopped
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-dataagent}
+      KC_DB_USERNAME: ${POSTGRES_USER:-admin}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      KC_DB_SCHEMA: keycloak
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Kong
+  kong-migration:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.kong
+    container_name: dataagent-kong-migration
+    command: kong migrations bootstrap
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: postgres
+      KONG_PG_PORT: 5432
+      KONG_PG_DATABASE: ${POSTGRES_DB:-dataagent}
+      KONG_PG_USER: ${POSTGRES_USER:-admin}
+      KONG_PG_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      KONG_PG_SCHEMA: kong
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  kong:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.kong
+    container_name: dataagent-kong
+    restart: unless-stopped
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: postgres
+      KONG_PG_PORT: 5432
+      KONG_PG_DATABASE: ${POSTGRES_DB:-dataagent}
+      KONG_PG_USER: ${POSTGRES_USER:-admin}
+      KONG_PG_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      KONG_PG_SCHEMA: kong
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: "0.0.0.0:8001"
+      KONG_PROXY_LISTEN: "0.0.0.0:8000"
+      KONG_PLUGINS: bundled,aeroflow-jwks
+    ports:
+      - "8000:8000"
+      - "8900:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kong-migration:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Kafka
+  kafka:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.kafka
+    container_name: dataagent-kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: SASL_PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: SASL_PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: SASL_PLAINTEXT:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: SASL_PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
+      KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_CLUSTER_ID: "dataagent-kafka-cluster-1"
+      KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
+      KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "false"
+      KAFKA_SUPER_USERS: "User:admin;User:ANONYMOUS"
+      KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/kafka/config/kafka-broker-jaas.config"
+      KAFKA_ADMIN_PASSWORD: ${KAFKA_ADMIN_PASSWORD}
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD-SHELL", "printf 'security.protocol=SASL_PLAINTEXT\\nsasl.mechanism=PLAIN\\nsasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\\\"admin\\\" password=\\\"${KAFKA_ADMIN_PASSWORD}\\\";\\n' > /tmp/hc.props && /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --command-config /tmp/hc.props --list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 45s
+
+  # MinIO
+  minio:
+    image: minio/minio:RELEASE.2024-01-16T16-07-38Z
+    container_name: dataagent-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_secret}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  #ElasticSearch
+  elasticsearch:
+    image: elasticsearch:8.12.0
+    container_name: dataagent-elasticsearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+
+  #Jaeger
+  jaeger:
+    image: jaegertracing/all-in-one:1.55
+    container_name: dataagent-jaeger
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+
+  # Openbao
+  openbao:
+    image: openbao/openbao:latest
+    container_name: dataagent-openbao
+    restart: unless-stopped
+    ports:
+      - "8300:8200"
+    command: server -config=/openbao/config/config.hcl
+    cap_add: [IPC_LOCK]
+    environment:
+      BAO_SKIP_DROP_ROOT: "true"
+    volumes:
+      - openbao_data:/openbao/data
+      - ./openbao:/openbao/config:ro
+
+  # Litellm
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    container_name: dataagent-litellm
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml:ro
+    env_file: ../../.env
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/litellm
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  #Langfuse
+  langfuse:
+    image: langfuse/langfuse:2
+    container_name: dataagent-langfuse
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/langfuse
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-dev-langfuse-nextauth-secret-changeme}
+      SALT: ${LANGFUSE_SALT:-dev-langfuse-salt-changeme}
+      NEXTAUTH_URL: http://localhost:3001
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_EMAIL:-admin@example.com}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_PASSWORD:-Admin@12345678}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_NAME:-Admin}
+      LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG:-GTEL}
+      LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT:-data-agent}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: pk-lf-8615e735-e5d5-4942-913f-68d02f6e48cc
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: sk-lf-b5f72b59-f31c-470f-aee3-8bd2d3d6acc0
+      AUTH_DISABLE_SIGNUP: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  workflow-runtime:
+    build:
+      context: ../..
+      dockerfile: services/workflow-runtime/Dockerfile
+    container_name: dataagent-workflow-runtime
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    env_file: ../../.env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
+      RUNTIME_DB_URL: postgresql+asyncpg://runtime_writer:${RUNTIME_DB_PASSWORD:-runtime_dev_pw}@postgres:5432/${POSTGRES_DB:-dataagent}
+      MONGODB_URL: mongodb://mongo:27017/dataagent
+      REDIS_URL: redis://redis:6379
+      LITELLM_BASE_URL: http://litellm:4000
+      LANGFUSE_HOST: http://langfuse:3000
+      LANGFUSE_PUBLIC_KEY: pk-lf-8615e735-e5d5-4942-913f-68d02f6e48cc
+      LANGFUSE_SECRET_KEY: sk-lf-b5f72b59-f31c-470f-aee3-8bd2d3d6acc0
+      QDRANT_URL: http://qdrant:6333
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_started
+      redis:
+        condition: service_started
+      litellm:
+        condition: service_started
+
+  flow-builder:
+    build:
+      context: ../..
+      dockerfile: services/flow-builder/Dockerfile
+    container_name: dataagent-flow-builder
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    env_file: ../../.env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
+      MONGODB_URL: mongodb://mongo:27017/dataagent
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_started
+
+  model-service:
+    build:
+      context: ./model-service
+    container_name: dataagent-model-service
+    restart: unless-stopped
+    ports:
+      - "8600:8001"
+    environment:
+      EMBED_MODEL: BAAI/bge-large-en-v1.5
+      RERANK_MODEL: cross-encoder/ms-marco-MiniLM-L-6-v2
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  kb-backend:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.kb
+    container_name: dataagent-kb-backend
+    restart: unless-stopped
+    ports:
+      - "8050:8000"
+    environment:
+      POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/${POSTGRES_DB:-dataagent}
+      QDRANT_URL: http://qdrant:6333
+      NEO4J_URI: bolt://neo4j:7687
+      MODEL_SERVICE_URL: http://model-service:8001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      neo4j:
+        condition: service_healthy
+      model-service:
+        condition: service_healthy
+
+  kb-ingestion-worker:
+    build:
+      context: ../..
+      dockerfile: infra/kb-ingestion-worker/Dockerfile
+    container_name: dataagent-kb-ingestion-worker
+    restart: unless-stopped
+    environment:
+      POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/${POSTGRES_DB:-dataagent}
+      MONGO_URL: mongodb://mongo:27017/dataagent
+      MINIO_URL: http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-minio_secret}@minio:9000
+      KAFKA_URL: kafka:9092
+      QDRANT_URL: http://qdrant:6333
+      NEO4J_URI: bolt://neo4j:7687
+      MODEL_SERVICE_URL: http://model-service:8001
+      LITELLM_BASE_URL: http://litellm:4000
+      USE_VLM: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      neo4j:
+        condition: service_healthy
+      model-service:
+        condition: service_healthy
+
+
+  auth-api:
+    build:
+      context: ../../services
+      dockerfile: auth-api/Dockerfile
+    container_name: dataagent-auth-api
+    restart: unless-stopped
+    ports:
+      - "8200:8200"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
+      KONG_ADMIN_URL: http://kong:8001
+      OPENBAO_ADDR: http://openbao:8200
+    volumes:
+      - openbao_data:/openbao/data:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      openbao:
+        condition: service_started
+
+
+  minio-service:
+    build:
+      context: ../../services
+      dockerfile: minio-service/Dockerfile
+    container_name: dataagent-minio-service
+    restart: unless-stopped
+    ports:
+      - "8400:8400"
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
+    depends_on:
+      minio:
+        condition: service_healthy
+
+
+  release-worker:
+    build:
+      context: ../../services
+      dockerfile: release-worker/Dockerfile
+    container_name: dataagent-release-worker
+    restart: unless-stopped
+    ports:
+      - "8100:8100"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
+      KAFKA_BOOTSTRAP: kafka:9092
+      KAFKA_USERNAME: release-worker
+      KAFKA_PASSWORD: ${RELEASE_WORKER_KAFKA_PASSWORD}
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      CELERY_BROKER: redis://redis:6379/0
+      KONG_ADMIN_URL: http://kong:8001
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB: dataagent
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+
+  audit-bridge:
+    build:
+      context: ../../services/audit-bridge
+    container_name: dataagent-audit-bridge
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: aeroflow
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: audit.auth.events
+      KAFKA_SASL_USERNAME: audit-bridge
+      KAFKA_SASL_PASSWORD: ${AUDIT_BRIDGE_KAFKA_PASSWORD}
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      POLL_INTERVAL_SECONDS: "10"
+      STATE_FILE: /data/last_event_time.txt
+    volumes:
+      - audit_bridge_data:/data
+    depends_on:
+      kafka:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+
+  audit-consumer:
+    build:
+      context: ../../services/audit-consumer
+    container_name: dataagent-audit-consumer
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: audit.auth.events
+      KAFKA_GROUP_ID: audit-consumer-group
+      KAFKA_SASL_USERNAME: audit-consumer
+      KAFKA_SASL_PASSWORD: ${AUDIT_CONSUMER_KAFKA_PASSWORD}
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-dataagent}
+      DB_USER: ${POSTGRES_USER:-admin}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  jwks-refresher:
+    build:
+      context: ../../services/jwks-refresher
+    container_name: dataagent-jwks-refresher
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: aeroflow
+      KONG_ADMIN_URL: http://kong:8001
+      KONG_CONSUMER: keycloak-users
+      REFRESH_INTERVAL_SECONDS: "300"
+      JWKS_STATE_FILE: /data/last_kid.txt
+    volumes:
+      - jwks_refresher_data:/data
+    depends_on:
+      keycloak:
+        condition: service_started
+      kong:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.dev
+    container_name: dataagent-frontend
+    restart: unless-stopped
+    volumes:
+      - ../..:/app
+      - /app/node_modules
+    ports:
+      - "5173:3000"
+    environment:
+      VITE_KEYCLOAK_URL: http://localhost:8080
+      VITE_KEYCLOAK_REALM: aeroflow
+      VITE_KEYCLOAK_CLIENT: aeroflow-frontend
+      VITE_API_BASE_URL: http://localhost:8000
+    depends_on:
+      keycloak:
+        condition: service_started
+      kong:
+        condition: service_healthy

@@ -46,7 +46,7 @@ Enum
 """
 
 
-class Language(Enum):
+class Language(str, Enum):
     EN = "english"
     VN = "vietnamese"
 
@@ -58,29 +58,28 @@ class SourceType(str, Enum):
     WAREHOUSE = "warehouse"
 
 
-class Tier(Enum):
+class Tier(str, Enum):
     BRONZE = "bronze"
     SILVER = "silver"
     GOLD = "gold"
 
 
-class ActiveStatus(Enum):
-    active = "active"
-    inactive = "inactive"
+class ActiveStatus(str, Enum):
+    ACTIVE = "active"
+    INACTIVE = "inactive"
 
 
-class PolicyFilteringType(Enum):
-    NATURAL_LANG = "Natural Language"
-    EXACT_MATCH = "Exact Match For Word or Phrase"
+class PolicyFilteringType(str, Enum):
+    NATURAL_LANG = "natural_language"
+    EXACT_MATCH = "exact_word"
 
 
+class PolicyExtractionType(str, Enum):
+    ENTITY_NODE = "entity_node"
+    RELATIONSHIP_EDGE = "relationship_edge"
 
-class PolicyExtractionType(Enum):
-    ENTITY_NODE = "Entity"
-    RELATIONSHIP_EDGE = "Relationship Edge"
 
-
-class ConflictType(Enum):
+class ConflictType(str, Enum):
     CONTENT_CONTRADICTION = "content_contradiction"
     CONTENT_CONFLICT = "content_conflict"
     CONTENT_DUPLICATE = "content_duplicate"
@@ -88,37 +87,38 @@ class ConflictType(Enum):
     TABLE_SCHEMA = "table_schema"
 
 
-class ConflictResolution(Enum):
+class ConflictResolution(str, Enum):
     KEEP_EXISTING = "keep_existing"
     KEEP_INCOMING = "keep_incoming"
     MERGE = "merge"
     DELETE = "delete"
+    NO_ACTION = "no_action"
 
 
-class ConflictSeverity(Enum):
+class ConflictSeverity(str, Enum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
 
 
-class ConflictStatus(Enum):
+class ConflictStatus(str, Enum):
     PENDING = "pending"
     AWAITING = "awaiting"
     RESOLVED = "resolved"
 
 
-class TaskType(Enum):
+class TaskType(str, Enum):
     EMBEDDING = "embedding"
-    VLM = "Vision Language Model"
+    VLM = "vision_language_model"
 
 
-class SimilarityMetric(Enum):
+class SimilarityMetric(str, Enum):
     COSINE = "cosine"
     EUCLIDEAN = "euclidean"
     DOT = "dot"
 
 
-class HttpMethod(Enum):
+class HttpMethod(str, Enum):
     GET = "GET"
     POST = "POST"
     PUT = "PUT"
@@ -126,7 +126,7 @@ class HttpMethod(Enum):
     DELETE = "DELETE"
 
 
-class APIType(Enum):
+class APIType(str, Enum):
     NEO4J = "NEO4J"
     QDRANT = "QDRANT"
     RETRIEVE = "RETRIEVE"
@@ -223,9 +223,10 @@ class WarehouseConfigPayload(BaseModel):
     host: Optional[str] = None
     port: Optional[int] = None
     database: Optional[str] = None
-    selected_tables: Optional[list[str]] = None
+    selected_tables: Optional[list] = None  # list of table objects {name, schema, rowCount, description, columns}
     sync_schedule: Optional[str] = None
     schema_filter: Optional[list[str]] = None
+    connection: Optional[dict[str, Any]] = None  # full connection credentials/details
     extra: Optional[dict[str, Any]] = None
 
 
@@ -277,6 +278,7 @@ class KBModelVersionInsert(BaseModel):
 @register("insert")
 class KBDataInsert(TenantModel):
     role_id: str
+    knowledge_base_id: Optional[str] = None
     name: str
     extension: str
     language: Language
@@ -290,12 +292,26 @@ class KBDataInsert(TenantModel):
 
 
 @register("insert")
+class KBKnowledgeBaseInsert(TenantModel):
+    name: str
+    description: Optional[str] = None
+    is_active: bool = True
+    created_by: Optional[str] = None
+
+
+@register("delete")
+class KBKnowledgeBaseDelete(TenantModel):
+    knowledge_base_id: str
+
+
+@register("insert")
 class KBLifecycleHistoryInsert(BaseModel):
     data_id: str
     to_tier: Tier
     from_tier: Optional[Tier] = None
     approved_by: Optional[str] = None
     notes: Optional[str] = None
+    pipeline_metadata: Optional[dict] = None
     model_config = ConfigDict(use_enum_values=True)
 
 
@@ -435,6 +451,8 @@ class KBNeo4jRelationshipInsert(BaseModel):
 class KBEntityLookupInsert(BaseModel):
     alias_name: str
     canonical_name: str
+    # NULL = global seed alias shared by all tenants
+    tenant_id: Optional[uuid.UUID] = None
 
 
 @register("insert")

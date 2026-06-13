@@ -1,0 +1,87 @@
+# syntax=docker/dockerfile:1
+# AeroFlow KB Backend — FastAPI service
+#
+# Build context: repo root (one level above infra/)
+#   cd <repo-root>
+#   docker build -f infra/Dockerfile.kb -t kb-backend .
+#
+# Or via Compose:
+#   docker compose -f infra/docker-compose.kb-ui-testing.yml up kb-backend
+
+
+# ── Stage 1: compile Python wheels ───────────────────────────────────────────
+FROM python:3.13-slim AS builder
+
+WORKDIR /build
+
+# Build-time system deps:
+#   gcc + libpq-dev  → asyncpg (C extension, links against libpq)
+#   libssl-dev + libffi-dev → cryptography (required by snowflake-connector-python)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gcc \
+        libpq-dev \
+        libssl-dev \
+        libffi-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY services/backend/requirements.txt ./
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+
+# ── Stage 2: runtime image ────────────────────────────────────────────────────
+FROM python:3.13-slim
+
+WORKDIR /app
+
+# Runtime-only system dep: libpq5 is the shared library asyncpg links against.
+# cryptography / snowflake-connector uses the OpenSSL already bundled in the
+# python:3.13-slim base image, so no extra libssl package is needed here.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy compiled site-packages from builder
+COPY --from=builder /install /usr/local
+
+# Copy source — ordered least-to-most frequently changed for layer cache efficiency
+COPY basemodel/ ./basemodel/
+COPY services/  ./services/
+
+# Make all packages importable without an editable install
+# PYTHONUNBUFFERED=1  → stdout/stderr flushed immediately (essential for Docker log collection)
+# PYTHONDONTWRITEBYTECODE=1 → no .pyc files written inside the container
+ENV PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# ── Default service URLs (override via env or docker-compose) ─────────────────
+# These match the names used in docker-compose.kb-ui-testing.yml
+ENV POSTGRES_URL="postgresql+asyncpg://aeroflow:aeroflow_secret@postgres/aeroflow_kb" \
+    MONGO_URL="mongodb://mongo:27017/dataagent" \
+    MINIO_URL="http://minio:miniominio@minio:9000" \
+    MINIO_BUCKET="knowledge-base" \
+    KAFKA_URL="kafka:9092" \
+    QDRANT_URL="http://qdrant:6333" \
+    NEO4J_URL="bolt://neo4j:7687" \
+    MODEL_SERVICE_URL="http://model-service:8001" \
+    LLAMA_BASE_URL="http://llama:11434" \
+    LITELLM_BASE_URL="http://litellm:4000" \
+    LLM_MODEL="llama3"
+
+# Create writable log directory before dropping root
+RUN useradd --no-create-home --uid 1001 kb \
+    && mkdir -p /app/logs \
+    && chown kb:kb /app/logs
+USER kb
+
+EXPOSE 8000
+
+# Probe the /health endpoint added to services/backend/main.py
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+
+CMD ["uvicorn", "services.backend.main:app", \
+     "--host", "0.0.0.0", \
+     "--port", "8000", \
+     "--workers", "1", \
+     "--log-level", "info"]

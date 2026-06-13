@@ -56,6 +56,34 @@ class KBModelVersionORM(Base):
 
 
 @register("orm")
+class KBKnowledgeBaseORM(Base):
+    """A knowledge base = the *kind* of knowledge a document belongs to (e.g. "finance",
+    "legal", "engineering"). A tenant can define many knowledge bases; each KBData
+    document optionally belongs to one. The knowledge_base_id is stamped onto every
+    Qdrant point and Neo4j entity node so retrieval can be scoped to one knowledge base.
+    """
+    __tablename__ = "KBKnowledgeBase"
+    __table_args__ = (
+        # A tenant cannot have two knowledge bases with the same name.
+        Index("idx_kbknowledgebase_tenant_name", "tenant_id", "name", unique=True),
+        Index("idx_kbknowledgebase_inserted_at_desc", text("inserted_at DESC")),
+    )
+
+    knowledge_base_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
+    created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+
+    tenant: Mapped["TenantsORM"] = relationship(back_populates="kb_knowledge_bases")
+    documents: Mapped[list["KBDataORM"]] = relationship(back_populates="knowledge_base")
+
+
+@register("orm")
 class KBDataORM(Base):
     __tablename__ = "KBData"
     __table_args__ = (
@@ -68,6 +96,11 @@ class KBDataORM(Base):
     data_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
     role_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("RolePermissions.id"), nullable=False)
+    # The knowledge base (kind of knowledge) this document belongs to. Nullable so
+    # documents ingested before knowledge bases existed remain valid.
+    knowledge_base_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("KBKnowledgeBase.knowledge_base_id"), nullable=True, index=True,
+    )
     name: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
     extension: Mapped[str] = mapped_column(String(32), nullable=False)
     language: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -83,6 +116,7 @@ class KBDataORM(Base):
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
 
     tenant: Mapped["TenantsORM"] = relationship(back_populates="kb_data")
+    knowledge_base: Mapped[Optional["KBKnowledgeBaseORM"]] = relationship(back_populates="documents")
     lifecycle_histories: Mapped[list["KBLifecycleHistoryORM"]] = relationship(back_populates="data", cascade="all, delete-orphan")
     text_blocks: Mapped[list["KBTextBlockORM"]] = relationship(back_populates="owner", cascade="all, delete-orphan")
     tables: Mapped[list["KBTableORM"]] = relationship(back_populates="owner", cascade="all, delete-orphan")
@@ -102,6 +136,7 @@ class KBLifecycleHistoryORM(Base):
     from_tier: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     approved_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    pipeline_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     transitioned_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -449,13 +484,21 @@ class KBNeo4jRelationshipORM(Base):
 
 @register("orm")
 class KBEntityLookupORM(Base):
+    """Exact alias → canonical entity resolution, learned during gold promotion.
+
+    alias_name is stored in canonical form (to_canonical output — lowercase,
+    underscores, Vietnamese diacritics PRESERVED) so lookup is a hash-index
+    equality. tenant_id NULL = global seed alias shared by all tenants.
+    """
     __tablename__ = "KBEntityLookup"
     __table_args__ = (
         Index("idx_kbentitylookup_alias", "alias_name", postgresql_using="hash"),
+        Index("idx_kbentitylookup_tenant_alias", "tenant_id", "alias_name"),
         Index("idx_kbentitylookup_inserted_at_desc", text("inserted_at DESC")),
     )
 
     lookup_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=True, index=True)
     alias_name: Mapped[str] = mapped_column(String(512), nullable=False)
     canonical_name: Mapped[str] = mapped_column(String(512), nullable=False, index=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)

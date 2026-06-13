@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+sqlalchemy[asyncio]
+asyncpg
+alembic
+neo4j
+qdrant-client
+httpx
+litellm
+aioboto3
+botocore
+aiokafka
+motor
+snowflake-connector-python

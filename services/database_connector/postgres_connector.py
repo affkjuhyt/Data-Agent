@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from typing import Any
 
 from sqlalchemy import select, update as sa_update, delete as sa_delete, text
@@ -91,7 +92,14 @@ _OP_MAP = {
 
 
 def _apply_op(col, f):
-    return _OP_MAP[f.operator](col, f.value)
+    value = f.value
+    # Convert string to UUID if column is UUID type and value is string
+    if isinstance(value, str) and hasattr(col.type, 'python_type') and col.type.python_type == uuid.UUID:
+        try:
+            value = uuid.UUID(value)
+        except (ValueError, TypeError):
+            pass  # Not a UUID string, use original value
+    return _OP_MAP[f.operator](col, value)
 
 
 def _validate_order_by(order_by, allowed_tables: set[str]) -> None:
@@ -130,7 +138,8 @@ def _prepare_deep_search(data: SelectInLoadRequest) -> DQLPreparation:
     stmt = select(orm_cls).options(*load_options)
 
     if data.tenant_id is not None:
-        stmt = stmt.where(orm_cls.tenant_id == data.tenant_id)
+        tenant_uuid = uuid.UUID(data.tenant_id) if isinstance(data.tenant_id, str) else data.tenant_id
+        stmt = stmt.where(orm_cls.tenant_id == tenant_uuid)
     for f in data.filters:
         stmt = stmt.where(_apply_op(getattr(orm_cls, f.column_name), f))
     if data.cursor is not None:
@@ -208,7 +217,8 @@ def _prepare_read(data: ReadJoinRequest) -> DQLPreparation:
         stmt = stmt.join(join_cls)
 
     if data.tenant_id is not None:
-        stmt = stmt.where(from_cls.tenant_id == data.tenant_id)
+        tenant_uuid = uuid.UUID(data.tenant_id) if isinstance(data.tenant_id, str) else data.tenant_id
+        stmt = stmt.where(from_cls.tenant_id == tenant_uuid)
     for f in data.filters:
         stmt = stmt.where(_apply_op(getattr(orm_map[f.table_name], f.column_name), f))
     if data.cursor is not None:
