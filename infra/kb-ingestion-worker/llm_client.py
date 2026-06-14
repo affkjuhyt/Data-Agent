@@ -1,33 +1,87 @@
 """
-LLM backend dispatcher — gold/silver/conflict_resolver import this instead of a
-concrete client.
+LLM access for the ingestion worker — gold/silver/conflict_resolver import this.
 
-Backend selection (config.py):
-  LLM_BACKEND=vllm   → vllm_client  (OpenAI-compatible vLLM, schema-guided JSON;
-                                     e.g. the Colab server from model/vllm/)
-  LLM_BACKEND=llama  → llama_client (Ollama-compatible llama.cpp, GBNF grammars)
+The worker no longer knows or chooses the LLM backend. Every call goes to the
+model-service GATEWAY (/generate); model-service decides whether to serve locally
+or forward to a remote server (e.g. Colab vLLM) based on its own env. Switching
+the LLM backend is a model-service env change — nothing here changes.
 
-When LLM_BACKEND is unset, vllm is chosen automatically iff VLLM_BASE_URL is set,
-so pointing the worker at a tunnel URL is the only switch needed.
+The JSON SHAPE each call wants is still the worker's concern (domain logic), so the
+per-system_type schema registry is reused from vllm_client and passed to the gateway
+as `json_schema`. The gateway applies it as the server's response_format.
 """
 from __future__ import annotations
 
 import logging
 
+import httpx
+
 import config as cfg
+from vllm_client import _SCHEMAS_BY_SYSTEM_TYPE  # schema shapes only (no transport)
 
 log = logging.getLogger(__name__)
 
-if cfg.LLM_BACKEND == "vllm":
-    import vllm_client as _backend
-    log.info("LLM backend: vllm (%s)", cfg.VLLM_BASE_URL or "VLLM_BASE_URL not set!")
-else:
-    import llama_client as _backend
-    log.info("LLM backend: llama (%s)", cfg.LLAMA_BASE_URL)
+BACKEND = "gateway"
+_BASE = cfg.MODEL_SERVICE_URL.rstrip("/")
+_DEFAULT_TIMEOUT = 300.0
 
-BACKEND = cfg.LLM_BACKEND
+log.info("LLM access: model-service gateway (%s/generate)", _BASE)
 
-generate_json  = _backend.generate_json
-generate_plain = _backend.generate_plain
-chat_plain     = _backend.chat_plain
-chat_json      = _backend.chat_json
+
+def _schema(system_type: str) -> dict | None:
+    return _SCHEMAS_BY_SYSTEM_TYPE.get(system_type)
+
+
+async def _generate(payload: dict, timeout: float) -> str:
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        resp = await client.post(f"{_BASE}/generate", json=payload)
+        resp.raise_for_status()
+        return resp.json().get("content", "")
+
+
+async def generate_json(
+    prompt: str, *, system_prompt: str = "", system_type: str = "",
+    max_tokens: int = 512, temperature: float = 0.1, timeout: float = _DEFAULT_TIMEOUT,
+) -> str:
+    payload: dict = {
+        "prompt": prompt, "system_prompt": system_prompt, "json_mode": True,
+        "max_tokens": max_tokens, "temperature": temperature,
+    }
+    schema = _schema(system_type)
+    if schema is not None:
+        payload["json_schema"] = schema
+    return await _generate(payload, timeout)
+
+
+async def generate_plain(
+    prompt: str, *, system_prompt: str = "", system_type: str = "",
+    max_tokens: int = 1024, temperature: float = 0.3, timeout: float = _DEFAULT_TIMEOUT,
+) -> str:
+    return await _generate({
+        "prompt": prompt, "system_prompt": system_prompt, "json_mode": False,
+        "max_tokens": max_tokens, "temperature": temperature,
+    }, timeout)
+
+
+async def chat_plain(
+    messages: list[dict], *, max_tokens: int = 1024, temperature: float = 0.3,
+    timeout: float = _DEFAULT_TIMEOUT, system_type: str = "",
+) -> str:
+    return await _generate({
+        "messages": messages, "json_mode": False,
+        "max_tokens": max_tokens, "temperature": temperature,
+    }, timeout)
+
+
+async def chat_json(
+    messages: list[dict], *, max_tokens: int = 512, temperature: float = 0.1,
+    timeout: float = _DEFAULT_TIMEOUT, grammar_gbnf: str = "", system_type: str = "",
+) -> str:
+    payload: dict = {
+        "messages": messages, "json_mode": True,
+        "max_tokens": max_tokens, "temperature": temperature,
+    }
+    schema = _schema(system_type)
+    if schema is not None:
+        payload["json_schema"] = schema
+    return await _generate(payload, timeout)

@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from models import get_embed, get_embed_for_name, is_ready
 import config as cfg
 import registry
+import remote
 
 router = APIRouter()
 
@@ -24,6 +25,14 @@ class EmbedResponse(BaseModel):
 
 @router.post("/embed", response_model=EmbedResponse)
 def embed(req: EmbedRequest) -> EmbedResponse:
+    # Remote proxy: forward to a GPU server (Colab + cloudflared) when configured.
+    # No local model needed for embedding in this mode.
+    if cfg.REMOTE_EMBED_URL:
+        if not req.texts:
+            return EmbedResponse(embeddings=[], model_id=req.model_id)
+        data = remote.post(cfg.REMOTE_EMBED_URL, "/embed", {"texts": req.texts})
+        return EmbedResponse(embeddings=data["embeddings"], model_id=req.model_id)
+
     if not is_ready():
         raise HTTPException(503, "Model not loaded")
 

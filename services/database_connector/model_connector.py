@@ -125,3 +125,36 @@ class ModelServiceClient:
         )
         resp.raise_for_status()
         return resp.json().get("results", [])
+
+    async def generate(
+        self,
+        prompt: str = "",
+        *,
+        system_prompt: str = "",
+        messages: list[dict] | None = None,
+        json_schema: dict | None = None,
+        json_mode: bool = True,
+        max_tokens: int = 512,
+        temperature: float = 0.1,
+    ) -> str:
+        """LLM text generation via the model-service gateway. The caller provides
+        only the input (prompt/messages, optional json_schema); model-service routes
+        to whichever LLM backend is configured (local or Colab). Returns the
+        assistant content string."""
+        payload: dict = {
+            "system_prompt": system_prompt, "json_mode": json_mode,
+            "max_tokens": max_tokens, "temperature": temperature,
+        }
+        if messages is not None:
+            payload["messages"] = messages
+        else:
+            payload["prompt"] = prompt
+        if json_schema is not None:
+            payload["json_schema"] = json_schema
+        # LLM calls run longer than the default 60s read timeout.
+        resp = await self._client.post(
+            "/generate", json=payload,
+            timeout=httpx.Timeout(connect=5.0, read=180.0, write=5.0, pool=5.0),
+        )
+        resp.raise_for_status()
+        return resp.json().get("content", "")

@@ -26,7 +26,6 @@ import time
 import unicodedata
 import uuid as _uuid
 
-import httpx
 from neo4j import AsyncDriver
 from qdrant_client import models as qmodels
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
@@ -70,98 +69,10 @@ def _clamp01(x) -> float:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# LLM helpers — direct to llama server /api/generate (no LiteLLM proxy)
-# X-System-Type header tells the llama server which pre-cached KV snapshot to use.
+# LLM access — all generation goes through the model-service gateway
+# (ModelServiceClient.generate → /generate, env-routed local/remote). The old
+# direct vLLM/llama helpers were removed when canonicalize moved to the gateway.
 # ═══════════════════════════════════════════════════════════════════════════════
-
-# Timeout for pipeline LLM calls — increased for CPU inference.
-# On timeout or error the step returns empty and the pipeline continues with vector search only.
-_LLM_TIMEOUT = 60.0
-
-# vLLM served-model id, discovered once from /v1/models when VLLM_MODEL is unset.
-_vllm_model_id: str = cfg.VLLM_MODEL
-
-
-async def _vllm_generate(system_type: str, user: str, temperature: float, max_tokens: int) -> str:
-    """OpenAI-compatible chat completion against cfg.VLLM_BASE_URL. The system
-    prompt is sent inline (no KV-snapshot machinery — vLLM prefix-caches it)."""
-    global _vllm_model_id
-    headers = {"Authorization": f"Bearer {cfg.VLLM_API_KEY}"} if cfg.VLLM_API_KEY else {}
-    base = cfg.VLLM_BASE_URL.rstrip("/")
-    async with httpx.AsyncClient(timeout=_LLM_TIMEOUT, headers=headers) as client:
-        if not _vllm_model_id:
-            resp = await client.get(f"{base}/v1/models")
-            resp.raise_for_status()
-            models = [m["id"] for m in resp.json().get("data", [])]
-            if not models:
-                raise RuntimeError("vLLM serves no models")
-            _vllm_model_id = models[0]
-            log.info("llm | discovered vLLM model %r", _vllm_model_id)
-        messages = []
-        system_prompt = SYSTEM_PROMPTS.get(system_type, "")
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": user})
-        resp = await client.post(f"{base}/v1/chat/completions", json={
-            "model":           _vllm_model_id,
-            "messages":        messages,
-            "max_tokens":      max_tokens,
-            "temperature":     temperature,
-            "stream":          False,
-            "response_format": {"type": "json_object"},
-        })
-        resp.raise_for_status()
-        return (resp.json().get("choices") or [{}])[0].get("message", {}).get("content") or ""
-
-
-async def _llm_generate(
-    base_url: str, model: str, system_type: str, user: str,
-    temperature: float = 0.1, max_tokens: int = 512,
-) -> str:
-    try:
-        if cfg.VLLM_BASE_URL:
-            return await _vllm_generate(system_type, user, temperature, max_tokens)
-        payload = {
-            "model":  model,
-            "prompt": user,
-            "format": "json",
-            "stream": False,
-            "options": {
-                "num_predict": max_tokens,
-                "temperature": temperature,
-            },
-        }
-        async with httpx.AsyncClient(timeout=_LLM_TIMEOUT) as client:
-            resp = await client.post(
-                f"{base_url}/api/generate",
-                json=payload,
-                headers={"X-System-Type": system_type},
-            )
-            resp.raise_for_status()
-        return resp.json().get("response", "")
-    except Exception as exc:
-        log.warning("llm | %s timed out or failed (%s) — continuing without LLM step", system_type, exc)
-        return ""
-
-
-async def _llm_generate_json(
-    base_url: str, model: str, system_type: str, user: str,
-    temperature: float = 0.1, max_tokens: int = 512,
-) -> dict:
-    raw = await _llm_generate(base_url, model, system_type, user, temperature, max_tokens)
-    if not raw:
-        return {}
-    stripped = raw.strip()
-    if stripped.startswith("```"):
-        stripped = stripped.split("```", 2)[1]
-        if stripped.startswith("json"):
-            stripped = stripped[4:]
-        stripped = stripped.rsplit("```", 1)[0].strip()
-    try:
-        return json.loads(stripped)
-    except json.JSONDecodeError as exc:
-        log.warning("llm | JSON parse failed: %r — %s", raw[:200], exc)
-        return {}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -183,8 +94,36 @@ Query: "Gia xang co anh huong den gia o to?"
 {"intent":"causal_query","entities":["gia xang","gia oto"],"relationships":[["gia xang","anh huong","gia oto"]]}"""
 
 
-async def canonicalize(base_url: str, model: str, query: str) -> dict:
-    result = await _llm_generate_json(base_url, model, "canonicalize", query, temperature=0.0, max_tokens=256)
+def _parse_json_obj(raw: str) -> dict:
+    """Strip ```json fences and parse; {} on failure."""
+    if not raw:
+        return {}
+    s = raw.strip()
+    if s.startswith("```"):
+        s = s.split("```", 2)[1]
+        if s.startswith("json"):
+            s = s[4:]
+        s = s.rsplit("```", 1)[0].strip()
+    try:
+        obj = json.loads(s)
+        return obj if isinstance(obj, dict) else {}
+    except json.JSONDecodeError as exc:
+        log.warning("llm | JSON parse failed: %r — %s", raw[:200], exc)
+        return {}
+
+
+async def canonicalize(model: ModelServiceClient, query: str) -> dict:
+    """Query understanding via the model-service LLM gateway — the pipeline does not
+    know or care which LLM backend (local / Colab) actually serves the request."""
+    try:
+        content = await model.generate(
+            prompt=query, system_prompt=_CANONICALIZE_SYSTEM,
+            json_mode=True, max_tokens=256, temperature=0.0,
+        )
+    except Exception as exc:
+        log.warning("canonicalize | failed (%s) — continuing without LLM step", exc)
+        return {"intent": "general", "entities": [], "relationships": []}
+    result = _parse_json_obj(content)
     entities = result.get("entities", [])
     return {
         "intent": str(result.get("intent", "general")),
@@ -892,7 +831,7 @@ class LightRAGPipeline:
 
             # ── 3. Canonicalize ─────────────────────────────────────────────────
             _t = time.perf_counter()
-            canonical = await canonicalize(cfg.LLAMA_BASE_URL, cfg.LLM_MODEL, query)
+            canonical = await canonicalize(model, query)
             timings["canonicalize_ms"] = _ms(_t)
             yield {
                 "step": "canonicalize",
@@ -1157,7 +1096,7 @@ class LightRAGPipeline:
             pass1_filter = query_entities or None
         else:
             query_entities = []
-            canon_task = asyncio.create_task(canonicalize(cfg.LLAMA_BASE_URL, cfg.LLM_MODEL, query))
+            canon_task = asyncio.create_task(canonicalize(model, query))
             if not cfg.CANON_OVERLAP:
                 canonical = await canon_task
                 canon_task = None

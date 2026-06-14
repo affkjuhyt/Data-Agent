@@ -1,6 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from models import get_rerank, is_ready
+import config as cfg
+import remote
 
 router = APIRouter()
 
@@ -22,6 +24,14 @@ class RerankResponse(BaseModel):
 
 @router.post("/rerank", response_model=RerankResponse)
 def rerank(req: RerankRequest) -> RerankResponse:
+    # Remote proxy: forward to a GPU server (Colab + cloudflared) when configured.
+    if cfg.REMOTE_RERANK_URL:
+        if not req.documents:
+            return RerankResponse(results=[])
+        data = remote.post(cfg.REMOTE_RERANK_URL, "/rerank",
+                           {"query": req.query, "documents": req.documents, "top_n": req.top_n})
+        return RerankResponse(results=[RerankResult(**r) for r in data.get("results", [])])
+
     if not is_ready():
         raise HTTPException(503, "Model not loaded")
     if not req.documents:

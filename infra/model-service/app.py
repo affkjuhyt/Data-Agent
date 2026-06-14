@@ -8,7 +8,7 @@ from fastapi import FastAPI
 import config as cfg
 import models
 import registry
-from routers import embed, health, rerank
+from routers import embed, generate, health, rerank
 
 logging.basicConfig(level=logging.INFO)
 
@@ -28,6 +28,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(embed.router)
     app.include_router(rerank.router)
+    app.include_router(generate.router)
 
     return app
 
