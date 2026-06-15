@@ -21,9 +21,9 @@ from basemodel.services_docling.docling_model import (
     ParsedTable,
     SupportedExtension,
 )
-from services.log_set_up import create_logger
+import logging
 
-log = create_logger("services.docling", "service_docling")
+log = logging.getLogger(__name__)
 
 MAX_CHUNK_CHARS: int = 1500
 _worker_converter: DocumentConverter | None = None

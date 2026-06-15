@@ -2,7 +2,7 @@ from qdrant_client import models
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
 from typing import List
 import asyncio
-from services.log_set_up import create_logger
+import logging
 from basemodel.services_databaseconnector.qdrant_model import (
     # Enums
     DistanceMetric, MatchType,
@@ -30,7 +30,7 @@ from basemodel.services_databaseconnector.shared_model import (
 )
 
 # Logging Initiate
-log = create_logger("services.qdrant", "service_qdrant")
+log = logging.getLogger(__name__)
 
 # Utilities
 def _build_qdrant_filters(

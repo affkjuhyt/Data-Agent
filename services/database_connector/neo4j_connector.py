@@ -4,14 +4,14 @@ import asyncio
 
 from neo4j import AsyncGraphDatabase
 from neo4j._async.driver import AsyncDriver
-from services.log_set_up import create_logger
+import logging
 from basemodel.services_databaseconnector.shared_model import ResponseModel, RetryConfig, HealthCheckLoopConfig
 from basemodel.services_databaseconnector.neo4j_model import (
     AddNodeRequest, AddRelationshipRequest, GraphExpandRequest,
     RelationshipDirection
 )
 
-log = create_logger("services.neo4j", "service_neo4j")
+log = logging.getLogger(__name__)
 
 
 class Neo4jClient:

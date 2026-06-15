@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload, attributes as sa_attributes
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
-from services.log_set_up import create_logger
+import logging
 from basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig, ResponseModel
 from pydantic import BaseModel
 from basemodel.services_databaseconnector.postgres_model import (
@@ -17,7 +17,7 @@ from basemodel.services_databaseconnector.postgres_model import (
 )
 import basemodel.services_databaseconnector.postgres_orm  # noqa: F401 — registers ORM classes into REGISTRY
 
-log = create_logger("services.postgres", "service_postgres")
+log = logging.getLogger(__name__)
 
 
 # Helpers
