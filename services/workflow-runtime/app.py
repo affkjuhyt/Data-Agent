@@ -5,6 +5,10 @@ load_dotenv(find_dotenv())
 import asyncio
 from contextlib import asynccontextmanager
 
+from services.log_set_up.logger import setup_logging
+
+setup_logging("workflow-runtime")
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 

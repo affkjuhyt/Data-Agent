@@ -1,24 +1,48 @@
-from pathlib import Path
 import logging
 import os
-_LOG_DIR = Path(__file__).resolve().parent.parent.parent / "logs"
-_LOG_DIR.mkdir(parents=True, exist_ok=True)
+import sys
 
-def create_logger(logger_name: str, file_name: str) -> logging.Logger:
-    log = logging.getLogger(logger_name)
-    log.setLevel(logging.INFO)
+try:
+    import ecs_logging
+    _ECS_AVAILABLE = True
+except ImportError:
+    _ECS_AVAILABLE = False
 
-    if not log.handlers:
-        _fmt = logging.Formatter(
-            fmt="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-        _file_handler = logging.FileHandler(_LOG_DIR / f"{file_name}.log")
-        _file_handler.setFormatter(_fmt)
-        _stream_handler = logging.StreamHandler()
-        _stream_handler.setFormatter(_fmt)
-        log.addHandler(_file_handler)
-        log.addHandler(_stream_handler)
-        log.propagate = False
 
-    return log
+class _ServiceFilter(logging.Filter):
+    """Inject service name + env vào mọi log record để Loki có thể filter."""
+    def __init__(self, service: str, env: str):
+        super().__init__()
+        self._service = service
+        self._env = env
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.labels = getattr(record, "labels", {})
+        record.labels.setdefault("service", self._service)
+        record.labels.setdefault("env", self._env)
+        return True
+
+
+def setup_logging(service_name: str) -> None:
+    env = os.environ.get("APP_ENV", "development")
+    level = os.environ.get("LOG_LEVEL", "INFO").upper()
+
+    root = logging.getLogger()
+    root.setLevel(level)
+    root.handlers.clear()
+
+    handler = logging.StreamHandler(sys.stdout)
+
+    if _ECS_AVAILABLE:
+        handler.setFormatter(ecs_logging.StdoutLogFormatter())
+    else:
+        handler.setFormatter(logging.Formatter(
+            "%(asctime)s %(levelname)s %(name)s %(message)s"
+        ))
+
+    handler.addFilter(_ServiceFilter(service_name, env))
+    root.addHandler(handler)
+
+    # Giảm noise từ third-party libs
+    for lib in ("httpx", "httpcore", "uvicorn.access", "asyncio", "multipart"):
+        logging.getLogger(lib).setLevel(logging.WARNING)

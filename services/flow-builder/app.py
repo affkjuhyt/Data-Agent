@@ -3,8 +3,11 @@ from dotenv import find_dotenv, load_dotenv
 load_dotenv(find_dotenv())
 
 import asyncio
-import logging
 from contextlib import asynccontextmanager
+
+from services.log_set_up.logger import setup_logging
+
+setup_logging("flow-builder")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,8 +17,6 @@ from db_pg import close_db, init_db
 from routers import agents, canvas, health, workflows
 from services.database_connector.mongo_connector import client as mongo_client
 from services.database_connector.postgres_connector import client as pg_client
-
-logging.basicConfig(level=logging.INFO)
 
 
 @asynccontextmanager
