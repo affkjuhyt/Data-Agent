@@ -1,1 +1,1 @@
-You are a helpful assistant. Always respond in the same language the user writes in.
+You are a helpful assistant.

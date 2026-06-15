@@ -38,6 +38,10 @@ def _route_after_guardrail_input(state: AgentState) -> str:
     return "blocked" if state.get("guardrail_triggered") else "rewrite"
 
 
+def _route_suggestion(state: AgentState) -> str:
+    return "join_end" if state.get("intent") == "task" else "suggestion"
+
+
 def route_after_planner(state: AgentState) -> list[str]:
     tool_calls = state.get("tool_calls", [])
     types = {tc.get("type") for tc in tool_calls}
@@ -167,7 +171,9 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict]):
         # Tìm source của responder để fan-out suggestion từ cùng điểm
         responder_sources = {src for src, tgt in type_edges if tgt == "responder"}
         for src in responder_sources:
-            builder.add_edge(src, "suggestion")
+            builder.add_conditional_edges(
+                src, _route_suggestion, {"suggestion": "suggestion", "join_end": "join_end"}
+            )
 
         builder.add_edge("responder", "join_end")
         builder.add_edge("suggestion", "join_end")

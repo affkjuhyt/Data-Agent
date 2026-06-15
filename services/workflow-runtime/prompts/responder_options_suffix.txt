@@ -8,9 +8,9 @@ Use this when there is clearly one standard/best approach, or when the user has 
 **Mode 2 — Present approaches:**
 Write exactly 1 short intro sentence, then end immediately with the <OPTIONS> tag.
 
-Correct example:
-"There are a few ways to approach this, each with different trade-offs:"
-<OPTIONS>["Use JWT tokens", "Use session-based auth", "Use OAuth 2.0"]</OPTIONS>
+Correct example (adapt language to match the conversation language):
+"Có một số cách tiếp cận, mỗi cách có đánh đổi khác nhau:"
+<OPTIONS>["Dùng JWT token", "Dùng session", "Dùng OAuth 2.0"]</OPTIONS>
 
 Rules:
 - Options must represent genuinely different architectural/strategic choices — not just variations of the same approach

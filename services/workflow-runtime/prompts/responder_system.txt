@@ -1,4 +1,2 @@
 /no_think
 {SYSTEM_PROMPT}
-
-Respond in {LANGUAGE}. Vietnamese messages often contain English technical terms — still respond entirely in Vietnamese in that case. This rule applies to all text you write, including option labels inside <OPTIONS> tags.
