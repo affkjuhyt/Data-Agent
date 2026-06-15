@@ -111,6 +111,8 @@ async def run_conversation_stream(req: RunRequest, request: Request):
 
     _OPTIONS_OPEN  = "<OPTIONS>"
     _OPTIONS_CLOSE = "</OPTIONS>"
+    _THINK_OPEN    = "<think>"
+    _THINK_CLOSE   = "</think>"
 
     async def event_stream():
         full_response: list[str] = []
@@ -122,6 +124,8 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         pending = ""           # giữ tạm token cuối để detect prefix của <OPTIONS>
         options_mode = False   # True khi đã qua <OPTIONS>
         options_buffer = ""    # nội dung sau <OPTIONS>
+        think_mode = False     # True khi đang trong <think>...</think>
+        think_buffer = ""      # buffer think content (bị discard)
         started_at = time.monotonic()
 
         pending_suggestions: list[str] | None = None
@@ -149,6 +153,29 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                 elif kind == "on_chat_model_stream" and node == "responder":
                     token = event["data"]["chunk"].content or ""
                     if not token:
+                        continue
+
+                    # Strip <think>...</think> — discard toàn bộ thinking block
+                    if think_mode:
+                        think_buffer += token
+                        if _THINK_CLOSE in think_buffer:
+                            token = think_buffer.split(_THINK_CLOSE, 1)[1]
+                            think_mode = False
+                            think_buffer = ""
+                        else:
+                            continue
+                        if not token:
+                            continue
+                    elif _THINK_OPEN in (pending + token):
+                        combined = pending + token
+                        idx = combined.find(_THINK_OPEN)
+                        before = combined[:idx]
+                        if before:
+                            full_response.append(before)
+                            yield f"data: {json.dumps(before)}\n\n"
+                        pending = ""
+                        think_mode = True
+                        think_buffer = combined[idx + len(_THINK_OPEN):]
                         continue
 
                     if options_mode:

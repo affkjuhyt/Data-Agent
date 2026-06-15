@@ -60,7 +60,8 @@ function spanType(node: string): { label: string; color: string; bg: string } {
 
 /* ─── Helpers ────────────────────────────────────────────────── */
 
-const _SKIP_NODES = new Set(['LangGraph', '_route_after_guardrail_input', 'route_after_planner', 'join_retrieval', 'join_end']);
+const _SKIP_NODES = new Set(['LangGraph', 'join_retrieval', 'join_end']);
+const _shouldSkip = (name: string) => _SKIP_NODES.has(name) || name.startsWith('_route') || name.startsWith('route_');
 
 function trimInput(name: string, raw: any): string {
   if (!raw || typeof raw !== 'object') return String(raw ?? '');
@@ -79,7 +80,7 @@ function trimInput(name: string, raw: any): string {
 
 function mapObservations(obs: any[]): TraceStep[] {
   const filtered = obs
-    .filter(o => !_SKIP_NODES.has(o.name) && o.type === 'SPAN')
+    .filter(o => !_shouldSkip(o.name) && o.type === 'SPAN')
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
   const traceStart = filtered.length > 0 ? new Date(filtered[0].startTime).getTime() : 0;
   return filtered.map(o => ({

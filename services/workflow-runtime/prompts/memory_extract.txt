@@ -1,3 +1,4 @@
+/no_think
 Từ đoạn hội thoại sau, trích xuất thông tin đáng nhớ lâu dài (facts, preferences, quyết định quan trọng của user).
 Chỉ trích xuất nếu có giá trị thực sự. Nếu không có gì đáng nhớ, trả lời đúng 1 từ: NONE.
 Không lưu câu hỏi/trả lời thông thường, kiến thức chung, hay thông tin tạm thời.
