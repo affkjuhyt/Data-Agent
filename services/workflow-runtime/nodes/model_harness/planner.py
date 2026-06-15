@@ -19,6 +19,7 @@ class _ToolCall(BaseModel):
 
 class _PlannerOutput(BaseModel):
     intent: str = "question"
+    language: str = "vi"
     tool_calls: list[_ToolCall] = []
 
 logger = logging.getLogger(__name__)
@@ -76,12 +77,14 @@ def planner_node(state: AgentState) -> dict:
         parsed = _PlannerOutput.model_validate_json(raw)
         tool_calls = parsed.model_dump()["tool_calls"]
         intent = parsed.intent if parsed.intent in ("question", "task") else "question"
+        language = parsed.language if parsed.language in ("vi", "en") else "vi"
     except (ValidationError, Exception):
         logger.warning("planner | failed to validate response, using fallback. raw=%r", raw)
         fallback = _FALLBACK_TOOL_CALLS.copy()
         fallback[0] = {**fallback[0], "query": state["query"]}
         tool_calls = fallback
         intent = "question"
+        language = "vi"
 
-    logger.info("planner | intent=%s", intent)
-    return {"tool_calls": tool_calls, "intent": intent}
+    logger.info("planner | intent=%s language=%s", intent, language)
+    return {"tool_calls": tool_calls, "intent": intent, "language": language}

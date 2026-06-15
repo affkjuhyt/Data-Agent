@@ -92,6 +92,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         "guardrail_stage": None,
         "guardrail_reason": None,
         "intent": None,
+        "language": None,
         "config": cfg,
     }
 

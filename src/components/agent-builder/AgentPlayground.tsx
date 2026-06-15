@@ -358,16 +358,83 @@ function TracePanel({ steps, traceLoading, traceId }: {
   );
 }
 
+/* ─── Markdown renderer ──────────────────────────────────────── */
+
+function renderInline(text: string): React.ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g).map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**'))
+      return <strong key={i} style={{ fontWeight: 600, color: '#fff' }}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith('`') && part.endsWith('`'))
+      return <code key={i} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85em', background: 'rgba(255,255,255,0.1)', padding: '1px 5px', borderRadius: 4, color: '#EBD07C' }}>{part.slice(1, -1)}</code>;
+    const link = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (link)
+      return <a key={i} href={link[2]} target="_blank" rel="noopener noreferrer" style={{ color: '#93C5FD', textDecoration: 'underline' }}>{link[1]}</a>;
+    return <span key={i}>{part}</span>;
+  });
+}
+
+function MarkdownContent({ text }: { text: string }) {
+  const lines = text.split('\n');
+  const nodes: React.ReactNode[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    // Fenced code block
+    if (line.startsWith('```')) {
+      const codeLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith('```')) { codeLines.push(lines[i]); i++; }
+      i++;
+      nodes.push(
+        <pre key={`cb${i}`} style={{ background: '#0A0A0A', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '10px 14px', margin: '8px 0 4px', fontSize: 12, fontFamily: 'var(--font-mono)', color: 'rgba(229,231,235,0.85)', overflowX: 'auto', lineHeight: 1.6, whiteSpace: 'pre' }}>
+          {codeLines.join('\n')}
+        </pre>
+      );
+      continue;
+    }
+    // Headers
+    const hm = line.match(/^(#{1,4})\s+(.+)/);
+    if (hm) {
+      const lvl = hm[1].length;
+      const sz = ['18px', '16px', '14px', '13px'][lvl - 1] ?? '13px';
+      nodes.push(<p key={`h${i}`} style={{ fontSize: sz, fontWeight: 700, color: '#fff', margin: lvl <= 2 ? '12px 0 4px' : '8px 0 2px' }}>{renderInline(hm[2])}</p>);
+      i++; continue;
+    }
+    // Unordered list
+    if (/^[-*]\s/.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^[-*]\s/.test(lines[i])) { items.push(lines[i].replace(/^[-*]\s/, '')); i++; }
+      nodes.push(
+        <ul key={`ul${i}`} style={{ margin: '4px 0', paddingLeft: 18 }}>
+          {items.map((item, j) => <li key={j} style={{ margin: '2px 0', fontSize: 13, color: 'rgba(255,255,255,0.78)' }}>{renderInline(item)}</li>)}
+        </ul>
+      );
+      continue;
+    }
+    // Numbered list
+    if (/^\d+\.\s/.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^\d+\.\s/.test(lines[i])) { items.push(lines[i].replace(/^\d+\.\s/, '')); i++; }
+      nodes.push(
+        <ol key={`ol${i}`} style={{ margin: '4px 0', paddingLeft: 20 }}>
+          {items.map((item, j) => <li key={j} style={{ margin: '2px 0', fontSize: 13, color: 'rgba(255,255,255,0.78)' }}>{renderInline(item)}</li>)}
+        </ol>
+      );
+      continue;
+    }
+    // Blank line
+    if (!line.trim()) { i++; continue; }
+    // Paragraph
+    nodes.push(<p key={`p${i}`} style={{ margin: '3px 0', fontSize: 13, lineHeight: 1.55 }}>{renderInline(line)}</p>);
+    i++;
+  }
+  return <>{nodes}</>;
+}
+
 /* ─── ChatBubble ─────────────────────────────────────────────── */
 
 function ChatBubble({ msg }: { msg: Message }) {
   const isUser = msg.role === 'user';
-  const renderContent = (text: string) =>
-    text.split(/(\*\*[^*]+\*\*)/g).map((p, i) =>
-      p.startsWith('**') && p.endsWith('**')
-        ? <strong key={i} style={{ fontWeight: 600, color: '#fff' }}>{p.slice(2, -2)}</strong>
-        : <span key={i}>{p}</span>
-    );
   return (
     <div style={{ display: 'flex', gap: 10, flexDirection: isUser ? 'row-reverse' : 'row' }}>
       <div style={{
@@ -395,9 +462,10 @@ function ChatBubble({ msg }: { msg: Message }) {
               </span>
             </div>
           )}
-          {msg.content.split('\n').map((line, i) => (
-            <p key={i} style={{ margin: i > 0 ? '4px 0 0' : 0 }}>{renderContent(line)}</p>
-          ))}
+          {isUser
+            ? <p style={{ margin: 0 }}>{msg.content}</p>
+            : <MarkdownContent text={msg.content} />
+          }
           <p style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.25)', marginTop: 6 }}>{msg.timestamp}</p>
         </div>
       </div>
@@ -422,6 +490,9 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
   const [traceLoading, setTraceLoading] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [pendingOptions, setPendingOptions] = useState<string[] | null>(null);
+  const [customOptionInput, setCustomOptionInput] = useState('');
+
+  useEffect(() => { if (!pendingOptions) setCustomOptionInput(''); }, [pendingOptions]);
 
   const bottomRef   = useRef<HTMLDivElement>(null);
   const selectorRef = useRef<HTMLDivElement>(null);
@@ -806,17 +877,35 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                       {opt}
                     </button>
                   ))}
-                  <button onClick={() => setPendingOptions(null)}
-                    style={{ width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 8, border: 'none', background: 'transparent', color: 'rgba(255,255,255,0.3)', fontSize: 13, cursor: 'pointer', fontStyle: 'italic' }}>
-                    Tự nhập câu trả lời...
-                  </button>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '6px 8px', marginTop: 2 }}>
+                    <textarea
+                      value={customOptionInput}
+                      onChange={e => setCustomOptionInput(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          if (customOptionInput.trim()) { setCustomOptionInput(''); handleSend(customOptionInput.trim()); }
+                        }
+                      }}
+                      placeholder="Tự nhập câu trả lời..."
+                      rows={1}
+                      style={{ flex: 1, background: 'transparent', fontSize: 13, color: 'rgba(255,255,255,0.65)', resize: 'none', outline: 'none', border: 'none', lineHeight: 1.5, fontFamily: 'inherit', fontStyle: 'italic' }}
+                    />
+                    <button
+                      onClick={() => { if (customOptionInput.trim()) { setCustomOptionInput(''); handleSend(customOptionInput.trim()); } }}
+                      disabled={!customOptionInput.trim() || sending}
+                      style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 7, background: customOptionInput.trim() ? '#B88719' : 'rgba(184,135,25,0.2)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: customOptionInput.trim() ? 'pointer' : 'default', color: '#fff' }}
+                    >
+                      <Send size={11} />
+                    </button>
+                  </div>
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
 
           {/* Input */}
-          <div style={{ padding: '8px 12px 14px', flexShrink: 0 }}>
+          {!pendingOptions && <div style={{ padding: '8px 12px 14px', flexShrink: 0 }}>
             {/* hint when no agent selected */}
             {mode === 'single' && !selectedAgent && (
               <p style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.25)', textAlign: 'center', margin: '0 0 6px', fontStyle: 'italic' }}>
@@ -858,7 +947,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                 <Send size={13} />
               </button>
             </div>
-          </div>
+          </div>}
         </motion.div>
 
         {/* Trace panel — slides in from right, out to right */}

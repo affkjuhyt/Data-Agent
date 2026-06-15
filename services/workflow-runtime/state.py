@@ -21,4 +21,5 @@ class AgentState(TypedDict):
     guardrail_stage: Optional[str]    # always "input"
     guardrail_reason: Optional[str]   # lý do chi tiết từ LLM hoặc regex pattern matched
     intent: Optional[str]             # "question" | "task" — set by planner
+    language: Optional[str]           # "vi" | "en" — set by planner
     config: dict

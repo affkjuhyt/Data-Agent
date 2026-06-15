@@ -8,6 +8,9 @@ from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
+_PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
+_DEFAULT_SYSTEM_PROMPT = open(os.path.join(_PROMPTS_DIR, "default_system_prompt.txt"), encoding="utf-8").read().strip()
+
 DEV_CONFIG = {
     "kb_endpoint": os.environ.get("KB_ENDPOINT", "http://localhost:8080"),
     "planner_model": "openai/planner",
@@ -22,7 +25,7 @@ DEV_CONFIG = {
     "responder_temperature": 0.2,
     "responder_max_tokens": 1000,
     "responder_stream": True,
-    "system_prompt": os.environ.get("DEV_SYSTEM_PROMPT", "You are a helpful assistant. Always respond in the same language the user writes in."),
+    "system_prompt": os.environ.get("DEV_SYSTEM_PROMPT", _DEFAULT_SYSTEM_PROMPT),
     "rrf_top_n": 20,
     "reranker_model": "openai/reranker",
     "reranker_top_n": 5,

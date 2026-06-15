@@ -13,6 +13,8 @@ _SYSTEM = open(os.path.join(_PROMPTS_DIR, "suggestion_system.txt")).read()
 
 
 async def suggestion_node(state: dict) -> dict:
+    if state.get("intent") == "task":
+        return {"suggestions": []}
     cfg    = state.get("config", {})
     query  = state.get("query", "")
     msgs   = state.get("messages", [])

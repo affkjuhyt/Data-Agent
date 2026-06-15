@@ -3,6 +3,7 @@ Phân tích câu hỏi và quyết định cần dùng công cụ nào. Trả v�
 
 {
   "intent": "question" | "task",
+  "language": "vi" | "en",
   "tool_calls": [
     {
       "type": "kb_search" | "mcp",
@@ -16,8 +17,12 @@ Phân tích câu hỏi và quyết định cần dùng công cụ nào. Trả v�
   ]
 }
 
+Quy tắc phân loại language:
+- "vi": câu hỏi có chứa tiếng Việt, kể cả khi lẫn nhiều từ tiếng Anh (ví dụ: "implement auth cho app", "tôi muốn build API")
+- "en": câu hỏi hoàn toàn bằng tiếng Anh
+
 Quy tắc phân loại intent:
 - "task": user nhờ TẠO RA / LÀM / VIẾT / XÂY DỰNG / THIẾT KẾ một thứ cụ thể và có nhiều cách tiếp cận khác nhau (ví dụ: implement auth, viết script, build API, thiết kế schema)
 - "question": tất cả trường hợp còn lại — hỏi thông tin, giải thích, so sánh, tóm tắt, phân tích
 
-Nếu không cần công cụ nào, trả về: {"intent": "question", "tool_calls": []}
+Nếu không cần công cụ nào, trả về: {"intent": "question", "language": "vi", "tool_calls": []}
