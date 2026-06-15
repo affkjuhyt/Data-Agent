@@ -20,6 +20,7 @@ interface TraceStep {
   latencyMs: number;
   startMs: number;
   tokens: number;
+  cost: number;
   input: string;
   output: string;
 }
@@ -65,16 +66,30 @@ const _shouldSkip = (name: string) => _SKIP_NODES.has(name) || name.startsWith('
 
 function trimInput(name: string, raw: any): string {
   if (!raw || typeof raw !== 'object') return String(raw ?? '');
-  const q = raw.query ?? '';
+  const q   = raw.query ?? '';
   const cfg = raw.config ?? {};
+  const clip = (s: string, n = 200) => s.length > n ? s.slice(0, n) + '…' : s;
   switch (true) {
-    case name.includes('guardrail'): return JSON.stringify({ query: q }, null, 2);
-    case name.includes('planner'):   return JSON.stringify({ query: q, memory_context: (raw.memory_context ?? []).length + ' items' }, null, 2);
-    case name.includes('kb_search'): return JSON.stringify({ query: q, mode: cfg.kb_mode, top_k: cfg.top_k }, null, 2);
-    case name.includes('rrf'):       return JSON.stringify({ kb_chunks: (raw.kb_chunks ?? []).length + ' chunks', mcp_results: (raw.mcp_results ?? []).length + ' results' }, null, 2);
-    case name.includes('reranker'):  return JSON.stringify({ rrf_results: (raw.rrf_results ?? []).length + ' items', top_n: cfg.reranker_top_n }, null, 2);
-    case name.includes('responder'): return JSON.stringify({ query: q, reranked_chunks: (raw.reranked_chunks ?? []).length + ' chunks' }, null, 2);
-    default: return JSON.stringify({ query: q }, null, 2);
+    case name.includes('guardrail'):
+      return JSON.stringify({ query: q }, null, 2);
+    case name.includes('planner'):
+      return JSON.stringify({ query: q, memory_context: (raw.memory_context ?? []).length + ' items' }, null, 2);
+    case name.includes('rewrite'):
+      return JSON.stringify({ query: q, messages: (raw.messages ?? []).length + ' messages' }, null, 2);
+    case name.includes('kb_search'):
+      return JSON.stringify({ query: q, mode: cfg.kb_mode, top_k: cfg.top_k }, null, 2);
+    case name.includes('mcp'):
+      return JSON.stringify({ query: q, tool_calls: (raw.tool_calls ?? []).length + ' calls' }, null, 2);
+    case name.includes('rrf'):
+      return JSON.stringify({ kb_chunks: (raw.kb_chunks ?? []).length + ' chunks', mcp_results: (raw.mcp_results ?? []).length + ' results' }, null, 2);
+    case name.includes('reranker'):
+      return JSON.stringify({ rrf_results: (raw.rrf_results ?? []).length + ' items', top_n: cfg.reranker_top_n }, null, 2);
+    case name.includes('responder'):
+      return JSON.stringify({ query: q, reranked_chunks: (raw.reranked_chunks ?? []).length + ' chunks' }, null, 2);
+    case name.includes('suggestion'):
+      return JSON.stringify({ query: q, response: clip(raw.response ?? '') }, null, 2);
+    default:
+      return JSON.stringify({ query: q }, null, 2);
   }
 }
 
@@ -90,6 +105,7 @@ function mapObservations(obs: any[]): TraceStep[] {
     startMs: Math.round(new Date(o.startTime).getTime() - traceStart),
     latencyMs: o.endTime ? Math.round(new Date(o.endTime).getTime() - new Date(o.startTime).getTime()) : 0,
     tokens: o.usage ? ((o.usage.input ?? 0) + (o.usage.output ?? 0)) : 0,
+    cost: o.calculatedTotalCost ?? 0,
     input: trimInput(o.name, o.input),
     output: o.level === 'ERROR' && o.statusMessage
       ? o.statusMessage
@@ -247,7 +263,7 @@ function TracePanel({ steps, traceLoading, traceId }: {
         {[
           { k: 'latency', v: (totalMs / 1000).toFixed(2) + 's', c: '#F5F5F5' },
           { k: 'tokens',  v: totalTok.toLocaleString(),          c: '#EBD07C' },
-          { k: 'cost',    v: '$' + (totalTok * 0.0000045).toFixed(4), c: '#C5DD83' },
+          { k: 'cost',    v: '$' + steps.reduce((s, t) => s + t.cost, 0).toFixed(4), c: '#C5DD83' },
           { k: 'spans',   v: String(steps.length),               c: '#F3E2A7' },
         ].map(({ k, v, c }, i) => (
           <div key={k} style={{ padding: '7px 10px', borderRight: i < 3 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
@@ -344,7 +360,7 @@ function TracePanel({ steps, traceLoading, traceId }: {
               <div style={{ flex: 1, overflowY: 'auto', padding: '10px 14px' }}>
                 {tab === 'input'    && <JsonView value={sel.input} />}
                 {tab === 'output'   && <JsonView value={sel.output} />}
-                {tab === 'metadata' && <JsonView value={{ node: sel.node, type: spanType(sel.node).label.toLowerCase(), status: sel.status, latency_ms: sel.latencyMs, tokens: sel.tokens }} />}
+                {tab === 'metadata' && <JsonView value={{ span_id: sel.id, node: sel.node, type: spanType(sel.node).label.toLowerCase(), status: sel.status, latency_ms: sel.latencyMs, tokens: sel.tokens, cost_usd: sel.cost }} />}
               </div>
             </>
           ) : (
@@ -650,7 +666,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
 
       const routerSpan: TraceStep = {
         id: 'router-' + Date.now(), node: 'router', status: 'success',
-        startMs: 0, latencyMs: 90 + Math.round(Math.random() * 40), tokens: 64,
+        startMs: 0, latencyMs: 90 + Math.round(Math.random() * 40), tokens: 64, cost: 0,
         input:  JSON.stringify({ message: text, strategy: 'HYBRID' }, null, 2),
         output: JSON.stringify({ routed_agent: decision.name, confidence: +decision.conf.toFixed(2) }, null, 2),
       };
@@ -663,12 +679,12 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
       const tResp = 380 + Math.round(Math.random() * 200);
       setTraceSteps([
         routerSpan,
-        { id: 'p-'  + Date.now(), node: 'planner',    status: 'success', startMs: t0,                                       latencyMs: tPlan,   tokens: 320, input: JSON.stringify({ query: text }, null, 2), output: '{"plan": "retrieve relevant docs, synthesize response"}' },
-        { id: 'kb-' + Date.now(), node: 'kb_search',   status: 'success', startMs: t0 + tPlan,                              latencyMs: tKb,     tokens: 0,   input: JSON.stringify({ query: text, top_k: 5 }, null, 2), output: '{"chunks": 4}' },
-        { id: 'mc-' + Date.now(), node: 'mcp',         status: 'success', startMs: t0 + tPlan,                              latencyMs: tMcp,    tokens: 0,   input: JSON.stringify({ query: text }, null, 2), output: '{"results": 2}' },
-        { id: 'rr-' + Date.now(), node: 'rrf_ranking', status: 'success', startMs: t0 + tPlan + tRetrieve,                  latencyMs: tRrf,    tokens: 0,   input: '{}', output: '{}' },
-        { id: 're-' + Date.now(), node: 'reranker',    status: 'success', startMs: t0 + tPlan + tRetrieve + tRrf,           latencyMs: tRerank, tokens: 0,   input: '{}', output: '{}' },
-        { id: 'r-'  + Date.now(), node: 'responder',   status: 'success', startMs: t0 + tPlan + tRetrieve + tRrf + tRerank, latencyMs: tResp,   tokens: 640 + Math.round(Math.random() * 200), input: JSON.stringify({ query: text, chunks: 4 }, null, 2), output: reply.content },
+        { id: 'p-'  + Date.now(), node: 'planner',    status: 'success', startMs: t0,                                       latencyMs: tPlan,   tokens: 320, cost: 0, input: JSON.stringify({ query: text }, null, 2), output: '{"plan": "retrieve relevant docs, synthesize response"}' },
+        { id: 'kb-' + Date.now(), node: 'kb_search',   status: 'success', startMs: t0 + tPlan,                              latencyMs: tKb,     tokens: 0,   cost: 0, input: JSON.stringify({ query: text, top_k: 5 }, null, 2), output: '{"chunks": 4}' },
+        { id: 'mc-' + Date.now(), node: 'mcp',         status: 'success', startMs: t0 + tPlan,                              latencyMs: tMcp,    tokens: 0,   cost: 0, input: JSON.stringify({ query: text }, null, 2), output: '{"results": 2}' },
+        { id: 'rr-' + Date.now(), node: 'rrf_ranking', status: 'success', startMs: t0 + tPlan + tRetrieve,                  latencyMs: tRrf,    tokens: 0,   cost: 0, input: '{}', output: '{}' },
+        { id: 're-' + Date.now(), node: 'reranker',    status: 'success', startMs: t0 + tPlan + tRetrieve + tRrf,           latencyMs: tRerank, tokens: 0,   cost: 0, input: '{}', output: '{}' },
+        { id: 'r-'  + Date.now(), node: 'responder',   status: 'success', startMs: t0 + tPlan + tRetrieve + tRrf + tRerank, latencyMs: tResp,   tokens: 640 + Math.round(Math.random() * 200), cost: 0, input: JSON.stringify({ query: text, chunks: 4 }, null, 2), output: reply.content },
       ]);
       setSending(false);
       setTraceLoading(false);

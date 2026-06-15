@@ -24,6 +24,11 @@ logger = logging.getLogger(__name__)
 
 _graph_cache: dict[str, object] = {}
 
+_SKIP_TRACE_NODES = frozenset({"LangGraph", "join_retrieval", "join_end"})
+
+def _skip_trace(name: str) -> bool:
+    return name in _SKIP_TRACE_NODES or name.startswith(("_route", "route_"))
+
 
 async def run_conversation_stream(req: RunRequest, request: Request):
     tenant_id = request.headers.get("X-Tenant-ID", _DEV_TENANT_ID)
@@ -102,7 +107,9 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         user_id=user_ref,
         metadata={
             "agent_id": agent_id,
+            "agent_version_id": cfg.get("agent_version_id"),
             "tenant_id": tenant_id,
+            "channel": request.headers.get("X-Channel", "web"),
             "responder_model": cfg.get("responder_model"),
             "planner_model": cfg.get("planner_model"),
         },
@@ -130,25 +137,50 @@ async def run_conversation_stream(req: RunRequest, request: Request):
 
         pending_suggestions: list[str] | None = None
 
+        # per-node trace tracking
+        node_start_times: dict[str, float] = {}
+        node_traces: list[dict] = []
+        detected_language: str | None = None
+        detected_intent: str | None = None
+
         try:
             async for event in graph.astream_events(state, version="v2", config={"callbacks": callbacks}):
                 kind = event["event"]
                 node = event.get("metadata", {}).get("langgraph_node", "")
 
-                if kind == "on_chain_end" and node == "guardrail_input":
-                    output = event["data"].get("output", {})
-                    if isinstance(output, dict) and output.get("guardrail_triggered"):
-                        guardrail_triggered = True
-                        guardrail_msg = output.get("guardrail_message", "")
-                        guardrail_stage = output.get("guardrail_stage")
-                        guardrail_reason = output.get("guardrail_reason")
+                if kind == "on_chain_start" and node and not _skip_trace(node):
+                    node_start_times[node] = time.monotonic()
 
-                elif kind == "on_chain_end" and node == "suggestion":
-                    output = event["data"].get("output", {})
-                    if isinstance(output, dict):
-                        topics = output.get("suggestions", [])
-                        if topics:
-                            pending_suggestions = topics
+                elif kind == "on_chain_end" and node and not _skip_trace(node):
+                    if node in node_start_times:
+                        node_lat = int((time.monotonic() - node_start_times.pop(node)) * 1000)
+                        out = event["data"].get("output", {})
+                        inp = event["data"].get("input", {})
+                        node_traces.append({
+                            "tool_name": node,
+                            "input":     inp if isinstance(inp, dict) else {},
+                            "output":    out if isinstance(out, dict) else {},
+                            "latency_ms": node_lat,
+                        })
+                    # node-specific logic
+                    if node == "guardrail_input":
+                        out = event["data"].get("output", {})
+                        if isinstance(out, dict) and out.get("guardrail_triggered"):
+                            guardrail_triggered = True
+                            guardrail_msg    = out.get("guardrail_message", "")
+                            guardrail_stage  = out.get("guardrail_stage")
+                            guardrail_reason = out.get("guardrail_reason")
+                    elif node == "suggestion":
+                        out = event["data"].get("output", {})
+                        if isinstance(out, dict):
+                            topics = out.get("suggestions", [])
+                            if topics:
+                                pending_suggestions = topics
+                    elif node == "planner":
+                        out = event["data"].get("output", {})
+                        if isinstance(out, dict):
+                            detected_language = out.get("language")
+                            detected_intent   = out.get("intent")
 
                 elif kind == "on_chat_model_stream" and node == "responder":
                     token = event["data"]["chunk"].content or ""
@@ -257,7 +289,10 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                             "triggered": guardrail_triggered,
                             "stage": guardrail_stage,
                             "reason": guardrail_reason,
-                        }
+                        },
+                        "language": detected_language,
+                        "intent": detected_intent,
+                        "responder_model": cfg.get("responder_model"),
                     },
                 )
                 await cache_append_messages(conv_id, [
@@ -265,14 +300,25 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                     {"role": "assistant", "content": assistant_text},
                 ])
                 if assistant_msg_id:
-                    await save_trace(
-                        message_id=assistant_msg_id,
-                        trace_index=0,
-                        tool_name="responder",
-                        input={"query": req.query},
-                        output={"response": assistant_text, "guardrail_triggered": guardrail_triggered},
-                        latency_ms=latency,
-                    )
+                    if node_traces:
+                        for idx, nt in enumerate(node_traces):
+                            await save_trace(
+                                message_id=assistant_msg_id,
+                                trace_index=idx,
+                                tool_name=nt["tool_name"],
+                                input=nt["input"],
+                                output=nt["output"],
+                                latency_ms=nt["latency_ms"],
+                            )
+                    else:
+                        await save_trace(
+                            message_id=assistant_msg_id,
+                            trace_index=0,
+                            tool_name="responder",
+                            input={"query": req.query},
+                            output={"response": assistant_text, "guardrail_triggered": guardrail_triggered},
+                            latency_ms=latency,
+                        )
 
             if cfg.get("memory_enabled") and not guardrail_triggered:
                 final_state = {**state, "response": assistant_text}
