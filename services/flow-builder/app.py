@@ -17,6 +17,7 @@ from db_pg import close_db, init_db
 from routers import agents, canvas, health, workflows
 from services.database_connector.mongo_connector import client as mongo_client
 from services.database_connector.postgres_connector import client as pg_client
+from services.otel_set_up.tracing import setup_tracing
 
 
 @asynccontextmanager
@@ -44,6 +45,8 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="flow-builder", version="0.1.0", lifespan=lifespan)
+
+    setup_tracing("flow-builder", app=app)
 
     app.add_middleware(
         CORSMiddleware,

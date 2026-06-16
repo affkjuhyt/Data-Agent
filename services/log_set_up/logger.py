@@ -20,6 +20,15 @@ class _ServiceFilter(logging.Filter):
         record.labels = getattr(record, "labels", {})
         record.labels.setdefault("service", self._service)
         record.labels.setdefault("env", self._env)
+
+        # opentelemetry-instrumentation-logging gắn otelTraceID/otelSpanID vào record
+        # — đưa vào ECS field trace.id/span.id để nhảy Kibana <-> Jaeger
+        trace_id = getattr(record, "otelTraceID", None)
+        span_id = getattr(record, "otelSpanID", None)
+        if trace_id and trace_id != "0":
+            record.trace = {"id": trace_id}
+        if span_id and span_id != "0":
+            record.span = {"id": span_id}
         return True
 
 

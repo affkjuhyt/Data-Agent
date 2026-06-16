@@ -20,6 +20,7 @@ from mongo_client import close_mongo, init_mongo
 from routers import catalog, conversations, health, traces
 from services.database_connector.mongo_connector import client as mongo_client
 from services.database_connector.postgres_connector import client as pg_client
+from services.otel_set_up.tracing import setup_tracing
 
 
 @asynccontextmanager
@@ -51,6 +52,8 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="workflow-runtime", version="0.1.0", lifespan=lifespan)
+
+    setup_tracing("workflow-runtime", app=app)
 
     app.add_middleware(
         CORSMiddleware,
