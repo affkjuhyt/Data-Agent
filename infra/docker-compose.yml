@@ -147,8 +147,8 @@ services:
   # Kong
   kong-migration:
     build:
-      context: ../..
-      dockerfile: Dockerfile.kong
+      context: ..
+      dockerfile: infra/kong/Dockerfile
     container_name: dataagent-kong-migration
     command: kong migrations bootstrap
     environment:
@@ -166,8 +166,8 @@ services:
 
   kong:
     build:
-      context: ../..
-      dockerfile: Dockerfile.kong
+      context: ..
+      dockerfile: infra/kong/Dockerfile
     container_name: dataagent-kong
     restart: unless-stopped
     environment:
@@ -203,8 +203,8 @@ services:
   # Kafka
   kafka:
     build:
-      context: ../..
-      dockerfile: Dockerfile.kafka
+      context: ..
+      dockerfile: infra/kafka/Dockerfile
     container_name: dataagent-kafka
     restart: unless-stopped
     environment:
@@ -304,7 +304,7 @@ services:
       - "4000:4000"
     volumes:
       - ./litellm/config.yaml:/app/config.yaml:ro
-    env_file: ../../.env
+    env_file: ../.env
     environment:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/litellm
@@ -342,13 +342,13 @@ services:
 
   workflow-runtime:
     build:
-      context: ../..
+      context: ..
       dockerfile: services/workflow-runtime/Dockerfile
     container_name: dataagent-workflow-runtime
     restart: unless-stopped
     ports:
       - "8001:8001"
-    env_file: ../../.env
+    env_file: ../.env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
       RUNTIME_DB_URL: postgresql+asyncpg://runtime_writer:${RUNTIME_DB_PASSWORD:-runtime_dev_pw}@postgres:5432/${POSTGRES_DB:-dataagent}
@@ -371,13 +371,13 @@ services:
 
   flow-builder:
     build:
-      context: ../..
+      context: ..
       dockerfile: services/flow-builder/Dockerfile
     container_name: dataagent-flow-builder
     restart: unless-stopped
     ports:
       - "8002:8002"
-    env_file: ../../.env
+    env_file: ../.env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
       MONGODB_URL: mongodb://mongo:27017/dataagent
@@ -406,8 +406,8 @@ services:
 
   kb-backend:
     build:
-      context: ../..
-      dockerfile: Dockerfile.kb
+      context: ..
+      dockerfile: infra/Dockerfile.kb
     container_name: dataagent-kb-backend
     restart: unless-stopped
     ports:
@@ -429,7 +429,7 @@ services:
 
   kb-ingestion-worker:
     build:
-      context: ../..
+      context: ..
       dockerfile: infra/kb-ingestion-worker/Dockerfile
     container_name: dataagent-kb-ingestion-worker
     restart: unless-stopped
@@ -462,7 +462,7 @@ services:
 
   auth-api:
     build:
-      context: ../../services
+      context: ../services
       dockerfile: auth-api/Dockerfile
     container_name: dataagent-auth-api
     restart: unless-stopped
@@ -483,7 +483,7 @@ services:
 
   minio-service:
     build:
-      context: ../../services
+      context: ../services
       dockerfile: minio-service/Dockerfile
     container_name: dataagent-minio-service
     restart: unless-stopped
@@ -500,7 +500,7 @@ services:
 
   release-worker:
     build:
-      context: ../../services
+      context: ../services
       dockerfile: release-worker/Dockerfile
     container_name: dataagent-release-worker
     restart: unless-stopped
@@ -535,7 +535,7 @@ services:
 
   audit-bridge:
     build:
-      context: ../../services/audit-bridge
+      context: ../services/audit-bridge
     container_name: dataagent-audit-bridge
     restart: unless-stopped
     environment:
@@ -561,7 +561,7 @@ services:
 
   audit-consumer:
     build:
-      context: ../../services/audit-consumer
+      context: ../services/audit-consumer
     container_name: dataagent-audit-consumer
     restart: unless-stopped
     environment:
@@ -585,7 +585,7 @@ services:
 
   jwks-refresher:
     build:
-      context: ../../services/jwks-refresher
+      context: ../services/jwks-refresher
     container_name: dataagent-jwks-refresher
     restart: unless-stopped
     environment:
@@ -605,8 +605,8 @@ services:
 
   frontend:
     build:
-      context: ../..
-      dockerfile: Dockerfile.dev
+      context: ..
+      dockerfile: infra/Dockerfile.dev
     container_name: dataagent-frontend
     restart: unless-stopped
     volumes:
