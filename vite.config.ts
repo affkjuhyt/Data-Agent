@@ -19,11 +19,7 @@ export default defineConfig(({ mode }) => {
       hmr: process.env.DISABLE_HMR !== "true",
       watch: process.env.DISABLE_HMR === "true" ? null : {},
       proxy: {
-        "/api/release": {
-          target: "http://host.docker.internal:8000",
-          changeOrigin: true,
-        },
-        "/api/auth": {
+        "/api": {
           target: "http://host.docker.internal:8000",
           changeOrigin: true,
         },

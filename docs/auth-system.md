@@ -1,7 +1,7 @@
 # Auth & Gateway — Mô tả Hệ thống
 
-> Keycloak HA + Kong + Kafka Audit Pipeline + PostgreSQL  
-> Thiết kế: Linh Thien (thiennlinh) — Cập nhật: 2026-05-25
+> Keycloak HA + Kong + Kafka Audit Pipeline + PostgreSQL + Microsoft SSO  
+> Thiết kế: Linh Thien (thiennlinh) — Cập nhật: 2026-06-09
 
 ---
 
@@ -64,6 +64,34 @@ Kafka Audit Pipeline (push-based, at-least-once):
 
 ---
 
+## Microsoft SSO — Cấu hình
+
+| Thành phần | Chi tiết |
+|---|---|
+| **Provider** | Microsoft Entra ID (Azure AD) qua OIDC |
+| **Keycloak IDP alias** | `microsoft` |
+| **Protocol** | OIDC + PKCE S256 |
+| **Tenant** | `consumers` (Personal Microsoft accounts) |
+| **Authorization URL** | `https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize` |
+| **Token URL** | `https://login.microsoftonline.com/consumers/oauth2/v2.0/token` |
+| **IDP mapper** | `set-idp-provider-attr` — set user attribute `idp_provider=microsoft` |
+| **Protocol mapper** | `idp-provider-claim` — emit `idp_provider` claim trong JWT |
+| **First Login Flow** | `first broker login` (default) — auto-create user profile |
+| **Approval DB table** | `microsoft_sso_approvals` (status: pending/approved/rejected) |
+| **Admin UI** | Settings → Auth & SSO → tab "MS Approvals" |
+| **Redirect URI** | `http://localhost:8080/realms/aeroflow/broker/microsoft/endpoint` |
+
+**Env vars cần thiết:**
+```
+MS_SSO_CLIENT_ID      = Azure App Registration Client ID
+MS_SSO_CLIENT_SECRET  = Azure App Registration Client Secret
+MS_SSO_TENANT_ID      = consumers | <tenant-id>
+```
+
+**Setup:** `keycloak-setup.py` tự động cấu hình IDP + mapper khi 3 biến trên được set.
+
+---
+
 ## Thành phần tùy chỉnh
 
 ### 1. Kong Plugin — `aeroflow-jwks`
@@ -110,7 +138,7 @@ Java `EventListenerProvider` build bằng Maven multi-stage Docker, mount vào K
 
 ## Auth Flow Chi Tiết
 
-### Login Flow (PKCE S256)
+### Login Flow (PKCE S256 — Local Keycloak user)
 
 ```
 1. Frontend tạo code_verifier (random 32 bytes) + code_challenge = SHA256(code_verifier)
@@ -119,6 +147,37 @@ Java `EventListenerProvider` build bằng Maven multi-stage Docker, mount vào K
 4. Frontend POST /token với code + code_verifier → Keycloak verify → trả JWT
 5. Frontend lưu JWT trong memory (không localStorage)
 6. updateToken(30) chạy mỗi 5s — nếu exp < now+30s → gọi /token?grant_type=refresh_token
+7. AuthProvider gọi GET /api/auth/me → status=active → render app
+```
+
+### Microsoft SSO Flow (First Login — Admin Approval Required)
+
+```
+1. User click "Sign in with Microsoft" trên Keycloak login page
+2. Keycloak redirect → Microsoft /authorize (OIDC PKCE S256)
+3. User xác thực với Microsoft account
+4. Microsoft redirect về Keycloak /broker/microsoft/endpoint với code
+5. Keycloak exchange code → Microsoft token → tạo user trong realm aeroflow
+   - User attribute idp_provider=microsoft được set bởi IDP mapper
+6. Keycloak trả JWT cho frontend (idp_provider claim có trong token)
+7. AuthProvider gọi GET /api/auth/me:
+   a. Backend check DB: chưa có bản ghi → gọi Keycloak Admin API federated-identity
+   b. Xác nhận provider=microsoft → INSERT pending record → disable Keycloak account
+   c. Trả về {status: "pending_approval"}
+8. AuthProvider render màn hình PendingApproval thay vì app
+9. Admin vào Settings → Auth & SSO → MS Approvals → Approve user
+10. Backend UPDATE status=approved → enable Keycloak account
+11. User login lại → GET /api/auth/me → status=active → vào app bình thường
+```
+
+### Microsoft SSO Flow (Subsequent Login)
+
+```
+1-6. Giống first login (Keycloak xác thực qua Microsoft)
+7. AuthProvider gọi GET /api/auth/me
+   a. Backend check DB: bản ghi tồn tại, status=approved
+   b. Trả về {status: "active"}
+8. AuthProvider render app bình thường (không cần admin review)
 ```
 
 ### JWT Verification Flow (Kong)
