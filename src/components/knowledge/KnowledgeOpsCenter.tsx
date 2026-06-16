@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Database,
   ShieldAlert,
@@ -16,6 +16,8 @@ import {
   Settings,
   ServerCog,
   Boxes,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { OperationalHeader } from '../shared/OperationalHeader';
@@ -30,22 +32,42 @@ import { PolicyCenter } from './policy/PolicyCenter';
 import { KnowledgeBaseCenter } from './knowledge-base/KnowledgeBaseCenter';
 import { WarehouseWizard } from './warehouse/WarehouseWizard';
 import { KnowledgeHubView } from './knowledge-hub/KnowledgeHub';
+import { TrashCenter } from './trash/TrashCenter';
 import { KnowledgeDocument } from '../../types';
 import { useAppState } from '../../AppStateContext';
-import { mockMutate } from '../../lib/mockApi';
+import { mockGet, mockMutate } from '../../lib/mockApi';
 import { usePromotionQueue } from './inventory/usePromotionQueue';
 import { PromotionProgressOverlay } from './inventory/PromotionProgressOverlay';
 
-type KnowledgeTabId = 'FLEET' | 'INGEST' | 'INVENTORY' | 'CONFLICTS' | 'KNOWLEDGE' | 'POLICY' | 'KNOWLEDGE_BASE';
+type KnowledgeTabId = 'FLEET' | 'INGEST' | 'INVENTORY' | 'CONFLICTS' | 'KNOWLEDGE' | 'POLICY' | 'KNOWLEDGE_BASE' | 'TRASH';
 
 const KnowledgeOpsCenter = () => {
-  const { subTab, setSubTab, updateDocument, pendingAction, setPendingAction } = useAppState();
+  const { updateDocument } = useAppState();
   const { queue: promotionQueue, startPromotion, dismissEntry } = usePromotionQueue(updateDocument);
   const promotingIds = new Set(
     promotionQueue.filter(e => e.status === 'queued' || e.status === 'processing').map(e => e.data_id),
   );
-  const activeSubTab = (subTab['knowledge-ops'] as KnowledgeTabId) ?? 'FLEET';
-  const setActiveSubTab = (id: KnowledgeTabId) => setSubTab('knowledge-ops', id);
+  // Knowledge's own tabs are independent of the module nav (which now lives under "Build").
+  const [activeSubTab, setActiveSubTab] = useState<KnowledgeTabId>('FLEET');
+
+  // Live pending-conflict count for the Conflicts sub-tab badge.
+  const [conflictCount, setConflictCount] = useState<number | null>(null);
+  const refreshConflictCount = useCallback(() => {
+    mockGet<{ pending: { items?: any[] } | any[] }>('/api/knowledge/conflicts', {
+      pending_page: 1, awaiting_page: 1, resolved_page: 1,
+    })
+      .then(data => {
+        const pending = Array.isArray(data.pending) ? data.pending : (data.pending?.items ?? []);
+        setConflictCount(pending.reduce((sum, b) => sum + (b?.number_pending_conflict ?? 0), 0));
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => { refreshConflictCount(); }, [refreshConflictCount]);
+  // Counts change after a resolution inside ConflictWorkspace — re-fetch whenever the
+  // user navigates away from that tab so the badge stays accurate.
+  useEffect(() => {
+    if (activeSubTab !== 'CONFLICTS') refreshConflictCount();
+  }, [activeSubTab, refreshConflictCount]);
 
   const [selectedAsset, setSelectedAsset] = useState<KnowledgeDocument | null>(null);
   const [selectedAssetReadOnly, setSelectedAssetReadOnly] = useState(false);
@@ -53,17 +75,6 @@ const KnowledgeOpsCenter = () => {
   const [showIngestionWizard, setShowIngestionWizard] = useState(false);
   const [showWarehouseWizard, setShowWarehouseWizard] = useState(false);
   const [showPromoteWizard, setShowPromoteWizard] = useState(false);
-
-  // Handle sidebar action buttons (ACTION_INGEST, ACTION_WAREHOUSE)
-  useEffect(() => {
-    if (pendingAction === 'ACTION_INGEST') {
-      setShowIngestionWizard(true);
-      setPendingAction(null);
-    } else if (pendingAction === 'ACTION_WAREHOUSE') {
-      setShowWarehouseWizard(true);
-      setPendingAction(null);
-    }
-  }, [pendingAction, setPendingAction]);
 
   const isWarehouse = (type: string | undefined) => !!type?.startsWith('Warehouse/');
   const hasTables = (type: string | undefined) =>
@@ -80,9 +91,10 @@ const KnowledgeOpsCenter = () => {
     { id: 'FLEET',     label: 'Fleet Overview', icon: Database },
     { id: 'INVENTORY', label: 'Data Layers',    icon: Layers },
     { id: 'KNOWLEDGE', label: 'Knowledge Hub',  icon: Network },
-    { id: 'CONFLICTS', label: 'Conflicts',      icon: ShieldAlert, count: 12 },
+    { id: 'CONFLICTS', label: 'Conflicts',      icon: ShieldAlert, count: conflictCount ?? undefined },
     { id: 'POLICY',    label: 'Policies',       icon: ShieldCheck },
-    { id: 'KNOWLEDGE_BASE', label: 'Knowledge Bases', icon: Boxes },
+    { id: 'KNOWLEDGE_BASE', label: 'Knowledge Groups', icon: Boxes },
+    { id: 'TRASH',     label: 'Trash',          icon: Trash2 },
   ];
 
   const renderContent = () => {
@@ -109,6 +121,7 @@ const KnowledgeOpsCenter = () => {
       case 'CONFLICTS':  return <ConflictWorkspace />;
       case 'POLICY':     return <PolicyCenter />;
       case 'KNOWLEDGE_BASE': return <KnowledgeBaseCenter />;
+      case 'TRASH':      return <TrashCenter />;
       default:           return null;
     }
   };
@@ -194,23 +207,32 @@ const KnowledgeOpsCenter = () => {
         footer={
           <div className="flex gap-3 justify-end w-full">
             {selectedAsset && selectedAsset.current_tier !== 'gold' && !isWarehouse(selectedAsset.metadata?.doc_type) && !selectedAssetReadOnly && (
-              <button
-                onClick={async () => {
-                  const doc = selectedAsset;
-                  const targetL = doc.current_tier === 'bronze' ? 'silver' : 'gold';
-                  try {
-                    await mockMutate('POST', `/api/pipeline/ingestion/promote/${doc.data_id}/${targetL}`);
-                    const nextStatus = targetL === 'silver' ? 'CHUNKING' : 'GRAPH_EXTRACTING';
-                    updateDocument(doc.data_id, { status: nextStatus });
-                    setSelectedAsset(prev => prev ? { ...prev, status: nextStatus } : null);
-                    startPromotion(doc.data_id, doc.name, doc.current_tier as 'bronze' | 'silver', targetL);
-                  } catch { /* ForbiddenToast handles 403 */ }
-                }}
-                className="btn-primary"
-              >
-                Process to {selectedAsset.current_tier === 'bronze' ? 'Silver Data Layer' : 'Gold Data Layer'}
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
+              promotingIds.has(selectedAsset.data_id) ? (
+                <button disabled className="btn-primary opacity-60 cursor-not-allowed">
+                  <span className="w-3.5 h-3.5 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                  Processing…
+                </button>
+              ) : (
+                <button
+                  onClick={async () => {
+                    const doc = selectedAsset;
+                    // Lock: don't re-promote a document that's already in flight.
+                    if (promotingIds.has(doc.data_id)) return;
+                    const targetL = doc.current_tier === 'bronze' ? 'silver' : 'gold';
+                    try {
+                      await mockMutate('POST', `/api/pipeline/ingestion/promote/${doc.data_id}/${targetL}`);
+                      const nextStatus = targetL === 'silver' ? 'CHUNKING' : 'GRAPH_EXTRACTING';
+                      updateDocument(doc.data_id, { status: nextStatus });
+                      setSelectedAsset(prev => prev ? { ...prev, status: nextStatus } : null);
+                      startPromotion(doc.data_id, doc.name, doc.current_tier as 'bronze' | 'silver', targetL);
+                    } catch { /* ForbiddenToast handles 403 */ }
+                  }}
+                  className="btn-primary"
+                >
+                  Process to {selectedAsset.current_tier === 'bronze' ? 'Silver Data Layer' : 'Gold Data Layer'}
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              )
             )}
           </div>
         }
@@ -245,7 +267,18 @@ const KnowledgeOpsCenter = () => {
         subtitle="Global Data Ingestion, Semantic Normalization & Graph Synthesis"
         breadcrumbs={[{ label: 'Knowledge' }, { label: 'Operations' }]}
         status={<StatusBadge status="HEALTHY" size="lg" />}
-        actions={null}
+        actions={
+          <>
+            <button className="btn-secondary" onClick={() => setShowWarehouseWizard(true)}>
+              <ServerCog className="w-3.5 h-3.5" />
+              Add Warehouse
+            </button>
+            <button className="btn-gold" onClick={() => setShowIngestionWizard(true)}>
+              <Plus className="w-3.5 h-3.5" />
+              Add Data
+            </button>
+          </>
+        }
       />
 
       {/* ── Sub-tab bar ── */}
@@ -258,7 +291,7 @@ const KnowledgeOpsCenter = () => {
           >
             <tab.icon className="tab-icon w-3.5 h-3.5" />
             <span>{tab.label}</span>
-            {tab.count && (
+            {!!tab.count && (
               <span className="px-1.5 py-0.5 rounded-full bg-[#FAD7D7] text-[#9F1D1D] text-[9px] font-bold border border-[#C94A4A]">{tab.count}</span>
             )}
           </button>

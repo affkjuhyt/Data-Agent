@@ -154,12 +154,10 @@ async def _handle_keep_incoming(
         table=snap.get("table"),
         payload_meta={
             "summary":            snap["summary"],
-            "intents":            snap.get("intents", []),
             "embedding_model_id": embed_model_id,
             "knowledge_base":     knowledge_base,
         },
         embedding=snap["embedding"],
-        intents=snap.get("intents", []),
         summary=snap["summary"],
         approved_by=snap.get("approved_by", "system"),
         embed_model_id=embed_model_id,
@@ -217,12 +215,21 @@ async def _handle_merge(
     # point stays attached to the EXISTING document, so preserve its data_id from
     # the live point — the incoming snapshot may belong to a different document.
     existing_data_id = ""
+    carried_entities: dict = {}
     try:
         live = await qdrant_client.retrieve(
             collection_name=cfg.QDRANT_COLLECTION, ids=[block_id], with_payload=True,
         )
         if live:
-            existing_data_id = (live[0].payload or {}).get("data_id", "")
+            live_payload = live[0].payload or {}
+            existing_data_id = live_payload.get("data_id", "")
+            # Preserve the document-level entity back-stamp (entities + ent_* typed
+            # fields). A PointStruct upsert replaces the whole payload, so without
+            # this an in-place merge would wipe the chunk's entity filter.
+            carried_entities = {
+                k: v for k, v in live_payload.items()
+                if k == "entities" or k.startswith("ent_")
+            }
     except Exception as exc:
         log.warning("conflict_resolver | merge: could not read live point %s: %s", block_id, exc)
 
@@ -231,7 +238,7 @@ async def _handle_merge(
         "data_id":            existing_data_id,
         "block_id":           block_id,
         "summary":            merged_content[:200],
-        "intents":            incoming_snap.get("intents", []),
+        **carried_entities,
         "embedding_model_id": embed_model_id,
         "knowledge_base":     knowledge_base,
         "is_deleted":         False,

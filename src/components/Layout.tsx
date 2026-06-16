@@ -4,8 +4,8 @@ import { useAppState } from '../AppStateContext';
 import { useAuth } from '../lib/AuthProvider';
 import { NAV_ITEMS, ROLES, ENVIRONMENTS, MODULE_SUB_ITEMS, SubNavItem } from '../constants';
 import {
-  Search, Bell, LogOut, Cpu, LayoutGrid, ChevronDown, Terminal,
-  Building2, Menu, X, Settings, Sparkles, ArrowRight,
+  Search, Bell, LogOut, Cpu, ChevronDown, Terminal,
+  Building2, Menu, X, Sparkles, ArrowRight,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { Role, Environment } from '../types';
@@ -13,31 +13,37 @@ import { Role, Environment } from '../types';
 /* ─── Command Palette ─────────────────────────────────────────────── */
 const PALETTE_GROUPS = [
   { category: 'Modules', items: [
-    { label: 'Executive Pulse',     module: 'dashboard' },
-    { label: 'Knowledge Base',      module: 'knowledge-ops' },
-    { label: 'AI Runtime',          module: 'ai-runtime' },
-    { label: 'Operations Center',   module: 'operations-center' },
-    { label: 'Deployment Center',   module: 'release-management' },
-    { label: 'Governance & Audit',  module: 'governance' },
-    { label: 'Settings',            module: 'settings' },
+    { label: 'Build',    module: 'build' },
+    { label: 'Test',     module: 'test' },
+    { label: 'Release',  module: 'release' },
+    { label: 'Monitor',  module: 'monitor' },
+    { label: 'Settings', module: 'settings' },
   ]},
-  { category: 'Knowledge Base', items: [
-    { label: 'Fleet Overview',      module: 'knowledge-ops', sub: 'FLEET' },
-    { label: 'Register Connectors', module: 'knowledge-ops', sub: 'CONNECTORS' },
-    { label: 'Knowledge Graph',     module: 'knowledge-ops', sub: 'GRAPH' },
-    { label: 'Playground',          module: 'knowledge-ops', sub: 'PLAYGROUND' },
-    { label: 'Conflict Manager',    module: 'knowledge-ops', sub: 'CONFLICTS' },
+  { category: 'Build', items: [
+    { label: 'Agents',    module: 'build', sub: 'AGENTS' },
+    { label: 'Router',    module: 'build', sub: 'ROUTER' },
+    { label: 'Knowledge', module: 'build', sub: 'KNOWLEDGE' },
+    { label: 'Tools',     module: 'build', sub: 'TOOLS' },
   ]},
-  { category: 'Agents', items: [
-    { label: 'Agent Registry',      module: 'ai-runtime', sub: 'AGENTS' },
-    { label: 'CLI',                 module: 'ai-runtime', sub: 'CLI' },
-    { label: 'Recent Traces',       module: 'ai-runtime', sub: 'TRACES' },
-    { label: 'Workflow Engine',     module: 'ai-runtime', sub: 'WORKFLOWS' },
+  { category: 'Test', items: [
+    { label: 'Playground', module: 'test', sub: 'PLAYGROUND' },
+    { label: 'Evals',      module: 'test', sub: 'EVALS' },
   ]},
-  { category: 'Deployment', items: [
-    { label: 'Deployments',    module: 'release-management', sub: 'DEPLOYMENTS' },
-    { label: 'Release History', module: 'release-management', sub: 'HISTORY'     },
-    { label: 'Rollback Center', module: 'release-management', sub: 'ROLLBACK'    },
+  { category: 'Release', items: [
+    { label: 'Versions',      module: 'release', sub: 'VERSIONS' },
+    { label: 'Chat Endpoint', module: 'release', sub: 'ENDPOINT' },
+  ]},
+  { category: 'Monitor', items: [
+    { label: 'Conversations', module: 'monitor', sub: 'CONVERSATIONS' },
+    { label: 'Traces',        module: 'monitor', sub: 'TRACES' },
+    { label: 'Analytics',     module: 'monitor', sub: 'ANALYTICS' },
+  ]},
+  { category: 'Settings', items: [
+    { label: 'Team & Access', module: 'settings', sub: 'TEAM' },
+    { label: 'AI Providers',  module: 'settings', sub: 'PROVIDERS' },
+    { label: 'Secrets',       module: 'settings', sub: 'SECRETS' },
+    { label: 'Billing',       module: 'settings', sub: 'BILLING' },
+    { label: 'Audit Log',     module: 'settings', sub: 'AUDIT' },
   ]},
 ];
 
@@ -206,12 +212,11 @@ const LeftRail = () => {
 
 /* ─── Contextual hint text per module ────────────────────────────── */
 const CONTEXT_HINTS: Record<string, string> = {
-  'knowledge-ops':      '12 conflicts pending · Fleet healthy',
-  'ai-runtime':         '482 agents active · 1.4s avg latency',
-  'operations-center':  '99.9% health · 2 active alerts',
-  'release-management': '3 deployments in progress',
-  'governance':         '100% policy compliance · A+ score',
-  'settings':           'Last updated 2 hours ago',
+  'build':    '6 agents · router accuracy 92%',
+  'test':     'Last eval run 4m ago · 23 cases',
+  'release':  'PROD on v4.2.1 · 1 pending',
+  'monitor':  '1,284 conversations today · p95 1.4s',
+  'settings': 'Last updated 2 hours ago',
 };
 
 /* ─── Secondary Contextual Nav ────────────────────────────────────── */
@@ -534,13 +539,7 @@ const MobileDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
 const BottomNav = () => {
   const { activeModule, navigate } = useAppState();
 
-  const items = [
-    { id: 'dashboard',     label: 'Home',     icon: NAV_ITEMS.find(n => n.id === 'dashboard')?.icon ?? LayoutGrid },
-    { id: 'knowledge-ops', label: 'Knowledge', icon: NAV_ITEMS.find(n => n.id === 'knowledge-ops')?.icon ?? LayoutGrid },
-    { id: 'ai-runtime',    label: 'AI',       icon: NAV_ITEMS.find(n => n.id === 'ai-runtime')?.icon ?? LayoutGrid },
-    { id: 'governance',    label: 'Govern',   icon: NAV_ITEMS.find(n => n.id === 'governance')?.icon ?? LayoutGrid },
-    { id: 'settings',      label: 'Settings', icon: Settings },
-  ];
+  const items = NAV_ITEMS.map(n => ({ id: n.id, label: n.label, icon: n.icon }));
 
   return (
     <div className="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-[#D6C79F] flex items-center justify-around px-2 z-[100]">

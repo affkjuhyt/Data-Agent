@@ -113,7 +113,7 @@ class DoclingServiceClient:
         bucket: str,
         object_key: str,
         extension: str,
-        max_chunk_chars: int = 1500,
+        max_chunk_chars: int = 4000,
     ) -> DoclingResult:
         resp = await self._client.post(
             "/parse",

@@ -117,6 +117,8 @@ async def _ensure_payload_indexes(client) -> None:
         cfg.QDRANT_DOC_COLLECTION: [
             ("tenant_id",      qmodels.PayloadSchemaType.KEYWORD),
             ("knowledge_base", qmodels.PayloadSchemaType.KEYWORD),
+            # step-1 document narrowing filters by content-purpose intent
+            ("intents",        qmodels.PayloadSchemaType.KEYWORD),
             ("is_deleted",     qmodels.PayloadSchemaType.BOOL),
         ],
         cfg.ENTITY_COLLECTION: [
@@ -149,11 +151,12 @@ async def _validate_or_create_qdrant_collection(qdrant: QdrantService, model: Mo
 
 
 async def _ensure_neo4j_indexes(neo4j: Neo4jClient) -> None:
-    """Indexes backing retrieval: graph expansion seeds nodes by (name, tenant_id)
-    and the typed boost reads entity_type. Idempotent (IF NOT EXISTS)."""
+    """Indexes backing retrieval: graph expansion seeds nodes by
+    (canonical_name, tenant_id) and the typed boost reads entity_type.
+    Idempotent (IF NOT EXISTS)."""
     statements = [
-        "CREATE INDEX entity_name_tenant IF NOT EXISTS FOR (n:Entity) ON (n.name, n.tenant_id)",
-        "CREATE INDEX entity_type_idx    IF NOT EXISTS FOR (n:Entity) ON (n.entity_type)",
+        "CREATE INDEX entity_canonical_tenant IF NOT EXISTS FOR (n:Entity) ON (n.canonical_name, n.tenant_id)",
+        "CREATE INDEX entity_type_idx         IF NOT EXISTS FOR (n:Entity) ON (n.entity_type)",
     ]
     try:
         async with neo4j.get_client().session() as session:

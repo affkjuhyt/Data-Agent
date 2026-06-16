@@ -90,9 +90,11 @@ export const AssetDetailWorkspace = ({
   const [savingNewConfig, setSavingNewConfig] = useState(false);
   const [newConfigSaveStatus, setNewConfigSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
 
-  // Fetch chunks when tab is CHUNKS, doc changes, or page changes
-  useEffect(() => {
-    if (activeTab !== 'CHUNKS' || document.current_tier === 'bronze') return;
+  const [chunkPolls, setChunkPolls] = useState(0);
+  const CHUNK_POLL_MAX = 20; // ~70s ceiling — chunks are produced async by the worker
+
+  const fetchChunks = useCallback(() => {
+    if (document.current_tier === 'bronze') return;
     setChunksLoading(true);
     mockGet<PagedResponse<Chunk> | Chunk[]>(
       `/api/knowledge/documents/${document.data_id}/chunks`,
@@ -117,10 +119,27 @@ export const AssetDetailWorkspace = ({
       })
       .catch(() => { setChunks([]); setChunksHasNext(false); })
       .finally(() => setChunksLoading(false));
-  }, [activeTab, document.data_id, document.current_tier, chunksPage]);
+  }, [document.data_id, document.current_tier, chunksPage]);
 
-  // Reset chunk page when doc changes
+  // Fetch chunks when tab is CHUNKS, doc changes, or page changes
+  useEffect(() => {
+    if (activeTab !== 'CHUNKS') return;
+    fetchChunks();
+  }, [activeTab, fetchChunks]);
+
+  // Chunks are generated asynchronously by the ingestion worker after a Silver/Gold
+  // promotion, so they don't exist the instant the tab opens. Poll (capped) until
+  // they appear instead of showing an empty list that never updates.
+  useEffect(() => {
+    if (activeTab !== 'CHUNKS' || document.current_tier === 'bronze') return;
+    if (chunks.length > 0 || chunkPolls >= CHUNK_POLL_MAX) return;
+    const id = setTimeout(() => { fetchChunks(); setChunkPolls(p => p + 1); }, 3500);
+    return () => clearTimeout(id);
+  }, [activeTab, document.current_tier, chunks.length, chunkPolls, fetchChunks]);
+
+  // Reset page + poll counter when doc or tab changes
   useEffect(() => { setChunksPage(1); }, [document.data_id]);
+  useEffect(() => { setChunkPolls(0); }, [document.data_id, activeTab]);
 
   // Fetch tables when tab is TABLES, doc changes, or page changes
   useEffect(() => {
@@ -164,6 +183,21 @@ export const AssetDetailWorkspace = ({
       .then(data => setHistoryEntries(data ?? []))
       .catch(() => setHistoryEntries([]))
       .finally(() => setHistoryLoading(false));
+  }, [activeTab, document.data_id]);
+
+  // ── Ingestion logs (kb_ingestion_logs) — real per-document log stream ──
+  interface LogEntry { timestamp: string | null; level: string; message: string }
+  interface LogsResponse { status: string; stage: string; updated_at: string | null; logs: LogEntry[] }
+  const [logData, setLogData] = useState<LogsResponse | null>(null);
+  const [logsLoading, setLogsLoading] = useState(false);
+
+  useEffect(() => {
+    if (activeTab !== 'LOGS') return;
+    setLogsLoading(true);
+    mockGet<LogsResponse>(`/api/pipeline/ingestion/documents/${document.data_id}/logs`)
+      .then(data => setLogData(data ?? null))
+      .catch(() => setLogData(null))
+      .finally(() => setLogsLoading(false));
   }, [activeTab, document.data_id]);
 
   // Fetch warehouse configs when CONFIGS tab active
@@ -354,6 +388,9 @@ export const AssetDetailWorkspace = ({
   const isWarehouse = sourceType.startsWith('Warehouse/');
 
   const showFileMetadata = activeTab === 'PREVIEW' && !isWarehouse;
+  // Silver tables come from Mongo staging (no Postgres row to PATCH) — preview only.
+  // Editing becomes available after Gold promotion.
+  const tablesReadOnly = readOnly || document.current_tier === 'silver';
 
   return (
     <div className="h-full flex flex-col bg-[#FCFBF7] text-[#111111]">
@@ -481,6 +518,20 @@ export const AssetDetailWorkspace = ({
                              {document.metadata.file_size || '52.4 MB'}
                           </span>
                        </div>
+                     </div>
+                   )}
+
+                   {/* Document-level intents (content-purpose labels, set at Gold). */}
+                   {(document.metadata.intents?.length ?? 0) > 0 && (
+                     <div className="flex flex-col">
+                        <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Document Intents</span>
+                        <div className="flex flex-wrap gap-1.5">
+                           {document.metadata.intents!.map((it, i) => (
+                              <span key={`${it}-${i}`} className="text-[10px] font-mono text-[#8A5A00] bg-white border border-[#BFA66A]/25 px-2.5 py-1 rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                                 {it}
+                              </span>
+                           ))}
+                        </div>
                      </div>
                    )}
                  </div>
@@ -619,7 +670,7 @@ export const AssetDetailWorkspace = ({
                                  <span className="w-5 h-5 rounded-full border-2 border-[#BFA66A]/40 border-t-[#B88719] animate-spin" />
                                </div>
                              ) : chunks.length === 0 ? (
-                               <div className="text-center py-12 text-xs text-slate-400 font-mono">No chunks available.<br/>Start the mock server.</div>
+                               <div className="text-center py-12 text-xs text-slate-400 font-mono">No chunks yet.<br/>{chunkPolls < CHUNK_POLL_MAX ? 'The ingestion worker may still be processing — auto-refreshing…' : 'None were produced for this document.'}</div>
                              ) : chunks.map((chunk) => (
                                 <div
                                   key={chunk.id}
@@ -705,7 +756,7 @@ export const AssetDetailWorkspace = ({
                                  <span className="w-5 h-5 rounded-full border-2 border-[#BFA66A]/40 border-t-[#B88719] animate-spin" />
                                </div>
                              ) : chunks.length === 0 ? (
-                               <div className="text-center py-12 text-xs text-slate-400 font-mono">No chunks available.<br/>Start the mock server.</div>
+                               <div className="text-center py-12 text-xs text-slate-400 font-mono">No chunks yet.<br/>{chunkPolls < CHUNK_POLL_MAX ? 'The ingestion worker may still be processing — auto-refreshing…' : 'None were produced for this document.'}</div>
                              ) : chunks.map((chunk) => (
                                 <div
                                   key={chunk.id}
@@ -875,26 +926,6 @@ export const AssetDetailWorkspace = ({
                                           </div>
                                        </div>
 
-                                       <div className="flex flex-col md:col-span-2 lg:col-span-3">
-                                          <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-2 flex justify-between items-center">
-                                             <span>Retrieval Intent Word Map</span>
-                                             <span className="text-[8px] font-mono text-slate-400 tracking-wider normal-case">(scroll horizontally)</span>
-                                          </span>
-                                          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin flex-nowrap max-w-full">
-                                             {selectedVersion.intent.split(/\s+/).map((word, idx) => {
-                                                const cleanedWord = word.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()""'?]/g, "").trim();
-                                                if (!cleanedWord) return null;
-                                                return (
-                                                   <span
-                                                      key={`${cleanedWord}-${idx}`}
-                                                      className="bg-white border border-[#BFA66A]/25 text-[#8A5A00] text-[11px] font-mono px-3 py-1.5 rounded-xl shadow-2xs shrink-0 flex items-center hover:bg-[#FFF9E8]/40 transition-colors"
-                                                   >
-                                                      {cleanedWord}
-                                                   </span>
-                                                );
-                                             })}
-                                          </div>
-                                       </div>
                                     </div>
                                  </div>
 
@@ -1037,7 +1068,7 @@ export const AssetDetailWorkspace = ({
                                         <span className="ml-1.5 text-[8px] font-mono text-slate-400 normal-case font-normal">{col.type}</span>
                                       </th>
                                     ))}
-                                    {!readOnly && <th className="px-4 py-3 text-[9px] font-black text-[#5A4209]/70 uppercase tracking-widest w-16 text-center">Edit</th>}
+                                    {!tablesReadOnly && <th className="px-4 py-3 text-[9px] font-black text-[#5A4209]/70 uppercase tracking-widest w-16 text-center">Edit</th>}
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-[#BFA66A]/10">
@@ -1082,12 +1113,12 @@ export const AssetDetailWorkspace = ({
                                               </div>
                                             ) : (
                                               <span
-                                                onClick={() => !readOnly && handleCellEdit(rowIdx, col.name, cellVal)}
+                                                onClick={() => !tablesReadOnly && handleCellEdit(rowIdx, col.name, cellVal)}
                                                 className={cn(
                                                   "px-1.5 py-0.5 rounded transition-colors block",
-                                                  readOnly ? "cursor-default" : "cursor-text hover:bg-[#FFF9E8]"
+                                                  tablesReadOnly ? "cursor-default" : "cursor-text hover:bg-[#FFF9E8]"
                                                 )}
-                                                title={readOnly ? undefined : "Click to edit"}
+                                                title={tablesReadOnly ? undefined : "Click to edit"}
                                               >
                                                 {cellVal === null || cellVal === undefined ? (
                                                   <span className="text-slate-300 italic text-[10px]">null</span>
@@ -1097,7 +1128,7 @@ export const AssetDetailWorkspace = ({
                                           </td>
                                         );
                                       })}
-                                      {!readOnly && (
+                                      {!tablesReadOnly && (
                                         <td className="px-4 py-3 text-center">
                                           <button
                                             onClick={() => {
@@ -1124,7 +1155,7 @@ export const AssetDetailWorkspace = ({
                               <span className="text-[10px] font-mono text-slate-500">
                                 {selectedTable.rows.length} row{selectedTable.rows.length !== 1 ? 's' : ''} · {selectedTable.columns.length} column{selectedTable.columns.length !== 1 ? 's' : ''}
                               </span>
-                              {!readOnly && <span className="text-[9px] font-mono text-slate-400 italic">Click any cell to edit · Enter to save · Esc to cancel</span>}
+                              {!tablesReadOnly && <span className="text-[9px] font-mono text-slate-400 italic">Click any cell to edit · Enter to save · Esc to cancel</span>}
                             </div>
                           </>
                         )}
@@ -1400,35 +1431,54 @@ export const AssetDetailWorkspace = ({
                   )}
 
                   {/* ─── LOGS TAB ─────────────────────────────────────────────── */}
-                  {activeTab === 'LOGS' && (
+                  {activeTab === 'LOGS' && (() => {
+                    const levelColor = (lvl: string) => {
+                      const l = lvl.toUpperCase();
+                      if (l === 'ERROR')   return 'text-red-400 font-bold';
+                      if (l === 'WARN' || l === 'WARNING') return 'text-amber-500 font-bold';
+                      if (l === 'SUCCESS') return 'text-emerald-400 font-bold';
+                      if (l === 'DEBUG')   return 'text-slate-500';
+                      return 'text-amber-300/80';
+                    };
+                    const fmtTime = (iso: string | null) => {
+                      if (!iso) return '--:--:--';
+                      const d = new Date(iso);
+                      return isNaN(d.getTime()) ? '--:--:--' : d.toLocaleTimeString();
+                    };
+                    const logs = logData?.logs ?? [];
+                    return (
                     <motion.div key="logs" className="h-full border border-[#BFA66A]/30 rounded-[2rem] bg-[#1E1B15] overflow-hidden flex flex-col shadow-sm">
-                       <div className="p-4 border-b border-white/5 flex justify-between bg-black/20">
+                       <div className="p-4 border-b border-white/5 flex justify-between items-center bg-black/20">
                           <div className="flex items-center gap-3">
                              <Terminal className="w-4 h-4 text-[#D9B86C]" />
                              <h4 className="text-[10px] font-black text-[#FFFDF8] uppercase tracking-widest">
                                 Ingestion Engine Logs
                              </h4>
                           </div>
+                          {logData?.status && (
+                            <span className="text-[9px] font-mono font-bold text-[#D9B86C] uppercase tracking-widest px-2 py-0.5 rounded-full border border-[#D9B86C]/30 bg-[#D9B86C]/10">
+                              {logData.status}{logData.stage ? ` · ${logData.stage}` : ''}
+                            </span>
+                          )}
                        </div>
                        <div className="flex-1 p-6 overflow-y-auto space-y-3 font-mono text-[11px] leading-relaxed custom-scrollbar text-slate-300">
-                          {[
-                            { t: '12:04:22', lvl: 'INFO', msg: `Initializing ingestion for document ${document.name}`, color: 'text-amber-300/80' },
-                            { t: '12:04:24', lvl: 'INFO', msg: 'OCR processing started on worker-node-42', color: 'text-slate-400' },
-                            { t: '12:04:30', lvl: 'SUCCESS', msg: 'OCR extraction complete. Identified 4,821 characters with 98% confidence', color: 'text-emerald-400 font-bold' },
-                            { t: '12:04:31', lvl: 'DEBUG', msg: 'Cleaning redundant whitespace and metadata headers', color: 'text-slate-500' },
-                            { t: '12:04:32', lvl: 'INFO', msg: 'Starting PII scan (LLM-based detection)', color: 'text-amber-300/80' },
-                            { t: '12:04:35', lvl: 'WARN', msg: 'Found potential email address in metadata field "author_mail". Auto-masking...', color: 'text-amber-500 font-bold' },
-                            { t: '12:04:38', lvl: 'SUCCESS', msg: `Pipeline stage ${document.current_tier} -> COMPLETED`, color: 'text-[#D9B86C] font-black' },
-                          ].map((log, idx) => (
-                            <div key={`${log.t}-${log.lvl}-${idx}`} className="flex gap-4 group">
-                               <span className="text-slate-500 shrink-0">{log.t}</span>
-                               <span className={cn("shrink-0 font-bold", log.color)}>[{log.lvl}]</span>
-                               <span className="text-slate-300">{log.msg}</span>
-                            </div>
-                          ))}
+                          {logsLoading ? (
+                            <div className="flex items-center justify-center h-32 text-[#D9B86C]/70 text-xs">Loading logs…</div>
+                          ) : logs.length === 0 ? (
+                            <div className="flex items-center justify-center h-32 text-slate-500 text-xs">No ingestion logs recorded for this document yet.</div>
+                          ) : (
+                            logs.map((log, idx) => (
+                              <div key={`${log.timestamp}-${idx}`} className="flex gap-4 group">
+                                 <span className="text-slate-500 shrink-0">{fmtTime(log.timestamp)}</span>
+                                 <span className={cn("shrink-0 font-bold", levelColor(log.level))}>[{log.level.toUpperCase()}]</span>
+                                 <span className="text-slate-300 break-words">{log.message}</span>
+                              </div>
+                            ))
+                          )}
                        </div>
                     </motion.div>
-                  )}
+                    );
+                  })()}
 
                   {/* ─── TIMELINE TAB ─────────────────────────────────────────── */}
                   {activeTab === 'TIMELINE' && (

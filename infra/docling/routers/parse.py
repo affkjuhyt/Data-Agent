@@ -13,7 +13,7 @@ class ParseRequest(BaseModel):
     bucket: str
     object_key: str
     extension: str
-    max_chunk_chars: int = 1500
+    max_chunk_chars: int = 4000
 
 
 class ParsedTableResponse(BaseModel):

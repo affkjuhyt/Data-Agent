@@ -3,7 +3,10 @@ import path from "path";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
-  plugins: [react()],
+  // Cast: @vitejs/plugin-react is typed against the project's `vite`, while
+  // vitest/config expects a plugin from its own nested `vite` copy. The two
+  // Plugin types are structurally identical but nominally distinct.
+  plugins: [react() as never],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "."),

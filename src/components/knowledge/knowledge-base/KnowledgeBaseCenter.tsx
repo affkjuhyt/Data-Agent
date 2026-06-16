@@ -79,18 +79,18 @@ export function KnowledgeBaseCenter() {
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2">
           <Boxes className="w-5 h-5 text-[#B88719]" />
-          <h2 className="text-lg font-semibold text-[#1E1B15]">Knowledge Bases</h2>
+          <h2 className="text-lg font-semibold text-[#1E1B15]">Knowledge Groups</h2>
         </div>
         <button
           onClick={() => setShowCreate((s) => !s)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#B88719] text-white text-sm font-medium hover:bg-[#9c7115] transition-colors"
         >
-          <Plus className="w-4 h-4" /> New Knowledge Base
+          <Plus className="w-4 h-4" /> New Knowledge Group
         </button>
       </div>
       <p className="text-sm text-[#6b6457] mb-5">
         The kind of knowledge a document belongs to. Documents are tagged with one at
-        ingestion so retrieval can be scoped to a single knowledge base.
+        ingestion so retrieval can be scoped to a single knowledge group.
       </p>
 
       {error && (
@@ -102,7 +102,7 @@ export function KnowledgeBaseCenter() {
       {showCreate && (
         <div className="mb-5 p-4 rounded-lg border border-[#E7DFcf] bg-[#FAF6ED]">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-[#1E1B15]">Create Knowledge Base</h3>
+            <h3 className="text-sm font-semibold text-[#1E1B15]">Create Knowledge Group</h3>
             <button onClick={() => setShowCreate(false)} className="text-[#6b6457] hover:text-[#1E1B15]">
               <X className="w-4 h-4" />
             </button>

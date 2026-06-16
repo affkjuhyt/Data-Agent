@@ -256,6 +256,8 @@ async def _upsert_entity(
     description: str,
     embedding: list[float],
     entity_type: str = "",
+    knowledge_base: str = "",
+    embed_model_id: str = "",
 ) -> None:
     """Insert a new entity or extend an existing canonical's aliases/description."""
     point_id = _entity_point_id(tenant_id, canonical)
@@ -281,6 +283,11 @@ async def _upsert_entity(
         # Backfill type once; an existing specific type is never overwritten.
         if entity_type and payload.get("entity_type") in (None, "", "concept") and entity_type != "concept":
             updates["entity_type"] = entity_type
+        # Backfill the KB scope / embed model on legacy points that predate them.
+        if knowledge_base and not payload.get("knowledge_base"):
+            updates["knowledge_base"] = knowledge_base
+        if embed_model_id and not payload.get("embedding_model_id"):
+            updates["embedding_model_id"] = embed_model_id
         if description and not payload.get("description"):
             updates["description"] = description
             await qdrant.upsert(
@@ -306,15 +313,17 @@ async def _upsert_entity(
                 id=point_id,
                 vector=embedding,
                 payload={
-                    "tenant_id":    tenant_id,
-                    "canonical":    canonical,
+                    "tenant_id":          tenant_id,
+                    "knowledge_base":     knowledge_base,
+                    "canonical":          canonical,
                     # Original surface form — case and Vietnamese diacritics exactly
                     # as written. Used as the Neo4j node display name.
-                    "display_name": raw,
-                    "aliases":      incoming_aliases,
-                    "description":  description,
-                    "entity_type":  entity_type or "concept",
-                    "is_deleted":   False,
+                    "display_name":       raw,
+                    "aliases":            incoming_aliases,
+                    "description":        description,
+                    "entity_type":        entity_type or "concept",
+                    "is_deleted":         False,
+                    "embedding_model_id": embed_model_id,
                 },
             )
         ],
@@ -332,10 +341,13 @@ async def normalize_entities(
     tenant_id: str,
     raw_entities: list[dict],
     verify_fn=None,
+    knowledge_base: str = "",
+    embed_model_id: str = "",
 ) -> list[str]:
     """Normalise raw entities — returns deduplicated canonical name list."""
     canonicals, _ = await normalize_entities_detailed(
-        qdrant, postgres, model, tenant_id, raw_entities, verify_fn=verify_fn)
+        qdrant, postgres, model, tenant_id, raw_entities, verify_fn=verify_fn,
+        knowledge_base=knowledge_base, embed_model_id=embed_model_id)
     return canonicals
 
 
@@ -346,6 +358,8 @@ async def normalize_entities_detailed(
     tenant_id: str,
     raw_entities: list[dict],
     verify_fn=None,
+    knowledge_base: str = "",
+    embed_model_id: str = "",
 ) -> tuple[list[str], list[dict]]:
     """Normalise raw entities and return canonicalization details for each.
 
@@ -481,11 +495,13 @@ async def normalize_entities_detailed(
                 await _upsert_entity(
                     qdrant, tenant_id, merged_to, raw, aliases, description, embedding,
                     entity_type=entry["entity_type"],
+                    knowledge_base=knowledge_base, embed_model_id=embed_model_id,
                 )
             else:
                 await _upsert_entity(
                     qdrant, tenant_id, canonical_candidate, raw, aliases, description, embedding,
                     entity_type=entry["entity_type"],
+                    knowledge_base=knowledge_base, embed_model_id=embed_model_id,
                 )
                 await _register_aliases(postgres, tenant_id, canonical_candidate, surface_forms)
                 result[idx] = canonical_candidate

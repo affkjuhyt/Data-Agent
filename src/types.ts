@@ -9,9 +9,11 @@ export type Environment = 'DEV' | 'UAT' | 'STAGING' | 'PROD';
 
 export interface PagedResponse<T> {
   items: T[];
-  page: number;
+  page?: number;
   page_size: number;
   has_next: boolean;
+  total?: number;
+  next_cursor?: string | null;
 }
 
 // Canonical layer values match the postgres KBTier enum (lowercase).
@@ -70,6 +72,7 @@ export interface KnowledgeDocument {
     color_space?: string | null;
     file_size?: number | null;
     total_frame?: number | null;
+    intents?: string[] | null;  // document-level content-purpose intents (Gold)
   };
   score?: number;
   conflicts?: boolean;

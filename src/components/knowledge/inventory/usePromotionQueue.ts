@@ -1,8 +1,27 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { PromotionEntry } from './PromotionProgressOverlay';
 import type { KnowledgeDocument } from '../../../types';
 
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8000';
+
+// Persist the queue so a page refresh doesn't drop in-flight promotions. The
+// overlay reappears AND `promotingIds` stays populated, so the row stays locked
+// against a duplicate promote request. Only in-flight entries are restored —
+// completed/failed ones were already applied to the document.
+const STORAGE_KEY = 'kb-promotion-queue-v1';
+
+function loadPersisted(): PromotionEntry[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as PromotionEntry[];
+    return Array.isArray(parsed)
+      ? parsed.filter(e => e.status === 'queued' || e.status === 'processing')
+      : [];
+  } catch {
+    return [];
+  }
+}
 
 // Visual progress animation while we wait for the worker. These milestones ONLY move
 // the bar — they never mark the promotion done and are capped below 100, so we never
@@ -20,15 +39,26 @@ const MILESTONES: [number, number][] = [
 export function usePromotionQueue(
   updateDocument: (id: string, updates: Partial<KnowledgeDocument>) => void,
 ) {
-  const [queue, setQueue] = useState<PromotionEntry[]>([]);
+  const [queue, setQueue] = useState<PromotionEntry[]>(loadPersisted);
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>[]>>(new Map());
   const abortRefs = useRef<Map<string, AbortController>>(new Map());
+  // Synchronous lock: prevents a rapid double-click from queuing the same doc
+  // twice within one tick (before React re-renders the disabled button).
+  const inFlightRef = useRef<Set<string>>(new Set());
+
+  // Persist the queue on every change so it survives a page refresh.
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(queue));
+    } catch { /* storage full / unavailable — non-fatal */ }
+  }, [queue]);
 
   const _cleanup = (data_id: string) => {
     timersRef.current.get(data_id)?.forEach(clearTimeout);
     timersRef.current.delete(data_id);
     abortRefs.current.get(data_id)?.abort();
     abortRefs.current.delete(data_id);
+    inFlightRef.current.delete(data_id);
   };
 
   const _finalise = useCallback(
@@ -51,31 +81,16 @@ export function usePromotionQueue(
     [updateDocument],
   );
 
-  const startPromotion = useCallback(
-    (data_id: string, name: string, from_tier: 'bronze' | 'silver', to_tier: 'silver' | 'gold') => {
-      const entry: PromotionEntry = { data_id, name, from_tier, to_tier, progress: 0, status: 'queued' };
-      setQueue((prev) => [...prev.filter((e) => e.data_id !== data_id), entry]);
-
-      // ── Animation only — capped, never finalises ────────────────────────────
-      const timers: ReturnType<typeof setTimeout>[] = [];
-      MILESTONES.forEach(([pct, delay]) => {
-        const t = setTimeout(() => {
-          setQueue((prev) =>
-            prev.map((e) => {
-              if (e.data_id !== data_id || e.status === 'failed' || e.status === 'done') return e;
-              return { ...e, progress: Math.max(e.progress, pct), status: 'processing' };
-            }),
-          );
-        }, delay);
-        timers.push(t);
-      });
-      timersRef.current.set(data_id, timers);
-
-      // ── Real progress + completion via the pipeline SSE ─────────────────────
-      // The worker's terminal log status is EMBEDDING for silver (it then queues gold)
-      // and PUBLISHED for gold; the /progress stream only sets `done` on PUBLISHED/FAILED,
-      // so silver completion is recognised from the status string. This keeps the entry
-      // "in flight" for the entire real run, so the bar never jumps to 100% early.
+  // ── Real progress + completion via the pipeline SSE ───────────────────────
+  // The worker's terminal log status is EMBEDDING for silver (it then queues gold)
+  // and PUBLISHED for gold; the /progress stream only sets `done` on PUBLISHED/FAILED,
+  // so silver completion is recognised from the status string. This keeps the entry
+  // "in flight" for the entire real run, so the bar never jumps to 100% early. The
+  // stream reads server-side state (kb_ingestion_logs), so re-attaching after a page
+  // refresh resumes mid-flight and finalises correctly even if the worker is done.
+  const _attachStream = useCallback(
+    (data_id: string, to_tier: 'silver' | 'gold') => {
+      if (abortRefs.current.has(data_id)) return; // already streaming
       const abort = new AbortController();
       abortRefs.current.set(data_id, abort);
 
@@ -132,6 +147,49 @@ export function usePromotionQueue(
     },
     [_finalise],
   );
+
+  const startPromotion = useCallback(
+    (data_id: string, name: string, from_tier: 'bronze' | 'silver', to_tier: 'silver' | 'gold') => {
+      // Lock: never queue the same document twice while a promotion is in flight.
+      if (inFlightRef.current.has(data_id)) return;
+      inFlightRef.current.add(data_id);
+
+      const entry: PromotionEntry = { data_id, name, from_tier, to_tier, progress: 0, status: 'queued' };
+      setQueue((prev) => [...prev.filter((e) => e.data_id !== data_id), entry]);
+
+      // ── Animation only — capped, never finalises ────────────────────────────
+      const timers: ReturnType<typeof setTimeout>[] = [];
+      MILESTONES.forEach(([pct, delay]) => {
+        const t = setTimeout(() => {
+          setQueue((prev) =>
+            prev.map((e) => {
+              if (e.data_id !== data_id || e.status === 'failed' || e.status === 'done') return e;
+              return { ...e, progress: Math.max(e.progress, pct), status: 'processing' };
+            }),
+          );
+        }, delay);
+        timers.push(t);
+      });
+      timersRef.current.set(data_id, timers);
+
+      _attachStream(data_id, to_tier);
+    },
+    [_attachStream],
+  );
+
+  // Rehydrate after a refresh: re-attach the progress stream for every in-flight
+  // entry restored from localStorage so the overlay keeps moving and finalises.
+  const rehydratedRef = useRef(false);
+  useEffect(() => {
+    if (rehydratedRef.current) return;
+    rehydratedRef.current = true;
+    queue.forEach((e) => {
+      if (e.status === 'queued' || e.status === 'processing') {
+        inFlightRef.current.add(e.data_id);
+        _attachStream(e.data_id, e.to_tier);
+      }
+    });
+  }, [queue, _attachStream]);
 
   const dismissEntry = useCallback((data_id: string) => {
     _cleanup(data_id);

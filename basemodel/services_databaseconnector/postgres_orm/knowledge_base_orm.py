@@ -91,6 +91,12 @@ class KBDataORM(Base):
         Index("idx_kbdata_tenant_role", "tenant_id", "role_id"),
         Index("idx_kbdata_tenant_tier", "tenant_id", "current_tier"),
         Index("idx_kbdata_inserted_at_desc", text("inserted_at DESC")),
+        # Keyset pagination support: the docs list orders by (inserted_at, data_id)
+        # filtered by tenant (+ current_tier for the layer tabs). These composite
+        # indexes keep each page an O(log n + limit) range scan even when many rows
+        # share an inserted_at (bulk same-timestamp inserts).
+        Index("idx_kbdata_keyset", "tenant_id", "current_tier", "inserted_at", "data_id"),
+        Index("idx_kbdata_keyset_all", "tenant_id", "inserted_at", "data_id"),
     )
 
     data_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

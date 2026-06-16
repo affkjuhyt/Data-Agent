@@ -17,7 +17,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../../lib/utils';
 import { useAppState } from '../../../AppStateContext';
 import { STEPS, SOURCES, formatBytes } from './ingest.data';
-import { mockUpload, mockGet } from '../../../lib/mockApi';
+import { mockUpload, mockGet, mockMutate } from '../../../lib/mockApi';
 
 interface KnowledgeBaseOption { id: string; name: string; }
 
@@ -164,6 +164,36 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
     }, 550);
 
     try {
+      // Web portal: no file — register the URL as bronze. The bronze→silver step
+      // fetches the page, strips boilerplate to markdown, and Docling-chunks it.
+      if (selectedSource === 'web') {
+        const result = await mockMutate<{ data_id: string; name: string; url: string; layer: string }>(
+          'POST',
+          '/api/pipeline/ingestion/bronze/web',
+          {
+            name: assetName,
+            url: webUrl,
+            web_name: assetName,
+            ...(knowledgeBaseId ? { knowledge_base_id: knowledgeBaseId } : {}),
+          },
+        );
+        setIngestionLogs(prev => [...prev, `Web portal registered in database: ${result.data_id}`]);
+        addDocument({
+          data_id: result.data_id,
+          name: result.name,
+          source_type: 'web',
+          current_tier: 'bronze',
+          status: 'RAW',
+          added_on: new Date().toISOString(),
+          added_by: user.name || 'AI Engineer',
+          metadata: {
+            doc_type: 'web',
+            warehouse_type: null,
+            url: webUrl,
+          },
+        });
+      }
+
       // Upload to real backend API via mockUpload (auto-injects context headers)
       if (selectedSource !== 'web' && fileInputRef.current?.files?.[0]) {
         const file = fileInputRef.current.files[0];
@@ -172,6 +202,9 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
         formData.append('file', file);
         // NOTE: Do NOT include role_id, tenant_id, or user_id in body
         // They are auto-injected as headers (X-Role, X-Tenant-Id, X-User-Id)
+        // The typed Knowledge Name becomes the document name; the real upload
+        // filename is sent on the file part and used only for storage.
+        formData.append('name', assetName);
         formData.append('abstract', assetName);
         formData.append('language', 'english');
         formData.append('source_type', selectedSource);

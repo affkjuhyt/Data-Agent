@@ -21,6 +21,29 @@ import {
   FilterPolicyType, FilterPolicy, BASE_EXTRACTION_POLICY,
 } from './policy.data';
 
+// Backend may return `content` as a structured value (e.g. {type, value} or an
+// array of rule objects) rather than a plain string. Coerce defensively so the
+// edit form never receives a non-string — calling .trim() on an object crashes
+// the whole drawer.
+const contentToText = (content: unknown): string =>
+  typeof content === 'string' ? content : content == null ? '' : JSON.stringify(content);
+
+const contentToWords = (content: unknown): string[] => {
+  let raw: unknown = content;
+  if (typeof content === 'string') {
+    try { raw = JSON.parse(content); }
+    catch { return content.split(',').map(s => s.trim()).filter(Boolean); }
+  }
+  if (!Array.isArray(raw)) return [];
+  return raw.map(w =>
+    typeof w === 'string'
+      ? w
+      : w && typeof w === 'object' && 'value' in (w as any)
+        ? String((w as any).value)
+        : JSON.stringify(w),
+  );
+};
+
 export const PolicyCenter = () => {
   const [filterPolicies, setFilterPolicies] = useState<FilterPolicy[]>([]);
   const [policiesPage, setPoliciesPage] = useState(1);
@@ -91,11 +114,11 @@ export const PolicyCenter = () => {
     setFormName(policy.name);
     setFormType(policy.type);
     if (policy.type === 'natural_language') {
-      setFormContent(policy.content);
+      setFormContent(contentToText(policy.content));
       setFormWords([]);
     } else {
       setFormContent('');
-      try { setFormWords(JSON.parse(policy.content)); } catch { setFormWords([]); }
+      setFormWords(contentToWords(policy.content));
     }
     setFormWordInput('');
     setSaveError(null);
@@ -152,7 +175,7 @@ export const PolicyCenter = () => {
     p =>
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.type.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.added_by.toLowerCase().includes(searchQuery.toLowerCase())
+      (p.added_by ?? '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const isFormValid =

@@ -80,9 +80,19 @@ ALIAS_VERIFY = os.getenv("ALIAS_VERIFY", "1") == "1"
 
 # Bounded parallelism for the per-chunk summary LLM calls in the silver stage.
 SILVER_SUMMARY_CONCURRENCY = int(os.getenv("SILVER_SUMMARY_CONCURRENCY", "4"))
-CONFLICT_SIMILARITY_THRESHOLD  = float(os.getenv("CONFLICT_SIMILARITY_THRESHOLD",  "0.92"))
-# Vectors above this score are near-identical — classified as content_duplicate without LLM
-DUPLICATE_SIMILARITY_THRESHOLD = float(os.getenv("DUPLICATE_SIMILARITY_THRESHOLD", "0.95"))
+
+# Web portal fetch timeout (seconds) for the bronze→silver web path.
+WEB_FETCH_TIMEOUT = float(os.getenv("WEB_FETCH_TIMEOUT", "30"))
+# Headless-render web portals with Chromium (most are client-rendered SPAs that
+# need JS to paint their content). Set to 0/false to use a static httpx fetch only.
+WEB_USE_PLAYWRIGHT = os.getenv("WEB_USE_PLAYWRIGHT", "1") not in ("0", "false", "False", "")
+# Max seconds to wait for the page's network to settle (template/content to finish
+# painting) after DOMContentLoaded before grabbing the rendered HTML.
+WEB_RENDER_WAIT = float(os.getenv("WEB_RENDER_WAIT", "12"))
+# Similarity floor for the top-1 candidate. Anything at/above this score is handed
+# to the LLM, which decides whether it's genuinely a conflict. No auto-resolve —
+# every confirmed conflict is surfaced as PENDING for human review.
+CONFLICT_SIMILARITY_THRESHOLD  = float(os.getenv("CONFLICT_SIMILARITY_THRESHOLD",  "0.90"))
 
 # Entity registry
 ENTITY_COLLECTION             = os.getenv("ENTITY_COLLECTION",              "entity_registry")

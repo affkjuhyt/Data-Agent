@@ -2,7 +2,7 @@ import asyncio
 import uuid
 from typing import Any
 
-from sqlalchemy import select, update as sa_update, delete as sa_delete, text, tuple_
+from sqlalchemy import select, update as sa_update, delete as sa_delete, text, tuple_, func
 from sqlalchemy.engine import CursorResult
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import selectinload, attributes as sa_attributes
@@ -88,17 +88,26 @@ _OP_MAP = {
     FilterOperator.LT: lambda col, val: col < val,
     FilterOperator.GTE: lambda col, val: col >= val,
     FilterOperator.LTE: lambda col, val: col <= val,
+    FilterOperator.IN: lambda col, val: col.in_(val if isinstance(val, (list, tuple, set)) else [val]),
 }
 
 
 def _apply_op(col, f):
     value = f.value
-    # Convert string to UUID if column is UUID type and value is string
-    if isinstance(value, str) and hasattr(col.type, 'python_type') and col.type.python_type == uuid.UUID:
-        try:
-            value = uuid.UUID(value)
-        except (ValueError, TypeError):
-            pass  # Not a UUID string, use original value
+    is_uuid_col = hasattr(col.type, 'python_type') and col.type.python_type == uuid.UUID
+    # Convert string→UUID for UUID columns. For IN, coerce each element of the list.
+    if is_uuid_col:
+        def _coerce(v):
+            if isinstance(v, str):
+                try:
+                    return uuid.UUID(v)
+                except (ValueError, TypeError):
+                    return v
+            return v
+        if f.operator == FilterOperator.IN and isinstance(value, (list, tuple, set)):
+            value = [_coerce(v) for v in value]
+        else:
+            value = _coerce(value)
     return _OP_MAP[f.operator](col, value)
 
 
@@ -257,6 +266,59 @@ def _prepare_read(data: ReadJoinRequest) -> DQLPreparation:
 
     stmt = _apply_keyset(stmt, from_cls, data.cursor, data.order_by)
     return DQLPreparation(compiled_query=stmt.limit(data.limit))
+
+
+def _prepare_count(data: ReadJoinRequest) -> DQLPreparation:
+    """COUNT(*) over the same joins/filters as _prepare_read (no keyset/limit).
+    Powers `total` for the numbered pager — keyset itself never needs this, but the
+    UI does to render '1 … N'."""
+    unknown = [t for t in data.joins_table if t not in REGISTRY]
+    if unknown:
+        raise AttributeError(f"Unknown table(s): {unknown}")
+
+    orm_map = {t: REGISTRY[t].orm for t in data.joins_table}
+    from_cls = orm_map[data.joins_table[0]]
+
+    stmt = select(func.count()).select_from(from_cls)
+    for i in range(1, len(data.joins_table)):
+        stmt = stmt.join(orm_map[data.joins_table[i]])
+
+    if data.tenant_id is not None:
+        tenant_uuid = uuid.UUID(data.tenant_id) if isinstance(data.tenant_id, str) else data.tenant_id
+        stmt = stmt.where(from_cls.tenant_id == tenant_uuid)
+    for f in data.filters:
+        stmt = stmt.where(_apply_op(getattr(orm_map[f.table_name], f.column_name), f))
+    try:
+        stmt = stmt.where(from_cls.is_deleted == False)
+    except AttributeError:
+        pass
+    return DQLPreparation(compiled_query=stmt)
+
+
+def _prepare_count(data: ReadJoinRequest) -> DQLPreparation:
+    """COUNT(*) over the same joins/filters as _prepare_read (no keyset/limit/offset).
+    Used to compute `total` for numbered pagination."""
+    unknown = [t for t in data.joins_table if t not in REGISTRY]
+    if unknown:
+        raise AttributeError(f"Unknown table(s): {unknown}")
+
+    orm_map = {t: REGISTRY[t].orm for t in data.joins_table}
+    from_cls = orm_map[data.joins_table[0]]
+
+    stmt = select(func.count()).select_from(from_cls)
+    for i in range(1, len(data.joins_table)):
+        stmt = stmt.join(orm_map[data.joins_table[i]])
+
+    if data.tenant_id is not None:
+        tenant_uuid = uuid.UUID(data.tenant_id) if isinstance(data.tenant_id, str) else data.tenant_id
+        stmt = stmt.where(from_cls.tenant_id == tenant_uuid)
+    for f in data.filters:
+        stmt = stmt.where(_apply_op(getattr(orm_map[f.table_name], f.column_name), f))
+    try:
+        stmt = stmt.where(from_cls.is_deleted == False)
+    except AttributeError:
+        pass
+    return DQLPreparation(compiled_query=stmt)
 
 
 class PostgresTransaction:
@@ -498,6 +560,17 @@ class PostgresClient:
             result = await session.execute(prep.compiled_query)
             rows = result.mappings().all()
         return ResponseModel(code=200, data=[dict(r) for r in rows])
+
+    async def read_count(self, data: ReadJoinRequest) -> ResponseModel:
+        """Total row count for the same filters as read() — for numbered pagination."""
+        try:
+            prep = _prepare_count(data)
+        except AttributeError as e:
+            return ResponseModel(code=400, error=str(e))
+
+        async with self.get_client() as session:
+            total = (await session.execute(prep.compiled_query)).scalar_one()
+        return ResponseModel(code=200, data=int(total or 0))
 
 
 client = PostgresClient()

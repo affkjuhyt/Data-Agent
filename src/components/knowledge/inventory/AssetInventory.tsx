@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import {
   Database,
   Search,
@@ -6,8 +6,6 @@ import {
   ArrowRight,
   Edit2,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   Layers,
   Trash2,
   X,
@@ -16,10 +14,12 @@ import {
   Loader2,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
-import { KnowledgeDocument, PagedResponse } from '../../../types';
+import { KnowledgeDocument } from '../../../types';
 import { useAppState } from '../../../AppStateContext';
-import { mockGet, mockMutate } from '../../../lib/mockApi';
-import { SourceFilter, SOURCE_FILTER_LABELS, getSourceCategory } from './inventory.data';
+import { mockMutate } from '../../../lib/mockApi';
+import { useCursorPagination } from '../../../lib/useCursorPagination';
+import { Pagination } from '../../shared/Pagination';
+import { SourceCategory, SOURCE_CATEGORIES, ALL_SOURCE_CATEGORIES, sourceParam } from './inventory.data';
 
 interface AssetInventoryProps {
   onSelectAsset: (asset: KnowledgeDocument) => void;
@@ -30,52 +30,34 @@ interface AssetInventoryProps {
 export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Set() }: AssetInventoryProps) => {
   const { updateDocument, deleteDocument } = useAppState();
   const [activeFilter, setActiveFilter] = useState<'bronze' | 'silver' | 'gold'>('bronze');
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('ALL');
+  // Multi-select source chips, default all-on. Backend does the filtering
+  // (`?source=…` → WHERE source_type IN (...)), so this drives the query, not a
+  // client-side filter. No "All" chip — all-on already means everything.
+  const [selectedSources, setSelectedSources] = useState<Set<SourceCategory>>(
+    () => new Set(ALL_SOURCE_CATEGORIES),
+  );
+  const sourceQuery = sourceParam(selectedSources);
   const [searchQuery, setSearchQuery] = useState('');
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showVerification, setShowVerification] = useState(false);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
 
-  // Server-side paginated docs
-  const [serverDocs, setServerDocs] = useState<KnowledgeDocument[]>([]);
-  const [hasNext, setHasNext] = useState(false);
-  const [isFetching, setIsFetching] = useState(false);
-
-  // `silent` skips the full-list loader so background re-syncs (during promotion)
-  // don't flash the table.
-  const fetchPage = useCallback(async (tier: string, page: number, silent = false) => {
-    if (!silent) setIsFetching(true);
-    try {
-      const result = await mockGet<PagedResponse<KnowledgeDocument> | KnowledgeDocument[]>(
-        '/api/data/documents',
-        { tier, page },
-      );
-      if (Array.isArray(result)) {
-        setServerDocs(result);
-        setHasNext(false);
-      } else {
-        setServerDocs(result.items ?? []);
-        setHasNext(result.has_next ?? false);
-      }
-    } catch {
-      setServerDocs([]);
-      setHasNext(false);
-    } finally {
-      if (!silent) setIsFetching(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchPage(activeFilter, currentPage);
-  }, [activeFilter, currentPage, fetchPage]);
+  // Server-side cursor pagination — stateless; the client holds the cursor token.
+  // Switching the layer tab (activeFilter) resets to page 1 and clears the cache.
+  const {
+    items: serverDocs, page, totalPages, hasNext, isLoading: isFetching,
+    canJump, goTo, reload,
+  } = useCursorPagination<KnowledgeDocument>(
+    '/api/data/documents',
+    { tier: activeFilter, source: sourceQuery },
+    [activeFilter, sourceQuery],
+  );
 
   // The promote button only fires off the async worker pipeline; the worker flips
-  // `current_tier` in Postgres when a stage completes. The list renders a server page,
-  // so re-sync from the server while a promotion is in flight (and for a short while
-  // after it finishes, since the tier flip lands a beat after the UI's progress bar).
+  // `current_tier` in Postgres a beat after the UI's progress bar. Silently re-sync the
+  // current page while a promotion is in flight (and shortly after) so the row moves.
   const promotingCount = promotingIds.size;
   const prevPromotingCount = useRef(promotingCount);
   useEffect(() => {
@@ -85,29 +67,30 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
     const timers: ReturnType<typeof setTimeout>[] = [];
     let poll: ReturnType<typeof setInterval> | undefined;
     if (promotingCount > 0) {
-      poll = setInterval(() => fetchPage(activeFilter, currentPage, true), 3000);
+      poll = setInterval(() => reload(true), 3000);
     }
     if (finished) {
-      [1500, 5000, 12000].forEach(d =>
-        timers.push(setTimeout(() => fetchPage(activeFilter, currentPage, true), d)),
-      );
+      [1500, 5000, 12000].forEach(d => timers.push(setTimeout(() => reload(true), d)));
     }
     return () => {
       if (poll) clearInterval(poll);
       timers.forEach(clearTimeout);
     };
-  }, [promotingCount, activeFilter, currentPage, fetchPage]);
+  }, [promotingCount, reload]);
 
   const handleFilterChange = (filter: 'bronze' | 'silver' | 'gold') => {
     setActiveFilter(filter);
-    setCurrentPage(1);
     setSelectedIds([]);
   };
 
-  const handleSourceFilterChange = (sf: SourceFilter) => {
-    setSourceFilter(sf);
-    if (sf === 'WAREHOUSE') { setActiveFilter('gold'); }
-    setCurrentPage(1);
+  const toggleSource = (cat: SourceCategory) => {
+    setSelectedSources(prev => {
+      const next = new Set(prev);
+      next.has(cat) ? next.delete(cat) : next.add(cat);
+      return next;
+    });
+    // Warehouses only exist in the Gold layer; jump there so the chip shows results.
+    if (cat === 'warehouse' && !selectedSources.has('warehouse')) setActiveFilter('gold');
     setSelectedIds([]);
   };
 
@@ -115,19 +98,20 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
     setSearchQuery(query);
   };
 
-  // Client-side source + search filter on the current server page
+  // Source filtering is server-side now (the `source` query param). Only the free-text
+  // search stays client-side, scoped to the current server page.
   const filteredDocs = serverDocs.filter(doc => {
-    const matchesSource = sourceFilter === 'ALL' || getSourceCategory(doc.metadata?.doc_type) === sourceFilter;
     const authorText = doc.metadata?.author ?? doc.added_by ?? '';
-    const matchesSearch = !searchQuery ||
+    return !searchQuery ||
       doc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       doc.data_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
       authorText.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesSource && matchesSearch;
   });
 
   const handleProcess = async (e: React.MouseEvent, doc: KnowledgeDocument) => {
     e.stopPropagation();
+    // Lock: ignore a promote request while this document is already promoting.
+    if (promotingIds.has(doc.data_id) || processingId === doc.data_id) return;
     const targetLayer = doc.current_tier === 'bronze' ? 'silver' : 'gold';
     setProcessingId(doc.data_id);
     try {
@@ -146,6 +130,7 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
       await mockMutate('DELETE', `/api/data/documents/${doc.data_id}`);
       deleteDocument(doc.data_id);
       setSelectedIds(prev => prev.filter(id => id !== doc.data_id));
+      reload(true); // refresh the current server page so the row clears + backfills
     } catch { /* ForbiddenToast handles 403 */ }
     setPendingDeleteId(null);
   };
@@ -172,6 +157,8 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
     for (const id of selectedIds) {
       const doc = serverDocs.find(d => d.data_id === id);
       if (!doc) continue;
+      if (promotingIds.has(id)) continue; // already promoting — don't re-queue
+
       const targetLayer = doc.current_tier === 'bronze' ? 'silver' : 'gold';
       try {
         await mockMutate('POST', `/api/pipeline/ingestion/promote/${id}/${targetLayer}`);
@@ -229,20 +216,24 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
                Source Type
             </span>
             <div className="flex gap-2 flex-wrap">
-               {(['ALL', 'DOC', 'MEDIA', 'WEB', 'WAREHOUSE'] as SourceFilter[]).map(sf => (
-                 <button
-                   key={sf}
-                   onClick={() => handleSourceFilterChange(sf)}
-                   className={cn(
-                     "px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
-                     sf === sourceFilter
-                       ? "bg-[#1E1B15] text-[#D9B86C] border border-[#BFA66A]/40 shadow-sm"
-                       : "bg-white border border-[#BFA66A]/25 text-[#8A5A00] hover:bg-[#FFF9E8]/40"
-                   )}
-                 >
-                   {SOURCE_FILTER_LABELS[sf]}
-                 </button>
-               ))}
+               {SOURCE_CATEGORIES.map(({ id, label }) => {
+                 const active = selectedSources.has(id);
+                 return (
+                   <button
+                     key={id}
+                     onClick={() => toggleSource(id)}
+                     aria-pressed={active}
+                     className={cn(
+                       "px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
+                       active
+                         ? "bg-[#1E1B15] text-[#D9B86C] border border-[#BFA66A]/40 shadow-sm"
+                         : "bg-white border border-[#BFA66A]/25 text-[#8A5A00] opacity-60 hover:opacity-100 hover:bg-[#FFF9E8]/40"
+                     )}
+                   >
+                     {label}
+                   </button>
+                 );
+               })}
             </div>
          </div>
 
@@ -418,7 +409,7 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
                               <CheckCircle2 className="w-3.5 h-3.5" />
                               <span className="text-[10px] font-mono font-black uppercase tracking-wider">Warehouse</span>
                             </div>
-                          ) : processingId === doc.data_id ? (
+                          ) : (processingId === doc.data_id || promotingIds.has(doc.data_id)) ? (
                             <span className="text-[10px] font-mono font-bold text-[#B88719] uppercase tracking-wide flex items-center justify-end gap-1.5 font-mono">
                               <span className="w-3 h-3 rounded-full border-2 border-[#B88719]/40 border-t-[#B88719] animate-spin" />
                               Processing...
@@ -453,36 +444,20 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
          </table>
 
          {/* Pagination Footer */}
-         {(currentPage > 1 || hasNext) && (
+         {(totalPages > 1 || hasNext) && (
            <div className="flex items-center justify-between gap-4 px-8 py-4 bg-[#FFFDF8] border-t border-[#BFA66A]/15 rounded-b-3xl">
               <span className="text-[11px] font-mono text-slate-500">
-                Page <span className="font-bold text-[#111111]">{currentPage}</span>
-                {hasNext && <span className="text-slate-400"> · more available</span>}
+                Page <span className="font-bold text-[#111111]">{page}</span>
+                <span className="text-slate-400"> of {totalPages}</span>
+                {isFetching && <span className="text-slate-400"> · loading…</span>}
               </span>
-              <div className="flex items-center gap-2">
-                 <button
-                   onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                   disabled={currentPage === 1 || isFetching}
-                   className={cn(
-                     "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#BFA66A]/20 bg-white text-[11px] font-bold text-[#8A5A00] transition-all hover:bg-[#FFF9E8]/60",
-                     (currentPage === 1 || isFetching) ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
-                   )}
-                 >
-                   <ChevronLeft className="w-3.5 h-3.5" />
-                   Prev
-                 </button>
-                 <button
-                   onClick={() => setCurrentPage(prev => prev + 1)}
-                   disabled={!hasNext || isFetching}
-                   className={cn(
-                     "flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#BFA66A]/20 bg-white text-[11px] font-bold text-[#8A5A00] transition-all hover:bg-[#FFF9E8]/60",
-                     (!hasNext || isFetching) ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
-                   )}
-                 >
-                   Next
-                   <ChevronRight className="w-3.5 h-3.5" />
-                 </button>
-              </div>
+              <Pagination
+                page={page}
+                totalPages={totalPages}
+                hasNext={hasNext}
+                canJump={canJump}
+                onJump={goTo}
+              />
            </div>
          )}
       </div>

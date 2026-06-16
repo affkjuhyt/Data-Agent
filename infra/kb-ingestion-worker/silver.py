@@ -174,6 +174,130 @@ async def _parse_doc(docling, bucket: str, object_key: str, extension: str) -> l
     return chunks
 
 
+def _docling_chunks_to_dicts(result) -> list[dict]:
+    """Map a DoclingResult into the silver chunk dicts (shared by doc + web)."""
+    chunks: list[dict] = []
+    for pc in result.chunks:
+        chunk: dict = {
+            "block_index": pc.block_index,
+            "content": pc.content,
+            "table_involved": pc.table_involved,
+            "table": None,
+        }
+        if pc.table is not None:
+            chunk["table"] = {
+                "table_name": pc.table.table_name,
+                "description": pc.table.description,
+                "data": pc.table.data,
+            }
+        chunks.append(chunk)
+    return chunks
+
+
+# ── Web portal: fetch → strip boilerplate → markdown → Docling ────────────────
+
+_WEB_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+)
+
+
+async def _fetch_url_static(url: str) -> str:
+    """Plain HTTP fetch — no JS. Fine for server-rendered pages; an SPA returns an
+    almost-empty shell here, which is why the rendered path is tried first."""
+    import httpx
+    async with httpx.AsyncClient(
+        follow_redirects=True,
+        timeout=httpx.Timeout(cfg.WEB_FETCH_TIMEOUT),
+        headers={"User-Agent": _WEB_USER_AGENT, "Accept-Language": "vi,en;q=0.8"},
+    ) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        return resp.text
+
+
+async def _fetch_url_rendered(url: str) -> str:
+    """Render with headless Chromium so client-side (React/Vue/SPA) content is in
+    the DOM before extraction. Waits for the network to settle so a late-loading
+    template finishes painting; if it never settles (analytics/polling sites) we
+    proceed with whatever has rendered within the wait budget."""
+    from playwright.async_api import async_playwright, TimeoutError as PWTimeout
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+        )
+        try:
+            page = await browser.new_page(user_agent=_WEB_USER_AGENT, locale="vi-VN")
+            await page.goto(url, wait_until="domcontentloaded", timeout=int(cfg.WEB_FETCH_TIMEOUT * 1000))
+            try:
+                await page.wait_for_load_state("networkidle", timeout=int(cfg.WEB_RENDER_WAIT * 1000))
+            except PWTimeout:
+                log.info("Web render: networkidle not reached for %s — using current DOM", url)
+            return await page.content()
+        finally:
+            await browser.close()
+
+
+async def _fetch_url(url: str) -> str:
+    """Fetch a web portal's HTML. Headless-render first (most portals are SPAs that
+    need JS to paint content); fall back to a static fetch if rendering fails."""
+    if cfg.WEB_USE_PLAYWRIGHT:
+        try:
+            html = await _fetch_url_rendered(url)
+            log.info("Web fetch: rendered %s → %d bytes (headless Chromium)", url, len(html))
+            return html
+        except Exception as exc:
+            log.warning("Web fetch: headless render failed for %s (%s) — falling back to static", url, exc)
+    return await _fetch_url_static(url)
+
+
+def _extract_main_content(html: str, url: str) -> tuple[str, str]:
+    """Isolate ONLY the main content and return (content, extension).
+
+    Docling on its own keeps the entire DOM — nav bars, ads, sidebars, cookie
+    banners, footers — because it has no notion of "the article". So we run a
+    readability-style extractor (trafilatura) FIRST to drop that boilerplate and
+    emit clean markdown; Docling then chunks the markdown exactly like a document,
+    keeping silver/gold downstream source-agnostic. Falls back to raw HTML (parsed
+    as .html) if trafilatura can't isolate content, so a page never fails outright.
+    """
+    try:
+        import trafilatura
+    except ImportError:
+        log.warning("trafilatura missing — feeding raw HTML to Docling (boilerplate NOT stripped)")
+        return html, "html"
+
+    for fmt in ("markdown", "txt"):
+        try:
+            extracted = trafilatura.extract(
+                html, url=url, output_format=fmt,
+                include_tables=True, include_comments=False, include_images=False,
+                favor_precision=True,
+            )
+        except Exception as exc:
+            log.warning("trafilatura extract(%s) failed: %s", fmt, exc)
+            extracted = None
+        if extracted and extracted.strip():
+            return extracted, "md"
+
+    log.warning("trafilatura found no main content for %s — falling back to raw HTML", url)
+    return html, "html"
+
+
+async def _parse_web(docling, url: str) -> list[dict]:
+    """bronze→silver web path: fetch the portal, strip boilerplate to markdown,
+    then Docling-chunk it like a document."""
+    if not url:
+        raise ValueError("Web document has no URL in its metadata")
+    html = await _fetch_url(url)
+    loop = asyncio.get_event_loop()
+    content, extension = await loop.run_in_executor(None, _extract_main_content, html, url)
+    log.info("Silver web: %s → %d chars main content (%s)", url, len(content), extension)
+    result = await docling.parse_bytes(content.encode("utf-8"), extension)
+    return _docling_chunks_to_dicts(result)
+
+
 async def _parse_image(file_bytes: bytes, extension: str) -> list[dict]:
     content_type = f"image/{extension.lstrip('.')}"
     description = await _vlm_describe(file_bytes, content_type)
@@ -408,10 +532,23 @@ async def promote_to_silver(
             "parser": "docling" if source_type in (SourceType.DOC, SourceType.WEB) else "vlm",
         })
 
-    if source_type in (SourceType.DOC, SourceType.WEB):
+    if source_type == SourceType.DOC:
         if emitter:
             await emitter.emit("silver.parse.start", {"parser": "InlineDoclingParser"})
         raw_chunks = await _parse_doc(docling, cfg.MINIO_BUCKET, path, extension)
+    elif source_type == SourceType.WEB:
+        # read() keys the row by the DB column name ("metadata"); the JSONB value
+        # may arrive as a dict or a JSON string depending on the driver codec.
+        meta = kb_data.get("metadata") or kb_data.get("doc_metadata") or {}
+        if isinstance(meta, str):
+            try:
+                meta = json.loads(meta)
+            except Exception:
+                meta = {}
+        web_url = (meta or {}).get("url", "")
+        if emitter:
+            await emitter.emit("silver.parse.start", {"parser": "trafilatura → Docling", "url": web_url})
+        raw_chunks = await _parse_web(docling, web_url)
     elif source_type in (SourceType.IMAGE, SourceType.VIDEO):
         file_bytes = await minio.download(cfg.MINIO_BUCKET, path)
         log.info("Silver: downloaded %d bytes data_id=%s", len(file_bytes), data_id)

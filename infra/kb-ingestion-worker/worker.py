@@ -26,6 +26,31 @@ from conflict_resolver import fetch_awaiting_conflict, _resolve_conflict
 
 log = logging.getLogger(__name__)
 
+_TERMINAL_EVENTS = ("pipeline.done", "pipeline.error")
+
+
+async def _reset_events_for_new_run(db, data_id: str) -> None:
+    """Drop a prior *completed* run's pipeline events before a new run begins.
+
+    Events accumulate per data_id (the emitter just resumes the seq counter), so a
+    re-promotion leaves the previous run's terminal event (pipeline.done/error)
+    sitting mid-stream. The SSE replay returns at the first terminal it sees, which
+    would otherwise freeze the observer on the stale run when the page is refreshed
+    mid-pipeline. A run is "new" when the latest stored event is a terminal; the
+    silver→gold continuation (silver ends on silver.complete, not a terminal) is
+    left untouched so its single stream stays intact.
+    """
+    try:
+        last = await db["pipeline_events"].find_one(
+            {"data_id": data_id}, sort=[("seq", -1)], projection={"event": 1},
+        )
+        if last and last.get("event") in _TERMINAL_EVENTS:
+            await db["pipeline_events"].delete_many({"data_id": data_id})
+            await db["pipeline_event_seq"].delete_many({"data_id": data_id})
+            log.info("Worker: cleared prior completed-run events for data_id=%s", data_id)
+    except Exception as exc:
+        log.warning("Worker: pipeline-event reset failed data_id=%s: %s", data_id, exc)
+
 
 async def consume_loop(
     consumer: KafkaConsumerClient,
@@ -50,18 +75,20 @@ async def consume_loop(
 
     async def handle_silver(data_id: str, tenant_id: str, approved_by: str) -> None:
         async with silver_sem:
-            # Reset log document on each new attempt so stale failure entries
-            # from previous runs don't replay through the /progress SSE.
+            # Update status/stage but PRESERVE the logs array so the document's
+            # full ingestion history is kept across Bronze→Silver→Gold transitions.
             try:
-                await db["kb_ingestion_logs"].replace_one(
+                await db["kb_ingestion_logs"].update_one(
                     {"data_id": data_id},
-                    {"data_id": data_id, "status": "RUNNING", "stage": "silver",
-                     "logs": [], "updated_at": __import__("datetime").datetime.utcnow()},
+                    {"$set": {"status": "RUNNING", "stage": "silver",
+                              "updated_at": __import__("datetime").datetime.utcnow()},
+                     "$setOnInsert": {"created_at": __import__("datetime").datetime.utcnow()}},
                     upsert=True,
                 )
             except Exception:
                 pass
             await write_log(db, data_id, "RUNNING", "Silver stage started")
+            await _reset_events_for_new_run(db, data_id)
             emitter = await PipelineEventEmitter.create(db, data_id)
             try:
                 await write_log(db, data_id, "CHUNKING", "Parsing document with Docling")
@@ -90,16 +117,20 @@ async def consume_loop(
 
     async def handle_gold(data_id: str, tenant_id: str, approved_by: str) -> None:
         async with gold_sem:
+            # Preserve prior (Silver) log entries — only update status/stage so the
+            # Gold logs append onto the document's existing history.
             try:
-                await db["kb_ingestion_logs"].replace_one(
+                await db["kb_ingestion_logs"].update_one(
                     {"data_id": data_id},
-                    {"data_id": data_id, "status": "GRAPH_EXTRACTING", "stage": "gold",
-                     "logs": [], "updated_at": __import__("datetime").datetime.utcnow()},
+                    {"$set": {"status": "GRAPH_EXTRACTING", "stage": "gold",
+                              "updated_at": __import__("datetime").datetime.utcnow()},
+                     "$setOnInsert": {"created_at": __import__("datetime").datetime.utcnow()}},
                     upsert=True,
                 )
             except Exception:
                 pass
             await write_log(db, data_id, "GRAPH_EXTRACTING", "Gold stage started — extracting entities")
+            await _reset_events_for_new_run(db, data_id)
             emitter = await PipelineEventEmitter.create(db, data_id)
             try:
                 result = await promote_to_gold(

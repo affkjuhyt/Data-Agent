@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 # Hard upper bound on chunk size (chars). Soft lower bound below which a section
 # header will NOT start a new chunk — prevents back-to-back headers (e.g. title +
 # subtitle + section heading) from each emitting a tiny header-only chunk.
-MAX_CHUNK_CHARS: int = 1500
+MAX_CHUNK_CHARS: int = 4000
 MIN_CHUNK_CHARS: int = 200
 
 _converter: DocumentConverter | None = None
@@ -179,7 +179,7 @@ def _iter_chunks(doc, parsed_tables: list[dict | None], max_chars: int) -> Gener
         yield chunk
 
 
-def _run_parse_sync(file_bytes: bytes, extension: str, max_chunk_chars: int = 1500) -> dict:
+def _run_parse_sync(file_bytes: bytes, extension: str, max_chunk_chars: int = MAX_CHUNK_CHARS) -> dict:
     if _converter is None:
         raise RuntimeError("Converter not loaded — call load_converter() first")
     suffix = f".{extension.lstrip('.')}"
@@ -210,11 +210,20 @@ class InlineDoclingParser:
         bucket: str,
         object_key: str,
         extension: str,
-        max_chunk_chars: int = 1500,
+        max_chunk_chars: int = MAX_CHUNK_CHARS,
     ) -> DoclingResult:
         file_bytes = await self._minio.download(bucket, object_key)
         log.info("InlineDocling: downloaded %d bytes key=%s", len(file_bytes), object_key)
+        return await self.parse_bytes(file_bytes, extension, max_chunk_chars)
 
+    async def parse_bytes(
+        self,
+        file_bytes: bytes,
+        extension: str,
+        max_chunk_chars: int = MAX_CHUNK_CHARS,
+    ) -> DoclingResult:
+        """Parse in-memory bytes (no MinIO download). Used by the web path, which
+        fetches + cleans HTML→markdown before handing it to Docling."""
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
             None, _run_parse_sync, file_bytes, extension, max_chunk_chars

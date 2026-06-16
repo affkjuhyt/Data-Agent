@@ -14,12 +14,10 @@ import { APISection } from './APISection';
 import { AdvancedPlatformSection } from './AdvancedPlatformSection';
 import { Placeholder } from '../shared/Placeholder';
 import { Boxes, Code, Flag, ShieldHalf } from 'lucide-react';
-import { useAppState } from '../../AppStateContext';
 
-const SettingsView = () => {
-  const { subTab, setSubTab } = useAppState();
-  const activeSection = (subTab['settings'] as SettingsSection) ?? 'OVERVIEW';
-  const setActiveSection = (s: SettingsSection) => setSubTab('settings', s);
+const SettingsView = ({ initialSection = 'OVERVIEW' }: { initialSection?: SettingsSection }) => {
+  // Settings' own section nav is independent of the module nav.
+  const [activeSection, setActiveSection] = React.useState<SettingsSection>(initialSection);
 
   const renderSection = () => {
     switch (activeSection) {

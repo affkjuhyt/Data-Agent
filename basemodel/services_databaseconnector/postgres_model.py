@@ -146,6 +146,7 @@ class FilterOperator(str, Enum):
     LT  = "lt"
     GTE = "gte"
     LTE = "lte"
+    IN  = "in"   # value is a list — SQL `column IN (...)`. Multi-select filtering.
 
 
 class OrderDirection(str, Enum):

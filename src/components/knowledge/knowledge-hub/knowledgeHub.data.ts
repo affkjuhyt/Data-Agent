@@ -125,7 +125,8 @@ export interface Chunk {
 export interface QdrantCollection {
   id: string;
   name: string;
-  points: number;
+  points: number;          // scoped to the current tenant
+  total_points?: number;   // all tenants (context)
   active: boolean;
   dimensions: number;
   distance: string;
@@ -142,10 +143,35 @@ export interface QdrantPoint {
 }
 
 /* ─── Neo4j graph types ──────────────────────────────────────────── */
-export interface GraphNode { id: string; name: string; description?: string; }
+export interface GraphNode { id: string; name: string; description?: string; type?: string | null; }
 export interface GraphEdge { from: string; to: string; description?: string; score?: number; }
 export interface LayoutNode { id: string; x: number; y: number; r: number; label: string; core: boolean; }
 export interface Neo4jSchema { entities: string[]; connections: Record<string, string[]>; }
+
+/* ─── Node colouring by type ─────────────────────────────────────── */
+/* Fixed colours for the known entity labels; anything else gets a stable
+ * colour hashed from its name so every distinct type still reads differently. */
+export const NODE_TYPE_COLORS: Record<string, string> = {
+  Person:        '#F2C14E',
+  Organization:  '#5BA8F5',
+  Location:      '#5BD6A0',
+  Event:         '#E87D7D',
+  Concept:       '#B98AE6',
+  LawDocument:   '#F29D52',
+  SystemProduct: '#4FD0D6',
+  TimePeriod:    '#D6CF5B',
+  Entity:        '#9AA4B2',
+};
+
+const _FALLBACK_PALETTE = ['#7FB3D5', '#76D7C4', '#F1948A', '#BB8FCE', '#F8C471', '#73C6B6', '#E59866', '#85C1E9'];
+
+export const nodeColor = (type?: string | null): string => {
+  if (!type) return '#B88719';
+  if (NODE_TYPE_COLORS[type]) return NODE_TYPE_COLORS[type];
+  let h = 0;
+  for (let i = 0; i < type.length; i++) h = (h * 31 + type.charCodeAt(i)) >>> 0;
+  return _FALLBACK_PALETTE[h % _FALLBACK_PALETTE.length];
+};
 
 export function computeGraphLayout(
   nodes: GraphNode[],
@@ -197,15 +223,34 @@ export interface QueryStep { id: string; relationship: string; nodeType: string;
 export const AVAILABLE_NODES = ['Person','Organization','Location','Policy','Contract','Regulation','Product','Department','Event','Agreement'];
 export const AVAILABLE_RELS  = ['WORKS_FOR','GOVERNED_BY','LOCATED_IN','PART_OF','REFERENCES','COMPLIES_WITH','CAUSES','RELATED_TO','SUPERSEDES','AUTHORIZED_BY'];
 
-export const buildCypher = (startNode: string, steps: QueryStep[]): string => {
-  let c = `MATCH (a:${startNode})`;
-  const r = ['a'];
+/**
+ * `startNode` / step targets are node LABELS (entity types), not names, and the
+ * graph uses many different relationship types — so we match on any relationship
+ * (`-[r]-`, undirected) instead of a hard-coded type. With no steps we pull the
+ * chosen type's immediate neighbourhood so the canvas always shows a connected
+ * subgraph. Every query is capped so the backend never returns more than `max`.
+ */
+export const buildCypher = (startNode: string, steps: QueryStep[], max = 200): string => {
+  if (!startNode) return '';
+  // Every matched node is scoped to the caller's tenant via the $tenant_id param
+  // (supplied by the backend) — same scoping the full-graph endpoint applies.
+  if (steps.length === 0) {
+    return `MATCH (a:${startNode})\nWHERE a.tenant_id = $tenant_id\n`
+         + `OPTIONAL MATCH (a)-[r]-(b) WHERE b.tenant_id = $tenant_id\n`
+         + `RETURN a, r, b\nLIMIT ${max}`;
+  }
+  let pattern = `(a:${startNode})`;
+  const vars = ['a'];
+  const tenantPreds = ['a.tenant_id = $tenant_id'];
   steps.forEach((s, i) => {
-    const v = String.fromCharCode(98 + i);
-    c += `-[:${s.relationship}]->(${v}:${s.nodeType})`;
-    r.push(v);
+    const v = String.fromCharCode(98 + i); // b, c, d, …
+    pattern += `-[r${i}]-(${v}:${s.nodeType})`;
+    // Return the relationship vars too — result.graph() only includes edges that
+    // are actually returned, so omitting them yields nodes with no links.
+    vars.push(`r${i}`, v);
+    tenantPreds.push(`${v}.tenant_id = $tenant_id`);
   });
-  return c + `\nRETURN ${r.join(', ')}`;
+  return `MATCH ${pattern}\nWHERE ${tenantPreds.join(' AND ')}\nRETURN ${vars.join(', ')}\nLIMIT ${max}`;
 };
 
 /**
@@ -225,6 +270,46 @@ export function traverseSubgraph(
 
   const exact = nodes.filter(n => (n.name ?? '').toLowerCase() === want);
   const seeds = exact.length ? exact : nodes.filter(n => (n.name ?? '').toLowerCase().includes(want));
+  if (!seeds.length) return { nodes: [], edges: [] };
+
+  const adj = new Map<string, GraphEdge[]>();
+  for (const e of edges) {
+    (adj.get(e.from) ?? adj.set(e.from, []).get(e.from)!).push(e);
+    (adj.get(e.to) ?? adj.set(e.to, []).get(e.to)!).push(e);
+  }
+
+  const keep = new Set(seeds.map(n => n.id));
+  let frontier = [...keep];
+  for (let d = 0; d < Math.max(hops, 1); d++) {
+    const next: string[] = [];
+    for (const id of frontier) {
+      for (const e of adj.get(id) ?? []) {
+        const other = e.from === id ? e.to : e.from;
+        if (!keep.has(other)) { keep.add(other); next.push(other); }
+      }
+    }
+    frontier = next;
+  }
+
+  return {
+    nodes: nodes.filter(n => keep.has(n.id)),
+    edges: edges.filter(e => keep.has(e.from) && keep.has(e.to)),
+  };
+}
+
+/**
+ * Offline fallback for the query builder: the builder's start node is an entity
+ * TYPE (label), so seed from every node of that type and expand `hops` steps.
+ * Used only when the backend can't run the generated Cypher (Neo4j offline).
+ */
+export function subgraphByType(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  type: string,
+  hops: number,
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+  const want = type.trim().toLowerCase();
+  const seeds = nodes.filter(n => (n.type ?? '').toLowerCase() === want);
   if (!seeds.length) return { nodes: [], edges: [] };
 
   const adj = new Map<string, GraphEdge[]>();

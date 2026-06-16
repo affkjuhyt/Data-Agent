@@ -1,20 +1,14 @@
 import React, { useEffect } from 'react';
 import { AppStateProvider, useAppState } from './AppStateContext';
 import { AppLayout } from './components/Layout';
-import KnowledgeOpsCenter from './components/knowledge/KnowledgeOpsCenter';
-import AIRuntimeCenter from './components/agent-builder/AIRuntimeCenter';
-import SettingsView from './components/Settings/Overview';
+import { Placeholder } from './components/shared/Placeholder';
 import IngestionProgressOverlay from './components/shared/IngestionProgressOverlay';
+import { ROUTE_MAP } from './routes';
+import { MODULE_SUB_ITEMS } from './constants';
 import { setApiContext } from './lib/mockApi';
 
-const Placeholder = ({ module }: { module: string }) => (
-  <div className="h-full flex items-center justify-center text-[#5F5F5F] font-display italic">
-    Module &quot;{module}&quot; is under construction...
-  </div>
-);
-
 function AppContent() {
-  const { activeModule, setActiveModule, user } = useAppState();
+  const { activeModule, setActiveModule, subTab, user } = useAppState();
 
   // Initialize API context with user/role info
   useEffect(() => {
@@ -26,16 +20,22 @@ function AppContent() {
   }, [user.role, user.id]);
 
   const renderView = () => {
-    switch (activeModule) {
-      case 'knowledge-ops':
-        return <KnowledgeOpsCenter />;
-      case 'ai-runtime':
-        return <AIRuntimeCenter />;
-      case 'settings':
-        return <SettingsView />;
-      default:
-        return <Placeholder module={activeModule} />;
+    const subItems = MODULE_SUB_ITEMS[activeModule] ?? [];
+    const activeSub = subTab[activeModule] ?? subItems[0]?.id;
+    const entry = activeSub ? ROUTE_MAP[activeModule]?.[activeSub] : undefined;
+
+    if (!entry) {
+      return (
+        <Placeholder
+          title="Not available"
+          description="This area isn't available yet. Pick another item from the menu."
+        />
+      );
     }
+    if ('comingSoon' in entry) {
+      return <Placeholder {...entry.comingSoon} />;
+    }
+    return <>{entry.render()}</>;
   };
 
   return (

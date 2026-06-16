@@ -532,6 +532,23 @@
   gap: 8px;
 }
 
+/* ─── Dark Hero Header band ───────────────────────────── */
+.hero-band {
+  background: radial-gradient(120% 140% at 0% 0%, #2a2113 0%, #161616 45%, #0e0e0e 100%);
+  border: 1px solid #3a2f17;
+  border-radius: 22px;
+  padding: 24px 28px;
+  position: relative;
+  overflow: hidden;
+}
+.hero-band::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 60%, rgba(184,135,25,0.10) 100%);
+  pointer-events: none;
+}
+
 /* ─── Card System ─────────────────────────────────────── */
 .content-card {
   background: #FFFFFF;

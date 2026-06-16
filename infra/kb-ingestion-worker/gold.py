@@ -38,7 +38,8 @@ import entity_registry
 from neo4j import AsyncDriver
 from qdrant_client import models as qmodels
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
-from sqlalchemy import update as sa_update
+from sqlalchemy import cast as sa_cast, func as sa_func, update as sa_update
+from sqlalchemy.dialects.postgresql import JSONB
 
 from basemodel.services_databaseconnector.postgres_model import (
     ConflictSeverity,
@@ -56,6 +57,7 @@ from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import
     KBTextBlockVersionORM,
     KBTextTableORM,
     KBQdrantCollectionORM,
+    KBConflictBatchORM,
 )
 from basemodel.services_databaseconnector.qdrant_model import (
     SearchRequest,
@@ -468,6 +470,34 @@ true). Thực thể liên quan nhưng KHÁC nhau là false: hai quốc gia khác
 ~ "Đại học Quốc gia TP.HCM" → false).
 Chỉ trả JSON: {"same":true} hoặc {"same":false}."""
 
+_CONFLICT_SYSTEM_VI = """\
+So sánh hai bản tóm tắt tri thức (có thể bằng tiếng Việt hoặc tiếng Anh).
+Quyết định xem có xung đột (conflict) hay không.
+Các loại xung đột và khi nào dùng:
+- content_duplicate: hai bản mô tả CÙNG một thông tin hoặc gần như giống hệt nhau
+- content_contradiction: hai bản đưa ra các khẳng định TRÁI NGƯỢC nhau về dữ kiện
+- content_conflict: hai bản nêu chi tiết KHÁC nhau hoặc không tương thích về cùng chủ đề
+- content_update: bản đến là phiên bản MỚI HƠN / đã chỉnh sửa của bản hiện có
+Mức độ (severity): low (trùng lặp/nhỏ), medium (xung đột), high (mâu thuẫn).
+
+Ví dụ (Hiện có ↔ Đến → kết quả):
+- content_duplicate: "Hà Nội là thủ đô của Việt Nam." ↔ "Thủ đô của Việt Nam là Hà Nội."
+  → has_conflict: true, content_duplicate, low
+- content_contradiction: "Công ty báo LÃI trong quý 2/2023." ↔ "Công ty báo LỖ trong quý 2/2023."
+  → has_conflict: true, content_contradiction, high
+- content_conflict: "Dự án khởi công năm 2018 với vốn 500 tỷ đồng." ↔ "Dự án khởi công năm 2019 với vốn 700 tỷ đồng."
+  → has_conflict: true, content_conflict, medium
+- content_update: "Lương tối thiểu vùng I là 4,42 triệu đồng (2022)." ↔ "Từ 01/7/2024, lương tối thiểu vùng I là 4,96 triệu đồng."
+  → has_conflict: true, content_update, medium
+- KHÔNG xung đột: "Hà Nội là thủ đô của Việt Nam." ↔ "Đà Nẵng là thành phố ven biển miền Trung Việt Nam."
+  → has_conflict: false (hai chủ đề khác nhau, bổ sung cho nhau)
+
+Chỉ đặt has_conflict: true khi thực sự rơi vào MỘT trong các loại trên. Nếu hai bản
+nói về chủ đề khác nhau, hoặc bổ sung cho nhau mà không đối nghịch, thì has_conflict: false.
+Nếu hai bản truyền đạt cùng một thông tin thì has_conflict: true với content_duplicate.
+Chỉ trả về một đối tượng JSON với các khóa: has_conflict (bool), conflict_type (string),
+severity (string), explanation (giải thích NGẮN bằng tiếng Việt, tối đa 20 từ)."""
+
 
 _PROMPTS_BY_LANG: dict[str, dict[str, str]] = {
     "en": {
@@ -482,7 +512,7 @@ _PROMPTS_BY_LANG: dict[str, dict[str, str]] = {
         "doc-reduce":   _DOC_REDUCE_SYSTEM_VI,
         "doc-entity":   _DOC_ENTITY_SYSTEM_VI,
         "relationship": _RELATIONSHIP_SYSTEM_VI,
-        "conflict":     _CONFLICT_SYSTEM,   # conflict compare stays English (short, structural)
+        "conflict":     _CONFLICT_SYSTEM_VI,
         "alias-verify": _ALIAS_VERIFY_SYSTEM_VI,
         "merge-verify": _MERGE_VERIFY_SYSTEM_VI,
     },
@@ -879,9 +909,16 @@ async def _get_collection_embed_model_id(
     return cfg.EMBED_MODEL_ID
 
 
+# Unscoped documents (no knowledge_base_id) are labelled with this default bucket
+# so the knowledge_base field is never blank on points / nodes. Keep in sync with
+# migrate_kb_schema.DEFAULT_KB.
+DEFAULT_KNOWLEDGE_BASE = "General Knowledge Base"
+
+
 async def _get_data_row(postgres: PostgresClient, data_id: str) -> tuple[str, str]:
-    """Return (document_name, knowledge_base_id) for the KBData document.
-    knowledge_base '' means unscoped. Name '' if the row is missing."""
+    """Return (document_name, knowledge_base) for the KBData document.
+    An unscoped document (null knowledge_base_id) resolves to the default bucket
+    DEFAULT_KNOWLEDGE_BASE. Name '' if the row is missing."""
     try:
         async with postgres.get_client() as session:
             row = (await session.execute(
@@ -890,10 +927,10 @@ async def _get_data_row(postgres: PostgresClient, data_id: str) -> tuple[str, st
                 .limit(1)
             )).first()
         if row:
-            return str(row[0] or ""), str(row[1]) if row[1] else ""
+            return str(row[0] or ""), (str(row[1]) if row[1] else DEFAULT_KNOWLEDGE_BASE)
     except Exception as exc:
         log.warning("Gold: could not resolve KBData row for data_id=%s: %s", data_id, exc)
-    return "", ""
+    return "", DEFAULT_KNOWLEDGE_BASE
 
 
 # ── Neo4j document-level commit ───────────────────────────────────────────────
@@ -902,20 +939,26 @@ async def _neo4j_commit_document(
     neo4j: AsyncDriver,
     tenant_id: str,
     data_id: str,
-    entity_data: list[tuple[str, str, str, list[str], str, list[float]]],
+    entity_data: list[tuple[str, str, str, str, list[float]]],
     relationships: list[dict],
     embed_model_id: str,
     knowledge_base: str = "",
 ) -> None:
     """Commit the document's entities and relationships.
 
-    entity_data: (canonical, display_name, description, aliases, entity_type, vector).
-    Entity nodes are keyed by (name, tenant_id, knowledge_base) and SHARED across
-    documents in the KB — cross-document linking is the graph's whole job. Each
-    node accumulates the data_ids that mention it (provenance) and the alias
-    surface forms (Vietnamese synonyms stay queryable). display_name keeps the
-    original casing and diacritics for UI rendering — the canonical key is
-    lowercased but never stripped of diacritics.
+    entity_data: (canonical, display_name, description, entity_type, vector).
+    Entity nodes are keyed by (canonical_name, tenant_id, knowledge_base) and
+    SHARED across documents in the KB — cross-document linking is the graph's
+    whole job. display_name keeps the original casing and diacritics for UI
+    rendering — the canonical key is lowercased but never stripped of diacritics.
+
+    The node stores only the spec fields {canonical_name, display_name,
+    description, embedding_model_id, tenant_id, knowledge_base, vector} plus
+    entity_type. It deliberately does NOT keep per-document provenance
+    (data_ids) — many documents mention the same entity and that list grows
+    unbounded — nor an alias list (aliases live in the Postgres KBEntityLookup
+    table and the entity_registry Qdrant payload). Orphan cleanup on document
+    removal is therefore edge-based (see _neo4j_remove_document).
 
     entity_type is metadata, NOT identity: stored as a property + a secondary
     label (:Entity:Person etc.) so the same real-world entity mis-typed by the
@@ -925,25 +968,20 @@ async def _neo4j_commit_document(
     asserts an edge once, and re-processing never duplicates it.
     """
     async with neo4j.session() as session:
-        for canonical, display, description, aliases, etype, vector in entity_data:
+        for canonical, display, description, etype, vector in entity_data:
             result = await session.run(
-                "MERGE (n:Entity {name: $name, tenant_id: $tid, knowledge_base: $kb}) "
+                "MERGE (n:Entity {canonical_name: $name, tenant_id: $tid, knowledge_base: $kb}) "
                 "SET n.description = CASE WHEN $desc <> '' THEN $desc ELSE coalesce(n.description, '') END, "
                 "    n.display_name = coalesce(n.display_name, $display), "
                 "    n.vector = $vec, "
                 "    n.embedding_model_id = $emid, "
-                "    n.aliases = reduce(acc = [], a IN coalesce(n.aliases, []) + $aliases | "
-                "                       CASE WHEN a IN acc THEN acc ELSE acc + a END), "
-                "    n.data_ids = CASE WHEN $did IN coalesce(n.data_ids, []) "
-                "                      THEN n.data_ids ELSE coalesce(n.data_ids, []) + $did END, "
                 # Existing specific type wins; only NULL or the 'concept' fallback upgrades.
                 "    n.entity_type = CASE WHEN n.entity_type IS NULL OR n.entity_type = 'concept' "
                 "                         THEN $etype ELSE n.entity_type END "
                 "RETURN n.entity_type AS effective_type",
                 name=canonical, tid=tenant_id, kb=knowledge_base,
                 desc=description, display=display, vec=vector,
-                emid=embed_model_id, aliases=aliases, did=data_id,
-                etype=etype,
+                emid=embed_model_id, etype=etype,
             )
             record = await result.single()
             effective = _to_entity_type(record["effective_type"] if record else etype)
@@ -952,7 +990,7 @@ async def _neo4j_commit_document(
             label = ENTITY_TYPE_LABELS[effective]
             others = " ".join(f"REMOVE n:{l}" for l in ENTITY_TYPE_LABELS.values() if l != label)
             result = await session.run(
-                f"MATCH (n:Entity {{name: $name, tenant_id: $tid, knowledge_base: $kb}}) "
+                f"MATCH (n:Entity {{canonical_name: $name, tenant_id: $tid, knowledge_base: $kb}}) "
                 f"SET n:{label} {others}",
                 name=canonical, tid=tenant_id, kb=knowledge_base,
             )
@@ -964,8 +1002,8 @@ async def _neo4j_commit_document(
             if not from_e or not to_e:
                 continue
             result = await session.run(
-                "MATCH (a:Entity {name: $from_e, tenant_id: $tid, knowledge_base: $kb}) "
-                "MATCH (b:Entity {name: $to_e,   tenant_id: $tid, knowledge_base: $kb}) "
+                "MATCH (a:Entity {canonical_name: $from_e, tenant_id: $tid, knowledge_base: $kb}) "
+                "MATCH (b:Entity {canonical_name: $to_e,   tenant_id: $tid, knowledge_base: $kb}) "
                 "MERGE (a)-[r:RELATES {rel_type: $rtype, data_id: $did, "
                 "                      tenant_id: $tid,  knowledge_base: $kb}]->(b) "
                 "SET r.score = $score",
@@ -982,9 +1020,14 @@ async def _neo4j_remove_document(
     data_id: str,
     knowledge_base: str = "",
 ) -> None:
-    """Remove one document's contribution from the graph: its edges, its data_id
-    provenance, and any entity node it alone introduced (no edges left, no other
-    document's data_id). Nodes referenced by other documents survive."""
+    """Remove one document's contribution from the graph.
+
+    Provenance is no longer stored per node (data_ids would grow unbounded as
+    more documents mention an entity), so cleanup is EDGE-based: delete this
+    document's :RELATES edges, then delete any entity node left with no edges at
+    all. An edgeless entity node is retrieval-inert — graph_expand reaches and
+    seeds nodes only through :RELATES edges — so pruning it loses nothing for
+    retrieval while keeping the graph from accumulating dangling nodes."""
     try:
         async with neo4j.session() as session:
             result = await session.run(
@@ -995,17 +1038,7 @@ async def _neo4j_remove_document(
 
             result = await session.run(
                 "MATCH (n:Entity {tenant_id: $tid, knowledge_base: $kb}) "
-                "WHERE $did IN coalesce(n.data_ids, []) "
-                "SET n.data_ids = [x IN n.data_ids WHERE x <> $did]",
-                tid=tenant_id, kb=knowledge_base, did=data_id,
-            )
-            await result.consume()
-
-            # Only nodes that carry a (now empty) data_ids list are eligible —
-            # legacy nodes without provenance are never deleted here.
-            result = await session.run(
-                "MATCH (n:Entity {tenant_id: $tid, knowledge_base: $kb}) "
-                "WHERE NOT (n)--() AND n.data_ids IS NOT NULL AND size(n.data_ids) = 0 "
+                "WHERE NOT (n)--() "
                 "DELETE n",
                 tid=tenant_id, kb=knowledge_base,
             )
@@ -1076,7 +1109,6 @@ async def _commit_chunk_atomic(
     table: dict | None,
     payload_meta: dict,
     embedding: list[float],
-    intents: list[str],
     summary: str,
     approved_by: str,
     embed_model_id: str,
@@ -1137,7 +1169,9 @@ async def _commit_chunk_atomic(
                                 "data_id":            data_id,
                                 "block_id":           block_id,
                                 "summary":            summary,
-                                "intents":            intents,
+                                # entities are back-stamped per document once
+                                # canonicalization finishes (see Phase 6a); intents
+                                # live on the doc-summary point, not the chunk.
                                 "embedding_model_id": embed_model_id,
                                 "knowledge_base":     knowledge_base,
                                 "is_deleted":         False,
@@ -1236,11 +1270,27 @@ async def promote_to_gold(
 
     committed_count  = 0
     conflicted_count = 0
+    pending_conflict_count = 0   # conflicts that still need human resolution (excludes auto-resolved duplicates)
     failed_count     = 0
     skipped_count    = 0
-    conflict_batch_id: str | None = None
     committed_summaries: list[str] = []   # document order — feeds the reduce step
     intent_counter: Counter[str] = Counter()
+
+    # One batch per gold pipeline run for this document — created upfront so the
+    # batch row IS the unit of work for the document's promotion, whether or not
+    # any conflict is detected. Status is reconciled at the end (Phase 7): it
+    # stays PENDING only if real (non-duplicate) conflicts await resolution,
+    # otherwise it's marked RESOLVED so clean runs don't linger as pending.
+    conflict_batch_id: str | None = None
+    batch_res = await postgres.insert(KBConflictBatchInsert(
+        tenant_id=tenant_id,
+        batch_title=f"Gold pipeline · {doc_name or data_id}",
+        status=ConflictStatus.PENDING,
+    ))
+    if batch_res.code == 200:
+        conflict_batch_id = batch_res.data["batch_id"]
+    else:
+        log.warning("Gold: conflict batch creation failed data_id=%s code=%s", data_id, batch_res.code)
 
     # ── Phase 1: per-chunk embed → conflict check → commit ────────────────────
     for chunk in chunks:
@@ -1279,7 +1329,7 @@ async def promote_to_gold(
                 tenant_id=tenant_id,
                 collection_name=cfg.QDRANT_COLLECTION,
                 query_vector=embedding,
-                limit=5,
+                limit=1,
                 knowledge_base=knowledge_base or None,
             ))
 
@@ -1295,36 +1345,15 @@ async def promote_to_gold(
                 })
 
             conflict_found = False
+            # Top-1 candidate only. If it clears the similarity floor, the LLM
+            # decides whether it is genuinely a conflict — nothing is auto-resolved,
+            # so every confirmed conflict (duplicates included) surfaces as PENDING.
             for hit in hits:
                 if hit.score < cfg.CONFLICT_SIMILARITY_THRESHOLD:
                     continue
                 existing_summary = (hit.payload or {}).get("summary", "")
-
-                # Near-identical vector → content_duplicate without LLM call.
-                if hit.score >= cfg.DUPLICATE_SIMILARITY_THRESHOLD:
-                    conflict_result = {
-                        "has_conflict":  True,
-                        "conflict_type": ConflictType.CONTENT_DUPLICATE.value,
-                        "severity":      ConflictSeverity.LOW.value,
-                        "explanation":   f"Near-identical content (similarity={hit.score:.3f})",
-                    }
-                    conflict_raw = "shortcut:near-duplicate"
-                    log.info(
-                        "Gold: near-duplicate shortcut block_index=%d score=%.4f — skipping LLM",
-                        block_index, hit.score,
-                    )
-                else:
-                    conflict_result, conflict_raw = await _detect_conflict(existing_summary, summary)
+                conflict_result, conflict_raw = await _detect_conflict(existing_summary, summary)
                 if conflict_result.get("has_conflict"):
-                    if conflict_batch_id is None:
-                        batch_res = await postgres.insert(KBConflictBatchInsert(
-                            tenant_id=tenant_id,
-                            batch_title=f"Conflict batch for data {data_id}",
-                            status=ConflictStatus.PENDING,
-                        ))
-                        if batch_res.code == 200:
-                            conflict_batch_id = batch_res.data["batch_id"]
-
                     raw_type     = conflict_result.get("conflict_type", ConflictType.CONTENT_CONFLICT.value)
                     raw_severity = conflict_result.get("severity", ConflictSeverity.MEDIUM.value)
                     try:
@@ -1336,13 +1365,12 @@ async def promote_to_gold(
                     except ValueError:
                         severity_enum = ConflictSeverity.MEDIUM
 
-                    is_duplicate = conflict_type_enum == ConflictType.CONTENT_DUPLICATE
                     await postgres.insert(KBConflictInsert(
                         tenant_id=tenant_id,
                         conflict_type=conflict_type_enum,
                         severity=severity_enum,
                         batch_id=conflict_batch_id,
-                        status=ConflictStatus.RESOLVED if is_duplicate else ConflictStatus.PENDING,
+                        status=ConflictStatus.PENDING,
                         detailed_explanation=conflict_result.get("explanation", ""),
                         existing_snapshot={
                             "block_id": str(hit.id),
@@ -1365,6 +1393,7 @@ async def promote_to_gold(
                     ))
                     conflict_found = True
                     conflicted_count += 1
+                    pending_conflict_count += 1
 
                     if emitter:
                         await emitter.emit("gold.conflict.found", {
@@ -1394,9 +1423,11 @@ async def promote_to_gold(
                 continue
 
             # ── Atomic commit (Postgres + Qdrant) ─────────────────────────────
+            # `entities` is added to the version payload per-document in Phase 6a
+            # (doc-level extraction) — mirroring the chunk Qdrant point. intents are
+            # now a DOCUMENT-level field (KBData.doc_metadata), not per-chunk.
             payload_meta = {
                 "summary":            summary,
-                "intents":            intents,
                 "embedding_model_id": embed_model_id,
                 "knowledge_base":     knowledge_base,
             }
@@ -1412,7 +1443,6 @@ async def promote_to_gold(
                 table=table,
                 payload_meta=payload_meta,
                 embedding=embedding,
-                intents=intents,
                 summary=summary,
                 approved_by=approved_by,
                 embed_model_id=embed_model_id,
@@ -1438,6 +1468,10 @@ async def promote_to_gold(
                     "index": block_index,
                     "error": str(exc)[:300],
                 })
+
+    # Document-level intents = the most common chunk intents. Mirrors the doc
+    # point's `intents` and is persisted on KBData.doc_metadata in Phase 7.
+    top_intents = [i for i, _ in intent_counter.most_common(5)]
 
     # ── Phases 2–6: document rollup → extraction → graph → doc point ──────────
     # Any failure here propagates: chunks stay committed, but the doc-summary
@@ -1469,6 +1503,7 @@ async def promote_to_gold(
         canonical_names, canon_details = await entity_registry.normalize_entities_detailed(
             qdrant, postgres, model, tenant_id, raw_entities,
             verify_fn=verify_merge_pair,
+            knowledge_base=knowledge_base, embed_model_id=embed_model_id,
         )
         if emitter:
             await emitter.emit("gold.canonicalize", {"mappings": canon_details})
@@ -1477,7 +1512,6 @@ async def promote_to_gold(
         raw_to_canonical: dict[str, str] = {}
         display_by_canonical: dict[str, str] = {}
         desc_by_canonical: dict[str, str] = {}
-        aliases_by_canonical: dict[str, list[str]] = {}
         type_by_canonical: dict[str, str] = {}
         for detail in canon_details:
             can = detail["canonical"]
@@ -1488,7 +1522,6 @@ async def promote_to_gold(
             can = raw_to_canonical.get(_fold(raw_ent["name"]))
             if can:
                 desc_by_canonical.setdefault(can, raw_ent["description"])
-                aliases_by_canonical.setdefault(can, raw_ent["aliases"])
                 type_by_canonical.setdefault(can, raw_ent.get("type", "concept"))
 
         remapped_rels: list[dict] = []
@@ -1508,12 +1541,11 @@ async def promote_to_gold(
         doc_embedding  = vectors[0]
         entity_vectors = vectors[1:]
 
-        entity_data: list[tuple[str, str, str, list[str], str, list[float]]] = [
+        entity_data: list[tuple[str, str, str, str, list[float]]] = [
             (
                 can,
                 display_by_canonical.get(can, can),
                 desc_by_canonical.get(can, ""),
-                aliases_by_canonical.get(can, []),
                 type_by_canonical.get(can, "concept"),
                 vec,
             )
@@ -1554,10 +1586,35 @@ async def promote_to_gold(
         except Exception as exc:
             log.warning("Gold: entity back-stamp on chunk points failed data_id=%s: %s", data_id, exc)
 
+        # Mirror the entity back-stamp into Postgres: each chunk's ACTIVE version
+        # payload gets the document's canonical entities (jsonb merge). Same list
+        # as the Qdrant chunk point, so the Postgres view stays in sync.
+        try:
+            block_ids_subq = (
+                sa_select(KBTextBlockORM.block_id)
+                .where(KBTextBlockORM.owner_id == uuid.UUID(data_id))
+            )
+            async with postgres.get_client() as session:
+                await session.execute(
+                    sa_update(KBTextBlockVersionORM)
+                    .where(KBTextBlockVersionORM.block_id.in_(block_ids_subq))
+                    .where(KBTextBlockVersionORM.is_active.is_(True))
+                    # Pass the dict straight to the JSONB cast — the type's bind
+                    # processor json-encodes it ONCE. Pre-calling json.dumps here
+                    # double-encodes it into a JSON *string* scalar, and
+                    # `object || "stringified"` concatenates into an array rather
+                    # than merging, corrupting every chunk version payload.
+                    .values(payload=sa_func.coalesce(
+                        KBTextBlockVersionORM.payload, sa_cast({}, JSONB)
+                    ).op("||")(sa_cast({"entities": canonical_names}, JSONB)))
+                )
+                await session.commit()
+        except Exception as exc:
+            log.warning("Gold: entity back-stamp on text-block versions failed data_id=%s: %s", data_id, exc)
+
         # Phase 6b: doc-summary point — written LAST. This is what makes the
         # document visible to step-1 retrieval; everything before it can be
         # retried invisibly.
-        top_intents = [i for i, _ in intent_counter.most_common(5)]
         try:
             await qdrant.upsert(
                 collection_name=cfg.QDRANT_DOC_COLLECTION,
@@ -1567,10 +1624,10 @@ async def promote_to_gold(
                     payload={
                         "tenant_id":          tenant_id,
                         "data_id":            data_id,
-                        "name":               doc_name,
                         "summary":            doc_summary,
-                        "entities":           canonical_names,
-                        **entities_by_type_fields(type_by_canonical, canonical_names),
+                        # The doc point is the entry point for step-1 retrieval and
+                        # is now narrowed by INTENT (chunks carry the entities). No
+                        # entity / ent_* fields live here anymore.
                         "intents":            top_intents,
                         "chunk_count":        committed_count,
                         "embedding_model_id": embed_model_id,
@@ -1598,14 +1655,43 @@ async def promote_to_gold(
             data_id,
         )
 
-    # ── Phase 7: update document tier ─────────────────────────────────────────
+    # ── Phase 7: update document tier + stamp document-level intents ──────────
+    # intents live on the document row (KBData.doc_metadata) — a document concept
+    # mirroring the doc-summary Qdrant point. jsonb merge preserves {type: ...}.
     async with postgres.get_client() as session:
         await session.execute(
             sa_update(KBDataORM)
             .where(KBDataORM.data_id == uuid.UUID(data_id))
-            .values(current_tier=Tier.GOLD.value)
+            .values(
+                current_tier=Tier.GOLD.value,
+                # Pass the dict to the JSONB cast directly (encoded once by the
+                # type). json.dumps here would double-encode into a string scalar,
+                # turning the merge into array concat and corrupting doc_metadata.
+                doc_metadata=sa_func.coalesce(
+                    KBDataORM.doc_metadata, sa_cast({}, JSONB)
+                ).op("||")(sa_cast({"intents": top_intents}, JSONB)),
+            )
         )
         await session.commit()
+
+    # Reconcile this run's batch status: PENDING only while real (non-duplicate)
+    # conflicts await human resolution; otherwise the run is clean → RESOLVED.
+    # Keeps the batch row's status meaningful now that every document gets one.
+    if conflict_batch_id is not None:
+        final_batch_status = (
+            ConflictStatus.PENDING.value if pending_conflict_count > 0
+            else ConflictStatus.RESOLVED.value
+        )
+        try:
+            async with postgres.get_client() as session:
+                await session.execute(
+                    sa_update(KBConflictBatchORM)
+                    .where(KBConflictBatchORM.batch_id == uuid.UUID(conflict_batch_id))
+                    .values(status=final_batch_status)
+                )
+                await session.commit()
+        except Exception as exc:
+            log.warning("Gold: batch status reconcile failed batch_id=%s: %s", conflict_batch_id, exc)
 
     await postgres.insert(KBLifecycleHistoryInsert(
         data_id=data_id,

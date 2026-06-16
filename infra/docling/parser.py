@@ -20,7 +20,7 @@ from docling_core.types.doc import PictureItem, SectionHeaderItem, TableItem, Te
 
 log = logging.getLogger(__name__)
 
-MAX_CHUNK_CHARS: int = 1500
+MAX_CHUNK_CHARS: int = 4000
 _converter: DocumentConverter | None = None
 _use_vlm: bool = False
 
