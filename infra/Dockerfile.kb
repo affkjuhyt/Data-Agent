@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY services/backend/requirements.txt ./
+COPY services/kb_backend/requirements.txt ./
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 
@@ -76,11 +76,11 @@ USER kb
 
 EXPOSE 8000
 
-# Probe the /health endpoint added to services/backend/main.py
+# Probe the /health endpoint added to services/kb_backend/main.py
 HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
 
-CMD ["uvicorn", "services.backend.main:app", \
+CMD ["uvicorn", "services.kb_backend.main:app", \
      "--host", "0.0.0.0", \
      "--port", "8000", \
      "--workers", "1", \
