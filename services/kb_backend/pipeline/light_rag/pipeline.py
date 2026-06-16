@@ -4,16 +4,21 @@ LightRAG Retrieval Pipeline
 All step functions + orchestrator in one file.
 Clients are injected — no module-level singletons.
 
-Pipeline flow:
-  1.  canonicalize     — Llama3 via LiteLLM → {intent, entities, relationships}
+Pipeline flow (steps in [] are env-gated):
+  1.  embed_query      — model-service /embed
   2.  cache_lookup     — Qdrant semantic cache → early return on hit
-  3.  qdrant_search    — Pass 1: entity filter (any), LIMIT=3
-  4.  rank_entities    — score entities from pass1 by frequency × relevance
-  5.  graph_expand     — Neo4j: top-N entities → related entity names (tenant-filtered)
-  6.  qdrant_search    — Pass 2: expanded Neo4j entities (any), LIMIT=2
-  7.  rrf_merge        — pass1 + pass2 → top 10
-  8.  rerank           — cross-encoder on summaries → top 5
-  9.  hydrate          — fetch actual chunk text + source info from Postgres (active version)
+  3.  canonicalize     — LLM via the model-service gateway (/generate, env-routed
+                         local/remote) → {intent, intents, entities, relationships}
+  3b. [alias_resolve]  — map query entities through the learned KBEntityLookup table
+  4.  qdrant_search    — Pass 1: entity filter (any) on the chunk collection
+  4b. [doc_narrow]     — top-m docs from the doc collection by intent → chunk filter
+  5.  rank_entities    — score pass-1 entities by frequency × relevance
+  6.  graph_expand     — Neo4j: top-N entities → related entity names (tenant-filtered)
+  7.  qdrant_search    — Pass 2: expanded Neo4j entities; [typed_pass] on ent_<type>
+  8.  rrf_merge        — fuse pass1 + pass2 + typed + doc lists
+  9.  rerank           — cross-encoder on summaries (model-service /rerank)
+  10. hydrate          — fetch active chunk text + source from Postgres
+  11. cache_store      — cache the post-rerank block_ids for near-identical queries
 """
 from __future__ import annotations
 
@@ -143,11 +148,6 @@ async def canonicalize(model: ModelServiceClient, query: str) -> dict:
     }
 
 
-SYSTEM_PROMPTS: dict[str, str] = {
-    "canonicalize": _CANONICALIZE_SYSTEM,
-}
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # STEP 3 — Cache Lookup
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -166,12 +166,12 @@ def _cache_filter(tenant_id: str, knowledge_base: str | None, unexpired: bool) -
 
 
 async def cache_lookup(
-    qdrant: AsyncQdrantClient,
-    collection: str,
-    query_vector: list[float],
-    tenant_id: str,
-    threshold: float,
-    knowledge_base: str | None = None,
+        qdrant: AsyncQdrantClient,
+        collection: str,
+        query_vector: list[float],
+        tenant_id: str,
+        threshold: float,
+        knowledge_base: str | None = None,
 ) -> dict | None:
     try:
         if not await qdrant.collection_exists(collection):
@@ -193,12 +193,12 @@ async def cache_lookup(
 
 
 async def cache_store(
-    qdrant: AsyncQdrantClient,
-    collection: str,
-    query_vector: list[float],
-    tenant_id: str,
-    knowledge_base: str | None,
-    results: list[dict],
+        qdrant: AsyncQdrantClient,
+        collection: str,
+        query_vector: list[float],
+        tenant_id: str,
+        knowledge_base: str | None,
+        results: list[dict],
 ) -> None:
     """Cache the post-rerank *retrieval decision* keyed by the query embedding.
 
@@ -215,12 +215,12 @@ async def cache_store(
         return
     now = time.time()
     payload = {
-        "tenant_id":      tenant_id,
+        "tenant_id": tenant_id,
         "knowledge_base": knowledge_base or "",
-        "block_refs":     block_refs,
-        "created_at":     now,
-        "expires_at":     now + cfg.CACHE_TTL_SECONDS,
-        "is_deleted":     False,
+        "block_refs": block_refs,
+        "created_at": now,
+        "expires_at": now + cfg.CACHE_TTL_SECONDS,
+        "is_deleted": False,
     }
     try:
         # The cache collection is created lazily on first write (vector size = query dim).
@@ -269,7 +269,8 @@ ENTITY_TYPE_FIELDS = frozenset({
 _TYPE_HINTS: list[tuple[re.Pattern, list[str]]] = [
     (re.compile(r"\b(ai|người nào|của ai|do ai|who|whom)\b", re.IGNORECASE), ["person", "organization"]),
     (re.compile(r"\b(ở đâu|tại đâu|nơi nào|nước nào|quốc gia nào|thành phố nào|where)\b", re.IGNORECASE), ["location"]),
-    (re.compile(r"\b(khi nào|năm nào|năm bao nhiêu|thời gian nào|thế kỷ nào|triều đại nào|when)\b", re.IGNORECASE), ["time_period", "event"]),
+    (re.compile(r"\b(khi nào|năm nào|năm bao nhiêu|thời gian nào|thế kỷ nào|triều đại nào|when)\b", re.IGNORECASE),
+     ["time_period", "event"]),
     (re.compile(r"\b(luật|nghị định|thông tư|hiệp định|hiệp ước|điều ước)\b", re.IGNORECASE), ["law_document"]),
     (re.compile(r"\b(chiến tranh|trận|chiến dịch|hội nghị|sự kiện)\b", re.IGNORECASE), ["event"]),
     (re.compile(r"\b(tổ chức nào|công ty nào|cơ quan nào)\b", re.IGNORECASE), ["organization"]),
@@ -340,9 +341,9 @@ async def purge_expired_cache(qdrant: AsyncQdrantClient, collection: str) -> int
 
 
 async def cache_sweep_loop(
-    qdrant: AsyncQdrantClient,
-    collection: str = cfg.QDRANT_CACHE_COLLECTION,
-    interval: int = cfg.CACHE_SWEEP_INTERVAL,
+        qdrant: AsyncQdrantClient,
+        collection: str = cfg.QDRANT_CACHE_COLLECTION,
+        interval: int = cfg.CACHE_SWEEP_INTERVAL,
 ) -> None:
     """Background loop (like the connector health-check loops) that periodically reclaims
     expired query-cache entries. Started from the backend lifespan; never raises."""
@@ -360,16 +361,16 @@ async def cache_sweep_loop(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def qdrant_search(
-    qdrant: AsyncQdrantClient,
-    collection: str,
-    query_vector: list[float],
-    tenant_id: str,
-    limit: int,
-    entities: list[str] | None = None,
-    knowledge_base: str | None = None,
-    data_ids: list[str] | None = None,
-    typed_field: tuple[str, list[str]] | None = None,
-    typed_entity_groups: dict[str, list[str]] | None = None,
+        qdrant: AsyncQdrantClient,
+        collection: str,
+        query_vector: list[float],
+        tenant_id: str,
+        limit: int,
+        entities: list[str] | None = None,
+        knowledge_base: str | None = None,
+        data_ids: list[str] | None = None,
+        typed_field: tuple[str, list[str]] | None = None,
+        typed_entity_groups: dict[str, list[str]] | None = None,
 ) -> list[dict]:
     # tenant_id + knowledge_base are applied as hard AND filters inside vector_search;
     # every matching_payload below is an OR (match_type=any) over the candidates:
@@ -407,8 +408,8 @@ async def qdrant_search(
         return [
             {
                 "point_id": str(pt.id),
-                "score":    pt.score,
-                "payload":  (pt.payload or {}),
+                "score": pt.score,
+                "payload": (pt.payload or {}),
             }
             for pt in resp.data
         ]
@@ -418,11 +419,11 @@ async def qdrant_search(
 
 
 async def doc_narrow_ids(
-    qdrant: AsyncQdrantClient,
-    query_vector: list[float],
-    tenant_id: str,
-    knowledge_base: str | None = None,
-    intents: list[str] | None = None,
+        qdrant: AsyncQdrantClient,
+        query_vector: list[float],
+        tenant_id: str,
+        knowledge_base: str | None = None,
+        intents: list[str] | None = None,
 ) -> list[str]:
     """Step 1 of 2-step retrieval: top-m documents from the doc-summary collection.
     Returns their data_ids (top-m, not top-1 — committing to a single document is
@@ -433,6 +434,7 @@ async def doc_narrow_ids(
     the query yields intents they become an OR payload filter over the doc
     `intents` field; a non-matching filter would exclude every document, so an
     empty intent-filtered result falls back to an unfiltered vector search."""
+
     async def _search(matching: list[MatchingPayload] | None) -> list[str]:
         req = SearchRequest(
             tenant_id=tenant_id,
@@ -461,9 +463,9 @@ async def doc_narrow_ids(
 
 
 async def resolve_query_aliases(
-    postgres: PostgresClient,
-    tenant_id: str,
-    entities: list[str],
+        postgres: PostgresClient,
+        tenant_id: str,
+        entities: list[str],
 ) -> list[str]:
     """Resolve query entities through the learned KBEntityLookup alias table so a
     Vietnamese synonym in the query matches the stored canonical entity
@@ -527,14 +529,14 @@ def _rank_entities(pass1_results: list[list[dict]], top_n: int) -> list[str]:
 
 
 async def graph_expand(
-    driver: AsyncDriver,
-    entity_names: list[str],
-    tenant_id: str,
-    max_hops: int,
-    max_neighbours: int,
-    query_vec: list[float],
-    knowledge_base: str | None = None,
-    preferred_types: list[str] | None = None,
+        driver: AsyncDriver,
+        entity_names: list[str],
+        tenant_id: str,
+        max_hops: int,
+        max_neighbours: int,
+        query_vec: list[float],
+        knowledge_base: str | None = None,
+        preferred_types: list[str] | None = None,
 ) -> list[str]:
     """Find neighbour entity names ranked by Neo4j vector similarity to the query.
 
@@ -617,10 +619,10 @@ def rrf_merge(ranked_lists: list[list[dict]], top_n: int) -> list[dict]:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def rerank(
-    model: ModelServiceClient,
-    query: str,
-    hits: list[dict],
-    top_n: int,
+        model: ModelServiceClient,
+        query: str,
+        hits: list[dict],
+        top_n: int,
 ) -> list[dict]:
     if not hits:
         return []
@@ -636,7 +638,7 @@ async def rerank(
                 **hits[indices[r["index"]]],
                 # Cross-encoder returns an unbounded logit — squash to a (0,1) score.
                 "rerank_score": _sigmoid(r.get("relevance_score", 0.0)),
-                "rerank_rank":  i,
+                "rerank_rank": i,
             }
             for i, r in enumerate(ranked[:top_n], start=1)
         ]
@@ -653,10 +655,10 @@ async def rerank(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def _fetch_chunks_postgres(
-    postgres: PostgresClient,
-    block_ids: list[str],
-    tenant_id: str,
-    knowledge_base: str | None = None,
+        postgres: PostgresClient,
+        block_ids: list[str],
+        tenant_id: str,
+        knowledge_base: str | None = None,
 ) -> dict[str, dict]:
     """Return a dict keyed by block_id (str) with the active version's text + source info.
 
@@ -696,14 +698,14 @@ async def _fetch_chunks_postgres(
             result = await session.execute(stmt)
             for r in result.all():
                 rows[str(r.block_id)] = {
-                    "block_id":       str(r.block_id),
-                    "block_index":    r.block_index,
-                    "content":        r.content,
+                    "block_id": str(r.block_id),
+                    "block_index": r.block_index,
+                    "content": r.content,
                     "version_number": r.version_number,
-                    "doc_id":         str(r.data_id),
-                    "doc_name":       r.name,
-                    "source_type":    r.source_type,
-                    "current_tier":   r.current_tier,
+                    "doc_id": str(r.data_id),
+                    "doc_name": r.name,
+                    "source_type": r.source_type,
+                    "current_tier": r.current_tier,
                 }
     except Exception as exc:
         log.warning("_fetch_chunks_postgres | failed: %s", exc)
@@ -711,8 +713,8 @@ async def _fetch_chunks_postgres(
 
 
 async def _fetch_tables_postgres(
-    postgres: PostgresClient,
-    block_ids: list[str],
+        postgres: PostgresClient,
+        block_ids: list[str],
 ) -> dict[str, list[dict]]:
     """Return block_id (str) → list of {table_name: table_description} for the block's
     *active* version. Chunks that carry a table (table_involved) have one; the rest none.
@@ -745,9 +747,9 @@ async def _fetch_tables_postgres(
 
 
 def _build_result_list(
-    final: list[dict],
-    pg_rows: dict[str, dict],
-    pg_tables: dict[str, list[dict]],
+        final: list[dict],
+        pg_rows: dict[str, dict],
+        pg_tables: dict[str, list[dict]],
 ) -> list[dict]:
     """Merge rerank scores with actual chunk text, Postgres source info, and any tables.
 
@@ -759,21 +761,21 @@ def _build_result_list(
         bid = str((hit.get("payload") or {}).get("block_id") or "")
         pg = pg_rows.get(bid) or {}
         enriched.append({
-            "chunk_rank":    hit.get("rerank_rank", 0),
+            "chunk_rank": hit.get("rerank_rank", 0),
             # Always a 0–1 relevance score (sigmoid of the cross-encoder logit; rrf fallback
             # is already a small positive). Clamped as a final guard.
-            "chunk_score":   _clamp01(hit.get("rerank_score", hit.get("rrf_score", 0.0))),
+            "chunk_score": _clamp01(hit.get("rerank_score", hit.get("rrf_score", 0.0))),
             # Actual chunk text from active Postgres version; fall back to Qdrant summary
             "chunk_context": pg.get("content") or (hit.get("payload") or {}).get("summary", ""),
             # Tables attached to this chunk: [{table_name: table_description}, ...]
-            "table":         pg_tables.get(bid, []),
+            "table": pg_tables.get(bid, []),
             "source": {
-                "block_id":    bid,
+                "block_id": bid,
                 "block_index": pg.get("block_index"),
-                "doc_id":      str(pg.get("doc_id") or ""),
-                "doc_name":    str(pg.get("doc_name") or ""),
+                "doc_id": str(pg.get("doc_id") or ""),
+                "doc_name": str(pg.get("doc_name") or ""),
                 "source_type": str(pg.get("source_type") or ""),
-                "tier":        str(pg.get("current_tier") or ""),
+                "tier": str(pg.get("current_tier") or ""),
             },
         })
     return enriched
@@ -787,15 +789,15 @@ class LightRAGPipeline:
     """Stateless pipeline — all DB clients injected per run() call."""
 
     async def run_stream(
-        self,
-        query: str,
-        tenant_id: str,
-        qdrant: AsyncQdrantClient,
-        neo4j: AsyncDriver,
-        model: ModelServiceClient,
-        postgres: PostgresClient,
-        collection: str = cfg.QDRANT_COLLECTION,
-        knowledge_base: str | None = None,
+            self,
+            query: str,
+            tenant_id: str,
+            qdrant: AsyncQdrantClient,
+            neo4j: AsyncDriver,
+            model: ModelServiceClient,
+            postgres: PostgresClient,
+            collection: str = cfg.QDRANT_COLLECTION,
+            knowledge_base: str | None = None,
     ):
         """Async generator — yields one dict per pipeline step for SSE streaming.
 
@@ -1026,18 +1028,18 @@ class LightRAGPipeline:
             yield {"step": "error", "message": str(exc)[:300]}
 
     async def run(
-        self,
-        query: str,
-        tenant_id: str,
-        qdrant: AsyncQdrantClient,
-        neo4j: AsyncDriver,
-        model: ModelServiceClient,
-        postgres: PostgresClient,
-        collection: str = cfg.QDRANT_COLLECTION,
-        knowledge_base: str | None = None,
-        entities: list[str] | None = None,
-        intent: str | None = None,
-        entity_types: dict[str, str] | None = None,
+            self,
+            query: str,
+            tenant_id: str,
+            qdrant: AsyncQdrantClient,
+            neo4j: AsyncDriver,
+            model: ModelServiceClient,
+            postgres: PostgresClient,
+            collection: str = cfg.QDRANT_COLLECTION,
+            knowledge_base: str | None = None,
+            entities: list[str] | None = None,
+            intent: str | None = None,
+            entity_types: dict[str, str] | None = None,
     ) -> dict:
         """`entities` / `intent` / `entity_types` are INSERT fields for a front
         layer (query enhancement) that has already done query understanding: when
@@ -1085,10 +1087,10 @@ class LightRAGPipeline:
                 _mark("hydrate_ms", _t)
                 timings["total_ms"] = round((time.perf_counter() - _t0) * 1000, 1)
                 return {
-                    "source":    "cache",
+                    "source": "cache",
                     "canonical": {"intent": "cached", "entities": [], "relationships": []},
-                    "results":   _build_result_list(cached_final, pg_rows, pg_tables),
-                    "timings":   timings,
+                    "results": _build_result_list(cached_final, pg_rows, pg_tables),
+                    "timings": timings,
                 }
 
         # 3. Query understanding.
@@ -1247,13 +1249,6 @@ class LightRAGPipeline:
             )
         _mark("qdrant_pass2_ms", _t)
 
-        # 7b. Typed pass — two flavours of "entity appears WITH the right type"
-        #     (per-type payload fields ent_person, ent_location, …):
-        #     (a) per-entity: each front-layer entity searched in its OWN type's
-        #         field ("Việt Minh" → ent_organization) — homonym disambiguation;
-        #     (b) answer-type: all candidate entities searched in the type the
-        #         question seeks ("ai" → ent_person) — answerability signal.
-        #     Extra RRF lists — a wrong hint can never exclude anything.
         _t = time.perf_counter()
         typed_lists: list[list[dict]] = []
         if cfg.TYPE_AWARE:
@@ -1322,8 +1317,8 @@ class LightRAGPipeline:
         log.info("run | query=%r kb=%s rrf=%d hydrated=%d total=%.0fms",
                  query[:60], knowledge_base, len(rrf_top), len(results), timings["total_ms"])
         return {
-            "source":    "pipeline",
+            "source": "pipeline",
             "canonical": canonical,
-            "results":   results,
-            "timings":   timings,
+            "results": results,
+            "timings": timings,
         }

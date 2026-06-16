@@ -344,7 +344,10 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      # Generous: weights are no longer baked in, so the FIRST start downloads the
+      # configured embed + rerank models into the mounted ./model-service/models
+      # volume before /health responds. Later starts reuse the cache and are fast.
+      start_period: 300s
 
   # ── KB Backend ────────────────────────────────────────────────────────────────
 

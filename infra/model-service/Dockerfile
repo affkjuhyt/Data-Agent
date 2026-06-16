@@ -11,13 +11,15 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
         pydantic \
         asyncpg
 
-# Pre-download all embedding model variants that are seeded in KBModel (init.sql).
-# Adding a new seeded variant here keeps startup instant for that model too.
-ARG RERANK_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2
-RUN python -c "from sentence_transformers import SentenceTransformer, CrossEncoder; \
-SentenceTransformer('BAAI/bge-large-en-v1.5'); \
-SentenceTransformer('BAAI/bge-small-en-v1.5'); \
-CrossEncoder('${RERANK_MODEL}')"
+# Model weights are NOT baked into the image. They download at runtime into HF_HOME,
+# which the compose mounts to a host volume (infra/model-service/models) so the weights
+# persist across container recreates. Trade-offs:
+#   + image is ~1.5GB smaller, and never carries model variants a stack doesn't use
+#   - the FIRST start needs network and is slower (downloads the configured EMBED_MODEL
+#     + RERANK_MODEL); every start after that reuses the cached weights.
+ENV HF_HOME=/app/models \
+    SENTENCE_TRANSFORMERS_HOME=/app/models
+RUN mkdir -p /app/models
 
 COPY . .
 

@@ -1,17 +1,8 @@
 import os
 
-# LLM text generation (enhance / canonicalize) — direct to llama server, no LiteLLM.
-LLAMA_BASE_URL = os.getenv("LLAMA_BASE_URL", "http://llama:11434")
-LLM_MODEL = os.getenv("LLM_MODEL", "llama3")
-
-# OpenAI-compatible vLLM endpoint (e.g. Colab + Cloudflare tunnel). When set, the
-# canonicalize LLM call goes here instead of the local llama — same prompt, same
-# JSON contract, just a different transport. Empty = llama path unchanged.
-VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "")
-VLLM_API_KEY  = os.getenv("VLLM_API_KEY", "")
-VLLM_MODEL    = os.getenv("VLLM_MODEL", "")   # empty → discovered once from /v1/models
-
-# Embedding and reranking go to the dedicated model-service (no LiteLLM).
+# All LLM access (canonicalize/generate), embedding, and reranking go through the
+# dedicated model-service gateway, which is env-routed to a local or remote backend.
+# The retrieval pipeline never talks to llama / vLLM directly.
 MODEL_SERVICE_URL = os.getenv("MODEL_SERVICE_URL", "http://model-service:8001")
 
 # Databases

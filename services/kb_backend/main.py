@@ -3,7 +3,6 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -22,34 +21,11 @@ from services.database_connector.kafka_connector import KafkaProducerClient
 from services.database_connector.model_connector import ModelServiceClient
 
 from services.kb_backend.pipeline.light_rag.pipeline import LightRAGPipeline, cache_sweep_loop
-from services.kb_backend.pipeline.light_rag.pipeline import SYSTEM_PROMPTS as _LR_SYSTEM_PROMPTS
 from services.kb_backend.pipeline.light_rag import config as cfg
 from services.kb_backend.pipeline.ingestion.pipeline import IngestionPipeline
 from services.kb_backend.dev_seed import seed_dev_data
 
 log = logging.getLogger(__name__)
-
-_LLAMA_BASE_URL = os.environ.get("LLAMA_BASE_URL", "http://llama:11434")
-
-# Only LightRAG prompts — silver/gold prompts are registered by kb-ingestion-worker
-_ALL_SYSTEM_PROMPTS: dict[str, str] = {**_LR_SYSTEM_PROMPTS}
-
-
-async def _register_system_prompts() -> None:
-    """POST each system prompt to the llama server's /api/system endpoint.
-    Pre-computes KV cache snapshots so each generation call only tokenizes user content.
-    Best-effort — failures are logged but don't block startup."""
-    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
-        for name, prompt in _ALL_SYSTEM_PROMPTS.items():
-            try:
-                resp = await client.post(
-                    f"{_LLAMA_BASE_URL}/api/system",
-                    json={"name": name, "prompt": prompt},
-                )
-                resp.raise_for_status()
-                log.info("startup: registered system type %r on llama server", name)
-            except Exception as exc:
-                log.warning("startup: failed to register system type %r: %s", name, exc)
 
 _POSTGRES_URL  = os.environ.get("POSTGRES_URL",  "postgresql+asyncpg://aeroflow:aeroflow_secret@postgres/aeroflow_kb")
 _MONGO_URL     = os.environ.get("MONGO_URL",     "mongodb://mongo:27017/dataagent")
@@ -114,9 +90,6 @@ async def lifespan(app: FastAPI):
     await _minio.open(retry)
     await _model.open(retry)
     await _kafka_producer.open(retry)
-
-    # ── Register system prompts on llama server (best-effort) ────────────────
-    await _register_system_prompts()
 
     # ── Expose on app.state ───────────────────────────────────────────────────
     app.state.postgres       = _postgres

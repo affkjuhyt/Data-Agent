@@ -397,12 +397,17 @@ services:
     environment:
       EMBED_MODEL: BAAI/bge-large-en-v1.5
       RERANK_MODEL: cross-encoder/ms-marco-MiniLM-L-6-v2
+    volumes:
+      # Weights are no longer baked into the image — they download here on first
+      # start and persist across recreates. See infra/model-service/Dockerfile.
+      - ./model-service/models:/app/models
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      # First start downloads the embed + rerank models into the volume above.
+      start_period: 300s
 
   kb-backend:
     build:
