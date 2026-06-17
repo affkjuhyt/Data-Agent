@@ -485,9 +485,23 @@ class PostgresClient:
             try:
                 await session.commit()
                 await session.refresh(prep.instance)
-            except IntegrityError:
+            except IntegrityError as e:
                 await session.rollback()
-                return ResponseModel(code=409, error=f"Record already exists in {prep.table_name}")
+                # Distinguish the constraint that failed (Postgres SQLSTATE via the
+                # underlying asyncpg error) instead of blanket-labelling everything
+                # "already exists" — a foreign-key or not-null failure is a very
+                # different problem from a duplicate.
+                sqlstate = getattr(getattr(e, "orig", None), "sqlstate", None)
+                if sqlstate == "23505":      # unique_violation
+                    return ResponseModel(code=409, error=f"Record already exists in {prep.table_name}")
+                if sqlstate == "23503":      # foreign_key_violation
+                    return ResponseModel(code=409, error=f"{prep.table_name}: references a record that does not exist")
+                if sqlstate == "23502":      # not_null_violation
+                    return ResponseModel(code=400, error=f"{prep.table_name}: a required field is missing")
+                if sqlstate == "23514":      # check_violation
+                    return ResponseModel(code=400, error=f"{prep.table_name}: a value failed a constraint check")
+                log.warning("insert integrity error in %s (sqlstate=%s): %s", prep.table_name, sqlstate, e)
+                return ResponseModel(code=409, error=f"Integrity error in {prep.table_name}")
         pks = [col.name for col in prep.orm_cls.__table__.primary_key]
         return ResponseModel(code=200, data={pk: str(getattr(prep.instance, pk)) for pk in pks if
                                              getattr(prep.instance, pk) is not None})
