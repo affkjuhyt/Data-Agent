@@ -1,0 +1,453 @@
+# KB UI Testing stack — local development / single-VM deployment.
+#
+# Services:
+#   postgres · mongo · qdrant · neo4j · minio · minio-init ·
+#   kafka · model-service · kb-backend · kb-ingestion-worker
+#   [profile local-llm] llama · litellm
+#
+# LLM backend:
+#   Default — remote vLLM (Colab + Cloudflare tunnel, see model/vllm/):
+#     set VLLM_BASE_URL=https://xxx.trycloudflare.com
+#     set VLLM_API_KEY=kb-...
+#   Local llama.cpp instead (needs model/ollama/weights/model.gguf + GPU):
+#     docker compose -f docker-compose.kb-ui-testing.yml --profile local-llm up -d
+#
+# Usage:
+#   cd infra
+#   docker compose -f docker-compose.kb-ui-testing.yml up -d
+#   # Frontend: npm run dev  (port 3000 → kb-backend on 8050)
+#
+# Resource sizing (limits, not reservations — Docker will overcommit safely):
+#   ~20 vCPU peak, ~27 GiB RAM peak. Fits comfortably on a 12 vCPU / 32 GiB VM.
+
+name: kb-ui-testing
+
+networks:
+  kb-test:
+    driver: bridge
+
+volumes:
+  pg_data:
+  mongo_data:
+  minio_data:
+  qdrant_data:
+  neo4j_data:
+  neo4j_logs:
+  docling_cache:
+
+services:
+
+  # ── PostgreSQL ────────────────────────────────────────────────────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: kb-test-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aeroflow
+      POSTGRES_DB: aeroflow_kb
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./Postgres/init.sql:/docker-entrypoint-initdb.d/01-kb-schema.sql:ro
+      - ./Postgres/seed.sql:/docker-entrypoint-initdb.d/02-kb-seed.sql:ro
+    ports:
+      - "5432:5432"
+    networks: [ kb-test ]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U aeroflow -d aeroflow_kb" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── MongoDB ───────────────────────────────────────────────────────────────────
+
+  mongo:
+    image: mongo:7.0
+    container_name: kb-test-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: kb_staging
+    # WiredTiger cache defaults to (RAM-1GB)/2; cap it manually so it respects the limit.
+    command: [ "--wiredTigerCacheSizeGB", "0.5" ]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks: [ kb-test ]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+    healthcheck:
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── Qdrant ────────────────────────────────────────────────────────────────────
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.6
+    container_name: kb-test-qdrant
+    restart: unless-stopped
+    environment:
+      QDRANT__SERVICE__MAX_REQUEST_SIZE_MB: "32"
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks: [ kb-test ]
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+    healthcheck:
+      test: [ "CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333'" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── Neo4j ─────────────────────────────────────────────────────────────────────
+
+  neo4j:
+    image: neo4j:5.19-community
+    container_name: kb-test-neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: none
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    networks: [ kb-test ]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1500M
+    healthcheck:
+      test: [ "CMD", "wget", "-qO", "/dev/null", "http://localhost:7474" ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ── MinIO ─────────────────────────────────────────────────────────────────────
+
+  minio:
+    image: minio/minio:RELEASE.2024-01-16T16-07-38Z
+    container_name: kb-test-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniominio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks: [ kb-test ]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+    healthcheck:
+      test: [ "CMD", "mc", "ready", "local" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  minio-init:
+    image: minio/mc
+    container_name: kb-test-minio-init
+    restart: "no"
+    networks: [ kb-test ]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+    entrypoint: >
+      sh -c "
+        mc alias set local http://minio:9000 minio miniominio &&
+        mc mb --ignore-existing local/knowledge-base &&
+        echo 'MinIO: knowledge-base bucket ready.'
+      "
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  # ── Kafka (KRaft, no auth) ────────────────────────────────────────────────────
+
+  kafka:
+    image: apache/kafka:3.7.1
+    container_name: kb-test-kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_HEAP_OPTS: "-Xms512m -Xmx1024m"
+      CLUSTER_ID: kb-ui-test-cluster-01
+    ports:
+      - "9092:9092"
+    networks: [ kb-test ]
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+    healthcheck:
+      test: [ "CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092" ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ── Llama (GPU) — Ollama-compatible local LLM ────────────────────────────────
+  # Weights must exist at model/ollama/weights/model.gguf before bring-up.
+  # GPU build pulls the prebuilt CUDA 12.2 wheel; runtime base must be a CUDA image.
+
+  llama:
+    # Behind the local-llm profile: not started by default — the worker now talks to
+    # the Colab vLLM endpoint (VLLM_BASE_URL/VLLM_API_KEY env, see model/vllm/).
+    # Re-enable the local path with: docker compose --profile local-llm up -d
+    profiles: [ "local-llm" ]
+    build:
+      context: ../model/ollama
+      dockerfile: docker/Dockerfile
+      args:
+        GPU: "1"
+    container_name: kb-test-llama
+    restart: unless-stopped
+    # Reached by worker/backend over the kb-test network as http://llama:11434.
+    # No host port publish — the host's 11434 is taken by native Ollama, and the
+    # in-stack services don't need host access.
+    expose:
+      - "11434"
+    volumes:
+      - ../model/ollama/weights:/models
+    environment:
+      MODEL_PATH: /models/model.gguf
+      N_CTX: "4096"
+      N_GPU_LAYERS: "-1"
+      N_THREADS: "6"
+      OMP_NUM_THREADS: "6"
+      KV_CACHE_TYPE: f16
+      USE_MMAP: "true"
+      USE_MLOCK: "false"
+      VERBOSE: "false"
+      POOL_SIZE: "1"
+    networks: [ kb-test ]
+    deploy:
+      resources:
+        limits:
+          cpus: "6.0"
+          memory: 12G
+        reservations:
+          memory: 6G
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:11434/health')" ]
+      interval: 30s
+      timeout: 10s
+      start_period: 180s
+      retries: 5
+
+  # ── LiteLLM — routes OpenAI-shaped calls to the local llama ──────────────────
+
+  litellm:
+    # Routes to the local llama only — excluded with it (see llama service note).
+    profiles: [ "local-llm" ]
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: kb-test-litellm
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./litellm/config.kb-test.yaml:/app/config.yaml:ro
+    command: [ "--config", "/app/config.yaml", "--port", "4000" ]
+    networks: [ kb-test ]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    depends_on:
+      llama:
+        condition: service_healthy
+
+  # ── Model Service — embedding + reranking ────────────────────────────────────
+
+  model-service:
+    build:
+      context: ./model-service
+    container_name: kb-test-model-service
+    restart: unless-stopped
+    ports:
+      - "8600:8001"
+    volumes:
+      - ./model-service/models:/app/models
+    environment:
+      # Multilingual models — Vietnamese corpus. bge-small-en / ms-marco-MiniLM are
+      # English-only and were the main recall bottleneck on the ViQuAD benchmark.
+      EMBED_MODEL: ${EMBED_MODEL:-intfloat/multilingual-e5-small}
+      RERANK_MODEL: ${RERANK_MODEL:-cross-encoder/mmarco-mMiniLMv2-L12-H384-v1}
+      # Optional GPU proxy (Colab + cloudflared). When set, /embed (and /rerank)
+      # forward to the remote server; the local models stay tiny just for health.
+      REMOTE_EMBED_URL: ${REMOTE_EMBED_URL:-}
+      REMOTE_RERANK_URL: ${REMOTE_RERANK_URL:-}
+      REMOTE_API_KEY: ${REMOTE_API_KEY:-}
+      # LLM gateway → OpenAI-compatible server (Colab vLLM). /generate forwards here.
+      REMOTE_LLM_URL: ${REMOTE_LLM_URL:-}
+      REMOTE_LLM_KEY: ${REMOTE_LLM_KEY:-}
+      OMP_NUM_THREADS: "2"
+      POSTGRES_DSN: postgresql://aeroflow@postgres/aeroflow_kb
+    networks: [ kb-test ]
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 3G
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # Generous: weights are no longer baked in, so the FIRST start downloads the
+      # configured embed + rerank models into the mounted ./model-service/models
+      # volume before /health responds. Later starts reuse the cache and are fast.
+      start_period: 300s
+
+  # ── KB Backend ────────────────────────────────────────────────────────────────
+
+  kb-backend:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.kb
+    container_name: kb-test-backend
+    restart: unless-stopped
+    ports:
+      - "8050:8000"
+    environment:
+      POSTGRES_URL: postgresql+asyncpg://aeroflow@postgres/aeroflow_kb
+      MONGO_URL: mongodb://mongo:27017/kb_staging
+      MINIO_URL: http://minio:miniominio@minio:9000
+      KAFKA_URL: kafka:9092
+      QDRANT_URL: http://qdrant:6333
+      NEO4J_URL: bolt://neo4j:7687
+      LLAMA_BASE_URL: http://llama:11434
+      LITELLM_BASE_URL: http://litellm:4000
+      # vLLM tunnel — when set, the LightRAG canonicalize step uses this
+      # OpenAI-compatible endpoint instead of the local llama.
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-}
+      VLLM_API_KEY: ${VLLM_API_KEY:-}
+      # LightRAG tuning knobs (benchmark iteration without image rebuild)
+      QDRANT_PASS1_LIMIT: ${QDRANT_PASS1_LIMIT:-3}
+      QDRANT_PASS2_LIMIT: ${QDRANT_PASS2_LIMIT:-2}
+      # 20 since the fusion gained doc-narrow + typed lists (run 06 showed RRF
+      # dilution at 10 — borderline candidates crowded out before reranking).
+      RRF_TOP_N: ${RRF_TOP_N:-20}
+      RERANK_TOP_N: ${RERANK_TOP_N:-5}
+      NEO4J_MAX_HOPS: ${NEO4J_MAX_HOPS:-1}
+      NEO4J_MAX_NEIGHBOURS: ${NEO4J_MAX_NEIGHBOURS:-5}
+      # Defaults ON since the typed graph + verified alias table landed —
+      # set to 0 for ablation runs.
+      DOC_NARROWING: ${DOC_NARROWING:-1}
+      DOC_PASS_TOP_M: ${DOC_PASS_TOP_M:-3}
+      DOC_PASS_CHUNK_LIMIT: ${DOC_PASS_CHUNK_LIMIT:-5}
+      QUERY_ALIAS_RESOLVE: ${QUERY_ALIAS_RESOLVE:-1}
+      TYPE_AWARE: ${TYPE_AWARE:-1}
+      MINIO_BUCKET: knowledge-base
+      MODEL_SERVICE_URL: http://model-service:8001
+    networks: [ kb-test ]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1G
+    depends_on:
+      postgres: { condition: service_healthy }
+      mongo: { condition: service_healthy }
+      qdrant: { condition: service_healthy }
+      neo4j: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+      kafka: { condition: service_healthy }
+      model-service: { condition: service_healthy }
+      # llama dependency removed — LLM now reached via VLLM_BASE_URL (Colab tunnel);
+      # the backend's llama calls (LightRAG canonicalize, prompt registration) are
+      # best-effort and degrade gracefully when the local llama is not running.
+
+  # ── KB Ingestion Worker — Kafka consumer, silver/gold pipeline ───────────────
+
+  kb-ingestion-worker:
+    build:
+      context: ..
+      dockerfile: infra/kb-ingestion-worker/Dockerfile
+    container_name: kb-test-ingestion-worker
+    restart: unless-stopped
+    environment:
+      POSTGRES_URL: postgresql+asyncpg://aeroflow@postgres/aeroflow_kb
+      MONGO_URL: mongodb://mongo:27017/kb_staging
+      MINIO_URL: http://minio:miniominio@minio:9000
+      KAFKA_URL: kafka:9092
+      QDRANT_URL: http://qdrant:6333
+      NEO4J_URI: bolt://neo4j:7687
+      MODEL_SERVICE_URL: http://model-service:8001
+      LLAMA_BASE_URL: http://llama:11434
+      LITELLM_BASE_URL: http://litellm:4000
+      # vLLM backend (Colab tunnel, see model/vllm/) — setting VLLM_BASE_URL on the
+      # host flips the worker's LLM backend to vllm; empty keeps the local llama.
+      VLLM_BASE_URL: ${VLLM_BASE_URL:-}
+      VLLM_API_KEY: ${VLLM_API_KEY:-}
+      LLM_BACKEND: ${LLM_BACKEND:-}
+      MINIO_BUCKET: knowledge-base
+      USE_VLM: "false"
+      LLM_MODEL: llama3
+      HF_HOME: /root/.cache/huggingface
+    volumes:
+      - docling_cache:/root/.cache/huggingface   # persists ~500 MB Docling models across restarts
+    networks: [ kb-test ]
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 3G
+    depends_on:
+      postgres: { condition: service_healthy }
+      mongo: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+      kafka: { condition: service_healthy }
+      qdrant: { condition: service_healthy }
+      neo4j: { condition: service_healthy }
+      model-service: { condition: service_healthy }

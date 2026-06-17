@@ -15,13 +15,40 @@ import {
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { DetailDrawer } from '../../shared/DetailDrawer';
-import { mockGet, mockMutate } from '../../../lib/mockApi';
+import { apiGet, apiMutate } from '../../../lib/apiClient';
+import { PagedResponse } from '../../../types';
 import {
-  FilterPolicyType, FilterPolicy, INITIAL_FILTER_POLICIES, BASE_EXTRACTION_POLICY,
+  FilterPolicyType, FilterPolicy, BASE_EXTRACTION_POLICY,
 } from './policy.data';
 
+// Backend may return `content` as a structured value (e.g. {type, value} or an
+// array of rule objects) rather than a plain string. Coerce defensively so the
+// edit form never receives a non-string — calling .trim() on an object crashes
+// the whole drawer.
+const contentToText = (content: unknown): string =>
+  typeof content === 'string' ? content : content == null ? '' : JSON.stringify(content);
+
+const contentToWords = (content: unknown): string[] => {
+  let raw: unknown = content;
+  if (typeof content === 'string') {
+    try { raw = JSON.parse(content); }
+    catch { return content.split(',').map(s => s.trim()).filter(Boolean); }
+  }
+  if (!Array.isArray(raw)) return [];
+  return raw.map(w =>
+    typeof w === 'string'
+      ? w
+      : w && typeof w === 'object' && 'value' in (w as any)
+        ? String((w as any).value)
+        : JSON.stringify(w),
+  );
+};
+
 export const PolicyCenter = () => {
-  const [filterPolicies, setFilterPolicies] = useState<FilterPolicy[]>(INITIAL_FILTER_POLICIES);
+  const [filterPolicies, setFilterPolicies] = useState<FilterPolicy[]>([]);
+  const [policiesPage, setPoliciesPage] = useState(1);
+  const [policiesHasNext, setPoliciesHasNext] = useState(false);
+  const [policiesLoading, setPoliciesLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Drawer state
@@ -37,18 +64,36 @@ export const PolicyCenter = () => {
 
   // Delete confirmation
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   // Extraction custom policy
   const [customExtraction, setCustomExtraction] = useState('');
   const [editingExtraction, setEditingExtraction] = useState(false);
   const [customExtractionDraft, setCustomExtractionDraft] = useState('');
 
-  // Fetch from mock server on mount; fall back to static data if server offline
+  const fetchPolicies = (page: number) => {
+    setPoliciesLoading(true);
+    apiGet<PagedResponse<FilterPolicy> | FilterPolicy[]>('/api/knowledge/policies/filtering', { page })
+      .then(data => {
+        if (Array.isArray(data)) {
+          setFilterPolicies(data);
+          setPoliciesHasNext(false);
+        } else {
+          setFilterPolicies(data.items ?? []);
+          setPoliciesHasNext(data.has_next ?? false);
+        }
+      })
+      .catch(() => { setFilterPolicies([]); })
+      .finally(() => setPoliciesLoading(false));
+  };
+
   useEffect(() => {
-    mockGet<FilterPolicy[]>('/api/knowledge/policies/filtering')
-      .then(setFilterPolicies)
-      .catch(() => {});
-    mockGet<{ base: string; custom: string }>('/api/knowledge/policies/extraction')
+    fetchPolicies(policiesPage);
+  }, [policiesPage]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    apiGet<{ base: string; custom: string }>('/api/knowledge/policies/extraction')
       .then(data => setCustomExtraction(data.custom ?? ''))
       .catch(() => {});
   }, []);
@@ -60,6 +105,7 @@ export const PolicyCenter = () => {
     setFormContent('');
     setFormWords([]);
     setFormWordInput('');
+    setSaveError(null);
     setDrawerOpen(true);
   };
 
@@ -68,52 +114,54 @@ export const PolicyCenter = () => {
     setFormName(policy.name);
     setFormType(policy.type);
     if (policy.type === 'natural_language') {
-      setFormContent(policy.content);
+      setFormContent(contentToText(policy.content));
       setFormWords([]);
     } else {
       setFormContent('');
-      try { setFormWords(JSON.parse(policy.content)); } catch { setFormWords([]); }
+      setFormWords(contentToWords(policy.content));
     }
     setFormWordInput('');
+    setSaveError(null);
     setDrawerOpen(true);
   };
 
-  const handleSavePolicy = () => {
+  const handleSavePolicy = async () => {
     const content =
       formType === 'natural_language' ? formContent : JSON.stringify(formWords);
 
-    if (editingPolicy) {
-      const updated = { ...editingPolicy, name: formName, type: formType, content };
-      setFilterPolicies(prev => prev.map(p => p.id === editingPolicy.id ? updated : p));
-      mockMutate('PUT', `/api/knowledge/policies/filtering/${editingPolicy.id}`, { name: formName, type: formType, content }).catch(() => {});
-    } else {
-      const newPolicy: FilterPolicy = {
-        id: `FP-${String(filterPolicies.length + 1).padStart(3, '0')}`,
-        name: formName,
-        type: formType,
-        content,
-        added_by: 'platform-admin',
-        added_when: new Date().toISOString().split('T')[0],
-        active: true,
-      };
-      setFilterPolicies(prev => [...prev, newPolicy]);
-      mockMutate('POST', '/api/knowledge/policies/filtering', { name: formName, type: formType, content }).catch(() => {});
+    setSaving(true);
+    setSaveError(null);
+    try {
+      if (editingPolicy) {
+        await apiMutate('PUT', `/api/knowledge/policies/filtering/${editingPolicy.id}`, { name: formName, type: formType, content });
+      } else {
+        await apiMutate('POST', '/api/knowledge/policies/filtering', { name: formName, type: formType, content });
+      }
+      setDrawerOpen(false);
+      setPoliciesPage(1);
+      fetchPolicies(1);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save policy');
+    } finally {
+      setSaving(false);
     }
-    setDrawerOpen(false);
   };
 
   const handleToggleActive = (id: string) => {
-    setFilterPolicies(prev => prev.map(p => {
-      if (p.id !== id) return p;
-      const updated = { ...p, active: !p.active };
-      mockMutate('PUT', `/api/knowledge/policies/filtering/${id}`, { active: updated.active }).catch(() => {});
-      return updated;
-    }));
+    const current = filterPolicies.find(p => p.id === id);
+    if (!current) return;
+    const newActive = !current.active;
+    setFilterPolicies(prev => prev.map(p => p.id === id ? { ...p, active: newActive } : p));
+    apiMutate('PUT', `/api/knowledge/policies/filtering/${id}`, { active: newActive })
+      .catch(() => {
+        // Revert optimistic update on failure
+        setFilterPolicies(prev => prev.map(p => p.id === id ? { ...p, active: current.active } : p));
+      });
   };
 
   const handleDelete = (id: string) => {
     setFilterPolicies(prev => prev.filter(p => p.id !== id));
-    mockMutate('DELETE', `/api/knowledge/policies/filtering/${id}`).catch(() => {});
+    apiMutate('DELETE', `/api/knowledge/policies/filtering/${id}`).catch(() => {});
     setDeletingId(null);
   };
 
@@ -127,7 +175,7 @@ export const PolicyCenter = () => {
     p =>
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.type.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.added_by.toLowerCase().includes(searchQuery.toLowerCase())
+      (p.added_by ?? '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const isFormValid =
@@ -146,26 +194,43 @@ export const PolicyCenter = () => {
         icon={Filter}
         size="standard"
         footer={
-          <div className="flex justify-end gap-2.5 w-full">
-            <button
-              onClick={() => setDrawerOpen(false)}
-              className="px-3.5 py-2 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-500 uppercase tracking-wide cursor-pointer"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSavePolicy}
-              disabled={!isFormValid}
-              className={cn(
-                'px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer',
-                isFormValid
-                  ? 'bg-[#B88719] text-white hover:bg-[#8A5A00]'
-                  : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
-              )}
-            >
-              <Save className="w-3.5 h-3.5" />
-              {editingPolicy ? 'Save Changes' : 'Create Policy'}
-            </button>
+          <div className="flex flex-col gap-2 w-full">
+            {saveError && (
+              <p className="text-[11px] text-red-600 font-mono bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {saveError}
+              </p>
+            )}
+            <div className="flex justify-end gap-2.5">
+              <button
+                onClick={() => setDrawerOpen(false)}
+                disabled={saving}
+                className="px-3.5 py-2 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-500 uppercase tracking-wide cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSavePolicy}
+                disabled={!isFormValid || saving}
+                className={cn(
+                  'px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer',
+                  isFormValid && !saving
+                    ? 'bg-[#B88719] text-white hover:bg-[#8A5A00]'
+                    : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                )}
+              >
+                {saving ? (
+                  <>
+                    <span className="w-3.5 h-3.5 rounded-full border-2 border-slate-300 border-t-[#B88719] animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-3.5 h-3.5" />
+                    {editingPolicy ? 'Save Changes' : 'Create Policy'}
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         }
       >
@@ -462,6 +527,21 @@ export const PolicyCenter = () => {
                 )}
               </tbody>
             </table>
+            {(policiesPage > 1 || policiesHasNext) && (
+              <div className="flex items-center justify-between px-5 py-3 border-t border-[#BFA66A]/15 bg-[#FFFDF8] rounded-b-2xl">
+                <span className="text-[10px] font-mono text-slate-400">Page {policiesPage}</span>
+                <div className="flex gap-1.5">
+                  <button disabled={policiesPage === 1 || policiesLoading} onClick={() => setPoliciesPage(p => Math.max(1, p - 1))}
+                    className={cn("px-2.5 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", (policiesPage === 1 || policiesLoading) && "opacity-40 cursor-not-allowed")}>
+                    ‹ Prev
+                  </button>
+                  <button disabled={!policiesHasNext || policiesLoading} onClick={() => setPoliciesPage(p => p + 1)}
+                    className={cn("px-2.5 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", (!policiesHasNext || policiesLoading) && "opacity-40 cursor-not-allowed")}>
+                    Next ›
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </section>
@@ -558,7 +638,7 @@ export const PolicyCenter = () => {
                       onClick={() => {
                         setCustomExtraction(customExtractionDraft);
                         setEditingExtraction(false);
-                        mockMutate('PUT', '/api/knowledge/policies/extraction/custom', { custom: customExtractionDraft }).catch(() => {});
+                        apiMutate('PUT', '/api/knowledge/policies/extraction/custom', { custom: customExtractionDraft }).catch(() => {});
                       }}
                       className="px-4 py-1.5 bg-[#B88719] text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-[#8A5A00] transition-all flex items-center gap-1.5 cursor-pointer"
                     >

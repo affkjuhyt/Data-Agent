@@ -1,49 +1,97 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+import ForceGraph2D from 'react-force-graph-2d';
+// Same force module react-force-graph uses internally — adds collision so nodes
+// don't pile on top of each other (overlapping dots are impossible to click).
+import { forceCollide } from 'd3-force-3d';
 import {
   Network, Database, Zap, Plus, Layers, Info, Code, Play,
   ArrowDown, Circle, CheckCircle2, Eye, ArrowLeft,
   Layers3, Clock, Tag, GitBranch, Trash2, FileText, Video, Globe, ServerCog,
-  Table2, RefreshCw, AlertCircle, Server, Link, Search, ChevronLeft, ChevronRight,
+  Table2, RefreshCw, AlertCircle, Server, Link, Search,
   Cpu, SendHorizonal, Loader2, Hash, List, MessageSquare,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../../../lib/utils';
 import { DetailDrawer } from '../../shared/DetailDrawer';
-import { mockGet, mockMutate } from '../../../lib/mockApi';
+import { apiGet, apiMutate } from '../../../lib/apiClient';
 import { useAppState } from '../../../AppStateContext';
+import { useCursorPagination } from '../../../lib/useCursorPagination';
+import { Pagination } from '../../shared/Pagination';
+import { KnowledgeDocument } from '../../../types';
 import {
-  GraphHubTab, DBSubType, DBDocument, getSubType, DB_SUBTYPES,
+  GraphHubTab, DBDocument, getSubType,
   WTableEntry, WConfig, WConnection, getWarehouseConnection, formatRows, nextVersion,
   ChunkVersion, Chunk, QdrantCollection, QdrantPoint, QueryStep,
-  GraphNode, GraphEdge, LayoutNode, Neo4jSchema, computeGraphLayout,
-  FALLBACK_DOCS, FALLBACK_CHUNKS, ALL_AVAILABLE_TABLES, FALLBACK_WAREHOUSE_CONFIGS,
-  FALLBACK_QDRANT, AVAILABLE_NODES, FALLBACK_EDGES, FALLBACK_REL_LABELS,
-  FALLBACK_NODES, buildCypher, PAGE_SIZE,
+  GraphNode, GraphEdge, Neo4jSchema,
+  buildCypher, subgraphByType, nodeColor,
 } from './knowledgeHub.data';
+import { SourceCategory, ALL_SOURCE_CATEGORIES, sourceParam } from '../inventory/inventory.data';
+
+// Source-type filter chips for the Database tab (Gold layer). Same `SourceCategory`
+// tokens the backend understands; icons kept for parity with the old sub-type pills.
+const DB_SOURCE_CHIPS: { id: SourceCategory; label: string; icon: React.ElementType }[] = [
+  { id: 'doc',       label: 'Document',  icon: FileText  },
+  { id: 'media',     label: 'Media',     icon: Video     },
+  { id: 'web',       label: 'Web',       icon: Globe     },
+  { id: 'warehouse', label: 'Warehouse', icon: ServerCog },
+];
+function normalizeWConfig(raw: Record<string, unknown>, idx: number): WConfig {
+  const tables = ((raw.tables ?? []) as Array<Record<string, unknown>>).map((t, ti) => ({
+    id: (t.id as string) ?? `${String(raw.id)}-t-${ti}`,
+    schema: (t.schema as string) ?? '',
+    tableName: (t.tableName as string) ?? (t.name as string) ?? '',
+    rowCount: typeof t.rowCount === 'number'
+      ? t.rowCount
+      : parseInt(String(t.rowCount ?? '0').replace(/[^0-9]/g, ''), 10) || 0,
+    columns: (t.columns as number) ?? 0,
+  }));
+  const rawStatus = (raw.status as string) ?? '';
+  return {
+    id: raw.id as string,
+    name: (raw.name as string) ?? `Config ${idx + 1}`,
+    version: (raw.version as string) ?? (raw.version_number as string) ?? 'v1',
+    createdAt: (raw.createdAt as string) ?? (raw.created_at as string) ?? '',
+    status: rawStatus === 'Active' ? 'Active' : rawStatus === 'Archived' ? 'Archived' : 'Draft',
+    syncSchedule: (raw.syncSchedule as string) ?? (raw.sync_schedule as string) ?? 'Manual',
+    connection: raw.connection as Record<string, string> | undefined,
+    tables,
+  };
+}
+
 export const KnowledgeHubView = () => {
-  const { documents, docsLoading } = useAppState();
   const [activeTab, setActiveTab] = useState<GraphHubTab>('DATABASE');
 
-  /* â"€â"€ Database: derive GOLD docs from shared context (same source as Data Layers) â"€â"€ */
-  const docs = useMemo<DBDocument[]>(
-    () => documents
-      .filter(d => d.layer === 'GOLD')
-      .map(d => ({
-        id: d.id,
-        name: d.name,
-        type: d.metadata?.type ?? 'Unknown',
-        added_date: d.lastUpdated,
-        language: d.metadata?.language ?? 'N/A',
-        author: d.author,
-        version: d.version,
-        subType: getSubType(d.metadata?.type ?? ''),
-      })),
-    [documents],
+  /* ── Database: GOLD docs via stateless cursor pagination (same source/feel as Data Layers) ── */
+  // Multi-select source chips, default all-on. Backend filters via `?source=…`
+  // (WHERE source_type IN (...)); no "All" chip — all-on already means everything.
+  const [selectedSources, setSelectedSources] = useState<Set<SourceCategory>>(
+    () => new Set(ALL_SOURCE_CATEGORIES),
+  );
+  const sourceQuery = sourceParam(selectedSources);
+  const {
+    items: goldDocs, page: dbPage, totalPages, hasNext: dbHasNext,
+    isLoading: docsLoading, canJump: dbCanJump, goTo: dbGoTo, reload: dbReload,
+  } = useCursorPagination<KnowledgeDocument>(
+    '/api/data/documents',
+    { tier: 'gold', source: sourceQuery },
+    [sourceQuery],
   );
 
-  const [dbSubType, setDbSubType]           = useState<DBSubType>('All');
+  const docs = useMemo<DBDocument[]>(
+    () => goldDocs.map(d => ({
+      id: d.data_id,
+      name: d.name,
+      type: d.metadata?.doc_type ?? 'Unknown',
+      added_date: d.added_on ?? '',
+      language: d.metadata?.language ?? 'N/A',
+      author: d.metadata?.author ?? d.added_by ?? '',
+      version: '',
+      subType: getSubType(d.metadata?.doc_type ?? ''),
+    })),
+    [goldDocs],
+  );
+
   const [dbSearch, setDbSearch]             = useState('');
-  const [dbPage, setDbPage]                 = useState(1);
   const [selectedDoc, setSelectedDoc]       = useState<DBDocument | null>(null);
   const [chunks, setChunks]                 = useState<Chunk[]>([]);
   const [chunksLoading, setChunksLoading]   = useState(false);
@@ -66,6 +114,7 @@ export const KnowledgeHubView = () => {
   const [qdrantQuery, setQdrantQuery]                   = useState('');
   const [qdrantPoints, setQdrantPoints]                 = useState<QdrantPoint[]>([]);
   const [qdrantSearching, setQdrantSearching]           = useState(false);
+  const [qdrantTopK, setQdrantTopK]                     = useState(5);
 
   /* New-version form */
   const [newVerDrawerOpen, setNewVerDrawerOpen] = useState(false);
@@ -81,30 +130,97 @@ export const KnowledgeHubView = () => {
     [warehouseConfigs],
   );
 
-  /* â"€â"€ Query builder state â"€â"€ */
-  const [startNode, setStartNode] = useState(AVAILABLE_NODES[0]);
-  const [steps, setSteps]         = useState<QueryStep[]>([]);
-  const [cypher, setCypher]       = useState('');
-  const [queryRan, setQueryRan]   = useState(false);
-  const [queryRunning, setQueryRunning] = useState(false);
+  /* Derive discoverable tables from all loaded warehouse configs (union, de-duped by schema.tableName) */
+  const availableTablesForNewConfig = useMemo<WTableEntry[]>(() => {
+    const seen = new Set<string>();
+    const result: WTableEntry[] = [];
+    warehouseConfigs.forEach(cfg => {
+      cfg.tables.forEach(t => {
+        const key = `${t.schema}.${t.tableName}`;
+        if (!seen.has(key)) { seen.add(key); result.push(t); }
+      });
+    });
+    return result;
+  }, [warehouseConfigs]);
 
-  /* â"€â"€ Neo4j graph state (initialised from fallback, replaced by API data) â"€â"€ */
-  const [neoNodes,     setNeoNodes]     = useState<LayoutNode[]>(
-    FALLBACK_NODES.map((n, i) => ({ ...n, id: `fn-${i}` })),
-  );
-  const [neoEdges,     setNeoEdges]     = useState<Array<[number,number,number,number]>>(FALLBACK_EDGES);
-  const [neoRelLabels, setNeoRelLabels] = useState<Array<[number,number,string]>>(FALLBACK_REL_LABELS);
-  const [neoSchema,    setNeoSchema]    = useState<Neo4jSchema | null>(null);
-  const [neoLoading,   setNeoLoading]   = useState(false);
-  const [rawGraphNodes, setRawGraphNodes] = useState<GraphNode[]>([]);
-  const [rawGraphEdges, setRawGraphEdges] = useState<GraphEdge[]>([]);
-  const [graphFiltered, setGraphFiltered] = useState(false);
+  /* â"€â"€ Query builder state â"€â"€ */
+  const [startNode, setStartNode]         = useState('');
+  const [steps, setSteps]                 = useState<QueryStep[]>([]);
+  const [cypher, setCypher]               = useState('');
+  const [queryRan, setQueryRan]           = useState(false);
+  const [queryRunning, setQueryRunning]   = useState(false);
+  const [entitySearchQuery, setEntitySearchQuery] = useState('');
+  const [entitySearchOpen,  setEntitySearchOpen]  = useState(false);
+
+  /* â"€â"€ Neo4j graph state â"€â"€ */
+  const [neoSchema,      setNeoSchema]      = useState<Neo4jSchema | null>(null);
+  const [neoLoading,     setNeoLoading]     = useState(false);
+  const [rawGraphNodes,  setRawGraphNodes]  = useState<GraphNode[]>([]);
+  const [rawGraphEdges,  setRawGraphEdges]  = useState<GraphEdge[]>([]);
+  const [filteredNodes,  setFilteredNodes]  = useState<GraphNode[] | null>(null);
+  const [filteredEdges,  setFilteredEdges]  = useState<GraphEdge[] | null>(null);
+  const [graphFiltered,  setGraphFiltered]  = useState(false);
+  const [selectedNeoNode, setSelectedNeoNode] = useState<{ id: string; name: string; description?: string | null; type?: string | null } | null>(null);
+  // Currently hovered node id — drives the in-canvas hover label/ring so hovering
+  // a node actually shows feedback (previously hover did nothing).
+  const [hoverNodeId, setHoverNodeId] = useState<string | null>(null);
+
+  const fgRef              = useRef<any>(null);
+  const graphContainerRef  = useRef<HTMLDivElement>(null);
+  const [graphDims, setGraphDims] = useState({ w: 600, h: 540 });
+  // zoomToFit only once per data load — otherwise every drag/settle re-fits the
+  // view and the canvas appears to zoom out on its own while you're clicking.
+  const didFitRef = useRef(false);
+
+  /* Keep canvas sized to its container. Depends on activeTab because the graph
+   * container only mounts when the NEO4J tab is active — without this the
+   * observer never attaches and the canvas stays stuck at its initial size. */
+  useEffect(() => {
+    if (activeTab !== 'NEO4J') return;
+    const el = graphContainerRef.current;
+    if (!el) return;
+    const update = () => setGraphDims({ w: el.clientWidth, h: el.clientHeight });
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [activeTab]);
+
+  /* Derived graph data for ForceGraph2D */
+  const graphData = useMemo(() => ({
+    nodes: (filteredNodes ?? rawGraphNodes).map(n => ({ ...n })),
+    links: (filteredEdges ?? rawGraphEdges).map(e => ({ source: e.from, target: e.to, description: e.description })),
+  }), [rawGraphNodes, rawGraphEdges, filteredNodes, filteredEdges]);
+
+  /* Distinct node types currently on the canvas — drives the colour legend. */
+  const presentTypes = useMemo(() => {
+    const set = new Set<string>();
+    for (const n of (filteredNodes ?? rawGraphNodes)) if (n.type) set.add(n.type);
+    return [...set].sort();
+  }, [rawGraphNodes, filteredNodes]);
+
+  /* Tune the force simulation once the graph is mounted/populated:
+   *  - stronger charge + longer links  → nodes sit further apart
+   *  - low link strength               → links are springy, so dragging a node
+   *    stretches its links and only pulls the cluster once they're taut. */
+  useEffect(() => {
+    if (activeTab !== 'NEO4J') return;
+    didFitRef.current = false; // new data → allow one auto-fit
+    const fg = fgRef.current;
+    if (!fg || graphData.nodes.length === 0) return;
+    fg.d3Force('charge')?.strength(-180).distanceMax(450);
+    fg.d3Force('link')?.distance(90).strength(0.12);
+    // Collision keeps every node ≥ this radius apart so dots never overlap and
+    // each one stays individually hoverable/clickable.
+    fg.d3Force('collide', forceCollide(26).strength(0.9));
+    fg.d3ReheatSimulation?.();
+  }, [activeTab, graphData]);
 
   /* â"€â"€ Fetch: Qdrant on mount â"€â"€ */
   useEffect(() => {
-    mockGet<QdrantCollection[]>('/api/knowledge/qdrant/collections')
-      .then(setQdrantCollections)
-      .catch(() => setQdrantCollections(FALLBACK_QDRANT));
+    apiGet<QdrantCollection[]>('/api/knowledge/qdrant/collections')
+      .then(data => setQdrantCollections(data ?? []))
+      .catch(() => setQdrantCollections([]));
   }, []);
 
   /* â"€â"€ Fetch: Neo4j graph + schema when NEO4J tab is active â"€â"€ */
@@ -112,27 +228,23 @@ export const KnowledgeHubView = () => {
     if (activeTab !== 'NEO4J') return;
     setNeoLoading(true);
     Promise.all([
-      mockGet<{ nodes: GraphNode[]; edges: GraphEdge[] }>('/api/knowledge/neo4j/graph'),
-      mockGet<Neo4jSchema>('/api/knowledge/neo4j/schema'),
+      apiGet<{ nodes: GraphNode[]; edges: GraphEdge[] }>('/api/knowledge/neo4j/graph'),
+      apiGet<Neo4jSchema>('/api/knowledge/neo4j/schema'),
     ])
       .then(([graphData, schema]) => {
         if (graphData?.nodes?.length) {
-          const nodes = graphData.nodes;
-          const edges = graphData.edges ?? [];
-          setRawGraphNodes(nodes);
-          setRawGraphEdges(edges);
+          setRawGraphNodes(graphData.nodes);
+          setRawGraphEdges(graphData.edges ?? []);
+          setFilteredNodes(null);
+          setFilteredEdges(null);
           setGraphFiltered(false);
-          const { layoutNodes, layoutEdges, layoutRelLabels } = computeGraphLayout(nodes, edges);
-          setNeoNodes(layoutNodes);
-          setNeoEdges(layoutEdges);
-          setNeoRelLabels(layoutRelLabels);
         }
         if (schema?.entities?.length) {
           setNeoSchema(schema);
-          setStartNode(schema.entities[0]);
+          setStartNode(prev => prev || schema.entities[0]);
         }
       })
-      .catch(() => {}) // keep fallback on error
+      .catch(() => {})
       .finally(() => setNeoLoading(false));
   }, [activeTab]);
 
@@ -147,16 +259,18 @@ export const KnowledgeHubView = () => {
 
   const handleDeleteDoc = async (docId: string) => {
     try {
-      await mockMutate('DELETE', `/api/data/documents/${docId}`);
+      await apiMutate('DELETE', `/api/data/documents/${docId}`);
       deleteDocument(docId);
       if (selectedDoc?.id === docId) setSelectedDoc(null);
+      dbReload(true); // refresh the current gold page after removal
+
     } catch { /* ForbiddenToast handles 403 */ } finally { setPendingDeleteDoc(null); }
   };
 
   const handleDeleteChunk = async (chunkId: string) => {
     if (!selectedDoc) return;
     try {
-      await mockMutate('DELETE', `/api/knowledge/documents/${selectedDoc.id}/chunks/${chunkId}`);
+      await apiMutate('DELETE', `/api/knowledge/documents/${selectedDoc.id}/chunks/${chunkId}`);
       setChunks(prev => prev.filter(c => c.id !== chunkId));
       if (selectedChunk?.id === chunkId) { setSelectedChunk(null); setSelectedVersion(null); }
     } catch { /* ForbiddenToast handles 403 */ } finally { setPendingDeleteChunk(null); }
@@ -165,7 +279,7 @@ export const KnowledgeHubView = () => {
   const handleDeleteVersion = async (versionNumber: string) => {
     if (!selectedDoc || !selectedChunk) return;
     try {
-      await mockMutate('DELETE', `/api/knowledge/documents/${selectedDoc.id}/chunks/${selectedChunk.id}/versions/${versionNumber}`);
+      await apiMutate('DELETE', `/api/knowledge/documents/${selectedDoc.id}/chunks/${selectedChunk.id}/versions/${versionNumber}`);
       const updated = { ...selectedChunk, versions: selectedChunk.versions.filter(v => v.version_number !== versionNumber) };
       setChunks(prev => prev.map(c => c.id === selectedChunk.id ? updated : c));
       setSelectedChunk(updated);
@@ -176,7 +290,7 @@ export const KnowledgeHubView = () => {
   const handleDeleteConfig = async (configId: string) => {
     if (!selectedDoc) return;
     try {
-      await mockMutate('DELETE', `/api/knowledge/warehouses/${selectedDoc.id}/configs/${configId}`);
+      await apiMutate('DELETE', `/api/knowledge/warehouses/${selectedDoc.id}/configs/${configId}`);
       const updated = warehouseConfigs.filter(c => c.id !== configId);
       setWarehouseConfigs(updated);
       if (selectedConfig?.id === configId) setSelectedConfig(updated[0] ?? null);
@@ -186,7 +300,7 @@ export const KnowledgeHubView = () => {
   const handleDeleteTable = async (tableId: string) => {
     if (!selectedDoc || !selectedConfig) return;
     try {
-      await mockMutate('DELETE', `/api/knowledge/warehouses/${selectedDoc.id}/configs/${selectedConfig.id}/tables/${tableId}`);
+      await apiMutate('DELETE', `/api/knowledge/warehouses/${selectedDoc.id}/configs/${selectedConfig.id}/tables/${tableId}`);
       const updated = { ...selectedConfig, tables: selectedConfig.tables.filter(t => t.id !== tableId) };
       setWarehouseConfigs(prev => prev.map(c => c.id === selectedConfig.id ? updated : c));
       setSelectedConfig(updated);
@@ -199,7 +313,7 @@ export const KnowledgeHubView = () => {
     if (!selectedCollection) return;
     setQdrantToggling(true);
     try {
-      const updated = await mockMutate<QdrantCollection>(
+      const updated = await apiMutate<QdrantCollection>(
         'PATCH',
         `/api/knowledge/qdrant/collections/${selectedCollection.id}`,
         { active: !selectedCollection.active },
@@ -218,10 +332,10 @@ export const KnowledgeHubView = () => {
     if (!selectedCollection || !qdrantQuery.trim()) return;
     setQdrantSearching(true);
     try {
-      const points = await mockMutate<QdrantPoint[]>(
+      const points = await apiMutate<QdrantPoint[]>(
         'POST',
         `/api/knowledge/qdrant/collections/${selectedCollection.id}/search`,
-        { query: qdrantQuery.trim() },
+        { query: qdrantQuery.trim(), limit: qdrantTopK },
       );
       setQdrantPoints(points ?? []);
     } catch {
@@ -240,24 +354,24 @@ export const KnowledgeHubView = () => {
     }
     if (selectedDoc.subType === 'Warehouse') {
       setWarehouseConfigsLoading(true);
-      mockGet<WConfig[]>(`/api/knowledge/warehouses/${selectedDoc.id}/configs`)
+      apiGet<Record<string, unknown>[] | { items: Record<string, unknown>[] }>(`/api/knowledge/warehouses/${selectedDoc.id}/configs`)
         .then(data => {
-          const list = data?.length ? data : (FALLBACK_WAREHOUSE_CONFIGS[selectedDoc.id] ?? []);
+          const rows = Array.isArray(data) ? data : (data?.items ?? []);
+          const list = rows.map((r, i) => normalizeWConfig(r, i));
           setWarehouseConfigs(list);
           setSelectedConfig(list[0] ?? null);
         })
         .catch(() => {
-          const list = FALLBACK_WAREHOUSE_CONFIGS[selectedDoc.id] ?? [];
-          setWarehouseConfigs(list);
-          setSelectedConfig(list[0] ?? null);
+          setWarehouseConfigs([]);
+          setSelectedConfig(null);
         })
         .finally(() => setWarehouseConfigsLoading(false));
     } else {
       setChunksLoading(true);
-      mockGet<Chunk[]>(`/api/knowledge/documents/${selectedDoc.id}/chunks`)
+      apiGet<Chunk[] | { items: Chunk[] }>(`/api/knowledge/documents/${selectedDoc.id}/chunks`)
         .then(data => {
-          const raw = data.length ? data : FALLBACK_CHUNKS;
-          const list = raw.map(chunk => ({
+          const rows = Array.isArray(data) ? data : (data?.items ?? []);
+          const list = rows.map(chunk => ({
             ...chunk,
             versions: chunk.versions.map(v => ({
               ...v,
@@ -265,13 +379,13 @@ export const KnowledgeHubView = () => {
             })),
           }));
           setChunks(list);
-          setSelectedChunk(list[0]);
-          setSelectedVersion(list[0].versions[0]);
+          setSelectedChunk(list[0] ?? null);
+          setSelectedVersion(list[0]?.versions[0] ?? null);
         })
         .catch(() => {
-          setChunks(FALLBACK_CHUNKS);
-          setSelectedChunk(FALLBACK_CHUNKS[0]);
-          setSelectedVersion(FALLBACK_CHUNKS[0].versions[0]);
+          setChunks([]);
+          setSelectedChunk(null);
+          setSelectedVersion(null);
         })
         .finally(() => setChunksLoading(false));
     }
@@ -294,7 +408,7 @@ export const KnowledgeHubView = () => {
     setChunks(prev => prev.map(c => c.id === selectedChunk.id ? updatedChunk : c));
     setSelectedChunk(updatedChunk);
     setSelectedVersion({ ...ver, status: 'Active' });
-    mockMutate('PATCH', `/api/knowledge/documents/${selectedDoc.id}/chunks/${selectedChunk.id}/activate`, {
+    apiMutate('PATCH', `/api/knowledge/documents/${selectedDoc.id}/chunks/${selectedChunk.id}/activate`, {
       version_number: ver.version_number,
     }).catch(() => {});
   };
@@ -318,7 +432,7 @@ export const KnowledgeHubView = () => {
     setSelectedVersion(newVer);
     setNewVerContent('');
     setNewVerDrawerOpen(false);
-    mockMutate('POST', `/api/knowledge/documents/${selectedDoc.id}/chunks/${selectedChunk.id}/versions`, {
+    apiMutate('POST', `/api/knowledge/documents/${selectedDoc.id}/chunks/${selectedChunk.id}/versions`, {
       version_number: newVer.version_number,
       text: newVer.text,
     }).catch(() => {});
@@ -333,13 +447,12 @@ export const KnowledgeHubView = () => {
     }));
     setWarehouseConfigs(updated);
     setSelectedConfig(updated.find(c => c.id === cfg.id) ?? null);
-    mockMutate('PATCH', `/api/knowledge/warehouses/${selectedDoc.id}/configs/${cfg.id}/activate`, {}).catch(() => {});
+    apiMutate('PATCH', `/api/knowledge/warehouses/${selectedDoc.id}/configs/${cfg.id}/activate`, {}).catch(() => {});
   };
 
   const handleCreateConfig = () => {
     if (!newCfgName.trim() || newCfgSelectedIds.size === 0 || !selectedDoc) return;
-    const allTables = ALL_AVAILABLE_TABLES[selectedDoc.id] ?? [];
-    const pickedTables = allTables.filter(t => newCfgSelectedIds.has(t.id));
+    const pickedTables = availableTablesForNewConfig.filter(t => newCfgSelectedIds.has(t.id));
     const newCfg: WConfig = {
       id: `cfg-${Date.now()}`,
       name: newCfgName.trim(),
@@ -353,7 +466,7 @@ export const KnowledgeHubView = () => {
     setSelectedConfig(newCfg);
     setNewCfgName(''); setNewCfgSelectedIds(new Set()); setNewCfgSchemaFilter('All');
     setNewCfgDrawerOpen(false);
-    mockMutate('POST', `/api/knowledge/warehouses/${selectedDoc.id}/configs`, {
+    apiMutate('POST', `/api/knowledge/warehouses/${selectedDoc.id}/configs`, {
       name: newCfg.name,
       version: newCfg.version,
       syncSchedule: newCfg.syncSchedule,
@@ -362,32 +475,38 @@ export const KnowledgeHubView = () => {
     }).catch(() => {});
   };
 
-  const PAGE_SIZE = 20;
+  const toggleSource = (cat: SourceCategory) => {
+    setSelectedSources(prev => {
+      const next = new Set(prev);
+      next.has(cat) ? next.delete(cat) : next.add(cat);
+      return next;
+    });
+  };
 
-  const searchedDocs = useMemo(() => {
-    const byType = dbSubType === 'All' ? docs : docs.filter(d => d.subType === dbSubType);
-    if (!dbSearch.trim()) return byType;
+  // Source filtering is server-side now (`?source=…`). Only free-text search stays
+  // client-side, scoped to the current server page (same model as Data Layers).
+  const pagedDocs = useMemo(() => {
+    if (!dbSearch.trim()) return docs;
     const q = dbSearch.toLowerCase();
-    return byType.filter(d =>
+    return docs.filter(d =>
       d.name.toLowerCase().includes(q) ||
       d.type.toLowerCase().includes(q) ||
       d.author.toLowerCase().includes(q) ||
       d.language.toLowerCase().includes(q),
     );
-  }, [docs, dbSubType, dbSearch]);
+  }, [docs, dbSearch]);
 
-  const totalPages = Math.max(1, Math.ceil(searchedDocs.length / PAGE_SIZE));
-  const safePage   = Math.min(dbPage, totalPages);
-  const pagedDocs  = searchedDocs.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
-
-  /* reset to page 1 when filter or search changes */
-  useEffect(() => { setDbPage(1); }, [dbSubType, dbSearch]);
-
-  /* â"€â"€ Query builder helpers â"€â"€ */
-  const allEntities = neoSchema?.entities ?? AVAILABLE_NODES;
-  const getTargets = (fromEntity: string) =>
-    neoSchema?.connections[fromEntity] ?? allEntities;
+  /* ── Query builder helpers ── */
+  const allEntities = neoSchema?.entities ?? [];
+  const filteredEntityOptions = entitySearchQuery.trim()
+    ? allEntities.filter(e => e.toLowerCase().includes(entitySearchQuery.toLowerCase()))
+    : allEntities;
+  // Target options are entity TYPES (labels). schema.connections maps a label to
+  // its relationship types (not target labels), so it must not be used here —
+  // doing so put rel names like "RELATED_TO" into the node dropdown.
+  const getTargets = (_fromEntity: string) => allEntities.filter(Boolean);
   const addStep = () => {
+    if (!allEntities.length) return;
     const prevEntity = steps.length ? steps[steps.length - 1].nodeType : startNode;
     const targets = getTargets(prevEntity);
     setSteps(p => [...p, { id: `s-${Date.now()}`, relationship: 'RELATED_TO', nodeType: targets[0] ?? allEntities[0] }]);
@@ -493,43 +612,47 @@ export const KnowledgeHubView = () => {
             /* â"€â"€ GOLD-STYLE DOCUMENT TABLE â"€â"€ */
             <div className="space-y-4">
 
-              {/* Search + filter row */}
-              <div className="flex items-center gap-3 flex-wrap">
-                {/* Search input */}
-                <div className="relative flex-1 min-w-[220px]">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
-                  <input
-                    value={dbSearch}
-                    onChange={e => setDbSearch(e.target.value)}
-                    placeholder="Search by name, type, author, languageâ€¦"
-                    className="w-full pl-9 pr-4 py-2 bg-white border border-[#BFA66A]/25 rounded-xl text-xs text-[#111111] placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-[#B88719] focus:border-[#B88719]/40 transition-all"
-                  />
+              {/* Source filter placed directly above the search bar (same layout as Data Layers) */}
+              <div className="bg-[#FFFDF8] border border-[#BFA66A]/20 p-5 rounded-2xl flex flex-col gap-4">
+                {/* Source-type filter pills — multi-select, server-side filtering */}
+                <div className="flex flex-col gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-[#8A5A00] opacity-80 font-mono">
+                    Source Type
+                  </span>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {DB_SOURCE_CHIPS.map(st => {
+                      const active = selectedSources.has(st.id);
+                      return (
+                        <button
+                          key={st.id}
+                          onClick={() => toggleSource(st.id)}
+                          aria-pressed={active}
+                          className={cn(
+                            'flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer',
+                            active
+                              ? 'bg-[#111111] border-[#B88719]/60 text-[#D9B86C]'
+                              : 'bg-white border-[#BFA66A]/25 text-[#5A4209]/70 opacity-60 hover:opacity-100 hover:border-[#BFA66A]/50 hover:bg-[#FFFDF8]'
+                          )}
+                        >
+                          <st.icon className="w-3 h-3" />
+                          {st.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
-                {/* Sub-type filter pills */}
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {DB_SUBTYPES.map(st => {
-                    const count = st.id === 'All' ? docs.length : docs.filter(d => d.subType === st.id).length;
-                    return (
-                      <button
-                        key={st.id}
-                        onClick={() => setDbSubType(st.id)}
-                        className={cn(
-                          'flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer',
-                          dbSubType === st.id
-                            ? 'bg-[#111111] border-[#B88719]/60 text-[#D9B86C]'
-                            : 'bg-white border-[#BFA66A]/25 text-[#5A4209]/70 hover:border-[#BFA66A]/50 hover:bg-[#FFFDF8]'
-                        )}
-                      >
-                        <st.icon className="w-3 h-3" />
-                        {st.label}
-                        <span className={cn(
-                          'ml-0.5 text-[9px] font-mono',
-                          dbSubType === st.id ? 'text-[#D9B86C]/70' : 'text-slate-400'
-                        )}>{count}</span>
-                      </button>
-                    );
-                  })}
+                {/* Search input */}
+                <div className="border-t border-[#BFA66A]/15 pt-3.5 flex items-center">
+                  <div className="relative group w-full sm:w-80">
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                    <input
+                      value={dbSearch}
+                      onChange={e => setDbSearch(e.target.value)}
+                      placeholder="Search by name, type, author, languageâ€¦"
+                      className="w-full pl-9 pr-4 py-2 bg-white border border-[#BFA66A]/25 rounded-xl text-xs text-[#111111] placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-[#B88719] focus:border-[#B88719]/40 transition-all"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -537,13 +660,17 @@ export const KnowledgeHubView = () => {
                 {/* Table header */}
                 <div className="px-6 py-4 bg-[#FFFDF8] border-b border-[#BFA66A]/15 flex items-center justify-between">
                   <span className="text-[10px] font-mono font-black text-[#5A4209]/80 uppercase tracking-widest">
-                    Gold Layer Â· {dbSubType === 'All' ? 'All Types' : dbSubType}
+                    Gold Layer Â· {selectedSources.size === DB_SOURCE_CHIPS.length
+                      ? 'All Types'
+                      : selectedSources.size === 0
+                        ? 'None Selected'
+                        : DB_SOURCE_CHIPS.filter(c => selectedSources.has(c.id)).map(c => c.label).join(', ')}
                     {dbSearch.trim() && (
                       <span className="ml-2 text-[#B88719]">Â· "{dbSearch.trim()}"</span>
                     )}
                   </span>
                   <span className="text-[9px] font-mono font-bold py-1 px-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-600">
-                    {searchedDocs.length} result{searchedDocs.length !== 1 ? 's' : ''}
+                    {pagedDocs.length} on page {dbPage}
                   </span>
                 </div>
 
@@ -563,7 +690,9 @@ export const KnowledgeHubView = () => {
                         <td colSpan={5} className="px-6 py-12 text-center text-xs text-slate-400 font-mono">
                           {dbSearch.trim()
                             ? `No results for "${dbSearch.trim()}"`
-                            : `No ${dbSubType === 'All' ? '' : dbSubType + ' '}documents in the Gold layer.`}
+                            : selectedSources.size === 0
+                              ? 'No source types selected.'
+                              : 'No documents in the Gold layer.'}
                         </td>
                       </tr>
                     ) : pagedDocs.map(doc => (
@@ -579,7 +708,7 @@ export const KnowledgeHubView = () => {
                               <div className="text-sm font-bold text-[#111111] group-hover:text-[#B88719] transition-colors uppercase tracking-tight truncate">
                                 {doc.name}
                               </div>
-                              <div className="text-[10px] text-slate-500 mt-0.5">{doc.version} Â· Added by {doc.author}</div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">Added by {doc.author || '—'}</div>
                             </div>
                           </div>
                         </td>
@@ -616,59 +745,19 @@ export const KnowledgeHubView = () => {
                 </table>
 
                 {/* Pagination */}
-                {totalPages > 1 && (
+                {(totalPages > 1 || dbHasNext) && (
                   <div className="px-6 py-4 border-t border-[#BFA66A]/15 bg-[#FFFDF8] flex items-center justify-between">
                     <span className="text-[10px] font-mono text-slate-500">
-                      {(safePage - 1) * PAGE_SIZE + 1}â€"{Math.min(safePage * PAGE_SIZE, searchedDocs.length)} of {searchedDocs.length}
+                      Page <span className="font-bold text-[#111111]">{dbPage}</span> of {totalPages}
+                      {docsLoading && <span className="text-slate-400"> · loading…</span>}
                     </span>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        onClick={() => setDbPage(p => Math.max(1, p - 1))}
-                        disabled={safePage === 1}
-                        className={cn(
-                          'p-1.5 rounded-lg border transition-all cursor-pointer',
-                          safePage === 1
-                            ? 'border-slate-100 text-slate-300 cursor-not-allowed'
-                            : 'border-[#BFA66A]/30 text-[#8A5A00] hover:bg-[#FFF9E8] hover:border-[#BFA66A]/50'
-                        )}>
-                        <ChevronLeft className="w-3.5 h-3.5" />
-                      </button>
-
-                      {Array.from({ length: totalPages }, (_, i) => i + 1)
-                        .filter(p => p === 1 || p === totalPages || Math.abs(p - safePage) <= 1)
-                        .reduce<(number | 'â€¦')[]>((acc, p, idx, arr) => {
-                          if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push('â€¦');
-                          acc.push(p);
-                          return acc;
-                        }, [])
-                        .map((p, i) =>
-                          p === 'â€¦' ? (
-                            <span key={`ellipsis-${i}`} className="px-1 text-[10px] text-slate-400 font-mono">â€¦</span>
-                          ) : (
-                            <button key={p} onClick={() => setDbPage(p as number)}
-                              className={cn(
-                                'min-w-[28px] h-7 px-2 rounded-lg border text-[10px] font-black transition-all cursor-pointer',
-                                p === safePage
-                                  ? 'bg-[#111111] border-[#B88719]/50 text-[#D9B86C]'
-                                  : 'bg-white border-[#BFA66A]/25 text-[#5A4209]/70 hover:border-[#BFA66A]/50 hover:bg-[#FFFDF8]'
-                              )}>
-                              {p}
-                            </button>
-                          )
-                        )}
-
-                      <button
-                        onClick={() => setDbPage(p => Math.min(totalPages, p + 1))}
-                        disabled={safePage === totalPages}
-                        className={cn(
-                          'p-1.5 rounded-lg border transition-all cursor-pointer',
-                          safePage === totalPages
-                            ? 'border-slate-100 text-slate-300 cursor-not-allowed'
-                            : 'border-[#BFA66A]/30 text-[#8A5A00] hover:bg-[#FFF9E8] hover:border-[#BFA66A]/50'
-                        )}>
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    <Pagination
+                      page={dbPage}
+                      totalPages={totalPages}
+                      hasNext={dbHasNext}
+                      canJump={dbCanJump}
+                      onJump={dbGoTo}
+                    />
                   </div>
                 )}
               </div>
@@ -705,7 +794,7 @@ export const KnowledgeHubView = () => {
                   </div>
                 }>
                 {(() => {
-                  const available = ALL_AVAILABLE_TABLES[selectedDoc.id] ?? [];
+                  const available = availableTablesForNewConfig;
                   const schemas = ['All', ...Array.from(new Set(available.map(t => t.schema)))];
                   const visible = newCfgSchemaFilter === 'All' ? available : available.filter(t => t.schema === newCfgSchemaFilter);
                   return (
@@ -823,6 +912,13 @@ export const KnowledgeHubView = () => {
                       </button>
                     </div>
                     <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
+                      {warehouseConfigs.length === 0 && (
+                        <div className="flex flex-col items-center justify-center h-32 gap-2 text-center text-slate-400">
+                          <Layers3 className="w-6 h-6 opacity-30" />
+                          <p className="text-[11px] font-mono">No configs yet</p>
+                          <p className="text-[10px] text-slate-300">Click New to create one</p>
+                        </div>
+                      )}
                       {warehouseConfigs.map(cfg => (
                         <div key={cfg.id}
                           className={cn(
@@ -892,7 +988,7 @@ export const KnowledgeHubView = () => {
 
                         {/* Connection mini-row */}
                         {(() => {
-                          const conn = getWarehouseConnection(selectedDoc.type);
+                          const conn = getWarehouseConnection(selectedDoc.type, selectedConfig.connection);
                           const fields = [
                             conn.platform,
                             conn.host,
@@ -998,6 +1094,12 @@ export const KnowledgeHubView = () => {
                       </span>
                     </div>
                     <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar bg-[#FCFBF7]/30">
+                      {chunks.length === 0 && (
+                        <div className="flex flex-col items-center justify-center h-32 gap-2 text-center text-slate-400">
+                          <Layers3 className="w-6 h-6 opacity-30" />
+                          <p className="text-[11px] font-mono">No chunks for this document</p>
+                        </div>
+                      )}
                       {chunks.map(chunk => (
                         <div key={chunk.id}
                           className={cn(
@@ -1164,21 +1266,6 @@ export const KnowledgeHubView = () => {
                                 </div>
                               </div>
                             )}
-                            {selectedVersion.intent && (
-                              <div className="flex flex-col md:col-span-2 lg:col-span-3">
-                                <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-2">Retrieval Intent Word Map</span>
-                                <div className="flex gap-2 overflow-x-auto pb-1 flex-nowrap">
-                                  {selectedVersion.intent.split(/\s+/).map((w, i) => {
-                                    const clean = w.replace(/[.,/#!$%^&*;:{}=\-_`~()"'?]/g, '').trim();
-                                    return clean ? (
-                                      <span key={i} className="bg-white border border-[#BFA66A]/25 text-[#8A5A00] text-[11px] font-mono px-3 py-1.5 rounded-xl shadow-2xs shrink-0">
-                                        {clean}
-                                      </span>
-                                    ) : null;
-                                  })}
-                                </div>
-                              </div>
-                            )}
                           </div>
                         </div>
 
@@ -1225,7 +1312,8 @@ export const KnowledgeHubView = () => {
                     { label: 'Embedding Model',  value: selectedCollection.embedding_model ?? 'â€"' },
                     { label: 'Dimensions',       value: String(selectedCollection.dimensions) },
                     { label: 'Distance Metric',  value: selectedCollection.distance },
-                    { label: 'Vector Points',    value: selectedCollection.points.toLocaleString() },
+                    { label: 'Vector Points (your tenant)', value: selectedCollection.points.toLocaleString() },
+                    { label: 'Vector Points (all tenants)', value: (selectedCollection.total_points ?? selectedCollection.points).toLocaleString() },
                   ].map(row => (
                     <div key={row.label}>
                       <span className="text-[9px] font-mono text-slate-400 font-bold uppercase tracking-wider block mb-0.5">{row.label}</span>
@@ -1275,14 +1363,35 @@ export const KnowledgeHubView = () => {
                 <div className="flex-1 flex flex-col min-w-0">
                   {/* Query bar */}
                   <div className={cn('px-5 py-4 border-b border-[#BFA66A]/15 shrink-0', selectedCollection.active ? 'bg-[#FFFDF8]' : 'bg-slate-50')}>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-[#6B6B6B] mb-2">Semantic Search Â· Top 5 Points</p>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-[#6B6B6B]">
+                        Semantic Search &middot; Top {qdrantTopK} Points
+                      </p>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider">Top K</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={20}
+                          value={qdrantTopK}
+                          onChange={e => setQdrantTopK(Math.min(20, Math.max(1, Number(e.target.value) || 1)))}
+                          disabled={!selectedCollection.active}
+                          className={cn(
+                            'w-14 border rounded-lg px-2 py-0.5 text-xs font-mono text-center focus:outline-none transition-all',
+                            selectedCollection.active
+                              ? 'bg-white border-[#BFA66A]/30 text-[#2A2A2A] focus:border-[#B88719]'
+                              : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed',
+                          )}
+                        />
+                      </div>
+                    </div>
                     <div className="flex gap-2">
                       <input
                         type="text"
                         value={qdrantQuery}
                         onChange={e => selectedCollection.active && setQdrantQuery(e.target.value)}
                         onKeyDown={e => e.key === 'Enter' && selectedCollection.active && handleQdrantSearch()}
-                        placeholder={selectedCollection.active ? 'Ask a natural-language questionâ€¦' : 'Collection is inactive â€" activate to query'}
+                        placeholder={selectedCollection.active ? 'Ask a natural-language question…' : 'Collection is inactive — activate to query'}
                         disabled={!selectedCollection.active}
                         className={cn(
                           'flex-1 border rounded-xl px-4 py-2 text-xs font-mono placeholder-slate-400 focus:outline-none transition-all',
@@ -1315,7 +1424,7 @@ export const KnowledgeHubView = () => {
                     {selectedCollection.active && qdrantPoints.length === 0 && !qdrantSearching && (
                       <div className="flex flex-col items-center justify-center h-full gap-3 text-center text-slate-400">
                         <MessageSquare className="w-10 h-10 opacity-30" />
-                        <p className="text-xs font-medium">Enter a query above to retrieve the top 5 matching points from this collection.</p>
+                        <p className="text-xs font-medium">Enter a query above to retrieve the top {qdrantTopK} matching points from this collection.</p>
                       </div>
                     )}
                     {selectedCollection.active && qdrantSearching && (
@@ -1382,10 +1491,18 @@ export const KnowledgeHubView = () => {
             )}
           </DetailDrawer>
 
-          {/* â"€â"€ Collection grid â"€â"€ */}
+          {/* ── Collection grid ── */}
           <div className="space-y-4">
+            {qdrantCollections.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 gap-3 text-center text-slate-400">
+                <Layers className="w-10 h-10 opacity-30" />
+                <p className="text-sm font-medium">No Qdrant collections registered</p>
+                <p className="text-xs text-slate-400">Register a Qdrant connection to see collections here.</p>
+              </div>
+            ) : (
+              <>
             <p className="text-sm text-slate-500 font-medium">
-              {qdrantCollections.filter(c => c.active).length} active Â· {qdrantCollections.length} total collections â€" click a card to inspect
+              {qdrantCollections.filter(c => c.active).length} active · {qdrantCollections.length} total collections — click a card to inspect
             </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {qdrantCollections.map(col => (
@@ -1441,6 +1558,8 @@ export const KnowledgeHubView = () => {
                 </button>
               ))}
             </div>
+              </>
+            )}
           </div>
         </>
       )}
@@ -1468,48 +1587,86 @@ export const KnowledgeHubView = () => {
                   setCypher(generated);
                   setQueryRan(true);
                   setQueryRunning(true);
+
+                  // 1) Ask the backend to run the Cypher and return the matched subgraph.
+                  let sub: { nodes?: GraphNode[]; edges?: GraphEdge[] } | null = null;
                   try {
-                    await mockMutate('POST', '/api/knowledge/neo4j/query', { cypher: generated });
-                  } catch { /* ignore */ }
+                    sub = await apiMutate<{ nodes?: GraphNode[]; edges?: GraphEdge[] }>(
+                      'POST', '/api/knowledge/neo4j/query', { cypher: generated },
+                    );
+                  } catch { /* Neo4j offline — fall back to a local traversal below */ }
                   finally { setQueryRunning(false); }
 
-                  // Filter graph to the query path entities
-                  if (rawGraphNodes.length > 0) {
-                    const pathEntities = new Set([startNode, ...steps.map(s => s.nodeType)]);
-                    const filtered = rawGraphNodes.filter(n => pathEntities.has(n.name ?? ''));
-                    const filteredIds = new Set(filtered.map(n => n.id));
-                    const filteredEdges = rawGraphEdges.filter(
-                      e => filteredIds.has(e.from) && filteredIds.has(e.to),
-                    );
-                    const { layoutNodes, layoutEdges, layoutRelLabels } = computeGraphLayout(
-                      filtered.length ? filtered : rawGraphNodes,
-                      filtered.length ? filteredEdges : rawGraphEdges,
-                    );
-                    setNeoNodes(layoutNodes);
-                    setNeoEdges(layoutEdges);
-                    setNeoRelLabels(layoutRelLabels);
-                    setGraphFiltered(filtered.length > 0 && filtered.length < rawGraphNodes.length);
+                  // 2) Prefer the backend subgraph; otherwise traverse the loaded graph
+                  //    from the start node so the canvas always reflects the query.
+                  let nodes = sub?.nodes ?? [];
+                  let edges = sub?.edges ?? [];
+                  if (nodes.length === 0 && rawGraphNodes.length > 0) {
+                    const local = subgraphByType(rawGraphNodes, rawGraphEdges, startNode, Math.max(steps.length, 1));
+                    nodes = local.nodes;
+                    edges = local.edges;
+                  }
+                  if (nodes.length > 0) {
+                    setFilteredNodes(nodes);
+                    setFilteredEdges(edges);
+                    setGraphFiltered(true);
+                    setTimeout(() => fgRef.current?.zoomToFit(400, 40), 60);
                   }
                 }}
                 className="flex items-center gap-1.5 px-3 py-2 bg-[#B88719] text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-[#8A5A00] transition-all cursor-pointer">
                 {queryRunning
                   ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   : <Play    className="w-3.5 h-3.5" />}
-                {queryRunning ? 'Running' : 'Run'}
+                {queryRunning ? 'Building' : 'Build'}
               </button>
             </div>
 
             {/* Builder steps */}
             <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
-              {/* Start node â€" always present */}
-              <div className="flex items-center gap-2 px-3 py-2.5 bg-[#FFF9E8] border-2 border-[#B88719] rounded-xl">
-                <Circle className="w-3.5 h-3.5 text-[#B88719] shrink-0" />
-                <select value={startNode} onChange={e => { setStartNode(e.target.value); setSteps([]); setQueryRan(false); }}
-                  className="bg-transparent text-xs font-bold text-[#8A5A00] focus:outline-none cursor-pointer flex-1">
-                  {allEntities.map(n => <option key={n} value={n}>{n}</option>)}
-                </select>
-                <span className="text-[9px] font-mono text-[#8A5A00]/50 uppercase tracking-wider shrink-0">start</span>
-              </div>
+              {/* Start node — searchable combobox */}
+              {allEntities.length === 0 ? (
+                <div className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-[10px] text-slate-400 font-mono text-center">
+                  No entities — Neo4j schema not loaded
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 px-3 py-2.5 bg-[#FFF9E8] border-2 border-[#B88719] rounded-xl relative">
+                  <Circle className="w-3.5 h-3.5 text-[#B88719] shrink-0" />
+                  <div className="relative flex-1">
+                    <input
+                      value={entitySearchOpen ? entitySearchQuery : startNode}
+                      onFocus={() => { setEntitySearchOpen(true); setEntitySearchQuery(''); }}
+                      onChange={e => { setEntitySearchQuery(e.target.value); setEntitySearchOpen(true); }}
+                      onBlur={() => setTimeout(() => { setEntitySearchOpen(false); setEntitySearchQuery(''); }, 160)}
+                      placeholder="Search entity…"
+                      className="bg-transparent text-xs font-bold text-[#8A5A00] focus:outline-none w-full placeholder:text-[#8A5A00]/40"
+                    />
+                    {entitySearchOpen && (
+                      <div className="absolute top-full left-0 z-50 mt-1.5 w-52 max-h-44 overflow-y-auto bg-white border border-[#BFA66A]/40 rounded-xl shadow-lg custom-scrollbar">
+                        {filteredEntityOptions.length === 0 ? (
+                          <div className="px-3 py-2 text-[10px] text-slate-400 font-mono">No match</div>
+                        ) : filteredEntityOptions.map(n => (
+                          <button
+                            key={n}
+                            onMouseDown={() => {
+                              setStartNode(n);
+                              setSteps([]);
+                              setQueryRan(false);
+                              setEntitySearchQuery('');
+                              setEntitySearchOpen(false);
+                            }}
+                            className={cn(
+                              'w-full text-left px-3 py-2 text-xs font-bold border-b border-[#BFA66A]/10 last:border-0 transition-colors cursor-pointer',
+                              n === startNode ? 'bg-[#FFF9E8] text-[#B88719]' : 'text-[#8A5A00] hover:bg-[#FFFDF8]',
+                            )}>
+                            {n}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-[9px] font-mono text-[#8A5A00]/50 uppercase tracking-wider shrink-0">start</span>
+                </div>
+              )}
 
               {/* Step rows â€" vertical */}
               {steps.map((step, si) => {
@@ -1517,12 +1674,12 @@ export const KnowledgeHubView = () => {
                 const targets = getTargets(fromEntity);
                 return (
                   <div key={step.id} className="ml-3 border-l-2 border-[#BFA66A]/30 pl-3 space-y-1.5">
-                    {/* Relationship â€" fixed RELATED_TO */}
+                    {/* Relationship — matches any link type/direction */}
                     <div className="flex items-center gap-1.5">
                       <ArrowDown className="w-3 h-3 text-slate-300 shrink-0" />
                       <div className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg flex-1 min-w-0">
                         <span className="text-[9px] font-mono text-slate-400 shrink-0">[</span>
-                        <span className="text-[11px] font-bold text-slate-500 font-mono flex-1 select-none">RELATED_TO</span>
+                        <span className="text-[11px] font-bold text-slate-500 font-mono flex-1 select-none">any relationship</span>
                         <span className="text-[9px] font-mono text-slate-400 shrink-0">]</span>
                       </div>
                     </div>
@@ -1565,7 +1722,7 @@ export const KnowledgeHubView = () => {
           </div>
 
           {/* â"€â"€ RIGHT: Graph Canvas â"€â"€ */}
-          <div className="flex-1 rounded-3xl relative overflow-hidden bg-[#0A0909] border border-white/6">
+          <div ref={graphContainerRef} className="flex-1 rounded-3xl relative overflow-hidden bg-[#0A0909] border border-white/6">
             {neoLoading && (
               <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#0A0909]/80 backdrop-blur-sm">
                 <div className="flex flex-col items-center gap-2">
@@ -1575,70 +1732,171 @@ export const KnowledgeHubView = () => {
               </div>
             )}
             <div className="absolute top-5 left-5 flex flex-col gap-1.5 z-10">
-              {['+','â€"','âŠ¡'].map((s,i) => (
-                <button key={i} className="w-8 h-8 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 text-slate-400 text-sm flex items-center justify-center font-mono">{s}</button>
+              {([
+                { label: '+', fn: () => fgRef.current?.zoom(fgRef.current.zoom() * 1.3, 300) },
+                { label: '−', fn: () => fgRef.current?.zoom(fgRef.current.zoom() / 1.3, 300) },
+                { label: '⊡', fn: () => fgRef.current?.zoomToFit(400, 40) },
+              ] as { label: string; fn: () => void }[]).map(({ label, fn }) => (
+                <button key={label} onClick={fn}
+                  className="w-8 h-8 bg-white/5 border border-white/10 rounded-lg hover:bg-white/10 text-slate-400 text-sm flex items-center justify-center font-mono cursor-pointer transition-colors">
+                  {label}
+                </button>
               ))}
             </div>
             <div className="absolute top-5 right-5 z-10 flex items-center gap-2">
               {graphFiltered && (
                 <button
                   onClick={() => {
-                    const { layoutNodes, layoutEdges, layoutRelLabels } = computeGraphLayout(rawGraphNodes, rawGraphEdges);
-                    setNeoNodes(layoutNodes);
-                    setNeoEdges(layoutEdges);
-                    setNeoRelLabels(layoutRelLabels);
+                    setFilteredNodes(null);
+                    setFilteredEdges(null);
                     setGraphFiltered(false);
                     setQueryRan(false);
+                    setTimeout(() => fgRef.current?.zoomToFit(400, 40), 50);
                   }}
+                  title="Revert the canvas to the full graph"
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 border border-white/20 text-white/70 hover:bg-white/20 rounded-full text-[9px] font-black uppercase tracking-widest transition-all cursor-pointer">
                   <RefreshCw className="w-3 h-3" />
-                  Full Graph
+                  Reset to Full Graph
                 </button>
               )}
-              <span className="flex items-center gap-1.5 px-3 py-1.5 bg-[#B88719]/10 border border-[#B88719]/20 text-[#B88719] rounded-full text-[9px] font-black uppercase tracking-widest">
+              <span className="pointer-events-none flex items-center gap-1.5 px-3 py-1.5 bg-[#B88719]/10 border border-[#B88719]/20 text-[#B88719] rounded-full text-[9px] font-black uppercase tracking-widest">
                 <span className="w-1.5 h-1.5 bg-[#B88719] rounded-full animate-pulse" />
                 {graphFiltered ? 'Query Result' : 'Force Layout Active'}
               </span>
             </div>
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <svg viewBox="0 0 900 560" className="w-full h-full px-10 py-6">
-                <defs>
-                  <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stopColor="#B88719" stopOpacity="0.55" /><stop offset="100%" stopColor="#B88719" stopOpacity="0" />
-                  </radialGradient>
-                  <radialGradient id="subGlow" cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stopColor="#8A5A00" stopOpacity="0.35" /><stop offset="100%" stopColor="#8A5A00" stopOpacity="0" />
-                  </radialGradient>
-                  <marker id="arrow" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto">
-                    <polygon points="0 0, 7 2.5, 0 5" fill="rgba(184,135,25,0.35)" />
-                  </marker>
-                </defs>
-                {neoEdges.map((e,i) => (
-                  <motion.line key={`e-${i}`} x1={e[0]} y1={e[1]} x2={e[2]} y2={e[3]} stroke="rgba(184,135,25,0.22)" strokeWidth="1.5" markerEnd="url(#arrow)"
-                    initial={{opacity:0}} animate={{opacity:1}} transition={{delay:i*0.12,duration:0.5}} />
-                ))}
-                {neoRelLabels.map(([x,y,label],i) => (
-                  <motion.text key={`rl-${i}`} x={x} y={y} textAnchor="middle" fill="rgba(184,135,25,0.5)" fontSize="8" fontFamily="monospace" fontWeight="bold"
-                    initial={{opacity:0}} animate={{opacity:1}} transition={{delay:1.2+i*0.08}}>{label}</motion.text>
-                ))}
-                {neoNodes.map((node,i) => (
-                  <motion.g key={node.id} initial={{scale:0,opacity:0}} animate={{scale:1,opacity:1}} transition={{delay:i*0.1,type:'spring',stiffness:200,damping:18}}>
-                    <circle cx={node.x} cy={node.y} r={node.r*3.8} fill={node.core ? 'url(#coreGlow)' : 'url(#subGlow)'} />
-                    <circle cx={node.x} cy={node.y} r={node.r} fill={node.core ? '#B88719' : '#6B4400'} stroke={node.core ? 'rgba(255,220,120,0.4)' : 'rgba(184,135,25,0.25)'} strokeWidth="1.5" />
-                    <text x={node.x} y={node.y+node.r+13} textAnchor="middle" fill="rgba(255,255,255,0.45)" fontSize="9" fontFamily="monospace" fontWeight="bold">{node.label}</text>
-                  </motion.g>
-                ))}
-              </svg>
-            </div>
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-full max-w-lg px-4">
-              <div className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl flex gap-2 p-1.5 shadow-[0_20px_50px_rgba(0,0,0,0.5)]">
-                <input className="flex-1 bg-transparent px-4 py-2 text-xs text-white/70 focus:outline-none placeholder:text-white/20"
-                  placeholder="Ask the Graph: 'How does Organization relate to Policy...'" />
-                <button className="bg-[#B88719] p-2 rounded-xl text-white hover:bg-[#8A5A00] transition-all">
-                  <Zap className="w-4 h-4" />
-                </button>
+            <ForceGraph2D
+              ref={fgRef}
+              graphData={graphData}
+              width={graphDims.w}
+              height={graphDims.h}
+              backgroundColor="#0A0909"
+              linkColor={() => 'rgba(184,135,25,0.3)'}
+              linkWidth={1.5}
+              linkDirectionalArrowLength={5}
+              linkDirectionalArrowRelPos={1}
+              linkDirectionalArrowColor={() => 'rgba(184,135,25,0.5)'}
+              // Keep the render loop (and therefore the offscreen hit-detection
+              // shadow canvas) alive after the layout settles. With the default
+              // auto-pause, the shadow canvas stops refreshing once the engine
+              // cools down, so settled nodes — and any node after a pan/zoom —
+              // lose their hover/click hit areas and appear "dead".
+              autoPauseRedraw={false}
+              onNodeHover={(node: any) => setHoverNodeId(node ? node.id : null)}
+              onNodeClick={(node: any) => setSelectedNeoNode(
+                selectedNeoNode?.id === node.id ? null : { id: node.id, name: node.name ?? '', description: node.description, type: node.type },
+              )}
+              nodeCanvasObject={(node: any, ctx, globalScale) => {
+                // Positions are NaN on the first layout tick — skip until resolved
+                // (createRadialGradient throws on non-finite coordinates).
+                if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) return;
+                const isSel = node.id === selectedNeoNode?.id;
+                const isHover = node.id === hoverNodeId;
+                const emphasised = isSel || isHover;
+                // Node radius is a fixed GRAPH-UNIT size, so it scales with the
+                // zoom — dots grow as you zoom in and shrink as you zoom out. The
+                // on-screen size is clamped so they never collapse into specks at
+                // full zoom-out nor swell into blobs at full zoom-in.
+                const baseGraph = emphasised ? 6 : 5;
+                const screenPx = Math.min(46, Math.max(3, baseGraph * globalScale));
+                const r = screenPx / globalScale; // back to graph units for drawing
+                const base = nodeColor(node.type);
+                // Glow (subtle for normal nodes, brighter when selected/hovered)
+                const glowR = r * (emphasised ? 4 : 2.4);
+                const grad = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, glowR);
+                grad.addColorStop(0, isSel ? '#FFD700' : base);
+                grad.addColorStop(1, 'transparent');
+                ctx.save();
+                ctx.globalAlpha = isSel ? 0.4 : isHover ? 0.3 : 0.18;
+                ctx.beginPath(); ctx.arc(node.x, node.y, glowR, 0, 2 * Math.PI);
+                ctx.fillStyle = grad; ctx.fill();
+                ctx.restore();
+                // Node body — colour by entity type
+                ctx.beginPath(); ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
+                ctx.fillStyle = isSel ? '#FFD700' : base; ctx.fill();
+                ctx.strokeStyle = isSel
+                  ? 'rgba(255,215,0,0.85)'
+                  : isHover ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.28)';
+                // Outline thickness tracks the (scaled) node so it stays proportional.
+                ctx.lineWidth = r * (emphasised ? 0.32 : 0.24); ctx.stroke();
+                // Name label for the selected OR hovered node so hovering always
+                // surfaces the node's name on the canvas (the full detail still
+                // appears in the node-info panel on click). Kept at a constant
+                // on-screen size so it stays readable at any zoom.
+                if (emphasised) {
+                  const fontSize = Math.max(9, 11 / globalScale);
+                  ctx.font = `bold ${fontSize}px monospace`;
+                  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+                  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+                  ctx.fillText(node.name ?? '', node.x, node.y + r + 3 / globalScale);
+                }
+              }}
+              nodeCanvasObjectMode={() => 'replace'}
+              nodeLabel={(node: any) => node.name || node.id || ''}
+              nodeRelSize={6}
+              nodePointerAreaPaint={(node: any, color, ctx, globalScale = 1) => {
+                // Hit-area must be painted explicitly when using a custom node
+                // renderer. Mirror the visible dot's zoom-scaling (same clamped
+                // graph-unit size, a touch larger) so "what you see is what you
+                // can click" at every zoom level — with a screen-px floor so even
+                // fully zoomed-out specks stay comfortably clickable.
+                if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) return;
+                const screenPx = Math.min(46, Math.max(3, 5 * globalScale));
+                const hitR = Math.max(7, screenPx * 1.4) / globalScale;
+                ctx.fillStyle = color;
+                ctx.beginPath(); ctx.arc(node.x, node.y, hitR, 0, 2 * Math.PI); ctx.fill();
+              }}
+              d3VelocityDecay={0.3}
+              d3AlphaDecay={0.05}
+              cooldownTicks={60}
+              onEngineStop={() => {
+                // Fit to view only the first time after each data load — not on
+                // every settle, so dragging a node doesn't snap the zoom back.
+                if (!didFitRef.current) {
+                  didFitRef.current = true;
+                  fgRef.current?.zoomToFit(400, 40);
+                }
+              }}
+            />
+            {/* Node info panel */}
+            {selectedNeoNode && (
+              <div className="absolute bottom-20 left-5 z-20 bg-[#12110E]/92 backdrop-blur-sm border border-[#B88719]/35 rounded-2xl p-4 max-w-[260px] shadow-[0_8px_32px_rgba(0,0,0,0.7)]">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-[#B88719] font-mono">Node Info</span>
+                  <button onClick={() => setSelectedNeoNode(null)} className="text-white/30 hover:text-white/60 transition-colors text-xs leading-none cursor-pointer">✕</button>
+                </div>
+                <p className="text-sm font-bold text-white font-mono">{selectedNeoNode.name || '(unnamed)'}</p>
+                {selectedNeoNode.type && (
+                  <span className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[9px] font-bold font-mono"
+                    style={{ background: `${nodeColor(selectedNeoNode.type)}22`, color: nodeColor(selectedNeoNode.type), border: `1px solid ${nodeColor(selectedNeoNode.type)}55` }}>
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: nodeColor(selectedNeoNode.type) }} />
+                    {selectedNeoNode.type}
+                  </span>
+                )}
+                <div className="mt-2">
+                  <span className="text-[8px] font-black uppercase tracking-widest text-white/30 font-mono">Description</span>
+                  <p className="text-[11px] text-white/55 leading-relaxed mt-0.5">
+                    {selectedNeoNode.description || 'No description available.'}
+                  </p>
+                </div>
+                <div className="mt-3 pt-2 border-t border-white/10">
+                  <span className="text-[9px] text-white/20 font-mono break-all">{selectedNeoNode.id}</span>
+                </div>
               </div>
-            </div>
+            )}
+            {/* Node-type colour legend */}
+            {presentTypes.length > 0 && (
+              <div className="pointer-events-none absolute bottom-5 right-5 z-10 bg-[#12110E]/85 backdrop-blur-sm border border-white/10 rounded-xl px-3 py-2.5 max-w-[180px]">
+                <div className="text-[8px] font-black uppercase tracking-widest text-white/40 font-mono mb-1.5">Node Types</div>
+                <div className="flex flex-col gap-1">
+                  {presentTypes.map(t => (
+                    <div key={t} className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: nodeColor(t) }} />
+                      <span className="text-[9px] text-white/60 font-mono truncate">{t}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

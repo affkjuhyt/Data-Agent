@@ -6,7 +6,7 @@ import time
 from typing import Any, Iterator, Literal, Protocol
 
 from jinja2 import Template
-from llama_cpp import Llama, LlamaState
+from llama_cpp import Llama, LlamaGrammar, LlamaState
 
 from _logging import get_logger
 
@@ -45,18 +45,23 @@ class UserPrompt:
     def __init__(self, prompt: str) -> None:
         self.prompt = prompt
 
-    def to_text(self) -> str:
+    def to_text(self, model: "Llama | None" = None) -> str:
         return self.prompt
 
 
 class UserMessageList:
-    def __init__(self, messages: list[dict[str, str]], offset: int = 0) -> None:
+    def __init__(self, messages: list[dict[str, str]], offset: int = 0, include_system: bool = False) -> None:
         self.messages = messages
         self._offset = offset  # messages[offset:] are new — everything before is already in KV
+        self._include_system = include_system
 
     def to_text(self, model: Llama) -> str:
-        conversation = [m for m in self.messages[self._offset:] if m.get("role") != "system"]
-        return _render_chat_template(model, conversation, add_generation_prompt=True)
+        msgs = self.messages[self._offset:]
+        # When a pre-cached system KV snapshot is loaded, the system tokens are already
+        # in context — skip them here. When starting fresh (no snapshot), include them.
+        if not self._include_system:
+            msgs = [m for m in msgs if m.get("role") != "system"]
+        return _render_chat_template(model, msgs, add_generation_prompt=True)
 
 
 class Formatter:
@@ -92,8 +97,46 @@ class Formatter:
             }
         return {**base, **body}
 
-def _extract_gen_kwargs(options: dict[str, Any]) -> dict[str, Any]:
-    return {
+# Standard GBNF grammar that constrains output to valid JSON objects.
+# Passed to llama_cpp generate() when the caller sets format="json".
+_JSON_GRAMMAR_GBNF = r"""
+root   ::= object
+value  ::= object | array | string | number | ("true" | "false" | "null") ws
+
+object ::=
+  "{" ws (
+            string ":" ws value
+    ("," ws string ":" ws value)*
+  )? "}" ws
+
+array  ::=
+  "[" ws (
+            value
+    ("," ws value)*
+  )? "]" ws
+
+string ::=
+  "\"" (
+    [^\\"\x7F\x00-\x1F] |
+    "\\" (["\\/bfnrt] | "u" [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F] [0-9a-fA-F])
+  )* "\"" ws
+
+number ::= ("-"? ([0-9] | [1-9] [0-9]*)) ("." [0-9]+)? ([eE] [-+]? [0-9]+)? ws
+
+ws ::= ([ \t\n] ws)?
+"""
+
+_JSON_GRAMMAR: LlamaGrammar | None = None
+
+def _get_json_grammar() -> LlamaGrammar:
+    global _JSON_GRAMMAR
+    if _JSON_GRAMMAR is None:
+        _JSON_GRAMMAR = LlamaGrammar.from_string(_JSON_GRAMMAR_GBNF, verbose=False)
+    return _JSON_GRAMMAR
+
+
+def _extract_gen_kwargs(options: dict[str, Any], fmt: str = "", grammar_gbnf: str = "") -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
         "temp": float(options.get("temperature", 0.8)),
         "top_k": int(options.get("top_k", 40)),
         "top_p": float(options.get("top_p", 0.95)),
@@ -109,24 +152,52 @@ def _extract_gen_kwargs(options: dict[str, Any]) -> dict[str, Any]:
         "penalize_nl": bool(options.get("penalize_newline", True)),
         "reset": False,
     }
+    if grammar_gbnf:
+        try:
+            kwargs["grammar"] = LlamaGrammar.from_string(grammar_gbnf, verbose=True)
+        except Exception as _e:
+            import logging as _lg
+            _lg.getLogger("llama3-model").error(
+                "grammar_gbnf parse failed (%s) — falling back to generic JSON grammar", _e
+            )
+            kwargs["grammar"] = _get_json_grammar()
+    elif fmt == "json":
+        kwargs["grammar"] = _get_json_grammar()
+    return kwargs
+
+def _resolve_max_tokens(payload: dict[str, Any], options: dict[str, Any]) -> int:
+    # LiteLLM proxy sends max_tokens as options.num_predict (Ollama format) OR
+    # as a top-level max_tokens field. Check both; fall back to 512.
+    v = options.get("num_predict") or payload.get("max_tokens") or payload.get("num_predict")
+    return int(v) if v else 512
+
 
 def parse_chat_payload(payload: dict[str, Any]) -> dict[str, Any]:
     options = payload.get("options") or {}
+    fmt = str(payload.get("format", "") or "")
+    grammar_gbnf = str(payload.get("grammar_gbnf", "") or "")
+    mt = _resolve_max_tokens(payload, options)
+    import logging as _l; _l.getLogger("llama3-model").info(
+        "parse_chat_payload max_tokens=%d options.num_predict=%r payload.max_tokens=%r format=%r grammar=%s",
+        mt, options.get("num_predict"), payload.get("max_tokens"), fmt,
+        "custom" if grammar_gbnf else "none",
+    )
     return {
         "user_input": UserMessageList(payload["messages"]),
         "formatter": Formatter("chat"),
-        "gen_kwargs": _extract_gen_kwargs(options),
-        "max_tokens": int(options.get("num_predict", 512)),
+        "gen_kwargs": _extract_gen_kwargs(options, fmt, grammar_gbnf),
+        "max_tokens": mt,
         "stream": bool(payload.get("stream", False)),
     }
 
 def parse_generate_payload(payload: dict[str, Any]) -> dict[str, Any]:
     options = payload.get("options") or {}
+    fmt = str(payload.get("format", "") or "")
     return {
         "user_input": UserPrompt(payload["prompt"]),
         "formatter": Formatter("generate"),
-        "gen_kwargs": _extract_gen_kwargs(options),
-        "max_tokens": int(options.get("num_predict", 512)),
+        "gen_kwargs": _extract_gen_kwargs(options, fmt),
+        "max_tokens": _resolve_max_tokens(payload, options),
         "stream": bool(payload.get("stream", False)),
     }
 
@@ -150,7 +221,7 @@ class Llama3Model:
         self._model: Llama | None = None
 
     def load(self) -> None:
-        log.info("Loading model from %s …", self._model_path)
+        log.info("Loading model from %s with n_gpu_layers=%d …", self._model_path, self._n_gpu_layers)
         t0 = time.perf_counter()
         self._model = Llama(
             model_path=self._model_path,
@@ -162,8 +233,16 @@ class Llama3Model:
             use_mmap=self._use_mmap,
             use_mlock=self._use_mlock,
             verbose=self._verbose,
+            n_batch=512,
         )
-        log.info("Weights loaded in %.2fs", time.perf_counter() - t0)
+        elapsed = time.perf_counter() - t0
+        gpu_layers = getattr(self._model, "n_gpu_layers", self._n_gpu_layers)
+        n_layers = getattr(self._model, "n_layers", "?")
+        log.info("Weights loaded in %.2fs | GPU layers: %s/%s", elapsed, gpu_layers, n_layers)
+        if self._n_gpu_layers != 0:
+            log.info("GPU acceleration ENABLED")
+        else:
+            log.warning("GPU acceleration DISABLED — model running on CPU only")
 
     def precaching_system_prompt(self, system_prompt: str) -> LlamaState:
         assert self._model is not None
@@ -274,6 +353,12 @@ class Llama3Model:
     ) -> Iterator[dict[str, Any]]:
         self.prefill(user_input)
         yield from self.stream_decode_reply(formatter, gen_kwargs, max_tokens)
+
+    def embed(self, text: str) -> list[float]:
+        """Return a float embedding for the given text using the model's token representations."""
+        assert self._model is not None
+        result = self._model.create_embedding(text)
+        return result["data"][0]["embedding"]
 
     def health(self) -> dict[str, Any]:
         return {

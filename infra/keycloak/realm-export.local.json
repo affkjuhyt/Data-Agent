@@ -1,0 +1,543 @@
+{
+  "realm": "aeroflow",
+  "enabled": true,
+  "displayName": "AeroFlow Platform",
+  "sslRequired": "none",
+  "passwordPolicy": "length(12) and upperCase(1) and lowerCase(1) and digits(1) and specialChars(1) and notUsername and notEmail and passwordHistory(5) and hashIterations(27500)",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "failureFactor": 5,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "maxDeltaTimeSeconds": 43200,
+  "eventsEnabled": true,
+  "eventsListeners": [
+    "jboss-logging"
+  ],
+  "enabledEventTypes": [
+    "LOGIN",
+    "LOGIN_ERROR",
+    "LOGOUT",
+    "LOGOUT_ERROR",
+    "REGISTER",
+    "REGISTER_ERROR",
+    "TOKEN_EXCHANGE",
+    "REFRESH_TOKEN",
+    "REFRESH_TOKEN_ERROR",
+    "CLIENT_LOGIN",
+    "CLIENT_LOGIN_ERROR",
+    "CODE_TO_TOKEN",
+    "CODE_TO_TOKEN_ERROR",
+    "UPDATE_PASSWORD",
+    "UPDATE_PASSWORD_ERROR",
+    "UPDATE_TOTP",
+    "REMOVE_TOTP",
+    "GRANT_CONSENT",
+    "REVOKE_GRANT",
+    "SEND_RESET_PASSWORD",
+    "SEND_VERIFY_EMAIL",
+    "VERIFY_EMAIL",
+    "IMPERSONATE",
+    "RESET_PASSWORD",
+    "RESET_PASSWORD_ERROR",
+    "IDENTITY_PROVIDER_LOGIN",
+    "IDENTITY_PROVIDER_LOGIN_ERROR"
+  ],
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": true,
+  "ssoSessionIdleTimeout": 28800,
+  "ssoSessionMaxLifespan": 36000,
+  "accessTokenLifespan": 900,
+  "clients": [
+    {
+      "clientId": "aeroflow-frontend",
+      "name": "AeroFlow Frontend",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": [
+        "http://localhost:5173/*",
+        "http://localhost:3000/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5173",
+        "http://localhost:3000"
+      ],
+      "protocol": "openid-connect",
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:5173/*##http://localhost:3000/*",
+        "backchannel.logout.url": "",
+        "backchannel.logout.session.required": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "role_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "role_id",
+            "claim.name": "role_id",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "aeroflow-backend",
+      "name": "AeroFlow Backend (Kong)",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocol": "openid-connect",
+      "secret": "aeroflow-backend-secret-change-in-prod"
+    },
+    {
+      "clientId": "aeroflow-admin",
+      "name": "AeroFlow Admin (python-keycloak)",
+      "enabled": true,
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "serviceAccountsEnabled": true,
+      "protocol": "openid-connect",
+      "secret": "aeroflow-admin-secret-change-in-prod"
+    }
+  ],
+  "roles": {
+    "realm": [
+      {
+        "name": "platform-admin",
+        "description": "Full platform sovereignty"
+      },
+      {
+        "name": "ai-engineer",
+        "description": "AI runtime and deployment access"
+      },
+      {
+        "name": "executive-viewer",
+        "description": "Read-only executive view"
+      }
+    ]
+  },
+  "users": [
+    {
+      "username": "platform-admin",
+      "email": "admin@aeroflow.local",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Admin@123456",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "platform-admin"
+      ],
+      "clientRoles": {
+        "realm-management": [
+          "view-users",
+          "query-users",
+          "query-groups",
+          "view-events"
+        ]
+      },
+      "attributes": {
+        "tenant_id": [
+          "a0000000-0000-0000-0000-000000000001"
+        ],
+        "role_id": [
+          "platform-admin"
+        ]
+      },
+      "requiredActions": [
+        "CONFIGURE_TOTP"
+      ]
+    },
+    {
+      "username": "ai-engineer",
+      "email": "engineer@aeroflow.local",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Engineer@1234",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ai-engineer"
+      ],
+      "attributes": {
+        "tenant_id": [
+          "a0000000-0000-0000-0000-000000000001"
+        ],
+        "role_id": [
+          "ai-engineer"
+        ]
+      },
+      "requiredActions": [
+        "CONFIGURE_TOTP"
+      ]
+    },
+    {
+      "username": "executive-viewer",
+      "email": "viewer@aeroflow.local",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Viewer@123456",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "executive-viewer"
+      ],
+      "attributes": {
+        "tenant_id": [
+          "a0000000-0000-0000-0000-000000000001"
+        ],
+        "role_id": [
+          "executive-viewer"
+        ]
+      },
+      "requiredActions": [
+        "CONFIGURE_TOTP"
+      ]
+    },
+    {
+      "username": "helios-admin",
+      "email": "helios-admin@helios.corp",
+      "firstName": "Admin",
+      "lastName": "Helios",
+      "enabled": true,
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "H3lios@Admin01!",
+          "temporary": false
+        }
+      ],
+      "attributes": {
+        "tenant_id": [
+          "b0000000-0000-0000-0000-000000000002"
+        ],
+        "role_id": [
+          "platform-admin"
+        ]
+      }
+    },
+    {
+      "username": "helios-engineer",
+      "email": "helios-engineer@helios.corp",
+      "firstName": "Engineer",
+      "lastName": "Helios",
+      "enabled": true,
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "H3lios@Eng001!",
+          "temporary": false
+        }
+      ],
+      "attributes": {
+        "tenant_id": [
+          "b0000000-0000-0000-0000-000000000002"
+        ],
+        "role_id": [
+          "ai-engineer"
+        ]
+      }
+    },
+    {
+      "username": "helios-viewer",
+      "email": "helios-viewer@helios.corp",
+      "firstName": "Viewer",
+      "lastName": "Helios",
+      "enabled": true,
+      "emailVerified": true,
+      "requiredActions": [],
+      "credentials": [
+        {
+          "type": "password",
+          "value": "H3lios@View01!",
+          "temporary": false
+        }
+      ],
+      "attributes": {
+        "tenant_id": [
+          "b0000000-0000-0000-0000-000000000002"
+        ],
+        "role_id": [
+          "executive-viewer"
+        ]
+      }
+    }
+  ],
+  "requiredActions": [
+    {
+      "alias": "CONFIGURE_TOTP",
+      "name": "Configure OTP",
+      "providerId": "CONFIGURE_TOTP",
+      "enabled": true,
+      "defaultAction": true
+    },
+    {
+      "alias": "webauthn-register",
+      "name": "Webauthn Register",
+      "providerId": "webauthn-register",
+      "enabled": true,
+      "defaultAction": false
+    },
+    {
+      "alias": "webauthn-register-passwordless",
+      "name": "Webauthn Register Passwordless",
+      "providerId": "webauthn-register-passwordless",
+      "enabled": true,
+      "defaultAction": false
+    }
+  ],
+  "webAuthnPolicyRpEntityName": "aeroflow",
+  "webAuthnPolicySignatureAlgorithms": [
+    "ES256",
+    "RS256"
+  ],
+  "webAuthnPolicyRpId": "",
+  "webAuthnPolicyAttestationConveyancePreference": "not specified",
+  "webAuthnPolicyAuthenticatorAttachment": "not specified",
+  "webAuthnPolicyRequireResidentKey": "not specified",
+  "webAuthnPolicyUserVerificationRequirement": "not specified",
+  "webAuthnPolicyCreateTimeout": 0,
+  "webAuthnPolicyAvoidSameAuthenticatorRegister": false,
+  "identityProviders": [
+    {
+      "alias": "azure-ad",
+      "displayName": "Azure Active Directory",
+      "providerId": "oidc",
+      "enabled": false,
+      "trustEmail": false,
+      "storeToken": false,
+      "addReadTokenRoleOnCreate": false,
+      "config": {
+        "clientId": "REPLACE_WITH_AZURE_APP_CLIENT_ID",
+        "clientSecret": "REPLACE_WITH_AZURE_APP_CLIENT_SECRET",
+        "tokenUrl": "https://login.microsoftonline.com/REPLACE_WITH_TENANT_ID/oauth2/v2.0/token",
+        "authorizationUrl": "https://login.microsoftonline.com/REPLACE_WITH_TENANT_ID/oauth2/v2.0/authorize",
+        "jwksUrl": "https://login.microsoftonline.com/REPLACE_WITH_TENANT_ID/discovery/v2.0/keys",
+        "userInfoUrl": "https://graph.microsoft.com/oidc/userinfo",
+        "defaultScope": "openid email profile",
+        "validateSignature": "true",
+        "useJwksUrl": "true",
+        "syncMode": "IMPORT"
+      }
+    },
+    {
+      "alias": "google",
+      "displayName": "Google Workspace",
+      "providerId": "google",
+      "enabled": false,
+      "trustEmail": true,
+      "storeToken": false,
+      "config": {
+        "clientId": "REPLACE_WITH_GOOGLE_CLIENT_ID",
+        "clientSecret": "REPLACE_WITH_GOOGLE_CLIENT_SECRET",
+        "defaultScope": "openid email profile",
+        "syncMode": "IMPORT"
+      }
+    },
+    {
+      "alias": "okta",
+      "displayName": "Okta",
+      "providerId": "oidc",
+      "enabled": false,
+      "trustEmail": false,
+      "storeToken": false,
+      "config": {
+        "clientId": "REPLACE_WITH_OKTA_CLIENT_ID",
+        "clientSecret": "REPLACE_WITH_OKTA_CLIENT_SECRET",
+        "tokenUrl": "https://REPLACE_WITH_OKTA_DOMAIN/oauth2/v1/token",
+        "authorizationUrl": "https://REPLACE_WITH_OKTA_DOMAIN/oauth2/v1/authorize",
+        "jwksUrl": "https://REPLACE_WITH_OKTA_DOMAIN/oauth2/v1/keys",
+        "userInfoUrl": "https://REPLACE_WITH_OKTA_DOMAIN/oauth2/v1/userinfo",
+        "defaultScope": "openid email profile groups",
+        "validateSignature": "true",
+        "useJwksUrl": "true",
+        "syncMode": "IMPORT"
+      }
+    }
+  ],
+  "identityProviderMappers": [
+    {
+      "name": "azure-ad-email-mapper",
+      "identityProviderAlias": "azure-ad",
+      "identityProviderMapper": "oidc-user-attribute-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "user.attribute": "email",
+        "claim": "email"
+      }
+    },
+    {
+      "name": "azure-ad-ai-engineer-role",
+      "identityProviderAlias": "azure-ad",
+      "identityProviderMapper": "oidc-role-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "role": "ai-engineer",
+        "claim": "roles",
+        "claim.value": "AeroFlow.AIEngineer"
+      }
+    },
+    {
+      "name": "azure-ad-platform-admin-role",
+      "identityProviderAlias": "azure-ad",
+      "identityProviderMapper": "oidc-role-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "role": "platform-admin",
+        "claim": "roles",
+        "claim.value": "AeroFlow.Admin"
+      }
+    },
+    {
+      "name": "google-email-mapper",
+      "identityProviderAlias": "google",
+      "identityProviderMapper": "oidc-user-attribute-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "user.attribute": "email",
+        "claim": "email"
+      }
+    },
+    {
+      "name": "okta-email-mapper",
+      "identityProviderAlias": "okta",
+      "identityProviderMapper": "oidc-user-attribute-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "user.attribute": "email",
+        "claim": "email"
+      }
+    },
+    {
+      "name": "okta-groups-to-role",
+      "identityProviderAlias": "okta",
+      "identityProviderMapper": "oidc-role-idp-mapper",
+      "config": {
+        "syncMode": "INHERIT",
+        "role": "ai-engineer",
+        "claim": "groups",
+        "claim.value": "aeroflow-engineers"
+      }
+    }
+  ],
+  "attributes": {
+    "cibaAuthRequestedUserHint": "login_hint",
+    "parRequestUriLifespan": "60",
+    "ssoSessionMaxConcurrentLogins": "2"
+  },
+  "browserSecurityHeaders": {
+    "contentSecurityPolicy": "frame-src 'self'; frame-ancestors 'self'; object-src 'none';"
+  },
+  "authenticationFlows": [
+    {
+      "alias": "Browser MFA",
+      "description": "Browser flow enforcing TOTP on every login",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-cookie",
+          "authenticatorFlow": false,
+          "requirement": "ALTERNATIVE",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        },
+        {
+          "authenticator": "auth-spnego",
+          "authenticatorFlow": false,
+          "requirement": "DISABLED",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        },
+        {
+          "authenticator": "identity-provider-redirector",
+          "authenticatorFlow": false,
+          "requirement": "ALTERNATIVE",
+          "priority": 25,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        },
+        {
+          "flowAlias": "Browser MFA - forms",
+          "requirement": "ALTERNATIVE",
+          "priority": 30,
+          "userSetupAllowed": false,
+          "autheticatorFlow": true
+        }
+      ]
+    },
+    {
+      "alias": "Browser MFA - forms",
+      "description": "Username, password and OTP form",
+      "providerId": "basic-flow",
+      "topLevel": false,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "auth-username-password-form",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        },
+        {
+          "authenticator": "auth-otp-form",
+          "authenticatorFlow": false,
+          "requirement": "REQUIRED",
+          "priority": 20,
+          "userSetupAllowed": false,
+          "autheticatorFlow": false
+        }
+      ]
+    }
+  ],
+  "browserFlow": "Browser MFA"
+}

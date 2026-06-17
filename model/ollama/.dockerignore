@@ -1,0 +1,30 @@
+# Weights are mounted at runtime — never bake them into the image.
+weights/
+*.gguf
+*.gguf.*
+
+# Build / cache artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local logs
+logs/
+*.log
+
+# Litellm config lives in infra/litellm — exclude the local copy
+litellm_config.yaml/
+
+# Editor / VCS
+.git/
+.gitignore
+.idea/
+.vscode/
+*.swp
+
+# Docs / scratch
+*.md

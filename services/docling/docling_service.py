@@ -25,7 +25,7 @@ from services.log_set_up import create_logger
 
 log = create_logger("services.docling", "service_docling")
 
-MAX_CHUNK_CHARS: int = 1500
+MAX_CHUNK_CHARS: int = 4000
 _worker_converter: DocumentConverter | None = None
 _worker_use_vlm: bool = False
 

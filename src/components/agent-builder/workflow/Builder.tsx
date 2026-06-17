@@ -1292,7 +1292,7 @@ ${edges.map(e => `  - from: "${e.source}"  to: "${e.target}"`).join('\n')}`;
                           (nodes.find(n => n.id === e.target)?.data as any)?.locked);
                       return !hasLocked;
                     }}
-                    onInit={inst => { rfInstance.current = inst; }}
+                    onInit={inst => { rfInstance.current = inst as ReactFlowInstance<Node<FlowNodeData>, Edge>; }}
                     nodeTypes={nodeTypes}
                     edgeTypes={edgeTypes}
                     fitView

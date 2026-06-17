@@ -1,0 +1,27 @@
+services:
+  neo4j:
+    build:
+      context: .
+    container_name: test_neo4j
+    restart: unless-stopped
+    expose:
+      - "7474"
+      - "7687"
+    environment:
+      NEO4J_AUTH: none
+
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://localhost:7474"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+

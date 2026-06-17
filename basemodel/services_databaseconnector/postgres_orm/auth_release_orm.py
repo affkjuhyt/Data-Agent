@@ -59,6 +59,7 @@ class TenantsORM(Base):
     audit_logs: Mapped[list["AuditLogsORM"]] = relationship(back_populates="tenant")
     pii_access_logs: Mapped[list["PIIAccessLogsORM"]] = relationship(back_populates="tenant")
     # knowledge_base_orm
+    kb_knowledge_bases: Mapped[list["KBKnowledgeBaseORM"]] = relationship(back_populates="tenant")
     kb_data: Mapped[list["KBDataORM"]] = relationship(back_populates="tenant")
     kb_filter_policies: Mapped[list["KBFilterPolicyORM"]] = relationship(back_populates="tenant")
     kb_extraction_policies: Mapped[list["KBExtractionPolicyORM"]] = relationship(back_populates="tenant")

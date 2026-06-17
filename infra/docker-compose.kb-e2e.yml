@@ -1,0 +1,373 @@
+# ─── Full KB E2E stack (laptop-tuned) ─────────────────────────────────────────
+# End-to-end testing: real auth (Keycloak + Kong) in front of the full KB data
+# plane (Qdrant + Neo4j + Mongo + MinIO + Kafka + model-service) with kb-backend
+# in FULL mode (KB_LITE unset), so the data-plane stores are real and Qdrant/Neo4j
+# routes return data instead of 503.
+#
+#   browser/curl → Keycloak (JWT) → Kong (verify + inject identity)
+#                → kb-backend (full) → Qdrant / Neo4j / Mongo / MinIO
+#
+# Memory: every service is capped to its real working set so the whole stack fits
+# a ~8 GiB Docker VM (~6.5 GiB total). A cap is a ceiling — set below a service's
+# working set and Docker OOM-kills it, so these are floors, not arbitrary.
+#
+# The bronze→silver→gold INGESTION WORKER (the heaviest service, ~2.5–3 GiB for
+# Docling models) is gated behind the `pipeline` profile and is OFF by default —
+# kb-backend does NOT depend on it to boot. With it off, ingestion API calls still
+# queue to Kafka successfully; the messages just sit unconsumed (no processing).
+# Turn it on (needs more RAM — bump the WSL VM to ~12 GiB) with:
+#   docker compose -f infra/docker-compose.kb-e2e.yml --profile pipeline up -d
+#
+# All stores persist to disk (named volumes). Data survives `down`/restart — it is
+# only wiped by `down -v`.
+#
+# Bring up (configures Kong too):
+#   pwsh infra/kb-e2e.ps1
+# By hand (from repo root):
+#   docker compose -f infra/docker-compose.kb-e2e.yml up -d --build
+#   pwsh infra/kb-e2e.ps1 configure   # register Kong route + jwks + cors
+#
+# Test users (realm-export.local.json — helios-* have no required actions, so the
+# password grant works directly; the *.aeroflow.local users require TOTP):
+#   helios-admin / H3lios@Admin01!   helios-engineer / H3lios@Eng001!   helios-viewer / H3lios@View01!
+
+name: aeroflow-e2e
+
+networks:
+  default:
+    name: e2e-network
+
+volumes:
+  pg_data:
+  qdrant_data:
+  neo4j_data:
+  neo4j_logs:
+  mongo_data:
+  minio_data:
+  docling_cache:
+
+services:
+  # ── Postgres — Keycloak (public schema) + Kong (kong schema) + kb-backend
+  #    (aeroflow_kb DB, self-created by main.py). Persists to pg_data.
+  postgres:
+    image: postgres:16-alpine
+    container_name: e2e-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_DB: ${POSTGRES_DB:-dataagent}
+    ports: ["5432:5432"]
+    volumes: [pg_data:/var/lib/postgresql/data]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 256M }
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-dataagent}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Keycloak — uses the default `public` schema (Keycloak won't create a named
+  #    one). Realm/users persist in Postgres.
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: e2e-keycloak
+    restart: unless-stopped
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-dataagent}
+      KC_DB_USERNAME: ${POSTGRES_USER:-admin}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HEALTH_ENABLED: "true"
+      # Cap the JVM heap so the container stays under its memory limit.
+      JAVA_OPTS_KC_HEAP: "-Xms256m -Xmx640m"
+    volumes:
+      - ./keycloak/realm-export.local.json:/opt/keycloak/data/import/realm-export.json:ro
+    ports: ["8080:8080"]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  kong-migration:
+    build: { context: .., dockerfile: infra/kong/Dockerfile }
+    container_name: e2e-kong-migration
+    command: kong migrations bootstrap
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: postgres
+      KONG_PG_DATABASE: ${POSTGRES_DB:-dataagent}
+      KONG_PG_USER: ${POSTGRES_USER:-admin}
+      KONG_PG_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      KONG_PG_SCHEMA: kong
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: on-failure
+
+  kong:
+    build: { context: .., dockerfile: infra/kong/Dockerfile }
+    container_name: e2e-kong
+    restart: unless-stopped
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: postgres
+      KONG_PG_DATABASE: ${POSTGRES_DB:-dataagent}
+      KONG_PG_USER: ${POSTGRES_USER:-admin}
+      KONG_PG_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      KONG_PG_SCHEMA: kong
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: "0.0.0.0:8001"
+      KONG_PROXY_LISTEN: "0.0.0.0:8000"
+      KONG_PLUGINS: bundled,aeroflow-jwks
+      KONG_NGINX_WORKER_PROCESSES: "1"   # dev: one worker is plenty, keeps RAM low
+    ports:
+      - "8000:8000"   # proxy
+      - "8900:8001"   # admin (used by kb-e2e.ps1)
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 384M }
+    depends_on:
+      postgres: { condition: service_healthy }
+      kong-migration: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ── Qdrant — minimal: payload on disk, small RAM cap, persists to qdrant_data.
+  qdrant:
+    image: qdrant/qdrant:v1.13.6
+    container_name: e2e-qdrant
+    restart: unless-stopped
+    environment:
+      QDRANT__STORAGE__ON_DISK_PAYLOAD: "true"
+      QDRANT__SERVICE__MAX_REQUEST_SIZE_MB: "32"
+    ports: ["6333:6333"]
+    volumes: [qdrant_data:/qdrant/storage]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 384M }
+
+  # ── Neo4j — minimal heap/pagecache (lean on disk), persists to neo4j_data.
+  neo4j:
+    image: neo4j:5.19-community
+    container_name: e2e-neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: none
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 384m
+      NEO4J_server_memory_pagecache_size: 128m
+    ports: ["7474:7474", "7687:7687"]
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 768M }
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://localhost:7474"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ── Mongo — silver staging. Capped cache, persists to mongo_data.
+  mongo:
+    image: mongo:7.0
+    container_name: e2e-mongo
+    restart: unless-stopped
+    command: ["--wiredTigerCacheSizeGB", "0.25"]
+    environment:
+      MONGO_INITDB_DATABASE: kb_staging
+    ports: ["27017:27017"]
+    volumes: [mongo_data:/data/db]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── MinIO — object storage. Persists to minio_data.
+  minio:
+    image: minio/minio:RELEASE.2024-01-16T16-07-38Z
+    container_name: e2e-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-miniominio}
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [minio_data:/data]
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 384M }
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  minio-init:
+    image: minio/mc
+    container_name: e2e-minio-init
+    restart: "no"
+    entrypoint: >
+      sh -c "mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minio} ${MINIO_ROOT_PASSWORD:-miniominio} &&
+             mc mb --ignore-existing local/knowledge-base &&
+             echo 'MinIO: knowledge-base bucket ready.'"
+    depends_on:
+      minio: { condition: service_healthy }
+
+  # ── Kafka — KRaft, plaintext (no SASL — dev). Auto-creates topics.
+  kafka:
+    image: apache/kafka:3.7.1
+    container_name: e2e-kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx384m"
+      CLUSTER_ID: aeroflow-e2e-cluster-01
+    ports: ["9092:9092"]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 700M }
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  # ── Model service — embedding + reranking. Smallest cached models; HF cache is
+  #    mounted from disk so there is NO download on start.
+  model-service:
+    build: { context: ./model-service }
+    container_name: e2e-model-service
+    restart: unless-stopped
+    environment:
+      EMBED_MODEL: ${EMBED_MODEL:-BAAI/bge-small-en-v1.5}
+      RERANK_MODEL: ${RERANK_MODEL:-cross-encoder/ms-marco-MiniLM-L-6-v2}
+      OMP_NUM_THREADS: "2"
+    volumes:
+      - ./model-service/models:/app/models   # HF_HOME=/app/models — reuse cached weights
+    deploy:
+      resources:
+        limits: { cpus: "2.0", memory: 1536M }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # ── KB backend — FULL mode (KB_LITE unset → opens all stores). Fail-closed:
+  #    only Kong-verified requests pass. Published on 8050 for /health probes.
+  kb-backend:
+    build: { context: .., dockerfile: infra/Dockerfile.kb }
+    container_name: e2e-kb-backend
+    restart: unless-stopped
+    environment:
+      POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/aeroflow_kb
+      QDRANT_URL: http://qdrant:6333
+      NEO4J_URL: bolt://neo4j:7687
+      MONGO_URL: mongodb://mongo:27017/kb_staging
+      MINIO_URL: http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-miniominio}@minio:9000
+      MINIO_BUCKET: knowledge-base
+      KAFKA_URL: kafka:9092
+      MODEL_SERVICE_URL: http://model-service:8001
+    ports: ["8050:8000"]
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 640M }
+    depends_on:
+      postgres: { condition: service_healthy }
+      qdrant: { condition: service_started }
+      neo4j: { condition: service_healthy }
+      mongo: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+      kafka: { condition: service_healthy }
+      model-service: { condition: service_healthy }
+
+  # ── Ingestion worker — Kafka consumer; runs the bronze→silver→gold pipeline.
+  #    Heaviest service (~2.5–3 GiB Docling models). Gated behind the `pipeline`
+  #    profile so it is OFF by default — kb-backend does not depend on it, and the
+  #    trimmed stack fits ~8 GiB without it. Enable (and bump WSL RAM ~12 GiB):
+  #      docker compose -f infra/docker-compose.kb-e2e.yml --profile pipeline up -d
+  kb-ingestion-worker:
+    profiles: ["pipeline"]
+    build: { context: .., dockerfile: infra/kb-ingestion-worker/Dockerfile }
+    container_name: e2e-ingestion-worker
+    restart: unless-stopped
+    environment:
+      POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/aeroflow_kb
+      QDRANT_URL: http://qdrant:6333
+      NEO4J_URI: bolt://neo4j:7687
+      MONGO_URL: mongodb://mongo:27017/kb_staging
+      MINIO_URL: http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-miniominio}@minio:9000
+      MINIO_BUCKET: knowledge-base
+      KAFKA_URL: kafka:9092
+      MODEL_SERVICE_URL: http://model-service:8001
+      USE_VLM: "false"
+      HF_HOME: /root/.cache/huggingface
+    volumes:
+      - docling_cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        limits: { cpus: "2.0", memory: 3G }
+    depends_on:
+      postgres: { condition: service_healthy }
+      mongo: { condition: service_healthy }
+      minio-init: { condition: service_completed_successfully }
+      kafka: { condition: service_healthy }
+      qdrant: { condition: service_started }
+      neo4j: { condition: service_healthy }
+      model-service: { condition: service_healthy }
+
+  # ── Frontend (optional): real browser login. Enable with `--profile ui`.
+  frontend:
+    profiles: ["ui"]
+    build: { context: .., dockerfile: infra/Dockerfile.dev }
+    container_name: e2e-frontend
+    restart: unless-stopped
+    volumes:
+      - ..:/app
+      - /app/node_modules
+    ports: ["5173:3000"]
+    environment:
+      VITE_KEYCLOAK_URL: http://localhost:8080
+      VITE_KEYCLOAK_REALM: aeroflow
+      VITE_KEYCLOAK_CLIENT: aeroflow-frontend
+      VITE_API_URL: http://localhost:8000
+    depends_on:
+      keycloak: { condition: service_started }
+      kong: { condition: service_healthy }

@@ -1,80 +1,125 @@
-﻿import React, { useState } from 'react';
-import { 
-  Database, 
-  Search, 
-  Zap, 
-  ArrowRight, 
-  Edit2, 
+﻿import React, { useState, useEffect, useRef } from 'react';
+import {
+  Database,
+  Search,
+  Zap,
+  ArrowRight,
+  Edit2,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   Layers,
   Trash2,
   X,
   AlertCircle,
-  Eye
+  Eye,
+  Loader2,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { KnowledgeDocument } from '../../../types';
 import { useAppState } from '../../../AppStateContext';
-import { mockMutate } from '../../../lib/mockApi';
-import { SourceFilter, SOURCE_FILTER_LABELS, getSourceCategory } from './inventory.data';
+import { apiMutate } from '../../../lib/apiClient';
+import { useCursorPagination } from '../../../lib/useCursorPagination';
+import { Pagination } from '../../shared/Pagination';
+import { SourceCategory, SOURCE_CATEGORIES, ALL_SOURCE_CATEGORIES, sourceParam } from './inventory.data';
 
 interface AssetInventoryProps {
   onSelectAsset: (asset: KnowledgeDocument) => void;
+  onPromote?: (doc: KnowledgeDocument) => void;
+  promotingIds?: Set<string>;
 }
 
-export const AssetInventory = ({ onSelectAsset }: AssetInventoryProps) => {
-  const { documents, updateDocument, deleteDocument } = useAppState();
-  const [activeFilter, setActiveFilter] = useState<'BRONZE' | 'SILVER' | 'GOLD'>('BRONZE');
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('ALL');
+export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Set() }: AssetInventoryProps) => {
+  const { updateDocument, deleteDocument } = useAppState();
+  const [activeFilter, setActiveFilter] = useState<'bronze' | 'silver' | 'gold'>('bronze');
+  // Multi-select source chips, default all-on. Backend does the filtering
+  // (`?source=…` → WHERE source_type IN (...)), so this drives the query, not a
+  // client-side filter. No "All" chip — all-on already means everything.
+  const [selectedSources, setSelectedSources] = useState<Set<SourceCategory>>(
+    () => new Set(ALL_SOURCE_CATEGORIES),
+  );
+  const sourceQuery = sourceParam(selectedSources);
   const [searchQuery, setSearchQuery] = useState('');
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [showVerification, setShowVerification] = useState(false);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
-  
-  const itemsPerPage = 20;
 
-  const handleFilterChange = (filter: 'BRONZE' | 'SILVER' | 'GOLD') => {
+  // Server-side cursor pagination — stateless; the client holds the cursor token.
+  // Switching the layer tab (activeFilter) resets to page 1 and clears the cache.
+  const {
+    items: serverDocs, page, totalPages, hasNext, isLoading: isFetching,
+    canJump, goTo, reload,
+  } = useCursorPagination<KnowledgeDocument>(
+    '/api/data/documents',
+    { tier: activeFilter, source: sourceQuery },
+    [activeFilter, sourceQuery],
+  );
+
+  // The promote button only fires off the async worker pipeline; the worker flips
+  // `current_tier` in Postgres a beat after the UI's progress bar. Silently re-sync the
+  // current page while a promotion is in flight (and shortly after) so the row moves.
+  const promotingCount = promotingIds.size;
+  const prevPromotingCount = useRef(promotingCount);
+  useEffect(() => {
+    const finished = promotingCount < prevPromotingCount.current;
+    prevPromotingCount.current = promotingCount;
+
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    let poll: ReturnType<typeof setInterval> | undefined;
+    if (promotingCount > 0) {
+      poll = setInterval(() => reload(true), 3000);
+    }
+    if (finished) {
+      [1500, 5000, 12000].forEach(d => timers.push(setTimeout(() => reload(true), d)));
+    }
+    return () => {
+      if (poll) clearInterval(poll);
+      timers.forEach(clearTimeout);
+    };
+  }, [promotingCount, reload]);
+
+  const handleFilterChange = (filter: 'bronze' | 'silver' | 'gold') => {
     setActiveFilter(filter);
-    setCurrentPage(1);
+    setSelectedIds([]);
   };
 
-  const handleSourceFilterChange = (sf: SourceFilter) => {
-    setSourceFilter(sf);
-    // Warehouse docs are always GOLD; auto-switch the layer so they're visible
-    if (sf === 'WAREHOUSE') setActiveFilter('GOLD');
-    setCurrentPage(1);
+  const toggleSource = (cat: SourceCategory) => {
+    setSelectedSources(prev => {
+      const next = new Set(prev);
+      next.has(cat) ? next.delete(cat) : next.add(cat);
+      return next;
+    });
+    // Warehouses only exist in the Gold layer; jump there so the chip shows results.
+    if (cat === 'warehouse' && !selectedSources.has('warehouse')) setActiveFilter('gold');
+    setSelectedIds([]);
   };
 
   const handleSearchChange = (query: string) => {
     setSearchQuery(query);
-    setCurrentPage(1);
   };
 
-  const filteredDocs = documents.filter(doc => {
-    const matchesLayer = doc.layer === activeFilter;
-    const matchesSource = sourceFilter === 'ALL' || getSourceCategory(doc.metadata?.type) === sourceFilter;
-    const matchesSearch = doc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          doc.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          doc.author.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesLayer && matchesSource && matchesSearch;
+  // Source filtering is server-side now (the `source` query param). Only the free-text
+  // search stays client-side, scoped to the current server page.
+  const filteredDocs = serverDocs.filter(doc => {
+    const authorText = doc.metadata?.author ?? doc.added_by ?? '';
+    return !searchQuery ||
+      doc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      doc.data_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      authorText.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
   const handleProcess = async (e: React.MouseEvent, doc: KnowledgeDocument) => {
     e.stopPropagation();
-    const targetLayer = doc.layer === 'BRONZE' ? 'SILVER' : 'GOLD';
-    const nextStatus = targetLayer === 'SILVER' ? 'EMBEDDING' : 'PUBLISHED';
-    setProcessingId(doc.id);
+    // Lock: ignore a promote request while this document is already promoting.
+    if (promotingIds.has(doc.data_id) || processingId === doc.data_id) return;
+    const targetLayer = doc.current_tier === 'bronze' ? 'silver' : 'gold';
+    setProcessingId(doc.data_id);
     try {
-      await mockMutate('PATCH', `/api/data/documents/${doc.id}`, { layer: targetLayer, status: nextStatus });
-      updateDocument(doc.id, { layer: targetLayer, status: nextStatus });
-      setSelectedIds(prev => prev.filter(id => id !== doc.id));
-      setActiveFilter(targetLayer);
-      setCurrentPage(1);
+      await apiMutate('POST', `/api/pipeline/ingestion/promote/${doc.data_id}/${targetLayer}`);
+      // Update status only — tier stays the same until pipeline completes
+      updateDocument(doc.data_id, { status: targetLayer === 'silver' ? 'CHUNKING' : 'GRAPH_EXTRACTING' });
+      setSelectedIds(prev => prev.filter(id => id !== doc.data_id));
+      onPromote?.(doc);
     } catch { /* ForbiddenToast handles 403 */ }
     setProcessingId(null);
   };
@@ -82,9 +127,10 @@ export const AssetInventory = ({ onSelectAsset }: AssetInventoryProps) => {
   const handleDelete = async (e: React.MouseEvent, doc: KnowledgeDocument) => {
     e.stopPropagation();
     try {
-      await mockMutate('DELETE', `/api/data/documents/${doc.id}`);
-      deleteDocument(doc.id);
-      setSelectedIds(prev => prev.filter(id => id !== doc.id));
+      await apiMutate('DELETE', `/api/data/documents/${doc.data_id}`);
+      deleteDocument(doc.data_id);
+      setSelectedIds(prev => prev.filter(id => id !== doc.data_id));
+      reload(true); // refresh the current server page so the row clears + backfills
     } catch { /* ForbiddenToast handles 403 */ }
     setPendingDeleteId(null);
   };
@@ -97,7 +143,7 @@ export const AssetInventory = ({ onSelectAsset }: AssetInventoryProps) => {
   };
 
   const toggleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const visibleIds = filteredDocs.map(d => d.id);
+    const visibleIds = filteredDocs.map(d => d.data_id);
     if (e.target.checked) {
       setSelectedIds(prev => Array.from(new Set([...prev, ...visibleIds])));
     } else {
@@ -107,27 +153,24 @@ export const AssetInventory = ({ onSelectAsset }: AssetInventoryProps) => {
 
   const handleBatchProcess = async () => {
     setIsBatchProcessing(true);
-    const firstSelected = documents.find(d => selectedIds.includes(d.id));
     let anyProcessed = false;
     for (const id of selectedIds) {
-      const doc = documents.find(d => d.id === id);
+      const doc = serverDocs.find(d => d.data_id === id);
       if (!doc) continue;
-      const targetLayer = doc.layer === 'BRONZE' ? 'SILVER' : 'GOLD';
-      const nextStatus = targetLayer === 'SILVER' ? 'EMBEDDING' : 'PUBLISHED';
+      if (promotingIds.has(id)) continue; // already promoting — don't re-queue
+
+      const targetLayer = doc.current_tier === 'bronze' ? 'silver' : 'gold';
       try {
-        await mockMutate('PATCH', `/api/data/documents/${id}`, { layer: targetLayer, status: nextStatus });
-        updateDocument(id, { layer: targetLayer, status: nextStatus });
+        await apiMutate('POST', `/api/pipeline/ingestion/promote/${id}/${targetLayer}`);
+        updateDocument(id, { status: targetLayer === 'silver' ? 'CHUNKING' : 'GRAPH_EXTRACTING' });
+        onPromote?.(doc);
         anyProcessed = true;
-      } catch { /* ForbiddenToast handles 403; stop further processing */ break; }
+      } catch { break; }
     }
     setIsBatchProcessing(false);
     if (anyProcessed) {
       setSelectedIds([]);
       setShowVerification(false);
-      if (firstSelected) {
-        setActiveFilter(firstSelected.layer === 'BRONZE' ? 'SILVER' : 'GOLD');
-      }
-      setCurrentPage(1);
     }
   };
 
@@ -135,13 +178,7 @@ export const AssetInventory = ({ onSelectAsset }: AssetInventoryProps) => {
     setSelectedIds(prev => prev.filter(item => item !== id));
   };
 
-  // Get current document info for selected IDs
-  const selectedDocs = documents.filter(d => selectedIds.includes(d.id));
-
-  // Pagination calculations
-  const totalItems = filteredDocs.length;
-  const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
-  const paginatedDocs = filteredDocs.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const selectedDocs = serverDocs.filter(d => selectedIds.includes(d.data_id));
 
   return (
     <div className="space-y-6 h-full">
@@ -152,22 +189,22 @@ export const AssetInventory = ({ onSelectAsset }: AssetInventoryProps) => {
                Data Layers Filter
             </span>
             <div className="flex gap-2.5">
-               {(['BRONZE', 'SILVER', 'GOLD'] as const).map(filter => (
+               {(['bronze', 'silver', 'gold'] as const).map(filter => (
                  <button
                    key={filter}
                    onClick={() => handleFilterChange(filter)}
                    className={cn(
                      "px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
                      filter === activeFilter
-                       ? filter === 'BRONZE'
+                       ? filter === 'bronze'
                          ? "bg-[#92620A] text-white shadow-md shadow-[#92620A]/20"
-                         : filter === 'SILVER'
+                         : filter === 'silver'
                            ? "bg-[#4A5568] text-white shadow-md shadow-[#4A5568]/20"
                            : "bg-[#B88719] text-white shadow-md shadow-[#B88719]/20"
                        : "bg-white border border-[#BFA66A]/30 text-[#8A5A00] hover:bg-[#FFF9E8]/20"
                    )}
                  >
-                   {filter === 'BRONZE' ? 'Bronze Data Layer' : filter === 'SILVER' ? 'Silver Data Layer' : 'Gold Data Layer'}
+                   {filter === 'bronze' ? 'Bronze Data Layer' : filter === 'silver' ? 'Silver Data Layer' : 'Gold Data Layer'}
                  </button>
                ))}
             </div>
@@ -179,20 +216,24 @@ export const AssetInventory = ({ onSelectAsset }: AssetInventoryProps) => {
                Source Type
             </span>
             <div className="flex gap-2 flex-wrap">
-               {(['ALL', 'DOC', 'MEDIA', 'WEB', 'WAREHOUSE'] as SourceFilter[]).map(sf => (
-                 <button
-                   key={sf}
-                   onClick={() => handleSourceFilterChange(sf)}
-                   className={cn(
-                     "px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
-                     sf === sourceFilter
-                       ? "bg-[#1E1B15] text-[#D9B86C] border border-[#BFA66A]/40 shadow-sm"
-                       : "bg-white border border-[#BFA66A]/25 text-[#8A5A00] hover:bg-[#FFF9E8]/40"
-                   )}
-                 >
-                   {SOURCE_FILTER_LABELS[sf]}
-                 </button>
-               ))}
+               {SOURCE_CATEGORIES.map(({ id, label }) => {
+                 const active = selectedSources.has(id);
+                 return (
+                   <button
+                     key={id}
+                     onClick={() => toggleSource(id)}
+                     aria-pressed={active}
+                     className={cn(
+                       "px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
+                       active
+                         ? "bg-[#1E1B15] text-[#D9B86C] border border-[#BFA66A]/40 shadow-sm"
+                         : "bg-white border border-[#BFA66A]/25 text-[#8A5A00] opacity-60 hover:opacity-100 hover:bg-[#FFF9E8]/40"
+                     )}
+                   >
+                     {label}
+                   </button>
+                 );
+               })}
             </div>
          </div>
 
@@ -211,7 +252,7 @@ export const AssetInventory = ({ onSelectAsset }: AssetInventoryProps) => {
       </div>
 
       {/* ─── BATCH PROCESS ACTION BAR PLACED ABOVE TABLE ─── */}
-      {activeFilter !== 'GOLD' && (
+      {activeFilter !== 'gold' && (
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 bg-white border border-[#BFA66A]/20 rounded-2xl gap-3 shadow-2xs">
            <div className="flex flex-col gap-1">
               <span className="text-xs font-bold text-[#111111]">Batch Operations Configurator</span>
@@ -249,11 +290,11 @@ export const AssetInventory = ({ onSelectAsset }: AssetInventoryProps) => {
          <table className="w-full text-left border-collapse">
             <thead>
                <tr className="bg-[#FFFDF8] text-[10px] font-black text-[#5A4209]/80 uppercase tracking-widest border-b border-[#BFA66A]/20">
-                  {activeFilter !== 'GOLD' && (
+                  {activeFilter !== 'gold' && (
                     <th className="px-6 py-5 w-12 text-center">
-                       <input 
-                         type="checkbox" 
-                         checked={filteredDocs.length > 0 && filteredDocs.every(d => selectedIds.includes(d.id))}
+                       <input
+                         type="checkbox"
+                         checked={filteredDocs.length > 0 && filteredDocs.every(d => selectedIds.includes(d.data_id))}
                          onChange={toggleSelectAll}
                          className="w-4 h-4 rounded border-[#BFA66A]/40 text-[#B88719] focus:ring-[#B88719] cursor-pointer"
                        />
@@ -267,34 +308,45 @@ export const AssetInventory = ({ onSelectAsset }: AssetInventoryProps) => {
                </tr>
             </thead>
             <tbody className="divide-y divide-[#BFA66A]/10 text-[#111111]">
-               {paginatedDocs.length === 0 ? (
+               {isFetching ? (
                  <tr>
-                    <td colSpan={activeFilter !== 'GOLD' ? 6 : 5} className="px-8 py-12 text-center text-slate-500 text-xs font-mono bg-white">
-                      No matching documents in {activeFilter} layer.
+                    <td colSpan={activeFilter !== 'gold' ? 6 : 5} className="px-8 py-12 text-center bg-white">
+                      <div className="flex items-center justify-center gap-2 text-slate-400 text-xs font-mono">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Loading…
+                      </div>
+                    </td>
+                 </tr>
+               ) : filteredDocs.length === 0 ? (
+                 <tr>
+                    <td colSpan={activeFilter !== 'gold' ? 6 : 5} className="px-8 py-12 text-center text-slate-500 text-xs font-mono bg-white">
+                      No matching documents in {activeFilter.toUpperCase()} layer.
                     </td>
                  </tr>
                ) : (
-                 paginatedDocs.map((doc) => (
+                 filteredDocs.map((doc) => (
                     <tr
-                      key={doc.id}
+                      key={doc.data_id}
                       className={cn(
                         "group transition-colors cursor-pointer",
-                        selectedIds.includes(doc.id)
-                          ? "bg-[#FDE8A0]/40"
-                          : doc.layer === 'BRONZE'
-                            ? "bg-[#FDF0CC]/50 hover:bg-[#FADB88]/30"
-                            : doc.layer === 'SILVER'
-                              ? "bg-[#F4F6F9]/60 hover:bg-[#E8EDF4]/60"
-                              : "bg-[#FEFDF8]/40 hover:bg-[#FEF9E4]/50"
+                        promotingIds.has(doc.data_id)
+                          ? "bg-amber-50/60 animate-pulse"
+                          : selectedIds.includes(doc.data_id)
+                            ? "bg-[#FDE8A0]/40"
+                            : doc.current_tier === 'bronze'
+                              ? "bg-[#FDF0CC]/50 hover:bg-[#FADB88]/30"
+                              : doc.current_tier === 'silver'
+                                ? "bg-[#F4F6F9]/60 hover:bg-[#E8EDF4]/60"
+                                : "bg-[#FEFDF8]/40 hover:bg-[#FEF9E4]/50"
                       )}
                       onClick={() => onSelectAsset(doc)}
                     >
-                       {activeFilter !== 'GOLD' && (
+                       {activeFilter !== 'gold' && (
                          <td className="px-6 py-6 w-12 text-center" onClick={(e) => e.stopPropagation()}>
                             <input 
                               type="checkbox" 
-                              checked={selectedIds.includes(doc.id)}
-                              onChange={(e) => toggleSelect(e, doc.id)}
+                              checked={selectedIds.includes(doc.data_id)}
+                              onChange={(e) => toggleSelect(e, doc.data_id)}
                               className="w-4 h-4 rounded border-[#BFA66A]/40 text-[#B88719] focus:ring-[#B88719] cursor-pointer"
                             />
                          </td>
@@ -303,24 +355,24 @@ export const AssetInventory = ({ onSelectAsset }: AssetInventoryProps) => {
                           <div className="flex items-center gap-4">
                              <div className={cn(
                                "w-10 h-10 rounded-xl flex items-center justify-center border",
-                               doc.layer === 'BRONZE' ? 'bg-[#FFF9E8] border-[#BFA66A]/30 text-[#8A5A00]' :
-                               doc.layer === 'SILVER' ? 'bg-slate-50 border-slate-200 text-slate-500' :
+                               doc.current_tier === 'bronze' ? 'bg-[#FFF9E8] border-[#BFA66A]/30 text-[#8A5A00]' :
+                               doc.current_tier === 'silver' ? 'bg-slate-50 border-slate-200 text-slate-500' :
                                'bg-[#FFFDF8] border-[#BFA66A]/30 text-[#B88719]'
                              )}>
-                                {doc.layer === 'BRONZE' ? <Database className="w-5 h-5" /> : 
-                                 doc.layer === 'SILVER' ? <Edit2 className="w-5 h-5" /> : 
+                                {doc.current_tier === 'bronze' ? <Database className="w-5 h-5" /> : 
+                                 doc.current_tier === 'silver' ? <Edit2 className="w-5 h-5" /> : 
                                  <Zap className="w-5 h-5 animate-pulse" />}
                              </div>
                              <div>
                                 <div className="text-sm font-bold text-[#111111] group-hover:text-[#B88719] transition-colors uppercase tracking-tight">{doc.name}</div>
-                                <div className="text-[10px] text-slate-500 mt-0.5">V{doc.version} · Added by {doc.author}</div>
+                                <div className="text-[10px] text-slate-500 mt-0.5">Added by {doc.metadata?.author ?? doc.added_by ?? '—'}</div>
                              </div>
                           </div>
                        </td>
                        <td className="px-6 py-6 font-mono text-xs text-slate-600">
-                          {doc.metadata.type || 'Document'}
+                          {doc.metadata.doc_type || 'Document'}
                        </td>
-                       <td className="px-6 py-6 font-mono text-xs text-slate-500">{doc.lastUpdated}</td>
+                       <td className="px-6 py-6 font-mono text-xs text-slate-500">{doc.added_on}</td>
                        <td className="px-6 py-6 font-mono text-xs text-slate-600">
                           {doc.metadata.language || 'English'}
                        </td>
@@ -334,7 +386,7 @@ export const AssetInventory = ({ onSelectAsset }: AssetInventoryProps) => {
                                <Eye className="w-3.5 h-3.5" />
                                <span>Inspect</span>
                              </button>
-                          {pendingDeleteId === doc.id ? (
+                          {pendingDeleteId === doc.data_id ? (
                             <span className="inline-flex items-center gap-1.5">
                               <button
                                 onClick={(e) => handleDelete(e, doc)}
@@ -347,22 +399,22 @@ export const AssetInventory = ({ onSelectAsset }: AssetInventoryProps) => {
                             </span>
                           ) : (
                             <button
-                              onClick={(e) => { e.stopPropagation(); setPendingDeleteId(doc.id); }}
+                              onClick={(e) => { e.stopPropagation(); setPendingDeleteId(doc.data_id); }}
                               className="p-1.5 opacity-0 group-hover:opacity-100 bg-red-50 hover:bg-red-100 border border-red-200 text-red-500 rounded-lg transition-all cursor-pointer"
                               title="Delete document"
                             ><Trash2 className="w-3.5 h-3.5" /></button>
                           )}
-                          {doc.metadata?.type?.startsWith('Warehouse/') ? (
+                          {doc.metadata?.doc_type?.startsWith('Warehouse/') ? (
                             <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-500/10 border border-blue-500/20 rounded-lg text-blue-700">
                               <CheckCircle2 className="w-3.5 h-3.5" />
                               <span className="text-[10px] font-mono font-black uppercase tracking-wider">Warehouse</span>
                             </div>
-                          ) : processingId === doc.id ? (
+                          ) : (processingId === doc.data_id || promotingIds.has(doc.data_id)) ? (
                             <span className="text-[10px] font-mono font-bold text-[#B88719] uppercase tracking-wide flex items-center justify-end gap-1.5 font-mono">
                               <span className="w-3 h-3 rounded-full border-2 border-[#B88719]/40 border-t-[#B88719] animate-spin" />
                               Processing...
                             </span>
-                          ) : doc.layer === 'BRONZE' ? (
+                          ) : doc.current_tier === 'bronze' ? (
                             <button
                               onClick={(e) => handleProcess(e, doc)}
                               className="px-3 py-1.5 bg-[#FFF9E8] border border-[#BFA66A]/45 hover:bg-[#B88719] hover:text-white rounded-lg text-[10px] font-bold text-[#8A5A00] uppercase tracking-wider transition-all inline-flex items-center gap-1.5 hover:shadow-md cursor-pointer"
@@ -370,7 +422,7 @@ export const AssetInventory = ({ onSelectAsset }: AssetInventoryProps) => {
                               Process to Silver
                               <ArrowRight className="w-3 h-3" />
                             </button>
-                          ) : doc.layer === 'SILVER' ? (
+                          ) : doc.current_tier === 'silver' ? (
                             <button
                               onClick={(e) => handleProcess(e, doc)}
                               className="px-3 py-1.5 bg-[#FFF9E8] border border-[#BFA66A]/45 hover:bg-[#B88719] hover:text-white rounded-lg text-[10px] font-bold text-[#8A5A00] uppercase tracking-wider transition-all inline-flex items-center gap-1.5 hover:shadow-md cursor-pointer"
@@ -392,51 +444,20 @@ export const AssetInventory = ({ onSelectAsset }: AssetInventoryProps) => {
          </table>
 
          {/* Pagination Footer */}
-         {totalPages > 1 && (
-           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-8 py-4 bg-[#FFFDF8] border-t border-[#BFA66A]/15 rounded-b-3xl">
-              <div className="text-[11px] font-mono text-slate-500">
-                 Showing <span className="font-bold text-[#111111]">{((currentPage - 1) * itemsPerPage) + 1}</span> to <span className="font-bold text-[#111111]">{Math.min(currentPage * itemsPerPage, totalItems)}</span> of <span className="font-bold text-[#111111]">{totalItems}</span> documents
-              </div>
-              <div className="flex items-center gap-2">
-                 <button
-                   onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                   disabled={currentPage === 1}
-                   className={cn(
-                     "p-2 rounded-lg border border-[#BFA66A]/20 bg-white transition-all hover:bg-[#FFF9E8]/35",
-                     currentPage === 1 ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
-                   )}
-                 >
-                   <ChevronLeft className="w-4 h-4 text-[#8A5A00]" />
-                 </button>
-                 
-                 <div className="flex items-center gap-1 overflow-x-auto max-w-[150px] sm:max-w-none">
-                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((pg) => (
-                       <button
-                         key={pg}
-                         onClick={() => setCurrentPage(pg)}
-                         className={cn(
-                           "w-7 h-7 rounded-lg text-[11px] font-mono font-black transition-all shrink-0",
-                           currentPage === pg 
-                             ? "bg-[#B88719] text-white" 
-                             : "bg-white border border-[#BFA66A]/15 text-[#8A5A00] hover:bg-[#FFF9E8]/30"
-                        )}
-                       >
-                         {pg}
-                       </button>
-                    ))}
-                 </div>
-
-                 <button
-                   onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                   disabled={currentPage === totalPages}
-                   className={cn(
-                     "p-2 rounded-lg border border-[#BFA66A]/20 bg-white transition-all hover:bg-[#FFF9E8]/35",
-                     currentPage === totalPages ? "opacity-40 cursor-not-allowed" : "cursor-pointer"
-                   )}
-                 >
-                   <ChevronRight className="w-4 h-4 text-[#8A5A00]" />
-                 </button>
-              </div>
+         {(totalPages > 1 || hasNext) && (
+           <div className="flex items-center justify-between gap-4 px-8 py-4 bg-[#FFFDF8] border-t border-[#BFA66A]/15 rounded-b-3xl">
+              <span className="text-[11px] font-mono text-slate-500">
+                Page <span className="font-bold text-[#111111]">{page}</span>
+                <span className="text-slate-400"> of {totalPages}</span>
+                {isFetching && <span className="text-slate-400"> · loading…</span>}
+              </span>
+              <Pagination
+                page={page}
+                totalPages={totalPages}
+                hasNext={hasNext}
+                canJump={canJump}
+                onJump={goTo}
+              />
            </div>
          )}
       </div>
@@ -452,7 +473,7 @@ export const AssetInventory = ({ onSelectAsset }: AssetInventoryProps) => {
                 <Layers className="w-5 h-5 text-[#D9B86C]" />
                 <div>
                   <h3 className="text-sm font-display font-black uppercase tracking-wider text-[#D9B86C]">Batch Pipeline Verification</h3>
-                  <p className="text-[10px] font-mono text-slate-400 mt-0.5">Please confirm items staged for {activeFilter === 'BRONZE' ? 'SILVER' : 'GOLD'} tier upgrade</p>
+                  <p className="text-[10px] font-mono text-slate-400 mt-0.5">Please confirm items staged for {activeFilter === 'bronze' ? 'SILVER' : 'GOLD'} tier upgrade</p>
                 </div>
               </div>
               <button 
@@ -473,13 +494,13 @@ export const AssetInventory = ({ onSelectAsset }: AssetInventoryProps) => {
               ) : (
                 selectedDocs.map((doc) => (
                   <div 
-                    key={doc.id} 
+                    key={doc.data_id} 
                     className="flex items-center justify-between p-3.5 bg-white/[0.03] rounded-xl border border-white/5 hover:border-[#BFA66A]/30 transition-all gap-4"
                   >
                     <div className="flex items-center gap-3">
                       {/* REMOVE BUTTON ON THE LEFT */}
                       <button
-                        onClick={() => handleRemoveFromBatch(doc.id)}
+                        onClick={() => handleRemoveFromBatch(doc.data_id)}
                         aria-label="Remove from selection"
                         className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-500 hover:text-red-400 rounded-lg transition-colors border border-red-500/15 cursor-pointer flex items-center justify-center shrink-0"
                       >
@@ -490,7 +511,7 @@ export const AssetInventory = ({ onSelectAsset }: AssetInventoryProps) => {
                           {doc.name}
                         </h4>
                         <span className="text-[9px] font-mono text-slate-400 uppercase tracking-widest mt-0.5 block">
-                          ID: {doc.id}
+                          ID: {doc.data_id}
                         </span>
                       </div>
                     </div>
@@ -498,7 +519,7 @@ export const AssetInventory = ({ onSelectAsset }: AssetInventoryProps) => {
                     {/* Source type label/badge on the right */}
                     <div className="shrink-0 flex items-center gap-2.5">
                       <span className="bg-white/5 border border-white/10 text-slate-300 text-[10px] font-mono px-2.5 py-1 rounded-lg">
-                        {doc.metadata.type || 'Document'}
+                        {doc.metadata.doc_type || 'Document'}
                       </span>
                     </div>
                   </div>

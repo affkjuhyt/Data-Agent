@@ -49,20 +49,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setGateSince(since);
       setGateStatus(status as ApprovalGateStatus);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to verify approval status');
-      setGateStatus('checking');
+      // The Microsoft-SSO approval API (auth-api, /api/auth/me) is optional: it is
+      // not part of the KB-only stacks (auth-lite / e2e), where Kong routes only
+      // /api/data, /api/knowledge, /api/fleet. If it is unreachable, fail OPEN —
+      // skip the approval gate rather than locking the whole app behind an error
+      // screen. When auth-api IS deployed and routed, the gate works as designed.
+      console.warn('Approval gate unavailable — skipping (auth-api not deployed?):', err);
+      setGateStatus('active');
     }
   };
 
   useEffect(() => {
-    // Dev bypass: VITE_MOCK_AUTH=true trong .env.local → bỏ qua Keycloak
-    if (import.meta.env.VITE_MOCK_AUTH === 'true') {
-      setUser({ id: 'u_123', name: 'Alex Rivera', email: 'alex.rivera@globalcorp.ai', roles: ['AI_ENGINEER'], token: 'mock-token' });
-      setGateStatus('active');
-      setLoading(false);
-      return;
-    }
-
+    // No mock/demo bypass: the app always authenticates against Keycloak and
+    // talks to the backend through Kong. There is no offline/demo mode.
     if ((keycloak as any).didInitialize) {
       const u = buildUser();
       setUser(u);

@@ -1,36 +1,44 @@
 import React from 'react';
 import { AppStateProvider, useAppState } from './AppStateContext';
 import { AppLayout } from './components/Layout';
-import KnowledgeOpsCenter from './components/knowledge/KnowledgeOpsCenter';
-import AIRuntimeCenter from './components/agent-builder/AIRuntimeCenter';
-import SettingsView from './components/Settings/Overview';
-
-const Placeholder = ({ module }: { module: string }) => (
-  <div className="h-full flex items-center justify-center text-[#5F5F5F] font-display italic">
-    Module &quot;{module}&quot; is under construction...
-  </div>
-);
+import { Placeholder } from './components/shared/Placeholder';
+import IngestionProgressOverlay from './components/shared/IngestionProgressOverlay';
+import { ROUTE_MAP } from './routes';
+import { MODULE_SUB_ITEMS } from './constants';
 
 function AppContent() {
-  const { activeModule, setActiveModule } = useAppState();
+  const { activeModule, setActiveModule, subTab } = useAppState();
+
+  // Identity is never sent from the client: the bearer token goes to Kong, which
+  // injects the authoritative X-* identity headers the backend trusts.
 
   const renderView = () => {
-    switch (activeModule) {
-      case 'knowledge-ops':
-        return <KnowledgeOpsCenter />;
-      case 'ai-runtime':
-        return <AIRuntimeCenter />;
-      case 'settings':
-        return <SettingsView />;
-      default:
-        return <Placeholder module={activeModule} />;
+    const subItems = MODULE_SUB_ITEMS[activeModule] ?? [];
+    const activeSub = subTab[activeModule] ?? subItems[0]?.id;
+    const entry = activeSub ? ROUTE_MAP[activeModule]?.[activeSub] : undefined;
+
+    if (!entry) {
+      return (
+        <Placeholder
+          title="Not available"
+          description="This area isn't available yet. Pick another item from the menu."
+        />
+      );
     }
+    if ('comingSoon' in entry) {
+      return <Placeholder {...entry.comingSoon} />;
+    }
+    return <>{entry.render()}</>;
   };
 
   return (
-    <AppLayout activeTab={activeModule} setActiveTab={setActiveModule}>
-      {renderView()}
-    </AppLayout>
+    <>
+      <AppLayout activeTab={activeModule} setActiveTab={setActiveModule}>
+        {renderView()}
+      </AppLayout>
+      {/* Progress overlay - always available, visible when ingestions active */}
+      <IngestionProgressOverlay />
+    </>
   );
 }
 
