@@ -2,8 +2,18 @@
 #
 # Services:
 #   postgres · mongo · qdrant · neo4j · minio · minio-init ·
-#   kafka · model-service · kb-backend · kb-ingestion-worker
+#   kafka · model-service · kb-backend · kb-ingestion-worker ·
+#   keycloak · kong
 #   [profile local-llm] llama · litellm
+#
+# Auth chain (so the UI ↔ backend round-trip works — kb-backend is fail-closed
+# and rejects any request without Kong's X-Kong-Verified header):
+#   browser (npm run dev :3000) → Keycloak login (:8080)
+#                               → Kong :8000 (aeroflow-jwks verify + inject X-*)
+#                               → kb-backend :8000 (in-network)
+#   Kong is DB-less: configured at boot from kong/kong.kb-ui-testing.yml — no
+#   migration or admin-API step. kb-backend is also published on :8050 for direct
+#   debugging (bypasses Kong = 401, by design).
 #
 # LLM backend:
 #   Default — remote vLLM (Colab + Cloudflare tunnel, see model/vllm/):
@@ -15,7 +25,10 @@
 # Usage:
 #   cd infra
 #   docker compose -f docker-compose.kb-ui-testing.yml up -d
-#   # Frontend: npm run dev  (port 3000 → kb-backend on 8050)
+#   # Frontend (from repo root): point it at Keycloak + Kong, then npm run dev:
+#   #   VITE_KEYCLOAK_URL=http://localhost:8080  VITE_KEYCLOAK_REALM=aeroflow
+#   #   VITE_KEYCLOAK_CLIENT=aeroflow-frontend   VITE_API_URL=http://localhost:8000
+#   # Login as helios-admin / H3lios@Admin01! (realm-export.local.json).
 #
 # Resource sizing (limits, not reservations — Docker will overcommit safely):
 #   ~20 vCPU peak, ~27 GiB RAM peak. Fits comfortably on a 12 vCPU / 32 GiB VM.
@@ -49,6 +62,7 @@ services:
       POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - pg_data:/var/lib/postgresql/data
+      - ./Postgres/keycloak-db.sql:/docker-entrypoint-initdb.d/00-keycloak-db.sql:ro
       - ./Postgres/init.sql:/docker-entrypoint-initdb.d/01-kb-schema.sql:ro
       - ./Postgres/seed.sql:/docker-entrypoint-initdb.d/02-kb-seed.sql:ro
     ports:
@@ -451,3 +465,78 @@ services:
       qdrant: { condition: service_healthy }
       neo4j: { condition: service_healthy }
       model-service: { condition: service_healthy }
+
+  # ── Keycloak — issues the RS256 JWT the frontend logs in with ────────────────
+  # Uses a dedicated `keycloak` database (created by Postgres/keycloak-db.sql) so
+  # its schema stays out of aeroflow_kb. iss is derived from the request Host, so
+  # tokens fetched via localhost:8080 carry iss=http://localhost:8080/realms/aeroflow
+  # — the issuer Kong validates against.
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: kb-test-keycloak
+    restart: unless-stopped
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: aeroflow
+      KC_DB_PASSWORD: aeroflow        # postgres uses trust auth — value is ignored
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HEALTH_ENABLED: "true"
+      JAVA_OPTS_KC_HEAP: "-Xms256m -Xmx640m"
+    volumes:
+      - ./keycloak/realm-export.local.json:/opt/keycloak/data/import/realm-export.json:ro
+    ports:
+      - "8080:8080"
+    networks: [ kb-test ]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  # ── Kong — DB-less gateway. The aeroflow-jwks plugin verifies the JWT and
+  #    injects X-Kong-Verified / X-User-Id / X-Tenant-Id / X-User-Roles / X-Role-Id.
+  #    Configured at boot from kong/kong.kb-ui-testing.yml — no migration/admin step.
+  kong:
+    build:
+      context: ..
+      dockerfile: infra/kong/Dockerfile
+    container_name: kb-test-kong
+    restart: unless-stopped
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_PROXY_LISTEN: "0.0.0.0:8000"
+      KONG_ADMIN_LISTEN: "0.0.0.0:8001"
+      KONG_PLUGINS: bundled,aeroflow-jwks
+      KONG_NGINX_WORKER_PROCESSES: "1"
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+    volumes:
+      - ./kong/kong.kb-ui-testing.yml:/kong/kong.yml:ro
+    ports:
+      - "8000:8000"   # proxy — the frontend sends API traffic here
+      - "8801:8001"   # admin (read-only in DB-less; handy for debugging)
+    networks: [ kb-test ]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 384M
+    healthcheck:
+      test: [ "CMD", "kong", "health" ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      kb-backend: { condition: service_started }
+      keycloak: { condition: service_started }
