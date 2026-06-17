@@ -1,8 +1,8 @@
-# ─── Full E2E stack (laptop-tuned) ────────────────────────────────────────────
+# ─── Full KB E2E stack (laptop-tuned) ─────────────────────────────────────────
 # End-to-end testing: real auth (Keycloak + Kong) in front of the full KB data
 # plane (Qdrant + Neo4j + Mongo + MinIO + Kafka + model-service) with kb-backend
-# in FULL mode (KB_LITE unset). Unlike docker-compose.auth-lite.yml the data-plane
-# stores are real, so Qdrant/Neo4j routes return data instead of 503.
+# in FULL mode (KB_LITE unset), so the data-plane stores are real and Qdrant/Neo4j
+# routes return data instead of 503.
 #
 #   browser/curl → Keycloak (JWT) → Kong (verify + inject identity)
 #                → kb-backend (full) → Qdrant / Neo4j / Mongo / MinIO
@@ -16,16 +16,16 @@
 # kb-backend does NOT depend on it to boot. With it off, ingestion API calls still
 # queue to Kafka successfully; the messages just sit unconsumed (no processing).
 # Turn it on (needs more RAM — bump the WSL VM to ~12 GiB) with:
-#   docker compose -f infra/docker-compose.e2e.yml --profile pipeline up -d
+#   docker compose -f infra/docker-compose.kb-e2e.yml --profile pipeline up -d
 #
 # All stores persist to disk (named volumes). Data survives `down`/restart — it is
 # only wiped by `down -v`.
 #
 # Bring up (configures Kong too):
-#   pwsh infra/e2e.ps1
+#   pwsh infra/kb-e2e.ps1
 # By hand (from repo root):
-#   docker compose -f infra/docker-compose.e2e.yml up -d --build
-#   pwsh infra/e2e.ps1 configure   # register Kong route + jwks + cors
+#   docker compose -f infra/docker-compose.kb-e2e.yml up -d --build
+#   pwsh infra/kb-e2e.ps1 configure   # register Kong route + jwks + cors
 #
 # Test users (realm-export.local.json — helios-* have no required actions, so the
 # password grant works directly; the *.aeroflow.local users require TOTP):
@@ -133,7 +133,7 @@ services:
       KONG_NGINX_WORKER_PROCESSES: "1"   # dev: one worker is plenty, keeps RAM low
     ports:
       - "8000:8000"   # proxy
-      - "8900:8001"   # admin (used by e2e.ps1)
+      - "8900:8001"   # admin (used by kb-e2e.ps1)
     deploy:
       resources:
         limits: { cpus: "1.0", memory: 384M }
@@ -322,7 +322,7 @@ services:
   #    Heaviest service (~2.5–3 GiB Docling models). Gated behind the `pipeline`
   #    profile so it is OFF by default — kb-backend does not depend on it, and the
   #    trimmed stack fits ~8 GiB without it. Enable (and bump WSL RAM ~12 GiB):
-  #      docker compose -f infra/docker-compose.e2e.yml --profile pipeline up -d
+  #      docker compose -f infra/docker-compose.kb-e2e.yml --profile pipeline up -d
   kb-ingestion-worker:
     profiles: ["pipeline"]
     build: { context: .., dockerfile: infra/kb-ingestion-worker/Dockerfile }

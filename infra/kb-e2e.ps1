@@ -1,41 +1,50 @@
 <#
 .SYNOPSIS
-  Bring up the auth-lite stack, configure Kong, and verify the identity chain.
+  Bring up the full KB E2E stack, configure Kong, and verify the auth chain + live
+  data plane.
 
 .DESCRIPTION
-  Smallest stack that exercises the real auth path:
-    Keycloak (RS256 JWT) -> Kong (aeroflow-jwks verify + inject X-* headers)
-                          -> kb-backend router (get_ui_context -> require_perm)
+  Real auth (Keycloak RS256 JWT -> Kong aeroflow-jwks verify + inject X-* headers)
+  in front of kb-backend in FULL mode talking to the REAL data plane
+  (Postgres + Qdrant + Neo4j + Mongo + MinIO + Kafka + model-service), so
+  data-plane routes return data instead of 503.
 
-  No Qdrant / Neo4j / Mongo / MinIO / Kafka / model-service. kb-backend runs
-  with KB_LITE=true (Postgres only).
+  Every service is memory-capped so the trimmed stack fits a ~8 GiB Docker VM
+  (~6.5 GiB). The heavy bronze->silver->gold ingestion worker is OFF by default
+  (the `pipeline` profile / -WithPipeline); kb-backend does not need it to boot.
 
 .PARAMETER Action
-  up        : build + start the stack, then configure Kong (default)
+  up        : build + start the stack, configure Kong (default)
   configure : (re)configure Kong only (stack already up)
-  verify    : run the identity-chain checks (401 / 403 / 200 + whoami)
-  down      : stop and remove the stack
+  verify    : run the auth-chain + data-plane checks (401 / 200 / 403 + fleet 200)
+  down      : stop and remove the stack (volumes/data preserved)
+  destroy   : down + delete volumes (WIPES Postgres/Qdrant/Neo4j/Mongo/MinIO data)
   logs      : tail kb-backend + kong logs
 
 .PARAMETER WithUi
   Also start the Vite frontend (browser login on http://localhost:5173).
 
+.PARAMETER WithPipeline
+  Also start the ingestion worker (needs ~12 GiB WSL VM — see docker-compose.kb-e2e.yml).
+
 .EXAMPLE
-  pwsh infra/auth-lite.ps1                 # up + configure
-  pwsh infra/auth-lite.ps1 verify          # prove the chain
-  pwsh infra/auth-lite.ps1 up -WithUi      # include the frontend
-  pwsh infra/auth-lite.ps1 down
+  pwsh infra/kb-e2e.ps1                 # up + configure
+  pwsh infra/kb-e2e.ps1 verify          # prove the chain + live data plane
+  pwsh infra/kb-e2e.ps1 up -WithUi      # include the frontend
+  pwsh infra/kb-e2e.ps1 down            # stop, keep data
+  pwsh infra/kb-e2e.ps1 destroy         # stop + wipe data
 #>
 [CmdletBinding()]
 param(
-  [ValidateSet('up', 'configure', 'verify', 'down', 'logs')]
+  [ValidateSet('up', 'configure', 'verify', 'down', 'destroy', 'logs')]
   [string]$Action = 'up',
-  [switch]$WithUi
+  [switch]$WithUi,
+  [switch]$WithPipeline
 )
 
 $ErrorActionPreference = 'Stop'
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Compose   = Join-Path $ScriptDir 'docker-compose.auth-lite.yml'
+$ScriptDir     = Split-Path -Parent $MyInvocation.MyCommand.Path
+$Compose       = Join-Path $ScriptDir 'docker-compose.kb-e2e.yml'
 
 $KONG_ADMIN = 'http://localhost:8900'
 $KONG_PROXY = 'http://localhost:8000'
@@ -48,11 +57,12 @@ $ISSUER     = "$KC_BASE/realms/$REALM"
 
 function Compose-Args {
   $a = @('-f', $Compose)
-  if ($WithUi) { $a += @('--profile', 'ui') }
+  if ($WithUi)       { $a += @('--profile', 'ui') }
+  if ($WithPipeline) { $a += @('--profile', 'pipeline') }
   return $a
 }
 
-function Wait-For($name, [scriptblock]$test, $tries = 60, $delay = 5) {
+function Wait-For($name, [scriptblock]$test, $tries = 90, $delay = 5) {
   Write-Host "  waiting for $name ..." -NoNewline
   for ($i = 0; $i -lt $tries; $i++) {
     try { if (& $test) { Write-Host " ok"; return } } catch {}
@@ -64,7 +74,7 @@ function Wait-For($name, [scriptblock]$test, $tries = 60, $delay = 5) {
 }
 
 # Kong's Admin API rejects PowerShell's default form encoding with 415, so send
-# JSON explicitly. Works identically on Windows PowerShell 5.1 and PowerShell 7.
+# JSON explicitly. Works on Windows PowerShell 5.1 and PowerShell 7.
 function Kong-Json($method, $path, $obj) {
   Invoke-RestMethod -Method $method -Uri "$KONG_ADMIN$path" `
     -ContentType 'application/json' -Body ($obj | ConvertTo-Json -Depth 8 -Compress)
@@ -82,17 +92,17 @@ function Configure-Kong {
   } | Out-Null
   Write-Host '  service: kb-backend'
 
-  # 2. Route — the UI-facing API prefixes.
+  # 2. Route — the actual router prefixes (data.py /api/data, fleet.py /api/fleet,
+  #    everything else under /api/knowledge).
   Kong-Json Put '/services/kb-backend/routes/kb-backend-route' @{
     name = 'kb-backend-route'
-    paths = @('/api/data', '/api/knowledge', '/api/pipeline')
+    paths = @('/api/data', '/api/knowledge', '/api/fleet')
     strip_path = $false
     methods = @('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS')
   } | Out-Null
-  Write-Host '  route:   kb-backend-route -> /api/data, /api/knowledge, /api/pipeline'
+  Write-Host '  route:   kb-backend-route -> /api/data, /api/knowledge, /api/fleet'
 
-  # 3. aeroflow-jwks plugin (NO audience — keeps the lite realm export's token
-  #    valid without an extra audience mapper). Upsert: PATCH if present, else POST.
+  # 3. aeroflow-jwks plugin. Upsert: PATCH if present, else POST.
   $jwksBody = @{
     name = 'aeroflow-jwks'
     config = @{
@@ -117,9 +127,6 @@ function Configure-Kong {
     config = @{
       origins = @('http://localhost:3000', 'http://localhost:5173')
       methods = @('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS')
-      # In real-auth mode the frontend sends only Authorization (+ Content-Type on
-      # writes); identity comes from the JWT, not client headers. Keep the
-      # allow-list minimal.
       headers = @('Authorization', 'Content-Type')
       credentials = $true; max_age = 3600
     }
@@ -168,41 +175,50 @@ function Try-Call($method, $path, $token) {
 }
 
 function Verify-Chain {
-  Write-Host "==> Verifying identity chain via Kong ($KONG_PROXY)" -ForegroundColor Cyan
+  Write-Host "==> Verifying auth chain + data plane via Kong ($KONG_PROXY)" -ForegroundColor Cyan
 
   Wait-For 'Keycloak realm' {
     (Invoke-WebRequest "$KC_BASE/realms/$REALM/.well-known/openid-configuration" -UseBasicParsing).StatusCode -eq 200
   }
 
-  # 1. No token -> fail-closed 401 (get_ui_context rejects non-Kong-verified).
+  # 1. No token -> fail-closed 401 (authenticate rejects non-Kong-verified).
   $r = Try-Call 'GET' '/api/knowledge/whoami' $null
-  Write-Host ("  [no token]        GET /whoami           -> {0}  (expect 401)" -f $r.status)
+  Write-Host ("  [no token]        GET  /whoami       -> {0}  (expect 401)" -f $r.status)
 
   # 2. Engineer token -> whoami 200 with resolved identity.
   $eng = Get-Token 'helios-engineer' 'H3lios@Eng001!'
   $r = Try-Call 'GET' '/api/knowledge/whoami' $eng
-  Write-Host ("  [ai-engineer]     GET /whoami           -> {0}  (expect 200)" -f $r.status)
+  Write-Host ("  [ai-engineer]     GET  /whoami       -> {0}  (expect 200)" -f $r.status)
   if ($r.status -eq 200) { Write-Host "    identity: $($r.body)" -ForegroundColor DarkGray }
 
-  # 3. Engineer lacks delete_data -> 403 at the router (RBAC), proving role
-  #    propagated and is enforced server-side.
-  $r = Try-Call 'DELETE' '/api/knowledge/knowledge-bases/does-not-exist' $eng
-  Write-Host ("  [ai-engineer]     DELETE knowledge-base -> {0}  (expect 403)" -f $r.status)
+  # 3. DATA PLANE: fleet stats touch Postgres + Qdrant + Neo4j (health-gated svc).
+  #    200 here = the real data plane is live (a KB_LITE backend returns 503).
+  $r = Try-Call 'GET' '/api/fleet/stats' $eng
+  Write-Host ("  [ai-engineer]     GET  /fleet/stats  -> {0}  (expect 200, NOT 503)" -f $r.status)
+  if ($r.status -eq 200) { Write-Host "    stats: $($r.body)" -ForegroundColor DarkGray }
 
-  # 4. Admin token -> whoami shows platform-admin + full permission set.
+  # 4. Engineer lacks delete_data -> 403 at the router (RBAC enforced server-side).
+  $r = Try-Call 'DELETE' '/api/knowledge/knowledge-bases/does-not-exist' $eng
+  Write-Host ("  [ai-engineer]     DEL  knowledge-base-> {0}  (expect 403)" -f $r.status)
+
+  # 5. Admin token -> whoami shows platform-admin + full permission set.
   $adm = Get-Token 'helios-admin' 'H3lios@Admin01!'
   $r = Try-Call 'GET' '/api/knowledge/whoami' $adm
-  Write-Host ("  [platform-admin]  GET /whoami           -> {0}  (expect 200)" -f $r.status)
+  Write-Host ("  [platform-admin]  GET  /whoami       -> {0}  (expect 200)" -f $r.status)
   if ($r.status -eq 200) { Write-Host "    identity: $($r.body)" -ForegroundColor DarkGray }
 
-  Write-Host '==> Done. 401 / 200 / 403 / 200 confirms the chain end-to-end.' -ForegroundColor Green
+  Write-Host '==> Done. 401 / 200 / 200 / 403 / 200 confirms auth + live data plane.' -ForegroundColor Green
 }
 
 switch ($Action) {
   'up' {
-    Write-Host '==> Building & starting auth-lite stack' -ForegroundColor Cyan
+    Write-Host '==> Building & starting KB E2E stack (this pulls/builds — first run is slow)' -ForegroundColor Cyan
+    if (-not $WithPipeline) {
+      Write-Host '    ingestion worker OFF (use -WithPipeline + ~12 GiB WSL VM to enable)' -ForegroundColor DarkGray
+    }
     & docker compose @(Compose-Args) up -d --build
     if ($LASTEXITCODE -ne 0) { throw 'docker compose up failed' }
+    # kb-backend waits on model-service health (start_period 120s), so give it time.
     Wait-For 'kb-backend /health' {
       (Invoke-WebRequest 'http://localhost:8050/health' -UseBasicParsing).StatusCode -eq 200
     }
@@ -213,14 +229,22 @@ switch ($Action) {
     Write-Host '  Kong proxy: http://localhost:8000  (send API traffic here)'
     Write-Host '  Kong admin: http://localhost:8900'
     Write-Host '  kb-backend: http://localhost:8050  (direct = bypasses Kong = 401)'
-    if ($WithUi) { Write-Host '  Frontend  : http://localhost:5173' }
+    Write-Host '  Qdrant    : http://localhost:6333   Neo4j: http://localhost:7474'
+    Write-Host '  MinIO     : http://localhost:9001    Mongo: localhost:27017'
+    if ($WithUi)       { Write-Host '  Frontend  : http://localhost:5173' }
+    if ($WithPipeline) { Write-Host '  Ingestion worker: ON (pipeline profile)' }
     Write-Host ''
-    Write-Host 'Next:  pwsh infra/auth-lite.ps1 verify' -ForegroundColor Yellow
+    Write-Host 'Next:  pwsh infra/kb-e2e.ps1 verify' -ForegroundColor Yellow
   }
   'configure' { Configure-Kong }
   'verify'    { Verify-Chain }
   'down' {
     & docker compose @(Compose-Args) down
+    Write-Host 'Stopped. Data volumes preserved (use `destroy` to wipe).' -ForegroundColor Yellow
+  }
+  'destroy' {
+    Write-Host '==> Removing stack AND volumes — Postgres/Qdrant/Neo4j/Mongo/MinIO data will be WIPED.' -ForegroundColor Red
+    & docker compose @(Compose-Args) down -v
   }
   'logs' {
     & docker compose @(Compose-Args) logs -f kb-backend kong
