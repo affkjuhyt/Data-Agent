@@ -16,7 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 log = logging.getLogger(__name__)
 
-DEV_TENANT_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+# Matches the `tenant_id` attribute on the seeded `aeroflow` realm users so a
+# Kong-authenticated UI session resolves to the tenant that owns this seed data.
+DEV_TENANT_ID = uuid.UUID("a0000000-0000-0000-0000-000000000001")
 
 DEV_ROLE_PERMISSION_IDS: dict[str, uuid.UUID] = {
     "PLATFORM_ADMIN":    uuid.UUID("00000000-0000-0000-0000-000000000010"),

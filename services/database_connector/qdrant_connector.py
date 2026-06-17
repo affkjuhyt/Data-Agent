@@ -180,6 +180,8 @@ class QdrantClient:
                 )
 
                 log.info("Qdrant connection successes")
+                self._connected = True
+                self._healthy = True
                 return self.get_client()
             except asyncio.TimeoutError as e:
                 log.info(f"Attempt #{_}/{retry.count}: Fail To Connect To Qdrant, retry after: {self._connection_wait}. Error: {e}")

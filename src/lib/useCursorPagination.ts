@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { mockGet } from './mockApi';
+import { apiGet } from './apiClient';
 import { PagedResponse } from '../types';
 
 const PAGE_SIZE = 50;
@@ -55,7 +55,7 @@ export function useCursorPagination<T>(
     try {
       const q: Record<string, string | number | boolean> = { ...paramsRef.current };
       if (token) q.cursor = token;
-      const res = await mockGet<PagedResponse<T>>(path, q);
+      const res = await apiGet<PagedResponse<T>>(path, q);
       setItems(res.items ?? []);
       setHasNext(res.has_next ?? false);
       if (typeof res.total === 'number') setTotal(res.total);

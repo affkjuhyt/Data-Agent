@@ -1,23 +1,16 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { AppStateProvider, useAppState } from './AppStateContext';
 import { AppLayout } from './components/Layout';
 import { Placeholder } from './components/shared/Placeholder';
 import IngestionProgressOverlay from './components/shared/IngestionProgressOverlay';
 import { ROUTE_MAP } from './routes';
 import { MODULE_SUB_ITEMS } from './constants';
-import { setApiContext } from './lib/mockApi';
 
 function AppContent() {
-  const { activeModule, setActiveModule, subTab, user } = useAppState();
+  const { activeModule, setActiveModule, subTab } = useAppState();
 
-  // Initialize API context with user/role info
-  useEffect(() => {
-    setApiContext(
-      user.role,
-      user.id,
-      '00000000-0000-0000-0000-000000000001' // Dev tenant ID
-    );
-  }, [user.role, user.id]);
+  // Identity is never sent from the client: the bearer token goes to Kong, which
+  // injects the authoritative X-* identity headers the backend trusts.
 
   const renderView = () => {
     const subItems = MODULE_SUB_ITEMS[activeModule] ?? [];

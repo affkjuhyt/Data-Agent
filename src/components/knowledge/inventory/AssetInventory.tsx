@@ -16,7 +16,7 @@ import {
 import { cn } from '../../../lib/utils';
 import { KnowledgeDocument } from '../../../types';
 import { useAppState } from '../../../AppStateContext';
-import { mockMutate } from '../../../lib/mockApi';
+import { apiMutate } from '../../../lib/apiClient';
 import { useCursorPagination } from '../../../lib/useCursorPagination';
 import { Pagination } from '../../shared/Pagination';
 import { SourceCategory, SOURCE_CATEGORIES, ALL_SOURCE_CATEGORIES, sourceParam } from './inventory.data';
@@ -115,7 +115,7 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
     const targetLayer = doc.current_tier === 'bronze' ? 'silver' : 'gold';
     setProcessingId(doc.data_id);
     try {
-      await mockMutate('POST', `/api/pipeline/ingestion/promote/${doc.data_id}/${targetLayer}`);
+      await apiMutate('POST', `/api/pipeline/ingestion/promote/${doc.data_id}/${targetLayer}`);
       // Update status only — tier stays the same until pipeline completes
       updateDocument(doc.data_id, { status: targetLayer === 'silver' ? 'CHUNKING' : 'GRAPH_EXTRACTING' });
       setSelectedIds(prev => prev.filter(id => id !== doc.data_id));
@@ -127,7 +127,7 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
   const handleDelete = async (e: React.MouseEvent, doc: KnowledgeDocument) => {
     e.stopPropagation();
     try {
-      await mockMutate('DELETE', `/api/data/documents/${doc.data_id}`);
+      await apiMutate('DELETE', `/api/data/documents/${doc.data_id}`);
       deleteDocument(doc.data_id);
       setSelectedIds(prev => prev.filter(id => id !== doc.data_id));
       reload(true); // refresh the current server page so the row clears + backfills
@@ -161,7 +161,7 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
 
       const targetLayer = doc.current_tier === 'bronze' ? 'silver' : 'gold';
       try {
-        await mockMutate('POST', `/api/pipeline/ingestion/promote/${id}/${targetLayer}`);
+        await apiMutate('POST', `/api/pipeline/ingestion/promote/${id}/${targetLayer}`);
         updateDocument(id, { status: targetLayer === 'silver' ? 'CHUNKING' : 'GRAPH_EXTRACTING' });
         onPromote?.(doc);
         anyProcessed = true;

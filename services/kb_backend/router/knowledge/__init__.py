@@ -13,6 +13,7 @@ from services.kb_backend.router.knowledge.knowledge_base   import router as know
 from services.kb_backend.router.knowledge.qdrant           import router as qdrant_router
 from services.kb_backend.router.knowledge.neo4j            import router as neo4j_router
 from services.kb_backend.router.knowledge.trash            import router as trash_router
+from services.kb_backend.router.knowledge.identity         import router as identity_router
 
 router = APIRouter()
 router.include_router(data_router)
@@ -28,3 +29,4 @@ router.include_router(knowledge_base_router)
 router.include_router(qdrant_router)
 router.include_router(neo4j_router)
 router.include_router(trash_router)
+router.include_router(identity_router)

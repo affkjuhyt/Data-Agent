@@ -17,7 +17,9 @@ from basemodel.services_databaseconnector.postgres_model import (
     ReadJoinRequest, WhereFilter,
 )
 from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import KBTextBlockORM
-from services.kb_backend.dependencies.ui_context import get_ui_context, svc
+from services.kb_backend.dependencies.auth import authenticate
+from services.kb_backend.dependencies.services import svc
+from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.pipeline.kb_ui_operation.document_ops import fetch_one as _fetch_doc
 from services.kb_backend.pipeline.ingestion import config as cfg
 from services.kb_backend.pipeline.ingestion.bronze import BronzeUploadRequest, WebBronzeRequest
@@ -54,7 +56,7 @@ async def ingest_bronze(
     source_type: str = Form(...),
     doc_metadata: str = Form("{}"),
     knowledge_base_id: str = Form(""),
-    ctx: dict = Depends(get_ui_context),
+    ctx: dict = Depends(require_perm("add_data")),
 ):
     """
     Ingest document to BRONZE layer.
@@ -146,7 +148,7 @@ class WebIngestBody(BaseModel):
 async def ingest_bronze_web(
     request: Request,
     body: WebIngestBody,
-    ctx: dict = Depends(get_ui_context),
+    ctx: dict = Depends(require_perm("add_data")),
 ):
     """
     Ingest a web portal to BRONZE by URL (no file upload).
@@ -209,7 +211,7 @@ async def ingest_bronze_web(
 async def promote_to_silver(
     data_id: str,
     request: Request,
-    ctx: dict = Depends(get_ui_context),
+    ctx: dict = Depends(require_perm("process_layer")),
 ):
     postgres       = svc(request, "postgres")
     kafka_producer = svc(request, "kafka_producer")
@@ -268,7 +270,7 @@ async def promote_to_silver(
 async def promote_to_gold(
     data_id: str,
     request: Request,
-    ctx: dict = Depends(get_ui_context),
+    ctx: dict = Depends(require_perm("process_layer")),
 ):
     postgres       = svc(request, "postgres")
     kafka_producer = svc(request, "kafka_producer")
@@ -329,7 +331,7 @@ async def promote_to_gold(
 
 @router.get("/documents/{data_id}/logs")
 async def get_ingestion_logs(
-    data_id: str, request: Request, ctx: dict = Depends(get_ui_context),
+    data_id: str, request: Request, ctx: dict = Depends(authenticate),
 ):
     """Stored per-document ingestion logs (Mongo ``kb_ingestion_logs``).
 
@@ -368,6 +370,7 @@ async def get_ingestion_logs(
 async def stream_pipeline_events(
     data_id: str,
     request: Request,
+    ctx: dict = Depends(authenticate),
 ):
     """SSE endpoint — streams structured pipeline events from MongoDB in real time.
 
@@ -428,7 +431,7 @@ def _progress_pct(status: str, stage: str, processed: int, total: int) -> float:
 
 
 @router.get("/documents/{data_id}/progress")
-async def stream_progress(data_id: str, request: Request):
+async def stream_progress(data_id: str, request: Request, ctx: dict = Depends(authenticate)):
     """SSE endpoint — streams ingestion progress with chunk-based percentage."""
     mongo    = svc(request, "mongo")
     postgres = svc(request, "postgres")

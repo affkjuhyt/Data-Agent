@@ -17,7 +17,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../../lib/utils';
 import { useAppState } from '../../../AppStateContext';
 import { STEPS, SOURCES, formatBytes } from './ingest.data';
-import { mockUpload, mockGet, mockMutate } from '../../../lib/mockApi';
+import { apiUpload, apiGet, apiMutate } from '../../../lib/apiClient';
 
 interface KnowledgeBaseOption { id: string; name: string; }
 
@@ -36,7 +36,7 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBaseOption[]>([]);
   const [knowledgeBaseId, setKnowledgeBaseId] = useState('');
   useEffect(() => {
-    mockGet<KnowledgeBaseOption[]>('/api/knowledge/knowledge-bases')
+    apiGet<KnowledgeBaseOption[]>('/api/knowledge/knowledge-bases')
       .then((data) => setKnowledgeBases(Array.isArray(data) ? data : []))
       .catch(() => setKnowledgeBases([]));
   }, []);
@@ -167,7 +167,7 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
       // Web portal: no file — register the URL as bronze. The bronze→silver step
       // fetches the page, strips boilerplate to markdown, and Docling-chunks it.
       if (selectedSource === 'web') {
-        const result = await mockMutate<{ data_id: string; name: string; url: string; layer: string }>(
+        const result = await apiMutate<{ data_id: string; name: string; url: string; layer: string }>(
           'POST',
           '/api/pipeline/ingestion/bronze/web',
           {
@@ -194,7 +194,7 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
         });
       }
 
-      // Upload to real backend API via mockUpload (auto-injects context headers)
+      // Upload to real backend API via apiUpload (auto-injects context headers)
       if (selectedSource !== 'web' && fileInputRef.current?.files?.[0]) {
         const file = fileInputRef.current.files[0];
         const formData = new FormData();
@@ -235,7 +235,7 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
               };
         formData.append('doc_metadata', JSON.stringify(apiMetadata));
 
-        const result = await mockUpload<{ data_id: string; name: string; path: string; layer: string }>(
+        const result = await apiUpload<{ data_id: string; name: string; path: string; layer: string }>(
           '/api/pipeline/ingestion/bronze',
           formData
         );

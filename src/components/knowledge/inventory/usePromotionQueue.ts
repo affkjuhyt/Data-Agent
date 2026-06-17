@@ -1,8 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { PromotionEntry } from './PromotionProgressOverlay';
 import type { KnowledgeDocument } from '../../../types';
-
-const BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8000';
+import { apiStream } from '../../../lib/apiClient';
 
 // Persist the queue so a page refresh doesn't drop in-flight promotions. The
 // overlay reappears AND `promotingIds` stays populated, so the row stays locked
@@ -94,7 +93,9 @@ export function usePromotionQueue(
       const abort = new AbortController();
       abortRefs.current.set(data_id, abort);
 
-      fetch(`${BASE}/api/pipeline/ingestion/documents/${data_id}/progress`, { signal: abort.signal })
+      // Routed through apiStream (not a bare fetch) so it carries the bearer
+      // token and goes through Kong like every other KB request.
+      apiStream(`/api/pipeline/ingestion/documents/${data_id}/progress`, { signal: abort.signal })
         .then(async (res) => {
           if (!res.ok || !res.body) return;
           const reader = res.body.getReader();

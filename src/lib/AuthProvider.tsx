@@ -37,13 +37,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [error, setError]     = useState<string | null>(null);
 
   useEffect(() => {
-    // Dev bypass: VITE_MOCK_AUTH=true trong .env.local → bỏ qua Keycloak
-    if (import.meta.env.VITE_MOCK_AUTH === 'true') {
-      setUser({ id: 'u_123', name: 'Alex Rivera', email: 'alex.rivera@globalcorp.ai', roles: ['AI_ENGINEER'], token: 'mock-token' });
-      setLoading(false);
-      return;
-    }
-
+    // No mock/demo bypass: the app always authenticates against Keycloak and
+    // talks to the backend through Kong. There is no offline/demo mode.
     if ((keycloak as any).didInitialize) {
       setUser(buildUser());
       setLoading(false);

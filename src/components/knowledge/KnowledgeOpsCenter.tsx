@@ -35,7 +35,7 @@ import { KnowledgeHubView } from './knowledge-hub/KnowledgeHub';
 import { TrashCenter } from './trash/TrashCenter';
 import { KnowledgeDocument } from '../../types';
 import { useAppState } from '../../AppStateContext';
-import { mockGet, mockMutate } from '../../lib/mockApi';
+import { apiGet, apiMutate } from '../../lib/apiClient';
 import { usePromotionQueue } from './inventory/usePromotionQueue';
 import { PromotionProgressOverlay } from './inventory/PromotionProgressOverlay';
 
@@ -53,7 +53,7 @@ const KnowledgeOpsCenter = () => {
   // Live pending-conflict count for the Conflicts sub-tab badge.
   const [conflictCount, setConflictCount] = useState<number | null>(null);
   const refreshConflictCount = useCallback(() => {
-    mockGet<{ pending: { items?: any[] } | any[] }>('/api/knowledge/conflicts', {
+    apiGet<{ pending: { items?: any[] } | any[] }>('/api/knowledge/conflicts', {
       pending_page: 1, awaiting_page: 1, resolved_page: 1,
     })
       .then(data => {
@@ -220,7 +220,7 @@ const KnowledgeOpsCenter = () => {
                     if (promotingIds.has(doc.data_id)) return;
                     const targetL = doc.current_tier === 'bronze' ? 'silver' : 'gold';
                     try {
-                      await mockMutate('POST', `/api/pipeline/ingestion/promote/${doc.data_id}/${targetL}`);
+                      await apiMutate('POST', `/api/pipeline/ingestion/promote/${doc.data_id}/${targetL}`);
                       const nextStatus = targetL === 'silver' ? 'CHUNKING' : 'GRAPH_EXTRACTING';
                       updateDocument(doc.data_id, { status: nextStatus });
                       setSelectedAsset(prev => prev ? { ...prev, status: nextStatus } : null);

@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { DetailDrawer } from '../../shared/DetailDrawer';
-import { mockGet, mockMutate } from '../../../lib/mockApi';
+import { apiGet, apiMutate } from '../../../lib/apiClient';
 import {
   ConflictType, SeverityType, ConflictStatusType, ResolutionMethod,
   ConflictSummary, ConflictBatchGroup, ConflictsResponse, ConflictsBucket, ConflictDetail,
@@ -67,7 +67,7 @@ export const ConflictWorkspace = () => {
 
   const loadConflicts = (pp = pendingPage, ap = awaitingPage, rp = resolvedPage) => {
     setLoading(true);
-    mockGet<ConflictsResponse>('/api/knowledge/conflicts', {
+    apiGet<ConflictsResponse>('/api/knowledge/conflicts', {
       pending_page: pp, awaiting_page: ap, resolved_page: rp,
     })
       .then(data => {
@@ -146,7 +146,7 @@ export const ConflictWorkspace = () => {
     setExistingExpanded(false);
     setIncomingExpanded(false);
 
-    mockGet<ConflictDetail>(`/api/knowledge/conflicts/${summary.conflict_id}`)
+    apiGet<ConflictDetail>(`/api/knowledge/conflicts/${summary.conflict_id}`)
       .then(detail => {
         setConflictDetail(detail);
         setResolutionInstruction(detail.resolution_instruction || '');
@@ -167,7 +167,7 @@ export const ConflictWorkspace = () => {
     if (!selectedConflictId || !selectedMethod) return;
     setSubmitting(true);
     try {
-      await mockMutate('PATCH', `/api/knowledge/conflicts/${selectedConflictId}`, {
+      await apiMutate('PATCH', `/api/knowledge/conflicts/${selectedConflictId}`, {
         selected_resolution_method: selectedMethod,
         resolution_instruction: resolutionInstruction,
       });

@@ -220,6 +220,29 @@ curl -sf -X PUT "$KONG_ADMIN/services/release-worker/routes/release-route" \
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
 
+# ── 3d. Create kb-backend service + route ──────────────────────────────
+# kb-backend is a compose service on the shared network, so Kong reaches it by
+# its service DNS name (NOT host.docker.internal like aeroflow-backend).
+echo "📡 Creating kb-backend service..."
+curl -sf -X PUT "$KONG_ADMIN/services/kb-backend" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "kb-backend",
+    "url": "http://kb-backend:8000",
+    "connect_timeout": 5000,
+    "read_timeout": 60000
+  }' | json_field name | xargs -I{} echo "  → service: {}"
+
+echo "🛣️  Creating kb-backend route (KB UI data/knowledge/pipeline APIs)..."
+curl -sf -X PUT "$KONG_ADMIN/services/kb-backend/routes/kb-backend-route" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "kb-backend-route",
+    "paths": ["/api/data","/api/knowledge","/api/pipeline"],
+    "strip_path": false,
+    "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
+  }' | json_field name | xargs -I{} echo "  → route: {}"
+
 # Helper: upsert a plugin scoped to a specific service/route/global endpoint.
 # Fetches all plugins at the scope, finds one matching plugin_name by parsing
 # JSON properly (Kong's ?name= filter is unreliable — returns all plugins).
@@ -289,6 +312,23 @@ echo "🔐 Enabling aeroflow-jwks plugin on auth-api (aud=auth-api)..."
 upsert_plugin "$KONG_ADMIN/services/auth-api/plugins" \
   "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"auth-api\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE}}" \
   "aeroflow-jwks"
+
+# ── 4d. aeroflow-jwks on kb-backend ────────────────────────────────────
+# Reuse aud=aeroflow-backend so the existing audience mapper on the
+# aeroflow-frontend client applies — no new Keycloak mapper needed.
+echo "🔐 Enabling aeroflow-jwks plugin on kb-backend (aud=aeroflow-backend)..."
+upsert_plugin "$KONG_ADMIN/services/kb-backend/plugins" \
+  "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"aeroflow-backend\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE}}" \
+  "aeroflow-jwks"
+
+# ── 4e. CORS on kb-backend-route ───────────────────────────────────────
+# Browser preflight OPTIONS carries no Authorization header. The cors plugin
+# (priority higher than aeroflow-jwks @1010) answers the preflight before JWT
+# verification runs — without it every cross-origin request 401s on preflight.
+echo "🌐 Enabling CORS on kb-backend-route..."
+upsert_plugin "$KONG_ADMIN/routes/kb-backend-route/plugins" \
+  '{"name":"cors","config":{"origins":["http://localhost:3000","http://localhost:5173"],"methods":["GET","POST","PUT","PATCH","DELETE","OPTIONS"],"headers":["Authorization","Content-Type","X-Role","X-Request-ID"],"credentials":true,"max_age":3600}}' \
+  "cors"
 
 # ── 5. IP restriction ─────────────────────────────────────────────────
 # Applied to: aeroflow-backend (data API), release-worker, auth-api-keys-route.

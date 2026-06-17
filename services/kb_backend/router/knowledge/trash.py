@@ -10,7 +10,9 @@ the per-document Mongo staging/logs/events.
 from fastapi import APIRouter, Depends, Request
 
 from basemodel.services_databaseconnector.shared_model import ResponseModel
-from services.kb_backend.dependencies.ui_context import get_ui_context, svc
+from services.kb_backend.dependencies.auth import authenticate
+from services.kb_backend.dependencies.services import svc
+from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.pipeline.kb_ui_operation.trash_ops import list_trash, restore, flush
 
 router = APIRouter(prefix="/api/knowledge/trash", tags=["Knowledge-Trash"])
@@ -20,7 +22,7 @@ router = APIRouter(prefix="/api/knowledge/trash", tags=["Knowledge-Trash"])
 async def list_trash_route(
     level: str,
     request: Request,
-    ctx: dict = Depends(get_ui_context),
+    ctx: dict = Depends(authenticate),
 ):
     """level ∈ document | chunk | version. Returns the soft-deleted items + total."""
     data = await list_trash(svc(request, "postgres"), level, ctx["tenant_id"])
@@ -32,7 +34,7 @@ async def restore_route(
     level: str,
     item_id: str,
     request: Request,
-    ctx: dict = Depends(get_ui_context),
+    ctx: dict = Depends(require_perm("delete_data")),
 ):
     await restore(svc(request, "postgres"), svc(request, "qdrant"), level, item_id, ctx["tenant_id"])
     return ResponseModel(code=200, data=None)
@@ -43,7 +45,7 @@ async def flush_route(
     level: str,
     item_id: str,
     request: Request,
-    ctx: dict = Depends(get_ui_context),
+    ctx: dict = Depends(require_perm("delete_data")),
 ):
     """Permanently delete (flush) the item — not reversible."""
     await flush(

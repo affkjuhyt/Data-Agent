@@ -40,7 +40,7 @@ MODEL_SERVICE_URL = os.getenv("MODEL_SERVICE_URL", "http://localhost:8001")
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "knowledge")
 
 # Dev identities seeded by services/kb_backend/dev_seed.py (seed_dev_data).
-DEV_TENANT_ID = "00000000-0000-0000-0000-000000000001"
+DEV_TENANT_ID = "a0000000-0000-0000-0000-000000000001"  # matches aeroflow realm users' tenant_id
 DEV_ROLE_ID   = "00000000-0000-0000-0000-000000000011"  # AI_ENGINEER
 EMBED_MODEL_ID = os.getenv("EMBED_MODEL_ID", "1")        # placeholder tag (matches gold)
 

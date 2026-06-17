@@ -35,7 +35,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../../lib/utils';
 import { useAppState } from '../../../AppStateContext';
 import { KnowledgeDocument, KnowledgeLayer, PagedResponse } from '../../../types';
-import { mockGet, mockMutate } from '../../../lib/mockApi';
+import { apiGet, apiMutate } from '../../../lib/apiClient';
 import {
   ChunkVersion, Chunk, TableColumn, DocTable,
   WarehouseConfigTable, WarehouseConfigVersion,
@@ -96,7 +96,7 @@ export const AssetDetailWorkspace = ({
   const fetchChunks = useCallback(() => {
     if (document.current_tier === 'bronze') return;
     setChunksLoading(true);
-    mockGet<PagedResponse<Chunk> | Chunk[]>(
+    apiGet<PagedResponse<Chunk> | Chunk[]>(
       `/api/knowledge/documents/${document.data_id}/chunks`,
       { page: chunksPage },
     )
@@ -145,7 +145,7 @@ export const AssetDetailWorkspace = ({
   useEffect(() => {
     if (activeTab !== 'TABLES' || document.current_tier === 'bronze') return;
     setTablesLoading(true);
-    mockGet<PagedResponse<DocTable> | DocTable[]>(
+    apiGet<PagedResponse<DocTable> | DocTable[]>(
       `/api/knowledge/documents/${document.data_id}/tables`,
       { page: tablesPage },
     )
@@ -179,7 +179,7 @@ export const AssetDetailWorkspace = ({
   useEffect(() => {
     if (activeTab !== 'TIMELINE') return;
     setHistoryLoading(true);
-    mockGet<HistoryEntry[]>(`/api/knowledge/documents/${document.data_id}/history`)
+    apiGet<HistoryEntry[]>(`/api/knowledge/documents/${document.data_id}/history`)
       .then(data => setHistoryEntries(data ?? []))
       .catch(() => setHistoryEntries([]))
       .finally(() => setHistoryLoading(false));
@@ -194,7 +194,7 @@ export const AssetDetailWorkspace = ({
   useEffect(() => {
     if (activeTab !== 'LOGS') return;
     setLogsLoading(true);
-    mockGet<LogsResponse>(`/api/pipeline/ingestion/documents/${document.data_id}/logs`)
+    apiGet<LogsResponse>(`/api/pipeline/ingestion/documents/${document.data_id}/logs`)
       .then(data => setLogData(data ?? null))
       .catch(() => setLogData(null))
       .finally(() => setLogsLoading(false));
@@ -204,7 +204,7 @@ export const AssetDetailWorkspace = ({
   useEffect(() => {
     if (activeTab !== 'CONFIGS') return;
     setConfigsLoading(true);
-    mockGet<WarehouseConfigVersion[]>(`/api/knowledge/documents/${document.data_id}/configs`)
+    apiGet<WarehouseConfigVersion[]>(`/api/knowledge/documents/${document.data_id}/configs`)
       .then(data => {
         const result = data && data.length > 0 ? data : [];
         setConfigs(result);
@@ -218,7 +218,7 @@ export const AssetDetailWorkspace = ({
     if (!selectedConfig) return;
     setActivatingConfig(true);
     try {
-      await mockMutate('PATCH', `/api/knowledge/documents/${document.data_id}/configs/${selectedConfig.id}/activate`, {});
+      await apiMutate('PATCH', `/api/knowledge/documents/${document.data_id}/configs/${selectedConfig.id}/activate`, {});
       setConfigs(prev => prev.map(c => ({
         ...c, status: c.id === selectedConfig.id ? 'Active' : 'Inactive'
       })));
@@ -269,7 +269,7 @@ export const AssetDetailWorkspace = ({
     const connection = selectedConfig?.connection ?? {};
     const tables = selected.map(({ name, schema, rowCount, description }) => ({ name, schema, rowCount, description }));
     try {
-      const raw = await mockMutate<WarehouseConfigVersion>(
+      const raw = await apiMutate<WarehouseConfigVersion>(
         'POST',
         `/api/knowledge/documents/${document.data_id}/configs`,
         { version_number: nextVersionLabel, connection, tables },
@@ -314,7 +314,7 @@ export const AssetDetailWorkspace = ({
     if (!selectedChunk || !selectedVersion) return;
     setActivatingSave(true);
     try {
-      await mockMutate(
+      await apiMutate(
         'PATCH',
         `/api/knowledge/documents/${document.data_id}/chunks/${selectedChunk.id}/activate`,
         { version_number: selectedVersion.version_number }
@@ -352,7 +352,7 @@ export const AssetDetailWorkspace = ({
     if (!editingCell || !selectedTable) return;
     setCellSaveStatus('saving');
     try {
-      await mockMutate(
+      await apiMutate(
         'PATCH',
         `/api/knowledge/documents/${document.data_id}/tables/${selectedTable.id}/rows/${editingCell.rowIndex}`,
         { column: editingCell.column, value: editingValue }
@@ -967,7 +967,7 @@ export const AssetDetailWorkspace = ({
                               <span className="w-5 h-5 rounded-full border-2 border-[#BFA66A]/40 border-t-[#B88719] animate-spin" />
                             </div>
                           ) : tables.length === 0 ? (
-                            <div className="text-center py-12 text-xs text-slate-400 font-mono">No tables available.<br/>Start the mock server.</div>
+                            <div className="text-center py-12 text-xs text-slate-400 font-mono">No tables available.</div>
                           ) : tables.map((table) => (
                             <div
                               key={table.id}
@@ -1221,7 +1221,7 @@ export const AssetDetailWorkspace = ({
                               <span className="w-5 h-5 rounded-full border-2 border-[#BFA66A]/40 border-t-[#B88719] animate-spin" />
                             </div>
                           ) : configs.length === 0 ? (
-                            <div className="text-center py-12 text-xs text-slate-400 font-mono">No configs yet.<br />Start the mock server.</div>
+                            <div className="text-center py-12 text-xs text-slate-400 font-mono">No configs yet.</div>
                           ) : configs.map(cfg => (
                             <div key={cfg.id} onClick={() => { setSelectedConfig(cfg); setShowNewConfigFlow(false); }}
                               className={cn(

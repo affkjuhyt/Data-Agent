@@ -18,7 +18,9 @@ from services.kb_backend.UI_model.knowledge import (
     RequestTableRowUpdate,
     RequestDocConfig,
 )
-from services.kb_backend.dependencies.ui_context import get_ui_context, svc
+from services.kb_backend.dependencies.auth import authenticate
+from services.kb_backend.dependencies.services import svc
+from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.pipeline.kb_ui_operation.chunk_ops import (
     get_chunks, delete_chunk, activate_chunk_version,
     delete_chunk_version, create_chunk_version,
@@ -43,7 +45,7 @@ class NewVersionBody(BaseModel):
 
 @router.get("/{doc_id}/chunks", response_model=ResponseModel)
 async def get_chunks_route(
-    doc_id: str, request: Request, ctx: dict = Depends(get_ui_context),
+    doc_id: str, request: Request, ctx: dict = Depends(authenticate),
     page: int = Query(1, ge=1),
 ):
     result = await get_chunks(
@@ -56,7 +58,7 @@ async def get_chunks_route(
 @router.delete("/{doc_id}/chunks/{chunk_id}", response_model=ResponseModel)
 async def delete_chunk_route(
     doc_id: str, chunk_id: str,
-    request: Request, ctx: dict = Depends(get_ui_context),
+    request: Request, ctx: dict = Depends(require_perm("delete_data")),
 ):
     await delete_chunk(svc(request, "postgres"), chunk_id, doc_id=doc_id, tenant_id=ctx["tenant_id"],
                        qdrant=svc(request, "qdrant"))
@@ -67,7 +69,7 @@ async def delete_chunk_route(
 async def activate_chunk_version_route(
     doc_id: str, chunk_id: str,
     body: RequestActivateChunkVersion,
-    request: Request, ctx: dict = Depends(get_ui_context),
+    request: Request, ctx: dict = Depends(require_perm("add_chunk_version")),
 ):
     result = await activate_chunk_version(
         postgres=svc(request, "postgres"),
@@ -82,7 +84,7 @@ async def activate_chunk_version_route(
 @router.delete("/{doc_id}/chunks/{chunk_id}/versions/{version_number}", response_model=ResponseModel)
 async def delete_chunk_version_route(
     doc_id: str, chunk_id: str, version_number: int,
-    request: Request, ctx: dict = Depends(get_ui_context),
+    request: Request, ctx: dict = Depends(require_perm("delete_data")),
 ):
     await delete_chunk_version(
         svc(request, "postgres"), chunk_id, version_number,
@@ -95,7 +97,7 @@ async def delete_chunk_version_route(
 async def create_chunk_version_route(
     doc_id: str, chunk_id: str,
     body: NewVersionBody,
-    request: Request, ctx: dict = Depends(get_ui_context),
+    request: Request, ctx: dict = Depends(require_perm("add_chunk_version")),
 ):
     result = await create_chunk_version(
         postgres=svc(request, "postgres"),
@@ -114,7 +116,7 @@ async def create_chunk_version_route(
 
 @router.get("/{doc_id}/tables", response_model=ResponseModel)
 async def get_tables_route(
-    doc_id: str, request: Request, ctx: dict = Depends(get_ui_context),
+    doc_id: str, request: Request, ctx: dict = Depends(authenticate),
     page: int = Query(1, ge=1),
 ):
     result = await get_tables(
@@ -128,7 +130,7 @@ async def get_tables_route(
 async def update_table_row_route(
     doc_id: str, table_id: str, row_index: int,
     body: RequestTableRowUpdate,
-    request: Request, ctx: dict = Depends(get_ui_context),
+    request: Request, ctx: dict = Depends(authenticate),
 ):
     result = await update_table_row(
         svc(request, "postgres"), table_id, row_index, body.model_dump(),
@@ -140,7 +142,7 @@ async def update_table_row_route(
 # ── Configs (aliases for AssetDetailWorkspace warehouse docs) ─────────────────
 
 @router.get("/{doc_id}/configs", response_model=ResponseModel)
-async def get_doc_configs(doc_id: str, request: Request, ctx: dict = Depends(get_ui_context)):
+async def get_doc_configs(doc_id: str, request: Request, ctx: dict = Depends(authenticate)):
     result = await get_warehouse_configs(svc(request, "postgres"), doc_id, tenant_id=ctx["tenant_id"])
     return ResponseModel(code=200, data=result)
 
@@ -148,7 +150,7 @@ async def get_doc_configs(doc_id: str, request: Request, ctx: dict = Depends(get
 @router.post("/{doc_id}/configs", response_model=ResponseModel)
 async def create_doc_config(
     doc_id: str, body: RequestDocConfig,
-    request: Request, ctx: dict = Depends(get_ui_context),
+    request: Request, ctx: dict = Depends(require_perm("add_warehouse_config")),
 ):
     result = await create_warehouse_config(
         postgres=svc(request, "postgres"),
@@ -163,7 +165,7 @@ async def create_doc_config(
 @router.patch("/{doc_id}/configs/{config_id}/activate", response_model=ResponseModel)
 async def activate_doc_config(
     doc_id: str, config_id: str,
-    request: Request, ctx: dict = Depends(get_ui_context),
+    request: Request, ctx: dict = Depends(require_perm("edit_warehouse_config")),
 ):
     result = await activate_warehouse_config(
         svc(request, "postgres"), doc_id, config_id, tenant_id=ctx["tenant_id"],
@@ -174,7 +176,7 @@ async def activate_doc_config(
 # ── Lifecycle History ──────────────────────────────────────────────────────────
 
 @router.get("/{doc_id}/history", response_model=ResponseModel)
-async def get_doc_history(doc_id: str, request: Request, ctx: dict = Depends(get_ui_context)):
+async def get_doc_history(doc_id: str, request: Request, ctx: dict = Depends(authenticate)):
     try:
         data_uuid = uuid.UUID(doc_id)
     except ValueError:

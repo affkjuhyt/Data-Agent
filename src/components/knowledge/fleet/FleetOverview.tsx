@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FileText, Globe, Film, Server, Database, Network, GitBranch, AlertCircle, Loader2 } from 'lucide-react';
-import { mockGet } from '../../../lib/mockApi';
+import { apiGet } from '../../../lib/apiClient';
 import { FleetStats } from './fleet.data';
 
 interface StatCardProps {
@@ -36,7 +36,7 @@ export const FleetOverview = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    mockGet<FleetStats>('/api/fleet/stats')
+    apiGet<FleetStats>('/api/fleet/stats')
       .then(data => setStats(data))
       .finally(() => setLoading(false));
   }, []);

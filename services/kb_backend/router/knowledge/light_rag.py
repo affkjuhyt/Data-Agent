@@ -8,7 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from services.kb_backend.dependencies.ui_context import get_ui_context, svc
+from services.kb_backend.dependencies.auth import authenticate
+from services.kb_backend.dependencies.services import svc
 from services.kb_backend.pipeline.light_rag import config as cfg
 
 log = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ class RetrieveResponse(BaseModel):
 async def retrieve(
     body: RetrieveRequest,
     request: Request,
-    ctx: dict = Depends(get_ui_context),
+    ctx: dict = Depends(authenticate),
 ):
     tenant_id = body.tenant_id or ctx["tenant_id"] or "default"
     knowledge_base = body.knowledge_base or None
@@ -73,7 +74,7 @@ async def retrieve(
 async def retrieve_stream(
     body: RetrieveRequest,
     request: Request,
-    ctx: dict = Depends(get_ui_context),
+    ctx: dict = Depends(authenticate),
 ):
     """SSE endpoint — streams one event per pipeline step so the UI can show progress.
 
@@ -109,6 +110,6 @@ async def retrieve_stream(
 
 
 @router.get("/health")
-async def health(request: Request, ctx: dict = Depends(get_ui_context)):
+async def health(request: Request, ctx: dict = Depends(authenticate)):
     pipeline = getattr(request.app.state, "light_rag", None)
     return {"status": "ok" if pipeline else "not_initialised"}

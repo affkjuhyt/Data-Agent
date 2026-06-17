@@ -3,7 +3,7 @@ import {
   Trash2, RotateCcw, FileText, Layers, GitBranch, AlertTriangle, RefreshCw, Loader2,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
-import { mockGet, mockMutate } from '../../../lib/mockApi';
+import { apiGet, apiMutate } from '../../../lib/apiClient';
 
 /* ─── 3 trash levels (mirror trash_ops.LEVELS) ──────────────────────────────── */
 type TrashLevel = 'document' | 'chunk' | 'version';
@@ -28,7 +28,7 @@ export const TrashCenter: React.FC = () => {
     setLoading(true);
     setError(null);
     setPendingFlush(null);
-    mockGet<TrashResponse>(`/api/knowledge/trash/${level}`)
+    apiGet<TrashResponse>(`/api/knowledge/trash/${level}`)
       .then(res => setItems(res?.items ?? []))
       .catch(e => { setItems([]); setError(e?.message || 'Failed to load trash'); })
       .finally(() => setLoading(false));
@@ -39,7 +39,7 @@ export const TrashCenter: React.FC = () => {
   const restore = async (id: string) => {
     setBusyId(id);
     try {
-      await mockMutate('POST', `/api/knowledge/trash/${mode}/${id}/restore`);
+      await apiMutate('POST', `/api/knowledge/trash/${mode}/${id}/restore`);
       setItems(prev => prev.filter(it => (it.id ?? it.data_id) !== id));
     } catch { /* ForbiddenToast handles 403 */ } finally { setBusyId(null); }
   };
@@ -47,7 +47,7 @@ export const TrashCenter: React.FC = () => {
   const flush = async (id: string) => {
     setBusyId(id);
     try {
-      await mockMutate('DELETE', `/api/knowledge/trash/${mode}/${id}`);
+      await apiMutate('DELETE', `/api/knowledge/trash/${mode}/${id}`);
       setItems(prev => prev.filter(it => (it.id ?? it.data_id) !== id));
     } catch { /* ForbiddenToast handles 403 */ } finally { setBusyId(null); setPendingFlush(null); }
   };

@@ -32,6 +32,14 @@ _MONGO_URL     = os.environ.get("MONGO_URL",     "mongodb://mongo:27017/dataagen
 _MINIO_URL     = os.environ.get("MINIO_URL",     "http://minioadmin:minioadmin@minio:9000")
 _KAFKA_URL     = os.environ.get("KAFKA_URL",     "kafka:9092")
 
+# Lite/auth-verification mode. When true, only Postgres is opened at startup;
+# the heavy data-plane stores (Qdrant, Neo4j, Mongo, MinIO, model-service, Kafka)
+# are skipped so the API can boot for verifying the Kong→router identity chain
+# (user_id / tenant_id / role / permission) without standing up the full stack.
+# Routes that actually touch those stores will fail at request time — that's
+# expected; RBAC-gated mutations 403 before ever reaching a store.
+KB_LITE = os.getenv("KB_LITE", "false").lower() == "true"
+
 # One instance per service — shared for the full process lifetime
 _postgres = PostgresClient()
 _qdrant   = QdrantService()
@@ -84,12 +92,18 @@ async def lifespan(app: FastAPI):
 
     # ── Open all connections ──────────────────────────────────────────────────
     await _postgres.open(retry)
-    await _qdrant.open(retry)
-    await _neo4j.open(retry)
-    await _mongo.open(retry)
-    await _minio.open(retry)
-    await _model.open(retry)
-    await _kafka_producer.open(retry)
+    if KB_LITE:
+        log.warning(
+            "KB_LITE=true — skipping Qdrant/Neo4j/Mongo/MinIO/model-service/Kafka "
+            "connections. Auth/RBAC verification mode: only Postgres is live."
+        )
+    else:
+        await _qdrant.open(retry)
+        await _neo4j.open(retry)
+        await _mongo.open(retry)
+        await _minio.open(retry)
+        await _model.open(retry)
+        await _kafka_producer.open(retry)
 
     # ── Expose on app.state ───────────────────────────────────────────────────
     app.state.postgres       = _postgres
@@ -106,15 +120,18 @@ async def lifespan(app: FastAPI):
     hc = HealthCheckLoopConfig()
     hc_tasks = [
         asyncio.create_task(_postgres.health_check_loop(hc),       name="hc-postgres"),
-        asyncio.create_task(_qdrant.health_check_loop(hc),         name="hc-qdrant"),
-        asyncio.create_task(_neo4j.health_check_loop(hc),          name="hc-neo4j"),
-        asyncio.create_task(_mongo.health_check_loop(hc),          name="hc-mongo"),
-        asyncio.create_task(_minio.health_check_loop(hc),          name="hc-minio"),
-        asyncio.create_task(_model.health_check_loop(hc),          name="hc-model"),
-        asyncio.create_task(_kafka_producer.health_check_loop(hc), name="hc-kafka-producer"),
-        # Background sweep that reclaims expired LightRAG query-cache entries (24h TTL).
-        asyncio.create_task(cache_sweep_loop(_qdrant.get_client()), name="cache-sweep"),
     ]
+    if not KB_LITE:
+        hc_tasks += [
+            asyncio.create_task(_qdrant.health_check_loop(hc),         name="hc-qdrant"),
+            asyncio.create_task(_neo4j.health_check_loop(hc),          name="hc-neo4j"),
+            asyncio.create_task(_mongo.health_check_loop(hc),          name="hc-mongo"),
+            asyncio.create_task(_minio.health_check_loop(hc),          name="hc-minio"),
+            asyncio.create_task(_model.health_check_loop(hc),          name="hc-model"),
+            asyncio.create_task(_kafka_producer.health_check_loop(hc), name="hc-kafka-producer"),
+            # Background sweep that reclaims expired LightRAG query-cache entries (24h TTL).
+            asyncio.create_task(cache_sweep_loop(_qdrant.get_client()), name="cache-sweep"),
+        ]
 
     yield
 

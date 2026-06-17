@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { DetailDrawer } from '../../shared/DetailDrawer';
-import { mockGet, mockMutate } from '../../../lib/mockApi';
+import { apiGet, apiMutate } from '../../../lib/apiClient';
 import { PagedResponse } from '../../../types';
 import {
   FilterPolicyType, FilterPolicy, BASE_EXTRACTION_POLICY,
@@ -74,7 +74,7 @@ export const PolicyCenter = () => {
 
   const fetchPolicies = (page: number) => {
     setPoliciesLoading(true);
-    mockGet<PagedResponse<FilterPolicy> | FilterPolicy[]>('/api/knowledge/policies/filtering', { page })
+    apiGet<PagedResponse<FilterPolicy> | FilterPolicy[]>('/api/knowledge/policies/filtering', { page })
       .then(data => {
         if (Array.isArray(data)) {
           setFilterPolicies(data);
@@ -93,7 +93,7 @@ export const PolicyCenter = () => {
   }, [policiesPage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    mockGet<{ base: string; custom: string }>('/api/knowledge/policies/extraction')
+    apiGet<{ base: string; custom: string }>('/api/knowledge/policies/extraction')
       .then(data => setCustomExtraction(data.custom ?? ''))
       .catch(() => {});
   }, []);
@@ -133,9 +133,9 @@ export const PolicyCenter = () => {
     setSaveError(null);
     try {
       if (editingPolicy) {
-        await mockMutate('PUT', `/api/knowledge/policies/filtering/${editingPolicy.id}`, { name: formName, type: formType, content });
+        await apiMutate('PUT', `/api/knowledge/policies/filtering/${editingPolicy.id}`, { name: formName, type: formType, content });
       } else {
-        await mockMutate('POST', '/api/knowledge/policies/filtering', { name: formName, type: formType, content });
+        await apiMutate('POST', '/api/knowledge/policies/filtering', { name: formName, type: formType, content });
       }
       setDrawerOpen(false);
       setPoliciesPage(1);
@@ -152,7 +152,7 @@ export const PolicyCenter = () => {
     if (!current) return;
     const newActive = !current.active;
     setFilterPolicies(prev => prev.map(p => p.id === id ? { ...p, active: newActive } : p));
-    mockMutate('PUT', `/api/knowledge/policies/filtering/${id}`, { active: newActive })
+    apiMutate('PUT', `/api/knowledge/policies/filtering/${id}`, { active: newActive })
       .catch(() => {
         // Revert optimistic update on failure
         setFilterPolicies(prev => prev.map(p => p.id === id ? { ...p, active: current.active } : p));
@@ -161,7 +161,7 @@ export const PolicyCenter = () => {
 
   const handleDelete = (id: string) => {
     setFilterPolicies(prev => prev.filter(p => p.id !== id));
-    mockMutate('DELETE', `/api/knowledge/policies/filtering/${id}`).catch(() => {});
+    apiMutate('DELETE', `/api/knowledge/policies/filtering/${id}`).catch(() => {});
     setDeletingId(null);
   };
 
@@ -638,7 +638,7 @@ export const PolicyCenter = () => {
                       onClick={() => {
                         setCustomExtraction(customExtractionDraft);
                         setEditingExtraction(false);
-                        mockMutate('PUT', '/api/knowledge/policies/extraction/custom', { custom: customExtractionDraft }).catch(() => {});
+                        apiMutate('PUT', '/api/knowledge/policies/extraction/custom', { custom: customExtractionDraft }).catch(() => {});
                       }}
                       className="px-4 py-1.5 bg-[#B88719] text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-[#8A5A00] transition-all flex items-center gap-1.5 cursor-pointer"
                     >

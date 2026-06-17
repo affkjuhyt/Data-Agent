@@ -6,7 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from basemodel.services_databaseconnector.shared_model import ResponseModel
 from services.kb_backend.UI_model.data import RequestUpdateDocument
-from services.kb_backend.dependencies.ui_context import get_ui_context, svc
+from services.kb_backend.dependencies.auth import authenticate
+from services.kb_backend.dependencies.services import svc
+from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.pipeline.kb_ui_operation.document_ops import (
     fetch_one, list_documents, promote_document, delete_document,
 )
@@ -17,7 +19,7 @@ router = APIRouter(prefix="/api/data", tags=["Data"])
 @router.get("/documents", response_model=ResponseModel)
 async def list_documents_route(
     request: Request,
-    ctx: dict = Depends(get_ui_context),
+    ctx: dict = Depends(authenticate),
     tier: str | None = Query(None, description="bronze|silver|gold — omit for all"),
     cursor: str | None = Query(None, description="opaque keyset cursor; omit for first page"),
     source: str | None = Query(
@@ -43,7 +45,7 @@ async def promote_document_route(
     data_id: str,
     body: RequestUpdateDocument,
     request: Request,
-    ctx: dict = Depends(get_ui_context),
+    ctx: dict = Depends(require_perm("process_layer")),
 ):
     postgres = svc(request, "postgres")
     record = await fetch_one(postgres, data_id, ctx["tenant_id"])
@@ -65,7 +67,7 @@ async def promote_document_route(
 async def delete_document_route(
     data_id: str,
     request: Request,
-    ctx: dict = Depends(get_ui_context),
+    ctx: dict = Depends(require_perm("delete_data")),
 ):
     postgres = svc(request, "postgres")
     record = await fetch_one(postgres, data_id, ctx["tenant_id"])

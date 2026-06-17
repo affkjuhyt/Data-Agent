@@ -96,7 +96,6 @@ services:
       NEO4J_server_memory_pagecache_size: '3g'
       NEO4J_server_jvm_additional: '-XX:+ExitOnOutOfMemoryError'
 
-      NEO4J_server_memory_pagecache_async: "true"
       NEO4J_dbms_routing_driver_connection_pool_max__size: 50
       NEO4J_dbms_cypher_forbid__exhaustive__shortestpath: "true"
       NEO4J_db_track__query__cpu__time: "true"
@@ -415,8 +414,13 @@ services:
       dockerfile: infra/Dockerfile.kb
     container_name: dataagent-kb-backend
     restart: unless-stopped
-    ports:
-      - "8050:8000"
+    # Gateway-only: not published to the host. Reachable solely via Kong
+    # (http://kb-backend:8000 on the shared network). With KB_DEV_AUTH unset the
+    # backend is fail-closed — it rejects any request lacking X-Kong-Verified.
+    # For direct local dev without Kong, re-add `ports: ["8050:8000"]` and set
+    # KB_DEV_AUTH=true below.
+    expose:
+      - "8000"
     environment:
       POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/${POSTGRES_DB:-dataagent}
       QDRANT_URL: http://qdrant:6333

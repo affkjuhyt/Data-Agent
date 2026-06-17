@@ -13,7 +13,7 @@ import {
 import { motion } from 'motion/react';
 import { cn } from '../../../lib/utils';
 import { DetailDrawer } from '../../shared/DetailDrawer';
-import { mockGet, mockMutate } from '../../../lib/mockApi';
+import { apiGet, apiMutate } from '../../../lib/apiClient';
 import { useAppState } from '../../../AppStateContext';
 import { useCursorPagination } from '../../../lib/useCursorPagination';
 import { Pagination } from '../../shared/Pagination';
@@ -218,7 +218,7 @@ export const KnowledgeHubView = () => {
 
   /* â"€â"€ Fetch: Qdrant on mount â"€â"€ */
   useEffect(() => {
-    mockGet<QdrantCollection[]>('/api/knowledge/qdrant/collections')
+    apiGet<QdrantCollection[]>('/api/knowledge/qdrant/collections')
       .then(data => setQdrantCollections(data ?? []))
       .catch(() => setQdrantCollections([]));
   }, []);
@@ -228,8 +228,8 @@ export const KnowledgeHubView = () => {
     if (activeTab !== 'NEO4J') return;
     setNeoLoading(true);
     Promise.all([
-      mockGet<{ nodes: GraphNode[]; edges: GraphEdge[] }>('/api/knowledge/neo4j/graph'),
-      mockGet<Neo4jSchema>('/api/knowledge/neo4j/schema'),
+      apiGet<{ nodes: GraphNode[]; edges: GraphEdge[] }>('/api/knowledge/neo4j/graph'),
+      apiGet<Neo4jSchema>('/api/knowledge/neo4j/schema'),
     ])
       .then(([graphData, schema]) => {
         if (graphData?.nodes?.length) {
@@ -259,7 +259,7 @@ export const KnowledgeHubView = () => {
 
   const handleDeleteDoc = async (docId: string) => {
     try {
-      await mockMutate('DELETE', `/api/data/documents/${docId}`);
+      await apiMutate('DELETE', `/api/data/documents/${docId}`);
       deleteDocument(docId);
       if (selectedDoc?.id === docId) setSelectedDoc(null);
       dbReload(true); // refresh the current gold page after removal
@@ -270,7 +270,7 @@ export const KnowledgeHubView = () => {
   const handleDeleteChunk = async (chunkId: string) => {
     if (!selectedDoc) return;
     try {
-      await mockMutate('DELETE', `/api/knowledge/documents/${selectedDoc.id}/chunks/${chunkId}`);
+      await apiMutate('DELETE', `/api/knowledge/documents/${selectedDoc.id}/chunks/${chunkId}`);
       setChunks(prev => prev.filter(c => c.id !== chunkId));
       if (selectedChunk?.id === chunkId) { setSelectedChunk(null); setSelectedVersion(null); }
     } catch { /* ForbiddenToast handles 403 */ } finally { setPendingDeleteChunk(null); }
@@ -279,7 +279,7 @@ export const KnowledgeHubView = () => {
   const handleDeleteVersion = async (versionNumber: string) => {
     if (!selectedDoc || !selectedChunk) return;
     try {
-      await mockMutate('DELETE', `/api/knowledge/documents/${selectedDoc.id}/chunks/${selectedChunk.id}/versions/${versionNumber}`);
+      await apiMutate('DELETE', `/api/knowledge/documents/${selectedDoc.id}/chunks/${selectedChunk.id}/versions/${versionNumber}`);
       const updated = { ...selectedChunk, versions: selectedChunk.versions.filter(v => v.version_number !== versionNumber) };
       setChunks(prev => prev.map(c => c.id === selectedChunk.id ? updated : c));
       setSelectedChunk(updated);
@@ -290,7 +290,7 @@ export const KnowledgeHubView = () => {
   const handleDeleteConfig = async (configId: string) => {
     if (!selectedDoc) return;
     try {
-      await mockMutate('DELETE', `/api/knowledge/warehouses/${selectedDoc.id}/configs/${configId}`);
+      await apiMutate('DELETE', `/api/knowledge/warehouses/${selectedDoc.id}/configs/${configId}`);
       const updated = warehouseConfigs.filter(c => c.id !== configId);
       setWarehouseConfigs(updated);
       if (selectedConfig?.id === configId) setSelectedConfig(updated[0] ?? null);
@@ -300,7 +300,7 @@ export const KnowledgeHubView = () => {
   const handleDeleteTable = async (tableId: string) => {
     if (!selectedDoc || !selectedConfig) return;
     try {
-      await mockMutate('DELETE', `/api/knowledge/warehouses/${selectedDoc.id}/configs/${selectedConfig.id}/tables/${tableId}`);
+      await apiMutate('DELETE', `/api/knowledge/warehouses/${selectedDoc.id}/configs/${selectedConfig.id}/tables/${tableId}`);
       const updated = { ...selectedConfig, tables: selectedConfig.tables.filter(t => t.id !== tableId) };
       setWarehouseConfigs(prev => prev.map(c => c.id === selectedConfig.id ? updated : c));
       setSelectedConfig(updated);
@@ -313,7 +313,7 @@ export const KnowledgeHubView = () => {
     if (!selectedCollection) return;
     setQdrantToggling(true);
     try {
-      const updated = await mockMutate<QdrantCollection>(
+      const updated = await apiMutate<QdrantCollection>(
         'PATCH',
         `/api/knowledge/qdrant/collections/${selectedCollection.id}`,
         { active: !selectedCollection.active },
@@ -332,7 +332,7 @@ export const KnowledgeHubView = () => {
     if (!selectedCollection || !qdrantQuery.trim()) return;
     setQdrantSearching(true);
     try {
-      const points = await mockMutate<QdrantPoint[]>(
+      const points = await apiMutate<QdrantPoint[]>(
         'POST',
         `/api/knowledge/qdrant/collections/${selectedCollection.id}/search`,
         { query: qdrantQuery.trim(), limit: qdrantTopK },
@@ -354,7 +354,7 @@ export const KnowledgeHubView = () => {
     }
     if (selectedDoc.subType === 'Warehouse') {
       setWarehouseConfigsLoading(true);
-      mockGet<Record<string, unknown>[] | { items: Record<string, unknown>[] }>(`/api/knowledge/warehouses/${selectedDoc.id}/configs`)
+      apiGet<Record<string, unknown>[] | { items: Record<string, unknown>[] }>(`/api/knowledge/warehouses/${selectedDoc.id}/configs`)
         .then(data => {
           const rows = Array.isArray(data) ? data : (data?.items ?? []);
           const list = rows.map((r, i) => normalizeWConfig(r, i));
@@ -368,7 +368,7 @@ export const KnowledgeHubView = () => {
         .finally(() => setWarehouseConfigsLoading(false));
     } else {
       setChunksLoading(true);
-      mockGet<Chunk[] | { items: Chunk[] }>(`/api/knowledge/documents/${selectedDoc.id}/chunks`)
+      apiGet<Chunk[] | { items: Chunk[] }>(`/api/knowledge/documents/${selectedDoc.id}/chunks`)
         .then(data => {
           const rows = Array.isArray(data) ? data : (data?.items ?? []);
           const list = rows.map(chunk => ({
@@ -408,7 +408,7 @@ export const KnowledgeHubView = () => {
     setChunks(prev => prev.map(c => c.id === selectedChunk.id ? updatedChunk : c));
     setSelectedChunk(updatedChunk);
     setSelectedVersion({ ...ver, status: 'Active' });
-    mockMutate('PATCH', `/api/knowledge/documents/${selectedDoc.id}/chunks/${selectedChunk.id}/activate`, {
+    apiMutate('PATCH', `/api/knowledge/documents/${selectedDoc.id}/chunks/${selectedChunk.id}/activate`, {
       version_number: ver.version_number,
     }).catch(() => {});
   };
@@ -432,7 +432,7 @@ export const KnowledgeHubView = () => {
     setSelectedVersion(newVer);
     setNewVerContent('');
     setNewVerDrawerOpen(false);
-    mockMutate('POST', `/api/knowledge/documents/${selectedDoc.id}/chunks/${selectedChunk.id}/versions`, {
+    apiMutate('POST', `/api/knowledge/documents/${selectedDoc.id}/chunks/${selectedChunk.id}/versions`, {
       version_number: newVer.version_number,
       text: newVer.text,
     }).catch(() => {});
@@ -447,7 +447,7 @@ export const KnowledgeHubView = () => {
     }));
     setWarehouseConfigs(updated);
     setSelectedConfig(updated.find(c => c.id === cfg.id) ?? null);
-    mockMutate('PATCH', `/api/knowledge/warehouses/${selectedDoc.id}/configs/${cfg.id}/activate`, {}).catch(() => {});
+    apiMutate('PATCH', `/api/knowledge/warehouses/${selectedDoc.id}/configs/${cfg.id}/activate`, {}).catch(() => {});
   };
 
   const handleCreateConfig = () => {
@@ -466,7 +466,7 @@ export const KnowledgeHubView = () => {
     setSelectedConfig(newCfg);
     setNewCfgName(''); setNewCfgSelectedIds(new Set()); setNewCfgSchemaFilter('All');
     setNewCfgDrawerOpen(false);
-    mockMutate('POST', `/api/knowledge/warehouses/${selectedDoc.id}/configs`, {
+    apiMutate('POST', `/api/knowledge/warehouses/${selectedDoc.id}/configs`, {
       name: newCfg.name,
       version: newCfg.version,
       syncSchedule: newCfg.syncSchedule,
@@ -1591,7 +1591,7 @@ export const KnowledgeHubView = () => {
                   // 1) Ask the backend to run the Cypher and return the matched subgraph.
                   let sub: { nodes?: GraphNode[]; edges?: GraphEdge[] } | null = null;
                   try {
-                    sub = await mockMutate<{ nodes?: GraphNode[]; edges?: GraphEdge[] }>(
+                    sub = await apiMutate<{ nodes?: GraphNode[]; edges?: GraphEdge[] }>(
                       'POST', '/api/knowledge/neo4j/query', { cypher: generated },
                     );
                   } catch { /* Neo4j offline — fall back to a local traversal below */ }

@@ -1,39 +1,26 @@
 /**
- * Thin fetch wrapper for the AeroFlow KB FastAPI server.
- * Base URL from VITE_API_URL env var, defaults to http://localhost:8000 (FastAPI).
+ * HTTP client for the AeroFlow KB backend.
  *
- * Every request includes the current role, tenant_id, and user_id via headers.
- * These are used by the backend to validate permissions and scope queries to tenant.
+ * Every KB request goes through this module, and from here through the Kong
+ * gateway (VITE_API_URL). Kong validates the Keycloak JWT and injects the
+ * verified identity headers the backend trusts (X-User-Id / X-Tenant-Id /
+ * X-User-Roles / X-Role-Id) — this client only attaches the bearer token.
  *
- * Responses from the FastAPI server are wrapped in { code, data, error }.
- * unwrapEnvelope() strips the envelope and returns data, or throws on error.
+ * There is no mock / dev-bypass path: with no token the request is sent without
+ * Authorization and Kong rejects it (401). Real auth, real gateway, always.
+ *
+ * Responses are wrapped in { code, data, error }; unwrapEnvelope() strips it.
  */
+
+import keycloak from './keycloak';
 
 const BASE =
   (import.meta.env.VITE_API_URL as string | undefined) ??
-  'http://localhost:8050';
+  'http://localhost:8000'; // Kong gateway
 
-let _role = 'AI_ENGINEER';
-let _userId = 'dev-user';
-let _tenantId = '00000000-0000-0000-0000-000000000001';
-
-/** Call this whenever the app role/user context changes (e.g. from AppStateContext). */
-export const setApiContext = (role: string, userId: string, tenantId: string) => {
-  _role = role;
-  _userId = userId;
-  _tenantId = tenantId;
-};
-
-/** Legacy method for setting just the role */
-export const setApiRole = (role: string) => {
-  _role = role;
-};
-
-const contextHeaders = () => ({
-  'X-Role': _role,
-  'X-Tenant-Id': _tenantId,
-  'X-User-Id': _userId,
-});
+/** Bearer-only auth header. Kong injects the authoritative X-* identity. */
+const authHeaders = (): Record<string, string> =>
+  keycloak.token ? { Authorization: `Bearer ${keycloak.token}` } : {};
 
 /** Unwraps FastAPI ResponseModel envelope { code, data, error }. Raw responses pass through. */
 function unwrapEnvelope<T>(json: unknown): T {
@@ -51,7 +38,7 @@ function unwrapEnvelope<T>(json: unknown): T {
   return json as T;
 }
 
-export async function mockGet<T>(
+export async function apiGet<T>(
   path: string,
   params?: Record<string, string | number | boolean>,
 ): Promise<T> {
@@ -60,19 +47,19 @@ export async function mockGet<T>(
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
   }
   const res = await fetch(url.toString(), {
-    headers: contextHeaders(),
+    headers: authHeaders(),
     signal: AbortSignal.timeout(5000),
   });
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return unwrapEnvelope<T>(await res.json());
 }
 
-export async function mockMutate<T = unknown>(
+export async function apiMutate<T = unknown>(
   method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
 ): Promise<T> {
-  const headers: Record<string, string> = { ...contextHeaders() };
+  const headers: Record<string, string> = { ...authHeaders() };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
 
   const res = await fetch(`${BASE}${path}`, {
@@ -98,19 +85,19 @@ export async function mockMutate<T = unknown>(
   return unwrapEnvelope<T>(await res.json());
 }
 
-/** Upload form data (for file uploads, multipart/form-data). */
-export async function mockUpload<T = unknown>(
+/** Upload form data (multipart/form-data). */
+export async function apiUpload<T = unknown>(
   path: string,
   formData: FormData,
 ): Promise<T> {
-  const headers: Record<string, string> = { ...contextHeaders() };
-  // Don't set Content-Type — browser will set it with boundary
+  const headers: Record<string, string> = { ...authHeaders() };
+  // Don't set Content-Type — the browser sets it with the multipart boundary.
 
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
     headers,
     body: formData,
-    signal: AbortSignal.timeout(10000), // Longer timeout for uploads
+    signal: AbortSignal.timeout(10000),
   });
 
   if (!res.ok) {
@@ -127,4 +114,20 @@ export async function mockUpload<T = unknown>(
     throw new Error(msg);
   }
   return unwrapEnvelope<T>(await res.json());
+}
+
+/**
+ * Streaming GET (Server-Sent Events / chunked) over the same gateway path:
+ * attaches the bearer token and returns the raw Response so the caller can read
+ * `response.body` as a stream. No JSON unwrap, no timeout — streams are
+ * long-lived and the caller owns the lifecycle via the optional `signal`.
+ */
+export async function apiStream(
+  path: string,
+  init?: { signal?: AbortSignal },
+): Promise<Response> {
+  return fetch(`${BASE}${path}`, {
+    headers: authHeaders(),
+    signal: init?.signal,
+  });
 }

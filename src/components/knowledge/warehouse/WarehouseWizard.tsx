@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { useAppState } from '../../../AppStateContext';
-import { mockMutate } from '../../../lib/mockApi';
+import { apiMutate } from '../../../lib/apiClient';
 import {
   WarehouseType, WizardStep, TableRow, FieldDef,
   SNOWFLAKE_FIELDS, DATABRICKS_FIELDS, STEP_LABELS,
@@ -57,7 +57,7 @@ export const WarehouseWizard = ({ onCancel, onComplete }: WarehouseWizardProps) 
             role: null,
           };
 
-      const result = await mockMutate<{ success: boolean; message: string; tables: Array<{ table_name: string; row_count: number }> }>(
+      const result = await apiMutate<{ success: boolean; message: string; tables: Array<{ table_name: string; row_count: number }> }>(
         'POST',
         '/api/knowledge/warehouses/connect',
         payload,
@@ -112,7 +112,7 @@ export const WarehouseWizard = ({ onCancel, onComplete }: WarehouseWizardProps) 
     let docId = `wh-${Date.now()}`;
 
     try {
-      const result = await mockMutate<{ warehouse_id: string; connection_name: string; warehouse_type: string }>(
+      const result = await apiMutate<{ warehouse_id: string; connection_name: string; warehouse_type: string }>(
         'POST',
         '/api/knowledge/warehouses/select-tables',
         {

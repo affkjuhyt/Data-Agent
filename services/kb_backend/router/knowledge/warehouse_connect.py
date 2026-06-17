@@ -13,7 +13,9 @@ from basemodel.services_databaseconnector.postgres_model import (
     KBWarehouseConfigInsert,
     WarehouseConfigPayload,
 )
-from services.kb_backend.dependencies.ui_context import get_ui_context, svc
+from services.kb_backend.dependencies.auth import authenticate
+from services.kb_backend.dependencies.services import svc
+from services.kb_backend.dependencies.auth import require_perm
 from services.database_connector.snowflake_connector import SnowflakeConnector
 
 log = logging.getLogger(__name__)
@@ -48,7 +50,7 @@ class SelectTablesRequest(BaseModel):
 async def test_warehouse_connection(
     body: ConnectSnowflakeRequest,
     request: Request,
-    ctx: dict = Depends(get_ui_context),
+    ctx: dict = Depends(require_perm("add_warehouse")),
 ):
     """Test Snowflake connection and discover tables in the schema."""
     log.info("Testing Snowflake connection account=%s database=%s", body.account_identifier, body.database)
@@ -81,7 +83,7 @@ async def test_warehouse_connection(
 async def select_warehouse_tables(
     body: SelectTablesRequest,
     request: Request,
-    ctx: dict = Depends(get_ui_context),
+    ctx: dict = Depends(require_perm("add_warehouse")),
 ):
     """
     Validate Snowflake connection, fetch column schemas, then persist:

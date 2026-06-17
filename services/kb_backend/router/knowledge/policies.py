@@ -5,7 +5,9 @@ from basemodel.services_databaseconnector.shared_model import ResponseModel
 from services.kb_backend.UI_model.policy import (
     RequestCreateFilterPolicy, RequestUpdateFilterPolicy, RequestExtractionCustom,
 )
-from services.kb_backend.dependencies.ui_context import get_ui_context, svc
+from services.kb_backend.dependencies.auth import authenticate
+from services.kb_backend.dependencies.services import svc
+from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.pipeline.kb_ui_operation.policy_ops import (
     list_filter_policies, create_filter_policy, update_filter_policy,
     delete_filter_policy, get_extraction_policy, update_extraction_policy,
@@ -13,12 +15,12 @@ from services.kb_backend.pipeline.kb_ui_operation.policy_ops import (
 
 router = APIRouter(prefix="/api/knowledge/policies", tags=["Knowledge-Policies"])
 
-_DEFAULT_TENANT = "00000000-0000-0000-0000-000000000001"
+_DEFAULT_TENANT = "a0000000-0000-0000-0000-000000000001"
 
 
 @router.get("/filtering", response_model=ResponseModel)
 async def list_filter_policies_route(
-    request: Request, ctx: dict = Depends(get_ui_context),
+    request: Request, ctx: dict = Depends(authenticate),
     page: int = Query(1, ge=1),
 ):
     result = await list_filter_policies(
@@ -32,7 +34,7 @@ async def list_filter_policies_route(
 
 @router.post("/filtering", response_model=ResponseModel)
 async def create_filter_policy_route(
-    body: RequestCreateFilterPolicy, request: Request, ctx: dict = Depends(get_ui_context),
+    body: RequestCreateFilterPolicy, request: Request, ctx: dict = Depends(require_perm("add_filtering_policy")),
 ):
     result = await create_filter_policy(
         postgres=svc(request, "postgres"),
@@ -48,7 +50,7 @@ async def create_filter_policy_route(
 @router.put("/filtering/{policy_id}", response_model=ResponseModel)
 async def update_filter_policy_route(
     policy_id: str, body: RequestUpdateFilterPolicy,
-    request: Request, ctx: dict = Depends(get_ui_context),
+    request: Request, ctx: dict = Depends(require_perm("edit_filtering_policy")),
 ):
     result = await update_filter_policy(
         postgres=svc(request, "postgres"),
@@ -60,7 +62,7 @@ async def update_filter_policy_route(
 
 @router.delete("/filtering/{policy_id}", response_model=ResponseModel)
 async def delete_filter_policy_route(
-    policy_id: str, request: Request, ctx: dict = Depends(get_ui_context),
+    policy_id: str, request: Request, ctx: dict = Depends(require_perm("delete_filtering_policy")),
 ):
     await delete_filter_policy(
         postgres=svc(request, "postgres"),
@@ -71,7 +73,7 @@ async def delete_filter_policy_route(
 
 
 @router.get("/extraction", response_model=ResponseModel)
-async def get_extraction_policy_route(request: Request, ctx: dict = Depends(get_ui_context)):
+async def get_extraction_policy_route(request: Request, ctx: dict = Depends(authenticate)):
     result = await get_extraction_policy(
         postgres=svc(request, "postgres"),
         tenant_id=ctx["tenant_id"],
@@ -81,7 +83,7 @@ async def get_extraction_policy_route(request: Request, ctx: dict = Depends(get_
 
 @router.put("/extraction/custom", response_model=ResponseModel)
 async def update_extraction_policy_route(
-    body: RequestExtractionCustom, request: Request, ctx: dict = Depends(get_ui_context),
+    body: RequestExtractionCustom, request: Request, ctx: dict = Depends(require_perm("edit_extraction_policy")),
 ):
     result = await update_extraction_policy(
         postgres=svc(request, "postgres"),

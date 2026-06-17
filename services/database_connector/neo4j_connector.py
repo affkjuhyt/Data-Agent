@@ -67,6 +67,8 @@ class Neo4jClient:
                 )
 
                 log.info("Neo4j connection successes")
+                self._connected = True
+                self._healthy = True
                 return self.get_client()
             except asyncio.TimeoutError as e:
                 log.info(f"Attempt #{_}/{retry.count}: Fail To Connect To Neo4j, retry after: {self._connection_wait}. Error: {e}")

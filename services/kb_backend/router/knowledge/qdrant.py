@@ -4,7 +4,9 @@ from pydantic import BaseModel, Field
 
 from basemodel.services_databaseconnector.shared_model import ResponseModel
 from services.kb_backend.UI_model.knowledge import RequestToggleQdrantCollection
-from services.kb_backend.dependencies.ui_context import get_ui_context, svc
+from services.kb_backend.dependencies.auth import authenticate
+from services.kb_backend.dependencies.services import svc
+from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.pipeline.kb_ui_operation.qdrant_ops import (
     list_collections, toggle_collection, semantic_search,
 )
@@ -20,7 +22,7 @@ class SearchBody(BaseModel):
 
 
 @router.get("/collections", response_model=ResponseModel)
-async def list_collections_route(request: Request, ctx: dict = Depends(get_ui_context)):
+async def list_collections_route(request: Request, ctx: dict = Depends(authenticate)):
     result = await list_collections(
         postgres=svc(request, "postgres"),
         qdrant=svc(request, "qdrant"),
@@ -32,7 +34,7 @@ async def list_collections_route(request: Request, ctx: dict = Depends(get_ui_co
 @router.patch("/collections/{collection_id}", response_model=ResponseModel)
 async def toggle_collection_route(
     collection_id: str, body: RequestToggleQdrantCollection,
-    request: Request, ctx: dict = Depends(get_ui_context),
+    request: Request, ctx: dict = Depends(require_perm("toggle_qdrant")),
 ):
     result = await toggle_collection(
         postgres=svc(request, "postgres"),
@@ -45,7 +47,7 @@ async def toggle_collection_route(
 @router.post("/collections/{collection_id}/search", response_model=ResponseModel)
 async def semantic_search_route(
     collection_id: str, body: SearchBody,
-    request: Request, ctx: dict = Depends(get_ui_context),
+    request: Request, ctx: dict = Depends(authenticate),
 ):
     result = await semantic_search(
         qdrant=svc(request, "qdrant"),

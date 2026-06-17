@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { Role, Industry, TenantContext, User, Environment, KnowledgeDocument, PagedResponse } from './types';
-import { mockGet } from './lib/mockApi';
+import { apiGet } from './lib/apiClient';
 import { useAuth } from './lib/AuthProvider';
 
 interface AppStateContextType {
@@ -151,7 +151,7 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
   const [docsLoading, setDocsLoading] = useState(true);
 
   useEffect(() => {
-    mockGet<PagedResponse<KnowledgeDocument> | KnowledgeDocument[]>('/api/data/documents')
+    apiGet<PagedResponse<KnowledgeDocument> | KnowledgeDocument[]>('/api/data/documents')
       .then(data => {
         const items = Array.isArray(data) ? data : (data as PagedResponse<KnowledgeDocument>).items ?? [];
         setDocuments(items);

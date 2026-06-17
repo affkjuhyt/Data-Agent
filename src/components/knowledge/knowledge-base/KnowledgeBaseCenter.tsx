@@ -6,7 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Boxes, Plus, Trash2, Loader2, AlertCircle, X } from 'lucide-react';
-import { mockGet, mockMutate } from '../../../lib/mockApi';
+import { apiGet, apiMutate } from '../../../lib/apiClient';
 
 export interface KnowledgeBase {
   id: string;
@@ -32,7 +32,7 @@ export function KnowledgeBaseCenter() {
     setLoading(true);
     setError(null);
     try {
-      const data = await mockGet<KnowledgeBase[]>('/api/knowledge/knowledge-bases');
+      const data = await apiGet<KnowledgeBase[]>('/api/knowledge/knowledge-bases');
       setItems(Array.isArray(data) ? data : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load knowledge bases');
@@ -48,7 +48,7 @@ export function KnowledgeBaseCenter() {
     setSaving(true);
     setError(null);
     try {
-      await mockMutate('POST', '/api/knowledge/knowledge-bases', {
+      await apiMutate('POST', '/api/knowledge/knowledge-bases', {
         name: name.trim(),
         description: description.trim(),
       });
@@ -66,7 +66,7 @@ export function KnowledgeBaseCenter() {
   const handleDelete = async (id: string) => {
     if (pendingDeleteId !== id) { setPendingDeleteId(id); return; }
     try {
-      await mockMutate('DELETE', `/api/knowledge/knowledge-bases/${id}`);
+      await apiMutate('DELETE', `/api/knowledge/knowledge-bases/${id}`);
       setPendingDeleteId(null);
       await load();
     } catch (e) {

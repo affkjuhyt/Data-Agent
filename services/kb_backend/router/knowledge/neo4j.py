@@ -3,14 +3,15 @@ from fastapi import APIRouter, Depends, Request
 
 from basemodel.services_databaseconnector.shared_model import ResponseModel
 from services.kb_backend.UI_model.knowledge import RequestNeo4jQuery
-from services.kb_backend.dependencies.ui_context import get_ui_context, svc
+from services.kb_backend.dependencies.auth import authenticate
+from services.kb_backend.dependencies.services import svc
 from services.kb_backend.pipeline.kb_ui_operation.neo4j_ops import get_graph, get_schema, run_cypher
 
 router = APIRouter(prefix="/api/knowledge/neo4j", tags=["Knowledge-Neo4j"])
 
 
 @router.get("/graph", response_model=ResponseModel)
-async def get_graph_route(request: Request, ctx: dict = Depends(get_ui_context)):
+async def get_graph_route(request: Request, ctx: dict = Depends(authenticate)):
     result = await get_graph(
         postgres=svc(request, "postgres"),
         neo4j=svc(request, "neo4j"),
@@ -20,7 +21,7 @@ async def get_graph_route(request: Request, ctx: dict = Depends(get_ui_context))
 
 
 @router.get("/schema", response_model=ResponseModel)
-async def get_schema_route(request: Request, ctx: dict = Depends(get_ui_context)):
+async def get_schema_route(request: Request, ctx: dict = Depends(authenticate)):
     result = await get_schema(
         neo4j=svc(request, "neo4j"),
         postgres=svc(request, "postgres"),
@@ -31,7 +32,7 @@ async def get_schema_route(request: Request, ctx: dict = Depends(get_ui_context)
 
 @router.post("/query", response_model=ResponseModel)
 async def run_cypher_route(
-    body: RequestNeo4jQuery, request: Request, ctx: dict = Depends(get_ui_context),
+    body: RequestNeo4jQuery, request: Request, ctx: dict = Depends(authenticate),
 ):
     result = await run_cypher(
         neo4j=svc(request, "neo4j"),
