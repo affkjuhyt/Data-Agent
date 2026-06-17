@@ -384,6 +384,13 @@ async def stream_pipeline_events(
     async def generate():
         db = mongo.get_client()
         last_seq = 0
+        # Keep the stream warm: emit an SSE comment at least every HEARTBEAT_S of
+        # silence so a quiet pipeline stage never sits idle long enough for Kong's
+        # read_timeout (or any proxy) to drop the connection. Comment lines are
+        # ignored by EventSource and skipped by the fetch parser (no "data: " prefix).
+        loop = asyncio.get_running_loop()
+        last_emit = loop.time()
+        HEARTBEAT_S = 15.0
 
         while True:
             if await request.is_disconnected():
@@ -405,10 +412,14 @@ async def stream_pipeline_events(
                     "payload": doc.get("payload", {}),
                 }
                 yield f"data: {json.dumps(payload)}\n\n"
+                last_emit = loop.time()
                 if doc["event"] in _TERMINAL:
                     return
 
             if not docs:
+                if loop.time() - last_emit >= HEARTBEAT_S:
+                    yield ": keepalive\n\n"
+                    last_emit = loop.time()
                 await asyncio.sleep(0.25)
 
     return StreamingResponse(
@@ -444,10 +455,15 @@ async def stream_progress(data_id: str, request: Request, ctx: dict = Depends(au
         except ValueError:
             return
 
+        loop = asyncio.get_running_loop()
+        last_emit = loop.time()
+        HEARTBEAT_S = 15.0
+
         while True:
             if await request.is_disconnected():
                 return
 
+            emitted = False
             doc = await db["kb_ingestion_logs"].find_one({"data_id": data_id})
 
             # Count already-processed chunks from Postgres
@@ -467,6 +483,7 @@ async def stream_progress(data_id: str, request: Request, ctx: dict = Depends(au
 
             if not doc:
                 yield f"data: {json.dumps({'status': 'PENDING', 'message': 'Waiting for worker...', 'processed_chunks': 0, 'total_chunks': 0, 'progress_pct': 0})}\n\n"
+                emitted = True
             else:
                 logs = doc.get("logs", [])
                 for entry in logs[last_count:]:
@@ -480,6 +497,7 @@ async def stream_progress(data_id: str, request: Request, ctx: dict = Depends(au
                         "progress_pct":     pct,
                     }
                     yield f"data: {json.dumps(payload)}\n\n"
+                    emitted = True
                 last_count = len(logs)
 
                 if status in _TERMINAL_STATUSES:
@@ -487,6 +505,12 @@ async def stream_progress(data_id: str, request: Request, ctx: dict = Depends(au
                     yield f"data: {json.dumps({'status': status, 'done': True, 'progress_pct': final_pct, 'processed_chunks': processed_chunks, 'total_chunks': total_chunks})}\n\n"
                     return
 
+            # Heartbeat during quiet stages so Kong's read_timeout can't drop us.
+            if emitted:
+                last_emit = loop.time()
+            elif loop.time() - last_emit >= HEARTBEAT_S:
+                yield ": keepalive\n\n"
+                last_emit = loop.time()
             await asyncio.sleep(2)
 
     return StreamingResponse(

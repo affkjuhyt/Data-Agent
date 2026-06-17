@@ -16,15 +16,20 @@ services:
   - name: kb-backend
     url: http://kb-backend:8000
     connect_timeout: 5000
-    read_timeout: 60000
+    # Generous read_timeout: SSE endpoints under /api/pipeline stream for a long
+    # time and can be quiet between events. The backend also sends heartbeats, but
+    # this keeps Kong from dropping a slow upstream. Only affects a SILENT upstream;
+    # normal fast requests are unaffected.
+    read_timeout: 3600000
     routes:
       - name: kb-backend-route
         # The real router prefixes: /api/data (data.py), /api/fleet (fleet.py),
-        # /api/knowledge (everything else).
+        # /api/pipeline (ingestion SSE + light-rag), /api/knowledge (everything else).
         paths:
           - /api/data
           - /api/knowledge
           - /api/fleet
+          - /api/pipeline
         strip_path: false
         methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
         plugins:
