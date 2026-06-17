@@ -27,9 +27,9 @@ Controlled vocabulary cho fact_key theo domain (CHỈ chọn từ danh sách, n�
 Nếu một turn có nhiều insight mâu thuẫn nhau, chỉ giữ insight xuất hiện sau (recency wins).
 
 Trả về đúng format JSON sau (insights là danh sách rỗng nếu không có gì đáng nhớ):
-{{
+{
   "insights": [
-    {{
+    {
       "action": "add" | "update" | "delete",
       "memory_type": "semantic" | "episodic_past" | "episodic_future",
       "domain": "user_pref" | "general",
@@ -38,6 +38,6 @@ Trả về đúng format JSON sau (insights là danh sách rỗng nếu không c
       "importance_score": <0.0-1.0>,
       "execution_time": "<ISO 8601 datetime, chỉ cho episodic_future, null nếu không có>",
       "recurrence": "<cron expression nếu task lặp lại, null nếu không>"
-    }}
+    }
   ]
-}}
+}

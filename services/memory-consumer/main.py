@@ -176,7 +176,16 @@ def ensure_qdrant_collection(qdrant: QdrantClient):
 # ─── LLM calls ───────────────────────────────────────────────────────────────
 
 def call_llm_extract(query: str, response: str) -> list[dict]:
-    prompt = _EXTRACT_PROMPT.format(query=query[:500], response=response[:1000], vocab=_vocab_block())
+    # .replace() instead of .format() — the template's own JSON example uses
+    # literal braces, and query/response are arbitrary user text (code, JSON,
+    # math) that could contain them too. .format() would require escaping the
+    # template's braces and stays fragile to future edits; .replace() doesn't care.
+    prompt = (
+        _EXTRACT_PROMPT
+        .replace("{query}", query[:500])
+        .replace("{response}", response[:1000])
+        .replace("{vocab}", _vocab_block())
+    )
     r = httpx.post(
         f"{LITELLM_BASE}/v1/chat/completions",
         headers={"Authorization": f"Bearer {LITELLM_KEY}"},
@@ -339,7 +348,14 @@ def process_semantic_insight(cur, qdrant: QdrantClient, tenant_id: str, agent_id
     enforce_agent_memories_cap(cur, tenant_id, agent_id, user_ref, domain, cap)
 
 
-def process_episodic_past(cur, tenant_id: str, agent_id: str, user_ref: str, insight: dict):
+def _episodic_id(message_id: str, kind: str, index: int) -> str:
+    """Deterministic id derived from (message_id, insight position) — makes
+    EpisodicMemory/FutureMemory inserts idempotent under Kafka at-least-once
+    redelivery, the same way _qdrant_point_id() does for semantic facts."""
+    return str(uuid.uuid5(uuid.NAMESPACE_OID, f"{message_id}|{kind}|{index}"))
+
+
+def process_episodic_past(cur, tenant_id: str, agent_id: str, user_ref: str, insight: dict, episodic_id: str):
     content = (insight.get("content") or "").strip()
     if not content:
         return
@@ -349,12 +365,13 @@ def process_episodic_past(cur, tenant_id: str, agent_id: str, user_ref: str, ins
     cur.execute(
         """INSERT INTO "EpisodicMemory" (id, tenant_id, agent_id, user_ref, domain, content, importance_score, expires_at)
            VALUES (%s, %s, %s, %s, %s, %s, %s,
-                   CASE WHEN %s::int IS NULL THEN NULL ELSE now() + (%s || ' days')::interval END)""",
-        (str(uuid.uuid4()), tenant_id, agent_id, user_ref, domain, content, importance, retention_days, retention_days),
+                   CASE WHEN %s::int IS NULL THEN NULL ELSE now() + (%s || ' days')::interval END)
+           ON CONFLICT (id) DO NOTHING""",
+        (episodic_id, tenant_id, agent_id, user_ref, domain, content, importance, retention_days, retention_days),
     )
 
 
-def process_episodic_future(cur, tenant_id: str, agent_id: str, user_ref: str, insight: dict):
+def process_episodic_future(cur, tenant_id: str, agent_id: str, user_ref: str, insight: dict, future_id: str):
     content = (insight.get("content") or "").strip()
     execution_time = insight.get("execution_time")
     if not content or not execution_time:
@@ -362,8 +379,9 @@ def process_episodic_future(cur, tenant_id: str, agent_id: str, user_ref: str, i
         return
     cur.execute(
         """INSERT INTO "FutureMemory" (id, tenant_id, agent_id, user_ref, content, execution_time, recurrence)
-           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
-        (str(uuid.uuid4()), tenant_id, agent_id, user_ref, content, execution_time, insight.get("recurrence")),
+           VALUES (%s, %s, %s, %s, %s, %s, %s)
+           ON CONFLICT (id) DO NOTHING""",
+        (future_id, tenant_id, agent_id, user_ref, content, execution_time, insight.get("recurrence")),
     )
 
 
@@ -382,16 +400,20 @@ def cancel_future_memory(cur, tenant_id: str, agent_id: str, user_ref: str, insi
     )
 
 
-def process_insight(cur, qdrant: QdrantClient, tenant_id: str, agent_id: str, user_ref: str, insight: dict):
+def process_insight(cur, qdrant: QdrantClient, tenant_id: str, agent_id: str, user_ref: str, insight: dict, message_id: str, index: int):
     memory_type = insight.get("memory_type")
     action = insight.get("action", "add")
     if memory_type == "semantic":
         process_semantic_insight(cur, qdrant, tenant_id, agent_id, user_ref, insight)
     elif memory_type == "episodic_past":
-        process_episodic_past(cur, tenant_id, agent_id, user_ref, insight)
+        episodic_id = _episodic_id(message_id, "episodic_past", index)
+        process_episodic_past(cur, tenant_id, agent_id, user_ref, insight, episodic_id)
     elif memory_type == "episodic_future":
-        cancel_future_memory(cur, tenant_id, agent_id, user_ref, insight) if action == "delete" \
-            else process_episodic_future(cur, tenant_id, agent_id, user_ref, insight)
+        if action == "delete":
+            cancel_future_memory(cur, tenant_id, agent_id, user_ref, insight)
+        else:
+            future_id = _episodic_id(message_id, "episodic_future", index)
+            process_episodic_future(cur, tenant_id, agent_id, user_ref, insight, future_id)
     else:
         log.warning("unknown memory_type=%r — insight skipped", memory_type)
 
@@ -415,12 +437,21 @@ def handle_event(conn, qdrant: QdrantClient, event: dict):
     if not insights:
         return
 
+    # Each insight gets its own SAVEPOINT — in Postgres, one failed statement
+    # aborts the whole transaction (InFailedSqlTransaction) until rolled back,
+    # which would otherwise brick every remaining insight in this turn and the
+    # final commit too.
     with conn.cursor() as cur:
-        for insight in insights:
+        for i, insight in enumerate(insights):
+            savepoint = f"insight_{i}"
             try:
-                process_insight(cur, qdrant, tenant_id, agent_id, user_ref, insight)
+                cur.execute(f"SAVEPOINT {savepoint}")
+                process_insight(cur, qdrant, tenant_id, agent_id, user_ref, insight, message_id, i)
+                cur.execute(f"RELEASE SAVEPOINT {savepoint}")
             except Exception:
                 log.exception("failed to process one insight, skipping it: %s", insight)
+                cur.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                cur.execute(f"RELEASE SAVEPOINT {savepoint}")
     conn.commit()
 
 

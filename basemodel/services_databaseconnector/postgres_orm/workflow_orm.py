@@ -342,7 +342,10 @@ class AgentMemoriesORM(Base):
         Index("idx_agentmemories_user_domain", "tenant_id", "agent_id", "user_ref", "domain"),
         Index("idx_agentmemories_deleted_at", "deleted_at",postgresql_where=text("deleted_at IS NULL")),
         Index("idx_agentmemories_inserted_at_desc", text("inserted_at DESC")),
-        UniqueConstraint("tenant_id", "agent_id", "scope", "user_ref", "domain", "fact_key", name="uq_agentmemories_fact"),
+        UniqueConstraint(
+            "tenant_id", "agent_id", "scope", "user_ref", "domain", "fact_key",
+            name="uq_agentmemories_fact", postgresql_nulls_not_distinct=True,
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

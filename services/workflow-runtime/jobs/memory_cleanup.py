@@ -106,7 +106,7 @@ async def _cleanup_episodic_memory():
                 WHERE id IN (
                     SELECT id FROM "EpisodicMemory"
                     WHERE tenant_id = :tenant_id AND agent_id = :agent_id
-                      AND user_ref = :user_ref AND domain = :domain AND status = 'active'
+                      AND user_ref IS NOT DISTINCT FROM :user_ref AND domain = :domain AND status = 'active'
                     ORDER BY importance_score ASC, created_at ASC
                     LIMIT :over_by
                 )

@@ -141,9 +141,9 @@ async def retrieve_memories(
         async def _fts_search(session) -> list:
             fts_q = (
                 select(
-                    AgentMemoriesORM.id, AgentMemoriesORM.content, AgentMemoriesORM.memory_type,
-                    AgentMemoriesORM.scope, AgentMemoriesORM.domain, AgentMemoriesORM.importance,
-                    AgentMemoriesORM.updated_at,
+                    AgentMemoriesORM.id, AgentMemoriesORM.embedding_ref, AgentMemoriesORM.content,
+                    AgentMemoriesORM.memory_type, AgentMemoriesORM.scope, AgentMemoriesORM.domain,
+                    AgentMemoriesORM.importance, AgentMemoriesORM.updated_at,
                 )
                 .where(AgentMemoriesORM.tenant_id == UUID(tenant_id))
                 .where(AgentMemoriesORM.agent_id  == UUID(agent_id))
@@ -170,22 +170,28 @@ async def retrieve_memories(
                 _fts_search(session),
             )
 
-            vec_ids   = list(vec_scores.keys())
-            fts_ids   = [str(r.id) for r in fts_rows]
-            rows_by_id = {str(r.id): r._asdict() for r in fts_rows}
+            # Qdrant's "pg_id" payload field is actually the deterministic point id,
+            # stored on the Postgres row as embedding_ref (NOT the row's own `id` —
+            # see services/memory-consumer/main.py:_qdrant_point_id). Key everything
+            # by embedding_ref so vector and FTS candidates can actually overlap in
+            # RRF, falling back to `id` only for rows with no embedding (FTS-only).
+            vec_ids    = list(vec_scores.keys())
+            fts_ids    = [str(r.embedding_ref or r.id) for r in fts_rows]
+            rows_by_id = {str(r.embedding_ref or r.id): r._asdict() for r in fts_rows}
 
             missing = [id_ for id_ in vec_ids if id_ not in rows_by_id]
             if missing:
                 extra = await session.execute(
                     select(
-                        AgentMemoriesORM.id, AgentMemoriesORM.content, AgentMemoriesORM.memory_type,
-                        AgentMemoriesORM.scope, AgentMemoriesORM.domain, AgentMemoriesORM.importance,
-                        AgentMemoriesORM.updated_at,
+                        AgentMemoriesORM.id, AgentMemoriesORM.embedding_ref, AgentMemoriesORM.content,
+                        AgentMemoriesORM.memory_type, AgentMemoriesORM.scope, AgentMemoriesORM.domain,
+                        AgentMemoriesORM.importance, AgentMemoriesORM.updated_at,
                     )
-                    .where(AgentMemoriesORM.id.in_([UUID(i) for i in missing]))
+                    .where(AgentMemoriesORM.embedding_ref.in_(missing))
+                    .where(AgentMemoriesORM.deleted_at.is_(None))
                 )
                 for r in extra.fetchall():
-                    rows_by_id[str(r.id)] = r._asdict()
+                    rows_by_id[str(r.embedding_ref)] = r._asdict()
 
             # RRF widens the candidate pool for recall; final ranking uses the weighted formula.
             candidate_ids = _rrf(vec_ids, fts_ids)[:limit * 2] if (vec_ids or fts_ids) else []

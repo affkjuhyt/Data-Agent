@@ -93,6 +93,7 @@ def upgrade() -> None:
         'uq_agentmemories_fact',
         'AgentMemories',
         ['tenant_id', 'agent_id', 'scope', 'user_ref', 'domain', 'fact_key'],
+        postgresql_nulls_not_distinct=True,
     )
     op.create_index(
         'idx_agentmemories_user_domain',

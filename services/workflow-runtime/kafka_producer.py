@@ -1,7 +1,9 @@
+import datetime
 import json
 import logging
 import os
 import threading
+import uuid
 from typing import Optional
 
 from kafka import KafkaProducer
@@ -18,6 +20,16 @@ _producer: Optional[KafkaProducer] = None
 _lock = threading.Lock()
 
 
+def _json_default(obj):
+    """tenant_id/agent_id/conversation_id/message_id often arrive as raw UUID
+    objects from SQLAlchemy/asyncpg — json.dumps can't serialize those by default."""
+    if isinstance(obj, uuid.UUID):
+        return str(obj)
+    if isinstance(obj, (datetime.date, datetime.datetime)):
+        return obj.isoformat()
+    raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
+
 async def init_kafka_producer():
     """Connect lazily/fire-and-forget — a Kafka outage must never block the
     request/response cycle. produce_event() degrades to a no-op + log if
@@ -26,7 +38,7 @@ async def init_kafka_producer():
     try:
         kwargs: dict = dict(
             bootstrap_servers=_KAFKA_BOOTSTRAP,
-            value_serializer=lambda v: json.dumps(v, ensure_ascii=False).encode("utf-8"),
+            value_serializer=lambda v: json.dumps(v, default=_json_default, ensure_ascii=False).encode("utf-8"),
             key_serializer=lambda k: k.encode("utf-8") if isinstance(k, str) else k,
             acks="all",
             retries=3,
