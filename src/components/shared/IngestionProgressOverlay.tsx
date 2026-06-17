@@ -8,6 +8,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Activity, CheckCircle, AlertCircle, ChevronUp } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { apiStream } from '../../lib/apiClient';
 
 interface IngestionProgress {
   dataId: string;
@@ -17,7 +18,6 @@ interface IngestionProgress {
   status: 'QUEUED' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
   logs: string[];
   startTime: Date;
-  eventSource?: EventSource;
 }
 
 interface IngestionProgressOverlayProps {
@@ -33,7 +33,7 @@ export const IngestionProgressOverlay: React.FC<IngestionProgressOverlayProps> =
 }) => {
   const [isHovering, setIsHovering] = useState(false);
   const [ingestions, setIngestions] = useState<Map<string, IngestionProgress>>(new Map());
-  const eventSourcesRef = useRef<Map<string, EventSource>>(new Map());
+  const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
 
   /**
    * Start monitoring ingestion progress via SSE
@@ -54,85 +54,93 @@ export const IngestionProgressOverlay: React.FC<IngestionProgressOverlayProps> =
 
     setIngestions(prev => new Map(prev).set(dataId, progress));
 
-    // Open SSE stream to backend
-    const eventSource = new EventSource(
-      `/api/pipeline/ingestion/documents/${dataId}/progress`
-    );
+    // Stream progress via apiStream (fetch + bearer token → Kong). Native
+    // EventSource can't send Authorization, so the fail-closed gateway would 401 it.
+    const abort = new AbortController();
+    abortControllersRef.current.set(dataId, abort);
 
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
+    const markFailed = (msg: string) => {
+      setIngestions(prev => {
+        const updated = new Map(prev);
+        const item = updated.get(dataId);
+        if (item) updated.set(dataId, { ...item, status: 'FAILED', logs: [...item.logs, msg] });
+        return updated;
+      });
+      abortControllersRef.current.delete(dataId);
+    };
 
+    // Returns true once a terminal event is seen (so the reader loop can stop).
+    const applyEvent = (data: any): boolean => {
+      setIngestions(prev => {
+        const updated = new Map(prev);
+        const item = updated.get(dataId);
+        if (!item) return updated;
+        return updated.set(dataId, {
+          ...item,
+          stage:    data.stage || item.stage,
+          progress: data.progress_pct != null ? Math.min(data.progress_pct, 100) : item.progress,
+          logs:     data.message ? [...item.logs, data.message].slice(-10) : item.logs,
+        });
+      });
+
+      if (data.status === 'PUBLISHED' || data.status === 'FAILED') {
         setIngestions(prev => {
           const updated = new Map(prev);
           const item = updated.get(dataId);
           if (!item) return updated;
-
           return updated.set(dataId, {
             ...item,
-            stage: data.stage || item.stage,
-            logs: [...item.logs, data.message].slice(-10), // Keep last 10 logs
+            progress: data.status === 'PUBLISHED' ? 100 : item.progress,
+            status:   data.status === 'PUBLISHED' ? 'COMPLETED' : 'FAILED',
           });
         });
-
-        // Check if complete
-        if (data.status === 'PUBLISHED' || data.status === 'FAILED') {
-          setIngestions(prev => {
-            const updated = new Map(prev);
-            const item = updated.get(dataId);
-            if (!item) return updated;
-
-            return updated.set(dataId, {
-              ...item,
-              progress: data.status === 'PUBLISHED' ? 100 : item.progress,
-              status: data.status === 'PUBLISHED' ? 'COMPLETED' : 'FAILED',
+        abortControllersRef.current.delete(dataId);
+        onIngestionComplete?.(dataId);
+        if (data.status === 'PUBLISHED') {
+          setTimeout(() => {
+            setIngestions(prev => {
+              const updated = new Map(prev);
+              updated.delete(dataId);
+              return updated;
             });
-          });
+          }, 5000);
+        }
+        return true;
+      }
+      return false;
+    };
 
-          eventSource.close();
-          eventSourcesRef.current.delete(dataId);
-          onIngestionComplete?.(dataId);
-
-          // Auto-remove after 5 seconds if completed
-          if (data.status === 'PUBLISHED') {
-            setTimeout(() => {
-              setIngestions(prev => {
-                const updated = new Map(prev);
-                updated.delete(dataId);
-                return updated;
-              });
-            }, 5000);
+    apiStream(`/api/pipeline/ingestion/documents/${dataId}/progress`, { signal: abort.signal })
+      .then(async (res) => {
+        if (!res.ok || !res.body) { markFailed(`Connection failed (HTTP ${res.status})`); return; }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop() ?? '';
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;   // skip ": keepalive" heartbeats
+            try {
+              if (applyEvent(JSON.parse(line.slice(6)))) { abort.abort(); return; }
+            } catch { /* ignore parse errors */ }
           }
         }
-      } catch (error) {
-        console.error('Failed to parse SSE data:', error);
-      }
-    };
-
-    eventSource.onerror = () => {
-      eventSource.close();
-      eventSourcesRef.current.delete(dataId);
-      setIngestions(prev => {
-        const updated = new Map(prev);
-        const item = updated.get(dataId);
-        if (item) {
-          updated.set(dataId, {
-            ...item,
-            status: 'FAILED',
-            logs: [...item.logs, 'Connection lost'],
-          });
-        }
-        return updated;
+      })
+      .catch(() => {
+        if (abort.signal.aborted) return;   // normal teardown / terminal close
+        markFailed('Connection lost');
       });
-    };
-
-    eventSourcesRef.current.set(dataId, eventSource);
   };
 
   // Cleanup on unmount
   useEffect(() => {
+    const controllers = abortControllersRef.current;
     return () => {
-      eventSourcesRef.current.forEach(es => es.close());
+      controllers.forEach(c => c.abort());
     };
   }, []);
 
