@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Shield, Server, Key, Globe, LayoutGrid, ScrollText } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
+import { useAuth } from '../../lib/AuthProvider';
 import { OperationalHeader } from '../shared/OperationalHeader';
 import { StatusBadge } from '../shared/StatusBadge';
 import { AuthOverviewPanel } from './Auth/AuthOverviewPanel';
@@ -10,19 +11,31 @@ import { KongGatewayPanel } from './Auth/KongGatewayPanel';
 import { IPAllowlistPanel } from './Auth/IPAllowlistPanel';
 import { APIKeysPanel } from './Auth/APIKeysPanel';
 import { AuthAuditPanel } from './Auth/AuthAuditPanel';
+import { MicrosoftSSOPanel } from './Auth/MicrosoftSSOPanel';
 
-type AuthTab = 'OVERVIEW' | 'KEYCLOAK' | 'KONG' | 'IP' | 'APIKEYS' | 'AUDIT';
+type AuthTab = 'OVERVIEW' | 'KEYCLOAK' | 'KONG' | 'IP' | 'APIKEYS' | 'AUDIT' | 'MSAPP';
 
-const TABS: { id: AuthTab; label: string; icon: React.ElementType; desc: string }[] = [
+const ALL_TABS: { id: AuthTab; label: string; icon: React.ElementType; desc: string; adminOnly?: boolean; approvalAdmin?: boolean }[] = [
   { id: 'OVERVIEW', label: 'Overview',      icon: LayoutGrid,  desc: 'Health, stack & audit stream' },
-  { id: 'KEYCLOAK', label: 'Keycloak',      icon: Shield,      desc: 'Realms, SSO bridges, MFA, role mappings' },
-  { id: 'KONG',     label: 'Kong Gateway',  icon: Server,      desc: 'JWT verify, JWKS, injected headers' },
-  { id: 'IP',       label: 'IP Allowlist',  icon: Globe,       desc: 'CIDR whitelist via Kong IP plugin' },
+  { id: 'KEYCLOAK', label: 'Keycloak',      icon: Shield,      desc: 'Realms, SSO bridges, MFA, role mappings',          adminOnly: true },
+  { id: 'MSAPP',    label: 'MS Approvals',  icon: Shield,      desc: 'Microsoft SSO — first-login admin approval queue',  approvalAdmin: true },
+  { id: 'KONG',     label: 'Kong Gateway',  icon: Server,      desc: 'JWT verify, JWKS, injected headers',               adminOnly: true },
+  { id: 'IP',       label: 'IP Allowlist',  icon: Globe,       desc: 'CIDR whitelist via Kong IP plugin',                adminOnly: true },
   { id: 'APIKEYS',  label: 'API Keys',      icon: Key,         desc: 'Programmatic access, rotate & revoke' },
-  { id: 'AUDIT',    label: 'Audit Log',     icon: ScrollText,  desc: 'Full Keycloak auth event stream — admin only' },
+  { id: 'AUDIT',    label: 'Audit Log',     icon: ScrollText,  desc: 'Full Keycloak auth event stream — admin only',     adminOnly: true },
 ];
 
 export const AuthSection = ({ initialTab }: { initialTab?: AuthTab } = {}) => {
+  const { user } = useAuth();
+  const isPlatformAdmin = user?.roles.includes('platform-admin') ?? false;
+  const isTenantAdmin   = user?.roles.includes('tenant-admin') ?? false;
+
+  const TABS = ALL_TABS.filter(t => {
+    if (t.adminOnly)     return isPlatformAdmin;
+    if (t.approvalAdmin) return isPlatformAdmin || isTenantAdmin;
+    return true;
+  });
+
   const [tab, setTab] = useState<AuthTab>(initialTab ?? 'OVERVIEW');
 
   return (
@@ -74,6 +87,7 @@ export const AuthSection = ({ initialTab }: { initialTab?: AuthTab } = {}) => {
         >
           {tab === 'OVERVIEW' && <AuthOverviewPanel onViewAudit={() => setTab('AUDIT')} />}
           {tab === 'KEYCLOAK' && <KeycloakPanel />}
+          {tab === 'MSAPP'    && <MicrosoftSSOPanel />}
           {tab === 'KONG'     && <KongGatewayPanel />}
           {tab === 'IP'       && <IPAllowlistPanel />}
           {tab === 'APIKEYS'  && <APIKeysPanel />}

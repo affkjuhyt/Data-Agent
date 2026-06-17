@@ -81,6 +81,11 @@ services:
       # admin is NOT listening. See docs/auth-runbook.md "Kong admin hardening".
       KONG_ADMIN_URL: http://172.30.0.10:8001
       OPENBAO_ADDR: http://openbao:8200
+      # Keycloak Admin API — used by approvals router to check federated identities
+      KC_URL: http://keycloak-lb:8080
+      KC_REALM: ${VITE_KEYCLOAK_REALM:-aeroflow}
+      KC_ADMIN_USER: ${KEYCLOAK_ADMIN:-admin}
+      KC_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
     networks:
       # auth-api needs both: default for proxy traffic + admin-net to manage
       # Kong routes/plugins from auth_core._sync_kong().
