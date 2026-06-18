@@ -6,23 +6,29 @@ Phân tích câu hỏi và quyết định cần dùng công cụ nào. Trả v�
   "language": "vi" | "en",
   "tool_calls": [
     {
-      "type": "kb_search" | "mcp",
-      "query": "<câu truy vấn cụ thể hoặc input cho công cụ>",
+      "type": "kb_search" | "mcp" | "tool",
+      "query": "<câu truy vấn hoặc mô tả yêu cầu cho công cụ>",
       "reason": "<lý do cần dùng công cụ này>",
       "confidence": <0.0 - 1.0>,
-      "tool_name": "<tên mcp tool, chỉ bắt buộc khi type=mcp>",
-      "parallel": <true nếu có thể chạy song song với tool khác, false nếu phải chạy riêng>,
-      "depends_on": [<index của tool_calls phải hoàn thành trước, để trống nếu không có>]
+      "tool_name": "<tên tool — bắt buộc khi type=mcp hoặc type=tool>",
+      "arguments": {<tham số bổ sung cho tool, ví dụ: file_path, expression>},
+      "parallel": <true nếu có thể chạy song song với tool khác>,
+      "depends_on": [<index tool_calls phải xong trước>]
     }
   ]
 }
 
+Quy tắc chọn type:
+- "kb_search": tìm kiếm trong knowledge base nội bộ (tài liệu, quy định, hướng dẫn)
+- "mcp": gọi external MCP tool (chỉ dùng nếu có MCP server trong danh sách)
+- "tool": gọi built-in platform tool (danh sách available tools được inject phía trên nếu có)
+
 Quy tắc phân loại language:
-- "vi": câu hỏi có chứa tiếng Việt, kể cả khi lẫn nhiều từ tiếng Anh (ví dụ: "implement auth cho app", "tôi muốn build API")
+- "vi": câu hỏi có chứa tiếng Việt, kể cả khi lẫn nhiều từ tiếng Anh
 - "en": câu hỏi hoàn toàn bằng tiếng Anh
 
 Quy tắc phân loại intent:
-- "task": user nhờ TẠO RA / LÀM / VIẾT / XÂY DỰNG / THIẾT KẾ một thứ cụ thể và có nhiều cách tiếp cận khác nhau (ví dụ: implement auth, viết script, build API, thiết kế schema)
-- "question": tất cả trường hợp còn lại — hỏi thông tin, giải thích, so sánh, tóm tắt, phân tích
+- "task": user nhờ TẠO RA / LÀM / VIẾT / XÂY DỰNG / THIẾT KẾ một thứ cụ thể
+- "question": tất cả trường hợp còn lại — hỏi thông tin, giải thích, so sánh, tóm tắt
 
 Nếu không cần công cụ nào, trả về: {"intent": "question", "language": "vi", "tool_calls": []}

@@ -88,6 +88,12 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         "tool_calls": [],
         "kb_chunks": [],
         "mcp_results": [],
+        "tool_results": [],
+        "tool_errors": [],
+        "loop_iteration": 0,
+        "judge_verdict": None,
+        "judge_error_type": None,
+        "judge_reason": None,
         "rrf_results": [],
         "reranked_chunks": [],
         "response": "",
@@ -162,6 +168,16 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                             "output":    out if isinstance(out, dict) else {},
                             "latency_ms": node_lat,
                         })
+                        # Expand per-tool spans for tool_executor
+                        if node == "tool_executor" and isinstance(out, dict):
+                            for tt in out.get("_tool_traces", []):
+                                node_traces.append({
+                                    "tool_name": f"tool/{tt['tool_name']}",
+                                    "input":     {"query": tt.get("query", ""), "arguments": tt.get("arguments", {})},
+                                    "output":    {"result_id": tt.get("result_id"), "error": tt.get("error")},
+                                    "latency_ms": tt["latency_ms"],
+                                    "status":     tt.get("status", "success"),
+                                })
                     # node-specific logic
                     if node == "guardrail_input":
                         out = event["data"].get("output", {})
@@ -309,6 +325,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                                 input=nt["input"],
                                 output=nt["output"],
                                 latency_ms=nt["latency_ms"],
+                                status=nt.get("status", "success"),
                             )
                     else:
                         await save_trace(

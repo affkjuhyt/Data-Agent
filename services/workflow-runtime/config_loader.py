@@ -33,6 +33,10 @@ DEV_CONFIG = {
     "context_max_chars": 4000,
     "memory_enabled": False,
     "mcp_endpoints": [],
+    "allowed_tools": [],
+    "tool_config": {},
+    "judge_model": "openai/judge",
+    "loop_max_iterations": 3,
     "guardrail_input_patterns": [],
     "guardrail_llm_enabled":    False,
     "guardrail_model":           "openai/guardrail",
@@ -192,4 +196,38 @@ def _extract_node_config(flow_nodes: list[dict]) -> dict:
         elif t == "responder":
             if "temperature" in c: cfg["responder_temperature"] = c["temperature"]
             if "max_tokens"  in c: cfg["responder_max_tokens"]  = c["max_tokens"]
+        elif t == "judge":
+            if "max_iterations" in c: cfg["loop_max_iterations"] = int(c["max_iterations"])
+            if "model_id"       in c: cfg["judge_model"]         = c["model_id"]
+        elif t == "tool_executor":
+            allowed = c.get("allowedBuiltinTools", [])
+            if allowed:
+                cfg["allowed_tools"] = allowed
+            tool_config: dict = {}
+            if c.get("dbUrl"):
+                tool_config["text_to_sql"] = {
+                    "db_url":      c["dbUrl"],
+                    "schema_hint": c.get("schemaHint", ""),
+                }
+            if c.get("defaultFilePath") or c.get("pandasAllowedDir"):
+                tool_config["text_to_pandas"] = {
+                    "default_file_path": c.get("defaultFilePath", ""),
+                    "allowed_dir":       c.get("pandasAllowedDir", ""),
+                }
+            if c.get("fileReadAllowedDir"):
+                tool_config["file_read"] = {"allowed_dir": c["fileReadAllowedDir"]}
+            if c.get("grepAllowedDir"):
+                tool_config["grep"] = {"allowed_dir": c["grepAllowedDir"]}
+            if c.get("globAllowedDir"):
+                tool_config["glob"] = {"allowed_dir": c["globAllowedDir"]}
+            if c.get("writeAllowedDir"):
+                tool_config["file_write"] = {"allowed_dir": c["writeAllowedDir"]}
+                tool_config["file_edit"]  = {"allowed_dir": c["writeAllowedDir"]}
+            if "bashEnabled" in c:
+                tool_config["bash"] = {
+                    "enabled": bool(c["bashEnabled"]),
+                    "cwd":     c.get("bashCwd", ""),
+                }
+            if tool_config:
+                cfg["tool_config"] = tool_config
     return cfg

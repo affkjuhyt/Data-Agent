@@ -23,6 +23,10 @@ interface TraceStep {
   cost: number;
   input: string;
   output: string;
+  iteration: number;
+  isRetryStart: boolean;
+  verdict?: 'PASS' | 'FAIL';
+  errorType?: string;
 }
 
 interface Message {
@@ -56,6 +60,8 @@ function spanType(node: string): { label: string; color: string; bg: string } {
     return { label: 'TOOL',       color: '#86EFAC', bg: 'rgba(134,239,172,0.12)' };
   if (node.includes('rrf') || node.includes('reranker'))
     return { label: 'RANK',       color: '#F3E2A7', bg: 'rgba(243,226,167,0.10)' };
+  if (node.includes('judge'))
+    return { label: 'EVAL',       color: '#C084FC', bg: 'rgba(192,132,252,0.14)' };
   return   { label: 'SPAN',       color: '#BFA66A', bg: 'rgba(191,166,106,0.12)' };
 }
 
@@ -88,6 +94,8 @@ function trimInput(name: string, raw: any): string {
       return JSON.stringify({ query: q, reranked_chunks: (raw.reranked_chunks ?? []).length + ' chunks' }, null, 2);
     case name.includes('suggestion'):
       return JSON.stringify({ query: q, response: clip(raw.response ?? '') }, null, 2);
+    case name.includes('judge'):
+      return JSON.stringify({ query: q, response: clip(raw.response ?? ''), tool_errors: (raw.tool_errors ?? []).length + ' errors' }, null, 2);
     default:
       return JSON.stringify({ query: q }, null, 2);
   }
@@ -98,19 +106,42 @@ function mapObservations(obs: any[]): TraceStep[] {
     .filter(o => !_shouldSkip(o.name) && o.type === 'SPAN')
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
   const traceStart = filtered.length > 0 ? new Date(filtered[0].startTime).getTime() : 0;
-  return filtered.map(o => ({
-    id: o.id,
-    node: o.name,
-    status: o.level === 'ERROR' ? 'error' : 'success',
-    startMs: Math.round(new Date(o.startTime).getTime() - traceStart),
-    latencyMs: o.endTime ? Math.round(new Date(o.endTime).getTime() - new Date(o.startTime).getTime()) : 0,
-    tokens: o.usage ? ((o.usage.input ?? 0) + (o.usage.output ?? 0)) : 0,
-    cost: o.calculatedTotalCost ?? 0,
-    input: trimInput(o.name, o.input),
-    output: o.level === 'ERROR' && o.statusMessage
-      ? o.statusMessage
-      : typeof o.output === 'object' ? JSON.stringify(o.output, null, 2) : String(o.output ?? ''),
-  }));
+  const nameCounts: Record<string, number> = {};
+  let currentMaxIteration = 0;
+  return filtered.map(o => {
+    const count = nameCounts[o.name] ?? 0;
+    nameCounts[o.name] = count + 1;
+    const iteration = count;
+    const isRetryStart = iteration > currentMaxIteration;
+    if (isRetryStart) currentMaxIteration = iteration;
+    const displayName = iteration > 0 ? `${o.name}#${iteration}` : o.name;
+    let verdict: 'PASS' | 'FAIL' | undefined;
+    let errorType: string | undefined;
+    if (o.name.startsWith('judge')) {
+      try {
+        const out = typeof o.output === 'object' ? o.output : JSON.parse(o.output || '{}');
+        verdict   = out.judge_verdict;
+        errorType = out.judge_error_type ?? undefined;
+      } catch { /* ignore */ }
+    }
+    return {
+      id: o.id,
+      node: displayName,
+      status: o.level === 'ERROR' ? 'error' : 'success',
+      startMs: Math.round(new Date(o.startTime).getTime() - traceStart),
+      latencyMs: o.endTime ? Math.round(new Date(o.endTime).getTime() - new Date(o.startTime).getTime()) : 0,
+      tokens: o.usage ? ((o.usage.input ?? 0) + (o.usage.output ?? 0)) : 0,
+      cost: o.calculatedTotalCost ?? 0,
+      input: trimInput(o.name, o.input),
+      output: o.level === 'ERROR' && o.statusMessage
+        ? o.statusMessage
+        : typeof o.output === 'object' ? JSON.stringify(o.output, null, 2) : String(o.output ?? ''),
+      iteration,
+      isRetryStart,
+      verdict,
+      errorType,
+    };
+  });
 }
 
 /* ─── Routing ────────────────────────────────────────────────── */
@@ -162,16 +193,33 @@ function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs }: {
           {step.node}
         </span>
       </div>
-      <div style={{ position: 'relative', height: 14 }}>
-        <div style={{ position: 'absolute', top: 5, left: 0, right: 0, height: 4, background: 'rgba(255,255,255,0.04)', borderRadius: 2 }} />
-        <div style={{
-          position: 'absolute', top: 4,
-          left: leftPct + '%', width: widthPct + '%',
-          height: 6, borderRadius: 2,
-          background: isErr ? '#F8A4A4' : t.color,
-          boxShadow: '0 0 0 1px rgba(255,255,255,0.08)',
-        }} />
-      </div>
+      {step.verdict ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{
+            fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, letterSpacing: '0.06em',
+            background: step.verdict === 'PASS' ? 'rgba(52,211,153,0.18)' : 'rgba(248,113,113,0.18)',
+            color: step.verdict === 'PASS' ? '#34D399' : '#F87171',
+          }}>
+            {step.verdict}
+          </span>
+          {step.errorType && (
+            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.38)', fontFamily: 'var(--font-mono)' }}>
+              {step.errorType}
+            </span>
+          )}
+        </div>
+      ) : (
+        <div style={{ position: 'relative', height: 14 }}>
+          <div style={{ position: 'absolute', top: 5, left: 0, right: 0, height: 4, background: 'rgba(255,255,255,0.04)', borderRadius: 2 }} />
+          <div style={{
+            position: 'absolute', top: 4,
+            left: leftPct + '%', width: widthPct + '%',
+            height: 6, borderRadius: 2,
+            background: isErr ? '#F8A4A4' : t.color,
+            boxShadow: '0 0 0 1px rgba(255,255,255,0.08)',
+          }} />
+        </div>
+      )}
       <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.45)', textAlign: 'right' }}>
         {step.latencyMs}ms
       </span>
@@ -300,11 +348,25 @@ function TracePanel({ steps, traceLoading, traceId }: {
                 Send a message to capture a trace
               </p>
             ) : steps.map((s, i) => (
-              <WaterfallRow
-                key={s.id} step={s} index={i}
-                selected={selected === i} onSelect={setSelected}
-                startMs={starts[i]} totalMs={totalMs}
-              />
+              <React.Fragment key={s.id}>
+                {s.isRetryStart && (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '4px 12px 2px',
+                    color: 'rgba(192,132,252,0.7)', fontSize: 9,
+                    fontFamily: 'var(--font-mono)', letterSpacing: '0.08em',
+                  }}>
+                    <div style={{ flex: 1, height: 1, background: 'rgba(192,132,252,0.25)' }} />
+                    <span>retry #{s.iteration}</span>
+                    <div style={{ flex: 1, height: 1, background: 'rgba(192,132,252,0.25)' }} />
+                  </div>
+                )}
+                <WaterfallRow
+                  step={s} index={i}
+                  selected={selected === i} onSelect={setSelected}
+                  startMs={starts[i]} totalMs={totalMs}
+                />
+              </React.Fragment>
             ))}
           </div>
         </div>
@@ -669,6 +731,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
         startMs: 0, latencyMs: 90 + Math.round(Math.random() * 40), tokens: 64, cost: 0,
         input:  JSON.stringify({ message: text, strategy: 'HYBRID' }, null, 2),
         output: JSON.stringify({ routed_agent: decision.name, confidence: +decision.conf.toFixed(2) }, null, 2),
+        iteration: 0, isRetryStart: false,
       };
       const t0 = routerSpan.latencyMs;
       const tPlan = 160 + Math.round(Math.random() * 80);
@@ -679,12 +742,12 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
       const tResp = 380 + Math.round(Math.random() * 200);
       setTraceSteps([
         routerSpan,
-        { id: 'p-'  + Date.now(), node: 'planner',    status: 'success', startMs: t0,                                       latencyMs: tPlan,   tokens: 320, cost: 0, input: JSON.stringify({ query: text }, null, 2), output: '{"plan": "retrieve relevant docs, synthesize response"}' },
-        { id: 'kb-' + Date.now(), node: 'kb_search',   status: 'success', startMs: t0 + tPlan,                              latencyMs: tKb,     tokens: 0,   cost: 0, input: JSON.stringify({ query: text, top_k: 5 }, null, 2), output: '{"chunks": 4}' },
-        { id: 'mc-' + Date.now(), node: 'mcp',         status: 'success', startMs: t0 + tPlan,                              latencyMs: tMcp,    tokens: 0,   cost: 0, input: JSON.stringify({ query: text }, null, 2), output: '{"results": 2}' },
-        { id: 'rr-' + Date.now(), node: 'rrf_ranking', status: 'success', startMs: t0 + tPlan + tRetrieve,                  latencyMs: tRrf,    tokens: 0,   cost: 0, input: '{}', output: '{}' },
-        { id: 're-' + Date.now(), node: 'reranker',    status: 'success', startMs: t0 + tPlan + tRetrieve + tRrf,           latencyMs: tRerank, tokens: 0,   cost: 0, input: '{}', output: '{}' },
-        { id: 'r-'  + Date.now(), node: 'responder',   status: 'success', startMs: t0 + tPlan + tRetrieve + tRrf + tRerank, latencyMs: tResp,   tokens: 640 + Math.round(Math.random() * 200), cost: 0, input: JSON.stringify({ query: text, chunks: 4 }, null, 2), output: reply.content },
+        { id: 'p-'  + Date.now(), node: 'planner',    status: 'success', startMs: t0,                                       latencyMs: tPlan,   tokens: 320, cost: 0, input: JSON.stringify({ query: text }, null, 2), output: '{"plan": "retrieve relevant docs, synthesize response"}', iteration: 0, isRetryStart: false },
+        { id: 'kb-' + Date.now(), node: 'kb_search',  status: 'success', startMs: t0 + tPlan,                               latencyMs: tKb,     tokens: 0,   cost: 0, input: JSON.stringify({ query: text, top_k: 5 }, null, 2), output: '{"chunks": 4}', iteration: 0, isRetryStart: false },
+        { id: 'mc-' + Date.now(), node: 'mcp',        status: 'success', startMs: t0 + tPlan,                               latencyMs: tMcp,    tokens: 0,   cost: 0, input: JSON.stringify({ query: text }, null, 2), output: '{"results": 2}', iteration: 0, isRetryStart: false },
+        { id: 'rr-' + Date.now(), node: 'rrf_ranking',status: 'success', startMs: t0 + tPlan + tRetrieve,                   latencyMs: tRrf,    tokens: 0,   cost: 0, input: '{}', output: '{}', iteration: 0, isRetryStart: false },
+        { id: 're-' + Date.now(), node: 'reranker',   status: 'success', startMs: t0 + tPlan + tRetrieve + tRrf,            latencyMs: tRerank, tokens: 0,   cost: 0, input: '{}', output: '{}', iteration: 0, isRetryStart: false },
+        { id: 'r-'  + Date.now(), node: 'responder',  status: 'success', startMs: t0 + tPlan + tRetrieve + tRrf + tRerank,  latencyMs: tResp,   tokens: 640 + Math.round(Math.random() * 200), cost: 0, input: JSON.stringify({ query: text, chunks: 4 }, null, 2), output: reply.content, iteration: 0, isRetryStart: false },
       ]);
       setSending(false);
       setTraceLoading(false);

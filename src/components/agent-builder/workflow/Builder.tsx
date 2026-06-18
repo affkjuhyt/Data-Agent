@@ -39,7 +39,7 @@ const WORKFLOW_RUNTIME_URL = (import.meta as any).env?.VITE_WORKFLOW_RUNTIME_URL
 export type TemplateId = 'blank' | 'rag' | 'multi-agent' | 'hitl';
 
 type FlowNodeType =
-  | 'trigger' | 'guardrail' | 'planner' | 'kb_search' | 'mcp'
+  | 'trigger' | 'guardrail' | 'planner' | 'kb_search' | 'mcp' | 'tool_executor'
   | 'rrf_ranking' | 'reranker' | 'responder' | 'output'
   | 'human_approval' | 'condition' | 'db_query'
   | 'send_notification' | 'loop';
@@ -48,13 +48,29 @@ export interface FlowNodeData extends Record<string, unknown> {
   nodeType: FlowNodeType;
   label: string;
   locked?: boolean;
+  // mcp
   mcpServerUrl?: string;
   allowedTools?: string[];
+  // tool_executor
+  allowedBuiltinTools?: string[];
+  dbUrl?: string;
+  schemaHint?: string;
+  defaultFilePath?: string;
+  pandasAllowedDir?: string;
+  fileReadAllowedDir?: string;
+  grepAllowedDir?: string;
+  globAllowedDir?: string;
+  writeAllowedDir?: string;
+  bashEnabled?: boolean;
+  bashCwd?: string;
+  // reranker
   rerankerModel?: string;
   topN?: number;
+  // responder
   systemPromptName?: string;
   temperature?: number;
   maxTokens?: number;
+  // human_approval
   approverRole?: string;
 }
 
@@ -70,6 +86,7 @@ const NODE_STYLE: Record<string, { typeLabel: string; Icon: any; color: string }
   planner:           { typeLabel: 'Planner',        Icon: Bot,         color: '#3B82F6' },
   kb_search:         { typeLabel: 'KB Search',      Icon: Database,    color: '#10B981' },
   mcp:               { typeLabel: 'MCP Tool',       Icon: Wrench,      color: '#F59E0B' },
+  tool_executor:     { typeLabel: 'Tool Executor',  Icon: Zap,         color: '#F97316' },
   rrf_ranking:       { typeLabel: 'RRF Ranking',    Icon: Layers,      color: '#8B5CF6' },
   reranker:          { typeLabel: 'Reranker',       Icon: Filter,      color: '#8B5CF6' },
   responder:         { typeLabel: 'Responder',      Icon: Cpu,         color: '#3B82F6' },
@@ -433,41 +450,47 @@ export const TEMPLATE_FLOWS: Record<TemplateId, { nodes: Node<FlowNodeData>[]; e
 
   'multi-agent': {
     nodes: [
-      mkNode('planner',     'planner',     'Planner',     240, 0),
-      mkNode('kb_search',   'kb_search',   'KB Search',   40,  130, ),
-      mkNode('mcp',    'mcp',    'MCP Tool',    440, 130, { mcpServerUrl: 'http://mcp.tenant.gov.vn/sse', allowedTools: ['tra_cuu_phat_nguoi', 'query_dashboard'] }),
-      mkNode('rrf_ranking', 'rrf_ranking', 'RRF Ranking', 240, 270),
-      mkNode('reranker',    'reranker',    'Reranker',    240, 380, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
-      mkNode('responder',   'responder',   'Responder',   240, 490, { systemPromptName: 'prompt_default', temperature: 0.2, maxTokens: 1000 }),
+      mkNode('planner',       'planner',       'Planner',       340, 0),
+      mkNode('kb_search',     'kb_search',     'KB Search',     40,  130),
+      mkNode('mcp',           'mcp',           'MCP Tool',      340, 130, { mcpServerUrl: 'http://mcp.tenant.gov.vn/sse', allowedTools: ['tra_cuu_phat_nguoi', 'query_dashboard'] }),
+      mkNode('tool_executor', 'tool_executor', 'Tool Executor', 640, 130, { allowedBuiltinTools: ['text_to_sql', 'web_search'] }),
+      mkNode('rrf_ranking',   'rrf_ranking',   'RRF Ranking',   340, 270),
+      mkNode('reranker',      'reranker',      'Reranker',      340, 380, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
+      mkNode('responder',     'responder',     'Responder',     340, 490, { systemPromptName: 'prompt_default', temperature: 0.2, maxTokens: 1000 }),
     ],
     edges: [
-      labeledSolid('e1', 'planner',     'kb_search',   'always',        '#10B98199'),
-      dashedEdge  ('e2', 'planner',     'mcp',    'if tool_calls', '#F59E0B99'),
-      solidEdge   ('e3', 'kb_search',   'rrf_ranking', '#10B98166'),
-      solidEdge   ('e4', 'mcp',    'rrf_ranking', '#F59E0B66'),
-      solidEdge   ('e5', 'rrf_ranking', 'reranker',    '#8B5CF666'),
-      solidEdge   ('e6', 'reranker',    'responder',   '#8B5CF666'),
+      labeledSolid('e1', 'planner',       'kb_search',     'always',        '#10B98199'),
+      dashedEdge  ('e2', 'planner',       'mcp',           'if mcp_calls',  '#F59E0B99'),
+      dashedEdge  ('e3', 'planner',       'tool_executor', 'if tool_calls', '#F9731699'),
+      solidEdge   ('e4', 'kb_search',     'rrf_ranking',   '#10B98166'),
+      solidEdge   ('e5', 'mcp',           'rrf_ranking',   '#F59E0B66'),
+      solidEdge   ('e6', 'tool_executor', 'rrf_ranking',   '#F9731666'),
+      solidEdge   ('e7', 'rrf_ranking',   'reranker',      '#8B5CF666'),
+      solidEdge   ('e8', 'reranker',      'responder',     '#8B5CF666'),
     ],
   },
 
   hitl: {
     nodes: [
-      mkNode('planner',        'planner',        'Planner',        240, 0),
-      mkNode('kb_search',      'kb_search',      'KB Search',      40,  130, ),
-      mkNode('mcp',       'mcp',       'MCP Tool',       440, 130, { mcpServerUrl: 'http://mcp.tenant.gov.vn/sse', allowedTools: ['tra_cuu_phat_nguoi', 'query_dashboard'] }),
-      mkNode('rrf_ranking',    'rrf_ranking',    'RRF Ranking',    240, 270),
-      mkNode('reranker',       'reranker',       'Reranker',       240, 380, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
-      mkNode('responder',      'responder',      'Responder',      240, 490, { systemPromptName: 'prompt_default', temperature: 0.2, maxTokens: 1000 }),
-      mkNode('human_approval', 'human_approval', 'Human Review',   240, 600, { approverRole: 'MANAGER' }),
+      mkNode('planner',        'planner',        'Planner',        340, 0),
+      mkNode('kb_search',      'kb_search',      'KB Search',      40,  130),
+      mkNode('mcp',            'mcp',            'MCP Tool',       340, 130, { mcpServerUrl: 'http://mcp.tenant.gov.vn/sse', allowedTools: ['tra_cuu_phat_nguoi', 'query_dashboard'] }),
+      mkNode('tool_executor',  'tool_executor',  'Tool Executor',  640, 130, { allowedBuiltinTools: ['text_to_sql', 'web_search'] }),
+      mkNode('rrf_ranking',    'rrf_ranking',    'RRF Ranking',    340, 270),
+      mkNode('reranker',       'reranker',       'Reranker',       340, 380, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
+      mkNode('responder',      'responder',      'Responder',      340, 490, { systemPromptName: 'prompt_default', temperature: 0.2, maxTokens: 1000 }),
+      mkNode('human_approval', 'human_approval', 'Human Review',   340, 600, { approverRole: 'MANAGER' }),
     ],
     edges: [
       labeledSolid('e1', 'planner',        'kb_search',      'always',        '#10B98199'),
-      dashedEdge  ('e2', 'planner',        'mcp',       'if tool_calls', '#F59E0B99'),
-      solidEdge   ('e3', 'kb_search',      'rrf_ranking',    '#10B98166'),
-      solidEdge   ('e4', 'mcp',       'rrf_ranking',    '#F59E0B66'),
-      solidEdge   ('e5', 'rrf_ranking',    'reranker',       '#8B5CF666'),
-      solidEdge   ('e6', 'reranker',       'responder',      '#8B5CF666'),
-      solidEdge   ('e7', 'responder',      'human_approval', '#D9B86C66'),
+      dashedEdge  ('e2', 'planner',        'mcp',            'if mcp_calls',  '#F59E0B99'),
+      dashedEdge  ('e3', 'planner',        'tool_executor',  'if tool_calls', '#F9731699'),
+      solidEdge   ('e4', 'kb_search',      'rrf_ranking',    '#10B98166'),
+      solidEdge   ('e5', 'mcp',            'rrf_ranking',    '#F59E0B66'),
+      solidEdge   ('e6', 'tool_executor',  'rrf_ranking',    '#F9731666'),
+      solidEdge   ('e7', 'rrf_ranking',    'reranker',       '#8B5CF666'),
+      solidEdge   ('e8', 'reranker',       'responder',      '#8B5CF666'),
+      solidEdge   ('e9', 'responder',      'human_approval', '#D9B86C66'),
     ],
   },
 };
@@ -547,6 +570,27 @@ const InfoNote = ({ text }: { text: string }) => (
 );
 
 const MCP_TOOLS = ['tra_cuu_phat_nguoi', 'query_dashboard', 'send_alert', 'export_report'];
+
+const BUILTIN_TOOLS: Array<{ name: string; hint: string; category: 'data' | 'filesystem' | 'filesystem-write' | 'shell' | 'langchain' | 'agent' }> = [
+  // Data
+  { name: 'text_to_sql',       hint: 'SQL từ câu hỏi tự nhiên',       category: 'data'             },
+  { name: 'text_to_pandas',    hint: 'Phân tích file CSV/Excel',       category: 'data'             },
+  // File system — read
+  { name: 'file_read',         hint: 'Đọc file text',                  category: 'filesystem'       },
+  { name: 'grep',              hint: 'Tìm regex trong file',           category: 'filesystem'       },
+  { name: 'glob',              hint: 'Liệt kê file theo pattern',      category: 'filesystem'       },
+  // File system — write
+  { name: 'file_write',        hint: 'Ghi/tạo file',                   category: 'filesystem-write' },
+  { name: 'file_edit',         hint: 'Sửa file (string replacement)',  category: 'filesystem-write' },
+  // Shell
+  { name: 'bash',              hint: 'Thực thi lệnh shell',            category: 'shell'            },
+  // LangChain
+  { name: 'web_search',        hint: 'Tìm kiếm web (DuckDuckGo)',      category: 'langchain'        },
+  { name: 'wikipedia',         hint: 'Tra cứu Wikipedia',              category: 'langchain'        },
+  { name: 'calculator',        hint: 'Tính toán số học',               category: 'langchain'        },
+  // Multi-agent
+  { name: 'delegate_to_agent', hint: 'Ủy quyền cho agent khác',       category: 'agent'            },
+];
 
 // â”€â”€â”€ Config Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -636,6 +680,153 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
           </>
         )}
 
+        {d.nodeType === 'tool_executor' && (() => {
+          const selected = (d.allowedBuiltinTools as string[]) || [];
+          const toggle   = (name: string) => upd(
+            'allowedBuiltinTools',
+            selected.includes(name) ? selected.filter(t => t !== name) : [...selected, name],
+          );
+          const hasSql    = selected.includes('text_to_sql');
+          const hasPandas = selected.includes('text_to_pandas');
+          const hasFile   = selected.includes('file_read');
+
+          return (
+            <>
+              {(['data', 'filesystem', 'filesystem-write', 'shell', 'langchain', 'agent'] as const).map(cat => (
+                <div key={cat}>
+                  <div className={`text-[9px] font-black uppercase tracking-widest mb-2 ${
+                    cat === 'data'             ? 'text-orange-400'  :
+                    cat === 'filesystem'       ? 'text-emerald-400' :
+                    cat === 'filesystem-write' ? 'text-yellow-500'  :
+                    cat === 'shell'            ? 'text-red-400'     :
+                    cat === 'langchain'        ? 'text-purple-400'  :
+                                                 'text-sky-400'
+                  }`}>
+                    {cat === 'data'             ? 'Data'              :
+                     cat === 'filesystem'       ? 'File system (read)':
+                     cat === 'filesystem-write' ? 'File system (write)':
+                     cat === 'shell'            ? 'Shell'             :
+                     cat === 'langchain'        ? 'LangChain'         :
+                                                  'Multi-agent'}
+                  </div>
+                  <div className="space-y-2">
+                    {BUILTIN_TOOLS.filter(t => t.category === cat).map(tool => {
+                      const checked = selected.includes(tool.name);
+                      return (
+                        <label key={tool.name} className="flex items-start gap-2.5 cursor-pointer group">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggle(tool.name)}
+                            className="w-3.5 h-3.5 mt-0.5 rounded accent-orange-500 cursor-pointer shrink-0"
+                          />
+                          <div>
+                            <span className="text-[11px] font-mono text-slate-400 group-hover:text-white transition-colors">{tool.name}</span>
+                            <div className="text-[9px] text-slate-700">{tool.hint}</div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+
+              {hasSql && (
+                <>
+                  <div className="h-px bg-white/10" />
+                  <div className="text-[9px] font-black text-orange-400 uppercase tracking-widest">text_to_sql</div>
+                  <Field label="DB URL">
+                    <TextInput value={(d.dbUrl as string) || ''} onChange={v => upd('dbUrl', v)} placeholder="postgresql://user:pass@host/db" />
+                  </Field>
+                  <Field label="Schema Hint (optional)">
+                    <textarea
+                      value={(d.schemaHint as string) || ''}
+                      onChange={e => upd('schemaHint', e.target.value)}
+                      placeholder="TABLE violations (id, date, plate, amount)"
+                      rows={3}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-xs text-white font-mono focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-slate-700 resize-none"
+                    />
+                  </Field>
+                </>
+              )}
+
+              {hasPandas && (
+                <>
+                  <div className="h-px bg-white/10" />
+                  <div className="text-[9px] font-black text-orange-400 uppercase tracking-widest">text_to_pandas</div>
+                  <Field label="Default File Path">
+                    <TextInput value={(d.defaultFilePath as string) || ''} onChange={v => upd('defaultFilePath', v)} placeholder="/data/reports/violations.csv" />
+                  </Field>
+                  <Field label="Allowed Dir">
+                    <TextInput value={(d.pandasAllowedDir as string) || ''} onChange={v => upd('pandasAllowedDir', v)} placeholder="/data/reports" />
+                  </Field>
+                </>
+              )}
+
+              {hasFile && (
+                <>
+                  <div className="h-px bg-white/10" />
+                  <div className="text-[9px] font-black text-orange-400 uppercase tracking-widest">file_read</div>
+                  <Field label="Allowed Dir">
+                    <TextInput value={(d.fileReadAllowedDir as string) || ''} onChange={v => upd('fileReadAllowedDir', v)} placeholder="/data/docs" />
+                  </Field>
+                </>
+              )}
+
+              {selected.includes('grep') && (
+                <>
+                  <div className="h-px bg-white/10" />
+                  <div className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">grep</div>
+                  <Field label="Allowed Dir">
+                    <TextInput value={(d.grepAllowedDir as string) || ''} onChange={v => upd('grepAllowedDir', v)} placeholder="/data" />
+                  </Field>
+                </>
+              )}
+
+              {selected.includes('glob') && (
+                <>
+                  <div className="h-px bg-white/10" />
+                  <div className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">glob</div>
+                  <Field label="Allowed Dir">
+                    <TextInput value={(d.globAllowedDir as string) || ''} onChange={v => upd('globAllowedDir', v)} placeholder="/data" />
+                  </Field>
+                </>
+              )}
+
+              {(selected.includes('file_write') || selected.includes('file_edit')) && (
+                <>
+                  <div className="h-px bg-white/10" />
+                  <div className="text-[9px] font-black text-yellow-500 uppercase tracking-widest">file_write / file_edit</div>
+                  <Field label="Allowed Dir">
+                    <TextInput value={(d.writeAllowedDir as string) || ''} onChange={v => upd('writeAllowedDir', v)} placeholder="/data/output" />
+                  </Field>
+                </>
+              )}
+
+              {selected.includes('bash') && (
+                <>
+                  <div className="h-px bg-white/10" />
+                  <div className="text-[9px] font-black text-red-400 uppercase tracking-widest">bash</div>
+                  <label className="flex items-center gap-2.5 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={!!(d.bashEnabled)}
+                      onChange={e => upd('bashEnabled', e.target.checked)}
+                      className="w-3.5 h-3.5 rounded accent-red-500 cursor-pointer"
+                    />
+                    <span className="text-[11px] text-slate-400 group-hover:text-white transition-colors">Enable execution</span>
+                  </label>
+                  <Field label="Working Dir (cwd)">
+                    <TextInput value={(d.bashCwd as string) || ''} onChange={v => upd('bashCwd', v)} placeholder="/workspace" />
+                  </Field>
+                </>
+              )}
+
+              <InfoNote text="Planner tự động biết các tool này và quyết định khi nào gọi dựa vào câu hỏi user." />
+            </>
+          );
+        })()}
+
         {d.nodeType === 'rrf_ranking' && (
           <InfoNote text={`k=${RRF_K_DEFAULT} (hardcoded)`} />
         )}
@@ -693,7 +884,8 @@ const ALL_LIBRARY_NODES: Array<{
 }> = [
   { nodeType: 'planner',           label: 'Planner',           color: '#3B82F6', Icon: Bot,         allowMultiple: false },
   { nodeType: 'kb_search',         label: 'KB Search',         color: '#10B981', Icon: Database,    allowMultiple: true  },
-  { nodeType: 'mcp',          label: 'MCP Tool',          color: '#F59E0B', Icon: Wrench,      allowMultiple: true  },
+  { nodeType: 'mcp',               label: 'MCP Tool',          color: '#F59E0B', Icon: Wrench,      allowMultiple: true  },
+  { nodeType: 'tool_executor',     label: 'Tool Executor',     color: '#F97316', Icon: Zap,         allowMultiple: false },
   { nodeType: 'rrf_ranking',       label: 'RRF Ranking',       color: '#8B5CF6', Icon: Layers,      allowMultiple: false },
   { nodeType: 'reranker',          label: 'Reranker',          color: '#8B5CF6', Icon: Filter,      allowMultiple: false },
   { nodeType: 'responder',         label: 'Responder',         color: '#3B82F6', Icon: Cpu,         allowMultiple: false },

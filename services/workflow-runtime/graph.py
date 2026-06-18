@@ -10,14 +10,18 @@ from nodes.model_harness.reranker import reranker_node
 from nodes.model_harness.suggestion import suggestion_node
 from nodes.sandbox.kb_search import kb_search_node
 from nodes.sandbox.mcp import mcp_node
+from nodes.sandbox.tool_executor import tool_executor_node
+from nodes.model_harness.judge import judge_node
 
 NODE_TYPE_MAP = {
-    "planner":     planner_node,
-    "kb_search":   kb_search_node,
-    "mcp":         mcp_node,
-    "rrf_ranking": rrf_ranking_node,
-    "reranker":    reranker_node,
-    "responder":   responder_node,
+    "planner":       planner_node,
+    "kb_search":     kb_search_node,
+    "mcp":           mcp_node,
+    "tool_executor": tool_executor_node,
+    "rrf_ranking":   rrf_ranking_node,
+    "reranker":      reranker_node,
+    "responder":     responder_node,
+    "judge":         judge_node,
 }
 
 _DEFAULT_FLOW_NODES = [
@@ -50,11 +54,29 @@ def route_after_planner(state: AgentState) -> list[str]:
         destinations.append("kb_search")
     if "mcp" in types:
         destinations.append("mcp")
+    if "tool" in types:
+        destinations.append("tool_executor")
     return destinations or ["kb_search"]
 
 
 def join_retrieval_node(state: AgentState) -> dict:
     return {}
+
+
+def _make_route_after_judge(available: frozenset[str]):
+    """Closure: route về node lỗi, chỉ route tới node thực sự có trong graph."""
+    def route_after_judge(state: AgentState) -> str:
+        if state.get("judge_verdict") != "FAIL":
+            return "end"
+        error_type = state.get("judge_error_type", "")
+        if error_type == "RETRIEVAL_ERROR" and "kb_search" in available:
+            return "kb_search"
+        if error_type == "TOOL_ERROR" and "tool_executor" in available:
+            return "tool_executor"
+        if error_type == "PLANNING_ERROR" and "planner" in available:
+            return "planner"
+        return "end"  # DATA_QUALITY hoặc node không tồn tại trong graph
+    return route_after_judge
 
 
 def build_graph(flow_nodes: list[dict] | None = None, flow_edges: list[dict] | None = None):
@@ -107,7 +129,7 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict]):
     builder.add_edge("rewrite", "planner")
 
     # Tìm retrieval nodes mà planner nối tới trên canvas
-    retrieval_nodes = {tgt for src, tgt in type_edges if src == "planner" and tgt in ("kb_search", "mcp")}
+    retrieval_nodes = {tgt for src, tgt in type_edges if src == "planner" and tgt in ("kb_search", "mcp", "tool_executor")}
     non_retrieval_planner_targets = {tgt for src, tgt in type_edges if src == "planner" and tgt not in ("kb_search", "mcp")}
 
     if len(retrieval_nodes) > 1:
@@ -129,13 +151,21 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict]):
     else:
         builder.add_edge("planner", END)
 
+    has_judge     = "judge" in node_types
+    has_responder = "responder" in node_types
+
     # Tính incoming edges của từng node (để detect fan-in)
     incoming: dict[str, set[str]] = defaultdict(set)
     for src, tgt in type_edges:
         incoming[tgt].add(src)
 
     # Node có >1 nguồn (không tính retrieval_nodes đã xử lý) → cần join tự động
+    # responder và judge được xử lý thủ công qua join_end → bỏ qua trong generic loop
     handled_sources = retrieval_nodes | {"planner", "guardrail_input", "rewrite"}
+    if has_responder:
+        handled_sources = handled_sources | {"responder"}
+    if has_judge:
+        handled_sources = handled_sources | {"judge"}
     fan_in_nodes = {
         tgt for tgt, srcs in incoming.items()
         if len(srcs) > 1 and tgt not in handled_sources and tgt in node_types
@@ -163,12 +193,12 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict]):
     has_outgoing = {src for src, _ in type_edges}
     terminal_nodes = all_canvas_types - handled_sources - has_outgoing
 
-    # Suggestion chạy song song với responder (nếu responder có trong graph)
-    if "responder" in terminal_nodes:
+    # Suggestion chạy song song với responder; judge (nếu có) chạy sau join_end
+    if has_responder:
         builder.add_node("suggestion", suggestion_node)
         builder.add_node("join_end", lambda state: {})
 
-        # Tìm source của responder để fan-out suggestion từ cùng điểm
+        # Fan-out suggestion từ node ngay trước responder (thường là reranker)
         responder_sources = {src for src, tgt in type_edges if tgt == "responder"}
         for src in responder_sources:
             builder.add_conditional_edges(
@@ -177,8 +207,25 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict]):
 
         builder.add_edge("responder", "join_end")
         builder.add_edge("suggestion", "join_end")
-        builder.add_edge("join_end", END)
+
+        if has_judge:
+            builder.add_edge("join_end", "judge")
+
+            # Judge route: chỉ loop về node thực sự có trong graph
+            available_for_judge = frozenset(
+                {"planner"} | (node_types & {"kb_search", "tool_executor", "mcp"})
+            )
+            judge_path_map = {t: t for t in available_for_judge}
+            judge_path_map["end"] = END
+            builder.add_conditional_edges(
+                "judge", _make_route_after_judge(available_for_judge), judge_path_map
+            )
+        else:
+            builder.add_edge("join_end", END)
+
         terminal_nodes = terminal_nodes - {"responder"}
+        if has_judge:
+            terminal_nodes = terminal_nodes - {"judge"}
 
     for tn in terminal_nodes:
         builder.add_edge(tn, END)
