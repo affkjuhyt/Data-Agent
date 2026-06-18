@@ -13,8 +13,7 @@ import { DetailDrawer } from '../../shared/DetailDrawer';
 import WorkflowBuilder from '../workflow/Builder';
 import { Bot, Terminal, Sliders, Activity, Zap, Plus, Settings } from 'lucide-react';
 import { cn } from '../../../lib/utils';
-
-const FLOW_BUILDER_URL = (import.meta as any).env?.VITE_FLOW_BUILDER_URL ?? 'http://localhost:8002';
+import { FLOW_BUILDER_URL } from '../../../lib/config';
 
 export type RegistryView = 'OVERVIEW' | 'CLI' | 'CONFIG' | 'TRACES' | 'RUNS';
 

@@ -9,8 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../../lib/utils';
 import { AgentType, AgentStatus } from '../../../types/agent';
 import { MOCK_AGENTS } from '../../../constants/agentMock';
-
-const FLOW_BUILDER_URL = (import.meta as any).env?.VITE_FLOW_BUILDER_URL ?? 'http://localhost:8002';
+import { FLOW_BUILDER_URL } from '../../../lib/config';
 
 interface ApiAgent { id: string; name: string; description: string; published_version_id: string | null; draft_version_id: string | null; created_at: string; }
 

@@ -37,6 +37,7 @@ test-results/
 
 .env*
 !.env.example
+!infra/.env.kb-testing.example
 .env.local
 
 .claude/

@@ -195,8 +195,14 @@ Three layers of defense, two active now and one opt-in:
 
 After `docker compose up -d` and `kong-setup.sh`, run:
 
-```powershell
+```bash
+# Linux / macOS / Git Bash
 bash infra/scripts/verify_kong_admin_locked.sh
+```
+
+```powershell
+# Windows PowerShell (no Git Bash needed)
+powershell -ExecutionPolicy Bypass -File infra/scripts/verify_kong_admin_locked.ps1
 ```
 
 Exits 0 if all three checks pass (host refused, default-net refused,
@@ -499,7 +505,13 @@ Nếu cert mTLS đã được tạo (`infra/certs/kong-client.crt` tồn tại),
 ## Bước 4 — Setup Kafka ACL (chạy một lần)
 
 ```bash
+# Linux / macOS / Git Bash
 bash infra/kafka/kafka-setup.sh
+```
+
+```powershell
+# Windows PowerShell (no Git Bash needed)
+powershell -ExecutionPolicy Bypass -File infra/kafka/kafka-setup.ps1
 ```
 
 Tạo topic `audit.auth.events` (3 partitions, retention 30 ngày) và gán ACL:
@@ -511,7 +523,13 @@ Tạo topic `audit.auth.events` (3 partitions, retention 30 ngày) và gán ACL:
 ## Bước 5 — Setup mTLS certs (tùy chọn)
 
 ```bash
+# Linux / macOS / Git Bash
 bash infra/certs/gen-certs.sh
+```
+
+```powershell
+# Windows PowerShell (no Git Bash needed)
+powershell -ExecutionPolicy Bypass -File infra/certs/gen-certs.ps1
 ```
 
 Tạo trong `infra/certs/` (git-ignored):

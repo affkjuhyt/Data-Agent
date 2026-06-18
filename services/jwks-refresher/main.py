@@ -20,11 +20,13 @@ import time
 import urllib.request
 
 import requests
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicNumbers
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [jwks-refresher] %(levelname)s %(message)s",
-)
+from shared.atomic_io import atomic_write_text
+from shared.observability import setup_observability
+
+setup_observability("jwks-refresher")
 log = logging.getLogger("jwks-refresher")
 
 KONG_ADMIN = os.environ.get("KONG_ADMIN_URL", "http://kong:8001")
@@ -50,9 +52,7 @@ def _load_last_kid() -> str:
 
 def _save_last_kid(kid: str) -> None:
     try:
-        os.makedirs(os.path.dirname(_STATE_FILE) or ".", exist_ok=True)
-        with open(_STATE_FILE, "w") as f:
-            f.write(kid)
+        atomic_write_text(_STATE_FILE, kid)
     except Exception as e:
         log.warning("Could not persist last_kid to %s: %s", _STATE_FILE, e)
 
@@ -60,21 +60,6 @@ def _save_last_kid(kid: str) -> None:
 def b64url_to_int(s: str) -> int:
     s += "=" * (-len(s) % 4)
     return int.from_bytes(base64.urlsafe_b64decode(s), "big")
-
-
-def enc_len(l: int) -> bytes:
-    if l < 128:
-        return bytes([l])
-    if l < 256:
-        return bytes([0x81, l])
-    return bytes([0x82, l >> 8, l & 0xFF])
-
-
-def enc_int(n: int) -> bytes:
-    b = n.to_bytes((n.bit_length() + 7) // 8, "big")
-    if b[0] & 0x80:
-        b = b"\x00" + b
-    return b"\x02" + enc_len(len(b)) + b
 
 
 def jwks_to_pem(jwks_url: str) -> tuple[str, str]:
@@ -99,17 +84,15 @@ def jwks_to_pem(jwks_url: str) -> tuple[str, str]:
     n = b64url_to_int(key["n"])
     e = b64url_to_int(key["e"])
 
-    rsa_pub = b"\x30" + enc_len(len(enc_int(n) + enc_int(e))) + enc_int(n) + enc_int(e)
-    oid = b"\x30\x0d\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x01\x01\x05\x00"
-    bitstring = b"\x03" + enc_len(len(rsa_pub) + 1) + b"\x00" + rsa_pub
-    spki = b"\x30" + enc_len(len(oid) + len(bitstring)) + oid + bitstring
-
-    b64 = base64.b64encode(spki).decode()
-    pem = (
-        "-----BEGIN PUBLIC KEY-----\n"
-        + "\n".join(b64[i : i + 64] for i in range(0, len(b64), 64))
-        + "\n-----END PUBLIC KEY-----"
-    )
+    # Build the public key from the JWK modulus/exponent and let cryptography
+    # emit the SubjectPublicKeyInfo PEM. Hand-rolling DER/ASN.1 here is what the
+    # previous implementation did — one wrong length byte produced a malformed
+    # PEM that Kong silently rejected.
+    public_key = RSAPublicNumbers(e=e, n=n).public_key()
+    pem = public_key.public_bytes(
+        encoding=Encoding.PEM,
+        format=PublicFormat.SubjectPublicKeyInfo,
+    ).decode()
     return kid, pem
 
 

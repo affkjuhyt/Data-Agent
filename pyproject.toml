@@ -67,7 +67,6 @@ branch = true
 source = ["app", "services", "basemodel", "model"]
 omit = [
     "*/tests/*",
-    "*/archive/*",
     "*/__pycache__/*",
     "*/migrations/*",
     "*/alembic/*",
@@ -136,7 +135,6 @@ no_implicit_optional = true
 check_untyped_defs = true
 ignore_missing_imports = true
 exclude = [
-    "archive/",
     "alembic/versions/",
     "node_modules/",
     "dist/",

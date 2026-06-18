@@ -177,24 +177,31 @@ services:
       KONG_ADMIN_ACCESS_LOG: /dev/stdout
       KONG_PROXY_ERROR_LOG: /dev/stderr
       KONG_ADMIN_ERROR_LOG: /dev/stderr
-      # Admin API binds ONLY to the kong-admin-net interface (172.30.0.10).
+      # Admin API binds ONLY to the kong-admin-net interface (KONG_ADMIN_IP).
       # Containers on the default network cannot reach this — they see
       # connection-refused. Host cannot reach this either (no port mapping
       # AND admin-net is `internal: true`). See docs/auth-runbook.md
-      # "Kong admin hardening".
-      KONG_ADMIN_LISTEN: "172.30.0.10:8001"
+      # "Kong admin hardening". IP + subnet come from .env (single source of
+      # truth) so changing the CIDR is a one-place edit.
+      KONG_ADMIN_LISTEN: "${KONG_ADMIN_IP:-172.30.0.10}:8001"
       KONG_PROXY_LISTEN: "0.0.0.0:8000"
       KONG_PLUGINS: bundled,aeroflow-jwks
     networks:
       default: {}
       kong-admin-net:
-        ipv4_address: 172.30.0.10
+        # Clients resolve `kong-admin` on this network — a network-scoped alias
+        # that deterministically returns the admin-net IP, so no client needs
+        # to hardcode the IP. The default `kong` hostname is NOT used because it
+        # can resolve to the default-net IP where admin isn't listening.
+        aliases:
+          - kong-admin
+        ipv4_address: ${KONG_ADMIN_IP:-172.30.0.10}
     ports:
       # Proxy port — public, where Kong serves API traffic.
       - "8000:8000"
       # 8900:8001 (admin API) intentionally removed. Admin is now reachable
       # only from containers on kong-admin-net. To inspect admin from host:
-      #   docker exec dataagent-kong curl -sf http://172.30.0.10:8001/status
+      #   docker exec dataagent-kong curl -sf http://"$KONG_ADMIN_IP":8001/status
     depends_on:
       postgres:
         condition: service_healthy
@@ -255,9 +262,12 @@ services:
       - ../infra/kong:/scripts:ro
       - ../infra/certs:/certs
     environment:
-      # Kong admin lives at this IP on kong-admin-net — see hardening section
-      # in docs/auth-runbook.md.
-      KONG_ADMIN_URL: http://172.30.0.10:8001
+      # Reach Kong admin via the `kong-admin` network alias — see hardening
+      # section in docs/auth-runbook.md.
+      KONG_ADMIN_URL: http://kong-admin:8001
+      # Admin subnet for the defense-in-depth ip-restriction in kong-setup.sh —
+      # kept in lockstep with the network CIDR via .env.
+      KONG_ADMIN_SUBNET: ${KONG_ADMIN_SUBNET:-172.30.0.0/24}
       KEYCLOAK_URL: http://aeroflow-keycloak-lb:8080
       KEYCLOAK_REALM: aeroflow
       ENABLE_ADMIN_KEY_AUTH: ${ENABLE_ADMIN_KEY_AUTH:-0}
@@ -288,3 +298,14 @@ services:
     volumes:
       - openbao_data:/openbao/data
       - ../infra/openbao:/openbao/config:ro
+
+networks:
+  # Isolated, host-unreachable network for Kong's Admin API. `internal: true`
+  # means no outbound/host routing — only attached containers can talk to it.
+  # The subnet is pinned from .env so KONG_ADMIN_IP is guaranteed to live
+  # inside it; changing the CIDR is a one-place edit in .env (M3 fix).
+  kong-admin-net:
+    internal: true
+    ipam:
+      config:
+        - subnet: ${KONG_ADMIN_SUBNET:-172.30.0.0/24}

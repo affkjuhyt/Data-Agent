@@ -293,7 +293,7 @@ services:
       - ./model-service/models:/app/models   # HF_HOME=/app/models — reuse cached weights
     deploy:
       resources:
-        limits: { cpus: "2.0", memory: 1536M }
+        limits: { cpus: "2.0", memory: 1024M }
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 30s

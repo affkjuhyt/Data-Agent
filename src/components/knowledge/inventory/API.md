@@ -81,7 +81,7 @@ Called when the CHUNKS tab is active and the document is SILVER or GOLD layer.
         "version_number": "v1.2",
         "create_at": "2026-05-23 15:30:10 UTC",
         "status": "Active",
-        "embedding_models": "text-embedding-3-small (1536d)",
+        "embedding_models": "text-embedding-3-small (1024)",
         "entities": ["GlobalCorp", "Failover Cluster"],
         "intent": "Explain multi-cluster failover latency-target parameters",
         "text": "Full text of this version..."

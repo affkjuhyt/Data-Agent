@@ -1,15 +1,14 @@
-import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from auth_core import startup as run_startup_tasks
 from routers import api_keys, approvals, governance, health, ip_allowlist, secrets
-
-structlog.configure(processors=[structlog.processors.JSONRenderer()])
+from shared.observability import setup_observability
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="auth-api", docs_url="/api/auth/docs")
+    setup_observability("auth-api", app)
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
     app.include_router(health.router)

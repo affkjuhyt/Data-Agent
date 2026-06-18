@@ -238,7 +238,7 @@ curl -sf -X PUT "$KONG_ADMIN/services/kb-backend/routes/kb-backend-route" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "kb-backend-route",
-    "paths": ["/api/data","/api/knowledge","/api/pipeline"],
+    "paths": ["/api/data","/api/knowledge","/api/pipeline","/api/fleet"],
     "strip_path": false,
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
@@ -434,11 +434,12 @@ fi
 if [ "${ENABLE_ADMIN_KEY_AUTH:-0}" = "1" ]; then
   echo "🔒 Phase 3: registering Kong-fronting-Kong admin proxy with key-auth..."
 
-  # Kong admin is bound to 172.30.0.10:8001 on the kong-admin-net interface.
+  # Kong admin is bound to KONG_ADMIN_IP:8001 on the kong-admin-net interface.
   # From Kong's OWN container, 127.0.0.1:8001 also reaches it iff KONG_ADMIN_LISTEN
   # includes a loopback binding — currently it doesn't. So upstream the service
-  # to the explicit admin-net IP, which is reachable from Kong's data plane.
-  ADMIN_UPSTREAM="${KONG_ADMIN_UPSTREAM:-http://172.30.0.10:8001}"
+  # to the `kong-admin` alias, which resolves to the admin-net IP from Kong's
+  # data plane without hardcoding it.
+  ADMIN_UPSTREAM="${KONG_ADMIN_UPSTREAM:-http://kong-admin:8001}"
 
   curl -sf -X PUT "$KONG_ADMIN/services/kong-admin-proxy" \
     -H "Content-Type: application/json" \
@@ -459,8 +460,10 @@ if [ "${ENABLE_ADMIN_KEY_AUTH:-0}" = "1" ]; then
     "key-auth"
 
   # Optional: also restrict by IP to defense-in-depth even if key leaks.
+  # Subnet comes from KONG_ADMIN_SUBNET (.env) so it stays in lockstep with the
+  # network CIDR — no silent break if the CIDR changes.
   upsert_plugin "$KONG_ADMIN/routes/kong-admin-route/plugins" \
-    '{"name":"ip-restriction","config":{"allow":["172.30.0.0/24"]}}' \
+    "{\"name\":\"ip-restriction\",\"config\":{\"allow\":[\"${KONG_ADMIN_SUBNET:-172.30.0.0/24}\"]}}" \
     "ip-restriction"
 
   # Helper: idempotent consumer + key creation. Writes keys to admin-keys.env

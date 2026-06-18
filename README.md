@@ -416,7 +416,6 @@ Separate intent-specific Docker paths also exist:
 - KB-UI integration: [`infra/docker-compose.kb_e2e.yml`](./infra/docker-compose.kb_e2e.yml)
 - KB end-to-end (memory-capped + helper): [`infra/docker-compose.kb_and_authen.yml`](./infra/docker-compose.kb_and_authen.yml) + [`infra/kb_and_authen.ps1`](./infra/kb_and_authen.ps1)
 - Standalone model experiment: [`model/ollama/docker/docker-compose.yml`](./model/ollama/docker/docker-compose.yml)
-- Legacy archive: [`archive/docker-legacy/`](./archive/docker-legacy)
 
 ### Common URLs (Docker stack)
 
