@@ -31,6 +31,7 @@ import { AssetInventory } from './inventory/AssetInventory';
 import { PolicyCenter } from './policy/PolicyCenter';
 import { KnowledgeBaseCenter } from './knowledge-base/KnowledgeBaseCenter';
 import { WarehouseWizard } from './warehouse/WarehouseWizard';
+import { WarehouseCenter } from './warehouse/WarehouseCenter';
 import { KnowledgeHubView } from './knowledge-hub/KnowledgeHub';
 import { TrashCenter } from './trash/TrashCenter';
 import { KnowledgeDocument } from '../../types';
@@ -39,7 +40,7 @@ import { apiGet, apiMutate } from '../../lib/apiClient';
 import { usePromotionQueue } from './inventory/usePromotionQueue';
 import { PromotionProgressOverlay } from './inventory/PromotionProgressOverlay';
 
-type KnowledgeTabId = 'FLEET' | 'INGEST' | 'INVENTORY' | 'CONFLICTS' | 'KNOWLEDGE' | 'POLICY' | 'KNOWLEDGE_BASE' | 'TRASH';
+type KnowledgeTabId = 'FLEET' | 'INGEST' | 'INVENTORY' | 'CONFLICTS' | 'KNOWLEDGE' | 'WAREHOUSE' | 'POLICY' | 'KNOWLEDGE_BASE' | 'TRASH';
 
 const KnowledgeOpsCenter = () => {
   const { updateDocument } = useAppState();
@@ -91,6 +92,7 @@ const KnowledgeOpsCenter = () => {
     { id: 'FLEET',     label: 'Fleet Overview', icon: Database },
     { id: 'INVENTORY', label: 'Data Layers',    icon: Layers },
     { id: 'KNOWLEDGE', label: 'Knowledge Hub',  icon: Network },
+    { id: 'WAREHOUSE', label: 'Warehouses',     icon: ServerCog },
     { id: 'CONFLICTS', label: 'Conflicts',      icon: ShieldAlert, count: conflictCount ?? undefined },
     { id: 'POLICY',    label: 'Policies',       icon: ShieldCheck },
     { id: 'KNOWLEDGE_BASE', label: 'Knowledge Groups', icon: Boxes },
@@ -118,6 +120,8 @@ const KnowledgeOpsCenter = () => {
       );
       case 'KNOWLEDGE':
         return <KnowledgeHubView />;
+      case 'WAREHOUSE':
+        return <WarehouseCenter onAddWarehouse={() => setShowWarehouseWizard(true)} />;
       case 'CONFLICTS':  return <ConflictWorkspace />;
       case 'POLICY':     return <PolicyCenter />;
       case 'KNOWLEDGE_BASE': return <KnowledgeBaseCenter />;
@@ -164,7 +168,7 @@ const KnowledgeOpsCenter = () => {
           onCancel={() => setShowWarehouseWizard(false)}
           onComplete={() => {
             setShowWarehouseWizard(false);
-            setActiveSubTab('KNOWLEDGE');
+            setActiveSubTab('WAREHOUSE');
           }}
         />
       </DetailDrawer>

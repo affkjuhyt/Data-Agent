@@ -1,96 +1,14 @@
 """Business logic for warehouse connection CRUD."""
 import logging
-import uuid
 from typing import Optional
 
 from basemodel.services_databaseconnector.postgres_model import (
-    KBWarehouseInsert, KBWarehouseDelete,
+    KBWarehouseDelete,
     ReadJoinRequest, WhereFilter,
 )
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import KBWarehouseORM
 from fastapi import HTTPException
 
 log = logging.getLogger(__name__)
-
-
-async def save_warehouse_connection(
-    postgres,
-    tenant_id: str,
-    connection_name: str,
-    warehouse_type: str,
-    connection_metadata: dict,
-    created_by: str,
-) -> dict:
-    """
-    Save a new warehouse connection to the database.
-
-    Args:
-        postgres: PostgresClient instance
-        tenant_id: Tenant ID
-        connection_name: User-friendly name for the connection
-        warehouse_type: "Snowflake" | "Databricks"
-        connection_metadata: {account_identifier, database, schema, warehouse, user, password, role}
-        created_by: User ID who created this connection
-
-    Returns:
-        {"warehouse_id": str, "connection_name": str}
-    """
-    warehouse_id = f"wh-{uuid.uuid4().hex[:8]}"
-
-    try:
-        resp = await postgres.insert(KBWarehouseInsert(
-            warehouse_id=warehouse_id,
-            tenant_id=tenant_id,
-            name=connection_name,
-            warehouse_type=warehouse_type,
-            connection_metadata=connection_metadata,
-            created_by=created_by,
-        ))
-        if resp.code != 200:
-            log.error("save_warehouse_connection: DB error: %s", resp.error)
-            raise HTTPException(status_code=500, detail="Failed to save warehouse connection")
-
-        log.info("Saved warehouse connection %s type=%s", warehouse_id, warehouse_type)
-        return {
-            "warehouse_id": warehouse_id,
-            "connection_name": connection_name,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.exception("Failed to save warehouse connection: %s", e)
-        raise HTTPException(status_code=500, detail="Failed to save warehouse connection")
-
-
-async def save_warehouse_table_schema(
-    postgres,
-    warehouse_id: str,
-    table_name: str,
-    table_schema: dict,
-) -> dict:
-    """
-    Save table schema metadata for a warehouse.
-
-    Args:
-        postgres: PostgresClient instance
-        warehouse_id: Warehouse ID
-        table_name: Name of the table
-        table_schema: {columns: [{name, type, nullable, ...}]}
-
-    Returns:
-        {"table_name": str, "columns": int}
-    """
-    try:
-        # TODO: Insert into KBWarehouseTableSchema ORM table
-        # This will store the table metadata for querying later
-        log.info("Saved table schema for %s.%s", warehouse_id, table_name)
-        return {
-            "table_name": table_name,
-            "columns": len(table_schema.get("columns", [])),
-        }
-    except Exception as e:
-        log.exception("Failed to save table schema: %s", e)
-        raise HTTPException(status_code=500, detail="Failed to save table schema")
 
 
 async def get_warehouse_connection(postgres, warehouse_id: str) -> Optional[dict]:

@@ -190,8 +190,9 @@ ON CONFLICT (data_id) DO NOTHING;
 --    only in KBWarehouse and are merged into the inventory listing from there.
 --    added_by in the UI is read from the active config's created_by.) ───────────
 
-INSERT INTO "KBWarehouse" (warehouse_id, service, description) VALUES
-    ('40000000-0000-0001-0000-000000000001', 'snowflake', 'Snowflake analytics warehouse')
+INSERT INTO "KBWarehouse" (warehouse_id, tenant_id, service, description) VALUES
+    ('40000000-0000-0001-0000-000000000001', 'a0000000-0000-0000-0000-000000000001',
+     'snowflake', 'Snowflake analytics warehouse')
 ON CONFLICT (warehouse_id) DO NOTHING;
 
 INSERT INTO "KBWarehouseConfig" (config_id, warehouse_id, version_number, is_active, config, created_by) VALUES

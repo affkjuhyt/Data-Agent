@@ -2,13 +2,15 @@
 // (`?source=doc,media,web`), which maps them to KBData.source_type values
 // (media → image+video) and does the `WHERE source_type IN (...)` filtering.
 // Multi-select, default all-on — there is no "All" chip (all-on === everything).
-export type SourceCategory = 'doc' | 'media' | 'web' | 'warehouse';
+// Warehouses are managed in their own Warehouses sub-tab (WarehouseCenter), not in
+// the Data Layer / Knowledge Hub document listings — so 'warehouse' is intentionally
+// NOT a browsable source category here.
+export type SourceCategory = 'doc' | 'media' | 'web';
 
 export const SOURCE_CATEGORIES: { id: SourceCategory; label: string }[] = [
   { id: 'doc',       label: 'Doc' },
   { id: 'media',     label: 'Media' },
   { id: 'web',       label: 'Web' },
-  { id: 'warehouse', label: 'Warehouse' },
 ];
 
 export const ALL_SOURCE_CATEGORIES: SourceCategory[] = SOURCE_CATEGORIES.map(c => c.id);

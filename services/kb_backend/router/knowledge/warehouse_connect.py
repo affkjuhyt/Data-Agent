@@ -137,8 +137,9 @@ async def select_warehouse_tables(
             "columns": col_schema.get("columns", []),
         })
 
-    # 4. Create KBWarehouse record
+    # 4. Create KBWarehouse record (tenant-scoped — owned by the caller's tenant)
     wh_ins = await postgres.insert(KBWarehouseInsert(
+        tenant_id=ctx["tenant_id"],
         service=body.warehouse_type,
         description=body.connection_name,
     ))

@@ -33,7 +33,6 @@ const DB_SOURCE_CHIPS: { id: SourceCategory; label: string; icon: React.ElementT
   { id: 'doc',       label: 'Document',  icon: FileText  },
   { id: 'media',     label: 'Media',     icon: Video     },
   { id: 'web',       label: 'Web',       icon: Globe     },
-  { id: 'warehouse', label: 'Warehouse', icon: ServerCog },
 ];
 function normalizeWConfig(raw: Record<string, unknown>, idx: number): WConfig {
   const tables = ((raw.tables ?? []) as Array<Record<string, unknown>>).map((t, ti) => ({

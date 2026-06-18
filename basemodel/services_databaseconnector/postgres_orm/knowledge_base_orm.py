@@ -97,6 +97,9 @@ class KBDataORM(Base):
         # share an inserted_at (bulk same-timestamp inserts).
         Index("idx_kbdata_keyset", "tenant_id", "current_tier", "inserted_at", "data_id"),
         Index("idx_kbdata_keyset_all", "tenant_id", "inserted_at", "data_id"),
+        # Document name is unique PER TENANT, not globally — two tenants may each
+        # have a document with the same name.
+        Index("idx_kbdata_tenant_name", "tenant_id", "name", unique=True),
     )
 
     data_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -107,7 +110,7 @@ class KBDataORM(Base):
     knowledge_base_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("KBKnowledgeBase.knowledge_base_id"), nullable=True, index=True,
     )
-    name: Mapped[str] = mapped_column(String(512), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(512), nullable=False)
     extension: Mapped[str] = mapped_column(String(32), nullable=False)
     language: Mapped[str] = mapped_column(String(32), nullable=False)
     source_type: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -251,10 +254,14 @@ class KBWarehouseORM(Base):
     __tablename__ = "KBWarehouse"
 
     __table_args__ = (
+        Index("idx_kbwarehouse_tenant", "tenant_id"),
         Index("idx_kbwarehouse_inserted_at_desc", text("inserted_at DESC")),
     )
 
     warehouse_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Warehouses are tenant-scoped like every other asset (a tenant only sees and
+    # manages its own warehouse connections).
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
     service: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)

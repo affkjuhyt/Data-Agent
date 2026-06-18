@@ -93,6 +93,7 @@ async def ingest_bronze(
     # message instead of letting the insert blow up with a generic 500.
     postgres = svc(request, "postgres")
     dup = await postgres.read(ReadJoinRequest(
+        tenant_id=ctx["tenant_id"],
         joins_table=["KBData"],
         filters=[WhereFilter(table_name="KBData", column_name="name", value=name)],
         limit=1,
@@ -181,6 +182,7 @@ async def ingest_bronze_web(
     # KBData.name is globally unique — reject duplicates up front (same as files).
     postgres = svc(request, "postgres")
     dup = await postgres.read(ReadJoinRequest(
+        tenant_id=ctx["tenant_id"],
         joins_table=["KBData"],
         filters=[WhereFilter(table_name="KBData", column_name="name", value=name)],
         limit=1,

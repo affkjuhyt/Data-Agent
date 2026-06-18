@@ -1,9 +1,10 @@
 """Business logic for warehouse config CRUD."""
+import base64
 import datetime
 import logging
 import uuid
 from fastapi import HTTPException
-from sqlalchemy import select as sa_select, update as sa_update
+from sqlalchemy import select as sa_select, update as sa_update, func as sa_func
 
 from basemodel.services_databaseconnector.postgres_model import (
     ReadJoinRequest, WhereFilter,
@@ -13,9 +14,83 @@ from basemodel.services_databaseconnector.postgres_model import (
 from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBDataORM, KBWarehouseConfigORM, KBWarehouseORM,
 )
+from services.kb_backend.pipeline.kb_ui_operation.pagination import PAGE_SIZE, build_cursor_page
 from services.kb_backend.UI_model.response import to_string
 
 log = logging.getLogger(__name__)
+
+
+def _decode_offset(cursor: str | None) -> int:
+    """Opaque offset cursor. Warehouses are low-cardinality, so a simple
+    LIMIT/OFFSET page (encoded as base64) is plenty — no keyset needed."""
+    if not cursor:
+        return 0
+    try:
+        return max(0, int(base64.urlsafe_b64decode(cursor.encode()).decode()))
+    except Exception:
+        return 0
+
+
+async def list_warehouses(postgres, tenant_id: str, cursor: str | None = None) -> dict:
+    """Paginated, tenant-scoped warehouse list (own tables, not KBData). Returns the
+    same row shape the document listing used to merge in, wrapped in the cursor-page
+    envelope so the UI's useCursorPagination hook drives it like every other list."""
+    offset = _decode_offset(cursor)
+    tenant_uuid = uuid.UUID(tenant_id)
+    async with postgres.get_client() as session:
+        total = await session.scalar(
+            sa_select(sa_func.count()).select_from(KBWarehouseORM)
+            .where(
+                KBWarehouseORM.tenant_id == tenant_uuid,
+                KBWarehouseORM.is_deleted == False,  # noqa: E712
+            )
+        ) or 0
+        rows = (await session.execute(
+            sa_select(KBWarehouseORM)
+            .where(
+                KBWarehouseORM.tenant_id == tenant_uuid,
+                KBWarehouseORM.is_deleted == False,  # noqa: E712
+            )
+            .order_by(KBWarehouseORM.inserted_at.desc(), KBWarehouseORM.warehouse_id.desc())
+            .offset(offset).limit(PAGE_SIZE)
+        )).scalars().all()
+
+        wh_ids = [w.warehouse_id for w in rows]
+        creators: dict[str, str] = {}
+        if wh_ids:
+            crows = (await session.execute(
+                sa_select(KBWarehouseConfigORM.warehouse_id, KBWarehouseConfigORM.created_by)
+                .where(
+                    KBWarehouseConfigORM.warehouse_id.in_(wh_ids),
+                    KBWarehouseConfigORM.is_active == True,  # noqa: E712
+                )
+            )).all()
+            creators = {str(wid): (cb or "") for wid, cb in crows}
+
+    docs = []
+    for w in rows:
+        service = (w.service or "").lower()
+        docs.append({
+            "data_id":      str(w.warehouse_id),
+            "name":         w.description or f"Warehouse ({service.title()})",
+            "source_type":  "warehouse",
+            "extension":    None,
+            "current_tier": "gold",
+            "status":       "PUBLISHED",
+            "added_by":     creators.get(str(w.warehouse_id), ""),
+            "added_on":     str(w.created_at or ""),
+            "abstract":     None,
+            "metadata": {
+                "doc_type":       f"Warehouse/{service}",
+                "language":       None,
+                "access_role":    None,
+                "warehouse_type": service,
+            },
+        })
+
+    has_next = offset + PAGE_SIZE < total
+    next_cursor = base64.urlsafe_b64encode(str(offset + PAGE_SIZE).encode()).decode() if has_next else None
+    return build_cursor_page(docs, total, has_next, next_cursor)
 
 
 async def _assert_tenant(postgres, doc_id: str, tenant_id: str) -> None:
@@ -33,12 +108,13 @@ async def _assert_tenant(postgres, doc_id: str, tenant_id: str) -> None:
         )
         if row is not None:
             return
-        # Warehouse records (created via wizard) live in KBWarehouse without tenant_id;
-        # allow if the record exists at all.
+        # Warehouse records (created via wizard) live in KBWarehouse — tenant-scoped,
+        # so only the owning tenant may manage its configs.
         wh_row = await session.scalar(
             sa_select(KBWarehouseORM.warehouse_id)
             .where(
                 KBWarehouseORM.warehouse_id == doc_uuid,
+                KBWarehouseORM.tenant_id == uuid.UUID(tenant_id),
                 KBWarehouseORM.is_deleted == False,  # noqa: E712
             )
             .limit(1)
