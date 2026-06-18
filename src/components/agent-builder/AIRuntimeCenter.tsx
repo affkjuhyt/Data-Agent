@@ -4,6 +4,7 @@ import { Zap } from 'lucide-react';
 import { useAppState } from '../../AppStateContext';
 import { AgentRuntimeView, RegistryView } from './agents/AgentRuntime';
 import KnowledgeOpsCenter from '../knowledge/KnowledgeOpsCenter';
+import ReviewCenter from './ReviewCenter';
 
 const Placeholder = ({ label }: { label: string }) => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -65,6 +66,7 @@ const AIRuntimeCenter = () => {
     if (activeSubTab === 'KNOWLEDGE') return <KnowledgeOpsCenter />;
     if (activeSubTab === 'ROUTER')    return <Placeholder label="Router" />;
     if (activeSubTab === 'TOOLS')     return <Placeholder label="Tools" />;
+    if (activeSubTab === 'REVIEWS')   return <ReviewCenter />;
 
     // AGENTS, NEW_AGENT, PROVISION → AgentRuntimeView
     return (

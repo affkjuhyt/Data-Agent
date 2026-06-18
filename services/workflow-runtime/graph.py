@@ -12,16 +12,18 @@ from nodes.sandbox.kb_search import kb_search_node
 from nodes.sandbox.mcp import mcp_node
 from nodes.sandbox.tool_executor import tool_executor_node
 from nodes.model_harness.judge import judge_node
+from nodes.model_harness.human_approval import human_approval_node
 
 NODE_TYPE_MAP = {
-    "planner":       planner_node,
-    "kb_search":     kb_search_node,
-    "mcp":           mcp_node,
-    "tool_executor": tool_executor_node,
-    "rrf_ranking":   rrf_ranking_node,
-    "reranker":      reranker_node,
-    "responder":     responder_node,
-    "judge":         judge_node,
+    "planner":          planner_node,
+    "kb_search":        kb_search_node,
+    "mcp":              mcp_node,
+    "tool_executor":    tool_executor_node,
+    "rrf_ranking":      rrf_ranking_node,
+    "reranker":         reranker_node,
+    "responder":        responder_node,
+    "judge":            judge_node,
+    "human_approval":   human_approval_node,
 }
 
 _DEFAULT_FLOW_NODES = [
@@ -79,14 +81,24 @@ def _make_route_after_judge(available: frozenset[str]):
     return route_after_judge
 
 
-def build_graph(flow_nodes: list[dict] | None = None, flow_edges: list[dict] | None = None):
+def _make_route_after_human_approval(targets: frozenset[str]):
+    def route_after_human_approval(state: AgentState) -> str:
+        if state.get("human_approved") is False:
+            return "end"
+        lst = list(targets)
+        return lst[0] if lst else "end"
+    return route_after_human_approval
+
+
+def build_graph(flow_nodes: list[dict] | None = None, flow_edges: list[dict] | None = None, checkpointer=None):
     return _build_dynamic_graph(
         flow_nodes or _DEFAULT_FLOW_NODES,
         flow_edges if flow_nodes else _DEFAULT_FLOW_EDGES,
+        checkpointer=checkpointer,
     )
 
 
-def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict]):
+def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict], checkpointer=None):
     # Build node id → nodeType map (chỉ lấy node có trong NODE_TYPE_MAP)
     id_to_type: dict[str, str] = {}
     for n in flow_nodes:
@@ -151,8 +163,9 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict]):
     else:
         builder.add_edge("planner", END)
 
-    has_judge     = "judge" in node_types
-    has_responder = "responder" in node_types
+    has_judge          = "judge" in node_types
+    has_responder      = "responder" in node_types
+    has_human_approval = "human_approval" in node_types
 
     # Tính incoming edges của từng node (để detect fan-in)
     incoming: dict[str, set[str]] = defaultdict(set)
@@ -160,12 +173,14 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict]):
         incoming[tgt].add(src)
 
     # Node có >1 nguồn (không tính retrieval_nodes đã xử lý) → cần join tự động
-    # responder và judge được xử lý thủ công qua join_end → bỏ qua trong generic loop
+    # responder, judge, human_approval được xử lý thủ công → bỏ qua trong generic loop
     handled_sources = retrieval_nodes | {"planner", "guardrail_input", "rewrite"}
     if has_responder:
         handled_sources = handled_sources | {"responder"}
     if has_judge:
         handled_sources = handled_sources | {"judge"}
+    if has_human_approval:
+        handled_sources = handled_sources | {"human_approval"}
     fan_in_nodes = {
         tgt for tgt, srcs in incoming.items()
         if len(srcs) > 1 and tgt not in handled_sources and tgt in node_types
@@ -227,7 +242,21 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict]):
         if has_judge:
             terminal_nodes = terminal_nodes - {"judge"}
 
+    if has_human_approval:
+        ha_targets = frozenset(
+            tgt for src, tgt in type_edges
+            if src == "human_approval" and tgt in node_types
+        )
+        ha_path_map = {t: t for t in ha_targets}
+        ha_path_map["end"] = END
+        builder.add_conditional_edges(
+            "human_approval",
+            _make_route_after_human_approval(ha_targets),
+            ha_path_map,
+        )
+        terminal_nodes = terminal_nodes - {"human_approval"}
+
     for tn in terminal_nodes:
         builder.add_edge(tn, END)
 
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer)

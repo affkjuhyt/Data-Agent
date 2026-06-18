@@ -17,7 +17,7 @@ from db import close_db, init_db
 from memory_middleware import close_qdrant, init_qdrant
 from redis_cache import init_redis, close_redis
 from mongo_client import close_mongo, init_mongo
-from routers import catalog, conversations, health, traces
+from routers import catalog, conversations, health, traces, reviews
 from services.database_connector.mongo_connector import client as mongo_client
 from services.database_connector.postgres_connector import client as pg_client
 from services.otel_set_up.tracing import setup_tracing
@@ -67,5 +67,6 @@ def create_app() -> FastAPI:
     app.include_router(catalog.router)
     app.include_router(conversations.router)
     app.include_router(traces.router)
+    app.include_router(reviews.router)
 
     return app

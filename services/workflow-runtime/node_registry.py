@@ -147,6 +147,12 @@ NODE_REGISTRY = {
             },
         },
     },
+    "human_approval": {
+        "display":  "Human Approval",
+        "category": "default",
+        "locked":   False,
+        "schema": {},
+    },
     "rrf_ranking": {
         "display":  "RRF Ranking",
         "category": "default",

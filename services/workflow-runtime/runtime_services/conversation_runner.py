@@ -7,6 +7,9 @@ import time
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.types import Command
+
 from config_loader import load_agent_config
 from db import create_conversation, get_messages, save_message, save_trace, validate_agent_tenant
 from redis_cache import cache_get_messages, cache_append_messages, cache_set_messages
@@ -23,6 +26,10 @@ from schemas import RunRequest
 logger = logging.getLogger(__name__)
 
 _graph_cache: dict[str, object] = {}
+_checkpointer = MemorySaver()
+
+# conv_id → {agent_id, query, interrupt_payload, suspended_at}
+_pending_reviews: dict[str, dict] = {}
 
 _SKIP_TRACE_NODES = frozenset({"LangGraph", "join_retrieval", "join_end"})
 
@@ -42,9 +49,15 @@ async def run_conversation_stream(req: RunRequest, request: Request):
 
     cache_key = cfg.get("agent_version_id") or req.agent_id
     if cache_key not in _graph_cache:
+        flow_nodes = cfg.get("flow_nodes") or None
+        flow_edges = cfg.get("flow_edges") or None
+        needs_checkpointer = flow_nodes and any(
+            n.get("data", {}).get("nodeType") == "human_approval"
+            for n in flow_nodes
+        )
         _graph_cache[cache_key] = build_graph(
-            cfg.get("flow_nodes") or None,
-            cfg.get("flow_edges") or None,
+            flow_nodes, flow_edges,
+            checkpointer=_checkpointer if needs_checkpointer else None,
         )
     graph = _graph_cache[cache_key]
     cfg["tenant_id"] = tenant_id
@@ -94,6 +107,8 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         "judge_verdict": None,
         "judge_error_type": None,
         "judge_reason": None,
+        "human_approved": None,
+        "human_note": None,
         "rrf_results": [],
         "reranked_chunks": [],
         "response": "",
@@ -149,8 +164,10 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         detected_language: str | None = None
         detected_intent: str | None = None
 
+        lg_config = {"callbacks": callbacks, "configurable": {"thread_id": conv_id}}
+
         try:
-            async for event in graph.astream_events(state, version="v2", config={"callbacks": callbacks}):
+            async for event in graph.astream_events(state, version="v2", config=lg_config):
                 kind = event["event"]
                 node = event.get("metadata", {}).get("langgraph_node", "")
 
@@ -277,6 +294,28 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                         full_response.append(fallback)
                         yield f"data: {json.dumps(fallback)}\n\n"
 
+            # Detect interrupt (human_approval node đang chờ reviewer)
+            try:
+                snap = graph.get_state(lg_config)
+                if snap.next:
+                    interrupt_payload = None
+                    for task in snap.tasks:
+                        for intr in getattr(task, "interrupts", []):
+                            interrupt_payload = intr.value
+                            break
+                    _pending_reviews[conv_id] = {
+                        "agent_id":   req.agent_id,
+                        "query":      req.query,
+                        "payload":    interrupt_payload,
+                        "suspended_at": time.monotonic(),
+                    }
+                    logger.info("human_approval | conv=%s suspended, waiting for review", conv_id)
+                    yield f"data: {json.dumps({'__pending_review': {'conv_id': conv_id, 'payload': interrupt_payload}})}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
+            except Exception:
+                pass  # graph không có checkpointer → skip
+
             if guardrail_triggered:
                 yield f"data: {json.dumps('Xin lỗi, tôi không thể trả lời câu hỏi này.')}\n\n"
             elif responder_options:
@@ -309,6 +348,8 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                         "language": detected_language,
                         "intent": detected_intent,
                         "responder_model": cfg.get("responder_model"),
+                        **({"pending_options": responder_options} if responder_options else {}),
+                        **({"pending_approval": conv_id} if conv_id and conv_id in _pending_reviews else {}),
                     },
                 )
                 await cache_append_messages(conv_id, [

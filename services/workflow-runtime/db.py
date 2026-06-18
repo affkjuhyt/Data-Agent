@@ -190,6 +190,34 @@ async def get_messages(conversation_id: str, tenant_id: str = _DEV_TENANT_ID, li
         return []
 
 
+async def get_messages_ui(conversation_id: str, tenant_id: str = _DEV_TENANT_ID, limit: int = 50) -> list[dict]:
+    """Load messages với metadata cho UI restoration."""
+    if not client.is_connected():
+        return []
+    try:
+        async with client.get_client(tenant_id=tenant_id) as session:
+            result = await session.execute(
+                select(MessagesORM.id, MessagesORM.role, MessagesORM.content, MessagesORM.msg_metadata)
+                .where(MessagesORM.conversation_id == UUID(conversation_id))
+                .order_by(MessagesORM.created_at.asc())
+                .limit(limit)
+            )
+            rows = result.fetchall()
+            return [
+                {
+                    "id":       str(row.id),
+                    "role":     row.role,
+                    "content":  (row.content or {}).get("text", ""),
+                    "metadata": row.msg_metadata or {},
+                }
+                for row in rows
+                if row.role in ("user", "assistant")
+            ]
+    except Exception as e:
+        logger.warning("get_messages_ui failed conv_id=%s: %s", conversation_id, e)
+        return []
+
+
 async def save_message(
     conversation_id: str,
     role: str,

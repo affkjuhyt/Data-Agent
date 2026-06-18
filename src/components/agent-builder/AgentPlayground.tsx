@@ -38,6 +38,12 @@ interface Message {
   routed?: { name: string; conf: number } | null;
 }
 
+interface PendingApproval {
+  convId: string;
+  placeholderId: string;
+  payload: { title: string; description: string; detail?: unknown } | null;
+}
+
 interface AgentOption {
   id: string;
   label: string;
@@ -568,10 +574,14 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
   const [traceSteps, setTraceSteps]   = useState<TraceStep[]>([]);
   const [traceLoading, setTraceLoading] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [pendingOptions, setPendingOptions] = useState<string[] | null>(null);
+  const [pendingOptions, setPendingOptions]     = useState<string[] | null>(null);
+  const [pendingApproval, setPendingApproval]   = useState<PendingApproval | null>(null);
+  const [approvalNote, setApprovalNote]         = useState('');
+  const [approvalLoading, setApprovalLoading]   = useState(false);
   const [customOptionInput, setCustomOptionInput] = useState('');
 
   useEffect(() => { if (!pendingOptions) setCustomOptionInput(''); }, [pendingOptions]);
+
 
   const bottomRef   = useRef<HTMLDivElement>(null);
   const selectorRef = useRef<HTMLDivElement>(null);
@@ -669,6 +679,16 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
               setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, suggestions: parsed.__suggestions } : m));
             } else if (parsed?.__options) {
               setPendingOptions(parsed.__options);
+            } else if (parsed?.__pending_review) {
+              setMessages(prev => prev.map(m => m.id === placeholderId
+                ? { ...m, content: '' }
+                : m,
+              ));
+              setPendingApproval({
+                convId:        parsed.__pending_review.conv_id ?? parsed.__pending_review,
+                placeholderId,
+                payload:       parsed.__pending_review.payload ?? null,
+              });
             } else {
               fullText += parsed;
               setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: fullText } : m));
@@ -752,6 +772,28 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
       setSending(false);
       setTraceLoading(false);
     }, 1200);
+  };
+
+  const handleApproval = async (approved: boolean) => {
+    if (!pendingApproval || approvalLoading) return;
+    setApprovalLoading(true);
+    const { convId, placeholderId } = pendingApproval;
+    try {
+      const res = await fetch(`${API_BASE}/api/reviews/${convId}/resume`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approved, note: approvalNote }),
+      });
+      const data = await res.json();
+      const responseText = data.response || (approved ? '' : 'Yêu cầu không được phê duyệt.');
+      setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: responseText } : m));
+    } catch {
+      setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: 'Lỗi khi xử lý phê duyệt.' } : m));
+    } finally {
+      setPendingApproval(null);
+      setApprovalNote('');
+      setApprovalLoading(false);
+    }
   };
 
   const handleSend = (override?: string) => {
@@ -984,8 +1026,56 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
             )}
           </AnimatePresence>
 
+          {/* Human Approval card */}
+          <AnimatePresence>
+            {pendingApproval && (
+              <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
+                style={{ margin: '0 12px 8px', background: '#1a1a1a', border: '1px solid rgba(217,184,108,0.35)', borderRadius: 12, overflow: 'hidden' }}>
+                <div style={{ padding: '10px 14px 6px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#D9B86C', flexShrink: 0 }} />
+                  <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#D9B86C', fontWeight: 700 }}>
+                    Cần phê duyệt
+                  </span>
+                </div>
+                <div style={{ padding: '4px 14px 10px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {pendingApproval.payload?.title && (
+                    <div style={{ fontSize: 12.5, fontWeight: 600, color: '#fff' }}>
+                      {pendingApproval.payload.title}
+                    </div>
+                  )}
+                  {pendingApproval.payload?.description && (
+                    <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5, fontFamily: 'var(--font-mono)', background: 'rgba(255,255,255,0.04)', borderRadius: 6, padding: '7px 10px' }}>
+                      {pendingApproval.payload.description}
+                    </div>
+                  )}
+                  <textarea
+                    value={approvalNote}
+                    onChange={e => setApprovalNote(e.target.value)}
+                    placeholder="Ghi chú (tuỳ chọn)..."
+                    rows={1}
+                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6, padding: '6px 9px', fontSize: 11.5, color: 'rgba(255,255,255,0.65)', fontFamily: 'inherit', resize: 'none', outline: 'none' }}
+                  />
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      disabled={approvalLoading}
+                      onClick={() => handleApproval(false)}
+                      style={{ flex: 1, padding: '7px 0', borderRadius: 7, border: '1px solid rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.1)', color: '#F87171', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: approvalLoading ? 0.5 : 1 }}>
+                      Từ chối
+                    </button>
+                    <button
+                      disabled={approvalLoading}
+                      onClick={() => handleApproval(true)}
+                      style={{ flex: 1, padding: '7px 0', borderRadius: 7, border: '1px solid rgba(52,211,153,0.35)', background: 'rgba(52,211,153,0.12)', color: '#34D399', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: approvalLoading ? 0.5 : 1 }}>
+                      {approvalLoading ? 'Đang xử lý...' : 'Phê duyệt ✓'}
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Input */}
-          {!pendingOptions && <div style={{ padding: '8px 12px 14px', flexShrink: 0 }}>
+          {!pendingOptions && !pendingApproval && <div style={{ padding: '8px 12px 14px', flexShrink: 0 }}>
             {/* hint when no agent selected */}
             {mode === 'single' && !selectedAgent && (
               <p style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.25)', textAlign: 'center', margin: '0 0 6px', fontStyle: 'italic' }}>
