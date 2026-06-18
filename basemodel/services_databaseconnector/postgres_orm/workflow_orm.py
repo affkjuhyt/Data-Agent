@@ -6,7 +6,7 @@ from sqlalchemy import (
     Boolean, DateTime, Float, ForeignKey, Index, Integer, SmallInteger,
     String, Text, UniqueConstraint, func, text,
 )
-from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from basemodel.services_databaseconnector.postgres_model import register
@@ -206,6 +206,7 @@ class AgentsORM(Base):
     episodic_memories: Mapped[list["EpisodicMemoryORM"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
     future_memories: Mapped[list["FutureMemoryORM"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
     memory_policies: Mapped[list["MemoryPolicyORM"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
+    workflow_memories: Mapped[list["WorkflowMemoryORM"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
 
 
 @register("orm")
@@ -451,6 +452,58 @@ class MemoryPolicyORM(Base):
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     agent: Mapped["AgentsORM"] = relationship(back_populates="memory_policies")
+
+
+@register("orm")
+class WorkflowMemoryORM(Base):
+    """LTM Workflow Memory (doc §3.7) — Episodic Memory specific to data
+    execution context: which task_type/pipeline ran, with what params, and
+    whether it succeeded. Lets the agent retrieve a similar past run instead
+    of re-planning from scratch."""
+    __tablename__ = "WorkflowMemory"
+    __table_args__ = (
+        Index("idx_workflowmemory_tenant", "tenant_id"),
+        Index("idx_workflowmemory_task_type", "tenant_id", "agent_id", "task_type"),
+        Index("idx_workflowmemory_created_at_desc", text("created_at DESC")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    agent_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Agents.id"), nullable=False, index=True)
+    task_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    task_description: Mapped[str] = mapped_column(Text, nullable=False)
+    param_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    qdrant_point_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    tenant: Mapped["TenantsORM"] = relationship(back_populates="workflow_memories")
+    agent: Mapped["AgentsORM"] = relationship(back_populates="workflow_memories")
+
+
+@register("orm")
+class SchemaMemoryORM(Base):
+    """LTM Schema Memory (doc §3.7) — catalog of tables/columns the agent is
+    allowed to query. Admin-managed; the agent only ever reads this. Used to
+    inject DDL-like context before SQL generation instead of a static,
+    hand-typed schema_hint."""
+    __tablename__ = "SchemaMemory"
+    __table_args__ = (
+        Index("idx_schemamemory_lookup", "tenant_id", "data_source"),
+        UniqueConstraint("tenant_id", "data_source", "table_name", name="uq_schemamemory_table"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    data_source: Mapped[str] = mapped_column(String(64), nullable=False)
+    table_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    column_metadata: Mapped[list] = mapped_column(JSONB, nullable=False)
+    business_description: Mapped[str] = mapped_column(Text, nullable=False)
+    access_roles: Mapped[list[str]] = mapped_column(ARRAY(String), default=list, server_default="{}", nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    tenant: Mapped["TenantsORM"] = relationship(back_populates="schema_memories")
 
 
 # ─── Conversation ─────────────────────────────────────────────────────────────

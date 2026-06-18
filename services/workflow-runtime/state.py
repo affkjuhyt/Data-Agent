@@ -7,6 +7,7 @@ class AgentState(TypedDict):
     original_query: Optional[str]
     messages: List[dict]
     memory_context: List[dict]
+    workflow_memory_context: List[dict]  # doc §3.7 — past successful runs of the same task_type
     tool_calls: List[dict]
     kb_chunks: List[dict]
     kb_error: Optional[str]

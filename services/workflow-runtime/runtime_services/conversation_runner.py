@@ -19,12 +19,23 @@ from memory_middleware import (
     retrieve_memories,
     retrieve_pending_reminders,
 )
+from workflow_memory import record_workflow_outcome, retrieve_workflow_memory
 from observability import get_langfuse_handler
 from schemas import RunRequest
 
 logger = logging.getLogger(__name__)
 
 _graph_cache: dict[str, object] = {}
+
+# doc §3.7 — Workflow Memory needs a task_type to filter on, but that's only
+# known once the planner decides to call a data tool, which is *after* the
+# point retrieval needs to happen. No table_name-style "task type taxonomy"
+# step exists yet (see docs/STM_LTM_Memory_Implementation.md), so task_type
+# is inferred from which data tools the agent has configured.
+_DATA_TOOL_TASK_TYPE = {
+    "text_to_sql":    "sql_query",
+    "text_to_pandas": "report_gen",
+}
 
 _SKIP_TRACE_NODES = frozenset({"LangGraph", "join_retrieval", "join_end"})
 
@@ -75,6 +86,19 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                 {**e, "memory_type": "episodic_past"} for e in episodic_past
             ] + memory_context
 
+    workflow_memory_context = []
+    data_task_type = next(
+        (_DATA_TOOL_TASK_TYPE[t] for t in cfg.get("allowed_tools", []) if t in _DATA_TOOL_TASK_TYPE),
+        None,
+    )
+    if data_task_type:
+        workflow_memory_context = await retrieve_workflow_memory(
+            tenant_id=tenant_id,
+            agent_id=agent_id,
+            task_type=data_task_type,
+            query=req.query,
+        )
+
     # Load history: Redis → DB → client fallback
     if req.conversation_id:
         history = await cache_get_messages(req.conversation_id)
@@ -98,6 +122,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         "original_query": None,
         "messages": history,
         "memory_context": memory_context,
+        "workflow_memory_context": workflow_memory_context,
         "tool_calls": [],
         "kb_chunks": [],
         "mcp_results": [],
@@ -355,6 +380,24 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                 await apply_memory_policy(
                     final_state, agent_id, tenant_id, user_ref,
                     conversation_id=conv_id, message_id=assistant_msg_id,
+                )
+
+            # Workflow Memory write (doc §3.7) — one record per data-tool call
+            # this turn actually executed, regardless of success/failure.
+            for nt in node_traces:
+                if not nt["tool_name"].startswith("tool/"):
+                    continue
+                task_type = _DATA_TOOL_TASK_TYPE.get(nt["tool_name"][len("tool/"):])
+                if not task_type:
+                    continue
+                await record_workflow_outcome(
+                    tenant_id=tenant_id,
+                    agent_id=agent_id,
+                    task_type=task_type,
+                    task_description=nt["input"].get("query") or "",
+                    param_snapshot=nt["input"].get("arguments") or {},
+                    outcome="success" if nt.get("status", "success") == "success" else "failed",
+                    duration_ms=nt.get("latency_ms"),
                 )
 
     response = StreamingResponse(event_stream(), media_type="text/event-stream")
