@@ -309,10 +309,6 @@ services:
       KAFKA_URL: kafka:9092
       MODEL_SERVICE_URL: http://model-service:8001
       USE_VLM: "false"
-      LLM_BACKEND:   ${LLM_BACKEND:-vllm}
-      VLLM_BASE_URL: ${VLLM_BASE_URL:-http://host.docker.internal:11434/v1}
-      VLLM_API_KEY:  ${VLLM_API_KEY:-ollama}
-      VLLM_MODEL:    ${VLLM_MODEL:-llama3}
       HF_HOME: /root/.cache/huggingface
     extra_hosts:
       - "host.docker.internal:host-gateway"

@@ -215,9 +215,9 @@ services:
   # GPU build pulls the prebuilt CUDA 12.2 wheel; runtime base must be a CUDA image.
 
   llama:
-    # Behind the local-llm profile: not started by default — the worker now talks to
-    # the Colab vLLM endpoint (VLLM_BASE_URL/VLLM_API_KEY env, see model/vllm/).
-    # Re-enable the local path with: docker compose --profile local-llm up -d
+    # Behind the local-llm profile: not started by default. The LLM is reached
+    # through model-service /generate; point its REMOTE_LLM_URL at this service
+    # (http://llama:11434/v1) to use it. Enable with: docker compose --profile local-llm up -d
     profiles: [ "local-llm" ]
     build:
       context: ../model/ollama
@@ -345,12 +345,7 @@ services:
       KAFKA_URL: kafka:9092
       QDRANT_URL: http://qdrant:6333
       NEO4J_URL: bolt://neo4j:7687
-      LLAMA_BASE_URL: http://llama:11434
       LITELLM_BASE_URL: http://litellm:4000
-      # vLLM tunnel — when set, the LightRAG canonicalize step uses this
-      # OpenAI-compatible endpoint instead of the local llama.
-      VLLM_BASE_URL: ${VLLM_BASE_URL:-}
-      VLLM_API_KEY: ${VLLM_API_KEY:-}
       # LightRAG tuning knobs (benchmark iteration without image rebuild)
       QDRANT_PASS1_LIMIT: ${QDRANT_PASS1_LIMIT:-3}
       QDRANT_PASS2_LIMIT: ${QDRANT_PASS2_LIMIT:-2}
@@ -383,9 +378,8 @@ services:
       minio-init: { condition: service_completed_successfully }
       kafka: { condition: service_healthy }
       model-service: { condition: service_healthy }
-      # llama dependency removed — LLM now reached via VLLM_BASE_URL (Colab tunnel);
-      # the backend's llama calls (LightRAG canonicalize, prompt registration) are
-      # best-effort and degrade gracefully when the local llama is not running.
+      # No direct LLM dependency — the backend's LightRAG calls go through
+      # model-service /generate, which forwards to its configured backend.
 
   # ── KB Ingestion Worker — Kafka consumer, silver/gold pipeline ───────────────
 
@@ -403,13 +397,6 @@ services:
       QDRANT_URL: http://qdrant:6333
       NEO4J_URI: bolt://neo4j:7687
       MODEL_SERVICE_URL: http://model-service:8001
-      LLAMA_BASE_URL: http://llama:11434
-      LITELLM_BASE_URL: http://litellm:4000
-      # vLLM backend (Colab tunnel, see model/vllm/) — setting VLLM_BASE_URL on the
-      # host flips the worker's LLM backend to vllm; empty keeps the local llama.
-      VLLM_BASE_URL: ${VLLM_BASE_URL:-}
-      VLLM_API_KEY: ${VLLM_API_KEY:-}
-      LLM_BACKEND: ${LLM_BACKEND:-}
       MINIO_BUCKET: knowledge-base
       USE_VLM: "false"
       LLM_MODEL: llama3
