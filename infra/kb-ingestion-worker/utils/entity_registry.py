@@ -51,7 +51,7 @@ from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import
 )
 from services.database_connector.model_connector import ModelServiceClient
 from services.database_connector.postgres_connector import PostgresClient
-import config as cfg
+from utils import config as cfg
 
 log = logging.getLogger(__name__)
 

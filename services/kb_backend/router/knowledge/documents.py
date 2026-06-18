@@ -105,7 +105,7 @@ async def create_chunk_version_route(
         text=body.text,
         entities=body.entities,
         intents=body.intents,
-        user_id=ctx["user_id"],
+        created_by=ctx["user_name"],
         doc_id=doc_id,
         tenant_id=ctx["tenant_id"],
     )
@@ -156,7 +156,7 @@ async def create_doc_config(
         postgres=svc(request, "postgres"),
         warehouse_id=doc_id,
         body=body.model_dump(),
-        user_id=ctx["user_id"],
+        created_by=ctx["user_name"],
         tenant_id=ctx["tenant_id"],
     )
     return ResponseModel(code=200, data=result)

@@ -83,16 +83,18 @@ async def list_filter_policies(
 async def create_filter_policy(
     postgres,
     name: str, ptype: str, content: str,
-    tenant_id: str, user_id: str,
+    tenant_id: str, created_by: str,
     active: bool = True,
 ) -> dict:
+    # created_by stores the human-readable username (not the user_id UUID) so the
+    # UI shows "added_by: helios-admin" rather than an opaque id.
     resp = await postgres.insert(KBFilterPolicyInsert(
         tenant_id=tenant_id,
         policy_name=name,
         configformat=PolicyFilteringType(ptype),
         config={"rules": _rules_from_body(ptype, content)},
         is_active=active,
-        created_by=user_id,
+        created_by=created_by,
     ))
     if resp.code != 200:
         log.error("create_filter_policy: DB error: %s", resp.error)
@@ -154,7 +156,7 @@ async def get_extraction_policy(postgres, tenant_id: str | None) -> dict:
 
 
 async def update_extraction_policy(
-    postgres, custom: str, tenant_id: str, user_id: str,
+    postgres, custom: str, tenant_id: str, created_by: str,
 ) -> dict:
     resp = await postgres.read(ReadJoinRequest(
         tenant_id=tenant_id, joins_table=["KBExtractionPolicy"], limit=1,
@@ -176,6 +178,6 @@ async def update_extraction_policy(
             policy_name="Default Extraction Policy",
             policy_type=PolicyExtractionType.ENTITY_NODE,
             custom_override=custom,
-            created_by=user_id,
+            created_by=created_by,
         ))
     return {"status": "ok"}

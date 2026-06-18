@@ -31,28 +31,28 @@ front of `kb-backend`. Pick the stack that matches your task:
 
 | Stack | File / helper | What it is | When to use |
 |---|---|---|---|
-| **kb-ui-testing** | `infra/docker-compose.kb-ui-testing.yml` | KB data plane + ingestion worker + Keycloak + DB-less Kong; richer LLM options (vLLM / local `llama`) and multilingual models | Day-to-day local dev with the Vite UI (`npm run dev`) and the ingestion/RAG pipeline |
-| **kb-e2e** | `infra/docker-compose.kb-e2e.yml` + `infra/kb-e2e.ps1` | Same auth chain + data plane, **memory-capped to ~6.4 GiB** (fits an ~8 GiB Docker VM); helper auto-configures Kong & runs verify checks | Quick, low-RAM end-to-end auth/data-plane verification; CI-style smoke test |
+| **kb_e2e** | `infra/docker-compose.kb_e2e.yml` | KB data plane + ingestion worker + Keycloak + DB-less Kong; richer LLM options (vLLM / local `llama`) and multilingual models | Day-to-day local dev with the Vite UI (`npm run dev`) and the ingestion/RAG pipeline |
+| **kb_and_authen** | `infra/docker-compose.kb_and_authen.yml` + `infra/kb_and_authen.ps1` | Same auth chain + data plane, **memory-capped to ~6.4 GiB** (fits an ~8 GiB Docker VM); helper auto-configures Kong & runs verify checks | Quick, low-RAM end-to-end auth/data-plane verification; CI-style smoke test |
 | **Full aggregate** | `infra/docker-compose.yml` (+ `local`/`dev` override) | Every service group (storage, security, messaging, observability, all app services) | Running the whole platform, not just KB |
 | **Test fixture** | `infra/docker-compose.test.yml` | Isolated PostgreSQL only | Connector / Alembic tests |
 
-> The `kb-e2e` and `kb-ui-testing` stacks both publish ports `8000`/`8080`/`5432`/… so **run one at a
+> The `kb_and_authen` and `kb_e2e` stacks both publish ports `8000`/`8080`/`5432`/… so **run one at a
 > time**. `kb-backend` is also published on `:8050` in each — but hitting it directly bypasses Kong, so
 > it returns `401` by design (handy to confirm fail-closed behaviour).
 
-The fastest path to a working UI is **kb-e2e** (below); for the full local dev loop use **kb-ui-testing**.
+The fastest path to a working UI is **kb_and_authen** (below); for the full local dev loop use **kb_e2e**.
 
 ---
 
-## Quick start — kb-e2e (recommended)
+## Quick start — kb_and_authen (recommended)
 
-The `kb-e2e.ps1` helper builds the stack, waits for health, configures Kong, and prints the endpoints.
+The `kb_and_authen.ps1` helper builds the stack, waits for health, configures Kong, and prints the endpoints.
 
 ```powershell
 npm install                       # frontend deps (first time)
-pwsh infra/kb-e2e.ps1             # build + start + configure Kong (ingestion worker OFF)
-pwsh infra/kb-e2e.ps1 verify      # prove the chain: 401 / 200 / fleet 200 / 403 / 200
-pwsh infra/kb-e2e.ps1 up -WithUi  # also start the containerized frontend on :5173
+pwsh infra/kb_and_authen.ps1             # build + start + configure Kong (ingestion worker OFF)
+pwsh infra/kb_and_authen.ps1 verify      # prove the chain: 401 / 200 / fleet 200 / 403 / 200
+pwsh infra/kb_and_authen.ps1 up -WithUi  # also start the containerized frontend on :5173
 ```
 
 Then open the UI (containerized on `:5173`, or run `npm run dev` against it — see below) and log in
@@ -61,14 +61,14 @@ via Keycloak as **`helios-admin` / `H3lios@Admin01!`** (full perms) or **`helios
 
 | Action | Command |
 |---|---|
-| Stop, keep data | `pwsh infra/kb-e2e.ps1 down` |
-| Stop, **wipe** data | `pwsh infra/kb-e2e.ps1 destroy` |
-| Tail logs | `pwsh infra/kb-e2e.ps1 logs` |
-| Enable bronze→silver→gold pipeline | `pwsh infra/kb-e2e.ps1 up -WithPipeline` (needs ~12 GiB WSL VM) |
+| Stop, keep data | `pwsh infra/kb_and_authen.ps1 down` |
+| Stop, **wipe** data | `pwsh infra/kb_and_authen.ps1 destroy` |
+| Tail logs | `pwsh infra/kb_and_authen.ps1 logs` |
+| Enable bronze→silver→gold pipeline | `pwsh infra/kb_and_authen.ps1 up -WithPipeline` (needs ~12 GiB WSL VM) |
 
 ---
 
-## Running the KB-UI — kb-ui-testing (full local dev)
+## Running the KB-UI — kb_e2e (full local dev)
 
 End-to-end local development with the Vite dev server, the ingestion pipeline, and the auth chain.
 
@@ -87,7 +87,7 @@ tables (incl. a dedicated `keycloak` DB), Qdrant collections, and the Kong route
 created automatically on first start.
 
 ```powershell
-docker compose -f infra/docker-compose.kb-ui-testing.yml --env-file infra/.env.kb-testing up -d --build
+docker compose -f infra/docker-compose.kb_e2e.yml --env-file infra/.env.kb-testing up -d --build
 ```
 
 > First start is slower: `model-service` downloads its embed/rerank weights into
@@ -97,7 +97,7 @@ docker compose -f infra/docker-compose.kb-ui-testing.yml --env-file infra/.env.k
 ### 3. Verify the stack is healthy
 
 ```powershell
-docker compose -f infra/docker-compose.kb-ui-testing.yml ps     # every service "healthy"
+docker compose -f infra/docker-compose.kb_e2e.yml ps     # every service "healthy"
 curl http://localhost:8050/health                               # -> {"status":"ok"} (direct; bypasses Kong)
 ```
 
@@ -119,8 +119,8 @@ Open http://localhost:3000, log in as **`helios-admin` / `H3lios@Admin01!`**, an
 ### Shutdown
 
 ```powershell
-docker compose -f infra/docker-compose.kb-ui-testing.yml down       # stop, keep data (volumes)
-docker compose -f infra/docker-compose.kb-ui-testing.yml down -v    # also wipe DB volumes
+docker compose -f infra/docker-compose.kb_e2e.yml down       # stop, keep data (volumes)
+docker compose -f infra/docker-compose.kb_e2e.yml down -v    # also wipe DB volumes
 ```
 
 ---
@@ -240,7 +240,7 @@ The dev server talks to the backend via:
 - `VITE_API_URL` — base URL for KB API calls (default `http://localhost:8000`, the **Kong** gateway —
   **not** `kb-backend` on `:8050`, which is fail-closed)
 
-The defaults already match the kb-e2e / kb-ui-testing stacks, so plain `npm run dev` works against
+The defaults already match the kb_and_authen / kb_e2e stacks, so plain `npm run dev` works against
 either; override only if a service is on a different host/port.
 
 Other scripts:
@@ -273,11 +273,11 @@ The Docker stack lives under [`infra/`](./infra). Use these files as the source 
 - [`infra/docker-compose.local.yml`](./infra/docker-compose.local.yml): local developer override (adds `migrate` + `seed`)
 - [`infra/docker-compose.dev.yml`](./infra/docker-compose.dev.yml): shared dev server override (adds `migrate` + `seed`)
 - [`infra/docker-compose.test.yml`](./infra/docker-compose.test.yml): test-only PostgreSQL fixture
-- [`infra/docker-compose.kb-ui-testing.yml`](./infra/docker-compose.kb-ui-testing.yml): isolated KB-UI integration stack — data plane + ingestion worker + Keycloak + DB-less Kong
-- [`infra/docker-compose.kb-e2e.yml`](./infra/docker-compose.kb-e2e.yml) + [`infra/kb-e2e.ps1`](./infra/kb-e2e.ps1): memory-capped KB end-to-end stack (auth chain + live data plane) with a bring-up/verify helper
+- [`infra/docker-compose.kb_e2e.yml`](./infra/docker-compose.kb_e2e.yml): isolated KB-UI integration stack — data plane + ingestion worker + Keycloak + DB-less Kong
+- [`infra/docker-compose.kb_and_authen.yml`](./infra/docker-compose.kb_and_authen.yml) + [`infra/kb_and_authen.ps1`](./infra/kb_and_authen.ps1): memory-capped KB end-to-end stack (auth chain + live data plane) with a bring-up/verify helper
 
-This repository still contains older Docker artifacts under [`archive/docker-legacy/`](./archive/docker-legacy)
-and [`infra/old/`](./infra/old). Do not use them.
+This repository still contains older Docker artifacts under [`archive/docker-legacy/`](./archive/docker-legacy).
+Do not use them.
 
 ### Prerequisites
 
@@ -314,8 +314,8 @@ before bringing the KB-UI testing stack up:
 
 | Local-only file | Used by | What to do |
 |---|---|---|
-| `infra/.env.kb-testing` | kb-ui-testing compose interpolation — MinIO credentials and the optional `VLLM_BASE_URL` / `VLLM_API_KEY` LLM tunnel | `Copy-Item infra/.env.kb-testing.example infra/.env.kb-testing`, then edit. The example defaults work for basic local testing. |
-| `model/ollama/weights/model.gguf` (~5.7 GB) | the optional GPU `llama` service (mounted `../model/ollama/weights:/models`) | Download a GGUF model into that path. **Only** needed if you run the local `llama` service — the default KB stack reaches the LLM via `VLLM_BASE_URL` and does not require it. |
+| `infra/.env.kb-testing` | kb_e2e compose interpolation — MinIO credentials (the example defaults work as-is). The LLM / embed / rerank backend is configured separately on `model-service` via its `REMOTE_*_URL` env — see [Switching the model backend](./infra/README.md#switching-the-model-backend-local-cpu--colab-gpu). | `Copy-Item infra/.env.kb-testing.example infra/.env.kb-testing` |
+| `model/ollama/weights/model.gguf` (~5.7 GB) | the optional GPU `llama` service (mounted `../model/ollama/weights:/models`) | Download a GGUF model into that path. **Only** needed if you run the local `llama` service — by default the worker and LightRAG reach the LLM through the `model-service` `/generate` gateway (point its `REMOTE_LLM_URL` at the backend), and do not require it. |
 
 Auto-managed (downloads itself — no manual file placement):
 
@@ -327,7 +327,7 @@ Auto-managed (downloads itself — no manual file placement):
     (kb-backend waits for it), so first start is slower — this is expected, not an error;
   - to pre-seed offline (skip the first-run download), populate the folder from another machine's
     `infra/model-service/models/`, or run:
-    `docker compose -f infra/docker-compose.kb-ui-testing.yml run --rm model-service python -c "import models, config as c; models.load(c.EMBED_MODEL, c.RERANK_MODEL)"`
+    `docker compose -f infra/docker-compose.kb_e2e.yml run --rm model-service python -c "import models, config as c; models.load(c.EMBED_MODEL, c.RERANK_MODEL)"`
 - DB content lives in Docker **named volumes** (persist across image rebuilds) and is seeded by the
   tracked [`infra/Postgres/init.sql`](./infra/Postgres/init.sql) + [`infra/Postgres/seed.sql`](./infra/Postgres/seed.sql).
 
@@ -335,18 +335,19 @@ Auto-managed (downloads itself — no manual file placement):
 
 Isolated stack (KB data plane + ingestion worker + Keycloak + DB-less Kong) for exercising the KB
 backend against the UI. Full walkthrough — including the frontend env and login — is in
-[Running the KB-UI — kb-ui-testing](#running-the-kb-ui--kb-ui-testing-full-local-dev) above:
+[Running the KB-UI — kb_e2e](#running-the-kb-ui--kb_e2e-full-local-dev) above:
 
 ```powershell
-docker compose -f infra/docker-compose.kb-ui-testing.yml --env-file infra/.env.kb-testing up -d --build
+docker compose -f infra/docker-compose.kb_e2e.yml --env-file infra/.env.kb-testing up -d --build
 curl http://localhost:8050/health   # -> {"status":"ok"} (direct probe; app traffic goes via Kong :8000)
 ```
 
-Switch the model-service backend (LOCAL CPU vs. remote Colab GPU) with
-[`infra/model-backend.sh`](./infra/model-backend.sh) — no image rebuild required.
+Switch the model-service backend (LOCAL CPU vs. remote Colab GPU) by setting the
+`REMOTE_*_URL` env on `model-service` and recreating that one container — no image
+rebuild required. See [Switching the model backend](./infra/README.md#switching-the-model-backend-local-cpu--colab-gpu).
 
-For a leaner, memory-capped end-to-end run with an automated bring-up/verify helper, use the **kb-e2e**
-stack instead — see [Quick start — kb-e2e](#quick-start--kb-e2e-recommended).
+For a leaner, memory-capped end-to-end run with an automated bring-up/verify helper, use the **kb_and_authen**
+stack instead — see [Quick start — kb_and_authen](#quick-start--kb_and_authen-recommended).
 
 ### Official Docker Commands
 
@@ -412,8 +413,8 @@ The local and shared-dev overrides both add `migrate` and `seed` jobs.
 Separate intent-specific Docker paths also exist:
 
 - Test-only: [`infra/docker-compose.test.yml`](./infra/docker-compose.test.yml)
-- KB-UI integration: [`infra/docker-compose.kb-ui-testing.yml`](./infra/docker-compose.kb-ui-testing.yml)
-- KB end-to-end (memory-capped + helper): [`infra/docker-compose.kb-e2e.yml`](./infra/docker-compose.kb-e2e.yml) + [`infra/kb-e2e.ps1`](./infra/kb-e2e.ps1)
+- KB-UI integration: [`infra/docker-compose.kb_e2e.yml`](./infra/docker-compose.kb_e2e.yml)
+- KB end-to-end (memory-capped + helper): [`infra/docker-compose.kb_and_authen.yml`](./infra/docker-compose.kb_and_authen.yml) + [`infra/kb_and_authen.ps1`](./infra/kb_and_authen.ps1)
 - Standalone model experiment: [`model/ollama/docker/docker-compose.yml`](./model/ollama/docker/docker-compose.yml)
 - Legacy archive: [`archive/docker-legacy/`](./archive/docker-legacy)
 

@@ -106,6 +106,15 @@ async def list_documents(
     if include_warehouses and cursor is None and (not tier or tier == "gold"):
         existing_ids = {d["data_id"] for d in docs}
         wh_resp = await postgres.read(ReadJoinRequest(joins_table=["KBWarehouse"], limit=PAGE_SIZE))
+        # KBWarehouse has no creator column — added_by lives on the active config.
+        # Map warehouse_id → active config's created_by (the username) so the warehouse
+        # row shows who added it instead of an empty field.
+        cfg_resp = await postgres.read(ReadJoinRequest(joins_table=["KBWarehouseConfig"], limit=200))
+        creator_by_wh = {
+            str(c.get("warehouse_id")): (c.get("created_by") or "")
+            for c in (cfg_resp.data or [])
+            if c.get("is_active")
+        }
         for wh in (wh_resp.data or []):
             if wh.get("is_deleted"):
                 continue
@@ -119,7 +128,7 @@ async def list_documents(
                 "extension":    None,
                 "current_tier": "gold",
                 "status":       "PUBLISHED",
-                "added_by":     None,
+                "added_by":     creator_by_wh.get(str(wh["warehouse_id"]), ""),
                 "added_on":     str(wh.get("created_at", "")),
                 "abstract":     None,
                 "metadata": {
@@ -149,7 +158,7 @@ async def promote_document(
                 "source_type": record.get("source_type", "doc"),
                 "extension":   record.get("extension", ""),
                 "minio_path":  record.get("path", ""),
-                "approved_by": ctx["user_id"],
+                "approved_by": ctx["user_name"],
             },
             key=data_id,
         )
@@ -161,7 +170,7 @@ async def promote_document(
                 "data_id":     data_id,
                 "tenant_id":   tenant_id or str(record.get("tenant_id", "")),
                 "neo4j_connection_id": "",
-                "approved_by": ctx["user_id"],
+                "approved_by": ctx["user_name"],
             },
             key=data_id,
         )

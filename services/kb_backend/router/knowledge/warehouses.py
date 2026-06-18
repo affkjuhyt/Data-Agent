@@ -35,7 +35,7 @@ async def create_config(
         postgres=svc(request, "postgres"),
         warehouse_id=warehouse_id,
         body=body.model_dump(),
-        user_id=ctx["user_id"],
+        created_by=ctx["user_name"],
         tenant_id=ctx["tenant_id"],
     )
     return ResponseModel(code=200, data=result)

@@ -11,8 +11,9 @@ import logging
 import re
 import uuid
 
-import llm_client
 from sqlalchemy import update as sa_update
+
+from utils import llm_client
 
 from basemodel.services_databaseconnector.postgres_model import (
     KBLifecycleHistoryInsert,
@@ -28,8 +29,8 @@ from services.database_connector.minio_connector import MinIOClient
 from services.database_connector.mongo_connector import MongoClient
 from services.database_connector.postgres_connector import PostgresClient
 
-import config as cfg  # local worker config
-from pipeline_events import PipelineEventEmitter
+from utils import config as cfg  # local worker config
+from utils.pipeline_events import PipelineEventEmitter
 
 log = logging.getLogger(__name__)
 
@@ -58,7 +59,17 @@ projects) CHARACTER-FOR-CHARACTER, keeping ALL Vietnamese diacritics and tone
 marks exactly as written ("Đà Nẵng" stays "Đà Nẵng", never "Da Nang"). Tone marks
 change meaning in Vietnamese — altering them corrupts the entity.
 Prefer keeping concrete names, numbers, and dates over generic phrasing: these
-summaries are later merged into a document summary used for entity extraction.
+summaries are later merged into a document summary.
+
+── entities (0–8 knowledge-graph entities that appear IN THIS CHUNK) ─────────────
+The specific named things this chunk is about. For each: name, type, description
+(≤ 12 words), score (0.0–1.0 importance in this chunk).
+LANGUAGE RULE: copy each name in the chunk's OWN language, CHARACTER-FOR-CHARACTER
+with ALL Vietnamese diacritics ("Đà Nẵng" stays "Đà Nẵng"). NEVER translate a name
+and NEVER output Chinese / Han characters unless they literally appear in the chunk.
+type — exactly one of: person, organization, location, law_document,
+system_product, event, time_period, concept (use "concept" only when none fit).
+Skip generic nouns (system, method, data, document, report, …). Return [] if none.
 
 ── intents (2–4, snake_case English labels) ────────────────────────────────────
 Machine-readable purpose labels (ALWAYS English snake_case, even for Vietnamese
@@ -73,7 +84,7 @@ true ONLY for chunks with NO indexable content: pure reference lists, isolated
 headers or page numbers, acknowledgements, legal boilerplate. Otherwise false.
 
 Output JSON only — no markdown, no extra text:
-{"summary":"…","intents":["…"],"skip":false}"""
+{"summary":"…","entities":[{"name":"…","type":"…","description":"…","score":0.0}],"intents":["…"],"skip":false}"""
 
 # Vietnamese variant (PROMPT_LANG=vi, default) — native instructions for a
 # Vietnamese corpus; intents stay English snake_case (machine-readable keys).
@@ -89,7 +100,17 @@ TÊN RIÊNG: chép chính xác từng ký tự (người, tổ chức, địa da
 dự án), giữ nguyên toàn bộ dấu ("Đà Nẵng" giữ là "Đà Nẵng", không viết "Da Nang").
 Dấu thanh làm thay đổi nghĩa — sai dấu là sai thực thể.
 Ưu tiên giữ tên riêng, con số, mốc thời gian thay vì câu chữ chung chung: các tóm
-tắt này sẽ được gộp thành tóm tắt tài liệu để trích xuất thực thể.
+tắt này sẽ được gộp thành tóm tắt tài liệu.
+
+── entities (0–8 thực thể tri thức XUẤT HIỆN TRONG ĐOẠN NÀY) ─────────────────────
+Những thứ có tên cụ thể mà đoạn nói đến. Mỗi thực thể: name, type, description
+(≤ 12 từ), score (0.0–1.0, mức quan trọng trong đoạn).
+NGÔN NGỮ: chép tên theo ĐÚNG ngôn ngữ của đoạn, từng ký tự, giữ nguyên mọi dấu
+tiếng Việt ("Đà Nẵng" giữ là "Đà Nẵng"). TUYỆT ĐỐI KHÔNG dịch tên và KHÔNG xuất
+ký tự Trung/Hán trừ khi chúng thực sự có trong đoạn.
+type — đúng một trong: person, organization, location, law_document,
+system_product, event, time_period, concept (chỉ dùng "concept" khi không hợp loại nào).
+Bỏ qua danh từ chung chung (hệ thống, phương pháp, dữ liệu, tài liệu…). Không có thì trả [].
 
 ── intents (2–4 nhãn, tiếng Anh snake_case) ────────────────────────────────────
 Nhãn mục đích cho máy đọc (LUÔN là tiếng Anh snake_case, kể cả với văn bản tiếng
@@ -104,7 +125,7 @@ true CHỈ KHI đoạn không có nội dung đáng lập chỉ mục: danh mụ
 tiêu đề/số trang đứng một mình, lời cảm ơn, văn bản pháp lý rập khuôn. Còn lại: false.
 
 Chỉ trả JSON — không markdown, không văn bản thừa:
-{"summary":"…","intents":["…"],"skip":false}"""
+{"summary":"…","entities":[{"name":"…","type":"…","description":"…","score":0.0}],"intents":["…"],"skip":false}"""
 
 _SUMMARY_PROMPTS_BY_LANG = {"en": _CHUNK_SUMMARY_SYSTEM, "vi": _CHUNK_SUMMARY_SYSTEM_VI}
 
@@ -421,31 +442,65 @@ async def _filter_chunks(
 
 # ── Per-chunk summary + intents ───────────────────────────────────────────────
 
+def _strip_surrogates(s: str) -> str:
+    """Drop lone UTF-16 surrogates (\\udcxx) the LLM emits when a multibyte (e.g.
+    Chinese/Vietnamese) character is truncated mid-generation. These are the
+    mojibake seen in stored summaries/entities — strip them before persisting so
+    corrupted text never reaches Postgres/Qdrant."""
+    if not s:
+        return s
+    return "".join(ch for ch in s if not 0xD800 <= ord(ch) <= 0xDFFF)
+
+
+def _clean_chunk_entities(raw: Any) -> list[dict]:
+    """Parse + sanitize per-chunk entities from the LLM. Names/descriptions are
+    surrogate-stripped; names are kept in the chunk's own language (the prompt
+    forbids translation/Han output). Gold applies the generic-word blacklist,
+    dedup, and canonicalization."""
+    out: list[dict] = []
+    for e in raw or []:
+        if not isinstance(e, dict):
+            continue
+        name = _strip_surrogates(str(e.get("name") or "").strip())
+        if len(name) < 2:
+            continue
+        out.append({
+            "name":        name,
+            "type":        (str(e.get("type") or "concept").strip() or "concept"),
+            "description": _strip_surrogates(str(e.get("description") or "").strip()),
+            "aliases":     [],
+            "score":       e.get("score", 0.5),
+        })
+    return out
+
+
 def _fallback_chunk_summary(content: str) -> dict:
     """Heuristic summary when the LLM can't return valid JSON: first sentence,
     truncated. Splits on Latin sentence punctuation, which Vietnamese also uses."""
     first_sentence = re.split(r"[.!?…]", content, maxsplit=1)[0].strip()
     summary = " ".join((first_sentence or content).split()[:40])
-    return {"summary": summary, "intents": ["document_content"], "skip": False}
+    return {"summary": summary, "intents": ["document_content"], "entities": [], "skip": False}
 
 
 async def summarize_chunk(content: str) -> dict:
-    """One LLM call → {summary, intents, skip}. Never raises — falls back to the
+    """One LLM call → {summary, entities, intents, skip}. Entities are extracted
+    PER CHUNK here (in the chunk's own language). Never raises — falls back to the
     heuristic summary so a flaky LLM can't fail the whole silver stage."""
     for attempt in range(2):
         try:
             result = await _llm_generate_json(
                 system_type="chunk-summary",
                 user=content[:3000],
-                max_tokens=256,
+                max_tokens=512,
             )
-            summary = str(result.get("summary") or "").strip()
+            summary = _strip_surrogates(str(result.get("summary") or "").strip())
             intents = [s for s in result.get("intents") or [] if isinstance(s, str) and s.strip()]
             if summary:
                 return {
-                    "summary": summary,
-                    "intents": intents or ["document_content"],
-                    "skip":    bool(result.get("skip", False)),
+                    "summary":  summary,
+                    "intents":  intents or ["document_content"],
+                    "entities": _clean_chunk_entities(result.get("entities")),
+                    "skip":     bool(result.get("skip", False)),
                 }
         except Exception as exc:
             log.warning("Silver summary: attempt %d failed: %s", attempt + 1, exc)
@@ -481,13 +536,15 @@ async def _summarize_chunks(
                     "reason": "boilerplate_no_descriptive_content",
                 })
             continue
-        chunk["summary"] = res["summary"]
-        chunk["intents"] = res["intents"]
+        chunk["summary"]  = res["summary"]
+        chunk["intents"]  = res["intents"]
+        chunk["entities"] = res.get("entities", [])
         if emitter:
             await emitter.emit("silver.summary.complete", {
-                "index":   chunk["block_index"],
-                "summary": res["summary"],
-                "intents": res["intents"],
+                "index":    chunk["block_index"],
+                "summary":  res["summary"],
+                "intents":  res["intents"],
+                "entities": [e["name"] for e in res.get("entities", [])],
             })
         kept.append(chunk)
     return kept

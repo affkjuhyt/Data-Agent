@@ -25,14 +25,14 @@
   Also start the Vite frontend (browser login on http://localhost:5173).
 
 .PARAMETER WithPipeline
-  Also start the ingestion worker (needs ~12 GiB WSL VM — see docker-compose.kb-e2e.yml).
+  Also start the ingestion worker (needs ~12 GiB WSL VM — see docker-compose.kb_and_authen.yml).
 
 .EXAMPLE
-  pwsh infra/kb-e2e.ps1                 # up + configure
-  pwsh infra/kb-e2e.ps1 verify          # prove the chain + live data plane
-  pwsh infra/kb-e2e.ps1 up -WithUi      # include the frontend
-  pwsh infra/kb-e2e.ps1 down            # stop, keep data
-  pwsh infra/kb-e2e.ps1 destroy         # stop + wipe data
+  pwsh infra/kb_and_authen.ps1                 # up + configure
+  pwsh infra/kb_and_authen.ps1 verify          # prove the chain + live data plane
+  pwsh infra/kb_and_authen.ps1 up -WithUi      # include the frontend
+  pwsh infra/kb_and_authen.ps1 down            # stop, keep data
+  pwsh infra/kb_and_authen.ps1 destroy         # stop + wipe data
 #>
 [CmdletBinding()]
 param(
@@ -44,7 +44,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ScriptDir     = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Compose       = Join-Path $ScriptDir 'docker-compose.kb-e2e.yml'
+$Compose       = Join-Path $ScriptDir 'docker-compose.kb_and_authen.yml'
 
 $KONG_ADMIN = 'http://localhost:8900'
 $KONG_PROXY = 'http://localhost:8000'
@@ -237,7 +237,7 @@ switch ($Action) {
     if ($WithUi)       { Write-Host '  Frontend  : http://localhost:5173' }
     if ($WithPipeline) { Write-Host '  Ingestion worker: ON (pipeline profile)' }
     Write-Host ''
-    Write-Host 'Next:  pwsh infra/kb-e2e.ps1 verify' -ForegroundColor Yellow
+    Write-Host 'Next:  pwsh infra/kb_and_authen.ps1 verify' -ForegroundColor Yellow
   }
   'configure' { Configure-Kong }
   'verify'    { Verify-Chain }

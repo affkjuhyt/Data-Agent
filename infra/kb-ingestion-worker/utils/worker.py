@@ -16,12 +16,12 @@ from services.database_connector.postgres_connector import PostgresClient
 from services.database_connector.qdrant_connector import QdrantClient as QdrantService
 from services.database_connector.neo4j_connector import Neo4jClient
 
-import config as cfg
+from utils import config as cfg
+from utils.docling_parser import InlineDoclingParser
+from utils.log_writer import write_log
+from utils.pipeline_events import PipelineEventEmitter
 from silver import promote_to_silver
 from gold import promote_to_gold
-from docling_parser import InlineDoclingParser
-from log_writer import write_log
-from pipeline_events import PipelineEventEmitter
 from conflict_resolver import fetch_awaiting_conflict, _resolve_conflict
 
 log = logging.getLogger(__name__)

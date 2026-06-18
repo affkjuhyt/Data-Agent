@@ -26,7 +26,7 @@ _UUID_RE = re.compile(
 )
 
 # Keycloak realm role names → app canonical role literals (match
-# src/lib/permissions.ts and dev_seed.DEV_ROLE_PERMISSION_IDS keys).
+# src/lib/permissions.ts and ingestion.DEV_ROLE_PERMISSION_IDS keys).
 _KC_ROLE_MAP = {
     "platform-admin":   "PLATFORM_ADMIN",
     "ai-engineer":      "AI_ENGINEER",
@@ -56,14 +56,20 @@ def _canon_role(raw: str) -> str:
 def authenticate(
     x_kong_verified: str = Header(default="", alias="X-Kong-Verified"),
     x_user_id:       str = Header(default="", alias="X-User-Id"),
+    x_user_name:     str = Header(default="", alias="X-User-Name"),
     x_tenant_id:     str = Header(default="", alias="X-Tenant-Id"),
     x_user_roles:    str = Header(default="", alias="X-User-Roles"),
     x_role_id:       str = Header(default="", alias="X-Role-Id"),
 ) -> dict:
-    """Resolve {role, roles, tenant_id, user_id} from the Kong-verified headers.
+    """Resolve {role, roles, tenant_id, user_id, user_name} from the Kong-verified headers.
 
     Fail-closed: anything not stamped `X-Kong-Verified: true` by the gateway is
     rejected. This is the only identity extractor in the service.
+
+    `user_name` is the human-readable login (Keycloak `preferred_username`, injected
+    by Kong as X-User-Name) — use it for display attribution like added_by/created_by
+    so the UI shows "helios-admin" instead of the opaque `user_id` UUID. Falls back to
+    user_id if the gateway did not provide a name.
     """
     if x_kong_verified != "true":
         raise HTTPException(status_code=401, detail="Request not verified by Kong gateway")
@@ -82,6 +88,7 @@ def authenticate(
         "roles": roles,
         "tenant_id": tenant_id,
         "user_id": x_user_id or "",
+        "user_name": (x_user_name or "").strip() or (x_user_id or ""),
     }
 
 

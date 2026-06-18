@@ -6,7 +6,7 @@
 #   docker build -f infra/Dockerfile.kb -t kb-backend .
 #
 # Or via Compose:
-#   docker compose -f infra/docker-compose.kb-ui-testing.yml up kb-backend
+#   docker compose -f infra/docker-compose.kb_e2e.yml up kb-backend
 
 
 # ── Stage 1: compile Python wheels ───────────────────────────────────────────
@@ -55,7 +55,7 @@ ENV PYTHONPATH=/app \
     PYTHONDONTWRITEBYTECODE=1
 
 # ── Default service URLs (override via env or docker-compose) ─────────────────
-# These match the names used in docker-compose.kb-ui-testing.yml
+# These match the names used in docker-compose.kb_e2e.yml
 ENV POSTGRES_URL="postgresql+asyncpg://aeroflow:aeroflow_secret@postgres/aeroflow_kb" \
     MONGO_URL="mongodb://mongo:27017/dataagent" \
     MINIO_URL="http://minio:miniominio@minio:9000" \

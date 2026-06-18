@@ -43,7 +43,13 @@ function normalizeWConfig(raw: Record<string, unknown>, idx: number): WConfig {
     rowCount: typeof t.rowCount === 'number'
       ? t.rowCount
       : parseInt(String(t.rowCount ?? '0').replace(/[^0-9]/g, ''), 10) || 0,
-    columns: (t.columns as number) ?? 0,
+    // The backend sends `columns` as the full column-definition array
+    // ([{name, type, …}]); the UI only shows a count. Rendering the array as a
+    // React child throws "Objects are not valid as a React child" (white screen),
+    // so coerce to its length here (defensive: accept a pre-counted number too).
+    columns: Array.isArray(t.columns)
+      ? t.columns.length
+      : (typeof t.columns === 'number' ? t.columns : 0),
   }));
   const rawStatus = (raw.status as string) ?? '';
   return {

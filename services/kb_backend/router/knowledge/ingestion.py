@@ -23,11 +23,20 @@ from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.pipeline.kb_ui_operation.document_ops import fetch_one as _fetch_doc
 from services.kb_backend.pipeline.ingestion import config as cfg
 from services.kb_backend.pipeline.ingestion.bronze import BronzeUploadRequest, WebBronzeRequest
-from services.kb_backend.dev_seed import DEV_ROLE_PERMISSION_IDS
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/pipeline/ingestion", tags=["Ingestion"])
+
+# Maps an app role literal (from the Kong-injected X-Role) to the RolePermissions.id
+# stamped on a newly ingested KBData row (KBData.role_id FK). These UUIDs MUST match
+# the RolePermissions rows seeded in infra/Postgres/seed.sql.
+DEV_ROLE_PERMISSION_IDS: dict[str, str] = {
+    "PLATFORM_ADMIN":    "00000000-0000-0000-0000-000000000010",
+    "AI_ENGINEER":       "00000000-0000-0000-0000-000000000011",
+    "BUSINESS_OPERATOR": "00000000-0000-0000-0000-000000000012",
+    "EXECUTIVE":         "00000000-0000-0000-0000-000000000013",
+}
 
 _META_CLS = {
     SourceType.DOC:       Document,
@@ -117,7 +126,7 @@ async def ingest_bronze(
                 extension=extension,
                 language=lang.value,
                 source_type=src.value,
-                added_by=ctx["user_id"],
+                added_by=ctx["user_name"],
                 abstract=abstract,
                 doc_metadata=metadata_obj.model_dump(mode="json"),
                 file_bytes=file_bytes,
@@ -193,7 +202,7 @@ async def ingest_bronze_web(
                 url=url,
                 web_name=(body.web_name or name),
                 language=lang.value,
-                added_by=ctx["user_id"],
+                added_by=ctx["user_name"],
                 abstract=body.abstract or "",
                 knowledge_base_id=body.knowledge_base_id or None,
             ),
@@ -239,7 +248,7 @@ async def promote_to_silver(
                 "source_type": record.get("source_type", "doc"),
                 "extension":   record.get("extension", ""),
                 "minio_path":  record.get("path", ""),
-                "approved_by": ctx["user_id"],
+                "approved_by": ctx["user_name"],
             },
             key=data_id,
         )
@@ -302,7 +311,7 @@ async def promote_to_gold(
                 "data_id":             data_id,
                 "tenant_id":           ctx["tenant_id"],
                 "neo4j_connection_id": record.get("neo4j_connection_id", ""),
-                "approved_by":         ctx["user_id"],
+                "approved_by":         ctx["user_name"],
             },
             key=data_id,
         )

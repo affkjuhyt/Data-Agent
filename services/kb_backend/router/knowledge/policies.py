@@ -42,7 +42,7 @@ async def create_filter_policy_route(
         ptype=body.type,
         content=body.content,
         tenant_id=ctx["tenant_id"] or _DEFAULT_TENANT,
-        user_id=ctx["user_id"],
+        created_by=ctx["user_name"],
     )
     return ResponseModel(code=200, data=result)
 
@@ -89,6 +89,6 @@ async def update_extraction_policy_route(
         postgres=svc(request, "postgres"),
         custom=body.custom,
         tenant_id=ctx["tenant_id"] or _DEFAULT_TENANT,
-        user_id=ctx["user_id"],
+        created_by=ctx["user_name"],
     )
     return ResponseModel(code=200, data=result)

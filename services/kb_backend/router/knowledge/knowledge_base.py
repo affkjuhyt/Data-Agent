@@ -42,7 +42,7 @@ async def create_knowledge_base_route(
         name=body.name,
         description=body.description,
         tenant_id=ctx["tenant_id"] or _DEFAULT_TENANT,
-        user_id=ctx["user_id"],
+        created_by=ctx["user_name"],
     )
     return ResponseModel(code=200, data=result)
 

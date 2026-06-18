@@ -1,39 +1,4 @@
-# KB UI Testing stack — local development / single-VM deployment.
-#
-# Services:
-#   postgres · mongo · qdrant · neo4j · minio · minio-init ·
-#   kafka · model-service · kb-backend · kb-ingestion-worker ·
-#   keycloak · kong
-#   [profile local-llm] llama · litellm
-#
-# Auth chain (so the UI ↔ backend round-trip works — kb-backend is fail-closed
-# and rejects any request without Kong's X-Kong-Verified header):
-#   browser (npm run dev :3000) → Keycloak login (:8080)
-#                               → Kong :8000 (aeroflow-jwks verify + inject X-*)
-#                               → kb-backend :8000 (in-network)
-#   Kong is DB-less: configured at boot from kong/kong.kb-ui-testing.yml — no
-#   migration or admin-API step. kb-backend is also published on :8050 for direct
-#   debugging (bypasses Kong = 401, by design).
-#
-# LLM backend:
-#   Default — remote vLLM (Colab + Cloudflare tunnel, see model/vllm/):
-#     set VLLM_BASE_URL=https://xxx.trycloudflare.com
-#     set VLLM_API_KEY=kb-...
-#   Local llama.cpp instead (needs model/ollama/weights/model.gguf + GPU):
-#     docker compose -f docker-compose.kb-ui-testing.yml --profile local-llm up -d
-#
-# Usage:
-#   cd infra
-#   docker compose -f docker-compose.kb-ui-testing.yml up -d
-#   # Frontend (from repo root): point it at Keycloak + Kong, then npm run dev:
-#   #   VITE_KEYCLOAK_URL=http://localhost:8080  VITE_KEYCLOAK_REALM=aeroflow
-#   #   VITE_KEYCLOAK_CLIENT=aeroflow-frontend   VITE_API_URL=http://localhost:8000
-#   # Login as helios-admin / H3lios@Admin01! (realm-export.local.json).
-#
-# Resource sizing (limits, not reservations — Docker will overcommit safely):
-#   ~20 vCPU peak, ~27 GiB RAM peak. Fits comfortably on a 12 vCPU / 32 GiB VM.
-
-name: kb-ui-testing
+name: kb_e2e
 
 networks:
   kb-test:
@@ -466,11 +431,6 @@ services:
       neo4j: { condition: service_healthy }
       model-service: { condition: service_healthy }
 
-  # ── Keycloak — issues the RS256 JWT the frontend logs in with ────────────────
-  # Uses a dedicated `keycloak` database (created by Postgres/keycloak-db.sql) so
-  # its schema stays out of aeroflow_kb. iss is derived from the request Host, so
-  # tokens fetched via localhost:8080 carry iss=http://localhost:8080/realms/aeroflow
-  # — the issuer Kong validates against.
   keycloak:
     image: quay.io/keycloak/keycloak:24.0
     container_name: kb-test-keycloak
@@ -500,9 +460,6 @@ services:
     depends_on:
       postgres: { condition: service_healthy }
 
-  # ── Kong — DB-less gateway. The aeroflow-jwks plugin verifies the JWT and
-  #    injects X-Kong-Verified / X-User-Id / X-Tenant-Id / X-User-Roles / X-Role-Id.
-  #    Configured at boot from kong/kong.kb-ui-testing.yml — no migration/admin step.
   kong:
     build:
       context: ..

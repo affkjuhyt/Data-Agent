@@ -1,7 +1,6 @@
 """
 kb-ingestion-worker entry point.
-Opens all service connections, registers LLM system prompts, loads Docling,
-then runs the Kafka consume loop.
+Opens all service connections, loads Docling, then runs the Kafka consume loop.
 """
 import asyncio
 import logging
@@ -9,21 +8,17 @@ import os
 import sys
 
 # Project root → services.*, basemodel.*
-# Worker dir  → config, log_writer, docling_parser, worker, silver, gold
+# Worker dir  → pipeline stages (silver, gold, conflict_resolver) + the `utils`
+#               support package (config, worker, docling_parser, …)
 _here = os.path.dirname(os.path.abspath(__file__))
 _root = os.path.abspath(os.path.join(_here, "..", ".."))
 for _p in (_root, _here):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-import httpx
-
-import config as cfg
-import llama_client
-from docling_parser import InlineDoclingParser, load_converter
-from worker import consume_loop
-from silver import SYSTEM_PROMPTS as _SILVER_PROMPTS
-from gold import SYSTEM_PROMPTS as _GOLD_PROMPTS
+from utils import config as cfg
+from utils.docling_parser import InlineDoclingParser, load_converter
+from utils.worker import consume_loop
 from conflict_resolver import conflict_resolve_loop
 
 from basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
@@ -44,8 +39,6 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
 log = logging.getLogger("kb-ingestion-worker")
-
-_ALL_SYSTEM_PROMPTS = {**_SILVER_PROMPTS, **_GOLD_PROMPTS}
 
 
 async def _probe_embed_dim(model: ModelServiceClient) -> int:
@@ -168,33 +161,6 @@ async def _ensure_neo4j_indexes(neo4j: Neo4jClient) -> None:
         log.warning("Neo4j index creation failed (non-fatal): %s", exc)
 
 
-async def _register_system_prompts() -> None:
-    """Pre-register system prompts on the llama server so /api/generate can bake them into
-    KV snapshots. Each confirmed registration is recorded in llama_client so the generate
-    helpers know the snapshot exists; any that fail to register fall back to inlining the
-    system prompt into the generated prompt (never policy-less)."""
-    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0)) as client:
-        for name, prompt in _ALL_SYSTEM_PROMPTS.items():
-            try:
-                resp = await client.post(
-                    f"{cfg.LLAMA_BASE_URL}/api/system",
-                    json={"name": name, "prompt": prompt},
-                )
-                resp.raise_for_status()
-                llama_client.mark_system_registered(name)
-                log.info("Registered system prompt %r on llama server", name)
-            except Exception as exc:
-                log.warning(
-                    "Failed to register system prompt %r: %s — generate calls will inline it",
-                    name, exc,
-                )
-        missing = set(_ALL_SYSTEM_PROMPTS) - llama_client.CONFIRMED_SYSTEM_TYPES
-        if missing:
-            log.warning("System prompts NOT KV-cached (will inline on each call): %s", sorted(missing))
-        else:
-            log.info("All %d system prompts KV-cached on llama server", len(_ALL_SYSTEM_PROMPTS))
-
-
 async def main() -> None:
     retry = RetryConfig()
     hc    = HealthCheckLoopConfig()
@@ -230,12 +196,8 @@ async def main() -> None:
 
     await _validate_or_create_qdrant_collection(qdrant, model)
     await _ensure_neo4j_indexes(neo4j)
-    if cfg.LLM_BACKEND == "vllm":
-        # vLLM caches repeated system prompts automatically (prefix caching) and
-        # constrains JSON via response_format schemas — no KV snapshots to register.
-        log.info("LLM backend: vllm (%s) — skipping llama KV snapshot registration", cfg.VLLM_BASE_URL)
-    else:
-        await _register_system_prompts()
+    # The LLM is reached through the model-service /generate gateway (see utils.llm_client);
+    # system prompts are sent inline per call, so there is nothing to pre-register here.
 
     log.info("Loading Docling converter (use_vlm=%s)...", cfg.USE_VLM)
     load_converter(use_vlm=cfg.USE_VLM)

@@ -53,7 +53,7 @@ async def resolve_conflict_route(
         conflict_id=conflict_id,
         method=body.selected_resolution_method,
         instruction=body.resolution_instruction or "",
-        user_id=ctx["user_id"],
+        resolved_by=ctx["user_name"],
         kafka_producer=svc(request, "kafka_producer"),
         tenant_id=ctx.get("tenant_id"),
     )
