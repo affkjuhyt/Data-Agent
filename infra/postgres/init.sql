@@ -94,7 +94,7 @@ CREATE TABLE IF NOT EXISTS "KBData" (
     tenant_id         uuid NOT NULL REFERENCES "Tenants"(id),
     role_id           uuid NOT NULL REFERENCES "RolePermissions"(id),
     knowledge_base_id uuid REFERENCES "KBKnowledgeBase"(knowledge_base_id),
-    name              varchar(512) NOT NULL UNIQUE,
+    name              varchar(512) NOT NULL,
     extension         varchar(32) NOT NULL,
     language          varchar(32) NOT NULL,
     source_type       varchar(32) NOT NULL,
@@ -194,6 +194,7 @@ CREATE TABLE IF NOT EXISTS "KBConflict" (
 
 CREATE TABLE IF NOT EXISTS "KBWarehouse" (
     warehouse_id uuid PRIMARY KEY,
+    tenant_id    uuid NOT NULL REFERENCES "Tenants"(id),
     service      varchar(255) NOT NULL,
     description  text,
     created_at   timestamptz NOT NULL DEFAULT now(),
@@ -373,6 +374,9 @@ CREATE INDEX IF NOT EXISTS idx_kbdata_tenant_source     ON "KBData" (tenant_id, 
 CREATE INDEX IF NOT EXISTS idx_kbdata_tenant_tier       ON "KBData" (tenant_id, current_tier);
 CREATE INDEX IF NOT EXISTS idx_kbdata_inserted_at_desc  ON "KBData" (inserted_at DESC);
 
+-- Document name is unique PER TENANT, not globally — two tenants may each have a
+-- document with the same name.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_kbdata_tenant_name          ON "KBData" (tenant_id, name);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_kbknowledgebase_tenant_name ON "KBKnowledgeBase" (tenant_id, name);
 
 CREATE INDEX IF NOT EXISTS idx_kbconflict_tenant_status_severity ON "KBConflict" (tenant_id, status, severity);
@@ -381,6 +385,7 @@ CREATE INDEX IF NOT EXISTS idx_kbconflictbatch_inserted_at_desc  ON "KBConflictB
 
 CREATE INDEX IF NOT EXISTS idx_kbfilterpolicy_tenant_lang     ON "KBFilterPolicy" (tenant_id, language);
 CREATE INDEX IF NOT EXISTS idx_kbextractionpolicy_tenant_lang ON "KBExtractionPolicy" (tenant_id, language);
+CREATE INDEX IF NOT EXISTS idx_kbwarehouse_tenant            ON "KBWarehouse" (tenant_id);
 
 CREATE INDEX IF NOT EXISTS idx_kbtextblock_owner_block          ON "KBTextBlock" (owner_id, block_id);
 CREATE INDEX IF NOT EXISTS idx_kbtextblockversion_block_version ON "KBTextBlockVersion" (block_id, version_number) WHERE (is_active = true);

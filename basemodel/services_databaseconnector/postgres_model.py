@@ -359,6 +359,7 @@ class KBConflictInsert(TenantModel):
 
 @register("insert")
 class KBWarehouseInsert(BaseModel):
+    tenant_id: str
     service: str
     description: Optional[str] = None
 

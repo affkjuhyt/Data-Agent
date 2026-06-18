@@ -11,7 +11,6 @@ volumes:
   neo4j_logs:
   mongo_data:
   minio_data:
-  docling_cache:
 
 services:
   # ── Postgres — Keycloak (public schema) + Kong (kong schema) + kb-backend
@@ -35,6 +34,39 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # ── DB seed (one-shot) — the kb-backend's aeroflow_kb is a SEPARATE database
+  #    from the default `dataagent` (Keycloak/Kong), so docker-entrypoint-initdb.d
+  #    can't target it. This sidecar runs on every `up`: it ensures aeroflow_kb
+  #    exists, applies the schema (init.sql), then the seed (seed.sql). Both files
+  #    are fully idempotent (CREATE TABLE IF NOT EXISTS / INSERT ... ON CONFLICT DO
+  #    NOTHING), so re-running is a no-op. kb-backend waits for this to complete so
+  #    it always boots into a seeded DB (its own create_all then no-ops).
+  db-seed:
+    image: postgres:16-alpine
+    container_name: e2e-db-seed
+    restart: "no"
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-admin}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-dev123}
+    volumes:
+      - ./Postgres/init.sql:/sql/init.sql:ro
+      - ./Postgres/seed.sql:/sql/seed.sql:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -e
+        echo "[db-seed] ensuring aeroflow_kb database exists"
+        psql -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='aeroflow_kb'" | grep -q 1 \
+          || psql -d postgres -c "CREATE DATABASE aeroflow_kb"
+        echo "[db-seed] applying schema (init.sql)"
+        psql -v ON_ERROR_STOP=1 -d aeroflow_kb -f /sql/init.sql
+        echo "[db-seed] applying seed data (seed.sql)"
+        psql -v ON_ERROR_STOP=1 -d aeroflow_kb -f /sql/seed.sql
+        echo "[db-seed] complete"
 
   # ── Keycloak — uses the default `public` schema (Keycloak won't create a named
   #    one). Realm/users persist in Postgres.
@@ -288,6 +320,7 @@ services:
         limits: { cpus: "1.0", memory: 640M }
     depends_on:
       postgres: { condition: service_healthy }
+      db-seed: { condition: service_completed_successfully }
       qdrant: { condition: service_started }
       neo4j: { condition: service_healthy }
       mongo: { condition: service_healthy }
@@ -310,15 +343,24 @@ services:
       MODEL_SERVICE_URL: http://model-service:8001
       USE_VLM: "false"
       HF_HOME: /root/.cache/huggingface
+      # Models are pre-downloaded to model/docling-model/weights/ and bind-mounted
+      # below; offline mode keeps Docling/HF from doing any network round-trips.
+      HF_HUB_OFFLINE: "1"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - docling_cache:/root/.cache/huggingface
+      # Persisted on host disk (repo-root model/ folder) so the Docling layout/OCR
+      # + RapidOCR weights never re-download (survives container recreate and
+      # `down -v`). Pre-populated via docker cp from a warmed worker; see
+      # model/docling-model/weights/.
+      - ../model/docling-model/weights/hf:/root/.cache/huggingface
+      - ../model/docling-model/weights/rapidocr:/usr/local/lib/python3.11/site-packages/rapidocr/models
     deploy:
       resources:
         limits: { cpus: "2.0", memory: 3G }
     depends_on:
       postgres: { condition: service_healthy }
+      db-seed: { condition: service_completed_successfully }
       mongo: { condition: service_healthy }
       minio-init: { condition: service_completed_successfully }
       kafka: { condition: service_healthy }

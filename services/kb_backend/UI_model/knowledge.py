@@ -45,6 +45,9 @@ class RequestWarehouseConfigCreate(BaseModel):
     status: Optional[str] = 'Draft'
     tables: list
     sync_schedule: Optional[str] = Field(default='Manual', alias='syncSchedule')
+    # A new version reuses the warehouse account but may change database/schema —
+    # the (possibly re-discovered) connection is persisted with the version.
+    connection: Optional[dict] = None
 
 # PATCH /api/knowledge/documents/:doc_id/tables/:table_id/rows/:row_index
 class RequestTableRowUpdate(BaseModel):

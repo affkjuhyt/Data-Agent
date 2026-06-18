@@ -89,8 +89,6 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
       next.has(cat) ? next.delete(cat) : next.add(cat);
       return next;
     });
-    // Warehouses only exist in the Gold layer; jump there so the chip shows results.
-    if (cat === 'warehouse' && !selectedSources.has('warehouse')) setActiveFilter('gold');
     setSelectedIds([]);
   };
 
@@ -127,7 +125,13 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
   const handleDelete = async (e: React.MouseEvent, doc: KnowledgeDocument) => {
     e.stopPropagation();
     try {
-      await apiMutate('DELETE', `/api/data/documents/${doc.data_id}`);
+      // Warehouses live in their own tables (KBWarehouse), not KBData, so they
+      // have a dedicated delete route — the document endpoint can't remove them.
+      const isWarehouse = doc.metadata?.doc_type?.startsWith('Warehouse/');
+      const path = isWarehouse
+        ? `/api/knowledge/warehouses/${doc.data_id}`
+        : `/api/data/documents/${doc.data_id}`;
+      await apiMutate('DELETE', path);
       deleteDocument(doc.data_id);
       setSelectedIds(prev => prev.filter(id => id !== doc.data_id));
       reload(true); // refresh the current server page so the row clears + backfills
