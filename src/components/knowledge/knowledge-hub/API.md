@@ -202,7 +202,7 @@ Called on component mount. Returns all Qdrant vector collections.
     "name": "aeroflow_enterprise_v2",
     "points": 892541,
     "active": true,
-    "dimensions": 1536,
+    "dimensions": 1024,
     "distance": "Cosine",
     "indexed": 100,
     "embedding_model": "text-embedding-3-small"

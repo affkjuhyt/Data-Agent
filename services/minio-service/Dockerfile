@@ -7,6 +7,7 @@ RUN apk add --no-cache gcc musl-dev curl
 COPY minio-service/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+COPY shared/ ./shared/
 COPY minio-service/ .
 
 EXPOSE 8400

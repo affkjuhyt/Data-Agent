@@ -27,9 +27,14 @@ services:
       POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - pg_data:/var/lib/postgresql/data
-      - ./Postgres/keycloak-db.sql:/docker-entrypoint-initdb.d/00-keycloak-db.sql:ro
-      - ./Postgres/init.sql:/docker-entrypoint-initdb.d/01-kb-schema.sql:ro
-      - ./Postgres/seed.sql:/docker-entrypoint-initdb.d/02-kb-seed.sql:ro
+      # Schema + dev data are provisioned by kb-backend on startup
+      # (Base.metadata.create_all + seed_dev_data in services/kb_backend/main.py),
+      # using the ORM's quoted identifiers ("KBModel", …). The old init.sql mount
+      # created UNQUOTED → lowercase tables (kbmodel) that the app's quoted queries
+      # (e.g. model-service registry: SELECT FROM "KBModel") never match, and its
+      # seed.sql could not insert into them. Removed to kill that case-mismatch
+      # shadow schema. Seed test documents manually when needed:
+      #   docker exec kb-test-backend python services/kb_backend/dev_seed_kb.py
     ports:
       - "5432:5432"
     networks: [ kb-test ]
@@ -281,7 +286,8 @@ services:
       resources:
         limits:
           cpus: "0.5"
-          memory: 512M
+          # litellm main image OOMs at 512M (exit 137) — needs ~1GB+ to boot.
+          memory: 2G
     depends_on:
       llama:
         condition: service_healthy

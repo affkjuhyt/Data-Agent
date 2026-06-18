@@ -14,8 +14,10 @@ from db_pg import (
     publish_workflow_version,
     republish_workflow_version,
 )
+from config import REDIS_URL
 from dependencies import ensure_db_available
 from schemas import CreateWorkflowRequest, PublishVersionRequest
+from services.shared.cache_invalidation import publish_graph_invalidation
 from utils import serialize
 
 logger = logging.getLogger(__name__)
@@ -94,7 +96,11 @@ async def api_publish_workflow_version(
 ):
     ensure_db_available()
     try:
-        return await publish_workflow_version(workflow_version_id, body.changelog)
+        result = await publish_workflow_version(workflow_version_id, body.changelog)
+        # New publish gets a new cache key in runtime anyway; broadcast is a
+        # belt-and-suspenders nudge so any stale same-id entry is dropped too.
+        await publish_graph_invalidation(REDIS_URL, workflow_version_id)
+        return result
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:
@@ -106,7 +112,11 @@ async def api_publish_workflow_version(
 async def api_republish_workflow_version(workflow_version_id: str):
     ensure_db_available()
     try:
-        return await republish_workflow_version(workflow_version_id)
+        result = await republish_workflow_version(workflow_version_id)
+        # Republish reuses the same version id, so the runtime cache key is
+        # unchanged — this broadcast is what actually forces the rebuild.
+        await publish_graph_invalidation(REDIS_URL, workflow_version_id)
+        return result
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:

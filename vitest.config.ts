@@ -31,12 +31,21 @@ export default defineConfig({
         "src/vite-env.d.ts",
       ],
       thresholds: {
-        // Start permissive; raise as coverage grows. Failing CI on day 1
-        // with a 60% threshold would block all PRs.
+        // Global stays permissive while overall coverage is still low — a
+        // repo-wide 60% gate on day 1 would block every PR. Instead we ratchet
+        // per-file: once a module has real tests, it gets a high per-file
+        // threshold so its coverage can't silently regress. Add modules here as
+        // they gain tests; raise the global numbers once enough files qualify.
         lines: 0,
         functions: 0,
         branches: 0,
         statements: 0,
+        "src/lib/permissions.ts": {
+          lines: 100,
+          functions: 100,
+          branches: 100,
+          statements: 100,
+        },
       },
     },
   },

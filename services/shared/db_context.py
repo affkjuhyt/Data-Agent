@@ -38,12 +38,13 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
 
-import psycopg2
+from psycopg2 import pool as pg_pool
 from fastapi import Header, HTTPException
 
 # Connection URL for the app_user role. MUST be distinct from the
@@ -85,6 +86,39 @@ def _app_dsn() -> str:
     return dsn
 
 
+# ── Connection pool (app_user role) ─────────────────────────────────────────────
+# Pool the app_user connections rather than opening a fresh one per request. RLS
+# safety is preserved because tenant scoping uses SET LOCAL (transaction-lived):
+# it reverts on commit/rollback, and _release() always rolls back before returning
+# the connection, so a pooled connection never carries one tenant's app.tenant_id
+# into the next borrower.
+_POOL_MIN = int(os.environ.get("DB_POOL_MIN", "2"))
+_POOL_MAX = int(os.environ.get("DB_POOL_MAX", "20"))
+
+_app_pool: pg_pool.ThreadedConnectionPool | None = None
+_app_pool_lock = threading.Lock()
+
+
+def _get_app_pool() -> pg_pool.ThreadedConnectionPool:
+    # Lazy + double-checked: Postgres / APP_DATABASE_URL may not be ready at import.
+    global _app_pool
+    if _app_pool is None:
+        with _app_pool_lock:
+            if _app_pool is None:
+                _app_pool = pg_pool.ThreadedConnectionPool(_POOL_MIN, _POOL_MAX, _app_dsn())
+    return _app_pool
+
+
+def _release(pool: pg_pool.ThreadedConnectionPool, conn: Any) -> None:
+    """Return a connection to the pool, rolling back first so no transaction
+    state (incl. SET LOCAL app.tenant_id) leaks to the next borrower."""
+    try:
+        conn.rollback()
+    except Exception:
+        pass
+    pool.putconn(conn)
+
+
 def set_tenant_context(conn: Any, tenant_id: str) -> None:
     """Bind `app.tenant_id` for the lifetime of the current transaction.
 
@@ -108,7 +142,8 @@ def tenant_scoped_db(tenant_id: str) -> Iterator[Any]:
     pattern is to let the context manager handle it on exit.
     """
     tenant_id = _validated_uuid(tenant_id)
-    conn = psycopg2.connect(_app_dsn())
+    pool = _get_app_pool()
+    conn = pool.getconn()
     conn.autocommit = False
     try:
         set_tenant_context(conn, tenant_id)
@@ -118,7 +153,7 @@ def tenant_scoped_db(tenant_id: str) -> Iterator[Any]:
         conn.rollback()
         raise
     finally:
-        conn.close()
+        _release(pool, conn)
 
 
 def get_tenant_db(
@@ -142,7 +177,8 @@ def get_tenant_db(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
-    conn = psycopg2.connect(_app_dsn())
+    pool = _get_app_pool()
+    conn = pool.getconn()
     conn.autocommit = False
     try:
         set_tenant_context(conn, tenant_id)
@@ -152,4 +188,4 @@ def get_tenant_db(
         conn.rollback()
         raise
     finally:
-        conn.close()
+        _release(pool, conn)

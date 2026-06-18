@@ -8,9 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import WorkflowBuilder from '../workflow/Builder';
 import { TEMPLATE_FLOWS } from '../workflow/BuilderTemplates';
 import type { TemplateId } from '../workflow/Builder';
-
-const FLOW_BUILDER_URL     = (import.meta as any).env?.VITE_FLOW_BUILDER_URL     ?? 'http://localhost:8002';
-const WORKFLOW_RUNTIME_URL = (import.meta as any).env?.VITE_WORKFLOW_RUNTIME_URL ?? 'http://localhost:8001';
+import { FLOW_BUILDER_URL, WORKFLOW_RUNTIME_URL } from '../../../lib/config';
 
 interface ApiWorkflow {
   id: string;

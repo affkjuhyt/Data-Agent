@@ -19,6 +19,7 @@ from services.database_connector.mongo_connector import MongoClient
 from services.database_connector.minio_connector import MinIOClient
 from services.database_connector.kafka_connector import KafkaProducerClient
 from services.database_connector.model_connector import ModelServiceClient
+from services.shared.observability import setup_observability
 
 from services.kb_backend.pipeline.light_rag.pipeline import LightRAGPipeline, cache_sweep_loop
 from services.kb_backend.pipeline.light_rag import config as cfg
@@ -152,6 +153,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="AeroFlow KB API", lifespan=lifespan)
+setup_observability("kb-backend", app)
 
 app.add_middleware(
     CORSMiddleware,

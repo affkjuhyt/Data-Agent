@@ -782,7 +782,7 @@ async def _extract_doc_entities(doc_summary: str) -> list[dict[str, Any]]:
             result, _, _ = await _llm_generate_json(
                 SYSTEM_PROMPTS["doc-entity"],
                 doc_summary,
-                max_tokens=1536,
+                max_tokens=1024,
                 temperature=temp,
                 system_type="doc-entity",
             )

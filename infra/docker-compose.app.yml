@@ -18,6 +18,8 @@ services:
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-change-me}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-change-me}
       QDRANT_URL: http://qdrant:6333
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: workflow-runtime
     depends_on:
       postgres:
         condition: service_healthy
@@ -40,10 +42,16 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
       MONGODB_URL: mongodb://mongo:27017/dataagent
+      # Broadcasts graph-cache invalidation to workflow-runtime on (re)publish.
+      REDIS_URL: redis://redis:6379
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: flow-builder
     depends_on:
       postgres:
         condition: service_healthy
       mongo:
+        condition: service_started
+      redis:
         condition: service_started
 
   kb-backend:
@@ -58,6 +66,8 @@ services:
       POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/${POSTGRES_DB:-dataagent}
       QDRANT_URL: http://qdrant:6333
       NEO4J_URI: bolt://neo4j:7687
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: kb-backend
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,16 +86,19 @@ services:
       - "8200:8200"
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
-      # Kong admin binds to 172.30.0.10 on the kong-admin-net. Use the IP
-      # directly — DNS for "kong" hostname returns the default-net IP, where
+      # Reach Kong's Admin API via the `kong-admin` alias on kong-admin-net.
+      # This is a network-scoped alias that resolves to Kong's admin-net IP —
+      # the plain "kong" hostname can resolve to the default-net IP, where
       # admin is NOT listening. See docs/auth-runbook.md "Kong admin hardening".
-      KONG_ADMIN_URL: http://172.30.0.10:8001
+      KONG_ADMIN_URL: http://kong-admin:8001
       OPENBAO_ADDR: http://openbao:8200
       # Keycloak Admin API — used by approvals router to check federated identities
       KC_URL: http://keycloak-lb:8080
       KC_REALM: ${VITE_KEYCLOAK_REALM:-aeroflow}
       KC_ADMIN_USER: ${KEYCLOAK_ADMIN:-admin}
       KC_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: auth-api
     networks:
       # auth-api needs both: default for proxy traffic + admin-net to manage
       # Kong routes/plugins from auth_core._sync_kong().
@@ -111,6 +124,8 @@ services:
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: minio-service
     depends_on:
       minio:
         condition: service_healthy
@@ -131,14 +146,15 @@ services:
       KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
       KAFKA_SASL_MECHANISM: PLAIN
       CELERY_BROKER: redis://redis:6379/0
-      # IP, not hostname — see auth-api KONG_ADMIN_URL comment above.
-      KONG_ADMIN_URL: http://172.30.0.10:8001
+      # `kong-admin` alias, not hostname/IP — see auth-api KONG_ADMIN_URL comment above.
+      KONG_ADMIN_URL: http://kong-admin:8001
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
       MONGO_URI: mongodb://mongo:27017
       MONGO_DB: dataagent
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: release-worker
     networks:
       - default
       - kong-admin-net
@@ -156,7 +172,8 @@ services:
 
   audit-bridge:
     build:
-      context: ../services/audit-bridge
+      context: ../services
+      dockerfile: audit-bridge/Dockerfile
     container_name: dataagent-audit-bridge
     restart: unless-stopped
     environment:
@@ -172,6 +189,8 @@ services:
       KAFKA_SASL_MECHANISM: PLAIN
       POLL_INTERVAL_SECONDS: "10"
       STATE_FILE: /data/last_event_time.txt
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: audit-bridge
     volumes:
       - audit_bridge_data:/data
     depends_on:
@@ -182,7 +201,8 @@ services:
 
   audit-consumer:
     build:
-      context: ../services/audit-consumer
+      context: ../services
+      dockerfile: audit-consumer/Dockerfile
     container_name: dataagent-audit-consumer
     restart: unless-stopped
     environment:
@@ -198,6 +218,8 @@ services:
       DB_NAME: ${POSTGRES_DB:-dataagent}
       DB_USER: ${POSTGRES_USER:-admin}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: audit-consumer
     depends_on:
       kafka:
         condition: service_healthy
@@ -206,17 +228,20 @@ services:
 
   jwks-refresher:
     build:
-      context: ../services/jwks-refresher
+      context: ../services
+      dockerfile: jwks-refresher/Dockerfile
     container_name: dataagent-jwks-refresher
     restart: unless-stopped
     environment:
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: aeroflow
-      # IP, not hostname — see auth-api KONG_ADMIN_URL comment above.
-      KONG_ADMIN_URL: http://172.30.0.10:8001
+      # `kong-admin` alias, not hostname/IP — see auth-api KONG_ADMIN_URL comment above.
+      KONG_ADMIN_URL: http://kong-admin:8001
       KONG_CONSUMER: keycloak-users
       REFRESH_INTERVAL_SECONDS: "300"
       JWKS_STATE_FILE: /data/last_kid.txt
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: jwks-refresher
     networks:
       - default
       - kong-admin-net

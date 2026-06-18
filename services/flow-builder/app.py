@@ -3,7 +3,6 @@ from dotenv import find_dotenv, load_dotenv
 load_dotenv(find_dotenv())
 
 import asyncio
-import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -14,8 +13,7 @@ from db_pg import close_db, init_db
 from routers import agents, canvas, health, workflows
 from services.database_connector.mongo_connector import client as mongo_client
 from services.database_connector.postgres_connector import client as pg_client
-
-logging.basicConfig(level=logging.INFO)
+from services.shared.observability import setup_observability
 
 
 @asynccontextmanager
@@ -43,6 +41,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="flow-builder", version="0.1.0", lifespan=lifespan)
+    setup_observability("flow-builder", app)
 
     app.add_middleware(
         CORSMiddleware,
