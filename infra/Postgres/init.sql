@@ -1,287 +1,394 @@
+-- ╔══════════════════════════════════════════════════════════════════════════╗
+-- ║  KB schema — kb_e2e stack                                           ║
+-- ╚══════════════════════════════════════════════════════════════════════════╝
+--
+-- SCHEMA ONLY. Seed data lives in seed.sql (runs after this at Postgres init).
+--
+-- This is the SINGLE source of truth for the KB schema and MUST stay in lockstep
+-- with the SQLAlchemy ORM in basemodel/services_databaseconnector/postgres_orm.
+-- It mirrors the canonical ORM-generated schema exactly:
+--   * mixed-case quoted identifiers ("KBData", not kbdata) — the code queries the
+--     quoted names, so unquoted (lowercase-folded) tables are invisible to it.
+--   * character-varying columns (NOT native pg ENUM types) — the ORM stores enums
+--     as plain strings; init.sql used to declare pg enums, which the ORM never used.
+--   * the created_at / inserted_at / is_deleted bookkeeping columns every table has.
+--
+-- Every statement is idempotent (CREATE TABLE IF NOT EXISTS / CREATE INDEX IF NOT
+-- EXISTS) so re-running on an already-initialised database is a no-op rather than
+-- an error. The backend's Base.metadata.create_all sees these tables already exist
+-- and skips them.
+--
+-- Tables are ordered by FK dependency: parents (Tenants, RolePermissions, KBModel,
+-- KBKnowledgeBase) before children.
+
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- ── Enums ─────────────────────────────────────────────────────────────────────
+-- ── Tenants (FK parent for every tenant-scoped table) ─────────────────────────
 
-CREATE TYPE KBLanguage        AS ENUM ('english', 'vietnamese');
-CREATE TYPE KBSourceType      AS ENUM ('doc', 'web', 'image', 'video', 'warehouse');
-CREATE TYPE KBTier            AS ENUM ('bronze', 'silver', 'gold');
-CREATE TYPE KBPolicyFormat    AS ENUM ('Natural Language', 'Exact Match For Word or Phrase');
-CREATE TYPE KBPolicyType      AS ENUM ('Entity', 'Relationship Edge');
-CREATE TYPE KBConflictType    AS ENUM ('content_contradiction','content_conflict','content_duplicate','content_update','table_schema');
-CREATE TYPE KBConflictSeverity AS ENUM ('low', 'medium', 'high');
-CREATE TYPE KBConflictStatus  AS ENUM ('pending', 'awaiting', 'resolved');
-CREATE TYPE KBTaskType        AS ENUM ('embedding', 'Vision Language Model');
-CREATE TYPE KBSimilarityMetric AS ENUM ('cosine', 'euclidean', 'dot');
-CREATE TYPE KBHttpMethod      AS ENUM ('GET', 'POST', 'PUT', 'PATCH', 'DELETE');
-CREATE TYPE KBAPIType         AS ENUM ('NEO4J', 'QDRANT', 'RETRIEVE');
+CREATE TABLE IF NOT EXISTS "Tenants" (
+    id             uuid PRIMARY KEY,
+    name           varchar(255) NOT NULL,
+    slug           varchar(100) NOT NULL UNIQUE,
+    plan_id        smallint,
+    data_residency varchar(20) NOT NULL,
+    is_active      boolean NOT NULL DEFAULT true,
+    created_at     timestamptz NOT NULL DEFAULT now(),
+    deleted_at     timestamptz,
+    inserted_at    timestamptz NOT NULL DEFAULT now()
+);
+
+-- ── RolePermissions (FK parent for KBData.role_id) ────────────────────────────
+
+CREATE TABLE IF NOT EXISTS "RolePermissions" (
+    id          uuid PRIMARY KEY,
+    role_id     varchar(50) NOT NULL,
+    resource    varchar(100) NOT NULL,
+    action      varchar(50) NOT NULL,
+    inserted_at timestamptz NOT NULL DEFAULT now()
+);
 
 -- ── KBModel ───────────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS KBModel (
-    model_id    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    model_name  VARCHAR(50),
-    task_type   KBTaskType NOT NULL
+CREATE TABLE IF NOT EXISTS "KBModel" (
+    model_id    uuid PRIMARY KEY,
+    model_name  varchar(255) NOT NULL,
+    task_type   varchar(64) NOT NULL,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    inserted_at timestamptz NOT NULL DEFAULT now(),
+    is_deleted  boolean NOT NULL DEFAULT false
 );
-CREATE INDEX IF NOT EXISTS idx_model_task_type ON KBModel (task_type);
 
 -- ── KBModelVersion ────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS KBModelVersion (
-    version_id     SERIAL PRIMARY KEY,
-    model_id       UUID REFERENCES KBModel(model_id),
-    version_number INT,
-    added_on       TIMESTAMPTZ,
-    added_by       UUID,
-    config         JSONB,
-    is_active      BOOL DEFAULT FALSE
+CREATE TABLE IF NOT EXISTS "KBModelVersion" (
+    version_id     serial PRIMARY KEY,
+    model_id       uuid NOT NULL REFERENCES "KBModel"(model_id),
+    version_number integer NOT NULL,
+    added_by       varchar(255),
+    config         jsonb,
+    is_active      boolean NOT NULL DEFAULT false,
+    added_on       timestamptz NOT NULL DEFAULT now(),
+    created_at     timestamptz NOT NULL DEFAULT now(),
+    inserted_at    timestamptz NOT NULL DEFAULT now(),
+    is_deleted     boolean NOT NULL DEFAULT false
 );
-CREATE INDEX IF NOT EXISTS idx_modelversion_active ON KBModelVersion (model_id, version_id) WHERE is_active = TRUE;
+
+-- ── KBKnowledgeBase ─────────────────────────────────────────────────────────--
+
+CREATE TABLE IF NOT EXISTS "KBKnowledgeBase" (
+    knowledge_base_id uuid PRIMARY KEY,
+    tenant_id         uuid NOT NULL REFERENCES "Tenants"(id),
+    name              varchar(255) NOT NULL,
+    description       text,
+    is_active         boolean NOT NULL DEFAULT true,
+    created_by        varchar(255),
+    created_at        timestamptz NOT NULL DEFAULT now(),
+    inserted_at       timestamptz NOT NULL DEFAULT now(),
+    is_deleted        boolean NOT NULL DEFAULT false
+);
 
 -- ── KBData ────────────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS KBData (
-    data_id      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id    UUID NOT NULL,
-    role_id      UUID NOT NULL,
-    name         VARCHAR(50) UNIQUE,
-    extension    VARCHAR(10),
-    language     KBLanguage,
-    source_type  KBSourceType NOT NULL,
-    current_tier KBTier NOT NULL DEFAULT 'bronze',
-    added_on     TIMESTAMPTZ,
-    added_by     UUID,
-    abstract     TEXT,
-    metadata     JSONB,
-    path         TEXT
+CREATE TABLE IF NOT EXISTS "KBData" (
+    data_id           uuid PRIMARY KEY,
+    tenant_id         uuid NOT NULL REFERENCES "Tenants"(id),
+    role_id           uuid NOT NULL REFERENCES "RolePermissions"(id),
+    knowledge_base_id uuid REFERENCES "KBKnowledgeBase"(knowledge_base_id),
+    name              varchar(512) NOT NULL UNIQUE,
+    extension         varchar(32) NOT NULL,
+    language          varchar(32) NOT NULL,
+    source_type       varchar(32) NOT NULL,
+    added_by          varchar(255) NOT NULL,
+    abstract          text NOT NULL,
+    metadata          jsonb NOT NULL,
+    current_tier      varchar(16) NOT NULL,
+    path              varchar(1024),
+    added_on          timestamptz NOT NULL DEFAULT now(),
+    created_at        timestamptz NOT NULL DEFAULT now(),
+    inserted_at       timestamptz NOT NULL DEFAULT now(),
+    is_deleted        boolean NOT NULL DEFAULT false
 );
-CREATE INDEX IF NOT EXISTS idx_data_tenant_source   ON KBData (tenant_id, source_type);
-CREATE INDEX IF NOT EXISTS idx_data_tenant_role     ON KBData (tenant_id, role_id);
-CREATE INDEX IF NOT EXISTS idx_data_tenant_tier     ON KBData (tenant_id, current_tier);
 
 -- ── KBLifecycleHistory ────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS KBLifecycleHistory (
-    history_id      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    data_id         UUID NOT NULL REFERENCES KBData(data_id),
-    from_tier       KBTier,
-    to_tier         KBTier NOT NULL,
-    transitioned_at TIMESTAMPTZ NOT NULL,
-    approved_by     UUID,
-    notes           TEXT
+CREATE TABLE IF NOT EXISTS "KBLifecycleHistory" (
+    history_id        uuid PRIMARY KEY,
+    data_id           uuid NOT NULL REFERENCES "KBData"(data_id),
+    to_tier           varchar(16) NOT NULL,
+    from_tier         varchar(16),
+    approved_by       varchar(255),
+    notes             text,
+    pipeline_metadata jsonb,
+    transitioned_at   timestamptz NOT NULL DEFAULT now(),
+    created_at        timestamptz NOT NULL DEFAULT now(),
+    inserted_at       timestamptz NOT NULL DEFAULT now(),
+    is_deleted        boolean NOT NULL DEFAULT false
 );
-CREATE INDEX IF NOT EXISTS idx_lifecycle_data_id ON KBLifecycleHistory (data_id);
 
 -- ── KBFilterPolicy ────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS KBFilterPolicy (
-    policy_id   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id   UUID NOT NULL,
-    policy_name VARCHAR NOT NULL,
-    configformat KBPolicyFormat NOT NULL,
-    config      JSONB,
-    is_active   BOOL DEFAULT FALSE,
-    created_at  TIMESTAMPTZ,
-    created_by  UUID,
-    language    KBLanguage
+CREATE TABLE IF NOT EXISTS "KBFilterPolicy" (
+    policy_id    uuid PRIMARY KEY,
+    tenant_id    uuid NOT NULL REFERENCES "Tenants"(id),
+    policy_name  varchar(255) NOT NULL,
+    configformat varchar(64) NOT NULL,
+    config       jsonb,
+    is_active    boolean NOT NULL DEFAULT false,
+    created_by   varchar(255),
+    language     varchar(32),
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    inserted_at  timestamptz NOT NULL DEFAULT now(),
+    is_deleted   boolean NOT NULL DEFAULT false
 );
-CREATE INDEX IF NOT EXISTS idx_filterpolicy_tenant_lang ON KBFilterPolicy (tenant_id, language);
 
 -- ── KBExtractionPolicy ────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS KBExtractionPolicy (
-    policy_id       UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id       UUID NOT NULL,
-    policy_name     VARCHAR NOT NULL,
-    policy_type     KBPolicyType NOT NULL,
-    custom_override TEXT,
-    created_at      TIMESTAMPTZ,
-    created_by      UUID,
-    language        KBLanguage
+CREATE TABLE IF NOT EXISTS "KBExtractionPolicy" (
+    policy_id       uuid PRIMARY KEY,
+    tenant_id       uuid NOT NULL REFERENCES "Tenants"(id),
+    policy_name     varchar(255) NOT NULL,
+    policy_type     varchar(64) NOT NULL,
+    custom_override text,
+    created_by      varchar(255),
+    language        varchar(32),
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    inserted_at     timestamptz NOT NULL DEFAULT now(),
+    is_deleted      boolean NOT NULL DEFAULT false
 );
-CREATE INDEX IF NOT EXISTS idx_extractionpolicy_tenant_lang ON KBExtractionPolicy (tenant_id, language);
 
 -- ── KBConflictBatch ───────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS KBConflictBatch (
-    batch_id    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id   UUID,
-    batch_title VARCHAR(100) NOT NULL,
-    created_at  TIMESTAMPTZ,
-    status      KBConflictStatus NOT NULL DEFAULT 'pending'
+CREATE TABLE IF NOT EXISTS "KBConflictBatch" (
+    batch_id    uuid PRIMARY KEY,
+    tenant_id   uuid REFERENCES "Tenants"(id),
+    batch_title varchar(512) NOT NULL,
+    status      varchar(32) NOT NULL,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    inserted_at timestamptz NOT NULL DEFAULT now(),
+    is_deleted  boolean NOT NULL DEFAULT false
 );
-CREATE INDEX IF NOT EXISTS idx_conflictbatch_tenant_status ON KBConflictBatch (tenant_id, status);
 
 -- ── KBConflict ────────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS KBConflict (
-    conflict_id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id              UUID,
-    batch_id               UUID REFERENCES KBConflictBatch(batch_id),
-    conflict_type          KBConflictType NOT NULL,
-    detected_at            TIMESTAMPTZ,
-    severity               KBConflictSeverity NOT NULL,
-    status                 KBConflictStatus NOT NULL DEFAULT 'pending',
-    detailed_explanation   TEXT,
-    existing_snapshot      JSONB,
-    incoming_snapshot      JSONB,
-    resolution_instruction TEXT,
-    resolved_at            TIMESTAMPTZ,
-    resolved_by            UUID,
-    selected_resolution_method VARCHAR(50)
+CREATE TABLE IF NOT EXISTS "KBConflict" (
+    conflict_id            uuid PRIMARY KEY,
+    tenant_id              uuid REFERENCES "Tenants"(id),
+    conflict_type          varchar(64) NOT NULL,
+    severity               varchar(16) NOT NULL,
+    batch_id               uuid REFERENCES "KBConflictBatch"(batch_id),
+    status                 varchar(32) NOT NULL,
+    detailed_explanation   text,
+    existing_snapshot      jsonb,
+    incoming_snapshot      jsonb,
+    resolution_instruction text,
+    resolution_method      varchar(20),
+    resolved_by            varchar(255),
+    resolved_at            timestamptz,
+    detected_at            timestamptz NOT NULL DEFAULT now(),
+    created_at             timestamptz NOT NULL DEFAULT now(),
+    inserted_at            timestamptz NOT NULL DEFAULT now(),
+    is_deleted             boolean NOT NULL DEFAULT false
 );
--- Used when joining KBConflictBatch with its pending conflicts
-CREATE INDEX IF NOT EXISTS idx_conflict_batch_pending       ON KBConflict (batch_id) WHERE status = 'pending';
--- Used for broader conflict queries (tenant + status + severity filtering)
-CREATE INDEX IF NOT EXISTS idx_conflict_tenant_status_severity ON KBConflict (tenant_id, status, severity);
 
 -- ── KBWarehouse ───────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS KBWarehouse (
-    warehouse_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    service      VARCHAR(50) NOT NULL,
-    description  TEXT
+CREATE TABLE IF NOT EXISTS "KBWarehouse" (
+    warehouse_id uuid PRIMARY KEY,
+    service      varchar(255) NOT NULL,
+    description  text,
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    inserted_at  timestamptz NOT NULL DEFAULT now(),
+    is_deleted   boolean NOT NULL DEFAULT false
 );
 
--- ── KBWarehouse_Config ────────────────────────────────────────────────────────
+-- ── KBWarehouseConfig ─────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS KBWarehouse_Config (
-    config_id      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    warehouse_id   UUID NOT NULL REFERENCES KBWarehouse(warehouse_id),
-    version_number INT,
-    is_active      BOOL,
-    config         JSONB,
-    created_at     TIMESTAMPTZ,
-    created_by     UUID
+CREATE TABLE IF NOT EXISTS "KBWarehouseConfig" (
+    config_id      uuid PRIMARY KEY,
+    warehouse_id   uuid NOT NULL REFERENCES "KBWarehouse"(warehouse_id) ON DELETE CASCADE,
+    version_number integer NOT NULL,
+    is_active      boolean NOT NULL DEFAULT false,
+    config         jsonb,
+    created_by     varchar(255),
+    created_at     timestamptz NOT NULL DEFAULT now(),
+    inserted_at    timestamptz NOT NULL DEFAULT now(),
+    is_deleted     boolean NOT NULL DEFAULT false
 );
-CREATE INDEX IF NOT EXISTS idx_warehouseconfig_version   ON KBWarehouse_Config (warehouse_id, version_number);
-CREATE INDEX IF NOT EXISTS idx_warehouseconfig_active    ON KBWarehouse_Config (warehouse_id) WHERE is_active = TRUE;
 
 -- ── KBTable ───────────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS KBTable (
-    owner_id    UUID,
-    table_id    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    table_name  VARCHAR(50),
-    description TEXT,
-    schema      JSONB,
-    created_on  TIMESTAMPTZ,
-    created_by  UUID
+CREATE TABLE IF NOT EXISTS "KBTable" (
+    table_id    uuid PRIMARY KEY,
+    owner_id    uuid NOT NULL REFERENCES "KBData"(data_id) ON DELETE CASCADE,
+    table_name  varchar(255) NOT NULL,
+    description text,
+    schema      jsonb,
+    created_by  varchar(255),
+    created_on  timestamptz NOT NULL DEFAULT now(),
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    inserted_at timestamptz NOT NULL DEFAULT now(),
+    is_deleted  boolean NOT NULL DEFAULT false
 );
-CREATE INDEX IF NOT EXISTS idx_table_name     ON KBTable (table_name);
-CREATE INDEX IF NOT EXISTS idx_table_owner_id ON KBTable (owner_id);
 
 -- ── KBTextBlock ───────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS KBTextBlock (
-    block_id    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    owner_id    UUID REFERENCES KBData(data_id),
-    block_index INT
+CREATE TABLE IF NOT EXISTS "KBTextBlock" (
+    block_id    uuid PRIMARY KEY,
+    owner_id    uuid NOT NULL REFERENCES "KBData"(data_id) ON DELETE CASCADE,
+    block_index integer NOT NULL,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    inserted_at timestamptz NOT NULL DEFAULT now(),
+    is_deleted  boolean NOT NULL DEFAULT false
 );
-CREATE INDEX IF NOT EXISTS idx_textblock_owner ON KBTextBlock (owner_id, block_id);
 
 -- ── KBTextBlockVersion ────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS KBTextBlockVersion (
-    version_id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    block_id           UUID NOT NULL REFERENCES KBTextBlock(block_id) ON DELETE CASCADE,
-    version_number     INT NOT NULL,
-    content            TEXT,
-    created_at         TIMESTAMPTZ,
-    created_by         UUID,
-    is_active          BOOL DEFAULT FALSE,
-    table_involved     BOOL,
-    embedding_model_id UUID REFERENCES KBModel(model_id),
-    payload            JSONB
+CREATE TABLE IF NOT EXISTS "KBTextBlockVersion" (
+    version_id         uuid PRIMARY KEY,
+    block_id           uuid NOT NULL REFERENCES "KBTextBlock"(block_id) ON DELETE CASCADE,
+    version_number     integer NOT NULL,
+    content            text,
+    created_by         varchar(255),
+    table_involved     boolean,
+    embedding_model_id uuid REFERENCES "KBModel"(model_id),
+    payload            jsonb,
+    is_active          boolean,
+    created_at         timestamptz NOT NULL DEFAULT now(),
+    inserted_at        timestamptz NOT NULL DEFAULT now(),
+    is_deleted         boolean NOT NULL DEFAULT false
 );
-CREATE INDEX IF NOT EXISTS idx_textblockversion_active ON KBTextBlockVersion (block_id, version_number) WHERE is_active = TRUE;
 
 -- ── KBTextTable ───────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS KBTextTable (
-    version_id  UUID PRIMARY KEY REFERENCES KBTextBlockVersion(version_id) ON DELETE CASCADE,
-    table_name  VARCHAR(50),
-    description TEXT,
-    data        JSONB
+CREATE TABLE IF NOT EXISTS "KBTextTable" (
+    version_id  uuid PRIMARY KEY REFERENCES "KBTextBlockVersion"(version_id) ON DELETE CASCADE,
+    table_name  varchar(255) NOT NULL,
+    description text,
+    data        jsonb,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    inserted_at timestamptz NOT NULL DEFAULT now(),
+    is_deleted  boolean NOT NULL DEFAULT false
 );
 
 -- ── KBQdrantConnection ────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS KBQdrantConnection (
-    connection_id    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id        UUID,
-    is_active        BOOL,
-    created_at       TIMESTAMPTZ,
-    total_collection INT DEFAULT 0
+CREATE TABLE IF NOT EXISTS "KBQdrantConnection" (
+    connection_id    uuid PRIMARY KEY,
+    tenant_id        uuid NOT NULL REFERENCES "Tenants"(id),
+    is_active        boolean NOT NULL DEFAULT false,
+    total_collection integer NOT NULL DEFAULT 0,
+    created_at       timestamptz NOT NULL DEFAULT now(),
+    inserted_at      timestamptz NOT NULL DEFAULT now(),
+    is_deleted       boolean NOT NULL DEFAULT false
 );
-CREATE INDEX IF NOT EXISTS idx_qdrantconn_active ON KBQdrantConnection (tenant_id) WHERE is_active = TRUE;
 
 -- ── KBQdrantCollection ────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS KBQdrantCollection (
-    collection_id    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    connection_id    UUID NOT NULL REFERENCES KBQdrantConnection(connection_id),
-    collection_name  VARCHAR(50) NOT NULL,
-    is_active        BOOL,
-    similarity_metric KBSimilarityMetric DEFAULT 'cosine',
-    points_count     INT DEFAULT 0,
-    vector_dimension INT,
-    embedding_model_id UUID REFERENCES KBModel(model_id)
+CREATE TABLE IF NOT EXISTS "KBQdrantCollection" (
+    collection_id      uuid PRIMARY KEY,
+    connection_id      uuid NOT NULL REFERENCES "KBQdrantConnection"(connection_id),
+    collection_name    varchar(255) NOT NULL,
+    is_active          boolean NOT NULL DEFAULT false,
+    similarity_metric  varchar(16) NOT NULL,
+    points_count       integer NOT NULL DEFAULT 0,
+    vector_dimension   integer,
+    embedding_model_id uuid REFERENCES "KBModel"(model_id),
+    created_at         timestamptz NOT NULL DEFAULT now(),
+    inserted_at        timestamptz NOT NULL DEFAULT now(),
+    is_deleted         boolean NOT NULL DEFAULT false
 );
-CREATE INDEX IF NOT EXISTS idx_qdrantcol_connection ON KBQdrantCollection (connection_id);
 
 -- ── KBNeo4jConnection ─────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS KBNeo4jConnection (
-    connection_id      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id          UUID,
-    is_connected       BOOL,
-    total_node         INT DEFAULT 0,
-    total_edge         INT DEFAULT 0,
-    created_at         TIMESTAMPTZ,
-    embedding_model_id UUID REFERENCES KBModel(model_id)
+CREATE TABLE IF NOT EXISTS "KBNeo4jConnection" (
+    connection_id      uuid PRIMARY KEY,
+    tenant_id          uuid NOT NULL REFERENCES "Tenants"(id),
+    is_connected       boolean NOT NULL DEFAULT false,
+    total_node         integer NOT NULL DEFAULT 0,
+    total_edge         integer NOT NULL DEFAULT 0,
+    embedding_model_id uuid REFERENCES "KBModel"(model_id),
+    created_at         timestamptz NOT NULL DEFAULT now(),
+    inserted_at        timestamptz NOT NULL DEFAULT now(),
+    is_deleted         boolean NOT NULL DEFAULT false
 );
-CREATE INDEX IF NOT EXISTS idx_neo4jconn_active ON KBNeo4jConnection (tenant_id) WHERE is_connected = TRUE;
 
 -- ── KBNeo4jNode ───────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS KBNeo4jNode (
-    connection_id    UUID REFERENCES KBNeo4jConnection(connection_id),
-    node_id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    node_name        VARCHAR(50),
-    node_description TEXT,
-    inserted_at      TIMESTAMPTZ
+CREATE TABLE IF NOT EXISTS "KBNeo4jNode" (
+    node_id          uuid PRIMARY KEY,
+    connection_id    uuid NOT NULL REFERENCES "KBNeo4jConnection"(connection_id),
+    node_name        varchar(512) NOT NULL,
+    node_description text,
+    inserted_at      timestamptz NOT NULL DEFAULT now(),
+    created_at       timestamptz NOT NULL DEFAULT now(),
+    is_deleted       boolean NOT NULL DEFAULT false
 );
-CREATE INDEX IF NOT EXISTS idx_neo4jnode_connection ON KBNeo4jNode (connection_id);
 
 -- ── KBNeo4jRelationship ───────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS KBNeo4jRelationship (
-    from_node   UUID REFERENCES KBNeo4jNode(node_id),
-    to_node     UUID REFERENCES KBNeo4jNode(node_id),
-    score       FLOAT,
-    description TEXT,
+CREATE TABLE IF NOT EXISTS "KBNeo4jRelationship" (
+    from_node   uuid NOT NULL REFERENCES "KBNeo4jNode"(node_id),
+    to_node     uuid NOT NULL REFERENCES "KBNeo4jNode"(node_id),
+    score       double precision,
+    description text,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    inserted_at timestamptz NOT NULL DEFAULT now(),
+    is_deleted  boolean NOT NULL DEFAULT false,
     PRIMARY KEY (from_node, to_node)
 );
 
 -- ── KBEntityLookup ────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS KBEntityLookup (
-    lookup_id      UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    alias_name     VARCHAR(50) NOT NULL,
-    canonical_name VARCHAR(200) NOT NULL,
-    created_at     TIMESTAMPTZ
+CREATE TABLE IF NOT EXISTS "KBEntityLookup" (
+    lookup_id      uuid PRIMARY KEY,
+    tenant_id      uuid REFERENCES "Tenants"(id),
+    alias_name     varchar(512) NOT NULL,
+    canonical_name varchar(512) NOT NULL,
+    created_at     timestamptz NOT NULL DEFAULT now(),
+    inserted_at    timestamptz NOT NULL DEFAULT now(),
+    is_deleted     boolean NOT NULL DEFAULT false
 );
-CREATE INDEX IF NOT EXISTS idx_entitylookup_alias ON KBEntityLookup USING HASH (alias_name);
 
 -- ── KBPublishAPI ──────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS KBPublishAPI (
-    id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id    UUID,
-    name         VARCHAR(50),
-    type         KBAPIType,
-    endpoint_url VARCHAR(100),
-    http_method  KBHttpMethod,
-    is_published BOOL DEFAULT FALSE
+CREATE TABLE IF NOT EXISTS "KBPublishAPI" (
+    id           uuid PRIMARY KEY,
+    tenant_id    uuid NOT NULL REFERENCES "Tenants"(id),
+    name         varchar(255) NOT NULL,
+    type         varchar(32) NOT NULL,
+    endpoint_url varchar(1024) NOT NULL,
+    http_method  varchar(8) NOT NULL,
+    is_published boolean NOT NULL DEFAULT false,
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    inserted_at  timestamptz NOT NULL DEFAULT now(),
+    is_deleted   boolean NOT NULL DEFAULT false
 );
-CREATE INDEX IF NOT EXISTS idx_publishapi_active ON KBPublishAPI (tenant_id) WHERE is_published = TRUE;
+
+-- ── Indexes (mirror the ORM; cursor-pagination keyset + tenant filters) ───────
+
+CREATE INDEX IF NOT EXISTS idx_kbdata_keyset            ON "KBData" (tenant_id, current_tier, inserted_at, data_id);
+CREATE INDEX IF NOT EXISTS idx_kbdata_keyset_all        ON "KBData" (tenant_id, inserted_at, data_id);
+CREATE INDEX IF NOT EXISTS idx_kbdata_tenant_role       ON "KBData" (tenant_id, role_id);
+CREATE INDEX IF NOT EXISTS idx_kbdata_tenant_source     ON "KBData" (tenant_id, source_type);
+CREATE INDEX IF NOT EXISTS idx_kbdata_tenant_tier       ON "KBData" (tenant_id, current_tier);
+CREATE INDEX IF NOT EXISTS idx_kbdata_inserted_at_desc  ON "KBData" (inserted_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_kbknowledgebase_tenant_name ON "KBKnowledgeBase" (tenant_id, name);
+
+CREATE INDEX IF NOT EXISTS idx_kbconflict_tenant_status_severity ON "KBConflict" (tenant_id, status, severity);
+CREATE INDEX IF NOT EXISTS idx_kbconflict_inserted_at_desc       ON "KBConflict" (inserted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_kbconflictbatch_inserted_at_desc  ON "KBConflictBatch" (inserted_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_kbfilterpolicy_tenant_lang     ON "KBFilterPolicy" (tenant_id, language);
+CREATE INDEX IF NOT EXISTS idx_kbextractionpolicy_tenant_lang ON "KBExtractionPolicy" (tenant_id, language);
+
+CREATE INDEX IF NOT EXISTS idx_kbtextblock_owner_block          ON "KBTextBlock" (owner_id, block_id);
+CREATE INDEX IF NOT EXISTS idx_kbtextblockversion_block_version ON "KBTextBlockVersion" (block_id, version_number) WHERE (is_active = true);
+
+CREATE INDEX IF NOT EXISTS idx_kbqdrantconn_tenant_active  ON "KBQdrantConnection" (tenant_id) WHERE (is_active = true);
+CREATE INDEX IF NOT EXISTS idx_kbneo4jconn_tenant_connected ON "KBNeo4jConnection" (tenant_id) WHERE (is_connected = true);
+
+CREATE INDEX IF NOT EXISTS idx_kbentitylookup_alias        ON "KBEntityLookup" USING hash (alias_name);
+CREATE INDEX IF NOT EXISTS idx_kbentitylookup_tenant_alias ON "KBEntityLookup" (tenant_id, alias_name);
+
+CREATE INDEX IF NOT EXISTS idx_kbpublishapi_tenant_published ON "KBPublishAPI" (tenant_id) WHERE (is_published = true);
