@@ -42,8 +42,8 @@ from services.database_connector.qdrant_connector import QdrantClient as QdrantS
 from services.database_connector.neo4j_connector import Neo4jClient
 
 from gold import _commit_chunk_atomic
-import llm_client
-import config as cfg
+from utils import config as cfg
+from utils import llm_client
 
 log = logging.getLogger(__name__)
 

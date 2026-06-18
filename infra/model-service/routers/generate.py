@@ -1,13 +1,12 @@
 """LLM gateway endpoint. Callers (ingestion, lightrag) send generic input —
 prompt/messages (+ optional system_prompt and json_schema) — and never know which
-backend serves it or where. Routing lives here: REMOTE_LLM_URL set → forward to the
-OpenAI-compatible server (e.g. Colab vLLM); unset → no local LLM configured (503).
-Switching backends is a single env change, exactly like /embed and /rerank."""
+backend serves it or where. The active chat backend (backends/) decides: remote
+(e.g. Colab vLLM) when REMOTE_LLM_URL is set, otherwise a local backend if one is
+implemented. Switching backends is a single env change, exactly like /embed and /rerank."""
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-import config as cfg
-import remote
+from backends import provider
 
 router = APIRouter()
 
@@ -28,8 +27,9 @@ class GenerateResponse(BaseModel):
 
 @router.post("/generate", response_model=GenerateResponse)
 def generate(req: GenerateRequest) -> GenerateResponse:
-    if not cfg.REMOTE_LLM_URL:
-        raise HTTPException(503, "no LLM backend configured (set REMOTE_LLM_URL)")
+    backend = provider.active_chat()
+    if backend is None:
+        raise HTTPException(503, "no LLM backend available (set REMOTE_LLM_URL or enable a local backend)")
 
     if req.messages is not None:
         messages = req.messages
@@ -47,5 +47,5 @@ def generate(req: GenerateRequest) -> GenerateResponse:
     else:
         response_format = None
 
-    content = remote.llm_chat(messages, response_format, req.max_tokens, req.temperature)
+    content = backend.chat(messages, response_format, req.max_tokens, req.temperature)
     return GenerateResponse(content=content)

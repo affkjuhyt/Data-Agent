@@ -156,7 +156,7 @@ async def resolve_conflict(
     conflict_id: str,
     method: str,
     instruction: str,
-    user_id: str,
+    resolved_by: str,
     kafka_producer=None,
     tenant_id: str | None = None,
 ) -> dict:
@@ -167,7 +167,7 @@ async def resolve_conflict(
         "status":                 new_status,
         "resolution_method":      method,
         "resolution_instruction": instruction or None,
-        "resolved_by":            user_id,
+        "resolved_by":            resolved_by,
     }
     # Only stamp resolved_at when the conflict is actually done. For AWAITING methods the
     # worker sets resolved_at once it finishes executing the resolution.

@@ -23,7 +23,6 @@ from services.database_connector.model_connector import ModelServiceClient
 from services.kb_backend.pipeline.light_rag.pipeline import LightRAGPipeline, cache_sweep_loop
 from services.kb_backend.pipeline.light_rag import config as cfg
 from services.kb_backend.pipeline.ingestion.pipeline import IngestionPipeline
-from services.kb_backend.dev_seed import seed_dev_data
 
 log = logging.getLogger(__name__)
 
@@ -73,10 +72,13 @@ async def lifespan(app: FastAPI):
     finally:
         await admin_engine.dispose()
 
+    # Schema is owned by infra/Postgres/init.sql (idempotent CREATE TABLE IF NOT
+    # EXISTS) and seeded by infra/Postgres/seed.sql at Postgres init. create_all
+    # stays as a safety net for non-Docker / fresh starts where those scripts did
+    # not run — it no-ops on tables that already exist. There is NO Python seeder.
     kb_engine = create_async_engine(_POSTGRES_URL)
     async with kb_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    await seed_dev_data(kb_engine)
     await kb_engine.dispose()
 
     # ── Set URLs ──────────────────────────────────────────────────────────────

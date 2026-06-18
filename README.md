@@ -12,7 +12,7 @@ the `kb-ingestion-worker`.
 
 | Path | Contents |
 |---|---|
-| [`src/`](./src) | React 19 + TypeScript + Vite frontend (Knowledge Base UI). `src/lib/mockApi.ts` is the FastAPI client |
+| [`src/`](./src) | React 19 + TypeScript + Vite frontend (Knowledge Base UI). `src/lib/apiClient.ts` is the FastAPI client (bearer-only — Kong injects identity) |
 | [`services/`](./services) | Backend microservices: `kb_backend`, `auth-api`, `flow-builder`, `workflow-runtime`, `minio-service`, `release-worker`, `audit-bridge`, `audit-consumer`, `jwks-refresher` |
 | [`infra/`](./infra) | Docker Compose stack, service Dockerfiles, and infra services (`docling`, `model-service`, `kb-ingestion-worker`, `Postgres`, `Neo4j`, `Qdrant`, `kafka`, `kong`) |
 | [`basemodel/`](./basemodel) | Shared data models and database connectors |
@@ -22,10 +22,55 @@ the `kb-ingestion-worker`.
 
 ---
 
-## Running the KB-UI (backend + frontend)
+## Docker stacks at a glance
 
-End-to-end startup. The frontend has **no mock server** — it talks to the real `kb-backend`, so the
-backend stack must be up first.
+There is no mock server — the frontend talks to the real `kb-backend`, which is **fail-closed**:
+every API request must arrive through **Kong** carrying a verified Keycloak identity (`X-Kong-Verified`),
+or it is rejected with `401`. So a usable stack needs **Keycloak** (login) + **Kong** (gateway) in
+front of `kb-backend`. Pick the stack that matches your task:
+
+| Stack | File / helper | What it is | When to use |
+|---|---|---|---|
+| **kb_e2e** | `infra/docker-compose.kb_e2e.yml` | KB data plane + ingestion worker + Keycloak + DB-less Kong; richer LLM options (vLLM / local `llama`) and multilingual models | Day-to-day local dev with the Vite UI (`npm run dev`) and the ingestion/RAG pipeline |
+| **kb_and_authen** | `infra/docker-compose.kb_and_authen.yml` + `infra/kb_and_authen.ps1` | Same auth chain + data plane, **memory-capped to ~6.4 GiB** (fits an ~8 GiB Docker VM); helper auto-configures Kong & runs verify checks | Quick, low-RAM end-to-end auth/data-plane verification; CI-style smoke test |
+| **Full aggregate** | `infra/docker-compose.yml` (+ `local`/`dev` override) | Every service group (storage, security, messaging, observability, all app services) | Running the whole platform, not just KB |
+| **Test fixture** | `infra/docker-compose.test.yml` | Isolated PostgreSQL only | Connector / Alembic tests |
+
+> The `kb_and_authen` and `kb_e2e` stacks both publish ports `8000`/`8080`/`5432`/… so **run one at a
+> time**. `kb-backend` is also published on `:8050` in each — but hitting it directly bypasses Kong, so
+> it returns `401` by design (handy to confirm fail-closed behaviour).
+
+The fastest path to a working UI is **kb_and_authen** (below); for the full local dev loop use **kb_e2e**.
+
+---
+
+## Quick start — kb_and_authen (recommended)
+
+The `kb_and_authen.ps1` helper builds the stack, waits for health, configures Kong, and prints the endpoints.
+
+```powershell
+npm install                       # frontend deps (first time)
+pwsh infra/kb_and_authen.ps1             # build + start + configure Kong (ingestion worker OFF)
+pwsh infra/kb_and_authen.ps1 verify      # prove the chain: 401 / 200 / fleet 200 / 403 / 200
+pwsh infra/kb_and_authen.ps1 up -WithUi  # also start the containerized frontend on :5173
+```
+
+Then open the UI (containerized on `:5173`, or run `npm run dev` against it — see below) and log in
+via Keycloak as **`helios-admin` / `H3lios@Admin01!`** (full perms) or **`helios-engineer` /
+`H3lios@Eng001!`** (limited — write actions return `403`).
+
+| Action | Command |
+|---|---|
+| Stop, keep data | `pwsh infra/kb_and_authen.ps1 down` |
+| Stop, **wipe** data | `pwsh infra/kb_and_authen.ps1 destroy` |
+| Tail logs | `pwsh infra/kb_and_authen.ps1 logs` |
+| Enable bronze→silver→gold pipeline | `pwsh infra/kb_and_authen.ps1 up -WithPipeline` (needs ~12 GiB WSL VM) |
+
+---
+
+## Running the KB-UI — kb_e2e (full local dev)
+
+End-to-end local development with the Vite dev server, the ingestion pipeline, and the auth chain.
 
 ### 1. One-time setup
 
@@ -34,40 +79,48 @@ npm install                                                       # frontend dep
 Copy-Item infra/.env.kb-testing.example infra/.env.kb-testing     # gitignored env (see Local-only files)
 ```
 
-### 2. Start the backend stack (Docker)
+### 2. Start the stack (Docker)
 
-Brings up Postgres, Qdrant, Neo4j, MongoDB, MinIO, Kafka, model-service, `kb-backend`, and the
-`kb-ingestion-worker`. Postgres tables and Qdrant collections are created automatically on first start.
+Brings up Postgres, Qdrant, Neo4j, MongoDB, MinIO, Kafka, model-service, `kb-backend`,
+`kb-ingestion-worker`, **Keycloak** (`:8080`), and a DB-less **Kong** gateway (`:8000`). Postgres
+tables (incl. a dedicated `keycloak` DB), Qdrant collections, and the Kong route/JWT plugin are all
+created automatically on first start.
 
 ```powershell
-docker compose -f infra/docker-compose.kb-ui-testing.yml --env-file infra/.env.kb-testing up -d --build
+docker compose -f infra/docker-compose.kb_e2e.yml --env-file infra/.env.kb-testing up -d --build
 ```
 
 > First start is slower: `model-service` downloads its embed/rerank weights into
 > `infra/model-service/models/` (~2.3 GB, persisted for next time) — see
 > [Local-only files](#local-only-files-not-baked-into-images-or-git).
 
-### 3. Verify the backend is healthy
+### 3. Verify the stack is healthy
 
 ```powershell
-docker compose -f infra/docker-compose.kb-ui-testing.yml ps     # every service "healthy"
-curl http://localhost:8050/health                               # -> {"status":"ok"}
+docker compose -f infra/docker-compose.kb_e2e.yml ps     # every service "healthy"
+curl http://localhost:8050/health                               # -> {"status":"ok"} (direct; bypasses Kong)
 ```
 
 ### 4. Start the frontend
 
+The UI logs in through Keycloak and sends API traffic through Kong (`:8000`), so point it there:
+
 ```powershell
-npm run dev      # Vite dev server on http://localhost:3000
+$env:VITE_KEYCLOAK_URL    = "http://localhost:8080"
+$env:VITE_KEYCLOAK_REALM  = "aeroflow"
+$env:VITE_KEYCLOAK_CLIENT = "aeroflow-frontend"
+$env:VITE_API_URL         = "http://localhost:8000"   # Kong proxy — NOT :8050
+npm run dev                                            # Vite dev server on http://localhost:3000
 ```
 
-Open http://localhost:3000 — the UI calls `kb-backend` at `http://localhost:8050` (override with
-`VITE_API_URL`).
+Open http://localhost:3000, log in as **`helios-admin` / `H3lios@Admin01!`**, and the UI talks to
+`kb-backend` through Kong.
 
 ### Shutdown
 
 ```powershell
-docker compose -f infra/docker-compose.kb-ui-testing.yml down       # stop, keep data (volumes)
-docker compose -f infra/docker-compose.kb-ui-testing.yml down -v    # also wipe DB volumes
+docker compose -f infra/docker-compose.kb_e2e.yml down       # stop, keep data (volumes)
+docker compose -f infra/docker-compose.kb_e2e.yml down -v    # also wipe DB volumes
 ```
 
 ---
@@ -77,23 +130,25 @@ docker compose -f infra/docker-compose.kb-ui-testing.yml down -v    # also wipe 
 The `kb-backend` exposes the LightRAG retrieval pipeline over HTTP. Use it to fetch the top-ranked
 Gold-layer chunks for a query and feed them to your own LLM for RAG.
 
-**Base URL:** `http://localhost:8050` (the `kb-backend` service)
+**Base URL:** `http://localhost:8000` (the **Kong** gateway). These routes are fail-closed — call them
+through Kong with a Keycloak bearer token, not `kb-backend` directly (`:8050` returns `401`).
 
 | Method & path | Purpose |
 |---|---|
 | `POST /api/pipeline/light-rag/retrieve` | Run the full pipeline, return ranked chunks (JSON) |
 | `POST /api/pipeline/light-rag/retrieve/stream` | Same, streamed as SSE — one event per step (progress UIs) |
-| `GET  /api/pipeline/light-rag/health` | `{"status":"ok"}` when the pipeline is wired |
+| `GET  /api/pipeline/light-rag/health` | `{"status":"ok"}` when the pipeline is wired (also auth-gated) |
 
 ### Request
 
-Identity comes from request headers (used for multi-tenant scoping):
+Identity (tenant, user, role) is **not** sent as headers — it comes from the Keycloak JWT. Kong
+verifies the token and injects the authoritative `X-*` identity; the client sends only a bearer token.
+Get one via the password grant (helios-* users have no required actions):
 
-```
-Content-Type: application/json
-X-Role: AI_ENGINEER
-X-Tenant-Id: 00000000-0000-0000-0000-000000000001
-X-User-Id: dev-user
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8080/realms/aeroflow/protocol/openid-connect/token \
+  -d grant_type=password -d client_id=aeroflow-frontend \
+  -d username=helios-engineer -d password='H3lios@Eng001!' | jq -r .access_token)
 ```
 
 Body fields:
@@ -103,17 +158,15 @@ Body fields:
 | `query` | string | — | **required** — the natural-language question |
 | `knowledge_base` | string | `""` (all) | restrict retrieval to one knowledge base |
 | `collection` | string | `knowledge` | chunk collection to search |
-| `tenant_id` | string | from `X-Tenant-Id` | overrides the header |
+| `tenant_id` | string | from the JWT | overrides the token's tenant |
 | `entities` | string[] | `[]` | front-layer entities — skips the internal canonicalize LLM and uses these as the pass-1 filter + graph seeds |
 | `intent` | string | `""` | front-layer query intent label |
 | `entity_types` | object | `{}` | `{name: type}` e.g. `{"Việt Minh":"organization"}` — per-entity typed search |
 
 ```bash
-curl -X POST http://localhost:8050/api/pipeline/light-rag/retrieve \
+curl -X POST http://localhost:8000/api/pipeline/light-rag/retrieve \
+  -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
-  -H 'X-Role: AI_ENGINEER' \
-  -H 'X-Tenant-Id: 00000000-0000-0000-0000-000000000001' \
-  -H 'X-User-Id: dev-user' \
   -d '{"query":"Điều kiện thành lập thư viện cơ sở?","knowledge_base":""}'
 ```
 
@@ -169,21 +222,26 @@ For a progress UI, call `/retrieve/stream`: it returns `text/event-stream` with 
 
 ## Frontend Development
 
-The Knowledge Base UI is a Vite dev server. Its data layer (`src/lib/mockApi.ts`) is a thin fetch
-wrapper around the **real KB FastAPI backend** — there is no standalone mock server on this branch.
-Bring up the backend stack first (see [Full Stack — Docker](#full-stack--docker)), then:
+The Knowledge Base UI is a Vite dev server. Its data layer (`src/lib/apiClient.ts`) is a thin fetch
+wrapper around the **real KB FastAPI backend** reached **through Kong** — there is no standalone mock
+server and no demo-auth bypass: the app always authenticates against Keycloak and sends a bearer token
+(Kong injects the authoritative identity). Bring up a stack with Keycloak + Kong first
+(see [Docker stacks at a glance](#docker-stacks-at-a-glance)), then:
 
 ```powershell
 npm install
-npm run dev 
+npm run dev
 ```
 
 The dev server talks to the backend via:
 
-- `VITE_API_URL` — base URL for KB API calls (default `http://localhost:8050`, the `kb-backend` service)
-- A Vite proxy that forwards `/api/release` and `/api/auth` to the Kong gateway at `http://host.docker.internal:8000`
+- `VITE_KEYCLOAK_URL` / `VITE_KEYCLOAK_REALM` / `VITE_KEYCLOAK_CLIENT` — Keycloak login
+  (defaults: `http://localhost:8080`, `aeroflow`, `aeroflow-frontend`)
+- `VITE_API_URL` — base URL for KB API calls (default `http://localhost:8000`, the **Kong** gateway —
+  **not** `kb-backend` on `:8050`, which is fail-closed)
 
-Set `VITE_API_URL` in your environment if the backend is reachable on a different host/port.
+The defaults already match the kb_and_authen / kb_e2e stacks, so plain `npm run dev` works against
+either; override only if a service is on a different host/port.
 
 Other scripts:
 
@@ -196,7 +254,9 @@ npm run test          # vitest run
 | Service | URL |
 |---|---|
 | Frontend (Vite dev) | http://localhost:3000 |
-| KB backend API (`VITE_API_URL`) | http://localhost:8050 |
+| Keycloak (login) | http://localhost:8080 |
+| KB API via Kong (`VITE_API_URL`) | http://localhost:8000 |
+| kb-backend (direct — bypasses Kong = 401) | http://localhost:8050 |
 
 ---
 
@@ -213,10 +273,11 @@ The Docker stack lives under [`infra/`](./infra). Use these files as the source 
 - [`infra/docker-compose.local.yml`](./infra/docker-compose.local.yml): local developer override (adds `migrate` + `seed`)
 - [`infra/docker-compose.dev.yml`](./infra/docker-compose.dev.yml): shared dev server override (adds `migrate` + `seed`)
 - [`infra/docker-compose.test.yml`](./infra/docker-compose.test.yml): test-only PostgreSQL fixture
-- [`infra/docker-compose.kb-ui-testing.yml`](./infra/docker-compose.kb-ui-testing.yml): isolated KB-UI integration stack
+- [`infra/docker-compose.kb_e2e.yml`](./infra/docker-compose.kb_e2e.yml): isolated KB-UI integration stack — data plane + ingestion worker + Keycloak + DB-less Kong
+- [`infra/docker-compose.kb_and_authen.yml`](./infra/docker-compose.kb_and_authen.yml) + [`infra/kb_and_authen.ps1`](./infra/kb_and_authen.ps1): memory-capped KB end-to-end stack (auth chain + live data plane) with a bring-up/verify helper
 
-This repository still contains older Docker artifacts under [`archive/docker-legacy/`](./archive/docker-legacy)
-and [`infra/old/`](./infra/old). Do not use them.
+This repository still contains older Docker artifacts under [`archive/docker-legacy/`](./archive/docker-legacy).
+Do not use them.
 
 ### Prerequisites
 
@@ -253,8 +314,8 @@ before bringing the KB-UI testing stack up:
 
 | Local-only file | Used by | What to do |
 |---|---|---|
-| `infra/.env.kb-testing` | kb-ui-testing compose interpolation — MinIO credentials and the optional `VLLM_BASE_URL` / `VLLM_API_KEY` LLM tunnel | `Copy-Item infra/.env.kb-testing.example infra/.env.kb-testing`, then edit. The example defaults work for basic local testing. |
-| `model/ollama/weights/model.gguf` (~5.7 GB) | the optional GPU `llama` service (mounted `../model/ollama/weights:/models`) | Download a GGUF model into that path. **Only** needed if you run the local `llama` service — the default KB stack reaches the LLM via `VLLM_BASE_URL` and does not require it. |
+| `infra/.env.kb-testing` | kb_e2e compose interpolation — MinIO credentials (the example defaults work as-is). The LLM / embed / rerank backend is configured separately on `model-service` via its `REMOTE_*_URL` env — see [Switching the model backend](./infra/README.md#switching-the-model-backend-local-cpu--colab-gpu). | `Copy-Item infra/.env.kb-testing.example infra/.env.kb-testing` |
+| `model/ollama/weights/model.gguf` (~5.7 GB) | the optional GPU `llama` service (mounted `../model/ollama/weights:/models`) | Download a GGUF model into that path. **Only** needed if you run the local `llama` service — by default the worker and LightRAG reach the LLM through the `model-service` `/generate` gateway (point its `REMOTE_LLM_URL` at the backend), and do not require it. |
 
 Auto-managed (downloads itself — no manual file placement):
 
@@ -266,26 +327,27 @@ Auto-managed (downloads itself — no manual file placement):
     (kb-backend waits for it), so first start is slower — this is expected, not an error;
   - to pre-seed offline (skip the first-run download), populate the folder from another machine's
     `infra/model-service/models/`, or run:
-    `docker compose -f infra/docker-compose.kb-ui-testing.yml run --rm model-service python -c "import models, config as c; models.load(c.EMBED_MODEL, c.RERANK_MODEL)"`
+    `docker compose -f infra/docker-compose.kb_e2e.yml run --rm model-service python -c "import models, config as c; models.load(c.EMBED_MODEL, c.RERANK_MODEL)"`
 - DB content lives in Docker **named volumes** (persist across image rebuilds) and is seeded by the
   tracked [`infra/Postgres/init.sql`](./infra/Postgres/init.sql) + [`infra/Postgres/seed.sql`](./infra/Postgres/seed.sql).
 
 ### KB-UI testing stack
 
-Isolated stack for exercising the KB backend + ingestion worker against the UI:
+Isolated stack (KB data plane + ingestion worker + Keycloak + DB-less Kong) for exercising the KB
+backend against the UI. Full walkthrough — including the frontend env and login — is in
+[Running the KB-UI — kb_e2e](#running-the-kb-ui--kb_e2e-full-local-dev) above:
 
 ```powershell
-docker compose -f infra/docker-compose.kb-ui-testing.yml --env-file infra/.env.kb-testing up -d --build
+docker compose -f infra/docker-compose.kb_e2e.yml --env-file infra/.env.kb-testing up -d --build
+curl http://localhost:8050/health   # -> {"status":"ok"} (direct probe; app traffic goes via Kong :8000)
 ```
 
-The kb-backend health endpoint confirms it is live:
+Switch the model-service backend (LOCAL CPU vs. remote Colab GPU) by setting the
+`REMOTE_*_URL` env on `model-service` and recreating that one container — no image
+rebuild required. See [Switching the model backend](./infra/README.md#switching-the-model-backend-local-cpu--colab-gpu).
 
-```powershell
-curl http://localhost:8050/health   # -> {"status":"ok"}
-```
-
-Switch the model-service backend (LOCAL CPU vs. remote Colab GPU) with
-[`infra/model-backend.sh`](./infra/model-backend.sh) — no image rebuild required.
+For a leaner, memory-capped end-to-end run with an automated bring-up/verify helper, use the **kb_and_authen**
+stack instead — see [Quick start — kb_and_authen](#quick-start--kb_and_authen-recommended).
 
 ### Official Docker Commands
 
@@ -351,7 +413,8 @@ The local and shared-dev overrides both add `migrate` and `seed` jobs.
 Separate intent-specific Docker paths also exist:
 
 - Test-only: [`infra/docker-compose.test.yml`](./infra/docker-compose.test.yml)
-- KB-UI integration: [`infra/docker-compose.kb-ui-testing.yml`](./infra/docker-compose.kb-ui-testing.yml)
+- KB-UI integration: [`infra/docker-compose.kb_e2e.yml`](./infra/docker-compose.kb_e2e.yml)
+- KB end-to-end (memory-capped + helper): [`infra/docker-compose.kb_and_authen.yml`](./infra/docker-compose.kb_and_authen.yml) + [`infra/kb_and_authen.ps1`](./infra/kb_and_authen.ps1)
 - Standalone model experiment: [`model/ollama/docker/docker-compose.yml`](./model/ollama/docker/docker-compose.yml)
 - Legacy archive: [`archive/docker-legacy/`](./archive/docker-legacy)
 

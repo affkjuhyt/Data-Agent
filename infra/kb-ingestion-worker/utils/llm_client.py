@@ -7,8 +7,8 @@ or forward to a remote server (e.g. Colab vLLM) based on its own env. Switching
 the LLM backend is a model-service env change — nothing here changes.
 
 The JSON SHAPE each call wants is still the worker's concern (domain logic), so the
-per-system_type schema registry is reused from vllm_client and passed to the gateway
-as `json_schema`. The gateway applies it as the server's response_format.
+per-system_type schema registry (llm_schemas) is passed to the gateway as
+`json_schema`. The gateway applies it as the server's response_format.
 """
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ import logging
 
 import httpx
 
-import config as cfg
-from vllm_client import _SCHEMAS_BY_SYSTEM_TYPE  # schema shapes only (no transport)
+from utils import config as cfg
+from utils.llm_schemas import SCHEMAS_BY_SYSTEM_TYPE
 
 log = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ log.info("LLM access: model-service gateway (%s/generate)", _BASE)
 
 
 def _schema(system_type: str) -> dict | None:
-    return _SCHEMAS_BY_SYSTEM_TYPE.get(system_type)
+    return SCHEMAS_BY_SYSTEM_TYPE.get(system_type)
 
 
 async def _generate(payload: dict, timeout: float) -> str:

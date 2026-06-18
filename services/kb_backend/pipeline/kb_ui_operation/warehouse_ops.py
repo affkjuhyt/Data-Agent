@@ -91,7 +91,7 @@ async def get_warehouse_configs(postgres, warehouse_id: str, tenant_id: str) -> 
 
 
 async def create_warehouse_config(
-    postgres, warehouse_id: str, body: dict, user_id: str, tenant_id: str,
+    postgres, warehouse_id: str, body: dict, created_by: str, tenant_id: str,
 ) -> dict:
     await _assert_tenant(postgres, warehouse_id, tenant_id)
     resp = await postgres.read(ReadJoinRequest(
@@ -114,7 +114,7 @@ async def create_warehouse_config(
         warehouse_id=warehouse_id,
         version_number=new_version,
         is_active=False,
-        created_by=user_id,
+        created_by=created_by,
         config=WarehouseConfigPayload(
             host=connection.get("account") or connection.get("host") or body.get("host"),
             database=connection.get("database") or body.get("database"),

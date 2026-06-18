@@ -25,14 +25,14 @@
   Also start the Vite frontend (browser login on http://localhost:5173).
 
 .PARAMETER WithPipeline
-  Also start the ingestion worker (needs ~12 GiB WSL VM — see docker-compose.kb-e2e.yml).
+  Also start the ingestion worker (needs ~12 GiB WSL VM — see docker-compose.kb_and_authen.yml).
 
 .EXAMPLE
-  pwsh infra/kb-e2e.ps1                 # up + configure
-  pwsh infra/kb-e2e.ps1 verify          # prove the chain + live data plane
-  pwsh infra/kb-e2e.ps1 up -WithUi      # include the frontend
-  pwsh infra/kb-e2e.ps1 down            # stop, keep data
-  pwsh infra/kb-e2e.ps1 destroy         # stop + wipe data
+  pwsh infra/kb_and_authen.ps1                 # up + configure
+  pwsh infra/kb_and_authen.ps1 verify          # prove the chain + live data plane
+  pwsh infra/kb_and_authen.ps1 up -WithUi      # include the frontend
+  pwsh infra/kb_and_authen.ps1 down            # stop, keep data
+  pwsh infra/kb_and_authen.ps1 destroy         # stop + wipe data
 #>
 [CmdletBinding()]
 param(
@@ -44,7 +44,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ScriptDir     = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Compose       = Join-Path $ScriptDir 'docker-compose.kb-e2e.yml'
+$Compose       = Join-Path $ScriptDir 'docker-compose.kb_and_authen.yml'
 
 $KONG_ADMIN = 'http://localhost:8900'
 $KONG_PROXY = 'http://localhost:8000'
@@ -86,21 +86,24 @@ function Configure-Kong {
   Wait-For 'Kong admin' { (Invoke-WebRequest "$KONG_ADMIN/status" -UseBasicParsing).StatusCode -eq 200 }
 
   # 1. kb-backend upstream service (Kong reaches it by compose service DNS).
+  #    Generous read_timeout so long-lived SSE streams under /api/pipeline aren't
+  #    dropped during quiet stages (backend also heartbeats). Only affects a SILENT
+  #    upstream — normal fast requests are unaffected.
   Kong-Json Put '/services/kb-backend' @{
     name = 'kb-backend'; url = 'http://kb-backend:8000'
-    connect_timeout = 5000; read_timeout = 60000
+    connect_timeout = 5000; read_timeout = 3600000
   } | Out-Null
   Write-Host '  service: kb-backend'
 
   # 2. Route — the actual router prefixes (data.py /api/data, fleet.py /api/fleet,
-  #    everything else under /api/knowledge).
+  #    /api/pipeline = ingestion SSE + light-rag, everything else under /api/knowledge).
   Kong-Json Put '/services/kb-backend/routes/kb-backend-route' @{
     name = 'kb-backend-route'
-    paths = @('/api/data', '/api/knowledge', '/api/fleet')
+    paths = @('/api/data', '/api/knowledge', '/api/fleet', '/api/pipeline')
     strip_path = $false
     methods = @('GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS')
   } | Out-Null
-  Write-Host '  route:   kb-backend-route -> /api/data, /api/knowledge, /api/fleet'
+  Write-Host '  route:   kb-backend-route -> /api/data, /api/knowledge, /api/fleet, /api/pipeline'
 
   # 3. aeroflow-jwks plugin. Upsert: PATCH if present, else POST.
   $jwksBody = @{
@@ -234,7 +237,7 @@ switch ($Action) {
     if ($WithUi)       { Write-Host '  Frontend  : http://localhost:5173' }
     if ($WithPipeline) { Write-Host '  Ingestion worker: ON (pipeline profile)' }
     Write-Host ''
-    Write-Host 'Next:  pwsh infra/kb-e2e.ps1 verify' -ForegroundColor Yellow
+    Write-Host 'Next:  pwsh infra/kb_and_authen.ps1 verify' -ForegroundColor Yellow
   }
   'configure' { Configure-Kong }
   'verify'    { Verify-Chain }

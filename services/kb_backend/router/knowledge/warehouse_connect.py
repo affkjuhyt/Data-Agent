@@ -152,7 +152,7 @@ async def select_warehouse_tables(
         warehouse_id=warehouse_id,
         version_number=1,
         is_active=True,
-        created_by=ctx["user_id"],
+        created_by=ctx["user_name"],
         config=WarehouseConfigPayload(
             host=body.account_identifier,
             database=body.database,

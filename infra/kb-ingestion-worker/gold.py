@@ -33,8 +33,6 @@ import uuid
 from collections import Counter
 from typing import Any
 
-import llm_client
-import entity_registry
 from neo4j import AsyncDriver
 from qdrant_client import models as qmodels
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
@@ -69,8 +67,10 @@ from services.database_connector.qdrant_connector import (
     vector_search as qdrant_vector_search,
 )
 
-import config as cfg
-from pipeline_events import PipelineEventEmitter
+from utils import config as cfg
+from utils import entity_registry
+from utils import llm_client
+from utils.pipeline_events import PipelineEventEmitter
 
 log = logging.getLogger(__name__)
 
@@ -138,9 +138,9 @@ async def _llm_generate_json(
 ) -> tuple[dict, str, int]:
     """Returns (parsed_dict, last_raw_response, attempts_used).
 
-    `system_type` is a key of SYSTEM_PROMPTS. On the llama backend it selects the
-    pre-cached KV snapshot (keeps CPU inference inside the timeout); on the vllm
-    backend it selects the JSON schema for constrained decoding.
+    `system_type` is a key of SYSTEM_PROMPTS and of utils.llm_schemas: it selects the
+    JSON schema llm_client forwards to the model-service /generate gateway, which the
+    served model applies as its response_format for constrained decoding.
     """
     current_user = user
     last_hint = ""
@@ -1113,6 +1113,8 @@ async def _commit_chunk_atomic(
     approved_by: str,
     embed_model_id: str,
     knowledge_base: str = "",
+    entities: list[str] | None = None,
+    entity_type_fields: dict | None = None,
     emitter: PipelineEventEmitter | None = None,
 ) -> str:
     block_id: str | None = None
@@ -1169,9 +1171,12 @@ async def _commit_chunk_atomic(
                                 "data_id":            data_id,
                                 "block_id":           block_id,
                                 "summary":            summary,
-                                # entities are back-stamped per document once
-                                # canonicalization finishes (see Phase 6a); intents
-                                # live on the doc-summary point, not the chunk.
+                                # Per-chunk entities: each chunk point carries its
+                                # OWN canonical entity set + typed ent_* fields
+                                # (extracted in silver, canonicalized in gold).
+                                # intents live on the doc-summary point, not chunks.
+                                "entities":           entities or [],
+                                **(entity_type_fields or {}),
                                 "embedding_model_id": embed_model_id,
                                 "knowledge_base":     knowledge_base,
                                 "is_deleted":         False,
@@ -1275,6 +1280,16 @@ async def promote_to_gold(
     skipped_count    = 0
     committed_summaries: list[str] = []   # document order — feeds the reduce step
     intent_counter: Counter[str] = Counter()
+
+    # Per-chunk entities are canonicalized + stamped on each chunk during the loop;
+    # the document graph (Neo4j) is the UNION of those canonical entities across
+    # all committed chunks. These accumulate that union (+ display/desc/type and the
+    # raw→canonical map used to remap relationships).
+    doc_canonical_set: set[str] = set()
+    doc_raw_to_canonical: dict[str, str] = {}
+    doc_display_by_canonical: dict[str, str] = {}
+    doc_desc_by_canonical: dict[str, str] = {}
+    doc_type_by_canonical: dict[str, str] = {}
 
     # One batch per gold pipeline run for this document — created upfront so the
     # batch row IS the unit of work for the document's promotion, whether or not
@@ -1422,12 +1437,47 @@ async def promote_to_gold(
             if conflict_found:
                 continue
 
+            # ── Per-chunk entities: filter (blacklist/dedup) → canonicalize →
+            #    accumulate into the document-level union for the graph ──────────
+            raw_ents = _to_entity_list(chunk.get("entities") or [])
+            chunk_canonicals: list[str] = []
+            chunk_type_by_can: dict[str, str] = {}
+            if raw_ents:
+                try:
+                    chunk_canonicals, chunk_details = await entity_registry.normalize_entities_detailed(
+                        qdrant, postgres, model, tenant_id, raw_ents,
+                        verify_fn=verify_merge_pair,
+                        knowledge_base=knowledge_base, embed_model_id=embed_model_id,
+                    )
+                except Exception as exc:
+                    log.warning("Gold: per-chunk canonicalize failed block_index=%d: %s", block_index, exc)
+                    chunk_details = []
+                local_raw_to_can: dict[str, str] = {}
+                for d in chunk_details:
+                    can = d["canonical"]
+                    for form in [d["raw"], *d.get("aliases", [])]:
+                        local_raw_to_can[_fold(form)] = can
+                        doc_raw_to_canonical[_fold(form)] = can
+                    doc_display_by_canonical.setdefault(can, d["raw"])
+                for raw_ent in raw_ents:
+                    can = local_raw_to_can.get(_fold(raw_ent["name"]))
+                    if not can:
+                        continue
+                    chunk_type_by_can.setdefault(can, raw_ent.get("type", "concept"))
+                    doc_desc_by_canonical.setdefault(can, raw_ent.get("description", ""))
+                    doc_type_by_canonical.setdefault(can, raw_ent.get("type", "concept"))
+                doc_canonical_set.update(chunk_canonicals)
+                if emitter:
+                    await emitter.emit("gold.chunk.entities", {
+                        "index": block_index, "entities": chunk_canonicals,
+                    })
+
             # ── Atomic commit (Postgres + Qdrant) ─────────────────────────────
-            # `entities` is added to the version payload per-document in Phase 6a
-            # (doc-level extraction) — mirroring the chunk Qdrant point. intents are
-            # now a DOCUMENT-level field (KBData.doc_metadata), not per-chunk.
+            # Each chunk carries its OWN canonical entities + typed ent_* fields.
+            # intents are a DOCUMENT-level field (KBData.doc_metadata), not per-chunk.
             payload_meta = {
                 "summary":            summary,
+                "entities":           chunk_canonicals,
                 "embedding_model_id": embed_model_id,
                 "knowledge_base":     knowledge_base,
             }
@@ -1447,6 +1497,8 @@ async def promote_to_gold(
                 approved_by=approved_by,
                 embed_model_id=embed_model_id,
                 knowledge_base=knowledge_base,
+                entities=chunk_canonicals,
+                entity_type_fields=entities_by_type_fields(chunk_type_by_can, chunk_canonicals),
                 emitter=emitter,
             )
             committed_count += 1
@@ -1488,41 +1540,26 @@ async def promote_to_gold(
                 "chars":   len(doc_summary),
             })
 
-        # Phase 3: doc-level entities (with Vietnamese aliases) + relationships
-        raw_entities = await _extract_doc_entities(doc_summary)
-        raw_names    = [e["name"] for e in raw_entities]
-        relationships = await _extract_doc_relationships(doc_summary, raw_names)
-        if emitter:
-            await emitter.emit("gold.doc.extract.complete", {
-                "entities":      raw_entities,
-                "relationships": relationships,
-            })
+        # Phase 3: the document's entity set is the UNION of the per-chunk
+        # entities canonicalized during the loop — NOT a separate doc-level
+        # extraction. Relationships are still extracted once from the document
+        # summary, scoped to those union entities, then remapped to canonicals.
+        canonical_names      = sorted(doc_canonical_set)
+        raw_to_canonical     = doc_raw_to_canonical
+        display_by_canonical = doc_display_by_canonical
+        desc_by_canonical    = doc_desc_by_canonical
+        type_by_canonical    = doc_type_by_canonical
 
-        # Phase 4: canonicalize (alias table first — the Vietnamese synonym path;
-        # gray-band embedding merges are LLM-verified via verify_merge_pair)
-        canonical_names, canon_details = await entity_registry.normalize_entities_detailed(
-            qdrant, postgres, model, tenant_id, raw_entities,
-            verify_fn=verify_merge_pair,
-            knowledge_base=knowledge_base, embed_model_id=embed_model_id,
+        rel_names = [display_by_canonical.get(can, can) for can in canonical_names]
+        relationships = (
+            await _extract_doc_relationships(doc_summary, rel_names)
+            if len(canonical_names) >= 2 else []
         )
         if emitter:
-            await emitter.emit("gold.canonicalize", {"mappings": canon_details})
-
-        # raw surface form (and every alias) → canonical, for relationship remap
-        raw_to_canonical: dict[str, str] = {}
-        display_by_canonical: dict[str, str] = {}
-        desc_by_canonical: dict[str, str] = {}
-        type_by_canonical: dict[str, str] = {}
-        for detail in canon_details:
-            can = detail["canonical"]
-            for form in [detail["raw"], *detail.get("aliases", [])]:
-                raw_to_canonical[_fold(form)] = can
-            display_by_canonical.setdefault(can, detail["raw"])
-        for raw_ent in raw_entities:
-            can = raw_to_canonical.get(_fold(raw_ent["name"]))
-            if can:
-                desc_by_canonical.setdefault(can, raw_ent["description"])
-                type_by_canonical.setdefault(can, raw_ent.get("type", "concept"))
+            await emitter.emit("gold.doc.extract.complete", {
+                "entities":      canonical_names,
+                "relationships": relationships,
+            })
 
         remapped_rels: list[dict] = []
         canonical_set = set(canonical_names)
@@ -1564,53 +1601,9 @@ async def promote_to_gold(
                 "neo4j_edges": len(remapped_rels),
             })
 
-        # Back-stamp the doc-level canonical entities onto this document's chunk
-        # points (one filtered set_payload). Graph expansion lands on a data_id;
-        # this gives retrieval an entity → chunk filter inside the document, and
-        # keeps the existing LightRAG `entities` payload filter working.
-        # Per-type fields (ent_person, ent_location, …) make TYPED filters
-        # first-class: parallel name/type arrays can't be correlated in a Qdrant
-        # filter, but "ent_person MatchAny [...]" can. Every type field is always
-        # present (empty list when none) so IsEmpty conditions behave predictably.
-        try:
-            await qdrant.set_payload(
-                collection_name=cfg.QDRANT_COLLECTION,
-                payload={
-                    "entities": canonical_names,
-                    **entities_by_type_fields(type_by_canonical, canonical_names),
-                },
-                points=qmodels.Filter(must=[
-                    qmodels.FieldCondition(key="data_id", match=qmodels.MatchValue(value=data_id)),
-                ]),
-            )
-        except Exception as exc:
-            log.warning("Gold: entity back-stamp on chunk points failed data_id=%s: %s", data_id, exc)
-
-        # Mirror the entity back-stamp into Postgres: each chunk's ACTIVE version
-        # payload gets the document's canonical entities (jsonb merge). Same list
-        # as the Qdrant chunk point, so the Postgres view stays in sync.
-        try:
-            block_ids_subq = (
-                sa_select(KBTextBlockORM.block_id)
-                .where(KBTextBlockORM.owner_id == uuid.UUID(data_id))
-            )
-            async with postgres.get_client() as session:
-                await session.execute(
-                    sa_update(KBTextBlockVersionORM)
-                    .where(KBTextBlockVersionORM.block_id.in_(block_ids_subq))
-                    .where(KBTextBlockVersionORM.is_active.is_(True))
-                    # Pass the dict straight to the JSONB cast — the type's bind
-                    # processor json-encodes it ONCE. Pre-calling json.dumps here
-                    # double-encodes it into a JSON *string* scalar, and
-                    # `object || "stringified"` concatenates into an array rather
-                    # than merging, corrupting every chunk version payload.
-                    .values(payload=sa_func.coalesce(
-                        KBTextBlockVersionORM.payload, sa_cast({}, JSONB)
-                    ).op("||")(sa_cast({"entities": canonical_names}, JSONB)))
-                )
-                await session.commit()
-        except Exception as exc:
-            log.warning("Gold: entity back-stamp on text-block versions failed data_id=%s: %s", data_id, exc)
+        # NOTE: entities + typed ent_* fields are now stamped on each chunk's
+        # Qdrant point AND its Postgres version payload at commit time (per-chunk),
+        # so there is no doc-level back-stamp here anymore.
 
         # Phase 6b: doc-summary point — written LAST. This is what makes the
         # document visible to step-1 retrieval; everything before it can be

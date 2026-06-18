@@ -1,37 +1,4 @@
-# ─── Full KB E2E stack (laptop-tuned) ─────────────────────────────────────────
-# End-to-end testing: real auth (Keycloak + Kong) in front of the full KB data
-# plane (Qdrant + Neo4j + Mongo + MinIO + Kafka + model-service) with kb-backend
-# in FULL mode (KB_LITE unset), so the data-plane stores are real and Qdrant/Neo4j
-# routes return data instead of 503.
-#
-#   browser/curl → Keycloak (JWT) → Kong (verify + inject identity)
-#                → kb-backend (full) → Qdrant / Neo4j / Mongo / MinIO
-#
-# Memory: every service is capped to its real working set so the whole stack fits
-# a ~8 GiB Docker VM (~6.5 GiB total). A cap is a ceiling — set below a service's
-# working set and Docker OOM-kills it, so these are floors, not arbitrary.
-#
-# The bronze→silver→gold INGESTION WORKER (the heaviest service, ~2.5–3 GiB for
-# Docling models) is gated behind the `pipeline` profile and is OFF by default —
-# kb-backend does NOT depend on it to boot. With it off, ingestion API calls still
-# queue to Kafka successfully; the messages just sit unconsumed (no processing).
-# Turn it on (needs more RAM — bump the WSL VM to ~12 GiB) with:
-#   docker compose -f infra/docker-compose.kb-e2e.yml --profile pipeline up -d
-#
-# All stores persist to disk (named volumes). Data survives `down`/restart — it is
-# only wiped by `down -v`.
-#
-# Bring up (configures Kong too):
-#   pwsh infra/kb-e2e.ps1
-# By hand (from repo root):
-#   docker compose -f infra/docker-compose.kb-e2e.yml up -d --build
-#   pwsh infra/kb-e2e.ps1 configure   # register Kong route + jwks + cors
-#
-# Test users (realm-export.local.json — helios-* have no required actions, so the
-# password grant works directly; the *.aeroflow.local users require TOTP):
-#   helios-admin / H3lios@Admin01!   helios-engineer / H3lios@Eng001!   helios-viewer / H3lios@View01!
-
-name: aeroflow-e2e
+name: kb_and_authen
 
 networks:
   default:
@@ -133,7 +100,7 @@ services:
       KONG_NGINX_WORKER_PROCESSES: "1"   # dev: one worker is plenty, keeps RAM low
     ports:
       - "8000:8000"   # proxy
-      - "8900:8001"   # admin (used by kb-e2e.ps1)
+      - "8900:8001"   # admin (used by kb_and_authen.ps1)
     deploy:
       resources:
         limits: { cpus: "1.0", memory: 384M }
@@ -278,6 +245,18 @@ services:
       EMBED_MODEL: ${EMBED_MODEL:-BAAI/bge-small-en-v1.5}
       RERANK_MODEL: ${RERANK_MODEL:-cross-encoder/ms-marco-MiniLM-L-6-v2}
       OMP_NUM_THREADS: "2"
+      # Remote embed/rerank: when set, /embed and /rerank FORWARD to a GPU tunnel
+      # (Colab + cloudflared) instead of the local CPU model. The embed model fixes
+      # the Qdrant vector dim — the AITeamVN tunnel is 1024-d, so the worker probes
+      # 1024 and creates collections at 1024. Empty → local bge-small (384-d).
+      REMOTE_EMBED_URL:  ${REMOTE_EMBED_URL:-}
+      REMOTE_RERANK_URL: ${REMOTE_RERANK_URL:-}
+      REMOTE_API_KEY:    ${REMOTE_API_KEY:-}
+      REMOTE_LLM_URL:   ${REMOTE_LLM_URL:-http://host.docker.internal:11434/v1}
+      REMOTE_LLM_KEY:   ${REMOTE_LLM_KEY:-ollama}
+      REMOTE_LLM_MODEL: ${REMOTE_LLM_MODEL:-llama3}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./model-service/models:/app/models   # HF_HOME=/app/models — reuse cached weights
     deploy:
@@ -290,8 +269,6 @@ services:
       retries: 5
       start_period: 120s
 
-  # ── KB backend — FULL mode (KB_LITE unset → opens all stores). Fail-closed:
-  #    only Kong-verified requests pass. Published on 8050 for /health probes.
   kb-backend:
     build: { context: .., dockerfile: infra/Dockerfile.kb }
     container_name: e2e-kb-backend
@@ -317,12 +294,6 @@ services:
       minio-init: { condition: service_completed_successfully }
       kafka: { condition: service_healthy }
       model-service: { condition: service_healthy }
-
-  # ── Ingestion worker — Kafka consumer; runs the bronze→silver→gold pipeline.
-  #    Heaviest service (~2.5–3 GiB Docling models). Gated behind the `pipeline`
-  #    profile so it is OFF by default — kb-backend does not depend on it, and the
-  #    trimmed stack fits ~8 GiB without it. Enable (and bump WSL RAM ~12 GiB):
-  #      docker compose -f infra/docker-compose.kb-e2e.yml --profile pipeline up -d
   kb-ingestion-worker:
     profiles: ["pipeline"]
     build: { context: .., dockerfile: infra/kb-ingestion-worker/Dockerfile }
@@ -339,6 +310,8 @@ services:
       MODEL_SERVICE_URL: http://model-service:8001
       USE_VLM: "false"
       HF_HOME: /root/.cache/huggingface
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - docling_cache:/root/.cache/huggingface
     deploy:

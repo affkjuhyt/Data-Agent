@@ -99,7 +99,7 @@ class DocResponse(BaseModel):
     source_type: str
     extension: str | None = None
     current_tier: str                 # bronze | silver | gold
-    added_by: str | None = None       # user_id of uploader (from dependency)
+    added_by: str | None = None       # username of uploader (X-User-Name via authenticate)
     added_on: str | None = None       # timestamp set at insert
     abstract: str | None = None
     metadata: DocumentMetadata

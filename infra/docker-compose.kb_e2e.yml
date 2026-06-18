@@ -1,26 +1,4 @@
-# KB UI Testing stack — local development / single-VM deployment.
-#
-# Services:
-#   postgres · mongo · qdrant · neo4j · minio · minio-init ·
-#   kafka · model-service · kb-backend · kb-ingestion-worker
-#   [profile local-llm] llama · litellm
-#
-# LLM backend:
-#   Default — remote vLLM (Colab + Cloudflare tunnel, see model/vllm/):
-#     set VLLM_BASE_URL=https://xxx.trycloudflare.com
-#     set VLLM_API_KEY=kb-...
-#   Local llama.cpp instead (needs model/ollama/weights/model.gguf + GPU):
-#     docker compose -f docker-compose.kb-ui-testing.yml --profile local-llm up -d
-#
-# Usage:
-#   cd infra
-#   docker compose -f docker-compose.kb-ui-testing.yml up -d
-#   # Frontend: npm run dev  (port 3000 → kb-backend on 8050)
-#
-# Resource sizing (limits, not reservations — Docker will overcommit safely):
-#   ~20 vCPU peak, ~27 GiB RAM peak. Fits comfortably on a 12 vCPU / 32 GiB VM.
-
-name: kb-ui-testing
+name: kb_e2e
 
 networks:
   kb-test:
@@ -49,6 +27,7 @@ services:
       POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - pg_data:/var/lib/postgresql/data
+      - ./Postgres/keycloak-db.sql:/docker-entrypoint-initdb.d/00-keycloak-db.sql:ro
       - ./Postgres/init.sql:/docker-entrypoint-initdb.d/01-kb-schema.sql:ro
       - ./Postgres/seed.sql:/docker-entrypoint-initdb.d/02-kb-seed.sql:ro
     ports:
@@ -236,9 +215,9 @@ services:
   # GPU build pulls the prebuilt CUDA 12.2 wheel; runtime base must be a CUDA image.
 
   llama:
-    # Behind the local-llm profile: not started by default — the worker now talks to
-    # the Colab vLLM endpoint (VLLM_BASE_URL/VLLM_API_KEY env, see model/vllm/).
-    # Re-enable the local path with: docker compose --profile local-llm up -d
+    # Behind the local-llm profile: not started by default. The LLM is reached
+    # through model-service /generate; point its REMOTE_LLM_URL at this service
+    # (http://llama:11434/v1) to use it. Enable with: docker compose --profile local-llm up -d
     profiles: [ "local-llm" ]
     build:
       context: ../model/ollama
@@ -366,12 +345,7 @@ services:
       KAFKA_URL: kafka:9092
       QDRANT_URL: http://qdrant:6333
       NEO4J_URL: bolt://neo4j:7687
-      LLAMA_BASE_URL: http://llama:11434
       LITELLM_BASE_URL: http://litellm:4000
-      # vLLM tunnel — when set, the LightRAG canonicalize step uses this
-      # OpenAI-compatible endpoint instead of the local llama.
-      VLLM_BASE_URL: ${VLLM_BASE_URL:-}
-      VLLM_API_KEY: ${VLLM_API_KEY:-}
       # LightRAG tuning knobs (benchmark iteration without image rebuild)
       QDRANT_PASS1_LIMIT: ${QDRANT_PASS1_LIMIT:-3}
       QDRANT_PASS2_LIMIT: ${QDRANT_PASS2_LIMIT:-2}
@@ -404,9 +378,8 @@ services:
       minio-init: { condition: service_completed_successfully }
       kafka: { condition: service_healthy }
       model-service: { condition: service_healthy }
-      # llama dependency removed — LLM now reached via VLLM_BASE_URL (Colab tunnel);
-      # the backend's llama calls (LightRAG canonicalize, prompt registration) are
-      # best-effort and degrade gracefully when the local llama is not running.
+      # No direct LLM dependency — the backend's LightRAG calls go through
+      # model-service /generate, which forwards to its configured backend.
 
   # ── KB Ingestion Worker — Kafka consumer, silver/gold pipeline ───────────────
 
@@ -424,13 +397,6 @@ services:
       QDRANT_URL: http://qdrant:6333
       NEO4J_URI: bolt://neo4j:7687
       MODEL_SERVICE_URL: http://model-service:8001
-      LLAMA_BASE_URL: http://llama:11434
-      LITELLM_BASE_URL: http://litellm:4000
-      # vLLM backend (Colab tunnel, see model/vllm/) — setting VLLM_BASE_URL on the
-      # host flips the worker's LLM backend to vllm; empty keeps the local llama.
-      VLLM_BASE_URL: ${VLLM_BASE_URL:-}
-      VLLM_API_KEY: ${VLLM_API_KEY:-}
-      LLM_BACKEND: ${LLM_BACKEND:-}
       MINIO_BUCKET: knowledge-base
       USE_VLM: "false"
       LLM_MODEL: llama3
@@ -451,3 +417,70 @@ services:
       qdrant: { condition: service_healthy }
       neo4j: { condition: service_healthy }
       model-service: { condition: service_healthy }
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: kb-test-keycloak
+    restart: unless-stopped
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: aeroflow
+      KC_DB_PASSWORD: aeroflow        # postgres uses trust auth — value is ignored
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HEALTH_ENABLED: "true"
+      JAVA_OPTS_KC_HEAP: "-Xms256m -Xmx640m"
+    volumes:
+      - ./keycloak/realm-export.local.json:/opt/keycloak/data/import/realm-export.json:ro
+    ports:
+      - "8080:8080"
+    networks: [ kb-test ]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  kong:
+    build:
+      context: ..
+      dockerfile: infra/kong/Dockerfile
+    container_name: kb-test-kong
+    restart: unless-stopped
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /kong/kong.yml
+      KONG_PROXY_LISTEN: "0.0.0.0:8000"
+      KONG_ADMIN_LISTEN: "0.0.0.0:8001"
+      KONG_PLUGINS: bundled,aeroflow-jwks
+      KONG_NGINX_WORKER_PROCESSES: "1"
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+    volumes:
+      - ./kong/kong.kb-ui-testing.yml:/kong/kong.yml:ro
+    ports:
+      - "8000:8000"   # proxy — the frontend sends API traffic here
+      - "8801:8001"   # admin (read-only in DB-less; handy for debugging)
+    networks: [ kb-test ]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 384M
+    healthcheck:
+      test: [ "CMD", "kong", "health" ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      kb-backend: { condition: service_started }
+      keycloak: { condition: service_started }

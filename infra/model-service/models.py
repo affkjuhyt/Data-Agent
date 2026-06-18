@@ -5,7 +5,7 @@ Startup path:
   load(default_embed, rerank_name) — loads the default embed model + reranker
   synchronously so the service can serve immediately.
 
-Background path (via registry.register_with_retry):
+Background path (via model_sync.register_with_retry):
   ensure_loaded(model_name) — called for every model row found in KBModel;
   no-ops if the model is already in _embed_models.
 

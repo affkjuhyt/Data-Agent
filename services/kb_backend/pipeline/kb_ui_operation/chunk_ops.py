@@ -222,7 +222,7 @@ async def delete_chunk_version(postgres, chunk_id: str, version_number: int, doc
 async def create_chunk_version(
     postgres, chunk_id: str,
     text: str, entities: list, intents: list,
-    user_id: str, doc_id: str, tenant_id: str,
+    created_by: str, doc_id: str, tenant_id: str,
 ) -> dict:
     await _assert_tenant(postgres, doc_id, tenant_id)
     resp = await postgres.read(ReadJoinRequest(
@@ -237,7 +237,7 @@ async def create_chunk_version(
         block_id=chunk_id,
         version_number=max_v + 1,
         content=text,
-        created_by=user_id,
+        created_by=created_by,
         table_involved=False,
         payload={"entities": entities, "intents": intents},
         is_active=False,

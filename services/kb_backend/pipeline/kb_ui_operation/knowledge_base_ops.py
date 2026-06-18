@@ -47,7 +47,7 @@ async def create_knowledge_base(
     name: str,
     description: str,
     tenant_id: str,
-    user_id: str,
+    created_by: str,
 ) -> dict:
     name = (name or "").strip()
     if not name:
@@ -57,7 +57,7 @@ async def create_knowledge_base(
         name=name,
         description=(description or "").strip() or None,
         is_active=True,
-        created_by=user_id,
+        created_by=created_by,
     ))
     if resp.code == 409:
         raise HTTPException(status_code=409, detail=f"Knowledge base '{name}' already exists")

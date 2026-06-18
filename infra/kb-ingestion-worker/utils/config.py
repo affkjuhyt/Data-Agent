@@ -6,18 +6,9 @@ MINIO_URL         = os.getenv("MINIO_URL",         "http://minioadmin:minioadmin
 KAFKA_URL         = os.getenv("KAFKA_URL",         "kafka:9092")
 QDRANT_URL        = os.getenv("QDRANT_URL",        "http://qdrant:6333")
 NEO4J_URI         = os.getenv("NEO4J_URI",         "bolt://neo4j:7687")
+# The LLM/embed/rerank backend is owned entirely by model-service. The worker
+# only knows this URL and never which backend (local vs Colab) serves a call.
 MODEL_SERVICE_URL = os.getenv("MODEL_SERVICE_URL", "http://model-service:8001")
-LITELLM_BASE_URL  = os.getenv("LITELLM_BASE_URL",  "http://litellm:4000")
-LLAMA_BASE_URL    = os.getenv("LLAMA_BASE_URL",    "http://llama:11434")
-
-# ── vLLM backend (e.g. Colab + Cloudflare tunnel, see model/vllm/) ────────────
-VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "")   # e.g. https://xxx.trycloudflare.com
-VLLM_API_KEY  = os.getenv("VLLM_API_KEY",  "")   # printed by the Colab notebook
-VLLM_MODEL    = os.getenv("VLLM_MODEL",    "")   # empty → auto-discover via /v1/models
-
-# Which client llm_client dispatches to: "vllm" or "llama". Unset → vllm iff
-# VLLM_BASE_URL is set, so the tunnel URL env var alone flips the backend.
-LLM_BACKEND = os.getenv("LLM_BACKEND") or ("vllm" if VLLM_BASE_URL else "llama")
 
 KAFKA_CONSUMER_GROUP          = os.getenv("KAFKA_CONSUMER_GROUP",          "kb-ingestion")
 KAFKA_TOPIC_SILVER            = os.getenv("KAFKA_TOPIC_SILVER",            "kb.promote.silver")
