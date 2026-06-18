@@ -14,6 +14,7 @@ volumes:
   qdrant_data:
   neo4j_data:
   neo4j_logs:
+  ollama_models:
 
 services:
   # Databases
@@ -210,9 +211,13 @@ services:
       KAFKA_NODE_ID: "1"
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
-      KAFKA_LISTENERS: SASL_PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_ADVERTISED_LISTENERS: SASL_PLAINTEXT://kafka:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: SASL_PLAINTEXT:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT
+      # INTERNAL://:9094 is a PLAINTEXT listener for in-cluster clients that don't
+      # speak SASL (kb-backend, kb-ingestion-worker). Principal = ANONYMOUS, which
+      # is a super-user (KAFKA_SUPER_USERS) so it bypasses ACLs. SASL stays on :9092
+      # for audit-bridge/audit-consumer/release-worker.
+      KAFKA_LISTENERS: SASL_PLAINTEXT://:9092,CONTROLLER://:9093,INTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: SASL_PLAINTEXT://kafka:9092,INTERNAL://kafka:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: SASL_PLAINTEXT:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: SASL_PLAINTEXT
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
@@ -386,6 +391,26 @@ services:
       mongo:
         condition: service_started
 
+  # Local LLM backend on the host GPU. model-service /generate forwards here.
+  # Requires NVIDIA GPU + Docker GPU support (Docker Desktop WSL2 / nvidia-container-toolkit).
+  # First start has no model — pull it once:
+  #   docker exec dataagent-ollama ollama pull llama3.1:8b
+  ollama:
+    image: ollama/ollama
+    container_name: dataagent-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
   model-service:
     build:
       context: ./model-service
@@ -394,8 +419,13 @@ services:
     ports:
       - "8600:8001"
     environment:
-      EMBED_MODEL: BAAI/bge-large-en-v1.5
-      RERANK_MODEL: cross-encoder/ms-marco-MiniLM-L-6-v2
+      # Multilingual (Vietnamese corpus) — must match the weights cached in
+      # ./model-service/models and the dim of the Qdrant collections.
+      EMBED_MODEL: ${EMBED_MODEL:-intfloat/multilingual-e5-small}
+      RERANK_MODEL: ${RERANK_MODEL:-cross-encoder/mmarco-mMiniLMv2-L12-H384-v1}
+      # LLM gateway → local Ollama (GPU). /generate forwards to REMOTE_LLM_URL + /v1/...
+      REMOTE_LLM_URL: ${REMOTE_LLM_URL:-http://ollama:11434}
+      REMOTE_LLM_MODEL: ${REMOTE_LLM_MODEL:-llama3.1:8b}
     volumes:
       # Weights are no longer baked into the image — they download here on first
       # start and persist across recreates. See infra/model-service/Dockerfile.
@@ -426,6 +456,11 @@ services:
       QDRANT_URL: http://qdrant:6333
       NEO4J_URI: bolt://neo4j:7687
       MODEL_SERVICE_URL: http://model-service:8001
+      # MinIO creds: the Dockerfile default password is wrong — pin to the real root creds.
+      MINIO_URL: http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-minio_secret}@minio:9000
+      MINIO_BUCKET: knowledge-base
+      # Plaintext Kafka listener (this client has no SASL support).
+      KAFKA_URL: kafka:9094
     depends_on:
       postgres:
         condition: service_healthy
@@ -446,7 +481,7 @@ services:
       POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/${POSTGRES_DB:-dataagent}
       MONGO_URL: mongodb://mongo:27017/dataagent
       MINIO_URL: http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-minio_secret}@minio:9000
-      KAFKA_URL: kafka:9092
+      KAFKA_URL: kafka:9094
       QDRANT_URL: http://qdrant:6333
       NEO4J_URI: bolt://neo4j:7687
       MODEL_SERVICE_URL: http://model-service:8001

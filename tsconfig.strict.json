@@ -1,0 +1,18 @@
+{
+  // Incremental-strict typecheck (SRS §7.1: TypeScript strict). The base
+  // tsconfig.json stays loose so the existing `npm run typecheck` CI gate keeps
+  // passing; this config turns on `strict` for a SEPARATE, non-blocking
+  // `npm run typecheck:strict` job that surfaces the ~56-error baseline to burn
+  // down over time. New/refactored code should pass strict. Once the baseline
+  // reaches zero, fold these flags into tsconfig.json and make it blocking.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noUnusedParameters": true,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true
+    // noUnusedLocals intentionally deferred — ~277 findings; covered by the
+    // dead-code sweep (knip/vulture) in a later phase to avoid blocking noise.
+  },
+  "include": ["src", "vite.config.ts", "vitest.config.ts", "vitest.setup.ts"]
+}

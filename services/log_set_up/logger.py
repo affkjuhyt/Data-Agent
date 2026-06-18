@@ -1,24 +1,23 @@
-from pathlib import Path
-import logging
-import os
-_LOG_DIR = Path(__file__).resolve().parent.parent.parent / "logs"
-_LOG_DIR.mkdir(parents=True, exist_ok=True)
+"""Named-logger factory for the database connectors.
 
-def create_logger(logger_name: str, file_name: str) -> logging.Logger:
+Previously this attached its own file + stream handlers (writing to the repo
+`logs/` dir) and set ``propagate = False`` — producing a plain log format that
+diverged from the structured JSON the services emit via
+``services/shared/observability.py``. It now just returns a standard named logger
+that PROPAGATES to the root logger, so each process formats connector logs with
+its own root config consistently:
+
+* services (kb_backend, flow-builder, workflow-runtime, …) → JSON via
+  ``setup_observability()``;
+* the ingestion worker → its ``logging.basicConfig()``.
+
+No own handlers, no file writes. ``file_name`` is kept for call-site
+compatibility but is now ignored.
+"""
+import logging
+
+
+def create_logger(logger_name: str, file_name: str | None = None) -> logging.Logger:
     log = logging.getLogger(logger_name)
     log.setLevel(logging.INFO)
-
-    if not log.handlers:
-        _fmt = logging.Formatter(
-            fmt="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
-        _file_handler = logging.FileHandler(_LOG_DIR / f"{file_name}.log")
-        _file_handler.setFormatter(_fmt)
-        _stream_handler = logging.StreamHandler()
-        _stream_handler.setFormatter(_fmt)
-        log.addHandler(_file_handler)
-        log.addHandler(_stream_handler)
-        log.propagate = False
-
     return log

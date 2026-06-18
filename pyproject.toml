@@ -20,6 +20,8 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
     "pre-commit>=3.7",
+    "import-linter>=2.0",   # Dependency Rule arch test (.importlinter)
+    "vulture>=2.14",        # dead-code detection (SRS §7.2)
 ]
 
 [tool.setuptools.packages.find]
@@ -82,6 +84,24 @@ exclude_lines = [
     "raise NotImplementedError",
     "if TYPE_CHECKING:",
     "@abstractmethod",
+]
+
+# ─── Vulture (dead code) ───────────────────────────────────────────────────
+# SRS §7.2: dead code must be removed without changing runtime behaviour.
+# Vulture finds unused functions/classes/vars (Ruff F401 only covers imports).
+# min_confidence=80 trims false positives; dynamic refs (FastAPI deps, pytest
+# fixtures, ORM attrs) may still flag — vet before deleting and add real
+# whitelist entries to .vulture_whitelist.py. Run: `vulture`.
+[tool.vulture]
+paths = ["services", "basemodel", ".vulture_whitelist.py"]
+min_confidence = 80
+exclude = [
+    "*/migrations/*",
+    "*/alembic/*",
+    "*/__pycache__/*",
+    "*/tests/*",
+    "archive/",
+    "*/node_modules/*",
 ]
 
 # ─── Ruff (lint + format) ──────────────────────────────────────────────────
