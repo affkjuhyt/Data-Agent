@@ -15,7 +15,9 @@ from memory_middleware import (
     _DEV_AGENT_ID,
     _DEV_TENANT_ID,
     apply_memory_policy,
+    retrieve_episodic_past,
     retrieve_memories,
+    retrieve_pending_reminders,
 )
 from observability import get_langfuse_handler
 from schemas import RunRequest
@@ -61,6 +63,17 @@ async def run_conversation_stream(req: RunRequest, request: Request):
             user_ref=user_ref,
             query=req.query,
         )
+        if not req.conversation_id:
+            # New session — surface due reminders + recent episodic history once (doc §IV).
+            reminders, episodic_past = await asyncio.gather(
+                retrieve_pending_reminders(tenant_id=tenant_id, agent_id=agent_id, user_ref=user_ref),
+                retrieve_episodic_past(tenant_id=tenant_id, agent_id=agent_id, user_ref=user_ref),
+            )
+            memory_context = [
+                {**r, "memory_type": "episodic_future"} for r in reminders
+            ] + [
+                {**e, "memory_type": "episodic_past"} for e in episodic_past
+            ] + memory_context
 
     # Load history: Redis → DB → client fallback
     if req.conversation_id:
@@ -337,9 +350,12 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                             latency_ms=latency,
                         )
 
-            if cfg.get("memory_enabled") and not guardrail_triggered:
+            if cfg.get("memory_enabled") and not guardrail_triggered and conv_id:
                 final_state = {**state, "response": assistant_text}
-                await apply_memory_policy(final_state, agent_id, tenant_id, user_ref)
+                await apply_memory_policy(
+                    final_state, agent_id, tenant_id, user_ref,
+                    conversation_id=conv_id, message_id=assistant_msg_id,
+                )
 
     response = StreamingResponse(event_stream(), media_type="text/event-stream")
     response.headers["X-Conversation-Id"] = conv_id or ""
