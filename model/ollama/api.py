@@ -143,23 +143,6 @@ async def api_embeddings(request: Request):
     return JSONResponse({"model": "llama3", "embedding": embedding})
 
 
-@app.post("/api/embeddings")
-async def api_embeddings(request: Request):
-    """Ollama-compatible embeddings endpoint. LiteLLM routes embedding calls here."""
-    cache = _get_cache()
-    body: dict[str, Any] = await request.json()
-    prompt = body.get("prompt", "")
-    if not prompt:
-        raise HTTPException(status_code=422, detail="'prompt' is required")
-    loop = asyncio.get_event_loop()
-    try:
-        embedding = await loop.run_in_executor(None, lambda: cache.embed(prompt))
-    except Exception as exc:
-        log.error("Embedding failed: %s", exc)
-        raise HTTPException(status_code=500, detail=f"Embedding failed: {exc}")
-    return JSONResponse({"model": "llama3", "embedding": embedding})
-
-
 @app.get("/api/tags")
 async def api_tags():
     pool = _get_pool()

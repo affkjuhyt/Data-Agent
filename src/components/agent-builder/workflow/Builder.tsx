@@ -43,7 +43,7 @@ type FlowNodeType =
   | 'trigger' | 'guardrail' | 'planner' | 'kb_search' | 'mcp' | 'tool_executor'
   | 'rrf_ranking' | 'reranker' | 'responder' | 'output'
   | 'human_approval' | 'condition' | 'db_query'
-  | 'send_notification' | 'loop';
+  | 'send_notification' | 'loop' | 'judge';
 
 export interface FlowNodeData extends Record<string, unknown> {
   nodeType: FlowNodeType;
@@ -97,6 +97,7 @@ const NODE_STYLE: Record<string, { typeLabel: string; Icon: any; color: string }
   db_query:          { typeLabel: 'DB Query',       Icon: Database,    color: '#10B981' },
   send_notification: { typeLabel: 'Notification',   Icon: Bell,        color: '#EF4444' },
   loop:              { typeLabel: 'Loop',           Icon: RefreshCw,   color: '#3B82F6' },
+  judge:             { typeLabel: 'Judge',          Icon: CheckCircle2, color: '#F59E0B' },
 };
 
 // â”€â”€â”€ Custom Node â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -874,6 +875,10 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
         {['condition', 'db_query', 'send_notification', 'loop'].includes(d.nodeType) && (
           <InfoNote text="Node nÃ y chÆ°a cÃ³ config. KÃ©o vÃ o canvas vÃ  káº¿t ná»‘i vá»›i cÃ¡c node khÃ¡c." />
         )}
+
+        {d.nodeType === 'judge' && (
+          <InfoNote text="Đánh giá toàn bộ trace sau responder. Route lại nếu lỗi: RETRIEVAL→kb_search, REASONING→responder, TOOL→tool_executor, DATA_QUALITY→human_approval." />
+        )}
       </div>
     </motion.div>
   );
@@ -896,6 +901,7 @@ const ALL_LIBRARY_NODES: Array<{
   { nodeType: 'condition',         label: 'Condition',         color: '#6B7280', Icon: GitBranch,   allowMultiple: true  },
   { nodeType: 'send_notification', label: 'Send Notification', color: '#EF4444', Icon: Bell,        allowMultiple: true  },
   { nodeType: 'loop',              label: 'Loop',              color: '#3B82F6', Icon: RefreshCw,   allowMultiple: false },
+  { nodeType: 'judge',             label: 'Judge',             color: '#F59E0B', Icon: CheckCircle2, allowMultiple: false },
 ];
 
 // â”€â”€â”€ Node Library â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
