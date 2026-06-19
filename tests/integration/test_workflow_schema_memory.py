@@ -12,6 +12,9 @@ Covers:
   3. routers/schema_memory.py — the Admin CRUD endpoints, via a bare FastAPI
      TestClient (no app.py lifespan — that needs Mongo/Redis/Kafka/Qdrant
      all up, which is unrelated to what this router does).
+  4. nodes/sandbox/tool_executor/handlers/data.py — _text_to_sql_handler's
+     wiring (Schema Memory retrieval → prompt → real SQL execution → retry
+     on error), with litellm.completion monkeypatched.
 
 No real LLM/embedding provider is contacted anywhere in this file —
 `workflow_memory._embed` is monkeypatched to a fixed vector. That isolates
@@ -22,12 +25,14 @@ per the project's "don't test against a real LLM" convention.
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import pathlib
 import subprocess
 import sys
 import uuid
 from typing import Iterator
+from unittest.mock import MagicMock
 
 import psycopg2
 import psycopg2.errors
@@ -428,3 +433,187 @@ def test_schema_memory_router_delete_unknown_id_returns_404(schema_memory_client
     tc, tenant_id = schema_memory_client
     resp = tc.delete(f"/api/schema-memory/{uuid.uuid4()}", headers={"X-Tenant-ID": tenant_id})
     assert resp.status_code == 404
+
+
+# ─── 4. _text_to_sql_handler wiring — real Postgres, litellm.completion mocked ─
+#
+# The SQL-generation CALL is mocked (no real LLM) — what's under test is
+# everything around it: does Schema Memory actually get retrieved and
+# rendered into the prompt, does the generated SQL actually execute against
+# a real database, does the retry-on-error path actually retry with the
+# previous error appended to the prompt.
+
+@pytest.fixture
+async def text_to_sql_env(migrated_db, monkeypatch):
+    svc_dir = str(REPO_ROOT / "services" / "workflow-runtime")
+    added = [p for p in (svc_dir, str(REPO_ROOT)) if p not in sys.path]
+    sys.path[:0] = added
+    try:
+        import importlib as _il
+        from services.database_connector.postgres_connector import client as pg_client
+
+        data_mod = _il.import_module("nodes.sandbox.tool_executor.handlers.data")
+        _il.reload(data_mod)
+
+        pg_client.set_url(migrated_db["dsn"])
+        await pg_client.open()
+
+        tenant_id, _ = _seed_tenant_and_agent(migrated_db["dsn"])
+
+        # The "data source" table text_to_sql will query — a plain table in
+        # the same throwaway Postgres, separate from the app's own schema.
+        conn = psycopg2.connect(migrated_db["dsn"])
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute("CREATE TABLE demo_orders (id serial PRIMARY KEY, total numeric NOT NULL)")
+            cur.execute("INSERT INTO demo_orders (total) VALUES (100), (250)")
+        conn.close()
+
+        from basemodel.services_databaseconnector.postgres_orm.workflow_orm import SchemaMemoryORM
+        from uuid import UUID
+        async with pg_client.get_client(tenant_id=tenant_id) as session:
+            session.add(SchemaMemoryORM(
+                id=uuid.uuid4(), tenant_id=UUID(tenant_id), data_source="postgresql", table_name="demo_orders",
+                column_metadata=[
+                    {"name": "id", "type": "int", "is_nullable": False},
+                    {"name": "total", "type": "numeric", "description": "order total", "is_nullable": False},
+                ],
+                business_description="Demo orders table",
+            ))
+            await session.commit()
+
+        yield data_mod, migrated_db["dsn"], tenant_id
+
+        await pg_client.close()
+    finally:
+        for p in added:
+            if p in sys.path:
+                sys.path.remove(p)
+
+
+def _fake_sql_response(sql: str):
+    resp = MagicMock()
+    resp.choices = [MagicMock(message=MagicMock(content=sql))]
+    return resp
+
+
+async def test_text_to_sql_includes_schema_memory_context_in_prompt(text_to_sql_env, monkeypatch):
+    data_mod, db_url, tenant_id = text_to_sql_env
+    captured = {}
+
+    def fake_completion(**kwargs):
+        captured["prompt"] = kwargs["messages"][0]["content"]
+        return _fake_sql_response("SELECT * FROM demo_orders")
+
+    monkeypatch.setattr(data_mod.litellm, "completion", fake_completion)
+
+    result, error = await data_mod._text_to_sql_handler(
+        call={"query": "lấy hết đơn hàng"},
+        cfg={"tool_config": {"text_to_sql": {"db_url": db_url, "data_source": "postgresql"}}, "tenant_id": tenant_id},
+    )
+
+    assert error is None, error
+    assert "demo_orders" in captured["prompt"]
+    assert "order total" in captured["prompt"]  # column description from Schema Memory
+    assert "Demo orders table" in captured["prompt"]  # business_description
+
+
+async def test_text_to_sql_executes_against_real_postgres(text_to_sql_env, monkeypatch):
+    data_mod, db_url, tenant_id = text_to_sql_env
+
+    monkeypatch.setattr(data_mod.litellm, "completion",
+                         lambda **kw: _fake_sql_response("SELECT total FROM demo_orders ORDER BY total"))
+
+    result, error = await data_mod._text_to_sql_handler(
+        call={"query": "lấy hết đơn hàng"},
+        cfg={"tool_config": {"text_to_sql": {"db_url": db_url, "data_source": "postgresql"}}, "tenant_id": tenant_id},
+    )
+
+    assert error is None, error
+    rows = json.loads(result["content"])
+    # numeric column -> Decimal via asyncpg -> not JSON-native -> serialized
+    # as string by the handler's json.dumps(default=str). Still proves the
+    # SQL actually ran against real Postgres and got the real row values.
+    assert [r["total"] for r in rows] == ["100", "250"]
+
+
+async def test_text_to_sql_retries_on_sql_error_with_previous_error_in_prompt(text_to_sql_env, monkeypatch):
+    data_mod, db_url, tenant_id = text_to_sql_env
+    attempts: list[str] = []
+
+    def fake_completion(**kwargs):
+        prompt = kwargs["messages"][0]["content"]
+        attempts.append(prompt)
+        if len(attempts) == 1:
+            return _fake_sql_response("SELECT * FROM table_that_does_not_exist")
+        return _fake_sql_response("SELECT total FROM demo_orders")
+
+    monkeypatch.setattr(data_mod.litellm, "completion", fake_completion)
+
+    result, error = await data_mod._text_to_sql_handler(
+        call={"query": "lấy hết đơn hàng"},
+        cfg={"tool_config": {"text_to_sql": {"db_url": db_url, "data_source": "postgresql"}}, "tenant_id": tenant_id},
+    )
+
+    assert error is None, error
+    assert len(attempts) == 2, "should succeed on the 2nd attempt, not exhaust all 3"
+    assert "SQL trước lỗi" in attempts[1]
+    assert "table_that_does_not_exist" in attempts[1]  # actual asyncpg error text fed back
+
+
+async def test_text_to_sql_fails_after_3_attempts_all_invalid(text_to_sql_env, monkeypatch):
+    data_mod, db_url, tenant_id = text_to_sql_env
+
+    monkeypatch.setattr(data_mod.litellm, "completion",
+                         lambda **kw: _fake_sql_response("SELECT * FROM table_that_does_not_exist"))
+
+    result, error = await data_mod._text_to_sql_handler(
+        call={"query": "lấy hết đơn hàng"},
+        cfg={"tool_config": {"text_to_sql": {"db_url": db_url, "data_source": "postgresql"}}, "tenant_id": tenant_id},
+    )
+
+    assert result is None
+    assert error["tool_name"] == "text_to_sql"
+    assert "failed after 3 attempts" in error["error"]
+
+
+async def test_text_to_sql_falls_back_to_static_schema_hint_when_no_schema_memory_rows(monkeypatch, migrated_db):
+    """Different tenant, no Schema Memory rows registered — must fall back
+    to the canvas's static schema_hint instead of sending an empty Schema: block."""
+    svc_dir = str(REPO_ROOT / "services" / "workflow-runtime")
+    added = [p for p in (svc_dir, str(REPO_ROOT)) if p not in sys.path]
+    sys.path[:0] = added
+    try:
+        import importlib as _il
+        from services.database_connector.postgres_connector import client as pg_client
+
+        data_mod = _il.import_module("nodes.sandbox.tool_executor.handlers.data")
+        _il.reload(data_mod)
+        pg_client.set_url(migrated_db["dsn"])
+        await pg_client.open()
+        tenant_id, _ = _seed_tenant_and_agent(migrated_db["dsn"])
+
+        captured = {}
+
+        def fake_completion(**kwargs):
+            captured["prompt"] = kwargs["messages"][0]["content"]
+            return _fake_sql_response("SELECT 1")
+
+        monkeypatch.setattr(data_mod.litellm, "completion", fake_completion)
+
+        result, error = await data_mod._text_to_sql_handler(
+            call={"query": "test"},
+            cfg={"tool_config": {"text_to_sql": {
+                "db_url": migrated_db["dsn"], "data_source": "postgresql",
+                "schema_hint": "TABLE fallback_table (id INT)",
+            }}, "tenant_id": tenant_id},
+        )
+
+        assert error is None, error
+        assert "fallback_table" in captured["prompt"]
+
+        await pg_client.close()
+    finally:
+        for p in added:
+            if p in sys.path:
+                sys.path.remove(p)

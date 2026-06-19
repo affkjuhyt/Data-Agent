@@ -43,7 +43,7 @@ def setup_logging(service_name: str) -> None:
     handler = logging.StreamHandler(sys.stdout)
 
     if _ECS_AVAILABLE:
-        handler.setFormatter(ecs_logging.StderrLogFormatter())
+        handler.setFormatter(ecs_logging.StdlibFormatter())
     else:
         handler.setFormatter(logging.Formatter(
             "%(asctime)s %(levelname)s %(name)s %(message)s"

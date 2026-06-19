@@ -29,7 +29,10 @@ async def _text_to_sql_handler(call: dict, cfg: dict) -> tuple[dict | None, dict
     tenant_id = cfg.get("tenant_id")
     schema_memory_ctx = ""
     if tenant_id:
-        tables = await retrieve_schema_memory(tenant_id, tool_cfg.get("data_source", "postgresql"))
+        tables = await retrieve_schema_memory(
+            tenant_id, tool_cfg.get("data_source", "postgresql"),
+            user_roles=cfg.get("user_roles"),
+        )
         schema_memory_ctx = format_schema_context(tables)
     schema_ctx = f"\n\nSchema:\n{schema_memory_ctx or tool_cfg.get('schema_hint', '')}" if (schema_memory_ctx or tool_cfg.get("schema_hint")) else ""
     planner_mdl = cfg.get("planner_model", "planner")

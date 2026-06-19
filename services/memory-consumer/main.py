@@ -77,6 +77,7 @@ DOMAIN_FACT_KEYS = {
 }
 DEFAULT_AGENTMEMORIES_MAX_PER_USER = 200  # doc §3.2
 DEFAULT_EPISODIC_RETENTION_DAYS = 30      # doc §3.3 — used only when no MemoryRetentionConfig row exists
+MIN_IMPORTANCE_TO_STORE = 0.5             # doc §II Bước 2 — "score >= 5" on the 1-10 scale, normalized to 0-1
 
 _PROMPT_PATH = os.path.join(os.path.dirname(__file__), "extract_prompt.txt")
 with open(_PROMPT_PATH, encoding="utf-8") as _f:
@@ -276,17 +277,96 @@ def enforce_agent_memories_cap(cur, tenant_id: str, agent_id: str, user_ref: str
 
 # ─── Insight processing (doc §V — 4-decision lifecycle) ────────────────────
 
-def process_semantic_insight(cur, qdrant: QdrantClient, tenant_id: str, agent_id: str, user_ref: str, insight: dict):
-    domain, fact_key = _normalize_fact_key(insight.get("domain"), insight.get("fact_key"))
+def _catch_all_search(qdrant: QdrantClient, vector: list[float], tenant_id: str, agent_id: str, domain: str):
+    """Novelty-detection search scoped to catch-all entries only (doc §V
+    thresholds), not against controlled-vocab facts — those represent a
+    single canonical value per fact_key and have no novelty question to
+    answer. Returns the top hit, or None."""
+    hits = qdrant.search(
+        QDRANT_COLLECTION,
+        query_vector=vector,
+        query_filter=Filter(must=[
+            FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id)),
+            FieldCondition(key="agent_id", match=MatchValue(value=agent_id)),
+            FieldCondition(key="domain", match=MatchValue(value=domain)),
+            FieldCondition(key="is_catch_all", match=MatchValue(value=True)),
+        ]),
+        limit=1,
+    )
+    return hits[0] if hits else None
+
+
+def _resolve_catch_all_key(qdrant: QdrantClient, vector: list[float], tenant_id: str, agent_id: str,
+                            domain: str, message_id: str, index: int) -> tuple[str, str]:
+    """doc §V: ADD when sim<0.7, UPDATE when sim>0.85, NO_CHANGE when
+    sim>0.95. The 0.7-0.85 band is left unspecified by the doc — resolved
+    here as ADD (a new, separate fact) since silently overwriting a
+    possibly-unrelated note is the worse failure mode of the two.
+
+    Returns (fact_key, decision). On ADD, fact_key is a fresh composite key
+    deterministic from (message_id, index) — same idempotency trick as
+    _episodic_id(), so Kafka redelivery of the same insight can't mint two
+    rows for what is really one fact."""
+    try:
+        hit = _catch_all_search(qdrant, vector, tenant_id, agent_id, domain)
+    except Exception as e:
+        log.warning("qdrant catch-all search failed, treating as ADD: %s", e)
+        hit = None
+
+    if hit and hit.score > 0.95:
+        return hit.payload["fact_key"], "NO_CHANGE"
+    if hit and hit.score > 0.85:
+        return hit.payload["fact_key"], "UPDATE"
+
+    new_key = f"{CATCH_ALL_FACT_KEY}:{_episodic_id(message_id, 'catch_all_fact', index)}"
+    return new_key, "ADD"
+
+
+def _delete_catch_all_match(cur, qdrant: QdrantClient, tenant_id: str, agent_id: str, user_ref: str,
+                             domain: str, content: str) -> None:
+    """Best-effort match against the user's catch-all facts (doc §V DELETE
+    example) — same spirit as cancel_future_memory()'s fuzzy match. No
+    confident match -> no-op, since deleting the wrong fact is worse than
+    leaving a stale one."""
+    vector = embed(content)
+    try:
+        hit = _catch_all_search(qdrant, vector, tenant_id, agent_id, domain)
+    except Exception as e:
+        log.warning("qdrant catch-all search failed during delete: %s", e)
+        hit = None
+
+    if not hit or hit.score <= 0.85:
+        log.info("catch_all delete — no confident match (best=%s), skipped", hit.score if hit else None)
+        return
+
+    fact_key = hit.payload["fact_key"]
+    cur.execute(
+        """UPDATE "AgentMemories" SET deleted_at = now()
+           WHERE tenant_id=%s AND agent_id=%s AND user_ref=%s AND domain=%s AND fact_key=%s AND deleted_at IS NULL""",
+        (tenant_id, agent_id, user_ref, domain, fact_key),
+    )
+    try:
+        qdrant.delete(QDRANT_COLLECTION, points_selector=PointIdsList(points=[hit.id]))
+    except Exception as e:
+        log.warning("qdrant delete failed point=%s: %s", hit.id, e)
+
+
+def process_semantic_insight(cur, qdrant: QdrantClient, tenant_id: str, agent_id: str, user_ref: str,
+                              insight: dict, message_id: str, index: int):
+    domain, base_fact_key = _normalize_fact_key(insight.get("domain"), insight.get("fact_key"))
     content = (insight.get("content") or "").strip()
     action = insight.get("action", "add")
-    point_id = _qdrant_point_id(tenant_id, agent_id, user_ref, domain, fact_key)
+    is_catch_all = base_fact_key == CATCH_ALL_FACT_KEY
 
     if action == "delete":
+        if is_catch_all:
+            _delete_catch_all_match(cur, qdrant, tenant_id, agent_id, user_ref, domain, content)
+            return
+        point_id = _qdrant_point_id(tenant_id, agent_id, user_ref, domain, base_fact_key)
         cur.execute(
             """UPDATE "AgentMemories" SET deleted_at = now()
                WHERE tenant_id=%s AND agent_id=%s AND user_ref=%s AND domain=%s AND fact_key=%s AND deleted_at IS NULL""",
-            (tenant_id, agent_id, user_ref, domain, fact_key),
+            (tenant_id, agent_id, user_ref, domain, base_fact_key),
         )
         try:
             qdrant.delete(QDRANT_COLLECTION, points_selector=PointIdsList(points=[point_id]))
@@ -300,31 +380,48 @@ def process_semantic_insight(cur, qdrant: QdrantClient, tenant_id: str, agent_id
     importance = max(0.0, min(1.0, float(insight.get("importance_score") or 0.5)))
     vector = embed(content)
 
-    sim = None
-    try:
-        hits = qdrant.search(
-            QDRANT_COLLECTION,
-            query_vector=vector,
-            query_filter=Filter(must=[
-                FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id)),
-                FieldCondition(key="agent_id", match=MatchValue(value=agent_id)),
-                FieldCondition(key="domain", match=MatchValue(value=domain)),
-                FieldCondition(key="fact_key", match=MatchValue(value=fact_key)),
-            ]),
-            limit=1,
-        )
-        sim = hits[0].score if hits else None
-    except Exception as e:
-        log.warning("qdrant search failed, treating as ADD: %s", e)
+    if is_catch_all:
+        # Catch-all bucket can hold many distinct facts — novelty-detect by
+        # similarity across ALL catch-all entries for this user+domain
+        # (doc §V), instead of the single-slot-per-fact_key model below
+        # (which would otherwise silently overwrite an unrelated note).
+        fact_key, decision = _resolve_catch_all_key(qdrant, vector, tenant_id, agent_id, domain, message_id, index)
+        if decision == "NO_CHANGE":
+            cur.execute(
+                """UPDATE "AgentMemories" SET updated_at = now()
+                   WHERE tenant_id=%s AND agent_id=%s AND user_ref=%s AND domain=%s AND fact_key=%s AND deleted_at IS NULL""",
+                (tenant_id, agent_id, user_ref, domain, fact_key),
+            )
+            return
+    else:
+        fact_key = base_fact_key
+        sim = None
+        try:
+            hits = qdrant.search(
+                QDRANT_COLLECTION,
+                query_vector=vector,
+                query_filter=Filter(must=[
+                    FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id)),
+                    FieldCondition(key="agent_id", match=MatchValue(value=agent_id)),
+                    FieldCondition(key="domain", match=MatchValue(value=domain)),
+                    FieldCondition(key="fact_key", match=MatchValue(value=fact_key)),
+                ]),
+                limit=1,
+            )
+            sim = hits[0].score if hits else None
+        except Exception as e:
+            log.warning("qdrant search failed, treating as ADD: %s", e)
 
-    if sim is not None and sim > 0.95:
-        # NO_CHANGE — touch updated_at only (doc §V).
-        cur.execute(
-            """UPDATE "AgentMemories" SET updated_at = now()
-               WHERE tenant_id=%s AND agent_id=%s AND user_ref=%s AND domain=%s AND fact_key=%s AND deleted_at IS NULL""",
-            (tenant_id, agent_id, user_ref, domain, fact_key),
-        )
-        return
+        if sim is not None and sim > 0.95:
+            # NO_CHANGE — touch updated_at only (doc §V).
+            cur.execute(
+                """UPDATE "AgentMemories" SET updated_at = now()
+                   WHERE tenant_id=%s AND agent_id=%s AND user_ref=%s AND domain=%s AND fact_key=%s AND deleted_at IS NULL""",
+                (tenant_id, agent_id, user_ref, domain, fact_key),
+            )
+            return
+
+    point_id = _qdrant_point_id(tenant_id, agent_id, user_ref, domain, fact_key)
 
     # ADD or UPDATE — ON CONFLICT makes this idempotent across retries.
     scope = "user" if user_ref and user_ref != "anonymous" else "global"
@@ -341,7 +438,10 @@ def process_semantic_insight(cur, qdrant: QdrantClient, tenant_id: str, agent_id
     qdrant.upsert(QDRANT_COLLECTION, points=[PointStruct(
         id=point_id,
         vector=vector,
-        payload={"tenant_id": tenant_id, "agent_id": agent_id, "domain": domain, "fact_key": fact_key, "pg_id": point_id},
+        payload={
+            "tenant_id": tenant_id, "agent_id": agent_id, "domain": domain, "fact_key": fact_key,
+            "pg_id": point_id, "is_catch_all": is_catch_all,
+        },
     )])
 
     _, cap = get_retention_config(cur, tenant_id, domain)
@@ -403,8 +503,19 @@ def cancel_future_memory(cur, tenant_id: str, agent_id: str, user_ref: str, insi
 def process_insight(cur, qdrant: QdrantClient, tenant_id: str, agent_id: str, user_ref: str, insight: dict, message_id: str, index: int):
     memory_type = insight.get("memory_type")
     action = insight.get("action", "add")
+
+    # doc §II/§VI — only insights worth remembering get stored; importance
+    # is what distinguishes "Tôi thích PDF" from small talk. DELETE is a
+    # direct command, not an insight being judged for storage-worthiness,
+    # so it bypasses the gate.
+    importance = float(insight.get("importance_score") or 0.5)
+    if action != "delete" and importance < MIN_IMPORTANCE_TO_STORE:
+        log.info("insight skipped — importance=%.2f below threshold=%.2f: %r",
+                  importance, MIN_IMPORTANCE_TO_STORE, insight.get("content", "")[:80])
+        return
+
     if memory_type == "semantic":
-        process_semantic_insight(cur, qdrant, tenant_id, agent_id, user_ref, insight)
+        process_semantic_insight(cur, qdrant, tenant_id, agent_id, user_ref, insight, message_id, index)
     elif memory_type == "episodic_past":
         episodic_id = _episodic_id(message_id, "episodic_past", index)
         process_episodic_past(cur, tenant_id, agent_id, user_ref, insight, episodic_id)

@@ -221,12 +221,19 @@ async def retrieve_schema_memory(
     tenant_id: str,
     data_source: str,
     table_names: Optional[list[str]] = None,
+    user_roles: Optional[list[str]] = None,
 ) -> List[dict]:
     """doc §IV: NOT semantic search — exact match on (tenant_id, data_source,
     table_name[]). Result is injected directly into the SQL-generation
     prompt. table_names=None loads every table registered for the
     data_source (no table-selection planning step exists yet — see
-    docs/STM_LTM_Memory_Implementation.md)."""
+    docs/STM_LTM_Memory_Implementation.md).
+
+    doc §3.7: access_roles gates which tables the caller may see. A table
+    with an empty access_roles list is unrestricted (visible to everyone).
+    user_roles=None means "caller identity unknown" (e.g. internal/admin
+    callers) and skips the filter entirely — pass the caller's actual roles
+    (e.g. from the X-User-Roles header) to enforce it."""
     if not client.is_connected():
         return []
     try:
@@ -241,8 +248,17 @@ async def retrieve_schema_memory(
             )
             if table_names:
                 q = q.where(SchemaMemoryORM.table_name.in_(table_names))
-            rows = (await session.execute(q)).fetchall()
-            return [r._asdict() for r in rows]
+            rows = [r._asdict() for r in (await session.execute(q)).fetchall()]
+
+            if user_roles is not None:
+                allowed_roles = set(user_roles)
+                hidden = [r["table_name"] for r in rows if r["access_roles"] and not (set(r["access_roles"]) & allowed_roles)]
+                if hidden:
+                    logger.info("schema_memory | hid %d table(s) — caller roles %s don't match: %s",
+                                len(hidden), user_roles, hidden)
+                rows = [r for r in rows if not r["access_roles"] or (set(r["access_roles"]) & allowed_roles)]
+
+            return rows
     except Exception as e:
         logger.warning("schema_memory | retrieve failed: %s", e)
         return []

@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 _REDIS_URL = os.environ.get("REDIS_URL") or (
     f"redis://{os.environ.get('REDIS_HOST', 'localhost')}:{os.environ.get('REDIS_PORT', '6379')}"
 )
-_TTL = int(os.environ.get("CONV_CACHE_TTL_SECONDS", str(24 * 3600)))  # 24h default
+_TTL = int(os.environ.get("CONV_CACHE_TTL_SECONDS", str(30 * 60)))  # 30min default — doc §3.1 session timeout
 
 _client: Optional[aioredis.Redis] = None
 

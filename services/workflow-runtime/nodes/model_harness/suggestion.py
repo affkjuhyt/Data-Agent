@@ -9,7 +9,7 @@ _LITELLM_BASE = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
 _LITELLM_KEY  = os.environ.get("LITELLM_API_KEY",  "sk-dev")
 
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "prompts")
-_SYSTEM = open(os.path.join(_PROMPTS_DIR, "suggestion_system.txt")).read()
+_SYSTEM = open(os.path.join(_PROMPTS_DIR, "suggestion_system.txt"), encoding="utf-8").read()
 
 
 async def suggestion_node(state: dict) -> dict:
