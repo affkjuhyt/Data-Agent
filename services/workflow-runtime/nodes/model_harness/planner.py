@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import litellm
+from xml.sax.saxutils import quoteattr
 from pydantic import BaseModel, ValidationError  # noqa: F401
 
 from state import AgentState
@@ -75,7 +76,7 @@ def planner_node(state: AgentState) -> dict:
     wf_ctx = state.get("workflow_memory_context", [])
     if wf_ctx:
         items = "\n".join(
-            f"  <run task=\"{w['task_description']}\" params=\"{w['param_snapshot']}\"/>"
+            f"  <run task={quoteattr(w['task_description'])} params={quoteattr(str(w['param_snapshot']))}/>"
             for w in wf_ctx
         )
         system += (

@@ -27,6 +27,18 @@ logger = logging.getLogger(__name__)
 
 _graph_cache: dict[str, object] = {}
 
+# asyncio only holds a weak reference to a task created via create_task — if
+# nothing else references it, it can be GC'd mid-execution. Keep a strong ref
+# here until done, per the stdlib docs' own recommendation for fire-and-forget tasks.
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _fire_and_forget(coro) -> None:
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
 # doc §3.7 — Workflow Memory needs a task_type to filter on, but that's only
 # known once the planner decides to call a data tool, which is *after* the
 # point retrieval needs to happen. No table_name-style "task type taxonomy"
@@ -394,7 +406,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                 task_type = _DATA_TOOL_TASK_TYPE.get(nt["tool_name"][len("tool/"):])
                 if not task_type:
                     continue
-                await record_workflow_outcome(
+                _fire_and_forget(record_workflow_outcome(
                     tenant_id=tenant_id,
                     agent_id=agent_id,
                     task_type=task_type,
@@ -402,7 +414,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                     param_snapshot=nt["input"].get("arguments") or {},
                     outcome="success" if nt.get("status", "success") == "success" else "failed",
                     duration_ms=nt.get("latency_ms"),
-                )
+                ))
 
     response = StreamingResponse(event_stream(), media_type="text/event-stream")
     response.headers["X-Conversation-Id"] = conv_id or ""
