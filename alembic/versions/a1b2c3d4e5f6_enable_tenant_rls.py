@@ -84,6 +84,9 @@ BEGIN
         EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO app_user', tbl);
         EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
         EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', tbl);
+        -- Idempotent: a partial/earlier run (or legacy snake_case tables) may
+        -- already carry this policy; CREATE POLICY has no IF NOT EXISTS.
+        EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON %I', tbl);
         EXECUTE format($p$
             CREATE POLICY tenant_isolation ON %I
             AS PERMISSIVE

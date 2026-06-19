@@ -6,8 +6,8 @@ import {
   Copy, Trash2, Settings2, X, CheckCircle2, MoreHorizontal,
   SlidersHorizontal, SearchX,
 } from 'lucide-react';
-
-const FLOW_BUILDER_URL = (import.meta as any).env?.VITE_FLOW_BUILDER_URL ?? 'http://localhost:8002';
+import { cn } from '../../../lib/utils';
+import { FLOW_BUILDER_URL } from '../../../lib/config';
 
 interface ApiAgent {
   id: string;

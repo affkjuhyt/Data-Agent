@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { Role, Industry, TenantContext, User, Environment, KnowledgeDocument } from './types';
-import { mockGet } from './lib/mockApi';
+import { Role, Industry, TenantContext, User, Environment, KnowledgeDocument, PagedResponse } from './types';
+import { apiGet } from './lib/apiClient';
 import { useAuth } from './lib/AuthProvider';
 
 interface AppStateContextType {
@@ -39,11 +39,24 @@ interface AppStateContextType {
 const AppStateContext = createContext<AppStateContextType | undefined>(undefined);
 
 /* ─── URL hash helpers ─────────────────────────────────────────────── */
+/* Old module IDs → new 5-module IA. Applied in parseHash + navigate so
+ * existing links/bookmarks keep working and the URL stays canonical. */
+const REDIRECT_MAP: Record<string, { module: string; sub: string }> = {
+  'dashboard':           { module: 'monitor', sub: 'ANALYTICS' },
+  'knowledge-ops':       { module: 'build',   sub: 'KNOWLEDGE' },
+  'ai-runtime':          { module: 'build',   sub: 'AGENTS' },
+  'operations-center':   { module: 'monitor', sub: 'TRACES' },
+  'release-management':  { module: 'release', sub: 'VERSIONS' },
+  'governance':          { module: 'settings', sub: 'AUDIT' },
+  'national-ops':        { module: 'monitor', sub: 'ANALYTICS' },
+};
+
 const parseHash = (): { module: string; sub?: string } => {
   const raw = (typeof window !== 'undefined' ? window.location.hash : '').replace(/^#\/?/, '');
-  if (!raw) return { module: 'dashboard' };
+  if (!raw) return { module: 'build', sub: 'AGENTS' };
   const [module, sub] = raw.split('/');
-  return { module: module || 'dashboard', sub: sub || undefined };
+  if (REDIRECT_MAP[module]) return REDIRECT_MAP[module];
+  return { module: module || 'build', sub: sub || undefined };
 };
 
 const writeHash = (module: string, sub?: string) => {
@@ -101,6 +114,12 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
   );
 
   const navigate = useCallback((moduleId: string, subId?: string) => {
+    /* Honor redirect map if a caller still uses an old module id */
+    if (REDIRECT_MAP[moduleId]) {
+      const r = REDIRECT_MAP[moduleId];
+      moduleId = r.module;
+      subId = subId ?? r.sub;
+    }
     _setActiveModule(moduleId);
     if (subId) {
       _setSubTabState(prev => ({ ...prev, [moduleId]: subId }));
@@ -132,8 +151,11 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
   const [docsLoading, setDocsLoading] = useState(true);
 
   useEffect(() => {
-    mockGet<KnowledgeDocument[]>('/api/data/documents')
-      .then(data => setDocuments(data ?? []))
+    apiGet<PagedResponse<KnowledgeDocument> | KnowledgeDocument[]>('/api/data/documents')
+      .then(data => {
+        const items = Array.isArray(data) ? data : (data as PagedResponse<KnowledgeDocument>).items ?? [];
+        setDocuments(items);
+      })
       .catch(() => setDocuments([]))
       .finally(() => setDocsLoading(false));
   }, []);
@@ -142,17 +164,17 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
     setDocuments(prev => [doc, ...prev]);
   }, []);
 
-  const updateDocument = useCallback((id: string, patch: Partial<KnowledgeDocument>) => {
+  const updateDocument = useCallback((data_id: string, patch: Partial<KnowledgeDocument>) => {
     setDocuments(prev => prev.map(d => {
-      if (d.id !== id) return d;
+      if (d.data_id !== data_id) return d;
       const updated = { ...d, ...patch };
       if (patch.metadata) updated.metadata = { ...d.metadata, ...patch.metadata };
       return updated;
     }));
   }, []);
 
-  const deleteDocument = useCallback((id: string) => {
-    setDocuments(prev => prev.filter(d => d.id !== id));
+  const deleteDocument = useCallback((data_id: string) => {
+    setDocuments(prev => prev.filter(d => d.data_id !== data_id));
   }, []);
 
   /* Wizard trigger */

@@ -12,16 +12,18 @@ setup_logging("workflow-runtime")
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import CORS_ORIGINS
+from config import CORS_ORIGINS, REDIS_URL
 from db import close_db, init_db
 from kafka_producer import close_kafka_producer, init_kafka_producer
 from memory_middleware import close_qdrant, init_qdrant
 from redis_cache import init_redis, close_redis
 from mongo_client import close_mongo, init_mongo
 from routers import catalog, conversations, health, traces, reviews
+from runtime_services.conversation_runner import invalidate_graph_version
 from services.database_connector.mongo_connector import client as mongo_client
 from services.database_connector.postgres_connector import client as pg_client
-from services.otel_set_up.tracing import setup_tracing
+from services.shared.cache_invalidation import run_graph_invalidation_listener
+from services.shared.observability import setup_observability
 
 
 @asynccontextmanager
@@ -35,6 +37,11 @@ async def lifespan(app: FastAPI):
     tasks = [
         asyncio.create_task(pg_client.health_check_loop()),
         asyncio.create_task(mongo_client.health_check_loop()),
+        # Evict locally-cached graphs when another replica/flow-builder signals a
+        # republished version. No-op if REDIS_URL is unset.
+        asyncio.create_task(
+            run_graph_invalidation_listener(REDIS_URL, invalidate_graph_version)
+        ),
     ]
 
     yield
@@ -55,6 +62,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="workflow-runtime", version="0.1.0", lifespan=lifespan)
+    setup_observability("workflow-runtime", app)
 
     setup_tracing("workflow-runtime", app=app)
 

@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import { X, ArrowRight, Database, Network, User, Layers, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TEMPLATE_FLOWS } from '../workflow/BuilderTemplates';
-
-const FLOW_BUILDER_URL = (import.meta as any).env?.VITE_FLOW_BUILDER_URL ?? 'http://localhost:8002';
+import { FLOW_BUILDER_URL } from '../../../lib/config';
 
 
 type TemplateChoice = 'blank' | 'rag' | 'multi-agent' | 'hitl';

@@ -30,9 +30,10 @@ import {
   type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { FLOW_BUILDER_URL, WORKFLOW_RUNTIME_URL } from '../../../lib/config';
+import { useRuntimeConfig } from '../../../lib/runtimeConfig';
 
-const FLOW_BUILDER_URL     = (import.meta as any).env?.VITE_FLOW_BUILDER_URL     ?? 'http://localhost:8002';
-const WORKFLOW_RUNTIME_URL = (import.meta as any).env?.VITE_WORKFLOW_RUNTIME_URL ?? 'http://localhost:8001';
+const LOCKED_NODE_TYPES    = new Set(['guardrail_input', 'guardrail_output', 'guardrail']);
 
 // â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -398,9 +399,9 @@ const mkLockedNode = (
 
 // â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-const PLANNER_MODEL  = 'Qwen3-9B (hardcoded)' as const;
-const RESPONDER_MODEL = 'Qwen3-35B (local)' as const;
-const RRF_K_DEFAULT  = 60 as const;
+// Planner/responder model names and the RRF k are no longer hardcoded here —
+// they come from workflow-runtime (GET /api/llm-providers, /api/runtime-config)
+// through useRuntimeConfig(), consumed in ConfigPanel.
 
 // â”€â”€â”€ Workflow â†’ React Flow transform â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -601,6 +602,7 @@ interface ConfigPanelProps {
 }
 
 const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
+  const { models, rrfK } = useRuntimeConfig();
   if (!node) return null;
   const d   = node.data as FlowNodeData;
   const cfg = NODE_STYLE[d.nodeType] || NODE_STYLE.trigger;
@@ -643,7 +645,7 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
 
         {d.nodeType === 'planner' && (
           <>
-            <Field label="Model"><Readonly value={PLANNER_MODEL} /></Field>
+            <Field label="Model"><Readonly value={models.planner ?? '—'} /></Field>
             <InfoNote text="Tá»± Ä‘á»™ng Ä‘á»c allowed_tools tá»« MCP Tool node" />
           </>
         )}
@@ -828,7 +830,7 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
         })()}
 
         {d.nodeType === 'rrf_ranking' && (
-          <InfoNote text={`k=${RRF_K_DEFAULT} (hardcoded)`} />
+          <InfoNote text={`k=${rrfK ?? '…'}`} />
         )}
 
         {d.nodeType === 'reranker' && (
@@ -842,7 +844,7 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
 
         {d.nodeType === 'responder' && (
           <>
-            <Field label="Model"><Readonly value={RESPONDER_MODEL} /></Field>
+            <Field label="Model"><Readonly value={models.responder ?? '—'} /></Field>
             <Field label="System Prompt">
               <Sel value={(d.systemPromptName as string) || 'prompt_default'} options={['prompt_default', 'prompt_phat_nguoi_v2', 'prompt_dashboard']} onChange={v => upd('systemPromptName', v)} />
             </Field>
@@ -1521,7 +1523,7 @@ ${edges.map(e => `  - from: "${e.source}"  to: "${e.target}"`).join('\n')}`;
                           (nodes.find(n => n.id === e.target)?.data as any)?.locked);
                       return !hasLocked;
                     }}
-                    onInit={inst => { rfInstance.current = inst; }}
+                    onInit={inst => { rfInstance.current = inst as ReactFlowInstance<Node<FlowNodeData>, Edge>; }}
                     nodeTypes={nodeTypes}
                     edgeTypes={edgeTypes}
                     fitView

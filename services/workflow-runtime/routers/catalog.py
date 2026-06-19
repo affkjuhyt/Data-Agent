@@ -4,6 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Request
 from sqlalchemy import text
 
+from config import RRF_K
 from node_registry import NODE_REGISTRY
 
 router = APIRouter()
@@ -68,6 +69,12 @@ async def list_agents(request: Request):
 @router.get("/api/nodes/registry")
 def get_node_registry():
     return NODE_REGISTRY
+
+
+@router.get("/api/runtime-config")
+def get_runtime_config():
+    """Runtime defaults the flow builder reads instead of hardcoding them."""
+    return {"rrf_k": RRF_K}
 
 
 @router.get("/api/llm-providers")

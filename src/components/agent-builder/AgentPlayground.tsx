@@ -7,9 +7,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
-
-const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8001';
-const FLOW_BUILDER_URL = (import.meta as any).env?.VITE_FLOW_BUILDER_URL ?? 'http://localhost:8002';
+import { WORKFLOW_RUNTIME_URL as API_BASE } from '../../lib/config';
 
 /* ─── Types ─────────────────────────────────────────────────── */
 

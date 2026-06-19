@@ -1,0 +1,24 @@
+# Shared dev server - run migrate + seed for the team dev shape
+# Usage: docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml up -d --build
+
+services:
+  migrate:
+    build: ../../services/workflow-runtime
+    restart: "no"
+    working_dir: /app
+    command: alembic upgrade head
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/dataagent
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  seed:
+    image: postgres:16
+    restart: "no"
+    command: psql postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/dataagent -f /seed.sql
+    volumes:
+      - ../../services/workflow-runtime/migrations/seed.sql:/seed.sql:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully

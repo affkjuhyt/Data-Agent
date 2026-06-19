@@ -7,7 +7,6 @@ import {
   Plus,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { useAppState } from '../AppStateContext';
 import { useAuth } from '../lib/AuthProvider';
 import {
   fetchPipelines, fetchHistory, fetchRollbackTargets,
@@ -107,7 +106,6 @@ function useReleaseData() {
 /* ─── Component ─────────────────────────────────────────────────────── */
 
 const ReleaseManagementCenter = () => {
-  const { subTab, setSubTab } = useAppState();
   const { user }              = useAuth();
   const {
     deployments, rawPipelines, history, rollbackTargets,
@@ -138,10 +136,10 @@ const ReleaseManagementCenter = () => {
   const [envFilter,    setEnvFilter]    = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
 
-  /* ── Tab helpers ── */
-  const activeTab    = (subTab['release-management'] as Tab) ?? 'DEPLOYMENTS';
+  /* ── Tab helpers (local — independent of the module nav) ── */
+  const [activeTab, _setActiveTab] = useState<Tab>('DEPLOYMENTS');
   const setActiveTab = (id: Tab) => {
-    setSubTab('release-management', id);
+    _setActiveTab(id);
     if (id !== 'DEPLOYMENTS') {
       setEnvFilter('ALL');
       setStatusFilter('ALL');

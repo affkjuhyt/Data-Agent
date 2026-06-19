@@ -1,21 +1,23 @@
-export type SourceFilter = 'ALL' | 'DOC' | 'MEDIA' | 'WEB' | 'WAREHOUSE';
+// Source-type filter chips. These tokens are sent verbatim to the backend
+// (`?source=doc,media,web`), which maps them to KBData.source_type values
+// (media → image+video) and does the `WHERE source_type IN (...)` filtering.
+// Multi-select, default all-on — there is no "All" chip (all-on === everything).
+// Warehouses are managed in their own Warehouses sub-tab (WarehouseCenter), not in
+// the Data Layer / Knowledge Hub document listings — so 'warehouse' is intentionally
+// NOT a browsable source category here.
+export type SourceCategory = 'doc' | 'media' | 'web';
 
-export const SOURCE_FILTER_LABELS: Record<SourceFilter, string> = {
-  ALL: 'All',
-  DOC: 'Doc',
-  MEDIA: 'Media',
-  WEB: 'Web',
-  WAREHOUSE: 'Warehouse',
-};
+export const SOURCE_CATEGORIES: { id: SourceCategory; label: string }[] = [
+  { id: 'doc',       label: 'Doc' },
+  { id: 'media',     label: 'Media' },
+  { id: 'web',       label: 'Web' },
+];
 
-export const getSourceCategory = (type: string | undefined): SourceFilter => {
-  if (!type) return 'DOC';
-  if (type.startsWith('Doc/')) return 'DOC';
-  if (type.startsWith('Video/') || type.startsWith('Image/')) return 'MEDIA';
-  if (type.toLowerCase() === 'web') return 'WEB';
-  if (type.startsWith('Warehouse/')) return 'WAREHOUSE';
-  return 'DOC';
-};
+export const ALL_SOURCE_CATEGORIES: SourceCategory[] = SOURCE_CATEGORIES.map(c => c.id);
+
+/** Stable comma-joined token for the `source` query param (canonical order). */
+export const sourceParam = (selected: Set<SourceCategory>): string =>
+  ALL_SOURCE_CATEGORIES.filter(c => selected.has(c)).join(',');
 
 export interface ChunkVersion {
   version_number: string;

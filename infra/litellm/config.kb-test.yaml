@@ -1,0 +1,20 @@
+# LiteLLM config for KB UI testing — all traffic routes to the local llama service.
+#
+# text_completion (litellm.atext_completion) → /v1/completions → /api/generate on llama
+# embedding      (litellm.aembedding)        → /v1/embeddings  → /api/embeddings on llama
+#
+# forward_client_headers_to_llm_api passes X-System-Type through to the llama server
+# so it can load the correct pre-cached KV snapshot per call.
+
+model_list:
+  - model_name: llama3
+    litellm_params:
+      model: ollama/llama3
+      api_base: http://llama:11434
+general_settings:
+  forward_client_headers_to_llm_api: true
+
+litellm_settings:
+  request_timeout: 120
+  set_verbose: false
+  json_logs: true

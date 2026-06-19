@@ -110,5 +110,9 @@ class SearchRequest(BaseModel):
     collection_name: str
     query_vector: list[float]
     limit: int = 10
+    # Scope results to one knowledge base (the "kind of knowledge" a point belongs to).
+    # Applied as a hard AND filter alongside tenant_id. None = search across all KBs.
+    knowledge_base: str | None = None
     matching_payload: List[MatchingPayload] | None = None
+    match_type: MatchType = MatchType.must
     pagination_config: PaginationConfig | None = None

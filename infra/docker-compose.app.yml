@@ -1,0 +1,314 @@
+services:
+  workflow-runtime:
+    build:
+      context: ..
+      dockerfile: services/workflow-runtime/Dockerfile
+    container_name: dataagent-workflow-runtime
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
+      RUNTIME_DB_URL: postgresql+asyncpg://runtime_writer:${RUNTIME_DB_PASSWORD:-runtime_dev_pw}@postgres:5432/${POSTGRES_DB:-dataagent}
+      MONGODB_URL: mongodb://mongo:27017/dataagent
+      REDIS_URL: redis://redis:6379
+      LITELLM_BASE_URL: http://litellm:4000
+      LANGFUSE_HOST: http://langfuse:3000
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-change-me}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-change-me}
+      QDRANT_URL: http://qdrant:6333
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_SASL_USERNAME: workflow-runtime
+      KAFKA_SASL_PASSWORD: ${WORKFLOW_RUNTIME_KAFKA_PASSWORD}
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      OTEL_SERVICE_NAME: workflow-runtime
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_started
+      redis:
+        condition: service_started
+      litellm:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+
+  flow-builder:
+    build:
+      context: ..
+      dockerfile: services/flow-builder/Dockerfile
+    container_name: dataagent-flow-builder
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
+      MONGODB_URL: mongodb://mongo:27017/dataagent
+      # Broadcasts graph-cache invalidation to workflow-runtime on (re)publish.
+      REDIS_URL: redis://redis:6379
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: flow-builder
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_started
+      redis:
+        condition: service_started
+
+  kb-backend:
+    build:
+      context: ..
+      dockerfile: services/kb-backend/Dockerfile
+    container_name: dataagent-kb-backend
+    restart: unless-stopped
+    ports:
+      - "8050:8000"
+    environment:
+      POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/${POSTGRES_DB:-dataagent}
+      QDRANT_URL: http://qdrant:6333
+      NEO4J_URI: bolt://neo4j:7687
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: kb-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      neo4j:
+        condition: service_healthy
+
+  auth-api:
+    build:
+      context: ../services
+      dockerfile: auth-api/Dockerfile
+    container_name: dataagent-auth-api
+    restart: unless-stopped
+    ports:
+      - "8200:8200"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
+      # Reach Kong's Admin API via the `kong-admin` alias on kong-admin-net.
+      # This is a network-scoped alias that resolves to Kong's admin-net IP —
+      # the plain "kong" hostname can resolve to the default-net IP, where
+      # admin is NOT listening. See docs/auth-runbook.md "Kong admin hardening".
+      KONG_ADMIN_URL: http://kong-admin:8001
+      OPENBAO_ADDR: http://openbao:8200
+      # Keycloak Admin API — used by approvals router to check federated identities
+      KC_URL: http://keycloak-lb:8080
+      KC_REALM: ${VITE_KEYCLOAK_REALM:-aeroflow}
+      KC_ADMIN_USER: ${KEYCLOAK_ADMIN:-admin}
+      KC_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: auth-api
+    networks:
+      # auth-api needs both: default for proxy traffic + admin-net to manage
+      # Kong routes/plugins from auth_core._sync_kong().
+      - default
+      - kong-admin-net
+    volumes:
+      - openbao_data:/openbao/data:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      openbao:
+        condition: service_started
+
+  minio-service:
+    build:
+      context: ../services
+      dockerfile: minio-service/Dockerfile
+    container_name: dataagent-minio-service
+    restart: unless-stopped
+    ports:
+      - "8400:8400"
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: minio-service
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  release-worker:
+    build:
+      context: ../services
+      dockerfile: release-worker/Dockerfile
+    container_name: dataagent-release-worker
+    restart: unless-stopped
+    ports:
+      - "8100:8100"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
+      KAFKA_BOOTSTRAP: kafka:9092
+      KAFKA_USERNAME: release-worker
+      KAFKA_PASSWORD: ${RELEASE_WORKER_KAFKA_PASSWORD}
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      CELERY_BROKER: redis://redis:6379/0
+      # `kong-admin` alias, not hostname/IP — see auth-api KONG_ADMIN_URL comment above.
+      KONG_ADMIN_URL: http://kong-admin:8001
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB: dataagent
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: release-worker
+    networks:
+      - default
+      - kong-admin-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+
+  audit-bridge:
+    build:
+      context: ../services
+      dockerfile: audit-bridge/Dockerfile
+    container_name: dataagent-audit-bridge
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: aeroflow
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: audit.auth.events
+      KAFKA_SASL_USERNAME: audit-bridge
+      KAFKA_SASL_PASSWORD: ${AUDIT_BRIDGE_KAFKA_PASSWORD}
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      POLL_INTERVAL_SECONDS: "10"
+      STATE_FILE: /data/last_event_time.txt
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: audit-bridge
+    volumes:
+      - audit_bridge_data:/data
+    depends_on:
+      kafka:
+        condition: service_healthy
+      keycloak-lb:
+        condition: service_healthy
+
+  audit-consumer:
+    build:
+      context: ../services
+      dockerfile: audit-consumer/Dockerfile
+    container_name: dataagent-audit-consumer
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: audit.auth.events
+      KAFKA_GROUP_ID: audit-consumer-group
+      KAFKA_SASL_USERNAME: audit-consumer
+      KAFKA_SASL_PASSWORD: ${AUDIT_CONSUMER_KAFKA_PASSWORD}
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-dataagent}
+      DB_USER: ${POSTGRES_USER:-admin}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: audit-consumer
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  memory-consumer:
+    build:
+      context: ../services/memory-consumer
+    container_name: dataagent-memory-consumer
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: memory.extraction.requested
+      KAFKA_DLQ_TOPIC: memory.extraction.dlq
+      KAFKA_GROUP_ID: memory-consumer-group
+      KAFKA_SASL_USERNAME: memory-consumer
+      KAFKA_SASL_PASSWORD: ${MEMORY_CONSUMER_KAFKA_PASSWORD}
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-dataagent}
+      DB_USER: ${POSTGRES_USER:-admin}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      QDRANT_URL: http://qdrant:6333
+      LITELLM_BASE_URL: http://litellm:4000
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      litellm:
+        condition: service_started
+
+  jwks-refresher:
+    build:
+      context: ../services
+      dockerfile: jwks-refresher/Dockerfile
+    container_name: dataagent-jwks-refresher
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: aeroflow
+      # `kong-admin` alias, not hostname/IP — see auth-api KONG_ADMIN_URL comment above.
+      KONG_ADMIN_URL: http://kong-admin:8001
+      KONG_CONSUMER: keycloak-users
+      REFRESH_INTERVAL_SECONDS: "300"
+      JWKS_STATE_FILE: /data/last_kid.txt
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: jwks-refresher
+    networks:
+      - default
+      - kong-admin-net
+    volumes:
+      - jwks_refresher_data:/data
+    depends_on:
+      keycloak-lb:
+        condition: service_healthy
+      kong:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.dev
+    container_name: dataagent-frontend
+    restart: unless-stopped
+    volumes:
+      - ..:/app
+      - /app/node_modules
+    ports:
+      - "5173:3000"
+    environment:
+      VITE_KEYCLOAK_URL: http://localhost:8080
+      VITE_KEYCLOAK_REALM: aeroflow
+      VITE_KEYCLOAK_CLIENT: aeroflow-frontend
+      VITE_API_BASE_URL: http://localhost:8000
+    depends_on:
+      keycloak-lb:
+        condition: service_healthy
+      kong:
+        condition: service_healthy
