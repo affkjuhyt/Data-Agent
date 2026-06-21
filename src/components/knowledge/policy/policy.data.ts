@@ -1,4 +1,6 @@
-export type FilterPolicyType = 'natural_language' | 'exact_word';
+import { FilterPolicyType } from '../../../lib/enums';
+
+export type { FilterPolicyType };
 
 export interface FilterPolicy {
   id: string;

@@ -30,9 +30,10 @@ import {
   type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { FLOW_BUILDER_URL, WORKFLOW_RUNTIME_URL } from '../../../lib/config';
+import { useRuntimeConfig } from '../../../lib/runtimeConfig';
 
-const FLOW_BUILDER_URL     = (import.meta as any).env?.VITE_FLOW_BUILDER_URL     ?? 'http://localhost:8002';
-const WORKFLOW_RUNTIME_URL = (import.meta as any).env?.VITE_WORKFLOW_RUNTIME_URL ?? 'http://localhost:8001';
+const LOCKED_NODE_TYPES    = new Set(['guardrail_input', 'guardrail_output', 'guardrail']);
 
 // â”€â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -42,7 +43,7 @@ type FlowNodeType =
   | 'trigger' | 'guardrail' | 'planner' | 'kb_search' | 'mcp' | 'tool_executor'
   | 'rrf_ranking' | 'reranker' | 'responder' | 'output'
   | 'human_approval' | 'condition' | 'db_query'
-  | 'send_notification' | 'loop';
+  | 'send_notification' | 'loop' | 'judge';
 
 export interface FlowNodeData extends Record<string, unknown> {
   nodeType: FlowNodeType;
@@ -96,6 +97,7 @@ const NODE_STYLE: Record<string, { typeLabel: string; Icon: any; color: string }
   db_query:          { typeLabel: 'DB Query',       Icon: Database,    color: '#10B981' },
   send_notification: { typeLabel: 'Notification',   Icon: Bell,        color: '#EF4444' },
   loop:              { typeLabel: 'Loop',           Icon: RefreshCw,   color: '#3B82F6' },
+  judge:             { typeLabel: 'Judge',          Icon: CheckCircle2, color: '#F59E0B' },
 };
 
 // â”€â”€â”€ Custom Node â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -398,9 +400,9 @@ const mkLockedNode = (
 
 // â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-const PLANNER_MODEL  = 'Qwen3-9B (hardcoded)' as const;
-const RESPONDER_MODEL = 'Qwen3-35B (local)' as const;
-const RRF_K_DEFAULT  = 60 as const;
+// Planner/responder model names and the RRF k are no longer hardcoded here —
+// they come from workflow-runtime (GET /api/llm-providers, /api/runtime-config)
+// through useRuntimeConfig(), consumed in ConfigPanel.
 
 // â”€â”€â”€ Workflow â†’ React Flow transform â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -601,6 +603,7 @@ interface ConfigPanelProps {
 }
 
 const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
+  const { models, rrfK } = useRuntimeConfig();
   if (!node) return null;
   const d   = node.data as FlowNodeData;
   const cfg = NODE_STYLE[d.nodeType] || NODE_STYLE.trigger;
@@ -643,7 +646,7 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
 
         {d.nodeType === 'planner' && (
           <>
-            <Field label="Model"><Readonly value={PLANNER_MODEL} /></Field>
+            <Field label="Model"><Readonly value={models.planner ?? '—'} /></Field>
             <InfoNote text="Tá»± Ä‘á»™ng Ä‘á»c allowed_tools tá»« MCP Tool node" />
           </>
         )}
@@ -828,7 +831,7 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
         })()}
 
         {d.nodeType === 'rrf_ranking' && (
-          <InfoNote text={`k=${RRF_K_DEFAULT} (hardcoded)`} />
+          <InfoNote text={`k=${rrfK ?? '…'}`} />
         )}
 
         {d.nodeType === 'reranker' && (
@@ -842,7 +845,7 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
 
         {d.nodeType === 'responder' && (
           <>
-            <Field label="Model"><Readonly value={RESPONDER_MODEL} /></Field>
+            <Field label="Model"><Readonly value={models.responder ?? '—'} /></Field>
             <Field label="System Prompt">
               <Sel value={(d.systemPromptName as string) || 'prompt_default'} options={['prompt_default', 'prompt_phat_nguoi_v2', 'prompt_dashboard']} onChange={v => upd('systemPromptName', v)} />
             </Field>
@@ -872,6 +875,10 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
         {['condition', 'db_query', 'send_notification', 'loop'].includes(d.nodeType) && (
           <InfoNote text="Node nÃ y chÆ°a cÃ³ config. KÃ©o vÃ o canvas vÃ  káº¿t ná»‘i vá»›i cÃ¡c node khÃ¡c." />
         )}
+
+        {d.nodeType === 'judge' && (
+          <InfoNote text="Đánh giá toàn bộ trace sau responder. Route lại nếu lỗi: RETRIEVAL→kb_search, REASONING→responder, TOOL→tool_executor, DATA_QUALITY→human_approval." />
+        )}
       </div>
     </motion.div>
   );
@@ -894,6 +901,7 @@ const ALL_LIBRARY_NODES: Array<{
   { nodeType: 'condition',         label: 'Condition',         color: '#6B7280', Icon: GitBranch,   allowMultiple: true  },
   { nodeType: 'send_notification', label: 'Send Notification', color: '#EF4444', Icon: Bell,        allowMultiple: true  },
   { nodeType: 'loop',              label: 'Loop',              color: '#3B82F6', Icon: RefreshCw,   allowMultiple: false },
+  { nodeType: 'judge',             label: 'Judge',             color: '#F59E0B', Icon: CheckCircle2, allowMultiple: false },
 ];
 
 // â”€â”€â”€ Node Library â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1521,7 +1529,7 @@ ${edges.map(e => `  - from: "${e.source}"  to: "${e.target}"`).join('\n')}`;
                           (nodes.find(n => n.id === e.target)?.data as any)?.locked);
                       return !hasLocked;
                     }}
-                    onInit={inst => { rfInstance.current = inst; }}
+                    onInit={inst => { rfInstance.current = inst as ReactFlowInstance<Node<FlowNodeData>, Edge>; }}
                     nodeTypes={nodeTypes}
                     edgeTypes={edgeTypes}
                     fitView

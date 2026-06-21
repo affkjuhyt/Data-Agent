@@ -32,8 +32,7 @@ import WorkflowBuilder, { type TemplateId } from './Builder';
 import ExecutionCenter from './ExecutionCenter';
 import SchedulingCenter from './SchedulingCenter';
 import WorkflowObservability from './Observability';
-
-const FLOW_BUILDER_URL = (import.meta as any).env?.VITE_FLOW_BUILDER_URL ?? 'http://localhost:8002';
+import { FLOW_BUILDER_URL } from '../../../lib/config';
 
 interface ApiAgent {
   id: string;

@@ -46,6 +46,7 @@ DEV_CONFIG = {
     "guardrail_id":              None,
     "agent_id": os.environ.get("DEV_AGENT_ID", "00000000-0000-0000-0000-000000000030"),
     "agent_version_id": None,
+    "workflow_version_id": None,
     "flow_nodes": [],
     "flow_edges": [],
 }
@@ -153,8 +154,11 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
         return {
             **DEV_CONFIG,
             # identity
-            "agent_id":         agent_id,
-            "agent_version_id": str(row.agent_version_id),
+            "agent_id":            agent_id,
+            "agent_version_id":    str(row.agent_version_id),
+            # workflow_version_id keys the graph cache — a new published version
+            # gets a new id, so the runner rebuilds the graph automatically.
+            "workflow_version_id": wv_id,
             # responder
             "responder_model":      row.responder_model or DEV_CONFIG["responder_model"],
             "responder_temperature": llm_config.get("temperature", DEV_CONFIG["responder_temperature"]),

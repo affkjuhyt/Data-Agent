@@ -37,7 +37,8 @@ def _build_qdrant_filters(
         tenant_id: str | List[str],
         data: List[MatchingPayload],
         match_type: MatchType | None = None,
-        pagination_config: PaginationConfig | None = None) -> models.Filter | None:
+        pagination_config: PaginationConfig | None = None,
+        knowledge_base: str | None = None) -> models.Filter | None:
 
 
     def build_matching_field():
@@ -81,13 +82,22 @@ def _build_qdrant_filters(
 
 
     matching_require = build_matching_tenant()
+    # Always exclude soft-deleted points from every search and scroll
+    matching_require.append(
+        models.FieldCondition(key="is_deleted", match=models.MatchValue(value=False))
+    )
+    # Scope to a single knowledge base (the "kind of knowledge") when provided.
+    if knowledge_base:
+        matching_require.append(
+            models.FieldCondition(key="knowledge_base", match=models.MatchValue(value=knowledge_base))
+        )
     matching_field = build_matching_field()
     if pagination_config is not None and pagination_config.pagination_cursor is not None:
         matching_require += build_paginating()
 
 
     if not matching_field:
-        return None
+        return models.Filter(must=matching_require)
 
     if match_type is MatchType.any:
         return models.Filter(
@@ -108,7 +118,7 @@ def _build_batch_points(tenant_id: str, points: List[PointData]):
 
     return [
         models.PointStruct(
-            id=p.payload.data_id,
+            id=p.payload.block_id,   # block_id is 1-to-1 with KBTextBlock in Postgres
             vector=p.vector,
             payload=add_tenant(p.payload).model_dump(mode="json"),
         )
@@ -132,31 +142,34 @@ class QdrantClient:
     def set_url(self, url: str):
         self._url = url
 
+    async def _check_health(self, config: HealthCheckLoopConfig) -> None:
+        await asyncio.wait_for(
+            self._client.get_collections(),
+            timeout=config.timeout_for_health_check,
+        )
+
+    async def _reconnect(self) -> None:
+        await self.close()
+        try:
+            self._create_connection()
+        except Exception as e:
+            log.warning(f"Qdrant reconnect failed: {e}")
+
     async def health_check_loop(self, config: HealthCheckLoopConfig):
         log.info("Qdrant health check loop started")
         while True:
             try:
-                if self._client is None:
-                    self._create_connection()
-
-                await asyncio.wait_for(
-                    self._client.get_collections(),
-                    timeout=config.timeout_for_health_check
-                )
-
-                log.info("Qdrant health check successes")
-
+                await self._check_health(config)
                 self._healthy = True
-            except asyncio.TimeoutError as e:
-                log.info(f"Qdrant health check failed: {e}")
-
+            except Exception as e:
                 self._healthy = False
-
+                log.warning(f"Qdrant unhealthy: {e} — attempting reconnect")
+                await self._reconnect()
             await asyncio.sleep(config.interval)
 
     async def open(self, retry: RetryConfig):
-        if self._client is None:
-           return self._client
+        if self._client is not None:
+            return self._client
         log.info("Qdrant Connection established")
         self._create_connection()
         for _ in range(retry.count):
@@ -167,6 +180,8 @@ class QdrantClient:
                 )
 
                 log.info("Qdrant connection successes")
+                self._connected = True
+                self._healthy = True
                 return self.get_client()
             except asyncio.TimeoutError as e:
                 log.info(f"Attempt #{_}/{retry.count}: Fail To Connect To Qdrant, retry after: {self._connection_wait}. Error: {e}")
@@ -205,6 +220,9 @@ class QdrantClient:
         if self._client is None:
             raise ConnectionError("Connection must be first established")
         return self._client
+
+    def connect(self) -> AsyncQdrantClient:
+        return self._create_connection()
 
     def _create_connection(self) -> AsyncQdrantClient:
         if self._url is None:
@@ -338,20 +356,19 @@ async def vector_search(client: AsyncQdrantClient, item: SearchRequest) -> Respo
     if not await client.collection_exists(item.collection_name):
         return ResponseModel(code=404, error="Collection does not exist")
 
-    query_filter = None
-    if item.matching_payload is not None:
-        query_filter = _build_qdrant_filters(
-            tenant_id=item.tenant_id,
-            data=item.matching_payload,
-            match_type=MatchType.must,
-            pagination_config=item.pagination_config,
-        )
+    query_filter = _build_qdrant_filters(
+        tenant_id=item.tenant_id,
+        data=item.matching_payload or [],
+        match_type=item.match_type if item.matching_payload else None,
+        pagination_config=item.pagination_config,
+        knowledge_base=item.knowledge_base,
+    )
 
     results = await client.query_points(
         collection_name=item.collection_name,
-        query_vector=item.query_vector,
+        query=item.query_vector,
         limit=item.limit,
         query_filter=query_filter,
         with_payload=True,
     )
-    return ResponseModel(code = 200, data=list(results))
+    return ResponseModel(code=200, data=results.points)

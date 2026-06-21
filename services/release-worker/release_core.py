@@ -28,24 +28,13 @@ import ipaddress
 
 from fastapi import FastAPI, HTTPException, Header, Depends, Request, Response
 from shared.auth import get_current_user
+from shared.observability import setup_observability, get_tracer
 from kafka import KafkaConsumer, KafkaProducer
-from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 
-# ── Logging ───────────────────────────────────────────────────────────
-structlog.configure(processors=[structlog.processors.JSONRenderer()])
+# ── Observability: JSON logs + OTel tracing (OTLP→Jaeger) via shared module ──
+setup_observability("release-worker")
 log = structlog.get_logger()
-
-# ── OpenTelemetry ─────────────────────────────────────────────────────
-provider = TracerProvider()
-otlp_exporter = OTLPSpanExporter(
-    endpoint=os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4317")
-)
-provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
-trace.set_tracer_provider(provider)
-tracer = trace.get_tracer("release-worker")
+tracer = get_tracer("release-worker")
 
 # ── Config ────────────────────────────────────────────────────────────
 def _require(name: str) -> str:

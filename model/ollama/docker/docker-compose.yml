@@ -1,53 +1,78 @@
+# Standalone Llama (CPU) for a beefy VM.
+#
+# Prereqs:
+#   - Docker + Compose plugin on the VM
+#   - GGUF weights at ../weights/model.gguf (relative to this file)
+#
+# Bring up:
+#   cd model/ollama/docker
+#   docker compose up -d --build
+#
+# With the OpenAI-compatible litellm shim too:
+#   docker compose --profile openai up -d --build
+#
+# Tune for your VM (env vars or shell exports):
+#   LLAMA_CPUS=16           # CPU limit
+#   LLAMA_MEM=32G           # memory limit
+#   LLAMA_THREADS=16        # threads inside llama (≤ LLAMA_CPUS)
+#   LLAMA_CTX=8192          # context window — bigger uses more RAM
+#   LLAMA_MODEL=/models/model.gguf
+
 services:
   llama:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    expose:
-      - "11434"
+      args:
+        GPU: "0"
+    image: kb-llama-cpu:latest
+    container_name: llama-cpu
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
     volumes:
-      - ../weights:/models
+      - ../weights:/models:ro
     environment:
-      MODEL_PATH: /models/model.gguf
-      N_CTX: "4096"
-      N_GPU_LAYERS: "0"
-      N_THREADS: "8"
-      KV_CACHE_TYPE: f16
-      USE_MMAP: "true"
-      USE_MLOCK: "true"
-      VERBOSE: "false"
+      MODEL_PATH:      ${LLAMA_MODEL:-/models/model.gguf}
+      N_CTX:           ${LLAMA_CTX:-4096}
+      N_GPU_LAYERS:    "0"
+      N_THREADS:       ${LLAMA_THREADS:-8}
+      OMP_NUM_THREADS: ${LLAMA_THREADS:-8}
+      KV_CACHE_TYPE:   ${LLAMA_KV_CACHE:-f16}
+      USE_MMAP:        "true"
+      USE_MLOCK:       "false"
+      VERBOSE:         "false"
+      POOL_SIZE:       ${LLAMA_POOL_SIZE:-1}
     deploy:
       resources:
         limits:
-          cpus: "8"
-          memory: 10G
+          cpus:   "${LLAMA_CPUS:-8}"
+          memory: ${LLAMA_MEM:-16G}
         reservations:
-          memory: 1G
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-    cap_add:
-      - IPC_LOCK
-    restart: unless-stopped
+          memory: ${LLAMA_MEM_RESERVED:-6G}
     healthcheck:
-      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:11434/health')" ]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:11434/health')"]
       interval: 30s
       timeout: 10s
-      start_period: 90s
-      retries: 3
+      start_period: 180s
+      retries: 5
 
+  # OpenAI-compatible shim. Optional — start with `--profile openai`.
   litellm:
     image: ghcr.io/berriai/litellm:main-latest
+    container_name: llama-litellm
+    restart: unless-stopped
+    profiles: ["openai"]
     ports:
       - "4000:4000"
     volumes:
-      - ./litellm/config.yaml:/app/config.yaml
-    command:
-      - "--config"
-      - "/app/config.yaml"
-      - "--port"
-      - "4000"
+      - ./litellm/config.yaml:/app/config.yaml:ro
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
     depends_on:
-      - llama
-    restart: unless-stopped
+      llama:
+        condition: service_healthy

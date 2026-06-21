@@ -1,0 +1,22 @@
+# Standalone litellm shim — exposes an OpenAI-compatible API at :4000
+# that proxies to the local llama service (Ollama-compatible at :11434).
+#
+# text_completion (litellm.atext_completion) → /v1/completions → /api/generate
+# embedding      (litellm.aembedding)        → /v1/embeddings  → /api/embeddings
+#
+# Forwarding client headers lets X-System-Type pass through so the llama server
+# can swap pre-cached KV snapshots per request.
+
+model_list:
+  - model_name: llama3
+    litellm_params:
+      model: ollama/llama3
+      api_base: http://llama:11434
+
+general_settings:
+  forward_client_headers_to_llm_api: true
+
+litellm_settings:
+  request_timeout: 120
+  set_verbose: false
+  json_logs: true

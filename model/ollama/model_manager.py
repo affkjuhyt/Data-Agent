@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import threading
-from typing import Any, Generic, Iterator, Protocol, TypeVar, runtime_checkable
+from contextlib import asynccontextmanager
+from typing import Any, AsyncIterator, Generic, Iterator, Protocol, TypeVar, runtime_checkable
 from llama_cpp import LlamaState
 from _logging import get_logger
 from llama import (
@@ -169,6 +171,9 @@ class KVCacheManager:
             if user_id:
                 self._client.eval_assistant_reply("".join(reply_parts))
                 self._save_conversation(user_id, len(messages) + 1)
+        # LiteLLM's Ollama provider requires a final done:true chunk to stop
+        # reading the NDJSON stream and return the accumulated content.
+        yield formatter.format("")
 
     def completion(
             self,
@@ -193,3 +198,89 @@ class KVCacheManager:
             state, _, _fresh = self._kv_start(None, system_type)
             self._client.reload_state(state)
             yield from self._client.stream_response(**kwargs)
+        yield kwargs["formatter"].format("")
+
+
+class SharedSystemRegistry:
+    """Thread-safe store of system-prompt name → text, shared by all pool instances.
+    Each instance uses this to lazily pre-warm KV snapshots it hasn't computed yet."""
+
+    def __init__(self) -> None:
+        self._prompts: dict[str, str] = {}
+        self._lock = threading.Lock()
+
+    def register(self, name: str, text: str) -> None:
+        with self._lock:
+            self._prompts[name] = text
+
+    def items(self) -> list[tuple[str, str]]:
+        with self._lock:
+            return list(self._prompts.items())
+
+    def keys(self) -> list[str]:
+        with self._lock:
+            return list(self._prompts.keys())
+
+
+class ModelPool:
+    """Fixed-size pool of KVCacheManagers backed by an asyncio.Queue.
+
+    Requests call acquire(), which blocks until a free instance is available,
+    then yields it. When the caller's context exits the instance is returned to
+    the queue so the next waiting request can pick it up.
+
+    All instances share a SharedSystemRegistry so a system prompt registered once
+    is lazily pre-warmed on each instance the first time it handles a request after
+    that registration.
+    """
+
+    def __init__(self, pool_size: int) -> None:
+        self._pool_size = pool_size
+        self._queue: asyncio.Queue[KVCacheManager] = asyncio.Queue(maxsize=pool_size)
+        self._registry = SharedSystemRegistry()
+        self._model_info: dict[str, Any] = {}
+
+    async def build(self) -> None:
+        loop = asyncio.get_event_loop()
+        for idx in range(self._pool_size):
+            log.info("Building model instance %d/%d …", idx + 1, self._pool_size)
+            model = Llama3Model()
+            await loop.run_in_executor(None, model.load)
+            cache = KVCacheManager(model)
+            await loop.run_in_executor(None, cache.init_empty_state)
+            if idx == 0:
+                self._model_info = cache.get_client().health()
+            await self._queue.put(cache)
+        log.info("Model pool ready — %d instance(s)", self._pool_size)
+
+    @asynccontextmanager
+    async def acquire(self) -> AsyncIterator[KVCacheManager]:
+        """Pull a free instance from the pool, sync any pending system prompts,
+        yield it, then return it to the pool. Blocks if all instances are busy."""
+        cache = await self._queue.get()
+        await self._sync_prompts(cache)
+        try:
+            yield cache
+        finally:
+            await self._queue.put(cache)
+
+    async def _sync_prompts(self, cache: KVCacheManager) -> None:
+        loop = asyncio.get_event_loop()
+        for name, text in self._registry.items():
+            if not cache.system.has(name):
+                log.info("Instance syncing system prompt %r …", name)
+                await loop.run_in_executor(None, cache.register_system_prompt, name, text)
+
+    async def register_system_prompt(self, name: str, text: str) -> None:
+        """Store text in shared registry. Each instance pre-warms lazily on next acquire."""
+        self._registry.register(name, text)
+
+    def system_types(self) -> list[str]:
+        return self._registry.keys()
+
+    def status(self) -> dict[str, Any]:
+        return {
+            **self._model_info,
+            "pool_size": self._pool_size,
+            "available": self._queue.qsize(),
+        }

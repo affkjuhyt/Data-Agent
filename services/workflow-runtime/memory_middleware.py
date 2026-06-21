@@ -26,7 +26,7 @@ _DEV_TENANT_ID = os.getenv("DEV_TENANT_ID", "00000000-0000-0000-0000-00000000000
 _LITELLM_BASE  = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
 _LITELLM_KEY   = os.environ.get("LITELLM_API_KEY",  "sk-dev")
 _QDRANT_URL    = os.environ.get("QDRANT_URL",        "http://localhost:6333")
-_EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "1536"))
+_EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "1024"))
 _COLLECTION    = "agent_memories"
 
 # Retrieval Score = α·recency + β·importance + γ·relevance (doc §IV).

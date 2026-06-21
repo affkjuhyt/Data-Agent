@@ -29,4 +29,6 @@ class AgentState(TypedDict):
     judge_verdict: Optional[str]      # "PASS" | "FAIL"
     judge_error_type: Optional[str]   # "RETRIEVAL_ERROR" | "REASONING_ERROR" | "TOOL_ERROR" | "DATA_QUALITY"
     judge_reason: Optional[str]
+    human_approved: Optional[bool]    # None = chưa qua HITL node, True/False = kết quả review
+    human_note: Optional[str]         # ghi chú reviewer khi reject
     config: dict

@@ -13,6 +13,7 @@ import ipaddress
 import os
 import secrets
 import string
+import threading
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -21,6 +22,7 @@ import httpx
 import hvac
 import psycopg2
 import psycopg2.extras
+from psycopg2 import pool as pg_pool
 import structlog
 from fastapi import Depends, Header, HTTPException, Path, Query
 from shared.auth import get_current_user, require_role
@@ -55,10 +57,67 @@ def get_vault() -> hvac.Client:
 # Private-network fallback when allowlist is empty — prevents lockout
 _PRIVATE_FALLBACK = ["127.0.0.1/32", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
 
+# ── Connection pool ─────────────────────────────────────────────────────────────
+# Pool the owner-role connections instead of opening a fresh TCP+auth handshake
+# on every request (the old per-request psycopg2.connect() both added latency and
+# risked exhausting Postgres max_connections under load).
+#
+# POOL_MAX bounds in-flight owner connections; the route threadpool is capped to
+# the same number in startup() so a `def` route thread always finds a free
+# connection — psycopg2's pool RAISES "exhausted" rather than waiting, so we must
+# never let more threads run than the pool can serve. OWNER_POOL_MAX adds a small
+# margin so the background rotation task can still get a connection when routes
+# are saturated.
+POOL_MIN        = int(os.environ.get("DB_POOL_MIN", "2"))
+POOL_MAX        = int(os.environ.get("DB_POOL_MAX", "20"))
+_OWNER_POOL_MAX = POOL_MAX + 2
+
+_owner_pool: Optional[pg_pool.ThreadedConnectionPool] = None
+_owner_pool_lock = threading.Lock()
+
+
+def _get_owner_pool() -> pg_pool.ThreadedConnectionPool:
+    # Lazy + double-checked: Postgres may not be up at import time.
+    global _owner_pool
+    if _owner_pool is None:
+        with _owner_pool_lock:
+            if _owner_pool is None:
+                _owner_pool = pg_pool.ThreadedConnectionPool(POOL_MIN, _OWNER_POOL_MAX, PG_DSN)
+    return _owner_pool
+
+
+class _PooledConn:
+    """Proxy so existing `conn = get_db(); ...; conn.close()` call sites return the
+    connection to the pool instead of really closing it — no call site changes.
+
+    A rollback on release clears any open/aborted transaction so the next borrower
+    starts clean: psycopg2's putconn() does NOT reset connection state.
+    """
+
+    def __init__(self, pool: pg_pool.ThreadedConnectionPool, conn) -> None:
+        object.__setattr__(self, "_pool", pool)
+        object.__setattr__(self, "_conn", conn)
+
+    def close(self) -> None:
+        conn = object.__getattribute__(self, "_conn")
+        pool = object.__getattribute__(self, "_pool")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        pool.putconn(conn)
+
+    def __getattr__(self, name):
+        return getattr(object.__getattribute__(self, "_conn"), name)
+
+    def __setattr__(self, name, value):
+        setattr(object.__getattribute__(self, "_conn"), name, value)
+
+
 def get_db():
-    conn = psycopg2.connect(PG_DSN)
-    conn.autocommit = False
-    return conn
+    raw = _get_owner_pool().getconn()
+    raw.autocommit = False
+    return _PooledConn(_get_owner_pool(), raw)
 
 
 def _ensure_settings_table():
@@ -172,7 +231,9 @@ async def _auto_rotation_loop():
     await asyncio.sleep(60)  # wait for startup to settle
     while True:
         try:
-            _run_auto_rotation()
+            # Offload the blocking psycopg2 + vault work to a thread so it never
+            # runs on (and stalls) the event loop.
+            await asyncio.to_thread(_run_auto_rotation)
         except Exception as e:
             log.error("auto_rotation_loop_error", error=str(e))
         await asyncio.sleep(86400)  # run every 24 hours
@@ -182,12 +243,24 @@ async def _sync_kong_on_startup():
     # Wait for Kong to finish setup before syncing
     await asyncio.sleep(15)
     try:
-        _sync_kong("")
+        # _sync_kong uses blocking httpx + psycopg2 — keep it off the event loop.
+        await asyncio.to_thread(_sync_kong, "")
         log.info("startup_kong_sync_done")
     except Exception as e:
         log.warning("startup_kong_sync_failed", error=str(e))
 
 async def startup():
+    # Cap the route threadpool to the DB pool size. Sync (`def`) routes run in
+    # this threadpool and each borrows one pooled connection; psycopg2's pool
+    # RAISES when exhausted, so we must not let more route threads run than the
+    # pool can serve. Excess requests then queue at this limiter (which waits)
+    # instead of erroring at the pool. Raise DB_POOL_MAX (and Postgres
+    # max_connections) together to lift concurrency.
+    try:
+        import anyio
+        anyio.to_thread.current_default_thread_limiter().total_tokens = POOL_MAX
+    except Exception as e:
+        log.warning("threadpool_limiter_set_failed", error=str(e))
     _ensure_settings_table()
     asyncio.create_task(_auto_rotation_loop())
     asyncio.create_task(_sync_kong_on_startup())

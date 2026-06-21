@@ -11,24 +11,40 @@ import {
   FileText,
   Calendar,
   ChevronRight,
+  ChevronDown,
   FolderOpen,
   ArrowLeft,
   Loader2,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { DetailDrawer } from '../../shared/DetailDrawer';
-import { mockGet, mockMutate } from '../../../lib/mockApi';
+import { apiGet, apiMutate } from '../../../lib/apiClient';
 import {
   ConflictType, SeverityType, ConflictStatusType, ResolutionMethod,
-  ConflictSummary, ConflictBatchGroup, ConflictsResponse, ConflictDetail,
+  ConflictSummary, ConflictBatchGroup, ConflictsResponse, ConflictsBucket, ConflictDetail,
   CONFLICT_TYPE_LABELS,
 } from './conflicts.data';
 
+function unwrapBucket<T>(raw: ConflictsBucket<T> | T[]): { items: T[]; has_next: boolean } {
+  if (Array.isArray(raw)) return { items: raw, has_next: false };
+  return { items: raw.items ?? [], has_next: raw.has_next ?? false };
+}
+import { RESOLUTION_LABELS } from '../../../lib/enums';
+
 
 export const ConflictWorkspace = () => {
-  // Cached server response — single load on tab mount
   const [cached, setCached] = useState<ConflictsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Per-bucket page state for server-side pagination
+  const [pendingPage, setPendingPage]   = useState(1);
+  const [awaitingPage, setAwaitingPage] = useState(1);
+  const [resolvedPage, setResolvedPage] = useState(1);
+
+  // has_next flags derived from the unwrapped response
+  const [pendingHasNext, setPendingHasNext]   = useState(false);
+  const [awaitingHasNext, setAwaitingHasNext] = useState(false);
+  const [resolvedHasNext, setResolvedHasNext] = useState(false);
 
   const [activeTab, setActiveTab] = useState<ConflictStatusType>('pending');
   const [searchQuery, setSearchQuery] = useState('');
@@ -45,30 +61,56 @@ export const ConflictWorkspace = () => {
   const [selectedMethod, setSelectedMethod] = useState<ResolutionMethod | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Load all three buckets on mount
-  useEffect(() => {
-    mockGet<ConflictsResponse>('/api/knowledge/conflicts')
+  // Full-text expansion toggles for each snapshot panel
+  const [existingExpanded, setExistingExpanded] = useState(false);
+  const [incomingExpanded, setIncomingExpanded] = useState(false);
+
+  const loadConflicts = (pp = pendingPage, ap = awaitingPage, rp = resolvedPage) => {
+    setLoading(true);
+    apiGet<ConflictsResponse>('/api/knowledge/conflicts', {
+      pending_page: pp, awaiting_page: ap, resolved_page: rp,
+    })
       .then(data => {
         setCached(data);
-        if (data.pending.length > 0) setSelectedBatchId(data.pending[0].batch_id);
+        const { items: pItems, has_next: pNext } = unwrapBucket(data.pending);
+        const { has_next: aNext } = unwrapBucket(data.awaiting);
+        const { has_next: rNext } = unwrapBucket(data.resolved);
+        setPendingHasNext(pNext);
+        setAwaitingHasNext(aNext);
+        setResolvedHasNext(rNext);
+        if (pp === 1 && pItems.length > 0) {
+          const first = pItems[0] as ConflictBatchGroup;
+          if (first.batch_id) setSelectedBatchId(first.batch_id);
+        }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { loadConflicts(1, 1, 1); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reload when page changes
+  useEffect(() => { loadConflicts(pendingPage, awaitingPage, resolvedPage); },
+    [pendingPage, awaitingPage, resolvedPage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Counters derived from cache
-  const pendingCount = cached?.pending.reduce((sum, b) => sum + b.number_pending_conflict, 0) ?? 0;
-  const awaitingCount = cached?.awaiting.length ?? 0;
-  const resolvedCount = cached?.resolved.length ?? 0;
+  const pendingBatches = cached ? unwrapBucket(cached.pending).items as ConflictBatchGroup[] : [];
+  const awaitingItems  = cached ? unwrapBucket(cached.awaiting).items as ConflictSummary[]   : [];
+  const resolvedItems  = cached ? unwrapBucket(cached.resolved).items as ConflictSummary[]   : [];
+
+  const pendingCount  = pendingBatches.reduce((sum, b) => sum + b.number_pending_conflict, 0);
+  const awaitingCount = awaitingItems.length;
+  const resolvedCount = resolvedItems.length;
 
   // Summaries for the active list view
   const currentSummaries: ConflictSummary[] = (() => {
     if (!cached) return [];
     if (activeTab === 'pending') {
-      const batch = cached.pending.find(b => b.batch_id === selectedBatchId);
+      const batch = pendingBatches.find(b => b.batch_id === selectedBatchId);
       return batch?.conflicts ?? [];
     }
-    return cached[activeTab];
+    if (activeTab === 'awaiting') return awaitingItems;
+    return resolvedItems;
   })();
 
   const filteredSummaries = currentSummaries.filter(c =>
@@ -78,19 +120,19 @@ export const ConflictWorkspace = () => {
 
   const renderSeverityBadge = (sev: SeverityType) => {
     const styles: Record<SeverityType, string> = {
-      High:   'bg-red-500/10 text-red-700 border-red-500/20 px-2 py-0.5 rounded text-[10px] uppercase font-bold border font-mono',
-      Medium: 'bg-amber-500/10 text-amber-700 border-amber-500/20 px-2 py-0.5 rounded text-[10px] uppercase font-bold border font-mono',
-      Low:    'bg-slate-100 text-slate-600 border-slate-200 px-2 py-0.5 rounded text-[10px] uppercase font-bold border font-mono',
+      high:   'bg-red-500/10 text-red-700 border-red-500/20 px-2 py-0.5 rounded text-[10px] uppercase font-bold border font-mono',
+      medium: 'bg-amber-500/10 text-amber-700 border-amber-500/20 px-2 py-0.5 rounded text-[10px] uppercase font-bold border font-mono',
+      low:    'bg-slate-100 text-slate-600 border-slate-200 px-2 py-0.5 rounded text-[10px] uppercase font-bold border font-mono',
     };
     return <span className={styles[sev]}>{sev}</span>;
   };
 
   const isMethodDisabled = (method: ResolutionMethod, type: ConflictType): boolean => {
-    if (type === 'Content Contradiction' || type === 'Table Schema') {
-      return method === 'Merge' || method === 'No Action';
+    if (type === 'content_contradiction' || type === 'table_schema') {
+      return method === 'merge' || method === 'no_action';
     }
-    if (type === 'Content Update') return method === 'Merge';
-    if (type === 'Content Duplicate') return method === 'No Action';
+    if (type === 'content_update') return method === 'merge';
+    if (type === 'content_duplicate') return method === 'no_action';
     return false;
   };
 
@@ -101,8 +143,10 @@ export const ConflictWorkspace = () => {
     setDetailLoading(true);
     setResolutionInstruction('');
     setSelectedMethod(null);
+    setExistingExpanded(false);
+    setIncomingExpanded(false);
 
-    mockGet<ConflictDetail>(`/api/knowledge/conflicts/${summary.conflict_id}`)
+    apiGet<ConflictDetail>(`/api/knowledge/conflicts/${summary.conflict_id}`)
       .then(detail => {
         setConflictDetail(detail);
         setResolutionInstruction(detail.resolution_instruction || '');
@@ -123,14 +167,14 @@ export const ConflictWorkspace = () => {
     if (!selectedConflictId || !selectedMethod) return;
     setSubmitting(true);
     try {
-      await mockMutate('PATCH', `/api/knowledge/conflicts/${selectedConflictId}`, {
+      await apiMutate('PATCH', `/api/knowledge/conflicts/${selectedConflictId}`, {
         selected_resolution_method: selectedMethod,
         resolution_instruction: resolutionInstruction,
       });
-      // Re-fetch to keep cache in sync with server
-      const fresh = await mockGet<ConflictsResponse>('/api/knowledge/conflicts');
-      setCached(fresh);
-      const nextTab: ConflictStatusType = selectedMethod === 'Merge' ? 'awaiting' : 'resolved';
+      const nextTab: ConflictStatusType = selectedMethod === 'merge' ? 'awaiting' : 'resolved';
+      // Reset to page 1 and re-fetch fresh counts
+      setPendingPage(1); setAwaitingPage(1); setResolvedPage(1);
+      loadConflicts(1, 1, 1);
       setActiveTab(nextTab);
       handleCloseDrawer();
     } catch { /* error handled by unwrapEnvelope */ }
@@ -144,7 +188,7 @@ export const ConflictWorkspace = () => {
       <DetailDrawer
         isOpen={!!selectedConflictId}
         onClose={handleCloseDrawer}
-        title={conflictDetail?.conflict_type ?? (detailLoading ? 'Loading...' : 'Conflict Detail')}
+        title={conflictDetail ? (CONFLICT_TYPE_LABELS[conflictDetail.conflict_type]?.title ?? conflictDetail.conflict_type) : (detailLoading ? 'Loading...' : 'Conflict Detail')}
         subtitle={conflictDetail ? conflictDetail.status.toUpperCase() : ''}
         icon={ShieldAlert}
         size="wide"
@@ -242,50 +286,74 @@ export const ConflictWorkspace = () => {
               </div>
             </div>
 
-            {/* Side by side snapshot diff */}
+            {/* Side by side summary diff */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="border border-slate-200 rounded-xl overflow-hidden flex flex-col shadow-xs bg-white">
-                <div className="bg-[#1F1E19] px-3.5 py-2 flex items-center justify-between">
-                  <span className="text-[9px] font-mono text-slate-300 font-black tracking-wider uppercase">
-                    Snapshot A: Database Canonical
-                  </span>
-                  <span className="text-[8px] font-bold bg-[#FAF6EA] border border-[#BFA66A]/30 px-1.5 py-0.5 rounded text-[#8A5A00]">
-                    Existing Key
-                  </span>
-                </div>
-                <div className="p-3 bg-[#FAF9F5] overflow-x-auto h-full min-h-[140px]">
-                  {typeof conflictDetail.existing_snapshot === 'object' ? (
-                    <pre className="bg-[#12110F] text-slate-200 text-[10px] font-mono p-3 rounded-lg overflow-x-auto leading-relaxed border border-[#BFA66A]/20 h-full">
-                      {JSON.stringify(conflictDetail.existing_snapshot, null, 2)}
-                    </pre>
-                  ) : (
-                    <p className="text-[11px] text-slate-700 leading-relaxed font-mono p-3 bg-[#FAF6EA]/30 border border-[#BFA66A]/15 rounded-lg whitespace-pre-wrap h-full">
-                      {conflictDetail.existing_snapshot as unknown as string}
+              {/* Snapshot A */}
+              <div className="flex flex-col gap-0">
+                <div className="border border-slate-200 rounded-xl overflow-hidden flex flex-col shadow-xs bg-white">
+                  <div className="bg-[#1F1E19] px-3.5 py-2 flex items-center justify-between">
+                    <span className="text-[9px] font-mono text-slate-300 font-black tracking-wider uppercase">
+                      Snapshot A: Database Canonical
+                    </span>
+                    <span className="text-[8px] font-bold bg-[#FAF6EA] border border-[#BFA66A]/30 px-1.5 py-0.5 rounded text-[#8A5A00]">
+                      Existing Key
+                    </span>
+                  </div>
+                  <div className="p-3.5 bg-[#FAF9F5] flex-1 min-h-[120px]">
+                    <p className="text-[11px] text-slate-700 leading-relaxed whitespace-pre-wrap">
+                      {(conflictDetail.existing_snapshot as Record<string, string>)?.summary || 'No summary available.'}
                     </p>
-                  )}
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setExistingExpanded(v => !v)}
+                  className="mt-1.5 flex items-center gap-1 self-start px-2.5 py-1 rounded-lg text-[10px] font-bold text-[#8A5A00] bg-[#FFF9E8] border border-[#BFA66A]/30 hover:bg-[#B88719] hover:text-white transition-all cursor-pointer"
+                >
+                  <ChevronDown className={cn("w-3 h-3 transition-transform", existingExpanded && "rotate-180")} />
+                  {existingExpanded ? 'Hide Full Text' : 'View Full Text'}
+                </button>
+                {existingExpanded && (
+                  <div className="mt-1 border border-[#BFA66A]/20 rounded-xl bg-[#FAF9F5] p-3.5 max-h-64 overflow-y-auto">
+                    <p className="text-[11px] text-slate-700 leading-relaxed whitespace-pre-wrap font-mono">
+                      {conflictDetail.existing_db_content ?? 'No content available.'}
+                    </p>
+                  </div>
+                )}
               </div>
 
-              <div className="border border-slate-200 rounded-xl overflow-hidden flex flex-col shadow-xs bg-white">
-                <div className="bg-[#1D1B17] px-3.5 py-2 flex items-center justify-between">
-                  <span className="text-[9px] font-mono text-slate-300 font-black tracking-wider uppercase">
-                    Snapshot B: Ingestion Buffer
-                  </span>
-                  <span className="text-[8px] font-bold bg-[#F3E2A7] border border-[#B88719]/30 px-1.5 py-0.5 rounded text-[#111111]">
-                    Incoming Stream
-                  </span>
-                </div>
-                <div className="p-3 bg-[#FAF9F5] overflow-x-auto h-full min-h-[140px]">
-                  {typeof conflictDetail.incoming_snapshot === 'object' ? (
-                    <pre className="bg-[#12110F] text-slate-200 text-[10px] font-mono p-3 rounded-lg overflow-x-auto leading-relaxed border border-[#BFA66A]/20 h-full">
-                      {JSON.stringify(conflictDetail.incoming_snapshot, null, 2)}
-                    </pre>
-                  ) : (
-                    <p className="text-[11px] text-slate-700 leading-relaxed font-mono p-3 bg-[#FAF6EA]/30 border border-[#BFA66A]/15 rounded-lg whitespace-pre-wrap h-full">
-                      {conflictDetail.incoming_snapshot as unknown as string}
+              {/* Snapshot B */}
+              <div className="flex flex-col gap-0">
+                <div className="border border-slate-200 rounded-xl overflow-hidden flex flex-col shadow-xs bg-white">
+                  <div className="bg-[#1D1B17] px-3.5 py-2 flex items-center justify-between">
+                    <span className="text-[9px] font-mono text-slate-300 font-black tracking-wider uppercase">
+                      Snapshot B: Ingestion Buffer
+                    </span>
+                    <span className="text-[8px] font-bold bg-[#F3E2A7] border border-[#B88719]/30 px-1.5 py-0.5 rounded text-[#111111]">
+                      Incoming Stream
+                    </span>
+                  </div>
+                  <div className="p-3.5 bg-[#FAF9F5] flex-1 min-h-[120px]">
+                    <p className="text-[11px] text-slate-700 leading-relaxed whitespace-pre-wrap">
+                      {(conflictDetail.incoming_snapshot as Record<string, string>)?.summary || 'No summary available.'}
                     </p>
-                  )}
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setIncomingExpanded(v => !v)}
+                  className="mt-1.5 flex items-center gap-1 self-start px-2.5 py-1 rounded-lg text-[10px] font-bold text-[#8A5A00] bg-[#FFF9E8] border border-[#BFA66A]/30 hover:bg-[#B88719] hover:text-white transition-all cursor-pointer"
+                >
+                  <ChevronDown className={cn("w-3 h-3 transition-transform", incomingExpanded && "rotate-180")} />
+                  {incomingExpanded ? 'Hide Full Text' : 'View Full Text'}
+                </button>
+                {incomingExpanded && (
+                  <div className="mt-1 border border-[#BFA66A]/20 rounded-xl bg-[#FAF9F5] p-3.5 max-h-64 overflow-y-auto">
+                    <p className="text-[11px] text-slate-700 leading-relaxed whitespace-pre-wrap font-mono">
+                      {(conflictDetail.incoming_snapshot as Record<string, string>)?.content || 'No content available.'}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -303,9 +371,9 @@ export const ConflictWorkspace = () => {
                   <div className="grid grid-cols-1 gap-2 pt-1 font-sans">
                     {(
                       [
-                        { method: 'Keep Existing' as ResolutionMethod, label: 'Keep Stored (Canonical Snapshot A)',         desc: 'Retains local Snapshot A, discarding incoming files completely.' },
-                        { method: 'Keep Incoming' as ResolutionMethod, label: 'Over-write (Active Snapshot B)',             desc: 'Supersedes database values and commits new ingestion stream raw records directly.' },
-                        { method: 'Merge'         as ResolutionMethod, label: 'Guided Merge (Coexisting Hybrid Synthesis)', desc: 'Invokes AI-assisted pipeline to fuse Snapshot A and B using your custom prompt instructions.' },
+                        { method: 'keep_existing' as ResolutionMethod, label: 'Keep Stored (Canonical Snapshot A)',         desc: 'Retains local Snapshot A, discarding incoming files completely.' },
+                        { method: 'keep_incoming' as ResolutionMethod, label: 'Over-write (Active Snapshot B)',             desc: 'Supersedes database values and commits new ingestion stream raw records directly.' },
+                        { method: 'merge'         as ResolutionMethod, label: 'Guided Merge (Coexisting Hybrid Synthesis)', desc: 'Invokes AI-assisted pipeline to fuse Snapshot A and B using your custom prompt instructions.' },
                       ] as const
                     ).map(({ method, label, desc }) => {
                       const disabled = isMethodDisabled(method, conflictDetail.conflict_type);
@@ -363,7 +431,7 @@ export const ConflictWorkspace = () => {
                     <span className="text-[8px] font-mono text-slate-400 font-bold uppercase block">Determined Canonical Action</span>
                     <div className="text-xs font-bold text-[#111111] flex items-center gap-1.5">
                       <CheckCircle2 className="w-4 h-4 text-green-600" />
-                      <span>{conflictDetail.selected_resolution_method}</span>
+                      <span>{conflictDetail.selected_resolution_method ? RESOLUTION_LABELS[conflictDetail.selected_resolution_method] : ''}</span>
                     </div>
                   </div>
 
@@ -516,7 +584,7 @@ export const ConflictWorkspace = () => {
                   </span>
                 </div>
                 <span className="text-[9px] font-mono font-bold uppercase py-1 px-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-600">
-                  KB.Batches ({cached?.pending.length ?? 0})
+                  KB.Batches ({pendingBatches.length})
                 </span>
               </div>
 
@@ -537,7 +605,7 @@ export const ConflictWorkspace = () => {
                           <Loader2 className="w-5 h-5 animate-spin text-[#B88719] mx-auto" />
                         </td>
                       </tr>
-                    ) : (cached?.pending ?? []).map((batch: ConflictBatchGroup) => (
+                    ) : pendingBatches.map((batch: ConflictBatchGroup) => (
                       <tr
                         key={batch.batch_id}
                         onClick={() => { setSelectedBatchId(batch.batch_id); setPendingView('conflicts'); }}
@@ -579,6 +647,21 @@ export const ConflictWorkspace = () => {
                     ))}
                   </tbody>
                 </table>
+                {(pendingPage > 1 || pendingHasNext) && (
+                  <div className="flex items-center justify-between px-6 py-3 border-t border-[#BFA66A]/15 bg-[#FFFDF8]">
+                    <span className="text-[10px] font-mono text-slate-400">Page {pendingPage}</span>
+                    <div className="flex gap-1.5">
+                      <button disabled={pendingPage === 1} onClick={() => setPendingPage(p => Math.max(1, p - 1))}
+                        className={cn("px-2.5 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", pendingPage === 1 && "opacity-40 cursor-not-allowed")}>
+                        ‹ Prev
+                      </button>
+                      <button disabled={!pendingHasNext} onClick={() => setPendingPage(p => p + 1)}
+                        className={cn("px-2.5 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", !pendingHasNext && "opacity-40 cursor-not-allowed")}>
+                        Next ›
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -602,7 +685,7 @@ export const ConflictWorkspace = () => {
                 <div>
                   <span className="text-[10px] font-mono font-black text-[#5A4209]/80 uppercase tracking-widest block">
                     {activeTab === 'pending'
-                      ? `${cached?.pending.find(b => b.batch_id === selectedBatchId)?.batch_name ?? 'Batch'} Conflicts`
+                      ? `${pendingBatches.find(b => b.batch_id === selectedBatchId)?.batch_name ?? 'Batch'} Conflicts`
                       : 'Reconciliation Registry'
                     }
                   </span>
@@ -683,6 +766,40 @@ export const ConflictWorkspace = () => {
                     })}
                   </tbody>
                 </table>
+                {activeTab !== 'pending' && (
+                  (activeTab === 'awaiting' ? (awaitingPage > 1 || awaitingHasNext) : (resolvedPage > 1 || resolvedHasNext))
+                ) && (
+                  <div className="flex items-center justify-between px-6 py-3 border-t border-[#BFA66A]/15 bg-[#FFFDF8]">
+                    <span className="text-[10px] font-mono text-slate-400">
+                      Page {activeTab === 'awaiting' ? awaitingPage : resolvedPage}
+                    </span>
+                    <div className="flex gap-1.5">
+                      {activeTab === 'awaiting' ? (
+                        <>
+                          <button disabled={awaitingPage === 1} onClick={() => setAwaitingPage(p => Math.max(1, p - 1))}
+                            className={cn("px-2.5 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", awaitingPage === 1 && "opacity-40 cursor-not-allowed")}>
+                            ‹ Prev
+                          </button>
+                          <button disabled={!awaitingHasNext} onClick={() => setAwaitingPage(p => p + 1)}
+                            className={cn("px-2.5 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", !awaitingHasNext && "opacity-40 cursor-not-allowed")}>
+                            Next ›
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button disabled={resolvedPage === 1} onClick={() => setResolvedPage(p => Math.max(1, p - 1))}
+                            className={cn("px-2.5 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", resolvedPage === 1 && "opacity-40 cursor-not-allowed")}>
+                            ‹ Prev
+                          </button>
+                          <button disabled={!resolvedHasNext} onClick={() => setResolvedPage(p => p + 1)}
+                            className={cn("px-2.5 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", !resolvedHasNext && "opacity-40 cursor-not-allowed")}>
+                            Next ›
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

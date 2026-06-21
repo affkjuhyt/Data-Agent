@@ -3,9 +3,13 @@ import json
 import logging
 import re
 import time
+from collections import OrderedDict
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
+
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.types import Command
 
 from config_loader import load_agent_config
 from db import create_conversation, get_messages, save_message, save_trace, validate_agent_tenant
@@ -25,7 +29,56 @@ from schemas import RunRequest
 
 logger = logging.getLogger(__name__)
 
-_graph_cache: dict[str, object] = {}
+
+class _LRUCache:
+    """Tiny bounded LRU for compiled graphs.
+
+    Keyed by (agent_id, workflow_version_id) so a newly published flow version
+    gets a fresh key and the graph is rebuilt automatically — no restart, no
+    manual invalidation. Bounded so stale version entries can't accumulate
+    forever (the previous plain dict never evicted anything).
+    """
+
+    def __init__(self, maxsize: int = 64) -> None:
+        self._maxsize = maxsize
+        self._data: "OrderedDict[str, object]" = OrderedDict()
+
+    def get(self, key: str):
+        if key not in self._data:
+            return None
+        self._data.move_to_end(key)
+        return self._data[key]
+
+    def set(self, key: str, value: object) -> None:
+        self._data[key] = value
+        self._data.move_to_end(key)
+        while len(self._data) > self._maxsize:
+            self._data.popitem(last=False)
+
+    def invalidate_suffix(self, suffix: str) -> int:
+        """Drop every entry whose key ends with `suffix`. Returns count removed.
+
+        Cache keys are `"{agent_id}:{workflow_version_id}"`, so passing
+        `":{wv_id}"` evicts that version across all agents that reference it.
+        """
+        victims = [k for k in self._data if k.endswith(suffix)]
+        for k in victims:
+            del self._data[k]
+        return len(victims)
+
+
+_GRAPH_CACHE_MAXSIZE = 64
+_graph_cache = _LRUCache(maxsize=_GRAPH_CACHE_MAXSIZE)
+# Per-key build locks dedup concurrent first-time builds of the same graph: two
+# requests racing on a new (agent, version) compile it once, not twice.
+_build_locks: dict[str, asyncio.Lock] = {}
+_default_graph = build_graph()
+
+# Shared checkpointer for workflows that have a human_approval node.
+_checkpointer = MemorySaver()
+
+# conv_id → {agent_id, query, interrupt_payload, suspended_at}
+_pending_reviews: dict[str, dict] = {}
 
 # asyncio only holds a weak reference to a task created via create_task — if
 # nothing else references it, it can be GC'd mid-execution. Keep a strong ref
@@ -55,6 +108,43 @@ def _skip_trace(name: str) -> bool:
     return name in _SKIP_TRACE_NODES or name.startswith(("_route", "route_"))
 
 
+async def _get_or_build_graph(
+    cache_key: str,
+    flow_nodes: list,
+    flow_edges: list | None = None,
+    checkpointer=None,
+) -> object:
+    graph = _graph_cache.get(cache_key)
+    if graph is not None:
+        return graph
+    lock = _build_locks.setdefault(cache_key, asyncio.Lock())
+    async with lock:
+        # Re-check under the lock: the request we waited on may have built it.
+        graph = _graph_cache.get(cache_key)
+        if graph is None:
+            graph = build_graph(flow_nodes, flow_edges, checkpointer=checkpointer)
+            _graph_cache.set(cache_key, graph)
+    return graph
+
+
+def invalidate_graph_version(workflow_version_id: str) -> int:
+    """Evict cached graphs for a workflow version (cross-replica, via pub/sub).
+
+    Called by the Redis invalidation listener when flow-builder republishes a
+    version in place (same id, changed content). New-version publishes don't need
+    this — they already get a fresh cache key. Returns the number of entries dropped.
+    """
+    if not workflow_version_id:
+        return 0
+    suffix = f":{workflow_version_id}"
+    removed = _graph_cache.invalidate_suffix(suffix)
+    for k in [k for k in _build_locks if k.endswith(suffix)]:
+        _build_locks.pop(k, None)  # best-effort lock cleanup
+    if removed:
+        logger.info("invalidated %d cached graph(s) for version %s", removed, workflow_version_id)
+    return removed
+
+
 async def run_conversation_stream(req: RunRequest, request: Request):
     tenant_id = request.headers.get("X-Tenant-ID", _DEV_TENANT_ID)
     cfg = await load_agent_config(req.agent_id, tenant_id=tenant_id)
@@ -65,11 +155,15 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         return StreamingResponse(_err(), media_type="text/event-stream")
     agent_id = cfg.get("agent_id", _DEV_AGENT_ID)
 
-    cache_key = cfg.get("agent_version_id") or req.agent_id
-    if cache_key not in _graph_cache:
-        _graph_cache[cache_key] = build_graph(
-            cfg.get("flow_nodes") or None,
-            cfg.get("flow_edges") or None,
+    flow_nodes = cfg.get("flow_nodes") or []
+    flow_edges = cfg.get("flow_edges") or None
+    if flow_nodes:
+        # Key by version so publishing a new flow version rebuilds the graph.
+        # Falls back to 'default' when no version is known (e.g. DEV_CONFIG).
+        cache_key = f"{req.agent_id}:{cfg.get('workflow_version_id') or 'default'}"
+        needs_checkpointer = any(
+            n.get("data", {}).get("nodeType") == "human_approval"
+            for n in flow_nodes
         )
     graph = _graph_cache[cache_key]
     cfg["tenant_id"] = tenant_id
@@ -77,6 +171,12 @@ async def run_conversation_stream(req: RunRequest, request: Request):
     # see. Kong-style convention: comma-separated roles already verified
     # upstream (see tests/integration/conftest.py headers_factory).
     cfg["user_roles"] = [r.strip() for r in request.headers.get("X-User-Roles", "").split(",") if r.strip()]
+        graph = await _get_or_build_graph(
+            cache_key, flow_nodes, flow_edges,
+            checkpointer=_checkpointer if needs_checkpointer else None,
+        )
+    else:
+        graph = _default_graph
     if not await validate_agent_tenant(agent_id, tenant_id):
         return JSONResponse(status_code=403, content={"detail": "Agent not found or access denied"})
 
@@ -148,6 +248,8 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         "judge_verdict": None,
         "judge_error_type": None,
         "judge_reason": None,
+        "human_approved": None,
+        "human_note": None,
         "rrf_results": [],
         "reranked_chunks": [],
         "response": "",
@@ -203,8 +305,10 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         detected_language: str | None = None
         detected_intent: str | None = None
 
+        lg_config = {"callbacks": callbacks, "configurable": {"thread_id": conv_id}}
+
         try:
-            async for event in graph.astream_events(state, version="v2", config={"callbacks": callbacks}):
+            async for event in graph.astream_events(state, version="v2", config=lg_config):
                 kind = event["event"]
                 node = event.get("metadata", {}).get("langgraph_node", "")
 
@@ -331,6 +435,28 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                         full_response.append(fallback)
                         yield f"data: {json.dumps(fallback)}\n\n"
 
+            # Detect interrupt (human_approval node đang chờ reviewer)
+            try:
+                snap = graph.get_state(lg_config)
+                if snap.next:
+                    interrupt_payload = None
+                    for task in snap.tasks:
+                        for intr in getattr(task, "interrupts", []):
+                            interrupt_payload = intr.value
+                            break
+                    _pending_reviews[conv_id] = {
+                        "agent_id":   req.agent_id,
+                        "query":      req.query,
+                        "payload":    interrupt_payload,
+                        "suspended_at": time.monotonic(),
+                    }
+                    logger.info("human_approval | conv=%s suspended, waiting for review", conv_id)
+                    yield f"data: {json.dumps({'__pending_review': {'conv_id': conv_id, 'payload': interrupt_payload}})}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
+            except Exception:
+                pass  # graph không có checkpointer → skip
+
             if guardrail_triggered:
                 yield f"data: {json.dumps('Xin lỗi, tôi không thể trả lời câu hỏi này.')}\n\n"
             elif responder_options:
@@ -363,6 +489,8 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                         "language": detected_language,
                         "intent": detected_intent,
                         "responder_model": cfg.get("responder_model"),
+                        **({"pending_options": responder_options} if responder_options else {}),
+                        **({"pending_approval": conv_id} if conv_id and conv_id in _pending_reviews else {}),
                     },
                 )
                 await cache_append_messages(conv_id, [

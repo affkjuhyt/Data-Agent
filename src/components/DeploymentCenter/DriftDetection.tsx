@@ -17,10 +17,11 @@ import {
   Brain, 
   Clock, 
   Activity, 
-  Plus, 
+  Plus,
   Minus,
   Search,
-  Filter
+  Filter,
+  Lock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';

@@ -17,10 +17,10 @@ import requests
 from kafka import KafkaProducer
 from kafka.errors import NoBrokersAvailable
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [audit-bridge] %(levelname)s %(message)s",
-)
+from shared.atomic_io import atomic_write_text
+from shared.observability import setup_observability
+
+setup_observability("audit-bridge")
 log = logging.getLogger("audit-bridge")
 
 KC_BASE = os.environ.get("KEYCLOAK_URL", "http://keycloak-lb:8080")
@@ -63,19 +63,61 @@ def wait_for_kafka(bootstrap: str, retries: int = 30, delay: int = 5) -> KafkaPr
     raise RuntimeError("Kafka unavailable after retries")
 
 
-def get_admin_token() -> str:
-    r = requests.post(
-        f"{KC_BASE}/realms/master/protocol/openid-connect/token",
-        data={
-            "client_id": "admin-cli",
-            "username": KC_ADMIN,
-            "password": KC_PASS,
-            "grant_type": "password",
-        },
-        timeout=10,
-    )
+_TOKEN_URL = f"{KC_BASE}/realms/master/protocol/openid-connect/token"
+# Refresh this many seconds before the token actually expires, so a request
+# never races the expiry boundary.
+TOKEN_REFRESH_MARGIN = 30
+
+# Cached admin token state. Deadlines use a monotonic clock (immune to NTP/system
+# clock jumps). Reusing the token across poll cycles avoids re-authenticating with
+# username/password every POLL_INTERVAL — we only hit the token endpoint when the
+# access token is near expiry, and prefer the (cheaper) refresh_token grant.
+_token: str | None = None
+_token_deadline: float = 0.0
+_refresh_token: str | None = None
+_refresh_deadline: float = 0.0
+
+
+def _post_token(data: dict) -> dict:
+    r = requests.post(_TOKEN_URL, data={"client_id": "admin-cli", **data}, timeout=10)
     r.raise_for_status()
-    return r.json()["access_token"]
+    return r.json()
+
+
+def _store_token(tok: dict) -> None:
+    global _token, _token_deadline, _refresh_token, _refresh_deadline
+    now = time.monotonic()
+    _token = tok["access_token"]
+    _token_deadline = now + max(1, tok.get("expires_in", 60) - TOKEN_REFRESH_MARGIN)
+    _refresh_token = tok.get("refresh_token")
+    # refresh_expires_in == 0 means "non-expiring" in some Keycloak configs.
+    refresh_ttl = tok.get("refresh_expires_in", 1800)
+    _refresh_deadline = now + (refresh_ttl - TOKEN_REFRESH_MARGIN if refresh_ttl else 86400)
+
+
+def get_admin_token(force: bool = False) -> str:
+    """Return a valid admin access token, refreshing only when needed.
+
+    `force=True` discards the cached access token (used after a 401) but still
+    tries the refresh_token grant before falling back to a full password grant.
+    """
+    now = time.monotonic()
+    if not force and _token and now < _token_deadline:
+        return _token
+
+    if _refresh_token and now < _refresh_deadline:
+        try:
+            _store_token(_post_token({"grant_type": "refresh_token", "refresh_token": _refresh_token}))
+            return _token  # type: ignore[return-value]
+        except requests.HTTPError:
+            log.warning("token refresh failed; falling back to password grant")
+
+    _store_token(_post_token({
+        "grant_type": "password",
+        "username": KC_ADMIN,
+        "password": KC_PASS,
+    }))
+    return _token  # type: ignore[return-value]
 
 
 def load_last_ts() -> int:
@@ -87,8 +129,7 @@ def load_last_ts() -> int:
 
 
 def save_last_ts(ts: int) -> None:
-    with open(STATE_FILE, "w") as f:
-        f.write(str(ts))
+    atomic_write_text(STATE_FILE, str(ts))
 
 
 def poll_events(token: str, since_ms: int) -> list:
@@ -114,9 +155,16 @@ def main():
 
     while True:
         try:
-            token = get_admin_token()
             last_ts = load_last_ts()
-            new_events = poll_events(token, last_ts)
+            try:
+                new_events = poll_events(get_admin_token(), last_ts)
+            except requests.HTTPError as e:
+                # Token revoked mid-cycle (e.g. Keycloak restart) → force re-auth, retry once.
+                if e.response is not None and e.response.status_code == 401:
+                    log.warning("Keycloak rejected token (401); forcing re-auth")
+                    new_events = poll_events(get_admin_token(force=True), last_ts)
+                else:
+                    raise
 
             if new_events:
                 for event in sorted(new_events, key=lambda e: e.get("time", 0)):

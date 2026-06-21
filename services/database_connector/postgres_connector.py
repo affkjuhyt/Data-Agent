@@ -1,7 +1,8 @@
 import asyncio
+import uuid
 from typing import Any
 
-from sqlalchemy import select, update as sa_update, delete as sa_delete, text
+from sqlalchemy import select, update as sa_update, delete as sa_delete, text, tuple_, func
 from sqlalchemy.engine import CursorResult
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import selectinload, attributes as sa_attributes
@@ -87,11 +88,27 @@ _OP_MAP = {
     FilterOperator.LT: lambda col, val: col < val,
     FilterOperator.GTE: lambda col, val: col >= val,
     FilterOperator.LTE: lambda col, val: col <= val,
+    FilterOperator.IN: lambda col, val: col.in_(val if isinstance(val, (list, tuple, set)) else [val]),
 }
 
 
 def _apply_op(col, f):
-    return _OP_MAP[f.operator](col, f.value)
+    value = f.value
+    is_uuid_col = hasattr(col.type, 'python_type') and col.type.python_type == uuid.UUID
+    # Convert string→UUID for UUID columns. For IN, coerce each element of the list.
+    if is_uuid_col:
+        def _coerce(v):
+            if isinstance(v, str):
+                try:
+                    return uuid.UUID(v)
+                except (ValueError, TypeError):
+                    return v
+            return v
+        if f.operator == FilterOperator.IN and isinstance(value, (list, tuple, set)):
+            value = [_coerce(v) for v in value]
+        else:
+            value = _coerce(value)
+    return _OP_MAP[f.operator](col, value)
 
 
 def _validate_order_by(order_by, allowed_tables: set[str]) -> None:
@@ -107,6 +124,40 @@ def _validate_order_by(order_by, allowed_tables: set[str]) -> None:
         raise AttributeError(
             f"order_by column '{order_by.column}' does not exist on '{order_by.table_name}'"
         )
+
+def _apply_keyset(stmt, root_cls, cursor, order_by):
+    """Keyset pagination with a stable tiebreaker.
+
+    Orders by (inserted_at, <pk>) and, when a cursor (the last row of the prior
+    page) is given, filters WHERE (inserted_at, pk) > (cur_ts, cur_id). The pk
+    tiebreaker is essential: inserted_at is NOT unique (bulk-seeded rows share a
+    timestamp), so a single-column `inserted_at > cur` skips every row tied at
+    the boundary — that was the page-2-empty bug. The pk ordering is applied on
+    page 1 too, so the order the cursor is derived from matches the continuation.
+    """
+    pk_col  = sa_inspect(root_cls).primary_key[0]
+    pk_name = pk_col.name
+    pk_attr = getattr(root_cls, pk_name)
+    ks_attr = root_cls.inserted_at  # the column advance() records into the cursor
+    asc = order_by is None or str(order_by.order.value).upper() == "ASC"
+
+    if cursor is not None:
+        if isinstance(cursor, dict):
+            cur_ts, cur_id = cursor.get("inserted_at"), cursor.get(pk_name)
+        else:  # legacy single-column cursor (datetime)
+            cur_ts, cur_id = cursor, None
+        if cur_ts is not None and cur_id is not None:
+            boundary = tuple_(ks_attr, pk_attr)
+            stmt = stmt.where(boundary > (cur_ts, cur_id) if asc else boundary < (cur_ts, cur_id))
+        elif cur_ts is not None:
+            stmt = stmt.where(ks_attr > cur_ts if asc else ks_attr < cur_ts)
+
+    if order_by is not None:
+        primary = text(f'"{order_by.table_name}".{order_by.column} {order_by.order.value}')
+    else:
+        primary = ks_attr.asc()
+    return stmt.order_by(primary, pk_attr.asc() if asc else pk_attr.desc())
+
 
 def _prepare_insert(data: BaseModel) -> DMLPreparation:
     table_name, orm_cls = _resolve(data)
@@ -130,16 +181,11 @@ def _prepare_deep_search(data: SelectInLoadRequest) -> DQLPreparation:
     stmt = select(orm_cls).options(*load_options)
 
     if data.tenant_id is not None:
-        stmt = stmt.where(orm_cls.tenant_id == data.tenant_id)
+        tenant_uuid = uuid.UUID(data.tenant_id) if isinstance(data.tenant_id, str) else data.tenant_id
+        stmt = stmt.where(orm_cls.tenant_id == tenant_uuid)
     for f in data.filters:
         stmt = stmt.where(_apply_op(getattr(orm_cls, f.column_name), f))
-    if data.cursor is not None:
-        stmt = stmt.where(orm_cls.inserted_at > data.cursor)
-
-    stmt = stmt.order_by(
-        text(
-            f'"{data.order_by.table_name}".{data.order_by.column} {data.order_by.order.value}') if data.order_by else orm_cls.inserted_at.asc()
-    ).limit(data.limit)
+    stmt = _apply_keyset(stmt, orm_cls, data.cursor, data.order_by).limit(data.limit)
     return DQLPreparation(compiled_query=stmt)
 
 
@@ -208,22 +254,71 @@ def _prepare_read(data: ReadJoinRequest) -> DQLPreparation:
         stmt = stmt.join(join_cls)
 
     if data.tenant_id is not None:
-        stmt = stmt.where(from_cls.tenant_id == data.tenant_id)
+        tenant_uuid = uuid.UUID(data.tenant_id) if isinstance(data.tenant_id, str) else data.tenant_id
+        stmt = stmt.where(from_cls.tenant_id == tenant_uuid)
     for f in data.filters:
         stmt = stmt.where(_apply_op(getattr(orm_map[f.table_name], f.column_name), f))
-    if data.cursor is not None:
-        stmt = stmt.where(from_cls.inserted_at > data.cursor)
     # exclude soft-deleted rows if the root table supports it
     try:
         stmt = stmt.where(from_cls.is_deleted == False)
     except AttributeError:
         pass
 
-    stmt = stmt.order_by(
-        text(
-            f'"{data.order_by.table_name}".{data.order_by.column} {data.order_by.order.value}') if data.order_by else from_cls.inserted_at.asc()
-    )
+    stmt = _apply_keyset(stmt, from_cls, data.cursor, data.order_by)
     return DQLPreparation(compiled_query=stmt.limit(data.limit))
+
+
+def _prepare_count(data: ReadJoinRequest) -> DQLPreparation:
+    """COUNT(*) over the same joins/filters as _prepare_read (no keyset/limit).
+    Powers `total` for the numbered pager — keyset itself never needs this, but the
+    UI does to render '1 … N'."""
+    unknown = [t for t in data.joins_table if t not in REGISTRY]
+    if unknown:
+        raise AttributeError(f"Unknown table(s): {unknown}")
+
+    orm_map = {t: REGISTRY[t].orm for t in data.joins_table}
+    from_cls = orm_map[data.joins_table[0]]
+
+    stmt = select(func.count()).select_from(from_cls)
+    for i in range(1, len(data.joins_table)):
+        stmt = stmt.join(orm_map[data.joins_table[i]])
+
+    if data.tenant_id is not None:
+        tenant_uuid = uuid.UUID(data.tenant_id) if isinstance(data.tenant_id, str) else data.tenant_id
+        stmt = stmt.where(from_cls.tenant_id == tenant_uuid)
+    for f in data.filters:
+        stmt = stmt.where(_apply_op(getattr(orm_map[f.table_name], f.column_name), f))
+    try:
+        stmt = stmt.where(from_cls.is_deleted == False)
+    except AttributeError:
+        pass
+    return DQLPreparation(compiled_query=stmt)
+
+
+def _prepare_count(data: ReadJoinRequest) -> DQLPreparation:
+    """COUNT(*) over the same joins/filters as _prepare_read (no keyset/limit/offset).
+    Used to compute `total` for numbered pagination."""
+    unknown = [t for t in data.joins_table if t not in REGISTRY]
+    if unknown:
+        raise AttributeError(f"Unknown table(s): {unknown}")
+
+    orm_map = {t: REGISTRY[t].orm for t in data.joins_table}
+    from_cls = orm_map[data.joins_table[0]]
+
+    stmt = select(func.count()).select_from(from_cls)
+    for i in range(1, len(data.joins_table)):
+        stmt = stmt.join(orm_map[data.joins_table[i]])
+
+    if data.tenant_id is not None:
+        tenant_uuid = uuid.UUID(data.tenant_id) if isinstance(data.tenant_id, str) else data.tenant_id
+        stmt = stmt.where(from_cls.tenant_id == tenant_uuid)
+    for f in data.filters:
+        stmt = stmt.where(_apply_op(getattr(orm_map[f.table_name], f.column_name), f))
+    try:
+        stmt = stmt.where(from_cls.is_deleted == False)
+    except AttributeError:
+        pass
+    return DQLPreparation(compiled_query=stmt)
 
 
 class PostgresTransaction:
@@ -411,12 +506,26 @@ class PostgresClient:
             try:
                 await session.commit()
                 await session.refresh(prep.instance)
-            except IntegrityError:
+            except IntegrityError as e:
                 await session.rollback()
-                return ResponseModel(code=409, error=f"Record already exists in {prep.table_name}")
-            pks = [col.name for col in prep.orm_cls.__table__.primary_key]
-            return ResponseModel(code=200, data={pk: str(getattr(prep.instance, pk)) for pk in pks if
-                                                 getattr(prep.instance, pk) is not None})
+                # Distinguish the constraint that failed (Postgres SQLSTATE via the
+                # underlying asyncpg error) instead of blanket-labelling everything
+                # "already exists" — a foreign-key or not-null failure is a very
+                # different problem from a duplicate.
+                sqlstate = getattr(getattr(e, "orig", None), "sqlstate", None)
+                if sqlstate == "23505":      # unique_violation
+                    return ResponseModel(code=409, error=f"Record already exists in {prep.table_name}")
+                if sqlstate == "23503":      # foreign_key_violation
+                    return ResponseModel(code=409, error=f"{prep.table_name}: references a record that does not exist")
+                if sqlstate == "23502":      # not_null_violation
+                    return ResponseModel(code=400, error=f"{prep.table_name}: a required field is missing")
+                if sqlstate == "23514":      # check_violation
+                    return ResponseModel(code=400, error=f"{prep.table_name}: a value failed a constraint check")
+                log.warning("insert integrity error in %s (sqlstate=%s): %s", prep.table_name, sqlstate, e)
+                return ResponseModel(code=409, error=f"Integrity error in {prep.table_name}")
+        pks = [col.name for col in prep.orm_cls.__table__.primary_key]
+        return ResponseModel(code=200, data={pk: str(getattr(prep.instance, pk)) for pk in pks if
+                                             getattr(prep.instance, pk) is not None})
 
     async def soft_delete(self, data: BaseModel) -> ResponseModel:
         try:
@@ -486,6 +595,17 @@ class PostgresClient:
             result = await session.execute(prep.compiled_query)
             rows = result.mappings().all()
         return ResponseModel(code=200, data=[dict(r) for r in rows])
+
+    async def read_count(self, data: ReadJoinRequest) -> ResponseModel:
+        """Total row count for the same filters as read() — for numbered pagination."""
+        try:
+            prep = _prepare_count(data)
+        except AttributeError as e:
+            return ResponseModel(code=400, error=str(e))
+
+        async with self.get_client() as session:
+            total = (await session.execute(prep.compiled_query)).scalar_one()
+        return ResponseModel(code=200, data=int(total or 0))
 
 
 client = PostgresClient()

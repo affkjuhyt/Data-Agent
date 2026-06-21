@@ -74,10 +74,14 @@ async def _stamp_if_init_scripts_ran(conn) -> None:
 
     # No alembic version. Did the SQL init scripts populate the schema?
     # DriftEvents is in the initial alembic revision; if it exists, init ran.
+    # Marker MUST be a table only the ORM initial migration creates (PascalCase).
+    # The lowercase `drift_events` comes from infra/sql/*.sql and does NOT imply
+    # the ORM tables (Agents, …) exist — keying on it wrongly stamps the initial
+    # revision and skips creating the ORM schema.
     has_init_schema = await conn.scalar(text("""
         SELECT EXISTS (
             SELECT 1 FROM information_schema.tables
-            WHERE table_schema = 'public' AND table_name IN ('DriftEvents', 'drift_events')
+            WHERE table_schema = 'public' AND table_name = 'DriftEvents'
         )
     """))
 

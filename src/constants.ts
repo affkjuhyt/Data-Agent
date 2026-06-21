@@ -1,12 +1,8 @@
-import React from 'react';
 import {
-  LayoutDashboard,
   Database,
   Bot,
   Activity,
-  ShieldCheck,
   Settings,
-  Globe,
   Stethoscope,
   FlaskConical,
   Route,
@@ -15,59 +11,32 @@ import {
   TrainFront,
   Building2,
   Lock,
-  Network,
-  Layers,
   BarChart3,
-  Server,
-  Zap,
   History,
-  FileText,
-  Scale,
-  Fingerprint,
-  Sparkles,
-  Hash,
-  ShieldAlert,
   Rocket,
-  AlertTriangle,
-  RefreshCcw,
   Cpu,
   LayoutGrid,
   Users,
-  Terminal,
-  Sliders,
-  Plus,
   Package,
   GitBranch,
-  Flag,
   Coins,
   Key,
-  Boxes,
-  CircleDot,
-  Eye,
-  ShieldHalf,
-  BookOpen,
-  Code,
   MessageSquare,
   MessageCircle,
   ScrollText,
+  PlugZap,
+  Webhook,
 } from 'lucide-react';
-import { Role, Industry, NavItem } from './types';
+import { Role, NavItem } from './types';
+
+const ALL_ROLES: Role[] = ['EXECUTIVE', 'PLATFORM_ADMIN', 'AI_ENGINEER'];
 
 export const NAV_ITEMS: NavItem[] = [
-  // Core Modules
-  { id: 'dashboard',          label: 'Executive Pulse',      icon: LayoutDashboard, roles: ['EXECUTIVE', 'PLATFORM_ADMIN'] },
-  { id: 'knowledge-ops',      label: 'Knowledge Base',       icon: Database,        roles: ['PLATFORM_ADMIN', 'AI_ENGINEER'] },
-  { id: 'build',              label: 'Build',                icon: Package,         roles: ['AI_ENGINEER', 'PLATFORM_ADMIN'] },
-  { id: 'test',               label: 'Test',                 icon: FlaskConical,    roles: ['AI_ENGINEER', 'PLATFORM_ADMIN'] },
-  { id: 'operations-center',  label: 'Operations Center',    icon: Activity,        roles: ['PLATFORM_ADMIN', 'AI_ENGINEER'] },
-  { id: 'release-management', label: 'Deployment Center',    icon: Zap,             roles: ['AI_ENGINEER', 'PLATFORM_ADMIN'] },
-  { id: 'governance',         label: 'Governance & Audit',   icon: ShieldCheck,     roles: ['PLATFORM_ADMIN', 'EXECUTIVE'] },
-
-  // Industry Specific
-  { id: 'national-ops', label: 'National Ops', icon: Globe, roles: ['EXECUTIVE', 'PLATFORM_ADMIN'], industry: 'GOVERNMENT' },
-
-  // System
-  { id: 'settings', label: 'Settings', icon: Settings, roles: ['PLATFORM_ADMIN', 'AI_ENGINEER', 'EXECUTIVE'] },
+  { id: 'build',    label: 'Build',    icon: Package,      roles: ALL_ROLES },
+  { id: 'test',     label: 'Test',     icon: FlaskConical, roles: ALL_ROLES },
+  { id: 'release',  label: 'Release',  icon: Rocket,       roles: ALL_ROLES },
+  { id: 'monitor',  label: 'Monitor',  icon: Activity,     roles: ALL_ROLES },
+  { id: 'settings', label: 'Settings', icon: Settings,     roles: ALL_ROLES },
 ];
 
 export interface SubNavItem {
@@ -76,6 +45,7 @@ export interface SubNavItem {
   icon: any;
   badge?: number | string;
   comingSoon?: boolean;
+  action?: boolean;
 }
 
 /* Contextual sub-nav items shown in the secondary panel per module.
@@ -83,64 +53,37 @@ export interface SubNavItem {
  * so secondary-nav clicks correctly drive the in-module state.
  */
 export const MODULE_SUB_ITEMS: Record<string, SubNavItem[]> = {
-  'dashboard': [],
-
-  'knowledge-ops': [
-    { id: 'FLEET',     label: 'Fleet Overview', icon: Database },
-    { id: 'INVENTORY', label: 'Data Layers',    icon: Layers },
-    { id: 'KNOWLEDGE', label: 'Knowledge Hub',  icon: Network },
-    { id: 'CONFLICTS', label: 'Conflicts',      icon: ShieldAlert, badge: 12 },
-    { id: 'POLICY',    label: 'Policies',       icon: ShieldCheck },
-  ],
-
   'build': [
-    { id: 'AGENTS',    label: 'Agents',    icon: Bot      },
-    { id: 'ROUTER',    label: 'Router',    icon: Route    },
+    { id: 'AGENTS',    label: 'Agents',    icon: Bot },
+    { id: 'ROUTER',    label: 'Router',    icon: Route,    comingSoon: true },
     { id: 'KNOWLEDGE', label: 'Knowledge', icon: Database },
-    { id: 'TOOLS',     label: 'Tools',     icon: Wrench   },
+    { id: 'TOOLS',     label: 'Tools',     icon: Wrench,   comingSoon: true },
   ],
 
   'test': [
-    { id: 'PLAYGROUND', label: 'Playground', icon: MessageSquare  },
-    { id: 'EVALS',      label: 'Evals',      icon: ClipboardCheck },
+    { id: 'PLAYGROUND', label: 'Playground', icon: MessageSquare },
+    { id: 'EVALS',      label: 'Evals',      icon: ClipboardCheck, comingSoon: true },
   ],
 
-  'operations-center': [
-    { id: 'HEALTH',        label: 'Platform Health',  icon: Activity },
-    { id: 'OBSERVABILITY', label: 'Metric Explorer',  icon: BarChart3 },
-    { id: 'FLEET',         label: 'Worker Fleet',     icon: Server },
-    { id: 'JOBS',          label: 'Migration Jobs',   icon: Zap },
+  'release': [
+    { id: 'VERSIONS',    label: 'Versions',      icon: GitBranch },
+    { id: 'EXPERIMENTS', label: 'Experiments',   icon: FlaskConical, comingSoon: true },
+    { id: 'ENDPOINT',    label: 'Chat Endpoint', icon: PlugZap,      comingSoon: true },
+    { id: 'WEBHOOKS',    label: 'Webhooks',      icon: Webhook,      comingSoon: true },
   ],
 
-  'release-management': [
-    { id: 'DEPLOYMENTS', label: 'Deployments',    icon: Rocket     },
-    { id: 'HISTORY',     label: 'Release History', icon: History    },
-    { id: 'ROLLBACK',    label: 'Rollback Center', icon: RefreshCcw },
+  'monitor': [
+    { id: 'CONVERSATIONS', label: 'Conversations', icon: MessageCircle },
+    { id: 'TRACES',        label: 'Traces',        icon: History },
+    { id: 'ANALYTICS',     label: 'Analytics',     icon: BarChart3 },
   ],
-
-  'governance': [
-    { id: 'GOVERNANCE', label: 'Policy Control',        icon: ShieldCheck },
-    { id: 'AUDIT',      label: 'Audit Logs',            icon: History },
-    { id: 'SECURITY',   label: 'Security Intelligence', icon: Fingerprint },
-    { id: 'COMPLIANCE', label: 'Compliance Reports',    icon: FileText },
-  ],
-
-  'national-ops': [],
 
   'settings': [
-    { id: 'OVERVIEW',      label: 'Overview',         icon: LayoutGrid },
-    { id: 'ORGANIZATION',  label: 'Organization',     icon: Building2 },
-    { id: 'WORKSPACES',    label: 'Workspaces',       icon: Boxes },
-    { id: 'IAM',           label: 'Users & Roles',    icon: Users },
-    { id: 'AUTH',          label: 'SSO',              icon: Lock },
-    { id: 'RBAC',          label: 'RBAC',             icon: ShieldHalf },
-    { id: 'AI_PROVIDERS',  label: 'AI Providers',     icon: Cpu },
-    { id: 'MODEL_REG',     label: 'Model Registry',   icon: Boxes },
-    { id: 'SECRETS',       label: 'Secrets',          icon: Key },
-    { id: 'SECURITY',      label: 'Security',         icon: ShieldCheck },
-    { id: 'BILLING',       label: 'Billing & Quotas', icon: Coins },
-    { id: 'API',           label: 'API & SDK',        icon: Code },
-    { id: 'FLAGS',         label: 'Feature Flags',    icon: Flag },
+    { id: 'TEAM',      label: 'Team & Access', icon: Users },
+    { id: 'PROVIDERS', label: 'AI Providers',  icon: Cpu },
+    { id: 'SECRETS',   label: 'Secrets',       icon: Key },
+    { id: 'BILLING',   label: 'Billing',       icon: Coins },
+    { id: 'AUDIT',     label: 'Audit Log',     icon: ScrollText },
   ],
 };
 

@@ -15,10 +15,9 @@ import psycopg2
 from kafka import KafkaConsumer
 from kafka.errors import NoBrokersAvailable
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [audit-consumer] %(levelname)s %(message)s",
-)
+from shared.observability import setup_observability
+
+setup_observability("audit-consumer")
 log = logging.getLogger("audit-consumer")
 
 

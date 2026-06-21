@@ -1,1 +1,10 @@
 requests==2.31.0
+# RSA JWK → SPKI PEM conversion (replaces hand-rolled DER/ASN.1 encoding).
+cryptography==42.0.8
+
+# ── Observability (shared/observability.py) ──
+structlog==24.2.0
+opentelemetry-sdk==1.24.0
+opentelemetry-exporter-otlp-proto-grpc==1.24.0
+opentelemetry-instrumentation-requests==0.45b0
+opentelemetry-instrumentation-logging==0.45b0

@@ -1,3 +1,4 @@
+docs/
 node_modules/
 __pycache__/
 *.pyc
@@ -36,6 +37,7 @@ test-results/
 
 .env*
 !.env.example
+!infra/.env.kb-testing.example
 .env.local
 
 .claude/
@@ -61,6 +63,11 @@ infra/certs/admin-keys.env
 
 # Model weights — large binary files, download separately
 model/ollama/weights/*.gguf
+# Docling (HF layout/OCR) + RapidOCR weights — pre-downloaded, bind-mounted into
+# the ingestion worker (docker-compose.kb_and_authen.yml). Large binaries.
+model/docling-model/weights/
+# model-service embed/rerank weights — downloaded at runtime into this mounted volume
+infra/model-service/models/
 
 # UI design files — reference only, không commit
 Data_Agent_UI/
@@ -69,3 +76,11 @@ Data_Agent_UI/
 infra/kafka/kafka-broker-jaas.config
 infra/kafka/admin_release.props
 infra/kafka/rw.props
+
+# Standalone demo/observability visualizer pages — not part of the app build
+*-visualizer.html
+
+# Transient stack bring-up / helper logs and crash dumps
+*.stackdump
+.kong-bringup.log
+infra/.*-up.log

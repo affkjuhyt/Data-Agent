@@ -25,7 +25,7 @@ import logging
 
 log = logging.getLogger(__name__)
 
-MAX_CHUNK_CHARS: int = 1500
+MAX_CHUNK_CHARS: int = 4000
 _worker_converter: DocumentConverter | None = None
 _worker_use_vlm: bool = False
 
