@@ -177,9 +177,7 @@
           "platform-admin"
         ]
       },
-      "requiredActions": [
-        "CONFIGURE_TOTP"
-      ]
+      "requiredActions": []
     },
     {
       "username": "ai-engineer",
@@ -204,9 +202,7 @@
           "ai-engineer"
         ]
       },
-      "requiredActions": [
-        "CONFIGURE_TOTP"
-      ]
+      "requiredActions": []
     },
     {
       "username": "executive-viewer",
@@ -231,9 +227,7 @@
           "executive-viewer"
         ]
       },
-      "requiredActions": [
-        "CONFIGURE_TOTP"
-      ]
+      "requiredActions": []
     },
     {
       "username": "helios-admin",
@@ -314,7 +308,7 @@
       "name": "Configure OTP",
       "providerId": "CONFIGURE_TOTP",
       "enabled": true,
-      "defaultAction": true
+      "defaultAction": false
     },
     {
       "alias": "webauthn-register",

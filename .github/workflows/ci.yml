@@ -116,9 +116,9 @@ jobs:
           RELEASE_WORKER_KAFKA_PASSWORD=ci-placeholder
           EOF
       - name: Validate local stack
-        run: docker compose -f docker/docker-compose.yml -f docker/docker-compose.local.yml config > /dev/null
+        run: docker compose -f infra/docker-compose.yml -f infra/docker-compose.local.yml config > /dev/null
       - name: Validate dev stack
-        run: docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml config > /dev/null
+        run: docker compose -f infra/docker-compose.yml -f infra/docker-compose.dev.yml config > /dev/null
 
   e2e-tenant-isolation:
     name: E2E · tenant isolation (live stack)
@@ -135,7 +135,7 @@ jobs:
       - name: Bring up stack
         run: |
           cp .env.example .env
-          docker compose -f docker/docker-compose.yml -f docker/docker-compose.local.yml up -d --build
+          docker compose -f infra/docker-compose.yml -f infra/docker-compose.local.yml up -d --build
       - name: Wait for stack
         run: |
           for i in {1..60}; do
@@ -151,4 +151,34 @@ jobs:
         run: pytest -m e2e tests/integration -v
       - name: Tear down
         if: always()
-        run: docker compose -f docker/docker-compose.yml -f docker/docker-compose.local.yml down -v
+        run: docker compose -f infra/docker-compose.yml -f infra/docker-compose.local.yml down -v
+
+  quality-gates:
+    # Phase 0 guardrails for the SRS (architecture + dead code + strict types).
+    # import-linter is BLOCKING (its contracts pass today, so this prevents new
+    # Dependency-Rule violations). The rest are REPORT-ONLY (`|| true`) because
+    # they have a known baseline to burn down — flip them to blocking per phase.
+    name: Quality · arch + dead-code + strict (report)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install import-linter vulture
+      - name: Architecture contracts (import-linter · BLOCKING)
+        run: lint-imports
+      - name: Dead code · Python (vulture · report)
+        run: vulture || true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - name: Dead code · TypeScript (knip · report)
+        run: npm run deadcode || true
+      - name: Strict typecheck (incremental · report)
+        run: npm run typecheck:strict || true
+      - name: Prettier format check (report)
+        run: npm run format:check || true

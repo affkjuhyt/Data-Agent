@@ -1,0 +1,32 @@
+# Architecture contracts — enforces the SRS Dependency Rule (§3.5) where the
+# current package layout allows it. Run: `lint-imports`.
+#
+# NOTE (Phase 0): the hyphenated service dirs (services/auth-api,
+# services/workflow-runtime, services/flow-builder, …) are NOT importable Python
+# packages, so import-linter/grimp can only analyse the underscore-named ones
+# (basemodel, services.shared, services.kb_backend, services.database_connector).
+# These contracts capture the rules that ARE true today and guard against
+# regression. The full layered Dependency Rule contract (domain ← application ←
+# adapters ← infrastructure) lands in Phase 1 once those layers exist.
+
+[importlinter]
+root_packages =
+    basemodel
+    services
+
+[importlinter:contract:basemodel-is-independent]
+name = basemodel (shared data models) must not depend on services
+type = forbidden
+source_modules =
+    basemodel
+forbidden_modules =
+    services
+
+[importlinter:contract:shared-is-a-leaf]
+name = services.shared must not depend on concrete services
+type = forbidden
+source_modules =
+    services.shared
+forbidden_modules =
+    services.kb_backend
+    services.database_connector

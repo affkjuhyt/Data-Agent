@@ -1,0 +1,10 @@
+node_modules
+dist
+build
+coverage
+archive
+*.min.js
+*.min.css
+package-lock.json
+public
+src/components/ui

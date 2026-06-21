@@ -64,7 +64,9 @@ services:
   kb-backend:
     build:
       context: ..
-      dockerfile: services/kb-backend/Dockerfile
+      # Real Dockerfile lives at infra/Dockerfile.kb (the code dir is services/kb_backend
+      # with an underscore — there is no services/kb-backend/Dockerfile).
+      dockerfile: infra/Dockerfile.kb
     container_name: dataagent-kb-backend
     restart: unless-stopped
     ports:
@@ -73,6 +75,12 @@ services:
       POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/${POSTGRES_DB:-dataagent}
       QDRANT_URL: http://qdrant:6333
       NEO4J_URI: bolt://neo4j:7687
+      MODEL_SERVICE_URL: http://model-service:8001
+      # MinIO Dockerfile default password is wrong — pin the real root creds.
+      MINIO_URL: http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-minio_secret}@minio:9000
+      MINIO_BUCKET: knowledge-base
+      # Plaintext Kafka listener (kb-backend has no SASL support).
+      KAFKA_URL: kafka:9094
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       OTEL_SERVICE_NAME: kb-backend
     depends_on:

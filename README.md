@@ -18,7 +18,6 @@ the `kb-ingestion-worker`.
 | [`basemodel/`](./basemodel) | Shared data models and database connectors |
 | [`alembic/`](./alembic) | Database migrations |
 | [`docs/`](./docs) | Architecture and subsystem docs |
-| [`archive/`](./archive) | Legacy Docker artifacts — do not use |
 
 ---
 
@@ -275,9 +274,6 @@ The Docker stack lives under [`infra/`](./infra). Use these files as the source 
 - [`infra/docker-compose.test.yml`](./infra/docker-compose.test.yml): test-only PostgreSQL fixture
 - [`infra/docker-compose.kb_e2e.yml`](./infra/docker-compose.kb_e2e.yml): isolated KB-UI integration stack — data plane + ingestion worker + Keycloak + DB-less Kong
 - [`infra/docker-compose.kb_and_authen.yml`](./infra/docker-compose.kb_and_authen.yml) + [`infra/kb_and_authen.ps1`](./infra/kb_and_authen.ps1): memory-capped KB end-to-end stack (auth chain + live data plane) with a bring-up/verify helper
-
-This repository still contains older Docker artifacts under [`archive/docker-legacy/`](./archive/docker-legacy).
-Do not use them.
 
 ### Prerequisites
 
