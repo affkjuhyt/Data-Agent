@@ -23,6 +23,7 @@ from memory_middleware import (
     retrieve_memories,
     retrieve_pending_reminders,
 )
+from workflow_memory import record_workflow_outcome, retrieve_workflow_memory
 from observability import get_langfuse_handler
 from schemas import RunRequest
 
@@ -78,6 +79,28 @@ _checkpointer = MemorySaver()
 
 # conv_id → {agent_id, query, interrupt_payload, suspended_at}
 _pending_reviews: dict[str, dict] = {}
+
+# asyncio only holds a weak reference to a task created via create_task — if
+# nothing else references it, it can be GC'd mid-execution. Keep a strong ref
+# here until done, per the stdlib docs' own recommendation for fire-and-forget tasks.
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _fire_and_forget(coro) -> None:
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
+# doc §3.7 — Workflow Memory needs a task_type to filter on, but that's only
+# known once the planner decides to call a data tool, which is *after* the
+# point retrieval needs to happen. No table_name-style "task type taxonomy"
+# step exists yet (see docs/STM_LTM_Memory_Implementation.md), so task_type
+# is inferred from which data tools the agent has configured.
+_DATA_TOOL_TASK_TYPE = {
+    "text_to_sql":    "sql_query",
+    "text_to_pandas": "report_gen",
+}
 
 _SKIP_TRACE_NODES = frozenset({"LangGraph", "join_retrieval", "join_end"})
 
@@ -142,6 +165,12 @@ async def run_conversation_stream(req: RunRequest, request: Request):
             n.get("data", {}).get("nodeType") == "human_approval"
             for n in flow_nodes
         )
+    graph = _graph_cache[cache_key]
+    cfg["tenant_id"] = tenant_id
+    # doc §3.7 — gates which Schema Memory tables _text_to_sql_handler may
+    # see. Kong-style convention: comma-separated roles already verified
+    # upstream (see tests/integration/conftest.py headers_factory).
+    cfg["user_roles"] = [r.strip() for r in request.headers.get("X-User-Roles", "").split(",") if r.strip()]
         graph = await _get_or_build_graph(
             cache_key, flow_nodes, flow_edges,
             checkpointer=_checkpointer if needs_checkpointer else None,
@@ -173,6 +202,19 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                 {**e, "memory_type": "episodic_past"} for e in episodic_past
             ] + memory_context
 
+    workflow_memory_context = []
+    data_task_type = next(
+        (_DATA_TOOL_TASK_TYPE[t] for t in cfg.get("allowed_tools", []) if t in _DATA_TOOL_TASK_TYPE),
+        None,
+    )
+    if data_task_type:
+        workflow_memory_context = await retrieve_workflow_memory(
+            tenant_id=tenant_id,
+            agent_id=agent_id,
+            task_type=data_task_type,
+            query=req.query,
+        )
+
     # Load history: Redis → DB → client fallback
     if req.conversation_id:
         history = await cache_get_messages(req.conversation_id)
@@ -196,6 +238,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         "original_query": None,
         "messages": history,
         "memory_context": memory_context,
+        "workflow_memory_context": workflow_memory_context,
         "tool_calls": [],
         "kb_chunks": [],
         "mcp_results": [],
@@ -482,6 +525,24 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                     final_state, agent_id, tenant_id, user_ref,
                     conversation_id=conv_id, message_id=assistant_msg_id,
                 )
+
+            # Workflow Memory write (doc §3.7) — one record per data-tool call
+            # this turn actually executed, regardless of success/failure.
+            for nt in node_traces:
+                if not nt["tool_name"].startswith("tool/"):
+                    continue
+                task_type = _DATA_TOOL_TASK_TYPE.get(nt["tool_name"][len("tool/"):])
+                if not task_type:
+                    continue
+                _fire_and_forget(record_workflow_outcome(
+                    tenant_id=tenant_id,
+                    agent_id=agent_id,
+                    task_type=task_type,
+                    task_description=nt["input"].get("query") or "",
+                    param_snapshot=nt["input"].get("arguments") or {},
+                    outcome="success" if nt.get("status", "success") == "success" else "failed",
+                    duration_ms=nt.get("latency_ms"),
+                ))
 
     response = StreamingResponse(event_stream(), media_type="text/event-stream")
     response.headers["X-Conversation-Id"] = conv_id or ""

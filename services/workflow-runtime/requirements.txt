@@ -15,18 +15,23 @@ psycopg2-binary==2.9.9
 alembic>=1.13
 sqlalchemy[asyncio]==2.0.35
 regex>=2024.0
+croniter>=2.0
 qdrant-client>=1.13.0,<1.14.0
 motor>=3.3
 redis>=5.0  # cross-replica graph-cache invalidation (services/shared/cache_invalidation.py)
 kafka-python-ng>=2.2,<2.3
+ecs-logging>=1.0
+opentelemetry-api>=1.24,<2.0
+opentelemetry-sdk>=1.24,<2.0
+opentelemetry-exporter-otlp>=1.24,<2.0
+opentelemetry-instrumentation-fastapi>=0.45b0
+opentelemetry-instrumentation-sqlalchemy>=0.45b0
+opentelemetry-instrumentation-httpx>=0.45b0
+opentelemetry-instrumentation-redis>=0.45b0
+opentelemetry-instrumentation-pymongo>=0.45b0
+opentelemetry-instrumentation-logging>=0.45b0
 
 # ── Observability (services/shared/observability.py) ──
 structlog==24.2.0
-opentelemetry-sdk==1.24.0
 opentelemetry-exporter-otlp-proto-grpc==1.24.0
-opentelemetry-instrumentation-fastapi==0.45b0
-opentelemetry-instrumentation-httpx==0.45b0
 opentelemetry-instrumentation-requests==0.45b0
-opentelemetry-instrumentation-logging==0.45b0
-opentelemetry-instrumentation-sqlalchemy==0.45b0
-opentelemetry-instrumentation-redis==0.45b0

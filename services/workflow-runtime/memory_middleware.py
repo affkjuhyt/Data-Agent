@@ -4,10 +4,11 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import List, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
-from sqlalchemy import select, func
+from croniter import croniter
+from sqlalchemy import select, func, update
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams, Filter, FieldCondition, MatchValue
 
@@ -248,7 +249,11 @@ async def retrieve_episodic_past(
 
 
 async def retrieve_pending_reminders(tenant_id: str, agent_id: str, user_ref: str) -> List[dict]:
-    """doc §IV — Episodic Future: surfaced once at the start of a new session."""
+    """doc §IV/§3.4 — Episodic Future: surfaced once at the start of a new
+    session. doc §3.4 also specifies what happens after surfacing: a
+    one-off reminder is marked executed; a recurring one gets a new row at
+    the next cron occurrence instead of staying pending forever. Without
+    this, the same due reminder would resurface every session indefinitely."""
     if not client.is_connected():
         return []
     try:
@@ -262,7 +267,34 @@ async def retrieve_pending_reminders(tenant_id: str, agent_id: str, user_ref: st
                 .where(FutureMemoryORM.status    == "pending")
                 .where(FutureMemoryORM.execution_time <= func.now())
             )).fetchall()
-            return [r._asdict() for r in rows]
+            reminders = [r._asdict() for r in rows]
+            if not reminders:
+                return []
+
+            now = datetime.now(timezone.utc)
+            for r in reminders:
+                if r["recurrence"]:
+                    try:
+                        next_time = croniter(r["recurrence"], now).get_next(datetime)
+                        session.add(FutureMemoryORM(
+                            id=uuid4(),
+                            tenant_id=UUID(tenant_id),
+                            agent_id=UUID(agent_id),
+                            user_ref=user_ref,
+                            content=r["content"],
+                            execution_time=next_time,
+                            recurrence=r["recurrence"],
+                        ))
+                    except Exception as e:
+                        logger.warning("memory | bad cron expression %r for reminder=%s: %s",
+                                       r["recurrence"], r["id"], e)
+                await session.execute(
+                    update(FutureMemoryORM)
+                    .where(FutureMemoryORM.id == r["id"])
+                    .values(status="executed", executed_at=now)
+                )
+            await session.commit()
+            return reminders
     except Exception as e:
         logger.warning("memory | retrieve_pending_reminders failed: %s", e)
         return []

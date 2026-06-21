@@ -123,9 +123,10 @@ def test_alembic_upgrade_head_on_fresh_db(fresh_db):
         f"--- stderr ---\n{result.stderr}"
     )
 
-    # alembic_version row must be set to the head revision (currently RLS).
+    # alembic_version row must be set to the head revision (currently
+    # Workflow/Schema Memory, doc §3.7 — bump this when a new head lands).
     rev = _current_revision(fresh_db["dsn"])
-    assert rev == "a1b2c3d4e5f6", f"expected RLS rev, got {rev}"
+    assert rev == "c3d4e5f6a7b8", f"expected head rev, got {rev}"
 
 
 # ─── 2. RLS migration was actually applied (regression net for issue #3) ───

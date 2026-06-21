@@ -212,6 +212,7 @@ def _extract_node_config(flow_nodes: list[dict]) -> dict:
                 tool_config["text_to_sql"] = {
                     "db_url":      c["dbUrl"],
                     "schema_hint": c.get("schemaHint", ""),
+                    "data_source": c.get("dataSource", "postgresql"),
                 }
             if c.get("defaultFilePath") or c.get("pandasAllowedDir"):
                 tool_config["text_to_pandas"] = {

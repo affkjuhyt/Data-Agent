@@ -23,7 +23,7 @@ _LITELLM_KEY  = os.environ.get("LITELLM_API_KEY", "sk-dev")
 _MAX_CHECK_CHARS = 2000  # giới hạn độ dài text trước khi check regex
 
 _PROMPTS_DIR    = os.path.join(os.path.dirname(__file__), "..", "prompts")
-_GUARDRAIL_SYSTEM = open(os.path.join(_PROMPTS_DIR, "guardrail_system.txt")).read()
+_GUARDRAIL_SYSTEM = open(os.path.join(_PROMPTS_DIR, "guardrail_system.txt"), encoding="utf-8").read()
 
 
 def _normalize(text: str) -> str:
