@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import {
   ArrowLeft, GitMerge, Plus, Settings2, Trash2, Upload,
-  CheckCircle2, Clock, Edit3, Save, X, Zap, ChevronDown, RotateCcw,
+  CheckCircle2, Clock, Edit3, Save, X, Zap, ChevronDown, RotateCcw, PowerOff,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import WorkflowBuilder from '../workflow/Builder';
@@ -28,6 +28,9 @@ interface ApiAgent {
   active_workflow_id: string | null;
   active_workflow_name: string | null;
   workflows?: ApiWorkflow[];
+  responder_model_id: string | null;
+  system_prompt_id: string | null;
+  memory_enabled: boolean;
 }
 
 interface LLMProvider { id: string; name: string; model_id: string; type: string; }
@@ -70,7 +73,14 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
   const [agent, setAgent]           = useState<ApiAgent | null>(null);
   const [activeTab, setActiveTab]   = useState<DetailTab>('WORKFLOWS');
   const [builder, setBuilder]       = useState<BuilderState>(null);
-  const [publishing, setPublishing] = useState(false);
+  const [wizardOpen, setWizardOpen]           = useState(false);
+  const [wizardStep, setWizardStep]           = useState<1 | 2>(1);
+  const [wizardWfId, setWizardWfId]           = useState('');
+  const [wizardNodeTypes, setWizardNodeTypes] = useState<Set<string>>(new Set());
+  const [wizardKbConns, setWizardKbConns]     = useState<{ id: string; name: string }[]>([]);
+  const [wizardKbId, setWizardKbId]           = useState('');
+  const [wizardChangelog, setWizardChangelog] = useState('');
+  const [wizardPublishing, setWizardPublishing] = useState(false);
   const [toast, setToast]           = useState<string | null>(null);
 
   // Version history
@@ -97,6 +107,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
     responder_model_id: '', system_prompt_id: '', memory_enabled: false,
   });
   const [savingSettings, setSavingSettings] = useState(false);
+  const [unpublishing, setUnpublishing]     = useState(false);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -144,8 +155,11 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
     setAgent(data);
     setSettingsForm(f => ({
       ...f,
-      name: data.name,
-      description: data.description || '',
+      name:                data.name,
+      description:         data.description || '',
+      responder_model_id:  data.responder_model_id  ?? '',
+      system_prompt_id:    data.system_prompt_id    ?? '',
+      memory_enabled:      data.memory_enabled      ?? false,
     }));
     // Fetch versions cho tất cả workflows
     (data.workflows ?? []).forEach(wf => {
@@ -176,19 +190,62 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
       .then(r => r.json()).then(setSystemPrompts).catch(() => {});
   }, []);
 
-  const handlePublish = async () => {
-    if (!agent?.workflows?.length) { showToast('Chưa có workflow để publish'); return; }
-    setPublishing(true);
+  const openPublishWizard = () => {
+    setWizardStep(1);
+    setWizardWfId('');
+    setWizardNodeTypes(new Set());
+    setWizardKbConns([]);
+    setWizardKbId('');
+    setWizardChangelog('');
+    setWizardOpen(true);
+  };
+
+  const handleWizardSelectWf = async (wf: ApiWorkflow) => {
+    if (!wf.published_version_id) return;
+    setWizardWfId(wf.id);
+
+    const [canvasRes, kbRes] = await Promise.allSettled([
+      fetch(`${FLOW_BUILDER_URL}/api/workflow-versions/${wf.published_version_id}/canvas`),
+      fetch(`${WORKFLOW_RUNTIME_URL}/api/kb-connections`, {
+        headers: { 'X-Tenant-ID': 'tenant-dev' },
+      }),
+    ]);
+
+    if (canvasRes.status === 'fulfilled' && canvasRes.value.ok) {
+      const canvas = await canvasRes.value.json();
+      const types = new Set<string>(
+        (canvas.nodes ?? [])
+          .map((n: any) => n.data?.nodeType || n.type || '')
+          .filter(Boolean)
+      );
+      setWizardNodeTypes(types);
+    }
+
+    if (kbRes.status === 'fulfilled' && kbRes.value.ok) {
+      setWizardKbConns(await kbRes.value.json());
+    }
+
+    setWizardStep(2);
+  };
+
+  const handleWizardConfirm = async () => {
+    setWizardPublishing(true);
     try {
-      await fetch(`${FLOW_BUILDER_URL}/api/agents/${agentId}/publish`, {
+      const res = await fetch(`${FLOW_BUILDER_URL}/api/agents/${agentId}/publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workflow_id: agent.workflows[0].id }),
+        body: JSON.stringify({
+          workflow_id:      wizardWfId,
+          changelog:        wizardChangelog || undefined,
+          kb_connection_id: wizardKbId || undefined,
+        }),
       });
-      showToast('✓ Published thành công');
+      if (!res.ok) { const e = await res.json(); showToast(e.detail || 'Publish thất bại'); return; }
+      showToast('✓ Agent published thành công');
+      setWizardOpen(false);
       fetchAgent();
     } catch { showToast('Publish thất bại'); }
-    finally { setPublishing(false); }
+    finally { setWizardPublishing(false); }
   };
 
   const handleCreateWorkflow = async () => {
@@ -239,6 +296,17 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
       setDeleteConfirm(null);
       fetchAgent();
     } catch { showToast('Xóa thất bại'); }
+  };
+
+  const handleUnpublish = async () => {
+    setUnpublishing(true);
+    try {
+      const res = await fetch(`${FLOW_BUILDER_URL}/api/agents/${agentId}/unpublish`, { method: 'POST' });
+      if (!res.ok) { const e = await res.json(); showToast(e.detail || 'Unpublish thất bại'); return; }
+      showToast('✓ Agent đã được unpublish');
+      fetchAgent();
+    } catch { showToast('Unpublish thất bại'); }
+    finally { setUnpublishing(false); }
   };
 
   const handleSaveSettings = async () => {
@@ -305,14 +373,26 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
             </div>
           </div>
         </div>
-        <button
-          onClick={handlePublish}
-          disabled={publishing}
-          className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-colors"
-        >
-          <Upload className="w-3.5 h-3.5" />
-          {publishing ? 'Publishing…' : 'Publish'}
-        </button>
+        <div className="flex items-center gap-2">
+          {isPublished && (
+            <button
+              onClick={handleUnpublish}
+              disabled={unpublishing}
+              title="Gỡ agent khỏi playground ngay lập tức"
+              className="flex items-center gap-1.5 px-3 py-2 border border-red-300 text-red-600 hover:bg-red-50 rounded-xl text-xs font-bold transition-colors disabled:opacity-50"
+            >
+              <PowerOff className="w-3.5 h-3.5" />
+              {unpublishing ? 'Đang gỡ…' : 'Unpublish'}
+            </button>
+          )}
+          <button
+            onClick={openPublishWizard}
+            className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold transition-colors"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            {isPublished ? 'Re-publish' : 'Publish'}
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -366,6 +446,9 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                       <div className="flex items-center gap-2">
                         <GitMerge className="w-4 h-4 text-blue-500" />
                         <span className="text-sm font-semibold text-[#111111]">{wf.name}</span>
+                        {isPublished && wf.id === agent?.active_workflow_id && (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded font-semibold">● đang dùng</span>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         <button
@@ -391,7 +474,13 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                           <Plus className="w-3 h-3" /> New Draft
                         </button>
                         <button
-                          onClick={() => setDeleteWfConfirm(wf.id)}
+                          onClick={() => {
+                            if (wf.id === agent?.active_workflow_id) {
+                              showToast('Workflow đang được agent sử dụng — hãy republish agent với workflow khác trước.');
+                              return;
+                            }
+                            setDeleteWfConfirm(wf.id);
+                          }}
                           title="Xóa workflow"
                           className="p-1.5 border border-red-200 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
                         >
@@ -747,6 +836,175 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
           </div>
         </div>
       )}
+
+      {/* Publish Wizard */}
+      <AnimatePresence>
+        {wizardOpen && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/30 backdrop-blur-sm"
+            onClick={() => !wizardPublishing && setWizardOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              onClick={e => e.stopPropagation()}
+              className="bg-white border border-[#ECE7DA] rounded-2xl shadow-2xl w-[520px] max-h-[80vh] flex flex-col"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-[#ECE7DA] shrink-0">
+                <div className="flex items-center gap-2">
+                  {wizardStep === 2 && (
+                    <button onClick={() => setWizardStep(1)} className="p-1 hover:bg-[#F3E2A7] rounded-lg text-[#8A8A7A] mr-1">
+                      ←
+                    </button>
+                  )}
+                  <h3 className="text-sm font-bold text-[#111111]">
+                    {wizardStep === 1 ? 'Publish Agent — Chọn Workflow' : 'Publish Agent — Cấu hình'}
+                  </h3>
+                </div>
+                <button onClick={() => setWizardOpen(false)} className="p-1.5 hover:bg-[#F3E2A7] rounded-lg text-[#8A8A7A]">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto px-6 py-4">
+                {/* Step 1 — chọn workflow */}
+                {wizardStep === 1 && (() => {
+                  const publishable = (agent?.workflows ?? []).filter(wf => wf.published_version_id);
+                  if (publishable.length === 0) return (
+                    <div className="text-center py-10 space-y-2">
+                      <p className="text-sm font-semibold text-[#2A2A2A]">Chưa có workflow nào được publish</p>
+                      <p className="text-xs text-[#8A8A7A]">Publish ít nhất một workflow version trước khi publish agent.</p>
+                    </div>
+                  );
+                  return (
+                    <div className="space-y-2">
+                      <p className="text-xs text-[#8A8A7A] mb-3">Chọn workflow agent sẽ sử dụng. Chỉ hiển thị workflow đã có published version.</p>
+                      {publishable.map(wf => {
+                        const pubV = (wfVersions[wf.id] ?? []).find(v => v.status === 'published');
+                        const isActive = wf.id === agent?.active_workflow_id;
+                        return (
+                          <button
+                            key={wf.id}
+                            onClick={() => handleWizardSelectWf(wf)}
+                            className="w-full text-left px-4 py-3 rounded-xl border border-[#ECE7DA] hover:border-[#BFA66A] hover:bg-[#FAFAF5] transition-colors"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm font-semibold text-[#111111]">{wf.name}</span>
+                                {isActive && (
+                                  <span className="text-[10px] px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full font-semibold">● đang dùng</span>
+                                )}
+                              </div>
+                              <span className="text-[10px] px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full font-semibold">
+                                v{pubV?.version ?? '?'} published
+                              </span>
+                            </div>
+                            {pubV?.changelog && (
+                              <p className="text-[11px] text-[#8A8A7A] mt-0.5 italic">"{pubV.changelog}"</p>
+                            )}
+                            {pubV?.published_at && (
+                              <p className="text-[10px] text-[#8A8A7A] mt-0.5">{new Date(pubV.published_at).toLocaleDateString('vi-VN')}</p>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
+                {/* Step 2 — config */}
+                {wizardStep === 2 && (() => {
+                  const wf = (agent?.workflows ?? []).find(w => w.id === wizardWfId);
+                  const pubV = (wfVersions[wizardWfId] ?? []).find(v => v.status === 'published');
+                  const hasKb           = wizardNodeTypes.has('kb_search');
+                  const hasMcp          = wizardNodeTypes.has('mcp');
+                  const hasHumanApproval = wizardNodeTypes.has('human_approval');
+
+                  return (
+                    <div className="space-y-4">
+                      {/* Summary */}
+                      <div className="px-3 py-2.5 bg-[#FAFAF5] rounded-xl border border-[#ECE7DA] text-xs text-[#5A5A5A]">
+                        Workflow: <span className="font-semibold">{wf?.name}</span>
+                        {pubV && <span className="text-[#8A8A7A]"> · v{pubV.version}</span>}
+                      </div>
+
+                      {/* Node type alerts */}
+                      {hasMcp && (
+                        <div className="px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-700">
+                          ℹ Workflow có MCP node — cấu hình MCP endpoint trong Settings tab sau khi publish.
+                        </div>
+                      )}
+                      {hasHumanApproval && (
+                        <div className="px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
+                          ⚠ Workflow có Human Approval node — cần cấu hình approver sau khi publish.
+                        </div>
+                      )}
+
+                      {/* KB Connection */}
+                      {hasKb && (
+                        <div>
+                          <label className="text-[10px] font-bold text-[#8A8A7A] uppercase tracking-widest mb-1.5 block">
+                            KB Connection
+                          </label>
+                          {wizardKbConns.length === 0 ? (
+                            <p className="text-xs text-[#8A8A7A] italic">Chưa có KB connection nào — thêm trong Settings.</p>
+                          ) : (
+                            <select
+                              value={wizardKbId}
+                              onChange={e => setWizardKbId(e.target.value)}
+                              className="w-full bg-[#FAFAF5] border border-[#ECE7DA] rounded-xl py-2 px-3 text-sm text-[#111111] focus:outline-none focus:border-[#BFA66A]"
+                            >
+                              <option value="">— Chọn KB connection —</option>
+                              {wizardKbConns.map(kb => (
+                                <option key={kb.id} value={kb.id}>{kb.name}</option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Changelog */}
+                      <div>
+                        <label className="text-[10px] font-bold text-[#8A8A7A] uppercase tracking-widest mb-1.5 block">
+                          Changelog (tuỳ chọn)
+                        </label>
+                        <input
+                          autoFocus
+                          type="text"
+                          value={wizardChangelog}
+                          onChange={e => setWizardChangelog(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') handleWizardConfirm(); }}
+                          placeholder="Mô tả thay đổi trong version này..."
+                          className="w-full bg-[#FAFAF5] border border-[#ECE7DA] rounded-xl py-2 px-3 text-sm text-[#111111] focus:outline-none focus:border-[#BFA66A]"
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Footer */}
+              {wizardStep === 2 && (
+                <div className="flex justify-end gap-2 px-6 py-4 border-t border-[#ECE7DA] shrink-0">
+                  <button onClick={() => setWizardOpen(false)} className="px-4 py-2 text-xs font-semibold text-[#8A8A7A] hover:bg-[#F3E2A7] rounded-xl">
+                    Huỷ
+                  </button>
+                  <button
+                    onClick={handleWizardConfirm}
+                    disabled={wizardPublishing}
+                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-xl transition-colors"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    {wizardPublishing ? 'Publishing…' : 'Publish Agent'}
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Toast */}
       <AnimatePresence>

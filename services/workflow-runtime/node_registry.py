@@ -30,37 +30,7 @@ NODE_REGISTRY = {
         "display":  "KB Search",
         "category": "default",
         "locked":   False,
-        "schema": {
-            "kb_connection_id": {
-                "type": "dropdown", "source": "/api/kb-connections",
-                "required": True,
-                "description": "Knowledge base cần tìm kiếm",
-                "advanced": False,
-            },
-            "mode": {
-                "type": "dropdown",
-                "options": ["naive", "local", "global", "hybrid"],
-                "default": "hybrid",
-                "required": False,
-                "description": "Chế độ tìm kiếm LightRAG: naive=keyword, local=vector, global=graph, hybrid=kết hợp",
-                "advanced": False,
-            },
-            "top_k": {
-                "type": "number", "default": 10,
-                "min": 1, "max": 50,
-                "required": False,
-                "description": "Số chunks trả về tối đa",
-                "advanced": False,
-            },
-            "max_depth": {
-                "type": "number", "default": 3,
-                "min": 1, "max": 5,
-                "required": False,
-                "description": "Độ sâu graph traversal (chỉ dùng với mode global/hybrid)",
-                "advanced": True,
-                "depends_on": {"mode": ["global", "hybrid"]},
-            },
-        },
+        "schema":   {},
     },
     "mcp": {
         "display":  "MCP Tool",
@@ -80,6 +50,108 @@ NODE_REGISTRY = {
                 "advanced": False,
             },
         },
+    },
+    "tool_executor": {
+        "display":  "Tool Executor",
+        "category": "default",
+        "locked":   False,
+        "schema": {
+            "allowedBuiltinTools": {
+                "type": "multiselect",
+                "options": [
+                    "text_to_sql", "text_to_pandas",
+                    "file_read", "grep", "glob",
+                    "file_write", "file_edit",
+                    "bash",
+                    "web_search", "wikipedia", "calculator",
+                    "delegate_to_agent",
+                ],
+                "required": True,
+                "description": "Các tool mà agent này được phép sử dụng",
+                "advanced": False,
+            },
+            "dbUrl": {
+                "type": "password",
+                "required": False,
+                "description": "DB connection string cho text_to_sql (postgresql://...)",
+                "advanced": False,
+            },
+            "schemaHint": {
+                "type": "textarea",
+                "required": False,
+                "description": "Schema hint để LLM sinh SQL chính xác hơn",
+                "advanced": True,
+            },
+            "defaultFilePath": {
+                "type": "text",
+                "required": False,
+                "description": "File mặc định cho text_to_pandas",
+                "advanced": False,
+            },
+            "pandasAllowedDir": {
+                "type": "text",
+                "required": False,
+                "description": "Thư mục được phép đọc file cho text_to_pandas",
+                "advanced": True,
+            },
+            "fileReadAllowedDir": {
+                "type": "text",
+                "required": False,
+                "description": "Thư mục được phép đọc file cho file_read",
+                "advanced": True,
+            },
+            "grepAllowedDir": {
+                "type": "text",
+                "required": False,
+                "description": "Thư mục được phép tìm kiếm cho grep/glob",
+                "advanced": True,
+            },
+            "writeAllowedDir": {
+                "type": "text",
+                "required": False,
+                "description": "Thư mục được phép ghi file cho file_write/file_edit",
+                "advanced": True,
+            },
+            "bashEnabled": {
+                "type": "boolean",
+                "default": False,
+                "required": False,
+                "description": "Cho phép thực thi lệnh shell (nguy hiểm, chỉ bật khi cần)",
+                "advanced": False,
+            },
+            "bashCwd": {
+                "type": "text",
+                "required": False,
+                "description": "Working directory cho bash",
+                "advanced": True,
+            },
+        },
+    },
+    "judge": {
+        "display":  "Judge",
+        "category": "default",
+        "locked":   False,
+        "schema": {
+            "max_iterations": {
+                "type": "number", "default": 3,
+                "min": 1, "max": 10,
+                "required": False,
+                "description": "Số lần retry tối đa khi judge FAIL. Đạt giới hạn → trả kết quả hiện tại cho user",
+                "advanced": False,
+            },
+            "model_id": {
+                "type": "dropdown", "source": "/api/llm-providers?type=chat",
+                "required": False,
+                "description": "Model dùng cho judge. Mặc định: model alias 'judge' (qwen3-8b)",
+                "advanced": True,
+            },
+        },
+    },
+    "human_approval": {
+        "display":  "Human Approval",
+        "category": "default",
+        "locked":   False,
+        "schema": {},
     },
     "rrf_ranking": {
         "display":  "RRF Ranking",
@@ -149,70 +221,23 @@ NODE_REGISTRY = {
             },
         },
     },
-    "human_approval": {
-        "display":  "Human Approval",
-        "category": "optional",
-        "locked":   False,
-        "schema": {
-            "timeout_minutes": {
-                "type": "number", "default": 30,
-                "min": 1, "max": 1440,
-                "required": False,
-                "description": "Thời gian chờ duyệt tối đa (phút). Hết thời gian → tự động từ chối",
-                "advanced": False,
-            },
-        },
-    },
-    "condition": {
-        "display":  "Condition",
-        "category": "optional",
-        "locked":   False,
-        "schema": {
-            "expression": {
-                "type": "text",
-                "required": True,
-                "description": "Biểu thức điều kiện (Python expression). Ví dụ: state['score'] > 0.8",
-                "advanced": False,
-            },
-            "branches": {
-                "type": "list",
-                "required": True,
-                "description": "Danh sách branch khi condition đúng/sai",
-                "advanced": False,
-            },
-        },
-    },
-    "loop": {
-        "display":  "Loop",
-        "category": "optional",
-        "locked":   False,
-        "schema": {
-            "max_iterations": {
-                "type": "number", "default": 3,
-                "min": 1, "max": 10,
-                "required": False,
-                "description": "Số lần lặp tối đa để tránh vòng lặp vô hạn",
-                "advanced": False,
-            },
-        },
-    },
-    "notification": {
-        "display":  "Notification",
-        "category": "optional",
-        "locked":   False,
-        "schema": {
-            "event_type": {
-                "type": "text",
-                "required": True,
-                "description": "Loại sự kiện gửi đi. Ví dụ: alert.high_risk, report.daily",
-                "advanced": False,
-            },
-            "payload_template": {
-                "type": "json",
-                "required": False,
-                "description": "Template JSON cho payload. Dùng {{variable}} để inject giá trị từ state",
-                "advanced": True,
-            },
-        },
-    },
 }
+
+# Các tính năng không phải node trên canvas:
+#
+# human_approval — middleware, chạy trước mcp_node
+#   config: human_approval_enabled, mcp_require_approval[]
+#
+# loop — middleware, chạy sau reranker
+#   config: loop_enabled, loop_max_iterations
+#
+# rewrite_message — middleware, chạy trước planner
+#   config: rewrite_enabled
+#
+# suggestion — background job, chạy song song
+#   config: suggestion_enabled
+#
+# condition — edge property trong flow_edges MongoDB
+#   field: "condition": "no_results" | "has_results" | "mcp_failed" | "low_confidence"
+#
+# notification — bỏ khỏi scope, chưa có use case đủ rõ

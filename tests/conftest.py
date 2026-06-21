@@ -92,6 +92,18 @@ def redis_container() -> Iterator[dict[str, str]]:
 
 
 @pytest.fixture(scope="session")
+def qdrant_container() -> Iterator[dict[str, str]]:
+    """Yield connection info for an ephemeral Qdrant container."""
+    if not _testcontainers_available():
+        pytest.skip("testcontainers not installed")
+
+    from testcontainers.qdrant import QdrantContainer
+
+    with QdrantContainer() as qc:
+        yield {"url": f"http://{qc.rest_host_address}"}
+
+
+@pytest.fixture(scope="session")
 def kafka_container() -> Iterator[dict[str, str]]:
     """Yield bootstrap_servers for an ephemeral Kafka container.
 

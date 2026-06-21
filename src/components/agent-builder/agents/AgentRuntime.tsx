@@ -77,6 +77,7 @@ export const AgentRuntimeView = ({
     if (selectedAgentId && view === 'OVERVIEW') {
       return (
         <AgentDetailPage
+          key={selectedAgentId}
           agentId={selectedAgentId}
           onBack={() => setSelectedAgentId(null)}
         />

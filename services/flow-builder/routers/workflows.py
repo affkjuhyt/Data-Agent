@@ -1,7 +1,8 @@
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 
+from config import DEV_TENANT_ID
 from db_mongo import save_canvas
 from db_pg import (
     create_draft_version,
@@ -64,10 +65,11 @@ async def api_create_draft_version(workflow_id: str):
 
 
 @router.delete("/api/workflow-versions/{version_id}", status_code=204)
-async def api_delete_workflow_version(version_id: str):
+async def api_delete_workflow_version(version_id: str, x_tenant_id: str = Header(default=None)):
     ensure_db_available()
+    tenant_id = x_tenant_id or DEV_TENANT_ID
     try:
-        await delete_workflow_version(version_id)
+        await delete_workflow_version(version_id, tenant_id=tenant_id)
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:
@@ -76,10 +78,11 @@ async def api_delete_workflow_version(version_id: str):
 
 
 @router.delete("/api/workflows/{workflow_id}", status_code=204)
-async def api_delete_workflow(workflow_id: str):
+async def api_delete_workflow(workflow_id: str, x_tenant_id: str = Header(default=None)):
     ensure_db_available()
+    tenant_id = x_tenant_id or DEV_TENANT_ID
     try:
-        version_ids = await delete_workflow(workflow_id)
+        version_ids = await delete_workflow(workflow_id, tenant_id=tenant_id)
         for version_id in version_ids:
             await save_canvas(version_id, [], [])
     except ValueError as e:

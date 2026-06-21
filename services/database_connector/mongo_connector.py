@@ -1,10 +1,10 @@
 import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
-from services.log_set_up import create_logger
+import logging
 from basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
 
-log = create_logger("services.mongo", "service_mongo")
+log = logging.getLogger(__name__)
 
 
 class MongoClient:

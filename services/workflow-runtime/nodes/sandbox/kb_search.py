@@ -19,16 +19,20 @@ class KBChunk(BaseModel):
 
 
 async def kb_search_node(state: AgentState) -> dict:
-    cfg = state["config"]
+    cfg         = state["config"]
     kb_endpoint = cfg.get("kb_endpoint", "")
-    mode = cfg.get("kb_mode", "hybrid")
-    top_k = max(1, min(cfg.get("top_k", 10), 50))
-    max_depth = max(1, min(cfg.get("max_depth", 3), 5))
+    tenant_id   = cfg.get("tenant_id", "")
 
     if not kb_endpoint:
         return {"kb_chunks": []}
 
     timeout = httpx.Timeout(connect=5.0, read=30.0, write=5.0, pool=5.0)
+
+    kb_call = next(
+        (tc for tc in state.get("tool_calls", []) if tc.get("type") == "kb_search"),
+        None,
+    )
+    search_query = (kb_call or {}).get("query") or state["query"]
 
     try:
         async for attempt in AsyncRetrying(
@@ -40,21 +44,35 @@ async def kb_search_node(state: AgentState) -> dict:
             with attempt:
                 async with httpx.AsyncClient(timeout=timeout) as client:
                     resp = await client.post(
-                        f"{kb_endpoint}/search",
-                        json={"query": state["query"], "mode": mode, "top_k": top_k, "max_depth": max_depth},
+                        f"{kb_endpoint}/api/pipeline/light-rag/retrieve",
+                        headers={
+                            "X-Role":      "AI_ENGINEER",
+                            "X-Tenant-Id": tenant_id,
+                        },
+                        json={
+                            "query":     search_query,
+                            "tenant_id": tenant_id,
+                        },
                     )
                     resp.raise_for_status()
-                    raw = resp.json().get("chunks", [])
+                    raw = resp.json().get("results", [])
+
                     valid, skipped = [], 0
                     for item in raw:
                         try:
-                            valid.append(KBChunk.model_validate(item).model_dump())
+                            valid.append(KBChunk(
+                                id      = item.get("source", {}).get("block_id", ""),
+                                content = item.get("chunk_context", ""),
+                                score   = item.get("chunk_score", 0.0),
+                            ).model_dump())
                         except ValidationError:
                             skipped += 1
+
                     if skipped:
                         logger.warning("kb_search | skipped %d invalid chunks", skipped)
-                    logger.info("kb_search | found %d chunks", len(valid))
+                    logger.info("kb_search | tenant=%s found=%d", tenant_id, len(valid))
                     return {"kb_chunks": valid}
+
     except Exception as e:
         logger.warning("kb_search | failed after retries: %s — returning empty", e)
         return {"kb_chunks": [], "kb_error": str(e)}

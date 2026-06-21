@@ -40,24 +40,38 @@ const LOCKED_NODE_TYPES    = new Set(['guardrail_input', 'guardrail_output', 'gu
 export type TemplateId = 'blank' | 'rag' | 'multi-agent' | 'hitl';
 
 type FlowNodeType =
-  | 'trigger' | 'guardrail' | 'planner' | 'kb_search' | 'mcp_tool'
+  | 'trigger' | 'guardrail' | 'planner' | 'kb_search' | 'mcp' | 'tool_executor'
   | 'rrf_ranking' | 'reranker' | 'responder' | 'output'
   | 'human_approval' | 'condition' | 'db_query'
-  | 'send_notification' | 'loop';
+  | 'send_notification' | 'loop' | 'judge';
 
 export interface FlowNodeData extends Record<string, unknown> {
   nodeType: FlowNodeType;
   label: string;
   locked?: boolean;
-  kbEndpoint?: string;
-  kbName?: string;
+  // mcp
   mcpServerUrl?: string;
   allowedTools?: string[];
+  // tool_executor
+  allowedBuiltinTools?: string[];
+  dbUrl?: string;
+  schemaHint?: string;
+  defaultFilePath?: string;
+  pandasAllowedDir?: string;
+  fileReadAllowedDir?: string;
+  grepAllowedDir?: string;
+  globAllowedDir?: string;
+  writeAllowedDir?: string;
+  bashEnabled?: boolean;
+  bashCwd?: string;
+  // reranker
   rerankerModel?: string;
   topN?: number;
+  // responder
   systemPromptName?: string;
   temperature?: number;
   maxTokens?: number;
+  // human_approval
   approverRole?: string;
 }
 
@@ -72,7 +86,8 @@ const NODE_STYLE: Record<string, { typeLabel: string; Icon: any; color: string }
   guardrail:         { typeLabel: 'Guardrail',       Icon: ShieldCheck, color: '#EF4444' },
   planner:           { typeLabel: 'Planner',        Icon: Bot,         color: '#3B82F6' },
   kb_search:         { typeLabel: 'KB Search',      Icon: Database,    color: '#10B981' },
-  mcp_tool:          { typeLabel: 'MCP Tool',       Icon: Wrench,      color: '#F59E0B' },
+  mcp:               { typeLabel: 'MCP Tool',       Icon: Wrench,      color: '#F59E0B' },
+  tool_executor:     { typeLabel: 'Tool Executor',  Icon: Zap,         color: '#F97316' },
   rrf_ranking:       { typeLabel: 'RRF Ranking',    Icon: Layers,      color: '#8B5CF6' },
   reranker:          { typeLabel: 'Reranker',       Icon: Filter,      color: '#8B5CF6' },
   responder:         { typeLabel: 'Responder',      Icon: Cpu,         color: '#3B82F6' },
@@ -82,6 +97,7 @@ const NODE_STYLE: Record<string, { typeLabel: string; Icon: any; color: string }
   db_query:          { typeLabel: 'DB Query',       Icon: Database,    color: '#10B981' },
   send_notification: { typeLabel: 'Notification',   Icon: Bell,        color: '#EF4444' },
   loop:              { typeLabel: 'Loop',           Icon: RefreshCw,   color: '#3B82F6' },
+  judge:             { typeLabel: 'Judge',          Icon: CheckCircle2, color: '#F59E0B' },
 };
 
 // â”€â”€â”€ Custom Node â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -285,6 +301,50 @@ const EdgeWithDelete = (props: EdgeProps) => {
 const nodeTypes = { flowNode: CustomFlowNode };
 const edgeTypes = { wfEdge: EdgeWithDelete };
 
+// ── Guardrail Banner ──────────────────────────────────────────────────────────
+
+const GuardrailBanner = ({ position }: { position: 'top' | 'bottom' }) => (
+  <div
+    style={{
+      position: 'absolute',
+      [position]: 0,
+      left: 0,
+      right: 0,
+      zIndex: 10,
+      pointerEvents: 'none',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '12px 16px',
+      background: position === 'top'
+        ? 'linear-gradient(to bottom, #0f172a 50%, transparent)'
+        : 'linear-gradient(to top, #0f172a 50%, transparent)',
+    }}
+  >
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      background: 'rgba(239,68,68,0.09)',
+      border: '1px solid rgba(239,68,68,0.25)',
+      borderRadius: 20,
+      padding: '6px 18px',
+    }}>
+      <ShieldCheck size={13} color="#EF4444" />
+      <span style={{
+        fontSize: 11,
+        fontWeight: 900,
+        letterSpacing: '0.18em',
+        textTransform: 'uppercase',
+        color: '#EF4444',
+        opacity: 0.85,
+      }}>
+        Guardrail
+      </span>
+    </div>
+  </div>
+);
+
 // â”€â”€â”€ Edge Helpers (all use type 'wfEdge') â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const solidEdge = (id: string, src: string, tgt: string, color = '#ffffff22'): Edge => ({
@@ -370,87 +430,69 @@ function transformWorkflowToFlow(workflow: Workflow): { nodes: Node<FlowNodeData
 export const TEMPLATE_FLOWS: Record<TemplateId, { nodes: Node<FlowNodeData>[]; edges: Edge[] }> = {
 
   blank: {
-    nodes: [mkNode('trigger', 'trigger', 'Start', 300, 200)],
+    nodes: [],
     edges: [],
   },
 
   rag: {
     nodes: [
-      mkNode('trigger',       'trigger',   'User Input',         360, 0),
-      mkLockedNode('guardrail_in',  'guardrail', 'Guardrail — Input',  360, 110),
-      mkNode('planner',       'planner',   'Planner',            360, 220),
-      mkNode('kb_search',     'kb_search', 'KB Search',          360, 330, { kbEndpoint: 'http://knowledge-space/api/kb/', kbName: 'kb_a05_violations' }),
-      mkNode('rrf_ranking',   'rrf_ranking','RRF Ranking',       360, 440),
-      mkNode('reranker',      'reranker',  'Reranker',           360, 550, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
-      mkNode('responder',     'responder', 'Responder',          360, 660, { systemPromptName: 'prompt_default', temperature: 0.2, maxTokens: 1000 }),
-      mkLockedNode('guardrail_out', 'guardrail', 'Guardrail — Output', 360, 770),
-      mkNode('output',        'output',    'Response',           360, 880),
+      mkNode('planner',     'planner',     'Planner',     240, 0),
+      mkNode('kb_search',   'kb_search',   'KB Search',   240, 110, ),
+      mkNode('rrf_ranking', 'rrf_ranking', 'RRF Ranking', 240, 220),
+      mkNode('reranker',    'reranker',    'Reranker',    240, 330, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
+      mkNode('responder',   'responder',   'Responder',   240, 440, { systemPromptName: 'prompt_default', temperature: 0.2, maxTokens: 1000 }),
     ],
     edges: [
-      lockedEdge('e1', 'trigger',       'guardrail_in'),
-      lockedEdge('e2', 'guardrail_in',  'planner'),
-      solidEdge ('e3', 'planner',       'kb_search',     '#3B82F666'),
-      solidEdge ('e4', 'kb_search',     'rrf_ranking',   '#10B98166'),
-      solidEdge ('e5', 'rrf_ranking',   'reranker',      '#8B5CF666'),
-      solidEdge ('e6', 'reranker',      'responder',     '#8B5CF666'),
-      lockedEdge('e7', 'responder',     'guardrail_out'),
-      lockedEdge('e8', 'guardrail_out', 'output'),
+      solidEdge('e1', 'planner',     'kb_search',   '#3B82F666'),
+      solidEdge('e2', 'kb_search',   'rrf_ranking', '#10B98166'),
+      solidEdge('e3', 'rrf_ranking', 'reranker',    '#8B5CF666'),
+      solidEdge('e4', 'reranker',    'responder',   '#8B5CF666'),
     ],
   },
 
   'multi-agent': {
     nodes: [
-      mkNode('trigger',       'trigger',    'User Input',         360, 0),
-      mkLockedNode('guardrail_in',  'guardrail', 'Guardrail — Input',  360, 110),
-      mkNode('planner',       'planner',    'Planner',            360, 220),
-      mkNode('kb_search',     'kb_search',  'KB Search',          160, 350, { kbEndpoint: 'http://knowledge-space/api/kb/', kbName: 'kb_a05_violations' }),
-      mkNode('mcp_tool',      'mcp_tool',   'MCP Tool',           560, 350, { mcpServerUrl: 'http://mcp.tenant.gov.vn/sse', allowedTools: ['tra_cuu_phat_nguoi', 'query_dashboard'] }),
-      mkNode('rrf_ranking',   'rrf_ranking','RRF Ranking',        360, 490),
-      mkNode('reranker',      'reranker',   'Reranker',           360, 600, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
-      mkNode('responder',     'responder',  'Responder',          360, 710, { systemPromptName: 'prompt_default', temperature: 0.2, maxTokens: 1000 }),
-      mkLockedNode('guardrail_out', 'guardrail', 'Guardrail — Output', 360, 820),
-      mkNode('output',        'output',     'Response',           360, 930),
+      mkNode('planner',       'planner',       'Planner',       340, 0),
+      mkNode('kb_search',     'kb_search',     'KB Search',     40,  130),
+      mkNode('mcp',           'mcp',           'MCP Tool',      340, 130, { mcpServerUrl: 'http://mcp.tenant.gov.vn/sse', allowedTools: ['tra_cuu_phat_nguoi', 'query_dashboard'] }),
+      mkNode('tool_executor', 'tool_executor', 'Tool Executor', 640, 130, { allowedBuiltinTools: ['text_to_sql', 'web_search'] }),
+      mkNode('rrf_ranking',   'rrf_ranking',   'RRF Ranking',   340, 270),
+      mkNode('reranker',      'reranker',      'Reranker',      340, 380, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
+      mkNode('responder',     'responder',     'Responder',     340, 490, { systemPromptName: 'prompt_default', temperature: 0.2, maxTokens: 1000 }),
     ],
     edges: [
-      lockedEdge  ('e1',  'trigger',       'guardrail_in'),
-      lockedEdge  ('e2',  'guardrail_in',  'planner'),
-      labeledSolid('e3',  'planner',       'kb_search',     'always',        '#10B98199'),
-      dashedEdge  ('e4',  'planner',       'mcp_tool',      'if tool_calls', '#F59E0B99'),
-      solidEdge   ('e5',  'kb_search',     'rrf_ranking',   '#10B98166'),
-      solidEdge   ('e6',  'mcp_tool',      'rrf_ranking',   '#F59E0B66'),
-      solidEdge   ('e7',  'rrf_ranking',   'reranker',      '#8B5CF666'),
-      solidEdge   ('e8',  'reranker',      'responder',     '#8B5CF666'),
-      lockedEdge  ('e9',  'responder',     'guardrail_out'),
-      lockedEdge  ('e10', 'guardrail_out', 'output'),
+      labeledSolid('e1', 'planner',       'kb_search',     'always',        '#10B98199'),
+      dashedEdge  ('e2', 'planner',       'mcp',           'if mcp_calls',  '#F59E0B99'),
+      dashedEdge  ('e3', 'planner',       'tool_executor', 'if tool_calls', '#F9731699'),
+      solidEdge   ('e4', 'kb_search',     'rrf_ranking',   '#10B98166'),
+      solidEdge   ('e5', 'mcp',           'rrf_ranking',   '#F59E0B66'),
+      solidEdge   ('e6', 'tool_executor', 'rrf_ranking',   '#F9731666'),
+      solidEdge   ('e7', 'rrf_ranking',   'reranker',      '#8B5CF666'),
+      solidEdge   ('e8', 'reranker',      'responder',     '#8B5CF666'),
     ],
   },
 
   hitl: {
     nodes: [
-      mkNode('trigger',        'trigger',        'User Input',         360, 0),
-      mkLockedNode('guardrail_in',  'guardrail', 'Guardrail — Input',  360, 110),
-      mkNode('planner',        'planner',        'Planner',            360, 220),
-      mkNode('kb_search',      'kb_search',      'KB Search',          160, 350, { kbEndpoint: 'http://knowledge-space/api/kb/', kbName: 'kb_a05_violations' }),
-      mkNode('mcp_tool',       'mcp_tool',       'MCP Tool',           560, 350, { mcpServerUrl: 'http://mcp.tenant.gov.vn/sse', allowedTools: ['tra_cuu_phat_nguoi', 'query_dashboard'] }),
-      mkNode('rrf_ranking',    'rrf_ranking',    'RRF Ranking',        360, 490),
-      mkNode('reranker',       'reranker',       'Reranker',           360, 600, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
-      mkNode('responder',      'responder',      'Responder',          360, 710, { systemPromptName: 'prompt_default', temperature: 0.2, maxTokens: 1000 }),
-      mkLockedNode('guardrail_out', 'guardrail', 'Guardrail — Output', 360, 820),
-      mkNode('human_approval', 'human_approval', 'Human Review',       360, 930, { approverRole: 'MANAGER' }),
-      mkNode('output',         'output',         'Response',           360, 1040),
+      mkNode('planner',        'planner',        'Planner',        340, 0),
+      mkNode('kb_search',      'kb_search',      'KB Search',      40,  130),
+      mkNode('mcp',            'mcp',            'MCP Tool',       340, 130, { mcpServerUrl: 'http://mcp.tenant.gov.vn/sse', allowedTools: ['tra_cuu_phat_nguoi', 'query_dashboard'] }),
+      mkNode('tool_executor',  'tool_executor',  'Tool Executor',  640, 130, { allowedBuiltinTools: ['text_to_sql', 'web_search'] }),
+      mkNode('rrf_ranking',    'rrf_ranking',    'RRF Ranking',    340, 270),
+      mkNode('reranker',       'reranker',       'Reranker',       340, 380, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
+      mkNode('responder',      'responder',      'Responder',      340, 490, { systemPromptName: 'prompt_default', temperature: 0.2, maxTokens: 1000 }),
+      mkNode('human_approval', 'human_approval', 'Human Review',   340, 600, { approverRole: 'MANAGER' }),
     ],
     edges: [
-      lockedEdge  ('e1',  'trigger',        'guardrail_in'),
-      lockedEdge  ('e2',  'guardrail_in',   'planner'),
-      labeledSolid('e3',  'planner',        'kb_search',      'always',        '#10B98199'),
-      dashedEdge  ('e4',  'planner',        'mcp_tool',       'if tool_calls', '#F59E0B99'),
-      solidEdge   ('e5',  'kb_search',      'rrf_ranking',    '#10B98166'),
-      solidEdge   ('e6',  'mcp_tool',       'rrf_ranking',    '#F59E0B66'),
-      solidEdge   ('e7',  'rrf_ranking',    'reranker',       '#8B5CF666'),
-      solidEdge   ('e8',  'reranker',       'responder',      '#8B5CF666'),
-      lockedEdge  ('e9',  'responder',      'guardrail_out'),
-      lockedEdge  ('e10', 'guardrail_out',  'human_approval'),
-      solidEdge   ('e11', 'human_approval', 'output',         '#D9B86C66'),
+      labeledSolid('e1', 'planner',        'kb_search',      'always',        '#10B98199'),
+      dashedEdge  ('e2', 'planner',        'mcp',            'if mcp_calls',  '#F59E0B99'),
+      dashedEdge  ('e3', 'planner',        'tool_executor',  'if tool_calls', '#F9731699'),
+      solidEdge   ('e4', 'kb_search',      'rrf_ranking',    '#10B98166'),
+      solidEdge   ('e5', 'mcp',            'rrf_ranking',    '#F59E0B66'),
+      solidEdge   ('e6', 'tool_executor',  'rrf_ranking',    '#F9731666'),
+      solidEdge   ('e7', 'rrf_ranking',    'reranker',       '#8B5CF666'),
+      solidEdge   ('e8', 'reranker',       'responder',      '#8B5CF666'),
+      solidEdge   ('e9', 'responder',      'human_approval', '#D9B86C66'),
     ],
   },
 };
@@ -531,6 +573,27 @@ const InfoNote = ({ text }: { text: string }) => (
 
 const MCP_TOOLS = ['tra_cuu_phat_nguoi', 'query_dashboard', 'send_alert', 'export_report'];
 
+const BUILTIN_TOOLS: Array<{ name: string; hint: string; category: 'data' | 'filesystem' | 'filesystem-write' | 'shell' | 'langchain' | 'agent' }> = [
+  // Data
+  { name: 'text_to_sql',       hint: 'SQL từ câu hỏi tự nhiên',       category: 'data'             },
+  { name: 'text_to_pandas',    hint: 'Phân tích file CSV/Excel',       category: 'data'             },
+  // File system — read
+  { name: 'file_read',         hint: 'Đọc file text',                  category: 'filesystem'       },
+  { name: 'grep',              hint: 'Tìm regex trong file',           category: 'filesystem'       },
+  { name: 'glob',              hint: 'Liệt kê file theo pattern',      category: 'filesystem'       },
+  // File system — write
+  { name: 'file_write',        hint: 'Ghi/tạo file',                   category: 'filesystem-write' },
+  { name: 'file_edit',         hint: 'Sửa file (string replacement)',  category: 'filesystem-write' },
+  // Shell
+  { name: 'bash',              hint: 'Thực thi lệnh shell',            category: 'shell'            },
+  // LangChain
+  { name: 'web_search',        hint: 'Tìm kiếm web (DuckDuckGo)',      category: 'langchain'        },
+  { name: 'wikipedia',         hint: 'Tra cứu Wikipedia',              category: 'langchain'        },
+  { name: 'calculator',        hint: 'Tính toán số học',               category: 'langchain'        },
+  // Multi-agent
+  { name: 'delegate_to_agent', hint: 'Ủy quyền cho agent khác',       category: 'agent'            },
+];
+
 // â”€â”€â”€ Config Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface ConfigPanelProps {
@@ -589,18 +652,10 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
         )}
 
         {d.nodeType === 'kb_search' && (
-          <>
-            <Field label="KB Endpoint">
-              <TextInput value={(d.kbEndpoint as string) || ''} onChange={v => upd('kbEndpoint', v)} placeholder="http://knowledge-space/api/kb/" />
-            </Field>
-            <Field label="KB Name">
-              <TextInput value={(d.kbName as string) || ''} onChange={v => upd('kbName', v)} placeholder="kb_a05_violations" />
-            </Field>
-            <InfoNote text="Knowledge Space API tá»± biáº¿t search mode" />
-          </>
+          <InfoNote text="Tự động tìm kiếm knowledge base của tenant hiện tại. Không cần cấu hình thêm." />
         )}
 
-        {d.nodeType === 'mcp_tool' && (
+        {d.nodeType === 'mcp' && (
           <>
             <Field label="MCP Server URL">
               <TextInput value={(d.mcpServerUrl as string) || ''} onChange={v => upd('mcpServerUrl', v)} placeholder="http://mcp.tenant.gov.vn/sse" />
@@ -627,6 +682,153 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
             <InfoNote text="Planner Ä‘á»c danh sÃ¡ch nÃ y Ä‘á»ƒ quyáº¿t Ä‘á»‹nh" />
           </>
         )}
+
+        {d.nodeType === 'tool_executor' && (() => {
+          const selected = (d.allowedBuiltinTools as string[]) || [];
+          const toggle   = (name: string) => upd(
+            'allowedBuiltinTools',
+            selected.includes(name) ? selected.filter(t => t !== name) : [...selected, name],
+          );
+          const hasSql    = selected.includes('text_to_sql');
+          const hasPandas = selected.includes('text_to_pandas');
+          const hasFile   = selected.includes('file_read');
+
+          return (
+            <>
+              {(['data', 'filesystem', 'filesystem-write', 'shell', 'langchain', 'agent'] as const).map(cat => (
+                <div key={cat}>
+                  <div className={`text-[9px] font-black uppercase tracking-widest mb-2 ${
+                    cat === 'data'             ? 'text-orange-400'  :
+                    cat === 'filesystem'       ? 'text-emerald-400' :
+                    cat === 'filesystem-write' ? 'text-yellow-500'  :
+                    cat === 'shell'            ? 'text-red-400'     :
+                    cat === 'langchain'        ? 'text-purple-400'  :
+                                                 'text-sky-400'
+                  }`}>
+                    {cat === 'data'             ? 'Data'              :
+                     cat === 'filesystem'       ? 'File system (read)':
+                     cat === 'filesystem-write' ? 'File system (write)':
+                     cat === 'shell'            ? 'Shell'             :
+                     cat === 'langchain'        ? 'LangChain'         :
+                                                  'Multi-agent'}
+                  </div>
+                  <div className="space-y-2">
+                    {BUILTIN_TOOLS.filter(t => t.category === cat).map(tool => {
+                      const checked = selected.includes(tool.name);
+                      return (
+                        <label key={tool.name} className="flex items-start gap-2.5 cursor-pointer group">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggle(tool.name)}
+                            className="w-3.5 h-3.5 mt-0.5 rounded accent-orange-500 cursor-pointer shrink-0"
+                          />
+                          <div>
+                            <span className="text-[11px] font-mono text-slate-400 group-hover:text-white transition-colors">{tool.name}</span>
+                            <div className="text-[9px] text-slate-700">{tool.hint}</div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+
+              {hasSql && (
+                <>
+                  <div className="h-px bg-white/10" />
+                  <div className="text-[9px] font-black text-orange-400 uppercase tracking-widest">text_to_sql</div>
+                  <Field label="DB URL">
+                    <TextInput value={(d.dbUrl as string) || ''} onChange={v => upd('dbUrl', v)} placeholder="postgresql://user:pass@host/db" />
+                  </Field>
+                  <Field label="Schema Hint (optional)">
+                    <textarea
+                      value={(d.schemaHint as string) || ''}
+                      onChange={e => upd('schemaHint', e.target.value)}
+                      placeholder="TABLE violations (id, date, plate, amount)"
+                      rows={3}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-xs text-white font-mono focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-slate-700 resize-none"
+                    />
+                  </Field>
+                </>
+              )}
+
+              {hasPandas && (
+                <>
+                  <div className="h-px bg-white/10" />
+                  <div className="text-[9px] font-black text-orange-400 uppercase tracking-widest">text_to_pandas</div>
+                  <Field label="Default File Path">
+                    <TextInput value={(d.defaultFilePath as string) || ''} onChange={v => upd('defaultFilePath', v)} placeholder="/data/reports/violations.csv" />
+                  </Field>
+                  <Field label="Allowed Dir">
+                    <TextInput value={(d.pandasAllowedDir as string) || ''} onChange={v => upd('pandasAllowedDir', v)} placeholder="/data/reports" />
+                  </Field>
+                </>
+              )}
+
+              {hasFile && (
+                <>
+                  <div className="h-px bg-white/10" />
+                  <div className="text-[9px] font-black text-orange-400 uppercase tracking-widest">file_read</div>
+                  <Field label="Allowed Dir">
+                    <TextInput value={(d.fileReadAllowedDir as string) || ''} onChange={v => upd('fileReadAllowedDir', v)} placeholder="/data/docs" />
+                  </Field>
+                </>
+              )}
+
+              {selected.includes('grep') && (
+                <>
+                  <div className="h-px bg-white/10" />
+                  <div className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">grep</div>
+                  <Field label="Allowed Dir">
+                    <TextInput value={(d.grepAllowedDir as string) || ''} onChange={v => upd('grepAllowedDir', v)} placeholder="/data" />
+                  </Field>
+                </>
+              )}
+
+              {selected.includes('glob') && (
+                <>
+                  <div className="h-px bg-white/10" />
+                  <div className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">glob</div>
+                  <Field label="Allowed Dir">
+                    <TextInput value={(d.globAllowedDir as string) || ''} onChange={v => upd('globAllowedDir', v)} placeholder="/data" />
+                  </Field>
+                </>
+              )}
+
+              {(selected.includes('file_write') || selected.includes('file_edit')) && (
+                <>
+                  <div className="h-px bg-white/10" />
+                  <div className="text-[9px] font-black text-yellow-500 uppercase tracking-widest">file_write / file_edit</div>
+                  <Field label="Allowed Dir">
+                    <TextInput value={(d.writeAllowedDir as string) || ''} onChange={v => upd('writeAllowedDir', v)} placeholder="/data/output" />
+                  </Field>
+                </>
+              )}
+
+              {selected.includes('bash') && (
+                <>
+                  <div className="h-px bg-white/10" />
+                  <div className="text-[9px] font-black text-red-400 uppercase tracking-widest">bash</div>
+                  <label className="flex items-center gap-2.5 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={!!(d.bashEnabled)}
+                      onChange={e => upd('bashEnabled', e.target.checked)}
+                      className="w-3.5 h-3.5 rounded accent-red-500 cursor-pointer"
+                    />
+                    <span className="text-[11px] text-slate-400 group-hover:text-white transition-colors">Enable execution</span>
+                  </label>
+                  <Field label="Working Dir (cwd)">
+                    <TextInput value={(d.bashCwd as string) || ''} onChange={v => upd('bashCwd', v)} placeholder="/workspace" />
+                  </Field>
+                </>
+              )}
+
+              <InfoNote text="Planner tự động biết các tool này và quyết định khi nào gọi dựa vào câu hỏi user." />
+            </>
+          );
+        })()}
 
         {d.nodeType === 'rrf_ranking' && (
           <InfoNote text={`k=${rrfK ?? '…'}`} />
@@ -673,6 +875,10 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
         {['condition', 'db_query', 'send_notification', 'loop'].includes(d.nodeType) && (
           <InfoNote text="Node nÃ y chÆ°a cÃ³ config. KÃ©o vÃ o canvas vÃ  káº¿t ná»‘i vá»›i cÃ¡c node khÃ¡c." />
         )}
+
+        {d.nodeType === 'judge' && (
+          <InfoNote text="Đánh giá toàn bộ trace sau responder. Route lại nếu lỗi: RETRIEVAL→kb_search, REASONING→responder, TOOL→tool_executor, DATA_QUALITY→human_approval." />
+        )}
       </div>
     </motion.div>
   );
@@ -685,7 +891,8 @@ const ALL_LIBRARY_NODES: Array<{
 }> = [
   { nodeType: 'planner',           label: 'Planner',           color: '#3B82F6', Icon: Bot,         allowMultiple: false },
   { nodeType: 'kb_search',         label: 'KB Search',         color: '#10B981', Icon: Database,    allowMultiple: true  },
-  { nodeType: 'mcp_tool',          label: 'MCP Tool',          color: '#F59E0B', Icon: Wrench,      allowMultiple: true  },
+  { nodeType: 'mcp',               label: 'MCP Tool',          color: '#F59E0B', Icon: Wrench,      allowMultiple: true  },
+  { nodeType: 'tool_executor',     label: 'Tool Executor',     color: '#F97316', Icon: Zap,         allowMultiple: false },
   { nodeType: 'rrf_ranking',       label: 'RRF Ranking',       color: '#8B5CF6', Icon: Layers,      allowMultiple: false },
   { nodeType: 'reranker',          label: 'Reranker',          color: '#8B5CF6', Icon: Filter,      allowMultiple: false },
   { nodeType: 'responder',         label: 'Responder',         color: '#3B82F6', Icon: Cpu,         allowMultiple: false },
@@ -694,6 +901,7 @@ const ALL_LIBRARY_NODES: Array<{
   { nodeType: 'condition',         label: 'Condition',         color: '#6B7280', Icon: GitBranch,   allowMultiple: true  },
   { nodeType: 'send_notification', label: 'Send Notification', color: '#EF4444', Icon: Bell,        allowMultiple: true  },
   { nodeType: 'loop',              label: 'Loop',              color: '#3B82F6', Icon: RefreshCw,   allowMultiple: false },
+  { nodeType: 'judge',             label: 'Judge',             color: '#F59E0B', Icon: CheckCircle2, allowMultiple: false },
 ];
 
 // â”€â”€â”€ Node Library â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -863,8 +1071,19 @@ export interface BuilderProps {
   sourceVersionId?: string;
 }
 
-// Đảm bảo node/edge nào có data.locked=true đều có deletable:false,
-// bất kể source (DB, initialNodes, sourceVersion canvas).
+// System nodes không phải user-designed, bỏ khi load từ DB (guardrail là banner, không phải RF node)
+const SYSTEM_NODE_TYPES = new Set(['guardrail', 'trigger', 'output']);
+
+const stripSystemNodes = (nodes: any[], edges: any[]) => {
+  const sysIds = new Set(
+    nodes.filter(n => SYSTEM_NODE_TYPES.has(n.data?.nodeType)).map((n: any) => n.id),
+  );
+  return {
+    nodes: nodes.filter(n => !sysIds.has(n.id)),
+    edges: edges.filter(e => !sysIds.has(e.source) && !sysIds.has(e.target)),
+  };
+};
+
 const withLockedNodes = (nodes: any[]): any[] =>
   nodes.map(n => n.data?.locked ? { ...n, deletable: false } : n);
 
@@ -877,6 +1096,7 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
   const [ctxMenu, setCtxMenu]           = useState<CtxMenuState | null>(null);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [saving, setSaving]             = useState(false);
+  const [canvasLoading, setCanvasLoading] = useState(!!workflowVersionId && !initialNodes?.length);
   const [libraryNodes, setLibraryNodes] = useState(ALL_LIBRARY_NODES);
   const rfInstance                       = useRef<ReactFlowInstance<Node<FlowNodeData>, Edge> | null>(null);
   const [versions, setVersions]         = useState<WorkflowVersion[]>([]);
@@ -906,32 +1126,36 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
       .then(data => {
         const hasDbCanvas = data.nodes?.length > 0 || data.edges?.length > 0;
         if (hasDbCanvas) {
-          // Existing draft đã có canvas trong DB
-          setNodes(withLockedNodes(data.nodes));
-          setEdges(withLockedEdges(data.edges ?? []));
-          savedSnapshot.current = snap(data.nodes, data.edges ?? []);
+          const cleaned = stripSystemNodes(data.nodes, data.edges ?? []);
+          setNodes(withLockedNodes(cleaned.nodes));
+          setEdges(withLockedEdges(cleaned.edges));
+          savedSnapshot.current = snap(cleaned.nodes, cleaned.edges);
+          setCanvasLoading(false);
         } else if (initialNodes || initialEdges) {
-          // Workflow mới: load template vào React state, DB vẫn rỗng
-          setNodes(withLockedNodes(initialNodes ?? []));
-          setEdges(withLockedEdges(initialEdges ?? []));
+          const cleaned = stripSystemNodes(initialNodes ?? [], initialEdges ?? []);
+          setNodes(withLockedNodes(cleaned.nodes));
+          setEdges(withLockedEdges(cleaned.edges));
           savedSnapshot.current = JSON.stringify({ nodes: [], edges: [] });
+          setCanvasLoading(false);
         } else if (sourceVersionId) {
-          // Draft mới: load canvas từ published version vào React state, DB vẫn rỗng
           fetch(`${FLOW_BUILDER_URL}/api/workflow-versions/${sourceVersionId}/canvas`)
             .then(r => r.json())
             .then(src => {
-              setNodes(withLockedNodes(src.nodes ?? []));
-              setEdges(withLockedEdges(src.edges ?? []));
+              const cleaned = stripSystemNodes(src.nodes ?? [], src.edges ?? []);
+              setNodes(withLockedNodes(cleaned.nodes));
+              setEdges(withLockedEdges(cleaned.edges));
               savedSnapshot.current = JSON.stringify({ nodes: [], edges: [] });
+              setCanvasLoading(false);
             })
-            .catch(() => {});
+            .catch(() => { setCanvasLoading(false); });
         } else {
           setNodes([]);
           setEdges([]);
           savedSnapshot.current = JSON.stringify({ nodes: [], edges: [] });
+          setCanvasLoading(false);
         }
       })
-      .catch(() => {});
+      .catch(() => { setCanvasLoading(false); });
   }, [activeVersionId]);
 
   // Fetch node registry từ workflow-runtime
@@ -1000,9 +1224,11 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
 
   // â”€â”€ Flow state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const initFlow = useMemo(() => {
+    // Nếu load từ DB (workflowVersionId có), useEffect sẽ set nodes/edges sau — khởi tạo rỗng tránh flash template
+    if (workflowVersionId) return { nodes: [], edges: [] };
     if (workflow && workflow.nodes.length > 0) return transformWorkflowToFlow(workflow);
     return TEMPLATE_FLOWS[template] ?? TEMPLATE_FLOWS['multi-agent'];
-  }, [workflow, template]);
+  }, [workflow, template, workflowVersionId]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initFlow.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initFlow.edges);
@@ -1183,6 +1409,14 @@ ${edges.map(e => `  - from: "${e.source}"  to: "${e.target}"`).join('\n')}`;
         className="fixed inset-0 z-[100] flex flex-col bg-[#0d1117] text-slate-200"
         onClick={() => setCtxMenu(null)}
       >
+        {canvasLoading && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#0d1117]">
+            <div className="flex items-center gap-2.5 text-slate-400 text-sm">
+              <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+              Loading canvas…
+            </div>
+          </div>
+        )}
         {/* â”€â”€ Toolbar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <div className="h-14 border-b border-white/10 bg-[#0d1117] flex items-center justify-between px-5 shrink-0">
           <div className="flex items-center gap-4">
@@ -1264,6 +1498,8 @@ ${edges.map(e => `  - from: "${e.source}"  to: "${e.target}"`).join('\n')}`;
             onDragOver={onDragOver}
             onDrop={onDrop}
           >
+            <GuardrailBanner position="top" />
+            <GuardrailBanner position="bottom" />
             <AnimatePresence mode="wait">
               {viewMode === 'VISUAL' ? (
                 <motion.div

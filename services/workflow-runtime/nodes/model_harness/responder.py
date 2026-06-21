@@ -12,6 +12,13 @@ logger = logging.getLogger(__name__)
 _LITELLM_BASE = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
 _LITELLM_KEY  = os.environ.get("LITELLM_API_KEY",  "sk-dev")
 
+_PROMPTS_DIR     = os.path.join(os.path.dirname(__file__), "..", "..", "prompts")
+_SYSTEM_TEMPLATE = open(os.path.join(_PROMPTS_DIR, "responder_system.txt"),          encoding="utf-8").read()
+_OPTIONS_SUFFIX  = open(os.path.join(_PROMPTS_DIR, "responder_options_suffix.txt"),  encoding="utf-8").read()
+_LANGUAGE_RULE   = "IMPORTANT — Language: Respond in {LANGUAGE}. Vietnamese messages often contain English technical terms — still respond entirely in Vietnamese in that case."
+
+_LANGUAGE_LABELS = {"vi": "Vietnamese", "en": "English"}
+
 
 def _to_lc_messages(messages: list[dict]) -> list:
     role_map = {"user": HumanMessage, "assistant": AIMessage}
@@ -24,7 +31,13 @@ def _to_lc_messages(messages: list[dict]) -> list:
 
 async def responder_node(state: AgentState) -> dict:
     cfg = state["config"]
-    system_prompt = cfg["system_prompt"]
+    intent = state.get("intent", "question")
+    language = state.get("language") or "vi"
+    lang_label = _LANGUAGE_LABELS.get(language, "Vietnamese")
+    system_prompt = _SYSTEM_TEMPLATE.replace("{SYSTEM_PROMPT}", cfg["system_prompt"])
+    if intent == "task":
+        system_prompt += "\n\n" + _OPTIONS_SUFFIX
+    system_prompt += "\n\n" + _LANGUAGE_RULE.replace("{LANGUAGE}", lang_label)
 
     if state.get("reranked_chunks"):
         max_chunks = cfg.get("context_max_chunks", 5)

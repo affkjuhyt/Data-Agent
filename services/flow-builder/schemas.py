@@ -20,6 +20,8 @@ class CanvasPayload(BaseModel):
 
 class PublishRequest(BaseModel):
     workflow_id: str
+    changelog: Optional[str] = None
+    kb_connection_id: Optional[str] = None
 
 
 class PublishVersionRequest(BaseModel):

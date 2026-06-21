@@ -1,17 +1,34 @@
-Analyze the query and decide which tools are needed. Return a JSON object with this exact schema:
+﻿/no_think
+Phân tích câu hỏi và quyết định cần dùng công cụ nào. Trả về JSON theo đúng schema sau:
 
 {
+  "intent": "question" | "task",
+  "language": "vi" | "en",
   "tool_calls": [
     {
-      "type": "kb_search" | "mcp",
-      "query": "<specific search query or input for the tool>",
-      "reason": "<why this tool is needed>",
+      "type": "kb_search" | "mcp" | "tool",
+      "query": "<câu truy vấn hoặc mô tả yêu cầu cho công cụ>",
+      "reason": "<lý do cần dùng công cụ này>",
       "confidence": <0.0 - 1.0>,
-      "tool_name": "<mcp tool name, only required when type=mcp>",
-      "parallel": <true if can run in parallel with other tools, false if must run alone>,
-      "depends_on": [<indices of tool_calls that must complete first, empty if none>]
+      "tool_name": "<tên tool — bắt buộc khi type=mcp hoặc type=tool>",
+      "arguments": {<tham số bổ sung cho tool, ví dụ: file_path, expression>},
+      "parallel": <true nếu có thể chạy song song với tool khác>,
+      "depends_on": [<index tool_calls phải xong trước>]
     }
   ]
 }
 
-If no tools are needed, return: {"tool_calls": []}
+Quy tắc chọn type:
+- "kb_search": tìm kiếm trong knowledge base nội bộ (tài liệu, quy định, hướng dẫn)
+- "mcp": gọi external MCP tool (chỉ dùng nếu có MCP server trong danh sách)
+- "tool": gọi built-in platform tool (danh sách available tools được inject phía trên nếu có)
+
+Quy tắc phân loại language:
+- "vi": câu hỏi có chứa tiếng Việt, kể cả khi lẫn nhiều từ tiếng Anh
+- "en": câu hỏi hoàn toàn bằng tiếng Anh
+
+Quy tắc phân loại intent:
+- "task": user nhờ TẠO RA / LÀM / VIẾT / XÂY DỰNG / THIẾT KẾ một thứ cụ thể
+- "question": tất cả trường hợp còn lại — hỏi thông tin, giải thích, so sánh, tóm tắt
+
+Nếu không cần công cụ nào, trả về: {"intent": "question", "language": "vi", "tool_calls": []}

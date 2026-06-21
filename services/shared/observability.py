@@ -168,6 +168,27 @@ def _instrument_http_clients() -> None:
         pass
 
 
+def _instrument_databases() -> None:
+    try:
+        from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+
+        SQLAlchemyInstrumentor().instrument()
+    except Exception:
+        pass
+    try:
+        from opentelemetry.instrumentation.redis import RedisInstrumentor
+
+        RedisInstrumentor().instrument()
+    except Exception:
+        pass
+    try:
+        from opentelemetry.instrumentation.pymongo import PymongoInstrumentor
+
+        PymongoInstrumentor().instrument()
+    except Exception:
+        pass
+
+
 def setup_observability(service_name: str, app=None) -> None:
     """Single call for any service.
 
@@ -177,6 +198,7 @@ def setup_observability(service_name: str, app=None) -> None:
     """
     configure_logging(service_name)
     init_tracing(service_name)
+    _instrument_databases()
     if app is not None:
         instrument_fastapi(app)
     else:

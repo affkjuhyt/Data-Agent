@@ -6,7 +6,7 @@ from sqlalchemy import (
     Boolean, DateTime, Float, ForeignKey, Index, Integer, SmallInteger,
     String, Text, UniqueConstraint, func, text,
 )
-from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from basemodel.services_databaseconnector.postgres_model import register
@@ -203,7 +203,10 @@ class AgentsORM(Base):
     )
     workflows: Mapped[list["WorkflowsORM"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
     memories: Mapped[list["AgentMemoriesORM"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
+    episodic_memories: Mapped[list["EpisodicMemoryORM"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
+    future_memories: Mapped[list["FutureMemoryORM"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
     memory_policies: Mapped[list["MemoryPolicyORM"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
+    workflow_memories: Mapped[list["WorkflowMemoryORM"]] = relationship(back_populates="agent", cascade="all, delete-orphan")
 
 
 @register("orm")
@@ -337,8 +340,13 @@ class AgentMemoriesORM(Base):
         Index("idx_agentmemories_tenant", "tenant_id"),
         Index("idx_agentmemories_agent_scope", "agent_id", "scope"),
         Index("idx_agentmemories_agent_user_ref", "agent_id", "user_ref"),
+        Index("idx_agentmemories_user_domain", "tenant_id", "agent_id", "user_ref", "domain"),
         Index("idx_agentmemories_deleted_at", "deleted_at",postgresql_where=text("deleted_at IS NULL")),
         Index("idx_agentmemories_inserted_at_desc", text("inserted_at DESC")),
+        UniqueConstraint(
+            "tenant_id", "agent_id", "scope", "user_ref", "domain", "fact_key",
+            name="uq_agentmemories_fact", postgresql_nulls_not_distinct=True,
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -347,6 +355,8 @@ class AgentMemoriesORM(Base):
     scope: Mapped[str] = mapped_column(String(20), nullable=False)
     user_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     memory_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    domain: Mapped[str] = mapped_column(String(64), default="general", server_default="general", nullable=False)
+    fact_key: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     embedding_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     importance: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -358,6 +368,70 @@ class AgentMemoriesORM(Base):
 
     tenant: Mapped["TenantsORM"] = relationship(back_populates="agent_memories")
     agent: Mapped["AgentsORM"] = relationship(back_populates="memories")
+
+
+@register("orm")
+class EpisodicMemoryORM(Base):
+    """LTM Episodic Past — timestamped events (completed tasks, user corrections)."""
+    __tablename__ = "EpisodicMemory"
+    __table_args__ = (
+        Index("idx_episodicmemory_tenant", "tenant_id"),
+        Index("idx_episodicmemory_user_time", "user_ref", text("created_at DESC")),
+        Index("idx_episodicmemory_expires", "expires_at", postgresql_where=text("expires_at IS NOT NULL")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    agent_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Agents.id"), nullable=False, index=True)
+    user_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    domain: Mapped[str] = mapped_column(String(64), default="general", server_default="general", nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    importance_score: Mapped[float] = mapped_column(Float, default=0.5, server_default="0.5", nullable=False)
+    embedding_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    expires_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="active", server_default="active", nullable=False)
+
+    tenant: Mapped["TenantsORM"] = relationship(back_populates="episodic_memories")
+    agent: Mapped["AgentsORM"] = relationship(back_populates="episodic_memories")
+
+
+@register("orm")
+class FutureMemoryORM(Base):
+    """LTM Episodic Future — prospective memory (reminders, scheduled intents)."""
+    __tablename__ = "FutureMemory"
+    __table_args__ = (
+        Index("idx_futurememory_tenant", "tenant_id"),
+        Index("idx_futurememory_user_status_time", "user_ref", "status", "execution_time"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    agent_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Agents.id"), nullable=False, index=True)
+    user_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    execution_time: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    recurrence: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", server_default="pending", nullable=False)
+    executed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    tenant: Mapped["TenantsORM"] = relationship(back_populates="future_memories")
+    agent: Mapped["AgentsORM"] = relationship(back_populates="future_memories")
+
+
+@register("orm")
+class MemoryRetentionConfigORM(Base):
+    """Per tenant+domain retention/cap config — doc §3.3, replaces the global MEMORY_RETENTION_DAYS env var."""
+    __tablename__ = "MemoryRetentionConfig"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), primary_key=True)
+    domain: Mapped[str] = mapped_column(String(64), primary_key=True)
+    retention_days: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # NULL = keep forever
+    max_records_per_user: Mapped[int] = mapped_column(Integer, default=500, server_default="500", nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    tenant: Mapped["TenantsORM"] = relationship(back_populates="memory_retention_configs")
 
 
 @register("orm")
@@ -378,6 +452,58 @@ class MemoryPolicyORM(Base):
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     agent: Mapped["AgentsORM"] = relationship(back_populates="memory_policies")
+
+
+@register("orm")
+class WorkflowMemoryORM(Base):
+    """LTM Workflow Memory (doc §3.7) — Episodic Memory specific to data
+    execution context: which task_type/pipeline ran, with what params, and
+    whether it succeeded. Lets the agent retrieve a similar past run instead
+    of re-planning from scratch."""
+    __tablename__ = "WorkflowMemory"
+    __table_args__ = (
+        Index("idx_workflowmemory_tenant", "tenant_id"),
+        Index("idx_workflowmemory_task_type", "tenant_id", "agent_id", "task_type"),
+        Index("idx_workflowmemory_created_at_desc", text("created_at DESC")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    agent_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Agents.id"), nullable=False, index=True)
+    task_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    task_description: Mapped[str] = mapped_column(Text, nullable=False)
+    param_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    outcome: Mapped[str] = mapped_column(String(16), nullable=False)
+    duration_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    qdrant_point_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    tenant: Mapped["TenantsORM"] = relationship(back_populates="workflow_memories")
+    agent: Mapped["AgentsORM"] = relationship(back_populates="workflow_memories")
+
+
+@register("orm")
+class SchemaMemoryORM(Base):
+    """LTM Schema Memory (doc §3.7) — catalog of tables/columns the agent is
+    allowed to query. Admin-managed; the agent only ever reads this. Used to
+    inject DDL-like context before SQL generation instead of a static,
+    hand-typed schema_hint."""
+    __tablename__ = "SchemaMemory"
+    __table_args__ = (
+        Index("idx_schemamemory_lookup", "tenant_id", "data_source"),
+        UniqueConstraint("tenant_id", "data_source", "table_name", name="uq_schemamemory_table"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    data_source: Mapped[str] = mapped_column(String(64), nullable=False)
+    table_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    column_metadata: Mapped[list] = mapped_column(JSONB, nullable=False)
+    business_description: Mapped[str] = mapped_column(Text, nullable=False)
+    access_roles: Mapped[list[str]] = mapped_column(ARRAY(String), default=list, server_default="{}", nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    tenant: Mapped["TenantsORM"] = relationship(back_populates="schema_memories")
 
 
 # ─── Conversation ─────────────────────────────────────────────────────────────

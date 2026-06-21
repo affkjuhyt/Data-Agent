@@ -19,6 +19,11 @@ services:
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-change-me}
       QDRANT_URL: http://qdrant:6333
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_SASL_USERNAME: workflow-runtime
+      KAFKA_SASL_PASSWORD: ${WORKFLOW_RUNTIME_KAFKA_PASSWORD}
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
       OTEL_SERVICE_NAME: workflow-runtime
     depends_on:
       postgres:
@@ -29,6 +34,8 @@ services:
         condition: service_started
       litellm:
         condition: service_started
+      kafka:
+        condition: service_healthy
 
   flow-builder:
     build:
@@ -233,6 +240,37 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+
+  memory-consumer:
+    build:
+      context: ../services/memory-consumer
+    container_name: dataagent-memory-consumer
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: memory.extraction.requested
+      KAFKA_DLQ_TOPIC: memory.extraction.dlq
+      KAFKA_GROUP_ID: memory-consumer-group
+      KAFKA_SASL_USERNAME: memory-consumer
+      KAFKA_SASL_PASSWORD: ${MEMORY_CONSUMER_KAFKA_PASSWORD}
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-dataagent}
+      DB_USER: ${POSTGRES_USER:-admin}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      QDRANT_URL: http://qdrant:6333
+      LITELLM_BASE_URL: http://litellm:4000
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      litellm:
+        condition: service_started
 
   jwks-refresher:
     build:
