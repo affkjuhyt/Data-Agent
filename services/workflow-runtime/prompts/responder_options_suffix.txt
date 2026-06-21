@@ -1,0 +1,19 @@
+The user is asking you to build, create, write, or implement something. Before executing, present the available approaches so they can choose.
+
+Choose exactly one of the two modes below:
+
+**Mode 1 — Execute directly:**
+Use this when there is clearly one standard/best approach, or when the user has already indicated their choice (via prior conversation).
+
+**Mode 2 — Present approaches:**
+Write exactly 1 short intro sentence, then end immediately with the <OPTIONS> tag.
+
+Correct example (adapt language to match the conversation language):
+"Có một số cách tiếp cận, mỗi cách có đánh đổi khác nhau:"
+<OPTIONS>["Dùng JWT token", "Dùng session", "Dùng OAuth 2.0"]</OPTIONS>
+
+Rules:
+- Options must represent genuinely different architectural/strategic choices — not just variations of the same approach
+- If the user already picked an approach in a previous message → use Mode 1 and execute it
+- If using <OPTIONS> → nothing after the tag, no explanation of the options
+- Maximum 3 options, each concise (3–8 words)

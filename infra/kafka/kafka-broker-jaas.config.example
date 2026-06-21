@@ -19,7 +19,9 @@ KafkaServer {
     user_release-worker="REPLACE_WITH_RELEASE_WORKER_PASSWORD"
     user_drift-detector="REPLACE_WITH_DRIFT_DETECTOR_PASSWORD"
     user_scan-runner="REPLACE_WITH_SCAN_RUNNER_PASSWORD"
-    user_notification-consumer="REPLACE_WITH_NOTIFICATION_CONSUMER_PASSWORD";
+    user_notification-consumer="REPLACE_WITH_NOTIFICATION_CONSUMER_PASSWORD"
+    user_workflow-runtime="REPLACE_WITH_WORKFLOW_RUNTIME_PASSWORD"
+    user_memory-consumer="REPLACE_WITH_MEMORY_CONSUMER_PASSWORD";
 };
 
 // KafkaClient uses the same admin account — create a dedicated management

@@ -6,23 +6,73 @@ model_list:
 
   - model_name: planner
     litellm_params:
-      model: gemini/gemini-2.0-flash
-      api_key: os.environ/GEMINI_API_KEY
+      model: openai/qwen3-8b-instruct
+      api_base: http://host.docker.internal:8088/v1
+      api_key: not-needed
+      extra_body:
+        enable_thinking: false
 
   - model_name: responder
     litellm_params:
-      model: gemini/gemini-2.0-flash
-      api_key: os.environ/GEMINI_API_KEY
+      model: openai/qwen3-8b-instruct
+      api_base: http://host.docker.internal:8088/v1
+      api_key: not-needed
+      extra_body:
+        enable_thinking: false
 
   - model_name: guardrail
     litellm_params:
-      model: gemini/gemini-2.0-flash
-      api_key: os.environ/GEMINI_API_KEY
+      model: openai/qwen3-8b-instruct
+      api_base: http://host.docker.internal:8088/v1
+      api_key: not-needed
+      extra_body:
+        enable_thinking: false
+
+  - model_name: rewriter
+    litellm_params:
+      model: openai/qwen3-8b-instruct
+      api_base: http://host.docker.internal:8088/v1
+      api_key: not-needed
+      extra_body:
+        enable_thinking: false
+
+  - model_name: suggester
+    litellm_params:
+      model: openai/qwen3-8b-instruct
+      api_base: http://host.docker.internal:8088/v1
+      api_key: not-needed
+      extra_body:
+        enable_thinking: false
+
+  - model_name: judge
+    litellm_params:
+      model: openai/qwen3-8b-instruct
+      api_base: http://host.docker.internal:8088/v1
+      api_key: not-needed
+      extra_body:
+        enable_thinking: false
 
   - model_name: embedder
     litellm_params:
       model: openai/text-embedding-3-small
       api_key: os.environ/OPENAI_API_KEY
+
+  # Local LLM via llama.cpp server (CPU-only, run docker-compose.llm.yml first)
+  - model_name: local-qwen
+    litellm_params:
+      model: openai/qwen3-8b-instruct
+      api_base: http://host.docker.internal:8088/v1
+      api_key: not-needed
+      extra_body:
+        enable_thinking: false
+
+  - model_name: local
+    litellm_params:
+      model: openai/qwen3-8b-instruct
+      api_base: http://host.docker.internal:8088/v1
+      api_key: not-needed
+      extra_body:
+        enable_thinking: false
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
@@ -31,6 +81,8 @@ litellm_settings:
   request_timeout: 600
   set_verbose: false
   json_logs: true
+  success_callback: ["langfuse"]
+  failure_callback: ["langfuse"]
   cache: true
   cache_params:
     type: redis

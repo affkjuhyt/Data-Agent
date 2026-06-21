@@ -1,0 +1,4 @@
+kafka-python-ng==2.2.3
+psycopg2-binary==2.9.9
+httpx>=0.27,<0.28
+qdrant-client>=1.13.0,<1.14.0

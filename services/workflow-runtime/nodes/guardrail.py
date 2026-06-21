@@ -33,30 +33,30 @@ def _normalize(text: str) -> str:
 
 
 @functools.lru_cache(maxsize=64)
-def _compile_patterns(patterns_tuple: tuple) -> list[tuple[str, str, object]]:
-    """Compile và cache regex patterns lúc startup. patterns_tuple = ((id, pattern_str), ...)"""
+def _compile_patterns(patterns_tuple: tuple) -> list[tuple[str, str, str, object]]:
+    """Compile và cache regex patterns lúc startup. patterns_tuple = ((id, pattern_str, confidence), ...)"""
     compiled = []
-    for pid, p in patterns_tuple:
+    for pid, p, confidence in patterns_tuple:
         try:
-            compiled.append((pid, p, re_lib.compile(p, re_lib.IGNORECASE)))
+            compiled.append((pid, p, confidence, re_lib.compile(p, re_lib.IGNORECASE)))
         except re_lib.error as e:
             logger.warning("guardrail | invalid pattern skipped id=%s pattern=%r error=%s", pid, p, e)
     return compiled
 
 
 def _regex_check(text: str, patterns: list) -> tuple[bool, str, dict | None]:
-    text = _normalize(text)[:_MAX_CHECK_CHARS]  # normalize + giới hạn độ dài
-    patterns_tuple = tuple((item["id"], item["pattern"]) for item in patterns)
+    text = _normalize(text)[:_MAX_CHECK_CHARS]
+    patterns_tuple = tuple((item["id"], item["pattern"], item.get("confidence", "low")) for item in patterns)
     compiled = _compile_patterns(patterns_tuple)
 
-    for pid, p_str, compiled_re in compiled:
+    for pid, p_str, confidence, compiled_re in compiled:
         try:
             match = (
                 compiled_re.search(text, timeout=_REGEX_TIMEOUT)
                 if _REGEX_TIMEOUT else compiled_re.search(text)
             )
             if match:
-                return True, "Yêu cầu không được phép.", {"id": pid, "pattern": p_str}
+                return True, "Yêu cầu không được phép.", {"id": pid, "pattern": p_str, "confidence": confidence}
         except TimeoutError:
             logger.warning("guardrail | regex timeout id=%s pattern=%r", pid, p_str)
         except re_lib.error as e:
@@ -91,7 +91,9 @@ def _llm_check(text: str, check_type: str, cfg: dict) -> tuple[bool, str, None]:
         raw = response.choices[0].message.content or ""
         result = json.loads(raw)
         triggered = bool(result.get("triggered", False))
-        reason = result.get("reason", "") or "Yêu cầu không được phép."
+        reason = result.get("reason", "")
+        if triggered and not reason:
+            reason = "Yêu cầu không được phép."
         return triggered, reason, None
     except Exception as e:
         logger.warning("guardrail | LLM check failed, defaulting to pass. error=%s", e)
@@ -108,14 +110,35 @@ def guardrail_input_node(state: AgentState) -> dict:
     t0 = time.monotonic()
     cfg = state.get("config", {})
 
-    triggered, message, matched = _regex_check(
+    regex_triggered, regex_message, regex_matched = _regex_check(
         state["query"], cfg.get("guardrail_input_patterns", [])
     )
-    method = "regex"
 
-    if not triggered and cfg.get("guardrail_llm_enabled", True):
+    # HIGH confidence → hard-block ngay, không cần LLM
+    if regex_triggered and regex_matched and regex_matched.get("confidence") == "high":
+        latency_ms = int((time.monotonic() - t0) * 1000)
+        logger.info(
+            "guardrail_input | latency=%dms triggered=True method=regex-hard pattern_id=%r reason=%r",
+            latency_ms, regex_matched["id"], regex_message,
+        )
+        return {
+            "guardrail_triggered": True,
+            "guardrail_message": regex_message,
+            "guardrail_stage": "input",
+            "guardrail_reason": _build_reason("regex-hard", regex_matched, regex_message),
+        }
+
+    # LOW confidence hoặc không match → LLM quyết định độc lập
+    triggered, message, matched = False, "", None
+    method = "none"
+
+    if cfg.get("guardrail_llm_enabled", True):
         triggered, message, matched = _llm_check(state["query"], "input", cfg)
         method = "llm"
+    elif regex_triggered:
+        # LLM disabled → regex làm fallback
+        triggered, message, matched = regex_triggered, regex_message, regex_matched
+        method = "regex-fallback"
 
     latency_ms = int((time.monotonic() - t0) * 1000)
     logger.info(
@@ -130,33 +153,3 @@ def guardrail_input_node(state: AgentState) -> dict:
         "guardrail_stage": "input" if triggered else None,
         "guardrail_reason": _build_reason(method, matched, message) if triggered else None,
     }
-
-
-def guardrail_output_node(state: AgentState) -> dict:
-    if state.get("guardrail_triggered"):
-        return {}
-
-    cfg = state.get("config", {})
-
-    triggered, message, matched = _regex_check(
-        state.get("response", ""), cfg.get("guardrail_output_patterns", [])
-    )
-    method = "regex"
-
-    if not triggered and cfg.get("guardrail_llm_enabled", True):
-        triggered, message, matched = _llm_check(state.get("response", ""), "output", cfg)
-        method = "llm"
-
-    if triggered:
-        logger.info(
-            "guardrail_output | triggered method=%s pattern_id=%r reason=%r",
-            method, matched["id"] if matched else None, message,
-        )
-        return {
-            "guardrail_triggered": True,
-            "guardrail_message": message,
-            "guardrail_stage": "output",
-            "guardrail_reason": _build_reason(method, matched, message),
-            "response": message,
-        }
-    return {}

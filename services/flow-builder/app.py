@@ -5,6 +5,10 @@ load_dotenv(find_dotenv())
 import asyncio
 from contextlib import asynccontextmanager
 
+from services.log_set_up.logger import setup_logging
+
+setup_logging("flow-builder")
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -42,6 +46,8 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(title="flow-builder", version="0.1.0", lifespan=lifespan)
     setup_observability("flow-builder", app)
+
+    setup_tracing("flow-builder", app=app)
 
     app.add_middleware(
         CORSMiddleware,

@@ -25,7 +25,7 @@ def _is_valid_url(url: str) -> bool:
 
 
 async def _execute_call(
-    client: httpx.AsyncClient, call: dict, mcp_endpoints: list, query: str
+    client: httpx.AsyncClient, call: dict, mcp_endpoints: list, fallback_query: str
 ) -> tuple[list, dict | None]:
     tool_name = call.get("tool_name", "")
     endpoint = next(
@@ -43,6 +43,7 @@ async def _execute_call(
     headers = {}
     if token := endpoint.get("auth_token"):
         headers["Authorization"] = f"Bearer {token}"
+    query = call.get("query") or fallback_query
     try:
         resp = await client.post(
             f"{url}/execute",

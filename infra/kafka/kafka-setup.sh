@@ -97,6 +97,28 @@ run_kafka "/opt/kafka/bin/kafka-topics.sh \
   --replication-factor 1" \
   && echo "  → topic: release.rollback.initiated"
 
+run_kafka "/opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server $BOOTSTRAP \
+  --command-config /tmp/admin.props \
+  --create --if-not-exists \
+  --topic memory.extraction.requested \
+  --partitions 3 \
+  --replication-factor 1 \
+  --config retention.ms=604800000 \
+  --config cleanup.policy=delete" \
+  && echo "  → topic: memory.extraction.requested (3 partitions, 7d retention)"
+
+run_kafka "/opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server $BOOTSTRAP \
+  --command-config /tmp/admin.props \
+  --create --if-not-exists \
+  --topic memory.extraction.dlq \
+  --partitions 1 \
+  --replication-factor 1 \
+  --config retention.ms=2592000000 \
+  --config cleanup.policy=delete" \
+  && echo "  → topic: memory.extraction.dlq (1 partition, 30d retention)"
+
 # ── 2. Enable ACLs (authorizer must be configured) ─────────────────────
 echo ""
 echo "🛡️  Applying ACLs..."
@@ -178,6 +200,47 @@ run_kafka "/opt/kafka/bin/kafka-acls.sh \
   --group release-worker-group" \
   && echo "  → release-worker: Read on group release-worker-group"
 
+# workflow-runtime: WRITE only to memory.extraction.requested
+run_kafka "/opt/kafka/bin/kafka-acls.sh \
+  --bootstrap-server $BOOTSTRAP \
+  --command-config /tmp/admin.props \
+  --add \
+  --allow-principal User:workflow-runtime \
+  --operation Write \
+  --operation Describe \
+  --topic memory.extraction.requested" \
+  && echo "  → workflow-runtime: Write + Describe on memory.extraction.requested"
+
+# memory-consumer: READ from memory.extraction.requested, WRITE to the DLQ topic
+run_kafka "/opt/kafka/bin/kafka-acls.sh \
+  --bootstrap-server $BOOTSTRAP \
+  --command-config /tmp/admin.props \
+  --add \
+  --allow-principal User:memory-consumer \
+  --operation Read \
+  --operation Describe \
+  --topic memory.extraction.requested" \
+  && echo "  → memory-consumer: Read + Describe on memory.extraction.requested"
+
+run_kafka "/opt/kafka/bin/kafka-acls.sh \
+  --bootstrap-server $BOOTSTRAP \
+  --command-config /tmp/admin.props \
+  --add \
+  --allow-principal User:memory-consumer \
+  --operation Write \
+  --operation Describe \
+  --topic memory.extraction.dlq" \
+  && echo "  → memory-consumer: Write + Describe on memory.extraction.dlq"
+
+run_kafka "/opt/kafka/bin/kafka-acls.sh \
+  --bootstrap-server $BOOTSTRAP \
+  --command-config /tmp/admin.props \
+  --add \
+  --allow-principal User:memory-consumer \
+  --operation Read \
+  --group memory-consumer-group" \
+  && echo "  → memory-consumer: Read on group memory-consumer-group"
+
 # ── 3. Show current ACL summary ────────────────────────────────────────
 echo ""
 echo "📊 Current ACLs:"
@@ -195,8 +258,10 @@ echo ""
 echo "✅ Kafka ACL setup complete."
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  audit-bridge    → WRITE  audit.auth.events"
-echo "  audit-consumer  → READ   audit.auth.events (group: audit-consumer-group)"
-echo "  release-worker  → WRITE+READ+CREATE release.* topics"
-echo "  admin           → ALL    (inter-broker + management)"
+echo "  audit-bridge      → WRITE  audit.auth.events"
+echo "  audit-consumer    → READ   audit.auth.events (group: audit-consumer-group)"
+echo "  release-worker    → WRITE+READ+CREATE release.* topics"
+echo "  workflow-runtime  → WRITE  memory.extraction.requested"
+echo "  memory-consumer   → READ   memory.extraction.requested (group: memory-consumer-group), WRITE memory.extraction.dlq"
+echo "  admin             → ALL    (inter-broker + management)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

@@ -76,6 +76,9 @@ class TenantsORM(Base):
     mcp_servers: Mapped[list["MCPORM"]] = relationship(back_populates="tenant")
     agents: Mapped[list["AgentsORM"]] = relationship(back_populates="tenant")
     agent_memories: Mapped[list["AgentMemoriesORM"]] = relationship(back_populates="tenant")
+    episodic_memories: Mapped[list["EpisodicMemoryORM"]] = relationship(back_populates="tenant")
+    future_memories: Mapped[list["FutureMemoryORM"]] = relationship(back_populates="tenant")
+    memory_retention_configs: Mapped[list["MemoryRetentionConfigORM"]] = relationship(back_populates="tenant")
     conversations: Mapped[list["ConversationsORM"]] = relationship(back_populates="tenant")
 
 
