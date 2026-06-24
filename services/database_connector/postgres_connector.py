@@ -501,6 +501,7 @@ class PostgresClient:
             return ResponseModel(code=400, error=str(e))
 
         tenant_id = str(getattr(data, "tenant_id", None) or "")
+        pk_data: dict = {}
         async with self.get_client(tenant_id=tenant_id or None) as session:
             session.add(prep.instance)
             try:
@@ -523,9 +524,10 @@ class PostgresClient:
                     return ResponseModel(code=400, error=f"{prep.table_name}: a value failed a constraint check")
                 log.warning("insert integrity error in %s (sqlstate=%s): %s", prep.table_name, sqlstate, e)
                 return ResponseModel(code=409, error=f"Integrity error in {prep.table_name}")
-        pks = [col.name for col in prep.orm_cls.__table__.primary_key]
-        return ResponseModel(code=200, data={pk: str(getattr(prep.instance, pk)) for pk in pks if
-                                             getattr(prep.instance, pk) is not None})
+            pks = [col.name for col in prep.orm_cls.__table__.primary_key]
+            pk_data = {pk: str(getattr(prep.instance, pk)) for pk in pks if
+                       getattr(prep.instance, pk) is not None}
+        return ResponseModel(code=200, data=pk_data)
 
     async def soft_delete(self, data: BaseModel) -> ResponseModel:
         try:

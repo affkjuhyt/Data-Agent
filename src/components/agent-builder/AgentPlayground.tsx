@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
 import { WORKFLOW_RUNTIME_URL as API_BASE } from '../../lib/config';
 import { apiGet, apiMutate } from '../../lib/apiClient';
+import keycloak from '../../lib/keycloak';
 
 /* ─── Types ─────────────────────────────────────────────────── */
 
@@ -61,7 +62,7 @@ function spanType(node: string): { label: string; color: string; bg: string } {
     return { label: 'GENERATION', color: '#EBD07C', bg: 'rgba(235,208,124,0.14)' };
   if (node.includes('kb_search'))
     return { label: 'RETRIEVAL',  color: '#93C5FD', bg: 'rgba(147,197,253,0.12)' };
-  if (node.includes('mcp'))
+  if (node.includes('mcp') || node.includes('tool_executor') || node.startsWith('tool/'))
     return { label: 'TOOL',       color: '#86EFAC', bg: 'rgba(134,239,172,0.12)' };
   if (node.includes('rrf') || node.includes('reranker'))
     return { label: 'RANK',       color: '#F3E2A7', bg: 'rgba(243,226,167,0.10)' };
@@ -641,7 +642,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     try {
       const res = await fetch(`${API_BASE}/api/conversations/run`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(keycloak?.token ? { Authorization: `Bearer ${keycloak.token}` } : {}) },
         body: JSON.stringify({
           query: text, agent_id: selectedAgent,
           conversation_id: conversationId,

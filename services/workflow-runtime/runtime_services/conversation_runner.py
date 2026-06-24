@@ -165,9 +165,8 @@ async def run_conversation_stream(req: RunRequest, request: Request):
             n.get("data", {}).get("nodeType") == "human_approval"
             for n in flow_nodes
         )
-        if cache_key in _graph_cache:
-            graph = _graph_cache[cache_key]
-        else:
+        graph = _graph_cache.get(cache_key)
+        if graph is None:
             graph = await _get_or_build_graph(
                 cache_key, flow_nodes, flow_edges,
                 checkpointer=_checkpointer if needs_checkpointer else None,
