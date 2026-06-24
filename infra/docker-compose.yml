@@ -29,7 +29,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./sql/create-extra-dbs.sql:/docker-entrypoint-initdb.d/01-create-dbs.sql:ro
-      - ./Postgres/init.sql:/docker-entrypoint-initdb.d/02-kb-tables.sql:ro
       - ./sql/init.sql:/docker-entrypoint-initdb.d/03-app-schema.sql:ro
       - ./sql/release-init.sql:/docker-entrypoint-initdb.d/04-release-schema.sql:ro
     ports:
@@ -403,13 +402,13 @@ services:
       - "11434:11434"
     volumes:
       - ollama_models:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    # deploy:  # Uncomment when nvidia-container-toolkit is available
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
 
   model-service:
     build:
@@ -579,7 +578,8 @@ services:
 
   audit-bridge:
     build:
-      context: ../services/audit-bridge
+      context: ../services
+      dockerfile: audit-bridge/Dockerfile
     container_name: dataagent-audit-bridge
     restart: unless-stopped
     environment:
@@ -605,7 +605,8 @@ services:
 
   audit-consumer:
     build:
-      context: ../services/audit-consumer
+      context: ../services
+      dockerfile: audit-consumer/Dockerfile
     container_name: dataagent-audit-consumer
     restart: unless-stopped
     environment:
@@ -629,7 +630,8 @@ services:
 
   jwks-refresher:
     build:
-      context: ../services/jwks-refresher
+      context: ../services
+      dockerfile: jwks-refresher/Dockerfile
     container_name: dataagent-jwks-refresher
     restart: unless-stopped
     environment:
@@ -654,7 +656,7 @@ services:
     container_name: dataagent-frontend
     restart: unless-stopped
     volumes:
-      - ../..:/app
+      - ..:/app
       - /app/node_modules
     ports:
       - "5173:3000"

@@ -165,18 +165,21 @@ async def run_conversation_stream(req: RunRequest, request: Request):
             n.get("data", {}).get("nodeType") == "human_approval"
             for n in flow_nodes
         )
-    graph = _graph_cache[cache_key]
+        if cache_key in _graph_cache:
+            graph = _graph_cache[cache_key]
+        else:
+            graph = await _get_or_build_graph(
+                cache_key, flow_nodes, flow_edges,
+                checkpointer=_checkpointer if needs_checkpointer else None,
+            )
+    else:
+        graph = _default_graph
+
     cfg["tenant_id"] = tenant_id
     # doc §3.7 — gates which Schema Memory tables _text_to_sql_handler may
     # see. Kong-style convention: comma-separated roles already verified
     # upstream (see tests/integration/conftest.py headers_factory).
     cfg["user_roles"] = [r.strip() for r in request.headers.get("X-User-Roles", "").split(",") if r.strip()]
-        graph = await _get_or_build_graph(
-            cache_key, flow_nodes, flow_edges,
-            checkpointer=_checkpointer if needs_checkpointer else None,
-        )
-    else:
-        graph = _default_graph
     if not await validate_agent_tenant(agent_id, tenant_id):
         return JSONResponse(status_code=403, content={"detail": "Agent not found or access denied"})
 

@@ -8,7 +8,7 @@ from fastapi import FastAPI
 import config as cfg
 import model_sync
 import models
-import registry
+import model_sync as registry
 import remote
 from routers import embed, generate, health, rerank
 
