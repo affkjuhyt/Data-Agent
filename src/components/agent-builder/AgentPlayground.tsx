@@ -8,6 +8,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
 import { WORKFLOW_RUNTIME_URL as API_BASE } from '../../lib/config';
+import { apiGet, apiMutate } from '../../lib/apiClient';
 
 /* ─── Types ─────────────────────────────────────────────────── */
 
@@ -606,10 +607,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
   useEffect(() => {
     (async () => {
       try {
-        const res  = await fetch(`${API_BASE}/api/catalog/agents`, {
-          headers: { 'X-Tenant-ID': import.meta.env.VITE_TENANT_ID ?? 'tenant-dev' },
-        });
-        const data: { id: string; name: string; description: string; routing_keywords?: string[] }[] = await res.json();
+        const data = await apiGet<{ id: string; name: string; description: string; routing_keywords?: string[] }[]>('/api/catalog/agents');
         const opts: AgentOption[] = data.map(a => ({
           id: a.id, label: a.name, description: a.description,
           routing_keywords: a.routing_keywords,
@@ -704,8 +702,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
           for (let i = 0; i < 5; i++) {
             await new Promise(r => setTimeout(r, 2000));
             try {
-              const tr  = await fetch(`${API_BASE}/api/traces/${convId}`);
-              const { observations } = await tr.json();
+              const { observations } = await apiGet<any>(`/api/traces/${convId}`);
               const steps = mapObservations(observations ?? []);
               if (steps.length > 0) { setTraceSteps(steps); break; }
             } catch { break; }
@@ -777,12 +774,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     setApprovalLoading(true);
     const { convId, placeholderId } = pendingApproval;
     try {
-      const res = await fetch(`${API_BASE}/api/reviews/${convId}/resume`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approved, note: approvalNote }),
-      });
-      const data = await res.json();
+      const data = await apiMutate<any>('POST', `/api/reviews/${convId}/resume`, { approved, note: approvalNote });
       const responseText = data.response || (approved ? '' : 'Yêu cầu không được phê duyệt.');
       setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: responseText } : m));
     } catch {

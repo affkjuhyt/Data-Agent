@@ -32,7 +32,7 @@ import WorkflowBuilder, { type TemplateId } from './Builder';
 import ExecutionCenter from './ExecutionCenter';
 import SchedulingCenter from './SchedulingCenter';
 import WorkflowObservability from './Observability';
-import { FLOW_BUILDER_URL } from '../../../lib/config';
+import { apiGet, apiMutate } from '../../../lib/apiClient';
 
 interface ApiAgent {
   id: string;
@@ -278,9 +278,8 @@ const WorkflowEngine = () => {
   const [publishing, setPublishing] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${FLOW_BUILDER_URL}/api/agents`)
-      .then(r => r.json())
-      .then((data: ApiAgent[]) => setApiAgents(Array.isArray(data) ? data : []))
+    apiGet<ApiAgent[]>('/api/agents')
+      .then(data => setApiAgents(Array.isArray(data) ? data : []))
       .catch(() => {});
   }, []);
 
@@ -288,12 +287,7 @@ const WorkflowEngine = () => {
     if (!createName.trim()) return;
     setCreating(true);
     try {
-      const res = await fetch(`${FLOW_BUILDER_URL}/api/agents`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: createName.trim(), description: '' }),
-      });
-      const data = await res.json();
+      const data = await apiMutate<any>('POST', '/api/agents', { name: createName.trim(), description: '' });
       setApiAgents(prev => [...prev, {
         id: data.agent_id,
         name: createName.trim(),
@@ -319,8 +313,7 @@ const WorkflowEngine = () => {
 
   const handleEditAgent = async (agent: ApiAgent) => {
     try {
-      const res = await fetch(`${FLOW_BUILDER_URL}/api/agents/${agent.id}`);
-      const data = await res.json();
+      const data = await apiGet<any>(`/api/agents/${agent.id}`);
       const workflows: ApiWorkflow[] = data.workflows ?? [];
       const wv = workflows[0]?.draft_version_id ?? null;
       setBuilderAgentId(agent.id);
@@ -337,17 +330,12 @@ const WorkflowEngine = () => {
   const handlePublishAgent = async (agent: ApiAgent) => {
     setPublishing(agent.id);
     try {
-      const agentDetail = await fetch(`${FLOW_BUILDER_URL}/api/agents/${agent.id}`).then(r => r.json());
+      const agentDetail = await apiGet<any>(`/api/agents/${agent.id}`);
       const workflows: ApiWorkflow[] = agentDetail.workflows ?? [];
       if (!workflows[0]) { setToast('Không có workflow để publish'); return; }
-      await fetch(`${FLOW_BUILDER_URL}/api/agents/${agent.id}/publish`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workflow_id: workflows[0].id }),
-      });
+      await apiMutate('POST', `/api/agents/${agent.id}/publish`, { workflow_id: workflows[0].id });
       setToast(`✓ "${agent.name}" đã publish`);
-      // Refresh list
-      const updated = await fetch(`${FLOW_BUILDER_URL}/api/agents`).then(r => r.json());
+      const updated = await apiGet<ApiAgent[]>('/api/agents');
       setApiAgents(Array.isArray(updated) ? updated : []);
     } catch {
       setToast('Publish thất bại');

@@ -13,7 +13,7 @@ import { DetailDrawer } from '../../shared/DetailDrawer';
 import WorkflowBuilder from '../workflow/Builder';
 import { Bot, Terminal, Sliders, Activity, Zap, Plus, Settings } from 'lucide-react';
 import { cn } from '../../../lib/utils';
-import { FLOW_BUILDER_URL } from '../../../lib/config';
+import { apiMutate } from '../../../lib/apiClient';
 
 export type RegistryView = 'OVERVIEW' | 'CLI' | 'CONFIG' | 'TRACES' | 'RUNS';
 
@@ -114,7 +114,9 @@ export const AgentRuntimeView = ({
         initialEdges={builderAgent.initialEdges}
         onClose={() => setBuilderAgent(null)}
         onLeave={async () => {
-          await fetch(`${FLOW_BUILDER_URL}/api/agents/${builderAgent.agentId}`, { method: 'DELETE' });
+          try {
+            await apiMutate('DELETE', `/api/agents/${builderAgent.agentId}`);
+          } catch { /* agent may not exist yet — ignore */ }
           setWizardRestore({ name: builderAgent.name });
           setBuilderAgent(null);
         }}

@@ -296,13 +296,18 @@ curl -sf -X PUT "$KONG_ADMIN/services/kb-backend/routes/kb-backend-route" \
 # JSON properly (Kong's ?name= filter is unreliable — returns all plugins).
 # PATCH if found (update in-place), POST if not (create). Never deletes first.
 upsert_plugin() {
-  local scope_url="$1" body="$2" plugin_name="$3"
+  local scope_url="$1" body="$2" plugin_name="$3" scope_type="${4:-scoped}"
   local existing_id
   existing_id=$(curl -sf "$scope_url" | \
     python3 -c "
 import sys, json
 data = json.load(sys.stdin)
-matches = [p['id'] for p in data.get('data', []) if p.get('name') == '$plugin_name']
+is_global = '$scope_type' == 'global'
+matches = [
+    p['id'] for p in data.get('data', [])
+    if p.get('name') == '$plugin_name'
+    and (not is_global or (not p.get('service') and not p.get('route')))
+]
 print(matches[0] if matches else '')
 " 2>/dev/null || true)
   if [ -n "$existing_id" ]; then
@@ -326,7 +331,7 @@ ISSUER="$KC_PUBLIC/realms/$REALM"
 # not the public one. Two URLs by design: public for iss validation, network
 # for JWKS fetch. Mixing them means either tokens reject ("iss mismatch")
 # OR Kong can't reach Keycloak.
-KONG_KC_HOST="${KEYCLOAK_NETWORK_URL:-http://aeroflow-keycloak-lb:8080}"
+KONG_KC_HOST="${KEYCLOAK_NETWORK_URL:-http://keycloak:8080}"
 JWKS_URI="$KONG_KC_HOST/realms/$REALM/protocol/openid-connect/certs"
 
 # ── 4. aeroflow-jwks plugin — JWKS-based RS256 verify + header inject ──
@@ -435,13 +440,13 @@ fi
 echo "🌐 Enabling global CORS plugin..."
 upsert_plugin "$KONG_ADMIN/plugins" \
   '{"name":"cors","config":{"origins":["http://localhost:3000","http://localhost:5173"],"methods":["GET","POST","PUT","PATCH","DELETE","OPTIONS"],"headers":["Content-Type","Authorization","X-Tenant-ID","X-Conversation-Id","Accept","X-Role"],"exposed_headers":["X-Conversation-Id","X-Kong-Request-Id"],"credentials":false,"max_age":3600,"preflight_continue":false}}' \
-  "cors"
+  "cors" "global"
 
 # ── 9. Correlation ID (tracing) ────────────────────────────────────────
 echo "📝 Enabling correlation-id..."
 upsert_plugin "$KONG_ADMIN/plugins" \
   '{"name":"correlation-id","config":{"header_name":"X-Request-ID","generator":"uuid#counter","echo_downstream":true}}' \
-  "correlation-id"
+  "correlation-id" "global"
 
 # ── 10. Rate limiting ──────────────────────────────────────────────────
 echo "⏱️  Enabling rate-limiting on workflow-runtime..."

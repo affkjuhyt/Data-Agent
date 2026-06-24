@@ -30,7 +30,7 @@ import {
   type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { FLOW_BUILDER_URL, WORKFLOW_RUNTIME_URL } from '../../../lib/config';
+import { apiGet, apiMutate } from '../../../lib/apiClient';
 import { useRuntimeConfig } from '../../../lib/runtimeConfig';
 
 const LOCKED_NODE_TYPES    = new Set(['guardrail_input', 'guardrail_output', 'guardrail']);
@@ -1014,37 +1014,45 @@ const ContextMenu = ({
 
 // â”€â”€â”€ Confirm Exit Dialog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-const ConfirmExitModal = ({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) => (
-  <div className="fixed inset-0 z-[200] flex items-center justify-center">
-    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onCancel} />
-    <motion.div
-      initial={{ scale: 0.95, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      exit={{ scale: 0.95, opacity: 0 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 32 }}
-      className="relative z-10 bg-[#1e293b] border border-white/15 rounded-2xl p-7 w-[380px] shadow-2xl"
-    >
-      <h3 className="text-base font-bold text-white mb-2">Leave without saving?</h3>
-      <p className="text-sm text-slate-400 leading-relaxed mb-6">
-        Unsaved changes will be lost. Are you sure you want to leave?
-      </p>
-      <div className="flex items-center justify-end gap-3">
-        <button
-          onClick={onCancel}
-          className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-all"
-        >
-          Stay
-        </button>
-        <button
-          onClick={onConfirm}
-          className="px-4 py-2 text-xs font-bold text-white bg-red-500/80 hover:bg-red-500 rounded-xl transition-all"
-        >
-          Leave
-        </button>
-      </div>
-    </motion.div>
-  </div>
-);
+const ConfirmExitModal = ({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) => {
+  const [leaving, setLeaving] = React.useState(false);
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={leaving ? undefined : onCancel} />
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+        className="relative z-10 bg-[#1e293b] border border-white/15 rounded-2xl p-7 w-[380px] shadow-2xl"
+      >
+        <h3 className="text-base font-bold text-white mb-2">Leave without saving?</h3>
+        <p className="text-sm text-slate-400 leading-relaxed mb-6">
+          Unsaved changes will be lost. Are you sure you want to leave?
+        </p>
+        <div className="flex items-center justify-end gap-3">
+          <button
+            disabled={leaving}
+            onClick={onCancel}
+            className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-all disabled:opacity-40"
+          >
+            Stay
+          </button>
+          <button
+            disabled={leaving}
+            onClick={async () => {
+              setLeaving(true);
+              await onConfirm();
+            }}
+            className="px-4 py-2 text-xs font-bold text-white bg-red-500/80 hover:bg-red-500 rounded-xl transition-all disabled:opacity-40"
+          >
+            {leaving ? 'Leaving…' : 'Leave'}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
 
 // â”€â”€â”€ Main Builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -1108,9 +1116,8 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
   // Fetch danh sách versions
   useEffect(() => {
     if (!workflowId) return;
-    fetch(`${FLOW_BUILDER_URL}/api/workflows/${workflowId}/versions`)
-      .then(r => r.json())
-      .then((data: WorkflowVersion[]) => setVersions(data))
+    apiGet<WorkflowVersion[]>(`/api/workflows/${workflowId}/versions`)
+      .then(setVersions)
       .catch(() => {});
   }, [workflowId]);
 
@@ -1121,8 +1128,7 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
       nodes: ns.map((n: any) => ({ id: n.id, type: n.type, position: n.position, data: n.data })),
       edges: es.map((e: any) => ({ id: e.id, source: e.source, target: e.target, type: e.type, label: e.label })),
     });
-    fetch(`${FLOW_BUILDER_URL}/api/workflow-versions/${activeVersionId}/canvas`)
-      .then(r => r.json())
+    apiGet<any>(`/api/workflow-versions/${activeVersionId}/canvas`)
       .then(data => {
         const hasDbCanvas = data.nodes?.length > 0 || data.edges?.length > 0;
         if (hasDbCanvas) {
@@ -1138,8 +1144,7 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
           savedSnapshot.current = JSON.stringify({ nodes: [], edges: [] });
           setCanvasLoading(false);
         } else if (sourceVersionId) {
-          fetch(`${FLOW_BUILDER_URL}/api/workflow-versions/${sourceVersionId}/canvas`)
-            .then(r => r.json())
+          apiGet<any>(`/api/workflow-versions/${sourceVersionId}/canvas`)
             .then(src => {
               const cleaned = stripSystemNodes(src.nodes ?? [], src.edges ?? []);
               setNodes(withLockedNodes(cleaned.nodes));
@@ -1160,9 +1165,8 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
 
   // Fetch node registry từ workflow-runtime
   useEffect(() => {
-    fetch(`${WORKFLOW_RUNTIME_URL}/api/nodes/registry`)
-      .then(r => r.json())
-      .then((registry: Record<string, { display: string; category: string; locked: boolean }>) => {
+    apiGet<Record<string, { display: string; category: string; locked: boolean }>>('/api/nodes/registry')
+      .then((registry) => {
         const mapped = Object.entries(registry)
           .filter(([, v]) => !v.locked)
           .map(([nodeType, v]) => {
@@ -1199,10 +1203,8 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
     if (!workflowId) return;
     setCreatingVersion(true);
     try {
-      const res = await fetch(`${FLOW_BUILDER_URL}/api/workflows/${workflowId}/versions`, { method: 'POST' });
-      if (!res.ok) { const e = await res.json(); addToast(e.detail || 'Tạo version thất bại'); return; }
-      const data = await res.json();
-      const updated = await fetch(`${FLOW_BUILDER_URL}/api/workflows/${workflowId}/versions`).then(r => r.json());
+      const data = await apiMutate<any>('POST', `/api/workflows/${workflowId}/versions`);
+      const updated = await apiGet<WorkflowVersion[]>(`/api/workflows/${workflowId}/versions`);
       setVersions(updated);
       setActiveVersionId(data.workflow_version_id);
       addToast(`Tạo draft v${data.version} thành công`);
@@ -1213,9 +1215,8 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
   const handleDeleteVersion = useCallback(async (versionId: string) => {
     if (!workflowId) return;
     try {
-      const res = await fetch(`${FLOW_BUILDER_URL}/api/workflow-versions/${versionId}`, { method: 'DELETE' });
-      if (!res.ok) { const e = await res.json(); addToast(e.detail || 'Xóa thất bại'); return; }
-      const updated = await fetch(`${FLOW_BUILDER_URL}/api/workflows/${workflowId}/versions`).then(r => r.json());
+      await apiMutate('DELETE', `/api/workflow-versions/${versionId}`);
+      const updated = await apiGet<WorkflowVersion[]>(`/api/workflows/${workflowId}/versions`);
       setVersions(updated);
       if (activeVersionId === versionId) setActiveVersionId(updated[0]?.id);
       addToast('Đã xóa version');
@@ -1335,17 +1336,9 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
         nodes: nodes.map(n => ({ id: n.id, type: n.type, position: n.position, data: n.data })),
         edges: edges.map(e => ({ id: e.id, source: e.source, target: e.target, type: e.type, label: e.label })),
       };
-      const res = await fetch(`${FLOW_BUILDER_URL}/api/workflow-versions/${activeVersionId}/canvas`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        savedSnapshot.current = normalize(nodes, edges);
-        addToast('Canvas saved');
-      } else {
-        addToast('Save failed');
-      }
+      await apiMutate('POST', `/api/workflow-versions/${activeVersionId}/canvas`, payload);
+      savedSnapshot.current = normalize(nodes, edges);
+      addToast('Canvas saved');
     } catch {
       addToast('Save failed — network error');
     } finally {
@@ -1613,9 +1606,9 @@ ${edges.map(e => `  - from: "${e.source}"  to: "${e.target}"`).join('\n')}`;
                   return;
                 }
                 if (isNewWorkflow && workflowId) {
-                  await fetch(`${FLOW_BUILDER_URL}/api/workflows/${workflowId}`, { method: 'DELETE' });
+                  await apiMutate('DELETE', `/api/workflows/${workflowId}`);
                 } else if (isNewDraft && activeVersionId) {
-                  await fetch(`${FLOW_BUILDER_URL}/api/workflow-versions/${activeVersionId}`, { method: 'DELETE' });
+                  await apiMutate('DELETE', `/api/workflow-versions/${activeVersionId}`);
                 }
                 onClose();
               }}
