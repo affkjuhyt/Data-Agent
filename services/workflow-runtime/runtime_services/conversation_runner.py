@@ -209,7 +209,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         (_DATA_TOOL_TASK_TYPE[t] for t in cfg.get("allowed_tools", []) if t in _DATA_TOOL_TASK_TYPE),
         None,
     )
-    if data_task_type:
+    if data_task_type and cfg.get("memory_enabled"):
         workflow_memory_context = await retrieve_workflow_memory(
             tenant_id=tenant_id,
             agent_id=agent_id,
@@ -530,7 +530,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
 
             # Workflow Memory write (doc §3.7) — one record per data-tool call
             # this turn actually executed, regardless of success/failure.
-            for nt in node_traces:
+            for nt in (node_traces if cfg.get("memory_enabled") else []):
                 if not nt["tool_name"].startswith("tool/"):
                     continue
                 task_type = _DATA_TOOL_TASK_TYPE.get(nt["tool_name"][len("tool/"):])

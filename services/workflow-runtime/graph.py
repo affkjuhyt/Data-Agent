@@ -48,17 +48,21 @@ def _route_suggestion(state: AgentState) -> str:
     return "join_end" if state.get("intent") == "task" else "suggestion"
 
 
-def route_after_planner(state: AgentState) -> list[str]:
-    tool_calls = state.get("tool_calls", [])
-    types = {tc.get("type") for tc in tool_calls}
-    destinations = []
-    if "kb_search" in types or not tool_calls:
-        destinations.append("kb_search")
-    if "mcp" in types:
-        destinations.append("mcp")
-    if "tool" in types:
-        destinations.append("tool_executor")
-    return destinations or ["kb_search"]
+def _make_route_after_planner(retrieval_nodes: frozenset[str]):
+    """Closure giới hạn destinations trong các node thực sự có trong graph."""
+    def route_after_planner(state: AgentState) -> list[str]:
+        tool_calls = state.get("tool_calls", [])
+        types = {tc.get("type") for tc in tool_calls}
+        destinations = []
+        if ("kb_search" in types or not tool_calls) and "kb_search" in retrieval_nodes:
+            destinations.append("kb_search")
+        if "mcp" in types and "mcp" in retrieval_nodes:
+            destinations.append("mcp")
+        if "tool" in types and "tool_executor" in retrieval_nodes:
+            destinations.append("tool_executor")
+        # Fallback: dùng node retrieval đầu tiên có trong graph
+        return destinations or [next(iter(retrieval_nodes))]
+    return route_after_planner
 
 
 def join_retrieval_node(state: AgentState) -> dict:
@@ -144,10 +148,12 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict], checkpo
     retrieval_nodes = {tgt for src, tgt in type_edges if src == "planner" and tgt in ("kb_search", "mcp", "tool_executor")}
     non_retrieval_planner_targets = {tgt for src, tgt in type_edges if src == "planner" and tgt not in ("kb_search", "mcp")}
 
+    _route_planner = _make_route_after_planner(frozenset(retrieval_nodes))
+
     if len(retrieval_nodes) > 1:
         # Nhiều retrieval node → cần join để sync parallel branches
         builder.add_node("join_retrieval", join_retrieval_node)
-        builder.add_conditional_edges("planner", route_after_planner, list(retrieval_nodes))
+        builder.add_conditional_edges("planner", _route_planner, list(retrieval_nodes))
         for rn in retrieval_nodes:
             builder.add_edge(rn, "join_retrieval")
         # join_retrieval → node tiếp theo theo canvas (node mà retrieval nodes nối tới)
@@ -156,7 +162,7 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict], checkpo
             builder.add_edge("join_retrieval", tgt)
     elif len(retrieval_nodes) == 1:
         # 1 retrieval node → dùng conditional để planner quyết định runtime
-        builder.add_conditional_edges("planner", route_after_planner, list(retrieval_nodes))
+        builder.add_conditional_edges("planner", _route_planner, list(retrieval_nodes))
     elif non_retrieval_planner_targets:
         for tgt in non_retrieval_planner_targets:
             builder.add_edge("planner", tgt)

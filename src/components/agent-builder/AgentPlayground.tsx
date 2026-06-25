@@ -109,7 +109,7 @@ function trimInput(name: string, raw: any): string {
 
 function mapObservations(obs: any[]): TraceStep[] {
   const filtered = obs
-    .filter(o => !_shouldSkip(o.name) && o.type === 'SPAN')
+    .filter(o => !_shouldSkip(o.name) && (o.type === 'SPAN' || o.name?.startsWith('judge')))
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
   const traceStart = filtered.length > 0 ? new Date(filtered[0].startTime).getTime() : 0;
   const nameCounts: Record<string, number> = {};

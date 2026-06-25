@@ -54,8 +54,9 @@ model_list:
 
   - model_name: embedder
     litellm_params:
-      model: openai/text-embedding-3-small
-      api_key: os.environ/OPENAI_API_KEY
+      model: openai/qwen3-8b-instruct
+      api_base: http://host.docker.internal:8088/v1
+      api_key: not-needed
 
   # Local LLM via llama.cpp server (CPU-only, run docker-compose.llm.yml first)
   - model_name: local-qwen

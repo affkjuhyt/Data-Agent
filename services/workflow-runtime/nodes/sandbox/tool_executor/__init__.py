@@ -33,7 +33,7 @@ TOOL_DEFINITIONS: dict[str, dict] = {
     },
     "web_search": {
         "category":    "langchain",
-        "description": "Tìm kiếm thông tin mới nhất trên web (DuckDuckGo). Dùng khi cần tin tức, thông tin cập nhật ngoài KB.",
+        "description": "Tìm kiếm thông tin mới nhất trên web (DuckDuckGo). PHẢI dùng khi user đề cập 'web', 'internet', 'tìm kiếm online', 'tin tức', 'mới nhất'. KHÔNG dùng kb_search thay thế.",
     },
     "wikipedia": {
         "category":    "langchain",
@@ -41,7 +41,7 @@ TOOL_DEFINITIONS: dict[str, dict] = {
     },
     "calculator": {
         "category":    "langchain",
-        "description": "Tính toán số học, công thức, biểu thức toán học. Dùng khi cần kết quả chính xác.",
+        "description": "Tính toán số học, công thức, biểu thức toán học. PHẢI dùng cho MỌI phép tính kể cả đơn giản như 1+1, 2*3. KHÔNG tự tính trong đầu.",
     },
     "delegate_to_agent": {
         "category":    "agent",

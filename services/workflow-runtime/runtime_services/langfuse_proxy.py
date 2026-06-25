@@ -32,16 +32,16 @@ async def get_trace_observations(conv_id: str):
             if not traces:
                 return {"observations": []}
 
-            all_observations: list[dict] = []
-            for trace in traces:
-                obs_resp = await client.get(
-                    f"{host}/api/public/observations",
-                    params={"traceId": trace["id"]},
-                    headers=auth_headers,
-                )
-                obs_resp.raise_for_status()
-                all_observations.extend(obs_resp.json().get("data", []))
-            return {"observations": all_observations}
+            # Chỉ lấy trace mới nhất (1 turn chat = 1 trace)
+            # Gộp tất cả traces sẽ khiến UI hiểu nhầm multiple turns là retry
+            latest = max(traces, key=lambda t: t.get("timestamp", ""))
+            obs_resp = await client.get(
+                f"{host}/api/public/observations",
+                params={"traceId": latest["id"]},
+                headers=auth_headers,
+            )
+            obs_resp.raise_for_status()
+            return {"observations": obs_resp.json().get("data", []), "traceId": latest["id"]}
 
     except httpx.HTTPStatusError as e:
         logger.error("langfuse proxy HTTP error: %s", e.response.status_code)
