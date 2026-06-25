@@ -4,6 +4,7 @@ direct access from workflow-runtime). Exposes two internal endpoints that
 workflow-runtime's execute_python / execute_sql tool handlers call over
 HTTP; never reachable from outside the docker-compose network.
 """
+import asyncio
 import logging
 import os
 
@@ -69,7 +70,7 @@ async def execute_python(req: ExecutePythonRequest):
         return {"success": False, "error": f"syntax error: {e}"}
 
     try:
-        result = run_python_sandboxed(req.code, req.timeout_s, req.memory_mb, req.cpus)
+        result = await asyncio.to_thread(run_python_sandboxed, req.code, req.timeout_s, req.memory_mb, req.cpus)
     except ExecutionTimeoutError as e:
         return {"success": False, "error": str(e), "timed_out": True}
     except SandboxRunError as e:

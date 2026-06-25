@@ -150,7 +150,9 @@ def connection_params(config: dict, warehouse_id: str) -> dict | None:
     conn = (config or {}).get("connection") or {}
     if not conn.get("account"):
         return None
-    password = os.environ.get(f"SNOWFLAKE_PASSWORD__{warehouse_id}") or os.environ.get("SNOWFLAKE_CRAWLER_PASSWORD")
+    # Env var names can't contain "-", but warehouse_id is typically a UUID.
+    env_warehouse_id = warehouse_id.replace("-", "_")
+    password = os.environ.get(f"SNOWFLAKE_PASSWORD__{env_warehouse_id}") or os.environ.get("SNOWFLAKE_CRAWLER_PASSWORD")
     if not password:
         log.warning("connection_params | no password configured for warehouse=%s, skipping", warehouse_id)
         return None
@@ -247,9 +249,12 @@ def crawl_warehouse(cur, qdrant: QdrantClient, tenant_id: str, warehouse_id: str
     changed = 0
     for table_name, meta in metadata.items():
         try:
+            cur.execute("SAVEPOINT table_crawl")
             if process_table(cur, qdrant, tenant_id, warehouse_id, meta):
                 changed += 1
+            cur.execute("RELEASE SAVEPOINT table_crawl")
         except Exception:
+            cur.execute("ROLLBACK TO SAVEPOINT table_crawl")
             log.exception("crawl_warehouse | failed table=%s warehouse=%s", table_name, warehouse_id)
     log.info("crawl_warehouse | warehouse=%s: %d/%d table(s) changed", warehouse_id, changed, len(metadata))
 

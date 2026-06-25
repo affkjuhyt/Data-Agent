@@ -45,24 +45,28 @@ def discover_and_describe(connection_params: dict, selected_tables: list[str] | 
         table_stats = {row["TABLE_NAME"]: row for row in cursor.fetchall()}
 
         names = selected_tables or list(table_stats.keys())
-        result: dict[str, dict] = {}
-        for table_name in names:
+
+        columns_by_table: dict[str, list[dict]] = {}
+        if names:
+            placeholders = ", ".join(["%s"] * len(names))
             cursor.execute(
-                """SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COMMENT, ORDINAL_POSITION
-                   FROM INFORMATION_SCHEMA.COLUMNS
-                   WHERE TABLE_SCHEMA = CURRENT_SCHEMA() AND TABLE_NAME = %s
-                   ORDER BY ORDINAL_POSITION""",
-                (table_name,),
+                f"""SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, IS_NULLABLE, COMMENT, ORDINAL_POSITION
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = CURRENT_SCHEMA() AND TABLE_NAME IN ({placeholders})
+                    ORDER BY TABLE_NAME, ORDINAL_POSITION""",
+                tuple(names),
             )
-            columns = [
-                {
+            for r in cursor.fetchall():
+                columns_by_table.setdefault(r["TABLE_NAME"], []).append({
                     "name": r["COLUMN_NAME"],
                     "type": r["DATA_TYPE"],
                     "nullable": r["IS_NULLABLE"] == "YES",
                     "comment": r["COMMENT"],
-                }
-                for r in cursor.fetchall()
-            ]
+                })
+
+        result: dict[str, dict] = {}
+        for table_name in names:
+            columns = columns_by_table.get(table_name, [])
             if not columns:
                 logger.warning("snowflake_metadata | table %s has no columns, skipping", table_name)
                 continue

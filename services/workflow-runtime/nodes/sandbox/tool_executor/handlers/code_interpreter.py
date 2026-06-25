@@ -24,13 +24,14 @@ async def _execute_python_handler(call: dict, cfg: dict) -> tuple[dict | None, d
         return None, {"tool_name": "execute_python", "error": "no code provided"}
 
     tool_cfg = cfg.get("tool_config", {}).get("execute_python", {})
+    timeout_s = tool_cfg.get("timeout_s", 10)
     try:
-        async with httpx.AsyncClient(timeout=30) as http:
+        async with httpx.AsyncClient(timeout=timeout_s + 5) as http:
             resp = await http.post(
                 f"{_SANDBOX_EXECUTOR_URL}/execute/python",
                 json={
                     "code": code,
-                    "timeout_s": tool_cfg.get("timeout_s", 10),
+                    "timeout_s": timeout_s,
                     "memory_mb": tool_cfg.get("memory_mb", 256),
                     "cpus": tool_cfg.get("cpus", 0.5),
                 },

@@ -38,6 +38,7 @@ BLOCKED_MODULES = {
 BLOCKED_ATTRIBUTES = {
     "__globals__", "__builtins__", "__import__", "__subclasses__", "__bases__",
     "__mro__", "__code__", "__closure__", "__class__", "__base__", "__loader__",
+    "__dict__", "__getattribute__", "__getattr__",
 }
 
 

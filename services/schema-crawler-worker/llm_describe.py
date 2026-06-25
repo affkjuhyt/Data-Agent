@@ -48,8 +48,10 @@ def describe_table(table_name: str, columns: list[dict], row_count: int | None) 
     content = r.json()["choices"][0]["message"]["content"].strip()
     try:
         parsed = json.loads(content)
-    except json.JSONDecodeError:
-        logger.warning("llm_describe | non-JSON response for table=%s: %r", table_name, content[:200])
+        if not isinstance(parsed, dict):
+            raise ValueError("response is not a JSON object")
+    except (json.JSONDecodeError, ValueError):
+        logger.warning("llm_describe | non-JSON-object response for table=%s: %r", table_name, content[:200])
         parsed = {}
     return {
         "keywords": parsed.get("keywords") or [],
