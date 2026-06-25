@@ -506,6 +506,46 @@ class SchemaMemoryORM(Base):
     tenant: Mapped["TenantsORM"] = relationship(back_populates="schema_memories")
 
 
+@register("orm")
+class SchemaCatalogORM(Base):
+    """Schema Catalog (sandbox_schema_docs.docx §II) — auto-crawled, LLM-
+    enriched table catalog. Distinct from SchemaMemoryORM above: that one is
+    hand-written by an Admin and read by exact match; this one is written by
+    the schema-crawler-worker background job from Snowflake
+    INFORMATION_SCHEMA + an LLM-generated business description, embedded
+    into the Qdrant "schema_catalog" collection for hybrid (vector +
+    metadata-filter) retrieval before SQL generation.
+
+    warehouse_id points at KBWarehouse (basemodel...knowledge_base_orm) —
+    the existing per-tenant warehouse-connection record — but is stored as a
+    plain FK column (no ORM relationship) to avoid a cross-module
+    dependency; the crawler worker queries KBWarehouse/KBWarehouseConfig
+    directly instead of through a SQLAlchemy relationship here.
+    """
+    __tablename__ = "SchemaCatalog"
+    __table_args__ = (
+        Index("idx_schemacatalog_lookup", "tenant_id", "warehouse_id"),
+        UniqueConstraint("tenant_id", "warehouse_id", "schema_name", "table_name", name="uq_schemacatalog_table"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    warehouse_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBWarehouse.warehouse_id"), nullable=False, index=True)
+    schema_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    table_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    columns: Mapped[list] = mapped_column(JSONB, nullable=False)
+    row_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    last_altered: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    text_description: Mapped[str] = mapped_column(Text, nullable=False)
+    join_hints: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    schema_hash: Mapped[str] = mapped_column(String(32), nullable=False)
+    qdrant_point_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    last_crawled_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    tenant: Mapped["TenantsORM"] = relationship(back_populates="schema_catalog_entries")
+
+
 # ─── Conversation ─────────────────────────────────────────────────────────────
 
 @register("orm")

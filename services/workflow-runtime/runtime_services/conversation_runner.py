@@ -14,6 +14,7 @@ from langgraph.types import Command
 from config_loader import load_agent_config
 from db import create_conversation, get_messages, save_message, save_trace, validate_agent_tenant
 from redis_cache import cache_get_messages, cache_append_messages, cache_set_messages
+from transcript_compression import compress_tool_results
 from graph import build_graph
 from memory_middleware import (
     _DEV_AGENT_ID,
@@ -165,18 +166,17 @@ async def run_conversation_stream(req: RunRequest, request: Request):
             n.get("data", {}).get("nodeType") == "human_approval"
             for n in flow_nodes
         )
-    graph = _graph_cache[cache_key]
-    cfg["tenant_id"] = tenant_id
-    # doc §3.7 — gates which Schema Memory tables _text_to_sql_handler may
-    # see. Kong-style convention: comma-separated roles already verified
-    # upstream (see tests/integration/conftest.py headers_factory).
-    cfg["user_roles"] = [r.strip() for r in request.headers.get("X-User-Roles", "").split(",") if r.strip()]
         graph = await _get_or_build_graph(
             cache_key, flow_nodes, flow_edges,
             checkpointer=_checkpointer if needs_checkpointer else None,
         )
     else:
         graph = _default_graph
+    cfg["tenant_id"] = tenant_id
+    # doc §3.7 — gates which Schema Memory tables _text_to_sql_handler may
+    # see. Kong-style convention: comma-separated roles already verified
+    # upstream (see tests/integration/conftest.py headers_factory).
+    cfg["user_roles"] = [r.strip() for r in request.headers.get("X-User-Roles", "").split(",") if r.strip()]
     if not await validate_agent_tenant(agent_id, tenant_id):
         return JSONResponse(status_code=403, content={"detail": "Agent not found or access denied"})
 
@@ -225,6 +225,11 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         history = history or [m.model_dump() for m in req.messages]
     else:
         history = [m.model_dump() for m in req.messages]
+
+    # doc §1.8 — compress already-consumed tool results before they feed any
+    # node's LLM call this turn. State still gets the full history below;
+    # only this turn's view is compressed (see transcript_compression.py).
+    history = compress_tool_results(history)
 
     conv_id = req.conversation_id or await create_conversation(
         agent_version_id=cfg.get("agent_version_id", None),

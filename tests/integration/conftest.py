@@ -162,6 +162,12 @@ BEGIN
         EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO app_user', tbl);
         EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
         EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', tbl);
+        -- Idempotent: this loop discovers ANY tenant_id-having table in the
+        -- shared session container, which can include one an earlier test
+        -- file's alembic migration already left behind (with its own
+        -- tenant_isolation policy already applied) — e.g. KBWarehouse since
+        -- f6a7b8c9d0e1.
+        EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON %I', tbl);
         EXECUTE format($p$
             CREATE POLICY tenant_isolation ON %I
             AS PERMISSIVE

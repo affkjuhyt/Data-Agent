@@ -233,6 +233,29 @@ def _extract_node_config(flow_nodes: list[dict]) -> dict:
                     "enabled": bool(c["bashEnabled"]),
                     "cwd":     c.get("bashCwd", ""),
                 }
+            if c.get("snowflakeAccount"):
+                tool_config["execute_sql"] = {
+                    "connection": {
+                        "account":   c["snowflakeAccount"],
+                        "user":      c.get("snowflakeUser", ""),
+                        "password":  c.get("snowflakePassword", ""),
+                        "warehouse": c.get("snowflakeWarehouse", ""),
+                        "database":  c.get("snowflakeDatabase", ""),
+                        "schema":    c.get("snowflakeSchema", ""),
+                        "role":      c.get("snowflakeRole", ""),
+                    },
+                }
             if tool_config:
                 cfg["tool_config"] = tool_config
+            # doc §1.9 — sandbox tool-grant preset, independent of allowedBuiltinTools
+            # above. Omitted entirely (no toolGrantPreset/toolGrantTools/
+            # toolGrantDisallowedTools on the canvas node) -> tool_grant.py's
+            # DEFAULT_PRESET grants both execute_sql/execute_python, same as
+            # before this feature existed.
+            if c.get("toolGrantPreset") or c.get("toolGrantTools") or c.get("toolGrantDisallowedTools"):
+                cfg["tool_grant"] = {
+                    "preset":           c.get("toolGrantPreset", "full_data_agent"),
+                    "tools":            c.get("toolGrantTools", []),
+                    "disallowed_tools": c.get("toolGrantDisallowedTools", []),
+                }
     return cfg

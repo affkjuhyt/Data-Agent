@@ -25,6 +25,10 @@ services:
       KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
       KAFKA_SASL_MECHANISM: PLAIN
       OTEL_SERVICE_NAME: workflow-runtime
+      # Code Interpreter Sandbox (sandbox_schema_docs.docx §I) — internal-only,
+      # never exposed to the host; sandbox-executor is the sole holder of the
+      # Docker socket / Snowflake read-only credentials (hub-and-spoke isolation).
+      SANDBOX_EXECUTOR_URL: http://sandbox-executor:8500
     depends_on:
       postgres:
         condition: service_healthy
@@ -36,6 +40,31 @@ services:
         condition: service_started
       kafka:
         condition: service_healthy
+      sandbox-executor:
+        condition: service_started
+
+  sandbox-executor:
+    build:
+      context: ../services/sandbox-executor
+    container_name: dataagent-sandbox-executor
+    restart: unless-stopped
+    # No `ports:` — only reachable from other containers on the compose
+    # network (workflow-runtime calls it via SANDBOX_EXECUTOR_URL above).
+    expose:
+      - "8500"
+    environment:
+      SANDBOX_TIMEOUT_S: "10"
+      SANDBOX_MEMORY_MB: "256"
+      SANDBOX_CPUS: "0.5"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: sandbox-executor
+    volumes:
+      # The only service in the platform that touches the Docker socket —
+      # needed to spin up the ephemeral sandbox-runner container per job
+      # (doc §1.4). docker_runner.py never accepts agent input as shell
+      # text; the socket is only ever used to launch the fixed, pre-built
+      # sandbox-runner:latest image with hard resource-limit flags.
+      - /var/run/docker.sock:/var/run/docker.sock
 
   flow-builder:
     build:
@@ -262,6 +291,42 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
       QDRANT_URL: http://qdrant:6333
       LITELLM_BASE_URL: http://litellm:4000
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      litellm:
+        condition: service_started
+
+  schema-crawler-worker:
+    build:
+      context: ../services/schema-crawler-worker
+    container_name: dataagent-schema-crawler-worker
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_DDL_TOPIC: ddl.changes
+      KAFKA_GROUP_ID: schema-crawler-worker-group
+      KAFKA_SASL_USERNAME: schema-crawler-worker
+      KAFKA_SASL_PASSWORD: ${SCHEMA_CRAWLER_WORKER_KAFKA_PASSWORD}
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-dataagent}
+      DB_USER: ${POSTGRES_USER:-admin}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      QDRANT_URL: http://qdrant:6333
+      LITELLM_BASE_URL: http://litellm:4000
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-1024}
+      CRAWL_INTERVAL_SECONDS: "86400"
+      # Gap (see docs/Sandbox_SchemaCrawler_Implementation.md §7): KBWarehouseConfig
+      # never persists a Snowflake password. Single shared crawler-account password
+      # until a secrets-store (OpenBao) integration exists for per-tenant credentials.
+      SNOWFLAKE_CRAWLER_PASSWORD: ${SNOWFLAKE_CRAWLER_PASSWORD:-}
     depends_on:
       kafka:
         condition: service_healthy

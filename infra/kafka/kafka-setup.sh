@@ -119,6 +119,21 @@ run_kafka "/opt/kafka/bin/kafka-topics.sh \
   --config cleanup.policy=delete" \
   && echo "  → topic: memory.extraction.dlq (1 partition, 30d retention)"
 
+# sandbox_schema_docs.docx §2.8 — DDL-change events that trigger a targeted
+# re-crawl instead of waiting for the next cron tick. Producer side (a
+# Snowflake Stream → Kafka bridge) is external infra, out of this repo's
+# scope — schema-crawler-worker only ever consumes this topic.
+run_kafka "/opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server $BOOTSTRAP \
+  --command-config /tmp/admin.props \
+  --create --if-not-exists \
+  --topic ddl.changes \
+  --partitions 3 \
+  --replication-factor 1 \
+  --config retention.ms=604800000 \
+  --config cleanup.policy=delete" \
+  && echo "  → topic: ddl.changes (3 partitions, 7d retention)"
+
 # ── 2. Enable ACLs (authorizer must be configured) ─────────────────────
 echo ""
 echo "🛡️  Applying ACLs..."
@@ -241,6 +256,26 @@ run_kafka "/opt/kafka/bin/kafka-acls.sh \
   --group memory-consumer-group" \
   && echo "  → memory-consumer: Read on group memory-consumer-group"
 
+# schema-crawler-worker: READ from ddl.changes
+run_kafka "/opt/kafka/bin/kafka-acls.sh \
+  --bootstrap-server $BOOTSTRAP \
+  --command-config /tmp/admin.props \
+  --add \
+  --allow-principal User:schema-crawler-worker \
+  --operation Read \
+  --operation Describe \
+  --topic ddl.changes" \
+  && echo "  → schema-crawler-worker: Read + Describe on ddl.changes"
+
+run_kafka "/opt/kafka/bin/kafka-acls.sh \
+  --bootstrap-server $BOOTSTRAP \
+  --command-config /tmp/admin.props \
+  --add \
+  --allow-principal User:schema-crawler-worker \
+  --operation Read \
+  --group schema-crawler-worker-group" \
+  && echo "  → schema-crawler-worker: Read on group schema-crawler-worker-group"
+
 # ── 3. Show current ACL summary ────────────────────────────────────────
 echo ""
 echo "📊 Current ACLs:"
@@ -263,5 +298,6 @@ echo "  audit-consumer    → READ   audit.auth.events (group: audit-consumer-gr
 echo "  release-worker    → WRITE+READ+CREATE release.* topics"
 echo "  workflow-runtime  → WRITE  memory.extraction.requested"
 echo "  memory-consumer   → READ   memory.extraction.requested (group: memory-consumer-group), WRITE memory.extraction.dlq"
+echo "  schema-crawler-worker → READ ddl.changes (group: schema-crawler-worker-group)"
 echo "  admin             → ALL    (inter-broker + management)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

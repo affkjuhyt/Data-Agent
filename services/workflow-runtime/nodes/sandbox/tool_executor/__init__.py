@@ -7,6 +7,14 @@ TOOL_DEFINITIONS: dict[str, dict] = {
         "category":    "data",
         "description": "Phân tích dữ liệu file CSV/Excel bằng Pandas. Dùng khi cần thống kê, tổng hợp từ file dữ liệu.",
     },
+    "execute_python": {
+        "category":    "sandbox",
+        "description": "Thực thi code Python (pandas/numpy/plotly/matplotlib) trong Docker sandbox cô lập, không network, có resource limit. Dùng khi cần tự viết logic phân tích tùy biến.",
+    },
+    "execute_sql": {
+        "category":    "sandbox",
+        "description": "Thực thi câu SQL (chỉ SELECT) trên Snowflake qua service account read-only, kết quả giới hạn 10.000 dòng. Dùng khi đã có sẵn câu SQL cần chạy trực tiếp.",
+    },
     "file_read": {
         "category":    "filesystem",
         "description": "Đọc nội dung file text từ hệ thống (log, tài liệu, config).",

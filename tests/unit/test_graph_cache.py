@@ -27,6 +27,7 @@ cr = load_module_from_path(
         "config_loader": {"load_agent_config": lambda *a, **k: {}},
         "db": {
             "create_conversation": lambda *a, **k: None,
+            "get_messages": lambda *a, **k: None,
             "save_message": lambda *a, **k: None,
             "save_trace": lambda *a, **k: None,
             "validate_agent_tenant": lambda *a, **k: True,
