@@ -1,0 +1,68 @@
+# DPTS planner stack: mongo + elasticsearch + model-service (-> vLLM tunnel) + planner.
+#
+#   REMOTE_LLM_URL=https://...trycloudflare.com REMOTE_LLM_KEY=kb-... \
+#   docker compose -f services/dpts-planner/docker-compose.yml up --build
+#
+# Build contexts are the repo root (planner) and infra/model-service.
+
+services:
+  mongo:
+    image: mongo:7
+    ports: ["27017:27017"]
+    volumes: ["dpts_mongo:/data/db"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports: ["9200:9200"]
+    volumes: ["dpts_es:/usr/share/elasticsearch/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200 >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  model-service:
+    build:
+      context: ../../infra/model-service
+      dockerfile: Dockerfile
+    environment:
+      - REMOTE_LLM_URL=${REMOTE_LLM_URL:-https://peas-improved-lovely-interactive.trycloudflare.com}
+      - REMOTE_LLM_KEY=${REMOTE_LLM_KEY:-kb-JHPs7umnDUECw403TmxTtA}
+      - REMOTE_LLM_MODEL=${REMOTE_LLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}
+    ports: ["8001:8001"]
+    volumes: ["dpts_models:/app/models"]
+
+  dpts-planner:
+    build:
+      context: ../..
+      dockerfile: services/dpts-planner/Dockerfile
+    environment:
+      - MONGODB_URL=mongodb://mongo:27017/dataagent
+      - DPTS_ES_URL=http://elasticsearch:9200
+      - MODEL_SERVICE_URL=http://model-service:8001
+      - DPTS_PLAN_TTL_SECONDS=${DPTS_PLAN_TTL_SECONDS:-86400}
+      - DPTS_SWEEP_INTERVAL_SECONDS=${DPTS_SWEEP_INTERVAL_SECONDS:-300}
+      - DPTS_BRANCHING=2
+      - DPTS_MAX_PLAN_DEPTH=4
+    ports: ["8080:8010"]
+    depends_on:
+      mongo:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      model-service:
+        condition: service_started
+
+volumes:
+  dpts_mongo:
+  dpts_es:
+  dpts_models:

@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DPTS planner — live</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<style>
+  :root{--bg:#faf9f5;--card:#fff;--bd:#e4e2d9;--bd2:#cfccc0;--tx:#26241d;--tx2:#6b6a62;--tx3:#9a988f;--accent:#185FA5;--danger:#A32D2D}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5}
+  .wrap{max-width:980px;margin:0 auto;padding:20px 16px 60px}
+  h1{font-size:20px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--tx2);font-size:13px;margin:0 0 16px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  input[type=text]{flex:1;min-width:240px;height:40px;padding:0 12px;border:1px solid var(--bd2);border-radius:8px;font-size:15px;background:var(--card);color:var(--tx)}
+  button{height:36px;padding:0 14px;border:1px solid var(--bd2);border-radius:8px;background:var(--card);color:var(--tx);font-size:14px;cursor:pointer}
+  button:hover{background:#f0eee7}
+  button:disabled{opacity:.5;cursor:default}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:14px 0}
+  .metric{background:var(--card);border:1px solid var(--bd);border-radius:8px;padding:8px 10px}
+  .metric .l{font-size:11px;color:var(--tx2)}
+  .metric .v{font-size:18px;font-weight:600}
+  .legend{display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--tx2);margin:10px 0}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .sw{width:11px;height:11px;border-radius:3px;display:inline-block}
+  .panel{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px 14px}
+  .treebox{position:relative;background:var(--card);border:1px solid var(--bd);border-radius:10px;margin:8px 0;overflow:hidden}
+  .treehint{position:absolute;right:10px;bottom:8px;font-size:11px;color:var(--tx3)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+  .ttl{font-size:13px;font-weight:600;margin-bottom:8px}
+  .muted{color:var(--tx3);font-weight:400}
+  .chip{display:inline-flex;align-items:center;gap:4px;border-radius:5px;padding:1px 6px;font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace}
+  .poolrow{display:flex;align-items:center;gap:6px}
+  .bar{flex:1;height:12px;background:#eceae2;border-radius:3px;overflow:hidden}
+  .bar>div{height:100%;background:#888780;transition:width .4s}
+  .step{text-align:left;width:100%;border:1px solid var(--bd2);border-radius:8px;padding:8px 10px;background:#f7f5ef;cursor:pointer;margin-bottom:6px}
+  .step:hover{background:#f0eee7}
+  .spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--bd2);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;vertical-align:-2px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #tree text{font-family:ui-monospace,Menlo,Consolas,monospace}
+  .ncard{width:204px;border:1px solid var(--hb);border-radius:8px;background:var(--card);overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+  .ncard.onplan{outline:2px solid #BA7517;outline-offset:0}
+  .nhdr{display:flex;justify-content:space-between;background:var(--hf);color:var(--ht);font-family:ui-monospace,monospace;font-weight:600;padding:3px 8px;font-size:11px}
+  .ndesc{padding:5px 8px;color:var(--tx);font-size:11px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .ntasks{padding:3px 8px 5px;border-top:1px solid var(--bd)}
+  .ntask{display:flex;gap:6px;align-items:baseline;padding:1px 0;font-size:10px}
+  .ntask .tt{color:var(--tx)}
+  .ntask .ty{color:#185FA5}
+  .ntask .dep{color:var(--tx3);margin-left:auto;white-space:nowrap}
+  .ncard.clickable{cursor:pointer}
+  .ncard.clickable:hover{box-shadow:0 0 0 2px var(--danger)}
+  .pd-node{border:1px solid var(--bd);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+  .pd-step{font-family:ui-monospace,monospace;font-size:11px;color:var(--tx2);margin-bottom:3px}
+  .pd-desc{font-size:15px;font-weight:600;margin-bottom:10px}
+  .pd-tasks{display:flex;flex-direction:column;gap:6px}
+  .pd-task{display:flex;gap:14px;align-items:flex-start;border:1px solid var(--bd);border-radius:8px;padding:8px 10px;background:#fbfaf7}
+  .pd-idx{font-family:ui-monospace,monospace;font-size:11px;color:var(--tx3);padding-top:14px;min-width:16px}
+  .pd-fld{display:flex;flex-direction:column;gap:2px}
+  .pd-fld.title{flex:1;min-width:140px}
+  .pd-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--tx3)}
+  .pd-val{font-size:13px;color:var(--tx)}
+  .pd-val.ty{color:#185FA5}
+  .pd-val.dep{font-family:ui-monospace,monospace;color:var(--tx2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Dynamic Parallel Tree Search — planner</h1>
+  <p class="sub">Type a goal. The planner expands a thought tree against the live model until the LLM declares the first terminal node (a finished plan). Then a task is failed to show the Planner gate trim a branch and expand again.</p>
+
+  <div class="row">
+    <input type="text" id="goal" placeholder="e.g. Build a daily sales report from a Postgres orders table" value="Build a daily sales report from a Postgres orders table">
+    <button class="primary" id="run">Plan</button>
+  </div>
+  <div id="note" class="sub" style="margin-top:8px"></div>
+
+  <div class="legend">
+    <span><i class="sw" style="background:#B5D4F4;border:1px solid #185FA5"></i>exploitation</span>
+    <span><i class="sw" style="background:#9FE1CB;border:1px solid #0F6E56"></i>exploration</span>
+    <span><i class="sw" style="background:#D3D1C7;border:1px solid #888780"></i>pool (N)</span>
+    <span><i class="sw" style="background:#F1EFE8;border:1px solid #B4B2A9"></i>expanded</span>
+    <span><i class="sw" style="background:#FAC775;border:1px solid #BA7517"></i>terminal</span>
+    <span><i class="sw" style="background:#F7C1C1;border:1px solid #A32D2D"></i>pruned</span>
+  </div>
+
+  <div class="row" id="replay" style="display:none">
+    <button id="prev">◀ prev</button>
+    <button id="step">step ▶</button>
+    <button id="auto">auto ▶▶</button>
+    <button id="failbtn">⚡ fail a random task</button>
+    <button id="fit">fit</button>
+    <span class="muted" id="frame" style="font-size:13px"></span>
+  </div>
+
+  <div class="metrics">
+    <div class="metric"><div class="l">status</div><div class="v" id="m-status">—</div></div>
+    <div class="metric"><div class="l">layer</div><div class="v" id="m-layer">0</div></div>
+    <div class="metric"><div class="l">queue |Q|</div><div class="v" id="m-queue">0</div></div>
+    <div class="metric"><div class="l">pool |N|</div><div class="v" id="m-pool">0</div></div>
+    <div class="metric"><div class="l">tree</div><div class="v" id="m-tree">0</div></div>
+  </div>
+
+  <div class="treebox"><svg id="tree" width="100%" height="540"></svg><div class="treehint">scroll = zoom · drag = pan · click a plan node to fail it</div></div>
+
+  <div class="grid2">
+    <div class="panel">
+      <div class="ttl">queue Q <span class="muted">expanded first</span></div>
+      <div class="muted" style="font-size:12px;margin-bottom:3px">exploitation</div>
+      <div id="qx" class="row" style="min-height:22px"></div>
+      <div class="muted" style="font-size:12px;margin:8px 0 3px">exploration</div>
+      <div id="qe" class="row" style="min-height:22px"></div>
+    </div>
+    <div class="panel">
+      <div class="ttl">candidate pool N <span class="muted">sorted by confidence</span></div>
+      <div id="pool" style="display:flex;flex-direction:column;gap:4px;min-height:22px;max-height:300px;overflow:auto"></div>
+    </div>
+  </div>
+
+  <div class="panel" id="planpanel" style="display:none">
+    <div class="ttl">formulated plan <span class="muted" id="planid"></span></div>
+    <div class="muted" style="font-size:12px;margin-bottom:8px">click a step → the executor reports that node broke. The Planner gate trims that branch from the Tree, deletes its candidates from the pool, and expands again for another plan.</div>
+    <div id="steps"></div>
+  </div>
+
+  <div class="panel" id="plandetails" style="display:none;margin-top:10px">
+    <div class="ttl">plan details <span class="muted" id="pd-meta"></span></div>
+    <div id="pd-body"></div>
+  </div>
+</div>
+
+<script>
+var C={
+  exploitation:{f:'#B5D4F4',t:'#042C53',b:'#185FA5'},exploration:{f:'#9FE1CB',t:'#04342C',b:'#0F6E56'},
+  pooled:{f:'#D3D1C7',t:'#2C2C2A',b:'#888780'},expanded:{f:'#F1EFE8',t:'#5F5E5A',b:'#B4B2A9'},
+  terminal:{f:'#FAC775',t:'#412402',b:'#BA7517'},pruned:{f:'#F7C1C1',t:'#501313',b:'#A32D2D'}
+};
+var frames=[], idx=0, plan=null, runId=null, autoT=null, nodeMap={};
+function $(id){return document.getElementById(id);}
+function nmap(snap){var m={};snap.nodes.forEach(function(n){m[n.id]=n;});return m;}
+
+// ── d3 force graph (Neo4j-style: nodes repel, links pull, depth layered) ───
+var svg=d3.select('#tree'), zoomG=svg.append('g'),
+    gLinks=zoomG.append('g'), gNodes=zoomG.append('g'),
+    zoom=d3.zoom().scaleExtent([0.1,2]).on('zoom',function(e){zoomG.attr('transform',e.transform);}),
+    CW=206, CH=110, LAYER=185, posById={}, simNodes=[], simLinks=[],
+    planSet={}, nodeSel=null, linkSel=null, fitPending=null;
+zoom.filter(function(e){ return e.type==='wheel' || !(e.target.closest && e.target.closest('g.node')); });
+svg.call(zoom);
+
+var sim=d3.forceSimulation()
+  .force('link', d3.forceLink().id(function(d){return d.id;}).distance(60).strength(0.5))
+  .force('charge', d3.forceManyBody().strength(-1300))
+  .force('y', d3.forceY(function(d){return d.depth*LAYER;}).strength(0.7))   // depth -> vertical layers
+  .force('x', d3.forceX(0).strength(0.03))
+  .force('collide', d3.forceCollide(Math.hypot(CW,CH)/2+10))
+  .alphaDecay(0.045)
+  .on('tick', ticked)
+  .on('end', function(){ fit(false); });
+sim.stop();
+
+function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+
+function cardHTML(n, onPlan){
+  var c=C[n.state]||C.pooled;
+  var cls='ncard'+(onPlan?' onplan':'')+(n.state==='pruned'?' pruned':'')+((onPlan&&n.parent)?' clickable':'');
+  var style='--hf:'+c.f+';--hb:'+c.b+';--ht:'+c.t;
+  if(!n.parent){
+    return '<div class="'+cls+'" style="'+style+'"><div class="nhdr"><span>GOAL</span></div><div class="ndesc">'+esc(n.desc)+'</div></div>';
+  }
+  var rows=(n.tasks||[]).slice(0,5).map(function(tk){
+    var dep=(tk.depend_on&&tk.depend_on.length)?'<span class="dep">dep:['+tk.depend_on.map(esc).join(',')+']</span>':'';
+    return '<div class="ntask"><span class="tt">'+esc(tk.title)+'</span><span class="ty">'+esc(tk.type||'')+'</span>'+dep+'</div>';
+  }).join('');
+  if((n.tasks||[]).length>5) rows+='<div class="ntask"><span class="tt muted">+'+(n.tasks.length-5)+' more</span></div>';
+  var tasks=rows?'<div class="ntasks">'+rows+'</div>':'';
+  return '<div class="'+cls+'" style="'+style+'">'+
+    '<div class="nhdr"><span>'+n.id+' · '+n.conf.toFixed(2)+'</span><span>'+(n.is_terminal?'★':'')+'</span></div>'+
+    '<div class="ndesc">'+esc(n.desc)+'</div>'+tasks+'</div>';
+}
+
+var dragMoved=false;
+var drag=d3.drag()
+  .on('start',function(e,d){dragMoved=false; if(!e.active)sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y;})
+  .on('drag', function(e,d){dragMoved=true; d.fx=e.x; d.fy=e.y;})
+  .on('end',  function(e,d){ if(!e.active)sim.alphaTarget(0); d.fx=null; d.fy=null;
+                             if(!dragMoved && plan && planSet[d.id] && d.data.parent) failNode(d.id); });
+
+function drawTree(snap){
+  var maxTasks=0; snap.nodes.forEach(function(n){ if(n.parent) maxTasks=Math.max(maxTasks,(n.tasks||[]).length); });
+  CH=46 + Math.min(maxTasks,5)*16 + 6;
+  sim.force('collide').radius(Math.hypot(CW,CH)/2+10);
+  planSet={}; if(plan) plan.node_path.forEach(function(id){planSet[id]=1;});
+
+  var byId={};
+  simNodes=snap.nodes.map(function(n){
+    var o=posById[n.id];
+    if(!o){ var par=posById[n.parent]; o={id:n.id, x:(par?par.x+(Math.random()*60-30):0), y:(par?par.y+LAYER:0)}; posById[n.id]=o; }
+    o.depth=n.depth; o.data=n; o.parent=n.parent; byId[n.id]=o; return o;
+  });
+  simLinks=simNodes.filter(function(d){return d.parent && byId[d.parent];}).map(function(d){return {source:d.parent, target:d.id};});
+
+  var node=gNodes.selectAll('g.node').data(simNodes, function(d){return d.id;});
+  node.exit().remove();
+  var ent=node.enter().append('g').attr('class','node').call(drag);
+  ent.append('foreignObject').attr('width',CW).attr('height',CH).attr('x',-CW/2).attr('y',-CH/2);
+  nodeSel=ent.merge(node);
+  nodeSel.each(function(d){ this.querySelector('foreignObject').innerHTML=cardHTML(d.data, planSet[d.id]); });
+
+  var link=gLinks.selectAll('line').data(simLinks, function(d){return (d.target.id||d.target);});
+  link.exit().remove();
+  linkSel=link.enter().append('line').merge(link)
+    .attr('stroke',function(d){var s=d.source.id||d.source,t=d.target.id||d.target;return (planSet[s]&&planSet[t])?'#BA7517':'#c8c6bd';})
+    .attr('stroke-width',function(d){var s=d.source.id||d.source,t=d.target.id||d.target;return (planSet[s]&&planSet[t])?2.4:1.3;});
+
+  sim.nodes(simNodes);
+  sim.force('link').links(simLinks);
+  sim.alpha(0.9).restart();
+}
+
+function ticked(){
+  if(linkSel) linkSel.attr('x1',function(d){return d.source.x;}).attr('y1',function(d){return d.source.y;})
+                     .attr('x2',function(d){return d.target.x;}).attr('y2',function(d){return d.target.y;});
+  if(nodeSel) nodeSel.attr('transform',function(d){return 'translate('+d.x+','+d.y+')';})
+                     .style('opacity',function(d){return d.data.state==='pruned'?0.45:1;});
+}
+
+function fit(instant){
+  if(!simNodes.length)return;
+  var W=svg.node().clientWidth||900, H=+svg.attr('height');
+  var xs=simNodes.map(function(d){return d.x;}), ys=simNodes.map(function(d){return d.y;});
+  var minX=Math.min.apply(null,xs),maxX=Math.max.apply(null,xs),minY=Math.min.apply(null,ys),maxY=Math.max.apply(null,ys);
+  var cw=(maxX-minX)+CW+60, ch=(maxY-minY)+CH+60;
+  var s=Math.min(W/cw, H/ch, 1.1);
+  var cx=(minX+maxX)/2, cy=(minY+maxY)/2;
+  var tr=d3.zoomIdentity.translate(W/2-s*cx, H/2-s*cy).scale(s);
+  (instant?svg:svg.transition().duration(400)).call(zoom.transform, tr);
+}
+
+// ── panels ──────────────────────────────────────────────────────────────
+function drawPanels(snap){
+  $('m-status').textContent=snap.plan_ready?'plan ready':((snap.queue.exploitation.length+snap.queue.exploration.length)?'searching':'idle');
+  $('m-layer').textContent=snap.layer;
+  $('m-queue').textContent=snap.queue.exploitation.length+snap.queue.exploration.length;
+  $('m-pool').textContent=snap.pool.length;
+  $('m-tree').textContent=snap.nodes.length;
+  function chip(id){var n=nodeMap[id];if(!n)return '';var c=C[n.state]||C.pooled;
+    return '<span class="chip" style="background:'+c.f+';color:'+c.t+';border:1px solid '+c.b+'">'+id+' · '+n.conf.toFixed(2)+'</span>';}
+  $('qx').innerHTML=snap.queue.exploitation.map(chip).join('')||'<span class="muted" style="font-size:12px">—</span>';
+  $('qe').innerHTML=snap.queue.exploration.map(chip).join('')||'<span class="muted" style="font-size:12px">—</span>';
+  $('pool').innerHTML=snap.pool.length?snap.pool.map(function(id){var n=nodeMap[id];var w=Math.round(n.conf*100);var term=n.is_terminal?' ★':'';
+    return '<div class="poolrow"><span class="muted" style="font-family:ui-monospace,monospace;font-size:11px;min-width:30px">'+id+term+'</span><div class="bar"><div style="width:'+w+'%"></div></div><span style="font-size:11px;min-width:30px;text-align:right">'+n.conf.toFixed(2)+'</span></div>';
+  }).join(''):'<span class="muted" style="font-size:12px">empty</span>';
+}
+
+function stepIds(){
+  if(!plan)return [];
+  // a plan step must have executable tasks; skip "plan complete" markers
+  return plan.node_path.slice(1).filter(function(id){var n=nodeMap[id];return n&&n.tasks&&n.tasks.length;});
+}
+function drawPlan(){
+  var pp=$('planpanel');
+  if(!plan){pp.style.display='none';return;}
+  pp.style.display='block';
+  var tnode=nodeMap[plan.node_path[plan.node_path.length-1]];
+  var why=(tnode&&tnode.terminal_reason==='llm')?' · ✓ model marked finished':(tnode&&tnode.terminal_reason==='depth_cap'?' · depth cap':'');
+  $('planid').textContent=(plan.plan_id||'')+' · conf '+(plan.confidence||0).toFixed(2)+why;
+  $('steps').innerHTML=stepIds().map(function(id){var n=nodeMap[id];if(!n)return '';var c=C[n.state]||C.pooled;
+    var tasks=(n.tasks||[]).map(function(tk){return '<span class="muted" style="font-size:11px">'+tk.title+' ['+tk.type+']</span>';}).join(' · ');
+    return '<button class="step" data-id="'+id+'"><div style="display:flex;justify-content:space-between;gap:8px"><span style="font-size:13px"><span class="chip" style="background:'+c.f+';color:'+c.t+';border:1px solid '+c.b+'">'+id+'</span> &nbsp;'+n.desc+'</span><span style="font-size:11px;color:var(--danger)">⚡ fail</span></div><div style="margin-top:3px">'+tasks+'</div></button>';
+  }).join('');
+  Array.prototype.forEach.call(document.querySelectorAll('.step'),function(b){b.onclick=function(){failNode(b.getAttribute('data-id'));};});
+}
+
+function drawDetails(){
+  var pd=$('plandetails');
+  if(!plan){pd.style.display='none';return;}
+  pd.style.display='block';
+  var ids=stepIds();
+  $('pd-meta').textContent='— '+ids.length+' steps for: "'+(plan.user_input||'')+'"';
+  $('pd-body').innerHTML=ids.map(function(id,si){var n=nodeMap[id];if(!n)return '';
+    var tasks=(n.tasks||[]).map(function(tk,ti){
+      var dep=(tk.depend_on&&tk.depend_on.length)?esc(JSON.stringify(tk.depend_on)):'[]';
+      return '<div class="pd-task">'+
+        '<div class="pd-idx">'+ti+'</div>'+
+        '<div class="pd-fld title"><div class="pd-lbl">title</div><div class="pd-val">'+esc(tk.title)+'</div></div>'+
+        '<div class="pd-fld"><div class="pd-lbl">type</div><div class="pd-val ty">'+esc(tk.type||'—')+'</div></div>'+
+        '<div class="pd-fld"><div class="pd-lbl">depend_on</div><div class="pd-val dep">'+dep+'</div></div>'+
+      '</div>';
+    }).join('')||'<div class="muted" style="font-size:12px">no tasks</div>';
+    return '<div class="pd-node">'+
+      '<div class="pd-step">step '+(si+1)+' · '+id+' · conf '+n.conf.toFixed(2)+'</div>'+
+      '<div class="pd-desc">'+esc(n.desc)+'</div>'+
+      '<div class="pd-tasks">'+tasks+'</div></div>';
+  }).join('');
+}
+
+function show(i){idx=Math.max(0,Math.min(frames.length-1,i));nodeMap=nmap(frames[idx]);drawTree(frames[idx]);drawPanels(frames[idx]);drawPlan();drawDetails();$('frame').textContent='frame '+(idx+1)+' / '+frames.length;}
+function stopAuto(){if(autoT){clearInterval(autoT);autoT=null;$('auto').textContent='auto ▶▶';}}
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
+
+$('prev').onclick=function(){stopAuto();show(idx-1);};
+$('step').onclick=function(){stopAuto();show(idx+1);};
+$('fit').onclick=function(){fit(false);};
+$('auto').onclick=function(){if(autoT){stopAuto();return;}$('auto').textContent='pause ⏸';autoT=setInterval(function(){if(idx>=frames.length-1){stopAuto();return;}show(idx+1);},900);};
+$('failbtn').onclick=function(){if(plan)randomFail();};
+$('goal').addEventListener('keydown',function(e){if(e.key==='Enter')run();});
+$('run').onclick=run;
+window.addEventListener('resize',function(){fit(true);});
+
+var pending={plan:null,llm:false};
+
+async function run(){
+  stopAuto();plan=null;
+  var goal=$('goal').value.trim();if(!goal)return;
+  $('run').disabled=true;$('note').innerHTML='<span class="spinner"></span> expanding against the live model — the LLM decides when the plan is finished (~30–90s)…';
+  try{
+    var r=await fetch('/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({user_input:goal})});
+    var d=await r.json();
+    runId=d.run_id;frames=d.snapshots;plan=null;
+    pending={plan:d.plan,llm:d.llm};
+    $('replay').style.display='flex';
+    await playFrames(0,frames.length);                       // 1) animate expansion
+    plan=pending.plan;show(frames.length-1);                 // 2) reveal terminal path + plan
+    var tnode=nodeMap[plan.node_path[plan.node_path.length-1]];
+    var why=(tnode&&tnode.terminal_reason==='llm')?'the model marked the plan finished':'the depth cap was reached';
+    $('note').textContent='first terminal reached — '+why+'. Simulating a failed task next…';
+    await sleep(1600);
+    await randomFail();                                      // 3) fail a random task
+  }catch(e){$('note').textContent='error: '+e;}
+  $('run').disabled=false;
+}
+
+async function playFrames(a,b){for(var i=a;i<b;i++){plan=null;show(i);await sleep(900);}}
+
+async function randomFail(){
+  var steps=stepIds();
+  if(!steps.length)return;
+  await failNode(steps[Math.floor(Math.random()*steps.length)]);
+}
+
+async function failNode(id){
+  stopAuto();
+  var fdesc=(nodeMap[id]&&nodeMap[id].desc)||id;
+  $('note').innerHTML='<span class="spinner"></span> task failed: "'+fdesc+'" ('+id+') — Planner gate trimming branch and expanding again…';
+  try{
+    var r=await fetch('/fail',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({run_id:runId,node_id:id})});
+    var d=await r.json();
+    var start=frames.length;
+    frames=frames.concat(d.snapshots);
+    await playFrames(start,frames.length);                   // animate trim + re-expansion
+    plan=d.plan;show(frames.length-1);
+    $('note').textContent='task "'+fdesc+'" failed → trimmed '+d.cleared.length+' node(s) under parent '+d.parent_id+'. '+(d.plan?'expanded again → new plan ✓':'no alternative plan — re-run.');
+  }catch(e){$('note').textContent='error: '+e;}
+}
+</script>
+</body>
+</html>

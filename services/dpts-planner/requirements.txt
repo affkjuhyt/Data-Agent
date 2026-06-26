@@ -1,0 +1,17 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+motor>=3.3            # plan DB (Mongo)
+elasticsearch>=8.0    # Cached Plan search (plan_index)
+pydantic==2.9.2
+python-dotenv>=1.0
+httpx>=0.27           # LLM → vLLM OpenAI-compatible endpoint
+aiokafka>=0.10        # dispatch plan.ready to the executor (shared kafka_connector)
+
+# ── Observability (services/shared/observability.py) ──
+structlog==24.2.0
+opentelemetry-sdk==1.24.0
+opentelemetry-exporter-otlp-proto-grpc==1.24.0
+opentelemetry-instrumentation-fastapi==0.45b0
+opentelemetry-instrumentation-httpx==0.45b0
+opentelemetry-instrumentation-requests==0.45b0
+opentelemetry-instrumentation-logging==0.45b0
