@@ -10,17 +10,17 @@ import uuid as _uuid
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import func as sa_func, select as sa_select
 
 from basemodel.services_databaseconnector.postgres_model import (
     Language, SourceType, Document, Image, Video, Web, Warehouse,
-    ReadJoinRequest, WhereFilter,
 )
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import KBTextBlockORM
 from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
-from services.kb_backend.pipeline.kb_ui_operation.document_ops import fetch_one as _fetch_doc
+from services.kb_backend.pipeline.kb_ui_operation.document_ops import (
+    fetch_one as _fetch_doc, name_exists as _name_exists,
+    count_processed_chunks as _count_processed_chunks,
+)
 from services.kb_backend.pipeline.ingestion import config as cfg
 from services.kb_backend.pipeline.ingestion.bronze import BronzeUploadRequest, WebBronzeRequest
 
@@ -53,6 +53,35 @@ class PromoteResponse(BaseModel):
     data_id: str
     stage: str
     message: str
+
+
+async def _fetch_kbdata_or_404(postgres, tenant_id: str, data_id: str) -> dict:
+    """Fetch the single KBData row for (tenant, data_id) or raise 404.
+
+    Thin 404 wrapper over document_ops.fetch_one — the query itself lives in ops.
+    Shared by the silver/gold promote handlers, which both need the record
+    (source/extension/path for silver, tier + neo4j connection for gold).
+    """
+    record = await _fetch_doc(postgres, data_id, tenant_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"KBData not found: {data_id}")
+    return record
+
+
+async def _log_promotion_queued(mongo, data_id: str, stage: str) -> None:
+    """Upsert the ingestion-log doc marking a promotion to `stage` as queued."""
+    now = datetime.datetime.utcnow()
+    db = mongo.get_client()
+    await db["kb_ingestion_logs"].update_one(
+        {"data_id": data_id},
+        {
+            "$set":         {"status": "PENDING", "stage": stage, "updated_at": now},
+            "$push":        {"logs": {"timestamp": now, "level": "INFO",
+                                      "message": f"{stage.capitalize()} promotion queued"}},
+            "$setOnInsert": {"created_at": now},
+        },
+        upsert=True,
+    )
 
 
 @router.post("/bronze")
@@ -92,13 +121,7 @@ async def ingest_bronze(
     # KBData.name is globally unique — reject duplicates up front with a clear
     # message instead of letting the insert blow up with a generic 500.
     postgres = svc(request, "postgres")
-    dup = await postgres.read(ReadJoinRequest(
-        tenant_id=ctx["tenant_id"],
-        joins_table=["KBData"],
-        filters=[WhereFilter(table_name="KBData", column_name="name", value=name)],
-        limit=1,
-    ))
-    if dup.code == 200 and dup.data:
+    if await _name_exists(postgres, ctx["tenant_id"], name):
         raise HTTPException(
             status_code=409,
             detail=f"A document named '{name}' already exists. Choose a different Knowledge Name.",
@@ -181,13 +204,7 @@ async def ingest_bronze_web(
 
     # KBData.name is globally unique — reject duplicates up front (same as files).
     postgres = svc(request, "postgres")
-    dup = await postgres.read(ReadJoinRequest(
-        tenant_id=ctx["tenant_id"],
-        joins_table=["KBData"],
-        filters=[WhereFilter(table_name="KBData", column_name="name", value=name)],
-        limit=1,
-    ))
-    if dup.code == 200 and dup.data:
+    if await _name_exists(postgres, ctx["tenant_id"], name):
         raise HTTPException(
             status_code=409,
             detail=f"A document named '{name}' already exists. Choose a different Knowledge Name.",
@@ -228,16 +245,7 @@ async def promote_to_silver(
     kafka_producer = svc(request, "kafka_producer")
     mongo          = svc(request, "mongo")
 
-    resp = await postgres.read(ReadJoinRequest(
-        tenant_id=ctx["tenant_id"],
-        joins_table=["KBData"],
-        filters=[WhereFilter(table_name="KBData", column_name="data_id", value=data_id)],
-        limit=1,
-    ))
-    if resp.code != 200 or not resp.data:
-        raise HTTPException(status_code=404, detail=f"KBData not found: {data_id}")
-
-    record = resp.data[0]
+    record = await _fetch_kbdata_or_404(postgres, ctx["tenant_id"], data_id)
     log.info("POST /ingestion/promote/%s/silver tenant=%s", data_id, ctx["tenant_id"])
 
     try:
@@ -258,17 +266,7 @@ async def promote_to_silver(
         log.exception("Kafka produce error (silver): %s", e)
         raise HTTPException(status_code=500, detail="Promotion queuing failed")
 
-    now = datetime.datetime.utcnow()
-    db = mongo.get_client()
-    await db["kb_ingestion_logs"].update_one(
-        {"data_id": data_id},
-        {
-            "$set":         {"status": "PENDING", "stage": "silver", "updated_at": now},
-            "$push":        {"logs": {"timestamp": now, "level": "INFO", "message": "Silver promotion queued"}},
-            "$setOnInsert": {"created_at": now},
-        },
-        upsert=True,
-    )
+    await _log_promotion_queued(mongo, data_id, "silver")
 
     return PromoteResponse(
         data_id=data_id,
@@ -287,16 +285,7 @@ async def promote_to_gold(
     kafka_producer = svc(request, "kafka_producer")
     mongo          = svc(request, "mongo")
 
-    resp = await postgres.read(ReadJoinRequest(
-        tenant_id=ctx["tenant_id"],
-        joins_table=["KBData"],
-        filters=[WhereFilter(table_name="KBData", column_name="data_id", value=data_id)],
-        limit=1,
-    ))
-    if resp.code != 200 or not resp.data:
-        raise HTTPException(status_code=404, detail=f"KBData not found: {data_id}")
-
-    record = resp.data[0]
+    record = await _fetch_kbdata_or_404(postgres, ctx["tenant_id"], data_id)
     if record.get("current_tier") != "silver":
         raise HTTPException(
             status_code=409,
@@ -321,17 +310,7 @@ async def promote_to_gold(
         log.exception("Kafka produce error (gold): %s", e)
         raise HTTPException(status_code=500, detail="Promotion queuing failed")
 
-    now = datetime.datetime.utcnow()
-    db = mongo.get_client()
-    await db["kb_ingestion_logs"].update_one(
-        {"data_id": data_id},
-        {
-            "$set":         {"status": "PENDING", "stage": "gold", "updated_at": now},
-            "$push":        {"logs": {"timestamp": now, "level": "INFO", "message": "Gold promotion queued"}},
-            "$setOnInsert": {"created_at": now},
-        },
-        upsert=True,
-    )
+    await _log_promotion_queued(mongo, data_id, "gold")
 
     return PromoteResponse(
         data_id=data_id,
@@ -477,14 +456,13 @@ async def stream_progress(data_id: str, request: Request, ctx: dict = Depends(au
             emitted = False
             doc = await db["kb_ingestion_logs"].find_one({"data_id": data_id})
 
-            # Count already-processed chunks from Postgres
+            # Count already-processed chunks. Degrade to 0 on error so the progress
+            # stream stays alive, but LOG it — a silent 0 here would otherwise mask
+            # pool exhaustion or a DB outage behind "stuck at low %".
             try:
-                async with postgres.get_client() as session:
-                    processed_chunks: int = await session.scalar(
-                        sa_select(sa_func.count()).select_from(KBTextBlockORM)
-                        .where(KBTextBlockORM.owner_id == doc_uuid)
-                    ) or 0
-            except Exception:
+                processed_chunks: int = await _count_processed_chunks(postgres, doc_uuid)
+            except Exception as e:
+                log.warning("progress stream: chunk count failed for %s: %s", data_id, e)
                 processed_chunks = 0
 
             total_chunks: int = int((doc or {}).get("total_chunks", 0))

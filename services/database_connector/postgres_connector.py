@@ -1,4 +1,5 @@
 import asyncio
+import os
 import uuid
 from typing import Any
 
@@ -19,6 +20,36 @@ from basemodel.services_databaseconnector.postgres_model import (
 import basemodel.services_databaseconnector.postgres_orm  # noqa: F401 — registers ORM classes into REGISTRY
 
 log = logging.getLogger(__name__)
+
+
+def _engine_kwargs() -> dict[str, Any]:
+    """Build create_async_engine kwargs from env, defaulting to SQLAlchemy's own
+    defaults so existing deployments are unchanged.
+
+    Why this matters for concurrency: the async engine hands out connections from
+    a bounded pool (`pool_size` kept open + up to `max_overflow` burst). When all
+    are checked out, further requests WAIT up to `pool_timeout` seconds, then fail.
+    Under concurrent UI + retrieval + long-lived SSE progress streams (each of
+    which periodically checks out a connection), the 5+10 default can become the
+    ceiling. These knobs let ops raise the ceiling without a code change.
+
+    `command_timeout` (asyncpg) caps how long a single statement may run. Without
+    it a stuck query holds its pooled connection forever — one runaway query can
+    starve the whole pool. Default unset (no cap) to preserve current behaviour;
+    set POSTGRES_STATEMENT_TIMEOUT to enable.
+    """
+    kwargs: dict[str, Any] = {
+        "pool_pre_ping": True,
+        "pool_size":     int(os.getenv("POSTGRES_POOL_SIZE", "5")),
+        "max_overflow":  int(os.getenv("POSTGRES_MAX_OVERFLOW", "10")),
+        "pool_timeout":  int(os.getenv("POSTGRES_POOL_TIMEOUT", "30")),
+        "pool_recycle":  int(os.getenv("POSTGRES_POOL_RECYCLE", "1800")),
+    }
+    stmt_timeout = os.getenv("POSTGRES_STATEMENT_TIMEOUT")
+    if stmt_timeout:
+        # asyncpg accepts command_timeout (seconds) via connect_args.
+        kwargs["connect_args"] = {"command_timeout": float(stmt_timeout)}
+    return kwargs
 
 
 # Helpers
@@ -394,8 +425,12 @@ async def _tenant_session(factory, tenant_id: str):
                 await session.rollback()
                 await session.execute(text("SELECT set_config('app.tenant_id', '', false)"))
                 await session.commit()
-            except Exception:
-                pass
+            except Exception as e:
+                # A failed reset means this connection may carry app.tenant_id into
+                # the next checkout (RLS leak risk) or sit in a bad txn state. Log it
+                # rather than swallowing silently — the context manager still
+                # closes/recycles the session on exit.
+                log.warning("tenant session cleanup failed (connection will be recycled): %s", e)
 
 
 class PostgresClient:
@@ -416,7 +451,7 @@ class PostgresClient:
 
         for attempt in range(retry.count):
             try:
-                self._engine = create_async_engine(self._url, pool_pre_ping=True)
+                self._engine = create_async_engine(self._url, **_engine_kwargs())
                 self._session_factory = async_sessionmaker(self._engine, expire_on_commit=False)
                 async with self._engine.connect() as conn:
                     await conn.execute(text("SELECT 1"))

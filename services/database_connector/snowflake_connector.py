@@ -10,6 +10,11 @@ from snowflake.connector import DictCursor
 
 log = logging.getLogger(__name__)
 
+# Connection guardrails. Seconds. Kept short so a bad account fails fast instead
+# of holding a thread-pool worker hostage (see validate_and_connect).
+LOGIN_TIMEOUT_S = 15
+NETWORK_TIMEOUT_S = 30
+
 
 class SnowflakeConnector:
     """Manages Snowflake connections and metadata discovery."""
@@ -56,20 +61,23 @@ class SnowflakeConnector:
                 schema=schema,
                 role=role,
                 client_session_keep_alive=True,
+                # Bound BOTH timeouts. Without them an unreachable account pins the
+                # asyncio.to_thread worker (default login_timeout ~60s, network
+                # timeout effectively unbounded); under concurrency these exhaust
+                # the shared default ThreadPoolExecutor and stall every other
+                # to_thread caller process-wide. Fail fast instead.
+                login_timeout=LOGIN_TIMEOUT_S,
+                network_timeout=NETWORK_TIMEOUT_S,
             )
 
+        # Connection and metadata discovery are reported separately: a successful
+        # auth that then fails to enumerate tables (e.g. no INFORMATION_SCHEMA
+        # grant) must NOT come back as success with an empty list — that silently
+        # persists a broken warehouse downstream.
         try:
             log.info("Connecting to Snowflake account=%s database=%s", account_identifier, database)
             self.connection = await asyncio.to_thread(_connect)
             log.info("✓ Snowflake connection successful")
-
-            tables = await self.discover_tables()
-
-            return {
-                "success": True,
-                "message": f"Connected to {database}.{schema}",
-                "tables": tables,
-            }
         except Exception as e:
             log.error("✗ Snowflake connection failed: %s", e)
             return {
@@ -77,6 +85,22 @@ class SnowflakeConnector:
                 "message": f"Connection failed: {str(e)}",
                 "tables": [],
             }
+
+        try:
+            tables = await self.discover_tables()
+        except Exception as e:
+            log.error("✗ Snowflake table discovery failed: %s", e)
+            return {
+                "success": False,
+                "message": f"Connected, but could not list tables: {str(e)}",
+                "tables": [],
+            }
+
+        return {
+            "success": True,
+            "message": f"Connected to {database}.{schema}",
+            "tables": tables,
+        }
 
     async def discover_tables(self) -> list[dict]:
         """Fetch list of tables in the current schema with row counts."""
@@ -99,24 +123,23 @@ class SnowflakeConnector:
             """)
             return cursor.fetchall()
 
-        try:
-            rows = await asyncio.to_thread(_query)
-            tables = [
-                {
-                    "table_id": row["TABLE_NAME"],
-                    "table_name": row["TABLE_NAME"],
-                    "table_type": row["TABLE_TYPE"],
-                    "row_count": row["ROW_COUNT"] or 0,
-                    "created_at": str(row["CREATED"]) if row["CREATED"] else None,
-                    "last_altered": str(row["LAST_ALTERED"]) if row["LAST_ALTERED"] else None,
-                }
-                for row in rows
-            ]
-            log.info("Discovered %d tables", len(tables))
-            return tables
-        except Exception as e:
-            log.error("Table discovery failed: %s", e)
-            return []
+        # Let exceptions propagate — a discovery failure is NOT an empty schema.
+        # validate_and_connect distinguishes the two; swallowing here would report
+        # a broken connection as a successful one with zero tables.
+        rows = await asyncio.to_thread(_query)
+        tables = [
+            {
+                "table_id": row["TABLE_NAME"],
+                "table_name": row["TABLE_NAME"],
+                "table_type": row["TABLE_TYPE"],
+                "row_count": row["ROW_COUNT"] or 0,
+                "created_at": str(row["CREATED"]) if row["CREATED"] else None,
+                "last_altered": str(row["LAST_ALTERED"]) if row["LAST_ALTERED"] else None,
+            }
+            for row in rows
+        ]
+        log.info("Discovered %d tables", len(tables))
+        return tables
 
     async def get_table_schema(self, table_name: str) -> dict:
         """Get column schema for a specific table."""
@@ -139,22 +162,20 @@ class SnowflakeConnector:
             """, (table_name,))
             return cursor.fetchall()
 
-        try:
-            rows = await asyncio.to_thread(_query)
-            columns = [
-                {
-                    "name": row["COLUMN_NAME"],
-                    "position": row["ORDINAL_POSITION"],
-                    "type": row["DATA_TYPE"],
-                    "nullable": row["IS_NULLABLE"] == "YES",
-                    "default": row["COLUMN_DEFAULT"],
-                }
-                for row in rows
-            ]
-            return {"table_name": table_name, "columns": columns}
-        except Exception as e:
-            log.error("Schema fetch failed for table %s: %s", table_name, e)
-            return {}
+        # Propagate errors — the caller persists this schema, so a swallowed
+        # failure here silently saves a table with empty columns.
+        rows = await asyncio.to_thread(_query)
+        columns = [
+            {
+                "name": row["COLUMN_NAME"],
+                "position": row["ORDINAL_POSITION"],
+                "type": row["DATA_TYPE"],
+                "nullable": row["IS_NULLABLE"] == "YES",
+                "default": row["COLUMN_DEFAULT"],
+            }
+            for row in rows
+        ]
+        return {"table_name": table_name, "columns": columns}
 
     async def query_table(
         self, table_name: str, limit: int = 100, offset: int = 0

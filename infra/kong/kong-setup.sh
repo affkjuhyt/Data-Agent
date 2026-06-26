@@ -45,6 +45,55 @@ for i in $(seq 1 30); do
 done
 echo "✅ Keycloak ready"
 
+# ── 0. Set dev user passwords via Keycloak admin API ──────────────────
+# The realm export ships WITHOUT credential hashes (they can't be portably
+# serialised across Keycloak versions). This block sets well-known dev
+# passwords on every first boot. Safe to re-run — PUT is idempotent.
+echo "🔑 Setting dev user passwords in Keycloak realm '$REALM'..."
+KC_ADMIN_TOKEN=$(curl -sf -X POST "$KC_BASE/realms/master/protocol/openid-connect/token" \
+  -d "grant_type=password&client_id=admin-cli&username=admin&password=admin" \
+  | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || true)
+
+if [ -z "$KC_ADMIN_TOKEN" ]; then
+  echo "  ⚠️  Could not obtain Keycloak admin token — skipping password init"
+else
+  set_password() {
+    local USERNAME="$1" PASSWORD="$2"
+    local USER_ID
+    USER_ID=$(curl -sf -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+      "$KC_BASE/admin/realms/$REALM/users?username=$USERNAME&exact=true" \
+      | python3 -c "import sys,json; u=json.load(sys.stdin); print(u[0]['id'] if u else '')" 2>/dev/null || true)
+    if [ -z "$USER_ID" ]; then
+      echo "  ⚠️  User '$USERNAME' not found — skipping"
+      return
+    fi
+    # Capture body+status so we can tell a real failure from "already set". On a
+    # persisted Keycloak volume the user already has this password, and the realm's
+    # password-history policy rejects re-setting the same value with HTTP 400
+    # (invalidPasswordHistoryMessage) — that is success, not failure.
+    local resp status
+    resp=$(curl -s -w '\n%{http_code}' -X PUT "$KC_BASE/admin/realms/$REALM/users/$USER_ID/reset-password" \
+      -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "{\"type\":\"password\",\"value\":\"$PASSWORD\",\"temporary\":false}")
+    status=$(printf '%s' "$resp" | tail -n1)
+    if [ "$status" = "204" ] || [ "$status" = "200" ]; then
+      echo "  ✅ $USERNAME password set"
+    elif printf '%s' "$resp" | grep -q "invalidPasswordHistoryMessage"; then
+      echo "  ℹ️  $USERNAME password already set (unchanged) — ok"
+    else
+      echo "  ⚠️  $USERNAME password set failed (HTTP $status)"
+    fi
+  }
+
+  set_password "helios-admin"    "H3lios@Admin01!"
+  set_password "helios-engineer" "H3lios@Eng001!"
+  set_password "helios-viewer"   "H3lios@View001!"
+  set_password "platform-admin"  "Platform@Admin01!"
+  set_password "ai-engineer"     "AiEng@001!dev"
+  set_password "executive-viewer" "Exec@View001!"
+fi
+
 # ── 1. Fetch RSA public key from Keycloak JWKS ─────────────────────────
 echo "🔑 Fetching JWKS from Keycloak..."
 JWKS_URL="$KC_BASE/realms/$REALM/protocol/openid-connect/certs"
@@ -163,18 +212,6 @@ curl -sf -X PUT "$KONG_ADMIN/services/flow-builder" \
     "read_timeout": 30000
   }' | json_field name | xargs -I{} echo "  → service: {}"
 
-echo "📡 Creating kb-backend service..."
-curl -sf -X PUT "$KONG_ADMIN/services/kb-backend" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "kb-backend",
-    "host": "kb-backend",
-    "port": 8000,
-    "protocol": "http",
-    "connect_timeout": 5000,
-    "read_timeout": 30000
-  }' | json_field name | xargs -I{} echo "  → service: {}"
-
 # ── 3. Create routes ───────────────────────────────────────────────────
 echo "🛣️  Creating flow-builder route (canvas + agent CRUD)..."
 curl -sf -X PUT "$KONG_ADMIN/services/flow-builder/routes/builder-route" \
@@ -196,15 +233,10 @@ curl -sf -X PUT "$KONG_ADMIN/services/workflow-runtime/routes/runtime-route" \
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
 
-echo "🛣️  Creating kb-backend route (knowledge base data)..."
-curl -sf -X PUT "$KONG_ADMIN/services/kb-backend/routes/kb-route" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "kb-route",
-    "paths": ["/api/data"],
-    "strip_path": false,
-    "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
-  }' | json_field name | xargs -I{} echo "  → route: {}"
+# NOTE: the kb-backend service + its route (paths /api/data, /api/knowledge,
+# /api/pipeline, /api/fleet) are created together in section 3d below. Do not
+# add a second /api/data route here — two routes matching the same path leave
+# the CORS plugin (attached to one route) ambiguous for browser preflights.
 
 # ── 3b. Create auth-api service + route ────────────────────────────────
 echo "📡 Creating auth-api service..."
@@ -326,7 +358,7 @@ ISSUER="$KC_PUBLIC/realms/$REALM"
 # not the public one. Two URLs by design: public for iss validation, network
 # for JWKS fetch. Mixing them means either tokens reject ("iss mismatch")
 # OR Kong can't reach Keycloak.
-KONG_KC_HOST="${KEYCLOAK_NETWORK_URL:-http://aeroflow-keycloak-lb:8080}"
+KONG_KC_HOST="${KEYCLOAK_NETWORK_URL:-${KC_BASE:-http://dataagent-keycloak:8080}}"
 JWKS_URI="$KONG_KC_HOST/realms/$REALM/protocol/openid-connect/certs"
 
 # ── 4. aeroflow-jwks plugin — JWKS-based RS256 verify + header inject ──
