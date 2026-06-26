@@ -7,10 +7,14 @@ PLANS_COLLECTION = os.environ.get("DPTS_PLANS_COLLECTION", "dpts_plans")
 # ── Elasticsearch (Cached Plan — search if a plan exists for a user query) ──
 ES_URL = os.environ.get("DPTS_ES_URL", "")  # empty = Cached Plan search disabled
 ES_INDEX = os.environ.get("DPTS_ES_INDEX", "dpts_plans")
-ES_MIN_SCORE = float(os.environ.get("DPTS_ES_MIN_SCORE", "8.0"))
+ES_MIN_SCORE = float(os.environ.get("DPTS_ES_MIN_SCORE", "1.0"))  # BM25 is corpus-relative; tune per corpus
 
 # ── Model service (infra/model-service /generate -> vLLM) ───────────────────
 MODEL_SERVICE_URL = os.environ.get("MODEL_SERVICE_URL", "")  # empty -> MockLLM fallback
+
+# ── Agents catalog (Postgres) — task `type` is chosen from these agents ─────
+POSTGRES_DSN = os.environ.get("POSTGRES_DSN", "")            # empty -> task type stays free-form
+AGENT_TENANT_ID = os.environ.get("DPTS_AGENT_TENANT_ID", "")  # empty -> agents across all tenants
 
 # ── Cached-plan TTL (sweeper erases expired plans from Mongo + ES) ──────────
 PLAN_TTL_SECONDS = int(os.environ.get("DPTS_PLAN_TTL_SECONDS", "86400"))   # 24h

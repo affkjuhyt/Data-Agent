@@ -8,7 +8,6 @@ from fastapi import FastAPI
 import config as cfg
 import model_sync
 import models
-import registry
 import remote
 from routers import embed, generate, health, rerank
 
@@ -43,7 +42,7 @@ async def lifespan(app: FastAPI):
     models.load(cfg.EMBED_MODEL, cfg.RERANK_MODEL)
     # Register this model in Postgres in the background — Postgres may not be
     # ready yet, so the retry loop runs independently without blocking serving.
-    asyncio.create_task(registry.register_with_retry(), name="model-registry")
+    asyncio.create_task(model_sync.register_with_retry(), name="model-registry")
     # Probe the LLM gateway once (background) to fail loud on misconfiguration.
     asyncio.create_task(_probe_llm_backend(), name="llm-probe")
     yield

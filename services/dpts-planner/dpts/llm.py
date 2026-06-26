@@ -20,65 +20,82 @@ class ChildThought:
 
 
 # JSON grammar enforced at decode time (vLLM structured output). tasks minItems:1
-# makes a content-less "plan complete" step impossible to emit.
-STEP_SCHEMA = {
-    "type": "object",
-    "required": ["thought", "confidence", "is_terminal", "target"],
-    "additionalProperties": False,
-    "properties": {
-        "thought": {"type": "string"},
-        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-        "is_terminal": {"type": "boolean"},
-        "target": {
-            "type": "object",
-            "required": ["description", "tasks"],
-            "additionalProperties": False,
-            "properties": {
-                "description": {"type": "string"},
-                "tasks": {
-                    "type": "array", "minItems": 1,
-                    "items": {
-                        "type": "object",
-                        "required": ["title", "type", "depend_on"],
-                        "additionalProperties": False,
-                        "properties": {
-                            "title": {"type": "string"},
-                            "type": {"type": "string"},
-                            "depend_on": {"type": "array", "items": {"type": ["integer", "string"]}},
+# makes a content-less "plan complete" step impossible to emit. Each task's "type"
+# is the AGENT that runs it; when an agent catalog is supplied it becomes an enum,
+# so the model can only pick a real registered agent.
+def build_step_schema(agent_names: list[str] | None = None) -> dict:
+    type_field = {"type": "string"}
+    if agent_names:
+        type_field = {"type": "string", "enum": agent_names}
+    return {
+        "type": "object",
+        "required": ["thought", "confidence", "is_terminal", "target"],
+        "additionalProperties": False,
+        "properties": {
+            "thought": {"type": "string"},
+            "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+            "is_terminal": {"type": "boolean"},
+            "target": {
+                "type": "object",
+                "required": ["description", "tasks"],
+                "additionalProperties": False,
+                "properties": {
+                    "description": {"type": "string"},
+                    "tasks": {
+                        "type": "array", "minItems": 1,
+                        "items": {
+                            "type": "object",
+                            "required": ["title", "type", "depend_on"],
+                            "additionalProperties": False,
+                            "properties": {
+                                "title": {"type": "string"},
+                                "type": type_field,                # agent name (enum when catalog known)
+                                "depend_on": {"type": "array", "items": {"type": ["integer", "string"]}},
+                            },
                         },
                     },
                 },
             },
         },
-    },
-}
+    }
+
+
+STEP_SCHEMA = build_step_schema()   # default (free-form type) when no agent catalog
 
 _SYSTEM = (
     "You build a plan as a SHORT ordered sequence of high-level steps (Targets), each "
     "with concrete Tasks, using tree search. On each call you propose the SINGLE best "
     "NEXT step given the GOAL and the PLAN SO FAR.\n"
+    "Each task's \"type\" is the AGENT that will execute it — you MUST set it to one of the "
+    "AVAILABLE AGENTS by name (pick the agent whose description best fits the task). "
+    "\"depend_on\" lists the indices of earlier tasks in the same step that must finish first.\n"
     "Set is_terminal correctly — this is the most important field:\n"
     "- is_terminal=true  -> after THIS step's tasks are done, the GOAL is fully achieved; this is the LAST step.\n"
     "- is_terminal=false -> genuinely new work is still needed after this one.\n"
-    "Before answering, check: does the GOAL truly need ANOTHER step after this? If the GOAL's "
-    "deliverable (a report, a value, a file, an answer) is produced by this step, is_terminal MUST be true.\n"
-    "NEVER propose a step that repeats or rephrases work already in PLAN SO FAR — if the remaining work "
-    "is already covered, set is_terminal=true instead of adding a step.\n"
-    "Keep plans tight (usually 2-3 steps); never pad. Every step has at least one concrete task. "
-    "Score confidence in [0,1].\n"
+    "If the GOAL's deliverable is produced by this step, is_terminal MUST be true. NEVER repeat work "
+    "already in PLAN SO FAR. Keep plans tight (usually 2-3 steps); never pad. Score confidence in [0,1].\n"
     "Reply with ONLY one JSON object: {thought, confidence, is_terminal, "
     "target:{description, tasks:[{title, type, depend_on}]}}."
 )
 _INSTRUCTION = (
-    "Propose the next step now. Decide is_terminal: true if this step completes the GOAL, "
-    "otherwise false."
+    "Propose the next step now. Set each task's type to an available agent name. Decide is_terminal: "
+    "true if this step completes the GOAL, otherwise false."
 )
 
 
-# prefix-stable prompt (system+goal+path shared -> vLLM prefix cache); avoid suffix breaks cache only on recovery
-def build_messages(goal: str, path_steps: list[str], avoid: list[str] | None) -> list[dict]:
+def _agents_block(agents: list[dict] | None) -> str:
+    if not agents:
+        return ""
+    lines = "".join(f"\n- {a['name']}: {a.get('description', '')}" for a in agents)
+    return f"AVAILABLE AGENTS (set each task's \"type\" to one of these names):{lines}\n\n"
+
+
+# prefix-stable prompt (system+goal+agents+path shared -> vLLM prefix cache); avoid suffix breaks cache on recovery
+def build_messages(goal: str, path_steps: list[str], avoid: list[str] | None,
+                   agents: list[dict] | None = None) -> list[dict]:
+    user = f"GOAL:\n{goal}\n\n" + _agents_block(agents)
     steps = "".join(f"\n- {s}" for s in path_steps)
-    user = f"GOAL:\n{goal}\n\nPLAN SO FAR ({len(path_steps)} steps):{steps or ' (none yet)'}\n\n"
+    user += f"PLAN SO FAR ({len(path_steps)} steps):{steps or ' (none yet)'}\n\n"
     if avoid:
         user += "These next-steps FAILED in execution; do NOT propose them again:" + \
                 "".join(f"\n- {a}" for a in avoid) + "\n\n"
@@ -93,20 +110,24 @@ class LLM:
     = K concurrent /generate calls (vLLM continuous-batches them); temperature>0
     gives the branch diversity."""
 
-    def __init__(self, branching: int = 2, temperature: float = 0.7, max_tokens: int = 360) -> None:
+    def __init__(self, branching: int = 2, temperature: float = 0.7, max_tokens: int = 360,
+                 agents: list[dict] | None = None) -> None:
         self.branching = branching
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.agents = agents or []                      # [{name, description}] from the Agents table
+        self._schema = build_step_schema([a["name"] for a in self.agents] or None)
 
     async def generate(self, node: Node, k: int | None = None) -> list[ChildThought]:
         import asyncio
         from services.database_connector.model_connector import client as model_client
         k = k or self.branching
-        messages = build_messages(node.goal or node.thought, node.path_steps, node.blocked_attempts or None)
+        messages = build_messages(node.goal or node.thought, node.path_steps,
+                                  node.blocked_attempts or None, self.agents)
 
         async def one_child() -> list[ChildThought]:
             content = await model_client.generate(
-                messages=messages, json_schema=STEP_SCHEMA, json_mode=True,
+                messages=messages, json_schema=self._schema, json_mode=True,
                 max_tokens=self.max_tokens, temperature=self.temperature,
             )
             return _parse(content)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 import config
+import agent_catalog
 import plan_db
 import plan_index
 from dpts import LLM, MockLLM, Plan, PlanningProcess, StaticMemoryEstimator
@@ -12,17 +13,25 @@ logger = logging.getLogger(__name__)
 # Live trees keyed by (user_id, plan_id) — isolates concurrent users and lets a
 # Planner-gate failure resume the right tree.
 _sessions: dict[tuple[str, str], PlanningProcess] = {}
+_agents_cache: list[dict] | None = None
 
 
-def _build_llm():
+async def _agents() -> list[dict]:
+    global _agents_cache
+    if _agents_cache is None:
+        _agents_cache = await agent_catalog.load_agents()
+    return _agents_cache
+
+
+def _build_llm(agents: list[dict]):
     if config.USE_MOCK_EXPANDER:
         return MockLLM(plan_depth=config.MAX_PLAN_DEPTH, branching=config.BRANCHING)
-    return LLM(branching=config.BRANCHING)  # routes through the model-service connector
+    return LLM(branching=config.BRANCHING, agents=agents)  # task type chosen from these agents
 
 
-def _new_process() -> PlanningProcess:
+def _new_process(agents: list[dict]) -> PlanningProcess:
     return PlanningProcess(
-        _build_llm(), h_es=config.H_ES, h_ds=config.H_DS, branching=config.BRANCHING,
+        _build_llm(agents), h_es=config.H_ES, h_ds=config.H_DS, branching=config.BRANCHING,
         estimator=StaticMemoryEstimator(config.QUEUE_SIZE), exploit_ratio=config.EXPLOIT_RATIO,
         max_plan_depth=config.MAX_PLAN_DEPTH,
     )
@@ -37,7 +46,7 @@ async def create_plan(user_id: str, user_input: str, use_cache: bool = True) -> 
             if cached:
                 return {"plan": cached, "cached": True}
 
-    process = _new_process()
+    process = _new_process(await _agents())
     plan = await process.plan(user_input)
     if plan is None:
         return {"plan": None, "cached": False}

@@ -16,6 +16,22 @@ services:
       timeout: 5s
       retries: 5
 
+  postgres:
+    image: postgres:16
+    environment:
+      - POSTGRES_USER=dpts
+      - POSTGRES_PASSWORD=dpts
+      - POSTGRES_DB=dataagent
+    ports: ["5432:5432"]
+    volumes:
+      - dpts_pg:/var/lib/postgresql/data
+      - ./seed/agents.sql:/docker-entrypoint-initdb.d/agents.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dpts -d dataagent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
     environment:
@@ -30,13 +46,15 @@ services:
       timeout: 5s
       retries: 10
 
+  # infra/model-service — the single gateway for all model calls. /generate forwards
+  # to the vLLM endpoint (REMOTE_LLM_URL). First boot downloads embed/rerank weights.
   model-service:
     build:
       context: ../../infra/model-service
       dockerfile: Dockerfile
     environment:
-      - REMOTE_LLM_URL=${REMOTE_LLM_URL:-https://peas-improved-lovely-interactive.trycloudflare.com}
-      - REMOTE_LLM_KEY=${REMOTE_LLM_KEY:-kb-JHPs7umnDUECw403TmxTtA}
+      - REMOTE_LLM_URL=${REMOTE_LLM_URL:-}
+      - REMOTE_LLM_KEY=${REMOTE_LLM_KEY:-}
       - REMOTE_LLM_MODEL=${REMOTE_LLM_MODEL:-Qwen/Qwen2.5-7B-Instruct}
     ports: ["8001:8001"]
     volumes: ["dpts_models:/app/models"]
@@ -48,7 +66,10 @@ services:
     environment:
       - MONGODB_URL=mongodb://mongo:27017/dataagent
       - DPTS_ES_URL=http://elasticsearch:9200
+      - POSTGRES_DSN=postgresql://dpts:dpts@postgres:5432/dataagent
       - MODEL_SERVICE_URL=http://model-service:8001
+      - DPTS_USE_MOCK=${DPTS_USE_MOCK:-}
+      - DPTS_ES_MIN_SCORE=${DPTS_ES_MIN_SCORE:-1.0}
       - DPTS_PLAN_TTL_SECONDS=${DPTS_PLAN_TTL_SECONDS:-86400}
       - DPTS_SWEEP_INTERVAL_SECONDS=${DPTS_SWEEP_INTERVAL_SECONDS:-300}
       - DPTS_BRANCHING=2
@@ -59,10 +80,13 @@ services:
         condition: service_healthy
       elasticsearch:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
       model-service:
         condition: service_started
 
 volumes:
   dpts_mongo:
   dpts_es:
+  dpts_pg:
   dpts_models:

@@ -12,6 +12,7 @@ setup_logging("dpts-planner")
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import agent_catalog
 import config
 import plan_db
 import plan_index
@@ -27,6 +28,7 @@ from services.shared.observability import setup_observability
 async def lifespan(app: FastAPI):
     await plan_db.init_plan_db()         # plan DB (Mongo)
     await plan_index.init_plan_index()   # Cached Plan search (Elasticsearch)
+    await agent_catalog.init_agents_db()  # Agents catalog (Postgres) — task `type` source
 
     # Model service (infra/model-service /generate -> vLLM). Best-effort: a miss
     # falls back to MockLLM so the planner still serves.
@@ -52,6 +54,7 @@ async def lifespan(app: FastAPI):
             pass
 
     await model_client.close()
+    await agent_catalog.close_agents_db()
     await plan_index.close_plan_index()
     await plan_db.close_plan_db()
 
