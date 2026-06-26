@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 class Task(BaseModel):
     title: str = ""
-    type: str = ""
+    agent_id: str = ""
     depend_on: list[Union[int, str]] = Field(default_factory=list)
 
     @field_validator("depend_on", mode="before")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import random
 from dataclasses import dataclass, field
 
@@ -11,6 +12,9 @@ from .node import Node
 from .tree import Tree
 
 logger = logging.getLogger(__name__)
+
+_PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "prompts")
+_SYSTEM_BASE = open(os.path.join(_PROMPTS_DIR, "planner_system.txt"), encoding="utf-8").read().strip()
 
 
 @dataclass
@@ -39,11 +43,11 @@ STEP_SCHEMA = {
                     "type": "array", "minItems": 1,
                     "items": {
                         "type": "object",
-                        "required": ["title", "type", "depend_on"],
+                        "required": ["title", "agent_id", "depend_on"],
                         "additionalProperties": False,
                         "properties": {
                             "title": {"type": "string"},
-                            "type": {"type": "string"},
+                            "agent_id": {"type": "string"},
                             "depend_on": {"type": "array", "items": {"type": ["integer", "string"]}},
                         },
                     },
@@ -53,23 +57,6 @@ STEP_SCHEMA = {
     },
 }
 
-_SYSTEM_BASE = (
-    "You build a plan as a SHORT ordered sequence of high-level steps (Targets), each "
-    "with concrete Tasks, using tree search. On each call you propose the SINGLE best "
-    "NEXT step given the GOAL and the PLAN SO FAR.\n"
-    "Set is_terminal correctly — this is the most important field:\n"
-    "- is_terminal=true  -> after THIS step's tasks are done, the GOAL is fully achieved; this is the LAST step.\n"
-    "- is_terminal=false -> genuinely new work is still needed after this one.\n"
-    "Before answering, check: does the GOAL truly need ANOTHER step after this? If the GOAL's "
-    "deliverable (a report, a value, a file, an answer) is produced by this step, is_terminal MUST be true.\n"
-    "NEVER propose a step that repeats or rephrases work already in PLAN SO FAR — if the remaining work "
-    "is already covered, set is_terminal=true instead of adding a step.\n"
-    "Keep plans tight (usually 2-3 steps); never pad. Every step has at least one concrete task. "
-    "Score confidence in [0,1].\n"
-    "Each task MUST have an agent_id chosen from the AVAILABLE AGENTS list below.\n"
-    "Reply with ONLY one JSON object: {thought, confidence, is_terminal, "
-    "target:{description, tasks:[{title, agent_id, depend_on}]}}."
-)
 _INSTRUCTION = (
     "Propose the next step now. Decide is_terminal: true if this step completes the GOAL, "
     "otherwise false."

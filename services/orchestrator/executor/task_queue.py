@@ -28,7 +28,7 @@ def build_rounds(tasks: list[dict]) -> list[list[TaskNode]]:
             index=i,
             title=t.get("title", f"task_{i}"),
             agent_id=t.get("agent_id", ""),
-            depend_on=[int(d) for d in (t.get("depend_on") or [])],
+            depend_on=[int(d) for d in (t.get("depend_on") or []) if str(d).lstrip('-').isdigit()],
         )
         for i, t in enumerate(tasks)
     ]

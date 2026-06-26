@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
-import { WORKFLOW_RUNTIME_URL as API_BASE, ORCHESTRATOR_URL } from '../../lib/config';
+import { API_URL } from '../../lib/config';
 import { apiGet, apiMutate } from '../../lib/apiClient';
 import keycloak from '../../lib/keycloak';
 
@@ -175,7 +175,7 @@ function routeMessage(text: string, agents: AgentOption[]): { name: string; conf
 
 function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs, indent, expandable, expanded, expandLoading, onExpand }: {
   step: TraceStep; index: number; selected: boolean;
-  onSelect: (i: number) => void; startMs: number; totalMs: number;
+  onSelect: () => void; startMs: number; totalMs: number;
   indent?: boolean; expandable?: boolean; expanded?: boolean;
   expandLoading?: boolean; onExpand?: () => void;
 }) {
@@ -200,7 +200,7 @@ function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs, inden
         </button>
       )}
     <button
-      onClick={() => onSelect(index)}
+      onClick={() => onSelect()}
       style={{
         flex: 1, display: 'grid',
         gridTemplateColumns: '176px 1fr 52px',
@@ -278,7 +278,8 @@ function TracePanel({ steps, traceLoading, traceId }: {
   steps: TraceStep[]; traceLoading: boolean; traceId: string | null;
 }) {
   const [tab, setTab]           = useState<'input' | 'output' | 'metadata'>('input');
-  const [selected, setSelected] = useState(0);
+  // Track by ID instead of index to prevent index-shift when expanding rows
+  const [selectedId, setSelectedId] = useState<string>('');
   const [splitPct, setSplitPct] = useState(40);
   const isDragging    = useRef(false);
   const containerRef  = useRef<HTMLDivElement>(null);
@@ -297,7 +298,7 @@ function TracePanel({ steps, traceLoading, traceId }: {
     if (subSteps[convId]) return; // already fetched
     setLoadingConv(prev => new Set(prev).add(convId));
     for (let i = 0; i < 5; i++) {
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 1500));
       try {
         const { observations } = await apiGet<any>(`/api/traces/${convId}`);
         const mapped = mapObservations(observations ?? []);
@@ -307,9 +308,10 @@ function TracePanel({ steps, traceLoading, traceId }: {
     setLoadingConv(prev => { const s = new Set(prev); s.delete(convId); return s; });
   };
 
+  // Reset to first row when steps change (new result)
   useEffect(() => {
-    if (selected >= steps.length && steps.length > 0) setSelected(0);
-  }, [steps, selected]);
+    if (steps.length > 0) { setSelectedId(steps[0].id); setTab('input'); }
+  }, [steps]);
 
   /* Drag handlers */
   useEffect(() => {
@@ -341,7 +343,8 @@ function TracePanel({ steps, traceLoading, traceId }: {
   const starts   = allRows.map(r => r.step.startMs);
   const totalMs  = Math.max(...allRows.map(r => r.step.startMs + r.step.latencyMs), 1);
   const totalTok = allRows.reduce((s, r) => s + r.step.tokens, 0);
-  const sel = allRows[selected]?.step ?? steps[0];
+  // Find selected by ID — immune to index shifts from expand/collapse
+  const sel = allRows.find(r => r.step.id === selectedId)?.step ?? allRows[0]?.step;
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#0B0B0E', minWidth: 0 }}>
@@ -428,7 +431,7 @@ function TracePanel({ steps, traceLoading, traceId }: {
                 )}
                 <WaterfallRow
                   step={s} index={i}
-                  selected={selected === i} onSelect={setSelected}
+                  selected={selectedId === s.id} onSelect={() => { setSelectedId(s.id); setTab('input'); }}
                   startMs={starts[i]} totalMs={totalMs}
                   indent={indent}
                   expandable={!!s.agentConvId}
@@ -465,9 +468,9 @@ function TracePanel({ steps, traceLoading, traceId }: {
               {/* span header */}
               <div style={{ padding: '7px 14px 5px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flexShrink: 0 }}>
                 {(() => { const t = spanType(sel.node); return <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 5px', borderRadius: 3, background: t.bg, color: t.color }}>{t.label}</span>; })()}
-                <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.88)', fontWeight: 500 }}>{sel.node}</span>
+                <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.88)', fontWeight: 500 }}>{sel.node.replace(/^\[(target|task)\]\s*/, '')}</span>
                 <span style={{ marginLeft: 'auto', fontSize: 9.5, color: 'rgba(255,255,255,0.32)', fontFamily: 'var(--font-mono)' }}>
-                  +{starts[selected]}ms → +{starts[selected] + sel.latencyMs}ms
+                  +{sel.startMs}ms → +{sel.startMs + sel.latencyMs}ms
                 </span>
               </div>
               {/* span meta row */}
@@ -704,7 +707,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', content: '', timestamp: now }]);
 
     try {
-      const res = await fetch(`${API_BASE}/api/conversations/run`, {
+      const res = await fetch(`${API_URL}/api/conversations/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(keycloak?.token ? { Authorization: `Bearer ${keycloak.token}` } : {}) },
         body: JSON.stringify({
@@ -798,10 +801,10 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', content: '', timestamp: now }]);
 
     try {
-      const res = await fetch(`${ORCHESTRATOR_URL}/api/orchestrate/run`, {
+      const res = await fetch(`${API_URL}/api/orchestrate/run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(keycloak?.token ? { Authorization: `Bearer ${keycloak.token}` } : {}) },
-        body: JSON.stringify({ query: text, user_id: 'playground' }),
+        body: JSON.stringify({ query: text, user_id: keycloak?.tokenParsed?.sub ?? 'playground' }),
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -829,6 +832,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
           iteration: 0, isRetryStart: false,
         });
         const targetHeaderIdx = steps.length - 1;
+        const taskOutputs: string[] = [];
         for (const task of (target.task_results ?? [])) {
           const latency = 300 + Math.round(Math.random() * 400);
           steps.push({
@@ -839,13 +843,17 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
             latencyMs: latency,
             tokens: 0, cost: 0,
             input: JSON.stringify({ agent_id: task.agent_id, task: task.task_title }, null, 2),
-            output: task.success ? task.output : (task.error ?? ''),
+            output: task.success ? (task.output || '(empty)') : (task.error ?? '(failed)'),
             iteration: 0, isRetryStart: false,
             agentConvId: task.conversation_id ?? undefined,
           });
+          if (task.success && task.output) taskOutputs.push(`[${task.task_title}]: ${task.output}`);
           cursor += latency;
         }
         steps[targetHeaderIdx].latencyMs = cursor - targetStart;
+        steps[targetHeaderIdx].output = target.success
+          ? (taskOutputs.join('\n\n') || 'Completed')
+          : `Failed at: ${target.failed_task}`;
       }
       setTraceSteps(steps);
     } catch (e: any) {

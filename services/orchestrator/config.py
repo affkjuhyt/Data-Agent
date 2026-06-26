@@ -1,17 +1,21 @@
 import os
 import json
 
+# ── CORS ─────────────────────────────────────────────────────────────────────
+CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*").split(",")
+
 # ── LiteLLM gateway ─────────────────────────────────────────────────────────
 LITELLM_BASE_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
 LITELLM_API_KEY = os.environ.get("LITELLM_API_KEY", "sk-dev")
 
 # Model aliases — phải khớp với model_name trong infra/litellm/config.yaml
 # Tách riêng khỏi agent-level "planner"/"responder" để swap model to hơn độc lập
-PLANNER_MODEL = os.environ.get("ORCHESTRATOR_PLANNER_MODEL", "orchestrator-planner")
-SYNTHESIZER_MODEL = os.environ.get("ORCHESTRATOR_SYNTHESIZER_MODEL", "orchestrator-synthesizer")
+PLANNER_MODEL = os.environ.get("ORCHESTRATOR_PLANNER_MODEL", "openai/orchestrator-planner")
+SYNTHESIZER_MODEL = os.environ.get("ORCHESTRATOR_SYNTHESIZER_MODEL", "openai/orchestrator-synthesizer")
 
 # ── Database ─────────────────────────────────────────────────────────────────
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
+DEV_TENANT_ID = os.environ.get("DEV_TENANT_ID", "00000000-0000-0000-0000-000000000001")
 
 # ── Workflow runtime (agent workflows) ──────────────────────────────────────
 WORKFLOW_RUNTIME_URL = os.environ.get("WORKFLOW_RUNTIME_URL", "http://localhost:8001")

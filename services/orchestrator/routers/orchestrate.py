@@ -4,6 +4,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Request
 
+import config
 from agent_catalog import fetch_published_agents
 from executor import execute_plan
 from planner import create_plan, report_node_failure
@@ -26,7 +27,7 @@ async def run_orchestration(req: OrchestrateRequest, request: Request):
     4. Nếu fail → report planner → nhận plan mới → retry
     5. Synthesizer gom outputs → final response
     """
-    tenant_id = request.headers.get("X-Tenant-ID", "")
+    tenant_id = request.headers.get("X-Tenant-Id", "") or config.DEV_TENANT_ID
 
     # Step 1: fetch catalog
     agents = await fetch_published_agents(tenant_id)
@@ -45,7 +46,7 @@ async def run_orchestration(req: OrchestrateRequest, request: Request):
     recovered = False
 
     for attempt in range(_MAX_REPLAN + 1):
-        result = await execute_plan(plan, user_id=req.user_id, session_id=plan.plan_id)
+        result = await execute_plan(plan, user_id=req.user_id, original_query=req.query, tenant_id=tenant_id)
         all_target_results.extend(result.target_results)
 
         if result.success:

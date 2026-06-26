@@ -303,6 +303,8 @@ services:
     image: ghcr.io/berriai/litellm:main-stable
     container_name: dataagent-litellm
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "4000:4000"
     volumes:
@@ -648,6 +650,30 @@ services:
         condition: service_started
       kong:
         condition: service_healthy
+
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: services/orchestrator/Dockerfile
+    container_name: dataagent-orchestrator
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
+      LITELLM_BASE_URL: http://litellm:4000
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-sk-dev}
+      WORKFLOW_RUNTIME_URL: http://workflow-runtime:8001
+      LANGFUSE_HOST: http://langfuse:3000
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-change-me}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-change-me}
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: orchestrator
+    depends_on:
+      postgres:
+        condition: service_healthy
+      litellm:
+        condition: service_started
+      workflow-runtime:
+        condition: service_started
 
   frontend:
     build:

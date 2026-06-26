@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 
 import litellm
 
@@ -8,12 +9,8 @@ import config
 
 logger = logging.getLogger(__name__)
 
-_SYSTEM = (
-    "You are a helpful assistant. You are given a user question and the outputs "
-    "from multiple AI agents that each handled part of the task. "
-    "Synthesize all results into one clear, coherent final answer for the user. "
-    "Be concise and directly address the user's original question."
-)
+_PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "prompts")
+_SYSTEM = open(os.path.join(_PROMPTS_DIR, "synthesizer_system.txt"), encoding="utf-8").read().strip()
 
 
 async def synthesize(original_query: str, agent_outputs: list[str]) -> str:

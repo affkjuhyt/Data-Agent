@@ -21,14 +21,14 @@ class ExecutionResult:
     success: bool = True
 
 
-async def _run_task(node: TaskNode, prompt: str, user_id: str, session_id: str | None = None) -> TaskNode:
+async def _run_task(node: TaskNode, prompt: str, user_id: str, tenant_id: str = "") -> TaskNode:
     """Chạy 1 task, ghi output vào node, không throw."""
     try:
         output, conv_id = await call_agent(
             agent_id=node.agent_id,
             prompt=prompt,
             user_id=user_id,
-            session_id=session_id,
+            tenant_id=tenant_id,
         )
         node.output = output
         node.conversation_id = conv_id
@@ -45,7 +45,8 @@ async def _execute_target(
     target: Target,
     prior_context: str,
     user_id: str,
-    session_id: str | None = None,
+    original_query: str = "",
+    tenant_id: str = "",
 ) -> tuple[TargetResult, bool]:
     """
     Chạy tất cả tasks trong 1 target theo rounds (song song trong round, tuần tự giữa rounds).
@@ -59,18 +60,20 @@ async def _execute_target(
 
     for round_nodes in rounds:
         # Build prompt cho từng task trong round:
-        # target description + context từ prior targets + output các task đã xong trong cùng target
+        # original query + target description + context từ prior targets + output các task đã xong
         intra_context = collect_context(all_nodes)
 
         async def run_one(node: TaskNode) -> TaskNode:
             parts = []
+            if original_query:
+                parts.append(f"## Yêu cầu gốc của người dùng\n{original_query}")
             if prior_context:
                 parts.append(f"## Kết quả từ các bước trước\n{prior_context}")
             if intra_context:
                 parts.append(f"## Kết quả từ các task trước trong bước này\n{intra_context}")
-            parts.append(f"## Nhiệm vụ\n{target.description}\n\nTask: {node.title}")
+            parts.append(f"## Nhiệm vụ của bước này\n{target.description}\n\nTask: {node.title}")
             prompt = "\n\n".join(parts)
-            return await _run_task(node, prompt, user_id, session_id=session_id)
+            return await _run_task(node, prompt, user_id, tenant_id=tenant_id)
 
         completed = await asyncio.gather(*(run_one(n) for n in round_nodes))
         all_nodes.extend(completed)
@@ -107,7 +110,7 @@ async def _execute_target(
     ), success, target_output  # type: ignore[return-value]
 
 
-async def execute_plan(plan: Plan, user_id: str = "orchestrator", session_id: str | None = None) -> ExecutionResult:
+async def execute_plan(plan: Plan, user_id: str = "orchestrator", original_query: str = "", tenant_id: str = "") -> ExecutionResult:
     """
     Vòng lặp chính: chạy targets tuần tự, tasks trong target song song theo depend_on.
     Nếu 1 target fail → dừng, trả về node_id để caller report planner.
@@ -117,7 +120,7 @@ async def execute_plan(plan: Plan, user_id: str = "orchestrator", session_id: st
 
     for target in plan.targets:
         logger.info("executor | target=%s '%s'", target.node_id, target.description[:60])
-        target_result, success, target_output = await _execute_target(target, prior_context, user_id, session_id=session_id)
+        target_result, success, target_output = await _execute_target(target, prior_context, user_id, original_query=original_query, tenant_id=tenant_id)
         result.target_results.append(target_result)
 
         if success:

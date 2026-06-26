@@ -14,19 +14,18 @@ async def call_agent(
     agent_id: str,
     prompt: str,
     user_id: str = "orchestrator",
-    session_id: str | None = None,
+    tenant_id: str = "",
 ) -> tuple[str, str | None]:
     """
     Gọi POST /api/conversations/run trên workflow-runtime.
     Trả về (output_text, conversation_id).
     conversation_id dùng để frontend fetch LangFuse trace nội bộ của agent đó.
+    Mỗi lần gọi tạo conversation mới (không truyền conversation_id) → mỗi task có trace độc lập.
     """
     if not agent_id:
         raise ValueError("agent_id is empty — planner failed to assign an agent for this task.")
 
     payload = {"query": prompt, "agent_id": agent_id, "messages": []}
-    if session_id:
-        payload["conversation_id"] = session_id
 
     url = f"{config.WORKFLOW_RUNTIME_URL}/api/conversations/run"
     collected: list[str] = []
@@ -34,8 +33,11 @@ async def call_agent(
 
     try:
         async with httpx.AsyncClient(timeout=config.AGENT_CALL_TIMEOUT) as client:
+            headers = {"X-User-ID": user_id}
+            if tenant_id:
+                headers["X-Tenant-Id"] = tenant_id
             async with client.stream("POST", url, json=payload,
-                                     headers={"X-User-ID": user_id}) as resp:
+                                     headers=headers) as resp:
                 resp.raise_for_status()
                 conversation_id = resp.headers.get("X-Conversation-Id")
                 async for line in resp.aiter_lines():

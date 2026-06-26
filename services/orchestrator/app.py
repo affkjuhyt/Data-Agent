@@ -2,6 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 import config
 from routers.orchestrate import router as orchestrate_router
@@ -28,5 +29,11 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="GTEL Orchestrator", version="0.1.0", lifespan=lifespan)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=config.CORS_ORIGINS,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.include_router(orchestrate_router)
     return app

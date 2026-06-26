@@ -191,7 +191,7 @@ curl -sf -X PUT "$KONG_ADMIN/services/workflow-runtime/routes/runtime-route" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "runtime-route",
-    "paths": ["/api/conversations", "/api/traces", "/api/nodes", "/api/llm-providers", "/api/kb-connections", "/api/system-prompts", "/api/catalog"],
+    "paths": ["/api/conversations", "/api/traces", "/api/nodes", "/api/llm-providers", "/api/kb-connections", "/api/system-prompts", "/api/catalog", "/api/runtime-config"],
     "strip_path": false,
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
@@ -268,7 +268,28 @@ curl -sf -X PUT "$KONG_ADMIN/services/release-worker/routes/release-route" \
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
 
-# ── 3d. Create kb-backend service + route ──────────────────────────────
+# ── 3d. Create orchestrator service + route ────────────────────────────
+echo "📡 Creating orchestrator service..."
+curl -sf -X PUT "$KONG_ADMIN/services/orchestrator" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "orchestrator",
+    "url": "http://orchestrator:8003",
+    "connect_timeout": 5000,
+    "read_timeout": 300000
+  }' | json_field name | xargs -I{} echo "  → service: {}"
+
+echo "🛣️  Creating orchestrator route..."
+curl -sf -X PUT "$KONG_ADMIN/services/orchestrator/routes/orchestrator-route" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "orchestrator-route",
+    "paths": ["/api/orchestrate"],
+    "strip_path": false,
+    "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
+  }' | json_field name | xargs -I{} echo "  → route: {}"
+
+# ── 3e. Create kb-backend service + route ──────────────────────────────
 # kb-backend is a compose service on the shared network, so Kong reaches it by
 # its service DNS name (NOT host.docker.internal like aeroflow-backend).
 echo "📡 Creating kb-backend service..."
@@ -381,6 +402,12 @@ else
   echo "🔐 Enabling aeroflow-jwks plugin on auth-api (aud=auth-api)..."
   upsert_plugin "$KONG_ADMIN/services/auth-api/plugins" \
     "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"auth-api\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE}}" \
+    "aeroflow-jwks"
+
+  # ── 4d-pre. aeroflow-jwks on orchestrator ──────────────────────────────
+  echo "🔐 Enabling aeroflow-jwks plugin on orchestrator (aud=aeroflow-backend)..."
+  upsert_plugin "$KONG_ADMIN/services/orchestrator/plugins" \
+    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"aeroflow-backend\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE}}" \
     "aeroflow-jwks"
 fi
 
