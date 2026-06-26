@@ -47,6 +47,7 @@ async def _execute_target(
     user_id: str,
     original_query: str = "",
     tenant_id: str = "",
+    agent_name_map: dict[str, str] | None = None,
 ) -> tuple[TargetResult, bool]:
     """
     Chạy tất cả tasks trong 1 target theo rounds (song song trong round, tuần tự giữa rounds).
@@ -65,13 +66,17 @@ async def _execute_target(
 
         async def run_one(node: TaskNode) -> TaskNode:
             parts = []
-            if original_query:
-                parts.append(f"## Yêu cầu gốc của người dùng\n{original_query}")
-            if prior_context:
-                parts.append(f"## Kết quả từ các bước trước\n{prior_context}")
-            if intra_context:
-                parts.append(f"## Kết quả từ các task trước trong bước này\n{intra_context}")
-            parts.append(f"## Nhiệm vụ của bước này\n{target.description}\n\nTask: {node.title}")
+            if node.depend_on:
+                # Task phụ thuộc: nhận output thực từ các task nó phụ thuộc
+                if intra_context:
+                    parts.append(f"## Kết quả từ các task phụ thuộc\n{intra_context}")
+            else:
+                # Task độc lập: nhận nội dung planner đã extract + context từ target trước
+                if prior_context:
+                    parts.append(f"## Kết quả từ các bước trước\n{prior_context}")
+                if node.input:
+                    parts.append(f"## Nội dung\n{node.input}")
+            parts.append(f"Nhiệm vụ: {node.title}")
             prompt = "\n\n".join(parts)
             return await _run_task(node, prompt, user_id, tenant_id=tenant_id)
 
@@ -83,6 +88,7 @@ async def _execute_target(
                 task_index=node.index,
                 task_title=node.title,
                 agent_id=node.agent_id,
+                agent_name=(agent_name_map or {}).get(node.agent_id, ""),
                 output=node.output or "",
                 success=node.success,
                 error=node.output if not node.success else None,
@@ -110,17 +116,18 @@ async def _execute_target(
     ), success, target_output  # type: ignore[return-value]
 
 
-async def execute_plan(plan: Plan, user_id: str = "orchestrator", original_query: str = "", tenant_id: str = "") -> ExecutionResult:
+async def execute_plan(plan: Plan, user_id: str = "orchestrator", original_query: str = "", tenant_id: str = "", agents: list[dict] | None = None) -> ExecutionResult:
     """
     Vòng lặp chính: chạy targets tuần tự, tasks trong target song song theo depend_on.
     Nếu 1 target fail → dừng, trả về node_id để caller report planner.
     """
     result = ExecutionResult(plan_id=plan.plan_id)
     prior_context = ""
+    agent_name_map = {a["id"]: a["name"] for a in (agents or [])}
 
     for target in plan.targets:
         logger.info("executor | target=%s '%s'", target.node_id, target.description[:60])
-        target_result, success, target_output = await _execute_target(target, prior_context, user_id, original_query=original_query, tenant_id=tenant_id)
+        target_result, success, target_output = await _execute_target(target, prior_context, user_id, original_query=original_query, tenant_id=tenant_id, agent_name_map=agent_name_map)
         result.target_results.append(target_result)
 
         if success:

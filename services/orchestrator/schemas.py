@@ -32,6 +32,7 @@ class TaskResult(BaseModel):
     task_index: int
     task_title: str
     agent_id: str
+    agent_name: str = ""
     output: str
     success: bool
     error: Optional[str] = None

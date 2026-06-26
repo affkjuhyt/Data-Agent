@@ -43,10 +43,11 @@ STEP_SCHEMA = {
                     "type": "array", "minItems": 1,
                     "items": {
                         "type": "object",
-                        "required": ["title", "agent_id", "depend_on"],
+                        "required": ["title", "input", "agent_id", "depend_on"],
                         "additionalProperties": False,
                         "properties": {
                             "title": {"type": "string"},
+                            "input": {"type": "string"},
                             "agent_id": {"type": "string"},
                             "depend_on": {"type": "array", "items": {"type": ["integer", "string"]}},
                         },

@@ -30,6 +30,7 @@ Quy tắc chọn tool:
 - Chỉ dùng tool có trong danh sách "Available built-in tools" phía dưới (nếu có)
 - Nếu không có tool phù hợp hoặc không có tool nào được cung cấp → tool_calls=[]
 - Ưu tiên dùng tool thay vì tự trả lời nếu tool phù hợp với câu hỏi
+- calculator: CHỈ dùng khi biểu thức là phép toán số học thuần túy (ví dụ: "2+2", "sqrt(16)", "15% của 200"). KHÔNG dùng calculator cho văn bản, tóm tắt, dịch thuật, hay bất kỳ nội dung text nào.
 
 Quy tắc phân loại language:
 - "vi": câu hỏi có chứa tiếng Việt, kể cả khi lẫn nhiều từ tiếng Anh

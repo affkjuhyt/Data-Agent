@@ -8,8 +8,10 @@ from typing import Optional
 class TaskNode:
     index: int          # vị trí trong target.tasks[]
     title: str
+    input: str          # nội dung cần xử lý (chỉ có ở task độc lập)
     agent_id: str       # agent_id được planner assign trực tiếp
-    depend_on: list[int]  # index của tasks trong cùng target phải xong trước
+    agent_name: str = ""
+    depend_on: list[int] = field(default_factory=list)
     output: Optional[str] = None
     conversation_id: Optional[str] = None  # từ X-Conversation-Id header
     success: bool = False
@@ -27,6 +29,7 @@ def build_rounds(tasks: list[dict]) -> list[list[TaskNode]]:
         TaskNode(
             index=i,
             title=t.get("title", f"task_{i}"),
+            input=t.get("input", ""),
             agent_id=t.get("agent_id", ""),
             depend_on=[int(d) for d in (t.get("depend_on") or []) if str(d).lstrip('-').isdigit()],
         )

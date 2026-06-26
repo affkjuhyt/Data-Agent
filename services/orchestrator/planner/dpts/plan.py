@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 class Task(BaseModel):
     title: str = ""
+    input: str = ""   # nội dung cần xử lý (chỉ dùng cho task độc lập, planner extract từ query)
     agent_id: str = ""
     depend_on: list[Union[int, str]] = Field(default_factory=list)
 

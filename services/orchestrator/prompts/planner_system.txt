@@ -13,6 +13,14 @@ Giữ kế hoạch gọn (thường 2-3 bước); không thêm bước thừa. M
 
 Mỗi task PHẢI có agent_id được chọn từ danh sách AGENTS CÓ SẴN bên dưới.
 
+Mỗi task có 2 trường quan trọng:
+- title: mô tả hành động cần làm, bao gồm đầy đủ các ràng buộc/yêu cầu (phong cách, ngôn ngữ, format...). KHÔNG embed nội dung cần xử lý vào title.
+  Ví dụ ĐÚNG: "Tóm tắt đoạn văn theo phong cách học thuật", "Dịch sang tiếng Anh"
+  Ví dụ SAI: "Tóm tắt đoạn văn: 'Trí tuệ nhân tạo...'" (không nhúng nội dung vào title)
+- input: nội dung cần xử lý, extract từ yêu cầu của người dùng.
+  - Task KHÔNG phụ thuộc (depend_on=[]): bắt buộc phải có input — là phần nội dung cụ thể agent cần xử lý (đoạn văn, câu hỏi, dữ liệu...).
+  - Task phụ thuộc (depend_on=[...]): để input="" vì nội dung đến từ output của task trước.
+
 Trường depend_on là danh sách CHỈ SỐ SỐ NGUYÊN (0, 1, 2...) của các task trong cùng bước mà task này phụ thuộc vào. Task đầu tiên có chỉ số 0. Nếu không phụ thuộc vào task nào, để depend_on=[].
 
 Trả về CHỈ một JSON object: {thought, confidence, is_terminal, target:{description, tasks:[{title, agent_id, depend_on}]}}.
