@@ -39,7 +39,15 @@ async def _probe_llm_backend() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    models.load(cfg.EMBED_MODEL, cfg.RERANK_MODEL)
+    if cfg.REMOTE_EMBED_URL and cfg.REMOTE_RERANK_URL:
+        # Both remote backends are configured — skip downloading local models.
+        # The remote backends serve /embed and /rerank; local models are not needed.
+        log.info(
+            "Remote embed+rerank configured — skipping local model download "
+            "(REMOTE_EMBED_URL=%s)", cfg.REMOTE_EMBED_URL,
+        )
+    else:
+        models.load(cfg.EMBED_MODEL, cfg.RERANK_MODEL)
     # Register this model in Postgres in the background — Postgres may not be
     # ready yet, so the retry loop runs independently without blocking serving.
     asyncio.create_task(model_sync.register_with_retry(), name="model-registry")

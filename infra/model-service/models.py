@@ -66,4 +66,9 @@ def get_rerank() -> CrossEncoder:
 
 
 def is_ready() -> bool:
+    import config as cfg
+    # When both remote backends are configured, local models are intentionally
+    # not loaded — treat as ready so the health check doesn't block forever.
+    if cfg.REMOTE_EMBED_URL and cfg.REMOTE_RERANK_URL:
+        return True
     return bool(_embed_models) and _rerank_model is not None

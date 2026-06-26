@@ -50,18 +50,37 @@ Log in via Keycloak as **`helios-admin` / `H3lios@Admin01!`** (full perms) or
 
 Brings up Postgres, Qdrant, Neo4j, MongoDB, MinIO, Kafka, model-service, `kb-backend`,
 `kb-ingestion-worker`, **Keycloak** (`:8080`), and a DB-less **Kong** gateway (`:8000`).
-Postgres tables (incl. a dedicated `keycloak` DB), Qdrant collections, and the Kong
-route/JWT plugin are all created automatically on first start.
+On a **fresh volume**, Postgres init scripts automatically create the `keycloak` database,
+all KB tables, and seed the dev tenant / roles / knowledge base. Qdrant collections and
+the Kong route/JWT plugin are also created on first start.
+
+**Step 1 — install frontend deps (first time only):**
 
 ```powershell
 npm install
-Copy-Item infra/.env.kb-testing.example infra/.env.kb-testing   # gitignored env; defaults work locally
-docker compose -f infra/docker-compose.kb_e2e.yml --env-file infra/.env.kb-testing up -d --build
-docker compose -f infra/docker-compose.kb_e2e.yml ps            # every service "healthy"
-curl http://localhost:8050/health                               # -> {"status":"ok"} (direct; bypasses Kong)
 ```
 
-Point the Vite dev server at Keycloak + Kong, then `npm run dev` (http://localhost:3000):
+**Step 2 — create your env file (first time only):**
+
+```powershell
+Copy-Item infra/.env.kb-testing.example infra/.env.kb-testing
+```
+
+The defaults work locally. Set `REMOTE_LLM_URL` / `REMOTE_LLM_KEY` if you have a remote
+LLM tunnel (Colab vLLM) — without it, gold-stage entity extraction and LightRAG
+canonicalize return 503 but bronze→silver ingestion and retrieval still work. Set
+`REMOTE_EMBED_URL` / `REMOTE_RERANK_URL` / `REMOTE_API_KEY` to use a remote GPU for
+embeddings and reranking; when set, model-service skips downloading local weights entirely.
+
+**Step 3 — start the stack:**
+
+```powershell
+docker compose -f infra/docker-compose.kb_e2e.yml --env-file infra/.env.kb-testing up -d --build
+docker compose -f infra/docker-compose.kb_e2e.yml ps   # wait until every service is "healthy"
+curl http://localhost:8050/health                       # -> {"status":"ok"} (direct; bypasses Kong)
+```
+
+**Step 4 — start the Vite dev server** (separate terminal, keep it running):
 
 ```powershell
 $env:VITE_KEYCLOAK_URL    = "http://localhost:8080"
@@ -71,10 +90,27 @@ $env:VITE_API_URL         = "http://localhost:8000"   # Kong proxy — NOT :8050
 npm run dev
 ```
 
-Shutdown: `docker compose -f infra/docker-compose.kb_e2e.yml down` (`-v` also wipes volumes).
+Open **http://localhost:3000** and log in as `helios-admin` / `H3lios@Admin01!`.
 
-> First start is slower: `model-service` downloads its embed/rerank weights into
-> `infra/model-service/models/` (~2.3 GB, persisted for next time).
+> The Vite dev server is **not** part of the Docker stack — it must be started manually
+> every session. There is no containerized frontend in `kb_e2e`; use
+> `pwsh infra/kb_and_authen.ps1 up -WithUi` if you want one.
+
+| Action | Command |
+|---|---|
+| Stop, keep data | `docker compose -f infra/docker-compose.kb_e2e.yml down` |
+| Stop, **wipe** data | `docker compose -f infra/docker-compose.kb_e2e.yml down -v` |
+| Tail logs | `docker compose -f infra/docker-compose.kb_e2e.yml logs -f` |
+
+> **Fresh volume note:** `docker-entrypoint-initdb.d` scripts (`keycloak-db.sql`,
+> `init.sql`, `seed.sql`) run only when the Postgres volume is new. On an existing
+> volume, the data is already there and init is skipped — which is correct. If you
+> wipe with `down -v` and bring up again, everything is re-seeded automatically.
+
+> **First start with local models:** if `REMOTE_EMBED_URL` / `REMOTE_RERANK_URL` are not
+> set, `model-service` downloads embed/rerank weights into `infra/model-service/models/`
+> (~2.3 GB, persisted across restarts). When both remote URLs are set, the download is
+> skipped entirely and the service starts in seconds.
 
 ---
 
@@ -131,8 +167,12 @@ in-process CPU model serves. So switching is a single env change — no code, no
 |---|---|
 | `REMOTE_EMBED_URL` | set → `/embed` forwards there; empty → local CPU model (`EMBED_MODEL`) |
 | `REMOTE_RERANK_URL` | set → `/rerank` forwards there; empty → local CPU reranker |
-| `REMOTE_LLM_URL` | set → `/generate` forwards to this OpenAI-compatible server (e.g. Colab vLLM); empty → 503 (no local LLM yet) |
+| `REMOTE_LLM_URL` | set → `/generate` forwards to this OpenAI-compatible server (e.g. Colab vLLM); empty → 503 (no local LLM) |
 | `REMOTE_API_KEY` / `REMOTE_LLM_KEY` | bearer keys for the embed/rerank and LLM servers |
+
+> **When both `REMOTE_EMBED_URL` and `REMOTE_RERANK_URL` are set**, model-service skips
+> downloading local weights entirely and starts in seconds. When either is unset, the
+> local model is loaded as fallback (~2.3 GB download on first start).
 
 ### How to switch
 

@@ -27,6 +27,9 @@ services:
       POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
       - pg_data:/var/lib/postgresql/data
+      - ./Postgres/keycloak-db.sql:/docker-entrypoint-initdb.d/00-keycloak-db.sql:ro
+      - ./Postgres/init.sql:/docker-entrypoint-initdb.d/01-init-schema.sql:ro
+      - ./Postgres/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
       # Schema + dev data are provisioned by kb-backend on startup
       # (Base.metadata.create_all + seed_dev_data in services/kb_backend/main.py),
       # using the ORM's quoted identifiers ("KBModel", …). The old init.sql mount

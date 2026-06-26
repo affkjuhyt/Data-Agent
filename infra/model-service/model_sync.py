@@ -78,11 +78,13 @@ async def _sync(dsn: str) -> None:
             log.warning("No embedding models found in KBModel — ensure init.sql seed ran")
             return
 
+        remote_embed = bool(cfg.REMOTE_EMBED_URL)
         for row in rows:
             model_id: _uuid.UUID = row["model_id"]
             model_name: str = row["model_name"]
 
-            models.ensure_loaded(model_name)
+            if not remote_embed:
+                models.ensure_loaded(model_name)
             _id_to_name[model_id] = model_name
             await _ensure_active_version(conn, model_id, model_name)
 

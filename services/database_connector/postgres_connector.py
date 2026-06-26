@@ -162,7 +162,7 @@ def _apply_keyset(stmt, root_cls, cursor, order_by):
 def _prepare_insert(data: BaseModel) -> DMLPreparation:
     table_name, orm_cls = _resolve(data)
     return DMLPreparation(
-        instance=orm_cls(**data.model_dump(mode="python")),
+        instance=orm_cls(**data.model_dump(mode="json")),
         orm_cls=orm_cls,
         table_name=table_name,
     )
@@ -501,11 +501,17 @@ class PostgresClient:
             return ResponseModel(code=400, error=str(e))
 
         tenant_id = str(getattr(data, "tenant_id", None) or "")
+        pks = [col.name for col in prep.orm_cls.__table__.primary_key]
+        pk_data: dict = {}
         async with self.get_client(tenant_id=tenant_id or None) as session:
             session.add(prep.instance)
             try:
                 await session.commit()
                 await session.refresh(prep.instance)
+                # Read PK values inside the session before _tenant_session.finally
+                # calls rollback() which expires all instance attributes.
+                pk_data = {pk: str(getattr(prep.instance, pk)) for pk in pks if
+                           getattr(prep.instance, pk) is not None}
             except IntegrityError as e:
                 await session.rollback()
                 # Distinguish the constraint that failed (Postgres SQLSTATE via the
@@ -523,9 +529,7 @@ class PostgresClient:
                     return ResponseModel(code=400, error=f"{prep.table_name}: a value failed a constraint check")
                 log.warning("insert integrity error in %s (sqlstate=%s): %s", prep.table_name, sqlstate, e)
                 return ResponseModel(code=409, error=f"Integrity error in {prep.table_name}")
-        pks = [col.name for col in prep.orm_cls.__table__.primary_key]
-        return ResponseModel(code=200, data={pk: str(getattr(prep.instance, pk)) for pk in pks if
-                                             getattr(prep.instance, pk) is not None})
+        return ResponseModel(code=200, data=pk_data)
 
     async def soft_delete(self, data: BaseModel) -> ResponseModel:
         try:
