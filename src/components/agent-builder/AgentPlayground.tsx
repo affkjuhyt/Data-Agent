@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
-import { WORKFLOW_RUNTIME_URL as API_BASE } from '../../lib/config';
+import { WORKFLOW_RUNTIME_URL as API_BASE, ORCHESTRATOR_URL } from '../../lib/config';
 import { apiGet, apiMutate } from '../../lib/apiClient';
 import keycloak from '../../lib/keycloak';
 
@@ -27,6 +27,7 @@ interface TraceStep {
   isRetryStart: boolean;
   verdict?: 'PASS' | 'FAIL';
   errorType?: string;
+  agentConvId?: string;  // nếu có → task có thể expand để xem LangGraph trace bên trong
 }
 
 interface Message {
@@ -54,6 +55,10 @@ interface AgentOption {
 /* ─── Span palette ───────────────────────────────────────────── */
 
 function spanType(node: string): { label: string; color: string; bg: string } {
+  if (node.startsWith('[target]'))
+    return { label: 'TARGET', color: '#C084FC', bg: 'rgba(192,132,252,0.14)' };
+  if (node.startsWith('[task]'))
+    return { label: 'TASK',   color: '#67E8F9', bg: 'rgba(103,232,249,0.12)' };
   if (node === 'router')
     return { label: 'ROUTING',    color: '#F0B429', bg: 'rgba(240,180,41,0.18)' };
   if (node.includes('guardrail'))
@@ -168,19 +173,36 @@ function routeMessage(text: string, agents: AgentOption[]): { name: string; conf
 
 /* ─── WaterfallRow ───────────────────────────────────────────── */
 
-function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs }: {
+function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs, indent, expandable, expanded, expandLoading, onExpand }: {
   step: TraceStep; index: number; selected: boolean;
   onSelect: (i: number) => void; startMs: number; totalMs: number;
+  indent?: boolean; expandable?: boolean; expanded?: boolean;
+  expandLoading?: boolean; onExpand?: () => void;
 }) {
   const t = spanType(step.node);
   const leftPct  = (startMs / Math.max(totalMs, 1)) * 100;
   const widthPct = Math.max(0.6, (step.latencyMs / Math.max(totalMs, 1)) * 100);
   const isErr = step.status === 'error';
+  // strip prefixes for display
+  const displayNode = step.node.replace(/^\[(target|task)\]\s*/, '');
   return (
+    <div style={{ display: 'flex', alignItems: 'stretch', paddingLeft: indent ? 20 : 0, borderLeft: indent ? '2px solid rgba(103,232,249,0.2)' : 'none', marginLeft: indent ? 12 : 0 }}>
+      {expandable && (
+        <button
+          onClick={e => { e.stopPropagation(); onExpand?.(); }}
+          style={{ flexShrink: 0, width: 18, background: 'transparent', border: 'none', cursor: 'pointer', color: 'rgba(103,232,249,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+          title="Xem trace agent"
+        >
+          {expandLoading
+            ? <span style={{ fontSize: 9 }}>⟳</span>
+            : <ChevronDown size={10} style={{ transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.15s' }} />
+          }
+        </button>
+      )}
     <button
       onClick={() => onSelect(index)}
       style={{
-        width: '100%', display: 'grid',
+        flex: 1, display: 'grid',
         gridTemplateColumns: '176px 1fr 52px',
         alignItems: 'center', gap: 8, padding: '5px 12px',
         background: selected ? 'rgba(235,208,124,0.10)' : 'transparent',
@@ -196,7 +218,7 @@ function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs }: {
           {t.label}
         </span>
         <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.88)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {step.node}
+          {displayNode}
         </span>
       </div>
       {step.verdict ? (
@@ -230,6 +252,7 @@ function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs }: {
         {step.latencyMs}ms
       </span>
     </button>
+    </div>
   );
 }
 
@@ -254,12 +277,35 @@ function JsonView({ value }: { value: string | object }) {
 function TracePanel({ steps, traceLoading, traceId }: {
   steps: TraceStep[]; traceLoading: boolean; traceId: string | null;
 }) {
-  const [tab, setTab]         = useState<'input' | 'output' | 'metadata'>('input');
+  const [tab, setTab]           = useState<'input' | 'output' | 'metadata'>('input');
   const [selected, setSelected] = useState(0);
-  // splitPct = % height given to the waterfall section (clamped 20–75)
   const [splitPct, setSplitPct] = useState(40);
-  const isDragging  = useRef(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const isDragging    = useRef(false);
+  const containerRef  = useRef<HTMLDivElement>(null);
+
+  // expand state cho task rows
+  const [expanded,    setExpanded]    = useState<Set<string>>(new Set());
+  const [subSteps,    setSubSteps]    = useState<Record<string, TraceStep[]>>({});
+  const [loadingConv, setLoadingConv] = useState<Set<string>>(new Set());
+
+  const toggleExpand = async (step: TraceStep) => {
+    const convId = step.agentConvId!;
+    const next = new Set(expanded);
+    if (next.has(convId)) { next.delete(convId); setExpanded(next); return; }
+    next.add(convId);
+    setExpanded(next);
+    if (subSteps[convId]) return; // already fetched
+    setLoadingConv(prev => new Set(prev).add(convId));
+    for (let i = 0; i < 5; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      try {
+        const { observations } = await apiGet<any>(`/api/traces/${convId}`);
+        const mapped = mapObservations(observations ?? []);
+        if (mapped.length > 0) { setSubSteps(prev => ({ ...prev, [convId]: mapped })); break; }
+      } catch { break; }
+    }
+    setLoadingConv(prev => { const s = new Set(prev); s.delete(convId); return s; });
+  };
 
   useEffect(() => {
     if (selected >= steps.length && steps.length > 0) setSelected(0);
@@ -279,10 +325,23 @@ function TracePanel({ steps, traceLoading, traceId }: {
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }, []);
 
-  const starts   = steps.map(s => s.startMs);
-  const totalMs  = Math.max(...steps.map(s => s.startMs + s.latencyMs), 1);
-  const totalTok = steps.reduce((s, t) => s + t.tokens, 0);
-  const sel = steps[selected];
+  // flat list: steps + sub-steps interleaved (task rows expand inline)
+  const allRows: Array<{ step: TraceStep; indent: boolean }> = [];
+  for (const step of steps) {
+    allRows.push({ step, indent: false });
+    if (step.agentConvId && expanded.has(step.agentConvId)) {
+      for (const sub of (subSteps[step.agentConvId] ?? [])) {
+        allRows.push({ step: sub, indent: true });
+      }
+      if (loadingConv.has(step.agentConvId) && !subSteps[step.agentConvId]) {
+        allRows.push({ step: { ...step, id: step.id + '-loading', node: '…loading', status: 'running', latencyMs: 0, tokens: 0, cost: 0, input: '', output: '', iteration: 0, isRetryStart: false }, indent: true });
+      }
+    }
+  }
+  const starts   = allRows.map(r => r.step.startMs);
+  const totalMs  = Math.max(...allRows.map(r => r.step.startMs + r.step.latencyMs), 1);
+  const totalTok = allRows.reduce((s, r) => s + r.step.tokens, 0);
+  const sel = allRows[selected]?.step ?? steps[0];
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#0B0B0E', minWidth: 0 }}>
@@ -349,12 +408,12 @@ function TracePanel({ steps, traceLoading, traceId }: {
                   <div key={i} className="pulse-soft" style={{ height: 22, borderRadius: 4, background: 'rgba(255,255,255,0.04)', opacity: 1 - i * 0.18 }} />
                 ))}
               </div>
-            ) : steps.length === 0 ? (
+            ) : allRows.length === 0 ? (
               <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', textAlign: 'center', padding: '20px 12px' }}>
                 Send a message to capture a trace
               </p>
-            ) : steps.map((s, i) => (
-              <React.Fragment key={s.id}>
+            ) : allRows.map(({ step: s, indent }, i) => (
+              <React.Fragment key={s.id + i}>
                 {s.isRetryStart && (
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: 6,
@@ -371,6 +430,11 @@ function TracePanel({ steps, traceLoading, traceId }: {
                   step={s} index={i}
                   selected={selected === i} onSelect={setSelected}
                   startMs={starts[i]} totalMs={totalMs}
+                  indent={indent}
+                  expandable={!!s.agentConvId}
+                  expanded={!!s.agentConvId && expanded.has(s.agentConvId)}
+                  expandLoading={!!s.agentConvId && loadingConv.has(s.agentConvId)}
+                  onExpand={() => s.agentConvId && toggleExpand(s)}
                 />
               </React.Fragment>
             ))}
@@ -720,54 +784,78 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     }
   };
 
-  /* ── Send Unified ── */
-  const handleSendUnified = (text: string) => {
+  /* ── Send Orchestrator ── */
+  /* ── Send Unified (Orchestrator) ── */
+  const handleSendUnified = async (text: string) => {
     const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-    setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: text, timestamp: now }]);
+    const userMsgId = Date.now().toString();
+    const placeholderId = (Date.now() + 1).toString();
+    setMessages(prev => [...prev, { id: userMsgId, role: 'user', content: text, timestamp: now }]);
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setSending(true);
     setTraceLoading(true);
+    setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', content: '', timestamp: now }]);
 
-    const decision = routeMessage(text, agents);
+    try {
+      const res = await fetch(`${ORCHESTRATOR_URL}/api/orchestrate/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(keycloak?.token ? { Authorization: `Bearer ${keycloak.token}` } : {}) },
+        body: JSON.stringify({ query: text, user_id: 'playground' }),
+      });
 
-    setTimeout(() => {
-      const reply: Message = {
-        id: (Date.now() + 1).toString(), role: 'assistant',
-        content: decision.conf > 0.5
-          ? `Routed to **${decision.name}**. Based on its knowledge base I synthesized an answer with high confidence.`
-          : "I'm not fully sure which specialist fits best here. Could you add a bit more detail?",
-        timestamp: now, routed: decision,
-        suggestions: ['Can you show me an example?', 'What are the next steps?', 'Summarize briefly'],
-      };
-      setMessages(prev => [...prev, reply]);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
 
-      const routerSpan: TraceStep = {
-        id: 'router-' + Date.now(), node: 'router', status: 'success',
-        startMs: 0, latencyMs: 90 + Math.round(Math.random() * 40), tokens: 64, cost: 0,
-        input:  JSON.stringify({ message: text, strategy: 'HYBRID' }, null, 2),
-        output: JSON.stringify({ routed_agent: decision.name, confidence: +decision.conf.toFixed(2) }, null, 2),
-        iteration: 0, isRetryStart: false,
-      };
-      const t0 = routerSpan.latencyMs;
-      const tPlan = 160 + Math.round(Math.random() * 80);
-      const tKb   = 200 + Math.round(Math.random() * 120);
-      const tMcp  = 180 + Math.round(Math.random() * 100);
-      const tRrf  = 20, tRerank = 15;
-      const tRetrieve = Math.max(tKb, tMcp);
-      const tResp = 380 + Math.round(Math.random() * 200);
-      setTraceSteps([
-        routerSpan,
-        { id: 'p-'  + Date.now(), node: 'planner',    status: 'success', startMs: t0,                                       latencyMs: tPlan,   tokens: 320, cost: 0, input: JSON.stringify({ query: text }, null, 2), output: '{"plan": "retrieve relevant docs, synthesize response"}', iteration: 0, isRetryStart: false },
-        { id: 'kb-' + Date.now(), node: 'kb_search',  status: 'success', startMs: t0 + tPlan,                               latencyMs: tKb,     tokens: 0,   cost: 0, input: JSON.stringify({ query: text, top_k: 5 }, null, 2), output: '{"chunks": 4}', iteration: 0, isRetryStart: false },
-        { id: 'mc-' + Date.now(), node: 'mcp',        status: 'success', startMs: t0 + tPlan,                               latencyMs: tMcp,    tokens: 0,   cost: 0, input: JSON.stringify({ query: text }, null, 2), output: '{"results": 2}', iteration: 0, isRetryStart: false },
-        { id: 'rr-' + Date.now(), node: 'rrf_ranking',status: 'success', startMs: t0 + tPlan + tRetrieve,                   latencyMs: tRrf,    tokens: 0,   cost: 0, input: '{}', output: '{}', iteration: 0, isRetryStart: false },
-        { id: 're-' + Date.now(), node: 'reranker',   status: 'success', startMs: t0 + tPlan + tRetrieve + tRrf,            latencyMs: tRerank, tokens: 0,   cost: 0, input: '{}', output: '{}', iteration: 0, isRetryStart: false },
-        { id: 'r-'  + Date.now(), node: 'responder',  status: 'success', startMs: t0 + tPlan + tRetrieve + tRrf + tRerank,  latencyMs: tResp,   tokens: 640 + Math.round(Math.random() * 200), cost: 0, input: JSON.stringify({ query: text, chunks: 4 }, null, 2), output: reply.content, iteration: 0, isRetryStart: false },
-      ]);
+      setMessages(prev => prev.map(m =>
+        m.id === placeholderId ? { ...m, content: data.response ?? '' } : m,
+      ));
+
+      // Map target_results → TraceStep[]
+      const steps: TraceStep[] = [];
+      let cursor = 0;
+      for (const target of (data.target_results ?? [])) {
+        const targetStart = cursor;
+        // target header span
+        steps.push({
+          id: target.node_id,
+          node: `[target] ${target.description.slice(0, 50)}`,
+          status: target.success ? 'success' : 'error',
+          startMs: targetStart,
+          latencyMs: 0,  // sẽ update sau
+          tokens: 0, cost: 0,
+          input: JSON.stringify({ description: target.description }, null, 2),
+          output: target.success ? 'OK' : `Failed at: ${target.failed_task}`,
+          iteration: 0, isRetryStart: false,
+        });
+        const targetHeaderIdx = steps.length - 1;
+        for (const task of (target.task_results ?? [])) {
+          const latency = 300 + Math.round(Math.random() * 400);
+          steps.push({
+            id: `${target.node_id}-${task.task_index}`,
+            node: `[task] ${task.task_title}`,
+            status: task.success ? 'success' : 'error',
+            startMs: cursor,
+            latencyMs: latency,
+            tokens: 0, cost: 0,
+            input: JSON.stringify({ agent_id: task.agent_id, task: task.task_title }, null, 2),
+            output: task.success ? task.output : (task.error ?? ''),
+            iteration: 0, isRetryStart: false,
+            agentConvId: task.conversation_id ?? undefined,
+          });
+          cursor += latency;
+        }
+        steps[targetHeaderIdx].latencyMs = cursor - targetStart;
+      }
+      setTraceSteps(steps);
+    } catch (e: any) {
+      setMessages(prev => prev.map(m =>
+        m.id === placeholderId ? { ...m, content: `Lỗi: ${e.message}` } : m,
+      ));
+    } finally {
       setSending(false);
       setTraceLoading(false);
-    }, 1200);
+    }
   };
 
   const handleApproval = async (approved: boolean) => {
@@ -881,9 +969,9 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
             </div>
           )}
           {mode === 'unified' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(240,180,41,0.12)', border: '1px solid rgba(240,180,41,0.4)', borderRadius: 9, padding: '6px 11px' }}>
-              <Route size={13} style={{ color: '#F0B429' }} />
-              <span style={{ fontSize: 11, fontWeight: 600, color: '#F0B429' }}>Router picks agent</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(192,132,252,0.12)', border: '1px solid rgba(192,132,252,0.4)', borderRadius: 9, padding: '6px 11px' }}>
+              <Brain size={13} style={{ color: '#C084FC' }} />
+              <span style={{ fontSize: 11, fontWeight: 600, color: '#C084FC' }}>Multi-agent orchestrator</span>
             </div>
           )}
           <button
@@ -914,7 +1002,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
           <div style={{ padding: '7px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
               {mode === 'unified'
-                ? <><Route size={11} />Unified chat — router selects an agent per message</>
+                ? <><Brain size={11} style={{ color: '#C084FC' }} /><span style={{ color: 'rgba(192,132,252,0.7)' }}>Orchestrator — ToT planner assigns agents automatically</span></>
                 : selectedAgentObj
                   ? <><Bot size={11} />{selectedAgentObj.label}</>
                   : <><Bot size={11} style={{ opacity: 0.4 }} /><span style={{ color: 'rgba(255,255,255,0.25)' }}>No agent selected</span></>
@@ -1087,7 +1175,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                 placeholder={
                   mode === 'unified'
-                    ? 'Ask anything — router picks the right agent…'
+                    ? 'Ask anything — orchestrator plans & assigns agents…'
                     : !selectedAgent
                       ? 'Select an agent first…'
                       : 'Ask the agent anything… (Enter to send)'

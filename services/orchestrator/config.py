@@ -1,0 +1,38 @@
+import os
+import json
+
+# ── LiteLLM gateway ─────────────────────────────────────────────────────────
+LITELLM_BASE_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
+LITELLM_API_KEY = os.environ.get("LITELLM_API_KEY", "sk-dev")
+
+# Model aliases — phải khớp với model_name trong infra/litellm/config.yaml
+# Tách riêng khỏi agent-level "planner"/"responder" để swap model to hơn độc lập
+PLANNER_MODEL = os.environ.get("ORCHESTRATOR_PLANNER_MODEL", "orchestrator-planner")
+SYNTHESIZER_MODEL = os.environ.get("ORCHESTRATOR_SYNTHESIZER_MODEL", "orchestrator-synthesizer")
+
+# ── Database ─────────────────────────────────────────────────────────────────
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+
+# ── Workflow runtime (agent workflows) ──────────────────────────────────────
+WORKFLOW_RUNTIME_URL = os.environ.get("WORKFLOW_RUNTIME_URL", "http://localhost:8001")
+
+# ── Agent registry: task type -> agent_id ───────────────────────────────────
+# JSON string: '{"sql": "uuid-sql-agent", "kb": "uuid-kb-agent"}'
+_raw = os.environ.get("AGENT_REGISTRY", "{}")
+AGENT_REGISTRY: dict[str, str] = json.loads(_raw)
+DEFAULT_AGENT_ID = os.environ.get("DEFAULT_AGENT_ID", "")
+
+# ── Planner ToT parameters ───────────────────────────────────────────────────
+H_ES = float(os.environ.get("DPTS_H_ES", "0.5"))
+H_DS = float(os.environ.get("DPTS_H_DS", "0.7"))
+BRANCHING = int(os.environ.get("DPTS_BRANCHING", "2"))
+MAX_PLAN_DEPTH = int(os.environ.get("DPTS_MAX_PLAN_DEPTH", "4"))
+QUEUE_SIZE = int(os.environ.get("DPTS_QUEUE_SIZE", "4"))
+EXPLOIT_RATIO = float(os.environ.get("DPTS_EXPLOIT_RATIO", "0.5"))
+
+# MockLLM fallback khi không có LITELLM_URL (dev/test)
+USE_MOCK_PLANNER = os.environ.get("USE_MOCK_PLANNER", "").lower() in ("1", "true", "yes")
+
+# ── Executor ─────────────────────────────────────────────────────────────────
+AGENT_CALL_TIMEOUT = int(os.environ.get("AGENT_CALL_TIMEOUT", "120"))   # seconds
+MAX_RETRIES_PER_TASK = int(os.environ.get("MAX_RETRIES_PER_TASK", "1"))

@@ -15,3 +15,6 @@ export const FLOW_BUILDER_URL = (env.VITE_FLOW_BUILDER_URL as string | undefined
 
 /** workflow-runtime service — agent execution, node registry, runtime config. */
 export const WORKFLOW_RUNTIME_URL = (env.VITE_WORKFLOW_RUNTIME_URL as string | undefined) ?? 'http://localhost:8001';
+
+/** orchestrator service — multi-agent ToT planner + executor. */
+export const ORCHESTRATOR_URL = (env.VITE_ORCHESTRATOR_URL as string | undefined) ?? 'http://localhost:8003';

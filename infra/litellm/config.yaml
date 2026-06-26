@@ -58,6 +58,23 @@ model_list:
       api_base: http://host.docker.internal:8088/v1
       api_key: not-needed
 
+  # Orchestrator level — ToT planner + synthesizer (swap sang model to hơn khi có GPU)
+  - model_name: orchestrator-planner
+    litellm_params:
+      model: openai/qwen3-8b-instruct
+      api_base: http://host.docker.internal:8088/v1
+      api_key: not-needed
+      extra_body:
+        enable_thinking: false
+
+  - model_name: orchestrator-synthesizer
+    litellm_params:
+      model: openai/qwen3-8b-instruct
+      api_base: http://host.docker.internal:8088/v1
+      api_key: not-needed
+      extra_body:
+        enable_thinking: false
+
   # Local LLM via llama.cpp server (CPU-only, run docker-compose.llm.yml first)
   - model_name: local-qwen
     litellm_params:
