@@ -44,7 +44,7 @@ class ElasticsearchClient:
                 self._healthy = True
                 log.info("Elasticsearch connection established url=%s", self._url)
                 return self
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 log.info("Attempt #%d/%d: Elasticsearch connection failed — %s", attempt + 1, retry.count, e)
                 if self._client is not None:
                     await self._client.close()
@@ -67,7 +67,7 @@ class ElasticsearchClient:
             try:
                 await asyncio.wait_for(self._client.ping(), timeout=config.timeout_for_health_check)
                 self._healthy = True
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 self._healthy = False
                 log.warning("Elasticsearch unhealthy: %s — attempting reconnect", e)
                 await self._reconnect()
