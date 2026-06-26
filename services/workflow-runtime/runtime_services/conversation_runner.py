@@ -165,18 +165,20 @@ async def run_conversation_stream(req: RunRequest, request: Request):
             n.get("data", {}).get("nodeType") == "human_approval"
             for n in flow_nodes
         )
-    graph = _graph_cache[cache_key]
+        graph = _graph_cache.get(cache_key)
+        if graph is None:
+            graph = await _get_or_build_graph(
+                cache_key, flow_nodes, flow_edges,
+                checkpointer=_checkpointer if needs_checkpointer else None,
+            )
+    else:
+        graph = _default_graph
+
     cfg["tenant_id"] = tenant_id
     # doc §3.7 — gates which Schema Memory tables _text_to_sql_handler may
     # see. Kong-style convention: comma-separated roles already verified
     # upstream (see tests/integration/conftest.py headers_factory).
     cfg["user_roles"] = [r.strip() for r in request.headers.get("X-User-Roles", "").split(",") if r.strip()]
-        graph = await _get_or_build_graph(
-            cache_key, flow_nodes, flow_edges,
-            checkpointer=_checkpointer if needs_checkpointer else None,
-        )
-    else:
-        graph = _default_graph
     if not await validate_agent_tenant(agent_id, tenant_id):
         return JSONResponse(status_code=403, content={"detail": "Agent not found or access denied"})
 
@@ -207,7 +209,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         (_DATA_TOOL_TASK_TYPE[t] for t in cfg.get("allowed_tools", []) if t in _DATA_TOOL_TASK_TYPE),
         None,
     )
-    if data_task_type:
+    if data_task_type and cfg.get("memory_enabled"):
         workflow_memory_context = await retrieve_workflow_memory(
             tenant_id=tenant_id,
             agent_id=agent_id,
@@ -528,7 +530,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
 
             # Workflow Memory write (doc §3.7) — one record per data-tool call
             # this turn actually executed, regardless of success/failure.
-            for nt in node_traces:
+            for nt in (node_traces if cfg.get("memory_enabled") else []):
                 if not nt["tool_name"].startswith("tool/"):
                     continue
                 task_type = _DATA_TOOL_TASK_TYPE.get(nt["tool_name"][len("tool/"):])

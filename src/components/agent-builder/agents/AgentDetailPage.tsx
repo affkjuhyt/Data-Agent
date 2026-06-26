@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import WorkflowBuilder from '../workflow/Builder';
 import { TEMPLATE_FLOWS } from '../workflow/BuilderTemplates';
 import type { TemplateId } from '../workflow/Builder';
-import { FLOW_BUILDER_URL, WORKFLOW_RUNTIME_URL } from '../../../lib/config';
+import { apiGet, apiMutate } from '../../../lib/apiClient';
 
 interface ApiWorkflow {
   id: string;
@@ -115,8 +115,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
   };
 
   const fetchVersions = useCallback(async (workflowId: string) => {
-    const res = await fetch(`${FLOW_BUILDER_URL}/api/workflows/${workflowId}/versions`);
-    const data = await res.json();
+    const data = await apiGet<any[]>(`/api/workflows/${workflowId}/versions`);
     setWfVersions(prev => ({ ...prev, [workflowId]: data }));
   }, []);
 
@@ -125,24 +124,18 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
     if (!publishModal) return;
     const { versionId, mode } = publishModal;
     const endpoint = mode === 'republish'
-      ? `${FLOW_BUILDER_URL}/api/workflow-versions/${versionId}/republish`
-      : `${FLOW_BUILDER_URL}/api/workflow-versions/${versionId}/publish`;
+      ? `/api/workflow-versions/${versionId}/republish`
+      : `/api/workflow-versions/${versionId}/publish`;
     try {
-      await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: mode === 'publish' ? JSON.stringify({ changelog }) : undefined,
-      });
+      await apiMutate('POST', endpoint, mode === 'publish' ? { changelog } : undefined);
       showToast(mode === 'republish' ? '✓ Rollback thành công' : '✓ Published thành công');
       setPublishModal(null);
       setChangelog('');
       // Refetch agent + versions
-      const r = await fetch(`${FLOW_BUILDER_URL}/api/agents/${agentId}`);
-      const data: ApiAgent = await r.json();
+      const data = await apiGet<ApiAgent>(`/api/agents/${agentId}`);
       setAgent(data);
       for (const wf of data.workflows ?? []) {
-        fetch(`${FLOW_BUILDER_URL}/api/workflows/${wf.id}/versions`)
-          .then(rv => rv.json())
+        apiGet<any[]>(`/api/workflows/${wf.id}/versions`)
           .then(versions => setWfVersions(prev => ({ ...prev, [wf.id]: versions })))
           .catch(() => {});
       }
@@ -150,8 +143,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
   }, [publishModal, changelog, agentId]);
 
   const fetchAgent = useCallback(async () => {
-    const res = await fetch(`${FLOW_BUILDER_URL}/api/agents/${agentId}`);
-    const data: ApiAgent = await res.json();
+    const data = await apiGet<ApiAgent>(`/api/agents/${agentId}`);
     setAgent(data);
     setSettingsForm(f => ({
       ...f,
@@ -161,10 +153,8 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
       system_prompt_id:    data.system_prompt_id    ?? '',
       memory_enabled:      data.memory_enabled      ?? false,
     }));
-    // Fetch versions cho tất cả workflows
     (data.workflows ?? []).forEach(wf => {
-      fetch(`${FLOW_BUILDER_URL}/api/workflows/${wf.id}/versions`)
-        .then(r => r.json())
+      apiGet<any[]>(`/api/workflows/${wf.id}/versions`)
         .then(versions => setWfVersions(prev => ({ ...prev, [wf.id]: versions })))
         .catch(() => {});
     });
@@ -184,10 +174,8 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
   }, [deployDropdown]);
 
   useEffect(() => {
-    fetch(`${WORKFLOW_RUNTIME_URL}/api/llm-providers`)
-      .then(r => r.json()).then(setLlmProviders).catch(() => {});
-    fetch(`${WORKFLOW_RUNTIME_URL}/api/system-prompts`)
-      .then(r => r.json()).then(setSystemPrompts).catch(() => {});
+    apiGet<any[]>('/api/llm-providers').then(setLlmProviders).catch(() => {});
+    apiGet<any[]>('/api/system-prompts').then(setSystemPrompts).catch(() => {});
   }, []);
 
   const openPublishWizard = () => {
@@ -205,14 +193,12 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
     setWizardWfId(wf.id);
 
     const [canvasRes, kbRes] = await Promise.allSettled([
-      fetch(`${FLOW_BUILDER_URL}/api/workflow-versions/${wf.published_version_id}/canvas`),
-      fetch(`${WORKFLOW_RUNTIME_URL}/api/kb-connections`, {
-        headers: { 'X-Tenant-ID': 'tenant-dev' },
-      }),
+      apiGet<any>(`/api/workflow-versions/${wf.published_version_id}/canvas`),
+      apiGet<any[]>('/api/kb-connections'),
     ]);
 
-    if (canvasRes.status === 'fulfilled' && canvasRes.value.ok) {
-      const canvas = await canvasRes.value.json();
+    if (canvasRes.status === 'fulfilled') {
+      const canvas = canvasRes.value;
       const types = new Set<string>(
         (canvas.nodes ?? [])
           .map((n: any) => n.data?.nodeType || n.type || '')
@@ -221,8 +207,8 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
       setWizardNodeTypes(types);
     }
 
-    if (kbRes.status === 'fulfilled' && kbRes.value.ok) {
-      setWizardKbConns(await kbRes.value.json());
+    if (kbRes.status === 'fulfilled') {
+      setWizardKbConns(kbRes.value);
     }
 
     setWizardStep(2);
@@ -231,16 +217,11 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
   const handleWizardConfirm = async () => {
     setWizardPublishing(true);
     try {
-      const res = await fetch(`${FLOW_BUILDER_URL}/api/agents/${agentId}/publish`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workflow_id:      wizardWfId,
-          changelog:        wizardChangelog || undefined,
-          kb_connection_id: wizardKbId || undefined,
-        }),
+      await apiMutate('POST', `/api/agents/${agentId}/publish`, {
+        workflow_id:      wizardWfId,
+        changelog:        wizardChangelog || undefined,
+        kb_connection_id: wizardKbId || undefined,
       });
-      if (!res.ok) { const e = await res.json(); showToast(e.detail || 'Publish thất bại'); return; }
       showToast('✓ Agent published thành công');
       setWizardOpen(false);
       fetchAgent();
@@ -252,12 +233,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
     if (!newWfName.trim()) return;
     setCreating(true);
     try {
-      const res = await fetch(`${FLOW_BUILDER_URL}/api/agents/${agentId}/workflows`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newWfName.trim(), description: '' }),
-      });
-      const data = await res.json();
+      const data = await apiMutate<any>('POST', `/api/agents/${agentId}/workflows`, { name: newWfName.trim(), description: '' });
       const wvId: string = data.workflow_version_id;
       const tpl = TEMPLATE_FLOWS[newWfTemplate];
 
@@ -279,8 +255,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
   const handleDeleteWorkflow = async () => {
     if (!deleteWfConfirm) return;
     try {
-      const res = await fetch(`${FLOW_BUILDER_URL}/api/workflows/${deleteWfConfirm}`, { method: 'DELETE' });
-      if (!res.ok) { const e = await res.json(); showToast(e.detail || 'Xóa thất bại'); return; }
+      await apiMutate('DELETE', `/api/workflows/${deleteWfConfirm}`);
       showToast('Đã xóa workflow');
       setDeleteWfConfirm(null);
       fetchAgent();
@@ -290,8 +265,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
   const handleDeleteDraft = async () => {
     if (!deleteConfirm) return;
     try {
-      const res = await fetch(`${FLOW_BUILDER_URL}/api/workflow-versions/${deleteConfirm}`, { method: 'DELETE' });
-      if (!res.ok) { const e = await res.json(); showToast(e.detail || 'Xóa thất bại'); return; }
+      await apiMutate('DELETE', `/api/workflow-versions/${deleteConfirm}`);
       showToast('Đã xóa draft');
       setDeleteConfirm(null);
       fetchAgent();
@@ -301,8 +275,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
   const handleUnpublish = async () => {
     setUnpublishing(true);
     try {
-      const res = await fetch(`${FLOW_BUILDER_URL}/api/agents/${agentId}/unpublish`, { method: 'POST' });
-      if (!res.ok) { const e = await res.json(); showToast(e.detail || 'Unpublish thất bại'); return; }
+      await apiMutate('POST', `/api/agents/${agentId}/unpublish`);
       showToast('✓ Agent đã được unpublish');
       fetchAgent();
     } catch { showToast('Unpublish thất bại'); }
@@ -312,11 +285,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
   const handleSaveSettings = async () => {
     setSavingSettings(true);
     try {
-      await fetch(`${FLOW_BUILDER_URL}/api/agents/${agentId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settingsForm),
-      });
+      await apiMutate('PATCH', `/api/agents/${agentId}`, settingsForm);
       showToast('✓ Đã lưu settings');
       setSettingsEdit(false);
       fetchAgent();
@@ -340,7 +309,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
         sourceVersionId={builder.sourceVersionId}
         onLeave={builder.isNewWorkflow ? async () => {
           if (builder.workflowId) {
-            await fetch(`${FLOW_BUILDER_URL}/api/workflows/${builder.workflowId}`, { method: 'DELETE' });
+            await apiMutate('DELETE', `/api/workflows/${builder.workflowId}`);
           }
           setBuilder(null);
           setNewWfName(builder.workflowName ?? '');
@@ -454,9 +423,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                         <button
                           onClick={async () => {
                             try {
-                              const res = await fetch(`${FLOW_BUILDER_URL}/api/workflows/${wf.id}/versions`, { method: 'POST' });
-                              if (!res.ok) { const e = await res.json(); showToast(e.detail || 'Thất bại'); return; }
-                              const data = await res.json();
+                              const data = await apiMutate<any>('POST', `/api/workflows/${wf.id}/versions`);
                               await fetchAgent();
                               setBuilder({
                                 workflowVersionId: data.workflow_version_id,

@@ -6,58 +6,60 @@ model_list:
 
   - model_name: planner
     litellm_params:
-      model: openai/qwen3-8b-instruct
-      api_base: http://host.docker.internal:8088/v1
+      model: openai/haiku
+      api_base: http://host.docker.internal:8089/v1
       api_key: not-needed
-      extra_body:
-        enable_thinking: false
 
   - model_name: responder
     litellm_params:
-      model: openai/qwen3-8b-instruct
-      api_base: http://host.docker.internal:8088/v1
+      model: openai/sonnet
+      api_base: http://host.docker.internal:8089/v1
       api_key: not-needed
-      extra_body:
-        enable_thinking: false
 
   - model_name: guardrail
     litellm_params:
-      model: openai/qwen3-8b-instruct
-      api_base: http://host.docker.internal:8088/v1
+      model: openai/haiku
+      api_base: http://host.docker.internal:8089/v1
       api_key: not-needed
-      extra_body:
-        enable_thinking: false
 
   - model_name: rewriter
     litellm_params:
-      model: openai/qwen3-8b-instruct
-      api_base: http://host.docker.internal:8088/v1
+      model: openai/haiku
+      api_base: http://host.docker.internal:8089/v1
       api_key: not-needed
-      extra_body:
-        enable_thinking: false
 
   - model_name: suggester
     litellm_params:
-      model: openai/qwen3-8b-instruct
-      api_base: http://host.docker.internal:8088/v1
+      model: openai/haiku
+      api_base: http://host.docker.internal:8089/v1
       api_key: not-needed
-      extra_body:
-        enable_thinking: false
 
   - model_name: judge
     litellm_params:
-      model: openai/qwen3-8b-instruct
-      api_base: http://host.docker.internal:8088/v1
+      model: openai/haiku
+      api_base: http://host.docker.internal:8089/v1
       api_key: not-needed
-      extra_body:
-        enable_thinking: false
 
   - model_name: embedder
     litellm_params:
-      model: openai/text-embedding-3-small
-      api_key: os.environ/OPENAI_API_KEY
+      model: openai/haiku
+      api_base: http://host.docker.internal:8089/v1
+      api_key: not-needed
 
-  # Local LLM via llama.cpp server (CPU-only, run docker-compose.llm.yml first)
+  # Orchestrator level — ToT planner + synthesizer (Claude via proxy-ai on host)
+  - model_name: orchestrator-planner
+    litellm_params:
+      model: openai/sonnet
+      api_base: http://host.docker.internal:8089/v1
+      api_key: not-needed
+
+  - model_name: orchestrator-synthesizer
+    litellm_params:
+      model: openai/haiku
+      api_base: http://host.docker.internal:8089/v1
+      api_key: not-needed
+
+  # Local LLM via llama.cpp server (CPU-only, fallback)
   - model_name: local-qwen
     litellm_params:
       model: openai/qwen3-8b-instruct

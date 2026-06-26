@@ -55,4 +55,5 @@ exec "$LLAMA_BIN" \
   --mlock \
   \
   --flash-attn on \
+  --embeddings \
   --log-disable

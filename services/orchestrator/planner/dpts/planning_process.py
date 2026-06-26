@@ -38,11 +38,13 @@ class PlanningProcess:
         self.gate = PlannerGate(self.tree, self.pool, self.queue)
 
         self.user_input = ""
+        self.agents: list[dict] = []   # published agents injected before planning
         self.produced: set[str] = set()
         self.layers_run = 0
 
     # ── public workflow ────────────────────────────────────────────────
-    async def plan(self, user_input: str) -> Plan | None:
+    async def plan(self, user_input: str, agents: list[dict] | None = None) -> Plan | None:
+        self.agents = agents or []
         await self.seed(user_input)
         return await self.run_until_terminal()
 
@@ -164,7 +166,7 @@ class PlanningProcess:
 
     # ── helpers ─────────────────────────────────────────────────────────
     async def _generate(self, node: Node) -> list[Node]:
-        thoughts = await self.llm.generate(node, self.branching)
+        thoughts = await self.llm.generate(node, self.branching, agents=self.agents)
         children = node_extraction(node, thoughts, self.tree)
         for c in children:
             # depth cap = safety net; LLM decides terminal
