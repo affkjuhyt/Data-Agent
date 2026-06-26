@@ -45,7 +45,7 @@ async def run_orchestration(req: OrchestrateRequest, request: Request):
     recovered = False
 
     for attempt in range(_MAX_REPLAN + 1):
-        result = await execute_plan(plan, user_id=req.user_id)
+        result = await execute_plan(plan, user_id=req.user_id, session_id=plan.plan_id)
         all_target_results.extend(result.target_results)
 
         if result.success:

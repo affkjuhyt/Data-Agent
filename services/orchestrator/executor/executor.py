@@ -21,13 +21,14 @@ class ExecutionResult:
     success: bool = True
 
 
-async def _run_task(node: TaskNode, prompt: str, user_id: str) -> TaskNode:
+async def _run_task(node: TaskNode, prompt: str, user_id: str, session_id: str | None = None) -> TaskNode:
     """Chạy 1 task, ghi output vào node, không throw."""
     try:
         output, conv_id = await call_agent(
             agent_id=node.agent_id,
             prompt=prompt,
             user_id=user_id,
+            session_id=session_id,
         )
         node.output = output
         node.conversation_id = conv_id
@@ -44,6 +45,7 @@ async def _execute_target(
     target: Target,
     prior_context: str,
     user_id: str,
+    session_id: str | None = None,
 ) -> tuple[TargetResult, bool]:
     """
     Chạy tất cả tasks trong 1 target theo rounds (song song trong round, tuần tự giữa rounds).
@@ -68,7 +70,7 @@ async def _execute_target(
                 parts.append(f"## Kết quả từ các task trước trong bước này\n{intra_context}")
             parts.append(f"## Nhiệm vụ\n{target.description}\n\nTask: {node.title}")
             prompt = "\n\n".join(parts)
-            return await _run_task(node, prompt, user_id)
+            return await _run_task(node, prompt, user_id, session_id=session_id)
 
         completed = await asyncio.gather(*(run_one(n) for n in round_nodes))
         all_nodes.extend(completed)
@@ -105,7 +107,7 @@ async def _execute_target(
     ), success, target_output  # type: ignore[return-value]
 
 
-async def execute_plan(plan: Plan, user_id: str = "orchestrator") -> ExecutionResult:
+async def execute_plan(plan: Plan, user_id: str = "orchestrator", session_id: str | None = None) -> ExecutionResult:
     """
     Vòng lặp chính: chạy targets tuần tự, tasks trong target song song theo depend_on.
     Nếu 1 target fail → dừng, trả về node_id để caller report planner.
@@ -115,7 +117,7 @@ async def execute_plan(plan: Plan, user_id: str = "orchestrator") -> ExecutionRe
 
     for target in plan.targets:
         logger.info("executor | target=%s '%s'", target.node_id, target.description[:60])
-        target_result, success, target_output = await _execute_target(target, prior_context, user_id)
+        target_result, success, target_output = await _execute_target(target, prior_context, user_id, session_id=session_id)
         result.target_results.append(target_result)
 
         if success:
