@@ -1,36 +1,30 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from backends import provider
+from backends import registry, Capability
 
 router = APIRouter()
 
 
 class EmbedRequest(BaseModel):
     texts: list[str]
-    # UUID of the KBModel row that owns the target collection.
-    # When provided the service validates the model is loaded and uses it.
-    # When absent the default model (cfg.EMBED_MODEL) is used.
-    # Remote backends echo it back unchanged (the remote GPU owns the model).
+    # UUID of the KBModel embedding row. When absent the default embed model is used.
     model_id: str | None = None
 
 
 class EmbedResponse(BaseModel):
     embeddings: list[list[float]]
-    model_id: str | None  # KBModel UUID that produced the embeddings
+    model_id: str | None  # KBModel UUID that produced the embeddings (echoed for remote)
 
 
 @router.post("/embed", response_model=EmbedResponse)
 def embed(req: EmbedRequest) -> EmbedResponse:
-    backend = provider.active_embed()
-    if backend is None:
-        raise HTTPException(503, "Model not loaded")
-    try:
-        embeddings, model_id = backend.embed(req.texts, req.model_id)
-    except ValueError as exc:        # invalid model_id UUID
-        raise HTTPException(422, str(exc))
-    except LookupError as exc:        # model_id not in registry
-        raise HTTPException(422, str(exc))
-    except RuntimeError as exc:       # registered but not loaded yet
-        raise HTTPException(503, str(exc))
-    return EmbedResponse(embeddings=embeddings, model_id=model_id)
+    entry = registry.by_id(req.model_id) if req.model_id else registry.default(Capability.EMBED)
+    if entry is None:
+        if req.model_id:
+            raise HTTPException(422, f"embedding model_id '{req.model_id}' not in registry "
+                                     "(DB sync not complete or not seeded in KBModel)")
+        raise HTTPException(503, "no embedding model loaded")
+    embeddings = entry.caller.embed(req.texts)
+    used_id = str(entry.model_id) if entry.model_id else req.model_id
+    return EmbedResponse(embeddings=embeddings, model_id=used_id)

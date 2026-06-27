@@ -1,26 +1,26 @@
-"""The single capability registry for model-service.
+"""model-service backends package.
 
-Each capability (chat / embed / rerank) is served by whichever registered backend
-is `available()` first. Remote backends are registered before local ones, so a
-configured REMOTE_*_URL wins; otherwise the local in-process model serves. Routers
-import `provider` and call `provider.active_chat()` / `active_embed()` / `active_rerank()`.
+`registry` is the single process-wide model registry. Routers look an entry up
+(by UUID for embed/rerank, by name for chat) and call `entry.caller.<capability>()`;
+the caller — a concrete class in callers.py, registered explicitly in sync — knows
+how to reach that specific model (in-process vs HTTP, and which endpoint shape).
+
+Lifecycle (driven by app.py):
+  bootstrap(registry)        — sync, no DB: register default embed/rerank + chat.
+  sync_with_retry(registry)  — background: pull embed/rerank from Postgres (KBModel).
+  chat_status(registry)      — LLM-gateway status for /health.
 """
-from .local import LocalChatBackend, LocalEmbedBackend, LocalRerankBackend
-from .registry import Registry
-from .remote import RemoteChatBackend, RemoteEmbedBackend, RemoteRerankBackend
+from .registry import Capability, ModelEntry, Registry
+from .sync import bootstrap, sync_with_retry, chat_status
 
-provider = Registry()
-# Registration order = preference. Remote first (used when its URL is configured),
-# local in-process model as the fallback.
-provider.register(
-    chat=RemoteChatBackend(),
-    embed=RemoteEmbedBackend(),
-    rerank=RemoteRerankBackend(),
-)
-provider.register(
-    chat=LocalChatBackend(),
-    embed=LocalEmbedBackend(),
-    rerank=LocalRerankBackend(),
-)
+registry = Registry()
 
-__all__ = ["provider", "Registry"]
+__all__ = [
+    "registry",
+    "Registry",
+    "ModelEntry",
+    "Capability",
+    "bootstrap",
+    "sync_with_retry",
+    "chat_status",
+]

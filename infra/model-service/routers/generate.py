@@ -1,12 +1,13 @@
 """LLM gateway endpoint. Callers (ingestion, lightrag) send generic input —
-prompt/messages (+ optional system_prompt and json_schema) — and never know which
-backend serves it or where. The active chat backend (backends/) decides: remote
-(e.g. Colab vLLM) when REMOTE_LLM_URL is set, otherwise a local backend if one is
-implemented. Switching backends is a single env change, exactly like /embed and /rerank."""
+prompt/messages (+ optional system_prompt and json_schema) — and an optional chat
+model NAME. The registry resolves the name (or the default chat model) to an entry
+whose injected caller knows how to reach it (e.g. OpenAI /v1/chat/completions on a
+Colab tunnel or the local llama-server). Switching backends is a single env change,
+exactly like /embed and /rerank."""
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from backends import provider
+from backends import registry, Capability
 
 router = APIRouter()
 
@@ -19,6 +20,7 @@ class GenerateRequest(BaseModel):
     json_mode: bool = True                       # if true and no schema → json_object mode
     max_tokens: int = 512
     temperature: float = 0.1
+    model: str | None = None                     # chat model NAME; default chat model when absent
 
 
 class GenerateResponse(BaseModel):
@@ -27,17 +29,11 @@ class GenerateResponse(BaseModel):
 
 @router.post("/generate", response_model=GenerateResponse)
 def generate(req: GenerateRequest) -> GenerateResponse:
-    backend = provider.active_chat()
-    if backend is None:
-        raise HTTPException(503, "no LLM backend available (set REMOTE_LLM_URL or enable a local backend)")
-
-    if req.messages is not None:
-        messages = req.messages
-    else:
-        messages = []
-        if req.system_prompt:
-            messages.append({"role": "system", "content": req.system_prompt})
-        messages.append({"role": "user", "content": req.prompt or ""})
+    entry = registry.by_name(req.model) if req.model else registry.default(Capability.CHAT)
+    if entry is None:
+        if req.model:
+            raise HTTPException(422, f"chat model '{req.model}' not in registry")
+        raise HTTPException(503, "no LLM backend available (set REMOTE_LLM_URL)")
 
     if req.json_schema is not None:
         response_format = {"type": "json_schema",
@@ -47,5 +43,11 @@ def generate(req: GenerateRequest) -> GenerateResponse:
     else:
         response_format = None
 
-    content = backend.chat(messages, response_format, req.max_tokens, req.temperature)
+    # Full messages → chat(); a raw prompt → generate() (the caller builds the messages).
+    if req.messages is not None:
+        content = entry.caller.chat(req.messages, response_format,
+                                    max_tokens=req.max_tokens, temperature=req.temperature)
+    else:
+        content = entry.caller.generate(req.prompt or "", req.system_prompt, response_format,
+                                        max_tokens=req.max_tokens, temperature=req.temperature)
     return GenerateResponse(content=content)

@@ -6,21 +6,18 @@ import uvicorn
 from fastapi import FastAPI
 
 import config as cfg
-import model_sync
-import models
-import remote
+from backends import registry, bootstrap, sync_with_retry, chat_status
 from routers import embed, generate, health, rerank
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("model-service")
 
 
-async def _probe_llm_backend() -> None:
-    """Validate the LLM gateway at startup so a missing/broken REMOTE_LLM_URL is
-    surfaced once in the logs — instead of only as a per-request 503 that fails
-    every ingestion/lightrag LLM call. Runs in a thread (blocking urllib) and
-    never blocks startup or serving."""
-    status = await asyncio.to_thread(remote.probe_llm)
+def _probe_llm_backend() -> None:
+    """Surface the LLM gateway state once at startup (derived from the registry, no
+    network) so a missing/broken REMOTE_LLM_URL is loud in the logs instead of only a
+    per-request 503. The actual reachability check happened during bootstrap/sync."""
+    status = chat_status(registry)
     if not status["configured"]:
         log.warning(
             "LLM gateway DISABLED: REMOTE_LLM_URL is not set — POST /generate will "
@@ -31,28 +28,21 @@ async def _probe_llm_backend() -> None:
         log.info("LLM gateway OK: %s serving model=%s", cfg.REMOTE_LLM_URL, status["model"])
     else:
         log.warning(
-            "LLM gateway configured (REMOTE_LLM_URL=%s) but unreachable: %s — "
-            "/generate will error until the backend is up.",
-            cfg.REMOTE_LLM_URL, status.get("error"),
+            "LLM gateway configured (REMOTE_LLM_URL=%s) but the chat model isn't "
+            "registered yet — background discovery will retry; /generate errors until then.",
+            cfg.REMOTE_LLM_URL,
         )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if cfg.REMOTE_EMBED_URL and cfg.REMOTE_RERANK_URL:
-        # Both remote backends are configured — skip downloading local models.
-        # The remote backends serve /embed and /rerank; local models are not needed.
-        log.info(
-            "Remote embed+rerank configured — skipping local model download "
-            "(REMOTE_EMBED_URL=%s)", cfg.REMOTE_EMBED_URL,
-        )
-    else:
-        models.load(cfg.EMBED_MODEL, cfg.RERANK_MODEL)
-    # Register this model in Postgres in the background — Postgres may not be
-    # ready yet, so the retry loop runs independently without blocking serving.
-    asyncio.create_task(model_sync.register_with_retry(), name="model-registry")
-    # Probe the LLM gateway once (background) to fail loud on misconfiguration.
-    asyncio.create_task(_probe_llm_backend(), name="llm-probe")
+    # Synchronous, no-DB: register default embed/rerank (local unless REMOTE_*_URL is
+    # set) + chat, so the service is ready immediately. Loads local model weights here.
+    bootstrap(registry)
+    # Background: pull every embed/rerank model from Postgres (KBModel) so their UUIDs
+    # resolve — Postgres may not be ready yet, so this retries without blocking serving.
+    asyncio.create_task(sync_with_retry(registry), name="registry-sync")
+    _probe_llm_backend()
     yield
 
 

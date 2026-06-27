@@ -1,13 +1,19 @@
-"""Backend capability protocols.
+"""Caller protocols — one per capability.
 
-A *backend* serves one capability — chat, embed, or rerank. Several backends may
-be registered for the same capability (e.g. a remote Colab GPU and a local CPU
-model); the registry (registry.py) picks the ACTIVE one at call time. Callers
-(the routers) only ever talk to the active backend and never know whether the
-work runs locally or is forwarded to a remote server.
+A *caller* fully encapsulates HOW to reach one model: the endpoint + payload shape +
+auth for a remote, or an in-process handle for a local model. The registry just stores
+it; routers depend only on these method signatures and never know the implementation.
 
-Adding a new way to serve a capability = implement the matching protocol and
-register an instance in backends/__init__.py.
+The point of the protocols is that every model of a given capability is interchangeable
+to the caller — but the implementations can differ wildly. Two chat endpoints may both
+satisfy `ChatCaller` while POSTing different JSON bodies (e.g. a Cloudflare/vLLM tunnel
+whose `/v1/chat/completions` payload differs from a llama-server's). You write a new
+caller class per such model in callers.py; nothing else changes.
+
+Protocol per capability:
+  embed  → embed(texts)
+  rerank → rerank(query, documents, top_n)
+  chat   → chat(messages, ...)  and  generate(prompt, ...)
 """
 from __future__ import annotations
 
@@ -15,39 +21,23 @@ from typing import Protocol, runtime_checkable
 
 
 @runtime_checkable
-class ChatBackend(Protocol):
-    name: str
-
-    def available(self) -> bool:
-        """True when this backend is configured and able to serve right now."""
-        ...
-
-    def chat(self, messages: list[dict], response_format: dict | None,
-             max_tokens: int, temperature: float) -> str:
-        """Return the assistant content string for an OpenAI-style chat request."""
+class EmbedCaller(Protocol):
+    def embed(self, texts: list[str]) -> list[list[float]]:
         ...
 
 
 @runtime_checkable
-class EmbedBackend(Protocol):
-    name: str
-
-    def available(self) -> bool:
-        ...
-
-    def embed(self, texts: list[str], model_id: str | None) -> tuple[list[list[float]], str | None]:
-        """Return (embeddings, model_id_used). model_id selects a specific model
-        when the backend supports it (remote backends may ignore it)."""
-        ...
-
-
-@runtime_checkable
-class RerankBackend(Protocol):
-    name: str
-
-    def available(self) -> bool:
-        ...
-
+class RerankCaller(Protocol):
     def rerank(self, query: str, documents: list[str], top_n: int) -> list[tuple[int, float]]:
-        """Return up to top_n (document_index, relevance_score) pairs, best first."""
+        ...
+
+
+@runtime_checkable
+class ChatCaller(Protocol):
+    def chat(self, messages: list[dict], response_format: dict | None, **opts) -> str:
+        """Chat-completion from a full messages list."""
+        ...
+
+    def generate(self, prompt: str, system_prompt: str, response_format: dict | None, **opts) -> str:
+        """Convenience: build a (system?, user) messages list from a raw prompt and chat."""
         ...
