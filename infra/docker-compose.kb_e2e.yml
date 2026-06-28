@@ -41,7 +41,6 @@ services:
     volumes:
       - ./Postgres/seed.sql:/docker-entrypoint-initdb.d/05-kb-seed.sql:ro
 
-  # ── Keycloak: add healthcheck (main compose omits it) ────────────────────────
   keycloak:
     healthcheck:
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /realms/aeroflow/.well-known/openid-configuration HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && cat <&3 | grep -q 'issuer'"]
@@ -50,7 +49,6 @@ services:
       retries: 10
       start_period: 60s
 
-  # ── Neo4j: dev-sized memory (main compose allocates 10 GB for production) ─────
   neo4j:
     environment:
       NEO4J_server_memory_heap_initial__size: 512m
@@ -65,7 +63,6 @@ services:
           cpus: "0.5"
           memory: 512M
 
-  # ── MinIO init: create the knowledge-base bucket ─────────────────────────────
   minio-init:
     image: minio/mc
     container_name: kb-minio-init
@@ -79,11 +76,6 @@ services:
     depends_on:
       minio: { condition: service_healthy }
 
-  # ── Kong setup: configure routes + JWT plugin for KB services ────────────────
-  # Runs once after Kong and Keycloak are ready. Uses python:3-alpine because
-  # kong-setup.sh requires both curl and python3.
-  # Kong admin is reachable on the shared network at http://dataagent-kong:8001
-  # (port 8900 on host for manual debugging: curl http://localhost:8900/).
   kong-setup:
     image: python:3-alpine
     container_name: kb-kong-setup
@@ -94,8 +86,6 @@ services:
       KONG_ADMIN_URL: http://dataagent-kong:8001
       KEYCLOAK_URL: http://dataagent-keycloak:8080
       KEYCLOAK_PUBLIC_URL: http://localhost:8080
-    # Strip CR (the script may be checked out with CRLF on Windows) before running,
-    # else bash fails with "$'\r': command not found" / "syntax error near $'do\r'".
     entrypoint:
       - /bin/sh
       - -c
@@ -108,95 +98,27 @@ services:
       keycloak: { condition: service_healthy }
       kb-backend: { condition: service_started }
 
-  # ── Llama (GPU) — local LLM, profile: local-llm ─────────────────────────────
-  # Enable with: docker compose ... --profile local-llm up -d
-  # Weights must exist at model/ollama/weights/model.gguf before bring-up.
-  llama:
-    profiles: ["local-llm"]
-    build:
-      context: ../model/ollama
-      dockerfile: docker/Dockerfile
-      args:
-        GPU: "1"
-    container_name: kb-llama
-    restart: unless-stopped
-    expose:
-      - "11434"
-    volumes:
-      - ../model/ollama/weights:/models
-    environment:
-      MODEL_PATH: /models/model.gguf
-      N_CTX: "4096"
-      N_GPU_LAYERS: "-1"
-      N_THREADS: "6"
-      OMP_NUM_THREADS: "6"
-      KV_CACHE_TYPE: f16
-      USE_MMAP: "true"
-      USE_MLOCK: "false"
-      VERBOSE: "false"
-      POOL_SIZE: "1"
-    deploy:
-      resources:
-        limits:
-          cpus: "6.0"
-          memory: 12G
-        reservations:
-          memory: 6G
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:11434/health')"]
-      interval: 30s
-      timeout: 10s
-      start_period: 180s
-      retries: 5
-
-  # ── Model Service: override to add remote GPU tunnel env vars ─────────────────
   model-service:
     environment:
-      # Multilingual models — Vietnamese corpus.
       EMBED_MODEL: ${EMBED_MODEL:-intfloat/multilingual-e5-small}
       RERANK_MODEL: ${RERANK_MODEL:-cross-encoder/mmarco-mMiniLMv2-L12-H384-v1}
-      # Optional remote GPU (Colab + cloudflared). When set, /embed and /rerank
-      # forward to the tunnel; local model download is skipped entirely.
       REMOTE_EMBED_URL: ${REMOTE_EMBED_URL:-}
       REMOTE_RERANK_URL: ${REMOTE_RERANK_URL:-}
       REMOTE_API_KEY: ${REMOTE_API_KEY:-}
-      # LLM gateway — OpenAI-compatible. model-service forwards /generate to this URL
-      # exactly like it forwards to a Colab/cloudflared tunnel: POST {url}/v1/chat/completions,
-      # model auto-discovered from {url}/v1/models. The default points at the bundled
-      # local llama-server (model/llama-server/start-llama.sh) running on the host at
-      # :8088 — start it first, or override REMOTE_LLM_URL with a tunnel URL. Empty
-      # REMOTE_LLM_MODEL → discovered from /v1/models.
       REMOTE_LLM_URL: ${REMOTE_LLM_URL:-http://host.docker.internal:8088}
       REMOTE_LLM_KEY: ${REMOTE_LLM_KEY:-}
       REMOTE_LLM_MODEL: ${REMOTE_LLM_MODEL:-}
       OMP_NUM_THREADS: "2"
       POSTGRES_DSN: postgresql://${POSTGRES_USER:-admin}@postgres/${POSTGRES_DB:-dataagent}
-    # llama-server runs on the host; this lets the container resolve it on Linux
-    # (Docker Desktop on Windows/macOS maps host.docker.internal automatically).
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  # ── KB Backend: publish port + LightRAG tuning knobs ─────────────────────────
   kb-backend:
     ports:
-      - "8050:8000"   # also reachable via Kong :8000; :8050 returns 401 (fail-closed)
+      - "8050:8000"
     environment:
-      # Shared connector config (POSTGRES_URL, MINIO_URL, KAFKA_URL, QDRANT_URL,
-      # MODEL_SERVICE_URL, MINIO_BUCKET) is inherited from docker-compose.yml — do
-      # NOT re-declare it here, or the two files can drift. Only KB-specific keys
-      # and corrections to the base belong in this overlay.
-      #
-      # NEO4J_URL: the base sets NEO4J_URI, but kb-backend's code reads NEO4J_URL
-      # (services/kb_backend/pipeline/light_rag/config.py). Set the name the code
-      # actually uses. MONGO_URL: the base kb-backend omits it; the worker/backend
-      # both need Mongo, so set it here.
       NEO4J_URL: bolt://neo4j:7687
       MONGO_URL: mongodb://mongo:27017/${POSTGRES_DB:-dataagent}
-      # LightRAG tuning knobs — tweak without image rebuild
       QDRANT_PASS1_LIMIT: ${QDRANT_PASS1_LIMIT:-3}
       QDRANT_PASS2_LIMIT: ${QDRANT_PASS2_LIMIT:-2}
       RRF_TOP_N: ${RRF_TOP_N:-20}
@@ -211,12 +133,8 @@ services:
     depends_on:
       minio-init: { condition: service_completed_successfully }
 
-  # ── KB Ingestion Worker: docling cache + pipeline config ─────────────────────
   kb-ingestion-worker:
     environment:
-      # Shared connector config (POSTGRES_URL, MONGO_URL, MINIO_URL, KAFKA_URL,
-      # QDRANT_URL, NEO4J_URI, MODEL_SERVICE_URL, USE_VLM) is inherited from
-      # docker-compose.yml — only the keys the base omits are set here.
       MINIO_BUCKET: knowledge-base
       LLM_MODEL: llama3
       HF_HOME: /root/.cache/huggingface
