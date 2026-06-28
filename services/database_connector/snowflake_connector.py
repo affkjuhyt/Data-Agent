@@ -186,9 +186,9 @@ class SnowflakeConnector:
 
         def _query():
             cursor = self.connection.cursor(DictCursor)
-            cursor.execute(f"SELECT COUNT(*) as cnt FROM {table_name}")  # noqa: S608 — table_name is server-controlled
+            cursor.execute(f"SELECT COUNT(*) as cnt FROM {table_name}")
             total = cursor.fetchone()["CNT"]
-            cursor.execute(f"SELECT * FROM {table_name} LIMIT {limit} OFFSET {offset}")  # noqa: S608
+            cursor.execute(f"SELECT * FROM {table_name} LIMIT {limit} OFFSET {offset}")
             return total, cursor.fetchall()
 
         try:

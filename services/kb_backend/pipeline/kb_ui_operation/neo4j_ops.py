@@ -31,17 +31,19 @@ def _pick_type(labels) -> str | None:
 
 
 async def _graph_from_postgres(postgres, tenant_id: str | None) -> tuple[list, list]:
-    conn_resp = await postgres.read(ReadJoinRequest(
-        tenant_id=tenant_id, joins_table=["KBNeo4jConnection"], limit=10,
-    ))
-    if conn_resp.code != 200 or not conn_resp.data:
+    """Read the graph mirror that the ingestion pipeline maintains, scoped by tenant.
+    KBNeo4jRelationship holds one row per (pair, chunk), so edges are de-duplicated
+    to one bridge per pair; only live (is_deleted=false) rows are drawn."""
+    if not tenant_id:
         return [], []
 
-    conn_id = to_string(conn_resp.data[0].get("connection_id"))
-
     node_resp = await postgres.read(ReadJoinRequest(
+        tenant_id=tenant_id,
         joins_table=["KBNeo4jNode"],
-        filters=[WhereFilter(table_name="KBNeo4jNode", column_name="connection_id", value=conn_id)],
+        filters=[
+            WhereFilter(table_name="KBNeo4jNode", column_name="tenant_id", value=tenant_id),
+            WhereFilter(table_name="KBNeo4jNode", column_name="is_deleted", value=False),
+        ],
         limit=_MAX_NODES,
     ))
     nodes = [
@@ -56,19 +58,22 @@ async def _graph_from_postgres(postgres, tenant_id: str | None) -> tuple[list, l
     node_ids = {n["id"] for n in nodes}
 
     rel_resp = await postgres.read(ReadJoinRequest(
-        joins_table=["KBNeo4jRelationship"], limit=1000,
+        tenant_id=tenant_id,
+        joins_table=["KBNeo4jRelationship"],
+        filters=[
+            WhereFilter(table_name="KBNeo4jRelationship", column_name="tenant_id", value=tenant_id),
+            WhereFilter(table_name="KBNeo4jRelationship", column_name="is_deleted", value=False),
+        ],
+        limit=1000,
     ))
-    edges = [
-        {
-            "from":        to_string(r.get("from_node")),
-            "to":          to_string(r.get("to_node")),
-            "description": r.get("description"),
-            "score":       r.get("score"),
-        }
-        for r in (rel_resp.data or [])
-        if to_string(r.get("from_node")) in node_ids
-        and to_string(r.get("to_node")) in node_ids
-    ]
+    edges: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for r in (rel_resp.data or []):
+        f, t = to_string(r.get("from_node")), to_string(r.get("to_node"))
+        if f not in node_ids or t not in node_ids or (f, t) in seen:
+            continue
+        seen.add((f, t))
+        edges.append({"from": f, "to": t, "description": r.get("description"), "score": r.get("score")})
     return nodes, edges
 
 
