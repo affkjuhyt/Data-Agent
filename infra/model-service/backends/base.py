@@ -8,19 +8,18 @@ from pydantic import BaseModel
 # ── Wire schemas (request/response models for the endpoints in app.py) ────────────
 class EmbedRequest(BaseModel):
     texts: list[str]
-    model_id: str | None = None   # KBModel UUID; default embed model when absent
-
+    model_id: str | None = None
 
 class EmbedResponse(BaseModel):
     embeddings: list[list[float]]
-    model_id: str | None          # UUID that produced the embeddings (echoed for remote)
+    model_id: str | None
 
 
 class RerankRequest(BaseModel):
     query: str
     documents: list[str]
     top_n: int = 5
-    model_id: str | None = None   # KBModel UUID; default reranker when absent
+    model_id: str | None = None
 
 
 class RerankResult(BaseModel):
@@ -40,14 +39,13 @@ class GenerateRequest(BaseModel):
     json_mode: bool = True
     max_tokens: int = 512
     temperature: float = 0.1
-    model: str | None = None      # chat model NAME; default chat model when absent
+    model: str | None = None
 
 
 class GenerateResponse(BaseModel):
     content: str
 
 
-# ── Caller protocols (one per capability) ─────────────────────────────────────────
 @runtime_checkable
 class EmbedCaller(Protocol):
     def embed(self, texts: list[str]) -> list[list[float]]:

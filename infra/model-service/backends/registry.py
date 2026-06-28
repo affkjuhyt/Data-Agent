@@ -32,12 +32,10 @@ class ModelEntry:
 
 
 class Registry:
-
     def __init__(self) -> None:
         self._by_id: dict[_uuid.UUID, ModelEntry] = {}
         self._by_name: dict[str, ModelEntry] = {}
         self._default: dict[Capability, str] = {}
-
 
     def register(self, entry: ModelEntry, *, default: bool = False) -> None:
         self._by_name[entry.name] = entry

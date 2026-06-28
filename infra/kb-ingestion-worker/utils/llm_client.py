@@ -27,10 +27,7 @@ _DEFAULT_TIMEOUT = 300.0
 
 log.info("LLM access: model-service gateway (%s/generate)", _BASE)
 
-# One shared connection pool for every LLM call. Opening a new AsyncClient per
-# request (as the old code did) discarded the pool each time and reconnected on
-# every generate; a single lazily-created client reuses keep-alive connections.
-# Created lazily so it binds to the running event loop, not import time.
+# One shared connection pool for every LLM call
 _client: httpx.AsyncClient | None = None
 
 

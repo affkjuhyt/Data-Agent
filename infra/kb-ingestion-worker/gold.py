@@ -315,27 +315,7 @@ async def _reduce_summaries(
         doc_summary = doc_summary[: cfg.DOC_SUMMARY_TARGET_CHARS]
     return doc_summary
 
-
-# ── Conflict detection ────────────────────────────────────────────────────────
-
-async def _detect_conflict(existing_summary: str, incoming_summary: str) -> tuple[dict, str]:
-    """Returns (conflict_result_dict, raw_llm_answer)."""
-    user = (
-        f"Existing chunk summary:\n{existing_summary}\n\n"
-        f"Incoming chunk summary:\n{incoming_summary}"
-    )
-    try:
-        result, raw, _ = await _llm_generate_json(
-            SYSTEM_PROMPTS["conflict"], user, max_tokens=128, system_type="conflict",
-        )
-        return result, raw
-    except Exception as exc:
-        log.warning("Gold: conflict detection failed (%s) — treating as no conflict", exc)
-        return {"has_conflict": False}, f"ERROR: {exc}"
-
-
 # ── Resolvers (collection model / knowledge base / document name) ─────────────
-
 async def _get_collection_embed_model_id(
     postgres: PostgresClient,
     collection_name: str,
@@ -506,10 +486,6 @@ async def _commit_chunk_atomic(
                                 "data_id":            data_id,
                                 "block_id":           block_id,
                                 "summary":            summary,
-                                # Per-chunk entities: each chunk point carries its
-                                # OWN canonical entity set + typed ent_* fields
-                                # (extracted in silver, canonicalized in gold).
-                                # intents live on the doc-summary point, not chunks.
                                 "entities":           entities or [],
                                 **(entity_type_fields or {}),
                                 "embedding_model_id": embed_model_id,
@@ -641,6 +617,20 @@ def _heuristic_summary(content: str) -> str:
 
 
 # ── Main stage function ────────────────────────────────────────────────────────
+async def _detect_conflict(existing_summary: str, incoming_summary: str) -> tuple[dict, str]:
+    """Returns (conflict_result_dict, raw_llm_answer)."""
+    user = (
+        f"Existing chunk summary:\n{existing_summary}\n\n"
+        f"Incoming chunk summary:\n{incoming_summary}"
+    )
+    try:
+        result, raw, _ = await _llm_generate_json(
+            SYSTEM_PROMPTS["conflict"], user, max_tokens=128, system_type="conflict",
+        )
+        return result, raw
+    except Exception as exc:
+        log.warning("Gold: conflict detection failed (%s) — treating as no conflict", exc)
+        return {"has_conflict": False}, f"ERROR: {exc}"
 
 async def _detect_and_record_conflict(
     *, postgres, qdrant, tenant_id, data_id, knowledge_base, embed_model_id, approved_by,
@@ -707,9 +697,6 @@ async def _detect_and_record_conflict(
                     "table":          table,
                     "embed_model_id": embed_model_id,
                     "knowledge_base": knowledge_base,
-                    # Silver-extracted entities + relationships (chunk-local names), so
-                    # resolving keep_incoming can canonicalize and graph them exactly
-                    # as the gold loop would have.
                     "entities":       chunk.get("entities") or [],
                     "relationships":  chunk.get("relationships") or [],
                 },
@@ -775,8 +762,6 @@ async def _process_chunk(
     *, chunk, postgres, qdrant, graph, model, tenant_id, data_id, knowledge_base,
     embed_model_id, approved_by, database, ensure_conflict_batch, emitter,
 ) -> dict:
-    """Embed → conflict-detect → atomic commit → graph. Returns
-    {"outcome": "conflict"|"committed", "summary", "intents", "graph_failed"}."""
     block_index = chunk["block_index"]
     content = chunk["content"]
     summary = (chunk.get("summary") or "").strip() or _heuristic_summary(content)
@@ -861,9 +846,6 @@ async def _write_doc_summary_point(
     *, qdrant, model, database, data_id, tenant_id, knowledge_base, embed_model_id,
     doc_summary, top_intents, committed_count, emitter,
 ) -> None:
-    """Doc-summary point — written LAST, so the chunks + graph before it can be retried
-    invisibly. The point makes the document visible to step-1 retrieval; entities live
-    on the chunk points and the graph, so this point only carries intents."""
     await set_chunk_progress(database, data_id, status="GOLD_GRAPH")
     async with emitter.step("gold.doc.commit", data_id=data_id) as doc_scope:
         doc_embedding = (await model.embed([doc_summary], model_id=embed_model_id))[0]
@@ -958,8 +940,7 @@ async def _record_gold_lifecycle(postgres, database, data_id, approved_by, count
         ))
     except Exception as exc:
         log.warning("Gold: lifecycle history insert failed data_id=%s: %s", data_id, exc)
-        await write_log(database, data_id, "PUBLISHED",
-                        f"Gold lifecycle history not recorded: {exc}", level="WARNING")
+        await write_log(database, data_id, "PUBLISHED",f"Gold lifecycle history not recorded: {exc}", level="WARNING")
 
 
 async def promote_to_gold(
@@ -1049,10 +1030,7 @@ async def promote_to_gold(
         await set_chunk_progress(database, data_id, processed=len(chunks))
         top_intents = [intent for intent, _ in intent_counter.most_common(5)]
 
-        # Phases 2-3: document rollup → doc-summary point. A failure here propagates:
-        # chunks stay committed but the doc point is never written, so the document
-        # stays invisible to 2-step retrieval and the tier stays SILVER. Re-promotion
-        # cleans up and retries.
+        # Phases 2-3: document rollup → doc-summary point.
         if committed_summaries:
             doc_summary = await _reduce_document_summary(committed_summaries, database, data_id, emitter)
             await _write_doc_summary_point(

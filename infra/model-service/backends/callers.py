@@ -15,7 +15,7 @@ import urllib.request
 import config as cfg
 
 
-# ── HTTP helpers (the one shared thing) ──────────────────────────────────────────
+# HTTP helpers
 def _post(base_url: str, path: str, payload: dict, api_key: str | None = None) -> dict:
     headers = {"Content-Type": "application/json"}
     if api_key:
@@ -39,9 +39,8 @@ def _get(base_url: str, path: str, api_key: str | None = None, timeout: float = 
         return json.loads(r.read().decode("utf-8"))
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+
 # EMBED
-# ═══════════════════════════════════════════════════════════════════════════════
 class VietnameseEmbedCaller:
     def __init__(self, url: str, api_key: str | None = None) -> None:
         self._url = url

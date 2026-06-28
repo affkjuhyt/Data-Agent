@@ -57,11 +57,6 @@ async def _ensure_qdrant_collection(
     *,
     strict_dim_check: bool = True,
 ) -> None:
-    """Create collection if absent; validate dim if present.
-
-    strict_dim_check=True aborts on mismatch (knowledge collection).
-    strict_dim_check=False just warns (entity registry — same model, same dim, but be safe).
-    """
     if await client.collection_exists(name):
         info = await client.get_collection(name)
         collection_dim = info.config.params.vectors.size
@@ -145,9 +140,6 @@ async def _validate_or_create_qdrant_collection(qdrant: QdrantService, model: Mo
 
 
 async def _ensure_neo4j_indexes(neo4j: Neo4jClient) -> None:
-    """Indexes backing retrieval: graph expansion seeds nodes by
-    (canonical_name, tenant_id) and the typed boost reads entity_type.
-    Idempotent (IF NOT EXISTS)."""
     statements = [
         "CREATE INDEX entity_canonical_tenant IF NOT EXISTS FOR (n:Entity) ON (n.canonical_name, n.tenant_id)",
         "CREATE INDEX entity_type_idx         IF NOT EXISTS FOR (n:Entity) ON (n.entity_type)",

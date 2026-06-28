@@ -60,8 +60,6 @@ class GraphStore:
         self._postgres = postgres
         self._model = model
 
-    # ── write ──────────────────────────────────────────────────────────────────
-
     async def add_chunk(
         self,
         *,
@@ -123,7 +121,6 @@ class GraphStore:
     async def remove_document(self, *, tenant_id: str, knowledge_base: str, data_id: str) -> None:
         await self._remove(tenant_id, knowledge_base, KBNeo4jRelationshipORM.data_id, data_id)
 
-    # ── internals ────────────────────────────────────────────────────────────────
 
     async def _embed_entities(
         self, connected_canonicals, entity_by_canonical, embed_model_id,
