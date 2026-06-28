@@ -1,19 +1,8 @@
-"""Populate the model registry at startup.
-
-  bootstrap(registry)       — synchronous, NO network/DB beyond loading local weights.
-                              Registers the default embed + rerank and all chat models.
-  sync_with_retry(registry) — background. Pulls every embed/rerank model from Postgres
-                              (KBModel) so their DB UUIDs resolve; retries forever.
-
-Embed/rerank live in Postgres and are looked up by UUID; their caller is local
-(in-process) unless a REMOTE_*_URL is set for that capability. Chat models are NOT in
-the DB and are declared explicitly in `register_chat_models` — one registry.register
-per endpoint, each with its own caller (a Cloudflare/vLLM endpoint with a different
-payload just uses a different caller class). Chat is looked up by name."""
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import uuid as _uuid
 
 import asyncpg
@@ -27,134 +16,131 @@ from .registry import Capability, ModelEntry, Registry
 log = logging.getLogger(__name__)
 
 _DELAYS = [2, 5, 10, 20, 30, 60]
-_CAP_BY_TASK = {"embedding": Capability.EMBED, "rerank": Capability.RERANK}
+_TASK_BY_CAP = {Capability.EMBED: "embedding", Capability.RERANK: "rerank"}
+
+def _endpoints(url_env: str, key_env: str) -> list[tuple[str, str | None]]:
+    urls = [u.strip().rstrip("/") for u in os.getenv(url_env, "").split(",")]
+    keys = [k.strip() for k in os.getenv(key_env, "").split(",")]
+    pairs: list[tuple[str, str | None]] = []
+    for i, url in enumerate(urls):
+        if not url:
+            continue
+        key = keys[i] if i < len(keys) else ""
+        pairs.append((url, key or None))
+    return pairs
 
 
-# ── embed / rerank (from Postgres; caller = local handle, or remote if a URL is set) ──
-def _register_embed(registry: Registry, name: str, model_id: _uuid.UUID | None, *, default: bool = False) -> None:
-    if cfg.REMOTE_EMBED_URL:
-        caller = C.RemoteEmbedCaller(cfg.REMOTE_EMBED_URL, cfg.REMOTE_API_KEY)
-    else:
-        caller = C.LocalEmbedCaller(model_store.load_embed(name))
-    registry.register(ModelEntry(name=name, capability=Capability.EMBED, caller=caller,
-                                 model_id=model_id), default=default)
+def _discover_name(url: str, api_key: str | None, prefer: str = "id") -> str | None:
+    try:
+        model = C._get(url, "/v1/models", api_key, timeout=5)["data"][0]
+        return model.get(prefer) or model.get("id")
+    except Exception as e:  # noqa: BLE001
+        log.warning("Registry: /v1/models discovery failed for %s (%s)", url, e)
+        return None
 
 
-def _register_rerank(registry: Registry, name: str, model_id: _uuid.UUID | None, *, default: bool = False) -> None:
-    if cfg.REMOTE_RERANK_URL:
-        caller = C.RemoteRerankCaller(cfg.REMOTE_RERANK_URL, cfg.REMOTE_API_KEY)
-    else:
-        caller = C.LocalRerankCaller(model_store.load_rerank(name))
-    registry.register(ModelEntry(name=name, capability=Capability.RERANK, caller=caller,
-                                 model_id=model_id), default=default)
-
-
-# ── chat (declared explicitly — add/remove an endpoint by editing this function) ──────
-def register_chat_models(registry: Registry) -> None:
-    """Declare every chat endpoint here, one registry.register per model. Chat models
-    are not stored in the DB. Each gets its own caller; an endpoint with a different
-    payload shape uses a different caller class (see callers.CloudflareChatCaller).
-    Mark exactly one default=True — used when /generate omits `model`."""
-
-    # Local llama-server (model/llama-server) on the host — OpenAI-compatible.
+def register_embedding_models(registry: Registry) -> None:
+    """In-process e5-small (default until a remote is added) + one model per remote /embed URL."""
     registry.register(ModelEntry(
-        name="qwen3-8b-instruct",
-        capability=Capability.CHAT,
-        caller=C.OpenAIChatCaller(
-            url="http://host.docker.internal:8088",
-            model="qwen3-8b-instruct",
-            defaults={"temperature": 0.1, "max_tokens": 512},
-        ),
-    ), default=True)
+        name="intfloat/multilingual-e5-small",
+        capability=Capability.EMBED,
+        caller=C.MultilingualE5SmallCaller(model_store.load_embed("intfloat/multilingual-e5-small")),
+    ))
+    for i, (url, key) in enumerate(_endpoints("REMOTE_EMBED_URL", "REMOTE_API_KEY")):
+        name = _discover_name(url, key) or f"remote-embed-{i}"
+        registry.register(ModelEntry(
+            name=name,
+            capability=Capability.EMBED,
+            caller=C.VietnameseEmbedCaller(url, key),
+        ), default=(i == 0))
 
-    # ── add more endpoints here, e.g. a Colab/Cloudflare vLLM tunnel ──
-    # registry.register(ModelEntry(
-    #     name="qwen2.5-72b",
-    #     capability=Capability.CHAT,
-    #     caller=C.CloudflareChatCaller(
-    #         url="https://<tunnel>.trycloudflare.com", model="qwen2.5-72b",
-    #         api_key="<key>", defaults={"temperature": 0.2, "max_tokens": 1024},
-    #     ),
-    # ))
+
+def register_rerank_models(registry: Registry) -> None:
+    """One model per remote /rerank URL."""
+    for i, (url, key) in enumerate(_endpoints("REMOTE_RERANK_URL", "REMOTE_API_KEY")):
+        name = _discover_name(url, key, prefer="rerank") or f"remote-rerank-{i}"
+        registry.register(ModelEntry(
+            name=name,
+            capability=Capability.RERANK,
+            caller=C.VietnameseRerankCaller(url, key),
+        ), default=(i == 0))
+
+
+def register_chat_models(registry: Registry) -> None:
+    """Local llama-server (default until a remote is added) + one model per remote LLM URL.
+    All are OpenAI /v1/chat/completions; looked up by name."""
+    registry.register(ModelEntry(
+        name="llama-server-qwen3",
+        capability=Capability.CHAT,
+        caller=C.LlamaServerChatCaller(),
+    ))
+    for i, (url, key) in enumerate(_endpoints("REMOTE_LLM_URL", "REMOTE_LLM_KEY")):
+        name = _discover_name(url, key) or f"remote-chat-{i}"
+        registry.register(ModelEntry(
+            name=name,
+            capability=Capability.CHAT,
+            caller=C.CloudflareQwenChatCaller(url, key),
+        ), default=(i == 0))
 
 
 def bootstrap(registry: Registry) -> None:
-    """Synchronous registration of the defaults so the service is ready at boot
-    (loads local embed/rerank weights here unless a REMOTE_*_URL is configured)."""
-    _register_embed(registry, cfg.EMBED_MODEL, None, default=True)
-    _register_rerank(registry, cfg.RERANK_MODEL, None, default=True)
+    """Synchronous registration of every model (loads in-process embedder weights here)."""
+    register_embedding_models(registry)
+    register_rerank_models(registry)
     register_chat_models(registry)
-    log.info("Registry bootstrap complete (embed=%s, rerank=%s, chat=%s)",
-             cfg.EMBED_MODEL, cfg.RERANK_MODEL, registry.names(Capability.CHAT))
+    log.info("Registry bootstrap complete — embed=%s rerank=%s chat=%s",
+             registry.names(Capability.EMBED), registry.names(Capability.RERANK),
+             registry.names(Capability.CHAT))
 
 
-# ── Postgres sync ─────────────────────────────────────────────────────────────────
-async def _ensure_active_version(conn, model_id: _uuid.UUID, model_name: str) -> None:
-    """Guarantee the model has an active KBModelVersion. version_id is an autoincrement
-    int and version_number tracks the revision — activate the earliest seeded version if
-    present, else insert version_number=1."""
-    active = await conn.fetchval(
-        'SELECT version_id FROM "KBModelVersion" WHERE model_id = $1 AND is_active = true',
-        model_id,
+# ── Postgres: resolve each embed/rerank model's UUID by name (create if missing) ──
+async def _resolve_or_create(conn, model_name: str, task_type: str) -> _uuid.UUID:
+    found = await conn.fetchval(
+        'SELECT model_id FROM "KBModel" WHERE model_name = $1 AND task_type = $2 AND is_deleted = false',
+        model_name, task_type,
     )
-    if active is not None:
-        return
-    seeded = await conn.fetchrow(
-        'SELECT version_id, version_number FROM "KBModelVersion" '
-        "WHERE model_id = $1 ORDER BY version_number LIMIT 1",
-        model_id,
-    )
-    if seeded:
+    if found is not None:
+        return found
+    new_id = _uuid.uuid4()
+    async with conn.transaction():
         await conn.execute(
-            'UPDATE "KBModelVersion" SET is_active = true WHERE version_id = $1',
-            seeded["version_id"],
+            'INSERT INTO "KBModel" (model_id, model_name, task_type) VALUES ($1, $2, $3)',
+            new_id, model_name, task_type,
         )
-        log.info("Registry: activated version %d for '%s'", seeded["version_number"], model_name)
-    else:
         await conn.execute(
             'INSERT INTO "KBModelVersion" (model_id, version_number, is_active, config, added_on) '
             "VALUES ($1, 1, true, $2, NOW())",
-            model_id, '{"active": true}',
+            new_id, '{"active": true}',
         )
-        log.info("Registry: inserted active version 1 for '%s'", model_name)
+    log.info("Registry: created KBModel '%s' (%s) + v1 → %s", model_name, task_type, new_id)
+    return new_id
 
 
-async def _sync_db(registry: Registry, dsn: str) -> None:
+async def _sync_ids(registry: Registry, dsn: str) -> None:
+    """For every registered embed/rerank model, resolve its KBModel UUID by name"""
     conn = await asyncpg.connect(dsn)
     try:
-        rows = await conn.fetch(
-            'SELECT model_id, model_name, task_type FROM "KBModel" '
-            "WHERE is_deleted = false AND task_type IN ('embedding', 'rerank')",
-        )
-        for row in rows:
-            cap = _CAP_BY_TASK.get(row["task_type"])
-            is_default = row["model_name"] == cfg.EMBED_MODEL
-            if cap is Capability.EMBED:
-                _register_embed(registry, row["model_name"], row["model_id"], default=is_default)
-            elif cap is Capability.RERANK:
-                _register_rerank(registry, row["model_name"], row["model_id"])
-            else:
-                continue
-            await _ensure_active_version(conn, row["model_id"], row["model_name"])
-        log.info("Registry: synced %d embed/rerank model(s) from KBModel", len(rows))
+        for cap, task in _TASK_BY_CAP.items():
+            for entry in registry.entries(cap):
+                model_id = await _resolve_or_create(conn, entry.name, task)
+                registry.bind_id(entry, model_id)
     finally:
         await conn.close()
 
 
 async def sync_with_retry(registry: Registry) -> None:
-    """Background task: sync DB models into the registry, retrying until it succeeds."""
     delays = _DELAYS + [60] * 9999
     for attempt, delay in enumerate(delays, start=1):
         try:
-            await _sync_db(registry, cfg.POSTGRES_DSN)
+            await _sync_ids(registry, cfg.POSTGRES_DSN)
             return
-        except Exception as exc:  # noqa: BLE001
-            log.warning("Registry sync attempt %d failed (%s) — retrying in %ds", attempt, exc, delay)
+        except Exception as exc:
+            log.warning("Registry version sync attempt %d failed (%s) — retrying in %ds",
+                        attempt, exc, delay)
             await asyncio.sleep(delay)
 
 
 def chat_status(registry: Registry) -> dict:
-    """LLM-gateway status for /health, derived from registry state (no network call)."""
     entry = registry.default(Capability.CHAT)
     if entry is None:
         return {"configured": False, "ready": False, "model": None}

@@ -25,26 +25,20 @@ class Capability(str, Enum):
 
 @dataclass
 class ModelEntry:
-    """Just the lookup keys + the caller. Everything about HOW to reach the model
-    (url, payload shape, auth, or an in-process handle) lives inside the caller — a
-    concrete class written per model (callers.py) that satisfies the capability's
-    protocol (base.py). Routers call entry.caller.<embed|rerank|chat>()."""
-    name: str                       # model name — chat lookup key; also the OpenAI `model` param
+    name: str
     capability: Capability
-    caller: object                  # an EmbedCaller / RerankCaller / ChatCaller instance
-    model_id: _uuid.UUID | None = None   # DB UUID for embed/rerank lookup; None for chat
+    caller: object
+    model_id: _uuid.UUID | None = None
 
 
 class Registry:
-    """Holds model entries, looked up by UUID (embed/rerank) or name (chat), plus a
-    default per capability (used when a request omits the identifier)."""
 
     def __init__(self) -> None:
         self._by_id: dict[_uuid.UUID, ModelEntry] = {}
         self._by_name: dict[str, ModelEntry] = {}
-        self._default: dict[Capability, str] = {}   # capability → default entry name
+        self._default: dict[Capability, str] = {}
 
-    # ── registration ──────────────────────────────────────────────────────────
+
     def register(self, entry: ModelEntry, *, default: bool = False) -> None:
         self._by_name[entry.name] = entry
         if entry.model_id is not None:
@@ -52,7 +46,6 @@ class Registry:
         if default or entry.capability not in self._default:
             self._default[entry.capability] = entry.name
 
-    # ── lookups ───────────────────────────────────────────────────────────────
     def by_id(self, model_id: _uuid.UUID | str) -> ModelEntry | None:
         if isinstance(model_id, str):
             try:
@@ -74,3 +67,11 @@ class Registry:
     def names(self, capability: Capability | None = None) -> list[str]:
         return [e.name for e in self._by_name.values()
                 if capability is None or e.capability == capability]
+
+    def entries(self, capability: Capability | None = None) -> list[ModelEntry]:
+        return [e for e in self._by_name.values()
+                if capability is None or e.capability == capability]
+
+    def bind_id(self, entry: ModelEntry, model_id: _uuid.UUID) -> None:
+        entry.model_id = model_id
+        self._by_id[model_id] = entry

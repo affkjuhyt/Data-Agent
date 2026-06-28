@@ -18,7 +18,7 @@ N_PARALLEL="${LLAMA_N_PARALLEL:-4}"
 
 if [[ ! -f "$MODEL_PATH" ]]; then
   echo "Model not found: $MODEL_PATH"
-  echo "Run: bash scripts/download-model.sh"
+  echo "Run: bash model/llama-server/download-model.sh"
   exit 1
 fi
 
