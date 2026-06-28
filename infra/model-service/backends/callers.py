@@ -64,9 +64,7 @@ class MultilingualE5SmallCaller:
         return self._handle.encode(texts, normalize_embeddings=True).tolist()
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
 # RERANK
-# ═══════════════════════════════════════════════════════════════════════════════
 class VietnameseRerankCaller:
     def __init__(self, url: str, api_key: str | None = None) -> None:
         self._url = url
@@ -80,9 +78,8 @@ class VietnameseRerankCaller:
         return [(r["index"], r["relevance_score"]) for r in data.get("results", [])]
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+
 # CHAT
-# ═══════════════════════════════════════════════════════════════════════════════
 class CloudflareQwenChatCaller:
     def __init__(self, url: str, api_key: str | None = None) -> None:
         self._url = url
