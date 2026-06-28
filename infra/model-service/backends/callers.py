@@ -38,8 +38,6 @@ def _get(base_url: str, path: str, api_key: str | None = None, timeout: float = 
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8"))
 
-
-
 # EMBED
 class VietnameseEmbedCaller:
     def __init__(self, url: str, api_key: str | None = None) -> None:
