@@ -13,52 +13,16 @@ The frontend has no mock server and no auth bypass: `kb-backend` is **fail-close
 
 | Stack | File / helper | What it is | When to use |
 |---|---|---|---|
-| **kb_and_authen** | [`docker-compose.kb_and_authen.yml`](./docker-compose.kb_and_authen.yml) + [`kb_and_authen.ps1`](./kb_and_authen.ps1) | Standalone self-contained stack: full auth chain + KB data plane, **memory-capped to ~6.4 GiB**. Includes Kong setup. Ingestion worker behind the `pipeline` profile. | Quickest path to a working UI; low-RAM smoke test. **Recommended for first-time setup.** |
-| **kb_e2e** | [`docker-compose.yml`](./docker-compose.yml) + [`docker-compose.kb_e2e.yml`](./docker-compose.kb_e2e.yml) + [`kb_e2e.ps1`](./kb_e2e.ps1) | **Overlay** on the main platform compose. Shares the same `dataagent` DB, Kafka internal listener (`kafka:9094`), and network as the full platform. Adds dev-friendly memory limits on Neo4j and KB tuning knobs. | Day-to-day local dev; testing KB against the real platform infra; pre-merge validation. |
+| **kb_e2e** | [`docker-compose.yml`](./docker-compose.yml) + [`docker-compose.kb_e2e.yml`](./docker-compose.kb_e2e.yml) + [`kb_e2e.ps1`](./kb_e2e.ps1) | **Overlay** on the main platform compose. Shares the same `dataagent` DB, Kafka internal listener (`kafka:9094`), and network as the full platform. Adds dev-friendly memory limits on Neo4j and KB tuning knobs. | **The standard way to bring up the stack** — day-to-day local dev, KB + ingestion + auth chain, pre-merge validation. |
 | **Full platform** | [`docker-compose.yml`](./docker-compose.yml) + an override | The whole Data Agent OS — every service group (storage, security, messaging, observability, all app services). | Running the entire platform, not just KB. |
 | **Test fixture** | [`docker-compose.test.yml`](./docker-compose.test.yml) | Isolated PostgreSQL only. | Connector / ORM tests. |
 
-> `kb_and_authen` and `kb_e2e` both publish `8000`/`8080`/`5432`/… — **run one at a time**.
 > `kb-backend` is also published on `:8050` — hitting it directly bypasses Kong and returns
 > `401` by design (handy to confirm fail-closed behaviour).
 
 ---
 
-## Quick start — kb_and_authen (recommended)
-
-```powershell
-npm install                               # frontend deps (first time only)
-pwsh infra/kb_and_authen.ps1              # build + start + configure Kong
-pwsh infra/kb_and_authen.ps1 verify       # prove the chain: 401 / 200 / 403 / 200
-pwsh infra/kb_and_authen.ps1 up -WithUi   # also start the containerised frontend on :5173
-```
-
-Log in via Keycloak as **`helios-admin` / `H3lios@Admin01!`** (full perms) or
-**`helios-engineer` / `H3lios@Eng001!`** (limited — write actions return `403`).
-
-All six dev users and their passwords:
-
-| Username | Password | Role |
-|---|---|---|
-| `helios-admin` | `H3lios@Admin01!` | `platform-admin` (all perms) |
-| `helios-engineer` | `H3lios@Eng001!` | `ai-engineer` |
-| `helios-viewer` | `H3lios@View001!` | `executive-viewer` |
-| `platform-admin` | `Platform@Admin01!` | `platform-admin` |
-| `ai-engineer` | `AiEng@001!` | `ai-engineer` |
-| `executive-viewer` | `Exec@View001!` | `executive-viewer` |
-
-All users share tenant `a0000000-0000-0000-0000-000000000001` (the seeded dev tenant).
-
-| Action | Command |
-|---|---|
-| Stop, keep data | `pwsh infra/kb_and_authen.ps1 down` |
-| Stop, **wipe** data | `pwsh infra/kb_and_authen.ps1 destroy` |
-| Tail logs | `pwsh infra/kb_and_authen.ps1 logs` |
-| Enable ingestion pipeline | `pwsh infra/kb_and_authen.ps1 up -WithPipeline` (~12 GiB WSL VM) |
-
----
-
-## Full local dev — kb_e2e (overlay)
+## Bring up the stack — kb_e2e
 
 `docker-compose.kb_e2e.yml` is a **compose overlay** — it is not standalone. It always
 runs on top of `docker-compose.yml` which provides the shared platform infrastructure.
@@ -149,11 +113,25 @@ $env:VITE_API_URL         = "http://localhost:8000"   # Kong proxy — NOT :8050
 npm run dev
 ```
 
-Open **http://localhost:3000** and log in as `helios-admin` / `H3lios@Admin01!`.
+Open **http://localhost:3000** and log in via Keycloak as **`helios-admin` /
+`H3lios@Admin01!`** (full perms) or **`helios-engineer` / `H3lios@Eng001!`** (limited
+— write actions return `403`).
+
+All six seeded dev users:
+
+| Username | Password | Role |
+|---|---|---|
+| `helios-admin` | `H3lios@Admin01!` | `platform-admin` (all perms) |
+| `helios-engineer` | `H3lios@Eng001!` | `ai-engineer` |
+| `helios-viewer` | `H3lios@View001!` | `executive-viewer` |
+| `platform-admin` | `Platform@Admin01!` | `platform-admin` |
+| `ai-engineer` | `AiEng@001!` | `ai-engineer` |
+| `executive-viewer` | `Exec@View001!` | `executive-viewer` |
+
+All users share tenant `a0000000-0000-0000-0000-000000000001` (the seeded dev tenant).
 
 > The Vite dev server is **not** part of the Docker stack — start it manually each
-> session. Use `pwsh infra/kb_and_authen.ps1 up -WithUi` if you want a containerised
-> frontend instead.
+> session with `npm run dev`.
 
 | Action | Command |
 |---|---|
@@ -306,10 +284,8 @@ stray `otp` credential on the user and reset the password to `H3lios@Admin01!`
 infra/
   docker-compose.yml                     # main platform base (all services)
   docker-compose.kb_e2e.yml              # KB overlay (extends docker-compose.yml)
-  docker-compose.kb_and_authen.yml       # standalone KB + auth stack
   docker-compose.test.yml                # isolated Postgres test fixture
   kb_e2e.ps1                             # helper: two-file overlay bring-up
-  kb_and_authen.ps1                      # helper: standalone KB stack
   .env.kb-testing.example                # copy → .env.kb-testing, fill in tunnels
   Dockerfile.kb                          # kb-backend image
   Dockerfile.dev                         # dev-only containerised frontend
