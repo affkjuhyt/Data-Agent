@@ -1,81 +1,84 @@
-# KB E2E overlay — extends docker-compose.yml.
+# KB E2E stack — KB-OWNED services only.
 #
-# This file adds/overrides only KB-specific services on top of the shared
-# platform infrastructure. It is NOT standalone — always combine with the base:
+# This file is STANDALONE (it no longer extends docker-compose.yml). It defines
+# only the services the KB stack owns:
 #
-#   docker compose \
-#     -f infra/docker-compose.yml \
-#     -f infra/docker-compose.kb_e2e.yml \
-#     --env-file infra/.env.kb-testing \
-#     up -d --build <services...>
+#     model-service, kb-backend, kb-ingestion-worker
+#     + bootstrap jobs: minio-init, kong-setup, kb-seed
 #
-# Or use the helper:   pwsh infra/kb_e2e.ps1
+# Everything else — postgres, mongo, redis, qdrant, neo4j, minio, kafka,
+# keycloak, kong — is SHARED infrastructure brought up by another stack
+# (e.g. the base docker-compose.yml or the infra slice files). This file does
+# NOT declare those services, so it can never clash with them on container
+# names, host ports, or volumes. It simply attaches to the shared network and
+# talks to whatever shared services are already running, by service name.
 #
-# Specify only KB services on the up command to avoid starting the full platform
-# (workflow-runtime, flow-builder, auth-api, frontend, etc.):
+# PREREQUISITE: the shared infra must already be up so that the external network
+# `data-agent-network` exists and postgres/neo4j/qdrant/etc. are reachable.
 #
-#   ... up -d --build \
-#     postgres mongo qdrant neo4j minio kafka keycloak \
-#     kong-migration kong kong-setup minio-init \
-#     model-service kb-backend kb-ingestion-worker
+# Usage:
+#     pwsh infra/kb_e2e.ps1                 # bring up KB-owned services
+#     pwsh infra/kb_e2e.ps1 down            # tear down (keep volumes)
+#     pwsh infra/kb_e2e.ps1 logs -f         # stream logs
 #
-# What this overlay adds / overrides:
-#   postgres        — adds KB seed data mount (05-kb-seed.sql)
-#   keycloak        — adds healthcheck (main compose omits it)
-#   neo4j           — reduces memory limits to dev-friendly sizes
-#   minio-init      — creates the knowledge-base bucket (KB-specific)
-#   kong-setup      — configures Kong routes + JWT plugin for KB services
-#   model-service   — adds remote GPU tunnel env vars + KB postgres DSN
-#   kb-backend      — publishes :8050, adds LightRAG tuning knobs
-#   kb-ingestion-worker — adds docling cache volume, USE_VLM flag
-#   llama           — local GPU LLM (profile: local-llm)
+#   Or directly:
+#     docker compose \
+#       -f infra/docker-compose.kb_e2e.yml \
+#       --env-file infra/.env.kb-testing \
+#       up -d --build
+
+name: kb_e2e
+
+# Attach to the network the shared infra already created. `external: true` means
+# this project never creates or owns it — it only joins.
+networks:
+  default:
+    external: true
+    name: data-agent-network
 
 volumes:
   docling_cache:
 
 services:
 
-  # ── Extend postgres: add KB seed data on fresh volumes ────────────────────────
-  # init scripts run in lexicographic order; 05 runs after the base file's 04.
-  postgres:
-    volumes:
-      - ./Postgres/seed.sql:/docker-entrypoint-initdb.d/05-kb-seed.sql:ro
-
-  keycloak:
-    healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /realms/aeroflow/.well-known/openid-configuration HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && cat <&3 | grep -q 'issuer'"]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
-
-  neo4j:
+  # ── Seed KB structural rows into the SHARED postgres ──────────────────────────
+  # Replaces the old init-script mount (which only worked when this stack owned
+  # postgres). Idempotent: seed.sql is all ON CONFLICT DO NOTHING.
+  kb-seed:
+    image: postgres:16-alpine
+    container_name: kb-seed
+    restart: "no"
     environment:
-      NEO4J_server_memory_heap_initial__size: 512m
-      NEO4J_server_memory_heap_max__size: 512m
-      NEO4J_server_memory_pagecache_size: 256m
-    deploy:
-      resources:
-        limits:
-          cpus: "1.5"
-          memory: 1500M
-        reservations:
-          cpus: "0.5"
-          memory: 512M
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-admin}
+      PGDATABASE: ${POSTGRES_DB:-dataagent}
+    volumes:
+      - ./Postgres/seed.sql:/seed.sql:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until pg_isready -h postgres -U "$${PGUSER}" -d "$${PGDATABASE}" >/dev/null 2>&1; do
+          echo "kb-seed: waiting for shared postgres..."; sleep 2;
+        done
+        psql -v ON_ERROR_STOP=1 -f /seed.sql
+        echo "kb-seed: KB seed applied."
 
+  # ── Create the KB bucket on the SHARED minio ──────────────────────────────────
   minio-init:
     image: minio/mc
     container_name: kb-minio-init
     restart: "no"
     entrypoint: >
       sh -c "
-        mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minio} ${MINIO_ROOT_PASSWORD:-minio_secret} &&
+        until mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minio} ${MINIO_ROOT_PASSWORD:-minio_secret}; do
+          echo 'minio-init: waiting for shared minio...'; sleep 2;
+        done &&
         mc mb --ignore-existing local/knowledge-base &&
         echo 'MinIO: knowledge-base bucket ready.'
       "
-    depends_on:
-      minio: { condition: service_healthy }
 
+  # ── Configure Kong routes + JWT plugin for KB services on the SHARED kong ──────
   kong-setup:
     image: python:3-alpine
     container_name: kb-kong-setup
@@ -91,20 +94,34 @@ services:
       - -c
       - |
         apk add --no-cache curl bash > /dev/null 2>&1
+        until curl -sf http://dataagent-kong:8001 >/dev/null 2>&1; do
+          echo "kong-setup: waiting for shared kong admin..."; sleep 3;
+        done
+        until curl -sf http://dataagent-keycloak:8080/realms/aeroflow >/dev/null 2>&1; do
+          echo "kong-setup: waiting for shared keycloak..."; sleep 3;
+        done
         python3 -c "open('/tmp/k.sh','w').write(open('/scripts/kong-setup.sh').read().replace(chr(13),''))"
         bash /tmp/k.sh
     depends_on:
-      kong: { condition: service_healthy }
-      keycloak: { condition: service_healthy }
       kb-backend: { condition: service_started }
 
+  # ── KB-owned: embedding/rerank/LLM gateway ────────────────────────────────────
   model-service:
+    build:
+      context: ./model-service
+    container_name: kb-model-service
+    restart: unless-stopped
+    ports:
+      - "8600:8001"
     environment:
+      # Multilingual (Vietnamese corpus) — must match the weights cached in
+      # ./model-service/models and the dim of the Qdrant collections.
       EMBED_MODEL: ${EMBED_MODEL:-intfloat/multilingual-e5-small}
       RERANK_MODEL: ${RERANK_MODEL:-cross-encoder/mmarco-mMiniLMv2-L12-H384-v1}
       REMOTE_EMBED_URL: ${REMOTE_EMBED_URL:-}
       REMOTE_RERANK_URL: ${REMOTE_RERANK_URL:-}
       REMOTE_API_KEY: ${REMOTE_API_KEY:-}
+      # LLM gateway → remote GPU tunnel by default (override per model-backend.ps1).
       REMOTE_LLM_URL: ${REMOTE_LLM_URL:-http://host.docker.internal:8088}
       REMOTE_LLM_KEY: ${REMOTE_LLM_KEY:-}
       REMOTE_LLM_MODEL: ${REMOTE_LLM_MODEL:-}
@@ -112,13 +129,37 @@ services:
       POSTGRES_DSN: postgresql://${POSTGRES_USER:-admin}@postgres/${POSTGRES_DB:-dataagent}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      # Weights download here on first start and persist across recreates.
+      - ./model-service/models:/app/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # First start downloads the embed + rerank models into the volume above.
+      start_period: 300s
 
+  # ── KB-owned: retrieval/query backend ─────────────────────────────────────────
   kb-backend:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.kb
+    container_name: kb-backend
+    restart: unless-stopped
     ports:
       - "8050:8000"
     environment:
+      POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/${POSTGRES_DB:-dataagent}
+      QDRANT_URL: http://qdrant:6333
+      NEO4J_URI: bolt://neo4j:7687
       NEO4J_URL: bolt://neo4j:7687
       MONGO_URL: mongodb://mongo:27017/${POSTGRES_DB:-dataagent}
+      MODEL_SERVICE_URL: http://model-service:8001
+      MINIO_URL: http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-minio_secret}@minio:9000
+      MINIO_BUCKET: knowledge-base
+      # Plaintext Kafka listener (this client has no SASL support).
+      KAFKA_URL: kafka:9094
       QDRANT_PASS1_LIMIT: ${QDRANT_PASS1_LIMIT:-3}
       QDRANT_PASS2_LIMIT: ${QDRANT_PASS2_LIMIT:-2}
       RRF_TOP_N: ${RRF_TOP_N:-20}
@@ -131,14 +172,33 @@ services:
       QUERY_ALIAS_RESOLVE: ${QUERY_ALIAS_RESOLVE:-1}
       TYPE_AWARE: ${TYPE_AWARE:-1}
     depends_on:
+      model-service: { condition: service_healthy }
       minio-init: { condition: service_completed_successfully }
+      kb-seed: { condition: service_completed_successfully }
 
+  # ── KB-owned: ingestion worker ────────────────────────────────────────────────
   kb-ingestion-worker:
+    build:
+      context: ..
+      dockerfile: infra/kb-ingestion-worker/Dockerfile
+    container_name: kb-ingestion-worker
+    restart: unless-stopped
     environment:
+      POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/${POSTGRES_DB:-dataagent}
+      MONGO_URL: mongodb://mongo:27017/${POSTGRES_DB:-dataagent}
+      MINIO_URL: http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-minio_secret}@minio:9000
       MINIO_BUCKET: knowledge-base
+      KAFKA_URL: kafka:9094
+      QDRANT_URL: http://qdrant:6333
+      NEO4J_URI: bolt://neo4j:7687
+      MODEL_SERVICE_URL: http://model-service:8001
+      LITELLM_BASE_URL: http://litellm:4000
       LLM_MODEL: llama3
       HF_HOME: /root/.cache/huggingface
+      USE_VLM: "false"
     volumes:
       - docling_cache:/root/.cache/huggingface
     depends_on:
+      model-service: { condition: service_healthy }
       minio-init: { condition: service_completed_successfully }
+      kb-seed: { condition: service_completed_successfully }
