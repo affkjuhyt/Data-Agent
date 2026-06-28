@@ -426,10 +426,10 @@ llama-server chạy trực tiếp trên host (không qua Docker), cần bật **
 
 ```bash
 # Tải model lần đầu (chỉ chạy 1 lần)
-bash scripts/download-model.sh
+bash model/llama-server/download-model.sh
 
 # Khởi động llama-server ở port 8088
-bash scripts/start-llama.sh &
+bash model/llama-server/start-llama.sh &
 
 # Kiểm tra
 curl http://localhost:8088/health

@@ -94,7 +94,15 @@ services:
       KONG_ADMIN_URL: http://dataagent-kong:8001
       KEYCLOAK_URL: http://dataagent-keycloak:8080
       KEYCLOAK_PUBLIC_URL: http://localhost:8080
-    entrypoint: ["/bin/sh", "-c", "apk add --no-cache curl bash > /dev/null 2>&1 && bash /scripts/kong-setup.sh"]
+    # Strip CR (the script may be checked out with CRLF on Windows) before running,
+    # else bash fails with "$'\r': command not found" / "syntax error near $'do\r'".
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        apk add --no-cache curl bash > /dev/null 2>&1
+        python3 -c "open('/tmp/k.sh','w').write(open('/scripts/kong-setup.sh').read().replace(chr(13),''))"
+        bash /tmp/k.sh
     depends_on:
       kong: { condition: service_healthy }
       keycloak: { condition: service_healthy }
@@ -156,11 +164,21 @@ services:
       REMOTE_EMBED_URL: ${REMOTE_EMBED_URL:-}
       REMOTE_RERANK_URL: ${REMOTE_RERANK_URL:-}
       REMOTE_API_KEY: ${REMOTE_API_KEY:-}
-      # LLM gateway — OpenAI-compatible (Colab vLLM or local llama). /generate forwards here.
-      REMOTE_LLM_URL: ${REMOTE_LLM_URL:-}
+      # LLM gateway — OpenAI-compatible. model-service forwards /generate to this URL
+      # exactly like it forwards to a Colab/cloudflared tunnel: POST {url}/v1/chat/completions,
+      # model auto-discovered from {url}/v1/models. The default points at the bundled
+      # local llama-server (model/llama-server/start-llama.sh) running on the host at
+      # :8088 — start it first, or override REMOTE_LLM_URL with a tunnel URL. Empty
+      # REMOTE_LLM_MODEL → discovered from /v1/models.
+      REMOTE_LLM_URL: ${REMOTE_LLM_URL:-http://host.docker.internal:8088}
       REMOTE_LLM_KEY: ${REMOTE_LLM_KEY:-}
+      REMOTE_LLM_MODEL: ${REMOTE_LLM_MODEL:-}
       OMP_NUM_THREADS: "2"
       POSTGRES_DSN: postgresql://${POSTGRES_USER:-admin}@postgres/${POSTGRES_DB:-dataagent}
+    # llama-server runs on the host; this lets the container resolve it on Linux
+    # (Docker Desktop on Windows/macOS maps host.docker.internal automatically).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # ── KB Backend: publish port + LightRAG tuning knobs ─────────────────────────
   kb-backend:

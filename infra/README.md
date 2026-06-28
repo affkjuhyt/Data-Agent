@@ -258,6 +258,48 @@ notebooks live in `model/embedding/embed_rerank_colab.ipynb` (embed + rerank) an
 
 ---
 
+## Troubleshooting
+
+### `kb-ingestion-worker` crash-loops on start / `model-service /embed` → 500
+
+Worker log shows `httpx.HTTPStatusError: Server error '500' for .../embed` and the
+container restarts every ~60 s; `model-service` log shows
+`URLError: <urlopen error [Errno -2] Name or service not known>`.
+
+**Cause:** a stale Colab tunnel. `trycloudflare.com` URLs change every time the
+notebook restarts, so the `REMOTE_*` values in `infra/.env.kb-testing` no longer
+resolve. `model-service /health` stays green (it only checks the LLM), which hides
+the broken embed path; the worker's startup embed probe is what fails.
+
+**Fix** — put the new tunnel URLs + keys in `infra/.env.kb-testing`, then recreate
+the two services that read them. The worker **must** be recreated too (its startup
+probe is bound to the old URL):
+
+```powershell
+docker compose -f infra/docker-compose.yml -f infra/docker-compose.kb_e2e.yml `
+  --env-file infra/.env.kb-testing `
+  up -d --no-deps --force-recreate model-service kb-ingestion-worker
+```
+
+Verify embed is live (should return vectors, not `Internal Server Error`):
+
+```powershell
+curl -X POST http://localhost:8600/embed -H "Content-Type: application/json" -d '{\"texts\":[\"probe\"]}'
+```
+
+### Login fails: `helios-admin` → `invalid_grant / "Invalid user credentials"`
+
+The realm import ships **no** passwords — credentials live in the Keycloak volume and
+can drift (a stray `otp` credential gets enrolled, so the password grant is rejected).
+`helios-engineer` usually still works, which confirms the chain itself is fine.
+
+**Fix** — using the master admin (`admin` / `admin` on realm `master`), delete the
+stray `otp` credential on the user and reset the password to `H3lios@Admin01!`
+(non-temporary) via the Keycloak admin API
+(`/admin/realms/aeroflow/users/{id}/credentials` and `.../reset-password`).
+
+---
+
 ## Layout
 
 ```

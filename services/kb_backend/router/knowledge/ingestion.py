@@ -5,8 +5,6 @@ import datetime
 import json
 import logging
 
-import uuid as _uuid
-
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -19,7 +17,6 @@ from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.pipeline.kb_ui_operation.document_ops import (
     fetch_one as _fetch_doc, name_exists as _name_exists,
-    count_processed_chunks as _count_processed_chunks,
 )
 from services.kb_backend.pipeline.ingestion import config as cfg
 from services.kb_backend.pipeline.ingestion.bronze import BronzeUploadRequest, WebBronzeRequest
@@ -419,31 +416,40 @@ async def stream_pipeline_events(
     )
 
 
+# Each stage occupies a band on the global bar; within a stage we interpolate by
+# processed/total chunks (both written to kb_ingestion_logs by the worker) so the bar
+# moves smoothly and stays monotonic across silver→gold. Gold's CHUNK loop fills only
+# 50→85 — the slow doc-level phases after it (summary reduce, relationship reconcile,
+# graph build) have no per-chunk count, so the worker marks them with the statuses below
+# to step the bar 85→95 instead of flat-lining at the top while that LLM work runs.
+_STAGE_BAND = {
+    "queued": (0.0, 5.0), "bronze": (5.0, 10.0), "silver": (10.0, 50.0), "gold": (50.0, 85.0),
+}
+_GOLD_TAIL = {
+    "gold_reduce": 87.0, "gold_relations": 90.0, "gold_graph": 94.0,
+}
+
+
 def _progress_pct(status: str, stage: str, processed: int, total: int) -> float:
-    if status == "PUBLISHED":
+    s = (status or "").lower()
+    if s == "published":
         return 100.0
+    if s in _GOLD_TAIL:
+        return _GOLD_TAIL[s]
+    lo, hi = _STAGE_BAND.get((stage or "").lower(), (0.0, 5.0))
     if total > 0:
-        return min(round(processed / total * 100, 1), 95.0)
-    stage_map = {
-        "queued": 3, "bronze": 8, "ocr": 18, "cleaning": 32,
-        "chunking": 50, "embedding": 72, "graph": 85, "silver": 45, "gold": 82,
-    }
-    return float(stage_map.get((stage or "").lower(), 5))
+        return round(lo + min(processed / total, 1.0) * (hi - lo), 1)
+    return lo  # stage known but no chunk count yet → sit at the band start
 
 
 @router.get("/documents/{data_id}/progress")
 async def stream_progress(data_id: str, request: Request, ctx: dict = Depends(authenticate)):
     """SSE endpoint — streams ingestion progress with chunk-based percentage."""
-    mongo    = svc(request, "mongo")
-    postgres = svc(request, "postgres")
+    mongo = svc(request, "mongo")
 
     async def generate():
         db = mongo.get_client()
         last_count = 0
-        try:
-            doc_uuid = _uuid.UUID(data_id)
-        except ValueError:
-            return
 
         loop = asyncio.get_running_loop()
         last_emit = loop.time()
@@ -456,15 +462,9 @@ async def stream_progress(data_id: str, request: Request, ctx: dict = Depends(au
             emitted = False
             doc = await db["kb_ingestion_logs"].find_one({"data_id": data_id})
 
-            # Count already-processed chunks. Degrade to 0 on error so the progress
-            # stream stays alive, but LOG it — a silent 0 here would otherwise mask
-            # pool exhaustion or a DB outage behind "stuck at low %".
-            try:
-                processed_chunks: int = await _count_processed_chunks(postgres, doc_uuid)
-            except Exception as e:
-                log.warning("progress stream: chunk count failed for %s: %s", data_id, e)
-                processed_chunks = 0
-
+            # processed/total are written by the worker (silver + gold) onto this same
+            # doc, so the % comes from one Mongo source — no cross-store Postgres count.
+            processed_chunks: int = int((doc or {}).get("processed_chunks", 0))
             total_chunks: int = int((doc or {}).get("total_chunks", 0))
             status: str = (doc or {}).get("status", "PENDING")
             stage: str  = (doc or {}).get("stage",  "")

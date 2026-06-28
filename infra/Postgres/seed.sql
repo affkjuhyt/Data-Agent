@@ -36,9 +36,12 @@ ON CONFLICT (id) DO NOTHING;
 
 -- ── KBModel (embedding models — FK target for Qdrant/Neo4j/TextBlockVersion) ─
 
+-- model_name MUST match the names model-service registers (backends/sync.py), so its
+-- name→UUID resolution binds THESE seed UUIDs (which the Qdrant/Neo4j rows reference)
+-- instead of inserting fresh ones. id …0001 = the 1024-dim model, …0002 = the smaller.
 INSERT INTO "KBModel" (model_id, model_name, task_type) VALUES
-    ('00000000-0000-0000-0000-000000000001', 'BAAI/bge-large-en-v1.5', 'embedding'),
-    ('00000000-0000-0000-0000-000000000002', 'BAAI/bge-small-en-v1.5', 'embedding')
+    ('00000000-0000-0000-0000-000000000001', 'AITeamVN/Vietnamese_Embedding', 'embedding'),
+    ('00000000-0000-0000-0000-000000000002', 'intfloat/multilingual-e5-small', 'embedding')
 ON CONFLICT (model_id) DO NOTHING;
 
 -- ── KBKnowledgeBase ──────────────────────────────────────────────────────────

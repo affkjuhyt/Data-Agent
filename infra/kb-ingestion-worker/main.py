@@ -18,6 +18,7 @@ for _p in (_root, _here):
 
 from utils import config as cfg
 from utils.docling_parser import InlineDoclingParser, load_converter
+from utils.graph_store import GraphStore
 from utils.worker import consume_loop
 from conflict_resolver import conflict_resolve_loop
 
@@ -31,7 +32,7 @@ from services.database_connector.qdrant_connector import (
 from services.database_connector.neo4j_connector import Neo4jClient
 from services.database_connector.mongo_connector import MongoClient
 from services.database_connector.minio_connector import MinIOClient
-from services.database_connector.kafka_connector import KafkaProducerClient, KafkaConsumerClient
+from services.database_connector.kafka_connector import KafkaConsumerClient
 from services.database_connector.model_connector import ModelServiceClient
 
 logging.basicConfig(
@@ -93,7 +94,7 @@ async def _ensure_payload_indexes(client) -> None:
     badly as the collection grows. Idempotent: 'already exists' errors ignored."""
     from qdrant_client import models as qmodels  # local import keeps module deps unchanged
 
-    from gold import ENTITY_TYPE_LABELS  # ent_person, ent_location, … typed filters
+    from utils.entity_types import ENTITY_TYPE_LABELS  # ent_person, ent_location, … typed filters
 
     typed_entity_fields = [
         (f"ent_{t}", qmodels.PayloadSchemaType.KEYWORD) for t in ENTITY_TYPE_LABELS
@@ -171,7 +172,6 @@ async def main() -> None:
     mongo    = MongoClient()
     minio    = MinIOClient()
     model    = ModelServiceClient()
-    producer = KafkaProducerClient()
     consumer = KafkaConsumerClient()
     consumer.set_group_id(cfg.KAFKA_CONSUMER_GROUP)
 
@@ -181,7 +181,6 @@ async def main() -> None:
     mongo.set_url(cfg.MONGO_URL)
     minio.set_url(cfg.MINIO_URL)
     model.set_url(cfg.MODEL_SERVICE_URL)
-    producer.set_url(cfg.KAFKA_URL)
     consumer.set_url(cfg.KAFKA_URL)
 
     log.info("Opening connections...")
@@ -191,7 +190,6 @@ async def main() -> None:
     await mongo.open(retry)
     await minio.open(retry)
     await model.open(retry)
-    await producer.open(retry)
     await consumer.open(retry)
 
     await _validate_or_create_qdrant_collection(qdrant, model)
@@ -203,6 +201,8 @@ async def main() -> None:
     load_converter(use_vlm=cfg.USE_VLM)
     docling_parser = InlineDoclingParser(minio=minio)
 
+    graph = GraphStore(neo4j.get_client(), postgres, model)
+
     hc_tasks = [
         asyncio.create_task(postgres.health_check_loop(hc), name="hc-postgres"),
         asyncio.create_task(qdrant.health_check_loop(hc),   name="hc-qdrant"),
@@ -210,7 +210,6 @@ async def main() -> None:
         asyncio.create_task(mongo.health_check_loop(hc),    name="hc-mongo"),
         asyncio.create_task(minio.health_check_loop(hc),    name="hc-minio"),
         asyncio.create_task(model.health_check_loop(hc),    name="hc-model"),
-        asyncio.create_task(producer.health_check_loop(hc), name="hc-kafka-producer"),
         asyncio.create_task(consumer.health_check_loop(hc), name="hc-kafka-consumer"),
     ]
 
@@ -221,7 +220,7 @@ async def main() -> None:
         conflict_resolve_loop(
             postgres=postgres,
             qdrant_svc=qdrant,
-            neo4j_svc=neo4j,
+            graph=graph,
             model=model,
         ),
         name="conflict-resolver",
@@ -230,12 +229,11 @@ async def main() -> None:
     try:
         await consume_loop(
             consumer=consumer,
-            kafka_producer=producer,
             minio=minio,
             postgres=postgres,
             mongo=mongo,
             qdrant_svc=qdrant,
-            neo4j_svc=neo4j,
+            graph=graph,
             model=model,
             docling_parser=docling_parser,
         )
@@ -250,7 +248,6 @@ async def main() -> None:
         await mongo.close()
         await minio.close()
         await model.close()
-        await producer.close()
         await consumer.close()
         log.info("Worker shutdown complete")
 

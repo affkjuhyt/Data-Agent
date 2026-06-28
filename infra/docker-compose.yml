@@ -29,6 +29,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./sql/create-extra-dbs.sql:/docker-entrypoint-initdb.d/01-create-dbs.sql:ro
+      - ./Postgres/init.sql:/docker-entrypoint-initdb.d/02-kb-tables.sql:ro
       - ./sql/init.sql:/docker-entrypoint-initdb.d/03-app-schema.sql:ro
       - ./sql/release-init.sql:/docker-entrypoint-initdb.d/04-release-schema.sql:ro
     ports:
@@ -222,6 +223,13 @@ services:
       KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
       KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      # Single-broker cluster: the internal topics default to replication factor 3,
+      # which can never be created with one broker → __consumer_offsets is missing →
+      # the group coordinator is unavailable → consumers can't join their group (the
+      # ingestion worker hangs on GroupCoordinatorNotAvailableError). Pin them to 1.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
       KAFKA_CLUSTER_ID: "dataagent-kafka-cluster-1"
       KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
       KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "false"

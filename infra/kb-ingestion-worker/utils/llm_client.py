@@ -27,16 +27,28 @@ _DEFAULT_TIMEOUT = 300.0
 
 log.info("LLM access: model-service gateway (%s/generate)", _BASE)
 
+# One shared connection pool for every LLM call. Opening a new AsyncClient per
+# request (as the old code did) discarded the pool each time and reconnected on
+# every generate; a single lazily-created client reuses keep-alive connections.
+# Created lazily so it binds to the running event loop, not import time.
+_client: httpx.AsyncClient | None = None
+
+
+def _get_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None or _client.is_closed:
+        _client = httpx.AsyncClient(timeout=_DEFAULT_TIMEOUT)
+    return _client
+
 
 def _schema(system_type: str) -> dict | None:
     return SCHEMAS_BY_SYSTEM_TYPE.get(system_type)
 
 
 async def _generate(payload: dict, timeout: float) -> str:
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        resp = await client.post(f"{_BASE}/generate", json=payload)
-        resp.raise_for_status()
-        return resp.json().get("content", "")
+    resp = await _get_client().post(f"{_BASE}/generate", json=payload, timeout=timeout)
+    resp.raise_for_status()
+    return resp.json().get("content", "")
 
 
 async def generate_json(
