@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
 
 from planner.dpts.plan import Plan, Target
@@ -21,8 +22,15 @@ class ExecutionResult:
     success: bool = True
 
 
-async def _run_task(node: TaskNode, prompt: str, user_id: str, tenant_id: str = "") -> TaskNode:
+async def _run_task(node: TaskNode, prompt: str, user_id: str, tenant_id: str = "", executor_start: float = 0.0, lf_parent=None) -> TaskNode:
     """Chạy 1 task, ghi output vào node, không throw."""
+    node.start_ms = round((time.monotonic() - executor_start) * 1000)
+    t0 = time.monotonic()
+    task_span = lf_parent.span(
+        name=f"[task] {node.title}",
+        input={"agent_id": node.agent_id, "agent_name": node.agent_name, "prompt": prompt[:1000]},
+        metadata={"task_index": node.index},
+    ) if lf_parent else None
     try:
         output, conv_id = await call_agent(
             agent_id=node.agent_id,
@@ -37,7 +45,14 @@ async def _run_task(node: TaskNode, prompt: str, user_id: str, tenant_id: str = 
         logger.warning("task failed | '%s': %s", node.title, e)
         node.output = str(e)
         node.success = False
+    node.latency_ms = round((time.monotonic() - t0) * 1000)
     node.done = True
+    if task_span:
+        task_span.end(
+            output=node.output[:2000] if node.output else "",
+            level="ERROR" if not node.success else "DEFAULT",
+            metadata={"conversation_id": node.conversation_id, "latency_ms": node.latency_ms},
+        )
     return node
 
 
@@ -48,6 +63,8 @@ async def _execute_target(
     original_query: str = "",
     tenant_id: str = "",
     agent_name_map: dict[str, str] | None = None,
+    executor_start: float = 0.0,
+    lf_trace=None,
 ) -> tuple[TargetResult, bool]:
     """
     Chạy tất cả tasks trong 1 target theo rounds (song song trong round, tuần tự giữa rounds).
@@ -58,6 +75,10 @@ async def _execute_target(
     task_results: list[TaskResult] = []
     target_failed = False
     failed_task_title: str | None = None
+    target_span = lf_trace.span(
+        name=f"[target] {target.description[:80]}",
+        input={"description": target.description, "task_count": len(target.tasks)},
+    ) if lf_trace else None
 
     for round_nodes in rounds:
         # Build prompt cho từng task trong round:
@@ -78,7 +99,7 @@ async def _execute_target(
                     parts.append(f"## Nội dung\n{node.input}")
             parts.append(f"Nhiệm vụ: {node.title}")
             prompt = "\n\n".join(parts)
-            return await _run_task(node, prompt, user_id, tenant_id=tenant_id)
+            return await _run_task(node, prompt, user_id, tenant_id=tenant_id, executor_start=executor_start, lf_parent=target_span)
 
         completed = await asyncio.gather(*(run_one(n) for n in round_nodes))
         all_nodes.extend(completed)
@@ -93,6 +114,8 @@ async def _execute_target(
                 success=node.success,
                 error=node.output if not node.success else None,
                 conversation_id=node.conversation_id,
+                start_ms=node.start_ms,
+                latency_ms=node.latency_ms,
             ))
             if not node.success and not target_failed:
                 target_failed = True
@@ -107,6 +130,11 @@ async def _execute_target(
         f"[{n.title}]: {n.output}" for n in all_nodes if n.success and n.output
     )
 
+    if target_span:
+        target_span.end(
+            output=target_output[:2000] if target_output else "",
+            level="ERROR" if not success else "DEFAULT",
+        )
     return TargetResult(
         node_id=target.node_id,
         description=target.description,
@@ -116,7 +144,7 @@ async def _execute_target(
     ), success, target_output  # type: ignore[return-value]
 
 
-async def execute_plan(plan: Plan, user_id: str = "orchestrator", original_query: str = "", tenant_id: str = "", agents: list[dict] | None = None) -> ExecutionResult:
+async def execute_plan(plan: Plan, user_id: str = "orchestrator", original_query: str = "", tenant_id: str = "", agents: list[dict] | None = None, lf_trace=None) -> ExecutionResult:
     """
     Vòng lặp chính: chạy targets tuần tự, tasks trong target song song theo depend_on.
     Nếu 1 target fail → dừng, trả về node_id để caller report planner.
@@ -124,10 +152,11 @@ async def execute_plan(plan: Plan, user_id: str = "orchestrator", original_query
     result = ExecutionResult(plan_id=plan.plan_id)
     prior_context = ""
     agent_name_map = {a["id"]: a["name"] for a in (agents or [])}
+    executor_start = time.monotonic()
 
     for target in plan.targets:
         logger.info("executor | target=%s '%s'", target.node_id, target.description[:60])
-        target_result, success, target_output = await _execute_target(target, prior_context, user_id, original_query=original_query, tenant_id=tenant_id, agent_name_map=agent_name_map)
+        target_result, success, target_output = await _execute_target(target, prior_context, user_id, original_query=original_query, tenant_id=tenant_id, agent_name_map=agent_name_map, executor_start=executor_start, lf_trace=lf_trace)
         result.target_results.append(target_result)
 
         if success:

@@ -16,6 +16,8 @@ class TaskNode:
     conversation_id: Optional[str] = None  # từ X-Conversation-Id header
     success: bool = False
     done: bool = False
+    start_ms: int = 0    # relative to executor start
+    latency_ms: int = 0
 
 
 def build_rounds(tasks: list[dict]) -> list[list[TaskNode]]:

@@ -37,6 +37,8 @@ class TaskResult(BaseModel):
     success: bool
     error: Optional[str] = None
     conversation_id: Optional[str] = None  # để frontend fetch LangFuse trace nội bộ
+    start_ms: int = 0    # relative to executor start
+    latency_ms: int = 0
 
 
 class TargetResult(BaseModel):
@@ -52,3 +54,7 @@ class OrchestrateResponse(BaseModel):
     response: str
     target_results: list[TargetResult] = Field(default_factory=list)
     recovered: bool = False
+    planner_ms: int = 0
+    executor_ms: int = 0
+    synthesizer_ms: int = 0
+    session_id: str = ""  # LangFuse session ID để frontend fetch trace
