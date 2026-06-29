@@ -8,6 +8,7 @@ this orchestrator stopping the container from the outside, not by a signal
 handler inside it, so malicious code can't intercept/ignore it.
 """
 import logging
+import os
 
 import docker
 from docker.errors import APIError, ContainerError, ImageNotFound
@@ -33,9 +34,20 @@ _client = None
 
 
 def _get_client():
+    """Talks to a rootless Docker-in-Docker sidecar (`sandbox-dockerd` in
+    infra/docker-compose.app.yml) when SANDBOX_DOCKER_HOST is set, instead of
+    the host's own /var/run/docker.sock. A compromise of this process then
+    only yields root inside that sidecar's rootless user namespace, not on
+    the real host (see docs/Sandbox_SchemaCrawler_Implementation.md §8.7/§9
+    for what this does and does not close). Falls back to docker.from_env()
+    (host socket) when unset — local dev/CI without the sidecar still works."""
     global _client
     if _client is None:
-        _client = docker.from_env()
+        docker_host = os.environ.get("SANDBOX_DOCKER_HOST")
+        if docker_host:
+            _client = docker.DockerClient(base_url=docker_host)
+        else:
+            _client = docker.from_env()
     return _client
 
 

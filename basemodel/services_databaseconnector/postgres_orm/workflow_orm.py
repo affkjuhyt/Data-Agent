@@ -3,7 +3,7 @@ import uuid
 from typing import Optional
 
 from sqlalchemy import (
-    Boolean, DateTime, Float, ForeignKey, Index, Integer, SmallInteger,
+    BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, SmallInteger,
     String, Text, UniqueConstraint, func, text,
 )
 from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB, ARRAY
@@ -534,7 +534,8 @@ class SchemaCatalogORM(Base):
     schema_name: Mapped[str] = mapped_column(String(128), nullable=False)
     table_name: Mapped[str] = mapped_column(String(128), nullable=False)
     columns: Mapped[list] = mapped_column(JSONB, nullable=False)
-    row_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # BigInteger — Snowflake tables routinely exceed Integer's ~2.1B row cap.
+    row_count: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     last_altered: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     text_description: Mapped[str] = mapped_column(Text, nullable=False)
     join_hints: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)

@@ -124,10 +124,9 @@ def test_alembic_upgrade_head_on_fresh_db(fresh_db):
     )
 
     # alembic_version row must be set to the head revision (currently
-    # kbwarehouse_tenant_id, the Schema Catalog gap-fix — bump this when a
-    # new head lands).
+    # auth_api_secrets_vault_schema — bump this when a new head lands).
     rev = _current_revision(fresh_db["dsn"])
-    assert rev == "f6a7b8c9d0e1", f"expected head rev, got {rev}"
+    assert rev == "b8c9d0e1f2a3", f"expected head rev, got {rev}"
 
 
 # ─── 2. RLS migration was actually applied (regression net for issue #3) ───

@@ -54,3 +54,20 @@ def test_non_select_statements_are_rejected(sql):
     from sql_guard import validate_select_only, SQLGuardError
     with pytest.raises(SQLGuardError):
         validate_select_only(sql)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("sql", [
+    # The exact shape flagged in review: a trailing "--" comment would
+    # swallow the wrapping query's closing paren + LIMIT clause in
+    # snowflake_readonly.py, running the inner query unbounded.
+    "SELECT * FROM t -- LIMIT bypass",
+    "SELECT a, b FROM t -- comment\nWHERE a > 1",
+    "SELECT /* inline */ a FROM t",
+    "SELECT a FROM t /* trailing block comment */",
+    "WITH cte AS (SELECT 1 AS x) -- comment\nSELECT * FROM cte",
+])
+def test_comments_are_rejected(sql):
+    from sql_guard import validate_select_only, SQLGuardError
+    with pytest.raises(SQLGuardError):
+        validate_select_only(sql)

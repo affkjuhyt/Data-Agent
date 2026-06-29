@@ -8,7 +8,7 @@ mutates state: ``SELECT ... INTO``.
 """
 import sqlparse
 from sqlparse.sql import Statement
-from sqlparse.tokens import DDL, DML, Keyword
+from sqlparse.tokens import Comment, DDL, DML, Keyword
 
 
 class SQLGuardError(Exception):
@@ -37,3 +37,10 @@ def validate_select_only(sql: str) -> None:
             raise SQLGuardError("SELECT INTO is not allowed")
         if token.ttype is DML and token.value.upper() != "SELECT":
             raise SQLGuardError(f"DML token not allowed: {token.value}")
+        # snowflake_readonly.py wraps this SQL as a single-line f-string
+        # subquery (`SELECT * FROM ({sql}) AS _sandboxed_query LIMIT N`) — a
+        # trailing "--" line comment would swallow the closing paren and the
+        # LIMIT clause, running the inner query unbounded. Reject comments
+        # outright rather than trying to special-case "safe" placements.
+        if token.ttype in Comment:
+            raise SQLGuardError("comments are not allowed in sandboxed SQL")

@@ -55,6 +55,7 @@ GROUP_ID = os.environ.get("KAFKA_GROUP_ID", "schema-crawler-worker-group")
 CRAWL_INTERVAL_SECONDS = int(os.environ.get("CRAWL_INTERVAL_SECONDS", "86400"))  # doc §2.7 — 24h default
 DDL_DEBOUNCE_SECONDS = int(os.environ.get("DDL_DEBOUNCE_SECONDS", "60"))         # doc §2.8
 POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "5"))
+KAFKA_RECONNECT_INTERVAL_SECONDS = int(os.environ.get("KAFKA_RECONNECT_INTERVAL_SECONDS", "300"))
 
 
 def _safe_json(raw: bytes):
@@ -338,6 +339,21 @@ def process_due_ddl_events(conn, qdrant: QdrantClient, pending_ddl: dict[tuple, 
     return processed
 
 
+def maybe_reconnect_kafka(
+    consumer: "KafkaConsumer | None", now: float, last_attempt: float
+) -> "tuple[KafkaConsumer | None, float]":
+    """If the DDL-trigger consumer is down (Kafka was unavailable at boot, or
+    died later), retry establishing it every KAFKA_RECONNECT_INTERVAL_SECONDS
+    instead of staying cron-only forever — cron is a backstop, not a reason
+    to give up on the lower-latency DDL-trigger path once Kafka recovers."""
+    if consumer is not None or now - last_attempt < KAFKA_RECONNECT_INTERVAL_SECONDS:
+        return consumer, last_attempt
+    consumer = try_kafka_consumer(retries=1, delay=0)
+    if consumer is not None:
+        log.info("Kafka consumer recovered — DDL-trigger path restored")
+    return consumer, now
+
+
 def main():
     conn = wait_for_postgres()
     qdrant = QdrantClient(url=QDRANT_URL)
@@ -346,12 +362,24 @@ def main():
 
     pending_ddl: dict[tuple, dict] = {}
     last_crawl = 0.0
+    last_kafka_attempt = time.time()
 
     log.info("schema-crawler-worker started. crawl_interval=%ss kafka=%s", CRAWL_INTERVAL_SECONDS, bool(consumer))
     while True:
         try:
+            consumer, last_kafka_attempt = maybe_reconnect_kafka(consumer, time.time(), last_kafka_attempt)
+
             if consumer is not None:
-                poll_ddl_events(consumer, pending_ddl)
+                try:
+                    poll_ddl_events(consumer, pending_ddl)
+                except Exception:
+                    log.exception("Kafka consumer failed — falling back to cron-only until next retry")
+                    try:
+                        consumer.close()
+                    except Exception:
+                        pass
+                    consumer = None
+                    last_kafka_attempt = time.time()
 
             process_due_ddl_events(conn, qdrant, pending_ddl)
 
@@ -361,6 +389,13 @@ def main():
                 last_crawl = now
 
             time.sleep(POLL_INTERVAL_SECONDS)
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            log.error("main loop | postgres connection lost, reconnecting: %s", e)
+            try:
+                conn.close()
+            except Exception:
+                pass
+            conn = wait_for_postgres()
         except Exception as e:
             log.error("main loop error: %s", e)
             time.sleep(5)

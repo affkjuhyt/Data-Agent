@@ -8,6 +8,7 @@ that.
 """
 import asyncio
 import logging
+import threading
 
 import snowflake.connector
 from snowflake.connector import DictCursor
@@ -23,6 +24,62 @@ class SnowflakeQueryError(Exception):
     pass
 
 
+# Snowflake auth takes ~1-2s; for an interactive agent calling execute_sql
+# repeatedly, opening a fresh connection per call adds that latency to every
+# single tool call. Connections are pooled by their full param set (password
+# included, since a different password is a different identity) and reused
+# across calls/requests within this process.
+_connections: dict[tuple, "snowflake.connector.SnowflakeConnection"] = {}
+_connections_lock = threading.Lock()
+
+
+def _connection_key(connection_params: dict) -> tuple:
+    return (
+        connection_params["account"],
+        connection_params["user"],
+        connection_params["password"],
+        connection_params.get("warehouse"),
+        connection_params.get("database"),
+        connection_params.get("schema"),
+        connection_params.get("role"),
+    )
+
+
+def _get_connection(connection_params: dict):
+    key = _connection_key(connection_params)
+    with _connections_lock:
+        conn = _connections.get(key)
+        if conn is not None:
+            try:
+                if not conn.is_closed():
+                    return conn
+            except Exception:
+                pass
+            _connections.pop(key, None)
+
+        conn = snowflake.connector.connect(
+            account=connection_params["account"],
+            user=connection_params["user"],
+            password=connection_params["password"],
+            warehouse=connection_params.get("warehouse"),
+            database=connection_params.get("database"),
+            schema=connection_params.get("schema"),
+            role=connection_params.get("role"),
+            client_session_keep_alive=True,
+        )
+        _connections[key] = conn
+        return conn
+
+
+def _drop_connection(connection_params: dict, conn) -> None:
+    with _connections_lock:
+        _connections.pop(_connection_key(connection_params), None)
+    try:
+        conn.close()
+    except Exception:
+        pass
+
+
 async def execute_readonly_query(sql: str, connection_params: dict) -> dict:
     """Returns {"rows": list[dict], "row_count": int, "is_truncated": bool}.
 
@@ -34,23 +91,23 @@ async def execute_readonly_query(sql: str, connection_params: dict) -> dict:
         raise SnowflakeQueryError(f"SQL rejected: {e}") from e
 
     def _query():
-        conn = snowflake.connector.connect(
-            account=connection_params["account"],
-            user=connection_params["user"],
-            password=connection_params["password"],
-            warehouse=connection_params.get("warehouse"),
-            database=connection_params.get("database"),
-            schema=connection_params.get("schema"),
-            role=connection_params.get("role"),
-            client_session_keep_alive=False,
-        )
+        conn = _get_connection(connection_params)
         try:
             cursor = conn.cursor(DictCursor)
-            # Fetch one extra row to detect truncation without a separate COUNT(*).
-            cursor.execute(f"SELECT * FROM ({sql}) AS _sandboxed_query LIMIT {MAX_ROWS + 1}")  # noqa: S608 — sql is guard-validated SELECT-only
+            # Inner sql on its own line — defense in depth alongside
+            # sql_guard's comment rejection: even if a comment slipped
+            # through, it would only swallow the rest of *its own* line, not
+            # the closing paren/LIMIT that follow on the next one.
+            cursor.execute(
+                f"SELECT * FROM (\n{sql}\n) AS _sandboxed_query LIMIT {MAX_ROWS + 1}"  # noqa: S608 — sql is guard-validated SELECT-only
+            )
             return cursor.fetchall()
-        finally:
-            conn.close()
+        except Exception:
+            # Connection may be dead (idle timeout, network blip) — drop it
+            # from the pool so the next call reconnects instead of reusing
+            # a broken connection forever.
+            _drop_connection(connection_params, conn)
+            raise
 
     try:
         rows = await asyncio.to_thread(_query)
