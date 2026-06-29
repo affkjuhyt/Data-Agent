@@ -169,7 +169,7 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
             # kb
             "kb_endpoint": kb_endpoint,
             # memory
-            "memory_enabled": False,  # TODO: re-enable after embeddings are configured
+            "memory_enabled": bool(row.memory_enabled),
             # mcp
             "mcp_endpoints": mcp_endpoints,
             # guardrail

@@ -262,6 +262,7 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
       QDRANT_URL: http://qdrant:6333
       LITELLM_BASE_URL: http://litellm:4000
+      EMBEDDING_DIM: "1024"
     depends_on:
       kafka:
         condition: service_healthy

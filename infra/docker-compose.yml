@@ -15,6 +15,7 @@ volumes:
   neo4j_data:
   neo4j_logs:
   ollama_models:
+  hf_cache:
 
 services:
   # Databases
@@ -309,6 +310,7 @@ services:
       - "4000:4000"
     volumes:
       - ./litellm/config.yaml:/app/config.yaml:ro
+      - hf_cache:/root/.cache/huggingface
     env_file: ../.env
     environment:
       REDIS_URL: redis://redis:6379
@@ -364,6 +366,7 @@ services:
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
       QDRANT_URL: http://qdrant:6333
+      EMBEDDING_DIM: "1024"
     depends_on:
       postgres:
         condition: service_healthy
