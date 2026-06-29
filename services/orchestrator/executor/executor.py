@@ -22,7 +22,7 @@ class ExecutionResult:
     success: bool = True
 
 
-async def _run_task(node: TaskNode, prompt: str, user_id: str, tenant_id: str = "", executor_start: float = 0.0, lf_parent=None) -> TaskNode:
+async def _run_task(node: TaskNode, prompt: str, user_id: str, tenant_id: str = "", orchestrated: bool = True, executor_start: float = 0.0, lf_parent=None) -> TaskNode:
     """Chạy 1 task, ghi output vào node, không throw."""
     node.start_ms = round((time.monotonic() - executor_start) * 1000)
     t0 = time.monotonic()
@@ -37,6 +37,7 @@ async def _run_task(node: TaskNode, prompt: str, user_id: str, tenant_id: str = 
             prompt=prompt,
             user_id=user_id,
             tenant_id=tenant_id,
+            orchestrated=orchestrated,
         )
         node.output = output
         node.conversation_id = conv_id
@@ -63,6 +64,7 @@ async def _execute_target(
     original_query: str = "",
     tenant_id: str = "",
     agent_name_map: dict[str, str] | None = None,
+    orchestrated: bool = True,
     executor_start: float = 0.0,
     lf_trace=None,
 ) -> tuple[TargetResult, bool, str]:
@@ -105,7 +107,7 @@ async def _execute_target(
                     parts.append(f"## Nội dung\n{node.input}")
             parts.append(f"Nhiệm vụ: {node.title}")
             prompt = "\n\n".join(parts)
-            return await _run_task(node, prompt, user_id, tenant_id=tenant_id, executor_start=executor_start, lf_parent=target_span)
+            return await _run_task(node, prompt, user_id, tenant_id=tenant_id, orchestrated=orchestrated, executor_start=executor_start, lf_parent=target_span)
 
         completed = await asyncio.gather(*(run_one(n) for n in round_nodes))
         all_nodes.extend(completed)
@@ -150,7 +152,7 @@ async def _execute_target(
     ), success, target_output
 
 
-async def execute_plan(plan: Plan, user_id: str = "orchestrator", original_query: str = "", tenant_id: str = "", agents: list[dict] | None = None, lf_trace=None, skip_node_ids: set[str] | None = None) -> ExecutionResult:
+async def execute_plan(plan: Plan, user_id: str = "orchestrator", original_query: str = "", tenant_id: str = "", agents: list[dict] | None = None, lf_trace=None, skip_node_ids: set[str] | None = None, orchestrated: bool = True) -> ExecutionResult:
     """
     Vòng lặp chính: chạy targets tuần tự, tasks trong target song song theo depend_on.
     Nếu 1 target fail → dừng, trả về node_id để caller report planner.
@@ -167,7 +169,7 @@ async def execute_plan(plan: Plan, user_id: str = "orchestrator", original_query
             logger.info("executor | skip completed target=%s", target.node_id)
             continue
         logger.info("executor | target=%s '%s'", target.node_id, target.description[:60])
-        target_result, success, target_output = await _execute_target(target, prior_context, user_id, original_query=original_query, tenant_id=tenant_id, agent_name_map=agent_name_map, executor_start=executor_start, lf_trace=lf_trace)
+        target_result, success, target_output = await _execute_target(target, prior_context, user_id, original_query=original_query, tenant_id=tenant_id, agent_name_map=agent_name_map, orchestrated=orchestrated, executor_start=executor_start, lf_trace=lf_trace)
         result.target_results.append(target_result)
 
         if success:

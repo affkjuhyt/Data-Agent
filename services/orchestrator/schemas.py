@@ -7,6 +7,9 @@ class OrchestrateRequest(BaseModel):
     user_id: str = "default"
     session_id: Optional[str] = None
     use_cache: bool = True
+    # Nếu có agent_id → single agent mode (skip ToT, gọi thẳng agent đó)
+    # Nếu không → multi agent mode (ToT planner tự phân chia)
+    agent_id: Optional[str] = None
 
 
 class TaskSchema(BaseModel):
@@ -55,6 +58,7 @@ class OrchestrateResponse(BaseModel):
     success: bool = True
     target_results: list[TargetResult] = Field(default_factory=list)
     recovered: bool = False
+    suggestions: list[str] = Field(default_factory=list)
     planner_ms: int = 0
     executor_ms: int = 0
     synthesizer_ms: int = 0

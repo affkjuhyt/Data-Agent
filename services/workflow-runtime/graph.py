@@ -1,13 +1,10 @@
 from collections import defaultdict
 from langgraph.graph import StateGraph, START, END
 from state import AgentState
-from nodes.guardrail import guardrail_input_node
-from nodes.model_harness.rewrite import rewrite_node
 from nodes.model_harness.planner import planner_node
 from nodes.model_harness.responder import responder_node
 from nodes.model_harness.rrf_ranking import rrf_ranking_node
 from nodes.model_harness.reranker import reranker_node
-from nodes.model_harness.suggestion import suggestion_node
 from nodes.sandbox.kb_search import kb_search_node
 from nodes.sandbox.mcp import mcp_node
 from nodes.sandbox.tool_executor import tool_executor_node
@@ -38,14 +35,6 @@ _DEFAULT_FLOW_EDGES = [
     {"source": "rrf_ranking", "target": "reranker"},
     {"source": "reranker",    "target": "responder"},
 ]
-
-
-def _route_after_guardrail_input(state: AgentState) -> str:
-    return "blocked" if state.get("guardrail_triggered") else "rewrite"
-
-
-def _route_suggestion(state: AgentState) -> str:
-    return "join_end" if state.get("intent") == "task" else "suggestion"
 
 
 def _make_route_after_planner(retrieval_nodes: frozenset[str]):
@@ -124,10 +113,6 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict], checkpo
 
     builder = StateGraph(AgentState)
 
-    # Guardrail + rewrite luôn có (locked)
-    builder.add_node("guardrail_input", guardrail_input_node)
-    builder.add_node("rewrite", rewrite_node)
-
     for nt in node_types:
         builder.add_node(nt, NODE_TYPE_MAP[nt])
 
@@ -135,14 +120,8 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict], checkpo
     if "planner" not in node_types:
         builder.add_node("planner", planner_node)
 
-    # START → guardrail_input → rewrite → planner (hoặc END nếu bị chặn)
-    builder.add_edge(START, "guardrail_input")
-    builder.add_conditional_edges(
-        "guardrail_input",
-        _route_after_guardrail_input,
-        {"rewrite": "rewrite", "blocked": END},
-    )
-    builder.add_edge("rewrite", "planner")
+    # START → planner trực tiếp (guardrail + rewrite đã được xử lý ở orchestrator)
+    builder.add_edge(START, "planner")
 
     # Tìm retrieval nodes mà planner nối tới trên canvas
     retrieval_nodes = {tgt for src, tgt in type_edges if src == "planner" and tgt in ("kb_search", "mcp", "tool_executor")}
@@ -180,7 +159,7 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict], checkpo
 
     # Node có >1 nguồn (không tính retrieval_nodes đã xử lý) → cần join tự động
     # responder, judge, human_approval được xử lý thủ công → bỏ qua trong generic loop
-    handled_sources = retrieval_nodes | {"planner", "guardrail_input", "rewrite"}
+    handled_sources = retrieval_nodes | {"planner"}
     if has_responder:
         handled_sources = handled_sources | {"responder"}
     if has_judge:
@@ -214,25 +193,12 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict], checkpo
     has_outgoing = {src for src, _ in type_edges}
     terminal_nodes = all_canvas_types - handled_sources - has_outgoing
 
-    # Suggestion chạy song song với responder; judge (nếu có) chạy sau join_end
     if has_responder:
-        builder.add_node("suggestion", suggestion_node)
-        builder.add_node("join_end", lambda state: {})
-
-        # Fan-out suggestion từ node ngay trước responder (thường là reranker)
-        responder_sources = {src for src, tgt in type_edges if tgt == "responder"}
-        for src in responder_sources:
-            builder.add_conditional_edges(
-                src, _route_suggestion, {"suggestion": "suggestion", "join_end": "join_end"}
-            )
-
-        builder.add_edge("responder", "join_end")
-        builder.add_edge("suggestion", "join_end")
-
         if has_judge:
+            builder.add_node("join_end", lambda state: {})
+            builder.add_edge("responder", "join_end")
             builder.add_edge("join_end", "judge")
 
-            # Judge route: chỉ loop về node thực sự có trong graph
             available_for_judge = frozenset(
                 {"planner"} | (node_types & {"kb_search", "tool_executor", "mcp"})
             )
@@ -242,7 +208,7 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict], checkpo
                 "judge", _make_route_after_judge(available_for_judge), judge_path_map
             )
         else:
-            builder.add_edge("join_end", END)
+            builder.add_edge("responder", END)
 
         terminal_nodes = terminal_nodes - {"responder"}
         if has_judge:

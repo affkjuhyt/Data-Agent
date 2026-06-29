@@ -15,6 +15,7 @@ async def call_agent(
     prompt: str,
     user_id: str = "orchestrator",
     tenant_id: str = "",
+    orchestrated: bool = False,
 ) -> tuple[str, str | None]:
     """
     Gọi POST /api/conversations/run trên workflow-runtime.
@@ -25,7 +26,7 @@ async def call_agent(
     if not agent_id:
         raise ValueError("agent_id is empty — planner failed to assign an agent for this task.")
 
-    payload = {"query": prompt, "agent_id": agent_id, "messages": []}
+    payload = {"query": prompt, "agent_id": agent_id, "messages": [], "orchestrated": orchestrated}
 
     url = f"{config.WORKFLOW_RUNTIME_URL}/api/conversations/run"
     collected: list[str] = []
