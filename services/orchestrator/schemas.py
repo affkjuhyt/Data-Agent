@@ -52,6 +52,7 @@ class TargetResult(BaseModel):
 class OrchestrateResponse(BaseModel):
     plan_id: str
     response: str
+    success: bool = True
     target_results: list[TargetResult] = Field(default_factory=list)
     recovered: bool = False
     planner_ms: int = 0

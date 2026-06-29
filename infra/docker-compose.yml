@@ -660,6 +660,7 @@ services:
       dockerfile: services/orchestrator/Dockerfile
     container_name: dataagent-orchestrator
     restart: unless-stopped
+    env_file: ../.env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
       LITELLM_BASE_URL: http://litellm:4000

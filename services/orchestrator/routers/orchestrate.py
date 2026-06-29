@@ -64,14 +64,21 @@ async def run_orchestration(req: OrchestrateRequest, request: Request):
     all_target_results = []
     final_outputs: list[str] = []
     recovered = False
+    overall_success = False
+    completed_node_ids: set[str] = set()
 
     t_exec = time.monotonic()
     for attempt in range(_MAX_REPLAN + 1):
-        result = await execute_plan(plan, user_id=req.user_id, original_query=req.query, tenant_id=tenant_id, agents=agents, lf_trace=lf_trace)
+        result = await execute_plan(plan, user_id=req.user_id, original_query=req.query, tenant_id=tenant_id, agents=agents, lf_trace=lf_trace, skip_node_ids=completed_node_ids)
         all_target_results.extend(result.target_results)
+
+        completed_node_ids.update(
+            tr.node_id for tr in result.target_results if tr.success
+        )
 
         if result.success:
             final_outputs = result.all_outputs
+            overall_success = True
             break
 
         # Task fail — thử replan
@@ -88,6 +95,13 @@ async def run_orchestration(req: OrchestrateRequest, request: Request):
         break
     executor_ms = round((time.monotonic() - t_exec) * 1000)
 
+    # Dedup target_results by node_id — replan re-runs all targets so earlier
+    # attempts produce duplicate entries; keep the latest (most recent attempt).
+    seen: dict[str, int] = {}
+    for i, tr in enumerate(all_target_results):
+        seen[tr.node_id] = i
+    all_target_results = [all_target_results[i] for i in sorted(seen.values())]
+
     # Step 3: Synthesizer
     t_synth = time.monotonic()
     synth_span = lf_trace.span(name="orchestrator-synthesizer", input={"query": req.query, "outputs_count": len(final_outputs)}) if lf_trace else None
@@ -103,6 +117,7 @@ async def run_orchestration(req: OrchestrateRequest, request: Request):
     return OrchestrateResponse(
         plan_id=plan.plan_id,
         response=final_response,
+        success=overall_success,
         target_results=all_target_results,
         recovered=recovered,
         planner_ms=planner_ms,

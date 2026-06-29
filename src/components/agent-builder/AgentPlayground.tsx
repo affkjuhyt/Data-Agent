@@ -342,12 +342,12 @@ function TracePanel({ steps, traceLoading, traceId }: {
     if (subSteps[convId]) return; // already fetched
     setLoadingConv(prev => new Set(prev).add(convId));
     for (let i = 0; i < 5; i++) {
-      await new Promise(r => setTimeout(r, 1500));
       try {
         const { observations } = await apiGet<any>(`/api/traces/${convId}`);
         const mapped = mapObservations(observations ?? []);
         if (mapped.length > 0) { setSubSteps(prev => ({ ...prev, [convId]: mapped })); break; }
-      } catch { break; }
+      } catch { /* ignore */ }
+      if (i < 4) await new Promise(r => setTimeout(r, 1500));
     }
     setLoadingConv(prev => { const s = new Set(prev); s.delete(convId); return s; });
   };
@@ -812,12 +812,12 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
         setTraceLoading(true);
         (async () => {
           for (let i = 0; i < 5; i++) {
-            await new Promise(r => setTimeout(r, 2000));
             try {
               const { observations } = await apiGet<any>(`/api/traces/${convId}`);
               const steps = mapObservations(observations ?? []);
               if (steps.length > 0) { setTraceSteps(steps); break; }
-            } catch { break; }
+            } catch { /* ignore */ }
+            if (i < 4) await new Promise(r => setTimeout(r, 2000));
           }
           setTraceLoading(false);
         })();

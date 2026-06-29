@@ -65,12 +65,18 @@ async def _execute_target(
     agent_name_map: dict[str, str] | None = None,
     executor_start: float = 0.0,
     lf_trace=None,
-) -> tuple[TargetResult, bool]:
+) -> tuple[TargetResult, bool, str]:
     """
     Chạy tất cả tasks trong 1 target theo rounds (song song trong round, tuần tự giữa rounds).
-    Trả về (TargetResult, success).
+    Trả về (TargetResult, success, target_output).
     """
-    rounds = build_rounds([t.model_dump() for t in target.tasks])
+    rounds, stuck_tasks = build_rounds([t.model_dump() for t in target.tasks])
+    if stuck_tasks and target_span:
+        target_span.event(
+            name="dependency-cycle-detected",
+            level="WARNING",
+            input={"stuck_tasks": stuck_tasks},
+        )
     all_nodes: list[TaskNode] = []
     task_results: list[TaskResult] = []
     target_failed = False
@@ -141,20 +147,25 @@ async def _execute_target(
         task_results=task_results,
         success=success,
         failed_task=failed_task_title,
-    ), success, target_output  # type: ignore[return-value]
+    ), success, target_output
 
 
-async def execute_plan(plan: Plan, user_id: str = "orchestrator", original_query: str = "", tenant_id: str = "", agents: list[dict] | None = None, lf_trace=None) -> ExecutionResult:
+async def execute_plan(plan: Plan, user_id: str = "orchestrator", original_query: str = "", tenant_id: str = "", agents: list[dict] | None = None, lf_trace=None, skip_node_ids: set[str] | None = None) -> ExecutionResult:
     """
     Vòng lặp chính: chạy targets tuần tự, tasks trong target song song theo depend_on.
     Nếu 1 target fail → dừng, trả về node_id để caller report planner.
+    skip_node_ids: các node đã hoàn thành ở lần chạy trước (khi replan), sẽ bị bỏ qua.
     """
     result = ExecutionResult(plan_id=plan.plan_id)
     prior_context = ""
     agent_name_map = {a["id"]: a["name"] for a in (agents or [])}
     executor_start = time.monotonic()
+    _skip = skip_node_ids or set()
 
     for target in plan.targets:
+        if target.node_id in _skip:
+            logger.info("executor | skip completed target=%s", target.node_id)
+            continue
         logger.info("executor | target=%s '%s'", target.node_id, target.description[:60])
         target_result, success, target_output = await _execute_target(target, prior_context, user_id, original_query=original_query, tenant_id=tenant_id, agent_name_map=agent_name_map, executor_start=executor_start, lf_trace=lf_trace)
         result.target_results.append(target_result)

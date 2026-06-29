@@ -53,6 +53,7 @@ async def call_agent(question: str, agent_id: str) -> str:
     async with httpx.AsyncClient(timeout=60) as client:
         async with client.stream("POST", f"{RUNTIME_URL}/api/conversations/run",
                                  json=payload, headers=headers) as resp:
+            resp.raise_for_status()
             async for line in resp.aiter_lines():
                 if not line.startswith("data: "):
                     continue
@@ -106,11 +107,15 @@ async def run_api_mode(agent_id: str, limit: int | None):
         cases = cases[:limit]
 
     print(f"Calling workflow-runtime for {len(cases)} questions...")
-    answers = []
-    for i, c in enumerate(cases):
-        answer = await call_agent(c["question"], agent_id)
-        answers.append(answer)
-        print(f"  [{i+1}/{len(cases)}] {c['question'][:60]}...")
+    sem = asyncio.Semaphore(5)
+
+    async def call_with_sem(i, c):
+        async with sem:
+            ans = await call_agent(c["question"], agent_id)
+            print(f"  [{i+1}/{len(cases)}] {c['question'][:60]}...")
+            return ans
+
+    answers = await asyncio.gather(*(call_with_sem(i, c) for i, c in enumerate(cases)))
 
     data = {
         "question":     [c["question"]     for c in cases],
