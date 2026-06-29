@@ -14,6 +14,7 @@ from executor.agent_client import call_agent_stream
 from nodes.guardrail import run_guardrail
 from nodes.input_refine import input_refine_node
 from nodes.suggestion import run_suggestion
+from observability import get_langfuse_client
 from planner import create_plan, report_node_failure
 from schemas import TargetResult, TaskResult
 from state import OrchestratorState
@@ -28,7 +29,15 @@ _checkpointer = MemorySaver()
 # ── Guardrail ────────────────────────────────────────────────────────────────
 
 async def guardrail_node(state: OrchestratorState) -> dict:
+    lf = get_langfuse_client()
+    span = lf.span(
+        trace_id=state.get("session_id"),
+        name="guardrail",
+        input={"query": state["query"]},
+    ) if lf else None
     triggered, reason = await run_guardrail(state["query"], state.get("cfg", {}))
+    if span:
+        span.end(output={"triggered": triggered, "reason": reason or ""})
     return {"guardrail_triggered": triggered, "guardrail_reason": reason}
 
 
@@ -107,10 +116,22 @@ async def fetch_agents_node(state: OrchestratorState) -> dict:
 
 async def tot_planner_node(state: OrchestratorState) -> dict:
     t0 = time.monotonic()
+    lf = get_langfuse_client()
+    span = lf.span(
+        trace_id=state.get("session_id"),
+        name="orchestrator-planner",
+        input={"query": state["rewritten_query"], "agents_count": len(state.get("agents", []))},
+    ) if lf else None
     plan = await create_plan(state["user_id"], state["rewritten_query"], agents=state["agents"])
+    planner_ms = round((time.monotonic() - t0) * 1000)
+    if span:
+        span.end(output={
+            "plan_id": plan.plan_id if plan else None,
+            "targets": len(plan.targets) if plan else 0,
+        })
     return {
         "plan": plan,
-        "planner_ms": round((time.monotonic() - t0) * 1000),
+        "planner_ms": planner_ms,
         "success": plan is not None,
     }
 
@@ -127,6 +148,9 @@ async def execute_node(state: OrchestratorState) -> dict:
     recovered = False
     completed_node_ids: set[str] = set()
 
+    lf = get_langfuse_client()
+    lf_trace = lf.trace(id=state.get("session_id"), name="orchestrator") if lf else None
+
     for attempt in range(_MAX_REPLAN + 1):
         result = await execute_plan(
             plan,
@@ -136,6 +160,7 @@ async def execute_node(state: OrchestratorState) -> dict:
             agents=state["agents"],
             skip_node_ids=completed_node_ids,
             orchestrated=True,
+            lf_trace=lf_trace,
         )
         all_target_results.extend(result.target_results)
         completed_node_ids.update(tr.node_id for tr in result.target_results if tr.success)
@@ -174,11 +199,19 @@ async def synthesize_node(state: OrchestratorState) -> dict:
         for tr in state.get("target_results", [])
         if tr.success and tr.task_results
     ]
+    lf = get_langfuse_client()
+    span = lf.span(
+        trace_id=state.get("session_id"),
+        name="orchestrator-synthesizer",
+        input={"query": state["rewritten_query"], "outputs_count": len(outputs)},
+    ) if lf else None
     buffer: list[str] = []
     async for token in synthesize_stream(state["rewritten_query"], outputs):
         buffer.append(token)
         await adispatch_custom_event("token", token)
     response = "".join(buffer)
+    if span:
+        span.end(output=response[:2000])
     return {
         "final_response": response,
         "synthesizer_ms": round((time.monotonic() - t0) * 1000),
@@ -186,12 +219,20 @@ async def synthesize_node(state: OrchestratorState) -> dict:
 
 
 async def suggestion_node(state: OrchestratorState) -> dict:
+    lf = get_langfuse_client()
+    span = lf.span(
+        trace_id=state.get("session_id"),
+        name="suggestion",
+        input={"query": state["rewritten_query"], "response": state.get("final_response", "")[:300]},
+    ) if lf else None
     suggestions = await run_suggestion(
         state["rewritten_query"],
         state.get("messages", []),
         state.get("final_response", ""),
         state.get("cfg", {}),
     )
+    if span:
+        span.end(output={"suggestions": suggestions})
     return {"suggestions": suggestions}
 
 

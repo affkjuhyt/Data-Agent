@@ -65,7 +65,7 @@ function spanType(node: string): { label: string; color: string; bg: string } {
     return { label: 'GUARD',      color: '#F8A4A4', bg: 'rgba(248,164,164,0.14)' };
   if (node === 'orchestrator-synthesizer')
     return { label: 'SYNTH',      color: '#86EFAC', bg: 'rgba(134,239,172,0.12)' };
-  if (node.includes('planner') || node.includes('rewrite') || node.includes('responder') || node.includes('suggestion'))
+  if (node.includes('planner') || node.includes('rewrite') || node.includes('responder') || node.includes('suggestion') || node.includes('input_refine'))
     return { label: 'GENERATION', color: '#EBD07C', bg: 'rgba(235,208,124,0.14)' };
   if (node.includes('kb_search'))
     return { label: 'RETRIEVAL',  color: '#93C5FD', bg: 'rgba(147,197,253,0.12)' };
@@ -103,6 +103,7 @@ function trimInput(name: string, raw: any): string {
       return JSON.stringify({ query: q }, null, 2);
     case name.includes('planner'):
       return JSON.stringify({ query: q, memory_context: (raw.memory_context ?? []).length + ' items' }, null, 2);
+    case name.includes('input_refine'):
     case name.includes('rewrite'):
       return JSON.stringify({ query: q, messages: (raw.messages ?? []).length + ' messages' }, null, 2);
     case name.includes('kb_search'):
@@ -911,7 +912,9 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
       const data = await res.json();
 
       setMessages(prev => prev.map(m =>
-        m.id === placeholderId ? { ...m, content: data.response ?? '' } : m,
+        m.id === placeholderId
+          ? { ...m, content: data.response ?? '', suggestions: data.suggestions ?? [] }
+          : m,
       ));
 
       // Build conv_id map từ target_results — dùng để restore agentConvId sau khi mapObservations
@@ -933,6 +936,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
       // Fallback về manual build nếu LangFuse chưa configured
       const sessionId = data.session_id;
       if (sessionId) {
+        setConversationId(sessionId);
         setTraceLoading(true);
         (async () => {
           for (let i = 0; i < 6; i++) {

@@ -73,12 +73,6 @@ async def _execute_target(
     Trả về (TargetResult, success, target_output).
     """
     rounds, stuck_tasks = build_rounds([t.model_dump() for t in target.tasks])
-    if stuck_tasks and target_span:
-        target_span.event(
-            name="dependency-cycle-detected",
-            level="WARNING",
-            input={"stuck_tasks": stuck_tasks},
-        )
     all_nodes: list[TaskNode] = []
     task_results: list[TaskResult] = []
     target_failed = False
@@ -87,6 +81,12 @@ async def _execute_target(
         name=f"[target] {target.description[:80]}",
         input={"description": target.description, "task_count": len(target.tasks)},
     ) if lf_trace else None
+    if stuck_tasks and target_span:
+        target_span.event(
+            name="dependency-cycle-detected",
+            level="WARNING",
+            input={"stuck_tasks": stuck_tasks},
+        )
 
     for round_nodes in rounds:
         # Build prompt cho từng task trong round:
