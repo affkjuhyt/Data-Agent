@@ -62,3 +62,54 @@ async def call_agent(
     result = "".join(collected).strip()
     logger.debug("agent_call | agent=%s conv=%s len=%d", agent_id, conversation_id, len(result))
     return result, conversation_id
+
+
+async def call_agent_stream(
+    agent_id: str,
+    prompt: str,
+    user_id: str = "orchestrator",
+    tenant_id: str = "",
+):
+    """
+    Async generator — yield (event_type, data):
+      ("conv_id", str)       — conversation id từ response header
+      ("token", str)         — text token
+      ("pending_review", dict) — tool approval interrupt
+    Bỏ qua __suggestions từ workflow-runtime (orchestrator tự gen).
+    """
+    if not agent_id:
+        raise ValueError("agent_id is empty")
+
+    payload = {"query": prompt, "agent_id": agent_id, "messages": [], "orchestrated": False}
+    url = f"{config.WORKFLOW_RUNTIME_URL}/api/conversations/run"
+
+    async with httpx.AsyncClient(timeout=config.AGENT_CALL_TIMEOUT) as client:
+        headers = {"X-User-ID": user_id}
+        if tenant_id:
+            headers["X-Tenant-Id"] = tenant_id
+        async with client.stream("POST", url, json=payload, headers=headers) as resp:
+            resp.raise_for_status()
+            conv_id = resp.headers.get("X-Conversation-Id")
+            if conv_id:
+                yield ("conv_id", conv_id)
+            async for line in resp.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                raw = line[5:].strip()
+                if raw in ("[DONE]", ""):
+                    break
+                if raw.startswith("[ERROR]"):
+                    raise RuntimeError(f"Agent error: {raw}")
+                try:
+                    parsed = json.loads(raw)
+                except json.JSONDecodeError:
+                    yield ("token", raw)
+                    continue
+                if isinstance(parsed, str):
+                    yield ("token", parsed)
+                elif isinstance(parsed, dict):
+                    if "__suggestions" in parsed:
+                        pass  # bỏ qua, orchestrator tự gen
+                    elif "__pending_review" in parsed:
+                        yield ("pending_review", parsed["__pending_review"])
+                    # bỏ qua __options và các event khác

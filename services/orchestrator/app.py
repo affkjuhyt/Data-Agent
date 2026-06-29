@@ -5,6 +5,8 @@ from fastapi import FastAPI
 
 import config
 from routers.orchestrate import router as orchestrate_router
+from routers.reviews import router as reviews_router
+from routers.stream import router as stream_router
 
 logger = logging.getLogger(__name__)
 
@@ -29,4 +31,6 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(title="GTEL Orchestrator", version="0.1.0", lifespan=lifespan)
     app.include_router(orchestrate_router)
+    app.include_router(reviews_router)
+    app.include_router(stream_router)
     return app
