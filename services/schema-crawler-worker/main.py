@@ -245,17 +245,24 @@ def process_table(cur, qdrant: QdrantClient, tenant_id: str, warehouse_id: str, 
     return True
 
 
-def crawl_warehouse(cur, qdrant: QdrantClient, tenant_id: str, warehouse_id: str, conn_params: dict, table_names: list[str] | None):
+def crawl_warehouse(conn, qdrant: QdrantClient, tenant_id: str, warehouse_id: str, conn_params: dict, table_names: list[str] | None):
+    """Commits once per table (not once for the whole warehouse) — keeps the
+    window where a Postgres rollback could leave an already-written Qdrant
+    point orphaned (doc §3 / PR review) down to "this one table", instead of
+    every table already processed earlier in this warehouse's batch. The
+    deterministic point_id (_point_id) still does the actual healing on the
+    next crawl that touches this table; this just shrinks how much can be
+    orphaned in the meantime."""
     metadata = discover_and_describe(conn_params, table_names)
     changed = 0
     for table_name, meta in metadata.items():
         try:
-            cur.execute("SAVEPOINT table_crawl")
-            if process_table(cur, qdrant, tenant_id, warehouse_id, meta):
-                changed += 1
-            cur.execute("RELEASE SAVEPOINT table_crawl")
+            with conn.cursor() as cur:
+                if process_table(cur, qdrant, tenant_id, warehouse_id, meta):
+                    changed += 1
+            conn.commit()
         except Exception:
-            cur.execute("ROLLBACK TO SAVEPOINT table_crawl")
+            conn.rollback()
             log.exception("crawl_warehouse | failed table=%s warehouse=%s", table_name, warehouse_id)
     log.info("crawl_warehouse | warehouse=%s: %d/%d table(s) changed", warehouse_id, changed, len(metadata))
 
@@ -271,9 +278,7 @@ def crawl_all(conn, qdrant: QdrantClient):
             continue
         table_names = selected_table_names(w["config"])
         try:
-            with conn.cursor() as cur:
-                crawl_warehouse(cur, qdrant, str(w["tenant_id"]), str(w["warehouse_id"]), conn_params, table_names)
-            conn.commit()
+            crawl_warehouse(conn, qdrant, str(w["tenant_id"]), str(w["warehouse_id"]), conn_params, table_names)
         except Exception:
             log.exception("crawl_all | warehouse=%s failed, rolling back", w["warehouse_id"])
             conn.rollback()
@@ -301,9 +306,7 @@ def handle_ddl_event(conn, qdrant: QdrantClient, event: dict):
     if not conn_params:
         return
 
-    with conn.cursor() as cur:
-        crawl_warehouse(cur, qdrant, tenant_id, warehouse_id, conn_params, [table_name])
-    conn.commit()
+    crawl_warehouse(conn, qdrant, tenant_id, warehouse_id, conn_params, [table_name])
 
 
 def poll_ddl_events(consumer: KafkaConsumer, pending_ddl: dict[tuple, dict]) -> None:
