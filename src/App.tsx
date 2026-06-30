@@ -13,9 +13,10 @@ function AppContent() {
   // injects the authoritative X-* identity headers the backend trusts.
 
   const renderView = () => {
-    const subItems = MODULE_SUB_ITEMS[activeModule] ?? [];
-    const activeSub = subTab[activeModule] ?? subItems[0]?.id;
-    const entry = activeSub ? ROUTE_MAP[activeModule]?.[activeSub] : undefined;
+    const subItems  = MODULE_SUB_ITEMS[activeModule] ?? [];
+    // For modules with no sub-items (e.g. chat), fall back to the DEFAULT entry
+    const activeSub = subTab[activeModule] ?? subItems[0]?.id ?? 'DEFAULT';
+    const entry     = ROUTE_MAP[activeModule]?.[activeSub] ?? ROUTE_MAP[activeModule]?.['DEFAULT'];
 
     if (!entry) {
       return (

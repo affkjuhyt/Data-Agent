@@ -27,16 +27,18 @@ import {
   PlugZap,
   Webhook,
 } from 'lucide-react';
+
 import { Role, NavItem } from './types';
 
 const ALL_ROLES: Role[] = ['EXECUTIVE', 'PLATFORM_ADMIN', 'AI_ENGINEER'];
 
 export const NAV_ITEMS: NavItem[] = [
-  { id: 'build',    label: 'Build',    icon: Package,      roles: ALL_ROLES },
-  { id: 'test',     label: 'Test',     icon: FlaskConical, roles: ALL_ROLES },
-  { id: 'release',  label: 'Release',  icon: Rocket,       roles: ALL_ROLES },
-  { id: 'monitor',  label: 'Monitor',  icon: Activity,     roles: ALL_ROLES },
-  { id: 'settings', label: 'Settings', icon: Settings,     roles: ALL_ROLES },
+  { id: 'chat',     label: 'Chat',     icon: MessageCircle, roles: ALL_ROLES },
+  { id: 'build',    label: 'Build',    icon: Package,       roles: ALL_ROLES },
+  { id: 'test',     label: 'Test',     icon: FlaskConical,  roles: ALL_ROLES },
+  { id: 'release',  label: 'Release',  icon: Rocket,        roles: ALL_ROLES },
+  { id: 'monitor',  label: 'Monitor',  icon: Activity,      roles: ALL_ROLES },
+  { id: 'settings', label: 'Settings', icon: Settings,      roles: ALL_ROLES },
 ];
 
 export interface SubNavItem {
@@ -53,6 +55,9 @@ export interface SubNavItem {
  * so secondary-nav clicks correctly drive the in-module state.
  */
 export const MODULE_SUB_ITEMS: Record<string, SubNavItem[]> = {
+  /* chat has no sub-nav — the view manages its own internal sidebar */
+  'chat': [],
+
   'build': [
     { id: 'AGENTS',    label: 'Agents',    icon: Bot },
     { id: 'ROUTER',    label: 'Router',    icon: Route,    comingSoon: true },

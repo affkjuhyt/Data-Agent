@@ -9,6 +9,7 @@ import SettingsView from './components/Settings/Overview';
 import { AgentRuntimeView } from './components/agent-builder/agents/AgentRuntime';
 import { TraceExplorer } from './components/agent-builder/agents/AgentTraces';
 import { ExecutiveDashboard } from './components/ExecutiveDashboard';
+import ChatView from './components/chat/ChatView';
 
 export interface ComingSoonInfo {
   title: string;
@@ -28,6 +29,11 @@ export type RouteEntry =
  * focused leaf view here. Items with no screen yet render a Coming Soon placeholder.
  */
 export const ROUTE_MAP: Record<string, Record<string, RouteEntry>> = {
+  /* Chat module — full-screen view, no sub-tabs */
+  chat: {
+    DEFAULT: { render: () => <ChatView /> },
+  },
+
   build: {
     AGENTS:    { render: () => <AgentRuntimeView /> },
     KNOWLEDGE: { render: () => <KnowledgeOpsCenter /> },

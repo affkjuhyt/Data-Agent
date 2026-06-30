@@ -13,6 +13,7 @@ import { Role, Environment } from '../types';
 /* ─── Command Palette ─────────────────────────────────────────────── */
 const PALETTE_GROUPS = [
   { category: 'Modules', items: [
+    { label: 'Chat',     module: 'chat' },
     { label: 'Build',    module: 'build' },
     { label: 'Test',     module: 'test' },
     { label: 'Release',  module: 'release' },
