@@ -24,7 +24,7 @@ from memory_middleware import (
     retrieve_pending_reminders,
 )
 from workflow_memory import record_workflow_outcome, retrieve_workflow_memory
-from observability import get_langfuse_handler
+from observability import get_langfuse_handler, flush_langfuse
 from schemas import RunRequest
 
 logger = logging.getLogger(__name__)
@@ -269,6 +269,10 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         "config": cfg,
     }
 
+    lf_trace_id = request.headers.get("X-Langfuse-Trace-Id")
+    lf_parent_id = request.headers.get("X-Langfuse-Parent-Id")
+    logger.debug("langfuse | lf_trace_id=%s lf_parent_id=%s", lf_trace_id, lf_parent_id)
+
     handler = get_langfuse_handler(
         run_name=f"conv-{conv_id or 'new'}",
         session_id=conv_id,
@@ -281,7 +285,10 @@ async def run_conversation_stream(req: RunRequest, request: Request):
             "responder_model": cfg.get("responder_model"),
             "planner_model": cfg.get("planner_model"),
         },
+        trace_id=lf_trace_id,
+        parent_observation_id=lf_parent_id,
     )
+    logger.debug("langfuse | handler=%s root_span=%s trace=%s", type(handler).__name__ if handler else None, getattr(getattr(handler, 'root_span', None), 'id', None), getattr(getattr(handler, 'trace', None), 'id', None))
     callbacks = [handler] if handler else []
 
     _OPTIONS_OPEN  = "<OPTIONS>"
@@ -533,6 +540,8 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                     final_state, agent_id, tenant_id, user_ref,
                     conversation_id=conv_id, message_id=assistant_msg_id,
                 )
+
+            flush_langfuse()
 
             for nt in (node_traces if cfg.get("memory_enabled") and not req.orchestrated else []):
                 if not nt["tool_name"].startswith("tool/"):

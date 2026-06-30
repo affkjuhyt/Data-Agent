@@ -26,11 +26,14 @@ async def _run_task(node: TaskNode, prompt: str, user_id: str, tenant_id: str = 
     """Chạy 1 task, ghi output vào node, không throw."""
     node.start_ms = round((time.monotonic() - executor_start) * 1000)
     t0 = time.monotonic()
+    lf_trace_id = getattr(lf_parent, "trace_id", None) if lf_parent else None
     task_span = lf_parent.span(
         name=f"[task] {node.title}",
         input={"agent_id": node.agent_id, "agent_name": node.agent_name, "prompt": prompt[:1000]},
         metadata={"task_index": node.index},
     ) if lf_parent else None
+    node.lf_trace_id = lf_trace_id
+    node.lf_span_id = task_span.id if task_span else None
     try:
         output, conv_id = await call_agent(
             agent_id=node.agent_id,
@@ -38,6 +41,8 @@ async def _run_task(node: TaskNode, prompt: str, user_id: str, tenant_id: str = 
             user_id=user_id,
             tenant_id=tenant_id,
             orchestrated=orchestrated,
+            lf_trace_id=lf_trace_id,
+            lf_parent_id=task_span.id if task_span else None,
         )
         node.output = output
         node.conversation_id = conv_id
@@ -122,6 +127,8 @@ async def _execute_target(
                 success=node.success,
                 error=node.output if not node.success else None,
                 conversation_id=node.conversation_id,
+                lf_trace_id=node.lf_trace_id,
+                lf_span_id=node.lf_span_id,
                 start_ms=node.start_ms,
                 latency_ms=node.latency_ms,
             ))

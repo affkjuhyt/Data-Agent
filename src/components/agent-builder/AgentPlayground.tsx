@@ -27,7 +27,9 @@ interface TraceStep {
   isRetryStart: boolean;
   verdict?: 'PASS' | 'FAIL';
   errorType?: string;
-  agentConvId?: string;  // nếu có → task có thể expand để xem LangGraph trace bên trong
+  agentConvId?: string;     // nếu có → task có thể expand để xem LangGraph trace bên trong
+  agentLfTraceId?: string;  // orchestrator trace_id (orchestrated mode)
+  agentLfSpanId?: string;   // span id của task trong orchestrator trace
 }
 
 interface Message {
@@ -125,7 +127,7 @@ function trimInput(name: string, raw: any): string {
   }
 }
 
-function mapObservations(obs: any[]): TraceStep[] {
+function mapObservations(obs: any[], traceId?: string): TraceStep[] {
   const byTime = obs
     .filter(o => !_shouldSkip(o.name) && (o.type === 'SPAN' || o.name?.startsWith('judge')))
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
@@ -170,10 +172,14 @@ function mapObservations(obs: any[]): TraceStep[] {
         errorType = out.judge_error_type ?? undefined;
       } catch { /* ignore */ }
     }
-    // Task spans trong orchestrator lưu conversation_id trong metadata → dùng để expand inner agent trace
-    const agentConvId = o.name?.startsWith('[task]')
+    // [task] và single-agent spans có thể expand để xem LangGraph trace bên trong
+    const isExpandable = o.name?.startsWith('[task]') || o.name === 'single-agent';
+    const agentConvId = isExpandable
       ? (typeof o.metadata === 'object' && o.metadata !== null ? (o.metadata as any).conversation_id ?? undefined : undefined)
       : undefined;
+    // Dùng o.id (= span id trong Langfuse) để proxy fetch đúng observations khi orchestrated
+    const agentLfTraceId = isExpandable ? traceId : undefined;
+    const agentLfSpanId  = isExpandable ? o.id : undefined;
     return {
       id: o.id,
       node: displayName,
@@ -191,6 +197,8 @@ function mapObservations(obs: any[]): TraceStep[] {
       verdict,
       errorType,
       agentConvId,
+      agentLfTraceId,
+      agentLfSpanId,
     };
   });
 }
@@ -342,9 +350,13 @@ function TracePanel({ steps, traceLoading, traceId }: {
     setExpanded(next);
     if (subSteps[convId]) return; // already fetched
     setLoadingConv(prev => new Set(prev).add(convId));
+    // Orchestrated mode: spans nằm trong orchestrator trace, không phải trace riêng của conv
+    const url = (step.agentLfTraceId && step.agentLfSpanId)
+      ? `/api/traces/${convId}?trace_id=${step.agentLfTraceId}&parent_observation_id=${step.agentLfSpanId}`
+      : `/api/traces/${convId}`;
     for (let i = 0; i < 5; i++) {
       try {
-        const { observations } = await apiGet<any>(`/api/traces/${convId}`);
+        const { observations } = await apiGet<any>(url);
         const mapped = mapObservations(observations ?? []);
         if (mapped.length > 0) { setSubSteps(prev => ({ ...prev, [convId]: mapped })); break; }
       } catch { /* ignore */ }
@@ -814,8 +826,8 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
         (async () => {
           for (let i = 0; i < 5; i++) {
             try {
-              const { observations } = await apiGet<any>(`/api/traces/${convId}`);
-              const steps = mapObservations(observations ?? []);
+              const { observations, traceId: obsTraceId } = await apiGet<any>(`/api/traces/${convId}`);
+              const steps = mapObservations(observations ?? [], obsTraceId);
               if (steps.length > 0) { setTraceSteps(steps); break; }
             } catch { /* ignore */ }
             if (i < 4) await new Promise(r => setTimeout(r, 2000));
@@ -870,7 +882,10 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
           startMs: taskStartMs, latencyMs: taskLatency, tokens: 0, cost: 0,
           input: JSON.stringify({ agent_id: task.agent_id, agent_name: task.agent_name, task: task.task_title }, null, 2),
           output: task.success ? (task.output || '(empty)') : (task.error ?? '(failed)'),
-          iteration: 0, isRetryStart: false, agentConvId: task.conversation_id ?? undefined,
+          iteration: 0, isRetryStart: false,
+          agentConvId: task.conversation_id ?? undefined,
+          agentLfTraceId: task.lf_trace_id ?? undefined,
+          agentLfSpanId: task.lf_span_id ?? undefined,
         });
         if (task.success && task.output) taskOutputs.push(`[${task.task_title}]: ${task.output}`);
         targetEnd = Math.max(targetEnd, taskStartMs + taskLatency);
@@ -917,41 +932,53 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
           : m,
       ));
 
-      // Build conv_id map từ target_results — dùng để restore agentConvId sau khi mapObservations
-      const convIdMap = new Map<string, string>();
+      // Build lookup maps từ target_results — dùng để restore agentConvId + lf context sau mapObservations
+      const convIdMap  = new Map<string, string>();
+      const lfSpanMap  = new Map<string, { convId: string; lfTraceId: string; lfSpanId: string }>();
       for (const target of (data.target_results ?? [])) {
         for (const task of (target.task_results ?? [])) {
           if (task.conversation_id) convIdMap.set(task.task_title, task.conversation_id);
+          if (task.lf_span_id && task.lf_trace_id && task.conversation_id) {
+            lfSpanMap.set(task.lf_span_id, {
+              convId:    task.conversation_id,
+              lfTraceId: task.lf_trace_id,
+              lfSpanId:  task.lf_span_id,
+            });
+          }
         }
       }
       const injectConvIds = (steps: TraceStep[]) =>
         steps.map(s => {
-          if (!s.node.startsWith('[task]') || s.agentConvId) return s;
-          const title = s.node.replace(/^\[task\]\s*/, '');
-          const convId = convIdMap.get(title);
-          return convId ? { ...s, agentConvId: convId } : s;
+          // Inject theo lf_span_id (khớp chính xác, hoạt động cả [task] và single-agent)
+          if (s.agentLfSpanId && lfSpanMap.has(s.agentLfSpanId)) {
+            const info = lfSpanMap.get(s.agentLfSpanId)!;
+            return { ...s, agentConvId: s.agentConvId ?? info.convId, agentLfTraceId: info.lfTraceId, agentLfSpanId: info.lfSpanId };
+          }
+          // Fallback: inject agentConvId theo task title cho [task] spans
+          if (s.node.startsWith('[task]') && !s.agentConvId) {
+            const title = s.node.replace(/^\[task\]\s*/, '').replace(/#\d+$/, '');
+            const convId = convIdMap.get(title);
+            return convId ? { ...s, agentConvId: convId } : s;
+          }
+          return s;
         });
 
-      // Ưu tiên fetch từ LangFuse (real timing + tokens + cost)
-      // Fallback về manual build nếu LangFuse chưa configured
+      // Hiển thị manual steps ngay lập tức (fast path, không có timing/tokens/cost)
+      // Sau đó cập nhật lại bằng dữ liệu Langfuse (rich: real timing + tokens + cost)
       const sessionId = data.session_id;
+      setTraceSteps(buildManualSteps(data));
       if (sessionId) {
         setConversationId(sessionId);
-        setTraceLoading(true);
         (async () => {
           for (let i = 0; i < 6; i++) {
             await new Promise(r => setTimeout(r, 2000));
             try {
-              const { observations } = await apiGet<any>(`/api/traces/${sessionId}`);
-              const mapped = mapObservations(observations ?? []);
-              if (mapped.length > 0) { setTraceSteps(injectConvIds(mapped)); setTraceLoading(false); return; }
+              const { observations, traceId: obsTraceId } = await apiGet<any>(`/api/traces/${sessionId}`);
+              const mapped = mapObservations(observations ?? [], obsTraceId);
+              if (mapped.length > 0) { setTraceSteps(injectConvIds(mapped)); return; }
             } catch { break; }
           }
-          setTraceSteps(buildManualSteps(data));
-          setTraceLoading(false);
         })();
-      } else {
-        setTraceSteps(buildManualSteps(data));
       }
     } catch (e: any) {
       setMessages(prev => prev.map(m =>

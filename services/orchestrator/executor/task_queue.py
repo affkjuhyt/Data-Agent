@@ -17,6 +17,8 @@ class TaskNode:
     depend_on: list[int] = field(default_factory=list)
     output: Optional[str] = None
     conversation_id: Optional[str] = None  # từ X-Conversation-Id header
+    lf_trace_id: Optional[str] = None      # orchestrator trace id (để proxy fetch đúng trace)
+    lf_span_id: Optional[str] = None       # task span id trong orchestrator trace
     success: bool = False
     done: bool = False
     start_ms: int = 0    # relative to executor start

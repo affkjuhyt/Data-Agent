@@ -8,6 +8,7 @@ from langgraph.types import Command
 
 import config
 from graph import get_graph
+from observability import get_langfuse_client
 from schemas import OrchestrateRequest, OrchestrateResponse
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,13 @@ async def run_orchestration(req: OrchestrateRequest, request: Request):
     lg_config = {"configurable": {"thread_id": session_id}}
 
     result = await graph.ainvoke(initial_state, config=lg_config)
+
+    lf = get_langfuse_client()
+    if lf:
+        try:
+            lf.flush()
+        except Exception:
+            pass
 
     # Kiểm tra interrupt (HITL — input_refine cần hỏi user)
     snapshot = await graph.aget_state(lg_config)

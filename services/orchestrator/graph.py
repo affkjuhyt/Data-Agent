@@ -60,6 +60,13 @@ def _route_mode(state: OrchestratorState) -> str:
 
 async def single_agent_node(state: OrchestratorState) -> dict:
     t0 = time.monotonic()
+    lf = get_langfuse_client()
+    agent_span = lf.span(
+        trace_id=state.get("session_id"),
+        name="single-agent",
+        input={"query": state["rewritten_query"], "agent_id": state["agent_id"]},
+    ) if lf else None
+
     buffer: list[str] = []
     conversation_id = None
     success = False
@@ -69,6 +76,8 @@ async def single_agent_node(state: OrchestratorState) -> dict:
             prompt=state["rewritten_query"],
             user_id=state["user_id"],
             tenant_id=state["tenant_id"],
+            lf_trace_id=state.get("session_id"),
+            lf_parent_id=agent_span.id if agent_span else None,
         ):
             if event_type == "token":
                 buffer.append(data)
@@ -85,6 +94,12 @@ async def single_agent_node(state: OrchestratorState) -> dict:
 
     response_text = "".join(buffer)
     latency_ms = round((time.monotonic() - t0) * 1000)
+    if agent_span:
+        agent_span.end(
+            output={"response": response_text[:2000], "conversation_id": conversation_id},
+            level="ERROR" if not success else "DEFAULT",
+            metadata={"latency_ms": latency_ms},
+        )
     task_result = TaskResult(
         task_index=0,
         task_title=state["rewritten_query"][:100],
@@ -92,6 +107,8 @@ async def single_agent_node(state: OrchestratorState) -> dict:
         output=response_text,
         success=success,
         conversation_id=conversation_id,
+        lf_trace_id=state.get("session_id"),
+        lf_span_id=agent_span.id if agent_span else None,
         latency_ms=latency_ms,
     )
     return {

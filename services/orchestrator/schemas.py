@@ -43,6 +43,8 @@ class TaskResult(BaseModel):
     success: bool
     error: Optional[str] = None
     conversation_id: Optional[str] = None  # để frontend fetch LangFuse trace nội bộ
+    lf_trace_id: Optional[str] = None      # orchestrator trace id (orchestrated mode)
+    lf_span_id: Optional[str] = None       # task span id trong orchestrator trace
     start_ms: int = 0    # relative to executor start
     latency_ms: int = 0
 
