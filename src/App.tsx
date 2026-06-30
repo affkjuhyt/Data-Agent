@@ -3,18 +3,20 @@ import { AppStateProvider, useAppState } from './AppStateContext';
 import { AppLayout } from './components/Layout';
 import { Placeholder } from './components/shared/Placeholder';
 import IngestionProgressOverlay from './components/shared/IngestionProgressOverlay';
+import { ChatPage } from './chat/ChatPage';
 import { ROUTE_MAP } from './routes';
 import { MODULE_SUB_ITEMS } from './constants';
 
 function AppContent() {
   const { activeModule, setActiveModule, subTab } = useAppState();
 
-  // Identity is never sent from the client: the bearer token goes to Kong, which
-  // injects the authoritative X-* identity headers the backend trusts.
+  /* Chat is a standalone full-screen page — skip AppLayout entirely */
+  if (activeModule === 'chat') {
+    return <ChatPage onExit={() => setActiveModule('build')} />;
+  }
 
   const renderView = () => {
     const subItems  = MODULE_SUB_ITEMS[activeModule] ?? [];
-    // For modules with no sub-items (e.g. chat), fall back to the DEFAULT entry
     const activeSub = subTab[activeModule] ?? subItems[0]?.id ?? 'DEFAULT';
     const entry     = ROUTE_MAP[activeModule]?.[activeSub] ?? ROUTE_MAP[activeModule]?.['DEFAULT'];
 
@@ -37,7 +39,6 @@ function AppContent() {
       <AppLayout activeTab={activeModule} setActiveTab={setActiveModule}>
         {renderView()}
       </AppLayout>
-      {/* Progress overlay - always available, visible when ingestions active */}
       <IngestionProgressOverlay />
     </>
   );

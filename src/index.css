@@ -6,6 +6,19 @@
   --font-display: "Outfit", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
+  /* ── Semantic tokens used by chat UI (dark zinc palette) ── */
+  --color-background:           #18181b;
+  --color-foreground:           #f4f4f5;
+  --color-border:               #3f3f46;
+  --color-muted:                #27272a;
+  --color-muted-foreground:     #a1a1aa;
+  --color-primary:              #3b82f6;
+  --color-primary-foreground:   #ffffff;
+  --color-accent:               #27272a;
+  --color-accent-foreground:    #f4f4f5;
+  --color-destructive:          #ef4444;
+  --color-destructive-foreground: #ffffff;
+
   /* Warm Gold Brand Palette */
   --color-brand-50:  #FDF9EE;
   --color-brand-100: #F8EBC4;
@@ -948,4 +961,12 @@
 }
 .panel-selected {
   border: 2px solid #8A5A00;
+}
+
+/* Allow Monaco suggest widget to escape its container */
+.monaco-editor .overflowingContentWidgets {
+  position: fixed !important;
+}
+.monaco-editor .suggest-widget {
+  z-index: 9999 !important;
 }

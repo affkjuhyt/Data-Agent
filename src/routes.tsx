@@ -9,7 +9,7 @@ import SettingsView from './components/Settings/Overview';
 import { AgentRuntimeView } from './components/agent-builder/agents/AgentRuntime';
 import { TraceExplorer } from './components/agent-builder/agents/AgentTraces';
 import { ExecutiveDashboard } from './components/ExecutiveDashboard';
-import ChatView from './components/chat/ChatView';
+import { ChatPage } from './chat/ChatPage';
 
 export interface ComingSoonInfo {
   title: string;
@@ -31,7 +31,7 @@ export type RouteEntry =
 export const ROUTE_MAP: Record<string, Record<string, RouteEntry>> = {
   /* Chat module — full-screen view, no sub-tabs */
   chat: {
-    DEFAULT: { render: () => <ChatView /> },
+    DEFAULT: { render: () => <ChatPage /> },
   },
 
   build: {
