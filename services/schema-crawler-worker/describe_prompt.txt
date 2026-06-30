@@ -12,3 +12,5 @@ Yêu cầu:
 - JoinHints: gợi ý bảng khác có thể join cùng (dựa trên tên cột khóa ngoại nếu có), dạng "other_table.column". Để rỗng [] nếu không chắc.
 
 Trả về DUY NHẤT một JSON object với 4 key: "keywords" (list[str]), "categories" (object: col_name -> str), "use_cases" (list[str]), "join_hints" (list[str]). Không giải thích thêm.
+
+IMPORTANT: All values in the JSON output MUST be written in English only. Do not use any other language.

@@ -30,9 +30,13 @@ workflow-runtime
 
 ### 1.2. Build sandbox-runner image
 
+> **Lưu ý Docker permission:** Nếu gặp `permission denied while trying to connect to the Docker daemon socket`, chạy `newgrp docker` để kế thừa docker group trong session hiện tại (không cần logout).
+
+> Chạy tất cả lệnh từ thư mục gốc project: `~/Data-Agent`
+
 ```bash
-cd services/sandbox-executor/sandbox_runner
-docker build -t sandbox-runner:latest .
+cd ~/Data-Agent
+docker build -t sandbox-runner:latest services/sandbox-executor/sandbox_runner/
 ```
 
 Image này chứa: `pandas`, `numpy`, `plotly`, `matplotlib` — đúng với `ALLOWED_MODULES` trong `security_visitor.py`.
@@ -40,15 +44,16 @@ Image này chứa: `pandas`, `numpy`, `plotly`, `matplotlib` — đúng với `A
 ### 1.3. Cài đặt dependencies
 
 ```bash
-cd services/sandbox-executor
-pip install -r requirements.txt
+cd ~/Data-Agent
+python3 -m venv .venv-sandbox
+.venv-sandbox/bin/pip install -r services/sandbox-executor/requirements.txt
 ```
 
 ### 1.4. Chạy dịch vụ
 
 ```bash
-cd services/sandbox-executor
-uvicorn main:app --host 0.0.0.0 --port 8500
+cd ~/Data-Agent/services/sandbox-executor
+~/Data-Agent/.venv-sandbox/bin/uvicorn main:app --host 0.0.0.0 --port 8500
 ```
 
 **Biến môi trường tùy chọn:**
@@ -166,15 +171,16 @@ Database PostgreSQL phải có các bảng:
 
 Chạy migration:
 ```bash
-DATABASE_URL=postgresql+asyncpg://admin:dev123@localhost:5432/dataagent \
-  python -m alembic -c alembic/alembic.ini upgrade head
+cd ~/Data-Agent
+DATABASE_URL=postgresql+asyncpg://admin@localhost:5432/dataagent \
+  .venv-sandbox/bin/python3 -m alembic -c alembic/alembic.ini upgrade head
 ```
 
 ### 2.3. Cài đặt dependencies
 
 ```bash
-cd services/schema-crawler-worker
-pip install -r requirements.txt
+cd ~/Data-Agent
+.venv-sandbox/bin/pip install -r services/schema-crawler-worker/requirements.txt
 ```
 
 ### 2.4. Biến môi trường
@@ -214,8 +220,8 @@ LITELLM_API_KEY=sk-dev
 ### 2.5. Chạy worker
 
 ```bash
-cd services/schema-crawler-worker
-python main.py
+cd ~/Data-Agent/services/schema-crawler-worker
+~/Data-Agent/.venv-sandbox/bin/python3 main.py
 ```
 
 Lúc khởi động worker sẽ:
@@ -265,40 +271,102 @@ Kafka topic: ddl.changes
                     handle_ddl_event() → crawl_warehouse([table_name])
 ```
 
-### 2.8. Kiểm tra thủ công (không cần Snowflake thật)
+### 2.8. Chạy crawler với LLM thật (Ollama — không cần Snowflake, không cần cloud API)
 
-Để verify luồng PostgreSQL → Qdrant mà không có Snowflake, dùng script Python:
+Pipeline đầy đủ: Snowflake mock + LLM describe thật + embed thật → PostgreSQL + Qdrant.
 
-```python
-import sys
-sys.path.insert(0, "services/schema-crawler-worker")
-from unittest.mock import patch
-import psycopg2
+#### Bước 1 — Cài Ollama (một lần)
 
-# Patch Snowflake discovery
-fake_meta = {
-    "fact_stock_price": {
-        "schema_name": "ANALYTICS",
-        "table_name": "fact_stock_price",
-        "columns": [
-            {"name": "ticker", "type": "VARCHAR", "nullable": False, "comment": None},
-            {"name": "close", "type": "FLOAT", "nullable": False, "comment": None},
-        ],
-        "row_count": 4820000,
-        "last_altered": None,
-    }
-}
+```bash
+# Download binary vào user space (không cần sudo)
+mkdir -p ~/.local/bin
+curl -fsSL https://github.com/ollama/ollama/releases/download/v0.30.11/ollama-linux-amd64.tar.zst \
+  -o /tmp/ollama.tar.zst
+tar --zstd -xf /tmp/ollama.tar.zst -C ~/.local/
+export PATH="$PATH:~/.local/bin"
+```
 
-import main as worker
-with patch.object(worker, "discover_and_describe", return_value=fake_meta), \
-     patch.object(worker, "describe_table", return_value={"keywords": ["OHLCV"], "categories": {}, "use_cases": [], "join_hints": []}), \
-     patch.object(worker, "embed", return_value=[0.1] * 1024):
-    from qdrant_client import QdrantClient
-    conn = psycopg2.connect("postgresql://admin:dev123@localhost:5432/dataagent")
-    qdrant = QdrantClient(url="http://localhost:6333")
-    worker.ensure_qdrant_collection(qdrant)
-    worker.crawl_all(conn, qdrant)
-    print("Crawl complete!")
+#### Bước 2 — Pull models và start Ollama
+
+```bash
+# Start Ollama server
+OLLAMA_HOST=0.0.0.0:11434 ollama serve &
+
+# Pull 2 model cần thiết (~5GB tổng):
+ollama pull qwen2.5:7b          # LLM cho describe (~4.7GB)
+ollama pull mxbai-embed-large   # Embedding 1024-dim (~670MB)
+```
+
+#### Bước 3 — Start LiteLLM trỏ vào Ollama
+
+Config test đã có sẵn tại `infra/litellm/config.test-ollama.yaml`:
+
+```bash
+docker run -d --name test-litellm \
+  --network host \
+  -v $(pwd)/infra/litellm/config.test-ollama.yaml:/app/config.yaml \
+  -e LITELLM_MASTER_KEY=sk-1234 \
+  ghcr.io/berriai/litellm:main-stable \
+  --config /app/config.yaml --port 4000
+
+# Chờ sẵn sàng
+until curl -s http://localhost:4000/v1/models -H "Authorization: Bearer sk-1234" | grep -q "planner"; do sleep 2; done
+echo "LiteLLM ready"
+```
+
+#### Bước 4 — Start PostgreSQL + Qdrant + migration (nếu chưa có)
+
+```bash
+docker run -d --name test-postgres \
+  -e POSTGRES_USER=admin -e POSTGRES_DB=dataagent \
+  -e POSTGRES_HOST_AUTH_METHOD=trust -p 5432:5432 postgres:16-alpine
+
+docker run -d --name test-qdrant -p 6333:6333 qdrant/qdrant:v1.13.6
+
+DATABASE_URL=postgresql+asyncpg://admin@localhost:5432/dataagent \
+  .venv-sandbox/bin/python3 -m alembic -c alembic/alembic.ini upgrade head
+```
+
+#### Bước 5 — Chạy crawler với LLM thật
+
+```bash
+LITELLM_BASE_URL=http://localhost:4000 \
+LITELLM_API_KEY=sk-1234 \
+  .venv-sandbox/bin/python3 scripts/test_crawler_with_llm.py
+```
+
+#### Kết quả mong đợi
+
+```
+INFO  HTTP Request: POST http://localhost:4000/v1/chat/completions "200 OK"
+INFO  HTTP Request: POST http://localhost:4000/v1/embeddings "200 OK"
+INFO  HTTP Request: PUT .../schema_catalog/points "200 OK"
+INFO  process_table | crawled tenant=... table=ANALYTICS.fact_stock_price (changed)
+INFO  crawl_warehouse | warehouse=...: 1/1 table(s) changed
+
+=== fact_stock_price ===
+Name: fact_stock_price
+Keywords: stock price, ticker symbol, trading date, closing price, volume
+Categories:
+  ticker — Mã cổ phiếu
+  trade_date — Ngày giao dịch
+  close — Giá đóng cửa
+  volume — Khối lượng giao dịch
+Use Cases:
+  - Tính giá đóng cửa trung bình trong khoảng thời gian
+  - Phân hiện tích volume bất thường
+Join hints: dim_company.ticker | dim_calendar.trade_date
+```
+
+> **Lưu ý:** Model `qwen2.5:7b` có thể sinh mô tả tiếng Trung nếu tên cột là tiếng Anh kỹ thuật. Chỉnh prompt tại `services/schema-crawler-worker/describe_prompt.txt` để chỉ định ngôn ngữ đầu ra nếu cần.
+
+Thời gian xử lý mỗi bảng: ~8s (LLM) + ~0.2s (embed) trên CPU.
+
+#### Dọn dẹp
+
+```bash
+docker rm -f test-postgres test-qdrant test-litellm
+pkill -f "ollama serve"
 ```
 
 ---
