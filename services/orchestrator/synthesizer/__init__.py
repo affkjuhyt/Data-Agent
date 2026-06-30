@@ -1,3 +1,3 @@
-from .synthesizer import synthesize
+from .synthesizer import synthesize, synthesize_stream
 
-__all__ = ["synthesize"]
+__all__ = ["synthesize", "synthesize_stream"]

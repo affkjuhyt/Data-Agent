@@ -234,7 +234,6 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         history = [m.model_dump() for m in req.messages]
 
     conv_id = req.conversation_id or await create_conversation(
-        agent_version_id=cfg.get("agent_version_id", None),
         user_ref=user_ref,
         channel=request.headers.get("X-Channel", "web"),
         tenant_id=tenant_id,
@@ -488,6 +487,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                     assistant_text,
                     latency_ms=latency,
                     metadata={
+                        "agent_version_id": cfg.get("agent_version_id"),
                         "guardrail": {
                             "triggered": guardrail_triggered,
                             "stage": guardrail_stage,
