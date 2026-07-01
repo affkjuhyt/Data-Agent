@@ -654,7 +654,7 @@ services:
     container_name: dataagent-frontend
     restart: unless-stopped
     volumes:
-      - ../..:/app
+      - ..:/app
       - /app/node_modules
     ports:
       - "5173:3000"

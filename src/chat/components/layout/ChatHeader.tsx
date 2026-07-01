@@ -1,21 +1,10 @@
 import { useState } from "react"
 import { Download, MoreHorizontal, PanelLeft, PanelLeftClose, FlaskConical, ChevronDown, X, FolderOpen } from "lucide-react"
 import { MoreOptionsMenu } from "../chat/MoreOptionsMenu"
-import { Conversation, AgentDomain, Message } from "../../lib/types"
+import { Conversation, Message } from "../../lib/types"
 import { useChatStore } from "../../lib/store"
 import { cn } from "../../lib/utils"
-
-const DOMAIN_BADGE: Record<AgentDomain, string> = {
-  stockllm:   "bg-amber-100 text-amber-800 border-amber-200",
-  enterprise: "bg-emerald-100 text-emerald-800 border-emerald-200",
-  gov:        "bg-blue-100 text-blue-800 border-blue-200",
-  document:   "bg-violet-100 text-violet-800 border-violet-200",
-  forecast:   "bg-orange-100 text-orange-800 border-orange-200",
-}
-const DOMAIN_LABEL: Record<AgentDomain, string> = {
-  stockllm: "StockLLM", enterprise: "Enterprise",
-  gov: "Gov", document: "Document", forecast: "Forecast",
-}
+import { getDomain } from "../../lib/domains.config"
 
 /* ── HITL test scenarios ─────────────────────────────────── */
 interface HITLScenario {
@@ -237,14 +226,14 @@ export function ChatHeader({ conversation, onExit }: { conversation: Conversatio
 
       <div className="flex-1 min-w-0 flex items-center gap-2">
         <h1 className="text-sm font-medium text-foreground truncate">{conversation.title}</h1>
-        <div className={cn("flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium flex-shrink-0", DOMAIN_BADGE[conversation.domain])}>
+        <div className={cn("flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium flex-shrink-0", getDomain(conversation.domain).badge)}>
           {hasRunning && (
             <span className="relative flex h-1.5 w-1.5">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
               <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
             </span>
           )}
-          {DOMAIN_LABEL[conversation.domain]} Agent
+          {getDomain(conversation.domain).labelShort} Agent
         </div>
         {convProjects.map(p => (
           <div key={p.id}

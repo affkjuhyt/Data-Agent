@@ -2,6 +2,7 @@ import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import { Conversation, Message, InputMode, AgentDomain, Artifact, Project, ProjectFile } from "./types"
 import { MOCK_CONVERSATIONS, MOCK_ARTIFACTS, MCP_TOOLS, AGENT_SKILLS, MOCK_PROJECTS } from "./mock-data"
+import { DEFAULT_DOMAIN } from "./domains.config"
 
 interface UIState {
   isSidebarCollapsed: boolean
@@ -58,6 +59,10 @@ interface ChatStore {
   setDefaultToolsForDomain: (domain: AgentDomain) => void
   toggleSkill: (id: string) => void
   clearSkills: () => void
+  pinMessage: (conversationId: string, messageId: string, pinned: boolean) => void
+  bookmarkMessage: (conversationId: string, messageId: string, bookmarked: boolean) => void
+  reorderConversations: (ids: string[]) => void
+  setConversationSummary: (conversationId: string, summary: string) => void
 }
 
 export const useChatStore = create<ChatStore>()(
@@ -78,7 +83,7 @@ export const useChatStore = create<ChatStore>()(
         isSidebarCollapsed: false,
         isRightPanelOpen: true,
         currentInputMode: "text",
-        selectedDomain: "stockllm",
+        selectedDomain: DEFAULT_DOMAIN,
       },
 
       addArtifact: (artifact) =>
@@ -277,6 +282,39 @@ export const useChatStore = create<ChatStore>()(
       })),
 
       clearSkills: () => set({ activeSkillIds: [] }),
+
+      pinMessage: (conversationId, messageId, pinned) =>
+        set((s) => ({
+          conversations: s.conversations.map((c) =>
+            c.id === conversationId
+              ? { ...c, messages: c.messages.map((m) => m.id === messageId ? { ...m, pinned } : m) }
+              : c
+          ),
+        })),
+
+      bookmarkMessage: (conversationId, messageId, bookmarked) =>
+        set((s) => ({
+          conversations: s.conversations.map((c) =>
+            c.id === conversationId
+              ? { ...c, messages: c.messages.map((m) => m.id === messageId ? { ...m, bookmarked } : m) }
+              : c
+          ),
+        })),
+
+      reorderConversations: (ids) =>
+        set((s) => {
+          const map = new Map(s.conversations.map((c) => [c.id, c]))
+          const reordered = ids.map((id) => map.get(id)).filter(Boolean) as typeof s.conversations
+          const rest = s.conversations.filter((c) => !ids.includes(c.id))
+          return { conversations: [...reordered, ...rest] }
+        }),
+
+      setConversationSummary: (conversationId, summary) =>
+        set((s) => ({
+          conversations: s.conversations.map((c) =>
+            c.id === conversationId ? { ...c, summary } : c
+          ),
+        })),
     }),
     {
       name: "data-agent-chat",

@@ -8,17 +8,8 @@ import { formatDistanceToNow } from "date-fns"
 import { vi } from "date-fns/locale"
 import { useChatStore } from "../../lib/store"
 import { useChat } from "../../hooks/useChat"
-import { AgentDomain } from "../../lib/types"
 import { cn } from "../../lib/utils"
-
-const DOMAIN_COLOR: Record<AgentDomain, string> = {
-  stockllm: "bg-amber-600", enterprise: "bg-emerald-700",
-  gov: "bg-blue-700", document: "bg-violet-700", forecast: "bg-orange-700",
-}
-const DOMAIN_LABEL: Record<AgentDomain, string> = {
-  stockllm: "StockLLM", enterprise: "Enterprise",
-  gov: "Gov", document: "Document", forecast: "Forecast",
-}
+import { getDomain } from "../../lib/domains.config"
 
 function AddChatModal({ projectId, onClose }: { projectId: string; onClose: () => void }) {
   const conversations = useChatStore(s => s.conversations)
@@ -66,8 +57,8 @@ function AddChatModal({ projectId, onClose }: { projectId: string; onClose: () =
               className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors"
               onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#27272a")}
               onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>
-              <div className={cn("flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-white text-xs font-bold", DOMAIN_COLOR[c.domain])}>
-                {DOMAIN_LABEL[c.domain][0]}
+              <div className={cn("flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-white text-xs font-bold", getDomain(c.domain).avatarBg)}>
+                {getDomain(c.domain).labelShort[0]}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate" style={{ color: "#d4d4d8" }}>{c.title}</p>
@@ -402,8 +393,8 @@ export function ProjectDetailPage({
                   className="group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors"
                   onMouseEnter={e => (e.currentTarget.style.backgroundColor = "#1c1c1f")}
                   onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>
-                  <div className={cn("flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-white text-xs font-bold", DOMAIN_COLOR[conv.domain])}>
-                    {DOMAIN_LABEL[conv.domain][0]}
+                  <div className={cn("flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-white text-xs font-bold", getDomain(conv.domain).avatarBg)}>
+                    {getDomain(conv.domain).labelShort[0]}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate" style={{ color: "#d4d4d8" }}>{conv.title}</p>

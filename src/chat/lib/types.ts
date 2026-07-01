@@ -1,4 +1,4 @@
-export type AgentDomain = "gov" | "enterprise" | "stockllm" | "forecast" | "document"
+export type AgentDomain = string
 
 export interface MCPTool {
   id: string
@@ -132,6 +132,11 @@ export interface Message {
   }
   citations?: Citation[]
   isStreaming?: boolean
+  pinned?: boolean
+  bookmarked?: boolean
+  confidence?: number
+  followUps?: string[]
+  tokenCount?: number
 }
 
 export interface Conversation {
@@ -142,6 +147,8 @@ export interface Conversation {
   createdAt: Date
   updatedAt: Date
   activeAgents?: string[]
+  summary?: string
+  order?: number
 }
 
 export type ProjectFileType = "docx" | "pdf" | "md" | "txt" | "csv" | "other"

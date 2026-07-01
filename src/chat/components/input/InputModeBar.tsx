@@ -1,9 +1,10 @@
 import { MessageSquare, Database, Code2, Upload, Mic } from "lucide-react"
-import { InputMode, AgentDomain } from "../../lib/types"
+import { InputMode } from "../../lib/types"
 import { cn } from "../../lib/utils"
 import { useChatStore } from "../../lib/store"
 import { ToolPicker, EnabledToolChips } from "./ToolPicker"
 import { SkillPicker, ActiveSkillChips } from "./SkillPicker"
+import { DOMAINS } from "../../lib/domains.config"
 
 const MODES: { id: InputMode; icon: React.ReactNode; label: string }[] = [
   { id: "text",   icon: <MessageSquare size={12} />, label: "Text" },
@@ -11,14 +12,6 @@ const MODES: { id: InputMode; icon: React.ReactNode; label: string }[] = [
   { id: "python", icon: <Code2 size={12} />,         label: "Python" },
   { id: "file",   icon: <Upload size={12} />,        label: "File" },
   { id: "voice",  icon: <Mic size={12} />,           label: "Voice" },
-]
-
-const DOMAINS: { id: AgentDomain; label: string }[] = [
-  { id: "stockllm", label: "StockLLM" },
-  { id: "enterprise", label: "Enterprise" },
-  { id: "gov", label: "Gov" },
-  { id: "document", label: "Document" },
-  { id: "forecast", label: "Forecast" },
 ]
 
 export function InputModeBar() {
@@ -40,10 +33,10 @@ export function InputModeBar() {
           <ToolPicker />
           <SkillPicker />
         </div>
-        <select value={ui.selectedDomain ?? "stockllm"}
-          onChange={(e) => setSelectedDomain(e.target.value as AgentDomain)}
+        <select value={ui.selectedDomain ?? DOMAINS[0].id}
+          onChange={(e) => setSelectedDomain(e.target.value)}
           className="text-xs border border-border/50 rounded-lg px-2 py-1 bg-background text-muted-foreground focus:outline-none focus:border-primary/50 cursor-pointer">
-          {DOMAINS.map((d) => <option key={d.id} value={d.id}>{d.label}</option>)}
+          {DOMAINS.map((d) => <option key={d.id} value={d.id}>{d.labelShort}</option>)}
         </select>
       </div>
       <EnabledToolChips />

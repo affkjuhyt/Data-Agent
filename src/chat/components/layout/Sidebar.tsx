@@ -1,7 +1,6 @@
-import { useState } from "react"
+import { useState, useRef } from "react"
 import {
   Plus, Search, Settings, MoreHorizontal, Trash2,
-  TrendingUp, BarChart2, Landmark, FileText,
   FolderOpen, FolderInput, X,
 } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
@@ -9,15 +8,9 @@ import { vi } from "date-fns/locale"
 import { cn } from "../../lib/utils"
 import { useChatStore } from "../../lib/store"
 import { useChat } from "../../hooks/useChat"
-import { Conversation, AgentDomain, Project } from "../../lib/types"
-
-const DOMAIN_CONFIG: Record<AgentDomain, { icon: React.ReactNode; color: string; label: string }> = {
-  stockllm:   { icon: <TrendingUp size={11} />,  color: "bg-amber-600",   label: "StockLLM" },
-  enterprise: { icon: <BarChart2 size={11} />,   color: "bg-emerald-700", label: "Enterprise" },
-  gov:        { icon: <Landmark size={11} />,    color: "bg-blue-700",    label: "Gov" },
-  document:   { icon: <FileText size={11} />,    color: "bg-violet-700",  label: "Document" },
-  forecast:   { icon: <TrendingUp size={11} />,  color: "bg-orange-700",  label: "Forecast" },
-}
+import { Conversation, Project } from "../../lib/types"
+import { useAuth } from "../../../lib/AuthProvider"
+import { getDomain } from "../../lib/domains.config"
 
 function groupByDate(conversations: Conversation[]) {
   const now = new Date()
@@ -85,28 +78,61 @@ function MoveToProjectModal({ projects, convId, onClose, onMove }: {
   )
 }
 
-function ConvItem({ conv, isActive, projects, onSelect, onDelete, onAddToProject }: {
+function ConvItem({ conv, isActive, projects, onSelect, onDelete, onAddToProject, onDragStart, onDragOver, onDrop }: {
   conv: Conversation; isActive: boolean; projects: Project[];
   onSelect: () => void; onDelete: () => void; onAddToProject: (projectId: string) => void
+  onDragStart: () => void; onDragOver: (e: React.DragEvent) => void; onDrop: () => void
 }) {
-  const cfg = DOMAIN_CONFIG[conv.domain]
+  const renameConversation = useChatStore((s) => s.renameConversation)
+  const domainCfg = getDomain(conv.domain)
+  const Icon = domainCfg.icon
   const [showMenu, setShowMenu] = useState(false)
   const [showMoveModal, setShowMoveModal] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [editTitle, setEditTitle] = useState(conv.title)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const commitRename = () => {
+    const t = editTitle.trim()
+    if (t && t !== conv.title) renameConversation(conv.id, t)
+    setEditing(false)
+  }
 
   return (
     <>
       <div
+        draggable
+        onDragStart={onDragStart}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
         style={isActive ? { backgroundColor: "#27272a" } : undefined}
         className={cn("group relative flex items-center gap-2.5 rounded-xl px-3 py-2.5 cursor-pointer transition-colors mx-2",
           !isActive && "hover:bg-zinc-800/60")}
         onClick={onSelect}>
-        <div className={cn("flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md text-white", cfg.color)}>
-          {cfg.icon}
+        <div className={cn("flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md text-white", domainCfg.avatarBg)}>
+          <Icon size={11} />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate leading-tight" style={{ color: isActive ? "#ffffff" : "#d4d4d8" }}>{conv.title}</p>
+          {editing ? (
+            <input
+              ref={inputRef}
+              autoFocus
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") setEditing(false) }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full bg-transparent text-sm font-medium outline-none border-b border-zinc-500 text-white pb-0.5"
+            />
+          ) : (
+            <p
+              className="text-sm font-medium truncate leading-tight"
+              style={{ color: isActive ? "#ffffff" : "#d4d4d8" }}
+              onDoubleClick={(e) => { e.stopPropagation(); setEditing(true); setEditTitle(conv.title) }}
+            >{conv.title}</p>
+          )}
           <p className="text-xs mt-0.5" style={{ color: "#71717a" }}>
-            {cfg.label} · {formatDistanceToNow(new Date(conv.updatedAt), { addSuffix: true, locale: vi })}
+            {domainCfg.labelShort} · {formatDistanceToNow(new Date(conv.updatedAt), { addSuffix: true, locale: vi })}
           </p>
         </div>
         <button
@@ -156,8 +182,16 @@ export function Sidebar({ onExit, onNavigateProjects, onSelectConversation }: {
   const deleteConversation = useChatStore((s) => s.deleteConversation)
   const addConversationToProject = useChatStore((s) => s.addConversationToProject)
   const setActiveConversation = useChatStore((s) => s.setActiveConversation)
+  const reorderConversations = useChatStore((s) => s.reorderConversations)
   const { startNewChat } = useChat()
+  const { user, logout } = useAuth()
   const [search, setSearch] = useState("")
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  const dragIdRef = useRef<string | null>(null)
+
+  const initials = user?.name
+    ? user.name.split(" ").filter(Boolean).map((w) => w[0].toUpperCase()).slice(0, 2).join("")
+    : "?"
 
   const currentId = activeConversationId ?? ""
   const filtered = conversations.filter((c) => c.title.toLowerCase().includes(search.toLowerCase()))
@@ -166,6 +200,26 @@ export function Sidebar({ onExit, onNavigateProjects, onSelectConversation }: {
   const handleSelect = (id: string) => {
     setActiveConversation(id)
     onSelectConversation?.(id)
+  }
+
+  const toggleGroup = (label: string) =>
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev)
+      next.has(label) ? next.delete(label) : next.add(label)
+      return next
+    })
+
+  const handleDrop = (targetId: string) => {
+    const srcId = dragIdRef.current
+    if (!srcId || srcId === targetId) return
+    const ids = conversations.map((c) => c.id)
+    const from = ids.indexOf(srcId)
+    const to = ids.indexOf(targetId)
+    const reordered = [...ids]
+    reordered.splice(from, 1)
+    reordered.splice(to, 0, srcId)
+    reorderConversations(reordered)
+    dragIdRef.current = null
   }
 
   return (
@@ -207,28 +261,40 @@ export function Sidebar({ onExit, onNavigateProjects, onSelectConversation }: {
           {groups.length === 0 && !search && (
             <p className="px-5 py-2 text-xs" style={{ color: "#52525b" }}>Chưa có hội thoại nào</p>
           )}
-          {groups.map(([label, convs]) => (
-            <div key={label}>
-              <p className="px-4 pt-2 pb-1.5 text-[10px] font-semibold uppercase tracking-widest" style={{ color: "#a1a1aa" }}>{label}</p>
-              {convs.map((c) => (
-                <ConvItem key={c.id} conv={c} isActive={c.id === currentId}
-                  projects={projects}
-                  onSelect={() => handleSelect(c.id)}
-                  onDelete={() => deleteConversation(c.id)}
-                  onAddToProject={(projectId) => addConversationToProject(projectId, c.id)} />
-              ))}
-            </div>
-          ))}
+          {groups.map(([label, convs]) => {
+            const collapsed = collapsedGroups.has(label)
+            return (
+              <div key={label}>
+                <button
+                  onClick={() => toggleGroup(label)}
+                  className="flex w-full items-center gap-1.5 px-4 pt-2 pb-1.5 text-[10px] font-semibold uppercase tracking-widest hover:opacity-80 transition-opacity"
+                  style={{ color: "#a1a1aa" }}>
+                  <span className="flex-1 text-left">{label}</span>
+                  <span style={{ fontSize: 9 }}>{collapsed ? "▶" : "▼"}</span>
+                </button>
+                {!collapsed && convs.map((c) => (
+                  <ConvItem key={c.id} conv={c} isActive={c.id === currentId}
+                    projects={projects}
+                    onSelect={() => handleSelect(c.id)}
+                    onDelete={() => deleteConversation(c.id)}
+                    onAddToProject={(projectId) => addConversationToProject(projectId, c.id)}
+                    onDragStart={() => { dragIdRef.current = c.id }}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => handleDrop(c.id)} />
+                ))}
+              </div>
+            )
+          })}
         </div>
       </div>
 
       <div className="flex-shrink-0 px-4 py-3 flex items-center gap-3" style={{ borderTop: "1px solid #27272a" }}>
-        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white">HL</div>
+        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-blue-600 text-xs font-semibold text-white">{initials}</div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate" style={{ color: "#e4e4e7" }}>Minh Tuấn</p>
-          <p className="text-xs" style={{ color: "#71717a" }}>Analyst · Enterprise</p>
+          <p className="text-sm font-medium truncate" style={{ color: "#e4e4e7" }}>{user?.name || user?.email || "—"}</p>
+          <p className="text-xs truncate" style={{ color: "#71717a" }}>{user?.email || ""}</p>
         </div>
-        <button style={{ color: "#71717a" }} className="hover:text-white transition-colors"><Settings size={15} /></button>
+        <button onClick={logout} title="Đăng xuất" style={{ color: "#71717a" }} className="hover:text-white transition-colors"><Settings size={15} /></button>
       </div>
     </div>
   )
