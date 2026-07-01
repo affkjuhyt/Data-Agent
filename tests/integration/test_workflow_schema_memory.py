@@ -158,7 +158,11 @@ def test_rls_tenant_isolation_policy_exists_on_new_tables(migrated_db):
 
 
 def test_downgrade_drops_new_tables_then_reupgrade_is_clean(migrated_db):
-    down = _run_alembic(migrated_db["dsn"], "downgrade", "-1")
+    # Target the revision *before* c3d4e5f6a7b8 explicitly rather than "-1"
+    # from head — head has since moved past it (d4e5f6a7b8c9 schema_catalog,
+    # e5f6a7b8c9d0 microsoft_sso_approvals), same staleness this revision's
+    # own docstring flags about a1b2c3d4e5f6 previously.
+    down = _run_alembic(migrated_db["dsn"], "downgrade", "b2c3d4e5f6a7")
     assert down.returncode == 0, f"downgrade failed:\n{down.stdout}\n{down.stderr}"
 
     conn = psycopg2.connect(migrated_db["dsn"])

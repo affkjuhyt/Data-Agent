@@ -22,12 +22,19 @@ from nodes.sandbox.tool_executor.handlers.langchain import (
     _calculator_handler,
 )
 from nodes.sandbox.tool_executor.handlers.agent import _delegate_to_agent_handler
+from nodes.sandbox.tool_executor.handlers.code_interpreter import (
+    _execute_python_handler,
+    _execute_sql_handler,
+)
+from nodes.sandbox.tool_executor.tool_grant import check_sandbox_tool_granted, ToolNotGrantedError
 
 logger = logging.getLogger(__name__)
 
 TOOL_REGISTRY: dict[str, object] = {
     "text_to_sql":       _text_to_sql_handler,
     "text_to_pandas":    _text_to_pandas_handler,
+    "execute_python":    _execute_python_handler,
+    "execute_sql":       _execute_sql_handler,
     "file_read":         _file_read_handler,
     "grep":              _grep_handler,
     "glob":              _glob_handler,
@@ -67,17 +74,29 @@ async def tool_executor_node(state: AgentState) -> dict:
 
     tasks = []
     call_map: list[dict] = []
+    results, errors, traces = [], [], []
     for call in calls:
-        handler = TOOL_REGISTRY.get(call.get("tool_name", ""))
-        if handler:
-            tasks.append(_run_timed(handler, call, cfg))
-            call_map.append(call)
-        else:
-            logger.warning("tool_executor | unknown tool: %s", call.get("tool_name"))
+        tool_name = call.get("tool_name", "")
+        handler = TOOL_REGISTRY.get(tool_name)
+        if not handler:
+            logger.warning("tool_executor | unknown tool: %s", tool_name)
+            continue
+        try:
+            check_sandbox_tool_granted(tool_name, cfg)
+        except ToolNotGrantedError as e:
+            # doc §1.9 — grant check, independent of and prior to sandbox
+            # content validation (security_visitor/sql_guard never run for
+            # a call rejected here).
+            logger.warning("tool_executor | %s", e)
+            errors.append({"tool_name": tool_name, "error": str(e)})
+            traces.append({"tool_name": tool_name, "query": call.get("query", ""), "arguments": call.get("arguments", {}),
+                           "status": "error", "error": str(e), "result_id": None, "latency_ms": 0})
+            continue
+        tasks.append(_run_timed(handler, call, cfg))
+        call_map.append(call)
 
     outcomes = await asyncio.gather(*tasks, return_exceptions=True)
 
-    results, errors, traces = [], [], []
     for i, outcome in enumerate(outcomes):
         call = call_map[i]
         if isinstance(outcome, Exception):

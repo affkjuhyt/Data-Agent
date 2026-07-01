@@ -25,6 +25,19 @@ services:
       KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
       KAFKA_SASL_MECHANISM: PLAIN
       OTEL_SERVICE_NAME: workflow-runtime
+      # Code Interpreter Sandbox (sandbox_schema_docs.docx §I) — internal-only,
+      # never exposed to the host; sandbox-executor is the sole holder of the
+      # Docker socket / Snowflake read-only credentials (hub-and-spoke isolation).
+      SANDBOX_EXECUTOR_URL: http://sandbox-executor:8500
+      # warehouse_secrets.py — resolves a canvas node's snowflakeSecretId
+      # against OpenBao via a read-only AppRole (infra/openbao/openbao-approle-setup.sh),
+      # NOT auth-api's root token (doc §8.9/§9). Empty until that script has
+      # been run once and the printed values copied in — resolution then
+      # just no-ops (logs a warning, password stays unresolved) instead of
+      # crashing config load.
+      OPENBAO_ADDR: http://openbao:8200
+      OPENBAO_ROLE_ID: ${OPENBAO_ROLE_ID:-}
+      OPENBAO_SECRET_ID: ${OPENBAO_SECRET_ID:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -36,6 +49,110 @@ services:
         condition: service_started
       kafka:
         condition: service_healthy
+      sandbox-executor:
+        condition: service_started
+      openbao:
+        condition: service_started
+
+  sandbox-executor:
+    build:
+      context: ../services/sandbox-executor
+    container_name: dataagent-sandbox-executor
+    restart: unless-stopped
+    # No `ports:` — only reachable from other containers on the compose
+    # network (workflow-runtime calls it via SANDBOX_EXECUTOR_URL above).
+    expose:
+      - "8500"
+    environment:
+      SANDBOX_TIMEOUT_S: "10"
+      SANDBOX_MEMORY_MB: "256"
+      SANDBOX_CPUS: "0.5"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: sandbox-executor
+      # Talk to the rootless DinD sidecar below instead of the host's own
+      # /var/run/docker.sock (doc §8.7/§9 — a compromise of this process
+      # then only yields root inside sandbox-dockerd's rootless user
+      # namespace, not on the real host).
+      SANDBOX_DOCKER_HOST: tcp://sandbox-dockerd:2375
+    depends_on:
+      sandbox-dockerd:
+        condition: service_healthy
+
+  # Rootless Docker-in-Docker sidecar — the only thing in the platform that
+  # still holds a real Docker engine, isolated from the host's own daemon.
+  # sandbox-executor talks to it over the internal compose network
+  # (SANDBOX_DOCKER_HOST above) instead of mounting /var/run/docker.sock, so
+  # a compromised sandbox-executor can no longer reach host root through the
+  # socket — at worst it reaches root inside *this* container's rootless
+  # user namespace (see docs/Sandbox_SchemaCrawler_Implementation.md §8.7
+  # for the residual risk this does NOT close).
+  sandbox-dockerd:
+    image: ${SANDBOX_DOCKERD_IMAGE:-docker:27-dind-rootless}
+    container_name: dataagent-sandbox-dockerd
+    restart: unless-stopped
+    privileged: false
+    # No `ports:`/`expose:` to the host — only sandbox-executor (same
+    # compose network) can reach it. DOCKER_TLS_CERTDIR="" makes the
+    # official dind entrypoint listen on plaintext tcp://0.0.0.0:2375
+    # instead of generating TLS certs — acceptable here for the same reason
+    # OpenBao runs with tls_disable=1 (infra/openbao/config.hcl): trust
+    # boundary is "reachable only from this internal docker network", not
+    # the wire itself.
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+      # The CLI's own default (unix:///var/run/docker.sock) doesn't exist in
+      # rootless mode (real socket is /run/user/1000/docker.sock) — without
+      # this, the healthcheck below ("docker info") fails even though the
+      # daemon is actually up (confirmed against a real daemon: "Cannot
+      # connect to the Docker daemon at unix:///var/run/docker.sock").
+      DOCKER_HOST: tcp://localhost:2375
+    # /dev/fuse — lets rootless dockerd use fuse-overlayfs (fast layer
+    # sharing) instead of falling back to the much slower vfs storage
+    # driver, which matters here since sandbox-runner containers are
+    # spun up fresh per job. /dev/net/tun — rootlesskit's slirp4netns
+    # networking needs to create a tap interface; without it the daemon
+    # never comes up at all (confirmed against a real daemon: "executing
+    # [ip tuntap add name tap0 mode tap]: exit status 1" without this
+    # device). seccomp/apparmor unconfined is the standard, documented
+    # requirement for any Docker-in-Docker setup (rootless or not) — the
+    # outer container's default profiles block syscalls (unshare, mount,
+    # ...) the inner dockerd needs even unprivileged.
+    devices:
+      - /dev/fuse
+      - /dev/net/tun
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    volumes:
+      # Persists the inner image store (incl. sandbox-runner:latest loaded
+      # by sandbox-image-loader below) across restarts — without this every
+      # restart would need a rebuild before the first job could run.
+      - sandbox_dockerd_data:/home/rootless/.local/share/docker
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # One-off: builds sandbox-runner:latest *inside* sandbox-dockerd's own
+  # image store. Separate Docker engine = separate image store — the host's
+  # `docker build` (old deploy step 1) no longer puts the image anywhere
+  # sandbox-executor's new client can see it. Run after sandbox-dockerd is
+  # healthy, idempotent (re-run any time sandbox_runner/Dockerfile changes):
+  #
+  #   docker compose -f infra/docker-compose.app.yml --profile setup run --rm sandbox-image-loader
+  sandbox-image-loader:
+    image: ${SANDBOX_DOCKERD_CLI_IMAGE:-docker:27-cli}
+    profiles: ["setup"]
+    environment:
+      DOCKER_HOST: tcp://sandbox-dockerd:2375
+    volumes:
+      - ../services/sandbox-executor/sandbox_runner:/build:ro
+    depends_on:
+      sandbox-dockerd:
+        condition: service_healthy
+    command: ["build", "-t", "sandbox-runner:latest", "/build"]
 
   flow-builder:
     build:
@@ -262,6 +379,42 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
       QDRANT_URL: http://qdrant:6333
       LITELLM_BASE_URL: http://litellm:4000
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      litellm:
+        condition: service_started
+
+  schema-crawler-worker:
+    build:
+      context: ../services/schema-crawler-worker
+    container_name: dataagent-schema-crawler-worker
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_DDL_TOPIC: ddl.changes
+      KAFKA_GROUP_ID: schema-crawler-worker-group
+      KAFKA_SASL_USERNAME: schema-crawler-worker
+      KAFKA_SASL_PASSWORD: ${SCHEMA_CRAWLER_WORKER_KAFKA_PASSWORD}
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-dataagent}
+      DB_USER: ${POSTGRES_USER:-admin}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      QDRANT_URL: http://qdrant:6333
+      LITELLM_BASE_URL: http://litellm:4000
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-1024}
+      CRAWL_INTERVAL_SECONDS: "86400"
+      # Gap (see docs/Sandbox_SchemaCrawler_Implementation.md §7): KBWarehouseConfig
+      # never persists a Snowflake password. Single shared crawler-account password
+      # until a secrets-store (OpenBao) integration exists for per-tenant credentials.
+      SNOWFLAKE_CRAWLER_PASSWORD: ${SNOWFLAKE_CRAWLER_PASSWORD:-}
     depends_on:
       kafka:
         condition: service_healthy

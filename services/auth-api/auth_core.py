@@ -378,7 +378,13 @@ def _fmt_key(r: dict) -> dict:
 # SECRETS VAULT (backed by OpenBao KV v2)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-VALID_KEY_TYPES = {"ENCRYPTION_KEY", "SIGNING_KEY", "HMAC_KEY", "BEARER_TOKEN", "MCP_TOKEN", "KB_API_KEY"}
+VALID_KEY_TYPES = {
+    "ENCRYPTION_KEY", "SIGNING_KEY", "HMAC_KEY", "BEARER_TOKEN", "MCP_TOKEN", "KB_API_KEY",
+    # Warehouse credentials (e.g. Snowflake) referenced by a canvas node's
+    # snowflakeSecretId — see services/workflow-runtime/warehouse_secrets.py.
+    # KV v2 raw-value storage like BEARER_TOKEN/MCP_TOKEN/KB_API_KEY (not Transit).
+    "WAREHOUSE_PASSWORD",
+}
 _VAULT_MOUNT   = "secret"
 _TRANSIT_MOUNT = "transit"
 _GOV_KEYS = ["vault_auto_rotation", "vault_panic_mode", "vault_pii_access_log"]

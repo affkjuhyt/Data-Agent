@@ -150,6 +150,7 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
         flow_nodes = await load_flow_nodes(wv_id) if wv_id else []
         flow_edges = await load_flow_edges(wv_id) if wv_id else []
         node_cfg   = _extract_node_config(flow_nodes)
+        await _resolve_warehouse_secret(node_cfg, tenant_id)
 
         return {
             **DEV_CONFIG,
@@ -184,6 +185,28 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
     except Exception as e:
         logger.warning("load_agent_config DB failed: %s — fallback DEV_CONFIG", e)
         return {**DEV_CONFIG, "agent_id": agent_id}
+
+
+async def _resolve_warehouse_secret(node_cfg: dict, tenant_id: str | None) -> None:
+    """Mutates node_cfg in place: resolves execute_sql's `secret_id` (set by
+    _extract_node_config below) into a real password via OpenBao, and always
+    strips `secret_id` itself so it never reaches the HTTP body sent to
+    sandbox-executor. No-op if no node configured Snowflake, or no secret_id
+    was set — connection.password just stays "" (handler already treats that
+    as "not configured", same as before this fix)."""
+    connection = node_cfg.get("tool_config", {}).get("execute_sql", {}).get("connection")
+    if not connection:
+        return
+    secret_id = connection.pop("secret_id", "")
+    if not secret_id or not tenant_id:
+        return
+
+    from warehouse_secrets import resolve_snowflake_password
+    password = await resolve_snowflake_password(tenant_id, secret_id)
+    if password:
+        connection["password"] = password
+    else:
+        logger.warning("could not resolve snowflakeSecretId=%s for tenant=%s — execute_sql will fail auth", secret_id, tenant_id)
 
 
 def _extract_node_config(flow_nodes: list[dict]) -> dict:
@@ -233,6 +256,37 @@ def _extract_node_config(flow_nodes: list[dict]) -> dict:
                     "enabled": bool(c["bashEnabled"]),
                     "cwd":     c.get("bashCwd", ""),
                 }
+            if c.get("snowflakeAccount"):
+                tool_config["execute_sql"] = {
+                    "connection": {
+                        "account":   c["snowflakeAccount"],
+                        "user":      c.get("snowflakeUser", ""),
+                        "warehouse": c.get("snowflakeWarehouse", ""),
+                        "database":  c.get("snowflakeDatabase", ""),
+                        "schema":    c.get("snowflakeSchema", ""),
+                        "role":      c.get("snowflakeRole", ""),
+                        # Resolved against OpenBao in load_agent_config() via
+                        # warehouse_secrets.py — deliberately no plaintext
+                        # `snowflakePassword` field read here (PR review gap,
+                        # see docs/Sandbox_SchemaCrawler_Implementation.md §9).
+                        # "secret_id" is stripped before this dict reaches
+                        # execute_sql's handler; "password" is empty until
+                        # resolved.
+                        "secret_id": c.get("snowflakeSecretId", ""),
+                        "password":  "",
+                    },
+                }
             if tool_config:
                 cfg["tool_config"] = tool_config
+            # doc §1.9 — sandbox tool-grant preset, independent of allowedBuiltinTools
+            # above. Omitted entirely (no toolGrantPreset/toolGrantTools/
+            # toolGrantDisallowedTools on the canvas node) -> tool_grant.py's
+            # DEFAULT_PRESET grants both execute_sql/execute_python, same as
+            # before this feature existed.
+            if c.get("toolGrantPreset") or c.get("toolGrantTools") or c.get("toolGrantDisallowedTools"):
+                cfg["tool_grant"] = {
+                    "preset":           c.get("toolGrantPreset", "full_data_agent"),
+                    "tools":            c.get("toolGrantTools", []),
+                    "disallowed_tools": c.get("toolGrantDisallowedTools", []),
+                }
     return cfg
