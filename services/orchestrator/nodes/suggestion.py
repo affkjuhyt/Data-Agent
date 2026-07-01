@@ -15,7 +15,8 @@ _SYSTEM = open(os.path.join(_PROMPTS_DIR, "suggestion_system.txt"), encoding="ut
 
 async def run_suggestion(query: str, messages: list[dict], final_response: str, cfg: dict) -> list[str]:
     """
-    Gen follow-up suggestions từ final synthesized response.
+    Gen follow-up suggestions từ query + response.
+    Chạy sau khi có final_response để suggestions liên quan hơn.
     Trả về list tối đa 3 suggestions.
     """
     history_lines = []
@@ -30,7 +31,7 @@ async def run_suggestion(query: str, messages: list[dict], final_response: str, 
         parts.append("Lịch sử hội thoại:\n" + "\n".join(history_lines))
     parts.append(f"Câu hỏi hiện tại: {query}")
     if final_response:
-        parts.append(f"Câu trả lời: {final_response[:500]}")
+        parts.append(f"Câu trả lời: {final_response[:600]}")
 
     try:
         response = await litellm.acompletion(
