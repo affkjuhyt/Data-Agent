@@ -314,14 +314,62 @@ until curl -s http://localhost:4000/v1/models -H "Authorization: Bearer sk-1234"
 echo "LiteLLM ready"
 ```
 
-#### Bước 4 — Start PostgreSQL + Qdrant + migration (nếu chưa có)
+#### Bước 4 — Start PostgreSQL + Qdrant + migration
+
+Script test (`scripts/test_crawler_with_llm.py`) kết nối hardcode vào `localhost:5432`. Có hai tình huống:
+
+**Tình huống A — Project Docker Compose đang chạy (port 5432 bận)**
+
+`dataagent-postgres` đã chạy → dùng luôn, chỉ cần start Qdrant:
 
 ```bash
+# Qdrant
+docker rm -f test-qdrant 2>/dev/null || true
+docker run -d --name test-qdrant -p 6333:6333 qdrant/qdrant:v1.13.6
+
+# Đảm bảo role app_user tồn tại (cần cho RLS migrations)
+docker exec dataagent-postgres psql -U admin -d dataagent -c \
+  "DO \$\$ BEGIN
+     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='app_user') THEN
+       CREATE ROLE app_user LOGIN NOBYPASSRLS;
+     END IF;
+   END \$\$;"
+
+cd ~/Data-Agent
+DB_URL="postgresql+asyncpg://admin@localhost:5432/dataagent"
+
+# Nếu DB có bảng nhưng chưa có alembic_version, stamp base revision trước
+docker exec dataagent-postgres psql -U admin -d dataagent -tAc \
+  "SELECT table_name FROM information_schema.tables WHERE table_name='alembic_version'" \
+  | grep -q alembic_version || \
+  DATABASE_URL=$DB_URL .venv-sandbox/bin/python3 -m alembic -c alembic/alembic.ini stamp ff9ae8dcd7f7
+
+# Apply từng migration riêng để tránh rollback cả batch khi một migration fail
+for rev in a1b2c3d4e5f6 b2c3d4e5f6a7 c3d4e5f6a7b8 d4e5f6a7b8c9 e5f6a7b8c9d0 f6a7b8c9d0e1 a7b8c9d0e1f2 b8c9d0e1f2a3; do
+  DATABASE_URL=$DB_URL \
+    .venv-sandbox/bin/python3 -m alembic -c alembic/alembic.ini upgrade "$rev" 2>/dev/null || true
+done
+
+# Verify SchemaCatalog tồn tại
+docker exec dataagent-postgres psql -U admin -d dataagent -tAc \
+  "SELECT to_regclass('public.\"SchemaCatalog\"');" | grep -q SchemaCatalog && \
+  echo "OK: SchemaCatalog ready" || echo "ERROR: SchemaCatalog missing"
+```
+
+**Tình huống B — Chạy trên máy fresh (port 5432 trống)**
+
+```bash
+# Xóa container cũ nếu còn tồn tại (stopped nhưng chưa bị rm)
+docker rm -f test-postgres test-qdrant 2>/dev/null || true
+
 docker run -d --name test-postgres \
   -e POSTGRES_USER=admin -e POSTGRES_DB=dataagent \
   -e POSTGRES_HOST_AUTH_METHOD=trust -p 5432:5432 postgres:16-alpine
 
 docker run -d --name test-qdrant -p 6333:6333 qdrant/qdrant:v1.13.6
+
+# Bắt buộc phải đợi postgres sẵn sàng trước khi chạy alembic
+until docker exec test-postgres pg_isready -U admin -d dataagent 2>/dev/null; do sleep 1; done
 
 DATABASE_URL=postgresql+asyncpg://admin@localhost:5432/dataagent \
   .venv-sandbox/bin/python3 -m alembic -c alembic/alembic.ini upgrade head
@@ -330,8 +378,10 @@ DATABASE_URL=postgresql+asyncpg://admin@localhost:5432/dataagent \
 #### Bước 5 — Chạy crawler với LLM thật
 
 ```bash
+cd ~/Data-Agent
 LITELLM_BASE_URL=http://localhost:4000 \
 LITELLM_API_KEY=sk-1234 \
+DB_HOST=localhost \
   .venv-sandbox/bin/python3 scripts/test_crawler_with_llm.py
 ```
 
@@ -365,8 +415,8 @@ Thời gian xử lý mỗi bảng: ~8s (LLM) + ~0.2s (embed) trên CPU.
 #### Dọn dẹp
 
 ```bash
-docker rm -f test-postgres test-qdrant test-litellm
-pkill -f "ollama serve"
+docker rm -f test-postgres test-qdrant test-litellm 2>/dev/null || true
+pkill -f "ollama serve" 2>/dev/null || true
 ```
 
 ---
@@ -462,9 +512,15 @@ Cách fix: tương tự, cần Docker socket permission.
 | `SQL rejected: only SELECT ...` | SQL không phải SELECT/WITH | Chỉ SELECT hoặc CTE (WITH ... SELECT) |
 | `SQL rejected: comments are not allowed` | SQL có `--` hoặc `/* */` | Xóa tất cả comment trong SQL |
 | `connection_params | no password configured for warehouse=...` | Thiếu env var password | Set `SNOWFLAKE_CRAWLER_PASSWORD` hoặc `SNOWFLAKE_PASSWORD__<warehouse_id>` |
-| `PostgreSQL not ready` | DB chưa sẵn sàng | Worker tự retry 20 lần, delay 5s. Kiểm tra DB_HOST/PORT/NAME |
+| `PostgreSQL not ready` | DB chưa sẵn sàng | Worker tự retry 20 lần, delay 5s. Kiểm tra `DB_HOST=localhost` khi chạy ngoài Docker |
 | `Kafka unavailable ... running in cron-only mode` | Kafka không có | Bình thường — worker vẫn chạy theo cron |
 | `exit_code: 137` trên Python | OOM kill | Giảm data size hoặc tăng `memory_mb` |
+| `DuplicateTableError: relation "KBEntityLookup" already exists` | DB có bảng nhưng thiếu `alembic_version` | Stamp base revision: `alembic stamp ff9ae8dcd7f7` rồi migrate từng bước (xem Bước 4 Tình huống A) |
+| `UndefinedTableError: relation "AgentMemories" does not exist` | DB chỉ có KB tables, thiếu workflow tables | Stamp qua migration đó: `alembic stamp b2c3d4e5f6a7` |
+| `UndefinedObjectError: role "app_user" does not exist` | Role RLS chưa được tạo | `docker exec <postgres> psql -U admin -d dataagent -c "CREATE ROLE app_user LOGIN NOBYPASSRLS;"` |
+| `DuplicateColumnError: column "tenant_id" already exists` | Column đã được thêm ngoài Alembic | Stamp qua migration đó: `alembic stamp f6a7b8c9d0e1` |
+| `Bind for 0.0.0.0:5432 failed: port is already allocated` | `dataagent-postgres` đang chiếm port 5432 | Dùng Tình huống A ở Bước 4 — không tạo test-postgres |
+| `[Errno -3] Temporary failure in name resolution` | Worker dùng hostname `qdrant`/`postgres` (Docker internal) | Set `QDRANT_URL=http://localhost:6333` và `DB_HOST=localhost` |
 
 ---
 
