@@ -54,6 +54,8 @@ async def stream_orchestration(req: OrchestrateRequest, request: Request):
         "clarification_response":  req.clarification_response,
         "agents":                  [],
         "plan":                    None,
+        "process":                 None,
+        "completed_node_ids":      [],
         "final_response":          "",
         "suggestions":             [],
         "target_results":          [],
@@ -87,7 +89,7 @@ async def stream_orchestration(req: OrchestrateRequest, request: Request):
             # observability.py).
             handler = get_langchain_callback_handler()
             lg_config = {
-                "configurable": {"thread_id": session_id},
+                "configurable": {"thread_id": session_id, "redis": request.app.state.redis},
                 "callbacks": [handler] if handler else [],
             }
             try:

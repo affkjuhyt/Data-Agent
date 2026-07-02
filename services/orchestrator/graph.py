@@ -4,6 +4,7 @@ import logging
 import time
 from contextlib import nullcontext
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
 
@@ -18,6 +19,7 @@ from nodes.suggestion import run_suggestion
 from observability import get_langfuse_client
 from planner import create_plan, report_node_failure
 from schemas import TargetResult, TaskResult
+from session_cache import clear_cached_plan, load_cached_plan, save_cached_plan
 from state import OrchestratorState
 from summary import summarize_stream
 
@@ -125,13 +127,39 @@ async def fetch_agents_node(state: OrchestratorState) -> dict:
     return {"agents": agents}
 
 
-async def tot_planner_node(state: OrchestratorState) -> dict:
+async def tot_planner_node(state: OrchestratorState, config: RunnableConfig) -> dict:
     t0 = time.monotonic()
-    plan = await create_plan(state["user_id"], state["rewritten_query"], agents=state["agents"])
+    redis = (config.get("configurable") or {}).get("redis")
+    tenant_id, session_id, query = state["tenant_id"], state["session_id"], state["rewritten_query"]
+
+    # Client retried the same session_id (e.g. timed out waiting for a slow
+    # multi-agent run) — resume the live ToT tree instead of re-planning and
+    # re-billing every agent call that already succeeded.
+    cached = await load_cached_plan(redis, tenant_id, session_id, query)
+    if cached is not None:
+        process, plan, progress = cached
+        logger.info("tot_planner | resumed session=%s plan=%s", session_id, plan.plan_id)
+        return {
+            "plan": plan,
+            "process": process,
+            "completed_node_ids": progress.get("completed_node_ids", []),
+            "planner_ms": 0,
+            "success": True,
+        }
+
+    plan_result = await create_plan(query, agents=state["agents"])
+    planner_ms = round((time.monotonic() - t0) * 1000)
+    if plan_result is None:
+        return {"plan": None, "planner_ms": planner_ms, "success": False}
+
+    process, plan = plan_result
+    await save_cached_plan(redis, tenant_id, session_id, query, process, plan, [])
     return {
         "plan": plan,
-        "planner_ms": round((time.monotonic() - t0) * 1000),
-        "success": plan is not None,
+        "process": process,
+        "completed_node_ids": [],
+        "planner_ms": planner_ms,
+        "success": True,
     }
 
 
@@ -139,20 +167,24 @@ def _route_after_planner(state: OrchestratorState) -> str:
     return "execute" if state.get("plan") else "blocked"
 
 
-async def execute_node(state: OrchestratorState) -> dict:
+async def execute_node(state: OrchestratorState, config: RunnableConfig) -> dict:
     plan = state["plan"]
+    process = state["process"]
+    redis = (config.get("configurable") or {}).get("redis")
+    tenant_id, session_id, query = state["tenant_id"], state["session_id"], state["rewritten_query"]
+
     t0 = time.monotonic()
     all_target_results = []
     overall_success = False
     recovered = False
-    completed_node_ids: set[str] = set()
+    completed_node_ids: set[str] = set(state.get("completed_node_ids") or [])
 
     for attempt in range(_MAX_REPLAN + 1):
         result = await execute_plan(
             plan,
             user_id=state["user_id"],
-            original_query=state["rewritten_query"],
-            tenant_id=state["tenant_id"],
+            original_query=query,
+            tenant_id=tenant_id,
             agents=state["agents"],
             skip_node_ids=completed_node_ids,
             orchestrated=True,
@@ -165,20 +197,25 @@ async def execute_node(state: OrchestratorState) -> dict:
             break
 
         if attempt < _MAX_REPLAN and result.failed_node_id:
-            recovery = await report_node_failure(state["user_id"], plan.plan_id, result.failed_node_id)
+            recovery = await report_node_failure(process, result.failed_node_id)
             if recovery.get("recovered") and recovery.get("plan"):
                 plan = recovery["plan"]
                 recovered = True
+                await save_cached_plan(redis, tenant_id, session_id, query, process, plan, completed_node_ids)
                 continue
 
         break
 
+    await clear_cached_plan(redis, tenant_id, session_id)
+
+    # Dedup target results (giữ kết quả cuối cùng của mỗi node_id)
     seen: dict[str, int] = {}
     for i, tr in enumerate(all_target_results):
         seen[tr.node_id] = i
     deduped = [all_target_results[i] for i in sorted(seen.values())]
 
     return {
+        "plan": plan,
         "target_results": deduped,
         "success": overall_success,
         "recovered": recovered,

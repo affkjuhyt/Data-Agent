@@ -13,6 +13,9 @@ SUMMARY_MODEL = os.environ.get("ORCHESTRATOR_SUMMARY_MODEL", "openai/orchestrato
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 DEV_TENANT_ID = os.environ.get("DEV_TENANT_ID", "00000000-0000-0000-0000-000000000001")
 
+# ── Redis (planning-state checkpoint cache) ──────────────────────────────────
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
+
 # ── Workflow runtime (agent workflows) ──────────────────────────────────────
 WORKFLOW_RUNTIME_URL = os.environ.get("WORKFLOW_RUNTIME_URL", "http://localhost:8001")
 

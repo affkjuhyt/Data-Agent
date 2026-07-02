@@ -15,6 +15,44 @@ from .tree import Tree
 
 logger = logging.getLogger(__name__)
 
+_STATE_VERSION = 1
+
+
+def _node_to_dict(n: Node) -> dict:
+    return {
+        "node_id": n.node_id,
+        "thought": n.thought,
+        "confidence": n.confidence,
+        "parent_id": n.parent_id,
+        "depth": n.depth,
+        "is_terminal": n.is_terminal,
+        "state": n.state.value,
+        "children_ids": list(n.children_ids),
+        "target": n.target,
+        "terminal_reason": n.terminal_reason,
+        "goal": n.goal,
+        "path_steps": list(n.path_steps),
+        "blocked_attempts": list(n.blocked_attempts),
+    }
+
+
+def _node_from_dict(d: dict) -> Node:
+    return Node(
+        thought=d["thought"],
+        confidence=d["confidence"],
+        parent_id=d.get("parent_id"),
+        depth=d.get("depth", 0),
+        is_terminal=d.get("is_terminal", False),
+        node_id=d["node_id"],
+        state=NodeState(d.get("state", "pooled")),
+        children_ids=list(d.get("children_ids", [])),
+        target=d.get("target") or {},
+        terminal_reason=d.get("terminal_reason", ""),
+        goal=d.get("goal", ""),
+        path_steps=list(d.get("path_steps", [])),
+        blocked_attempts=list(d.get("blocked_attempts", [])),
+    )
+
 
 class PlanningProcess:
     """Main workflow: LLM -> node extraction -> Tree/N -> expanding queue ->
@@ -233,3 +271,30 @@ class PlanningProcess:
             "terminals": [t for t in self.pool.terminal_ids() if t not in self.produced],
             "plan_ready": bool(self.pool.pop_terminal(exclude=self.produced)),
         }
+
+    def dump_state(self) -> dict:
+        return {
+            "version": _STATE_VERSION,
+            "user_input": self.user_input,
+            "agents": self.agents,
+            "produced": list(self.produced),
+            "layers_run": self.layers_run,
+            "root_id": self.tree.root_id,
+            "nodes": [_node_to_dict(n) for n in self.tree._nodes.values()],
+        }
+
+    def load_state(self, state: dict) -> None:
+        self.user_input = state.get("user_input", "")
+        self.agents = state.get("agents", [])
+        self.produced = set(state.get("produced", []))
+        self.layers_run = state.get("layers_run", 0)
+        for nd in state.get("nodes", []):
+            node = _node_from_dict(nd)
+            self.tree._nodes[node.node_id] = node
+        self.tree.root_id = state.get("root_id")
+        for node in self.tree._nodes.values():
+            if node.state in (NodeState.POOLED, NodeState.EXPLOITATION, NodeState.EXPLORATION):
+                node.state = NodeState.POOLED
+                self.pool.store(node.node_id, node.confidence)
+            elif node.state == NodeState.TERMINAL:
+                self.pool.store_terminal(node.node_id, node.confidence)
