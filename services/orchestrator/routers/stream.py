@@ -10,14 +10,13 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 import config
+from agent_catalog import fetch_guardrail_config
 from graph import get_graph
 from observability import get_langchain_callback_handler, get_langfuse_client
 from schemas import OrchestrateRequest
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-_CFG: dict = {}
 
 
 @router.get("/api/orchestrate/health")
@@ -36,6 +35,7 @@ async def stream_orchestration(req: OrchestrateRequest, request: Request):
     # hex32 (không dấu gạch ngang) — format trace_id chuẩn OTEL, dùng chung
     # làm LangGraph thread_id VÀ Langfuse trace_id (xem observability.py).
     session_id = (req.session_id or uuid.uuid4().hex).replace("-", "")
+    cfg = await fetch_guardrail_config(tenant_id)
 
     initial_state = {
         "query":                   req.query,
@@ -46,7 +46,7 @@ async def stream_orchestration(req: OrchestrateRequest, request: Request):
         "session_id":              session_id,
         "agent_id":                req.agent_id,
         "messages":                req.messages,
-        "cfg":                     _CFG,
+        "cfg":                     cfg,
         "guardrail_triggered":     False,
         "guardrail_reason":        "",
         "clarification_needed":    False,

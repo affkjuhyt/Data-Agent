@@ -263,10 +263,6 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         "reranked_chunks": [],
         "response": "",
         "suggestions": [],
-        "guardrail_triggered": False,
-        "guardrail_message": "",
-        "guardrail_stage": None,
-        "guardrail_reason": None,
         "intent": None,
         "language": None,
         "config": cfg,
@@ -288,10 +284,6 @@ async def run_conversation_stream(req: RunRequest, request: Request):
     async def event_stream():
         # Emit span ID ngay để orchestrator biết span nào để expand
         full_response: list[str] = []
-        guardrail_triggered = False
-        guardrail_msg = ""
-        guardrail_stage = None
-        guardrail_reason = None
         # selective buffering để chặn <OPTIONS> tag khỏi frontend
         pending = ""           # giữ tạm token cuối để detect prefix của <OPTIONS>
         options_mode = False   # True khi đã qua <OPTIONS>
@@ -340,14 +332,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                                     "status":     tt.get("status", "success"),
                                 })
                     # node-specific logic
-                    if node == "guardrail_input":
-                        out = event["data"].get("output", {})
-                        if isinstance(out, dict) and out.get("guardrail_triggered"):
-                            guardrail_triggered = True
-                            guardrail_msg    = out.get("guardrail_message", "")
-                            guardrail_stage  = out.get("guardrail_stage")
-                            guardrail_reason = out.get("guardrail_reason")
-                    elif node == "suggestion":
+                    if node == "suggestion":
                         out = event["data"].get("output", {})
                         if isinstance(out, dict):
                             topics = out.get("suggestions", [])
@@ -460,9 +445,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
             except Exception:
                 pass  # graph không có checkpointer → skip
 
-            if guardrail_triggered:
-                yield f"data: {json.dumps('Xin lỗi, tôi không thể trả lời câu hỏi này.')}\n\n"
-            elif responder_options:
+            if responder_options:
                 yield f"data: {json.dumps({'__options': responder_options})}\n\n"
             elif pending_suggestions:
                 yield f"data: {json.dumps({'__suggestions': pending_suggestions})}\n\n"
@@ -475,7 +458,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
             yield "data: [ERROR] Đã xảy ra lỗi, vui lòng thử lại.\n\n"
         finally:
             latency = int((time.monotonic() - started_at) * 1000)
-            assistant_text = guardrail_msg if guardrail_triggered else "".join(full_response)
+            assistant_text = "".join(full_response)
 
             if conv_id:
                 await save_message(conv_id, "user", req.query)
@@ -486,11 +469,6 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                     latency_ms=latency,
                     metadata={
                         "agent_version_id": cfg.get("agent_version_id"),
-                        "guardrail": {
-                            "triggered": guardrail_triggered,
-                            "stage": guardrail_stage,
-                            "reason": guardrail_reason,
-                        },
                         "language": detected_language,
                         "intent": detected_intent,
                         "responder_model": cfg.get("responder_model"),
@@ -520,12 +498,12 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                             trace_index=0,
                             tool_name="responder",
                             input={"query": req.query},
-                            output={"response": assistant_text, "guardrail_triggered": guardrail_triggered},
+                            output={"response": assistant_text},
                             latency_ms=latency,
                         )
 
             # orchestrated=True: orchestrator sẽ ghi memory sau synthesize, agent không ghi
-            if not req.orchestrated and cfg.get("memory_enabled") and not guardrail_triggered and conv_id:
+            if not req.orchestrated and cfg.get("memory_enabled") and conv_id:
                 final_state = {**state, "response": assistant_text}
                 await apply_memory_policy(
                     final_state, agent_id, tenant_id, user_ref,
