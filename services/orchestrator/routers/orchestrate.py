@@ -39,6 +39,8 @@ async def run_orchestration(req: OrchestrateRequest, request: Request):
         "clarification_response": None,
         "agents":                [],
         "plan":                  None,
+        "process":               None,
+        "completed_node_ids":    [],
         "final_response":        "",
         "suggestions":           [],
         "target_results":        [],
@@ -50,7 +52,7 @@ async def run_orchestration(req: OrchestrateRequest, request: Request):
     }
 
     graph = get_graph()
-    lg_config = {"configurable": {"thread_id": session_id}}
+    lg_config = {"configurable": {"thread_id": session_id, "redis": request.app.state.redis}}
 
     result = await graph.ainvoke(initial_state, config=lg_config)
 
