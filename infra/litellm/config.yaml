@@ -46,14 +46,14 @@ model_list:
       api_base: http://model-service:8001/v1
       api_key: not-needed
 
-  # Orchestrator level — ToT planner + synthesizer (Claude via proxy-ai on host)
+  # Orchestrator level — ToT planner + summary (Claude via proxy-ai on host)
   - model_name: orchestrator-planner
     litellm_params:
       model: openai/sonnet
       api_base: http://host.docker.internal:8089/v1
       api_key: not-needed
 
-  - model_name: orchestrator-synthesizer
+  - model_name: orchestrator-summary
     litellm_params:
       model: openai/haiku
       api_base: http://host.docker.internal:8089/v1
@@ -83,8 +83,12 @@ litellm_settings:
   request_timeout: 600
   set_verbose: false
   json_logs: true
-  success_callback: ["langfuse"]
-  failure_callback: ["langfuse"]
+  # KHÔNG bật "langfuse" ở đây — proxy này log MỖI completion call thành 1
+  # trace "litellm-acompletion" RIÊNG BIỆT, không biết gì về trace_id/OTEL
+  # context của orchestrator/workflow-runtime, nên tạo ra hàng loạt trace rời
+  # rạc thay vì nối vào đúng trace của request. Tracing giờ do app-level xử lý
+  # (services/orchestrator, services/workflow-runtime — xem observability.py
+  # mỗi service: @observe() decorator + langfuse.langchain.CallbackHandler).
   cache: true
   cache_params:
     type: redis

@@ -7,6 +7,8 @@ import unicodedata
 
 import litellm
 
+from observability import get_langfuse_client
+
 try:
     import regex as re_lib
     _REGEX_TIMEOUT = 0.1
@@ -63,21 +65,38 @@ def _llm_check(text: str, cfg: dict) -> tuple[bool, str]:
     if allowed_topics:
         topics_block = "\n\nCHỦ ĐỀ ĐƯỢC PHÉP:\n" + "\n".join(f"- {t}" for t in allowed_topics)
 
+    model = cfg.get("guardrail_model", "openai/guardrail")
+    messages = [
+        {"role": "system", "content": _GUARDRAIL_SYSTEM + topics_block},
+        {"role": "user", "content": f"CHECK_TYPE: input\nCONTENT: {text[:_MAX_CHECK_CHARS]}"},
+    ]
     try:
         response = litellm.completion(
-            model=cfg.get("guardrail_model", "guardrail"),
+            model=model,
             api_base=_LITELLM_BASE,
             api_key=_LITELLM_KEY,
-            messages=[
-                {"role": "system", "content": _GUARDRAIL_SYSTEM + topics_block},
-                {"role": "user", "content": f"CHECK_TYPE: input\nCONTENT: {text[:_MAX_CHECK_CHARS]}"},
-            ],
+            messages=messages,
             temperature=0,
             max_tokens=cfg.get("guardrail_max_tokens", 64),
             response_format={"type": "json_object"},
-            timeout=cfg.get("guardrail_timeout", 5),
+            timeout=cfg.get("guardrail_timeout", 15),
         )
-        result = json.loads(response.choices[0].message.content or "{}")
+        output = response.choices[0].message.content or ""
+        # Làm giàu ngay span "guardrail" mà CallbackHandler đã tự tạo (không
+        # tạo span con mới) — xem observability.py.
+        lf = get_langfuse_client()
+        if lf:
+            usage = response.usage or {}
+            lf.update_current_generation(
+                model=model,
+                input=messages,
+                output=output,
+                usage_details={
+                    "input": getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", 0),
+                    "output": getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", 0),
+                },
+            )
+        result = json.loads(output or "{}")
         triggered = bool(result.get("triggered", False))
         reason = result.get("reason", "Yêu cầu không được phép.") if triggered else ""
         return triggered, reason

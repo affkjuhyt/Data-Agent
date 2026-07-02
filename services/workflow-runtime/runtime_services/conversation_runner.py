@@ -24,7 +24,7 @@ from memory_middleware import (
     retrieve_pending_reminders,
 )
 from workflow_memory import record_workflow_outcome, retrieve_workflow_memory
-from observability import get_langfuse_handler, flush_langfuse
+from observability import get_langchain_callback_handler, flush_langfuse
 from schemas import RunRequest
 
 logger = logging.getLogger(__name__)
@@ -179,6 +179,9 @@ async def run_conversation_stream(req: RunRequest, request: Request):
     # see. Kong-style convention: comma-separated roles already verified
     # upstream (see tests/integration/conftest.py headers_factory).
     cfg["user_roles"] = [r.strip() for r in request.headers.get("X-User-Roles", "").split(",") if r.strip()]
+    # Strip verbose build-time fields — không cần runtime, chỉ làm Langfuse input thêm to
+    cfg.pop("flow_nodes", None)
+    cfg.pop("flow_edges", None)
     if not await validate_agent_tenant(agent_id, tenant_id):
         return JSONResponse(status_code=403, content={"detail": "Agent not found or access denied"})
 
@@ -269,26 +272,12 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         "config": cfg,
     }
 
-    lf_trace_id = request.headers.get("X-Langfuse-Trace-Id")
-    lf_parent_id = request.headers.get("X-Langfuse-Parent-Id")
-    logger.debug("langfuse | lf_trace_id=%s lf_parent_id=%s", lf_trace_id, lf_parent_id)
-
-    handler = get_langfuse_handler(
-        run_name=f"conv-{conv_id or 'new'}",
-        session_id=conv_id,
-        user_id=user_ref,
-        metadata={
-            "agent_id": agent_id,
-            "agent_version_id": cfg.get("agent_version_id"),
-            "tenant_id": tenant_id,
-            "channel": request.headers.get("X-Channel", "web"),
-            "responder_model": cfg.get("responder_model"),
-            "planner_model": cfg.get("planner_model"),
-        },
-        trace_id=lf_trace_id,
-        parent_observation_id=lf_parent_id,
-    )
-    logger.debug("langfuse | handler=%s root_span=%s trace=%s", type(handler).__name__ if handler else None, getattr(getattr(handler, 'root_span', None), 'id', None), getattr(getattr(handler, 'trace', None), 'id', None))
+    # Nếu request đến từ orchestrator, traceparent header (W3C) đã được
+    # FastAPIInstrumentor (app.py) extract thành OTEL context hiện hành —
+    # get_langchain_callback_handler() tự nối span vào đúng trace đó. Nếu gọi
+    # thẳng workflow-runtime (không qua orchestrator, vd. test agent lẻ trong
+    # agent-builder), fallback tạo trace riêng với session_id=conv_id.
+    handler = get_langchain_callback_handler(conv_id=conv_id)
     callbacks = [handler] if handler else []
 
     _OPTIONS_OPEN  = "<OPTIONS>"
@@ -297,6 +286,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
     _THINK_CLOSE   = "</think>"
 
     async def event_stream():
+        # Emit span ID ngay để orchestrator biết span nào để expand
         full_response: list[str] = []
         guardrail_triggered = False
         guardrail_msg = ""
@@ -477,6 +467,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
             elif pending_suggestions:
                 yield f"data: {json.dumps({'__suggestions': pending_suggestions})}\n\n"
 
+            await asyncio.to_thread(flush_langfuse)
             yield "data: [DONE]\n\n"
 
         except Exception:

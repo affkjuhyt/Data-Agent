@@ -4,6 +4,7 @@ import logging
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.runnables import RunnableConfig
 
 from state import AgentState
 
@@ -29,7 +30,7 @@ def _to_lc_messages(messages: list[dict]) -> list:
     ]
 
 
-async def responder_node(state: AgentState) -> dict:
+async def responder_node(state: AgentState, config: RunnableConfig) -> dict:
     cfg = state["config"]
     intent = state.get("intent", "question")
     language = state.get("language") or "vi"
@@ -82,7 +83,7 @@ async def responder_node(state: AgentState) -> dict:
     )
 
     t0 = time.monotonic()
-    response = await llm.ainvoke(messages)
+    response = await llm.ainvoke(messages, config=config)
     latency_ms = int((time.monotonic() - t0) * 1000)
 
     full_text = response.content

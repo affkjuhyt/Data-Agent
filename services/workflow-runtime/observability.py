@@ -1,130 +1,73 @@
-import os
 import logging
+import os
 from functools import lru_cache
-from urllib.parse import urlparse
-
-from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
 try:
-    from langfuse import Langfuse
-    from langfuse.callback import CallbackHandler
-    from langfuse.client import StatefulSpanClient, StateType
-    _LANGFUSE_AVAILABLE = True
+    from langfuse import get_client
+    from langfuse.langchain import CallbackHandler
+    from opentelemetry import trace as _otel_trace
+    _AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
-    Langfuse = None  # type: ignore[assignment,misc]
-    CallbackHandler = None
-    StatefulSpanClient = None  # type: ignore[assignment,misc]
-    StateType = None  # type: ignore[assignment]
-    _LANGFUSE_AVAILABLE = False
+    get_client = None  # type: ignore[assignment]
+    CallbackHandler = None  # type: ignore[assignment,misc]
+    _otel_trace = None  # type: ignore[assignment]
+    _AVAILABLE = False
+    logger.warning("langfuse | import failed — Langfuse tracing disabled. Check langchain is installed.", exc_info=True)
 
 
-class LangfuseHandlerParams(BaseModel):
-    trace_name: str         = "agent-run"
-    session_id: str | None  = None
-    user_id:    str | None  = None
-    metadata:   dict | None = None
-
-
-def _valid_host(host: str) -> bool:
-    parsed = urlparse(host)
-    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+def _configured() -> bool:
+    return bool(os.environ.get("LANGFUSE_PUBLIC_KEY")) and bool(os.environ.get("LANGFUSE_SECRET_KEY"))
 
 
 @lru_cache(maxsize=1)
-def _get_langfuse_config():
-    public_key = os.environ.get("LANGFUSE_PUBLIC_KEY")
-    secret_key = os.environ.get("LANGFUSE_SECRET_KEY")
-    host       = os.environ.get("LANGFUSE_HOST", "http://localhost:3001")
-
-    if not public_key or not secret_key:
-        return None
-
-    if not _valid_host(host):
-        logger.warning("langfuse | invalid LANGFUSE_HOST=%s", host)
-        return None
-
-    return {"public_key": public_key, "secret_key": secret_key, "host": host}
-
-
-@lru_cache(maxsize=1)
-def _get_langfuse_raw_client():
-    if not _LANGFUSE_AVAILABLE or Langfuse is None:
-        return None
-    cfg = _get_langfuse_config()
-    if not cfg:
+def get_langfuse_client():
+    """Singleton Langfuse client (SDK v3, OTEL-based). None nếu chưa cấu hình."""
+    if not _AVAILABLE or not _configured():
         return None
     try:
-        return Langfuse(public_key=cfg["public_key"], secret_key=cfg["secret_key"], host=cfg["host"])
+        return get_client()
     except Exception:
-        logger.exception("langfuse | failed to create raw client")
+        logger.exception("langfuse | failed to create client")
         return None
 
 
-def flush_langfuse():
-    """Flush pending spans to Langfuse. Call after each request."""
-    lf = _get_langfuse_raw_client()
-    if lf:
-        try:
-            lf.flush()
-        except Exception:
-            logger.exception("langfuse | flush failed")
+def get_langchain_callback_handler(conv_id: str | None = None):
+    """CallbackHandler cho graph.astream_events của 1 agent run.
 
-
-def get_langfuse_handler(
-    run_name:              str        = "agent-run",
-    session_id:            str | None = None,
-    user_id:               str | None = None,
-    metadata:              dict | None = None,
-    trace_id:              str | None = None,
-    parent_observation_id: str | None = None,
-):
-    if not _LANGFUSE_AVAILABLE:
+    2 nhánh hành vi tùy nguồn gốc request:
+    - Có upstream OTEL context hợp lệ (request đến từ orchestrator, traceparent
+      header đã được FastAPIInstrumentor — xem app.py — extract tự động thành
+      current span context) → nối span vào ĐÚNG trace/parent đó, KHÔNG tạo
+      trace riêng. Đây là trường hợp orchestrator gọi /api/conversations/run.
+    - Không có upstream context (gọi thẳng workflow-runtime, vd. test 1 agent
+      lẻ trong agent-builder, không qua orchestrator) → tạo trace riêng, trace_id
+      ngẫu nhiên do SDK tự sinh (verify qua đọc source langfuse 3.15.0:
+      `langfuse.langchain.CallbackHandler.__init__` chỉ nhận `public_key`,
+      `update_trace`, `trace_context` — KHÔNG có `session_id`/`user_id`/
+      `metadata` như v2). routers/traces.py's fallback theo sessionId=conv_id
+      sẽ KHÔNG tra được trace của case này nữa — hạn chế đã biết, chưa xử lý.
+    """
+    if not _AVAILABLE or not _configured():
         return None
-
-    cfg = _get_langfuse_config()
-    if not cfg:
-        return None
-
-    # Orchestrated mode: attach agent spans directly under orchestrator's task span.
-    # Dùng StatefulSpanClient để reference task span có sẵn, không tạo span mới.
-    # Lưu ý: lf.client, lf.task_manager là internal API của langfuse>=2.0,<3.0 —
-    # cần kiểm tra lại nếu nâng version.
-    if trace_id and parent_observation_id:
-        lf = _get_langfuse_raw_client()
-        if lf and StatefulSpanClient is not None:
-            try:
-                task_span_ref = StatefulSpanClient(
-                    client=lf.client,
-                    id=parent_observation_id,
-                    state_type=StateType.OBSERVATION,
-                    trace_id=trace_id,
-                    task_manager=lf.task_manager,
-                    environment=getattr(lf, "_environment", None),
-                )
-                return CallbackHandler(stateful_client=task_span_ref, user_id=user_id)
-            except Exception:
-                logger.exception("langfuse | failed to create linked handler, falling back")
-
-    # Standalone mode (single agent, no orchestrator context)
-    params = LangfuseHandlerParams(
-        trace_name=run_name,
-        session_id=session_id,
-        user_id=user_id,
-        metadata=metadata,
-    )
-
     try:
-        return CallbackHandler(
-            public_key=cfg["public_key"],
-            secret_key=cfg["secret_key"],
-            host=cfg["host"],
-            trace_name=params.trace_name,
-            session_id=params.session_id,
-            user_id=params.user_id,
-            metadata=params.metadata or {},
-        )
+        span_ctx = _otel_trace.get_current_span().get_span_context()
+        if span_ctx.is_valid:
+            trace_id = format(span_ctx.trace_id, "032x")
+            parent_span_id = format(span_ctx.span_id, "016x")
+            return CallbackHandler(trace_context={"trace_id": trace_id, "parent_span_id": parent_span_id})
+        return CallbackHandler()
     except Exception:
         logger.exception("langfuse | failed to create callback handler")
         return None
+
+
+def flush_langfuse() -> None:
+    """Flush pending spans/generations to Langfuse. Gọi sau mỗi request."""
+    client = get_langfuse_client()
+    if client:
+        try:
+            client.flush()
+        except Exception:
+            logger.exception("langfuse | flush failed")

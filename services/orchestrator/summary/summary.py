@@ -7,6 +7,7 @@ from pathlib import Path
 import litellm
 
 import config
+from observability import get_langfuse_client
 
 logger = logging.getLogger(__name__)
 
@@ -15,10 +16,10 @@ _PROMPTS_DIR = Path(__file__).parent / ".." / "prompts"
 
 @lru_cache(maxsize=1)
 def _system() -> str:
-    return (_PROMPTS_DIR / "synthesizer_system.txt").read_text(encoding="utf-8").strip()
+    return (_PROMPTS_DIR / "summary_system.txt").read_text(encoding="utf-8").strip()
 
 
-async def synthesize(original_query: str, agent_outputs: list[str]) -> str:
+async def summarize(original_query: str, agent_outputs: list[str]) -> str:
     """
     1 LLM call cuối: nhận query gốc + tất cả outputs từ các agent tasks
     → trả final response cho user.
@@ -39,26 +40,39 @@ async def synthesize(original_query: str, agent_outputs: list[str]) -> str:
         f"## Kết quả từ các agents\n{outputs_block}\n\n"
         "Hãy tổng hợp các kết quả trên và trả lời câu hỏi của người dùng."
     )
+    messages_payload = [
+        {"role": "system", "content": _system()},
+        {"role": "user", "content": user_message},
+    ]
 
     resp = await litellm.acompletion(
-        model=config.SYNTHESIZER_MODEL,
+        model=config.SUMMARY_MODEL,
         api_base=config.LITELLM_BASE_URL,
         api_key=config.LITELLM_API_KEY,
-        messages=[
-            {"role": "system", "content": _system()},
-            {"role": "user", "content": user_message},
-        ],
+        messages=messages_payload,
         temperature=0.3,
         max_tokens=1024,
     )
 
     answer = resp.choices[0].message.content
-    logger.info("synthesizer | query_len=%d outputs=%d ans_len=%d",
+    lf = get_langfuse_client()
+    if lf:
+        usage = resp.usage or {}
+        lf.update_current_generation(
+            model=config.SUMMARY_MODEL,
+            input=messages_payload,
+            output=answer,
+            usage_details={
+                "input": getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", 0),
+                "output": getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", 0),
+            },
+        )
+    logger.info("summary | query_len=%d outputs=%d ans_len=%d",
                 len(original_query), len(agent_outputs), len(answer))
     return answer
 
 
-async def synthesize_stream(original_query: str, agent_outputs: list[str]):
+async def summarize_stream(original_query: str, agent_outputs: list[str]):
     """
     Async generator — yield từng text token từ LLM synthesis.
     """
@@ -80,21 +94,41 @@ async def synthesize_stream(original_query: str, agent_outputs: list[str]):
         f"## Kết quả từ các agents\n{outputs_block}\n\n"
         "Hãy tổng hợp các kết quả trên và trả lời câu hỏi của người dùng."
     )
+    messages_payload = [
+        {"role": "system", "content": _system()},
+        {"role": "user", "content": user_message},
+    ]
 
     resp = await litellm.acompletion(
-        model=config.SYNTHESIZER_MODEL,
+        model=config.SUMMARY_MODEL,
         api_base=config.LITELLM_BASE_URL,
         api_key=config.LITELLM_API_KEY,
-        messages=[
-            {"role": "system", "content": _system()},
-            {"role": "user", "content": user_message},
-        ],
+        messages=messages_payload,
         temperature=0.3,
         max_tokens=1024,
         stream=True,
+        stream_options={"include_usage": True},
     )
 
+    buffer: list[str] = []
+    usage = None
     async for chunk in resp:
-        token = chunk.choices[0].delta.content
+        if getattr(chunk, "usage", None):
+            usage = chunk.usage
+        token = chunk.choices[0].delta.content if chunk.choices else None
         if token:
+            buffer.append(token)
             yield token
+
+    lf = get_langfuse_client()
+    if lf:
+        usage = usage or {}
+        lf.update_current_generation(
+            model=config.SUMMARY_MODEL,
+            input=messages_payload,
+            output="".join(buffer),
+            usage_details={
+                "input": getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", 0),
+                "output": getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", 0),
+            },
+        )

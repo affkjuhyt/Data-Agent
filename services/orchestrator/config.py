@@ -7,7 +7,7 @@ LITELLM_API_KEY = os.environ.get("LITELLM_API_KEY", "sk-dev")
 # Model aliases — phải khớp với model_name trong infra/litellm/config.yaml
 # Tách riêng khỏi agent-level "planner"/"responder" để swap model to hơn độc lập
 PLANNER_MODEL = os.environ.get("ORCHESTRATOR_PLANNER_MODEL", "openai/orchestrator-planner")
-SYNTHESIZER_MODEL = os.environ.get("ORCHESTRATOR_SYNTHESIZER_MODEL", "openai/orchestrator-synthesizer")
+SUMMARY_MODEL = os.environ.get("ORCHESTRATOR_SUMMARY_MODEL", "openai/orchestrator-summary")
 
 # ── Database ─────────────────────────────────────────────────────────────────
 DATABASE_URL = os.environ.get("DATABASE_URL", "")

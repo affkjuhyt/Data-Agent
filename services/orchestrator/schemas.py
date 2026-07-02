@@ -42,10 +42,8 @@ class TaskResult(BaseModel):
     output: str
     success: bool
     error: Optional[str] = None
-    conversation_id: Optional[str] = None  # để frontend fetch LangFuse trace nội bộ
-    lf_trace_id: Optional[str] = None      # orchestrator trace id (orchestrated mode)
-    lf_span_id: Optional[str] = None       # task span id trong orchestrator trace
-    start_ms: int = 0    # relative to executor start
+    conversation_id: Optional[str] = None  # frontend dùng để fetch Langfuse trace
+    start_ms: int = 0
     latency_ms: int = 0
 
 
@@ -69,7 +67,7 @@ class OrchestrateResponse(BaseModel):
     suggestions: list[str] = Field(default_factory=list)
     planner_ms: int = 0
     executor_ms: int = 0
-    synthesizer_ms: int = 0
+    summary_ms: int = 0
     session_id: str = ""
 
 
