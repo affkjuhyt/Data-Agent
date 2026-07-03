@@ -94,13 +94,13 @@ async def _alias_lookup(
     """Return the canonical name for the first surface form with an exact alias
     entry, or None. Alias keys are stored in canonical form so lookup is a pure
     hash-index equality. Tenant-scoped rows win over global (tenant_id IS NULL)."""
-    keys = [k for k in (to_canonical(s) for s in surface_forms) if k]
-    if not keys:
+    alias_keys = [key for key in (to_canonical(form) for form in surface_forms) if key]
+    if not alias_keys:
         return None
     try:
-        tid = uuid.UUID(tenant_id)
+        tenant_uuid = uuid.UUID(tenant_id)
     except (ValueError, AttributeError):
-        tid = None
+        tenant_uuid = None
     try:
         async with postgres.get_client() as session:
             rows = (await session.execute(
@@ -109,21 +109,21 @@ async def _alias_lookup(
                     KBEntityLookupORM.canonical_name,
                     KBEntityLookupORM.tenant_id,
                 )
-                .where(KBEntityLookupORM.alias_name.in_(keys))
+                .where(KBEntityLookupORM.alias_name.in_(alias_keys))
                 .where(KBEntityLookupORM.is_deleted.is_(False))
             )).all()
     except Exception as exc:
         log.warning("entity_registry | alias lookup failed: %s", exc)
         return None
 
-    tenant_hit: str | None = None
-    global_hit: str | None = None
-    for alias, canonical, row_tid in rows:
-        if row_tid == tid and tenant_hit is None:
-            tenant_hit = canonical
-        elif row_tid is None and global_hit is None:
-            global_hit = canonical
-    return tenant_hit or global_hit
+    tenant_match: str | None = None
+    global_match: str | None = None
+    for alias_name, canonical_name, row_tenant_id in rows:
+        if row_tenant_id == tenant_uuid and tenant_match is None:
+            tenant_match = canonical_name
+        elif row_tenant_id is None and global_match is None:
+            global_match = canonical_name
+    return tenant_match or global_match
 
 
 async def _register_aliases(
@@ -135,59 +135,59 @@ async def _register_aliases(
     """Insert alias → canonical rows for any surface forms not yet known, so the
     next document resolves them exactly without an embedding call. Best-effort:
     a failure here never fails the gold commit."""
-    keys: dict[str, str] = {}
-    for s in surface_forms:
-        k = to_canonical(s)
-        if k and k != canonical:
-            keys[k] = s
+    alias_key_to_surface: dict[str, str] = {}
+    for surface_form in surface_forms:
+        canonical_key = to_canonical(surface_form)
+        if canonical_key and canonical_key != canonical:
+            alias_key_to_surface[canonical_key] = surface_form
     # The canonical form itself also gets a self-row so a future exact mention
     # of the canonical resolves at step 1.
-    keys.setdefault(canonical, canonical)
-    if not keys:
+    alias_key_to_surface.setdefault(canonical, canonical)
+    if not alias_key_to_surface:
         return
     try:
-        tid = uuid.UUID(tenant_id)
+        tenant_uuid = uuid.UUID(tenant_id)
     except (ValueError, AttributeError):
-        tid = None
+        tenant_uuid = None
     try:
         async with postgres.get_client() as session:
             # Existing alias rows for these keys — ANY tenant scope. A key that
             # already maps to a DIFFERENT canonical is a collision: never
             # overwrite or shadow it (first registration wins; LLM association
             # pollution must not rebind an existing entity's name).
-            taken: dict[str, str] = {}
-            for alias, can in (await session.execute(
+            taken_by_key: dict[str, str] = {}
+            for alias_name, mapped_canonical in (await session.execute(
                 sa_select(KBEntityLookupORM.alias_name, KBEntityLookupORM.canonical_name)
-                .where(KBEntityLookupORM.alias_name.in_(list(keys)))
+                .where(KBEntityLookupORM.alias_name.in_(list(alias_key_to_surface)))
                 .where(KBEntityLookupORM.is_deleted.is_(False))
             )).all():
-                taken.setdefault(alias, can)
+                taken_by_key.setdefault(alias_name, mapped_canonical)
             # Keys that ARE some other entity's canonical name are equally off-limits
             # ("creative_commons" can never become an alias of the GFDL license).
             other_canonicals = set((await session.execute(
                 sa_select(KBEntityLookupORM.canonical_name)
                 .where(KBEntityLookupORM.canonical_name.in_(
-                    [k for k in keys if k != canonical]))
+                    [key for key in alias_key_to_surface if key != canonical]))
                 .where(KBEntityLookupORM.is_deleted.is_(False))
             )).scalars())
 
             new_rows = []
-            for k in keys:
-                if k in taken:
-                    if taken[k] != canonical:
+            for alias_key in alias_key_to_surface:
+                if alias_key in taken_by_key:
+                    if taken_by_key[alias_key] != canonical:
                         log.warning(
                             "entity_registry | alias collision: %r already → %r, "
-                            "NOT rebinding to %r", k, taken[k], canonical,
+                            "NOT rebinding to %r", alias_key, taken_by_key[alias_key], canonical,
                         )
                     continue
-                if k in other_canonicals:
+                if alias_key in other_canonicals:
                     log.warning(
                         "entity_registry | %r is another entity's canonical — "
-                        "refusing to alias it to %r", k, canonical,
+                        "refusing to alias it to %r", alias_key, canonical,
                     )
                     continue
                 new_rows.append(
-                    KBEntityLookupORM(alias_name=k, canonical_name=canonical, tenant_id=tid)
+                    KBEntityLookupORM(alias_name=alias_key, canonical_name=canonical, tenant_id=tenant_uuid)
                 )
             if new_rows:
                 session.add_all(new_rows)
@@ -375,21 +375,21 @@ async def normalize_entities_detailed(
             action     — "matched_alias" | "matched_hard" | "matched_soft" | "new"
             similarity — cosine score if embedding-matched, None otherwise
     """
-    clean = [
+    cleaned_entities = [
         {
-            "name":        unicodedata.normalize("NFC", e["name"]).strip(),
-            "description": (e.get("description") or "").strip(),
-            "entity_type": (e.get("type") or "").strip().lower(),
+            "name":        unicodedata.normalize("NFC", entity["name"]).strip(),
+            "description": (entity.get("description") or "").strip(),
+            "entity_type": (entity.get("type") or "").strip().lower(),
             "aliases":     [
-                unicodedata.normalize("NFC", a).strip()
-                for a in (e.get("aliases") or [])
-                if isinstance(a, str) and a.strip()
+                unicodedata.normalize("NFC", alias).strip()
+                for alias in (entity.get("aliases") or [])
+                if isinstance(alias, str) and alias.strip()
             ],
         }
-        for e in raw_entities
-        if isinstance(e, dict) and e.get("name", "").strip()
+        for entity in raw_entities
+        if isinstance(entity, dict) and entity.get("name", "").strip()
     ]
-    if not clean:
+    if not cleaned_entities:
         return [], []
 
     result: list[str] = []
@@ -397,7 +397,7 @@ async def normalize_entities_detailed(
     # Entities whose embedding lookup is still needed (alias misses).
     needs_embedding: list[tuple[int, dict]] = []
 
-    for idx, entry in enumerate(clean):
+    for idx, entry in enumerate(cleaned_entities):
         result.append("")   # placeholder, filled below
         details.append({})
         surface_forms = [entry["name"], *entry["aliases"]]

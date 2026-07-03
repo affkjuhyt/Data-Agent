@@ -10,7 +10,6 @@ from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.pipeline.kb_ui_operation.qdrant_ops import (
     list_collections, toggle_collection, semantic_search,
 )
-from services.kb_backend.pipeline.ingestion import config as ing_cfg
 
 router = APIRouter(prefix="/api/knowledge/qdrant", tags=["Knowledge-Qdrant"])
 
@@ -52,10 +51,10 @@ async def semantic_search_route(
     result = await semantic_search(
         qdrant=svc(request, "qdrant"),
         postgres=svc(request, "postgres"),
+        model=svc(request, "model").get_client(),
         collection_id=collection_id,
         query=body.query,
         tenant_id=body.tenant_id or ctx["tenant_id"] or "",
         limit=body.limit,
-        model_service_url=ing_cfg.MODEL_SERVICE_URL,
     )
     return ResponseModel(code=200, data=result)

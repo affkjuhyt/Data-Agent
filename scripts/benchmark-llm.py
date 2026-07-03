@@ -2,12 +2,12 @@
 """
 LLM Benchmark Script — Qwen3 on llama-server
 Usage:
-  python3 scripts/benchmark-llm.py                  # full suite
-  python3 scripts/benchmark-llm.py --single         # single request only
-  python3 scripts/benchmark-llm.py --concurrent     # concurrent only
-  python3 scripts/benchmark-llm.py --thinking       # thinking mode only
-  python3 scripts/benchmark-llm.py --memory         # memory stats only
-  python3 scripts/benchmark-llm.py --host 127.0.0.1 --port 8088
+  python3 model/llama-server/benchmark-llm.py                  # full suite
+  python3 model/llama-server/benchmark-llm.py --single         # single request only
+  python3 model/llama-server/benchmark-llm.py --concurrent     # concurrent only
+  python3 model/llama-server/benchmark-llm.py --thinking       # thinking mode only
+  python3 model/llama-server/benchmark-llm.py --memory         # memory stats only
+  python3 model/llama-server/benchmark-llm.py --host 127.0.0.1 --port 8088
 """
 import argparse, json, os, sys, threading, time, urllib.request
 
@@ -243,7 +243,7 @@ def main():
     print(f"Target : {base_url}")
     print(f"Model  : {args.model}")
     if not health_check(base_url):
-        print(f"\nERROR: Server not reachable — start with: bash scripts/start-llama.sh")
+        print(f"\nERROR: Server not reachable — start with: bash model/llama-server/start-llama.sh")
         sys.exit(1)
     print("Health : OK")
 

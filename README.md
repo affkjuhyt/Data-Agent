@@ -30,40 +30,12 @@ front of `kb-backend`. Pick the stack that matches your task:
 
 | Stack | File / helper | What it is | When to use |
 |---|---|---|---|
-| **kb_e2e** | `infra/docker-compose.kb_e2e.yml` | KB data plane + ingestion worker + Keycloak + DB-less Kong; richer LLM options (vLLM / local `llama`) and multilingual models | Day-to-day local dev with the Vite UI (`npm run dev`) and the ingestion/RAG pipeline |
-| **kb_and_authen** | `infra/docker-compose.kb_and_authen.yml` + `infra/kb_and_authen.ps1` | Same auth chain + data plane, **memory-capped to ~6.4 GiB** (fits an ~8 GiB Docker VM); helper auto-configures Kong & runs verify checks | Quick, low-RAM end-to-end auth/data-plane verification; CI-style smoke test |
+| **kb_e2e** | `infra/docker-compose.kb_e2e.yml` | KB data plane + ingestion worker + Keycloak + DB-less Kong; richer LLM options (vLLM / local `llama`) and multilingual models | **The standard way to bring up the stack** — local dev with the Vite UI (`npm run dev`) and the ingestion/RAG pipeline |
 | **Full aggregate** | `infra/docker-compose.yml` (+ `local`/`dev` override) | Every service group (storage, security, messaging, observability, all app services) | Running the whole platform, not just KB |
 | **Test fixture** | `infra/docker-compose.test.yml` | Isolated PostgreSQL only | Connector / Alembic tests |
 
-> The `kb_and_authen` and `kb_e2e` stacks both publish ports `8000`/`8080`/`5432`/… so **run one at a
-> time**. `kb-backend` is also published on `:8050` in each — but hitting it directly bypasses Kong, so
-> it returns `401` by design (handy to confirm fail-closed behaviour).
-
-The fastest path to a working UI is **kb_and_authen** (below); for the full local dev loop use **kb_e2e**.
-
----
-
-## Quick start — kb_and_authen (recommended)
-
-The `kb_and_authen.ps1` helper builds the stack, waits for health, configures Kong, and prints the endpoints.
-
-```powershell
-npm install                       # frontend deps (first time)
-pwsh infra/kb_and_authen.ps1             # build + start + configure Kong (ingestion worker OFF)
-pwsh infra/kb_and_authen.ps1 verify      # prove the chain: 401 / 200 / fleet 200 / 403 / 200
-pwsh infra/kb_and_authen.ps1 up -WithUi  # also start the containerized frontend on :5173
-```
-
-Then open the UI (containerized on `:5173`, or run `npm run dev` against it — see below) and log in
-via Keycloak as **`helios-admin` / `H3lios@Admin01!`** (full perms) or **`helios-engineer` /
-`H3lios@Eng001!`** (limited — write actions return `403`).
-
-| Action | Command |
-|---|---|
-| Stop, keep data | `pwsh infra/kb_and_authen.ps1 down` |
-| Stop, **wipe** data | `pwsh infra/kb_and_authen.ps1 destroy` |
-| Tail logs | `pwsh infra/kb_and_authen.ps1 logs` |
-| Enable bronze→silver→gold pipeline | `pwsh infra/kb_and_authen.ps1 up -WithPipeline` (needs ~12 GiB WSL VM) |
+> `kb-backend` is also published on `:8050` — but hitting it directly bypasses Kong, so it returns
+> `401` by design (handy to confirm fail-closed behaviour).
 
 ---
 
@@ -239,8 +211,8 @@ The dev server talks to the backend via:
 - `VITE_API_URL` — base URL for KB API calls (default `http://localhost:8000`, the **Kong** gateway —
   **not** `kb-backend` on `:8050`, which is fail-closed)
 
-The defaults already match the kb_and_authen / kb_e2e stacks, so plain `npm run dev` works against
-either; override only if a service is on a different host/port.
+The defaults already match the kb_e2e stack, so plain `npm run dev` works against it;
+override only if a service is on a different host/port.
 
 Other scripts:
 
@@ -273,7 +245,6 @@ The Docker stack lives under [`infra/`](./infra). Use these files as the source 
 - [`infra/docker-compose.dev.yml`](./infra/docker-compose.dev.yml): shared dev server override (adds `migrate` + `seed`)
 - [`infra/docker-compose.test.yml`](./infra/docker-compose.test.yml): test-only PostgreSQL fixture
 - [`infra/docker-compose.kb_e2e.yml`](./infra/docker-compose.kb_e2e.yml): isolated KB-UI integration stack — data plane + ingestion worker + Keycloak + DB-less Kong
-- [`infra/docker-compose.kb_and_authen.yml`](./infra/docker-compose.kb_and_authen.yml) + [`infra/kb_and_authen.ps1`](./infra/kb_and_authen.ps1): memory-capped KB end-to-end stack (auth chain + live data plane) with a bring-up/verify helper
 
 ### Prerequisites
 
@@ -341,9 +312,6 @@ curl http://localhost:8050/health   # -> {"status":"ok"} (direct probe; app traf
 Switch the model-service backend (LOCAL CPU vs. remote Colab GPU) by setting the
 `REMOTE_*_URL` env on `model-service` and recreating that one container — no image
 rebuild required. See [Switching the model backend](./infra/README.md#switching-the-model-backend-local-cpu--colab-gpu).
-
-For a leaner, memory-capped end-to-end run with an automated bring-up/verify helper, use the **kb_and_authen**
-stack instead — see [Quick start — kb_and_authen](#quick-start--kb_and_authen-recommended).
 
 ### Official Docker Commands
 
@@ -426,10 +394,10 @@ llama-server chạy trực tiếp trên host (không qua Docker), cần bật **
 
 ```bash
 # Tải model lần đầu (chỉ chạy 1 lần)
-bash scripts/download-model.sh
+bash model/llama-server/download-model.sh
 
 # Khởi động llama-server ở port 8088
-bash scripts/start-llama.sh &
+bash model/llama-server/start-llama.sh &
 
 # Kiểm tra
 curl http://localhost:8088/health
@@ -514,7 +482,6 @@ Separate intent-specific Docker paths also exist:
 
 - Test-only: [`infra/docker-compose.test.yml`](./infra/docker-compose.test.yml)
 - KB-UI integration: [`infra/docker-compose.kb_e2e.yml`](./infra/docker-compose.kb_e2e.yml)
-- KB end-to-end (memory-capped + helper): [`infra/docker-compose.kb_and_authen.yml`](./infra/docker-compose.kb_and_authen.yml) + [`infra/kb_and_authen.ps1`](./infra/kb_and_authen.ps1)
 - Standalone model experiment: [`model/ollama/docker/docker-compose.yml`](./model/ollama/docker/docker-compose.yml)
 
 ### Common URLs (Docker stack)

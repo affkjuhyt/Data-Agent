@@ -46,7 +46,12 @@ def load_converter(use_vlm: bool = False) -> None:
             format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
         )
     else:
-        _converter = DocumentConverter()
+        # Disable OCR — text-based PDFs don't need it, and the available OCR
+        # backends (torch.PP-OCRv6) are unsupported in this environment.
+        pipeline_options = PdfPipelineOptions(do_ocr=False)
+        _converter = DocumentConverter(
+            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
+        )
     log.info("Docling converter ready (use_vlm=%s)", use_vlm)
 
 

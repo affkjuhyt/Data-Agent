@@ -8,16 +8,16 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from services.database_connector.kafka_connector import KafkaConsumerClient, KafkaProducerClient
+from services.database_connector.kafka_connector import KafkaConsumerClient
 from services.database_connector.minio_connector import MinIOClient
 from services.database_connector.model_connector import ModelServiceClient
 from services.database_connector.mongo_connector import MongoClient
 from services.database_connector.postgres_connector import PostgresClient
 from services.database_connector.qdrant_connector import QdrantClient as QdrantService
-from services.database_connector.neo4j_connector import Neo4jClient
 
 from utils import config as cfg
 from utils.docling_parser import InlineDoclingParser
+from utils.graph_store import GraphStore
 from utils.log_writer import write_log
 from utils.pipeline_events import PipelineEventEmitter
 from silver import promote_to_silver
@@ -54,12 +54,11 @@ async def _reset_events_for_new_run(db, data_id: str) -> None:
 
 async def consume_loop(
     consumer: KafkaConsumerClient,
-    kafka_producer: KafkaProducerClient,
     minio: MinIOClient,
     postgres: PostgresClient,
     mongo: MongoClient,
     qdrant_svc: QdrantService,
-    neo4j_svc: Neo4jClient,
+    graph: GraphStore,
     model: ModelServiceClient,
     docling_parser: InlineDoclingParser,
 ) -> None:
@@ -97,7 +96,6 @@ async def consume_loop(
                     postgres=postgres,
                     docling=docling_parser,
                     mongo=mongo,
-                    kafka_producer=kafka_producer,
                     data_id=data_id,
                     tenant_id=tenant_id,
                     approved_by=approved_by,
@@ -136,7 +134,7 @@ async def consume_loop(
                 result = await promote_to_gold(
                     postgres=postgres,
                     qdrant=qdrant_svc.get_client(),
-                    neo4j=neo4j_svc.get_client(),
+                    graph=graph,
                     mongo=mongo,
                     model=model,
                     data_id=data_id,
@@ -166,7 +164,7 @@ async def consume_loop(
                     conflict_id,
                 )
                 return
-            await _resolve_conflict(conflict, postgres, qdrant_svc, neo4j_svc, model)
+            await _resolve_conflict(conflict, postgres, qdrant_svc, graph, model)
 
     async def handler(event: dict) -> None:
         stage       = event.get("event", "")
