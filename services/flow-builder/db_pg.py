@@ -214,7 +214,7 @@ async def update_agent_draft(agent_id: str, fields: dict, tenant_id: str | None 
                 # Cast UUID string fields to UUID
                 uuid_keys = {"responder_model_id", "system_prompt_id", "guardrail_id"}
                 av_values = {
-                    k: UUID(v) if k in uuid_keys and v else v
+                    k: (UUID(v) if v else None) if k in uuid_keys else v
                     for k, v in av_fields.items()
                 }
                 await session.execute(

@@ -17,9 +17,14 @@ _SVC_DIR = str(REPO_ROOT / "services" / "memory-consumer")
 
 @pytest.fixture(autouse=True)
 def _sys_path():
+    """schema-crawler-worker also has a main.py — without evicting the
+    cached module, whichever test file imports "main" first in the session
+    wins sys.modules['main'] for every test after it, regardless of sys.path."""
     added = [p for p in (_SVC_DIR,) if p not in sys.path]
     sys.path[:0] = added
+    sys.modules.pop("main", None)
     yield
+    sys.modules.pop("main", None)
     for p in added:
         if p in sys.path:
             sys.path.remove(p)

@@ -1,79 +1,104 @@
 from __future__ import annotations
 
 import logging
+import uuid
 
 from fastapi import APIRouter, HTTPException, Request
+from langgraph.types import Command
 
 import config
-from agent_catalog import fetch_published_agents
-from executor import execute_plan
-from planner import create_plan, report_node_failure
+from graph import get_graph
 from schemas import OrchestrateRequest, OrchestrateResponse
-from synthesizer import synthesize
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-_MAX_REPLAN = 2  # tối đa retry sau khi replan
+_CFG: dict = {}  # global config cho guardrail/rewrite/suggestion/clarification models
 
 
 @router.post("/api/orchestrate/run", response_model=OrchestrateResponse)
 async def run_orchestration(req: OrchestrateRequest, request: Request):
-    """
-    Luồng chính:
-    1. Fetch published agents từ catalog (theo tenant)
-    2. Planner tạo plan (ToT) — biết được agents để assign đúng
-    3. Executor chạy plan
-    4. Nếu fail → report planner → nhận plan mới → retry
-    5. Synthesizer gom outputs → final response
-    """
     tenant_id = request.headers.get("X-Tenant-Id", "") or config.DEV_TENANT_ID
+    user_ref  = request.headers.get("X-User-ID", "anonymous")
+    session_id = req.session_id or str(uuid.uuid4())
 
-    # Step 1: fetch catalog
-    agents = await fetch_published_agents(tenant_id)
-    if not agents:
-        logger.warning("orchestrate | no published agents found for tenant=%s", tenant_id)
+    initial_state = {
+        "query":                 req.query,
+        "rewritten_query":       req.query,
+        "user_id":               req.user_id,
+        "tenant_id":             tenant_id,
+        "user_ref":              user_ref,
+        "session_id":            session_id,
+        "agent_id":              req.agent_id,
+        "messages":              list(req.messages),
+        "cfg":                   _CFG,
+        "guardrail_triggered":   False,
+        "guardrail_reason":      "",
+        "clarification_needed":  False,
+        "clarification_questions": [],
+        "clarification_response": None,
+        "agents":                [],
+        "plan":                  None,
+        "process":               None,
+        "completed_node_ids":    [],
+        "final_response":        "",
+        "suggestions":           [],
+        "target_results":        [],
+        "recovered":             False,
+        "success":               False,
+        "planner_ms":            0,
+        "executor_ms":           0,
+        "synthesizer_ms":        0,
+    }
 
-    # Step 2: tạo plan
-    plan = await create_plan(req.user_id, req.query, agents=agents)
-    if plan is None:
-        raise HTTPException(422, "Planner không thể tạo plan cho query này.")
+    graph = get_graph()
+    lg_config = {"configurable": {"thread_id": session_id, "redis": request.app.state.redis}}
 
-    logger.info("orchestrate | user=%s plan=%s targets=%d", req.user_id, plan.plan_id, len(plan.targets))
+    result = await graph.ainvoke(initial_state, config=lg_config)
 
-    all_target_results = []
-    final_outputs: list[str] = []
-    recovered = False
+    # Kiểm tra interrupt (HITL — input_refine cần hỏi user)
+    snapshot = await graph.aget_state(lg_config)
+    if snapshot.next:
+        # Graph bị interrupt tại input_refine node
+        interrupt_data = {}
+        for task in snapshot.tasks:
+            if hasattr(task, "interrupts") and task.interrupts:
+                interrupt_data = task.interrupts[0].value
+                break
 
-    for attempt in range(_MAX_REPLAN + 1):
-        result = await execute_plan(plan, user_id=req.user_id, original_query=req.query, tenant_id=tenant_id, agents=agents)
-        all_target_results.extend(result.target_results)
+        return OrchestrateResponse(
+            plan_id=session_id,
+            response="",
+            success=False,
+            needs_clarification=True,
+            clarification_questions=interrupt_data.get("clarification_questions", []),
+            session_id=session_id,
+        )
 
-        if result.success:
-            final_outputs = result.all_outputs
-            break
+    # Guardrail blocked
+    if result.get("guardrail_triggered"):
+        return OrchestrateResponse(
+            plan_id=session_id,
+            response="Xin lỗi, tôi không thể trả lời câu hỏi này.",
+            success=False,
+            session_id=session_id,
+        )
 
-        # Task fail — thử replan
-        if attempt < _MAX_REPLAN and result.failed_node_id:
-            logger.info("orchestrate | replan attempt=%d failed_node=%s", attempt + 1, result.failed_node_id)
-            recovery = await report_node_failure(req.user_id, plan.plan_id, result.failed_node_id)
-            if recovery.get("recovered") and recovery.get("plan"):
-                plan = recovery["plan"]
-                recovered = True
-                continue
-
-        # Không thể recover → dùng outputs đã có
-        final_outputs = result.all_outputs
-        break
-
-    # Step 3: Synthesizer
-    final_response = await synthesize(req.query, final_outputs)
+    # Plan failed
+    if not result.get("success") and not result.get("final_response"):
+        raise HTTPException(422, "Không thể xử lý yêu cầu này.")
 
     return OrchestrateResponse(
-        plan_id=plan.plan_id,
-        response=final_response,
-        target_results=all_target_results,
-        recovered=recovered,
+        plan_id=result.get("plan").plan_id if result.get("plan") else session_id,
+        response=result.get("final_response", ""),
+        success=result.get("success", False),
+        target_results=result.get("target_results", []),
+        recovered=result.get("recovered", False),
+        suggestions=result.get("suggestions", []),
+        planner_ms=result.get("planner_ms", 0),
+        executor_ms=result.get("executor_ms", 0),
+        synthesizer_ms=result.get("synthesizer_ms", 0),
+        session_id=session_id,
     )
 
 

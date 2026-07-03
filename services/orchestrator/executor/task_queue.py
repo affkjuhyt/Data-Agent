@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -16,14 +19,14 @@ class TaskNode:
     conversation_id: Optional[str] = None  # từ X-Conversation-Id header
     success: bool = False
     done: bool = False
+    start_ms: int = 0    # relative to executor start
+    latency_ms: int = 0
 
 
-def build_rounds(tasks: list[dict]) -> list[list[TaskNode]]:
+def build_rounds(tasks: list[dict]) -> tuple[list[list[TaskNode]], list[dict]]:
     """
-    Nhận tasks[] từ 1 target, trả về list các rounds.
-    Mỗi round là list TaskNode có thể chạy song song.
-
-    depend_on là list index trong tasks[] của cùng target đó.
+    Nhận tasks[] từ 1 target, trả về (rounds, stuck_tasks).
+    stuck_tasks không rỗng khi phát hiện circular/broken dependency.
     """
     nodes = [
         TaskNode(
@@ -38,18 +41,20 @@ def build_rounds(tasks: list[dict]) -> list[list[TaskNode]]:
 
     done_set: set[int] = set()
     rounds: list[list[TaskNode]] = []
+    stuck_tasks: list[dict] = []
 
     remaining = list(range(len(nodes)))
     while remaining:
         ready = [i for i in remaining if all(d in done_set for d in nodes[i].depend_on)]
         if not ready:
-            # dependency cycle hoặc broken — chạy tất cả còn lại
+            stuck_tasks = [{"index": nodes[i].index, "title": nodes[i].title, "depend_on": nodes[i].depend_on} for i in remaining]
+            logger.warning("task_queue | dependency cycle or broken deps, forcing remaining tasks: %s", stuck_tasks)
             ready = remaining
         rounds.append([nodes[i] for i in ready])
         done_set.update(ready)
         remaining = [i for i in remaining if i not in done_set]
 
-    return rounds
+    return rounds, stuck_tasks
 
 
 def collect_context(nodes: list[TaskNode]) -> str:

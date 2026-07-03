@@ -23,7 +23,7 @@ Mỗi task có 2 trường quan trọng:
 
 Trường depend_on là danh sách CHỈ SỐ SỐ NGUYÊN (0, 1, 2...) của các task trong cùng bước mà task này phụ thuộc vào. Task đầu tiên có chỉ số 0. Nếu không phụ thuộc vào task nào, để depend_on=[].
 
-Trả về CHỈ một JSON object: {thought, confidence, is_terminal, target:{description, tasks:[{title, agent_id, depend_on}]}}.
+Trả về CHỈ một JSON object: {thought, confidence, is_terminal, target:{description, tasks:[{title, input, agent_id, depend_on}]}}.
 
 Ví dụ depend_on đúng: [0] nghĩa là phụ thuộc task thứ nhất. [] nghĩa là không phụ thuộc.
 Ví dụ depend_on SAI: ["Tóm tắt đoạn văn"] — KHÔNG dùng tiêu đề làm depend_on.

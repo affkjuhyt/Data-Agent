@@ -42,8 +42,8 @@ model_list:
 
   - model_name: embedder
     litellm_params:
-      model: openai/haiku
-      api_base: http://host.docker.internal:8089/v1
+      model: openai/bge-m3
+      api_base: http://model-service:8001/v1
       api_key: not-needed
 
   # Orchestrator level — ToT planner + synthesizer (Claude via proxy-ai on host)

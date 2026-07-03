@@ -81,6 +81,7 @@ class TenantsORM(Base):
     memory_retention_configs: Mapped[list["MemoryRetentionConfigORM"]] = relationship(back_populates="tenant")
     workflow_memories: Mapped[list["WorkflowMemoryORM"]] = relationship(back_populates="tenant")
     schema_memories: Mapped[list["SchemaMemoryORM"]] = relationship(back_populates="tenant")
+    schema_catalog_entries: Mapped[list["SchemaCatalogORM"]] = relationship(back_populates="tenant")
     conversations: Mapped[list["ConversationsORM"]] = relationship(back_populates="tenant")
 
 

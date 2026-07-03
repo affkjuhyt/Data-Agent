@@ -1,8 +1,4 @@
 import os
-import json
-
-# ── CORS ─────────────────────────────────────────────────────────────────────
-CORS_ORIGINS = os.environ.get("CORS_ORIGINS", "*").split(",")
 
 # ── LiteLLM gateway ─────────────────────────────────────────────────────────
 LITELLM_BASE_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
@@ -17,14 +13,12 @@ SYNTHESIZER_MODEL = os.environ.get("ORCHESTRATOR_SYNTHESIZER_MODEL", "openai/orc
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 DEV_TENANT_ID = os.environ.get("DEV_TENANT_ID", "00000000-0000-0000-0000-000000000001")
 
+# ── Redis (planning-state checkpoint cache) ──────────────────────────────────
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
+
 # ── Workflow runtime (agent workflows) ──────────────────────────────────────
 WORKFLOW_RUNTIME_URL = os.environ.get("WORKFLOW_RUNTIME_URL", "http://localhost:8001")
 
-# ── Agent registry: task type -> agent_id ───────────────────────────────────
-# JSON string: '{"sql": "uuid-sql-agent", "kb": "uuid-kb-agent"}'
-_raw = os.environ.get("AGENT_REGISTRY", "{}")
-AGENT_REGISTRY: dict[str, str] = json.loads(_raw)
-DEFAULT_AGENT_ID = os.environ.get("DEFAULT_AGENT_ID", "")
 
 # ── Planner ToT parameters ───────────────────────────────────────────────────
 H_ES = float(os.environ.get("DPTS_H_ES", "0.5"))
@@ -39,4 +33,3 @@ USE_MOCK_PLANNER = os.environ.get("USE_MOCK_PLANNER", "").lower() in ("1", "true
 
 # ── Executor ─────────────────────────────────────────────────────────────────
 AGENT_CALL_TIMEOUT = int(os.environ.get("AGENT_CALL_TIMEOUT", "120"))   # seconds
-MAX_RETRIES_PER_TASK = int(os.environ.get("MAX_RETRIES_PER_TASK", "1"))

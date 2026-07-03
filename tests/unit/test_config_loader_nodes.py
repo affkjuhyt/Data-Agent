@@ -7,6 +7,10 @@ which is exactly the class of bug that needs a regression test.
 """
 from __future__ import annotations
 
+import sys
+import types
+from unittest.mock import AsyncMock
+
 import pytest
 
 from ._loader import SERVICES, load_module_from_path
@@ -77,3 +81,100 @@ class TestGuardrailDefaults:
         assert defaults["guardrail_model"] == config_loader.DEV_CONFIG["guardrail_model"]
         assert defaults["guardrail_id"] is None
         assert isinstance(defaults["guardrail_input_patterns"], list)
+
+
+class TestSnowflakeNodeConfig:
+    """PR review gap fix — _extract_node_config must never read a raw
+    snowflakePassword value; only snowflakeSecretId (resolved later against
+    OpenBao by _resolve_warehouse_secret, see TestResolveWarehouseSecret)."""
+
+    def test_secret_id_carried_through_password_left_empty(self) -> None:
+        cfg = config_loader._extract_node_config([_node(
+            "tool_executor", snowflakeAccount="acct1", snowflakeUser="u1",
+            snowflakeSecretId="sec-123",
+        )])
+        connection = cfg["tool_config"]["execute_sql"]["connection"]
+        assert connection["secret_id"] == "sec-123"
+        assert connection["password"] == ""
+
+    def test_no_secret_id_leaves_empty_secret_id_and_password(self) -> None:
+        cfg = config_loader._extract_node_config([_node("tool_executor", snowflakeAccount="acct1")])
+        connection = cfg["tool_config"]["execute_sql"]["connection"]
+        assert connection["secret_id"] == ""
+        assert connection["password"] == ""
+
+    def test_legacy_snowflake_password_field_is_ignored(self) -> None:
+        """Even if a stray snowflakePassword value is present in the node
+        config (e.g. hand-edited Mongo doc), it must never flow through —
+        this is the exact plaintext-passthrough the gap fix closes."""
+        cfg = config_loader._extract_node_config([_node(
+            "tool_executor", snowflakeAccount="acct1", snowflakePassword="plaintext-leak",
+        )])
+        connection = cfg["tool_config"]["execute_sql"]["connection"]
+        assert connection["password"] == ""
+        assert "plaintext-leak" not in str(connection)
+
+
+class TestResolveWarehouseSecret:
+    """_resolve_warehouse_secret — mutates node_cfg in place, resolving
+    execute_sql's secret_id via warehouse_secrets.resolve_snowflake_password
+    (mocked via sys.modules — see warehouse_secrets.py's own unit tests in
+    test_warehouse_secrets.py for the resolution logic itself)."""
+
+    def _stub_warehouse_secrets(self, monkeypatch, resolve_mock) -> None:
+        fake_module = types.ModuleType("warehouse_secrets")
+        fake_module.resolve_snowflake_password = resolve_mock
+        monkeypatch.setitem(sys.modules, "warehouse_secrets", fake_module)
+
+    async def test_noop_when_no_execute_sql_node(self) -> None:
+        node_cfg: dict = {}
+        await config_loader._resolve_warehouse_secret(node_cfg, "tenant-1")
+        assert node_cfg == {}
+
+    async def test_noop_when_no_secret_id_set(self, monkeypatch) -> None:
+        resolve_spy = AsyncMock(return_value="should-not-be-called")
+        self._stub_warehouse_secrets(monkeypatch, resolve_spy)
+        node_cfg = {"tool_config": {"execute_sql": {"connection": {"account": "acct1", "password": ""}}}}
+
+        await config_loader._resolve_warehouse_secret(node_cfg, "tenant-1")
+
+        resolve_spy.assert_not_called()
+        assert node_cfg["tool_config"]["execute_sql"]["connection"] == {"account": "acct1", "password": ""}
+
+    async def test_resolves_and_strips_secret_id(self, monkeypatch) -> None:
+        resolve_spy = AsyncMock(return_value="real-password")
+        self._stub_warehouse_secrets(monkeypatch, resolve_spy)
+        node_cfg = {"tool_config": {"execute_sql": {"connection": {
+            "account": "acct1", "secret_id": "sec-1", "password": "",
+        }}}}
+
+        await config_loader._resolve_warehouse_secret(node_cfg, "tenant-1")
+
+        connection = node_cfg["tool_config"]["execute_sql"]["connection"]
+        assert connection == {"account": "acct1", "password": "real-password"}
+        resolve_spy.assert_called_once_with("tenant-1", "sec-1")
+
+    async def test_resolution_failure_leaves_password_empty(self, monkeypatch) -> None:
+        resolve_spy = AsyncMock(return_value=None)
+        self._stub_warehouse_secrets(monkeypatch, resolve_spy)
+        node_cfg = {"tool_config": {"execute_sql": {"connection": {
+            "account": "acct1", "secret_id": "sec-1", "password": "",
+        }}}}
+
+        await config_loader._resolve_warehouse_secret(node_cfg, "tenant-1")
+
+        connection = node_cfg["tool_config"]["execute_sql"]["connection"]
+        assert connection == {"account": "acct1", "password": ""}
+
+    async def test_secret_id_stripped_even_without_tenant_id(self, monkeypatch) -> None:
+        resolve_spy = AsyncMock(return_value="real-password")
+        self._stub_warehouse_secrets(monkeypatch, resolve_spy)
+        node_cfg = {"tool_config": {"execute_sql": {"connection": {
+            "account": "acct1", "secret_id": "sec-1", "password": "",
+        }}}}
+
+        await config_loader._resolve_warehouse_secret(node_cfg, None)
+
+        resolve_spy.assert_not_called()
+        connection = node_cfg["tool_config"]["execute_sql"]["connection"]
+        assert "secret_id" not in connection

@@ -7,6 +7,12 @@ class OrchestrateRequest(BaseModel):
     user_id: str = "default"
     session_id: Optional[str] = None
     use_cache: bool = True
+    # Nếu có agent_id → single agent mode (skip ToT, gọi thẳng agent đó)
+    # Nếu không → multi agent mode (ToT planner tự phân chia)
+    agent_id: Optional[str] = None
+    # Khi frontend nhận __clarification event, user trả lời rồi gửi lại request với field này
+    clarification_response: Optional[str] = None
+    messages: list[dict] = Field(default_factory=list)
 
 
 class TaskSchema(BaseModel):
@@ -37,6 +43,8 @@ class TaskResult(BaseModel):
     success: bool
     error: Optional[str] = None
     conversation_id: Optional[str] = None  # để frontend fetch LangFuse trace nội bộ
+    start_ms: int = 0    # relative to executor start
+    latency_ms: int = 0
 
 
 class TargetResult(BaseModel):
@@ -50,5 +58,19 @@ class TargetResult(BaseModel):
 class OrchestrateResponse(BaseModel):
     plan_id: str
     response: str
+    success: bool = True
+    # HITL clarification — nếu True, frontend hiển thị questions và gọi /resume
+    needs_clarification: bool = False
+    clarification_questions: list[str] = Field(default_factory=list)
     target_results: list[TargetResult] = Field(default_factory=list)
     recovered: bool = False
+    suggestions: list[str] = Field(default_factory=list)
+    planner_ms: int = 0
+    executor_ms: int = 0
+    synthesizer_ms: int = 0
+    session_id: str = ""
+
+
+class ClarificationResume(BaseModel):
+    session_id: str   # dùng làm thread_id để resume LangGraph
+    clarification: str

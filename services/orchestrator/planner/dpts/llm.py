@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import random
 from dataclasses import dataclass, field
+from functools import lru_cache
+from pathlib import Path
 
 import litellm
 
@@ -13,8 +14,12 @@ from .tree import Tree
 
 logger = logging.getLogger(__name__)
 
-_PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "prompts")
-_SYSTEM_BASE = open(os.path.join(_PROMPTS_DIR, "planner_system.txt"), encoding="utf-8").read().strip()
+_PROMPTS_DIR = Path(__file__).parent / ".." / ".." / "prompts"
+
+
+@lru_cache(maxsize=1)
+def _system_base() -> str:
+    return (_PROMPTS_DIR / "planner_system.txt").read_text(encoding="utf-8").strip()
 
 
 @dataclass
@@ -80,7 +85,7 @@ def build_messages(
     avoid: list[str] | None,
     agents: list[dict] | None = None,
 ) -> list[dict]:
-    system = _SYSTEM_BASE + _build_agents_block(agents or [])
+    system = _system_base() + _build_agents_block(agents or [])
     steps = "".join(f"\n- {s}" for s in path_steps)
     user = f"GOAL:\n{goal}\n\nPLAN SO FAR ({len(path_steps)} steps):{steps or ' (none yet)'}\n\n"
     if avoid:
@@ -143,7 +148,7 @@ class MockLLM:
         self.branching = branching
         self.seed = seed
 
-    async def generate(self, node: Node, k: int | None = None) -> list[ChildThought]:
+    async def generate(self, node: Node, k: int | None = None, agents: list[dict] | None = None) -> list[ChildThought]:
         k = k or self.branching
         cd = node.depth + 1
         terminal = cd >= self.plan_depth

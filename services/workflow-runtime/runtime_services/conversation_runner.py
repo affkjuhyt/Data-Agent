@@ -14,6 +14,7 @@ from langgraph.types import Command
 from config_loader import load_agent_config
 from db import create_conversation, get_messages, save_message, save_trace, validate_agent_tenant
 from redis_cache import cache_get_messages, cache_append_messages, cache_set_messages
+from transcript_compression import compress_tool_results
 from graph import build_graph
 from memory_middleware import (
     _DEV_AGENT_ID,
@@ -184,38 +185,43 @@ async def run_conversation_stream(req: RunRequest, request: Request):
 
     user_ref = request.headers.get("X-User-ID", "anonymous")
 
-    memory_context = []
-    if cfg.get("memory_enabled"):
-        memory_context = await retrieve_memories(
-            tenant_id=tenant_id,
-            agent_id=agent_id,
-            user_ref=user_ref,
-            query=req.query,
-        )
-        if not req.conversation_id:
-            # New session — surface due reminders + recent episodic history once (doc §IV).
-            reminders, episodic_past = await asyncio.gather(
-                retrieve_pending_reminders(tenant_id=tenant_id, agent_id=agent_id, user_ref=user_ref),
-                retrieve_episodic_past(tenant_id=tenant_id, agent_id=agent_id, user_ref=user_ref),
+    # orchestrated=True: orchestrator đã fetch memory và pass xuống, dùng luôn
+    # orchestrated=False: single agent mode, tự fetch memory như bình thường
+    if req.orchestrated:
+        memory_context = list(req.memory_context)
+        workflow_memory_context = []
+    else:
+        memory_context = []
+        if cfg.get("memory_enabled"):
+            memory_context = await retrieve_memories(
+                tenant_id=tenant_id,
+                agent_id=agent_id,
+                user_ref=user_ref,
+                query=req.query,
             )
-            memory_context = [
-                {**r, "memory_type": "episodic_future"} for r in reminders
-            ] + [
-                {**e, "memory_type": "episodic_past"} for e in episodic_past
-            ] + memory_context
+            if not req.conversation_id:
+                reminders, episodic_past = await asyncio.gather(
+                    retrieve_pending_reminders(tenant_id=tenant_id, agent_id=agent_id, user_ref=user_ref),
+                    retrieve_episodic_past(tenant_id=tenant_id, agent_id=agent_id, user_ref=user_ref),
+                )
+                memory_context = [
+                    {**r, "memory_type": "episodic_future"} for r in reminders
+                ] + [
+                    {**e, "memory_type": "episodic_past"} for e in episodic_past
+                ] + memory_context
 
-    workflow_memory_context = []
-    data_task_type = next(
-        (_DATA_TOOL_TASK_TYPE[t] for t in cfg.get("allowed_tools", []) if t in _DATA_TOOL_TASK_TYPE),
-        None,
-    )
-    if data_task_type and cfg.get("memory_enabled"):
-        workflow_memory_context = await retrieve_workflow_memory(
-            tenant_id=tenant_id,
-            agent_id=agent_id,
-            task_type=data_task_type,
-            query=req.query,
+        workflow_memory_context = []
+        data_task_type = next(
+            (_DATA_TOOL_TASK_TYPE[t] for t in cfg.get("allowed_tools", []) if t in _DATA_TOOL_TASK_TYPE),
+            None,
         )
+        if data_task_type and cfg.get("memory_enabled"):
+            workflow_memory_context = await retrieve_workflow_memory(
+                tenant_id=tenant_id,
+                agent_id=agent_id,
+                task_type=data_task_type,
+                query=req.query,
+            )
 
     # Load history: Redis → DB → client fallback
     if req.conversation_id:
@@ -227,6 +233,11 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         history = history or [m.model_dump() for m in req.messages]
     else:
         history = [m.model_dump() for m in req.messages]
+
+    # doc §1.8 — compress already-consumed tool results before they feed any
+    # node's LLM call this turn. State still gets the full history below;
+    # only this turn's view is compressed (see transcript_compression.py).
+    history = compress_tool_results(history)
 
     conv_id = req.conversation_id or await create_conversation(
         agent_version_id=cfg.get("agent_version_id", None),
@@ -521,16 +532,15 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                             latency_ms=latency,
                         )
 
-            if cfg.get("memory_enabled") and not guardrail_triggered and conv_id:
+            # orchestrated=True: orchestrator sẽ ghi memory sau synthesize, agent không ghi
+            if not req.orchestrated and cfg.get("memory_enabled") and not guardrail_triggered and conv_id:
                 final_state = {**state, "response": assistant_text}
                 await apply_memory_policy(
                     final_state, agent_id, tenant_id, user_ref,
                     conversation_id=conv_id, message_id=assistant_msg_id,
                 )
 
-            # Workflow Memory write (doc §3.7) — one record per data-tool call
-            # this turn actually executed, regardless of success/failure.
-            for nt in (node_traces if cfg.get("memory_enabled") else []):
+            for nt in (node_traces if cfg.get("memory_enabled") and not req.orchestrated else []):
                 if not nt["tool_name"].startswith("tool/"):
                     continue
                 task_type = _DATA_TOOL_TASK_TYPE.get(nt["tool_name"][len("tool/"):])

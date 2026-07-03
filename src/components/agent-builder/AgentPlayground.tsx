@@ -63,6 +63,8 @@ function spanType(node: string): { label: string; color: string; bg: string } {
     return { label: 'ROUTING',    color: '#F0B429', bg: 'rgba(240,180,41,0.18)' };
   if (node.includes('guardrail'))
     return { label: 'GUARD',      color: '#F8A4A4', bg: 'rgba(248,164,164,0.14)' };
+  if (node === 'orchestrator-synthesizer')
+    return { label: 'SYNTH',      color: '#86EFAC', bg: 'rgba(134,239,172,0.12)' };
   if (node.includes('planner') || node.includes('rewrite') || node.includes('responder') || node.includes('suggestion'))
     return { label: 'GENERATION', color: '#EBD07C', bg: 'rgba(235,208,124,0.14)' };
   if (node.includes('kb_search'))
@@ -85,8 +87,18 @@ function trimInput(name: string, raw: any): string {
   if (!raw || typeof raw !== 'object') return String(raw ?? '');
   const q   = raw.query ?? '';
   const cfg = raw.config ?? {};
-  const clip = (s: string, n = 200) => s.length > n ? s.slice(0, n) + '…' : s;
+  const clip = (s: string, n = 300) => s.length > n ? s.slice(0, n) + '…' : s;
   switch (true) {
+    // ── Orchestrator spans ──
+    case name.startsWith('[task]'):
+      return JSON.stringify({ agent_name: raw.agent_name || raw.agent_id, agent_id: raw.agent_id, prompt: clip(raw.prompt ?? '') }, null, 2);
+    case name.startsWith('[target]'):
+      return JSON.stringify({ description: raw.description }, null, 2);
+    case name === 'orchestrator-synthesizer':
+      return JSON.stringify({ query: q, outputs_count: raw.outputs_count ?? 0 }, null, 2);
+    case name === 'orchestrator-planner':
+      return JSON.stringify({ query: q }, null, 2);
+    // ── Agent (LangGraph) spans ──
     case name.includes('guardrail'):
       return JSON.stringify({ query: q }, null, 2);
     case name.includes('planner'):
@@ -108,14 +120,36 @@ function trimInput(name: string, raw: any): string {
     case name.includes('judge'):
       return JSON.stringify({ query: q, response: clip(raw.response ?? ''), tool_errors: (raw.tool_errors ?? []).length + ' errors' }, null, 2);
     default:
-      return JSON.stringify({ query: q }, null, 2);
+      return JSON.stringify(raw, null, 2);
   }
 }
 
 function mapObservations(obs: any[]): TraceStep[] {
-  const filtered = obs
+  const byTime = obs
     .filter(o => !_shouldSkip(o.name) && (o.type === 'SPAN' || o.name?.startsWith('judge')))
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+
+  // Re-order: [target] spans must always appear before their child [task] spans.
+  // Async timing in the backend can cause target_span.startTime to land slightly
+  // after the first task's startTime in Langfuse, producing wrong sort order.
+  const taskPool  = byTime.filter(o => o.name.startsWith('[task]'));
+  const nonTasks  = byTime.filter(o => !o.name.startsWith('[task]'));
+  const placed    = new Set<string>();
+  const ordered: typeof byTime = [];
+  for (const span of nonTasks) {
+    ordered.push(span);
+    if (span.name.startsWith('[target]')) {
+      const tStart = new Date(span.startTime).getTime();
+      const tEnd   = span.endTime ? new Date(span.endTime).getTime() : Infinity;
+      const children = taskPool
+        .filter(t => !placed.has(t.id) && new Date(t.startTime).getTime() >= tStart && new Date(t.startTime).getTime() <= tEnd)
+        .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+      for (const c of children) { placed.add(c.id); ordered.push(c); }
+    }
+  }
+  for (const t of taskPool) { if (!placed.has(t.id)) ordered.push(t); }
+
+  const filtered = ordered;
   const traceStart = filtered.length > 0 ? new Date(filtered[0].startTime).getTime() : 0;
   const nameCounts: Record<string, number> = {};
   let currentMaxIteration = 0;
@@ -135,6 +169,10 @@ function mapObservations(obs: any[]): TraceStep[] {
         errorType = out.judge_error_type ?? undefined;
       } catch { /* ignore */ }
     }
+    // Task spans trong orchestrator lưu conversation_id trong metadata → dùng để expand inner agent trace
+    const agentConvId = o.name?.startsWith('[task]')
+      ? (typeof o.metadata === 'object' && o.metadata !== null ? (o.metadata as any).conversation_id ?? undefined : undefined)
+      : undefined;
     return {
       id: o.id,
       node: displayName,
@@ -151,6 +189,7 @@ function mapObservations(obs: any[]): TraceStep[] {
       isRetryStart,
       verdict,
       errorType,
+      agentConvId,
     };
   });
 }
@@ -183,22 +222,25 @@ function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs, inden
   const leftPct  = (startMs / Math.max(totalMs, 1)) * 100;
   const widthPct = Math.max(0.6, (step.latencyMs / Math.max(totalMs, 1)) * 100);
   const isErr = step.status === 'error';
-  // strip prefixes for display
+  // strip prefixes for display; TASK/TARGET labels already shown in chip, title shown in detail panel
   const displayNode = step.node.replace(/^\[(target|task)\]\s*/, '');
+  const isOrchNode = step.node.startsWith('[target]') || step.node.startsWith('[task]');
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', paddingLeft: indent ? 20 : 0, borderLeft: indent ? '2px solid rgba(103,232,249,0.2)' : 'none', marginLeft: indent ? 12 : 0 }}>
-      {expandable && (
-        <button
-          onClick={e => { e.stopPropagation(); onExpand?.(); }}
-          style={{ flexShrink: 0, width: 18, background: 'transparent', border: 'none', cursor: 'pointer', color: 'rgba(103,232,249,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
-          title="Xem trace agent"
-        >
-          {expandLoading
-            ? <span style={{ fontSize: 9 }}>⟳</span>
-            : <ChevronDown size={10} style={{ transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.15s' }} />
-          }
-        </button>
-      )}
+      <div style={{ flexShrink: 0, width: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {expandable && (
+          <button
+            onClick={e => { e.stopPropagation(); onExpand?.(); }}
+            style={{ width: 18, height: '100%', background: 'transparent', border: 'none', cursor: 'pointer', color: 'rgba(103,232,249,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+            title="Xem trace agent"
+          >
+            {expandLoading
+              ? <span style={{ fontSize: 9 }}>⟳</span>
+              : <ChevronDown size={10} style={{ transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.15s' }} />
+            }
+          </button>
+        )}
+      </div>
     <button
       onClick={() => onSelect()}
       style={{
@@ -217,9 +259,11 @@ function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs, inden
         <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 5px', borderRadius: 3, background: t.bg, color: t.color, letterSpacing: '0.04em', flexShrink: 0 }}>
           {t.label}
         </span>
-        <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.88)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {displayNode}
-        </span>
+        {!isOrchNode && (
+          <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.88)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {displayNode}
+          </span>
+        )}
       </div>
       {step.verdict ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -298,12 +342,12 @@ function TracePanel({ steps, traceLoading, traceId }: {
     if (subSteps[convId]) return; // already fetched
     setLoadingConv(prev => new Set(prev).add(convId));
     for (let i = 0; i < 5; i++) {
-      await new Promise(r => setTimeout(r, 1500));
       try {
         const { observations } = await apiGet<any>(`/api/traces/${convId}`);
         const mapped = mapObservations(observations ?? []);
         if (mapped.length > 0) { setSubSteps(prev => ({ ...prev, [convId]: mapped })); break; }
-      } catch { break; }
+      } catch { /* ignore */ }
+      if (i < 4) await new Promise(r => setTimeout(r, 1500));
     }
     setLoadingConv(prev => { const s = new Set(prev); s.delete(convId); return s; });
   };
@@ -333,14 +377,14 @@ function TracePanel({ steps, traceLoading, traceId }: {
     allRows.push({ step, indent: false });
     if (step.agentConvId && expanded.has(step.agentConvId)) {
       for (const sub of (subSteps[step.agentConvId] ?? [])) {
-        allRows.push({ step: sub, indent: true });
+        allRows.push({ step: { ...sub, startMs: sub.startMs + step.startMs }, indent: true });
       }
       if (loadingConv.has(step.agentConvId) && !subSteps[step.agentConvId]) {
         allRows.push({ step: { ...step, id: step.id + '-loading', node: '…loading', status: 'running', latencyMs: 0, tokens: 0, cost: 0, input: '', output: '', iteration: 0, isRetryStart: false }, indent: true });
       }
     }
   }
-  const starts   = allRows.map(r => r.step.startMs);
+  const headerTotalMs = Math.max(...steps.map(s => s.startMs + s.latencyMs), 1);
   const totalMs  = Math.max(...allRows.map(r => r.step.startMs + r.step.latencyMs), 1);
   const totalTok = allRows.reduce((s, r) => s + r.step.tokens, 0);
   // Find selected by ID — immune to index shifts from expand/collapse
@@ -377,7 +421,7 @@ function TracePanel({ steps, traceLoading, traceId }: {
       {/* ── KPI strip ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
         {[
-          { k: 'latency', v: (totalMs / 1000).toFixed(2) + 's', c: '#F5F5F5' },
+          { k: 'latency', v: (headerTotalMs / 1000).toFixed(2) + 's', c: '#F5F5F5' },
           { k: 'tokens',  v: totalTok.toLocaleString(),          c: '#EBD07C' },
           { k: 'cost',    v: '$' + steps.reduce((s, t) => s + t.cost, 0).toFixed(4), c: '#C5DD83' },
           { k: 'spans',   v: String(steps.length),               c: '#F3E2A7' },
@@ -400,7 +444,7 @@ function TracePanel({ steps, traceLoading, traceId }: {
               Observations
             </span>
             <span style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.28)', fontFamily: 'var(--font-mono)' }}>
-              {traceLoading ? 'streaming…' : steps.length + ' spans · ' + totalMs + 'ms'}
+              {traceLoading ? 'streaming…' : steps.length + ' spans · ' + headerTotalMs + 'ms'}
             </span>
           </div>
           {/* rows */}
@@ -432,7 +476,7 @@ function TracePanel({ steps, traceLoading, traceId }: {
                 <WaterfallRow
                   step={s} index={i}
                   selected={selectedId === s.id} onSelect={() => { setSelectedId(s.id); setTab('input'); }}
-                  startMs={starts[i]} totalMs={totalMs}
+                  startMs={s.startMs} totalMs={totalMs}
                   indent={indent}
                   expandable={!!s.agentConvId}
                   expanded={!!s.agentConvId && expanded.has(s.agentConvId)}
@@ -768,12 +812,12 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
         setTraceLoading(true);
         (async () => {
           for (let i = 0; i < 5; i++) {
-            await new Promise(r => setTimeout(r, 2000));
             try {
               const { observations } = await apiGet<any>(`/api/traces/${convId}`);
               const steps = mapObservations(observations ?? []);
               if (steps.length > 0) { setTraceSteps(steps); break; }
-            } catch { break; }
+            } catch { /* ignore */ }
+            if (i < 4) await new Promise(r => setTimeout(r, 2000));
           }
           setTraceLoading(false);
         })();
@@ -786,6 +830,62 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
       setSending(false);
     }
   };
+
+  /* ── Build manual trace steps from orchestrator response (fallback khi LangFuse không có) ── */
+  function buildManualSteps(data: any): TraceStep[] {
+    const plannerMs  = data.planner_ms   ?? 0;
+    const executorMs = data.executor_ms  ?? 0;
+    const synthMs    = data.synthesizer_ms ?? 0;
+    const steps: TraceStep[] = [];
+
+    steps.push({
+      id: 'orchestrator-planner', node: 'orchestrator-planner', status: 'success',
+      startMs: 0, latencyMs: plannerMs, tokens: 0, cost: 0,
+      input: JSON.stringify({ query: data.user_input ?? '' }, null, 2),
+      output: `Plan created (${(data.target_results ?? []).length} targets)`,
+      iteration: 0, isRetryStart: false,
+    });
+
+    for (const target of (data.target_results ?? [])) {
+      const targetStart = plannerMs + Math.min(...(target.task_results ?? [{ start_ms: 0 }]).map((t: any) => t.start_ms ?? 0));
+      steps.push({
+        id: target.node_id, node: `[target] ${target.description.slice(0, 80)}`,
+        status: target.success ? 'success' : 'error',
+        startMs: targetStart, latencyMs: 0, tokens: 0, cost: 0,
+        input: JSON.stringify({ description: target.description }, null, 2),
+        output: target.success ? 'OK' : `Failed: ${target.failed_task}`,
+        iteration: 0, isRetryStart: false,
+      });
+      const targetHeaderIdx = steps.length - 1;
+      const taskOutputs: string[] = [];
+      let targetEnd = targetStart;
+
+      for (const task of (target.task_results ?? [])) {
+        const taskStartMs = plannerMs + (task.start_ms ?? 0);
+        const taskLatency = task.latency_ms ?? 0;
+        steps.push({
+          id: `${target.node_id}-${task.task_index}`, node: `[task] ${task.task_title}`,
+          status: task.success ? 'success' : 'error',
+          startMs: taskStartMs, latencyMs: taskLatency, tokens: 0, cost: 0,
+          input: JSON.stringify({ agent_id: task.agent_id, agent_name: task.agent_name, task: task.task_title }, null, 2),
+          output: task.success ? (task.output || '(empty)') : (task.error ?? '(failed)'),
+          iteration: 0, isRetryStart: false, agentConvId: task.conversation_id ?? undefined,
+        });
+        if (task.success && task.output) taskOutputs.push(`[${task.task_title}]: ${task.output}`);
+        targetEnd = Math.max(targetEnd, taskStartMs + taskLatency);
+      }
+      steps[targetHeaderIdx].latencyMs = targetEnd - targetStart;
+      steps[targetHeaderIdx].output = target.success ? (taskOutputs.join('\n\n') || 'Completed') : `Failed: ${target.failed_task}`;
+    }
+
+    steps.push({
+      id: 'orchestrator-synthesizer', node: 'orchestrator-synthesizer', status: 'success',
+      startMs: plannerMs + executorMs, latencyMs: synthMs, tokens: 0, cost: 0,
+      input: 'Final outputs from all targets', output: data.response ?? '',
+      iteration: 0, isRetryStart: false,
+    });
+    return steps;
+  }
 
   /* ── Send Orchestrator ── */
   /* ── Send Unified (Orchestrator) ── */
@@ -814,48 +914,41 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
         m.id === placeholderId ? { ...m, content: data.response ?? '' } : m,
       ));
 
-      // Map target_results → TraceStep[]
-      const steps: TraceStep[] = [];
-      let cursor = 0;
+      // Build conv_id map từ target_results — dùng để restore agentConvId sau khi mapObservations
+      const convIdMap = new Map<string, string>();
       for (const target of (data.target_results ?? [])) {
-        const targetStart = cursor;
-        // target header span
-        steps.push({
-          id: target.node_id,
-          node: `[target] ${target.description.slice(0, 50)}`,
-          status: target.success ? 'success' : 'error',
-          startMs: targetStart,
-          latencyMs: 0,  // sẽ update sau
-          tokens: 0, cost: 0,
-          input: JSON.stringify({ description: target.description }, null, 2),
-          output: target.success ? 'OK' : `Failed at: ${target.failed_task}`,
-          iteration: 0, isRetryStart: false,
-        });
-        const targetHeaderIdx = steps.length - 1;
-        const taskOutputs: string[] = [];
         for (const task of (target.task_results ?? [])) {
-          const latency = 300 + Math.round(Math.random() * 400);
-          steps.push({
-            id: `${target.node_id}-${task.task_index}`,
-            node: `[task] ${task.task_title}`,
-            status: task.success ? 'success' : 'error',
-            startMs: cursor,
-            latencyMs: latency,
-            tokens: 0, cost: 0,
-            input: JSON.stringify({ agent_id: task.agent_id, task: task.task_title }, null, 2),
-            output: task.success ? (task.output || '(empty)') : (task.error ?? '(failed)'),
-            iteration: 0, isRetryStart: false,
-            agentConvId: task.conversation_id ?? undefined,
-          });
-          if (task.success && task.output) taskOutputs.push(`[${task.task_title}]: ${task.output}`);
-          cursor += latency;
+          if (task.conversation_id) convIdMap.set(task.task_title, task.conversation_id);
         }
-        steps[targetHeaderIdx].latencyMs = cursor - targetStart;
-        steps[targetHeaderIdx].output = target.success
-          ? (taskOutputs.join('\n\n') || 'Completed')
-          : `Failed at: ${target.failed_task}`;
       }
-      setTraceSteps(steps);
+      const injectConvIds = (steps: TraceStep[]) =>
+        steps.map(s => {
+          if (!s.node.startsWith('[task]') || s.agentConvId) return s;
+          const title = s.node.replace(/^\[task\]\s*/, '');
+          const convId = convIdMap.get(title);
+          return convId ? { ...s, agentConvId: convId } : s;
+        });
+
+      // Ưu tiên fetch từ LangFuse (real timing + tokens + cost)
+      // Fallback về manual build nếu LangFuse chưa configured
+      const sessionId = data.session_id;
+      if (sessionId) {
+        setTraceLoading(true);
+        (async () => {
+          for (let i = 0; i < 6; i++) {
+            await new Promise(r => setTimeout(r, 2000));
+            try {
+              const { observations } = await apiGet<any>(`/api/traces/${sessionId}`);
+              const mapped = mapObservations(observations ?? []);
+              if (mapped.length > 0) { setTraceSteps(injectConvIds(mapped)); setTraceLoading(false); return; }
+            } catch { break; }
+          }
+          setTraceSteps(buildManualSteps(data));
+          setTraceLoading(false);
+        })();
+      } else {
+        setTraceSteps(buildManualSteps(data));
+      }
     } catch (e: any) {
       setMessages(prev => prev.map(m =>
         m.id === placeholderId ? { ...m, content: `Lỗi: ${e.message}` } : m,

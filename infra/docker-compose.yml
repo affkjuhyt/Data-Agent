@@ -11,10 +11,12 @@ volumes:
   audit_bridge_data:
   jwks_refresher_data:
   openbao_data:
+  sandbox_dockerd_data:
   qdrant_data:
   neo4j_data:
   neo4j_logs:
   ollama_models:
+  hf_cache:
 
 services:
   # Databases
@@ -317,6 +319,7 @@ services:
       - "4000:4000"
     volumes:
       - ./litellm/config.yaml:/app/config.yaml:ro
+      - hf_cache:/root/.cache/huggingface
     env_file: ../.env
     environment:
       REDIS_URL: redis://redis:6379
@@ -372,6 +375,7 @@ services:
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
       QDRANT_URL: http://qdrant:6333
+      EMBEDDING_DIM: "1024"
     depends_on:
       postgres:
         condition: service_healthy
@@ -665,6 +669,7 @@ services:
       dockerfile: services/orchestrator/Dockerfile
     container_name: dataagent-orchestrator
     restart: unless-stopped
+    env_file: ../.env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
       LITELLM_BASE_URL: http://litellm:4000

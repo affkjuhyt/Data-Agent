@@ -6,6 +6,7 @@ import litellm
 
 from nodes.sandbox.tool_executor._utils import _safe_path, _strip_code_block, _get_query
 from workflow_memory import format_schema_context, retrieve_schema_memory
+from schema_catalog import format_catalog_context, retrieve_schema_catalog
 
 logger = logging.getLogger(__name__)
 
@@ -23,18 +24,23 @@ async def _text_to_sql_handler(call: dict, cfg: dict) -> tuple[dict | None, dict
     if not query:
         return None, {"tool_name": "text_to_sql", "error": "no query provided"}
 
-    # Schema Memory (doc §3.7) — Admin-managed table catalog takes priority
-    # over the canvas's static schema_hint; falls back to schema_hint when
-    # no rows are registered yet for this tenant/data_source.
+    # Schema Catalog (sandbox_schema_docs.docx §II) — auto-crawled, LLM-
+    # described, hybrid-searched catalog takes priority since it's kept in
+    # sync with the live warehouse automatically. Falls back to Schema
+    # Memory (doc §3.7, Admin-managed exact-match) when the crawler hasn't
+    # covered this tenant/table yet, then to the canvas's static schema_hint.
     tenant_id = cfg.get("tenant_id")
-    schema_memory_ctx = ""
+    schema_ctx_text = ""
     if tenant_id:
-        tables = await retrieve_schema_memory(
-            tenant_id, tool_cfg.get("data_source", "postgresql"),
-            user_roles=cfg.get("user_roles"),
-        )
-        schema_memory_ctx = format_schema_context(tables)
-    schema_ctx = f"\n\nSchema:\n{schema_memory_ctx or tool_cfg.get('schema_hint', '')}" if (schema_memory_ctx or tool_cfg.get("schema_hint")) else ""
+        catalog_tables = await retrieve_schema_catalog(tenant_id, query)
+        schema_ctx_text = format_catalog_context(catalog_tables)
+        if not schema_ctx_text:
+            memory_tables = await retrieve_schema_memory(
+                tenant_id, tool_cfg.get("data_source", "postgresql"),
+                user_roles=cfg.get("user_roles"),
+            )
+            schema_ctx_text = format_schema_context(memory_tables)
+    schema_ctx = f"\n\nSchema:\n{schema_ctx_text or tool_cfg.get('schema_hint', '')}" if (schema_ctx_text or tool_cfg.get("schema_hint")) else ""
     planner_mdl = cfg.get("planner_model", "planner")
     last_err: str | None = None
     sql: str | None      = None

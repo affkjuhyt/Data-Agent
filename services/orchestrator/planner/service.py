@@ -7,9 +7,6 @@ from .dpts import LLM, MockLLM, Plan, PlanningProcess, StaticMemoryEstimator
 
 logger = logging.getLogger(__name__)
 
-# Live trees keyed by (user_id, plan_id) — failure recovery resumes the same tree
-_sessions: dict[tuple[str, str], PlanningProcess] = {}
-
 
 def _build_llm():
     if config.USE_MOCK_PLANNER:
@@ -29,21 +26,24 @@ def _new_process() -> PlanningProcess:
     )
 
 
-async def create_plan(user_id: str, user_input: str, agents: list[dict] | None = None) -> Plan | None:
+def restore_plan(state: dict) -> PlanningProcess:
+    process = _new_process()
+    process.load_state(state)
+    return process
+
+
+async def create_plan(user_input: str, agents: list[dict] | None = None) -> tuple[PlanningProcess, Plan] | None:
     process = _new_process()
     plan = await process.plan(user_input, agents=agents)
     if plan is None:
         return None
-    _sessions[(user_id, plan.plan_id)] = process
-    logger.info("plan created | user=%s plan=%s targets=%d agents=%d",
-                user_id, plan.plan_id, len(plan.targets), len(agents or []))
-    return plan
+    logger.info("plan created | plan=%s targets=%d agents=%d",
+                plan.plan_id, len(plan.targets), len(agents or []))
+    return process, plan
 
 
-async def report_node_failure(user_id: str, plan_id: str, node_id: str) -> dict:
-    process = _sessions.get((user_id, plan_id))
-    if process is None:
-        return {"recovered": False, "reason": "no_live_session", "plan": None}
+async def report_node_failure(process: PlanningProcess, node_id: str) -> dict:
+    """Executor reported a broken node — trim its branch and re-expand the SAME tree."""
     try:
         result = process.report_broken_node(node_id)
     except KeyError:
@@ -58,6 +58,5 @@ async def report_node_failure(user_id: str, plan_id: str, node_id: str) -> dict:
             "plan": None,
         }
 
-    _sessions[(user_id, new_plan.plan_id)] = process
-    logger.info("plan recovered | user=%s new_plan=%s", user_id, new_plan.plan_id)
+    logger.info("plan recovered | new_plan=%s", new_plan.plan_id)
     return {"recovered": True, "trimmed": result["trimmed"], "plan": new_plan}
