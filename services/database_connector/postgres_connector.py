@@ -269,33 +269,6 @@ def _prepare_read(data: ReadJoinRequest) -> DQLPreparation:
 
 
 def _prepare_count(data: ReadJoinRequest) -> DQLPreparation:
-    """COUNT(*) over the same joins/filters as _prepare_read (no keyset/limit).
-    Powers `total` for the numbered pager — keyset itself never needs this, but the
-    UI does to render '1 … N'."""
-    unknown = [t for t in data.joins_table if t not in REGISTRY]
-    if unknown:
-        raise AttributeError(f"Unknown table(s): {unknown}")
-
-    orm_map = {t: REGISTRY[t].orm for t in data.joins_table}
-    from_cls = orm_map[data.joins_table[0]]
-
-    stmt = select(func.count()).select_from(from_cls)
-    for i in range(1, len(data.joins_table)):
-        stmt = stmt.join(orm_map[data.joins_table[i]])
-
-    if data.tenant_id is not None:
-        tenant_uuid = uuid.UUID(data.tenant_id) if isinstance(data.tenant_id, str) else data.tenant_id
-        stmt = stmt.where(from_cls.tenant_id == tenant_uuid)
-    for f in data.filters:
-        stmt = stmt.where(_apply_op(getattr(orm_map[f.table_name], f.column_name), f))
-    try:
-        stmt = stmt.where(from_cls.is_deleted == False)
-    except AttributeError:
-        pass
-    return DQLPreparation(compiled_query=stmt)
-
-
-def _prepare_count(data: ReadJoinRequest) -> DQLPreparation:
     """COUNT(*) over the same joins/filters as _prepare_read (no keyset/limit/offset).
     Used to compute `total` for numbered pagination."""
     unknown = [t for t in data.joins_table if t not in REGISTRY]
@@ -384,16 +357,16 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def _tenant_session(factory, tenant_id: str):
+    # is_local=true: setting scoped to current transaction, auto-reset on commit/rollback.
+    # Avoids releasing the connection back to the pool between set_config and the actual
+    # operation, which would lose the session-level setting on a different connection.
     async with factory() as session:
-        await session.execute(text("SELECT set_config('app.tenant_id', :tid, false)"), {"tid": str(tenant_id)})
-        await session.commit()
+        await session.execute(text("SELECT set_config('app.tenant_id', :tid, true)"), {"tid": str(tenant_id)})
         try:
             yield session
         finally:
             try:
                 await session.rollback()
-                await session.execute(text("SELECT set_config('app.tenant_id', '', false)"))
-                await session.commit()
             except Exception:
                 pass
 
@@ -501,18 +474,19 @@ class PostgresClient:
             return ResponseModel(code=400, error=str(e))
 
         tenant_id = str(getattr(data, "tenant_id", None) or "")
-        pk_data: dict = {}
         async with self.get_client(tenant_id=tenant_id or None) as session:
             session.add(prep.instance)
             try:
+                # flush() evaluates Python-side column defaults (uuid4) and sends the INSERT
+                # within the current transaction — so is_local tenant context is still active.
+                # We extract PK after flush (defaults resolved) but before commit.
+                await session.flush()
+                pks = [col.name for col in prep.orm_cls.__table__.primary_key]
+                pk_data = {pk: str(getattr(prep.instance, pk)) for pk in pks if
+                           getattr(prep.instance, pk) is not None}
                 await session.commit()
-                await session.refresh(prep.instance)
             except IntegrityError as e:
                 await session.rollback()
-                # Distinguish the constraint that failed (Postgres SQLSTATE via the
-                # underlying asyncpg error) instead of blanket-labelling everything
-                # "already exists" — a foreign-key or not-null failure is a very
-                # different problem from a duplicate.
                 sqlstate = getattr(getattr(e, "orig", None), "sqlstate", None)
                 if sqlstate == "23505":      # unique_violation
                     return ResponseModel(code=409, error=f"Record already exists in {prep.table_name}")
@@ -524,9 +498,6 @@ class PostgresClient:
                     return ResponseModel(code=400, error=f"{prep.table_name}: a value failed a constraint check")
                 log.warning("insert integrity error in %s (sqlstate=%s): %s", prep.table_name, sqlstate, e)
                 return ResponseModel(code=409, error=f"Integrity error in {prep.table_name}")
-            pks = [col.name for col in prep.orm_cls.__table__.primary_key]
-            pk_data = {pk: str(getattr(prep.instance, pk)) for pk in pks if
-                       getattr(prep.instance, pk) is not None}
         return ResponseModel(code=200, data=pk_data)
 
     async def soft_delete(self, data: BaseModel) -> ResponseModel:

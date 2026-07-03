@@ -19,15 +19,21 @@ interface TraceStep {
   status: 'success' | 'error' | 'running';
   latencyMs: number;
   startMs: number;
+  startAbsMs: number;       // absolute epoch ms, dùng để tính offset chính xác cho inner spans
   tokens: number;
   cost: number;
   input: string;
   output: string;
   iteration: number;
   isRetryStart: boolean;
+  isConcurrentBranch: boolean;  // true = span cùng tên trước đó vẫn CHƯA kết thúc (chạy song song thật, vd ToT branching) — khác "retry" (chạy sau khi cái trước đã xong, vd judge loop)
   verdict?: 'PASS' | 'FAIL';
   errorType?: string;
-  agentConvId?: string;  // nếu có → task có thể expand để xem LangGraph trace bên trong
+  agentConvId?: string;
+  agentLfTraceId?: string;
+  agentLfSpanId?: string;
+  agentGroupId?: string;        // multi-agent: conv_id của agent group này thuộc về
+  isAgentGroupHeader?: boolean; // true = dòng tổng của 1 agent trong multi-agent timeline
 }
 
 interface Message {
@@ -56,16 +62,20 @@ interface AgentOption {
 
 function spanType(node: string): { label: string; color: string; bg: string } {
   if (node.startsWith('[target]'))
-    return { label: 'TARGET', color: '#C084FC', bg: 'rgba(192,132,252,0.14)' };
+    return { label: 'TARGET',     color: '#C084FC', bg: 'rgba(192,132,252,0.14)' };
   if (node.startsWith('[task]'))
-    return { label: 'TASK',   color: '#67E8F9', bg: 'rgba(103,232,249,0.12)' };
+    return { label: 'TASK',       color: '#67E8F9', bg: 'rgba(103,232,249,0.12)' };
+  if (node.startsWith('[agent]'))
+    return { label: 'AGENT',      color: '#A78BFA', bg: 'rgba(167,139,250,0.18)' };
+  if (node === 'single-agent')
+    return { label: 'AGENT',      color: '#A78BFA', bg: 'rgba(167,139,250,0.12)' };
   if (node === 'router')
     return { label: 'ROUTING',    color: '#F0B429', bg: 'rgba(240,180,41,0.18)' };
   if (node.includes('guardrail'))
     return { label: 'GUARD',      color: '#F8A4A4', bg: 'rgba(248,164,164,0.14)' };
   if (node === 'orchestrator-synthesizer')
     return { label: 'SYNTH',      color: '#86EFAC', bg: 'rgba(134,239,172,0.12)' };
-  if (node.includes('planner') || node.includes('rewrite') || node.includes('responder') || node.includes('suggestion'))
+  if (node.includes('planner') || node.includes('responder') || node.includes('suggestion') || node.includes('input_refine') || node.includes('input-refine') || node.includes('summary'))
     return { label: 'GENERATION', color: '#EBD07C', bg: 'rgba(235,208,124,0.14)' };
   if (node.includes('kb_search'))
     return { label: 'RETRIEVAL',  color: '#93C5FD', bg: 'rgba(147,197,253,0.12)' };
@@ -75,13 +85,38 @@ function spanType(node: string): { label: string; color: string; bg: string } {
     return { label: 'RANK',       color: '#F3E2A7', bg: 'rgba(243,226,167,0.10)' };
   if (node.includes('judge'))
     return { label: 'EVAL',       color: '#C084FC', bg: 'rgba(192,132,252,0.14)' };
-  return   { label: 'SPAN',       color: '#BFA66A', bg: 'rgba(191,166,106,0.12)' };
+  if (node.includes('human_approval'))
+    return { label: 'APPROVAL',   color: '#7DD3FC', bg: 'rgba(125,211,252,0.14)' };
+  return   { label: 'NODE',       color: '#BFA66A', bg: 'rgba(191,166,106,0.12)' };
 }
 
 /* ─── Helpers ────────────────────────────────────────────────── */
 
-const _SKIP_NODES = new Set(['LangGraph', 'join_retrieval', 'join_end']);
+const _SKIP_NODES = new Set(['LangGraph', 'join_retrieval', 'join_end', 'ChatOpenAI']);
+const _HIDE_SPAN  = new Set(['orchestrator']); // hide span itself but keep children visible
 const _shouldSkip = (name: string) => _SKIP_NODES.has(name) || name.startsWith('_route') || name.startsWith('route_');
+
+// Span hạ tầng OTEL tự động (postgres connect, mongo ping/find, wrapper HTTP
+// request của FastAPI/httpx instrumentation...) — không phải node thật của
+// app, chỉ gây nhiễu waterfall. Nhận diện qua scope.name trong metadata
+// (opentelemetry.instrumentation.* — khác với span thật của app luôn có
+// scope.name = "langfuse-sdk" hoặc không có scope).
+function _isInfraSpan(o: any): boolean {
+  const scopeName = o?.metadata?.scope?.name as string | undefined;
+  return !!scopeName && scopeName.startsWith('opentelemetry.instrumentation.');
+}
+
+// "LangGraph" là tên mặc định của CallbackHandler cho MỌI graph invocation —
+// dùng chung ở CẢ orchestrator (bọc guardrail/input_refine/single_agent/...)
+// LẪN workflow-runtime (bọc planner/judge/tool_executor/... của 1 agent run).
+// Chỉ span của workflow-runtime mới cần ẩn con (chờ user expand single-agent/
+// [task]) — span của orchestrator là gốc thật, con của nó luôn phải hiện
+// ngay. Phân biệt qua service.name trong resourceAttributes (OTEL), KHÔNG
+// thể phân biệt bằng tên vì cả 2 đều tên "LangGraph".
+function _isAgentInternalWrapper(o: any): boolean {
+  return o?.name === 'LangGraph' &&
+    o?.metadata?.resourceAttributes?.['service.name'] === 'workflow-runtime';
+}
 
 function trimInput(name: string, raw: any): string {
   if (!raw || typeof raw !== 'object') return String(raw ?? '');
@@ -103,6 +138,7 @@ function trimInput(name: string, raw: any): string {
       return JSON.stringify({ query: q }, null, 2);
     case name.includes('planner'):
       return JSON.stringify({ query: q, memory_context: (raw.memory_context ?? []).length + ' items' }, null, 2);
+    case name.includes('input_refine'):
     case name.includes('rewrite'):
       return JSON.stringify({ query: q, messages: (raw.messages ?? []).length + ' messages' }, null, 2);
     case name.includes('kb_search'):
@@ -124,9 +160,53 @@ function trimInput(name: string, raw: any): string {
   }
 }
 
-function mapObservations(obs: any[]): TraceStep[] {
+function mapObservations(obs: any[], traceId?: string): TraceStep[] {
+  // Build parent lookup (full object, không chỉ tên) — cần cả metadata để
+  // phân biệt "LangGraph" của orchestrator vs của workflow-runtime.
+  const byId = new Map<string, any>(obs.map(o => [o.id as string, o]));
+  const infraById = new Map<string, boolean>(obs.map(o => [o.id as string, _isInfraSpan(o)]));
+
+  // Detect context to avoid mixing orchestrator-level and agent-internal spans:
+  // - outer multi-agent trace  : has [task] spans → hasTaskSpan = true
+  // - outer single-agent trace : has 'single-agent' span → hasSingleAgentSpan = true
+  // - expanded agent view      : neither flag → include all visible spans
+  const names = obs.map(o => o.name as string);
+  const hasTaskSpan        = names.some(n => n?.startsWith('[task]'));
+  const hasSingleAgentSpan = names.some(n => n === 'single-agent');
+  // Either outer-trace context → exclude agent-internal spans (behind skipped LangGraph wrapper)
+  const isOuterTrace = hasTaskSpan || hasSingleAgentSpan;
+
   const byTime = obs
-    .filter(o => !_shouldSkip(o.name) && (o.type === 'SPAN' || o.name?.startsWith('judge')))
+    .filter(o => {
+      if (_isInfraSpan(o)) return false;
+      if (_shouldSkip(o.name) || _HIDE_SPAN.has(o.name)) return false;
+      if (o.name?.startsWith('judge')) return true;
+      // Ẩn mọi span rơi vào tag mặc định "NODE" (spanType() không nhận diện
+      // được) — đây là các node hạ tầng/định tuyến không có giá trị hiển thị
+      // (vd fetch_agents, execute, single_agent wrapper) — khác "single-agent"
+      // (gạch ngang, tag AGENT, span thủ công) nên KHÔNG bị ẩn nhầm.
+      if (spanType(o.name).label === 'NODE') return false;
+      const parentId = o.parentObservationId as string | undefined;
+      const parentObs = parentId ? byId.get(parentId) : undefined;
+      const parentName = parentObs?.name as string | undefined;
+      // Parent not in this observation set (external root) → include only SPANs
+      if (!parentId || parentName === undefined) return o.type === 'SPAN';
+      // Parent là "LangGraph" của workflow-runtime (wrapper nội bộ 1 agent run)
+      // → ẩn con, chờ user expand single-agent/[task]. "LangGraph" của
+      // orchestrator (wrapper gốc, bọc guardrail/input_refine/...) → LUÔN
+      // hiện con, không quan tâm isOuterTrace (đây chính là các bước top-level
+      // thật sự, không phải chi tiết ẩn bên trong 1 agent).
+      if (parentName === 'LangGraph') {
+        return _isAgentInternalWrapper(parentObs) ? !isOuterTrace : true;
+      }
+      // Parent là skip/infra node khác (join_retrieval, ChatOpenAI, route/_route,
+      // FastAPI/httpx auto-instrumentation POST span) — "promote" con lên 1 cấp:
+      //   outer trace   → exclude (sẽ hiện khi expand [task]/single-agent)
+      //   expanded view → include (đây là các span top-level thật của agent)
+      if (_shouldSkip(parentName) || infraById.get(parentId)) return !isOuterTrace;
+      // Parent exists and is not skipped → always include
+      return true;
+    })
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
   // Re-order: [target] spans must always appear before their child [task] spans.
@@ -153,6 +233,10 @@ function mapObservations(obs: any[]): TraceStep[] {
   const traceStart = filtered.length > 0 ? new Date(filtered[0].startTime).getTime() : 0;
   const nameCounts: Record<string, number> = {};
   let currentMaxIteration = 0;
+  // Theo dõi endTime của lần xuất hiện GẦN NHẤT theo từng tên — để phân biệt
+  // "chạy song song thật" (vd nhiều candidate của ToT planner qua asyncio.gather)
+  // với "chạy tuần tự sau khi cái trước đã xong" (vd judge loop thất bại → thử lại).
+  const lastEndByName: Record<string, number> = {};
   return filtered.map(o => {
     const count = nameCounts[o.name] ?? 0;
     nameCounts[o.name] = count + 1;
@@ -169,16 +253,27 @@ function mapObservations(obs: any[]): TraceStep[] {
         errorType = out.judge_error_type ?? undefined;
       } catch { /* ignore */ }
     }
-    // Task spans trong orchestrator lưu conversation_id trong metadata → dùng để expand inner agent trace
-    const agentConvId = o.name?.startsWith('[task]')
+    // [task] và single-agent spans có thể expand để xem LangGraph trace bên trong
+    const isExpandable = o.name?.startsWith('[task]') || o.name === 'single-agent';
+    const agentConvId = isExpandable
       ? (typeof o.metadata === 'object' && o.metadata !== null ? (o.metadata as any).conversation_id ?? undefined : undefined)
       : undefined;
+    // Dùng o.id (= span id trong Langfuse) để proxy fetch đúng observations khi orchestrated
+    const agentLfTraceId = isExpandable ? traceId : undefined;
+    const agentLfSpanId  = isExpandable ? o.id : undefined;
+    const absMs = new Date(o.startTime).getTime();
+    const latencyMs = o.endTime ? Math.round(new Date(o.endTime).getTime() - absMs) : 0;
+    const endAbsMs = absMs + latencyMs;
+    const prevEnd = lastEndByName[o.name];
+    const isConcurrentBranch = isRetryStart && prevEnd !== undefined && absMs < prevEnd;
+    lastEndByName[o.name] = Math.max(prevEnd ?? 0, endAbsMs);
     return {
       id: o.id,
       node: displayName,
       status: o.level === 'ERROR' ? 'error' : 'success',
-      startMs: Math.round(new Date(o.startTime).getTime() - traceStart),
-      latencyMs: o.endTime ? Math.round(new Date(o.endTime).getTime() - new Date(o.startTime).getTime()) : 0,
+      startMs: Math.round(absMs - traceStart),
+      startAbsMs: absMs,
+      latencyMs,
       tokens: o.usage ? ((o.usage.input ?? 0) + (o.usage.output ?? 0)) : 0,
       cost: o.calculatedTotalCost ?? 0,
       input: trimInput(o.name, o.input),
@@ -187,9 +282,12 @@ function mapObservations(obs: any[]): TraceStep[] {
         : typeof o.output === 'object' ? JSON.stringify(o.output, null, 2) : String(o.output ?? ''),
       iteration,
       isRetryStart,
+      isConcurrentBranch,
       verdict,
       errorType,
       agentConvId,
+      agentLfTraceId,
+      agentLfSpanId,
     };
   });
 }
@@ -222,8 +320,7 @@ function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs, inden
   const leftPct  = (startMs / Math.max(totalMs, 1)) * 100;
   const widthPct = Math.max(0.6, (step.latencyMs / Math.max(totalMs, 1)) * 100);
   const isErr = step.status === 'error';
-  // strip prefixes for display; TASK/TARGET labels already shown in chip, title shown in detail panel
-  const displayNode = step.node.replace(/^\[(target|task)\]\s*/, '');
+  const displayNode = step.node.replace(/^\[(target|task|agent)\]\s*/, '');
   const isOrchNode = step.node.startsWith('[target]') || step.node.startsWith('[task]');
   return (
     <div style={{ display: 'flex', alignItems: 'stretch', paddingLeft: indent ? 20 : 0, borderLeft: indent ? '2px solid rgba(103,232,249,0.2)' : 'none', marginLeft: indent ? 12 : 0 }}>
@@ -318,8 +415,27 @@ function JsonView({ value }: { value: string | object }) {
 
 /* ─── TracePanel ─────────────────────────────────────────────── */
 
-function TracePanel({ steps, traceLoading, traceId }: {
-  steps: TraceStep[]; traceLoading: boolean; traceId: string | null;
+function getDescendants(obs: any[], parentId: string): any[] {
+  const childrenMap = new Map<string, any[]>();
+  for (const o of obs) {
+    const pid = o.parentObservationId ?? '__root__';
+    if (!childrenMap.has(pid)) childrenMap.set(pid, []);
+    childrenMap.get(pid)!.push(o);
+  }
+  const result: any[] = [];
+  const queue = [parentId];
+  while (queue.length) {
+    const cur = queue.shift()!;
+    for (const kid of childrenMap.get(cur) ?? []) {
+      result.push(kid);
+      if (kid.id) queue.push(kid.id);
+    }
+  }
+  return result;
+}
+
+function TracePanel({ steps, traceLoading, traceId, rawObservations }: {
+  steps: TraceStep[]; traceLoading: boolean; traceId: string | null; rawObservations: any[];
 }) {
   const [tab, setTab]           = useState<'input' | 'output' | 'metadata'>('input');
   // Track by ID instead of index to prevent index-shift when expanding rows
@@ -328,33 +444,39 @@ function TracePanel({ steps, traceLoading, traceId }: {
   const isDragging    = useRef(false);
   const containerRef  = useRef<HTMLDivElement>(null);
 
-  // expand state cho task rows
-  const [expanded,    setExpanded]    = useState<Set<string>>(new Set());
-  const [subSteps,    setSubSteps]    = useState<Record<string, TraceStep[]>>({});
-  const [loadingConv, setLoadingConv] = useState<Set<string>>(new Set());
+  // expand state cho task rows (single-agent inline expand)
+  const [expanded,       setExpanded]       = useState<Set<string>>(new Set());
+  const [subSteps,       setSubSteps]       = useState<Record<string, TraceStep[]>>({});
+  // collapse state cho multi-agent group headers (default: tất cả expanded)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
-  const toggleExpand = async (step: TraceStep) => {
-    const convId = step.agentConvId!;
+  const toggleGroup = (groupId: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId); else next.add(groupId);
+      return next;
+    });
+  };
+
+  const toggleExpand = (step: TraceStep) => {
+    // Use span ID as key (agentConvId may be missing for single-agent path)
+    const key = step.agentLfSpanId ?? step.agentConvId!;
     const next = new Set(expanded);
-    if (next.has(convId)) { next.delete(convId); setExpanded(next); return; }
-    next.add(convId);
+    if (next.has(key)) { next.delete(key); setExpanded(next); return; }
+    next.add(key);
     setExpanded(next);
-    if (subSteps[convId]) return; // already fetched
-    setLoadingConv(prev => new Set(prev).add(convId));
-    for (let i = 0; i < 5; i++) {
-      try {
-        const { observations } = await apiGet<any>(`/api/traces/${convId}`);
-        const mapped = mapObservations(observations ?? []);
-        if (mapped.length > 0) { setSubSteps(prev => ({ ...prev, [convId]: mapped })); break; }
-      } catch { /* ignore */ }
-      if (i < 4) await new Promise(r => setTimeout(r, 1500));
-    }
-    setLoadingConv(prev => { const s = new Set(prev); s.delete(convId); return s; });
+    if (subSteps[key] || !step.agentLfSpanId) return;
+
+    // 1 trace duy nhất cho cả request (xem handleSendStream) → rawObservations
+    // luôn chứa toàn bộ cây, không cần fetch thêm khi expand 1 [task]/single-agent.
+    const descendants = getDescendants(rawObservations, step.agentLfSpanId);
+    const mapped = mapObservations(descendants);
+    setSubSteps(prev => ({ ...prev, [key]: mapped }));
   };
 
   // Reset to first row when steps change (new result)
   useEffect(() => {
-    if (steps.length > 0) { setSelectedId(steps[0].id); setTab('input'); }
+    if (steps.length > 0) { setSelectedId(steps[0].id); setTab('input'); setCollapsedGroups(new Set()); }
   }, [steps]);
 
   /* Drag handlers */
@@ -371,22 +493,34 @@ function TracePanel({ steps, traceLoading, traceId }: {
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }, []);
 
-  // flat list: steps + sub-steps interleaved (task rows expand inline)
+  // flat list: steps + sub-steps interleaved
   const allRows: Array<{ step: TraceStep; indent: boolean }> = [];
   for (const step of steps) {
-    allRows.push({ step, indent: false });
-    if (step.agentConvId && expanded.has(step.agentConvId)) {
-      for (const sub of (subSteps[step.agentConvId] ?? [])) {
-        allRows.push({ step: { ...sub, startMs: sub.startMs + step.startMs }, indent: true });
+    // Inner node của multi-agent group: chỉ hiện khi group chưa bị collapse
+    if (step.agentGroupId && !step.isAgentGroupHeader) {
+      if (!collapsedGroups.has(step.agentGroupId)) {
+        allRows.push({ step, indent: true });
       }
-      if (loadingConv.has(step.agentConvId) && !subSteps[step.agentConvId]) {
-        allRows.push({ step: { ...step, id: step.id + '-loading', node: '…loading', status: 'running', latencyMs: 0, tokens: 0, cost: 0, input: '', output: '', iteration: 0, isRetryStart: false }, indent: true });
+      continue;
+    }
+
+    allRows.push({ step, indent: false });
+
+    // Expand inline cho [task] / single-agent spans (legacy single-trace path)
+    const expandKey = step.agentLfSpanId ?? step.agentConvId;
+    if (expandKey && expanded.has(expandKey)) {
+      for (const sub of (subSteps[expandKey] ?? [])) {
+        const subStartMs = (step.startAbsMs > 0 && sub.startAbsMs > 0)
+          ? step.startMs + (sub.startAbsMs - step.startAbsMs)
+          : sub.startMs + step.startMs;
+        allRows.push({ step: { ...sub, startMs: subStartMs }, indent: true });
       }
     }
   }
   const headerTotalMs = Math.max(...steps.map(s => s.startMs + s.latencyMs), 1);
   const totalMs  = Math.max(...allRows.map(r => r.step.startMs + r.step.latencyMs), 1);
-  const totalTok = allRows.reduce((s, r) => s + r.step.tokens, 0);
+  // Bỏ qua inner nodes khi tính tổng tokens/cost để tránh đếm trùng với group header
+  const totalTok = allRows.reduce((s, r) => s + (r.step.agentGroupId && !r.step.isAgentGroupHeader ? 0 : r.step.tokens), 0);
   // Find selected by ID — immune to index shifts from expand/collapse
   const sel = allRows.find(r => r.step.id === selectedId)?.step ?? allRows[0]?.step;
 
@@ -423,7 +557,7 @@ function TracePanel({ steps, traceLoading, traceId }: {
         {[
           { k: 'latency', v: (headerTotalMs / 1000).toFixed(2) + 's', c: '#F5F5F5' },
           { k: 'tokens',  v: totalTok.toLocaleString(),          c: '#EBD07C' },
-          { k: 'cost',    v: '$' + steps.reduce((s, t) => s + t.cost, 0).toFixed(4), c: '#C5DD83' },
+          { k: 'cost',    v: '$' + steps.reduce((s, t) => s + (t.agentGroupId && !t.isAgentGroupHeader ? 0 : t.cost), 0).toFixed(4), c: '#C5DD83' },
           { k: 'spans',   v: String(steps.length),               c: '#F3E2A7' },
         ].map(({ k, v, c }, i) => (
           <div key={k} style={{ padding: '7px 10px', borderRight: i < 3 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
@@ -469,7 +603,7 @@ function TracePanel({ steps, traceLoading, traceId }: {
                     fontFamily: 'var(--font-mono)', letterSpacing: '0.08em',
                   }}>
                     <div style={{ flex: 1, height: 1, background: 'rgba(192,132,252,0.25)' }} />
-                    <span>retry #{s.iteration}</span>
+                    <span>{s.isConcurrentBranch ? `song song #${s.iteration}` : `retry #${s.iteration}`}</span>
                     <div style={{ flex: 1, height: 1, background: 'rgba(192,132,252,0.25)' }} />
                   </div>
                 )}
@@ -478,10 +612,17 @@ function TracePanel({ steps, traceLoading, traceId }: {
                   selected={selectedId === s.id} onSelect={() => { setSelectedId(s.id); setTab('input'); }}
                   startMs={s.startMs} totalMs={totalMs}
                   indent={indent}
-                  expandable={!!s.agentConvId}
-                  expanded={!!s.agentConvId && expanded.has(s.agentConvId)}
-                  expandLoading={!!s.agentConvId && loadingConv.has(s.agentConvId)}
-                  onExpand={() => s.agentConvId && toggleExpand(s)}
+                  expandable={!!s.isAgentGroupHeader || !!s.agentLfSpanId}
+                  expanded={
+                    s.isAgentGroupHeader
+                      ? !collapsedGroups.has(s.agentGroupId!)
+                      : !!(s.agentLfSpanId ?? s.agentConvId) && expanded.has(s.agentLfSpanId ?? s.agentConvId!)
+                  }
+                  expandLoading={false}
+                  onExpand={() => {
+                    if (s.isAgentGroupHeader && s.agentGroupId) toggleGroup(s.agentGroupId);
+                    else if (s.agentLfSpanId) toggleExpand(s);
+                  }}
                 />
               </React.Fragment>
             ))}
@@ -684,6 +825,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
   const [sending, setSending]     = useState(false);
   const [traceSteps, setTraceSteps]   = useState<TraceStep[]>([]);
   const [traceLoading, setTraceLoading] = useState(false);
+  const [rawObservations, setRawObservations] = useState<any[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [pendingOptions, setPendingOptions]     = useState<string[] | null>(null);
   const [pendingApproval, setPendingApproval]   = useState<PendingApproval | null>(null);
@@ -737,159 +879,13 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   /* ── canSend ── */
-  const canSend = input.trim().length > 0 && !sending && (mode === 'unified' || !!selectedAgent);
+  // Khoá gửi tin nhắn trong lúc trace panel đang fetch/poll (traceLoading) —
+  // gửi tiếp sẽ tạo request mới đè lên session đang chờ trace, dễ gây nhầm
+  // lẫn thứ tự conversation.
+  const canSend = input.trim().length > 0 && !sending && !traceLoading && (mode === 'unified' || !!selectedAgent);
 
-  /* ── Send Single ── */
-  const handleSendSingle = async (text: string) => {
-    const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-    const userMsgId = Date.now().toString();
-    const placeholderId = (Date.now() + 1).toString();
-    setMessages(prev => [...prev, { id: userMsgId, role: 'user', content: text, timestamp: now }]);
-    setInput('');
-    if (textareaRef.current) textareaRef.current.style.height = 'auto';
-    setSending(true);
-    setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', content: '', timestamp: now }]);
-
-    try {
-      const res = await fetch(`${API_URL}/api/conversations/run`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(keycloak?.token ? { Authorization: `Bearer ${keycloak.token}` } : {}) },
-        body: JSON.stringify({
-          query: text, agent_id: selectedAgent,
-          conversation_id: conversationId,
-          messages: messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
-        }),
-      });
-
-      const convId = res.headers.get('X-Conversation-Id');
-      if (convId && !conversationId) setConversationId(convId);
-
-      const reader  = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let fullText  = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value);
-        for (const line of chunk.split('\n')) {
-          if (!line.startsWith('data: ')) continue;
-          const data = line.slice(6);
-          if (data === '[DONE]') continue;
-          if (data.startsWith('[ERROR]')) {
-            fullText = data.slice(7).trim() || 'Đã xảy ra lỗi, vui lòng thử lại.';
-            setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: fullText } : m));
-            break;
-          }
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed?.__suggestions) {
-              setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, suggestions: parsed.__suggestions } : m));
-            } else if (parsed?.__options) {
-              setPendingOptions(parsed.__options);
-            } else if (parsed?.__pending_review) {
-              setMessages(prev => prev.map(m => m.id === placeholderId
-                ? { ...m, content: '' }
-                : m,
-              ));
-              setPendingApproval({
-                convId:        parsed.__pending_review.conv_id ?? parsed.__pending_review,
-                placeholderId,
-                payload:       parsed.__pending_review.payload ?? null,
-              });
-            } else {
-              fullText += parsed;
-              setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: fullText } : m));
-            }
-          } catch {
-            fullText += data;
-            setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: fullText } : m));
-          }
-        }
-      }
-
-      if (convId) {
-        setTraceLoading(true);
-        (async () => {
-          for (let i = 0; i < 5; i++) {
-            try {
-              const { observations } = await apiGet<any>(`/api/traces/${convId}`);
-              const steps = mapObservations(observations ?? []);
-              if (steps.length > 0) { setTraceSteps(steps); break; }
-            } catch { /* ignore */ }
-            if (i < 4) await new Promise(r => setTimeout(r, 2000));
-          }
-          setTraceLoading(false);
-        })();
-      }
-    } catch {
-      setMessages(prev => prev.map(m =>
-        m.id === placeholderId ? { ...m, content: 'Lỗi: không kết nối được backend.' } : m,
-      ));
-    } finally {
-      setSending(false);
-    }
-  };
-
-  /* ── Build manual trace steps from orchestrator response (fallback khi LangFuse không có) ── */
-  function buildManualSteps(data: any): TraceStep[] {
-    const plannerMs  = data.planner_ms   ?? 0;
-    const executorMs = data.executor_ms  ?? 0;
-    const synthMs    = data.synthesizer_ms ?? 0;
-    const steps: TraceStep[] = [];
-
-    steps.push({
-      id: 'orchestrator-planner', node: 'orchestrator-planner', status: 'success',
-      startMs: 0, latencyMs: plannerMs, tokens: 0, cost: 0,
-      input: JSON.stringify({ query: data.user_input ?? '' }, null, 2),
-      output: `Plan created (${(data.target_results ?? []).length} targets)`,
-      iteration: 0, isRetryStart: false,
-    });
-
-    for (const target of (data.target_results ?? [])) {
-      const targetStart = plannerMs + Math.min(...(target.task_results ?? [{ start_ms: 0 }]).map((t: any) => t.start_ms ?? 0));
-      steps.push({
-        id: target.node_id, node: `[target] ${target.description.slice(0, 80)}`,
-        status: target.success ? 'success' : 'error',
-        startMs: targetStart, latencyMs: 0, tokens: 0, cost: 0,
-        input: JSON.stringify({ description: target.description }, null, 2),
-        output: target.success ? 'OK' : `Failed: ${target.failed_task}`,
-        iteration: 0, isRetryStart: false,
-      });
-      const targetHeaderIdx = steps.length - 1;
-      const taskOutputs: string[] = [];
-      let targetEnd = targetStart;
-
-      for (const task of (target.task_results ?? [])) {
-        const taskStartMs = plannerMs + (task.start_ms ?? 0);
-        const taskLatency = task.latency_ms ?? 0;
-        steps.push({
-          id: `${target.node_id}-${task.task_index}`, node: `[task] ${task.task_title}`,
-          status: task.success ? 'success' : 'error',
-          startMs: taskStartMs, latencyMs: taskLatency, tokens: 0, cost: 0,
-          input: JSON.stringify({ agent_id: task.agent_id, agent_name: task.agent_name, task: task.task_title }, null, 2),
-          output: task.success ? (task.output || '(empty)') : (task.error ?? '(failed)'),
-          iteration: 0, isRetryStart: false, agentConvId: task.conversation_id ?? undefined,
-        });
-        if (task.success && task.output) taskOutputs.push(`[${task.task_title}]: ${task.output}`);
-        targetEnd = Math.max(targetEnd, taskStartMs + taskLatency);
-      }
-      steps[targetHeaderIdx].latencyMs = targetEnd - targetStart;
-      steps[targetHeaderIdx].output = target.success ? (taskOutputs.join('\n\n') || 'Completed') : `Failed: ${target.failed_task}`;
-    }
-
-    steps.push({
-      id: 'orchestrator-synthesizer', node: 'orchestrator-synthesizer', status: 'success',
-      startMs: plannerMs + executorMs, latencyMs: synthMs, tokens: 0, cost: 0,
-      input: 'Final outputs from all targets', output: data.response ?? '',
-      iteration: 0, isRetryStart: false,
-    });
-    return steps;
-  }
-
-  /* ── Send Orchestrator ── */
-  /* ── Send Unified (Orchestrator) ── */
-  const handleSendUnified = async (text: string) => {
+  /* ── Send — unified handler cho cả single agent và multi-agent ── */
+  const handleSendStream = async (text: string) => {
     const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
     const userMsgId = Date.now().toString();
     const placeholderId = (Date.now() + 1).toString();
@@ -901,61 +897,95 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', content: '', timestamp: now }]);
 
     try {
-      const res = await fetch(`${API_URL}/api/orchestrate/run`, {
+      const res = await fetch(`${API_URL}/api/orchestrate/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(keycloak?.token ? { Authorization: `Bearer ${keycloak.token}` } : {}) },
-        body: JSON.stringify({ query: text, user_id: keycloak?.tokenParsed?.sub ?? 'playground' }),
+        body: JSON.stringify({
+          query:    text,
+          agent_id: mode === 'single' ? selectedAgent : undefined,
+          user_id:  keycloak?.tokenParsed?.sub ?? 'playground',
+          messages: messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
+        }),
       });
 
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      const reader  = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let fullText   = '';
+      let sessionId: string | undefined;
 
-      setMessages(prev => prev.map(m =>
-        m.id === placeholderId ? { ...m, content: data.response ?? '' } : m,
-      ));
-
-      // Build conv_id map từ target_results — dùng để restore agentConvId sau khi mapObservations
-      const convIdMap = new Map<string, string>();
-      for (const target of (data.target_results ?? [])) {
-        for (const task of (target.task_results ?? [])) {
-          if (task.conversation_id) convIdMap.set(task.task_title, task.conversation_id);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value);
+        for (const line of chunk.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6);
+          if (data === '[DONE]') continue;
+          if (data.startsWith('[ERROR]')) {
+            const errMsg = data.slice(7).trim() || 'Đã xảy ra lỗi, vui lòng thử lại.';
+            setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: errMsg } : m));
+            break;
+          }
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed?.__suggestions) {
+              setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, suggestions: parsed.__suggestions } : m));
+            } else if (parsed?.__session_id) {
+              // session_id = trace_id — biết ngay từ đầu, dùng để fetch 1 trace
+              // duy nhất (bao gồm cả outer node lẫn agent con) sau khi stream xong.
+              sessionId = parsed.__session_id;
+              setConversationId(sessionId ?? null);
+            } else if (parsed?.__clarification) {
+              setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: '' } : m));
+            } else if (parsed?.__pending_review) {
+              setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: '' } : m));
+              setPendingApproval({
+                convId:        parsed.__pending_review.conv_id ?? parsed.__pending_review,
+                placeholderId,
+                payload:       parsed.__pending_review.payload ?? null,
+              });
+            } else if (typeof parsed === 'string') {
+              fullText += parsed;
+              setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: fullText } : m));
+            }
+          } catch {
+            fullText += data;
+            setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: fullText } : m));
+          }
         }
       }
-      const injectConvIds = (steps: TraceStep[]) =>
-        steps.map(s => {
-          if (!s.node.startsWith('[task]') || s.agentConvId) return s;
-          const title = s.node.replace(/^\[task\]\s*/, '');
-          const convId = convIdMap.get(title);
-          return convId ? { ...s, agentConvId: convId } : s;
-        });
 
-      // Ưu tiên fetch từ LangFuse (real timing + tokens + cost)
-      // Fallback về manual build nếu LangFuse chưa configured
-      const sessionId = data.session_id;
+      // Stream xong → fetch trace theo session_id (= trace_id). Langfuse v3 ghi
+      // dữ liệu BẤT ĐỒNG BỘ (Redis queue → Clickhouse worker), nên lần fetch
+      // đầu có thể chỉ thấy 1 phần observations (vd thiếu "suggestion" — node
+      // chạy sau cùng, ghi lên Clickhouse trễ hơn). KHÔNG dừng poll ngay khi
+      // có kết quả đầu tiên — đợi số lượng observations ỔN ĐỊNH (2 lần liên
+      // tiếp bằng nhau) mới coi là đã lấy đủ.
       if (sessionId) {
-        setTraceLoading(true);
-        (async () => {
-          for (let i = 0; i < 6; i++) {
-            await new Promise(r => setTimeout(r, 2000));
-            try {
-              const { observations } = await apiGet<any>(`/api/traces/${sessionId}`);
-              const mapped = mapObservations(observations ?? []);
-              if (mapped.length > 0) { setTraceSteps(injectConvIds(mapped)); setTraceLoading(false); return; }
-            } catch { break; }
-          }
-          setTraceSteps(buildManualSteps(data));
-          setTraceLoading(false);
-        })();
-      } else {
-        setTraceSteps(buildManualSteps(data));
+        const id = sessionId;
+        let prevCount = -1;
+        for (let i = 0; i < 10; i++) {
+          try {
+            const { observations, traceId: obsTraceId } = await apiGet<any>(`/api/orchestrate/traces/${id}`);
+            const mapped = mapObservations(observations ?? [], obsTraceId);
+            if (mapped.length > 0) {
+              setTraceSteps(mapped);
+              setRawObservations(observations ?? []);
+              if (mapped.length === prevCount) break; // ổn định 2 lần liên tiếp → dừng
+              prevCount = mapped.length;
+            }
+          } catch { break; }
+          await new Promise(r => setTimeout(r, 800));
+        }
       }
-    } catch (e: any) {
+      setTraceLoading(false);
+    } catch {
       setMessages(prev => prev.map(m =>
-        m.id === placeholderId ? { ...m, content: `Lỗi: ${e.message}` } : m,
+        m.id === placeholderId ? { ...m, content: 'Lỗi: không kết nối được backend.' } : m,
       ));
+      setTraceLoading(false);
     } finally {
       setSending(false);
-      setTraceLoading(false);
     }
   };
 
@@ -978,11 +1008,10 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
 
   const handleSend = (override?: string) => {
     const text = (override ?? input).trim();
-    if (!text || sending) return;
+    if (!text || sending || traceLoading) return;
     setPendingOptions(null);
-    if (mode === 'unified') { handleSendUnified(text); return; }
-    if (!selectedAgent) return;
-    handleSendSingle(text);
+    if (mode === 'single' && !selectedAgent) return;
+    handleSendStream(text);
   };
 
   /* ── Derived ── */
@@ -1012,7 +1041,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
           </div>
           <div style={{ display: 'flex', gap: 2, padding: 3, background: 'rgba(255,255,255,0.06)', borderRadius: 9, border: '1px solid rgba(255,255,255,0.1)' }}>
             {([['unified', 'Unified Chat'], ['single', 'Single Agent']] as const).map(([id, label]) => (
-              <button key={id} onClick={() => { setMode(id); setMessages([]); setTraceSteps([]); }} style={{
+              <button key={id} onClick={() => { setMode(id); setMessages([]); setTraceSteps([]); setRawObservations([]); }} style={{
                 padding: '5px 11px', borderRadius: 7, fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer',
                 background: mode === id ? 'rgba(235,208,124,0.18)' : 'transparent',
                 color: mode === id ? '#EBD07C' : 'rgba(255,255,255,0.4)',
@@ -1272,17 +1301,20 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
               <textarea
                 ref={textareaRef}
                 value={input}
+                disabled={traceLoading}
                 onChange={e => { setInput(e.target.value); adjustHeight(); }}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                 placeholder={
-                  mode === 'unified'
-                    ? 'Ask anything — orchestrator plans & assigns agents…'
-                    : !selectedAgent
-                      ? 'Select an agent first…'
-                      : 'Ask the agent anything… (Enter to send)'
+                  traceLoading
+                    ? 'Đang tải trace, vui lòng đợi…'
+                    : mode === 'unified'
+                      ? 'Ask anything — orchestrator plans & assigns agents…'
+                      : !selectedAgent
+                        ? 'Select an agent first…'
+                        : 'Ask the agent anything… (Enter to send)'
                 }
                 rows={1}
-                style={{ flex: 1, background: 'transparent', fontSize: 13, color: 'rgba(255,255,255,0.8)', resize: 'none', outline: 'none', border: 'none', lineHeight: 1.55, fontFamily: 'inherit', maxHeight: 120, overflowY: 'auto' }}
+                style={{ flex: 1, background: 'transparent', fontSize: 13, color: 'rgba(255,255,255,0.8)', resize: 'none', outline: 'none', border: 'none', lineHeight: 1.55, fontFamily: 'inherit', maxHeight: 120, overflowY: 'auto', cursor: traceLoading ? 'not-allowed' : 'text' }}
               />
               <button
                 onClick={() => handleSend()}
@@ -1311,7 +1343,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
               transition={{ duration: 0.25, ease: 'easeInOut' }}
               style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: '45%', display: 'flex', overflow: 'hidden' }}
             >
-              <TracePanel steps={traceSteps} traceLoading={traceLoading} traceId={conversationId} />
+              <TracePanel steps={traceSteps} traceLoading={traceLoading} traceId={conversationId} rawObservations={rawObservations} />
             </motion.div>
           )}
         </AnimatePresence>

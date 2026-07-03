@@ -19,10 +19,6 @@ class AgentState(TypedDict):
     reranked_chunks: List[dict]
     response: str
     suggestions: List[str]
-    guardrail_triggered: bool
-    guardrail_message: str
-    guardrail_stage: Optional[str]    # always "input"
-    guardrail_reason: Optional[str]   # lý do chi tiết từ LLM hoặc regex pattern matched
     intent: Optional[str]             # "question" | "task" — set by planner
     language: Optional[str]           # "vi" | "en" — set by planner
     loop_iteration: int               # số lần judge đã chạy (tăng mỗi lần judge FAIL)

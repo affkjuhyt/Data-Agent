@@ -7,6 +7,7 @@ import os
 import litellm
 from langgraph.types import interrupt
 
+from observability import get_langfuse_client
 from state import OrchestratorState
 
 logger = logging.getLogger(__name__)
@@ -42,21 +43,36 @@ async def run_input_refine(
         user_content += "Lịch sử hội thoại:\n" + "\n".join(history_lines) + "\n\n"
     user_content += f"Câu hỏi hiện tại: {query}"
 
+    model = cfg.get("input_refine_model", "openai/orchestrator-planner")
+    messages_payload = [
+        {"role": "system", "content": _SYSTEM},
+        {"role": "user",   "content": user_content},
+    ]
     try:
         response = await litellm.acompletion(
-            model=cfg.get("input_refine_model", "openai/orchestrator-planner"),
+            model=model,
             api_base=_LITELLM_BASE,
             api_key=_LITELLM_KEY,
-            messages=[
-                {"role": "system", "content": _SYSTEM},
-                {"role": "user",   "content": user_content},
-            ],
+            messages=messages_payload,
             temperature=0,
             max_tokens=300,
             response_format={"type": "json_object"},
-            timeout=cfg.get("input_refine_timeout", 8),
+            timeout=cfg.get("input_refine_timeout", 20),
         )
-        result = json.loads(response.choices[0].message.content or "{}")
+        output = response.choices[0].message.content or ""
+        lf = get_langfuse_client()
+        if lf:
+            usage = response.usage or {}
+            lf.update_current_generation(
+                model=model,
+                input=messages_payload,
+                output=output,
+                usage_details={
+                    "input": getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", 0),
+                    "output": getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", 0),
+                },
+            )
+        result = json.loads(output or "{}")
         action = result.get("action", "keep")
 
         if action == "clarify":
@@ -73,7 +89,6 @@ async def run_input_refine(
 
 async def input_refine_node(state: OrchestratorState) -> dict:
     """LangGraph node — rewrite hoặc hỏi clarification trong 1 LLM call."""
-
     if state.get("clarification_response"):
         merged = f"{state['query']}\n\nThông tin bổ sung: {state['clarification_response']}"
         return {"rewritten_query": merged, "clarification_needed": False}

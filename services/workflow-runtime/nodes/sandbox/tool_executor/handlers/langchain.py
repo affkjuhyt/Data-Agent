@@ -29,12 +29,38 @@ async def _wikipedia_handler(call: dict, _cfg: dict) -> tuple[dict | None, dict 
     if not query:
         return None, {"tool_name": "wikipedia", "error": "no query provided"}
     try:
-        from langchain_community.tools import WikipediaQueryRun        # noqa: PLC0415
-        from langchain_community.utilities import WikipediaAPIWrapper  # noqa: PLC0415
-        result = await asyncio.to_thread(
-            WikipediaQueryRun(api_wrapper=WikipediaAPIWrapper(top_k_results=2)).run, query
-        )
-        return {"id": f"wiki_{uuid.uuid4().hex[:8]}", "content": result, "source": "tool/wikipedia"}, None
+        import httpx  # noqa: PLC0415
+        headers = {"User-Agent": "DataAgent/1.0 (internal tool; not affiliated with Wikimedia)"}
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Search for the most relevant article
+            search_resp = await client.get(
+                "https://en.wikipedia.org/w/api.php",
+                params={"action": "query", "format": "json", "list": "search",
+                        "srsearch": query, "srlimit": 1, "utf8": 1},
+                headers=headers,
+            )
+            search_resp.raise_for_status()
+            results = search_resp.json().get("query", {}).get("search", [])
+            if not results:
+                return None, {"tool_name": "wikipedia", "error": "no results found"}
+
+            # Fetch intro extract of the top article
+            title = results[0]["title"]
+            extract_resp = await client.get(
+                "https://en.wikipedia.org/w/api.php",
+                params={"action": "query", "format": "json", "titles": title,
+                        "prop": "extracts", "exintro": 1, "explaintext": 1, "redirects": 1},
+                headers=headers,
+            )
+            extract_resp.raise_for_status()
+            pages = extract_resp.json().get("query", {}).get("pages", {})
+            page  = next(iter(pages.values()))
+            content = (page.get("extract") or "").strip()[:3000]
+            if not content:
+                return None, {"tool_name": "wikipedia", "error": "empty article content"}
+            return {"id": f"wiki_{uuid.uuid4().hex[:8]}",
+                    "content": f"# {title}\n\n{content}",
+                    "source": "tool/wikipedia"}, None
     except Exception as e:
         return None, {"tool_name": "wikipedia", "error": str(e)}
 

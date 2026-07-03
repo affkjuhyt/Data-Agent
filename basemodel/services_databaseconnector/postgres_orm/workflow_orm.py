@@ -290,7 +290,6 @@ class AgentVersionsORM(Base):
     agent_kb: Mapped[list["AgentKBORM"]] = relationship(back_populates="version", cascade="all, delete-orphan")
     agent_tools: Mapped[list["AgentToolsORM"]] = relationship(back_populates="version", cascade="all, delete-orphan")
     agent_mcp: Mapped[list["AgentMCPORM"]] = relationship(back_populates="version", cascade="all, delete-orphan")
-    conversations: Mapped[list["ConversationsORM"]] = relationship(back_populates="agent_version")
 
 
 # ─── Junction Tables ──────────────────────────────────────────────────────────
@@ -554,14 +553,12 @@ class ConversationsORM(Base):
     __tablename__ = "Conversations"
     __table_args__ = (
         Index("idx_conversations_tenant", "tenant_id"),
-        Index("idx_conversations_agent_version", "agent_version_id"),
         Index("idx_conversations_tenant_user_ref", "tenant_id", "user_ref"),
         Index("idx_conversations_inserted_at_desc", text("inserted_at DESC")),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
-    agent_version_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("AgentVersions.id"), nullable=False, index=True)
     user_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     channel: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -570,7 +567,6 @@ class ConversationsORM(Base):
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     tenant: Mapped["TenantsORM"] = relationship(back_populates="conversations")
-    agent_version: Mapped["AgentVersionsORM"] = relationship(back_populates="conversations")
     messages: Mapped[list["MessagesORM"]] = relationship(back_populates="conversation", cascade="all, delete-orphan")
 
 

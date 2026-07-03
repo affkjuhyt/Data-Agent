@@ -982,22 +982,18 @@ def upgrade() -> None:
     op.create_table('Conversations',
     sa.Column('id', sa.UUID(), nullable=False),
     sa.Column('tenant_id', sa.UUID(), nullable=False),
-    sa.Column('agent_version_id', sa.UUID(), nullable=False),
     sa.Column('user_ref', sa.String(length=255), nullable=True),
     sa.Column('channel', sa.String(length=20), nullable=True),
     sa.Column('status', sa.String(length=20), nullable=False),
     sa.Column('started_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('ended_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('inserted_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.ForeignKeyConstraint(['agent_version_id'], ['AgentVersions.id'], ),
     sa.ForeignKeyConstraint(['tenant_id'], ['Tenants.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index('idx_conversations_agent_version', 'Conversations', ['agent_version_id'], unique=False)
     op.create_index('idx_conversations_inserted_at_desc', 'Conversations', [sa.literal_column('inserted_at DESC')], unique=False)
     op.create_index('idx_conversations_tenant', 'Conversations', ['tenant_id'], unique=False)
     op.create_index('idx_conversations_tenant_user_ref', 'Conversations', ['tenant_id', 'user_ref'], unique=False)
-    op.create_index(op.f('ix_Conversations_agent_version_id'), 'Conversations', ['agent_version_id'], unique=False)
     op.create_index(op.f('ix_Conversations_tenant_id'), 'Conversations', ['tenant_id'], unique=False)
     op.create_table('Messages',
     sa.Column('id', sa.UUID(), nullable=False),
@@ -1047,11 +1043,9 @@ def downgrade() -> None:
     op.drop_index('idx_messages_conversation_created', table_name='Messages')
     op.drop_table('Messages')
     op.drop_index(op.f('ix_Conversations_tenant_id'), table_name='Conversations')
-    op.drop_index(op.f('ix_Conversations_agent_version_id'), table_name='Conversations')
     op.drop_index('idx_conversations_tenant_user_ref', table_name='Conversations')
     op.drop_index('idx_conversations_tenant', table_name='Conversations')
     op.drop_index('idx_conversations_inserted_at_desc', table_name='Conversations')
-    op.drop_index('idx_conversations_agent_version', table_name='Conversations')
     op.drop_table('Conversations')
     op.drop_table('AgentTools')
     op.drop_table('AgentMCP')

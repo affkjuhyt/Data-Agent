@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+from contextlib import nullcontext
 
 from fastapi import APIRouter, HTTPException
 from langgraph.types import Command
 
 from graph import get_graph
+from observability import get_langchain_callback_handler, get_langfuse_client
 from schemas import ClarificationResume, OrchestrateResponse
 
 logger = logging.getLogger(__name__)
@@ -16,21 +19,36 @@ router = APIRouter()
 async def resume_orchestration(req: ClarificationResume):
     """
     Resume orchestration sau khi user cung cấp clarification.
-    session_id là thread_id của LangGraph checkpointer.
+    session_id là thread_id của LangGraph checkpointer VÀ Langfuse trace_id —
+    request resume này tiếp tục CÙNG 1 trace đã mở ở /api/orchestrate/stream.
     """
     graph = get_graph()
-    lg_config = {"configurable": {"thread_id": req.session_id}}
+    lf = get_langfuse_client()
+    lg_config_base = {"configurable": {"thread_id": req.session_id}}
 
     # Kiểm tra graph có đang bị interrupt không
-    snapshot = await graph.aget_state(lg_config)
+    snapshot = await graph.aget_state(lg_config_base)
     if not snapshot.next:
         raise HTTPException(404, "Session không tồn tại hoặc đã hoàn thành.")
 
+    span_ctx = lf.start_as_current_span(
+        trace_context={"trace_id": req.session_id},
+        name="orchestrate-resume",
+        input={"clarification": req.clarification},
+    ) if lf else nullcontext()
+
     # Resume graph với clarification từ user
-    result = await graph.ainvoke(
-        Command(resume=req.clarification, update={"clarification_response": req.clarification}),
-        config=lg_config,
-    )
+    with span_ctx:
+        # PHẢI tạo handler ở đây, sau khi span đã là OTEL current span (xem
+        # lý do tương tự trong routers/stream.py).
+        handler = get_langchain_callback_handler()
+        lg_config = {**lg_config_base, "callbacks": [handler] if handler else []}
+        result = await graph.ainvoke(
+            Command(resume=req.clarification, update={"clarification_response": req.clarification}),
+            config=lg_config,
+        )
+    if lf:
+        await asyncio.to_thread(lf.flush)
 
     if result.get("guardrail_triggered"):
         return OrchestrateResponse(
@@ -52,6 +70,6 @@ async def resume_orchestration(req: ClarificationResume):
         suggestions=result.get("suggestions", []),
         planner_ms=result.get("planner_ms", 0),
         executor_ms=result.get("executor_ms", 0),
-        synthesizer_ms=result.get("synthesizer_ms", 0),
+        summary_ms=result.get("summary_ms", 0),
         session_id=req.session_id,
     )

@@ -37,13 +37,6 @@ DEV_CONFIG = {
     "tool_config": {},
     "judge_model": "openai/judge",
     "loop_max_iterations": 3,
-    "guardrail_input_patterns": [],
-    "guardrail_llm_enabled":    False,
-    "guardrail_model":           "openai/guardrail",
-    "guardrail_max_tokens":      128,
-    "guardrail_timeout":         10,
-    "guardrail_allowed_topics":  [],
-    "guardrail_id":              None,
     "agent_id": os.environ.get("DEV_AGENT_ID", "00000000-0000-0000-0000-000000000030"),
     "agent_version_id": None,
     "workflow_version_id": None,
@@ -117,36 +110,7 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
                 for r in mcp_rows
             ]
 
-            # 4. Guardrail — platform-wide, always from DB
-            g_row = (await session.execute(text("""
-                SELECT g.id, g.conditions,
-                       lp.model_id AS guardrail_model
-                FROM "Guardrails" g
-                LEFT JOIN "LLMProviders" lp ON lp.id = g.guardrail_model_id
-                ORDER BY g.priority DESC
-                LIMIT 1
-            """))).fetchone()
-
-            if g_row:
-                cond = dict(g_row.conditions or {})
-                guardrail_cfg = {
-                    "guardrail_input_patterns": cond.get("input_patterns", []),
-                    "guardrail_llm_enabled":    cond.get("llm_enabled",    True),
-                    "guardrail_allowed_topics": cond.get("allowed_topics", []),
-                    "guardrail_model":          g_row.guardrail_model or DEV_CONFIG["guardrail_model"],
-                    "guardrail_max_tokens":     cond.get("max_tokens",     128),
-                    "guardrail_timeout":        cond.get("timeout",        10),
-                    "guardrail_id":             str(g_row.id),
-                }
-            else:
-                guardrail_cfg = {k: DEV_CONFIG[k] for k in (
-                    "guardrail_input_patterns",
-                    "guardrail_llm_enabled", "guardrail_model",
-                    "guardrail_max_tokens", "guardrail_timeout",
-                    "guardrail_allowed_topics", "guardrail_id",
-                )}
-
-        # 5. Load flow_nodes + flow_edges từ MongoDB
+        # 4. Load flow_nodes + flow_edges từ MongoDB
         flow_nodes = await load_flow_nodes(wv_id) if wv_id else []
         flow_edges = await load_flow_edges(wv_id) if wv_id else []
         node_cfg   = _extract_node_config(flow_nodes)
@@ -173,8 +137,6 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
             "memory_enabled": bool(row.memory_enabled),
             # mcp
             "mcp_endpoints": mcp_endpoints,
-            # guardrail
-            **guardrail_cfg,
             # node-level config từ canvas
             **node_cfg,
             # flow_nodes + flow_edges cho dynamic graph

@@ -189,7 +189,7 @@ NODE_REGISTRY = {
         },
     },
     "responder": {
-        "display":  "Synthesizer",
+        "display":  "Responder",
         "category": "default",
         "locked":   False,
         "schema": {

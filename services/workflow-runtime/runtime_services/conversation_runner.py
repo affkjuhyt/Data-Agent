@@ -25,7 +25,7 @@ from memory_middleware import (
     retrieve_pending_reminders,
 )
 from workflow_memory import record_workflow_outcome, retrieve_workflow_memory
-from observability import get_langfuse_handler
+from observability import get_langchain_callback_handler, flush_langfuse
 from schemas import RunRequest
 
 logger = logging.getLogger(__name__)
@@ -180,6 +180,9 @@ async def run_conversation_stream(req: RunRequest, request: Request):
     # see. Kong-style convention: comma-separated roles already verified
     # upstream (see tests/integration/conftest.py headers_factory).
     cfg["user_roles"] = [r.strip() for r in request.headers.get("X-User-Roles", "").split(",") if r.strip()]
+    # Strip verbose build-time fields — không cần runtime, chỉ làm Langfuse input thêm to
+    cfg.pop("flow_nodes", None)
+    cfg.pop("flow_edges", None)
     if not await validate_agent_tenant(agent_id, tenant_id):
         return JSONResponse(status_code=403, content={"detail": "Agent not found or access denied"})
 
@@ -240,7 +243,6 @@ async def run_conversation_stream(req: RunRequest, request: Request):
     history = compress_tool_results(history)
 
     conv_id = req.conversation_id or await create_conversation(
-        agent_version_id=cfg.get("agent_version_id", None),
         user_ref=user_ref,
         channel=request.headers.get("X-Channel", "web"),
         tenant_id=tenant_id,
@@ -267,28 +269,17 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         "reranked_chunks": [],
         "response": "",
         "suggestions": [],
-        "guardrail_triggered": False,
-        "guardrail_message": "",
-        "guardrail_stage": None,
-        "guardrail_reason": None,
         "intent": None,
         "language": None,
         "config": cfg,
     }
 
-    handler = get_langfuse_handler(
-        run_name=f"conv-{conv_id or 'new'}",
-        session_id=conv_id,
-        user_id=user_ref,
-        metadata={
-            "agent_id": agent_id,
-            "agent_version_id": cfg.get("agent_version_id"),
-            "tenant_id": tenant_id,
-            "channel": request.headers.get("X-Channel", "web"),
-            "responder_model": cfg.get("responder_model"),
-            "planner_model": cfg.get("planner_model"),
-        },
-    )
+    # Nếu request đến từ orchestrator, traceparent header (W3C) đã được
+    # FastAPIInstrumentor (app.py) extract thành OTEL context hiện hành —
+    # get_langchain_callback_handler() tự nối span vào đúng trace đó. Nếu gọi
+    # thẳng workflow-runtime (không qua orchestrator, vd. test agent lẻ trong
+    # agent-builder), fallback tạo trace riêng với session_id=conv_id.
+    handler = get_langchain_callback_handler(conv_id=conv_id)
     callbacks = [handler] if handler else []
 
     _OPTIONS_OPEN  = "<OPTIONS>"
@@ -297,11 +288,8 @@ async def run_conversation_stream(req: RunRequest, request: Request):
     _THINK_CLOSE   = "</think>"
 
     async def event_stream():
+        # Emit span ID ngay để orchestrator biết span nào để expand
         full_response: list[str] = []
-        guardrail_triggered = False
-        guardrail_msg = ""
-        guardrail_stage = None
-        guardrail_reason = None
         # selective buffering để chặn <OPTIONS> tag khỏi frontend
         pending = ""           # giữ tạm token cuối để detect prefix của <OPTIONS>
         options_mode = False   # True khi đã qua <OPTIONS>
@@ -350,14 +338,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                                     "status":     tt.get("status", "success"),
                                 })
                     # node-specific logic
-                    if node == "guardrail_input":
-                        out = event["data"].get("output", {})
-                        if isinstance(out, dict) and out.get("guardrail_triggered"):
-                            guardrail_triggered = True
-                            guardrail_msg    = out.get("guardrail_message", "")
-                            guardrail_stage  = out.get("guardrail_stage")
-                            guardrail_reason = out.get("guardrail_reason")
-                    elif node == "suggestion":
+                    if node == "suggestion":
                         out = event["data"].get("output", {})
                         if isinstance(out, dict):
                             topics = out.get("suggestions", [])
@@ -470,13 +451,12 @@ async def run_conversation_stream(req: RunRequest, request: Request):
             except Exception:
                 pass  # graph không có checkpointer → skip
 
-            if guardrail_triggered:
-                yield f"data: {json.dumps('Xin lỗi, tôi không thể trả lời câu hỏi này.')}\n\n"
-            elif responder_options:
+            if responder_options:
                 yield f"data: {json.dumps({'__options': responder_options})}\n\n"
             elif pending_suggestions:
                 yield f"data: {json.dumps({'__suggestions': pending_suggestions})}\n\n"
 
+            await asyncio.to_thread(flush_langfuse)
             yield "data: [DONE]\n\n"
 
         except Exception:
@@ -484,7 +464,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
             yield "data: [ERROR] Đã xảy ra lỗi, vui lòng thử lại.\n\n"
         finally:
             latency = int((time.monotonic() - started_at) * 1000)
-            assistant_text = guardrail_msg if guardrail_triggered else "".join(full_response)
+            assistant_text = "".join(full_response)
 
             if conv_id:
                 await save_message(conv_id, "user", req.query)
@@ -494,11 +474,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                     assistant_text,
                     latency_ms=latency,
                     metadata={
-                        "guardrail": {
-                            "triggered": guardrail_triggered,
-                            "stage": guardrail_stage,
-                            "reason": guardrail_reason,
-                        },
+                        "agent_version_id": cfg.get("agent_version_id"),
                         "language": detected_language,
                         "intent": detected_intent,
                         "responder_model": cfg.get("responder_model"),
@@ -528,17 +504,19 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                             trace_index=0,
                             tool_name="responder",
                             input={"query": req.query},
-                            output={"response": assistant_text, "guardrail_triggered": guardrail_triggered},
+                            output={"response": assistant_text},
                             latency_ms=latency,
                         )
 
             # orchestrated=True: orchestrator sẽ ghi memory sau synthesize, agent không ghi
-            if not req.orchestrated and cfg.get("memory_enabled") and not guardrail_triggered and conv_id:
+            if not req.orchestrated and cfg.get("memory_enabled") and conv_id:
                 final_state = {**state, "response": assistant_text}
                 await apply_memory_policy(
                     final_state, agent_id, tenant_id, user_ref,
                     conversation_id=conv_id, message_id=assistant_msg_id,
                 )
+
+            flush_langfuse()
 
             for nt in (node_traces if cfg.get("memory_enabled") and not req.orchestrated else []):
                 if not nt["tool_name"].startswith("tool/"):
