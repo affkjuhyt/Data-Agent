@@ -18,6 +18,7 @@ sqlalchemy[asyncio]==2.0.35
 regex>=2024.0
 croniter>=2.0
 qdrant-client>=1.13.0,<1.14.0
+hvac==2.3.0  # warehouse_secrets.py — read-only AppRole access to OpenBao (same pin as auth-api)
 motor>=3.3
 redis>=5.0  # cross-replica graph-cache invalidation (services/shared/cache_invalidation.py)
 kafka-python-ng>=2.2,<2.3

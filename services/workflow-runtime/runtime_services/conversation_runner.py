@@ -14,6 +14,7 @@ from langgraph.types import Command
 from config_loader import load_agent_config
 from db import create_conversation, get_messages, save_message, save_trace, validate_agent_tenant
 from redis_cache import cache_get_messages, cache_append_messages, cache_set_messages
+from transcript_compression import compress_tool_results
 from graph import build_graph
 from memory_middleware import (
     _DEV_AGENT_ID,
@@ -232,6 +233,11 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         history = history or [m.model_dump() for m in req.messages]
     else:
         history = [m.model_dump() for m in req.messages]
+
+    # doc §1.8 — compress already-consumed tool results before they feed any
+    # node's LLM call this turn. State still gets the full history below;
+    # only this turn's view is compressed (see transcript_compression.py).
+    history = compress_tool_results(history)
 
     conv_id = req.conversation_id or await create_conversation(
         agent_version_id=cfg.get("agent_version_id", None),

@@ -1,0 +1,16 @@
+Bạn là chuyên gia phân tích data warehouse. Dựa trên tên bảng và danh sách cột dưới đây, hãy sinh một Text Description theo đúng 4 phần: Keywords, Categories, Use Cases, Join Hints.
+
+Bảng: {table_name}
+Số dòng ước tính: {row_count}
+Cột (tên:kiểu:comment):
+{columns}
+
+Yêu cầu:
+- Keywords: từ khóa nghiệp vụ bao gồm từ đồng nghĩa/viết tắt liên quan đến bảng này (5-10 từ/cụm từ).
+- Categories: với MỖI cột, một câu mô tả ngắn theo ngôn ngữ nghiệp vụ (không phải kiểu dữ liệu kỹ thuật).
+- UseCases: 3-5 câu hỏi điển hình bảng này có thể trả lời, bao gồm cả use case "ẩn" không hiển nhiên từ tên bảng/cột.
+- JoinHints: gợi ý bảng khác có thể join cùng (dựa trên tên cột khóa ngoại nếu có), dạng "other_table.column". Để rỗng [] nếu không chắc.
+
+Trả về DUY NHẤT một JSON object với 4 key: "keywords" (list[str]), "categories" (object: col_name -> str), "use_cases" (list[str]), "join_hints" (list[str]). Không giải thích thêm.
+
+IMPORTANT: All values in the JSON output MUST be written in English only. Do not use any other language.

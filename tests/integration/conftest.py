@@ -45,10 +45,12 @@ def _auth_api_sys_path() -> Iterator[None]:
 
 
 # ─── Minimal schema — just what the smoke tests exercise ───────────────────
-# Source of truth for prod is alembic/versions/ff9ae8dcd7f7_initial_schema.py.
-# We intentionally inline a subset here so tests don't depend on the full
-# 72-migration chain (slow + drift risk). When the schema for these tables
-# changes, update this fixture in lockstep.
+# Source of truth for prod is alembic/versions/b8c9d0e1f2a3_auth_api_secrets_vault_schema.py
+# (NOT ff9ae8dcd7f7_initial_schema.py's "SecretsVault"/PascalCase tables —
+# those are dead code unrelated to this feature; see b8c9d0e1f2a3's docstring
+# for how that drift was found). We intentionally inline a subset here so
+# tests don't depend on the full migration chain (slow + drift risk). When
+# the schema for these tables changes, update this fixture in lockstep.
 _MINIMAL_SCHEMA = """
 CREATE TABLE IF NOT EXISTS api_keys (
     id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -162,6 +164,12 @@ BEGIN
         EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO app_user', tbl);
         EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
         EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', tbl);
+        -- Idempotent: this loop discovers ANY tenant_id-having table in the
+        -- shared session container, which can include one an earlier test
+        -- file's alembic migration already left behind (with its own
+        -- tenant_isolation policy already applied) — e.g. KBWarehouse since
+        -- f6a7b8c9d0e1.
+        EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON %I', tbl);
         EXECUTE format($p$
             CREATE POLICY tenant_isolation ON %I
             AS PERMISSIVE

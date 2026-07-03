@@ -1,15 +1,25 @@
 """microsoft_sso_approvals
 
-Revision ID: b2c3d4e5f6a7
-Revises: a1b2c3d4e5f6
+Revision ID: e5f6a7b8c9d0
+Revises: d4e5f6a7b8c9
 Create Date: 2026-06-09 10:00:00.000000
+
+Renamed from b2c3d4e5f6a7 — that id collided with
+b2c3d4e5f6a7_stm_ltm_memory_architecture.py (both independently branched off
+a1b2c3d4e5f6 and happened to pick the same hex id), which made `alembic
+upgrade head` fail with "Multiple head revisions are present" for every
+migration on top of either branch, including this repo's existing
+STM/LTM/Workflow/Schema-Memory chain. Re-chained linearly after
+d4e5f6a7b8c9 (this migration's content is unrelated to and doesn't depend
+on any of that work) since this repo's whole migration history is linear —
+no other branch_labels/merge revisions exist to model parallel branches.
 """
 from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
-revision: str = 'b2c3d4e5f6a7'
-down_revision: Union[str, None] = 'a1b2c3d4e5f6'
+revision: str = 'e5f6a7b8c9d0'
+down_revision: Union[str, None] = 'd4e5f6a7b8c9'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

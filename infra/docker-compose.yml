@@ -11,6 +11,7 @@ volumes:
   audit_bridge_data:
   jwks_refresher_data:
   openbao_data:
+  sandbox_dockerd_data:
   qdrant_data:
   neo4j_data:
   neo4j_logs:
