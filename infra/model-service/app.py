@@ -4,11 +4,13 @@ from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import APIRouter, FastAPI, HTTPException
 import config as cfg
+import model_store
 from backends import registry, bootstrap, sync_with_retry, chat_status, Capability
 from backends.base import (
     EmbedRequest, EmbedResponse,
     RerankRequest, RerankResult, RerankResponse,
     GenerateRequest, GenerateResponse,
+    OAIEmbedRequest, OAIEmbedObject, OAIEmbedResponse,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -33,6 +35,21 @@ def embed(req: EmbedRequest) -> EmbedResponse:
     embeddings = entry.caller.embed(req.texts)
     used_id = str(entry.model_id) if entry.model_id else req.model_id
     return EmbedResponse(embeddings=embeddings, model_id=used_id)
+
+@router.post("/v1/embeddings", response_model=OAIEmbedResponse)
+def openai_embeddings(req: OAIEmbedRequest) -> OAIEmbedResponse:
+    texts = [req.input] if isinstance(req.input, str) else req.input
+    try:
+        vectors = model_store.load_embed(cfg.BGE_M3_MODEL).encode(texts, normalize_embeddings=True)
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
+    total_tokens = sum(len(t.split()) for t in texts)
+    return OAIEmbedResponse(
+        data=[OAIEmbedObject(index=i, embedding=v.tolist()) for i, v in enumerate(vectors)],
+        model=req.model,
+        usage={"prompt_tokens": total_tokens, "total_tokens": total_tokens},
+    )
+
 
 @router.post("/rerank", response_model=RerankResponse)
 def rerank(req: RerankRequest) -> RerankResponse:

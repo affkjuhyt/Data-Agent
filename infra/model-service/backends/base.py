@@ -46,6 +46,25 @@ class GenerateResponse(BaseModel):
     content: str
 
 
+# ── OpenAI-compatible /v1/embeddings (BGE-M3, used by memory services via litellm) ──
+class OAIEmbedRequest(BaseModel):
+    input: str | list[str]
+    model: str = "bge-m3"
+
+
+class OAIEmbedObject(BaseModel):
+    object: str = "embedding"
+    index: int
+    embedding: list[float]
+
+
+class OAIEmbedResponse(BaseModel):
+    object: str = "list"
+    data: list[OAIEmbedObject]
+    model: str
+    usage: dict
+
+
 @runtime_checkable
 class EmbedCaller(Protocol):
     def embed(self, texts: list[str]) -> list[list[float]]:

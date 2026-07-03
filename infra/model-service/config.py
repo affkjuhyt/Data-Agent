@@ -2,6 +2,7 @@ import os
 
 PORT         = int(os.getenv("MODEL_SERVICE_PORT", "8001"))
 EMBED_MODEL  = os.getenv("EMBED_MODEL",  "BAAI/bge-large-en-v1.5")
+BGE_M3_MODEL = os.getenv("BGE_M3_MODEL", "BAAI/bge-m3")
 RERANK_MODEL = os.getenv("RERANK_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
 REMOTE_EMBED_URL  = os.getenv("REMOTE_EMBED_URL",  "").rstrip("/")
 REMOTE_RERANK_URL = os.getenv("REMOTE_RERANK_URL", "").rstrip("/")
