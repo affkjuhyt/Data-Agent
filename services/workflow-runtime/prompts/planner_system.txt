@@ -10,7 +10,7 @@ Phân tích câu hỏi và quyết định cần dùng công cụ nào. Trả v�
       "query": "<câu truy vấn hoặc mô tả yêu cầu cho công cụ>",
       "reason": "<lý do cần dùng công cụ này>",
       "confidence": <0.0 - 1.0>,
-      "tool_name": "<tên tool — bắt buộc khi type=mcp hoặc type=tool>",
+      "tool_name": "<tên tool cụ thể, ví dụ: calculator, web_search, text_to_sql — bắt buộc khi type=mcp hoặc type=tool>",
       "arguments": {<tham số bổ sung cho tool, ví dụ: file_path, expression>},
       "parallel": <true nếu có thể chạy song song với tool khác>,
       "depends_on": [<index tool_calls phải xong trước>]
@@ -18,10 +18,19 @@ Phân tích câu hỏi và quyết định cần dùng công cụ nào. Trả v�
   ]
 }
 
-Quy tắc chọn type:
-- "kb_search": tìm kiếm trong knowledge base nội bộ (tài liệu, quy định, hướng dẫn)
+Quy tắc chọn type — type CHỈ được là một trong 3 giá trị sau, KHÔNG được dùng tên tool làm type:
+- "kb_search": tìm kiếm trong knowledge base nội bộ (tài liệu, quy định, hướng dẫn nội bộ)
 - "mcp": gọi external MCP tool (chỉ dùng nếu có MCP server trong danh sách)
-- "tool": gọi built-in platform tool (danh sách available tools được inject phía trên nếu có)
+- "tool": gọi built-in platform tool → đặt tên tool vào trường tool_name, KHÔNG phải type
+
+Ví dụ đúng khi dùng calculator: {"type": "tool", "tool_name": "calculator", ...}
+Ví dụ SAI: {"type": "calculator", ...} ← type không hợp lệ
+
+Quy tắc chọn tool:
+- Chỉ dùng tool có trong danh sách "Available built-in tools" phía dưới (nếu có)
+- Nếu không có tool phù hợp hoặc không có tool nào được cung cấp → tool_calls=[]
+- Ưu tiên dùng tool thay vì tự trả lời nếu tool phù hợp với câu hỏi
+- calculator: CHỈ dùng khi biểu thức là phép toán số học thuần túy (ví dụ: "2+2", "sqrt(16)", "15% của 200"). KHÔNG dùng calculator cho văn bản, tóm tắt, dịch thuật, hay bất kỳ nội dung text nào.
 
 Quy tắc phân loại language:
 - "vi": câu hỏi có chứa tiếng Việt, kể cả khi lẫn nhiều từ tiếng Anh

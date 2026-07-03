@@ -70,8 +70,6 @@ def create_app() -> FastAPI:
     app = FastAPI(title="workflow-runtime", version="0.1.0", lifespan=lifespan)
     setup_observability("workflow-runtime", app)
 
-    setup_tracing("workflow-runtime", app=app)
-
     app.add_middleware(
         CORSMiddleware,
         allow_origins=CORS_ORIGINS,

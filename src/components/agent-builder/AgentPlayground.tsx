@@ -7,7 +7,9 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
-import { WORKFLOW_RUNTIME_URL as API_BASE } from '../../lib/config';
+import { API_URL } from '../../lib/config';
+import { apiGet, apiMutate } from '../../lib/apiClient';
+import keycloak from '../../lib/keycloak';
 
 /* ─── Types ─────────────────────────────────────────────────── */
 
@@ -25,6 +27,7 @@ interface TraceStep {
   isRetryStart: boolean;
   verdict?: 'PASS' | 'FAIL';
   errorType?: string;
+  agentConvId?: string;  // nếu có → task có thể expand để xem LangGraph trace bên trong
 }
 
 interface Message {
@@ -52,15 +55,21 @@ interface AgentOption {
 /* ─── Span palette ───────────────────────────────────────────── */
 
 function spanType(node: string): { label: string; color: string; bg: string } {
+  if (node.startsWith('[target]'))
+    return { label: 'TARGET', color: '#C084FC', bg: 'rgba(192,132,252,0.14)' };
+  if (node.startsWith('[task]'))
+    return { label: 'TASK',   color: '#67E8F9', bg: 'rgba(103,232,249,0.12)' };
   if (node === 'router')
     return { label: 'ROUTING',    color: '#F0B429', bg: 'rgba(240,180,41,0.18)' };
   if (node.includes('guardrail'))
     return { label: 'GUARD',      color: '#F8A4A4', bg: 'rgba(248,164,164,0.14)' };
+  if (node === 'orchestrator-synthesizer')
+    return { label: 'SYNTH',      color: '#86EFAC', bg: 'rgba(134,239,172,0.12)' };
   if (node.includes('planner') || node.includes('rewrite') || node.includes('responder') || node.includes('suggestion'))
     return { label: 'GENERATION', color: '#EBD07C', bg: 'rgba(235,208,124,0.14)' };
   if (node.includes('kb_search'))
     return { label: 'RETRIEVAL',  color: '#93C5FD', bg: 'rgba(147,197,253,0.12)' };
-  if (node.includes('mcp'))
+  if (node.includes('mcp') || node.includes('tool_executor') || node.startsWith('tool/'))
     return { label: 'TOOL',       color: '#86EFAC', bg: 'rgba(134,239,172,0.12)' };
   if (node.includes('rrf') || node.includes('reranker'))
     return { label: 'RANK',       color: '#F3E2A7', bg: 'rgba(243,226,167,0.10)' };
@@ -78,8 +87,18 @@ function trimInput(name: string, raw: any): string {
   if (!raw || typeof raw !== 'object') return String(raw ?? '');
   const q   = raw.query ?? '';
   const cfg = raw.config ?? {};
-  const clip = (s: string, n = 200) => s.length > n ? s.slice(0, n) + '…' : s;
+  const clip = (s: string, n = 300) => s.length > n ? s.slice(0, n) + '…' : s;
   switch (true) {
+    // ── Orchestrator spans ──
+    case name.startsWith('[task]'):
+      return JSON.stringify({ agent_name: raw.agent_name || raw.agent_id, agent_id: raw.agent_id, prompt: clip(raw.prompt ?? '') }, null, 2);
+    case name.startsWith('[target]'):
+      return JSON.stringify({ description: raw.description }, null, 2);
+    case name === 'orchestrator-synthesizer':
+      return JSON.stringify({ query: q, outputs_count: raw.outputs_count ?? 0 }, null, 2);
+    case name === 'orchestrator-planner':
+      return JSON.stringify({ query: q }, null, 2);
+    // ── Agent (LangGraph) spans ──
     case name.includes('guardrail'):
       return JSON.stringify({ query: q }, null, 2);
     case name.includes('planner'):
@@ -101,14 +120,36 @@ function trimInput(name: string, raw: any): string {
     case name.includes('judge'):
       return JSON.stringify({ query: q, response: clip(raw.response ?? ''), tool_errors: (raw.tool_errors ?? []).length + ' errors' }, null, 2);
     default:
-      return JSON.stringify({ query: q }, null, 2);
+      return JSON.stringify(raw, null, 2);
   }
 }
 
 function mapObservations(obs: any[]): TraceStep[] {
-  const filtered = obs
-    .filter(o => !_shouldSkip(o.name) && o.type === 'SPAN')
+  const byTime = obs
+    .filter(o => !_shouldSkip(o.name) && (o.type === 'SPAN' || o.name?.startsWith('judge')))
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+
+  // Re-order: [target] spans must always appear before their child [task] spans.
+  // Async timing in the backend can cause target_span.startTime to land slightly
+  // after the first task's startTime in Langfuse, producing wrong sort order.
+  const taskPool  = byTime.filter(o => o.name.startsWith('[task]'));
+  const nonTasks  = byTime.filter(o => !o.name.startsWith('[task]'));
+  const placed    = new Set<string>();
+  const ordered: typeof byTime = [];
+  for (const span of nonTasks) {
+    ordered.push(span);
+    if (span.name.startsWith('[target]')) {
+      const tStart = new Date(span.startTime).getTime();
+      const tEnd   = span.endTime ? new Date(span.endTime).getTime() : Infinity;
+      const children = taskPool
+        .filter(t => !placed.has(t.id) && new Date(t.startTime).getTime() >= tStart && new Date(t.startTime).getTime() <= tEnd)
+        .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+      for (const c of children) { placed.add(c.id); ordered.push(c); }
+    }
+  }
+  for (const t of taskPool) { if (!placed.has(t.id)) ordered.push(t); }
+
+  const filtered = ordered;
   const traceStart = filtered.length > 0 ? new Date(filtered[0].startTime).getTime() : 0;
   const nameCounts: Record<string, number> = {};
   let currentMaxIteration = 0;
@@ -128,6 +169,10 @@ function mapObservations(obs: any[]): TraceStep[] {
         errorType = out.judge_error_type ?? undefined;
       } catch { /* ignore */ }
     }
+    // Task spans trong orchestrator lưu conversation_id trong metadata → dùng để expand inner agent trace
+    const agentConvId = o.name?.startsWith('[task]')
+      ? (typeof o.metadata === 'object' && o.metadata !== null ? (o.metadata as any).conversation_id ?? undefined : undefined)
+      : undefined;
     return {
       id: o.id,
       node: displayName,
@@ -144,6 +189,7 @@ function mapObservations(obs: any[]): TraceStep[] {
       isRetryStart,
       verdict,
       errorType,
+      agentConvId,
     };
   });
 }
@@ -166,19 +212,39 @@ function routeMessage(text: string, agents: AgentOption[]): { name: string; conf
 
 /* ─── WaterfallRow ───────────────────────────────────────────── */
 
-function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs }: {
+function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs, indent, expandable, expanded, expandLoading, onExpand }: {
   step: TraceStep; index: number; selected: boolean;
-  onSelect: (i: number) => void; startMs: number; totalMs: number;
+  onSelect: () => void; startMs: number; totalMs: number;
+  indent?: boolean; expandable?: boolean; expanded?: boolean;
+  expandLoading?: boolean; onExpand?: () => void;
 }) {
   const t = spanType(step.node);
   const leftPct  = (startMs / Math.max(totalMs, 1)) * 100;
   const widthPct = Math.max(0.6, (step.latencyMs / Math.max(totalMs, 1)) * 100);
   const isErr = step.status === 'error';
+  // strip prefixes for display; TASK/TARGET labels already shown in chip, title shown in detail panel
+  const displayNode = step.node.replace(/^\[(target|task)\]\s*/, '');
+  const isOrchNode = step.node.startsWith('[target]') || step.node.startsWith('[task]');
   return (
+    <div style={{ display: 'flex', alignItems: 'stretch', paddingLeft: indent ? 20 : 0, borderLeft: indent ? '2px solid rgba(103,232,249,0.2)' : 'none', marginLeft: indent ? 12 : 0 }}>
+      <div style={{ flexShrink: 0, width: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {expandable && (
+          <button
+            onClick={e => { e.stopPropagation(); onExpand?.(); }}
+            style={{ width: 18, height: '100%', background: 'transparent', border: 'none', cursor: 'pointer', color: 'rgba(103,232,249,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+            title="Xem trace agent"
+          >
+            {expandLoading
+              ? <span style={{ fontSize: 9 }}>⟳</span>
+              : <ChevronDown size={10} style={{ transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.15s' }} />
+            }
+          </button>
+        )}
+      </div>
     <button
-      onClick={() => onSelect(index)}
+      onClick={() => onSelect()}
       style={{
-        width: '100%', display: 'grid',
+        flex: 1, display: 'grid',
         gridTemplateColumns: '176px 1fr 52px',
         alignItems: 'center', gap: 8, padding: '5px 12px',
         background: selected ? 'rgba(235,208,124,0.10)' : 'transparent',
@@ -193,9 +259,11 @@ function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs }: {
         <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 5px', borderRadius: 3, background: t.bg, color: t.color, letterSpacing: '0.04em', flexShrink: 0 }}>
           {t.label}
         </span>
-        <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.88)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {step.node}
-        </span>
+        {!isOrchNode && (
+          <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.88)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {displayNode}
+          </span>
+        )}
       </div>
       {step.verdict ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -228,6 +296,7 @@ function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs }: {
         {step.latencyMs}ms
       </span>
     </button>
+    </div>
   );
 }
 
@@ -252,16 +321,41 @@ function JsonView({ value }: { value: string | object }) {
 function TracePanel({ steps, traceLoading, traceId }: {
   steps: TraceStep[]; traceLoading: boolean; traceId: string | null;
 }) {
-  const [tab, setTab]         = useState<'input' | 'output' | 'metadata'>('input');
-  const [selected, setSelected] = useState(0);
-  // splitPct = % height given to the waterfall section (clamped 20–75)
+  const [tab, setTab]           = useState<'input' | 'output' | 'metadata'>('input');
+  // Track by ID instead of index to prevent index-shift when expanding rows
+  const [selectedId, setSelectedId] = useState<string>('');
   const [splitPct, setSplitPct] = useState(40);
-  const isDragging  = useRef(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const isDragging    = useRef(false);
+  const containerRef  = useRef<HTMLDivElement>(null);
 
+  // expand state cho task rows
+  const [expanded,    setExpanded]    = useState<Set<string>>(new Set());
+  const [subSteps,    setSubSteps]    = useState<Record<string, TraceStep[]>>({});
+  const [loadingConv, setLoadingConv] = useState<Set<string>>(new Set());
+
+  const toggleExpand = async (step: TraceStep) => {
+    const convId = step.agentConvId!;
+    const next = new Set(expanded);
+    if (next.has(convId)) { next.delete(convId); setExpanded(next); return; }
+    next.add(convId);
+    setExpanded(next);
+    if (subSteps[convId]) return; // already fetched
+    setLoadingConv(prev => new Set(prev).add(convId));
+    for (let i = 0; i < 5; i++) {
+      try {
+        const { observations } = await apiGet<any>(`/api/traces/${convId}`);
+        const mapped = mapObservations(observations ?? []);
+        if (mapped.length > 0) { setSubSteps(prev => ({ ...prev, [convId]: mapped })); break; }
+      } catch { /* ignore */ }
+      if (i < 4) await new Promise(r => setTimeout(r, 1500));
+    }
+    setLoadingConv(prev => { const s = new Set(prev); s.delete(convId); return s; });
+  };
+
+  // Reset to first row when steps change (new result)
   useEffect(() => {
-    if (selected >= steps.length && steps.length > 0) setSelected(0);
-  }, [steps, selected]);
+    if (steps.length > 0) { setSelectedId(steps[0].id); setTab('input'); }
+  }, [steps]);
 
   /* Drag handlers */
   useEffect(() => {
@@ -277,10 +371,24 @@ function TracePanel({ steps, traceLoading, traceId }: {
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }, []);
 
-  const starts   = steps.map(s => s.startMs);
-  const totalMs  = Math.max(...steps.map(s => s.startMs + s.latencyMs), 1);
-  const totalTok = steps.reduce((s, t) => s + t.tokens, 0);
-  const sel = steps[selected];
+  // flat list: steps + sub-steps interleaved (task rows expand inline)
+  const allRows: Array<{ step: TraceStep; indent: boolean }> = [];
+  for (const step of steps) {
+    allRows.push({ step, indent: false });
+    if (step.agentConvId && expanded.has(step.agentConvId)) {
+      for (const sub of (subSteps[step.agentConvId] ?? [])) {
+        allRows.push({ step: { ...sub, startMs: sub.startMs + step.startMs }, indent: true });
+      }
+      if (loadingConv.has(step.agentConvId) && !subSteps[step.agentConvId]) {
+        allRows.push({ step: { ...step, id: step.id + '-loading', node: '…loading', status: 'running', latencyMs: 0, tokens: 0, cost: 0, input: '', output: '', iteration: 0, isRetryStart: false }, indent: true });
+      }
+    }
+  }
+  const headerTotalMs = Math.max(...steps.map(s => s.startMs + s.latencyMs), 1);
+  const totalMs  = Math.max(...allRows.map(r => r.step.startMs + r.step.latencyMs), 1);
+  const totalTok = allRows.reduce((s, r) => s + r.step.tokens, 0);
+  // Find selected by ID — immune to index shifts from expand/collapse
+  const sel = allRows.find(r => r.step.id === selectedId)?.step ?? allRows[0]?.step;
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#0B0B0E', minWidth: 0 }}>
@@ -313,7 +421,7 @@ function TracePanel({ steps, traceLoading, traceId }: {
       {/* ── KPI strip ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
         {[
-          { k: 'latency', v: (totalMs / 1000).toFixed(2) + 's', c: '#F5F5F5' },
+          { k: 'latency', v: (headerTotalMs / 1000).toFixed(2) + 's', c: '#F5F5F5' },
           { k: 'tokens',  v: totalTok.toLocaleString(),          c: '#EBD07C' },
           { k: 'cost',    v: '$' + steps.reduce((s, t) => s + t.cost, 0).toFixed(4), c: '#C5DD83' },
           { k: 'spans',   v: String(steps.length),               c: '#F3E2A7' },
@@ -336,7 +444,7 @@ function TracePanel({ steps, traceLoading, traceId }: {
               Observations
             </span>
             <span style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.28)', fontFamily: 'var(--font-mono)' }}>
-              {traceLoading ? 'streaming…' : steps.length + ' spans · ' + totalMs + 'ms'}
+              {traceLoading ? 'streaming…' : steps.length + ' spans · ' + headerTotalMs + 'ms'}
             </span>
           </div>
           {/* rows */}
@@ -347,12 +455,12 @@ function TracePanel({ steps, traceLoading, traceId }: {
                   <div key={i} className="pulse-soft" style={{ height: 22, borderRadius: 4, background: 'rgba(255,255,255,0.04)', opacity: 1 - i * 0.18 }} />
                 ))}
               </div>
-            ) : steps.length === 0 ? (
+            ) : allRows.length === 0 ? (
               <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', textAlign: 'center', padding: '20px 12px' }}>
                 Send a message to capture a trace
               </p>
-            ) : steps.map((s, i) => (
-              <React.Fragment key={s.id}>
+            ) : allRows.map(({ step: s, indent }, i) => (
+              <React.Fragment key={s.id + i}>
                 {s.isRetryStart && (
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: 6,
@@ -367,8 +475,13 @@ function TracePanel({ steps, traceLoading, traceId }: {
                 )}
                 <WaterfallRow
                   step={s} index={i}
-                  selected={selected === i} onSelect={setSelected}
-                  startMs={starts[i]} totalMs={totalMs}
+                  selected={selectedId === s.id} onSelect={() => { setSelectedId(s.id); setTab('input'); }}
+                  startMs={s.startMs} totalMs={totalMs}
+                  indent={indent}
+                  expandable={!!s.agentConvId}
+                  expanded={!!s.agentConvId && expanded.has(s.agentConvId)}
+                  expandLoading={!!s.agentConvId && loadingConv.has(s.agentConvId)}
+                  onExpand={() => s.agentConvId && toggleExpand(s)}
                 />
               </React.Fragment>
             ))}
@@ -399,9 +512,9 @@ function TracePanel({ steps, traceLoading, traceId }: {
               {/* span header */}
               <div style={{ padding: '7px 14px 5px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flexShrink: 0 }}>
                 {(() => { const t = spanType(sel.node); return <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 5px', borderRadius: 3, background: t.bg, color: t.color }}>{t.label}</span>; })()}
-                <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.88)', fontWeight: 500 }}>{sel.node}</span>
+                <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.88)', fontWeight: 500 }}>{sel.node.replace(/^\[(target|task)\]\s*/, '')}</span>
                 <span style={{ marginLeft: 'auto', fontSize: 9.5, color: 'rgba(255,255,255,0.32)', fontFamily: 'var(--font-mono)' }}>
-                  +{starts[selected]}ms → +{starts[selected] + sel.latencyMs}ms
+                  +{sel.startMs}ms → +{sel.startMs + sel.latencyMs}ms
                 </span>
               </div>
               {/* span meta row */}
@@ -606,10 +719,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
   useEffect(() => {
     (async () => {
       try {
-        const res  = await fetch(`${API_BASE}/api/catalog/agents`, {
-          headers: { 'X-Tenant-ID': import.meta.env.VITE_TENANT_ID ?? 'tenant-dev' },
-        });
-        const data: { id: string; name: string; description: string; routing_keywords?: string[] }[] = await res.json();
+        const data = await apiGet<{ id: string; name: string; description: string; routing_keywords?: string[] }[]>('/api/catalog/agents');
         const opts: AgentOption[] = data.map(a => ({
           id: a.id, label: a.name, description: a.description,
           routing_keywords: a.routing_keywords,
@@ -641,9 +751,9 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', content: '', timestamp: now }]);
 
     try {
-      const res = await fetch(`${API_BASE}/api/conversations/run`, {
+      const res = await fetch(`${API_URL}/api/conversations/run`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(keycloak?.token ? { Authorization: `Bearer ${keycloak.token}` } : {}) },
         body: JSON.stringify({
           query: text, agent_id: selectedAgent,
           conversation_id: conversationId,
@@ -702,13 +812,12 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
         setTraceLoading(true);
         (async () => {
           for (let i = 0; i < 5; i++) {
-            await new Promise(r => setTimeout(r, 2000));
             try {
-              const tr  = await fetch(`${API_BASE}/api/traces/${convId}`);
-              const { observations } = await tr.json();
+              const { observations } = await apiGet<any>(`/api/traces/${convId}`);
               const steps = mapObservations(observations ?? []);
               if (steps.length > 0) { setTraceSteps(steps); break; }
-            } catch { break; }
+            } catch { /* ignore */ }
+            if (i < 4) await new Promise(r => setTimeout(r, 2000));
           }
           setTraceLoading(false);
         })();
@@ -722,54 +831,132 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     }
   };
 
-  /* ── Send Unified ── */
-  const handleSendUnified = (text: string) => {
+  /* ── Build manual trace steps from orchestrator response (fallback khi LangFuse không có) ── */
+  function buildManualSteps(data: any): TraceStep[] {
+    const plannerMs  = data.planner_ms   ?? 0;
+    const executorMs = data.executor_ms  ?? 0;
+    const synthMs    = data.synthesizer_ms ?? 0;
+    const steps: TraceStep[] = [];
+
+    steps.push({
+      id: 'orchestrator-planner', node: 'orchestrator-planner', status: 'success',
+      startMs: 0, latencyMs: plannerMs, tokens: 0, cost: 0,
+      input: JSON.stringify({ query: data.user_input ?? '' }, null, 2),
+      output: `Plan created (${(data.target_results ?? []).length} targets)`,
+      iteration: 0, isRetryStart: false,
+    });
+
+    for (const target of (data.target_results ?? [])) {
+      const targetStart = plannerMs + Math.min(...(target.task_results ?? [{ start_ms: 0 }]).map((t: any) => t.start_ms ?? 0));
+      steps.push({
+        id: target.node_id, node: `[target] ${target.description.slice(0, 80)}`,
+        status: target.success ? 'success' : 'error',
+        startMs: targetStart, latencyMs: 0, tokens: 0, cost: 0,
+        input: JSON.stringify({ description: target.description }, null, 2),
+        output: target.success ? 'OK' : `Failed: ${target.failed_task}`,
+        iteration: 0, isRetryStart: false,
+      });
+      const targetHeaderIdx = steps.length - 1;
+      const taskOutputs: string[] = [];
+      let targetEnd = targetStart;
+
+      for (const task of (target.task_results ?? [])) {
+        const taskStartMs = plannerMs + (task.start_ms ?? 0);
+        const taskLatency = task.latency_ms ?? 0;
+        steps.push({
+          id: `${target.node_id}-${task.task_index}`, node: `[task] ${task.task_title}`,
+          status: task.success ? 'success' : 'error',
+          startMs: taskStartMs, latencyMs: taskLatency, tokens: 0, cost: 0,
+          input: JSON.stringify({ agent_id: task.agent_id, agent_name: task.agent_name, task: task.task_title }, null, 2),
+          output: task.success ? (task.output || '(empty)') : (task.error ?? '(failed)'),
+          iteration: 0, isRetryStart: false, agentConvId: task.conversation_id ?? undefined,
+        });
+        if (task.success && task.output) taskOutputs.push(`[${task.task_title}]: ${task.output}`);
+        targetEnd = Math.max(targetEnd, taskStartMs + taskLatency);
+      }
+      steps[targetHeaderIdx].latencyMs = targetEnd - targetStart;
+      steps[targetHeaderIdx].output = target.success ? (taskOutputs.join('\n\n') || 'Completed') : `Failed: ${target.failed_task}`;
+    }
+
+    steps.push({
+      id: 'orchestrator-synthesizer', node: 'orchestrator-synthesizer', status: 'success',
+      startMs: plannerMs + executorMs, latencyMs: synthMs, tokens: 0, cost: 0,
+      input: 'Final outputs from all targets', output: data.response ?? '',
+      iteration: 0, isRetryStart: false,
+    });
+    return steps;
+  }
+
+  /* ── Send Orchestrator ── */
+  /* ── Send Unified (Orchestrator) ── */
+  const handleSendUnified = async (text: string) => {
     const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-    setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: text, timestamp: now }]);
+    const userMsgId = Date.now().toString();
+    const placeholderId = (Date.now() + 1).toString();
+    setMessages(prev => [...prev, { id: userMsgId, role: 'user', content: text, timestamp: now }]);
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setSending(true);
     setTraceLoading(true);
+    setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', content: '', timestamp: now }]);
 
-    const decision = routeMessage(text, agents);
+    try {
+      const res = await fetch(`${API_URL}/api/orchestrate/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(keycloak?.token ? { Authorization: `Bearer ${keycloak.token}` } : {}) },
+        body: JSON.stringify({ query: text, user_id: keycloak?.tokenParsed?.sub ?? 'playground' }),
+      });
 
-    setTimeout(() => {
-      const reply: Message = {
-        id: (Date.now() + 1).toString(), role: 'assistant',
-        content: decision.conf > 0.5
-          ? `Routed to **${decision.name}**. Based on its knowledge base I synthesized an answer with high confidence.`
-          : "I'm not fully sure which specialist fits best here. Could you add a bit more detail?",
-        timestamp: now, routed: decision,
-        suggestions: ['Can you show me an example?', 'What are the next steps?', 'Summarize briefly'],
-      };
-      setMessages(prev => [...prev, reply]);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
 
-      const routerSpan: TraceStep = {
-        id: 'router-' + Date.now(), node: 'router', status: 'success',
-        startMs: 0, latencyMs: 90 + Math.round(Math.random() * 40), tokens: 64, cost: 0,
-        input:  JSON.stringify({ message: text, strategy: 'HYBRID' }, null, 2),
-        output: JSON.stringify({ routed_agent: decision.name, confidence: +decision.conf.toFixed(2) }, null, 2),
-        iteration: 0, isRetryStart: false,
-      };
-      const t0 = routerSpan.latencyMs;
-      const tPlan = 160 + Math.round(Math.random() * 80);
-      const tKb   = 200 + Math.round(Math.random() * 120);
-      const tMcp  = 180 + Math.round(Math.random() * 100);
-      const tRrf  = 20, tRerank = 15;
-      const tRetrieve = Math.max(tKb, tMcp);
-      const tResp = 380 + Math.round(Math.random() * 200);
-      setTraceSteps([
-        routerSpan,
-        { id: 'p-'  + Date.now(), node: 'planner',    status: 'success', startMs: t0,                                       latencyMs: tPlan,   tokens: 320, cost: 0, input: JSON.stringify({ query: text }, null, 2), output: '{"plan": "retrieve relevant docs, synthesize response"}', iteration: 0, isRetryStart: false },
-        { id: 'kb-' + Date.now(), node: 'kb_search',  status: 'success', startMs: t0 + tPlan,                               latencyMs: tKb,     tokens: 0,   cost: 0, input: JSON.stringify({ query: text, top_k: 5 }, null, 2), output: '{"chunks": 4}', iteration: 0, isRetryStart: false },
-        { id: 'mc-' + Date.now(), node: 'mcp',        status: 'success', startMs: t0 + tPlan,                               latencyMs: tMcp,    tokens: 0,   cost: 0, input: JSON.stringify({ query: text }, null, 2), output: '{"results": 2}', iteration: 0, isRetryStart: false },
-        { id: 'rr-' + Date.now(), node: 'rrf_ranking',status: 'success', startMs: t0 + tPlan + tRetrieve,                   latencyMs: tRrf,    tokens: 0,   cost: 0, input: '{}', output: '{}', iteration: 0, isRetryStart: false },
-        { id: 're-' + Date.now(), node: 'reranker',   status: 'success', startMs: t0 + tPlan + tRetrieve + tRrf,            latencyMs: tRerank, tokens: 0,   cost: 0, input: '{}', output: '{}', iteration: 0, isRetryStart: false },
-        { id: 'r-'  + Date.now(), node: 'responder',  status: 'success', startMs: t0 + tPlan + tRetrieve + tRrf + tRerank,  latencyMs: tResp,   tokens: 640 + Math.round(Math.random() * 200), cost: 0, input: JSON.stringify({ query: text, chunks: 4 }, null, 2), output: reply.content, iteration: 0, isRetryStart: false },
-      ]);
+      setMessages(prev => prev.map(m =>
+        m.id === placeholderId ? { ...m, content: data.response ?? '' } : m,
+      ));
+
+      // Build conv_id map từ target_results — dùng để restore agentConvId sau khi mapObservations
+      const convIdMap = new Map<string, string>();
+      for (const target of (data.target_results ?? [])) {
+        for (const task of (target.task_results ?? [])) {
+          if (task.conversation_id) convIdMap.set(task.task_title, task.conversation_id);
+        }
+      }
+      const injectConvIds = (steps: TraceStep[]) =>
+        steps.map(s => {
+          if (!s.node.startsWith('[task]') || s.agentConvId) return s;
+          const title = s.node.replace(/^\[task\]\s*/, '');
+          const convId = convIdMap.get(title);
+          return convId ? { ...s, agentConvId: convId } : s;
+        });
+
+      // Ưu tiên fetch từ LangFuse (real timing + tokens + cost)
+      // Fallback về manual build nếu LangFuse chưa configured
+      const sessionId = data.session_id;
+      if (sessionId) {
+        setTraceLoading(true);
+        (async () => {
+          for (let i = 0; i < 6; i++) {
+            await new Promise(r => setTimeout(r, 2000));
+            try {
+              const { observations } = await apiGet<any>(`/api/traces/${sessionId}`);
+              const mapped = mapObservations(observations ?? []);
+              if (mapped.length > 0) { setTraceSteps(injectConvIds(mapped)); setTraceLoading(false); return; }
+            } catch { break; }
+          }
+          setTraceSteps(buildManualSteps(data));
+          setTraceLoading(false);
+        })();
+      } else {
+        setTraceSteps(buildManualSteps(data));
+      }
+    } catch (e: any) {
+      setMessages(prev => prev.map(m =>
+        m.id === placeholderId ? { ...m, content: `Lỗi: ${e.message}` } : m,
+      ));
+    } finally {
       setSending(false);
       setTraceLoading(false);
-    }, 1200);
+    }
   };
 
   const handleApproval = async (approved: boolean) => {
@@ -777,12 +964,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     setApprovalLoading(true);
     const { convId, placeholderId } = pendingApproval;
     try {
-      const res = await fetch(`${API_BASE}/api/reviews/${convId}/resume`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approved, note: approvalNote }),
-      });
-      const data = await res.json();
+      const data = await apiMutate<any>('POST', `/api/reviews/${convId}/resume`, { approved, note: approvalNote });
       const responseText = data.response || (approved ? '' : 'Yêu cầu không được phê duyệt.');
       setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: responseText } : m));
     } catch {
@@ -888,9 +1070,9 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
             </div>
           )}
           {mode === 'unified' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(240,180,41,0.12)', border: '1px solid rgba(240,180,41,0.4)', borderRadius: 9, padding: '6px 11px' }}>
-              <Route size={13} style={{ color: '#F0B429' }} />
-              <span style={{ fontSize: 11, fontWeight: 600, color: '#F0B429' }}>Router picks agent</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(192,132,252,0.12)', border: '1px solid rgba(192,132,252,0.4)', borderRadius: 9, padding: '6px 11px' }}>
+              <Brain size={13} style={{ color: '#C084FC' }} />
+              <span style={{ fontSize: 11, fontWeight: 600, color: '#C084FC' }}>Multi-agent orchestrator</span>
             </div>
           )}
           <button
@@ -921,7 +1103,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
           <div style={{ padding: '7px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
               {mode === 'unified'
-                ? <><Route size={11} />Unified chat — router selects an agent per message</>
+                ? <><Brain size={11} style={{ color: '#C084FC' }} /><span style={{ color: 'rgba(192,132,252,0.7)' }}>Orchestrator — ToT planner assigns agents automatically</span></>
                 : selectedAgentObj
                   ? <><Bot size={11} />{selectedAgentObj.label}</>
                   : <><Bot size={11} style={{ opacity: 0.4 }} /><span style={{ color: 'rgba(255,255,255,0.25)' }}>No agent selected</span></>
@@ -1094,7 +1276,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                 placeholder={
                   mode === 'unified'
-                    ? 'Ask anything — router picks the right agent…'
+                    ? 'Ask anything — orchestrator plans & assigns agents…'
                     : !selectedAgent
                       ? 'Select an agent first…'
                       : 'Ask the agent anything… (Enter to send)'

@@ -16,6 +16,7 @@ volumes:
   neo4j_data:
   neo4j_logs:
   ollama_models:
+  hf_cache:
 
 services:
   # Databases
@@ -30,7 +31,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./sql/create-extra-dbs.sql:/docker-entrypoint-initdb.d/01-create-dbs.sql:ro
-      - ./Postgres/init.sql:/docker-entrypoint-initdb.d/02-kb-tables.sql:ro
       - ./sql/init.sql:/docker-entrypoint-initdb.d/03-app-schema.sql:ro
       - ./sql/release-init.sql:/docker-entrypoint-initdb.d/04-release-schema.sql:ro
     ports:
@@ -305,10 +305,13 @@ services:
     image: ghcr.io/berriai/litellm:main-stable
     container_name: dataagent-litellm
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "4000:4000"
     volumes:
       - ./litellm/config.yaml:/app/config.yaml:ro
+      - hf_cache:/root/.cache/huggingface
     env_file: ../.env
     environment:
       REDIS_URL: redis://redis:6379
@@ -338,8 +341,8 @@ services:
       LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_NAME:-Admin}
       LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG:-GTEL}
       LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT:-data-agent}
-      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: pk-lf-8615e735-e5d5-4942-913f-68d02f6e48cc
-      LANGFUSE_INIT_PROJECT_SECRET_KEY: sk-lf-b5f72b59-f31c-470f-aee3-8bd2d3d6acc0
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
       AUTH_DISABLE_SIGNUP: "false"
     depends_on:
       postgres:
@@ -361,9 +364,10 @@ services:
       REDIS_URL: redis://redis:6379
       LITELLM_BASE_URL: http://litellm:4000
       LANGFUSE_HOST: http://langfuse:3000
-      LANGFUSE_PUBLIC_KEY: pk-lf-8615e735-e5d5-4942-913f-68d02f6e48cc
-      LANGFUSE_SECRET_KEY: sk-lf-b5f72b59-f31c-470f-aee3-8bd2d3d6acc0
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
       QDRANT_URL: http://qdrant:6333
+      EMBEDDING_DIM: "1024"
     depends_on:
       postgres:
         condition: service_healthy
@@ -404,13 +408,13 @@ services:
       - "11434:11434"
     volumes:
       - ollama_models:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    # deploy:  # Uncomment when nvidia-container-toolkit is available
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
 
   model-service:
     build:
@@ -580,7 +584,8 @@ services:
 
   audit-bridge:
     build:
-      context: ../services/audit-bridge
+      context: ../services
+      dockerfile: audit-bridge/Dockerfile
     container_name: dataagent-audit-bridge
     restart: unless-stopped
     environment:
@@ -606,7 +611,8 @@ services:
 
   audit-consumer:
     build:
-      context: ../services/audit-consumer
+      context: ../services
+      dockerfile: audit-consumer/Dockerfile
     container_name: dataagent-audit-consumer
     restart: unless-stopped
     environment:
@@ -630,7 +636,8 @@ services:
 
   jwks-refresher:
     build:
-      context: ../services/jwks-refresher
+      context: ../services
+      dockerfile: jwks-refresher/Dockerfile
     container_name: dataagent-jwks-refresher
     restart: unless-stopped
     environment:
@@ -648,6 +655,31 @@ services:
       kong:
         condition: service_healthy
 
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: services/orchestrator/Dockerfile
+    container_name: dataagent-orchestrator
+    restart: unless-stopped
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
+      LITELLM_BASE_URL: http://litellm:4000
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-sk-dev}
+      WORKFLOW_RUNTIME_URL: http://workflow-runtime:8001
+      LANGFUSE_HOST: http://langfuse:3000
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-change-me}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-change-me}
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: orchestrator
+    depends_on:
+      postgres:
+        condition: service_healthy
+      litellm:
+        condition: service_started
+      workflow-runtime:
+        condition: service_started
+
   frontend:
     build:
       context: ..
@@ -655,7 +687,7 @@ services:
     container_name: dataagent-frontend
     restart: unless-stopped
     volumes:
-      - ../..:/app
+      - ..:/app
       - /app/node_modules
     ports:
       - "5173:3000"

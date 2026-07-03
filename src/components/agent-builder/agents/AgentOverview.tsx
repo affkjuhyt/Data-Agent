@@ -7,7 +7,7 @@ import {
   SlidersHorizontal, SearchX,
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
-import { FLOW_BUILDER_URL } from '../../../lib/config';
+import { apiGet, apiMutate } from '../../../lib/apiClient';
 
 interface ApiAgent {
   id: string;
@@ -56,9 +56,8 @@ export const AgentRegistryOverview: React.FC<OverviewProps> = ({
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${FLOW_BUILDER_URL}/api/agents`)
-      .then(r => r.json())
-      .then((d: ApiAgent[]) => setApiAgents(Array.isArray(d) ? d : []))
+    apiGet<ApiAgent[]>('/api/agents')
+      .then(d => setApiAgents(Array.isArray(d) ? d : []))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -95,8 +94,7 @@ export const AgentRegistryOverview: React.FC<OverviewProps> = ({
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      const res = await fetch(`${FLOW_BUILDER_URL}/api/agents/${deleteTarget.id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error(`${res.status}`);
+      await apiMutate('DELETE', `/api/agents/${deleteTarget.id}`);
       setApiAgents(prev => prev.filter(a => a.id !== deleteTarget.id));
       setToast(`Agent "${deleteTarget.name}" deleted`);
     } catch {
