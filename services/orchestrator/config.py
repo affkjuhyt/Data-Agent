@@ -8,6 +8,9 @@ LITELLM_API_KEY = os.environ.get("LITELLM_API_KEY", "sk-dev")
 # Tách riêng khỏi agent-level "planner"/"responder" để swap model to hơn độc lập
 PLANNER_MODEL = os.environ.get("ORCHESTRATOR_PLANNER_MODEL", "openai/orchestrator-planner")
 SUMMARY_MODEL = os.environ.get("ORCHESTRATOR_SUMMARY_MODEL", "openai/orchestrator-summary")
+# Judge cho bước tổng hợp multi-agent (synthesis_judge_check trong summary.py)
+SYNTHESIS_JUDGE_MODEL = os.environ.get("ORCHESTRATOR_JUDGE_MODEL", "openai/orchestrator-judge")
+MAX_SYNTHESIS_RETRY = int(os.environ.get("ORCHESTRATOR_MAX_SYNTHESIS_RETRY", "2"))
 
 # ── Database ─────────────────────────────────────────────────────────────────
 DATABASE_URL = os.environ.get("DATABASE_URL", "")

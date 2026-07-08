@@ -1,13 +1,9 @@
 import functools
-import json
 import logging
-import os
 import time
 import unicodedata
 
-import litellm
-
-from observability import get_langfuse_client
+from services.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
 
 try:
     import regex as re_lib
@@ -18,12 +14,8 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-_LITELLM_BASE = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
-_LITELLM_KEY  = os.environ.get("LITELLM_API_KEY", "sk-dev")
 _MAX_CHECK_CHARS = 2000
-
-_PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "prompts")
-_GUARDRAIL_SYSTEM = open(os.path.join(_PROMPTS_DIR, "guardrail_system.txt"), encoding="utf-8").read()
+_HISTORY_TURNS = 6  # số lượt hội thoại gần nhất đưa vào ngữ cảnh check input
 
 
 def _normalize(text: str) -> str:
@@ -59,56 +51,24 @@ def _regex_check(text: str, patterns: list) -> tuple[bool, str, dict | None]:
     return False, "", None
 
 
-def _llm_check(text: str, cfg: dict) -> tuple[bool, str]:
-    allowed_topics = cfg.get("guardrail_allowed_topics", [])
-    topics_block = ""
-    if allowed_topics:
-        topics_block = "\n\nCHỦ ĐỀ ĐƯỢC PHÉP:\n" + "\n".join(f"- {t}" for t in allowed_topics)
-
-    model = cfg.get("guardrail_model", "openai/guardrail")
-    messages = [
-        {"role": "system", "content": _GUARDRAIL_SYSTEM + topics_block},
-        {"role": "user", "content": f"CHECK_TYPE: input\nCONTENT: {text[:_MAX_CHECK_CHARS]}"},
-    ]
-    try:
-        response = litellm.completion(
-            model=model,
-            api_base=_LITELLM_BASE,
-            api_key=_LITELLM_KEY,
-            messages=messages,
-            temperature=0,
-            max_tokens=cfg.get("guardrail_max_tokens", 64),
-            response_format={"type": "json_object"},
-            timeout=cfg.get("guardrail_timeout", 15),
-        )
-        output = response.choices[0].message.content or ""
-        # Làm giàu ngay span "guardrail" mà CallbackHandler đã tự tạo (không
-        # tạo span con mới) — xem observability.py.
-        lf = get_langfuse_client()
-        if lf:
-            usage = response.usage or {}
-            lf.update_current_generation(
-                model=model,
-                input=messages,
-                output=output,
-                usage_details={
-                    "input": getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", 0),
-                    "output": getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", 0),
-                },
-            )
-        result = json.loads(output or "{}")
-        triggered = bool(result.get("triggered", False))
-        reason = result.get("reason", "Yêu cầu không được phép.") if triggered else ""
-        return triggered, reason
-    except Exception as e:
-        logger.warning("guardrail | LLM check failed, defaulting to pass. error=%s", e)
-        return False, ""
+def _build_input_context(query: str, messages: list[dict] | None) -> str:
+    """Ghép lịch sử hội thoại gần nhất + câu hỏi hiện tại làm ngữ cảnh cho
+    LLM check — trước đây chỉ check mỗi query trần, thiếu ngữ cảnh hội thoại."""
+    if not messages:
+        return query
+    recent = messages[-_HISTORY_TURNS:]
+    lines = [f"{m.get('role', 'user')}: {m.get('content', '')}" for m in recent]
+    lines.append(f"user: {query}")
+    return "\n".join(lines)
 
 
-async def run_guardrail(query: str, cfg: dict) -> tuple[bool, str]:
+async def run_guardrail(query: str, cfg: dict, messages: list[dict] | None = None) -> tuple[bool, str]:
     """
     Trả về (triggered, reason).
     cfg có thể truyền vào guardrail_input_patterns, guardrail_llm_enabled, guardrail_model, v.v.
+    messages: lịch sử hội thoại gần nhất, dùng làm ngữ cảnh cho lớp LLM check
+    (lớp regex chỉ check `query` — mẫu câu jailbreak/injection nhắm vào câu
+    hỏi hiện tại, không cần lịch sử).
     """
     t0 = time.monotonic()
 
@@ -122,7 +82,12 @@ async def run_guardrail(query: str, cfg: dict) -> tuple[bool, str]:
 
     triggered, message = False, ""
     if cfg.get("guardrail_llm_enabled", True):
-        triggered, message = _llm_check(query, cfg)
+        context = _build_input_context(query, messages)
+        try:
+            triggered, message = await llm_guardrail_check(context, cfg, check_type="input")
+        except GuardrailCheckError as e:
+            logger.warning("guardrail | LLM check failed, defaulting to pass (fail-open). error=%s", e)
+            triggered, message = False, ""
     elif regex_triggered:
         triggered, message = regex_triggered, regex_message
 

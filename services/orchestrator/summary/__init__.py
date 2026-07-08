@@ -1,3 +1,3 @@
-from .summary import summarize, summarize_stream
+from .summary import summarize, synthesis_judge_check
 
-__all__ = ["summarize", "summarize_stream"]
+__all__ = ["summarize", "synthesis_judge_check"]

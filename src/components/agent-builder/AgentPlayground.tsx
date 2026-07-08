@@ -180,7 +180,20 @@ function mapObservations(obs: any[], traceId?: string): TraceStep[] {
     .filter(o => {
       if (_isInfraSpan(o)) return false;
       if (_shouldSkip(o.name) || _HIDE_SPAN.has(o.name)) return false;
-      if (o.name?.startsWith('judge')) return true;
+      // level=DEBUG: node có ý nghĩa quan sát thấp trên happy path (vd
+      // judge_phase1 khi PASS — services/workflow-runtime/graph.py hạ level
+      // xuống DEBUG lúc không bounce). Ẩn khỏi trace mặc định, đúng ý nghĩa
+      // chuẩn của field "level" — không cần bật riêng cho từng tên node.
+      if (o.level === 'DEBUG') return false;
+      // LƯU Ý: từng có `if (o.name?.startsWith('judge')) return true;` ở đây
+      // (thời filter còn ràng buộc type==='SPAN', judge là GENERATION/CHAIN
+      // nên cần miễn trừ riêng). Đã bỏ — nó khiến judge/judge_phase1 bỏ qua
+      // luôn rule ẩn-con-của-LangGraph-wrapper bên dưới, nên hiện ĐỒNG THỜI
+      // ở cả outer trace lẫn bên trong single-agent đã expand (cùng 1 id →
+      // click 1 cái thì cả 2 cùng highlight). Giờ filter không còn ràng buộc
+      // type==='SPAN' nữa (chỉ còn ở nhánh fallback không có parent trong
+      // set), nên judge/judge_phase1 cứ để rơi xuống rule parent-hierarchy
+      // như mọi node khác (planner/kb_search/...) là đủ, không cần miễn trừ.
       // Ẩn mọi span rơi vào tag mặc định "NODE" (spanType() không nhận diện
       // được) — đây là các node hạ tầng/định tuyến không có giá trị hiển thị
       // (vd fetch_agents, execute, single_agent wrapper) — khác "single-agent"
@@ -519,8 +532,16 @@ function TracePanel({ steps, traceLoading, traceId, rawObservations }: {
   }
   const headerTotalMs = Math.max(...steps.map(s => s.startMs + s.latencyMs), 1);
   const totalMs  = Math.max(...allRows.map(r => r.step.startMs + r.step.latencyMs), 1);
-  // Bỏ qua inner nodes khi tính tổng tokens/cost để tránh đếm trùng với group header
-  const totalTok = allRows.reduce((s, r) => s + (r.step.agentGroupId && !r.step.isAgentGroupHeader ? 0 : r.step.tokens), 0);
+  // Tổng tokens/cost cho KPI header: tính trực tiếp trên rawObservations (đã
+  // fetch đủ toàn bộ cây trace 1 lần, xem comment ở toggleExpand phía trên),
+  // KHÔNG tính trên allRows/steps — 2 cái đó phụ thuộc UI expand state (group
+  // agent nào chưa expand thì tokens/cost các generation con của nó bị 0, vì
+  // span "single-agent"/"[task]" bọc ngoài không tự mang usage rollup). Tính
+  // trên steps/allRows từng khiến TOKENS đổi giá trị mỗi lần bấm expand
+  // (trước đó bị undercount) còn COST thì undercount vĩnh viễn vì không
+  // dùng allRows. rawObservations ổn định, không đổi theo expand/collapse.
+  const totalTok  = rawObservations.reduce((s, o) => s + ((o?.usage?.input ?? 0) + (o?.usage?.output ?? 0)), 0);
+  const totalCost = rawObservations.reduce((s, o) => s + (o?.calculatedTotalCost ?? 0), 0);
   // Find selected by ID — immune to index shifts from expand/collapse
   const sel = allRows.find(r => r.step.id === selectedId)?.step ?? allRows[0]?.step;
 
@@ -557,7 +578,7 @@ function TracePanel({ steps, traceLoading, traceId, rawObservations }: {
         {[
           { k: 'latency', v: (headerTotalMs / 1000).toFixed(2) + 's', c: '#F5F5F5' },
           { k: 'tokens',  v: totalTok.toLocaleString(),          c: '#EBD07C' },
-          { k: 'cost',    v: '$' + steps.reduce((s, t) => s + (t.agentGroupId && !t.isAgentGroupHeader ? 0 : t.cost), 0).toFixed(4), c: '#C5DD83' },
+          { k: 'cost',    v: '$' + totalCost.toFixed(4),         c: '#C5DD83' },
           { k: 'spans',   v: String(steps.length),               c: '#F3E2A7' },
         ].map(({ k, v, c }, i) => (
           <div key={k} style={{ padding: '7px 10px', borderRight: i < 3 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>

@@ -23,8 +23,9 @@ class AgentState(TypedDict):
     language: Optional[str]           # "vi" | "en" — set by planner
     loop_iteration: int               # số lần judge đã chạy (tăng mỗi lần judge FAIL)
     judge_verdict: Optional[str]      # "PASS" | "FAIL"
-    judge_error_type: Optional[str]   # "RETRIEVAL_ERROR" | "REASONING_ERROR" | "TOOL_ERROR" | "DATA_QUALITY"
+    judge_error_type: Optional[str]   # "PLANNING_ERROR" | "DATA_QUALITY" | "GROUNDING_ERROR"
     judge_reason: Optional[str]
+    judge_phase1_error: Optional[str]  # "RETRIEVAL_ERROR" | "TOOL_ERROR" | None — set bởi judge_phase1_node
     human_approved: Optional[bool]    # None = chưa qua HITL node, True/False = kết quả review
     human_note: Optional[str]         # ghi chú reviewer khi reject
     config: dict

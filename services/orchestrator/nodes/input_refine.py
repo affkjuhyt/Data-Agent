@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 
 import litellm
+from langchain_core.callbacks.manager import adispatch_custom_event
+from langchain_core.runnables import RunnableConfig
 from langgraph.types import interrupt
 
 from observability import get_langfuse_client
@@ -87,16 +90,52 @@ async def run_input_refine(
         return query, []
 
 
-async def input_refine_node(state: OrchestratorState) -> dict:
-    """LangGraph node — rewrite hoặc hỏi clarification trong 1 LLM call."""
+async def input_refine_node(state: OrchestratorState, config: RunnableConfig) -> dict:
+    """LangGraph node — rewrite hoặc hỏi clarification trong 1 LLM call.
+
+    Đua với guardrail_task (bắn nền từ routers/stream.py ngay từ t=0, xem
+    graph.py) bằng asyncio.wait — nếu guardrail xong TRƯỚC và báo bị chặn thì
+    HUỶ LUÔN LLM call của input_refine (dù đang chạy dở), kết thúc graph ngay
+    tại đây, không cần đợi input_refine viết lại xong rồi mới biết bị chặn.
+    Trước đây guardrail chỉ được check ở gate cuối (single_agent_node/
+    execute_node) — nghĩa là dù guardrail xong sau 1ms (hard-block regex),
+    vẫn phải đợi hết input_refine (1 LLM call ~6s, không liên quan gì tới
+    guardrail) mới biết kết quả.
+
+    Nếu input_refine xong trước, hoặc guardrail cho pass, hoặc guardrail chưa
+    xong khi input_refine đã xong → chạy tiếp bình thường như cũ, guardrail
+    vẫn được check lại ở gate cuối để không bỏ sót case guardrail xong SAU."""
     if state.get("clarification_response"):
         merged = f"{state['query']}\n\nThông tin bổ sung: {state['clarification_response']}"
         return {"rewritten_query": merged, "clarification_needed": False}
 
     query = state.get("query", "")
-    refined, questions = await run_input_refine(
-        query, state.get("messages", []), state.get("cfg", {})
-    )
+    guardrail_task = (config.get("configurable") or {}).get("guardrail_task")
+
+    if guardrail_task:
+        llm_task = asyncio.create_task(
+            run_input_refine(query, state.get("messages", []), state.get("cfg", {}))
+        )
+        await asyncio.wait({llm_task, guardrail_task}, return_when=asyncio.FIRST_COMPLETED)
+
+        if guardrail_task.done():
+            triggered, reason = guardrail_task.result()
+            if triggered:
+                llm_task.cancel()
+                refusal = reason or "Xin lỗi, tôi không thể trả lời câu hỏi này."
+                await adispatch_custom_event("token", refusal)
+                return {
+                    "final_response": refusal,
+                    "success": False,
+                    "guardrail_triggered": True,
+                    "guardrail_reason": reason,
+                }
+
+        refined, questions = llm_task.result() if llm_task.done() else await llm_task
+    else:
+        refined, questions = await run_input_refine(
+            query, state.get("messages", []), state.get("cfg", {})
+        )
 
     if questions:
         logger.info("input_refine | clarification needed, questions=%d", len(questions))

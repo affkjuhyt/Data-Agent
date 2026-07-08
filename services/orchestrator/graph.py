@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from contextlib import nullcontext
@@ -8,36 +9,27 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
 
+import config
 from agent_catalog import fetch_published_agents
 from executor import execute_plan
 from langchain_core.callbacks.manager import adispatch_custom_event
 
-from executor.agent_client import call_agent_stream, traceparent_of
-from nodes.guardrail import run_guardrail
+from executor.agent_client import call_agent_stream, extract_guardrail_cfg, traceparent_of
 from nodes.input_refine import input_refine_node
 from nodes.suggestion import run_suggestion
 from observability import get_langfuse_client
 from planner import create_plan, report_node_failure
 from schemas import TargetResult, TaskResult
+from services.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
 from session_cache import clear_cached_plan, load_cached_plan, save_cached_plan
 from state import OrchestratorState
-from summary import summarize_stream
+from summary import summarize, synthesis_judge_check
 
 logger = logging.getLogger(__name__)
 
 _MAX_REPLAN = 2
 _checkpointer = MemorySaver()
-
-
-# ── Guardrail ────────────────────────────────────────────────────────────────
-
-async def guardrail_node(state: OrchestratorState) -> dict:
-    triggered, reason = await run_guardrail(state["query"], state.get("cfg", {}))
-    return {"guardrail_triggered": triggered, "guardrail_reason": reason}
-
-
-def _route_guardrail(state: OrchestratorState) -> str:
-    return "blocked" if state.get("guardrail_triggered") else "input_refine"
+_FAKE_STREAM_WORD_DELAY = 0.02  # giây/từ — hiệu ứng gõ chữ khi replay text đã duyệt xong
 
 
 # ── Route ─────────────────────────────────────────────────────────────────────
@@ -52,7 +44,25 @@ def _route_mode(state: OrchestratorState) -> str:
 
 # ── Single agent path ─────────────────────────────────────────────────────────
 
-async def single_agent_node(state: OrchestratorState) -> dict:
+async def single_agent_node(state: OrchestratorState, config: RunnableConfig) -> dict:
+    # Gate input guardrail — await task đã bắn nền từ routers/stream.py, ngay
+    # trước khi gọi ra ngoài (side-effect thật, workflow-runtime có thể chạy
+    # bash/SQL). Nếu guardrail đã xong từ sớm (thường vậy) thì không mất thêm
+    # latency gì cả.
+    guardrail_task = (config.get("configurable") or {}).get("guardrail_task")
+    if guardrail_task:
+        triggered, reason = await guardrail_task
+        if triggered:
+            refusal = reason or "Xin lỗi, tôi không thể trả lời câu hỏi này."
+            await adispatch_custom_event("token", refusal)
+            return {
+                "final_response": refusal,
+                "success": False,
+                "guardrail_triggered": True,
+                "guardrail_reason": reason,
+                "target_results": [],
+            }
+
     t0 = time.monotonic()
 
     # Span thủ công tương đương "[task]" bên multi-agent — đây là parent mà
@@ -76,6 +86,7 @@ async def single_agent_node(state: OrchestratorState) -> dict:
                 user_id=state["user_id"],
                 tenant_id=state["tenant_id"],
                 traceparent=traceparent_of(span),
+                guardrail_cfg=extract_guardrail_cfg(state.get("cfg", {})),
             ):
                 if event_type == "token":
                     buffer.append(data)
@@ -163,11 +174,44 @@ async def tot_planner_node(state: OrchestratorState, config: RunnableConfig) -> 
     }
 
 
+def _route_after_input_refine(state: OrchestratorState) -> str:
+    return "blocked" if state.get("guardrail_triggered") else "route"
+
+
 def _route_after_planner(state: OrchestratorState) -> str:
     return "execute" if state.get("plan") else "blocked"
 
 
+def _route_after_single_agent(state: OrchestratorState) -> str:
+    return "blocked" if state.get("guardrail_triggered") else "suggestion"
+
+
+def _route_after_execute(state: OrchestratorState) -> str:
+    return "blocked" if state.get("guardrail_triggered") else "summary"
+
+
+def _route_after_summary(state: OrchestratorState) -> str:
+    return "blocked" if state.get("guardrail_triggered") else "suggestion"
+
+
 async def execute_node(state: OrchestratorState, config: RunnableConfig) -> dict:
+    # Gate input guardrail — cùng lý do như single_agent_node: đây là điểm
+    # ngay trước khi gọi ra ngoài để thực thi các agent con thật.
+    guardrail_task = (config.get("configurable") or {}).get("guardrail_task")
+    if guardrail_task:
+        triggered, reason = await guardrail_task
+        if triggered:
+            refusal = reason or "Xin lỗi, tôi không thể trả lời câu hỏi này."
+            await adispatch_custom_event("token", refusal)
+            return {
+                "final_response": refusal,
+                "success": False,
+                "guardrail_triggered": True,
+                "guardrail_reason": reason,
+                "target_results": [],
+                "executor_ms": 0,
+            }
+
     plan = state["plan"]
     process = state["process"]
     redis = (config.get("configurable") or {}).get("redis")
@@ -179,6 +223,7 @@ async def execute_node(state: OrchestratorState, config: RunnableConfig) -> dict
     recovered = False
     completed_node_ids: set[str] = set(state.get("completed_node_ids") or [])
 
+    guardrail_cfg = extract_guardrail_cfg(state.get("cfg", {}))
     for attempt in range(_MAX_REPLAN + 1):
         result = await execute_plan(
             plan,
@@ -188,6 +233,7 @@ async def execute_node(state: OrchestratorState, config: RunnableConfig) -> dict
             agents=state["agents"],
             skip_node_ids=completed_node_ids,
             orchestrated=True,
+            guardrail_cfg=guardrail_cfg,
         )
         all_target_results.extend(result.target_results)
         completed_node_ids.update(tr.node_id for tr in result.target_results if tr.success)
@@ -223,6 +269,15 @@ async def execute_node(state: OrchestratorState, config: RunnableConfig) -> dict
     }
 
 
+async def _guardrail_output_check(text: str, cfg: dict) -> tuple[bool, str]:
+    try:
+        return await llm_guardrail_check(text, cfg, check_type="output")
+    except GuardrailCheckError as e:
+        # Fail-closed cho output (khác input) — lỗi/timeout coi như vi phạm.
+        logger.warning("summary | guardrail output check failed, fail-closed. error=%s", e)
+        return True, "Xin lỗi, tôi không thể tiếp tục trả lời câu hỏi này."
+
+
 async def summary_node(state: OrchestratorState) -> dict:
     t0 = time.monotonic()
     outputs = [
@@ -230,12 +285,51 @@ async def summary_node(state: OrchestratorState) -> dict:
         for tr in state.get("target_results", [])
         if tr.success and tr.task_results
     ]
-    buffer: list[str] = []
-    async for token in summarize_stream(state["rewritten_query"], outputs):
-        buffer.append(token)
-        await adispatch_custom_event("token", token)
+    cfg = state.get("cfg", {})
+    query = state["rewritten_query"]
+
+    # Sinh xong toàn bộ câu tổng hợp trước (không stream live) — để có thể
+    # check guardrail trên TOÀN BỘ text, tránh rủi ro cắt cụt ý nghĩa nếu check
+    # theo từng câu. Đổi hẳn latency-chồng-lấp của streaming thật lấy độ đúng
+    # đắn — xem Context trong plan.
+    #
+    # synthesis_judge_check (đúng-đắn của bước GỘP, có retry) và guardrail
+    # output check (an toàn, không retry) chạy SONG SONG trên cùng 1 bản text
+    # mỗi lần thử — không tuần tự, để không cộng dồn latency 2 lệnh gọi LLM.
+    # Nếu Judge FAIL, kết quả guardrail của bản đó bị bỏ (sắp lỗi thời), sinh
+    # lại và race tiếp.
+    text = ""
+    triggered, reason = False, ""
+    for attempt in range(config.MAX_SYNTHESIS_RETRY + 1):
+        text = await summarize(query, outputs)
+        (judge_passed, judge_reason), (triggered, reason) = await asyncio.gather(
+            synthesis_judge_check(query, outputs, text),
+            _guardrail_output_check(text, cfg),
+        )
+        if judge_passed or attempt == config.MAX_SYNTHESIS_RETRY:
+            break
+        logger.info("synthesis_judge | attempt=%d FAIL reason=%s — sinh lại tổng hợp", attempt, judge_reason)
+
+    if triggered:
+        refusal = reason or "Xin lỗi, tôi không thể trả lời câu hỏi này."
+        await adispatch_custom_event("token", refusal)
+        return {
+            "final_response": refusal,
+            "summary_ms": round((time.monotonic() - t0) * 1000),
+            "guardrail_triggered": True,
+            "guardrail_reason": reason,
+        }
+
+    # Pass — "giả streaming": chia theo từ, thả dần ra SSE với độ trễ nhân tạo
+    # nhỏ để giữ lại hiệu ứng gõ chữ, dù text đã sinh xong từ trước.
+    words = text.split(" ")
+    for i, word in enumerate(words):
+        chunk = word if i == 0 else " " + word
+        await adispatch_custom_event("token", chunk)
+        await asyncio.sleep(_FAKE_STREAM_WORD_DELAY)
+
     return {
-        "final_response": "".join(buffer),
+        "final_response": text,
         "summary_ms": round((time.monotonic() - t0) * 1000),
     }
 
@@ -255,7 +349,6 @@ async def suggestion_node(state: OrchestratorState) -> dict:
 def build_graph():
     builder = StateGraph(OrchestratorState)
 
-    builder.add_node("guardrail",    guardrail_node)
     builder.add_node("input_refine", input_refine_node)
     builder.add_node("route",        route_node)
     builder.add_node("single_agent", single_agent_node)
@@ -265,26 +358,41 @@ def build_graph():
     builder.add_node("summary",      summary_node)
     builder.add_node("suggestion",   suggestion_node)
 
-    builder.add_edge(START, "guardrail")
+    # Không còn node guardrail riêng chặn đầu graph — LLM guardrail check chạy
+    # nền song song (bắn từ routers/stream.py). input_refine_node tự đua với
+    # guardrail_task (asyncio.wait FIRST_COMPLETED) — nếu guardrail xong trước
+    # và bị chặn, huỷ luôn LLM call của input_refine, route thẳng "blocked"
+    # ngay tại đây thay vì phải đợi hết input_refine mới biết. Gate cuối
+    # (single_agent_node/execute_node) vẫn giữ nguyên, phòng case guardrail
+    # xong SAU khi input_refine đã chạy xong.
+    builder.add_edge(START, "input_refine")
     builder.add_conditional_edges(
-        "guardrail", _route_guardrail,
-        {"blocked": END, "input_refine": "input_refine"},
+        "input_refine", _route_after_input_refine,
+        {"route": "route", "blocked": END},
     )
-    builder.add_edge("input_refine", "route")
     builder.add_conditional_edges(
         "route", _route_mode,
         {"single_agent": "single_agent", "fetch_agents": "fetch_agents"},
     )
 
-    builder.add_edge("single_agent", "suggestion")
+    builder.add_conditional_edges(
+        "single_agent", _route_after_single_agent,
+        {"suggestion": "suggestion", "blocked": END},
+    )
 
     builder.add_edge("fetch_agents", "tot_planner")
     builder.add_conditional_edges(
         "tot_planner", _route_after_planner,
         {"execute": "execute", "blocked": END},
     )
-    builder.add_edge("execute", "summary")
-    builder.add_edge("summary", "suggestion")
+    builder.add_conditional_edges(
+        "execute", _route_after_execute,
+        {"summary": "summary", "blocked": END},
+    )
+    builder.add_conditional_edges(
+        "summary", _route_after_summary,
+        {"suggestion": "suggestion", "blocked": END},
+    )
 
     builder.add_edge("suggestion", END)
 

@@ -16,7 +16,7 @@ _LITELLM_KEY  = os.environ.get("LITELLM_API_KEY",  "sk-dev")
 _VERDICT_PASS = "PASS"
 _VERDICT_FAIL = "FAIL"
 
-_ERROR_TYPES = frozenset({"RETRIEVAL_ERROR", "TOOL_ERROR", "DATA_QUALITY", "PLANNING_ERROR"})
+_ERROR_TYPES = frozenset({"DATA_QUALITY", "PLANNING_ERROR", "GROUNDING_ERROR"})
 
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "prompts")
 _SYSTEM = open(os.path.join(_PROMPTS_DIR, "judge_system.txt"), encoding="utf-8").read().strip()
@@ -124,17 +124,15 @@ def _pass(iteration: int, reason: str = "") -> dict:
 def _fail(iteration: int, error_type: str, reason: str) -> dict:
     reset: dict = {"response": ""}
 
-    if error_type == "RETRIEVAL_ERROR":
-        reset |= {"kb_chunks": [], "mcp_results": [], "tool_results": [], "tool_errors": [],
-                  "rrf_results": [], "reranked_chunks": []}
-    elif error_type == "TOOL_ERROR":
-        reset |= {"tool_results": [], "tool_errors": [],
-                  "rrf_results": [], "reranked_chunks": []}
-    elif error_type == "PLANNING_ERROR":
+    if error_type == "PLANNING_ERROR":
         # Reset toàn bộ downstream của planner — planner sẽ re-emit tool_calls mới
         reset |= {"tool_calls": [], "kb_chunks": [], "mcp_results": [],
                   "tool_results": [], "tool_errors": [],
                   "rrf_results": [], "reranked_chunks": []}
+    # GROUNDING_ERROR: chỉ reset "response" (default ở trên) — context/data đã
+    # đúng, chỉ có bước diễn giải của responder bị sai, không cần tra lại.
+    # DATA_QUALITY: cũng chỉ reset response — hiếm gặp, không có recovery
+    # action riêng, để planner/responder tự thấy judge_reason ở lần sau.
 
     return {
         "judge_verdict":    _VERDICT_FAIL,
