@@ -127,6 +127,98 @@ class TestSnowflakeNodeConfig:
         assert "plaintext-leak" not in str(connection)
 
 
+class TestDbConnectorNodeConfig:
+    def test_parses_connections_into_dict_by_name(self) -> None:
+        import json
+        conns = [
+            {"name": "Sales", "host": "h1", "port": 5432, "database": "salesdb", "user": "u1", "secretId": "sec-1", "note": "orders table"},
+            {"name": "Warehouse", "host": "h2", "database": "whdb", "user": "u2", "secretId": "sec-2"},
+        ]
+        cfg = config_loader._extract_node_config([_node("db_connector", dbConnections=json.dumps(conns))])
+        db_connections = cfg["tool_config"]["db_connections"]
+        assert set(db_connections) == {"Sales", "Warehouse"}
+        assert db_connections["Sales"] == {
+            "host": "h1", "port": 5432, "database": "salesdb", "user": "u1",
+            "secret_id": "sec-1", "password": "", "note": "orders table",
+        }
+        assert db_connections["Warehouse"]["port"] == 5432  # default when omitted
+
+    def test_entries_missing_required_fields_are_skipped(self) -> None:
+        import json
+        conns = [{"name": "NoHost", "database": "db1"}, {"host": "h1", "database": "db1"}]
+        cfg = config_loader._extract_node_config([_node("db_connector", dbConnections=json.dumps(conns))])
+        assert cfg == {}
+
+    def test_missing_db_connections_returns_empty(self) -> None:
+        assert config_loader._extract_node_config([_node("db_connector")]) == {}
+
+    def test_malformed_json_is_safe(self) -> None:
+        cfg = config_loader._extract_node_config([_node("db_connector", dbConnections="not json")])
+        assert cfg == {}
+
+    def test_merges_tool_config_with_tool_executor_regardless_of_order(self) -> None:
+        import json
+        conns = [{"name": "Sales", "host": "h1", "database": "salesdb"}]
+        nodes = [
+            _node("db_connector", dbConnections=json.dumps(conns)),
+            _node("tool_executor", allowedBuiltinTools=["web_search"], bashEnabled=True),
+        ]
+        cfg = config_loader._extract_node_config(nodes)
+        assert "db_connections" in cfg["tool_config"]
+        assert "bash" in cfg["tool_config"]
+
+
+class TestResolveDbConnectorSecrets:
+    """_resolve_db_connector_secrets — mutates node_cfg in place, resolving
+    each named connection's secret_id via warehouse_secrets.resolve_db_connector_password
+    (mocked via sys.modules, same pattern as TestResolveWarehouseSecret)."""
+
+    def _stub_warehouse_secrets(self, monkeypatch, resolve_mock) -> None:
+        fake_module = types.ModuleType("warehouse_secrets")
+        fake_module.resolve_db_connector_password = resolve_mock
+        monkeypatch.setitem(sys.modules, "warehouse_secrets", fake_module)
+
+    async def test_noop_when_no_db_connector_node(self) -> None:
+        node_cfg: dict = {}
+        await config_loader._resolve_db_connector_secrets(node_cfg, "tenant-1")
+        assert node_cfg == {}
+
+    async def test_resolves_each_connection_independently(self, monkeypatch) -> None:
+        async def fake_resolve(tenant_id, secret_id):
+            return {"sec-1": "pw-sales", "sec-2": "pw-wh"}.get(secret_id)
+        self._stub_warehouse_secrets(monkeypatch, fake_resolve)
+        node_cfg = {"tool_config": {"db_connections": {
+            "Sales":     {"host": "h1", "secret_id": "sec-1", "password": ""},
+            "Warehouse": {"host": "h2", "secret_id": "sec-2", "password": ""},
+        }}}
+
+        await config_loader._resolve_db_connector_secrets(node_cfg, "tenant-1")
+
+        db_connections = node_cfg["tool_config"]["db_connections"]
+        assert db_connections["Sales"]["password"] == "pw-sales"
+        assert db_connections["Warehouse"]["password"] == "pw-wh"
+        assert "secret_id" not in db_connections["Sales"]
+        assert "secret_id" not in db_connections["Warehouse"]
+
+    async def test_resolution_failure_leaves_password_empty(self, monkeypatch) -> None:
+        self._stub_warehouse_secrets(monkeypatch, AsyncMock(return_value=None))
+        node_cfg = {"tool_config": {"db_connections": {"Sales": {"host": "h1", "secret_id": "sec-1", "password": ""}}}}
+
+        await config_loader._resolve_db_connector_secrets(node_cfg, "tenant-1")
+
+        assert node_cfg["tool_config"]["db_connections"]["Sales"]["password"] == ""
+
+    async def test_secret_id_stripped_even_without_tenant_id(self, monkeypatch) -> None:
+        resolve_spy = AsyncMock(return_value="pw")
+        self._stub_warehouse_secrets(monkeypatch, resolve_spy)
+        node_cfg = {"tool_config": {"db_connections": {"Sales": {"host": "h1", "secret_id": "sec-1", "password": ""}}}}
+
+        await config_loader._resolve_db_connector_secrets(node_cfg, None)
+
+        resolve_spy.assert_not_called()
+        assert "secret_id" not in node_cfg["tool_config"]["db_connections"]["Sales"]
+
+
 class TestResolveWarehouseSecret:
     """_resolve_warehouse_secret — mutates node_cfg in place, resolving
     execute_sql's secret_id via warehouse_secrets.resolve_snowflake_password

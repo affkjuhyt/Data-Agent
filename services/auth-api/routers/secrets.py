@@ -6,21 +6,48 @@ from schemas import *
 router = APIRouter()
 
 
+def _is_platform_admin(user: dict) -> bool:
+    return "platform-admin" in user["roles"]
+
+
+def _is_tenant_admin_for(user: dict, x_tenant_id: str) -> bool:
+    # tenant-admin is only ever effective within the caller's own tenant —
+    # require_role() doesn't check this itself (see auth_core.require_role),
+    # so every call site that admits tenant-admin must check it manually,
+    # same pattern as approvals.py's _can_approve().
+    return "tenant-admin" in user["roles"] and user["tenant_id"] == x_tenant_id
+
+
 @router.get("/api/auth/secrets")
 def list_secrets(
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(require_role("platform-admin")),
+    user: dict = Depends(get_current_user),
     _panic: None = Depends(_vault_panic_check),
 ):
+    is_platform_admin = _is_platform_admin(user)
+    if not is_platform_admin and not _is_tenant_admin_for(user, x_tenant_id):
+        raise HTTPException(status_code=403, detail="Required role: platform-admin or tenant-admin")
+
     conn = get_db()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT id, key_name, key_type, algorithm, realm, version, is_active, "
-                "rotation_due_at, last_rotated_at, created_by, created_at "
-                "FROM secrets_vault WHERE tenant_id = %s ORDER BY created_at DESC",
-                (x_tenant_id,),
-            )
+            if is_platform_admin:
+                cur.execute(
+                    "SELECT id, key_name, key_type, algorithm, realm, version, is_active, "
+                    "rotation_due_at, last_rotated_at, created_by, created_at "
+                    "FROM secrets_vault WHERE tenant_id = %s ORDER BY created_at DESC",
+                    (x_tenant_id,),
+                )
+            else:
+                # tenant-admin: only ever sees the key_types they're allowed to
+                # manage (TENANT_MANAGEABLE_KEY_TYPES) — SIGNING_KEY/
+                # ENCRYPTION_KEY/etc. of their own tenant stay invisible to them.
+                cur.execute(
+                    "SELECT id, key_name, key_type, algorithm, realm, version, is_active, "
+                    "rotation_due_at, last_rotated_at, created_by, created_at "
+                    "FROM secrets_vault WHERE tenant_id = %s AND key_type = ANY(%s) ORDER BY created_at DESC",
+                    (x_tenant_id, list(TENANT_MANAGEABLE_KEY_TYPES)),
+                )
             return [_fmt_secret(r) for r in cur.fetchall()]
     finally:
         conn.close()
@@ -30,13 +57,21 @@ def list_secrets(
 def create_secret(
     body: SecretIn,
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(require_role("platform-admin")),
+    user: dict = Depends(get_current_user),
     _panic: None = Depends(_vault_panic_check),
 ):
     if body.key_type not in VALID_KEY_TYPES:
         raise HTTPException(status_code=422, detail=f"Invalid key_type: {body.key_type}")
     if body.key_type not in _TRANSIT_TYPES and not body.value:
         raise HTTPException(status_code=422, detail="value is required for this key type")
+
+    is_platform_admin = _is_platform_admin(user)
+    if body.key_type in TENANT_MANAGEABLE_KEY_TYPES:
+        allowed = is_platform_admin or _is_tenant_admin_for(user, x_tenant_id)
+    else:
+        allowed = is_platform_admin
+    if not allowed:
+        raise HTTPException(status_code=403, detail=f"Required role: platform-admin{' or tenant-admin' if body.key_type in TENANT_MANAGEABLE_KEY_TYPES else ''}")
 
     vault = get_vault()
     path  = _vault_path(x_tenant_id, body.key_name)
@@ -102,12 +137,29 @@ def create_secret(
 def delete_secret(
     secret_id:    str = Path(...),
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(require_role("platform-admin")),
+    user: dict = Depends(get_current_user),
     _panic: None = Depends(_vault_panic_check),
 ):
+    is_platform_admin = _is_platform_admin(user)
+    if not is_platform_admin and not _is_tenant_admin_for(user, x_tenant_id):
+        raise HTTPException(status_code=403, detail="Required role: platform-admin or tenant-admin")
+
     conn = get_db()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            if not is_platform_admin:
+                # tenant-admin: only allowed to delete key_types they can
+                # manage — check BEFORE mutating, not after.
+                cur.execute(
+                    "SELECT key_type FROM secrets_vault WHERE id = %s AND tenant_id = %s",
+                    (secret_id, x_tenant_id),
+                )
+                existing = cur.fetchone()
+                if not existing:
+                    raise HTTPException(status_code=404, detail="Secret not found")
+                if existing["key_type"] not in TENANT_MANAGEABLE_KEY_TYPES:
+                    raise HTTPException(status_code=403, detail="tenant-admin cannot delete this key_type")
+
             cur.execute(
                 "UPDATE secrets_vault SET is_active = false WHERE id = %s AND tenant_id = %s "
                 "RETURNING key_name, key_type, version",

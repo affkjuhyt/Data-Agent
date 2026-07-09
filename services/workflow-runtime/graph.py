@@ -10,6 +10,7 @@ from nodes.model_harness.reranker import reranker_node
 from nodes.sandbox.kb_search import kb_search_node
 from nodes.sandbox.mcp import mcp_node
 from nodes.sandbox.tool_executor import tool_executor_node
+from nodes.sandbox.db_connector import db_connector_node
 from nodes.model_harness.judge import judge_node
 from nodes.model_harness.human_approval import human_approval_node
 from nodes.context.metadata_injector import metadata_injector_node
@@ -21,6 +22,7 @@ NODE_TYPE_MAP = {
     "kb_search":        kb_search_node,
     "mcp":              mcp_node,
     "tool_executor":    tool_executor_node,
+    "db_connector":     db_connector_node,
     "rrf_ranking":      rrf_ranking_node,
     "reranker":         reranker_node,
     "responder":        responder_node,
@@ -55,6 +57,8 @@ def _make_route_after_planner(retrieval_nodes: frozenset[str]):
             destinations.append("mcp")
         if "tool" in types and "tool_executor" in retrieval_nodes:
             destinations.append("tool_executor")
+        if "db_query" in types and "db_connector" in retrieval_nodes:
+            destinations.append("db_connector")
         # Fallback: dùng node retrieval đầu tiên có trong graph
         return destinations or [next(iter(retrieval_nodes))]
     return route_after_planner
@@ -76,10 +80,10 @@ _PHASE1_REASONS = {
 async def judge_phase1_node(state: AgentState) -> dict:
     """Judge Pha 1 (mới) — check thuần state, không LLM, ngay sau khi retrieval
     xong (trước rrf_ranking/reranker/responder). Bắt RETRIEVAL_ERROR (rỗng
-    toàn bộ — kb_chunks/mcp_results/tool_results đều không có gì) và
-    TOOL_ERROR (tool_errors không rỗng — tool như text_to_sql đã tự sinh SQL +
-    tự chạy + tự sửa lỗi kỹ thuật nội bộ tối đa 3 lần trước khi báo lỗi ra
-    đây, nên không phải lỗi tạm thời). Reset đúng phần cần sinh lại, route
+    toàn bộ — kb_chunks/mcp_results/tool_results/db_results đều không có gì) và
+    TOOL_ERROR (tool_errors/db_error không rỗng — tool như DB Connector đã tự
+    sinh SQL + tự chạy + tự sửa lỗi kỹ thuật nội bộ tối đa 3 lần trước khi báo
+    lỗi ra đây, nên không phải lỗi tạm thời). Reset đúng phần cần sinh lại, route
     thẳng về planner ngay — tiết kiệm chi phí rrf_ranking/reranker/responder
     cho các lỗi biết được sớm mà không cần LLM.
 
@@ -139,9 +143,9 @@ async def judge_phase1_node(state: AgentState) -> dict:
         return _pass()
 
     error_type = None
-    if state.get("tool_errors"):
+    if state.get("tool_errors") or state.get("db_error"):
         error_type = "TOOL_ERROR"
-    elif not (state.get("kb_chunks") or state.get("mcp_results") or state.get("tool_results")):
+    elif not (state.get("kb_chunks") or state.get("mcp_results") or state.get("tool_results") or state.get("db_results")):
         error_type = "RETRIEVAL_ERROR"
 
     if error_type is None:
@@ -156,6 +160,7 @@ async def judge_phase1_node(state: AgentState) -> dict:
         "judge_reason": _PHASE1_REASONS[error_type],
         "loop_iteration": iteration + 1,
         "kb_chunks": [], "mcp_results": [], "tool_results": [], "tool_errors": [],
+        "db_results": [], "db_error": None,
         "rrf_results": [], "reranked_chunks": [],
     }
 
@@ -247,7 +252,7 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict], checkpo
         builder.add_edge(START, "planner")
 
     # Tìm retrieval nodes mà planner nối tới trên canvas
-    retrieval_nodes = {tgt for src, tgt in type_edges if src == "planner" and tgt in ("kb_search", "mcp", "tool_executor")}
+    retrieval_nodes = {tgt for src, tgt in type_edges if src == "planner" and tgt in ("kb_search", "mcp", "tool_executor", "db_connector")}
     non_retrieval_planner_targets = {tgt for src, tgt in type_edges if src == "planner" and tgt not in ("kb_search", "mcp")}
 
     _route_planner = _make_route_after_planner(frozenset(retrieval_nodes))
@@ -340,7 +345,7 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict], checkpo
             builder.add_edge("join_end", "judge")
 
             available_for_judge = frozenset(
-                {"planner", "responder"} | (node_types & {"kb_search", "tool_executor", "mcp"})
+                {"planner", "responder"} | (node_types & {"kb_search", "tool_executor", "mcp", "db_connector"})
             )
             judge_path_map = {t: t for t in available_for_judge}
             judge_path_map["end"] = END

@@ -1,7 +1,12 @@
-"""Resolves a Snowflake/warehouse password referenced by a canvas node's
-`snowflakeSecretId` against OpenBao — instead of trusting a raw
-`snowflakePassword` value out of the Mongo flow-node document (PR review
-gap, see docs/Sandbox_SchemaCrawler_Implementation.md §9).
+"""Resolves a warehouse/DB password referenced by a canvas node's secret_id
+against OpenBao — instead of trusting a raw plaintext password value out of
+the Mongo flow-node document (PR review gap, see
+docs/Sandbox_SchemaCrawler_Implementation.md §9). `resolve_snowflake_password`
+(WAREHOUSE_PASSWORD, Snowflake) and `resolve_db_connector_password`
+(DB_CONNECTOR_PASSWORD, DB Connector node's Postgres connections) share the
+same `_resolve_vault_password` lookup, differing only by expected `key_type` —
+each key_type is only ever readable as itself, so a DB Connector secret_id can
+never resolve as a Snowflake password or vice versa.
 
 Reads `secrets_vault` directly (a second reader of services/auth-api's
 existing metadata table, same pattern as schema-crawler-worker reading
@@ -26,6 +31,7 @@ OPENBAO_SECRET_ID = os.environ.get("OPENBAO_SECRET_ID", "")
 
 _VAULT_MOUNT = "secret"
 _WAREHOUSE_KEY_TYPE = "WAREHOUSE_PASSWORD"
+_DB_CONNECTOR_KEY_TYPE = "DB_CONNECTOR_PASSWORD"
 
 _vault_client: "hvac.Client | None" = None
 
@@ -52,15 +58,15 @@ def _get_vault() -> "hvac.Client | None":
     return _vault_client
 
 
-async def resolve_snowflake_password(tenant_id: str, secret_id: str) -> "str | None":
+async def _resolve_vault_password(tenant_id: str, secret_id: str, key_type: str) -> "str | None":
     """Returns the plaintext password, or None if the secret doesn't exist,
-    isn't active, isn't a WAREHOUSE_PASSWORD, or OpenBao is unreachable —
+    isn't active, doesn't match `key_type`, or OpenBao is unreachable —
     callers treat None the same as "no password configured" (fails the
-    eventual Snowflake auth cleanly downstream, doesn't crash config load)."""
+    eventual DB auth cleanly downstream, doesn't crash config load)."""
     from services.database_connector.postgres_connector import client as pg_client
 
     if not pg_client.is_connected():
-        logger.warning("postgres not connected — cannot resolve warehouse secret %s", secret_id)
+        logger.warning("postgres not connected — cannot resolve secret %s", secret_id)
         return None
 
     try:
@@ -76,9 +82,9 @@ async def resolve_snowflake_password(tenant_id: str, secret_id: str) -> "str | N
         logger.warning("secrets_vault lookup failed for %s: %s", secret_id, e)
         return None
 
-    if not row or not row.is_active or row.key_type != _WAREHOUSE_KEY_TYPE:
+    if not row or not row.is_active or row.key_type != key_type:
         logger.warning(
-            "warehouse secret %s not found/inactive/wrong-type for tenant=%s", secret_id, tenant_id
+            "secret %s not found/inactive/wrong-type (expected=%s) for tenant=%s", secret_id, key_type, tenant_id
         )
         return None
 
@@ -94,5 +100,13 @@ async def resolve_snowflake_password(tenant_id: str, secret_id: str) -> "str | N
         )
         return resp["data"]["data"].get("value")
     except Exception as e:
-        logger.warning("failed to read warehouse secret %s from vault path=%s: %s", secret_id, path, e)
+        logger.warning("failed to read secret %s from vault path=%s: %s", secret_id, path, e)
         return None
+
+
+async def resolve_snowflake_password(tenant_id: str, secret_id: str) -> "str | None":
+    return await _resolve_vault_password(tenant_id, secret_id, _WAREHOUSE_KEY_TYPE)
+
+
+async def resolve_db_connector_password(tenant_id: str, secret_id: str) -> "str | None":
+    return await _resolve_vault_password(tenant_id, secret_id, _DB_CONNECTOR_KEY_TYPE)

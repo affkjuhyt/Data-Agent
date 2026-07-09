@@ -187,6 +187,59 @@ async def test_passes_when_only_tool_results_has_data():
     assert result == {"judge_phase1_error": None}
 
 
+_DB_TOOL_CALL = [{"type": "db_query", "query": "test"}]
+
+
+async def test_tool_error_when_db_error_present():
+    import graph as graph_mod
+
+    # db_error không rỗng — DB Connector (giống text_to_sql trước đây) đã tự
+    # thử sửa SQL nội bộ tối đa 3 lần trước khi báo lỗi ra đây.
+    state = {
+        "tool_calls": _DB_TOOL_CALL,
+        "kb_chunks": [], "mcp_results": [], "tool_results": [], "tool_errors": [],
+        "db_results": [], "db_error": "failed after 3 attempts: connection refused",
+    }
+    result = await graph_mod.judge_phase1_node(state)
+
+    assert result["judge_phase1_error"] == "TOOL_ERROR"
+    assert result["db_results"] == []
+    assert result["db_error"] is None
+    assert result["kb_chunks"] == [] and result["tool_results"] == []
+    assert result["judge_reason"]
+    assert result["loop_iteration"] == 1
+
+
+async def test_retrieval_error_when_db_results_also_empty():
+    import graph as graph_mod
+
+    state = {
+        "tool_calls": _DB_TOOL_CALL,
+        "kb_chunks": [], "mcp_results": [], "tool_results": [], "tool_errors": [],
+        "db_results": [], "db_error": None,
+    }
+    result = await graph_mod.judge_phase1_node(state)
+
+    assert result["judge_phase1_error"] == "RETRIEVAL_ERROR"
+    assert result["db_results"] == []
+    assert result["db_error"] is None
+
+
+async def test_passes_when_only_db_results_has_data():
+    import graph as graph_mod
+
+    # kb_chunks/mcp_results/tool_results rỗng là bình thường nếu planner chỉ
+    # gọi DB Connector — không nên bị coi là RETRIEVAL_ERROR miễn db_results có gì.
+    state = {
+        "tool_calls": _DB_TOOL_CALL,
+        "kb_chunks": [], "mcp_results": [], "tool_results": [], "tool_errors": [],
+        "db_results": [{"id": "sql_1", "content": "data"}], "db_error": None,
+    }
+    result = await graph_mod.judge_phase1_node(state)
+
+    assert result == {"judge_phase1_error": None}
+
+
 def test_route_after_phase1_blocks_to_planner_on_error():
     import graph as graph_mod
 

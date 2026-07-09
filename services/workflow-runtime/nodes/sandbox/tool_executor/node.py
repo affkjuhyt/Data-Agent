@@ -4,10 +4,7 @@ import time
 
 from state import AgentState
 
-from nodes.sandbox.tool_executor.handlers.data import (
-    _text_to_sql_handler,
-    _text_to_pandas_handler,
-)
+from nodes.sandbox.tool_executor.handlers.data import _text_to_pandas_handler
 from nodes.sandbox.tool_executor.handlers.filesystem import (
     _file_read_handler,
     _grep_handler,
@@ -31,7 +28,6 @@ from nodes.sandbox.tool_executor.tool_grant import check_sandbox_tool_granted, T
 logger = logging.getLogger(__name__)
 
 TOOL_REGISTRY: dict[str, object] = {
-    "text_to_sql":       _text_to_sql_handler,
     "text_to_pandas":    _text_to_pandas_handler,
     "execute_python":    _execute_python_handler,
     "execute_sql":       _execute_sql_handler,
