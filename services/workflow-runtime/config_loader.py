@@ -233,6 +233,10 @@ def _extract_node_config(flow_nodes: list[dict]) -> dict:
                 conns = []
             db_connections = {
                 conn["name"]: {
+                    # "postgres" (default) or "clickhouse" — selects the driver in
+                    # the db_connector node (handlers/data.py). Absent/unknown =>
+                    # postgres, so existing flows are unchanged.
+                    "type":      (conn.get("type") or "postgres").lower(),
                     "host":      conn.get("host", ""),
                     "port":      conn.get("port", 5432),
                     "database":  conn.get("database", ""),

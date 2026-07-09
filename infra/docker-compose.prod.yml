@@ -1,0 +1,92 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.prod.yml — production HARDENING overlay  (REVIEW DRAFT)
+# ─────────────────────────────────────────────────────────────────────────────
+# Layers on top of the base file (and the HA identity from security.yml).
+# It only changes fields an overlay can change cleanly: per-key `environment`,
+# `command`, extra `volumes`, and `restart`. See the "CANNOT do via overlay"
+# note at the bottom for the two hardening steps that require editing the base
+# file during the compose-consolidation phase.
+#
+# Usage — full hardened stack for one feature (e.g. kb):
+#   docker compose \
+#     -f infra/docker-compose.yml \
+#     -f infra/docker-compose.security.yml \   # HA Keycloak + isolated Kong admin
+#     -f infra/docker-compose.prod.yml \        # this file: secrets + TLS + no-trust
+#     -f infra/docker-compose.app.yml \         # (add for runtime: sandbox etc.)
+#     --profile kb up -d --scale keycloak=0
+#
+#   --scale keycloak=0 suppresses the base single-node Keycloak so only the
+#   security.yml HA nodes (keycloak-node1/2 + keycloak-lb) run.
+#
+# All secrets below use ${VAR:?message}: `docker compose up` FAILS FAST if the
+# variable is missing instead of silently falling back to a dev default.
+# Provide them via a real .env / secrets manager — never commit them.
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+  postgres:
+    restart: always
+    environment:
+      # Remove the base file's POSTGRES_HOST_AUTH_METHOD: trust — require a real
+      # password and modern SCRAM auth for every connection.
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in production}
+
+  redis:
+    restart: always
+
+  mongo:
+    restart: always
+
+  minio:
+    restart: always
+    environment:
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in production}
+
+  kafka:
+    restart: always
+    environment:
+      KAFKA_ADMIN_PASSWORD: ${KAFKA_ADMIN_PASSWORD:?KAFKA_ADMIN_PASSWORD must be set in production}
+
+  neo4j:
+    restart: always
+    environment:
+      # Base runs Neo4j with AUTH none — require credentials in production.
+      NEO4J_AUTH: ${NEO4J_AUTH:?NEO4J_AUTH must be set in production, e.g. neo4j/<strong-password>}
+
+  # OpenBao with TLS. Base mounts ../infra/openbao at /openbao/config, so
+  # config.prod.hcl (created alongside this file) is available in-container.
+  # We add the certs mount and switch the config file.
+  openbao:
+    restart: always
+    command: server -config=/openbao/config/config.prod.hcl
+    environment:
+      BAO_ADDR: https://127.0.0.1:8200
+    volumes:
+      - ../infra/certs:/openbao/certs:ro
+
+  kong:
+    restart: always
+
+  keycloak:
+    restart: always
+    environment:
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD must be set in production}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CANNOT be done via overlay — do these in the base file during consolidation:
+#
+#   1. Remove host-published infra ports. Compose MERGES `ports` (a `ports: []`
+#      override does NOT clear them), so stripping 5432/9092/9001/9200/8300/…
+#      from the host must be edited directly in docker-compose.yml. Keep only
+#      Kong proxy :8000 (and the Keycloak LB) exposed.
+#
+#   2. Remove the `:-dev123` / `:-minio_secret` / `:-sk-dev` interpolation
+#      DEFAULTS baked into the base file's ${VAR:-default} references. An overlay
+#      cannot change another service's interpolation default, only its own env.
+#
+#   3. Close the Kafka INTERNAL PLAINTEXT listener (:9094, principal ANONYMOUS =
+#      super-user). Requires giving kb-backend + kb-ingestion-worker SASL creds
+#      first, then dropping INTERNAL from KAFKA_LISTENERS — a coordinated change,
+#      tracked as its own step.
+# ─────────────────────────────────────────────────────────────────────────────

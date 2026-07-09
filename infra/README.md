@@ -20,6 +20,48 @@ The frontend has no mock server and no auth bypass: `kb-backend` is **fail-close
 > `kb-backend` is also published on `:8050` — hitting it directly bypasses Kong and returns
 > `401` by design (handy to confirm fail-closed behaviour).
 
+## Bring up only one feature — Compose profiles
+
+`docker-compose.yml` tags each service with a **feature profile** so you can start just
+the slice you are working on instead of the whole platform. Four services carry **no**
+profile and therefore always start (the core auth + system-of-record):
+`postgres`, `keycloak`, `kong-migration`, `kong`.
+
+```bash
+# Run from the repository root
+docker compose -f infra/docker-compose.yml --profile authoring up -d   # design flows: + flow-builder, frontend, mongo, redis
+docker compose -f infra/docker-compose.yml --profile kb        up -d   # Knowledge Base: + kb-backend, ingestion, model-service, litellm + qdrant/neo4j/minio/kafka/mongo
+docker compose -f infra/docker-compose.yml --profile iam       up -d   # auth/governance: + auth-api, audit-bridge, audit-consumer, openbao, kafka
+docker compose -f infra/docker-compose.yml --profile release   up -d   # release: + release-worker, minio-service + minio/mongo/kafka/redis
+docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml --profile runtime up -d  # agent runtime (full): + workflow-runtime, orchestrator, kb-backend, sandbox-executor, memory-consumer, schema-crawler-worker
+
+# Combine profiles freely
+docker compose -f infra/docker-compose.yml --profile kb --profile authoring up -d          # KB + its UI
+docker compose -f infra/docker-compose.yml --profile kb --profile testdb up -d             # KB + a ClickHouse test DB for db_connector
+docker compose -f infra/docker-compose.yml --profile runtime --profile observability up -d # runtime + Jaeger/Langfuse/ELK
+```
+
+| Profile | Adds (app) | Adds (stores) |
+|---|---|---|
+| `authoring` | flow-builder, frontend | mongo, redis |
+| `kb` | kb-backend, kb-ingestion-worker, model-service, litellm, minio-service | qdrant, neo4j, minio, kafka, mongo, redis |
+| `runtime` | workflow-runtime, orchestrator, kb-backend, model-service, litellm | mongo, redis, qdrant, neo4j, kafka, openbao |
+| `iam` | auth-api, audit-bridge, audit-consumer | kafka, openbao |
+| `release` | release-worker, minio-service | minio, mongo, kafka, redis |
+| `observability` | langfuse (+ worker, minio-init) | elasticsearch, jaeger, clickhouse, minio, redis |
+| `testdb` | — | clickhouse (throwaway DB target for `db_connector`) |
+| `models` | ollama | — (local GPU model backend; dev usually points litellm at a host llama-server instead) |
+| `legacy-jwt` | jwks-refresher | — (**only** if Kong runs the built-in `jwt` plugin instead of `aeroflow-jwks` — check `curl :8001/plugins`) |
+
+> **Note — the full `runtime` lives across two files.** `sandbox-executor` (+ `sandbox-dockerd`),
+> `memory-consumer`, and `schema-crawler-worker` are defined in
+> [`docker-compose.app.yml`](./docker-compose.app.yml), which carries the same profiles. So the
+> **complete** agent runtime (with the sandbox) is `-f docker-compose.yml -f docker-compose.app.yml
+> --profile runtime`; the base file alone gives a runtime without the sandbox/memory/schema workers.
+>
+> When you enable a profile, every service tagged with it starts; a shared store (e.g. `kafka`)
+> carries **all** the profiles that use it, so it comes up under any of them.
+
 ---
 
 ## Bring up the stack — kb_e2e
