@@ -364,6 +364,10 @@ services:
       LANGFUSE_PUBLIC_KEY: pk-lf-8615e735-e5d5-4942-913f-68d02f6e48cc
       LANGFUSE_SECRET_KEY: sk-lf-b5f72b59-f31c-470f-aee3-8bd2d3d6acc0
       QDRANT_URL: http://qdrant:6333
+      # Code Interpreter Sandbox (docs/1.md) — internal-only, never exposed
+      # to the host; sandbox-executor is the sole holder of the Docker
+      # socket / Snowflake read-only credentials (hub-and-spoke isolation).
+      SANDBOX_EXECUTOR_URL: http://sandbox-executor:8500
     depends_on:
       postgres:
         condition: service_healthy
@@ -373,6 +377,124 @@ services:
         condition: service_started
       litellm:
         condition: service_started
+      sandbox-executor:
+        condition: service_started
+
+  # ── Sandbox Executor (docs/1.md Kế hoạch 1) ────────────────────────────
+  sandbox-executor:
+    build:
+      context: ../services/sandbox-executor
+    container_name: dataagent-sandbox-executor
+    restart: unless-stopped
+    # TEMP (2026-07-09, operator decision for manual §2 curl testing) —
+    # exposed to host so `curl localhost:8500/...` works directly, matching
+    # the standalone §1.1 workflow. Real production does NOT expose this
+    # port (internal-only, single controlled entry via workflow-runtime) —
+    # remove this `ports:` block and keep only `expose:` before deploying
+    # for real, see docs/sandbox_report.md mục 11.
+    ports:
+      - "8500:8500"
+    expose:
+      - "8500"
+    environment:
+      SANDBOX_TIMEOUT_S: "10"
+      SANDBOX_MEMORY_MB: "256"
+      SANDBOX_CPUS: "0.5"
+      SANDBOX_POOL_SIZE: ${SANDBOX_POOL_SIZE:-3}
+      # Which engine /execute/sql talks to. Default "snowflake" is
+      # production behavior, unchanged. Set to "postgres" for local dev/CI
+      # without a real Snowflake account — the request body's `connection`
+      # then takes {host, port, user, password, dbname}, e.g. the
+      # `sandbox_reader` role against the `sandbox_dev` database on this
+      # same `postgres` service (infra/sql/create-extra-dbs.sql; only
+      # auto-created on a fresh postgres_data volume).
+      SANDBOX_SQL_BACKEND: ${SANDBOX_SQL_BACKEND:-snowflake}
+      SANDBOX_SQL_QUEUE_WORKERS: "5"
+      SANDBOX_BREAKER_ENFORCE: ${SANDBOX_BREAKER_ENFORCE:-true}
+      SANDBOX_BREAKER_WINDOW_S: "60"
+      SANDBOX_BREAKER_THRESHOLD: "5"
+      SANDBOX_BREAKER_COOLDOWN_S: "30"
+      # Left empty (= host default `runc`) on purpose. gVisor has only been
+      # verified/installed on the bare host daemon (docs/sandbox_report.md
+      # mục 10.1) — this container currently talks to that same host daemon
+      # via the docker.sock mount below (sandbox-dockerd sidecar disabled,
+      # see comment above), so "runsc" *would* work here if set; left empty
+      # anyway to match the safe code-level default documented in
+      # SANDBOX_EXECUTOR_GUIDE.md. Set SANDBOX_RUNTIME=runsc to opt in.
+      SANDBOX_RUNTIME: ${SANDBOX_RUNTIME:-}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
+      # SANDBOX_DOCKER_HOST intentionally left unset here (docker_runner.py
+      # falls back to docker.from_env(), i.e. the socket mounted below) —
+      # the sandbox-dockerd sidecar further down needs unprivileged user
+      # namespaces (rootless dind), which this host currently blocks via
+      # kernel.apparmor_restrict_unprivileged_userns=1 (operator decision
+      # 2026-07-09: fix that sysctl on the host, or point SANDBOX_DOCKER_HOST
+      # at sandbox-dockerd again once it can start, to get the isolation
+      # back — see docs/sandbox_report.md mục 10 for the tradeoff notes).
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  # Rootless Docker-in-Docker sidecar — isolates sandbox-executor's Docker
+  # access from the host's real daemon. Currently DISABLED by default
+  # (profile "dind", not started by a plain `docker compose up`): this
+  # host blocks rootless DinD via kernel.apparmor_restrict_unprivileged_userns=1
+  # (verified 2026-07-09 — rootlesskit fails with "fork/exec /proc/self/exe:
+  # operation not permitted"). sandbox-executor falls back to mounting the
+  # host's own docker.sock instead (see its `volumes:` above) until that
+  # sysctl is fixed. To re-enable: fix the sysctl, add SANDBOX_DOCKER_HOST:
+  # tcp://sandbox-dockerd:2375 back to sandbox-executor's environment, swap
+  # its `volumes:` for `depends_on: sandbox-dockerd: condition: service_healthy`,
+  # and start with `--profile dind`.
+  sandbox-dockerd:
+    image: ${SANDBOX_DOCKERD_IMAGE:-docker:27-dind-rootless}
+    container_name: dataagent-sandbox-dockerd
+    restart: unless-stopped
+    profiles: ["dind"]
+    privileged: false
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+      DOCKER_HOST: tcp://localhost:2375
+    devices:
+      - /dev/fuse
+      - /dev/net/tun
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    volumes:
+      - sandbox_dockerd_data:/home/rootless/.local/share/docker
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # One-off: builds sandbox-runner:latest *inside* sandbox-dockerd's own
+  # image store (separate engine = separate image store, the host's own
+  # `docker build` doesn't put the image anywhere this can see). Run once
+  # after sandbox-dockerd is healthy, re-run any time sandbox_runner/
+  # Dockerfile changes:
+  #
+  #   docker compose -f infra/docker-compose.yml -f infra/docker-compose.local.yml \
+  #     --profile setup run --rm sandbox-image-loader
+  sandbox-image-loader:
+    image: ${SANDBOX_DOCKERD_CLI_IMAGE:-docker:27-cli}
+    profiles: ["setup"]
+    environment:
+      DOCKER_HOST: tcp://sandbox-dockerd:2375
+    volumes:
+      - ../services/sandbox-executor/sandbox_runner:/build:ro
+    depends_on:
+      sandbox-dockerd:
+        condition: service_healthy
+    command: ["build", "-t", "sandbox-runner:latest", "/build"]
 
   flow-builder:
     build:
@@ -655,7 +777,7 @@ services:
     container_name: dataagent-frontend
     restart: unless-stopped
     volumes:
-      - ../..:/app
+      - ..:/app
       - /app/node_modules
     ports:
       - "5173:3000"

@@ -67,6 +67,47 @@ services:
       SANDBOX_TIMEOUT_S: "10"
       SANDBOX_MEMORY_MB: "256"
       SANDBOX_CPUS: "0.5"
+      # mục g — pool size bumped 3 -> 8 to compensate for runsc's measured
+      # ~2.5x exec latency (0.41s runc -> 1.04s runsc, exec into an
+      # already-warm container; measured 2026-07-09, see docs/sandbox_report.md
+      # mục g). Revisit if real traffic still queues more than before.
+      SANDBOX_POOL_SIZE: "8"
+      # docs/sandbox_report.md follow-up: which engine /execute/sql talks
+      # to. Default "snowflake" is production behavior, unchanged. Set to
+      # "postgres" for local dev/CI without a real Snowflake account — the
+      # request body's `connection` then takes {host, port, user, password,
+      # dbname} instead, e.g. the `sandbox_reader` role against the
+      # `sandbox_dev` database on the shared `postgres` service
+      # (infra/sql/create-extra-dbs.sql; only auto-created on a fresh
+      # postgres_data volume).
+      SANDBOX_SQL_BACKEND: ${SANDBOX_SQL_BACKEND:-snowflake}
+      # docs/1.md Kế hoạch 1 mục i — job queue worker counts; python
+      # defaults to SANDBOX_POOL_SIZE below (one worker per warm
+      # container) if left unset.
+      SANDBOX_SQL_QUEUE_WORKERS: "5"
+      # mục e — circuit breaker sliding window. Window/threshold/cooldown
+      # below are still placeholder values, not a tuned baseline — docs/1.md
+      # mục e recommends log-only until tuned against real traffic, but
+      # SANDBOX_BREAKER_ENFORCE was explicitly turned on ahead of that by
+      # operator decision (2026-07-09). Watch breaker OPEN/HALF_OPEN log
+      # lines for false-positive rejects and retune the three values below
+      # if legitimate traffic gets 503'd during load spikes.
+      SANDBOX_BREAKER_ENFORCE: "true"
+      SANDBOX_BREAKER_WINDOW_S: "60"
+      SANDBOX_BREAKER_THRESHOLD: "5"
+      SANDBOX_BREAKER_COOLDOWN_S: "30"
+      # mục g — gVisor (`runsc`). Enabled 2026-07-09 by operator decision
+      # after both required gates in docs/1.md mục g passed: (1) syscall-
+      # compat — pandas/numpy (incl. BLAS matmul)/matplotlib/plotly all
+      # run correctly under runsc; (2) latency measured — see
+      # SANDBOX_POOL_SIZE above for the compensation applied.
+      SANDBOX_RUNTIME: "runsc"
+      # mục h — audit copy of submitted code, uploaded before dispatch and
+      # deleted once the request ends either way. Same MinIO instance
+      # already used for the knowledge-base bucket, just a new bucket.
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       OTEL_SERVICE_NAME: sandbox-executor
       # Talk to the rootless DinD sidecar below instead of the host's own
@@ -76,6 +117,10 @@ services:
       SANDBOX_DOCKER_HOST: tcp://sandbox-dockerd:2375
     depends_on:
       sandbox-dockerd:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      minio:
         condition: service_healthy
 
   # Rootless Docker-in-Docker sidecar — the only thing in the platform that

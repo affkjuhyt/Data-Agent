@@ -12,6 +12,7 @@ sandbox-runner:latest image; skipped otherwise.
 """
 from __future__ import annotations
 
+import json
 import pathlib
 import shutil
 import sys
@@ -19,6 +20,7 @@ import threading
 import time
 
 import docker
+import httpx
 import pytest
 import uvicorn
 
@@ -62,10 +64,13 @@ def live_sandbox_executor():
         thread = threading.Thread(target=server.run, daemon=True)
         thread.start()
 
-        for _ in range(50):
+        # sandbox-executor's lifespan now spins up the warm container pool
+        # (docs/1.md Kế hoạch 1) on startup — real container creates take
+        # longer than the old instant (no-op) startup did.
+        for _ in range(300):
             if server.started:
                 break
-            time.sleep(0.1)
+            time.sleep(0.2)
         else:
             raise RuntimeError("sandbox-executor did not start in time")
 
@@ -134,6 +139,51 @@ async def test_execute_sql_handler_rejects_when_no_connection_configured(handler
 
     assert result is None
     assert "not configured" in error["error"]
+
+
+async def test_execute_python_stream_emits_output_incrementally_over_real_http(live_sandbox_executor):
+    """docs/1.md mục h: "stream trạng thái/stdout-stderr của lần exec
+    đang chạy" — genuinely incremental delivery, proven against a real
+    HTTP connection (httpx) to the real running uvicorn server this
+    module's fixture starts. Deliberately NOT driven through FastAPI's
+    TestClient the way test_sandbox_executor_api.py's SSE tests are:
+    TestClient's own streaming support was observed (empirically, while
+    building this feature) to buffer the *entire* SSE response and
+    deliver every line to test code at once, regardless of how
+    incrementally the server actually sent it — a test built on
+    TestClient here would pass even for a regression back to the old
+    batched-at-the-end design, defeating the point of this test.
+    """
+    code = "for i in range(3):\n    print(f'chunk-{i}')\n    x = sum(range(15_000_000))\n"
+    async with httpx.AsyncClient() as http:
+        resp = await http.post(f"{live_sandbox_executor}/execute/python", json={"code": code, "timeout_s": 15})
+        assert resp.status_code == 202
+        job_id = resp.json()["job_id"]
+
+        output_events: list[tuple[float, str]] = []
+        t0 = time.monotonic()
+        async with http.stream(
+            "GET", f"{live_sandbox_executor}/execute/python/{job_id}/stream", timeout=30,
+        ) as stream_resp:
+            assert stream_resp.status_code == 200
+            async for line in stream_resp.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                payload = json.loads(line[len("data:"):].strip())
+                if "stream" in payload and "text" in payload:
+                    output_events.append((time.monotonic() - t0, payload["text"].strip()))
+                if payload.get("status") == "done":
+                    break
+
+    assert [text for _, text in output_events] == ["chunk-0", "chunk-1", "chunk-2"], output_events
+
+    arrival_times = [t for t, _ in output_events]
+    assert arrival_times[-1] - arrival_times[0] > 0.2, (
+        f"output events arrived within {arrival_times[-1] - arrival_times[0]:.3f}s of each other "
+        f"(arrival times: {arrival_times}) — expected genuine incremental delivery with real gaps "
+        "between them, matching the ~0.3-0.4s CPU-bound gap between each print() under the pool's "
+        "0.5-CPU limit"
+    )
 
 
 async def test_execute_sql_handler_calls_sandbox_executor_and_surfaces_query_error(handler_mod):
