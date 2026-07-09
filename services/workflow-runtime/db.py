@@ -144,7 +144,6 @@ async def _has_role(tenant_id: str, user_ref: str, min_role: str) -> bool:
 
 
 async def create_conversation(
-    agent_version_id: str = _DEV_AGENT_VER_ID,
     user_ref: str = "anonymous",
     channel: str = "web",
     tenant_id: str = _DEV_TENANT_ID,
@@ -156,7 +155,6 @@ async def create_conversation(
         return None
     result = await client.insert(ConversationsInsert(
         tenant_id=tenant_id,
-        agent_version_id=agent_version_id or _DEV_AGENT_VER_ID,
         user_ref=user_ref,
         channel=channel,
         status="active",

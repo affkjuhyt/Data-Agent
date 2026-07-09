@@ -880,7 +880,6 @@ class MemoryPolicyInsert(InsertModel):
 
 @register("insert")
 class ConversationsInsert(TenantInsertModel):
-    agent_version_id: str
     user_ref: Optional[str] = None
     channel: str = "web"
     status: str = "active"

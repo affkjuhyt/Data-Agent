@@ -26,11 +26,37 @@ NODE_REGISTRY = {
             },
         },
     },
+    "metadata_injector": {
+        "display":  "Metadata Injector",
+        "category": "default",
+        "locked":   False,
+        "schema": {
+            "metadataKv": {
+                "type": "text",
+                "required": False,
+                "description": "Cặp key-value tĩnh chèn vào ngữ cảnh Planner/Responder, dạng \"key1=value1,key2=value2\"",
+                "advanced": False,
+            },
+        },
+    },
     "kb_search": {
         "display":  "KB Search",
         "category": "default",
         "locked":   False,
         "schema":   {},
+    },
+    "db_connector": {
+        "display":  "DB Connector",
+        "category": "default",
+        "locked":   False,
+        "schema": {
+            "dbConnections": {
+                "type": "json",
+                "required": False,
+                "description": "Danh sách kết nối DB: [{name, host, port, database, user, secretId, note}]. Schema tự đọc từ information_schema, không cần gõ tay. ≥2 kết nối → tự động chọn DB phù hợp theo câu hỏi (1 lệnh LLM), không cần Planner biết tên DB.",
+                "advanced": False,
+            },
+        },
     },
     "mcp": {
         "display":  "MCP Tool",
@@ -59,7 +85,7 @@ NODE_REGISTRY = {
             "allowedBuiltinTools": {
                 "type": "multiselect",
                 "options": [
-                    "text_to_sql", "text_to_pandas",
+                    "text_to_pandas",
                     "file_read", "grep", "glob",
                     "file_write", "file_edit",
                     "bash",
@@ -69,18 +95,6 @@ NODE_REGISTRY = {
                 "required": True,
                 "description": "Các tool mà agent này được phép sử dụng",
                 "advanced": False,
-            },
-            "dbUrl": {
-                "type": "password",
-                "required": False,
-                "description": "DB connection string cho text_to_sql (postgresql://...)",
-                "advanced": False,
-            },
-            "schemaHint": {
-                "type": "textarea",
-                "required": False,
-                "description": "Schema hint để LLM sinh SQL chính xác hơn",
-                "advanced": True,
             },
             "defaultFilePath": {
                 "type": "text",
@@ -189,7 +203,7 @@ NODE_REGISTRY = {
         },
     },
     "responder": {
-        "display":  "Synthesizer",
+        "display":  "Responder",
         "category": "default",
         "locked":   False,
         "schema": {

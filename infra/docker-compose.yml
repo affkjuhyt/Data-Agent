@@ -15,6 +15,8 @@ volumes:
   qdrant_data:
   neo4j_data:
   neo4j_logs:
+  langfuse_clickhouse_data:
+  langfuse_clickhouse_logs:
   ollama_models:
   hf_cache:
 
@@ -331,19 +333,117 @@ services:
       redis:
         condition: service_started
 
-  #Langfuse
-  langfuse:
-    image: langfuse/langfuse:2
-    container_name: dataagent-langfuse
+  # Langfuse v3 — SDK Python v3 (OTEL-based, dùng trong services/orchestrator,
+  # services/workflow-runtime) yêu cầu self-hosted server ≥ 3.125.0, KHÔNG
+  # tương thích server v2. v3 tách write-path (Clickhouse cho trace/observation,
+  # MinIO cho blob lớn, Redis cho queue) khỏi Postgres (chỉ còn giữ org/user/
+  # API-key). Xem: https://langfuse.com/self-hosting/upgrade-guides/upgrade-v2-to-v3
+  clickhouse:
+    image: docker.io/clickhouse/clickhouse-server
+    container_name: dataagent-clickhouse
     restart: unless-stopped
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-dev-clickhouse-pw-changeme}
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+    ports:
+      # 9000 bị MinIO chiếm ở host rồi (xem service minio dưới) — đổi cổng host,
+      # cổng nội bộ trong docker network vẫn là clickhouse:9000 như bình thường.
+      - "127.0.0.1:8123:8123"
+      - "127.0.0.1:9002:9000"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # Tạo bucket "langfuse" trên MinIO có sẵn (dùng chung instance với bucket
+  # "knowledge-base", KHÔNG cần MinIO riêng) — chạy 1 lần rồi thoát.
+  langfuse-minio-init:
+    image: minio/mc
+    container_name: dataagent-langfuse-minio-init
+    restart: "no"
+    entrypoint: >
+      sh -c "mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minio} ${MINIO_ROOT_PASSWORD:-minio_secret} &&
+             mc mb --ignore-existing local/langfuse &&
+             echo 'MinIO: langfuse bucket ready.'"
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  langfuse-worker: &langfuse-worker-def
+    image: docker.io/langfuse/langfuse-worker:3
+    container_name: dataagent-langfuse-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      clickhouse:
+        condition: service_healthy
+      langfuse-minio-init:
+        condition: service_completed_successfully
+    environment: &langfuse-env
+      NEXTAUTH_URL: http://localhost:3001
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/langfuse
+      SALT: ${LANGFUSE_SALT:-dev-langfuse-salt-changeme}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-420a3155e0050c9931ae7c80c6bb7adf7af9648ec64e4f97164ca66c0dbeecad}
+      TELEMETRY_ENABLED: "false"
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-dev-clickhouse-pw-changeme}
+      # Clickhouse của mình single-node, không có Zookeeper/cluster — thiếu biến
+      # này Langfuse tự hiểu nhầm là cluster mode, chạy DDL "ON CLUSTER" và lỗi.
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
+      # URL browser dùng để tải media đính kèm trực tiếp từ MinIO — đổi thành
+      # IP/hostname thật của máy nếu truy cập Langfuse UI từ máy khác.
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://localhost:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      # KHÔNG set REDIS_AUTH (kể cả rỗng) — redis service hiện tại không bật
+      # auth (redis:7-alpine mặc định). Set "" vẫn khiến Langfuse gửi lệnh AUTH
+      # (bị Redis từ chối vì server không có password nào cả) — phải bỏ hẳn key.
+
+  langfuse:
+    <<: *langfuse-worker-def
+    image: docker.io/langfuse/langfuse:3
+    container_name: dataagent-langfuse
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      clickhouse:
+        condition: service_healthy
+      langfuse-minio-init:
+        condition: service_completed_successfully
+      langfuse-worker:
+        condition: service_started
     ports:
       - "3001:3000"
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/langfuse
+      <<: *langfuse-env
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-dev-langfuse-nextauth-secret-changeme}
-      SALT: ${LANGFUSE_SALT:-dev-langfuse-salt-changeme}
-      NEXTAUTH_URL: http://localhost:3001
-      TELEMETRY_ENABLED: "false"
       LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_EMAIL:-admin@example.com}
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_PASSWORD:-Admin@12345678}
       LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_NAME:-Admin}
@@ -352,9 +452,6 @@ services:
       LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
       LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
       AUTH_DISABLE_SIGNUP: "false"
-    depends_on:
-      postgres:
-        condition: service_healthy
 
   workflow-runtime:
     build:

@@ -5,6 +5,7 @@ import litellm
 from xml.sax.saxutils import quoteattr
 from pydantic import BaseModel, ValidationError  # noqa: F401
 
+from observability import get_langfuse_client
 from state import AgentState
 from nodes.sandbox.tool_executor import TOOL_DEFINITIONS
 
@@ -37,7 +38,7 @@ _FALLBACK_TOOL_CALLS = [
 ]
 
 
-def planner_node(state: AgentState) -> dict:
+async def planner_node(state: AgentState) -> dict:
     t0 = time.monotonic()
     cfg = state.get("config", {})
 
@@ -86,14 +87,21 @@ def planner_node(state: AgentState) -> dict:
             "\n</past_successful_runs>"
         )
 
-    response = litellm.completion(
-        model=cfg.get("planner_model", "planner"),
+    injected_metadata = state.get("injected_metadata")
+    if injected_metadata:
+        meta_lines = "\n".join(f"- {k}: {v}" for k, v in injected_metadata.items())
+        system += f"\n\nMetadata:\n{meta_lines}"
+
+    model = cfg.get("planner_model", "planner")
+    messages_payload = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": state["query"]},
+    ]
+    response = await litellm.acompletion(
+        model=model,
         api_base=_LITELLM_BASE,
         api_key=_LITELLM_KEY,
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": state["query"]},
-        ],
+        messages=messages_payload,
         temperature=cfg.get("planner_temperature", 0),
         max_tokens=cfg.get("planner_max_tokens", 256),
         response_format=cfg.get("planner_response_format", {"type": "json_object"}),
@@ -105,6 +113,14 @@ def planner_node(state: AgentState) -> dict:
     usage = response.usage or {}
     prompt_tokens = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", 0)
     completion_tokens = getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", 0)
+    lf = get_langfuse_client()
+    if lf:
+        lf.update_current_generation(
+            model=model,
+            input=messages_payload,
+            output=response.choices[0].message.content,
+            usage_details={"input": prompt_tokens, "output": completion_tokens},
+        )
     logger.info("planner | latency=%dms prompt_tokens=%d completion_tokens=%d",
                 latency_ms, prompt_tokens, completion_tokens)
 

@@ -38,4 +38,4 @@ class OrchestratorState(TypedDict):
     # Timings (ms)
     planner_ms: int
     executor_ms: int
-    synthesizer_ms: int
+    summary_ms: int

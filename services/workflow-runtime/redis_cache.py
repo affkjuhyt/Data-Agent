@@ -11,6 +11,7 @@ _REDIS_URL = os.environ.get("REDIS_URL") or (
     f"redis://{os.environ.get('REDIS_HOST', 'localhost')}:{os.environ.get('REDIS_PORT', '6379')}"
 )
 _TTL = int(os.environ.get("CONV_CACHE_TTL_SECONDS", str(30 * 60)))  # 30min default — doc §3.1 session timeout
+_SCHEMA_TTL = int(os.environ.get("DB_SCHEMA_CACHE_TTL_SECONDS", str(10 * 60)))  # 10min default
 
 _client: Optional[aioredis.Redis] = None
 
@@ -78,3 +79,30 @@ async def cache_set_messages(conversation_id: str, messages: list[dict]):
         await pipe.execute()
     except Exception as e:
         logger.warning("redis | cache_set failed conv=%s: %s", conversation_id, e)
+
+
+def _schema_key(tenant_id: str, host: str, port: int, database: str) -> str:
+    # Cố ý KHÔNG dùng connection "name" (do người dùng tự đặt, đổi tên không
+    # đổi DB thật) hay user/password (đổi tài khoản không đổi cấu trúc bảng)
+    # — key theo đúng danh tính DB vật lý, để 2 connection khác tên trỏ cùng
+    # 1 DB tự nhiên share chung cache.
+    return f"db_schema:{tenant_id}:{host}:{port}:{database}"
+
+
+async def cache_get_schema(tenant_id: str, host: str, port: int, database: str) -> Optional[str]:
+    if not _client:
+        return None
+    try:
+        return await _client.get(_schema_key(tenant_id, host, port, database))
+    except Exception as e:
+        logger.warning("redis | cache_get_schema failed db=%s: %s", database, e)
+        return None
+
+
+async def cache_set_schema(tenant_id: str, host: str, port: int, database: str, schema_text: str):
+    if not _client:
+        return
+    try:
+        await _client.set(_schema_key(tenant_id, host, port, database), schema_text, ex=_SCHEMA_TTL)
+    except Exception as e:
+        logger.warning("redis | cache_set_schema failed db=%s: %s", database, e)

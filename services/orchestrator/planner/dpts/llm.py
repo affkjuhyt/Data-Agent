@@ -116,6 +116,12 @@ class LLM:
             agents=agents,
         )
 
+        # Đơn giản hoá: k candidate chạy song song chỉ tính vào thời gian
+        # tổng của span "tot_planner" (do CallbackHandler tự tạo) — không tách
+        # span/model/token riêng cho từng candidate. Muốn bổ sung chi tiết
+        # từng candidate sau này: dùng langfuse.observe(as_type="generation")
+        # hoặc start_as_current_generation() riêng cho mỗi candidate (xem
+        # lịch sử git cho cách làm cũ).
         async def one_child() -> list[ChildThought]:
             resp = await litellm.acompletion(
                 model=config.PLANNER_MODEL,

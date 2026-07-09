@@ -1,3 +1,7 @@
+volumes:
+  langfuse_clickhouse_data:
+  langfuse_clickhouse_logs:
+
 services:
   elasticsearch:
     image: elasticsearch:8.12.0
@@ -64,26 +68,110 @@ services:
       redis:
         condition: service_started
 
-  langfuse:
-    image: langfuse/langfuse:2
-    container_name: dataagent-langfuse
+  # Langfuse v3 — xem comment chi tiết ở docker-compose.yml (cùng block này,
+  # giữ đồng bộ 2 file). SDK Python v3 yêu cầu self-hosted server >= 3.125.0.
+  clickhouse:
+    image: docker.io/clickhouse/clickhouse-server
+    container_name: dataagent-clickhouse
     restart: unless-stopped
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-dev-clickhouse-pw-changeme}
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+    ports:
+      - "127.0.0.1:8123:8123"
+      - "127.0.0.1:9002:9000"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  langfuse-minio-init:
+    image: minio/mc
+    container_name: dataagent-langfuse-minio-init
+    restart: "no"
+    entrypoint: >
+      sh -c "mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minio} ${MINIO_ROOT_PASSWORD:-minio_secret} &&
+             mc mb --ignore-existing local/langfuse &&
+             echo 'MinIO: langfuse bucket ready.'"
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  langfuse-worker: &langfuse-worker-def
+    image: docker.io/langfuse/langfuse-worker:3
+    container_name: dataagent-langfuse-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      clickhouse:
+        condition: service_healthy
+      langfuse-minio-init:
+        condition: service_completed_successfully
+    environment: &langfuse-env
+      NEXTAUTH_URL: http://localhost:3001
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/langfuse
+      SALT: ${LANGFUSE_SALT:-dev-langfuse-salt-changeme}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-420a3155e0050c9931ae7c80c6bb7adf7af9648ec64e4f97164ca66c0dbeecad}
+      TELEMETRY_ENABLED: "false"
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-dev-clickhouse-pw-changeme}
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://localhost:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      # KHÔNG set REDIS_AUTH (kể cả rỗng) — redis không bật auth, set "" vẫn
+      # khiến Langfuse gửi AUTH và bị Redis từ chối.
+
+  langfuse:
+    <<: *langfuse-worker-def
+    image: docker.io/langfuse/langfuse:3
+    container_name: dataagent-langfuse
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      clickhouse:
+        condition: service_healthy
+      langfuse-minio-init:
+        condition: service_completed_successfully
+      langfuse-worker:
+        condition: service_started
     ports:
       - "3001:3000"
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/langfuse
+      <<: *langfuse-env
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-dev-langfuse-nextauth-secret-changeme}
-      SALT: ${LANGFUSE_SALT:-dev-langfuse-salt-changeme}
-      NEXTAUTH_URL: http://localhost:3001
-      TELEMETRY_ENABLED: "false"
       LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_EMAIL:-admin@example.com}
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_PASSWORD:-CHANGE_ME}
       LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_NAME:-Admin}
       LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG:-GTEL}
       LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT:-data-agent}
-      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:-pk-lf-change-me}
-      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:-sk-lf-change-me}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
       AUTH_DISABLE_SIGNUP: "false"
-    depends_on:
-      postgres:
-        condition: service_healthy
