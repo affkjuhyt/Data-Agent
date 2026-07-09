@@ -19,7 +19,7 @@ DEV_CONFIG = {
     "planner_response_format": {"type": "json_object"},
     "planner_timeout": 60,
     "planner_num_retries": 0,
-    "responder_model": "responder",
+    "responder_model": "openai/responder",
     "suggestion_model": "openai/suggester",
     "rewriter_model": "openai/rewriter",
     "responder_temperature": 0.2,

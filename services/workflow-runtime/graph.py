@@ -1,5 +1,7 @@
+import logging
 from collections import defaultdict
 from langgraph.graph import StateGraph, START, END
+from observability import get_langfuse_client
 from state import AgentState
 from nodes.model_harness.planner import planner_node
 from nodes.model_harness.responder import responder_node
@@ -10,6 +12,8 @@ from nodes.sandbox.mcp import mcp_node
 from nodes.sandbox.tool_executor import tool_executor_node
 from nodes.model_harness.judge import judge_node
 from nodes.model_harness.human_approval import human_approval_node
+
+logger = logging.getLogger(__name__)
 
 NODE_TYPE_MAP = {
     "planner":          planner_node,
@@ -58,18 +62,122 @@ def join_retrieval_node(state: AgentState) -> dict:
     return {}
 
 
+_JUDGE_PHASE1_NODE = "judge_phase1"
+
+
+_PHASE1_REASONS = {
+    "RETRIEVAL_ERROR": "Không tìm thấy dữ liệu liên quan — thử diễn đạt lại câu hỏi hoặc dùng nguồn/tool khác.",
+    "TOOL_ERROR": "Công cụ đã thử nhiều lần nhưng vẫn lỗi — thử cách tiếp cận hoặc tool khác.",
+}
+
+
+async def judge_phase1_node(state: AgentState) -> dict:
+    """Judge Pha 1 (mới) — check thuần state, không LLM, ngay sau khi retrieval
+    xong (trước rrf_ranking/reranker/responder). Bắt RETRIEVAL_ERROR (rỗng
+    toàn bộ — kb_chunks/mcp_results/tool_results đều không có gì) và
+    TOOL_ERROR (tool_errors không rỗng — tool như text_to_sql đã tự sinh SQL +
+    tự chạy + tự sửa lỗi kỹ thuật nội bộ tối đa 3 lần trước khi báo lỗi ra
+    đây, nên không phải lỗi tạm thời). Reset đúng phần cần sinh lại, route
+    thẳng về planner ngay — tiết kiệm chi phí rrf_ranking/reranker/responder
+    cho các lỗi biết được sớm mà không cần LLM.
+
+    CỐ Ý không cố phân biệt "data thật sự không tồn tại" với "query sai
+    logic nên ra 0 dòng" (ví dụ SQL chạy thành công nhưng row_count=0) —
+    2 trường hợp này nhìn giống hệt nhau ở tầng state (tool_results vẫn có 1
+    phần tử, chỉ là content rỗng), và mỗi tool lại có 1 dạng "rỗng" khác
+    nhau (SQL/pandas/web_search...) nên cố generic-hoá việc phát hiện ở đây
+    rất dễ vỡ. Case đó CỐ TÌNH bỏ qua, để trôi tới responder → Judge Pha 2
+    (đã có rule PLANNING_ERROR: "context không đủ") — nơi duy nhất có đủ
+    ngữ nghĩa (LLM) để phán đoán "0 dòng này có hợp lý với câu hỏi không".
+
+    Dùng CHUNG bộ đếm loop_iteration với Judge Pha 2 (giới hạn tổng số lần
+    retry, mặc định loop_max_iterations=3) — nếu không, khi data THẬT SỰ
+    không tồn tại (không phải lỗi tạm thời), planner/retrieval sẽ bị bounce
+    vô hạn không có điểm dừng. Hết hạn mức lượt thử chung (dù lỗi tới từ
+    Pha 1 hay Pha 2) → cho đi tiếp để responder tự trả lời kiểu "không tìm
+    thấy thông tin", thay vì lặp mãi.
+
+    Cũng set "judge_reason" (không chỉ judge_phase1_error) — planner_node
+    chỉ đọc field này để tự sửa chiến lược ở lần thử sau (xem
+    nodes/model_harness/planner.py); nếu bỏ trống, planner sẽ không biết
+    cần đổi gì và có thể lặp lại y hệt query cũ.
+
+    Nếu planner không hề yêu cầu tool/KB nào (tool_calls rỗng — ví dụ câu
+    chào hỏi thông thường, không cần tra cứu), thì việc kb_chunks/tool_results
+    rỗng là ĐÚNG NHƯ THIẾT KẾ (route_after_planner có fallback ép chạy
+    kb_search dù tool_calls rỗng — xem graph.py:_make_route_after_planner),
+    KHÔNG phải lỗi retrieval — không được phạt/bounce planner trong trường
+    hợp này, nếu không mọi lời chào đơn giản sẽ bị lặp tốn kém vô ích.
+
+    ASYNC dù thân hàm không await gì — bắt buộc, KHÔNG được đổi lại thành sync.
+    LangGraph chạy node sync qua threadpool executor, làm mất OTEL contextvars
+    mà Langfuse SDK v3 (OTEL-based) dùng để nối span vào đúng cha — planner_node
+    từng dính chính xác lỗi này (xem commit c41ea72 "refactor langfuse": sync
+    → async là cách fix, không phải thêm await nào). Biểu hiện quan sát được:
+    judge_phase1 xuất hiện 2 lần trong 1 trace — 1 bản lồng đúng chỗ dưới
+    span "single-agent", 1 bản rơi ra thành span mồ côi ở top-level (mất
+    parent_span_id) — chỉ node sync mới bị, các node async khác (planner,
+    kb_search, responder...) không bị.
+
+    Khi PASS (judge_phase1_error=None) hạ level span xuống DEBUG — Langfuse
+    UI mặc định ẩn observation level DEBUG khỏi trace view. Node này chỉ có
+    giá trị quan sát lúc THẬT SỰ bounce về planner; trên happy path (luôn
+    PASS) nó chỉ là nhiễu 1-2ms trong trace, không nên hiện mặc định."""
+    cfg = state.get("config", {})
+    max_iter = cfg.get("loop_max_iterations", 3)
+    iteration = state.get("loop_iteration", 0)
+    lf = get_langfuse_client()
+
+    def _pass() -> dict:
+        if lf:
+            lf.update_current_span(level="DEBUG")
+        return {"judge_phase1_error": None}
+
+    if not state.get("tool_calls"):
+        return _pass()
+
+    error_type = None
+    if state.get("tool_errors"):
+        error_type = "TOOL_ERROR"
+    elif not (state.get("kb_chunks") or state.get("mcp_results") or state.get("tool_results")):
+        error_type = "RETRIEVAL_ERROR"
+
+    if error_type is None:
+        return _pass()
+
+    if iteration >= max_iter:
+        logger.warning("judge_phase1 | max_iterations=%d reached → force pass", max_iter)
+        return _pass()
+
+    return {
+        "judge_phase1_error": error_type,
+        "judge_reason": _PHASE1_REASONS[error_type],
+        "loop_iteration": iteration + 1,
+        "kb_chunks": [], "mcp_results": [], "tool_results": [], "tool_errors": [],
+        "rrf_results": [], "reranked_chunks": [],
+    }
+
+
+def _make_route_after_phase1(after_targets: list[str]):
+    def route_after_phase1(state: AgentState) -> list[str]:
+        return ["planner"] if state.get("judge_phase1_error") else after_targets
+    return route_after_phase1
+
+
 def _make_route_after_judge(available: frozenset[str]):
-    """Closure: route về node lỗi, chỉ route tới node thực sự có trong graph."""
+    """Closure: route về node lỗi, chỉ route tới node thực sự có trong graph.
+    RETRIEVAL_ERROR/TOOL_ERROR không còn xuất hiện ở đây — Judge Pha 1
+    (judge_phase1_node, chạy trước rrf_ranking/reranker/responder) đã bắt 2
+    loại đó rồi, judge_node (Pha 2, sau responder) giờ chỉ còn PLANNING_ERROR/
+    DATA_QUALITY/GROUNDING_ERROR."""
     def route_after_judge(state: AgentState) -> str:
         if state.get("judge_verdict") != "FAIL":
             return "end"
         error_type = state.get("judge_error_type", "")
-        if error_type == "RETRIEVAL_ERROR" and "kb_search" in available:
-            return "kb_search"
-        if error_type == "TOOL_ERROR" and "tool_executor" in available:
-            return "tool_executor"
         if error_type == "PLANNING_ERROR" and "planner" in available:
             return "planner"
+        if error_type == "GROUNDING_ERROR" and "responder" in available:
+            return "responder"
         return "end"  # DATA_QUALITY hoặc node không tồn tại trong graph
     return route_after_judge
 
@@ -135,13 +243,30 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict], checkpo
         builder.add_conditional_edges("planner", _route_planner, list(retrieval_nodes))
         for rn in retrieval_nodes:
             builder.add_edge(rn, "join_retrieval")
-        # join_retrieval → node tiếp theo theo canvas (node mà retrieval nodes nối tới)
-        after_retrieval = {tgt for src, tgt in type_edges if src in retrieval_nodes}
-        for tgt in after_retrieval:
-            builder.add_edge("join_retrieval", tgt)
+        # join_retrieval → Judge Pha 1 (check rẻ, không LLM) → node tiếp theo
+        # theo canvas, hoặc quay lại planner ngay nếu retrieval/tool lỗi.
+        after_retrieval = list({tgt for src, tgt in type_edges if src in retrieval_nodes})
+        if after_retrieval:
+            builder.add_node(_JUDGE_PHASE1_NODE, judge_phase1_node)
+            builder.add_edge("join_retrieval", _JUDGE_PHASE1_NODE)
+            builder.add_conditional_edges(
+                _JUDGE_PHASE1_NODE,
+                _make_route_after_phase1(after_retrieval),
+                after_retrieval + ["planner"],
+            )
     elif len(retrieval_nodes) == 1:
         # 1 retrieval node → dùng conditional để planner quyết định runtime
         builder.add_conditional_edges("planner", _route_planner, list(retrieval_nodes))
+        single_rn = next(iter(retrieval_nodes))
+        after_retrieval = list({tgt for src, tgt in type_edges if src == single_rn})
+        if after_retrieval:
+            builder.add_node(_JUDGE_PHASE1_NODE, judge_phase1_node)
+            builder.add_edge(single_rn, _JUDGE_PHASE1_NODE)
+            builder.add_conditional_edges(
+                _JUDGE_PHASE1_NODE,
+                _make_route_after_phase1(after_retrieval),
+                after_retrieval + ["planner"],
+            )
     elif non_retrieval_planner_targets:
         for tgt in non_retrieval_planner_targets:
             builder.add_edge("planner", tgt)
@@ -200,7 +325,7 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict], checkpo
             builder.add_edge("join_end", "judge")
 
             available_for_judge = frozenset(
-                {"planner"} | (node_types & {"kb_search", "tool_executor", "mcp"})
+                {"planner", "responder"} | (node_types & {"kb_search", "tool_executor", "mcp"})
             )
             judge_path_map = {t: t for t in available_for_judge}
             judge_path_map["end"] = END

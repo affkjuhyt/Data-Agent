@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 import config
 from agent_catalog import fetch_guardrail_config
 from graph import get_graph
+from nodes.guardrail import run_guardrail
 from observability import get_langchain_callback_handler, get_langfuse_client
 from schemas import OrchestrateRequest
 
@@ -36,6 +37,12 @@ async def stream_orchestration(req: OrchestrateRequest, request: Request):
     # làm LangGraph thread_id VÀ Langfuse trace_id (xem observability.py).
     session_id = (req.session_id or uuid.uuid4().hex).replace("-", "")
     cfg = await fetch_guardrail_config(tenant_id)
+    # Bắn nền ngay từ đầu, chạy song song với input_refine/route/planner (đều
+    # thuần LLM/DB-read, không side-effect) — chỉ được await tại 2 "gate"
+    # trước hành động thật (single_agent_node/execute_node, xem graph.py).
+    # Input đã trọn vẹn ngay từ t=0 nên race này không đánh đổi gì về đúng-đắn,
+    # chỉ ẩn latency của guardrail phía sau latency của pipeline.
+    guardrail_task = asyncio.create_task(run_guardrail(req.query, cfg, req.messages))
 
     initial_state = {
         "query":                   req.query,
@@ -89,7 +96,11 @@ async def stream_orchestration(req: OrchestrateRequest, request: Request):
             # observability.py).
             handler = get_langchain_callback_handler()
             lg_config = {
-                "configurable": {"thread_id": session_id, "redis": request.app.state.redis},
+                "configurable": {
+                    "thread_id": session_id,
+                    "redis": request.app.state.redis,
+                    "guardrail_task": guardrail_task,
+                },
                 "callbacks": [handler] if handler else [],
             }
             try:
@@ -110,9 +121,14 @@ async def stream_orchestration(req: OrchestrateRequest, request: Request):
                 logger.error("stream | graph error: %s", e)
                 if lf:
                     await asyncio.to_thread(lf.flush)
+                if not guardrail_task.done():
+                    guardrail_task.cancel()
                 yield _sse("Đã xảy ra lỗi, vui lòng thử lại.")
                 yield "data: [DONE]\n\n"
                 return
+            finally:
+                if not guardrail_task.done():
+                    guardrail_task.cancel()
 
         if lf:
             await asyncio.to_thread(lf.flush)
@@ -132,11 +148,11 @@ async def stream_orchestration(req: OrchestrateRequest, request: Request):
             return
 
         final_state = snapshot.values
-        if final_state.get("guardrail_triggered"):
-            yield _sse("Xin lỗi, tôi không thể trả lời câu hỏi này.")
-            yield "data: [DONE]\n\n"
-            return
-
+        # Không còn check guardrail_triggered ở đây — chặn giờ xảy ra ngay tại
+        # gate (single_agent_node/execute_node, xem graph.py), câu từ chối đã
+        # được dispatch như 1 "token" bình thường ở trên rồi. suggestions/
+        # target_results tự nhiên rỗng khi bị chặn (suggestion_node/summary_node
+        # bị routing bỏ qua), nên không cần check lại ở đây.
         suggestions = final_state.get("suggestions", [])
         if suggestions:
             yield _sse({"__suggestions": suggestions})

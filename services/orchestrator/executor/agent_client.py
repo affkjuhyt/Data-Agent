@@ -17,12 +17,8 @@ _client: httpx.AsyncClient | None = None
 
 def _traced_headers(base: dict, traceparent: str | None) -> dict:
     """Chèn header traceparent (W3C) dựng THỦ CÔNG từ (trace_id, span_id) của
-    LangfuseSpan hiện tại — KHÔNG dựa vào opentelemetry.propagate.inject()
-    (đọc OTEL "current span" qua contextvars toàn cục) vì đã quan sát thực tế
-    span bên workflow-runtime vẫn bị tạo thành root mới (is_langchain_root=true)
-    dù đã inject theo cách đó — nghi ngờ do context bị lệch qua nhiều lớp
-    async/task của LangGraph. Cách này tường minh, không phụ thuộc ambient
-    context: caller tự truyền đúng span.trace_id/span.id vào."""
+    LangfuseSpan hiện tại — KHÔNG dựa vào opentelemetry.propagate.inject(),
+    tường minh, không phụ thuộc ambient context."""
     headers = dict(base)
     if traceparent:
         headers["traceparent"] = traceparent
@@ -81,6 +77,7 @@ async def call_agent(
     tenant_id: str = "",
     orchestrated: bool = False,
     traceparent: str | None = None,
+    guardrail_cfg: dict | None = None,
 ) -> tuple[str, str | None]:
     """
     Gọi POST /api/conversations/run trên workflow-runtime.
@@ -89,7 +86,10 @@ async def call_agent(
     if not agent_id:
         raise ValueError("agent_id is empty — planner failed to assign an agent for this task.")
 
-    payload = {"query": prompt, "agent_id": agent_id, "messages": [], "orchestrated": orchestrated}
+    payload = {
+        "query": prompt, "agent_id": agent_id, "messages": [], "orchestrated": orchestrated,
+        "guardrail_cfg": guardrail_cfg,
+    }
     url = f"{config.WORKFLOW_RUNTIME_URL}/api/conversations/run"
     collected: list[str] = []
     conversation_id: str | None = None
@@ -145,12 +145,23 @@ async def _open_agent_stream(client: httpx.AsyncClient, url: str, payload: dict,
     return cm, resp
 
 
+_GUARDRAIL_CFG_KEYS = ("guardrail_model", "guardrail_max_tokens", "guardrail_timeout")
+
+
+def extract_guardrail_cfg(cfg: dict) -> dict:
+    """Chỉ lấy 3 field workflow-runtime cần để tự chạy output-guardrail check
+    của chính nó — không gửi input_patterns/allowed_topics (không liên quan
+    tới output check)."""
+    return {k: cfg[k] for k in _GUARDRAIL_CFG_KEYS if k in cfg}
+
+
 async def call_agent_stream(
     agent_id: str,
     prompt: str,
     user_id: str = "orchestrator",
     tenant_id: str = "",
     traceparent: str | None = None,
+    guardrail_cfg: dict | None = None,
 ):
     """
     Async generator — yield (event_type, data):
@@ -161,7 +172,10 @@ async def call_agent_stream(
     if not agent_id:
         raise ValueError("agent_id is empty")
 
-    payload = {"query": prompt, "agent_id": agent_id, "messages": [], "orchestrated": False}
+    payload = {
+        "query": prompt, "agent_id": agent_id, "messages": [], "orchestrated": False,
+        "guardrail_cfg": guardrail_cfg,
+    }
     url = f"{config.WORKFLOW_RUNTIME_URL}/api/conversations/run"
 
     client = get_shared_client()

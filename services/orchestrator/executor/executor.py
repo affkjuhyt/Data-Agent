@@ -31,6 +31,7 @@ async def _run_task(
     tenant_id: str = "",
     orchestrated: bool = True,
     executor_start: float = 0.0,
+    guardrail_cfg: dict | None = None,
 ) -> TaskNode:
     node.start_ms = round((time.monotonic() - executor_start) * 1000)
     t0 = time.monotonic()
@@ -55,6 +56,7 @@ async def _run_task(
                 tenant_id=tenant_id,
                 orchestrated=orchestrated,
                 traceparent=traceparent_of(span),
+                guardrail_cfg=guardrail_cfg,
             )
             node.output = output
             node.conversation_id = conv_id
@@ -82,6 +84,7 @@ async def _execute_target(
     agent_name_map: dict[str, str] | None = None,
     orchestrated: bool = True,
     executor_start: float = 0.0,
+    guardrail_cfg: dict | None = None,
 ) -> tuple[TargetResult, bool, str]:
     """
     Chạy tất cả tasks trong 1 target theo rounds (song song trong round, tuần tự giữa rounds).
@@ -121,7 +124,7 @@ async def _execute_target(
                 return await _run_task(
                     node, "\n\n".join(parts), user_id,
                     tenant_id=tenant_id, orchestrated=orchestrated,
-                    executor_start=executor_start,
+                    executor_start=executor_start, guardrail_cfg=guardrail_cfg,
                 )
 
             completed = await asyncio.gather(*(run_one(n) for n in round_nodes))
@@ -168,6 +171,7 @@ async def execute_plan(
     agents: list[dict] | None = None,
     skip_node_ids: set[str] | None = None,
     orchestrated: bool = True,
+    guardrail_cfg: dict | None = None,
 ) -> ExecutionResult:
     """
     Vòng lặp chính: targets tuần tự, tasks trong mỗi target song song theo depend_on.
@@ -187,7 +191,7 @@ async def execute_plan(
             target, prior_context, user_id,
             original_query=original_query, tenant_id=tenant_id,
             agent_name_map=agent_name_map, orchestrated=orchestrated,
-            executor_start=executor_start,
+            executor_start=executor_start, guardrail_cfg=guardrail_cfg,
         )
         result.target_results.append(target_result)
 

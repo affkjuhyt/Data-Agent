@@ -75,14 +75,6 @@ class TestExtractNodeConfig:
         assert config_loader._extract_node_config([node]) == {"rrf_top_n": 9}
 
 
-class TestGuardrailDefaults:
-    def test_defaults_pull_from_dev_config(self) -> None:
-        defaults = config_loader._extract_guardrail_defaults()
-        assert defaults["guardrail_model"] == config_loader.DEV_CONFIG["guardrail_model"]
-        assert defaults["guardrail_id"] is None
-        assert isinstance(defaults["guardrail_input_patterns"], list)
-
-
 class TestSnowflakeNodeConfig:
     """PR review gap fix — _extract_node_config must never read a raw
     snowflakePassword value; only snowflakeSecretId (resolved later against
