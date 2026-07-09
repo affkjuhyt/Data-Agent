@@ -158,3 +158,7 @@ class ModelServiceClient:
         )
         resp.raise_for_status()
         return resp.json().get("content", "")
+
+
+# module-level singleton (same pattern as the mongo/postgres/elasticsearch connectors)
+client = ModelServiceClient()

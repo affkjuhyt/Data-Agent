@@ -455,7 +455,9 @@ class KBNeo4jNodeORM(Base):
     )
 
     node_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    connection_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBNeo4jConnection.connection_id"), nullable=False, index=True)
+    connection_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBNeo4jConnection.connection_id"), nullable=True, index=True)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True, index=True)
+    knowledge_base: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     node_name: Mapped[str] = mapped_column(String(512), nullable=False)
     node_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -481,10 +483,17 @@ class KBNeo4jRelationshipORM(Base):
 
     __table_args__ = (
         Index("idx_kbneo4jrelationship_inserted_at_desc", text("inserted_at DESC")),
+        Index("idx_kbneo4jrelationship_pair", "from_node", "to_node"),
+        Index("idx_kbneo4jrelationship_block", "block_id"),
+        Index("idx_kbneo4jrelationship_data", "data_id"),
     )
 
     from_node: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBNeo4jNode.node_id"), primary_key=True)
     to_node: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBNeo4jNode.node_id"), primary_key=True)
+    block_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    data_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True)
+    knowledge_base: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)

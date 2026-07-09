@@ -85,6 +85,34 @@ class MongoClient:
             raise RuntimeError("MongoClient is not open — call open() first")
         return self._db
 
+    # ── operations (query logic lives in the connector) ─────────────────
+    async def create_index(self, collection: str, keys, **kwargs) -> None:
+        await self.get_client()[collection].create_index(keys, **kwargs)
+
+    async def upsert(self, collection: str, filter: dict, document: dict) -> None:
+        """Replace (or insert) the single document matching ``filter``."""
+        await self.get_client()[collection].replace_one(filter, document, upsert=True)
+
+    async def set_fields(self, collection: str, filter: dict, fields: dict) -> int:
+        result = await self.get_client()[collection].update_one(filter, {"$set": fields})
+        return result.modified_count
+
+    async def find_one(self, collection: str, filter: dict, projection: dict | None = None) -> dict | None:
+        return await self.get_client()[collection].find_one(filter, projection or {"_id": 0})
+
+    async def find_many(self, collection: str, filter: dict, projection: dict | None = None,
+                        limit: int = 0) -> list[dict]:
+        cursor = self.get_client()[collection].find(filter, projection or {"_id": 0})
+        return await cursor.to_list(length=limit or None)
+
+    async def delete_one(self, collection: str, filter: dict) -> int:
+        result = await self.get_client()[collection].delete_one(filter)
+        return result.deleted_count
+
+    async def delete_many(self, collection: str, filter: dict) -> int:
+        result = await self.get_client()[collection].delete_many(filter)
+        return result.deleted_count
+
     async def _check_health(self, config: HealthCheckLoopConfig) -> None:
         await asyncio.wait_for(
             self._client.admin.command("ping"),

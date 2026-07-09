@@ -1,62 +1,120 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-
 import uvicorn
-from fastapi import FastAPI
-
+from fastapi import APIRouter, FastAPI, HTTPException
 import config as cfg
-import model_sync
-import models
-import model_sync as registry
-import remote
-from routers import embed, generate, health, rerank
+import model_store
+from backends import registry, bootstrap, sync_with_retry, chat_status, Capability
+from backends.base import (
+    EmbedRequest, EmbedResponse,
+    RerankRequest, RerankResult, RerankResponse,
+    GenerateRequest, GenerateResponse,
+    OAIEmbedRequest, OAIEmbedObject, OAIEmbedResponse,
+)
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("model-service")
 
+router = APIRouter()
 
-async def _probe_llm_backend() -> None:
-    """Validate the LLM gateway at startup so a missing/broken REMOTE_LLM_URL is
-    surfaced once in the logs — instead of only as a per-request 503 that fails
-    every ingestion/lightrag LLM call. Runs in a thread (blocking urllib) and
-    never blocks startup or serving."""
-    status = await asyncio.to_thread(remote.probe_llm)
+@router.get("/health")
+def health() -> dict:
+    ready = registry.has(Capability.EMBED) and registry.has(Capability.RERANK)
+    return {"status": "ok" if ready else "loading", "llm": chat_status(registry)}
+
+
+@router.post("/embed", response_model=EmbedResponse)
+def embed(req: EmbedRequest) -> EmbedResponse:
+    entry = registry.by_id(req.model_id) if req.model_id else registry.default(Capability.EMBED)
+    if entry is None:
+        if req.model_id:
+            raise HTTPException(422, f"embedding model_id '{req.model_id}' not in registry "
+                                     "(DB sync not complete or not seeded in KBModel)")
+        raise HTTPException(503, "no embedding model loaded")
+    embeddings = entry.caller.embed(req.texts)
+    used_id = str(entry.model_id) if entry.model_id else req.model_id
+    return EmbedResponse(embeddings=embeddings, model_id=used_id)
+
+@router.post("/v1/embeddings", response_model=OAIEmbedResponse)
+def openai_embeddings(req: OAIEmbedRequest) -> OAIEmbedResponse:
+    texts = [req.input] if isinstance(req.input, str) else req.input
+    try:
+        vectors = model_store.load_embed(cfg.BGE_M3_MODEL).encode(texts, normalize_embeddings=True)
+    except Exception as exc:
+        raise HTTPException(500, str(exc))
+    total_tokens = sum(len(t.split()) for t in texts)
+    return OAIEmbedResponse(
+        data=[OAIEmbedObject(index=i, embedding=v.tolist()) for i, v in enumerate(vectors)],
+        model=req.model,
+        usage={"prompt_tokens": total_tokens, "total_tokens": total_tokens},
+    )
+
+
+@router.post("/rerank", response_model=RerankResponse)
+def rerank(req: RerankRequest) -> RerankResponse:
+    entry = registry.by_id(req.model_id) if req.model_id else registry.default(Capability.RERANK)
+    if entry is None:
+        if req.model_id:
+            raise HTTPException(422, f"rerank model_id '{req.model_id}' not in registry")
+        raise HTTPException(503, "no rerank model loaded")
+    ranked = entry.caller.rerank(req.query, req.documents, req.top_n)
+    return RerankResponse(results=[RerankResult(index=i, relevance_score=s) for i, s in ranked])
+
+
+@router.post("/generate", response_model=GenerateResponse)
+def generate(req: GenerateRequest) -> GenerateResponse:
+    entry = registry.by_name(req.model) if req.model else registry.default(Capability.CHAT)
+    if entry is None:
+        if req.model:
+            raise HTTPException(422, f"chat model '{req.model}' not in registry")
+        raise HTTPException(503, "no LLM backend available (set REMOTE_LLM_URL)")
+
+    if req.json_schema is not None:
+        response_format = {"type": "json_schema",
+                           "json_schema": {"name": "out", "strict": True, "schema": req.json_schema}}
+    elif req.json_mode:
+        response_format = {"type": "json_object"}
+    else:
+        response_format = None
+
+    if req.messages is not None:
+        content = entry.caller.chat(req.messages, response_format,
+                                    max_tokens=req.max_tokens, temperature=req.temperature)
+    else:
+        content = entry.caller.generate(req.prompt or "", req.system_prompt, response_format,
+                                        max_tokens=req.max_tokens, temperature=req.temperature)
+    return GenerateResponse(content=content)
+
+
+def _probe_llm_backend() -> None:
+    status = chat_status(registry)
     if not status["configured"]:
         log.warning(
-            "LLM gateway DISABLED: REMOTE_LLM_URL is not set — POST /generate will "
-            "return 503 and every ingestion/lightrag LLM call will fail. Set "
-            "REMOTE_LLM_URL (+ REMOTE_LLM_KEY / REMOTE_LLM_MODEL) to enable it."
+            "LLM gateway DISABLED: no chat model registered (no REMOTE_LLM_URL and no "
+            "llama-server) — POST /generate returns 503 and every ingestion/lightrag LLM "
+            "call fails."
         )
     elif status["ready"]:
-        log.info("LLM gateway OK: %s serving model=%s", cfg.REMOTE_LLM_URL, status["model"])
+        log.info("LLM gateway OK: serving model=%s", status["model"])
     else:
-        log.warning(
-            "LLM gateway configured (REMOTE_LLM_URL=%s) but unreachable: %s — "
-            "/generate will error until the backend is up.",
-            cfg.REMOTE_LLM_URL, status.get("error"),
-        )
+        log.warning("LLM gateway configured but the chat model isn't ready yet — "
+                    "/generate errors until the backend is up.")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    models.load(cfg.EMBED_MODEL, cfg.RERANK_MODEL)
-    # Register this model in Postgres in the background — Postgres may not be
-    # ready yet, so the retry loop runs independently without blocking serving.
-    asyncio.create_task(registry.register_with_retry(), name="model-registry")
-    # Probe the LLM gateway once (background) to fail loud on misconfiguration.
-    asyncio.create_task(_probe_llm_backend(), name="llm-probe")
+    # register model
+    bootstrap(registry)
+    #Load model
+    asyncio.create_task(sync_with_retry(registry), name="registry-sync")
+    _probe_llm_backend()
     yield
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="model-service", lifespan=lifespan)
-
-    app.include_router(health.router)
-    app.include_router(embed.router)
-    app.include_router(rerank.router)
-    app.include_router(generate.router)
-
+    app.include_router(router)
     return app
 
 

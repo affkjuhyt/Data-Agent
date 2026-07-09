@@ -1,7 +1,7 @@
 # Local LLM override — llama-server chạy trên host, LiteLLM gọi qua host-gateway
 #
 # Bước 1: Start llama-server trên host trước
-#   bash scripts/start-llama.sh
+#   bash model/llama-server/start-llama.sh
 #
 # Bước 2: Start stack với file này
 #   docker compose -f docker/docker-compose.yml \

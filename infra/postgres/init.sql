@@ -317,7 +317,9 @@ CREATE TABLE IF NOT EXISTS "KBNeo4jConnection" (
 
 CREATE TABLE IF NOT EXISTS "KBNeo4jNode" (
     node_id          uuid PRIMARY KEY,
-    connection_id    uuid NOT NULL REFERENCES "KBNeo4jConnection"(connection_id),
+    connection_id    uuid REFERENCES "KBNeo4jConnection"(connection_id),
+    tenant_id        uuid,
+    knowledge_base   varchar(512),
     node_name        varchar(512) NOT NULL,
     node_description text,
     inserted_at      timestamptz NOT NULL DEFAULT now(),
@@ -326,16 +328,22 @@ CREATE TABLE IF NOT EXISTS "KBNeo4jNode" (
 );
 
 -- ── KBNeo4jRelationship ───────────────────────────────────────────────────────
+-- One row per (entity pair, chunk) — block_id is the provenance. An edge exists
+-- while >=1 row references it; its corroboration count is COUNT(*) over the pair.
 
 CREATE TABLE IF NOT EXISTS "KBNeo4jRelationship" (
-    from_node   uuid NOT NULL REFERENCES "KBNeo4jNode"(node_id),
-    to_node     uuid NOT NULL REFERENCES "KBNeo4jNode"(node_id),
-    score       double precision,
-    description text,
-    created_at  timestamptz NOT NULL DEFAULT now(),
-    inserted_at timestamptz NOT NULL DEFAULT now(),
-    is_deleted  boolean NOT NULL DEFAULT false,
-    PRIMARY KEY (from_node, to_node)
+    from_node      uuid NOT NULL REFERENCES "KBNeo4jNode"(node_id),
+    to_node        uuid NOT NULL REFERENCES "KBNeo4jNode"(node_id),
+    block_id       uuid NOT NULL,
+    data_id        uuid,
+    tenant_id      uuid,
+    knowledge_base varchar(512),
+    score          double precision,
+    description    text,
+    created_at     timestamptz NOT NULL DEFAULT now(),
+    inserted_at    timestamptz NOT NULL DEFAULT now(),
+    is_deleted     boolean NOT NULL DEFAULT false,
+    PRIMARY KEY (from_node, to_node, block_id)
 );
 
 -- ── KBEntityLookup ────────────────────────────────────────────────────────────
@@ -392,6 +400,11 @@ CREATE INDEX IF NOT EXISTS idx_kbtextblockversion_block_version ON "KBTextBlockV
 
 CREATE INDEX IF NOT EXISTS idx_kbqdrantconn_tenant_active  ON "KBQdrantConnection" (tenant_id) WHERE (is_active = true);
 CREATE INDEX IF NOT EXISTS idx_kbneo4jconn_tenant_connected ON "KBNeo4jConnection" (tenant_id) WHERE (is_connected = true);
+CREATE INDEX IF NOT EXISTS idx_kbneo4jnode_tenant_kb       ON "KBNeo4jNode" (tenant_id, knowledge_base);
+CREATE INDEX IF NOT EXISTS idx_kbneo4jrelationship_pair    ON "KBNeo4jRelationship" (from_node, to_node);
+CREATE INDEX IF NOT EXISTS idx_kbneo4jrelationship_block   ON "KBNeo4jRelationship" (block_id);
+CREATE INDEX IF NOT EXISTS idx_kbneo4jrelationship_data    ON "KBNeo4jRelationship" (data_id);
+CREATE INDEX IF NOT EXISTS idx_kbneo4jrelationship_tenkb   ON "KBNeo4jRelationship" (tenant_id, knowledge_base);
 
 CREATE INDEX IF NOT EXISTS idx_kbentitylookup_alias        ON "KBEntityLookup" USING hash (alias_name);
 CREATE INDEX IF NOT EXISTS idx_kbentitylookup_tenant_alias ON "KBEntityLookup" (tenant_id, alias_name);
