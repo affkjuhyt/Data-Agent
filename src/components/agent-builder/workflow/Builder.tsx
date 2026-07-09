@@ -1472,7 +1472,18 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
     setSaving(true);
     try {
       const payload = {
-        nodes: nodes.map(n => ({ id: n.id, type: n.type, position: n.position, data: n.data })),
+        // Metadata Injector: dòng key rỗng (nhấn "+" nhưng chưa gõ gì, hoặc
+        // xoá dở) không được backend đọc (config_loader._extract_node_config
+        // chỉ giữ key non-empty) — dọn trước khi lưu để không lưu rác kiểu
+        // "=,=,=" vào canvas, không phải để tránh lỗi (đã an toàn sẵn).
+        nodes: nodes.map(n => {
+          const data = n.data as FlowNodeData;
+          if (data.nodeType === 'metadata_injector') {
+            const cleaned = parseKv(data.metadataKv || '').filter(r => r.key.trim() !== '');
+            return { id: n.id, type: n.type, position: n.position, data: { ...data, metadataKv: serializeKv(cleaned) } };
+          }
+          return { id: n.id, type: n.type, position: n.position, data: n.data };
+        }),
         edges: edges.map(e => ({ id: e.id, source: e.source, target: e.target, type: e.type, label: e.label })),
       };
       await apiMutate('POST', `/api/workflow-versions/${activeVersionId}/canvas`, payload);
