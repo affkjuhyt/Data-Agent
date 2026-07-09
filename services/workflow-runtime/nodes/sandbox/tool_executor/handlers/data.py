@@ -28,21 +28,26 @@ async def _get_schema_text(tenant_id: str, conn_cfg: dict) -> str:
     if cached is not None:
         return cached
 
+    db_type = (conn_cfg.get("type") or "postgres").lower()
     try:
-        import asyncpg  # noqa: PLC0415
-        conn = await asyncpg.connect(
-            host=host, port=port, user=conn_cfg.get("user", ""),
-            password=conn_cfg.get("password", ""), database=database,
-        )
-        try:
-            rows = await conn.fetch(
-                "SELECT table_name, column_name, data_type FROM information_schema.columns "
-                "WHERE table_schema = 'public' ORDER BY table_name, ordinal_position"
+        if db_type == "clickhouse":
+            from services.database_connector import clickhouse_connector as _ch  # noqa: PLC0415
+            rows = await _ch.columns(conn_cfg)  # [{table_name, column_name, data_type}, ...]
+        else:
+            import asyncpg  # noqa: PLC0415
+            conn = await asyncpg.connect(
+                host=host, port=port, user=conn_cfg.get("user", ""),
+                password=conn_cfg.get("password", ""), database=database,
             )
-        finally:
-            await conn.close()
+            try:
+                rows = await conn.fetch(
+                    "SELECT table_name, column_name, data_type FROM information_schema.columns "
+                    "WHERE table_schema = 'public' ORDER BY table_name, ordinal_position"
+                )
+            finally:
+                await conn.close()
     except Exception as e:
-        logger.warning("text_to_sql | schema introspection failed host=%s db=%s: %s", host, database, e)
+        logger.warning("text_to_sql | schema introspection failed type=%s host=%s db=%s: %s", db_type, host, database, e)
         return ""
 
     tables: dict[str, list[str]] = {}
@@ -63,27 +68,32 @@ async def _run_one_query(
     hưởng query của DB khác."""
     current_sql = sql
     last_err: str | None = None
+    db_type = (conn_cfg.get("type") or "postgres").lower()
 
     for attempt in range(3):
         try:
-            import asyncpg  # noqa: PLC0415
-            conn = await asyncpg.connect(
-                host=conn_cfg.get("host", ""), port=conn_cfg.get("port", 5432),
-                user=conn_cfg.get("user", ""), password=conn_cfg.get("password", ""),
-                database=conn_cfg.get("database", ""),
-            )
-            try:
-                rows = await conn.fetch(current_sql)
-                data = [dict(r) for r in rows]
-                logger.info("text_to_sql | db=%s attempt=%d → %d rows", name, attempt + 1, len(data))
-                return {
-                    "id":       f"sql_{uuid.uuid4().hex[:8]}",
-                    "content":  json.dumps(data, ensure_ascii=False, default=str),
-                    "source":   "tool/sql",
-                    "metadata": {"sql": current_sql, "row_count": len(data), "db_name": name},
-                }, None
-            finally:
-                await conn.close()
+            if db_type == "clickhouse":
+                from services.database_connector import clickhouse_connector as _ch  # noqa: PLC0415
+                data = await _ch.query(conn_cfg, current_sql)
+            else:
+                import asyncpg  # noqa: PLC0415
+                conn = await asyncpg.connect(
+                    host=conn_cfg.get("host", ""), port=conn_cfg.get("port", 5432),
+                    user=conn_cfg.get("user", ""), password=conn_cfg.get("password", ""),
+                    database=conn_cfg.get("database", ""),
+                )
+                try:
+                    rows = await conn.fetch(current_sql)
+                    data = [dict(r) for r in rows]
+                finally:
+                    await conn.close()
+            logger.info("text_to_sql | db=%s type=%s attempt=%d → %d rows", name, db_type, attempt + 1, len(data))
+            return {
+                "id":       f"sql_{uuid.uuid4().hex[:8]}",
+                "content":  json.dumps(data, ensure_ascii=False, default=str),
+                "source":   "tool/sql",
+                "metadata": {"sql": current_sql, "row_count": len(data), "db_name": name, "db_type": db_type},
+            }, None
         except Exception as e:
             last_err = str(e)
             logger.warning("text_to_sql | db=%s attempt=%d failed: %s", name, attempt + 1, e)

@@ -45,6 +45,7 @@ services:
       retries: 10
 
   mongo:
+    profiles: [kb, authoring, runtime, release]
     image: mongo:7.0
     container_name: dataagent-mongo
     restart: unless-stopped
@@ -62,6 +63,7 @@ services:
       start_period: 20s
 
   redis:
+    profiles: [kb, authoring, runtime, release, observability]
     image: redis:7-alpine
     container_name: dataagent-redis
     restart: unless-stopped
@@ -76,6 +78,7 @@ services:
       retries: 5
 
   qdrant:
+    profiles: [kb, runtime]
     image: qdrant/qdrant:v1.13.6
     container_name: dataagent-qdrant
     restart: unless-stopped
@@ -85,6 +88,7 @@ services:
       - qdrant_data:/qdrant/storage
 
   neo4j:
+    profiles: [kb, runtime]
     build:
       context: ./Neo4j
     container_name: knowledge_graph_neo4j
@@ -206,6 +210,7 @@ services:
 
   # Kafka
   kafka:
+    profiles: [kb, runtime, iam, release]
     build:
       context: ..
       dockerfile: infra/kafka/Dockerfile
@@ -251,6 +256,7 @@ services:
 
   # MinIO
   minio:
+    profiles: [kb, release, observability]
     image: minio/minio:RELEASE.2024-01-16T16-07-38Z
     container_name: dataagent-minio
     restart: unless-stopped
@@ -272,6 +278,7 @@ services:
 
   #ElasticSearch
   elasticsearch:
+    profiles: [observability]
     image: elasticsearch:8.12.0
     container_name: dataagent-elasticsearch
     restart: unless-stopped
@@ -286,6 +293,7 @@ services:
 
   #Jaeger
   jaeger:
+    profiles: [observability]
     image: jaegertracing/all-in-one:1.55
     container_name: dataagent-jaeger
     restart: unless-stopped
@@ -297,6 +305,7 @@ services:
 
   # Openbao
   openbao:
+    profiles: [iam, runtime]
     image: openbao/openbao:latest
     container_name: dataagent-openbao
     restart: unless-stopped
@@ -312,6 +321,7 @@ services:
 
   # Litellm
   litellm:
+    profiles: [kb, runtime]
     image: ghcr.io/berriai/litellm:main-stable
     container_name: dataagent-litellm
     restart: unless-stopped
@@ -339,6 +349,7 @@ services:
   # MinIO cho blob lớn, Redis cho queue) khỏi Postgres (chỉ còn giữ org/user/
   # API-key). Xem: https://langfuse.com/self-hosting/upgrade-guides/upgrade-v2-to-v3
   clickhouse:
+    profiles: [observability, testdb]
     image: docker.io/clickhouse/clickhouse-server
     container_name: dataagent-clickhouse
     restart: unless-stopped
@@ -365,6 +376,7 @@ services:
   # Tạo bucket "langfuse" trên MinIO có sẵn (dùng chung instance với bucket
   # "knowledge-base", KHÔNG cần MinIO riêng) — chạy 1 lần rồi thoát.
   langfuse-minio-init:
+    profiles: [observability]
     image: minio/mc
     container_name: dataagent-langfuse-minio-init
     restart: "no"
@@ -377,6 +389,7 @@ services:
         condition: service_healthy
 
   langfuse-worker: &langfuse-worker-def
+    profiles: [observability]
     image: docker.io/langfuse/langfuse-worker:3
     container_name: dataagent-langfuse-worker
     restart: unless-stopped
@@ -425,6 +438,7 @@ services:
       # (bị Redis từ chối vì server không có password nào cả) — phải bỏ hẳn key.
 
   langfuse:
+    profiles: [observability]
     <<: *langfuse-worker-def
     image: docker.io/langfuse/langfuse:3
     container_name: dataagent-langfuse
@@ -454,6 +468,7 @@ services:
       AUTH_DISABLE_SIGNUP: "false"
 
   workflow-runtime:
+    profiles: [runtime]
     build:
       context: ..
       dockerfile: services/workflow-runtime/Dockerfile
@@ -484,6 +499,7 @@ services:
         condition: service_started
 
   flow-builder:
+    profiles: [authoring]
     build:
       context: ..
       dockerfile: services/flow-builder/Dockerfile
@@ -506,6 +522,7 @@ services:
   # First start has no model — pull it once:
   #   docker exec dataagent-ollama ollama pull llama3.1:8b
   ollama:
+    profiles: [models]
     image: ollama/ollama
     container_name: dataagent-ollama
     restart: unless-stopped
@@ -522,6 +539,7 @@ services:
     #           capabilities: [gpu]
 
   model-service:
+    profiles: [kb, runtime]
     build:
       context: ./model-service
     container_name: dataagent-model-service
@@ -549,6 +567,7 @@ services:
       start_period: 300s
 
   kb-backend:
+    profiles: [kb, runtime]
     build:
       context: ..
       dockerfile: infra/Dockerfile.kb
@@ -582,6 +601,7 @@ services:
         condition: service_healthy
 
   kb-ingestion-worker:
+    profiles: [kb]
     build:
       context: ..
       dockerfile: infra/kb-ingestion-worker/Dockerfile
@@ -615,6 +635,7 @@ services:
 
 
   auth-api:
+    profiles: [iam]
     build:
       context: ../services
       dockerfile: auth-api/Dockerfile
@@ -636,6 +657,7 @@ services:
 
 
   minio-service:
+    profiles: [kb, release]
     build:
       context: ../services
       dockerfile: minio-service/Dockerfile
@@ -653,6 +675,7 @@ services:
 
 
   release-worker:
+    profiles: [release]
     build:
       context: ../services
       dockerfile: release-worker/Dockerfile
@@ -688,6 +711,7 @@ services:
         condition: service_healthy
 
   audit-bridge:
+    profiles: [iam]
     build:
       context: ../services
       dockerfile: audit-bridge/Dockerfile
@@ -715,6 +739,7 @@ services:
         condition: service_started
 
   audit-consumer:
+    profiles: [iam]
     build:
       context: ../services
       dockerfile: audit-consumer/Dockerfile
@@ -740,6 +765,7 @@ services:
         condition: service_healthy
 
   jwks-refresher:
+    profiles: [legacy-jwt]
     build:
       context: ../services
       dockerfile: jwks-refresher/Dockerfile
@@ -761,6 +787,7 @@ services:
         condition: service_healthy
 
   orchestrator:
+    profiles: [runtime]
     build:
       context: ..
       dockerfile: services/orchestrator/Dockerfile
@@ -786,6 +813,7 @@ services:
         condition: service_started
 
   frontend:
+    profiles: [authoring]
     build:
       context: ..
       dockerfile: infra/Dockerfile.dev
