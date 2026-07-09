@@ -10,7 +10,8 @@ def rrf_ranking_node(state: AgentState) -> dict:
     kb_chunks    = state.get("kb_chunks", [])
     mcp_results  = state.get("mcp_results", [])
     tool_results = state.get("tool_results", [])
-    all_items    = kb_chunks + mcp_results + tool_results
+    db_results   = state.get("db_results", [])
+    all_items    = kb_chunks + mcp_results + tool_results + db_results
 
     if not all_items:
         return {"rrf_results": []}
@@ -19,7 +20,7 @@ def rrf_ranking_node(state: AgentState) -> dict:
     meta:    dict[str, dict]       = {}
     sources: dict[str, list[str]]  = {}
 
-    for source_name, items in [("kb", kb_chunks), ("mcp", mcp_results), ("tool", tool_results)]:
+    for source_name, items in [("kb", kb_chunks), ("mcp", mcp_results), ("tool", tool_results), ("db", db_results)]:
         for rank, item in enumerate(items, start=1):
             item_id = item.get("id")
             if not item_id:

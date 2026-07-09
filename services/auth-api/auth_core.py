@@ -384,7 +384,18 @@ VALID_KEY_TYPES = {
     # snowflakeSecretId — see services/workflow-runtime/warehouse_secrets.py.
     # KV v2 raw-value storage like BEARER_TOKEN/MCP_TOKEN/KB_API_KEY (not Transit).
     "WAREHOUSE_PASSWORD",
+    # DB Connector node's Postgres connection passwords — same KV v2 pattern
+    # as WAREHOUSE_PASSWORD, but tenant-admin (not just platform-admin) may
+    # create/list/delete THIS key_type for their own tenant — see
+    # TENANT_MANAGEABLE_KEY_TYPES and routers/secrets.py.
+    "DB_CONNECTOR_PASSWORD",
 }
+
+# key_types a tenant-admin may self-service for their own tenant (in addition
+# to platform-admin, who can always manage every key_type). Deliberately a
+# narrow allowlist — SIGNING_KEY/ENCRYPTION_KEY/HMAC_KEY/BEARER_TOKEN/
+# MCP_TOKEN/KB_API_KEY stay platform-admin-only, unaffected by this set.
+TENANT_MANAGEABLE_KEY_TYPES = {"DB_CONNECTOR_PASSWORD"}
 _VAULT_MOUNT   = "secret"
 _TRANSIT_MOUNT = "transit"
 _GOV_KEYS = ["vault_auto_rotation", "vault_panic_mode", "vault_pii_access_log"]

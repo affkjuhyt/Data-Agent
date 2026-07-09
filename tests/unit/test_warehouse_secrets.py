@@ -157,6 +157,53 @@ async def test_returns_none_when_vault_read_raises(monkeypatch):
 
 
 @pytest.mark.unit
+async def test_resolve_db_connector_password_uses_its_own_key_type(monkeypatch):
+    """resolve_db_connector_password must only accept DB_CONNECTOR_PASSWORD
+    rows — a WAREHOUSE_PASSWORD secret_id (or any other key_type) must never
+    resolve through this function, and vice versa (test below)."""
+    import warehouse_secrets as ws
+
+    monkeypatch.setattr(ws, "OPENBAO_ROLE_ID", "role-1")
+    monkeypatch.setattr(ws, "OPENBAO_SECRET_ID", "secret-id-1")
+    row = SimpleNamespace(key_name="db-connector-sales", key_type="DB_CONNECTOR_PASSWORD", is_active=True)
+    _patch_pg_client(monkeypatch, _fake_pg_client(row=row))
+
+    fake_vault = MagicMock()
+    fake_vault.secrets.kv.v2.read_secret_version.return_value = {"data": {"data": {"value": "db-pw"}}}
+    monkeypatch.setattr(ws, "_get_vault", lambda: fake_vault)
+
+    result = await ws.resolve_db_connector_password("tenant-1", "secret-1")
+
+    assert result == "db-pw"
+
+
+@pytest.mark.unit
+async def test_resolve_db_connector_password_rejects_warehouse_key_type(monkeypatch):
+    import warehouse_secrets as ws
+
+    monkeypatch.setattr(ws, "OPENBAO_ROLE_ID", "role-1")
+    monkeypatch.setattr(ws, "OPENBAO_SECRET_ID", "secret-id-1")
+    row = SimpleNamespace(key_name="snowflake-acme", key_type="WAREHOUSE_PASSWORD", is_active=True)
+    _patch_pg_client(monkeypatch, _fake_pg_client(row=row))
+
+    result = await ws.resolve_db_connector_password("tenant-1", "secret-1")
+
+    assert result is None
+
+
+@pytest.mark.unit
+async def test_resolve_snowflake_password_rejects_db_connector_key_type(monkeypatch):
+    import warehouse_secrets as ws
+
+    row = SimpleNamespace(key_name="db-connector-sales", key_type="DB_CONNECTOR_PASSWORD", is_active=True)
+    _patch_pg_client(monkeypatch, _fake_pg_client(row=row))
+
+    result = await ws.resolve_snowflake_password("tenant-1", "secret-1")
+
+    assert result is None
+
+
+@pytest.mark.unit
 def test_get_vault_returns_none_without_approle_credentials(monkeypatch):
     import warehouse_secrets as ws
 

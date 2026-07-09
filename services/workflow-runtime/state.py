@@ -15,6 +15,8 @@ class AgentState(TypedDict):
     mcp_errors: List[dict]
     tool_results: List[dict]
     tool_errors: List[dict]
+    db_results: List[dict]            # set bởi db_connector_node — có thể gộp từ nhiều DB chạy song song
+    db_error: Optional[str]
     rrf_results: List[dict]
     reranked_chunks: List[dict]
     response: str

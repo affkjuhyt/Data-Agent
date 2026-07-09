@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS secrets_vault (
     key_type        varchar(64) NOT NULL,
     algorithm       varchar(64),
     realm           varchar(64),
-    value_path      text,
+    openbao_path    text,
     version         int NOT NULL DEFAULT 1,
     is_active       boolean NOT NULL DEFAULT true,
     rotation_due_at timestamptz,
