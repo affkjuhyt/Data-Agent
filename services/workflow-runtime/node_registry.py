@@ -26,6 +26,19 @@ NODE_REGISTRY = {
             },
         },
     },
+    "metadata_injector": {
+        "display":  "Metadata Injector",
+        "category": "default",
+        "locked":   False,
+        "schema": {
+            "metadataKv": {
+                "type": "text",
+                "required": False,
+                "description": "Cặp key-value tĩnh chèn vào ngữ cảnh Planner/Responder, dạng \"key1=value1,key2=value2\"",
+                "advanced": False,
+            },
+        },
+    },
     "kb_search": {
         "display":  "KB Search",
         "category": "default",

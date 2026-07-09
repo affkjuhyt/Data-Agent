@@ -12,6 +12,7 @@ from nodes.sandbox.mcp import mcp_node
 from nodes.sandbox.tool_executor import tool_executor_node
 from nodes.model_harness.judge import judge_node
 from nodes.model_harness.human_approval import human_approval_node
+from nodes.context.metadata_injector import metadata_injector_node
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ NODE_TYPE_MAP = {
     "responder":        responder_node,
     "judge":            judge_node,
     "human_approval":   human_approval_node,
+    "metadata_injector": metadata_injector_node,
 }
 
 _DEFAULT_FLOW_NODES = [
@@ -216,8 +218,9 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict], checkpo
         if src and tgt and src != tgt:
             type_edges.add((src, tgt))
 
-    # Node types xuất hiện trong canvas edges
-    node_types = {nt for pair in type_edges for nt in pair} & set(NODE_TYPE_MAP)
+    # Node types xuất hiện trong canvas edges — metadata_injector bị loại trừ
+    # ở đây vì được wiring cố định thủ công bên dưới (không phụ thuộc edge).
+    node_types = ({nt for pair in type_edges for nt in pair} & set(NODE_TYPE_MAP)) - {"metadata_injector"}
 
     builder = StateGraph(AgentState)
 
@@ -228,8 +231,20 @@ def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict], checkpo
     if "planner" not in node_types:
         builder.add_node("planner", planner_node)
 
-    # START → planner trực tiếp (guardrail + rewrite đã được xử lý ở orchestrator)
-    builder.add_edge(START, "planner")
+    # Metadata Injector: vị trí CỐ ĐỊNH ngay sau START, trước planner — không
+    # phụ thuộc cạnh (edge) người dùng vẽ trên canvas, chỉ cần node có mặt
+    # trong flow_nodes (kéo vào canvas = bật, không kéo = tắt hoàn toàn,
+    # không có config bật/tắt riêng). Dùng id_to_type.values() (không phải
+    # node_types, vốn chỉ chứa node có edge) vì node này không cần người
+    # dùng tự nối cạnh.
+    has_metadata_injector = "metadata_injector" in id_to_type.values()
+    if has_metadata_injector:
+        builder.add_node("metadata_injector", metadata_injector_node)
+        builder.add_edge(START, "metadata_injector")
+        builder.add_edge("metadata_injector", "planner")
+    else:
+        # START → planner trực tiếp (guardrail + rewrite đã được xử lý ở orchestrator)
+        builder.add_edge(START, "planner")
 
     # Tìm retrieval nodes mà planner nối tới trên canvas
     retrieval_nodes = {tgt for src, tgt in type_edges if src == "planner" and tgt in ("kb_search", "mcp", "tool_executor")}

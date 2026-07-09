@@ -87,6 +87,11 @@ async def planner_node(state: AgentState) -> dict:
             "\n</past_successful_runs>"
         )
 
+    injected_metadata = state.get("injected_metadata")
+    if injected_metadata:
+        meta_lines = "\n".join(f"- {k}: {v}" for k, v in injected_metadata.items())
+        system += f"\n\nMetadata:\n{meta_lines}"
+
     model = cfg.get("planner_model", "planner")
     messages_payload = [
         {"role": "system", "content": system},

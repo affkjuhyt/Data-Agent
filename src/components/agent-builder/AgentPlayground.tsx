@@ -142,7 +142,7 @@ function trimInput(name: string, raw: any): string {
     case name.includes('rewrite'):
       return JSON.stringify({ query: q, messages: (raw.messages ?? []).length + ' messages' }, null, 2);
     case name.includes('kb_search'):
-      return JSON.stringify({ query: q, mode: cfg.kb_mode, top_k: cfg.top_k }, null, 2);
+      return JSON.stringify({ query: q }, null, 2);
     case name.includes('mcp'):
       return JSON.stringify({ query: q, tool_calls: (raw.tool_calls ?? []).length + ' calls' }, null, 2);
     case name.includes('rrf'):
