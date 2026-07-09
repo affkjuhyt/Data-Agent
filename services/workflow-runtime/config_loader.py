@@ -42,6 +42,7 @@ DEV_CONFIG = {
     "workflow_version_id": None,
     "flow_nodes": [],
     "flow_edges": [],
+    "injected_metadata": {},
 }
 
 
@@ -188,6 +189,17 @@ def _extract_node_config(flow_nodes: list[dict]) -> dict:
         elif t == "judge":
             if "max_iterations" in c: cfg["loop_max_iterations"] = int(c["max_iterations"])
             if "model_id"       in c: cfg["judge_model"]         = c["model_id"]
+        elif t == "metadata_injector":
+            # "key1=value1,key2=value2" — cặp thiếu dấu "=" hoặc key rỗng bị
+            # bỏ qua an toàn thay vì raise, vì đây là input tự do trên canvas.
+            parsed: dict = {}
+            for pair in c.get("metadataKv", "").split(","):
+                if "=" not in pair:
+                    continue
+                k, v = pair.split("=", 1)
+                if k.strip():
+                    parsed[k.strip()] = v.strip()
+            cfg["injected_metadata"] = parsed
         elif t == "tool_executor":
             allowed = c.get("allowedBuiltinTools", [])
             if allowed:

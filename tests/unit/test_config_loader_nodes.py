@@ -34,12 +34,6 @@ class TestExtractNodeConfig:
     def test_empty_flow_returns_empty(self) -> None:
         assert config_loader._extract_node_config([]) == {}
 
-    def test_kb_search_overrides(self) -> None:
-        cfg = config_loader._extract_node_config(
-            [_node("kb_search", mode="vector", top_k=7, max_depth=2)]
-        )
-        assert cfg == {"kb_mode": "vector", "top_k": 7, "max_depth": 2}
-
     def test_rrf_ranking_maps_top_n(self) -> None:
         cfg = config_loader._extract_node_config([_node("rrf_ranking", top_n=15)])
         assert cfg == {"rrf_top_n": 15}
@@ -57,22 +51,48 @@ class TestExtractNodeConfig:
         assert cfg == {"responder_temperature": 0.9, "responder_max_tokens": 512}
 
     def test_partial_fields_only_set_present_keys(self) -> None:
-        cfg = config_loader._extract_node_config([_node("kb_search", top_k=5)])
-        assert cfg == {"top_k": 5}
+        # Chỉ set "top_n" trên canvas (không có "model_id") — cfg chỉ nên có
+        # đúng key tương ứng field đã nhập, không tự điền field còn lại.
+        cfg = config_loader._extract_node_config([_node("reranker", top_n=3)])
+        assert cfg == {"reranker_top_n": 3}
 
     def test_unknown_node_type_ignored(self) -> None:
         assert config_loader._extract_node_config([_node("mystery", foo=1)]) == {}
 
     def test_multiple_nodes_merge(self) -> None:
         cfg = config_loader._extract_node_config(
-            [_node("kb_search", top_k=4), _node("responder", max_tokens=100)]
+            [_node("rrf_ranking", top_n=4), _node("responder", max_tokens=100)]
         )
-        assert cfg == {"top_k": 4, "responder_max_tokens": 100}
+        assert cfg == {"rrf_top_n": 4, "responder_max_tokens": 100}
 
     def test_falls_back_to_type_and_config_keys(self) -> None:
         # Node shape without `data.nodeType`: type + config keys instead.
         node = {"type": "rrf_ranking", "config": {"top_n": 9}}
         assert config_loader._extract_node_config([node]) == {"rrf_top_n": 9}
+
+
+class TestMetadataInjectorNodeConfig:
+    def test_parses_key_value_pairs(self) -> None:
+        cfg = config_loader._extract_node_config(
+            [_node("metadata_injector", metadataKv="locale=vi-VN,tenant_policy=no medical advice")]
+        )
+        assert cfg == {"injected_metadata": {"locale": "vi-VN", "tenant_policy": "no medical advice"}}
+
+    def test_missing_metadata_kv_returns_empty_dict(self) -> None:
+        cfg = config_loader._extract_node_config([_node("metadata_injector")])
+        assert cfg == {"injected_metadata": {}}
+
+    def test_malformed_pairs_are_skipped(self) -> None:
+        cfg = config_loader._extract_node_config(
+            [_node("metadata_injector", metadataKv="no_equals_sign,=empty_key,ok=1")]
+        )
+        assert cfg == {"injected_metadata": {"ok": "1"}}
+
+    def test_whitespace_around_key_and_value_is_stripped(self) -> None:
+        cfg = config_loader._extract_node_config(
+            [_node("metadata_injector", metadataKv=" locale = vi-VN ")]
+        )
+        assert cfg == {"injected_metadata": {"locale": "vi-VN"}}
 
 
 class TestSnowflakeNodeConfig:

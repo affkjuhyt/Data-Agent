@@ -3,7 +3,7 @@ import {
   Save, Play, Layout, Code as CodeIcon, CheckCircle2, Terminal,
   ArrowLeft, ChevronDown, Bot, Database, Activity, Zap, Cpu,
   Search, ShieldCheck, Wrench, Layers, Filter,
-  GitBranch, Bell, RefreshCw, GripVertical, X, Copy, Trash2,
+  GitBranch, Bell, RefreshCw, GripVertical, X, Copy, Trash2, Tag, Plus,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { Workflow } from '../../../types/workflow';
@@ -43,7 +43,7 @@ type FlowNodeType =
   | 'trigger' | 'guardrail' | 'planner' | 'kb_search' | 'mcp' | 'tool_executor'
   | 'rrf_ranking' | 'reranker' | 'responder' | 'output'
   | 'human_approval' | 'condition' | 'db_query'
-  | 'send_notification' | 'loop' | 'judge';
+  | 'send_notification' | 'loop' | 'judge' | 'metadata_injector';
 
 export interface FlowNodeData extends Record<string, unknown> {
   nodeType: FlowNodeType;
@@ -73,6 +73,8 @@ export interface FlowNodeData extends Record<string, unknown> {
   maxTokens?: number;
   // human_approval
   approverRole?: string;
+  // metadata_injector
+  metadataKv?: string;
 }
 
 // â”€â”€â”€ Toast Context (shared with custom edge) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -98,6 +100,7 @@ const NODE_STYLE: Record<string, { typeLabel: string; Icon: any; color: string }
   send_notification: { typeLabel: 'Notification',   Icon: Bell,        color: '#EF4444' },
   loop:              { typeLabel: 'Loop',           Icon: RefreshCw,   color: '#3B82F6' },
   judge:             { typeLabel: 'Judge',          Icon: CheckCircle2, color: '#F59E0B' },
+  metadata_injector: { typeLabel: 'Metadata Injector', Icon: Tag,      color: '#6366F1' },
 };
 
 // â”€â”€â”€ Custom Node â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -120,17 +123,24 @@ const CustomFlowNode = (props: NodeProps) => {
     addToast(`Node removed: ${data.label}`);
   }, [id, setNodes, setEdges, addToast, data.label]);
 
+  // Viền sáng nhẹ màu tím (màu của Metadata Injector, không phải màu riêng
+  // của node này) khi Metadata Injector đang được chọn — báo "node này đọc
+  // metadata", không phải trạng thái selected thật của chính node.
+  const relatedHighlight = !selected && (data as any)._relatedHighlight === true;
+
   return (
     <div
       style={{
         position: 'relative',
         background: selected ? `${cfg.color}22` : '#1e293b',
-        border: `2px solid ${selected ? cfg.color : 'rgba(255,255,255,0.15)'}`,
+        border: `2px solid ${selected ? cfg.color : relatedHighlight ? '#6366F1' : 'rgba(255,255,255,0.15)'}`,
         borderRadius: 14,
         padding: '11px 16px',
         minWidth: 178,
         boxShadow: selected
           ? `0 0 0 3px ${cfg.color}20, 0 4px 24px rgba(0,0,0,0.5)`
+          : relatedHighlight
+          ? '0 0 0 3px #6366F133, 0 4px 16px rgba(0,0,0,0.4)'
           : '0 4px 16px rgba(0,0,0,0.4)',
         transition: 'border-color 0.15s, box-shadow 0.15s',
         cursor: 'default',
@@ -571,6 +581,66 @@ const InfoNote = ({ text }: { text: string }) => (
   </div>
 );
 
+// Lưu trữ vẫn đúng 1 chuỗi "key1=value1,key2=value2" (không đổi format
+// backend/config_loader._extract_node_config) — chỉ đổi cách NHẬP thành
+// từng dòng Key/Value + nút xoá/thêm, thay vì 1 ô text thô dễ gõ nhầm dấu
+// phẩy/dấu bằng.
+const parseKv = (raw: string): { key: string; value: string }[] =>
+  raw ? raw.split(',').map(pair => {
+    const idx = pair.indexOf('=');
+    return idx === -1 ? { key: pair, value: '' } : { key: pair.slice(0, idx), value: pair.slice(idx + 1) };
+  }) : [];
+
+const serializeKv = (rows: { key: string; value: string }[]): string =>
+  rows.map(r => `${r.key}=${r.value}`).join(',');
+
+const KeyValueEditor = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => {
+  const rows = parseKv(value);
+
+  const updateRow = (i: number, field: 'key' | 'value', v: string) => {
+    const next = rows.map((r, idx) => idx === i ? { ...r, [field]: v } : r);
+    onChange(serializeKv(next));
+  };
+  const removeRow = (i: number) => onChange(serializeKv(rows.filter((_, idx) => idx !== i)));
+  const addRow = () => onChange(serializeKv([...rows, { key: '', value: '' }]));
+
+  return (
+    <div className="space-y-2">
+      {rows.map((row, i) => (
+        <div key={i} className="group flex items-center gap-1.5">
+          <input
+            type="text"
+            value={row.key}
+            onChange={e => updateRow(i, 'key', e.target.value)}
+            placeholder="key"
+            className="w-[38%] bg-white/5 border border-white/10 rounded-lg py-1.5 px-2 text-[11px] font-mono text-white focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-slate-700"
+          />
+          <input
+            type="text"
+            value={row.value}
+            onChange={e => updateRow(i, 'value', e.target.value)}
+            placeholder="value"
+            className="flex-1 bg-white/5 border border-white/10 rounded-lg py-1.5 px-2 text-[11px] font-mono text-white focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-slate-700"
+          />
+          <button
+            onClick={() => removeRow(i)}
+            title="Xoá cặp key-value"
+            className="shrink-0 w-5 h-5 flex items-center justify-center rounded-md text-slate-700 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <X size={11} />
+          </button>
+        </div>
+      ))}
+      <button
+        onClick={addRow}
+        className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-dashed border-white/15 text-[10px] font-semibold text-slate-500 hover:text-white hover:border-white/30 transition-colors"
+      >
+        <Plus size={11} /> Thêm cặp key-value
+      </button>
+    </div>
+  );
+};
+
 const MCP_TOOLS = ['tra_cuu_phat_nguoi', 'query_dashboard', 'send_alert', 'export_report'];
 
 const BUILTIN_TOOLS: Array<{ name: string; hint: string; category: 'data' | 'filesystem' | 'filesystem-write' | 'shell' | 'langchain' | 'agent' }> = [
@@ -879,17 +949,30 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
         {d.nodeType === 'judge' && (
           <InfoNote text="Đánh giá toàn bộ trace sau responder. Route lại nếu lỗi: RETRIEVAL→kb_search, REASONING→responder, TOOL→tool_executor, DATA_QUALITY→human_approval." />
         )}
+
+        {d.nodeType === 'metadata_injector' && (
+          <>
+            <Field label="Key-Value">
+              <KeyValueEditor
+                value={(d.metadataKv as string) || ''}
+                onChange={v => upd('metadataKv', v)}
+              />
+            </Field>
+            <InfoNote text="Các cặp key-value được chèn vào ngữ cảnh của Planner và Responder." />
+          </>
+        )}
       </div>
     </motion.div>
   );
 };
 
-// â”€â”€â”€ All Library Nodes (all non-trigger types â€” 12 items) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”€â”€â”€ All Library Nodes (all non-trigger types â€” 13 items) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const ALL_LIBRARY_NODES: Array<{
   nodeType: FlowNodeType; label: string; color: string; Icon: any; allowMultiple: boolean;
 }> = [
   { nodeType: 'planner',           label: 'Planner',           color: '#3B82F6', Icon: Bot,         allowMultiple: false },
+  { nodeType: 'metadata_injector', label: 'Metadata Injector', color: '#6366F1', Icon: Tag,         allowMultiple: false },
   { nodeType: 'kb_search',         label: 'KB Search',         color: '#10B981', Icon: Database,    allowMultiple: true  },
   { nodeType: 'mcp',               label: 'MCP Tool',          color: '#F59E0B', Icon: Wrench,      allowMultiple: true  },
   { nodeType: 'tool_executor',     label: 'Tool Executor',     color: '#F97316', Icon: Zap,         allowMultiple: false },
@@ -1239,6 +1322,27 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
     [nodes],
   );
 
+  // Metadata Injector đang chọn → viền sáng nhẹ quanh Planner + Responder,
+  // để lộ quan hệ "đọc state" (không có cạnh graph thật nào tới Responder —
+  // xem onDrop bên dưới) mà không cần vẽ đường nối vắt qua cả canvas.
+  const relatedHighlightIds = useMemo(() => {
+    if ((selectedNode?.data as FlowNodeData | undefined)?.nodeType !== 'metadata_injector') {
+      return new Set<string>();
+    }
+    return new Set(
+      nodes
+        .filter(n => ['planner', 'responder'].includes((n.data as FlowNodeData).nodeType))
+        .map(n => n.id),
+    );
+  }, [selectedNode, nodes]);
+
+  const displayNodes = useMemo(
+    () => nodes.map(n => relatedHighlightIds.has(n.id)
+      ? { ...n, data: { ...n.data, _relatedHighlight: true } }
+      : (n.data as FlowNodeData)._relatedHighlight ? { ...n, data: { ...n.data, _relatedHighlight: false } } : n),
+    [nodes, relatedHighlightIds],
+  );
+
   // â”€â”€ Connect â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const onConnect = useCallback<OnConnect>(
     conn => {
@@ -1295,13 +1399,48 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
     e.preventDefault();
     const nodeType = e.dataTransfer.getData('nodeType') as FlowNodeType;
     if (!nodeType || !rfInstance.current) return;
-    const pos = rfInstance.current.screenToFlowPosition({ x: e.clientX, y: e.clientY });
     const cfg = NODE_STYLE[nodeType];
     if (!cfg) return;
     const id = `${nodeType}-${Date.now()}`;
+
+    // Metadata Injector: vị trí thực thi luôn cố định ngay trước Planner ở
+    // backend (graph.py), không đọc cạnh canvas — cạnh vẽ ở đây CHỈ để
+    // trực quan, cho người dùng thấy nó "gắn liền" Planner thay vì trôi nổi
+    // một mình. Đặt NGAY TRÊN Planner (không phải bên cạnh) vì mọi node
+    // trong canvas chỉ có handle nối trên/dưới (luồng dọc) — đặt ngang hàng
+    // sẽ ra 1 đường nối vòng xuống-rồi-vòng lên rất rối; đặt trên/dưới cho
+    // đường thẳng, khớp hướng render của toàn bộ DAG còn lại. Tự vẽ cạnh
+    // khoá (không xoá được), giống cách guardrail node/edge đã làm (xem
+    // lockedEdge ở trên).
+    if (nodeType === 'metadata_injector') {
+      const planner   = nodes.find(n => (n.data as FlowNodeData).nodeType === 'planner');
+      const responder = nodes.find(n => (n.data as FlowNodeData).nodeType === 'responder');
+
+      // Canvas trắng (chưa có Planner lẫn Responder) → chặn, không có gì để
+      // "gắn liền" vào cả — tránh lặp lại bug đã gặp: kéo Metadata Injector
+      // trước, Planner sau, thì cạnh/vị trí neo không tự vẽ lại được (onDrop
+      // chỉ chạy đúng 1 lần lúc thả, không theo dõi canvas thay đổi sau đó).
+      if (!planner && !responder) {
+        addToast('Cần có node Planner hoặc Responder trên canvas trước khi thêm Metadata Injector');
+        return;
+      }
+
+      // Planner có thật thì neo + vẽ cạnh (cạnh graph thật, xem comment trên).
+      // Chỉ có Responder (chưa có Planner) → neo cạnh Responder, KHÔNG vẽ
+      // cạnh — cạnh chỉ có ý nghĩa khi trỏ tới Planner thật.
+      const anchor = planner ?? responder!;
+      setNodes(nds => [...nds, mkNode(id, nodeType, cfg.typeLabel, anchor.position.x, anchor.position.y - 130)]);
+      if (planner) {
+        setEdges(eds => [...eds, lockedEdge(`e-${id}-planner`, id, planner.id, '#6366F155')]);
+      }
+      addToast(`Added: ${cfg.typeLabel}`);
+      return;
+    }
+
+    const pos = rfInstance.current.screenToFlowPosition({ x: e.clientX, y: e.clientY });
     setNodes(nds => [...nds, mkNode(id, nodeType, cfg.typeLabel, pos.x - 89, pos.y - 35)]);
     addToast(`Added: ${cfg.typeLabel}`);
-  }, [setNodes, addToast]);
+  }, [setNodes, setEdges, addToast, nodes]);
 
   // â”€â”€ Node interactions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
@@ -1333,7 +1472,18 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
     setSaving(true);
     try {
       const payload = {
-        nodes: nodes.map(n => ({ id: n.id, type: n.type, position: n.position, data: n.data })),
+        // Metadata Injector: dòng key rỗng (nhấn "+" nhưng chưa gõ gì, hoặc
+        // xoá dở) không được backend đọc (config_loader._extract_node_config
+        // chỉ giữ key non-empty) — dọn trước khi lưu để không lưu rác kiểu
+        // "=,=,=" vào canvas, không phải để tránh lỗi (đã an toàn sẵn).
+        nodes: nodes.map(n => {
+          const data = n.data as FlowNodeData;
+          if (data.nodeType === 'metadata_injector') {
+            const cleaned = parseKv(data.metadataKv || '').filter(r => r.key.trim() !== '');
+            return { id: n.id, type: n.type, position: n.position, data: { ...data, metadataKv: serializeKv(cleaned) } };
+          }
+          return { id: n.id, type: n.type, position: n.position, data: n.data };
+        }),
         edges: edges.map(e => ({ id: e.id, source: e.source, target: e.target, type: e.type, label: e.label })),
       };
       await apiMutate('POST', `/api/workflow-versions/${activeVersionId}/canvas`, payload);
@@ -1504,7 +1654,7 @@ ${edges.map(e => `  - from: "${e.source}"  to: "${e.target}"`).join('\n')}`;
                   className="absolute inset-0"
                 >
                   <ReactFlow
-                    nodes={nodes}
+                    nodes={displayNodes}
                     edges={edges}
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}

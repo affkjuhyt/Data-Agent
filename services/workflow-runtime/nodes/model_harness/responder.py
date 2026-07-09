@@ -61,6 +61,11 @@ async def responder_node(state: AgentState) -> dict:
         context = "\n\n---\n\n".join(parts)
         system_prompt = f"{system_prompt}\n\nContext:\n{context}"
 
+    injected_metadata = state.get("injected_metadata")
+    if injected_metadata:
+        meta_lines = "\n".join(f"- {k}: {v}" for k, v in injected_metadata.items())
+        system_prompt = f"{system_prompt}\n\nMetadata:\n{meta_lines}"
+
     history = _to_lc_messages(state.get("messages", []))
     # tránh duplicate nếu query đã có trong message cuối
     if history and history[-1]["role"] == "user" and history[-1]["content"] == state["query"]:
