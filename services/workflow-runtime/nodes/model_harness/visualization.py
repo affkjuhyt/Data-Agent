@@ -47,6 +47,8 @@ def _parse_tabular_rows(items: list[dict]) -> list[dict]:
     "đọc hiểu" văn bản rồi tự bịa số liệu ra chart — tránh hallucination."""
     rows: list[dict] = []
     for item in items:
+        if not isinstance(item, dict):
+            continue
         content = item.get("content", "")
         if not isinstance(content, str):
             continue
@@ -96,8 +98,15 @@ async def _pick_chart_schema(query: str, columns: list[str], sample_rows: list[d
             temperature=0, max_tokens=400, timeout=15,
             response_format={"type": "json_object"},
         )
+        if not resp.choices:
+            return None
         schema = json.loads(resp.choices[0].message.content or "{}")
-        if not schema.get("x_key") or not schema.get("y_keys") or schema.get("chart_type") not in _CHART_TYPES:
+        if (
+            not schema.get("x_key")
+            or not isinstance(schema.get("y_keys"), list)
+            or not schema["y_keys"]
+            or schema.get("chart_type") not in _CHART_TYPES
+        ):
             return None
         return schema
     except Exception as e:
@@ -115,7 +124,13 @@ def _build_chart_spec(schema: dict, columns: list[str], rows: list[dict]) -> dic
     fields = {schema["x_key"], *y_keys}
     series = None
     if schema.get("chart_type") == "composed":
-        series = [s for s in schema.get("series", []) if s.get("key") in columns and s.get("type") in {"bar", "line", "area"}]
+        raw_series = schema.get("series")
+        if not isinstance(raw_series, list):
+            return None
+        series = [
+            s for s in raw_series
+            if isinstance(s, dict) and s.get("key") in columns and s.get("type") in {"bar", "line", "area"}
+        ]
         if not series:
             return None
         fields |= {s["key"] for s in series}
@@ -159,7 +174,7 @@ async def visualization_node(state: AgentState) -> dict:
     # Mỗi nguồn nối vào → 1 chart RIÊNG (không gộp chung rows từ các nguồn có
     # schema khác nhau vào 1 chart, vd DB Connector {month,revenue} và MCP
     # {region,sales} không cùng cấu trúc cột) — chạy song song, độc lập.
-    per_source_rows = [_parse_tabular_rows(state.get(_SOURCE_FIELD[t], [])) for t in sorted(connected)]
+    per_source_rows = [_parse_tabular_rows(state.get(_SOURCE_FIELD[t]) or []) for t in sorted(connected)]
     specs = await asyncio.gather(*(_build_spec_for_source(query, rows, cfg) for rows in per_source_rows))
     chart_specs = [s for s in specs if s is not None]
 

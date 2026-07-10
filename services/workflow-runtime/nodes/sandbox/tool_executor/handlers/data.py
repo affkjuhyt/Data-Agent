@@ -90,7 +90,7 @@ async def _run_one_query(
             if attempt >= 2:
                 break
             try:
-                resp = litellm.completion(
+                resp = await litellm.acompletion(
                     model=sql_mdl, api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
                     messages=[{"role": "user", "content":
                         f"Chuyển câu hỏi sau thành SQL.\n\nSchema:\n{schema_text}\n\n"
@@ -129,7 +129,7 @@ async def _text_to_sql_handler(call: dict, cfg: dict) -> tuple[list[dict], list[
         note = db_connections[name].get("note", "")
         schema_block = f"{schema_texts[name]}\n{note}".strip()
         try:
-            resp = litellm.completion(
+            resp = await litellm.acompletion(
                 model=sql_mdl, api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
                 messages=[{"role": "user", "content":
                     f"Chuyển câu hỏi sau thành SQL.\n\nSchema:\n{schema_block}\n\n"
@@ -153,7 +153,7 @@ async def _text_to_sql_handler(call: dict, cfg: dict) -> tuple[list[dict], list[
             f"\n\nCâu hỏi: {query}"
         )
         try:
-            resp = litellm.completion(
+            resp = await litellm.acompletion(
                 model=sql_mdl, api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0, max_tokens=1024, timeout=20,

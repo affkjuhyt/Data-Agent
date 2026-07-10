@@ -124,7 +124,7 @@ class TestRunOneQuery:
         import nodes.sandbox.tool_executor.handlers.data as data
         conn = _fake_conn(fetch_side_effect=[RuntimeError("syntax error"), [{"total": 1}]])
         _stub_asyncpg(monkeypatch, AsyncMock(return_value=conn))
-        monkeypatch.setattr(data.litellm, "completion", MagicMock(
+        monkeypatch.setattr(data.litellm, "acompletion", AsyncMock(
             return_value=_llm_text("SELECT SUM(total) FROM orders_fixed"),
         ))
 
@@ -140,7 +140,7 @@ class TestRunOneQuery:
         import nodes.sandbox.tool_executor.handlers.data as data
         conn = _fake_conn(fetch_side_effect=RuntimeError("always fails"))
         _stub_asyncpg(monkeypatch, AsyncMock(return_value=conn))
-        monkeypatch.setattr(data.litellm, "completion", MagicMock(return_value=_llm_text("SELECT 1")))
+        monkeypatch.setattr(data.litellm, "acompletion", AsyncMock(return_value=_llm_text("SELECT 1")))
 
         result, error = await data._run_one_query(
             "Sales", "SELECT 1", {"host": "h", "database": "d"}, "q", "schema", "model",
@@ -176,8 +176,8 @@ class TestTextToSqlHandler:
         suy luận thừa cho case phổ biến nhất."""
         import nodes.sandbox.tool_executor.handlers.data as data
         monkeypatch.setattr(data, "_get_schema_text", AsyncMock(return_value="orders(id int)"))
-        completion_mock = MagicMock(return_value=_llm_text("SELECT * FROM orders"))
-        monkeypatch.setattr(data.litellm, "completion", completion_mock)
+        completion_mock = AsyncMock(return_value=_llm_text("SELECT * FROM orders"))
+        monkeypatch.setattr(data.litellm, "acompletion", completion_mock)
         monkeypatch.setattr(data, "_run_one_query", AsyncMock(
             return_value=({"id": "sql_1", "metadata": {"db_name": "Sales"}}, None),
         ))
@@ -193,7 +193,7 @@ class TestTextToSqlHandler:
     async def test_multi_connection_llm_selects_subset_runs_in_parallel(self, monkeypatch):
         import nodes.sandbox.tool_executor.handlers.data as data
         monkeypatch.setattr(data, "_get_schema_text", AsyncMock(side_effect=lambda t, c: f"schema-for-{c['database']}"))
-        monkeypatch.setattr(data.litellm, "completion", MagicMock(return_value=_llm_text(json.dumps({
+        monkeypatch.setattr(data.litellm, "acompletion", AsyncMock(return_value=_llm_text(json.dumps({
             "queries": [
                 {"db_name": "Sales", "sql": "SELECT 1"},
                 {"db_name": "Warehouse", "sql": "SELECT 2"},
@@ -220,7 +220,7 @@ class TestTextToSqlHandler:
     async def test_llm_chooses_unknown_db_name_is_skipped_not_crashed(self, monkeypatch):
         import nodes.sandbox.tool_executor.handlers.data as data
         monkeypatch.setattr(data, "_get_schema_text", AsyncMock(return_value="schema"))
-        monkeypatch.setattr(data.litellm, "completion", MagicMock(return_value=_llm_text(json.dumps({
+        monkeypatch.setattr(data.litellm, "acompletion", AsyncMock(return_value=_llm_text(json.dumps({
             "queries": [{"db_name": "DoesNotExist", "sql": "SELECT 1"}],
         }))))
         run_query_mock = AsyncMock()
@@ -238,7 +238,7 @@ class TestTextToSqlHandler:
     async def test_partial_failure_among_multiple_dbs_still_returns_successes(self, monkeypatch):
         import nodes.sandbox.tool_executor.handlers.data as data
         monkeypatch.setattr(data, "_get_schema_text", AsyncMock(return_value="schema"))
-        monkeypatch.setattr(data.litellm, "completion", MagicMock(return_value=_llm_text(json.dumps({
+        monkeypatch.setattr(data.litellm, "acompletion", AsyncMock(return_value=_llm_text(json.dumps({
             "queries": [
                 {"db_name": "Sales", "sql": "SELECT 1"},
                 {"db_name": "Warehouse", "sql": "SELECT 2"},
