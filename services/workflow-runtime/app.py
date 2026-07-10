@@ -2,6 +2,16 @@ from dotenv import find_dotenv, load_dotenv
 
 load_dotenv(find_dotenv())
 
+import litellm
+# Tắt LiteLLM's built-in Langfuse integration — tracing đi qua LangChain's
+# CallbackHandler (responder) + observability.observe() decorator (planner,
+# judge — gọi litellm trực tiếp, xem nodes/model_harness/planner.py, judge.py).
+# Nếu không tắt, litellm tự tạo thêm 1 observation "litellm-acompletion" RIÊNG
+# BIỆT không nối vào OTEL context hiện hành (cơ chế nội bộ khác với @observe()/
+# CallbackHandler của Langfuse v3) → trùng lặp/nhiễu trace.
+litellm.success_callback = [cb for cb in litellm.success_callback if cb != "langfuse"]
+litellm.failure_callback = [cb for cb in litellm.failure_callback if cb != "langfuse"]
+
 import asyncio
 from contextlib import asynccontextmanager
 

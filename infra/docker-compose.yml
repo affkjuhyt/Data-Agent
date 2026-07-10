@@ -368,6 +368,7 @@ services:
       # to the host; sandbox-executor is the sole holder of the Docker
       # socket / Snowflake read-only credentials (hub-and-spoke isolation).
       SANDBOX_EXECUTOR_URL: http://sandbox-executor:8500
+      EMBEDDING_DIM: "1024"
     depends_on:
       postgres:
         condition: service_healthy
