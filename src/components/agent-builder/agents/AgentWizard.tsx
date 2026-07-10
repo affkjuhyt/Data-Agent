@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { X, ArrowRight, Database, Network, User, Layers, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TEMPLATE_FLOWS } from '../workflow/BuilderTemplates';
-import { FLOW_BUILDER_URL } from '../../../lib/config';
+import { apiMutate } from '../../../lib/apiClient';
 
 
 type TemplateChoice = 'blank' | 'rag' | 'multi-agent' | 'hitl';
@@ -57,13 +57,7 @@ export const NewAgentWizard: React.FC<WizardProps> = ({ onCancel, onComplete, in
     setError(null);
 
     try {
-      const agentRes = await fetch(`${FLOW_BUILDER_URL}/api/agents`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), description: description.trim() }),
-      });
-      if (!agentRes.ok) throw new Error(`Tạo agent thất bại (${agentRes.status})`);
-      const agentData = await agentRes.json();
+      const agentData = await apiMutate<any>('POST', '/api/agents', { name: name.trim(), description: description.trim() });
       const { agent_id, workflow_id, workflow_version_id, agent_version_id } = agentData;
 
       // Canvas không save lên DB ở đây — giống AgentDetailPage.handleCreateWorkflow.

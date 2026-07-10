@@ -2,7 +2,7 @@
 /api/data/* — document list, promote, delete.
 These are the primary routes consumed by AppStateContext and AssetInventory.
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 
 from basemodel.services_databaseconnector.shared_model import ResponseModel
 from services.kb_backend.UI_model.data import RequestUpdateDocument
@@ -10,7 +10,7 @@ from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.pipeline.kb_ui_operation.document_ops import (
-    fetch_one, list_documents, promote_document, delete_document,
+    fetch_one_or_404, list_documents, promote_document, delete_document,
 )
 
 router = APIRouter(prefix="/api/data", tags=["Data"])
@@ -48,9 +48,7 @@ async def promote_document_route(
     ctx: dict = Depends(require_perm("process_layer")),
 ):
     postgres = svc(request, "postgres")
-    record = await fetch_one(postgres, data_id, ctx["tenant_id"])
-    if not record:
-        return ResponseModel(code=404, error=f"Document not found: {data_id}")
+    record = await fetch_one_or_404(postgres, data_id, ctx["tenant_id"])
     result = await promote_document(
         postgres=postgres,
         kafka_producer=svc(request, "kafka_producer"),
@@ -70,9 +68,7 @@ async def delete_document_route(
     ctx: dict = Depends(require_perm("delete_data")),
 ):
     postgres = svc(request, "postgres")
-    record = await fetch_one(postgres, data_id, ctx["tenant_id"])
-    if not record:
-        return ResponseModel(code=404, error=f"Document not found: {data_id}")
+    record = await fetch_one_or_404(postgres, data_id, ctx["tenant_id"])
     await delete_document(
         postgres=postgres,
         qdrant=svc(request, "qdrant"),

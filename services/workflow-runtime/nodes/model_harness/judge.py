@@ -5,6 +5,7 @@ import time
 
 import litellm
 
+from observability import get_langfuse_client
 from state import AgentState
 
 logger = logging.getLogger(__name__)
@@ -15,13 +16,13 @@ _LITELLM_KEY  = os.environ.get("LITELLM_API_KEY",  "sk-dev")
 _VERDICT_PASS = "PASS"
 _VERDICT_FAIL = "FAIL"
 
-_ERROR_TYPES = frozenset({"RETRIEVAL_ERROR", "TOOL_ERROR", "DATA_QUALITY", "PLANNING_ERROR"})
+_ERROR_TYPES = frozenset({"DATA_QUALITY", "PLANNING_ERROR", "GROUNDING_ERROR"})
 
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "prompts")
 _SYSTEM = open(os.path.join(_PROMPTS_DIR, "judge_system.txt"), encoding="utf-8").read().strip()
 
 
-def judge_node(state: AgentState) -> dict:
+async def judge_node(state: AgentState) -> dict:
     t0  = time.monotonic()
     cfg = state.get("config", {})
 
@@ -58,21 +59,35 @@ def judge_node(state: AgentState) -> dict:
         f"CÂU TRẢ LỜI CỦA AI:\n{response[:800]}"
     )
 
+    model = cfg.get("judge_model", "openai/judge")
+    messages_payload = [
+        {"role": "system", "content": _SYSTEM},
+        {"role": "user",   "content": user_msg},
+    ]
     try:
-        resp = litellm.completion(
-            model=cfg.get("judge_model", "openai/judge"),
+        resp = await litellm.acompletion(
+            model=model,
             api_base=_LITELLM_BASE,
             api_key=_LITELLM_KEY,
-            messages=[
-                {"role": "system", "content": _SYSTEM},
-                {"role": "user",   "content": user_msg},
-            ],
+            messages=messages_payload,
             response_format={"type": "json_object"},
             temperature=0,
             max_tokens=128,
             timeout=15,
         )
         raw  = resp.choices[0].message.content or ""
+        lf = get_langfuse_client()
+        if lf:
+            usage = resp.usage or {}
+            lf.update_current_generation(
+                model=model,
+                input=messages_payload,
+                output=raw,
+                usage_details={
+                    "input": getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", 0),
+                    "output": getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", 0),
+                },
+            )
         data = json.loads(raw)
     except Exception as e:
         logger.warning("judge | LLM call failed: %s → PASS fallback", e)
@@ -109,17 +124,15 @@ def _pass(iteration: int, reason: str = "") -> dict:
 def _fail(iteration: int, error_type: str, reason: str) -> dict:
     reset: dict = {"response": ""}
 
-    if error_type == "RETRIEVAL_ERROR":
-        reset |= {"kb_chunks": [], "mcp_results": [], "tool_results": [], "tool_errors": [],
-                  "rrf_results": [], "reranked_chunks": []}
-    elif error_type == "TOOL_ERROR":
-        reset |= {"tool_results": [], "tool_errors": [],
-                  "rrf_results": [], "reranked_chunks": []}
-    elif error_type == "PLANNING_ERROR":
+    if error_type == "PLANNING_ERROR":
         # Reset toàn bộ downstream của planner — planner sẽ re-emit tool_calls mới
         reset |= {"tool_calls": [], "kb_chunks": [], "mcp_results": [],
                   "tool_results": [], "tool_errors": [],
                   "rrf_results": [], "reranked_chunks": []}
+    # GROUNDING_ERROR: chỉ reset "response" (default ở trên) — context/data đã
+    # đúng, chỉ có bước diễn giải của responder bị sai, không cần tra lại.
+    # DATA_QUALITY: cũng chỉ reset response — hiếm gặp, không có recovery
+    # action riêng, để planner/responder tự thấy judge_reason ở lần sau.
 
     return {
         "judge_verdict":    _VERDICT_FAIL,

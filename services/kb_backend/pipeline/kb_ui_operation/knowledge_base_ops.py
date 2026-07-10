@@ -5,15 +5,23 @@ legal, engineering). A tenant has many knowledge bases; documents reference one 
 retrieval can be scoped to it.
 """
 import logging
+import uuid
 
 from fastapi import HTTPException
+from sqlalchemy import update as sa_update
 
 from basemodel.services_databaseconnector.postgres_model import (
     ReadJoinRequest,
     KBKnowledgeBaseInsert,
     KBKnowledgeBaseDelete,
 )
+from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+    KBDataORM, KBKnowledgeBaseORM,
+)
 from services.kb_backend.UI_model.response import to_string
+
+# The seeded default knowledge base — cannot be deleted.
+_DEFAULT_KB_ID = uuid.UUID("00000000-0000-0003-0000-000000000001")
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +77,32 @@ async def create_knowledge_base(
 
 
 async def delete_knowledge_base(postgres, knowledge_base_id: str, tenant_id: str) -> None:
+    try:
+        kb_uuid = uuid.UUID(knowledge_base_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Invalid knowledge_base_id")
+
+    if kb_uuid == _DEFAULT_KB_ID:
+        raise HTTPException(status_code=403, detail="The default knowledge base cannot be deleted")
+
+    tenant_uuid = uuid.UUID(tenant_id)
+
+    # Reassign all documents that belong to this group back to the default KB.
+    async with postgres.get_client(tenant_id=tenant_id) as session:
+        await session.execute(
+            sa_update(KBDataORM)
+            .where(
+                KBDataORM.tenant_id == tenant_uuid,
+                KBDataORM.knowledge_base_id == kb_uuid,
+                KBDataORM.is_deleted == False,
+            )
+            .values(knowledge_base_id=_DEFAULT_KB_ID)
+        )
+        await session.commit()
+    log.info(
+        "delete_knowledge_base: reassigned documents from %s to default KB", knowledge_base_id
+    )
+
     resp = await postgres.soft_delete(KBKnowledgeBaseDelete(
         tenant_id=tenant_id,
         knowledge_base_id=knowledge_base_id,

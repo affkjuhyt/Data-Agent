@@ -1,9 +1,8 @@
 # infra — Docker stacks & setup
 
 This directory holds every Docker Compose stack, the service Dockerfiles, and the
-infra services (`docling`, `model-service`, `kb-ingestion-worker`, `kong`,
-`Postgres`, `Neo4j`, `Qdrant`, `kafka`, `keycloak`). This is the one place that
-documents how to bring a stack up. Run all commands from the **repository root**.
+infra services (`model-service`, `kb-ingestion-worker`, `kong`, `Postgres`, `Neo4j`,
+`Qdrant`, `kafka`, `keycloak`). Run all commands from the **repository root**.
 
 The frontend has no mock server and no auth bypass: `kb-backend` is **fail-closed**
 — every API request must arrive through **Kong** with a verified Keycloak identity
@@ -14,54 +13,139 @@ The frontend has no mock server and no auth bypass: `kb-backend` is **fail-close
 
 | Stack | File / helper | What it is | When to use |
 |---|---|---|---|
-| **kb_and_authen** | [`docker-compose.kb_and_authen.yml`](./docker-compose.kb_and_authen.yml) + [`kb_and_authen.ps1`](./kb_and_authen.ps1) | Full auth chain + live KB data plane, **memory-capped to ~6.4 GiB** (fits an ~8 GiB Docker VM). Helper builds, waits for health, configures Kong, runs verify checks. Ingestion worker is OFF by default (behind the `pipeline` profile). | Quickest path to a working UI; low-RAM end-to-end auth/data-plane check; CI-style smoke test. **Recommended.** |
-| **kb_e2e** | [`docker-compose.kb_e2e.yml`](./docker-compose.kb_e2e.yml) | Same auth chain + data plane + ingestion worker, with richer LLM options (remote vLLM / local `llama` profile) and multilingual models. | Day-to-day local dev with the Vite UI and the full ingestion/RAG pipeline. |
-| **Full platform** | [`docker-compose.yml`](./docker-compose.yml) + an override | The whole Data Agent OS — every service group (storage, security, messaging, observability, all app services), composed from the layer files below. | Running the entire platform, not just KB. |
-| **Test fixture** | [`docker-compose.test.yml`](./docker-compose.test.yml) | Isolated PostgreSQL only. | Connector / Alembic tests. |
+| **kb_e2e** | [`docker-compose.yml`](./docker-compose.yml) + [`docker-compose.kb_e2e.yml`](./docker-compose.kb_e2e.yml) + [`kb_e2e.ps1`](./kb_e2e.ps1) | **Overlay** on the main platform compose. Shares the same `dataagent` DB, Kafka internal listener (`kafka:9094`), and network as the full platform. Adds dev-friendly memory limits on Neo4j and KB tuning knobs. | **The standard way to bring up the stack** — day-to-day local dev, KB + ingestion + auth chain, pre-merge validation. |
+| **Full platform** | [`docker-compose.yml`](./docker-compose.yml) + an override | The whole Data Agent OS — every service group (storage, security, messaging, observability, all app services). | Running the entire platform, not just KB. |
+| **Test fixture** | [`docker-compose.test.yml`](./docker-compose.test.yml) | Isolated PostgreSQL only. | Connector / ORM tests. |
 
-> kb_and_authen and kb_e2e both publish `8000`/`8080`/`5432`/… so **run one at a time**.
-> `kb-backend` is also published on `:8050` in each — hitting it directly bypasses Kong, so
-> it returns `401` by design (handy to confirm fail-closed behaviour).
+> `kb-backend` is also published on `:8050` — hitting it directly bypasses Kong and returns
+> `401` by design (handy to confirm fail-closed behaviour).
+
+## Bring up only one feature — Compose profiles
+
+`docker-compose.yml` tags each service with a **feature profile** so you can start just
+the slice you are working on instead of the whole platform. Four services carry **no**
+profile and therefore always start (the core auth + system-of-record):
+`postgres`, `keycloak`, `kong-migration`, `kong`.
+
+```bash
+# Run from the repository root
+docker compose -f infra/docker-compose.yml --profile authoring up -d   # design flows: + flow-builder, frontend, mongo, redis
+docker compose -f infra/docker-compose.yml --profile kb        up -d   # Knowledge Base: + kb-backend, ingestion, model-service, litellm + qdrant/neo4j/minio/kafka/mongo
+docker compose -f infra/docker-compose.yml --profile iam       up -d   # auth/governance: + auth-api, audit-bridge, audit-consumer, openbao, kafka
+docker compose -f infra/docker-compose.yml --profile release   up -d   # release: + release-worker, minio-service + minio/mongo/kafka/redis
+docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml --profile runtime up -d  # agent runtime (full): + workflow-runtime, orchestrator, kb-backend, sandbox-executor, memory-consumer, schema-crawler-worker
+
+# Combine profiles freely
+docker compose -f infra/docker-compose.yml --profile kb --profile authoring up -d          # KB + its UI
+docker compose -f infra/docker-compose.yml --profile kb --profile testdb up -d             # KB + a ClickHouse test DB for db_connector
+docker compose -f infra/docker-compose.yml --profile runtime --profile observability up -d # runtime + Jaeger/Langfuse/ELK
+```
+
+| Profile | Adds (app) | Adds (stores) |
+|---|---|---|
+| `authoring` | flow-builder, frontend | mongo, redis |
+| `kb` | kb-backend, kb-ingestion-worker, model-service, litellm, minio-service | qdrant, neo4j, minio, kafka, mongo, redis |
+| `runtime` | workflow-runtime, orchestrator, kb-backend, model-service, litellm | mongo, redis, qdrant, neo4j, kafka, openbao |
+| `iam` | auth-api, audit-bridge, audit-consumer | kafka, openbao |
+| `release` | release-worker, minio-service | minio, mongo, kafka, redis |
+| `observability` | langfuse (+ worker, minio-init) | elasticsearch, jaeger, clickhouse, minio, redis |
+| `testdb` | — | clickhouse (throwaway DB target for `db_connector`) |
+| `models` | ollama | — (local GPU model backend; dev usually points litellm at a host llama-server instead) |
+| `legacy-jwt` | jwks-refresher | — (**only** if Kong runs the built-in `jwt` plugin instead of `aeroflow-jwks` — check `curl :8001/plugins`) |
+
+> **Note — the full `runtime` lives across two files.** `sandbox-executor` (+ `sandbox-dockerd`),
+> `memory-consumer`, and `schema-crawler-worker` are defined in
+> [`docker-compose.app.yml`](./docker-compose.app.yml), which carries the same profiles. So the
+> **complete** agent runtime (with the sandbox) is `-f docker-compose.yml -f docker-compose.app.yml
+> --profile runtime`; the base file alone gives a runtime without the sandbox/memory/schema workers.
+>
+> When you enable a profile, every service tagged with it starts; a shared store (e.g. `kafka`)
+> carries **all** the profiles that use it, so it comes up under any of them.
 
 ---
 
-## Quick start — kb_and_authen (recommended)
+## Bring up the stack — kb_e2e
 
-```powershell
-npm install                               # frontend deps (first time)
-pwsh infra/kb_and_authen.ps1              # build + start + configure Kong (ingestion worker OFF)
-pwsh infra/kb_and_authen.ps1 verify       # prove the chain: 401 / 200 / fleet 200 / 403 / 200
-pwsh infra/kb_and_authen.ps1 up -WithUi   # also start the containerized frontend on :5173
+`docker-compose.kb_e2e.yml` is a **compose overlay** — it is not standalone. It always
+runs on top of `docker-compose.yml` which provides the shared platform infrastructure.
+
+```
+docker-compose.yml         →  postgres · mongo · qdrant · neo4j · minio · kafka
+                              keycloak · kong-migration · kong · model-service
+                              kb-backend · kb-ingestion-worker (base definitions)
+docker-compose.kb_e2e.yml  →  overrides / extensions:
+                                postgres      adds KB seed data (05-kb-seed.sql)
+                                keycloak      adds healthcheck
+                                neo4j         reduces memory to dev-friendly 1.5 GB
+                                minio-init    creates the knowledge-base bucket
+                                kong-setup    configures routes + JWT plugin
+                                model-service adds remote GPU tunnel env vars
+                                kb-backend    publishes :8050, adds LightRAG knobs
+                                kb-ingestion-worker  adds docling cache volume
 ```
 
-Log in via Keycloak as **`helios-admin` / `H3lios@Admin01!`** (full perms) or
-**`helios-engineer` / `H3lios@Eng001!`** (limited — write actions return `403`).
+All services share the same `dataagent` Postgres database and Kafka plaintext listener
+(`kafka:9094`) — identical to the full platform.
 
-| Action | Command |
-|---|---|
-| Stop, keep data | `pwsh infra/kb_and_authen.ps1 down` |
-| Stop, **wipe** data | `pwsh infra/kb_and_authen.ps1 destroy` |
-| Tail logs | `pwsh infra/kb_and_authen.ps1 logs` |
-| Enable bronze→silver→gold pipeline | `pwsh infra/kb_and_authen.ps1 up -WithPipeline` (needs ~12 GiB WSL VM) |
-
----
-
-## Full local dev — kb_e2e
-
-Brings up Postgres, Qdrant, Neo4j, MongoDB, MinIO, Kafka, model-service, `kb-backend`,
-`kb-ingestion-worker`, **Keycloak** (`:8080`), and a DB-less **Kong** gateway (`:8000`).
-Postgres tables (incl. a dedicated `keycloak` DB), Qdrant collections, and the Kong
-route/JWT plugin are all created automatically on first start.
+### Step 1 — create your env file (first time only)
 
 ```powershell
-npm install
-Copy-Item infra/.env.kb-testing.example infra/.env.kb-testing   # gitignored env; defaults work locally
-docker compose -f infra/docker-compose.kb_e2e.yml --env-file infra/.env.kb-testing up -d --build
-docker compose -f infra/docker-compose.kb_e2e.yml ps            # every service "healthy"
-curl http://localhost:8050/health                               # -> {"status":"ok"} (direct; bypasses Kong)
+Copy-Item infra/.env.kb-testing.example infra/.env.kb-testing
 ```
 
-Point the Vite dev server at Keycloak + Kong, then `npm run dev` (http://localhost:3000):
+Edit `infra/.env.kb-testing`:
+- `REMOTE_LLM_URL` / `REMOTE_LLM_KEY` — Colab vLLM tunnel. Without it the gold
+  ingestion stage and LightRAG canonicalize step return 503; bronze→silver and
+  retrieval still work.
+- `REMOTE_EMBED_URL` / `REMOTE_RERANK_URL` / `REMOTE_API_KEY` — remote GPU for
+  embed/rerank. When set, model-service skips the local model download entirely
+  and starts in seconds.
+- `KAFKA_ADMIN_PASSWORD` — required (no compose default). Set to `dev123` for local
+  dev. Must match `infra/kafka/kafka-broker-jaas.config`.
+
+The file ships `KAFKA_ADMIN_PASSWORD=dev123` and `POSTGRES_PASSWORD=dev123` as safe
+local defaults.
+
+### Step 2 — create the Kafka JAAS config (first time only)
+
+```powershell
+Copy-Item infra/kafka/kafka-broker-jaas.config.example infra/kafka/kafka-broker-jaas.config
+# Then substitute the passwords — for local dev, replace all REPLACE_WITH_* with dev123
+```
+
+### Step 3 — start the stack
+
+```powershell
+# Helper (recommended) — starts only KB-relevant services:
+pwsh infra/kb_e2e.ps1
+
+# Or manually:
+docker compose `
+  -f infra/docker-compose.yml `
+  -f infra/docker-compose.kb_e2e.yml `
+  --env-file infra/.env.kb-testing `
+  up -d --build `
+  postgres mongo qdrant neo4j minio kafka keycloak `
+  kong-migration kong kong-setup minio-init `
+  model-service kb-backend kb-ingestion-worker
+```
+
+`kong-setup` starts automatically once Kong and Keycloak are healthy (~60–90 s on
+first boot, faster on subsequent starts). Watch it:
+
+```powershell
+docker logs kb-kong-setup -f
+```
+
+Smoke-test the stack once `kong-setup` exits 0:
+
+```powershell
+curl http://localhost:8050/health   # {"status":"ok"}  — direct (bypasses Kong)
+curl http://localhost:8000/health   # {"message":"no Route matched"} — Kong proxy up
+curl http://localhost:8080/realms/aeroflow/.well-known/openid-configuration  # Keycloak realm
+```
+
+### Step 4 — start the Vite dev server (separate terminal)
 
 ```powershell
 $env:VITE_KEYCLOAK_URL    = "http://localhost:8080"
@@ -71,36 +155,74 @@ $env:VITE_API_URL         = "http://localhost:8000"   # Kong proxy — NOT :8050
 npm run dev
 ```
 
-Shutdown: `docker compose -f infra/docker-compose.kb_e2e.yml down` (`-v` also wipes volumes).
+Open **http://localhost:3000** and log in via Keycloak as **`helios-admin` /
+`H3lios@Admin01!`** (full perms) or **`helios-engineer` / `H3lios@Eng001!`** (limited
+— write actions return `403`).
 
-> First start is slower: `model-service` downloads its embed/rerank weights into
-> `infra/model-service/models/` (~2.3 GB, persisted for next time).
+All six seeded dev users:
+
+| Username | Password | Role |
+|---|---|---|
+| `helios-admin` | `H3lios@Admin01!` | `platform-admin` (all perms) |
+| `helios-engineer` | `H3lios@Eng001!` | `ai-engineer` |
+| `helios-viewer` | `H3lios@View001!` | `executive-viewer` |
+| `platform-admin` | `Platform@Admin01!` | `platform-admin` |
+| `ai-engineer` | `AiEng@001!` | `ai-engineer` |
+| `executive-viewer` | `Exec@View001!` | `executive-viewer` |
+
+All users share tenant `a0000000-0000-0000-0000-000000000001` (the seeded dev tenant).
+
+> The Vite dev server is **not** part of the Docker stack — start it manually each
+> session with `npm run dev`.
+
+| Action | Command |
+|---|---|
+| Stop, keep data | `pwsh infra/kb_e2e.ps1 down` |
+| Stop, **wipe** data | `pwsh infra/kb_e2e.ps1 down -v` |
+| Tail logs | `pwsh infra/kb_e2e.ps1 logs -f` |
+| Service status | `pwsh infra/kb_e2e.ps1 ps` |
+| Rebuild one service | `pwsh infra/kb_e2e.ps1 up -d --build --no-deps kb-backend` |
+
+> **Fresh volume note:** `docker-entrypoint-initdb.d` scripts run only on a new Postgres
+> volume. `docker-compose.yml` mounts `init.sql` (KB tables); the overlay adds `seed.sql`
+> (dev tenant / roles / knowledge base). On an existing volume the data is already there
+> — init is skipped. Wipe with `down -v` and bring up again to re-seed.
+
+> **First start with local models:** if `REMOTE_EMBED_URL` / `REMOTE_RERANK_URL` are not
+> set, `model-service` downloads weights into `infra/model-service/models/` (~2.3 GB,
+> persisted across restarts). Both remote URLs set → download skipped, starts in seconds.
+
+### Port map
+
+| Port | Service |
+|---|---|
+| `3000` | Vite dev server (frontend) |
+| `8000` | Kong proxy (all API traffic goes here) |
+| `8050` | kb-backend direct (fail-closed — returns 401 without Kong token) |
+| `8080` | Keycloak |
+| `8600` | model-service |
+| `8900` | Kong admin API (debug only — not on host in production) |
+| `5432` | PostgreSQL |
+| `27017` | MongoDB |
+| `6333` | Qdrant |
+| `7687` | Neo4j bolt |
+| `9000` / `9001` | MinIO API / console |
+| `9092` | Kafka SASL (external clients) |
 
 ---
 
 ## Full platform stack
 
-The base [`docker-compose.yml`](./docker-compose.yml) is split into service-group layer
-files; an override adds the `migrate` + `seed` jobs. Run from the repo root with a real
-`.env` (`Copy-Item .env.example .env`).
-
-| Layer file | Contents |
-|---|---|
-| [`docker-compose.storage.yml`](./docker-compose.storage.yml) | PostgreSQL · MongoDB · Redis · MinIO · Qdrant · Neo4j |
-| [`docker-compose.security.yml`](./docker-compose.security.yml) | Keycloak (HA) · Kong · OpenBao · HAProxy |
-| [`docker-compose.messaging.yml`](./docker-compose.messaging.yml) | Kafka |
-| [`docker-compose.observability.yml`](./docker-compose.observability.yml) | Elasticsearch · Jaeger · Langfuse · LiteLLM |
-| [`docker-compose.app.yml`](./docker-compose.app.yml) | workflow-runtime · flow-builder · kb-backend · model-service · auth-api · … |
-| [`docker-compose.local.yml`](./docker-compose.local.yml) | local override (adds `migrate` + `seed`) |
-| [`docker-compose.dev.yml`](./docker-compose.dev.yml) | shared dev-server override (adds `migrate` + `seed`) |
+The base [`docker-compose.yml`](./docker-compose.yml) defines all platform services.
+Run from the repo root with a `.env` file (`Copy-Item .env.example .env`).
 
 ```powershell
-# local
+# local dev
 docker compose -f infra/docker-compose.yml -f infra/docker-compose.local.yml up -d --build
-docker compose -f infra/docker-compose.yml -f infra/docker-compose.local.yml down      # -v to wipe
+docker compose -f infra/docker-compose.yml -f infra/docker-compose.local.yml down   # -v to wipe
 # shared dev server
 docker compose -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up -d --build
-# validate without starting
+# validate config without starting
 docker compose -f infra/docker-compose.yml -f infra/docker-compose.local.yml config
 # test fixture (isolated Postgres on :5433)
 docker compose -f infra/docker-compose.test.yml up -d
@@ -108,52 +230,93 @@ docker compose -f infra/docker-compose.test.yml up -d
 
 ---
 
-## Switching the model backend (local CPU ↔ Colab GPU)
+## Switching the model backend (local CPU ↔ remote GPU)
 
-`model-service` is the single model gateway. Everything that needs a model — the
-ingestion worker and the LightRAG retrieval pipeline — calls only its three endpoints
-and never knows which backend serves the call:
+`model-service` is the single model gateway. All callers (ingestion worker, LightRAG
+pipeline) hit only its three endpoints and never know which backend is active:
 
 | Endpoint | Used for | Callers |
 |---|---|---|
-| `POST /embed` | text → vector | LightRAG query-embed, reembed, gold/silver |
+| `POST /embed` | text → vector | LightRAG query-embed, reembed, gold/silver ingestion |
 | `POST /rerank` | rerank candidates | LightRAG rerank step |
 | `POST /generate` | LLM text / JSON | LightRAG `canonicalize`, ingestion `llm_client` |
 
-Behind those endpoints, model-service holds a **backend provider registry**
-([`model-service/backends/`](./model-service/backends/)): for each capability
-(chat / embed / rerank) the active backend is the first registered one that is
-`available()`. A **remote** backend is available when its `REMOTE_*_URL` env is set
-(forwarding to e.g. a Colab GPU behind a cloudflared tunnel); otherwise the **local**
-in-process CPU model serves. So switching is a single env change — no code, no caller change.
+For each capability the active backend is the first registered one that is `available()`.
+A **remote** backend (Colab GPU behind a cloudflared tunnel) is available when its
+`REMOTE_*_URL` env is set; otherwise the **local** CPU model serves. Switching is a
+single env change — no code, no image rebuild.
 
 | env (on `model-service`) | effect |
 |---|---|
-| `REMOTE_EMBED_URL` | set → `/embed` forwards there; empty → local CPU model (`EMBED_MODEL`) |
+| `REMOTE_EMBED_URL` | set → `/embed` forwards there; empty → local CPU (`EMBED_MODEL`) |
 | `REMOTE_RERANK_URL` | set → `/rerank` forwards there; empty → local CPU reranker |
-| `REMOTE_LLM_URL` | set → `/generate` forwards to this OpenAI-compatible server (e.g. Colab vLLM); empty → 503 (no local LLM yet) |
-| `REMOTE_API_KEY` / `REMOTE_LLM_KEY` | bearer keys for the embed/rerank and LLM servers |
+| `REMOTE_LLM_URL` | set → `/generate` forwards to this OpenAI-compatible server; empty → 503 |
+| `REMOTE_API_KEY` / `REMOTE_LLM_KEY` | bearer keys for the remote embed/rerank and LLM servers |
 
-### How to switch
+> When both `REMOTE_EMBED_URL` and `REMOTE_RERANK_URL` are set, model-service skips
+> downloading local weights entirely and starts in seconds. When either is unset the
+> local model loads as fallback (~2.3 GB on first start).
 
-Set the relevant `REMOTE_*_URL` (+ key) env on `model-service` and recreate just that
-container — no rebuild, no other service restart:
+Switch to a remote GPU tunnel without restarting the whole stack:
 
 ```powershell
-$env:REMOTE_EMBED_URL = "https://<embed-tunnel>.trycloudflare.com"; $env:REMOTE_API_KEY = "kb-emb-xxxx"
-$env:REMOTE_LLM_URL   = "https://<vllm-tunnel>.trycloudflare.com";  $env:REMOTE_LLM_KEY = "kb-IT-xxxx"
-docker compose -f infra/docker-compose.kb_e2e.yml up -d --no-deps model-service
+# Set new tunnel URLs in your env file, then recreate just model-service:
+$env:REMOTE_EMBED_URL = "https://<embed-tunnel>.trycloudflare.com"
+$env:REMOTE_API_KEY   = "kb-emb-xxxx"
+$env:REMOTE_LLM_URL   = "https://<vllm-tunnel>.trycloudflare.com"
+$env:REMOTE_LLM_KEY   = "kb-IT-xxxx"
+pwsh infra/kb_e2e.ps1 up -d --no-deps model-service
 ```
 
-To revert to local CPU, clear those vars and recreate `model-service` again. The Colab GPU
-servers live in `model/embedding/embed_rerank_colab.ipynb` (embed + rerank) and
-`model/vllm/vllm_qwen_colab.ipynb` (LLM) — each prints its `TUNNEL_URL` + `API_KEY`.
+To revert to local CPU, clear those vars and recreate `model-service`. The Colab GPU
+notebooks live in `model/embedding/embed_rerank_colab.ipynb` (embed + rerank) and
+`model/vllm/vllm_qwen_colab.ipynb` (LLM) — each prints its tunnel URL + API key.
 
-> **⚠️ The embed dim must match the index.** The embed model fixes the Qdrant vector
-> dimension (the corpus is currently indexed at 1024-d). Switching **LLM** or **rerank**
-> is safe any time. Switching **embed** to a different dim requires re-embedding first
-> (`reembed.py`) or every search fails with a dim mismatch. Quick-tunnels rotate URLs on
-> each Colab restart — just re-run `colab --embed-url <new> …`.
+> **⚠️ The embed dim must match the index.** Switching **LLM** or **rerank** is safe
+> any time. Switching **embed** to a different dimension requires re-embedding the whole
+> corpus first (`reembed.py`) — otherwise every search fails with a dim mismatch.
+
+---
+
+## Troubleshooting
+
+### `kb-ingestion-worker` crash-loops on start / `model-service /embed` → 500
+
+Worker log shows `httpx.HTTPStatusError: Server error '500' for .../embed` and the
+container restarts every ~60 s; `model-service` log shows
+`URLError: <urlopen error [Errno -2] Name or service not known>`.
+
+**Cause:** a stale Colab tunnel. `trycloudflare.com` URLs change every time the
+notebook restarts, so the `REMOTE_*` values in `infra/.env.kb-testing` no longer
+resolve. `model-service /health` stays green (it only checks the LLM), which hides
+the broken embed path; the worker's startup embed probe is what fails.
+
+**Fix** — put the new tunnel URLs + keys in `infra/.env.kb-testing`, then recreate
+the two services that read them. The worker **must** be recreated too (its startup
+probe is bound to the old URL):
+
+```powershell
+docker compose -f infra/docker-compose.yml -f infra/docker-compose.kb_e2e.yml `
+  --env-file infra/.env.kb-testing `
+  up -d --no-deps --force-recreate model-service kb-ingestion-worker
+```
+
+Verify embed is live (should return vectors, not `Internal Server Error`):
+
+```powershell
+curl -X POST http://localhost:8600/embed -H "Content-Type: application/json" -d '{\"texts\":[\"probe\"]}'
+```
+
+### Login fails: `helios-admin` → `invalid_grant / "Invalid user credentials"`
+
+The realm import ships **no** passwords — credentials live in the Keycloak volume and
+can drift (a stray `otp` credential gets enrolled, so the password grant is rejected).
+`helios-engineer` usually still works, which confirms the chain itself is fine.
+
+**Fix** — using the master admin (`admin` / `admin` on realm `master`), delete the
+stray `otp` credential on the user and reset the password to `H3lios@Admin01!`
+(non-temporary) via the Keycloak admin API
+(`/admin/realms/aeroflow/users/{id}/credentials` and `.../reset-password`).
 
 ---
 
@@ -161,14 +324,21 @@ servers live in `model/embedding/embed_rerank_colab.ipynb` (embed + rerank) and
 
 ```
 infra/
-  docker-compose.kb_and_authen.yml   kb_and_authen.ps1   # recommended KB stack + helper
-  docker-compose.kb_e2e.yml                              # full local dev KB stack
-  docker-compose.yml + {storage,security,messaging,      # full platform stack
-    observability,app}.yml + {local,dev}.yml
-  docker-compose.test.yml                                # isolated Postgres test fixture
-  Dockerfile.kb           # kb-backend image
-  Dockerfile.dev          # dev-only frontend container
-  model-service/          docling/          kb-ingestion-worker/   # infra service images
-  kong/  keycloak/  Postgres/  Neo4j/  Qdrant/  kafka/  openbao/  haproxy/  litellm/
-  Qdrant/COLLECTIONS.md   # Qdrant collection schema reference
+  docker-compose.yml                     # main platform base (all services)
+  docker-compose.kb_e2e.yml              # KB overlay (extends docker-compose.yml)
+  docker-compose.test.yml                # isolated Postgres test fixture
+  kb_e2e.ps1                             # helper: two-file overlay bring-up
+  .env.kb-testing.example                # copy → .env.kb-testing, fill in tunnels
+  Dockerfile.kb                          # kb-backend image
+  Dockerfile.dev                         # dev-only containerised frontend
+  model-service/                         # model gateway (embed · rerank · generate)
+  kb-ingestion-worker/                   # bronze→silver→gold ingestion worker
+  kong/          kong-setup.sh           # Kong custom plugin + route setup script
+  keycloak/      realm-export.json       # Keycloak realm definition
+  Postgres/      init.sql  seed.sql      # KB schema + dev seed data
+  Neo4j/                                 # Neo4j custom image (APOC plugins)
+  kafka/         kafka-broker-jaas.config.example
+  openbao/       haproxy/  litellm/
+  sql/           create-extra-dbs.sql  init.sql  release-init.sql
+  Qdrant/        COLLECTIONS.md          # Qdrant collection schema reference
 ```

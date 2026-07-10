@@ -11,6 +11,7 @@ from basemodel.services_databaseconnector.shared_model import ResponseModel
 from basemodel.services_databaseconnector.postgres_model import (
     KBWarehouseInsert,
     KBWarehouseConfigInsert,
+    KBWarehouseDelete,
     WarehouseConfigPayload,
 )
 from services.kb_backend.dependencies.auth import authenticate
@@ -113,12 +114,20 @@ async def select_warehouse_tables(
         if not result["success"]:
             raise HTTPException(status_code=400, detail=result["message"])
 
-        # 2. Fetch column schemas for selected tables
+        # 2. Fetch column schemas for selected tables. A metadata failure here is
+        #    surfaced (502) rather than swallowed — persisting a table with empty
+        #    columns would silently save a half-broken warehouse.
         table_schemas: dict[str, dict] = {}
-        for table_id in body.selected_table_ids:
-            schema = await connector.get_table_schema(table_id)
-            if schema:
-                table_schemas[table_id] = schema
+        try:
+            for table_id in body.selected_table_ids:
+                schema = await connector.get_table_schema(table_id)
+                if schema:
+                    table_schemas[table_id] = schema
+        except HTTPException:
+            raise
+        except Exception as e:
+            log.error("warehouse_connect: schema fetch failed: %s", e)
+            raise HTTPException(status_code=502, detail=f"Failed to read table schema: {e}")
     finally:
         connector.close()
 
@@ -170,6 +179,13 @@ async def select_warehouse_tables(
     ))
     if cfg_ins.code != 200:
         log.error("warehouse_connect: failed to create config: %s", cfg_ins.error)
+        # Compensating cleanup: the warehouse row from step 4 is already committed.
+        # Without this it lingers as an orphan with no active config — usable-looking
+        # in listings but broken. Soft-delete it so the failed create leaves no trace.
+        try:
+            await postgres.soft_delete(KBWarehouseDelete(warehouse_id=warehouse_id))
+        except Exception as e:
+            log.error("warehouse_connect: orphan cleanup failed for %s: %s", warehouse_id, e)
         raise HTTPException(status_code=500, detail="Failed to create warehouse config")
 
     log.info("Created warehouse %s with config %s (%d tables)", warehouse_id, cfg_ins.data.get("config_id"), len(tables))

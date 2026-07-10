@@ -1,0 +1,39 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+httpx>=0.27
+litellm>=1.49
+pydantic==2.9.2
+python-dotenv>=1.0
+sqlalchemy[asyncio]>=2.0
+asyncpg>=0.29
+redis>=5.0
+langgraph>=0.2,<1.0
+tenacity>=8.2
+
+# Langfuse v3 — OTEL-based, thay cho v2 (callback + StatefulSpanClient nội bộ
+# không ổn định). Pin chặt vì dòng SDK này đang biến động, verify version cụ
+# thể bằng `pip index versions langfuse` trước khi bump.
+langfuse>=3.0,<4.0
+# langfuse.langchain.CallbackHandler cần package "langchain" đầy đủ (không chỉ
+# langchain-core mà langgraph kéo theo transitively) — thiếu cái này khiến
+# `from langfuse.langchain import CallbackHandler` ImportError NGAY LÚC IMPORT,
+# bị observability.py nuốt âm thầm (_AVAILABLE=False), tắt Langfuse hoàn toàn
+# mà không báo lỗi rõ ràng ở đâu cả.
+langchain>=0.3,<1.0
+langchain-core>=0.3,<1.0
+
+# ── Observability (services/shared/observability.py) — cùng bộ package với
+# workflow-runtime để traceparent (W3C) propagate được giữa 2 service ──
+# opentelemetry-sdk sàn 1.33.1 — langfuse v3 yêu cầu (langfuse 3.x depends on
+# opentelemetry-sdk>=1.33.1,<2.0). Không pin exact version thấp hơn ở bất kỳ
+# package opentelemetry-* nào, sẽ gây ResolutionImpossible với langfuse.
+structlog>=24.1
+opentelemetry-api>=1.33.1,<2.0
+opentelemetry-sdk>=1.33.1,<2.0
+opentelemetry-exporter-otlp>=1.33.1,<2.0
+opentelemetry-exporter-otlp-proto-grpc>=1.33.1,<2.0
+opentelemetry-instrumentation-fastapi>=0.54b0
+opentelemetry-instrumentation-httpx>=0.54b0
+opentelemetry-instrumentation-requests>=0.54b0
+opentelemetry-instrumentation-logging>=0.54b0
+opentelemetry-instrumentation-sqlalchemy>=0.54b0

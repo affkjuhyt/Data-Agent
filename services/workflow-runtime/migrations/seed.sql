@@ -8,11 +8,15 @@ INSERT INTO "Tenants" (id, name, slug, plan_id, data_residency, is_active)
 VALUES ('00000000-0000-0000-0000-000000000001', 'Dev Tenant', 'dev', 1, 'Asia-SE1', true)
 ON CONFLICT (id) DO NOTHING;
 
+-- model_id cần tiền tố provider ("openai/") vì litellm SDK gọi trực tiếp
+-- (litellm.acompletion) bắt buộc phải biết provider để định dạng request,
+-- dù vẫn đi qua chung 1 cổng api_base (LiteLLM gateway) — khác responder
+-- trước đây dùng ChatOpenAI (LangChain), không cần tiền tố này.
 INSERT INTO "LLMProviders" (id, name, model_id, endpoint_url, type, is_default, is_active)
 VALUES
-  ('00000000-0000-0000-0000-000000000010', 'Dev LLM (Planner)',   'planner',   'http://litellm:4000', 'chat', false, true),
-  ('00000000-0000-0000-0000-000000000011', 'Dev LLM (Responder)', 'responder', 'http://litellm:4000', 'chat', true,  true),
-  ('00000000-0000-0000-0000-000000000012', 'Dev LLM (Guardrail)', 'guardrail', 'http://litellm:4000', 'chat', false, true)
+  ('00000000-0000-0000-0000-000000000010', 'Dev LLM (Planner)',   'openai/planner',   'http://litellm:4000', 'chat', false, true),
+  ('00000000-0000-0000-0000-000000000011', 'Dev LLM (Responder)', 'openai/responder', 'http://litellm:4000', 'chat', true,  true),
+  ('00000000-0000-0000-0000-000000000012', 'Dev LLM (Guardrail)', 'openai/guardrail', 'http://litellm:4000', 'chat', false, true)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO "SystemPrompts" (id, tenant_id, name, content, version)

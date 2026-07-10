@@ -30,7 +30,7 @@ from workflow_memory import close_workflow_qdrant, init_workflow_qdrant
 from schema_catalog import close_schema_catalog_qdrant, init_schema_catalog_qdrant
 from redis_cache import init_redis, close_redis
 from mongo_client import close_mongo, init_mongo
-from routers import catalog, conversations, health, sandbox_ops, schema_memory, schema_catalog as schema_catalog_router, traces, reviews
+from routers import catalog, conversations, health, sandbox_ops, schema_memory, schema_catalog as schema_catalog_router, traces, reviews, db_connector
 from runtime_services.conversation_runner import invalidate_graph_version
 from services.database_connector.mongo_connector import client as mongo_client
 from services.database_connector.postgres_connector import client as pg_client
@@ -96,5 +96,6 @@ def create_app() -> FastAPI:
     app.include_router(schema_memory.router)
     app.include_router(schema_catalog_router.router)
     app.include_router(reviews.router)
+    app.include_router(db_connector.router)
 
     return app

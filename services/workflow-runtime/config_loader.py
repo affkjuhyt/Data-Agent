@@ -1,3 +1,4 @@
+import json
 import os
 import logging
 from dotenv import load_dotenv, find_dotenv
@@ -19,7 +20,7 @@ DEV_CONFIG = {
     "planner_response_format": {"type": "json_object"},
     "planner_timeout": 60,
     "planner_num_retries": 0,
-    "responder_model": "responder",
+    "responder_model": "openai/responder",
     "suggestion_model": "openai/suggester",
     "rewriter_model": "openai/rewriter",
     "responder_temperature": 0.2,
@@ -37,18 +38,12 @@ DEV_CONFIG = {
     "tool_config": {},
     "judge_model": "openai/judge",
     "loop_max_iterations": 3,
-    "guardrail_input_patterns": [],
-    "guardrail_llm_enabled":    False,
-    "guardrail_model":           "openai/guardrail",
-    "guardrail_max_tokens":      128,
-    "guardrail_timeout":         10,
-    "guardrail_allowed_topics":  [],
-    "guardrail_id":              None,
     "agent_id": os.environ.get("DEV_AGENT_ID", "00000000-0000-0000-0000-000000000030"),
     "agent_version_id": None,
     "workflow_version_id": None,
     "flow_nodes": [],
     "flow_edges": [],
+    "injected_metadata": {},
 }
 
 
@@ -117,40 +112,12 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
                 for r in mcp_rows
             ]
 
-            # 4. Guardrail — platform-wide, always from DB
-            g_row = (await session.execute(text("""
-                SELECT g.id, g.conditions,
-                       lp.model_id AS guardrail_model
-                FROM "Guardrails" g
-                LEFT JOIN "LLMProviders" lp ON lp.id = g.guardrail_model_id
-                ORDER BY g.priority DESC
-                LIMIT 1
-            """))).fetchone()
-
-            if g_row:
-                cond = dict(g_row.conditions or {})
-                guardrail_cfg = {
-                    "guardrail_input_patterns": cond.get("input_patterns", []),
-                    "guardrail_llm_enabled":    cond.get("llm_enabled",    True),
-                    "guardrail_allowed_topics": cond.get("allowed_topics", []),
-                    "guardrail_model":          g_row.guardrail_model or DEV_CONFIG["guardrail_model"],
-                    "guardrail_max_tokens":     cond.get("max_tokens",     128),
-                    "guardrail_timeout":        cond.get("timeout",        10),
-                    "guardrail_id":             str(g_row.id),
-                }
-            else:
-                guardrail_cfg = {k: DEV_CONFIG[k] for k in (
-                    "guardrail_input_patterns",
-                    "guardrail_llm_enabled", "guardrail_model",
-                    "guardrail_max_tokens", "guardrail_timeout",
-                    "guardrail_allowed_topics", "guardrail_id",
-                )}
-
-        # 5. Load flow_nodes + flow_edges từ MongoDB
+        # 4. Load flow_nodes + flow_edges từ MongoDB
         flow_nodes = await load_flow_nodes(wv_id) if wv_id else []
         flow_edges = await load_flow_edges(wv_id) if wv_id else []
         node_cfg   = _extract_node_config(flow_nodes)
         await _resolve_warehouse_secret(node_cfg, tenant_id)
+        await _resolve_db_connector_secrets(node_cfg, tenant_id)
 
         return {
             **DEV_CONFIG,
@@ -173,8 +140,6 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
             "memory_enabled": bool(row.memory_enabled),
             # mcp
             "mcp_endpoints": mcp_endpoints,
-            # guardrail
-            **guardrail_cfg,
             # node-level config từ canvas
             **node_cfg,
             # flow_nodes + flow_edges cho dynamic graph
@@ -209,6 +174,30 @@ async def _resolve_warehouse_secret(node_cfg: dict, tenant_id: str | None) -> No
         logger.warning("could not resolve snowflakeSecretId=%s for tenant=%s — execute_sql will fail auth", secret_id, tenant_id)
 
 
+async def _resolve_db_connector_secrets(node_cfg: dict, tenant_id: str | None) -> None:
+    """Mutates node_cfg in place: resolves each DB Connector connection's
+    `secret_id` (set by _extract_node_config below) into a real password via
+    OpenBao, and always strips `secret_id` so it never reaches the SQL
+    generation/execution code. No-op if no db_connector node configured, or
+    no secret_id was set for a given connection — that connection's password
+    just stays "" (auth fails cleanly downstream, same pattern as
+    _resolve_warehouse_secret above)."""
+    db_connections = node_cfg.get("tool_config", {}).get("db_connections", {})
+    if not db_connections:
+        return
+
+    from warehouse_secrets import resolve_db_connector_password
+    for name, connection in db_connections.items():
+        secret_id = connection.pop("secret_id", "")
+        if not secret_id or not tenant_id:
+            continue
+        password = await resolve_db_connector_password(tenant_id, secret_id)
+        if password:
+            connection["password"] = password
+        else:
+            logger.warning("could not resolve db_connector secret_id=%s for connection=%s tenant=%s — will fail auth", secret_id, name, tenant_id)
+
+
 def _extract_node_config(flow_nodes: list[dict]) -> dict:
     """Đọc config từng node canvas — override retrieval_config nếu user tùy chỉnh."""
     cfg = {}
@@ -226,17 +215,47 @@ def _extract_node_config(flow_nodes: list[dict]) -> dict:
         elif t == "judge":
             if "max_iterations" in c: cfg["loop_max_iterations"] = int(c["max_iterations"])
             if "model_id"       in c: cfg["judge_model"]         = c["model_id"]
+        elif t == "metadata_injector":
+            # "key1=value1,key2=value2" — cặp thiếu dấu "=" hoặc key rỗng bị
+            # bỏ qua an toàn thay vì raise, vì đây là input tự do trên canvas.
+            parsed: dict = {}
+            for pair in c.get("metadataKv", "").split(","):
+                if "=" not in pair:
+                    continue
+                k, v = pair.split("=", 1)
+                if k.strip():
+                    parsed[k.strip()] = v.strip()
+            cfg["injected_metadata"] = parsed
+        elif t == "db_connector":
+            try:
+                conns = json.loads(c.get("dbConnections") or "[]")
+            except (json.JSONDecodeError, TypeError):
+                conns = []
+            db_connections = {
+                conn["name"]: {
+                    # "postgres" (default) or "clickhouse" — selects the driver in
+                    # the db_connector node (handlers/data.py). Absent/unknown =>
+                    # postgres, so existing flows are unchanged.
+                    "type":      (conn.get("type") or "postgres").lower(),
+                    "host":      conn.get("host", ""),
+                    "port":      conn.get("port", 5432),
+                    "database":  conn.get("database", ""),
+                    "user":      conn.get("user", ""),
+                    # Resolved against OpenBao in load_agent_config() via
+                    # warehouse_secrets.py — no plaintext password read here.
+                    "secret_id": conn.get("secretId", ""),
+                    "password":  "",
+                    "note":      conn.get("note", ""),
+                }
+                for conn in conns if conn.get("name") and conn.get("host") and conn.get("database")
+            }
+            if db_connections:
+                cfg["tool_config"] = {**cfg.get("tool_config", {}), "db_connections": db_connections}
         elif t == "tool_executor":
             allowed = c.get("allowedBuiltinTools", [])
             if allowed:
                 cfg["allowed_tools"] = allowed
-            tool_config: dict = {}
-            if c.get("dbUrl"):
-                tool_config["text_to_sql"] = {
-                    "db_url":      c["dbUrl"],
-                    "schema_hint": c.get("schemaHint", ""),
-                    "data_source": c.get("dataSource", "postgresql"),
-                }
+            tool_config: dict = {**cfg.get("tool_config", {})}
             if c.get("defaultFilePath") or c.get("pandasAllowedDir"):
                 tool_config["text_to_pandas"] = {
                     "default_file_path": c.get("defaultFilePath", ""),

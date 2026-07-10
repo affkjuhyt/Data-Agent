@@ -1,10 +1,12 @@
 import json
 import os
 import logging
+from contextlib import asynccontextmanager
 from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import select, update as sa_update, func
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from services.database_connector.postgres_connector import client
@@ -19,6 +21,20 @@ logger = logging.getLogger(__name__)
 
 _DEV_TENANT_ID          = os.environ.get("DEV_TENANT_ID",          "00000000-0000-0000-0000-000000000001")
 _DEV_RESPONDER_MODEL_ID = os.environ.get("DEV_RESPONDER_MODEL_ID", "00000000-0000-0000-0000-000000000011")
+
+
+@asynccontextmanager
+async def _txn(session: AsyncSession):
+    """client.get_client(tenant_id=...) already autobegins a transaction (the
+    set_config SELECT executes on the session), so `session.begin()` here would
+    raise "A transaction is already begun on this Session". Commit/rollback the
+    already-open transaction instead."""
+    try:
+        yield
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
 
 
 async def init_db():
@@ -37,7 +53,7 @@ async def close_db():
 
 async def create_agent(name: str, description: str, tenant_id: str) -> dict:
     async with client.get_client(tenant_id=tenant_id) as session:
-        async with session.begin():
+        async with _txn(session):
             agent = AgentsORM(
                 tenant_id=UUID(tenant_id),
                 name=name,
@@ -149,7 +165,7 @@ async def get_agent(agent_id: str, tenant_id: str | None = None) -> Optional[dic
 
 async def create_workflow(agent_id: str, name: str, description: str = "") -> dict:
     async with client.get_client() as session:
-        async with session.begin():
+        async with _txn(session):
             wf = WorkflowsORM(
                 agent_id=UUID(agent_id),
                 name=name,
@@ -203,7 +219,7 @@ async def update_agent_draft(agent_id: str, fields: dict, tenant_id: str | None 
                  if k in ("responder_model_id", "system_prompt_id", "guardrail_id", "memory_enabled")}
 
     async with client.get_client(tenant_id=tenant_id) as session:
-        async with session.begin():
+        async with _txn(session):
             if agent_fields:
                 await session.execute(
                     sa_update(AgentsORM)
@@ -214,7 +230,7 @@ async def update_agent_draft(agent_id: str, fields: dict, tenant_id: str | None 
                 # Cast UUID string fields to UUID
                 uuid_keys = {"responder_model_id", "system_prompt_id", "guardrail_id"}
                 av_values = {
-                    k: UUID(v) if k in uuid_keys and v else v
+                    k: (UUID(v) if v else None) if k in uuid_keys else v
                     for k, v in av_fields.items()
                 }
                 await session.execute(
@@ -229,7 +245,7 @@ async def update_agent_draft(agent_id: str, fields: dict, tenant_id: str | None 
 
 async def unpublish_agent(agent_id: str, tenant_id: str | None = None) -> dict:
     async with client.get_client(tenant_id=tenant_id) as session:
-        async with session.begin():
+        async with _txn(session):
             result = await session.execute(
                 select(AgentsORM).where(AgentsORM.id == UUID(agent_id))
             )
@@ -248,7 +264,7 @@ async def unpublish_agent(agent_id: str, tenant_id: str | None = None) -> dict:
 
 async def publish_workflow_version(workflow_version_id: str, changelog: str | None = None) -> dict:
     async with client.get_client() as session:
-        async with session.begin():
+        async with _txn(session):
             wv = await session.get(WorkflowVersionsORM, UUID(workflow_version_id))
             if not wv:
                 raise ValueError("workflow_version not found")
@@ -274,7 +290,7 @@ async def publish_workflow_version(workflow_version_id: str, changelog: str | No
 async def republish_workflow_version(workflow_version_id: str) -> dict:
     """Re-publish an archived version — archives current published atomically."""
     async with client.get_client() as session:
-        async with session.begin():
+        async with _txn(session):
             wv = await session.get(WorkflowVersionsORM, UUID(workflow_version_id))
             if not wv:
                 raise ValueError("workflow_version not found")
@@ -317,7 +333,7 @@ async def list_workflow_versions(workflow_id: str) -> list[dict]:
 
 async def create_draft_version(workflow_id: str) -> dict:
     async with client.get_client() as session:
-        async with session.begin():
+        async with _txn(session):
             # Lấy max version hiện tại
             result = await session.execute(
                 select(func.max(WorkflowVersionsORM.version))
@@ -364,7 +380,7 @@ async def create_draft_version(workflow_id: str) -> dict:
 
 async def delete_workflow_version(version_id: str, tenant_id: str | None = None) -> None:
     async with client.get_client(tenant_id=tenant_id) as session:
-        async with session.begin():
+        async with _txn(session):
             wv = await session.get(WorkflowVersionsORM, UUID(version_id))
             if not wv:
                 raise ValueError("workflow_version not found")
@@ -375,7 +391,7 @@ async def delete_workflow_version(version_id: str, tenant_id: str | None = None)
 
 async def delete_workflow(workflow_id: str, tenant_id: str | None = None) -> list[str]:
     async with client.get_client(tenant_id=tenant_id) as session:
-        async with session.begin():
+        async with _txn(session):
             wf = await session.get(WorkflowsORM, UUID(workflow_id))
             if not wf:
                 raise ValueError("workflow not found")
@@ -415,7 +431,7 @@ async def delete_workflow(workflow_id: str, tenant_id: str | None = None) -> lis
 async def delete_agent(agent_id: str, tenant_id: str | None = None) -> list[str]:
     """Hard delete agent + cascade workflows + versions. Trả về version_ids để xóa MongoDB canvas."""
     async with client.get_client(tenant_id=tenant_id) as session:
-        async with session.begin():
+        async with _txn(session):
             agent = await session.get(AgentsORM, UUID(agent_id))
             if not agent:
                 raise ValueError("agent not found")
@@ -457,7 +473,7 @@ async def delete_agent(agent_id: str, tenant_id: str | None = None) -> list[str]
 
 async def publish_agent(agent_id: str, workflow_id: str, kb_connection_id: str | None = None, tenant_id: str | None = None) -> dict:
     async with client.get_client(tenant_id=tenant_id) as session:
-        async with session.begin():
+        async with _txn(session):
             # 1. Verify workflow belongs to agent
             wf = await session.get(WorkflowsORM, UUID(workflow_id))
             if not wf or str(wf.agent_id) != agent_id:

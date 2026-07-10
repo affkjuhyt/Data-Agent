@@ -2,9 +2,9 @@ import os
 import time
 import logging
 
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+import litellm
 
+from observability import get_langfuse_client
 from state import AgentState
 
 logger = logging.getLogger(__name__)
@@ -20,12 +20,11 @@ _LANGUAGE_RULE   = "IMPORTANT — Language: Respond in {LANGUAGE}. Vietnamese me
 _LANGUAGE_LABELS = {"vi": "Vietnamese", "en": "English"}
 
 
-def _to_lc_messages(messages: list[dict]) -> list:
-    role_map = {"user": HumanMessage, "assistant": AIMessage}
+def _to_lc_messages(messages: list[dict]) -> list[dict]:
     return [
-        role_map[m["role"]](content=m["content"])
+        {"role": m["role"], "content": m["content"]}
         for m in messages
-        if m.get("role") in role_map
+        if m.get("role") in ("user", "assistant")
     ]
 
 
@@ -62,35 +61,49 @@ async def responder_node(state: AgentState) -> dict:
         context = "\n\n---\n\n".join(parts)
         system_prompt = f"{system_prompt}\n\nContext:\n{context}"
 
-    history = _to_lc_messages([
-        m for m in state.get("messages", [])
-        if m.get("role") in ("user", "assistant")
-    ])
+    injected_metadata = state.get("injected_metadata")
+    if injected_metadata:
+        meta_lines = "\n".join(f"- {k}: {v}" for k, v in injected_metadata.items())
+        system_prompt = f"{system_prompt}\n\nMetadata:\n{meta_lines}"
+
+    history = _to_lc_messages(state.get("messages", []))
     # tránh duplicate nếu query đã có trong message cuối
-    if history and isinstance(history[-1], HumanMessage) and history[-1].content == state["query"]:
+    if history and history[-1]["role"] == "user" and history[-1]["content"] == state["query"]:
         history = history[:-1]
 
-    messages = [SystemMessage(content=system_prompt), *history, HumanMessage(content=state["query"])]
+    messages = [
+        {"role": "system", "content": system_prompt},
+        *history,
+        {"role": "user", "content": state["query"]},
+    ]
 
-    llm = ChatOpenAI(
-        model=cfg.get("responder_model", "responder"),
-        base_url=f"{_LITELLM_BASE}/v1",
+    model = cfg.get("responder_model", "responder")
+    t0 = time.monotonic()
+    response = await litellm.acompletion(
+        model=model,
+        api_base=_LITELLM_BASE,
         api_key=_LITELLM_KEY,
+        messages=messages,
         temperature=cfg.get("responder_temperature", 0.2),
         max_tokens=cfg.get("responder_max_tokens", 1000),
-        streaming=cfg.get("responder_streaming", True),
     )
-
-    t0 = time.monotonic()
-    response = await llm.ainvoke(messages)
     latency_ms = int((time.monotonic() - t0) * 1000)
 
-    full_text = response.content
-    usage = response.response_metadata.get("usage", {}) if response.response_metadata else {}
-    prompt_tokens     = usage.get("prompt_tokens", 0)
-    completion_tokens = usage.get("completion_tokens", 0)
+    full_text = response.choices[0].message.content or ""
+    usage = response.usage or {}
+    prompt_tokens     = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", 0)
+    completion_tokens = getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", 0)
 
-    logger.info("responder | latency=%dms prompt=%d completion=%d",
+    lf = get_langfuse_client()
+    if lf:
+        lf.update_current_generation(
+            model=model,
+            input=messages,
+            output=full_text,
+            usage_details={"input": prompt_tokens, "output": completion_tokens},
+        )
+
+    logger.info("responder | latency=%dms prompt=%s completion=%s",
                 latency_ms, prompt_tokens, completion_tokens)
 
     return {"response": full_text}

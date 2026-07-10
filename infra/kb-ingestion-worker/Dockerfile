@@ -15,7 +15,7 @@ RUN pip install --no-cache-dir torch torchvision --index-url https://download.py
 
 # Headless Chromium + its OS libraries for the web (SPA) render path. --with-deps
 # installs the apt libraries Chromium needs; the browser lives in the image.
-RUN python -m playwright install --with-deps chromium
+RUN apt-get update && python -m playwright install --with-deps chromium && rm -rf /var/lib/apt/lists/*
 
 # Copy only what the worker imports — nothing from app/
 COPY services/__init__.py          /app/services/__init__.py

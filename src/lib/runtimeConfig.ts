@@ -10,7 +10,7 @@
  */
 import { useEffect, useState } from 'react';
 
-import { WORKFLOW_RUNTIME_URL } from './config';
+import { apiGet } from './apiClient';
 
 export interface LlmProvider {
   id: string;
@@ -32,11 +32,7 @@ let _configPromise: Promise<RuntimeConfig> | null = null;
 
 export function fetchLlmProviders(): Promise<LlmProvider[]> {
   if (!_providersPromise) {
-    _providersPromise = fetch(`${WORKFLOW_RUNTIME_URL}/api/llm-providers`)
-      .then(r => {
-        if (!r.ok) throw new Error(`llm-providers ${r.status}`);
-        return r.json();
-      })
+    _providersPromise = apiGet<LlmProvider[]>('/api/llm-providers')
       .catch(err => {
         _providersPromise = null;
         throw err;
@@ -47,11 +43,7 @@ export function fetchLlmProviders(): Promise<LlmProvider[]> {
 
 export function fetchRuntimeConfig(): Promise<RuntimeConfig> {
   if (!_configPromise) {
-    _configPromise = fetch(`${WORKFLOW_RUNTIME_URL}/api/runtime-config`)
-      .then(r => {
-        if (!r.ok) throw new Error(`runtime-config ${r.status}`);
-        return r.json();
-      })
+    _configPromise = apiGet<RuntimeConfig>('/api/runtime-config')
       .catch(err => {
         _configPromise = null;
         throw err;

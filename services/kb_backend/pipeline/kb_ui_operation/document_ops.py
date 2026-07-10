@@ -1,11 +1,16 @@
 """Business logic for document listing, promotion, and deletion."""
 import logging
+import uuid
 from fastapi import HTTPException
+from sqlalchemy import select as sa_select, func as sa_func
 from basemodel.services_databaseconnector.postgres_model import (
     ReadJoinRequest, WhereFilter, OrderBy, OrderDirection, KBDataDelete, FilterOperator,
 )
+from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+    KBLifecycleHistoryORM, KBDataORM, KBTextBlockORM,
+)
 from services.kb_backend.pipeline.ingestion import config as ing_cfg
-from services.kb_backend.UI_model.response import DocResponse
+from services.kb_backend.UI_model.response import DocResponse, to_string
 from services.kb_backend.pipeline.kb_ui_operation.pagination import (
     PAGE_SIZE, decode_cursor, encode_cursor, build_cursor_page,
 )
@@ -24,6 +29,78 @@ async def fetch_one(postgres, data_id: str, tenant_id: str | None) -> dict | Non
     if resp.code == 200 and resp.data:
         return resp.data[0]
     return None
+
+
+async def fetch_one_or_404(postgres, data_id: str, tenant_id: str | None) -> dict:
+    """fetch_one plus a 404 guard, for routes that require the record to exist.
+    Centralises the not-found contract so routers stay pass-throughs and every
+    'missing document' returns a real 404 (+ message) instead of HTTP 200."""
+    record = await fetch_one(postgres, data_id, tenant_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"Document not found: {data_id}")
+    return record
+
+
+async def count_processed_chunks(postgres, owner_id) -> int:
+    """Number of KBTextBlock rows produced so far for a document (its chunk count).
+    Drives the ingestion progress %. `owner_id` is the KBData uuid."""
+    async with postgres.get_client() as session:
+        return await session.scalar(
+            sa_select(sa_func.count()).select_from(KBTextBlockORM)
+            .where(KBTextBlockORM.owner_id == owner_id)
+        ) or 0
+
+
+async def name_exists(postgres, tenant_id: str, name: str) -> bool:
+    """True if a KBData document with this (globally-unique) name already exists.
+    Lets the router reject duplicates with a clear 409 instead of a generic insert 500."""
+    resp = await postgres.read(ReadJoinRequest(
+        tenant_id=tenant_id,
+        joins_table=["KBData"],
+        filters=[WhereFilter(table_name="KBData", column_name="name", value=name)],
+        limit=1,
+    ))
+    return resp.code == 200 and bool(resp.data)
+
+
+async def get_doc_history(postgres, doc_id: str, tenant_id: str) -> list[dict]:
+    """Lifecycle-history rows for a document, newest first, tenant-scoped.
+
+    Raises HTTPException(400) on malformed ids so the router stays a thin pass-through.
+    """
+    try:
+        data_uuid = uuid.UUID(doc_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid doc_id")
+    try:
+        tenant_uuid = uuid.UUID(tenant_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid tenant_id")
+
+    async with postgres.get_client() as session:
+        rows = (await session.execute(
+            sa_select(KBLifecycleHistoryORM)
+            .join(KBDataORM, KBLifecycleHistoryORM.data_id == KBDataORM.data_id)
+            .where(
+                KBLifecycleHistoryORM.data_id == data_uuid,
+                KBDataORM.tenant_id == tenant_uuid,
+                KBLifecycleHistoryORM.is_deleted == False,  # noqa: E712
+            )
+            .order_by(KBLifecycleHistoryORM.transitioned_at.desc())
+        )).scalars().all()
+
+    return [
+        {
+            "history_id":        to_string(row.history_id),
+            "from_tier":         row.from_tier,
+            "to_tier":           row.to_tier,
+            "transitioned_at":   row.transitioned_at.isoformat() if row.transitioned_at else None,
+            "approved_by":       row.approved_by,
+            "notes":             row.notes,
+            "pipeline_metadata": row.pipeline_metadata,
+        }
+        for row in rows
+    ]
 
 
 # Source-type filter categories (the UI chips) → KBData.source_type values. "warehouse"

@@ -10,6 +10,7 @@ import json
 import logging
 import re
 import uuid
+from typing import Any
 
 from sqlalchemy import update as sa_update
 
@@ -24,122 +25,24 @@ from basemodel.services_databaseconnector.postgres_model import (
     WhereFilter,
 )
 from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import KBDataORM
-from services.database_connector.kafka_connector import KafkaProducerClient
 from services.database_connector.minio_connector import MinIOClient
 from services.database_connector.mongo_connector import MongoClient
 from services.database_connector.postgres_connector import PostgresClient
 
-from utils import config as cfg  # local worker config
-from utils.pipeline_events import PipelineEventEmitter
+from utils import config as cfg
+from utils.log_writer import set_chunk_progress, write_log
+from utils.pipeline_events import NULL_EMITTER, PipelineEventEmitter
+from utils.prompts import SILVER_SYSTEM_PROMPTS as SYSTEM_PROMPTS
 
 log = logging.getLogger(__name__)
 
 _JSON_FENCE = re.compile(r"```(?:json)?\s*([\s\S]*?)```", re.IGNORECASE)
 _JSON_OBJ   = re.compile(r'\{[\s\S]*\}', re.DOTALL)
 
-_MODERATE_SYSTEM = (
-    "You are a content moderation assistant. "
-    "Given a list of policy rules and a text chunk, decide if the chunk violates any rule. "
-    'Reply ONLY with valid JSON: {"blocked": true/false, "reason": "..."}.'
-)
-
-# Per-chunk summary + intent. Runs once per chunk in silver so gold never makes
-# per-chunk LLM calls — gold only reduces these summaries into a document summary
-# and extracts entities/relationships ONCE per document.
-_CHUNK_SUMMARY_SYSTEM = """\
-You summarize text chunks for a knowledge base. Documents may be in Vietnamese, \
-English, or mixed. Return JSON with exactly three keys: summary, intents, skip.
-
-── summary ─────────────────────────────────────────────────────────────────────
-1–2 sentences (≤ 40 words) capturing the most important facts of the chunk.
-LANGUAGE RULE: write the summary in the SAME language as the chunk — a Vietnamese
-chunk gets a Vietnamese summary. NEVER translate.
-NAME RULE: copy proper names (people, organisations, places, systems, laws,
-projects) CHARACTER-FOR-CHARACTER, keeping ALL Vietnamese diacritics and tone
-marks exactly as written ("Đà Nẵng" stays "Đà Nẵng", never "Da Nang"). Tone marks
-change meaning in Vietnamese — altering them corrupts the entity.
-Prefer keeping concrete names, numbers, and dates over generic phrasing: these
-summaries are later merged into a document summary.
-
-── entities (0–8 knowledge-graph entities that appear IN THIS CHUNK) ─────────────
-The specific named things this chunk is about. For each: name, type, description
-(≤ 12 words), score (0.0–1.0 importance in this chunk).
-LANGUAGE RULE: copy each name in the chunk's OWN language, CHARACTER-FOR-CHARACTER
-with ALL Vietnamese diacritics ("Đà Nẵng" stays "Đà Nẵng"). NEVER translate a name
-and NEVER output Chinese / Han characters unless they literally appear in the chunk.
-type — exactly one of: person, organization, location, law_document,
-system_product, event, time_period, concept (use "concept" only when none fit).
-Skip generic nouns (system, method, data, document, report, …). Return [] if none.
-
-── intents (2–4, snake_case English labels) ────────────────────────────────────
-Machine-readable purpose labels (ALWAYS English snake_case, even for Vietnamese
-text — they are filter keys, not display text). Choose from:
-  information_retrieval, regulation_compliance, technical_specification,
-  financial_reporting, process_description, organisational_info,
-  question_answering, data_definition, historical_record, announcement
-Add a custom snake_case label only if none fits.
-
-── skip (boolean) ──────────────────────────────────────────────────────────────
-true ONLY for chunks with NO indexable content: pure reference lists, isolated
-headers or page numbers, acknowledgements, legal boilerplate. Otherwise false.
-
-Output JSON only — no markdown, no extra text:
-{"summary":"…","entities":[{"name":"…","type":"…","description":"…","score":0.0}],"intents":["…"],"skip":false}"""
-
-# Vietnamese variant (PROMPT_LANG=vi, default) — native instructions for a
-# Vietnamese corpus; intents stay English snake_case (machine-readable keys).
-_CHUNK_SUMMARY_SYSTEM_VI = """\
-Bạn tóm tắt các đoạn văn bản cho một cơ sở tri thức. Văn bản có thể là tiếng Việt,
-tiếng Anh hoặc lẫn cả hai. Chỉ trả về JSON với đúng ba khóa: summary, intents, skip.
-
-── summary ─────────────────────────────────────────────────────────────────────
-1–2 câu (tối đa 40 từ) nêu các thông tin quan trọng nhất của đoạn.
-NGÔN NGỮ: viết bằng ĐÚNG ngôn ngữ của đoạn văn — đoạn tiếng Việt thì tóm tắt
-tiếng Việt. KHÔNG dịch.
-TÊN RIÊNG: chép chính xác từng ký tự (người, tổ chức, địa danh, hệ thống, luật,
-dự án), giữ nguyên toàn bộ dấu ("Đà Nẵng" giữ là "Đà Nẵng", không viết "Da Nang").
-Dấu thanh làm thay đổi nghĩa — sai dấu là sai thực thể.
-Ưu tiên giữ tên riêng, con số, mốc thời gian thay vì câu chữ chung chung: các tóm
-tắt này sẽ được gộp thành tóm tắt tài liệu.
-
-── entities (0–8 thực thể tri thức XUẤT HIỆN TRONG ĐOẠN NÀY) ─────────────────────
-Những thứ có tên cụ thể mà đoạn nói đến. Mỗi thực thể: name, type, description
-(≤ 12 từ), score (0.0–1.0, mức quan trọng trong đoạn).
-NGÔN NGỮ: chép tên theo ĐÚNG ngôn ngữ của đoạn, từng ký tự, giữ nguyên mọi dấu
-tiếng Việt ("Đà Nẵng" giữ là "Đà Nẵng"). TUYỆT ĐỐI KHÔNG dịch tên và KHÔNG xuất
-ký tự Trung/Hán trừ khi chúng thực sự có trong đoạn.
-type — đúng một trong: person, organization, location, law_document,
-system_product, event, time_period, concept (chỉ dùng "concept" khi không hợp loại nào).
-Bỏ qua danh từ chung chung (hệ thống, phương pháp, dữ liệu, tài liệu…). Không có thì trả [].
-
-── intents (2–4 nhãn, tiếng Anh snake_case) ────────────────────────────────────
-Nhãn mục đích cho máy đọc (LUÔN là tiếng Anh snake_case, kể cả với văn bản tiếng
-Việt — đây là khóa lọc, không phải văn hiển thị). Chọn trong:
-  information_retrieval, regulation_compliance, technical_specification,
-  financial_reporting, process_description, organisational_info,
-  question_answering, data_definition, historical_record, announcement
-Chỉ thêm nhãn tự đặt (snake_case) khi không nhãn nào phù hợp.
-
-── skip (boolean) ──────────────────────────────────────────────────────────────
-true CHỈ KHI đoạn không có nội dung đáng lập chỉ mục: danh mục tài liệu tham khảo,
-tiêu đề/số trang đứng một mình, lời cảm ơn, văn bản pháp lý rập khuôn. Còn lại: false.
-
-Chỉ trả JSON — không markdown, không văn bản thừa:
-{"summary":"…","entities":[{"name":"…","type":"…","description":"…","score":0.0}],"intents":["…"],"skip":false}"""
-
-_SUMMARY_PROMPTS_BY_LANG = {"en": _CHUNK_SUMMARY_SYSTEM, "vi": _CHUNK_SUMMARY_SYSTEM_VI}
-
-SYSTEM_PROMPTS: dict[str, str] = {
-    "moderate":      _MODERATE_SYSTEM,
-    "chunk-summary": _SUMMARY_PROMPTS_BY_LANG.get(cfg.PROMPT_LANG, _CHUNK_SUMMARY_SYSTEM_VI),
-}
-
 
 # ── LLM helpers ───────────────────────────────────────────────────────────────
 
 async def _llm_generate_json(system_type: str, user: str, max_tokens: int = 512) -> dict:
-    # /api/generate with the system prompt baked into the KV snapshot (system_type);
-    # only `user` is encoded. Falls back to inlining the system prompt if not registered.
     raw = await llm_client.generate_json(
         user,
         system_prompt=SYSTEM_PROMPTS[system_type],
@@ -152,7 +55,6 @@ async def _llm_generate_json(system_type: str, user: str, max_tokens: int = 512)
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
-        # Try extracting just the JSON object if the LLM added trailing text
         obj_m = _JSON_OBJ.search(cleaned)
         if obj_m:
             try:
@@ -164,8 +66,7 @@ async def _llm_generate_json(system_type: str, user: str, max_tokens: int = 512)
 
 
 async def _vlm_describe(image_bytes: bytes, content_type: str = "image/jpeg") -> str:
-    # VLM describe requires a multimodal endpoint (USE_VLM=true).
-    # When USE_VLM=false (default), this path is never reached.
+    # When USE_VLM=false (default), the image/video paths are never reached.
     raise NotImplementedError(
         "VLM describe requires USE_VLM=true and a dedicated VLM endpoint. "
         "Set USE_VLM=false to skip image/video processing."
@@ -174,45 +75,30 @@ async def _vlm_describe(image_bytes: bytes, content_type: str = "image/jpeg") ->
 
 # ── Parsing helpers ────────────────────────────────────────────────────────────
 
+def _docling_chunks_to_dicts(docling_result) -> list[dict]:
+    """Map a DoclingResult into the silver chunk dicts (shared by doc + web)."""
+    chunks: list[dict] = []
+    for parsed_chunk in docling_result.chunks:
+        chunk: dict = {
+            "block_index": parsed_chunk.block_index,
+            "content": parsed_chunk.content,
+            "table_involved": parsed_chunk.table_involved,
+            "table": None,
+        }
+        if parsed_chunk.table is not None:
+            chunk["table"] = {
+                "table_name": parsed_chunk.table.table_name,
+                "description": parsed_chunk.table.description,
+                "data": parsed_chunk.table.data,
+            }
+        chunks.append(chunk)
+    return chunks
+
+
 async def _parse_doc(docling, bucket: str, object_key: str, extension: str) -> list[dict]:
     """docling: any object with .parse(bucket, object_key, extension) -> DoclingResult"""
     result = await docling.parse(bucket=bucket, object_key=object_key, extension=extension)
-    chunks = []
-    for pc in result.chunks:
-        chunk: dict = {
-            "block_index": pc.block_index,
-            "content": pc.content,
-            "table_involved": pc.table_involved,
-            "table": None,
-        }
-        if pc.table is not None:
-            chunk["table"] = {
-                "table_name": pc.table.table_name,
-                "description": pc.table.description,
-                "data": pc.table.data,
-            }
-        chunks.append(chunk)
-    return chunks
-
-
-def _docling_chunks_to_dicts(result) -> list[dict]:
-    """Map a DoclingResult into the silver chunk dicts (shared by doc + web)."""
-    chunks: list[dict] = []
-    for pc in result.chunks:
-        chunk: dict = {
-            "block_index": pc.block_index,
-            "content": pc.content,
-            "table_involved": pc.table_involved,
-            "table": None,
-        }
-        if pc.table is not None:
-            chunk["table"] = {
-                "table_name": pc.table.table_name,
-                "description": pc.table.description,
-                "data": pc.table.data,
-            }
-        chunks.append(chunk)
-    return chunks
+    return _docling_chunks_to_dicts(result)
 
 
 # ── Web portal: fetch → strip boilerplate → markdown → Docling ────────────────
@@ -277,11 +163,10 @@ def _extract_main_content(html: str, url: str) -> tuple[str, str]:
     """Isolate ONLY the main content and return (content, extension).
 
     Docling on its own keeps the entire DOM — nav bars, ads, sidebars, cookie
-    banners, footers — because it has no notion of "the article". So we run a
-    readability-style extractor (trafilatura) FIRST to drop that boilerplate and
-    emit clean markdown; Docling then chunks the markdown exactly like a document,
-    keeping silver/gold downstream source-agnostic. Falls back to raw HTML (parsed
-    as .html) if trafilatura can't isolate content, so a page never fails outright.
+    banners, footers. So we run a readability-style extractor (trafilatura) FIRST
+    to drop that boilerplate and emit clean markdown; Docling then chunks the
+    markdown exactly like a document. Falls back to raw HTML (parsed as .html) if
+    trafilatura can't isolate content, so a page never fails outright.
     """
     try:
         import trafilatura
@@ -382,9 +267,9 @@ async def _filter_chunks(
     postgres: PostgresClient,
     tenant_id: str,
     chunks: list[dict],
-    emitter: PipelineEventEmitter | None = None,
+    emitter: PipelineEventEmitter = NULL_EMITTER,
 ) -> list[dict]:
-    policies_res = await postgres.read(ReadJoinRequest(
+    policies_response = await postgres.read(ReadJoinRequest(
         tenant_id=tenant_id,
         joins_table=["KBFilterPolicy"],
         filters=[WhereFilter(table_name="KBFilterPolicy", column_name="is_active", value=True)],
@@ -392,27 +277,20 @@ async def _filter_chunks(
     ))
 
     exact_phrases: list[str] = []
-    if policies_res.code == 200:
-        for p in (policies_res.data or []):
-            policy_config = p.get("config") or {}
+    if policies_response.code == 200:
+        for policy in (policies_response.data or []):
+            policy_config = policy.get("config") or {}
             raw_rules = policy_config.get("rules") or []
             # Rules may be plain strings OR structured dicts {"type": ..., "value": ...}
             rule_values = [
-                r["value"] if isinstance(r, dict) and "value" in r else str(r)
-                for r in raw_rules
+                rule["value"] if isinstance(rule, dict) and "value" in rule else str(rule)
+                for rule in raw_rules
             ]
-            if p.get("configformat") == PolicyFilteringType.EXACT_MATCH.value:
+            if policy.get("configformat") == PolicyFilteringType.EXACT_MATCH.value:
                 exact_phrases.extend(rule_values)
             # NLP/LLM-based policies skipped — exact-match only for reliability
 
-    if emitter:
-        await emitter.emit("silver.filter.start", {
-            "total": len(chunks),
-            "exact_rules": len(exact_phrases),
-            "nlp_rules": 0,
-        })
-
-    accepted: list[dict] = []
+    accepted_chunks: list[dict] = []
     for chunk in chunks:
         content = chunk["content"]
         block_index = chunk["block_index"]
@@ -421,57 +299,75 @@ async def _filter_chunks(
         if matched_phrase:
             log.info("Silver filter: exact-match blocked block_index=%d phrase=%r",
                      block_index, matched_phrase)
-            if emitter:
-                await emitter.emit("silver.filter.blocked", {
-                    "index": block_index,
-                    "method": "exact_match",
-                    "reason": f"Matched banned phrase: '{matched_phrase}'",
-                    "phrase": matched_phrase,
-                    "preview": content[:200],
-                    "length": len(content),
-                    "table_involved": chunk.get("table_involved", False),
-                })
+            await emitter.emit("silver.filter.blocked", {
+                "index": block_index,
+                "method": "exact_match",
+                "reason": f"Matched banned phrase: '{matched_phrase}'",
+                "phrase": matched_phrase,
+                "preview": content[:200],
+                "length": len(content),
+                "table_involved": chunk.get("table_involved", False),
+            })
             continue
 
-        if emitter:
-            await emitter.emit("silver.filter.accepted", {"index": block_index})
-        accepted.append(chunk)
+        await emitter.emit("silver.filter.accepted", {"index": block_index})
+        accepted_chunks.append(chunk)
 
-    return accepted
+    return accepted_chunks
 
 
 # ── Per-chunk summary + intents ───────────────────────────────────────────────
 
-def _strip_surrogates(s: str) -> str:
+def _strip_surrogates(text: str) -> str:
     """Drop lone UTF-16 surrogates (\\udcxx) the LLM emits when a multibyte (e.g.
-    Chinese/Vietnamese) character is truncated mid-generation. These are the
-    mojibake seen in stored summaries/entities — strip them before persisting so
-    corrupted text never reaches Postgres/Qdrant."""
-    if not s:
-        return s
-    return "".join(ch for ch in s if not 0xD800 <= ord(ch) <= 0xDFFF)
+    Chinese/Vietnamese) character is truncated mid-generation — strip them before
+    persisting so corrupted text never reaches Postgres/Qdrant."""
+    if not text:
+        return text
+    return "".join(char for char in text if not 0xD800 <= ord(char) <= 0xDFFF)
 
 
-def _clean_chunk_entities(raw: Any) -> list[dict]:
+def _clean_chunk_entities(raw_entities: Any) -> list[dict]:
     """Parse + sanitize per-chunk entities from the LLM. Names/descriptions are
-    surrogate-stripped; names are kept in the chunk's own language (the prompt
-    forbids translation/Han output). Gold applies the generic-word blacklist,
-    dedup, and canonicalization."""
-    out: list[dict] = []
-    for e in raw or []:
-        if not isinstance(e, dict):
+    surrogate-stripped; names stay in the chunk's own language. Gold applies the
+    generic-word blacklist, dedup, and canonicalization."""
+    cleaned_entities: list[dict] = []
+    for entity in raw_entities or []:
+        if not isinstance(entity, dict):
             continue
-        name = _strip_surrogates(str(e.get("name") or "").strip())
+        name = _strip_surrogates(str(entity.get("name") or "").strip())
         if len(name) < 2:
             continue
-        out.append({
+        cleaned_entities.append({
             "name":        name,
-            "type":        (str(e.get("type") or "concept").strip() or "concept"),
-            "description": _strip_surrogates(str(e.get("description") or "").strip()),
+            "type":        (str(entity.get("type") or "concept").strip() or "concept"),
+            "description": _strip_surrogates(str(entity.get("description") or "").strip()),
             "aliases":     [],
-            "score":       e.get("score", 0.5),
+            "score":       entity.get("score", 0.5),
         })
-    return out
+    return cleaned_entities
+
+
+def _clean_chunk_relationships(raw_relationships: Any, entity_names: list[str]) -> list[dict]:
+    """Keep only relationships whose from/to are among THIS chunk's entities (drops
+    hallucinated endpoints). Names stay in the chunk's language — gold remaps them
+    to canonical entities."""
+    allowed_names = {_strip_surrogates(name).strip().lower() for name in entity_names}
+    cleaned_relationships: list[dict] = []
+    for relationship in raw_relationships or []:
+        if not isinstance(relationship, dict):
+            continue
+        source = _strip_surrogates(str(relationship.get("from") or "").strip())
+        target = _strip_surrogates(str(relationship.get("to") or "").strip())
+        rel_type = str(relationship.get("type") or "").strip()
+        if not (source and target and rel_type) or source == target:
+            continue
+        if source.lower() not in allowed_names or target.lower() not in allowed_names:
+            continue
+        cleaned_relationships.append(
+            {"from": source, "to": target, "type": rel_type, "score": relationship.get("score", 0.5)}
+        )
+    return cleaned_relationships
 
 
 def _fallback_chunk_summary(content: str) -> dict:
@@ -479,7 +375,8 @@ def _fallback_chunk_summary(content: str) -> dict:
     truncated. Splits on Latin sentence punctuation, which Vietnamese also uses."""
     first_sentence = re.split(r"[.!?…]", content, maxsplit=1)[0].strip()
     summary = " ".join((first_sentence or content).split()[:40])
-    return {"summary": summary, "intents": ["document_content"], "entities": [], "skip": False}
+    return {"summary": summary, "intents": ["document_content"], "entities": [],
+            "relationships": [], "skip": False}
 
 
 async def summarize_chunk(content: str) -> dict:
@@ -488,19 +385,25 @@ async def summarize_chunk(content: str) -> dict:
     heuristic summary so a flaky LLM can't fail the whole silver stage."""
     for attempt in range(2):
         try:
-            result = await _llm_generate_json(
+            summary_result = await _llm_generate_json(
                 system_type="chunk-summary",
                 user=content[:3000],
                 max_tokens=512,
             )
-            summary = _strip_surrogates(str(result.get("summary") or "").strip())
-            intents = [s for s in result.get("intents") or [] if isinstance(s, str) and s.strip()]
+            summary = _strip_surrogates(str(summary_result.get("summary") or "").strip())
+            intents = [
+                intent for intent in summary_result.get("intents") or []
+                if isinstance(intent, str) and intent.strip()
+            ]
             if summary:
+                entities = _clean_chunk_entities(summary_result.get("entities"))
                 return {
                     "summary":  summary,
                     "intents":  intents or ["document_content"],
-                    "entities": _clean_chunk_entities(result.get("entities")),
-                    "skip":     bool(result.get("skip", False)),
+                    "entities": entities,
+                    "relationships": _clean_chunk_relationships(
+                        summary_result.get("relationships"), [entity["name"] for entity in entities]),
+                    "skip":     bool(summary_result.get("skip", False)),
                 }
         except Exception as exc:
             log.warning("Silver summary: attempt %d failed: %s", attempt + 1, exc)
@@ -509,189 +412,225 @@ async def summarize_chunk(content: str) -> dict:
 
 async def _summarize_chunks(
     chunks: list[dict],
-    emitter: PipelineEventEmitter | None = None,
+    emitter: PipelineEventEmitter = NULL_EMITTER,
+    database=None,
+    data_id: str | None = None,
 ) -> list[dict]:
     """Annotate every chunk with summary + intents (bounded-concurrency LLM calls)
     and drop chunks the LLM flags as boilerplate. Table chunks are never dropped —
     the table itself is valuable structured data even if the prose around it isn't."""
-    if emitter:
-        await emitter.emit("silver.summary.start", {"total": len(chunks)})
+    if database is not None and data_id is not None:
+        await set_chunk_progress(database, data_id, total=len(chunks), processed=0)
 
-    sem = asyncio.Semaphore(cfg.SILVER_SUMMARY_CONCURRENCY)
+    summary_semaphore = asyncio.Semaphore(cfg.SILVER_SUMMARY_CONCURRENCY)
+    completed_count = 0
 
-    async def _one(chunk: dict) -> dict:
-        async with sem:
-            return await summarize_chunk(chunk["content"])
+    async def _summarize_one(chunk: dict) -> dict:
+        nonlocal completed_count
+        async with summary_semaphore:
+            result = await summarize_chunk(chunk["content"])
+        completed_count += 1
+        if database is not None and data_id is not None:
+            await set_chunk_progress(database, data_id, processed=completed_count)
+        return result
 
-    results = await asyncio.gather(*(_one(c) for c in chunks))
+    summary_results = await asyncio.gather(*(_summarize_one(chunk) for chunk in chunks))
 
-    kept: list[dict] = []
-    for chunk, res in zip(chunks, results):
-        if res["skip"] and not chunk.get("table_involved"):
+    kept_chunks: list[dict] = []
+    for chunk, summary_result in zip(chunks, summary_results):
+        if summary_result["skip"] and not chunk.get("table_involved"):
             log.info("Silver summary: block_index=%d flagged boilerplate — dropping",
                      chunk["block_index"])
-            if emitter:
-                await emitter.emit("silver.summary.skipped", {
-                    "index":  chunk["block_index"],
-                    "reason": "boilerplate_no_descriptive_content",
-                })
-            continue
-        chunk["summary"]  = res["summary"]
-        chunk["intents"]  = res["intents"]
-        chunk["entities"] = res.get("entities", [])
-        if emitter:
-            await emitter.emit("silver.summary.complete", {
-                "index":    chunk["block_index"],
-                "summary":  res["summary"],
-                "intents":  res["intents"],
-                "entities": [e["name"] for e in res.get("entities", [])],
+            await emitter.emit("silver.summary.skipped", {
+                "index":  chunk["block_index"],
+                "reason": "boilerplate_no_descriptive_content",
             })
-        kept.append(chunk)
-    return kept
+            continue
+        chunk["summary"]  = summary_result["summary"]
+        chunk["intents"]  = summary_result["intents"]
+        chunk["entities"] = summary_result.get("entities", [])
+        chunk["relationships"] = summary_result.get("relationships", [])
+        await emitter.emit("silver.summary.item", {
+            "index":    chunk["block_index"],
+            "summary":  summary_result["summary"],
+            "intents":  summary_result["intents"],
+            "entities": [entity["name"] for entity in summary_result.get("entities", [])],
+        })
+        kept_chunks.append(chunk)
+    return kept_chunks
 
 
 # ── Main stage function ────────────────────────────────────────────────────────
+
+async def _load_kb_data(postgres: PostgresClient, tenant_id: str, data_id: str) -> dict:
+    data_response = await postgres.read(ReadJoinRequest(
+        tenant_id=tenant_id,
+        joins_table=["KBData"],
+        filters=[WhereFilter(table_name="KBData", column_name="data_id", value=uuid.UUID(data_id))],
+        limit=1,
+    ))
+    if data_response.code != 200 or not data_response.data:
+        raise ValueError(f"KBData not found: data_id={data_id}")
+    return data_response.data[0]
+
+
+async def _parse_source(
+    minio: MinIOClient, docling, kb_data: dict, data_id: str,
+    source_type: SourceType, path: str, extension: str,
+    emitter: PipelineEventEmitter,
+) -> list[dict]:
+    """Parse the bronze source into raw chunks. The emit envelope is handled by the
+    caller's `silver.parse` step; this only adds the parser name to that scope."""
+    if source_type == SourceType.DOC:
+        return await _parse_doc(docling, cfg.MINIO_BUCKET, path, extension)
+    if source_type == SourceType.WEB:
+        # read() keys the row by the DB column name ("metadata"); the JSONB value
+        # may arrive as a dict or a JSON string depending on the driver codec.
+        document_metadata = kb_data.get("metadata") or kb_data.get("doc_metadata") or {}
+        if isinstance(document_metadata, str):
+            try:
+                document_metadata = json.loads(document_metadata)
+            except Exception:
+                document_metadata = {}
+        web_url = (document_metadata or {}).get("url", "")
+        return await _parse_web(docling, web_url)
+    if source_type in (SourceType.IMAGE, SourceType.VIDEO):
+        file_bytes = await minio.download(cfg.MINIO_BUCKET, path)
+        log.info("Silver: downloaded %d bytes data_id=%s", len(file_bytes), data_id)
+        if source_type == SourceType.IMAGE:
+            return await _parse_image(file_bytes, extension)
+        return await _parse_video(file_bytes)
+    raise ValueError(f"Unsupported source_type for silver promotion: {source_type}")
+
+
+async def _persist_silver(
+    postgres: PostgresClient, mongo: MongoClient, data_id: str, tenant_id: str,
+    source_type: SourceType, accepted_chunks: list[dict], raw_chunk_count: int,
+    approved_by: str,
+) -> None:
+    """Write the silver staging doc + flip the tier, each guarded so a failure rolls
+    back and is recorded in the document history before propagating."""
+    database = mongo.get_client()
+    rejected_count = raw_chunk_count - len(accepted_chunks)
+    tables_found = sum(1 for chunk in accepted_chunks if chunk.get("table_involved"))
+
+    try:
+        await database["kb_silver_staging"].replace_one(
+            {"data_id": data_id},
+            {"data_id": data_id, "tenant_id": tenant_id,
+             "source_type": source_type.value, "chunks": accepted_chunks},
+            upsert=True,
+        )
+    except Exception as exc:
+        await write_log(database, data_id, "FAILED", f"Silver staging write failed: {exc}", level="ERROR")
+        raise
+
+    try:
+        async with postgres.get_client() as session:
+            try:
+                await session.execute(
+                    sa_update(KBDataORM)
+                    .where(KBDataORM.data_id == uuid.UUID(data_id))
+                    .values(current_tier=Tier.SILVER.value)
+                )
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+    except Exception as exc:
+        await write_log(database, data_id, "FAILED", f"Silver tier update failed: {exc}", level="ERROR")
+        raise
+
+    # Lifecycle history is an audit row — best-effort, never fails the stage.
+    try:
+        await postgres.insert(KBLifecycleHistoryInsert(
+            data_id=data_id,
+            to_tier=Tier.SILVER,
+            from_tier=Tier.BRONZE,
+            approved_by=approved_by,
+            notes=f"Promoted to silver: {len(accepted_chunks)} chunks accepted, {rejected_count} rejected",
+            pipeline_metadata={
+                "stage":           "silver",
+                "source_type":     source_type.value,
+                "chunks_accepted": len(accepted_chunks),
+                "chunks_rejected": rejected_count,
+                "chunks_total":    raw_chunk_count,
+                "tables_found":    tables_found,
+            },
+        ))
+    except Exception as exc:
+        log.warning("Silver: lifecycle history insert failed data_id=%s: %s", data_id, exc)
+        await write_log(database, data_id, "RUNNING",
+                        f"Silver lifecycle history not recorded: {exc}", level="WARNING")
+
 
 async def promote_to_silver(
     minio: MinIOClient,
     postgres: PostgresClient,
     docling,
     mongo: MongoClient,
-    kafka_producer: KafkaProducerClient,
     data_id: str,
     tenant_id: str,
     approved_by: str,
-    emitter: PipelineEventEmitter | None = None,
+    emitter: PipelineEventEmitter = NULL_EMITTER,
 ) -> dict:
     """
-    Load bronze file → parse → filter → store chunks to MongoDB silver staging.
-    Updates KBData tier to SILVER and publishes a gold promotion event to Kafka.
+    Load bronze file → parse → filter → summarize → store chunks to MongoDB silver
+    staging, then flip KBData tier to SILVER. Gold promotion is NOT triggered here —
+    it waits for an explicit user request (POST /promote/{data_id}/gold).
     Returns: {data_id, chunks_count, layer}
     """
-    data_res = await postgres.read(ReadJoinRequest(
-        tenant_id=tenant_id,
-        joins_table=["KBData"],
-        filters=[WhereFilter(table_name="KBData", column_name="data_id",
-                             value=uuid.UUID(data_id))],
-        limit=1,
-    ))
-    if data_res.code != 200 or not data_res.data:
-        raise ValueError(f"KBData not found: data_id={data_id}")
-
-    kb_data = data_res.data[0]
+    kb_data = await _load_kb_data(postgres, tenant_id, data_id)
     source_type = SourceType(kb_data["source_type"])
     path: str = kb_data["path"]
     extension: str = kb_data["extension"]
+    parser_name = "docling" if source_type in (SourceType.DOC, SourceType.WEB) else "vlm"
 
-    if emitter:
-        await emitter.emit("silver.start", {
-            "source_type": source_type.value,
-            "parser": "docling" if source_type in (SourceType.DOC, SourceType.WEB) else "vlm",
-        })
+    async with emitter.step("silver", source_type=source_type.value, parser=parser_name) as silver_scope:
+        async with emitter.step("silver.parse", parser=parser_name) as parse_scope:
+            raw_chunks = await _parse_source(
+                minio, docling, kb_data, data_id, source_type, path, extension, emitter,
+            )
+            parse_scope.set(chunks=len(raw_chunks))
+        log.info("Silver: parsed %d chunks data_id=%s", len(raw_chunks), data_id)
 
-    if source_type == SourceType.DOC:
-        if emitter:
-            await emitter.emit("silver.parse.start", {"parser": "InlineDoclingParser"})
-        raw_chunks = await _parse_doc(docling, cfg.MINIO_BUCKET, path, extension)
-    elif source_type == SourceType.WEB:
-        # read() keys the row by the DB column name ("metadata"); the JSONB value
-        # may arrive as a dict or a JSON string depending on the driver codec.
-        meta = kb_data.get("metadata") or kb_data.get("doc_metadata") or {}
-        if isinstance(meta, str):
-            try:
-                meta = json.loads(meta)
-            except Exception:
-                meta = {}
-        web_url = (meta or {}).get("url", "")
-        if emitter:
-            await emitter.emit("silver.parse.start", {"parser": "trafilatura → Docling", "url": web_url})
-        raw_chunks = await _parse_web(docling, web_url)
-    elif source_type in (SourceType.IMAGE, SourceType.VIDEO):
-        file_bytes = await minio.download(cfg.MINIO_BUCKET, path)
-        log.info("Silver: downloaded %d bytes data_id=%s", len(file_bytes), data_id)
-        if source_type == SourceType.IMAGE:
-            if emitter:
-                await emitter.emit("silver.parse.start", {"parser": "VLM (image)"})
-            raw_chunks = await _parse_image(file_bytes, extension)
-        else:
-            if emitter:
-                await emitter.emit("silver.parse.start", {"parser": "VLM (video frames)"})
-            raw_chunks = await _parse_video(file_bytes)
-    else:
-        raise ValueError(f"Unsupported source_type for silver promotion: {source_type}")
-
-    log.info("Silver: parsed %d chunks data_id=%s", len(raw_chunks), data_id)
-
-    # Emit each parsed chunk
-    if emitter:
         for chunk in raw_chunks:
             content = chunk["content"]
             await emitter.emit("silver.chunk.found", {
-                "index":         chunk["block_index"],
-                "preview":       content[:200],
-                "length":        len(content),
+                "index":          chunk["block_index"],
+                "preview":        content[:200],
+                "length":         len(content),
                 "table_involved": chunk.get("table_involved", False),
-                "table_name":    (chunk.get("table") or {}).get("table_name"),
+                "table_name":     (chunk.get("table") or {}).get("table_name"),
             })
 
-    accepted_chunks = await _filter_chunks(postgres, tenant_id, raw_chunks, emitter)
-    log.info("Silver: %d/%d chunks passed filters data_id=%s",
-             len(accepted_chunks), len(raw_chunks), data_id)
+        async with emitter.step("silver.filter") as filter_scope:
+            accepted_chunks = await _filter_chunks(postgres, tenant_id, raw_chunks, emitter)
+            filter_scope.set(total=len(raw_chunks), accepted=len(accepted_chunks))
+        log.info("Silver: %d/%d chunks passed filters data_id=%s",
+                 len(accepted_chunks), len(raw_chunks), data_id)
 
-    # Per-chunk summary + intents (one LLM call per chunk, the only per-chunk LLM
-    # work in the whole pipeline — gold reduces these summaries instead of
-    # re-reading chunk content). Also drops boilerplate chunks the LLM flags.
-    accepted_chunks = await _summarize_chunks(accepted_chunks, emitter)
-    log.info("Silver: %d chunks after summary/boilerplate pass data_id=%s",
-             len(accepted_chunks), data_id)
+        async with emitter.step("silver.summary", total=len(accepted_chunks)) as summary_scope:
+            accepted_chunks = await _summarize_chunks(
+                accepted_chunks, emitter, database=mongo.get_client(), data_id=data_id,
+            )
+            summary_scope.set(kept=len(accepted_chunks))
+        log.info("Silver: %d chunks after summary/boilerplate pass data_id=%s",
+                 len(accepted_chunks), data_id)
 
-    for i, chunk in enumerate(accepted_chunks):
-        chunk["block_index"] = i
+        for new_index, chunk in enumerate(accepted_chunks):
+            chunk["block_index"] = new_index
 
-    mongo_db = mongo.get_client()
-    await mongo_db["kb_silver_staging"].replace_one(
-        {"data_id": data_id},
-        {
-            "data_id": data_id,
-            "tenant_id": tenant_id,
-            "source_type": source_type.value,
-            "chunks": accepted_chunks,
-        },
-        upsert=True,
-    )
-
-    async with postgres.get_client() as session:
-        await session.execute(
-            sa_update(KBDataORM)
-            .where(KBDataORM.data_id == uuid.UUID(data_id))
-            .values(current_tier=Tier.SILVER.value)
+        await _persist_silver(
+            postgres, mongo, data_id, tenant_id, source_type,
+            accepted_chunks, len(raw_chunks), approved_by,
         )
-        await session.commit()
+        silver_scope.set(
+            accepted=len(accepted_chunks),
+            rejected=len(raw_chunks) - len(accepted_chunks),
+            total=len(raw_chunks),
+        )
 
-    rejected = len(raw_chunks) - len(accepted_chunks)
-    tables_found = sum(1 for c in accepted_chunks if c.get("table_involved"))
-    await postgres.insert(KBLifecycleHistoryInsert(
-        data_id=data_id,
-        to_tier=Tier.SILVER,
-        from_tier=Tier.BRONZE,
-        approved_by=approved_by,
-        notes=f"Promoted to silver: {len(accepted_chunks)} chunks accepted, {rejected} rejected",
-        pipeline_metadata={
-            "stage":           "silver",
-            "source_type":     source_type.value,
-            "chunks_accepted": len(accepted_chunks),
-            "chunks_rejected": rejected,
-            "chunks_total":    len(raw_chunks),
-            "tables_found":    tables_found,
-        },
-    ))
-    if emitter:
-        await emitter.emit("silver.complete", {
-            "accepted": len(accepted_chunks),
-            "rejected": rejected,
-            "total":    len(raw_chunks),
-        })
-
-    # NOTE: Do NOT auto-promote to GOLD. Wait for explicit user request via /promote/{data_id}/gold endpoint.
-    log.info("Silver complete data_id=%s chunks=%d — waiting for gold promotion request", data_id, len(accepted_chunks))
+    log.info("Silver complete data_id=%s chunks=%d — waiting for gold promotion request",
+             data_id, len(accepted_chunks))
     return {"data_id": data_id, "chunks_count": len(accepted_chunks), "layer": Tier.SILVER.value}

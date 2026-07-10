@@ -3,7 +3,8 @@ import {
   Save, Play, Layout, Code as CodeIcon, CheckCircle2, Terminal,
   ArrowLeft, ChevronDown, Bot, Database, Activity, Zap, Cpu,
   Search, ShieldCheck, Wrench, Layers, Filter,
-  GitBranch, Bell, RefreshCw, GripVertical, X, Copy, Trash2,
+  GitBranch, Bell, RefreshCw, GripVertical, X, Copy, Trash2, Tag, Plus,
+  Eye, EyeOff, PlugZap,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { Workflow } from '../../../types/workflow';
@@ -30,7 +31,7 @@ import {
   type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { FLOW_BUILDER_URL, WORKFLOW_RUNTIME_URL } from '../../../lib/config';
+import { apiGet, apiMutate } from '../../../lib/apiClient';
 import { useRuntimeConfig } from '../../../lib/runtimeConfig';
 
 const LOCKED_NODE_TYPES    = new Set(['guardrail_input', 'guardrail_output', 'guardrail']);
@@ -43,7 +44,7 @@ type FlowNodeType =
   | 'trigger' | 'guardrail' | 'planner' | 'kb_search' | 'mcp' | 'tool_executor'
   | 'rrf_ranking' | 'reranker' | 'responder' | 'output'
   | 'human_approval' | 'condition' | 'db_query'
-  | 'send_notification' | 'loop' | 'judge';
+  | 'send_notification' | 'loop' | 'judge' | 'metadata_injector' | 'db_connector';
 
 export interface FlowNodeData extends Record<string, unknown> {
   nodeType: FlowNodeType;
@@ -54,8 +55,6 @@ export interface FlowNodeData extends Record<string, unknown> {
   allowedTools?: string[];
   // tool_executor
   allowedBuiltinTools?: string[];
-  dbUrl?: string;
-  schemaHint?: string;
   defaultFilePath?: string;
   pandasAllowedDir?: string;
   fileReadAllowedDir?: string;
@@ -73,6 +72,10 @@ export interface FlowNodeData extends Record<string, unknown> {
   maxTokens?: number;
   // human_approval
   approverRole?: string;
+  // metadata_injector
+  metadataKv?: string;
+  // db_connector — chuỗi JSON, mảng {name, host, port, database, user, secretId, note}
+  dbConnections?: string;
 }
 
 // â”€â”€â”€ Toast Context (shared with custom edge) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -98,6 +101,8 @@ const NODE_STYLE: Record<string, { typeLabel: string; Icon: any; color: string }
   send_notification: { typeLabel: 'Notification',   Icon: Bell,        color: '#EF4444' },
   loop:              { typeLabel: 'Loop',           Icon: RefreshCw,   color: '#3B82F6' },
   judge:             { typeLabel: 'Judge',          Icon: CheckCircle2, color: '#F59E0B' },
+  metadata_injector: { typeLabel: 'Metadata Injector', Icon: Tag,      color: '#6366F1' },
+  db_connector:      { typeLabel: 'DB Connector',    Icon: Database,    color: '#0EA5B5' },
 };
 
 // â”€â”€â”€ Custom Node â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -120,17 +125,24 @@ const CustomFlowNode = (props: NodeProps) => {
     addToast(`Node removed: ${data.label}`);
   }, [id, setNodes, setEdges, addToast, data.label]);
 
+  // Viền sáng nhẹ màu tím (màu của Metadata Injector, không phải màu riêng
+  // của node này) khi Metadata Injector đang được chọn — báo "node này đọc
+  // metadata", không phải trạng thái selected thật của chính node.
+  const relatedHighlight = !selected && (data as any)._relatedHighlight === true;
+
   return (
     <div
       style={{
         position: 'relative',
         background: selected ? `${cfg.color}22` : '#1e293b',
-        border: `2px solid ${selected ? cfg.color : 'rgba(255,255,255,0.15)'}`,
+        border: `2px solid ${selected ? cfg.color : relatedHighlight ? '#6366F1' : 'rgba(255,255,255,0.15)'}`,
         borderRadius: 14,
         padding: '11px 16px',
         minWidth: 178,
         boxShadow: selected
           ? `0 0 0 3px ${cfg.color}20, 0 4px 24px rgba(0,0,0,0.5)`
+          : relatedHighlight
+          ? '0 0 0 3px #6366F133, 0 4px 16px rgba(0,0,0,0.4)'
           : '0 4px 16px rgba(0,0,0,0.4)',
         transition: 'border-color 0.15s, box-shadow 0.15s',
         cursor: 'default',
@@ -455,7 +467,7 @@ export const TEMPLATE_FLOWS: Record<TemplateId, { nodes: Node<FlowNodeData>[]; e
       mkNode('planner',       'planner',       'Planner',       340, 0),
       mkNode('kb_search',     'kb_search',     'KB Search',     40,  130),
       mkNode('mcp',           'mcp',           'MCP Tool',      340, 130, { mcpServerUrl: 'http://mcp.tenant.gov.vn/sse', allowedTools: ['tra_cuu_phat_nguoi', 'query_dashboard'] }),
-      mkNode('tool_executor', 'tool_executor', 'Tool Executor', 640, 130, { allowedBuiltinTools: ['text_to_sql', 'web_search'] }),
+      mkNode('tool_executor', 'tool_executor', 'Tool Executor', 640, 130, { allowedBuiltinTools: ['web_search'] }),
       mkNode('rrf_ranking',   'rrf_ranking',   'RRF Ranking',   340, 270),
       mkNode('reranker',      'reranker',      'Reranker',      340, 380, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
       mkNode('responder',     'responder',     'Responder',     340, 490, { systemPromptName: 'prompt_default', temperature: 0.2, maxTokens: 1000 }),
@@ -477,7 +489,7 @@ export const TEMPLATE_FLOWS: Record<TemplateId, { nodes: Node<FlowNodeData>[]; e
       mkNode('planner',        'planner',        'Planner',        340, 0),
       mkNode('kb_search',      'kb_search',      'KB Search',      40,  130),
       mkNode('mcp',            'mcp',            'MCP Tool',       340, 130, { mcpServerUrl: 'http://mcp.tenant.gov.vn/sse', allowedTools: ['tra_cuu_phat_nguoi', 'query_dashboard'] }),
-      mkNode('tool_executor',  'tool_executor',  'Tool Executor',  640, 130, { allowedBuiltinTools: ['text_to_sql', 'web_search'] }),
+      mkNode('tool_executor',  'tool_executor',  'Tool Executor',  640, 130, { allowedBuiltinTools: ['web_search'] }),
       mkNode('rrf_ranking',    'rrf_ranking',    'RRF Ranking',    340, 270),
       mkNode('reranker',       'reranker',       'Reranker',       340, 380, { rerankerModel: 'BGE-Reranker-v2-m3', topN: 5 }),
       mkNode('responder',      'responder',      'Responder',      340, 490, { systemPromptName: 'prompt_default', temperature: 0.2, maxTokens: 1000 }),
@@ -571,11 +583,337 @@ const InfoNote = ({ text }: { text: string }) => (
   </div>
 );
 
+// Lưu trữ vẫn đúng 1 chuỗi "key1=value1,key2=value2" (không đổi format
+// backend/config_loader._extract_node_config) — chỉ đổi cách NHẬP thành
+// từng dòng Key/Value + nút xoá/thêm, thay vì 1 ô text thô dễ gõ nhầm dấu
+// phẩy/dấu bằng.
+const parseKv = (raw: string): { key: string; value: string }[] =>
+  raw ? raw.split(',').map(pair => {
+    const idx = pair.indexOf('=');
+    return idx === -1 ? { key: pair, value: '' } : { key: pair.slice(0, idx), value: pair.slice(idx + 1) };
+  }) : [];
+
+const serializeKv = (rows: { key: string; value: string }[]): string =>
+  rows.map(r => `${r.key}=${r.value}`).join(',');
+
+const KeyValueEditor = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => {
+  const rows = parseKv(value);
+
+  const updateRow = (i: number, field: 'key' | 'value', v: string) => {
+    const next = rows.map((r, idx) => idx === i ? { ...r, [field]: v } : r);
+    onChange(serializeKv(next));
+  };
+  const removeRow = (i: number) => onChange(serializeKv(rows.filter((_, idx) => idx !== i)));
+  const addRow = () => onChange(serializeKv([...rows, { key: '', value: '' }]));
+
+  return (
+    <div className="space-y-2">
+      {rows.map((row, i) => (
+        <div key={i} className="group flex items-center gap-1.5">
+          <input
+            type="text"
+            value={row.key}
+            onChange={e => updateRow(i, 'key', e.target.value)}
+            placeholder="key"
+            className="w-[38%] bg-white/5 border border-white/10 rounded-lg py-1.5 px-2 text-[11px] font-mono text-white focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-slate-700"
+          />
+          <input
+            type="text"
+            value={row.value}
+            onChange={e => updateRow(i, 'value', e.target.value)}
+            placeholder="value"
+            className="flex-1 bg-white/5 border border-white/10 rounded-lg py-1.5 px-2 text-[11px] font-mono text-white focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-slate-700"
+          />
+          <button
+            onClick={() => removeRow(i)}
+            title="Xoá cặp key-value"
+            className="shrink-0 w-5 h-5 flex items-center justify-center rounded-md text-slate-700 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <X size={11} />
+          </button>
+        </div>
+      ))}
+      <button
+        onClick={addRow}
+        className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-dashed border-white/15 text-[10px] font-semibold text-slate-500 hover:text-white hover:border-white/30 transition-colors"
+      >
+        <Plus size={11} /> Thêm cặp key-value
+      </button>
+    </div>
+  );
+};
+
+// DB Connector — danh sách kết nối có tên (giống MCP có danh sách endpoint,
+// không phải nhiều node trên canvas). Mỗi kết nối là host/port/database/user
+// tách riêng (KHÔNG phải 1 chuỗi dbUrl như text_to_sql cũ) + password không
+// bao giờ gõ tay lưu thẳng vào canvas — bấm "Lưu 🔒" gọi POST /api/auth/secrets
+// (key_type=DB_CONNECTOR_PASSWORD, đã có sẵn, tenant-admin dùng được cho
+// đúng tenant mình — xem services/auth-api/routers/secrets.py), chỉ
+// secret_id trả về được lưu vào JSON, password thật không bao giờ vào state
+// component sau khi lưu xong.
+type DbConnRow = {
+  name: string; host: string; port: number; database: string; user: string;
+  secretId: string; note: string;
+};
+
+const parseDbConns = (raw: string): DbConnRow[] => {
+  try {
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+};
+const serializeDbConns = (rows: DbConnRow[]): string => JSON.stringify(rows);
+
+// Modal xác nhận nhỏ, dùng chung style với ConfirmExitModal (motion + overlay
+// mờ) — vì xoá 1 kết nối kéo theo xoá vĩnh viễn secret trong OpenBao
+// (removeRow bên dưới), không thể hoàn tác, nên bắt xác nhận trước.
+const ConfirmDangerModal = ({
+  title, message, confirmLabel, busy, onConfirm, onCancel,
+}: {
+  title: string; message: string; confirmLabel: string; busy: boolean;
+  onConfirm: () => void; onCancel: () => void;
+}) => (
+  <div className="fixed inset-0 z-[200] flex items-center justify-center">
+    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={busy ? undefined : onCancel} />
+    <motion.div
+      initial={{ scale: 0.95, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      exit={{ scale: 0.95, opacity: 0 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+      className="relative z-10 bg-[#1e293b] border border-white/15 rounded-2xl p-7 w-[380px] shadow-2xl"
+    >
+      <h3 className="text-base font-bold text-white mb-2">{title}</h3>
+      <p className="text-sm text-slate-400 leading-relaxed mb-6">{message}</p>
+      <div className="flex items-center justify-end gap-3">
+        <button
+          disabled={busy}
+          onClick={onCancel}
+          className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-all disabled:opacity-40"
+        >
+          Huỷ
+        </button>
+        <button
+          disabled={busy}
+          onClick={onConfirm}
+          className="px-4 py-2 text-xs font-bold text-white bg-red-500/80 hover:bg-red-500 rounded-xl transition-all disabled:opacity-40"
+        >
+          {busy ? 'Đang xoá…' : confirmLabel}
+        </button>
+      </div>
+    </motion.div>
+  </div>
+);
+
+const DbConnectionEditor = ({ value, onChange }: { value: string; onChange: (v: string) => void }) => {
+  const rows = parseDbConns(value);
+  const addToast = useContext(BuilderToastCtx);
+  const [pendingPasswords, setPendingPasswords] = useState<Record<number, string>>({});
+  const [visiblePasswords, setVisiblePasswords] = useState<Record<number, boolean>>({});
+  const [savingIdx, setSavingIdx] = useState<number | null>(null);
+  const [testResult, setTestResult] = useState<Record<number, { ok: boolean; message: string }>>({});
+  const [deleteIdx, setDeleteIdx] = useState<number | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const updateRow = (i: number, patch: Partial<DbConnRow>) => {
+    const next = rows.map((r, idx) => idx === i ? { ...r, ...patch } : r);
+    onChange(serializeDbConns(next));
+  };
+  const addRow = () => onChange(serializeDbConns([
+    ...rows, { name: '', host: '', port: 5432, database: '', user: '', secretId: '', note: '' },
+  ]));
+
+  // "Lưu" giờ gộp cả bước test kết nối — sai thì báo lỗi và KHÔNG lưu, đúng
+  // mới thật sự lưu password vào OpenBao. Tránh lưu 1 password sai/gõ nhầm
+  // mà không ai biết cho tới khi agent chạy thật mới phát hiện ra.
+  const savePassword = async (i: number) => {
+    const pw = pendingPasswords[i];
+    if (!pw) return;
+    const row = rows[i];
+    setSavingIdx(i);
+    setTestResult(prev => { const next = { ...prev }; delete next[i]; return next; });
+    try {
+      const testRes = await apiMutate<{ success: boolean; error?: string }>(
+        'POST', '/api/db-connector/test-connection',
+        { host: row.host, port: row.port || 5432, database: row.database, user: row.user, password: pw },
+      );
+      if (!testRes.success) {
+        setTestResult(prev => ({ ...prev, [i]: { ok: false, message: testRes.error || 'Không kết nối được' } }));
+        addToast('Không lưu — kết nối thất bại, kiểm tra lại thông tin');
+        return;
+      }
+
+      const keyName = `db-connector-${row.name || 'conn'}-${Date.now()}`;
+      const result = await apiMutate<{ id: string }>('POST', '/api/auth/secrets', {
+        key_name: keyName, key_type: 'DB_CONNECTOR_PASSWORD', value: pw, rotation_days: 90,
+      });
+      updateRow(i, { secretId: result.id });
+      setPendingPasswords(prev => {
+        const next = { ...prev };
+        delete next[i];
+        return next;
+      });
+      addToast('Đã kiểm tra kết nối và lưu mật khẩu an toàn');
+    } catch (e) {
+      // apiMutate đã trả đúng lỗi thật từ server (403 thiếu quyền, 422 sai
+      // dữ liệu, 500 lỗi backend...) — hiện nguyên lỗi đó, không tự đoán
+      // luôn là "thiếu quyền" (dễ gây hiểu nhầm khi lỗi thật là chỗ khác).
+      addToast(`Lưu mật khẩu thất bại: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSavingIdx(null);
+    }
+  };
+
+  // Xoá kết nối phải xoá luôn secret trong OpenBao (nếu đã lưu) — không để
+  // secret mồ côi vĩnh viễn trong vault. Best-effort: nếu API xoá secret
+  // thất bại, vẫn xoá khỏi canvas nhưng báo rõ để dọn tay sau.
+  const confirmRemove = async () => {
+    if (deleteIdx === null) return;
+    const row = rows[deleteIdx];
+    setDeleting(true);
+    try {
+      if (row.secretId) {
+        try {
+          await apiMutate('DELETE', `/api/auth/secrets/${row.secretId}`);
+        } catch (e) {
+          addToast(`Đã xoá khỏi canvas nhưng chưa xoá được secret trên server (cần dọn tay): ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+      onChange(serializeDbConns(rows.filter((_, idx) => idx !== deleteIdx)));
+    } finally {
+      setDeleting(false);
+      setDeleteIdx(null);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      {rows.map((row, i) => (
+        <div key={i} className="p-3 rounded-xl bg-white/[0.03] border border-white/10 space-y-2.5 relative">
+          <button
+            onClick={() => setDeleteIdx(i)}
+            title="Xoá kết nối"
+            className="absolute top-2.5 right-2.5 w-5 h-5 flex items-center justify-center rounded-md text-slate-700 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+          >
+            <X size={11} />
+          </button>
+
+          <Field label="Tên kết nối">
+            <TextInput value={row.name} onChange={v => updateRow(i, { name: v })} placeholder="DB Bán hàng" />
+          </Field>
+
+          <div className="grid grid-cols-[2fr_1fr] gap-2">
+            <Field label="Host">
+              <TextInput value={row.host} onChange={v => updateRow(i, { host: v })} placeholder="db.company.internal" />
+            </Field>
+            <Field label="Port">
+              <TextInput
+                value={row.port ? String(row.port) : ''}
+                onChange={v => updateRow(i, { port: parseInt(v, 10) || 5432 })}
+                placeholder="5432"
+              />
+            </Field>
+          </div>
+
+          <Field label="Database">
+            <TextInput value={row.database} onChange={v => updateRow(i, { database: v })} placeholder="salesdb" />
+          </Field>
+
+          <Field label="User">
+            <TextInput value={row.user} onChange={v => updateRow(i, { user: v })} placeholder="readonly_agent" />
+          </Field>
+
+          <Field label="Password">
+            {row.secretId ? (
+              <div className="flex items-center gap-1.5 py-1.5 px-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                <ShieldCheck size={12} className="text-emerald-400 shrink-0" />
+                <span className="text-[11px] text-emerald-400 flex-1 truncate">
+                  Đã lưu an toàn (secret_id: {row.secretId.slice(0, 8)})
+                </span>
+                <button
+                  onClick={() => updateRow(i, { secretId: '' })}
+                  className="text-[10px] text-slate-500 hover:text-white underline shrink-0"
+                >
+                  Đổi
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <div className="relative flex-1">
+                  <input
+                    type={visiblePasswords[i] ? 'text' : 'password'}
+                    value={pendingPasswords[i] || ''}
+                    onChange={e => setPendingPasswords(prev => ({ ...prev, [i]: e.target.value }))}
+                    placeholder="Nhập mật khẩu"
+                    className="w-full bg-white/5 border border-white/10 rounded-lg py-1.5 pl-2 pr-8 text-[11px] text-white focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-slate-700"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setVisiblePasswords(prev => ({ ...prev, [i]: !prev[i] }))}
+                    title={visiblePasswords[i] ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-white transition-colors"
+                  >
+                    {visiblePasswords[i] ? <EyeOff size={12} /> : <Eye size={12} />}
+                  </button>
+                </div>
+                <button
+                  onClick={() => savePassword(i)}
+                  disabled={!pendingPasswords[i] || savingIdx === i}
+                  title="Kiểm tra kết nối thật rồi mới lưu — sai thì báo lỗi, không lưu"
+                  className="shrink-0 px-2.5 py-1.5 rounded-lg bg-teal-600/80 hover:bg-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[10px] font-semibold whitespace-nowrap transition-colors flex items-center gap-1"
+                >
+                  <PlugZap size={11} /> {savingIdx === i ? 'Đang kiểm tra…' : 'Lưu 🔒'}
+                </button>
+              </div>
+            )}
+            {testResult[i] && !testResult[i].ok && (
+              <p className="text-[10.5px] mt-1.5 text-red-400">✗ {testResult[i].message}</p>
+            )}
+          </Field>
+
+          <Field label="Ghi chú thêm (tuỳ chọn)">
+            <textarea
+              value={row.note || ''}
+              onChange={e => updateRow(i, { note: e.target.value })}
+              placeholder="VD: bảng orders là đơn hàng, không phải lệnh sản xuất"
+              rows={2}
+              className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-xs text-white font-mono focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-slate-700 resize-none"
+            />
+          </Field>
+        </div>
+      ))}
+      <button
+        onClick={addRow}
+        className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-dashed border-white/15 text-[10px] font-semibold text-slate-500 hover:text-white hover:border-white/30 transition-colors"
+      >
+        <Plus size={11} /> Thêm kết nối
+      </button>
+
+      <AnimatePresence>
+        {deleteIdx !== null && (
+          <ConfirmDangerModal
+            title="Xoá kết nối này?"
+            message={
+              rows[deleteIdx]?.secretId
+                ? `Mật khẩu đã lưu (secret_id: ${rows[deleteIdx].secretId.slice(0, 8)}) sẽ bị xoá vĩnh viễn khỏi kho bí mật, không khôi phục được.`
+                : 'Kết nối chưa lưu mật khẩu — xoá khỏi canvas, không ảnh hưởng gì khác.'
+            }
+            confirmLabel="Xoá"
+            busy={deleting}
+            onConfirm={confirmRemove}
+            onCancel={() => setDeleteIdx(null)}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+};
+
 const MCP_TOOLS = ['tra_cuu_phat_nguoi', 'query_dashboard', 'send_alert', 'export_report'];
 
 const BUILTIN_TOOLS: Array<{ name: string; hint: string; category: 'data' | 'filesystem' | 'filesystem-write' | 'shell' | 'langchain' | 'agent' }> = [
   // Data
-  { name: 'text_to_sql',       hint: 'SQL từ câu hỏi tự nhiên',       category: 'data'             },
   { name: 'text_to_pandas',    hint: 'Phân tích file CSV/Excel',       category: 'data'             },
   // File system — read
   { name: 'file_read',         hint: 'Đọc file text',                  category: 'filesystem'       },
@@ -689,7 +1027,6 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
             'allowedBuiltinTools',
             selected.includes(name) ? selected.filter(t => t !== name) : [...selected, name],
           );
-          const hasSql    = selected.includes('text_to_sql');
           const hasPandas = selected.includes('text_to_pandas');
           const hasFile   = selected.includes('file_read');
 
@@ -733,25 +1070,6 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
                   </div>
                 </div>
               ))}
-
-              {hasSql && (
-                <>
-                  <div className="h-px bg-white/10" />
-                  <div className="text-[9px] font-black text-orange-400 uppercase tracking-widest">text_to_sql</div>
-                  <Field label="DB URL">
-                    <TextInput value={(d.dbUrl as string) || ''} onChange={v => upd('dbUrl', v)} placeholder="postgresql://user:pass@host/db" />
-                  </Field>
-                  <Field label="Schema Hint (optional)">
-                    <textarea
-                      value={(d.schemaHint as string) || ''}
-                      onChange={e => upd('schemaHint', e.target.value)}
-                      placeholder="TABLE violations (id, date, plate, amount)"
-                      rows={3}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-xs text-white font-mono focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-slate-700 resize-none"
-                    />
-                  </Field>
-                </>
-              )}
 
               {hasPandas && (
                 <>
@@ -879,19 +1197,45 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
         {d.nodeType === 'judge' && (
           <InfoNote text="Đánh giá toàn bộ trace sau responder. Route lại nếu lỗi: RETRIEVAL→kb_search, REASONING→responder, TOOL→tool_executor, DATA_QUALITY→human_approval." />
         )}
+
+        {d.nodeType === 'metadata_injector' && (
+          <>
+            <Field label="Key-Value">
+              <KeyValueEditor
+                value={(d.metadataKv as string) || ''}
+                onChange={v => upd('metadataKv', v)}
+              />
+            </Field>
+            <InfoNote text="Các cặp key-value được chèn vào ngữ cảnh của Planner và Responder." />
+          </>
+        )}
+
+        {d.nodeType === 'db_connector' && (
+          <>
+            <Field label="Kết nối DB">
+              <DbConnectionEditor
+                value={(d.dbConnections as string) || ''}
+                onChange={v => upd('dbConnections', v)}
+              />
+            </Field>
+            <InfoNote text="Schema tự đọc từ information_schema, không cần gõ tay. Chỉ 1 kết nối → dùng luôn. ≥2 kết nối → tự động chọn DB phù hợp theo câu hỏi (1 lệnh LLM), không cần Planner biết tên DB." />
+          </>
+        )}
       </div>
     </motion.div>
   );
 };
 
-// â”€â”€â”€ All Library Nodes (all non-trigger types â€” 12 items) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”€â”€â”€ All Library Nodes (all non-trigger types â€” 14 items) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const ALL_LIBRARY_NODES: Array<{
   nodeType: FlowNodeType; label: string; color: string; Icon: any; allowMultiple: boolean;
 }> = [
   { nodeType: 'planner',           label: 'Planner',           color: '#3B82F6', Icon: Bot,         allowMultiple: false },
+  { nodeType: 'metadata_injector', label: 'Metadata Injector', color: '#6366F1', Icon: Tag,         allowMultiple: false },
   { nodeType: 'kb_search',         label: 'KB Search',         color: '#10B981', Icon: Database,    allowMultiple: true  },
   { nodeType: 'mcp',               label: 'MCP Tool',          color: '#F59E0B', Icon: Wrench,      allowMultiple: true  },
+  { nodeType: 'db_connector',      label: 'DB Connector',      color: '#0EA5B5', Icon: Database,    allowMultiple: false },
   { nodeType: 'tool_executor',     label: 'Tool Executor',     color: '#F97316', Icon: Zap,         allowMultiple: false },
   { nodeType: 'rrf_ranking',       label: 'RRF Ranking',       color: '#8B5CF6', Icon: Layers,      allowMultiple: false },
   { nodeType: 'reranker',          label: 'Reranker',          color: '#8B5CF6', Icon: Filter,      allowMultiple: false },
@@ -1014,37 +1358,45 @@ const ContextMenu = ({
 
 // â”€â”€â”€ Confirm Exit Dialog â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-const ConfirmExitModal = ({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) => (
-  <div className="fixed inset-0 z-[200] flex items-center justify-center">
-    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onCancel} />
-    <motion.div
-      initial={{ scale: 0.95, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      exit={{ scale: 0.95, opacity: 0 }}
-      transition={{ type: 'spring', stiffness: 400, damping: 32 }}
-      className="relative z-10 bg-[#1e293b] border border-white/15 rounded-2xl p-7 w-[380px] shadow-2xl"
-    >
-      <h3 className="text-base font-bold text-white mb-2">Leave without saving?</h3>
-      <p className="text-sm text-slate-400 leading-relaxed mb-6">
-        Unsaved changes will be lost. Are you sure you want to leave?
-      </p>
-      <div className="flex items-center justify-end gap-3">
-        <button
-          onClick={onCancel}
-          className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-all"
-        >
-          Stay
-        </button>
-        <button
-          onClick={onConfirm}
-          className="px-4 py-2 text-xs font-bold text-white bg-red-500/80 hover:bg-red-500 rounded-xl transition-all"
-        >
-          Leave
-        </button>
-      </div>
-    </motion.div>
-  </div>
-);
+const ConfirmExitModal = ({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) => {
+  const [leaving, setLeaving] = React.useState(false);
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={leaving ? undefined : onCancel} />
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+        className="relative z-10 bg-[#1e293b] border border-white/15 rounded-2xl p-7 w-[380px] shadow-2xl"
+      >
+        <h3 className="text-base font-bold text-white mb-2">Leave without saving?</h3>
+        <p className="text-sm text-slate-400 leading-relaxed mb-6">
+          Unsaved changes will be lost. Are you sure you want to leave?
+        </p>
+        <div className="flex items-center justify-end gap-3">
+          <button
+            disabled={leaving}
+            onClick={onCancel}
+            className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-all disabled:opacity-40"
+          >
+            Stay
+          </button>
+          <button
+            disabled={leaving}
+            onClick={async () => {
+              setLeaving(true);
+              await onConfirm();
+            }}
+            className="px-4 py-2 text-xs font-bold text-white bg-red-500/80 hover:bg-red-500 rounded-xl transition-all disabled:opacity-40"
+          >
+            {leaving ? 'Leaving…' : 'Leave'}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
 
 // â”€â”€â”€ Main Builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -1108,9 +1460,8 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
   // Fetch danh sách versions
   useEffect(() => {
     if (!workflowId) return;
-    fetch(`${FLOW_BUILDER_URL}/api/workflows/${workflowId}/versions`)
-      .then(r => r.json())
-      .then((data: WorkflowVersion[]) => setVersions(data))
+    apiGet<WorkflowVersion[]>(`/api/workflows/${workflowId}/versions`)
+      .then(setVersions)
       .catch(() => {});
   }, [workflowId]);
 
@@ -1121,8 +1472,7 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
       nodes: ns.map((n: any) => ({ id: n.id, type: n.type, position: n.position, data: n.data })),
       edges: es.map((e: any) => ({ id: e.id, source: e.source, target: e.target, type: e.type, label: e.label })),
     });
-    fetch(`${FLOW_BUILDER_URL}/api/workflow-versions/${activeVersionId}/canvas`)
-      .then(r => r.json())
+    apiGet<any>(`/api/workflow-versions/${activeVersionId}/canvas`)
       .then(data => {
         const hasDbCanvas = data.nodes?.length > 0 || data.edges?.length > 0;
         if (hasDbCanvas) {
@@ -1138,8 +1488,7 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
           savedSnapshot.current = JSON.stringify({ nodes: [], edges: [] });
           setCanvasLoading(false);
         } else if (sourceVersionId) {
-          fetch(`${FLOW_BUILDER_URL}/api/workflow-versions/${sourceVersionId}/canvas`)
-            .then(r => r.json())
+          apiGet<any>(`/api/workflow-versions/${sourceVersionId}/canvas`)
             .then(src => {
               const cleaned = stripSystemNodes(src.nodes ?? [], src.edges ?? []);
               setNodes(withLockedNodes(cleaned.nodes));
@@ -1160,9 +1509,8 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
 
   // Fetch node registry từ workflow-runtime
   useEffect(() => {
-    fetch(`${WORKFLOW_RUNTIME_URL}/api/nodes/registry`)
-      .then(r => r.json())
-      .then((registry: Record<string, { display: string; category: string; locked: boolean }>) => {
+    apiGet<Record<string, { display: string; category: string; locked: boolean }>>('/api/nodes/registry')
+      .then((registry) => {
         const mapped = Object.entries(registry)
           .filter(([, v]) => !v.locked)
           .map(([nodeType, v]) => {
@@ -1199,10 +1547,8 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
     if (!workflowId) return;
     setCreatingVersion(true);
     try {
-      const res = await fetch(`${FLOW_BUILDER_URL}/api/workflows/${workflowId}/versions`, { method: 'POST' });
-      if (!res.ok) { const e = await res.json(); addToast(e.detail || 'Tạo version thất bại'); return; }
-      const data = await res.json();
-      const updated = await fetch(`${FLOW_BUILDER_URL}/api/workflows/${workflowId}/versions`).then(r => r.json());
+      const data = await apiMutate<any>('POST', `/api/workflows/${workflowId}/versions`);
+      const updated = await apiGet<WorkflowVersion[]>(`/api/workflows/${workflowId}/versions`);
       setVersions(updated);
       setActiveVersionId(data.workflow_version_id);
       addToast(`Tạo draft v${data.version} thành công`);
@@ -1213,9 +1559,8 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
   const handleDeleteVersion = useCallback(async (versionId: string) => {
     if (!workflowId) return;
     try {
-      const res = await fetch(`${FLOW_BUILDER_URL}/api/workflow-versions/${versionId}`, { method: 'DELETE' });
-      if (!res.ok) { const e = await res.json(); addToast(e.detail || 'Xóa thất bại'); return; }
-      const updated = await fetch(`${FLOW_BUILDER_URL}/api/workflows/${workflowId}/versions`).then(r => r.json());
+      await apiMutate('DELETE', `/api/workflow-versions/${versionId}`);
+      const updated = await apiGet<WorkflowVersion[]>(`/api/workflows/${workflowId}/versions`);
       setVersions(updated);
       if (activeVersionId === versionId) setActiveVersionId(updated[0]?.id);
       addToast('Đã xóa version');
@@ -1236,6 +1581,27 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
   const usedTypes = useMemo(
     () => new Set(nodes.map(n => (n.data as FlowNodeData).nodeType)),
     [nodes],
+  );
+
+  // Metadata Injector đang chọn → viền sáng nhẹ quanh Planner + Responder,
+  // để lộ quan hệ "đọc state" (không có cạnh graph thật nào tới Responder —
+  // xem onDrop bên dưới) mà không cần vẽ đường nối vắt qua cả canvas.
+  const relatedHighlightIds = useMemo(() => {
+    if ((selectedNode?.data as FlowNodeData | undefined)?.nodeType !== 'metadata_injector') {
+      return new Set<string>();
+    }
+    return new Set(
+      nodes
+        .filter(n => ['planner', 'responder'].includes((n.data as FlowNodeData).nodeType))
+        .map(n => n.id),
+    );
+  }, [selectedNode, nodes]);
+
+  const displayNodes = useMemo(
+    () => nodes.map(n => relatedHighlightIds.has(n.id)
+      ? { ...n, data: { ...n.data, _relatedHighlight: true } }
+      : (n.data as FlowNodeData)._relatedHighlight ? { ...n, data: { ...n.data, _relatedHighlight: false } } : n),
+    [nodes, relatedHighlightIds],
   );
 
   // â”€â”€ Connect â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1294,13 +1660,48 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
     e.preventDefault();
     const nodeType = e.dataTransfer.getData('nodeType') as FlowNodeType;
     if (!nodeType || !rfInstance.current) return;
-    const pos = rfInstance.current.screenToFlowPosition({ x: e.clientX, y: e.clientY });
     const cfg = NODE_STYLE[nodeType];
     if (!cfg) return;
     const id = `${nodeType}-${Date.now()}`;
+
+    // Metadata Injector: vị trí thực thi luôn cố định ngay trước Planner ở
+    // backend (graph.py), không đọc cạnh canvas — cạnh vẽ ở đây CHỈ để
+    // trực quan, cho người dùng thấy nó "gắn liền" Planner thay vì trôi nổi
+    // một mình. Đặt NGAY TRÊN Planner (không phải bên cạnh) vì mọi node
+    // trong canvas chỉ có handle nối trên/dưới (luồng dọc) — đặt ngang hàng
+    // sẽ ra 1 đường nối vòng xuống-rồi-vòng lên rất rối; đặt trên/dưới cho
+    // đường thẳng, khớp hướng render của toàn bộ DAG còn lại. Tự vẽ cạnh
+    // khoá (không xoá được), giống cách guardrail node/edge đã làm (xem
+    // lockedEdge ở trên).
+    if (nodeType === 'metadata_injector') {
+      const planner   = nodes.find(n => (n.data as FlowNodeData).nodeType === 'planner');
+      const responder = nodes.find(n => (n.data as FlowNodeData).nodeType === 'responder');
+
+      // Canvas trắng (chưa có Planner lẫn Responder) → chặn, không có gì để
+      // "gắn liền" vào cả — tránh lặp lại bug đã gặp: kéo Metadata Injector
+      // trước, Planner sau, thì cạnh/vị trí neo không tự vẽ lại được (onDrop
+      // chỉ chạy đúng 1 lần lúc thả, không theo dõi canvas thay đổi sau đó).
+      if (!planner && !responder) {
+        addToast('Cần có node Planner hoặc Responder trên canvas trước khi thêm Metadata Injector');
+        return;
+      }
+
+      // Planner có thật thì neo + vẽ cạnh (cạnh graph thật, xem comment trên).
+      // Chỉ có Responder (chưa có Planner) → neo cạnh Responder, KHÔNG vẽ
+      // cạnh — cạnh chỉ có ý nghĩa khi trỏ tới Planner thật.
+      const anchor = planner ?? responder!;
+      setNodes(nds => [...nds, mkNode(id, nodeType, cfg.typeLabel, anchor.position.x, anchor.position.y - 130)]);
+      if (planner) {
+        setEdges(eds => [...eds, lockedEdge(`e-${id}-planner`, id, planner.id, '#6366F155')]);
+      }
+      addToast(`Added: ${cfg.typeLabel}`);
+      return;
+    }
+
+    const pos = rfInstance.current.screenToFlowPosition({ x: e.clientX, y: e.clientY });
     setNodes(nds => [...nds, mkNode(id, nodeType, cfg.typeLabel, pos.x - 89, pos.y - 35)]);
     addToast(`Added: ${cfg.typeLabel}`);
-  }, [setNodes, addToast]);
+  }, [setNodes, setEdges, addToast, nodes]);
 
   // â”€â”€ Node interactions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
@@ -1332,20 +1733,23 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
     setSaving(true);
     try {
       const payload = {
-        nodes: nodes.map(n => ({ id: n.id, type: n.type, position: n.position, data: n.data })),
+        // Metadata Injector: dòng key rỗng (nhấn "+" nhưng chưa gõ gì, hoặc
+        // xoá dở) không được backend đọc (config_loader._extract_node_config
+        // chỉ giữ key non-empty) — dọn trước khi lưu để không lưu rác kiểu
+        // "=,=,=" vào canvas, không phải để tránh lỗi (đã an toàn sẵn).
+        nodes: nodes.map(n => {
+          const data = n.data as FlowNodeData;
+          if (data.nodeType === 'metadata_injector') {
+            const cleaned = parseKv(data.metadataKv || '').filter(r => r.key.trim() !== '');
+            return { id: n.id, type: n.type, position: n.position, data: { ...data, metadataKv: serializeKv(cleaned) } };
+          }
+          return { id: n.id, type: n.type, position: n.position, data: n.data };
+        }),
         edges: edges.map(e => ({ id: e.id, source: e.source, target: e.target, type: e.type, label: e.label })),
       };
-      const res = await fetch(`${FLOW_BUILDER_URL}/api/workflow-versions/${activeVersionId}/canvas`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        savedSnapshot.current = normalize(nodes, edges);
-        addToast('Canvas saved');
-      } else {
-        addToast('Save failed');
-      }
+      await apiMutate('POST', `/api/workflow-versions/${activeVersionId}/canvas`, payload);
+      savedSnapshot.current = normalize(nodes, edges);
+      addToast('Canvas saved');
     } catch {
       addToast('Save failed — network error');
     } finally {
@@ -1511,7 +1915,7 @@ ${edges.map(e => `  - from: "${e.source}"  to: "${e.target}"`).join('\n')}`;
                   className="absolute inset-0"
                 >
                   <ReactFlow
-                    nodes={nodes}
+                    nodes={displayNodes}
                     edges={edges}
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
@@ -1613,9 +2017,9 @@ ${edges.map(e => `  - from: "${e.source}"  to: "${e.target}"`).join('\n')}`;
                   return;
                 }
                 if (isNewWorkflow && workflowId) {
-                  await fetch(`${FLOW_BUILDER_URL}/api/workflows/${workflowId}`, { method: 'DELETE' });
+                  await apiMutate('DELETE', `/api/workflows/${workflowId}`);
                 } else if (isNewDraft && activeVersionId) {
-                  await fetch(`${FLOW_BUILDER_URL}/api/workflow-versions/${activeVersionId}`, { method: 'DELETE' });
+                  await apiMutate('DELETE', `/api/workflow-versions/${activeVersionId}`);
                 }
                 onClose();
               }}

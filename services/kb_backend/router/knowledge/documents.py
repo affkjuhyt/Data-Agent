@@ -2,17 +2,10 @@
 /api/knowledge/documents/{id}/chunks|tables|configs
 Serves AssetDetailWorkspace and KnowledgeHub (chunk/version management).
 """
-import uuid
-
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import select as sa_select
 
 from basemodel.services_databaseconnector.shared_model import ResponseModel
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
-    KBLifecycleHistoryORM,
-    KBDataORM,
-)
 from services.kb_backend.UI_model.knowledge import (
     RequestActivateChunkVersion,
     RequestTableRowUpdate,
@@ -29,7 +22,7 @@ from services.kb_backend.pipeline.kb_ui_operation.table_ops import get_tables, u
 from services.kb_backend.pipeline.kb_ui_operation.warehouse_ops import (
     get_warehouse_configs, create_warehouse_config, activate_warehouse_config,
 )
-from services.kb_backend.UI_model.response import to_string
+from services.kb_backend.pipeline.kb_ui_operation.document_ops import get_doc_history
 
 router = APIRouter(prefix="/api/knowledge/documents", tags=["Knowledge-Documents"])
 
@@ -176,41 +169,7 @@ async def activate_doc_config(
 # ── Lifecycle History ──────────────────────────────────────────────────────────
 
 @router.get("/{doc_id}/history", response_model=ResponseModel)
-async def get_doc_history(doc_id: str, request: Request, ctx: dict = Depends(authenticate)):
-    try:
-        data_uuid = uuid.UUID(doc_id)
-    except ValueError:
-        return ResponseModel(code=400, data=None, error="Invalid doc_id")
-
-    try:
-        tenant_uuid = uuid.UUID(ctx["tenant_id"])
-    except (ValueError, KeyError):
-        return ResponseModel(code=400, data=None, error="Invalid tenant_id")
-
-    postgres = svc(request, "postgres")
-    async with postgres.get_client() as session:
-        rows = (await session.execute(
-            sa_select(KBLifecycleHistoryORM)
-            .join(KBDataORM, KBLifecycleHistoryORM.data_id == KBDataORM.data_id)
-            .where(
-                KBLifecycleHistoryORM.data_id == data_uuid,
-                KBDataORM.tenant_id == tenant_uuid,
-                KBLifecycleHistoryORM.is_deleted == False,  # noqa: E712
-            )
-            .order_by(KBLifecycleHistoryORM.transitioned_at.desc())
-        )).scalars().all()
-
-    result = [
-        {
-            "history_id":        to_string(row.history_id),
-            "from_tier":         row.from_tier,
-            "to_tier":           row.to_tier,
-            "transitioned_at":   row.transitioned_at.isoformat() if row.transitioned_at else None,
-            "approved_by":       row.approved_by,
-            "notes":             row.notes,
-            "pipeline_metadata": row.pipeline_metadata,
-        }
-        for row in rows
-    ]
+async def get_doc_history_route(doc_id: str, request: Request, ctx: dict = Depends(authenticate)):
+    result = await get_doc_history(svc(request, "postgres"), doc_id, tenant_id=ctx["tenant_id"])
     return ResponseModel(code=200, data=result)
 

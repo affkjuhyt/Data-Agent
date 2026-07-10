@@ -15,7 +15,10 @@ volumes:
   qdrant_data:
   neo4j_data:
   neo4j_logs:
+  langfuse_clickhouse_data:
+  langfuse_clickhouse_logs:
   ollama_models:
+  hf_cache:
 
 services:
   # Databases
@@ -42,6 +45,7 @@ services:
       retries: 10
 
   mongo:
+    profiles: [kb, authoring, runtime, release]
     image: mongo:7.0
     container_name: dataagent-mongo
     restart: unless-stopped
@@ -59,6 +63,7 @@ services:
       start_period: 20s
 
   redis:
+    profiles: [kb, authoring, runtime, release, observability]
     image: redis:7-alpine
     container_name: dataagent-redis
     restart: unless-stopped
@@ -73,6 +78,7 @@ services:
       retries: 5
 
   qdrant:
+    profiles: [kb, runtime]
     image: qdrant/qdrant:v1.13.6
     container_name: dataagent-qdrant
     restart: unless-stopped
@@ -82,6 +88,7 @@ services:
       - qdrant_data:/qdrant/storage
 
   neo4j:
+    profiles: [kb, runtime]
     build:
       context: ./Neo4j
     container_name: knowledge_graph_neo4j
@@ -203,6 +210,7 @@ services:
 
   # Kafka
   kafka:
+    profiles: [kb, runtime, iam, release]
     build:
       context: ..
       dockerfile: infra/kafka/Dockerfile
@@ -224,6 +232,13 @@ services:
       KAFKA_SASL_ENABLED_MECHANISMS: PLAIN
       KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL: PLAIN
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      # Single-broker cluster: the internal topics default to replication factor 3,
+      # which can never be created with one broker → __consumer_offsets is missing →
+      # the group coordinator is unavailable → consumers can't join their group (the
+      # ingestion worker hangs on GroupCoordinatorNotAvailableError). Pin them to 1.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
       KAFKA_CLUSTER_ID: "dataagent-kafka-cluster-1"
       KAFKA_AUTHORIZER_CLASS_NAME: org.apache.kafka.metadata.authorizer.StandardAuthorizer
       KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND: "false"
@@ -241,6 +256,7 @@ services:
 
   # MinIO
   minio:
+    profiles: [kb, release, observability, runtime]
     image: minio/minio:RELEASE.2024-01-16T16-07-38Z
     container_name: dataagent-minio
     restart: unless-stopped
@@ -262,6 +278,7 @@ services:
 
   #ElasticSearch
   elasticsearch:
+    profiles: [observability]
     image: elasticsearch:8.12.0
     container_name: dataagent-elasticsearch
     restart: unless-stopped
@@ -276,6 +293,7 @@ services:
 
   #Jaeger
   jaeger:
+    profiles: [observability]
     image: jaegertracing/all-in-one:1.55
     container_name: dataagent-jaeger
     restart: unless-stopped
@@ -287,6 +305,7 @@ services:
 
   # Openbao
   openbao:
+    profiles: [iam, runtime]
     image: openbao/openbao:latest
     container_name: dataagent-openbao
     restart: unless-stopped
@@ -302,13 +321,17 @@ services:
 
   # Litellm
   litellm:
+    profiles: [kb, runtime]
     image: ghcr.io/berriai/litellm:main-stable
     container_name: dataagent-litellm
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "4000:4000"
     volumes:
       - ./litellm/config.yaml:/app/config.yaml:ro
+      - hf_cache:/root/.cache/huggingface
     env_file: ../.env
     environment:
       REDIS_URL: redis://redis:6379
@@ -320,206 +343,132 @@ services:
       redis:
         condition: service_started
 
-  #Langfuse
-  langfuse:
-    image: langfuse/langfuse:2
-    container_name: dataagent-langfuse
+  # Langfuse v3 — SDK Python v3 (OTEL-based, dùng trong services/orchestrator,
+  # services/workflow-runtime) yêu cầu self-hosted server ≥ 3.125.0, KHÔNG
+  # tương thích server v2. v3 tách write-path (Clickhouse cho trace/observation,
+  # MinIO cho blob lớn, Redis cho queue) khỏi Postgres (chỉ còn giữ org/user/
+  # API-key). Xem: https://langfuse.com/self-hosting/upgrade-guides/upgrade-v2-to-v3
+  clickhouse:
+    profiles: [observability, testdb]
+    image: docker.io/clickhouse/clickhouse-server
+    container_name: dataagent-clickhouse
     restart: unless-stopped
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-dev-clickhouse-pw-changeme}
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+    ports:
+      # 9000 bị MinIO chiếm ở host rồi (xem service minio dưới) — đổi cổng host,
+      # cổng nội bộ trong docker network vẫn là clickhouse:9000 như bình thường.
+      - "127.0.0.1:8123:8123"
+      - "127.0.0.1:9002:9000"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # Tạo bucket "langfuse" trên MinIO có sẵn (dùng chung instance với bucket
+  # "knowledge-base", KHÔNG cần MinIO riêng) — chạy 1 lần rồi thoát.
+  langfuse-minio-init:
+    profiles: [observability]
+    image: minio/mc
+    container_name: dataagent-langfuse-minio-init
+    restart: "no"
+    entrypoint: >
+      sh -c "mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minio} ${MINIO_ROOT_PASSWORD:-minio_secret} &&
+             mc mb --ignore-existing local/langfuse &&
+             echo 'MinIO: langfuse bucket ready.'"
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  langfuse-worker: &langfuse-worker-def
+    profiles: [observability]
+    image: docker.io/langfuse/langfuse-worker:3
+    container_name: dataagent-langfuse-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      clickhouse:
+        condition: service_healthy
+      langfuse-minio-init:
+        condition: service_completed_successfully
+    environment: &langfuse-env
+      NEXTAUTH_URL: http://localhost:3001
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/langfuse
+      SALT: ${LANGFUSE_SALT:-dev-langfuse-salt-changeme}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-420a3155e0050c9931ae7c80c6bb7adf7af9648ec64e4f97164ca66c0dbeecad}
+      TELEMETRY_ENABLED: "false"
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-dev-clickhouse-pw-changeme}
+      # Clickhouse của mình single-node, không có Zookeeper/cluster — thiếu biến
+      # này Langfuse tự hiểu nhầm là cluster mode, chạy DDL "ON CLUSTER" và lỗi.
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
+      # URL browser dùng để tải media đính kèm trực tiếp từ MinIO — đổi thành
+      # IP/hostname thật của máy nếu truy cập Langfuse UI từ máy khác.
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://localhost:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      # KHÔNG set REDIS_AUTH (kể cả rỗng) — redis service hiện tại không bật
+      # auth (redis:7-alpine mặc định). Set "" vẫn khiến Langfuse gửi lệnh AUTH
+      # (bị Redis từ chối vì server không có password nào cả) — phải bỏ hẳn key.
+
+  langfuse:
+    profiles: [observability]
+    <<: *langfuse-worker-def
+    image: docker.io/langfuse/langfuse:3
+    container_name: dataagent-langfuse
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      clickhouse:
+        condition: service_healthy
+      langfuse-minio-init:
+        condition: service_completed_successfully
+      langfuse-worker:
+        condition: service_started
     ports:
       - "3001:3000"
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/langfuse
+      <<: *langfuse-env
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-dev-langfuse-nextauth-secret-changeme}
-      SALT: ${LANGFUSE_SALT:-dev-langfuse-salt-changeme}
-      NEXTAUTH_URL: http://localhost:3001
-      TELEMETRY_ENABLED: "false"
       LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_EMAIL:-admin@example.com}
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_PASSWORD:-Admin@12345678}
       LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_NAME:-Admin}
       LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG:-GTEL}
       LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT:-data-agent}
-      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: pk-lf-8615e735-e5d5-4942-913f-68d02f6e48cc
-      LANGFUSE_INIT_PROJECT_SECRET_KEY: sk-lf-b5f72b59-f31c-470f-aee3-8bd2d3d6acc0
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
       AUTH_DISABLE_SIGNUP: "false"
-    depends_on:
-      postgres:
-        condition: service_healthy
 
-  workflow-runtime:
-    build:
-      context: ..
-      dockerfile: services/workflow-runtime/Dockerfile
-    container_name: dataagent-workflow-runtime
-    restart: unless-stopped
-    ports:
-      - "8001:8001"
-    env_file: ../.env
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
-      RUNTIME_DB_URL: postgresql+asyncpg://runtime_writer:${RUNTIME_DB_PASSWORD:-runtime_dev_pw}@postgres:5432/${POSTGRES_DB:-dataagent}
-      MONGODB_URL: mongodb://mongo:27017/dataagent
-      REDIS_URL: redis://redis:6379
-      LITELLM_BASE_URL: http://litellm:4000
-      LANGFUSE_HOST: http://langfuse:3000
-      LANGFUSE_PUBLIC_KEY: pk-lf-8615e735-e5d5-4942-913f-68d02f6e48cc
-      LANGFUSE_SECRET_KEY: sk-lf-b5f72b59-f31c-470f-aee3-8bd2d3d6acc0
-      QDRANT_URL: http://qdrant:6333
-      # Code Interpreter Sandbox (docs/1.md) — internal-only, never exposed
-      # to the host; sandbox-executor is the sole holder of the Docker
-      # socket / Snowflake read-only credentials (hub-and-spoke isolation).
-      SANDBOX_EXECUTOR_URL: http://sandbox-executor:8500
-      EMBEDDING_DIM: "1024"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      mongo:
-        condition: service_started
-      redis:
-        condition: service_started
-      litellm:
-        condition: service_started
-      sandbox-executor:
-        condition: service_started
-
-  # ── Sandbox Executor (docs/1.md Kế hoạch 1) ────────────────────────────
-  sandbox-executor:
-    build:
-      context: ../services/sandbox-executor
-    container_name: dataagent-sandbox-executor
-    restart: unless-stopped
-    # TEMP (2026-07-09, operator decision for manual §2 curl testing) —
-    # exposed to host so `curl localhost:8500/...` works directly, matching
-    # the standalone §1.1 workflow. Real production does NOT expose this
-    # port (internal-only, single controlled entry via workflow-runtime) —
-    # remove this `ports:` block and keep only `expose:` before deploying
-    # for real, see docs/sandbox_report.md mục 11.
-    ports:
-      - "8500:8500"
-    expose:
-      - "8500"
-    environment:
-      SANDBOX_TIMEOUT_S: "10"
-      SANDBOX_MEMORY_MB: "256"
-      SANDBOX_CPUS: "0.5"
-      SANDBOX_POOL_SIZE: ${SANDBOX_POOL_SIZE:-3}
-      # Which engine /execute/sql talks to. Default "snowflake" is
-      # production behavior, unchanged. Set to "postgres" for local dev/CI
-      # without a real Snowflake account — the request body's `connection`
-      # then takes {host, port, user, password, dbname}, e.g. the
-      # `sandbox_reader` role against the `sandbox_dev` database on this
-      # same `postgres` service (infra/sql/create-extra-dbs.sql; only
-      # auto-created on a fresh postgres_data volume).
-      SANDBOX_SQL_BACKEND: ${SANDBOX_SQL_BACKEND:-snowflake}
-      SANDBOX_SQL_QUEUE_WORKERS: "5"
-      SANDBOX_BREAKER_ENFORCE: ${SANDBOX_BREAKER_ENFORCE:-true}
-      SANDBOX_BREAKER_WINDOW_S: "60"
-      SANDBOX_BREAKER_THRESHOLD: "5"
-      SANDBOX_BREAKER_COOLDOWN_S: "30"
-      # Left empty (= host default `runc`) on purpose. gVisor has only been
-      # verified/installed on the bare host daemon (docs/sandbox_report.md
-      # mục 10.1) — this container currently talks to that same host daemon
-      # via the docker.sock mount below (sandbox-dockerd sidecar disabled,
-      # see comment above), so "runsc" *would* work here if set; left empty
-      # anyway to match the safe code-level default documented in
-      # SANDBOX_EXECUTOR_GUIDE.md. Set SANDBOX_RUNTIME=runsc to opt in.
-      SANDBOX_RUNTIME: ${SANDBOX_RUNTIME:-}
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
-      # SANDBOX_DOCKER_HOST intentionally left unset here (docker_runner.py
-      # falls back to docker.from_env(), i.e. the socket mounted below) —
-      # the sandbox-dockerd sidecar further down needs unprivileged user
-      # namespaces (rootless dind), which this host currently blocks via
-      # kernel.apparmor_restrict_unprivileged_userns=1 (operator decision
-      # 2026-07-09: fix that sysctl on the host, or point SANDBOX_DOCKER_HOST
-      # at sandbox-dockerd again once it can start, to get the isolation
-      # back — see docs/sandbox_report.md mục 10 for the tradeoff notes).
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-
-  # Rootless Docker-in-Docker sidecar — isolates sandbox-executor's Docker
-  # access from the host's real daemon. Currently DISABLED by default
-  # (profile "dind", not started by a plain `docker compose up`): this
-  # host blocks rootless DinD via kernel.apparmor_restrict_unprivileged_userns=1
-  # (verified 2026-07-09 — rootlesskit fails with "fork/exec /proc/self/exe:
-  # operation not permitted"). sandbox-executor falls back to mounting the
-  # host's own docker.sock instead (see its `volumes:` above) until that
-  # sysctl is fixed. To re-enable: fix the sysctl, add SANDBOX_DOCKER_HOST:
-  # tcp://sandbox-dockerd:2375 back to sandbox-executor's environment, swap
-  # its `volumes:` for `depends_on: sandbox-dockerd: condition: service_healthy`,
-  # and start with `--profile dind`.
-  sandbox-dockerd:
-    image: ${SANDBOX_DOCKERD_IMAGE:-docker:27-dind-rootless}
-    container_name: dataagent-sandbox-dockerd
-    restart: unless-stopped
-    profiles: ["dind"]
-    privileged: false
-    environment:
-      DOCKER_TLS_CERTDIR: ""
-      DOCKER_HOST: tcp://localhost:2375
-    devices:
-      - /dev/fuse
-      - /dev/net/tun
-    security_opt:
-      - seccomp=unconfined
-      - apparmor=unconfined
-    volumes:
-      - sandbox_dockerd_data:/home/rootless/.local/share/docker
-    healthcheck:
-      test: ["CMD", "docker", "info"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 20s
-
-  # One-off: builds sandbox-runner:latest *inside* sandbox-dockerd's own
-  # image store (separate engine = separate image store, the host's own
-  # `docker build` doesn't put the image anywhere this can see). Run once
-  # after sandbox-dockerd is healthy, re-run any time sandbox_runner/
-  # Dockerfile changes:
-  #
-  #   docker compose -f infra/docker-compose.yml -f infra/docker-compose.local.yml \
-  #     --profile setup run --rm sandbox-image-loader
-  sandbox-image-loader:
-    image: ${SANDBOX_DOCKERD_CLI_IMAGE:-docker:27-cli}
-    profiles: ["setup"]
-    environment:
-      DOCKER_HOST: tcp://sandbox-dockerd:2375
-    volumes:
-      - ../services/sandbox-executor/sandbox_runner:/build:ro
-    depends_on:
-      sandbox-dockerd:
-        condition: service_healthy
-    command: ["build", "-t", "sandbox-runner:latest", "/build"]
-
-  flow-builder:
-    build:
-      context: ..
-      dockerfile: services/flow-builder/Dockerfile
-    container_name: dataagent-flow-builder
-    restart: unless-stopped
-    ports:
-      - "8002:8002"
-    env_file: ../.env
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
-      MONGODB_URL: mongodb://mongo:27017/dataagent
-    depends_on:
-      postgres:
-        condition: service_healthy
-      mongo:
-        condition: service_started
-
-  # Local LLM backend on the host GPU. model-service /generate forwards here.
-  # Requires NVIDIA GPU + Docker GPU support (Docker Desktop WSL2 / nvidia-container-toolkit).
-  # First start has no model — pull it once:
-  #   docker exec dataagent-ollama ollama pull llama3.1:8b
   ollama:
+    profiles: [models]
     image: ollama/ollama
     container_name: dataagent-ollama
     restart: unless-stopped
@@ -527,15 +476,16 @@ services:
       - "11434:11434"
     volumes:
       - ollama_models:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    # deploy:  # Uncomment when nvidia-container-toolkit is available
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
 
   model-service:
+    profiles: [kb, runtime]
     build:
       context: ./model-service
     container_name: dataagent-model-service
@@ -562,40 +512,8 @@ services:
       # First start downloads the embed + rerank models into the volume above.
       start_period: 300s
 
-  kb-backend:
-    build:
-      context: ..
-      dockerfile: infra/Dockerfile.kb
-    container_name: dataagent-kb-backend
-    restart: unless-stopped
-    # Gateway-only: not published to the host. Reachable solely via Kong
-    # (http://kb-backend:8000 on the shared network). With KB_DEV_AUTH unset the
-    # backend is fail-closed — it rejects any request lacking X-Kong-Verified.
-    # For direct local dev without Kong, re-add `ports: ["8050:8000"]` and set
-    # KB_DEV_AUTH=true below.
-    expose:
-      - "8000"
-    environment:
-      POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/${POSTGRES_DB:-dataagent}
-      QDRANT_URL: http://qdrant:6333
-      NEO4J_URI: bolt://neo4j:7687
-      MODEL_SERVICE_URL: http://model-service:8001
-      # MinIO creds: the Dockerfile default password is wrong — pin to the real root creds.
-      MINIO_URL: http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-minio_secret}@minio:9000
-      MINIO_BUCKET: knowledge-base
-      # Plaintext Kafka listener (this client has no SASL support).
-      KAFKA_URL: kafka:9094
-    depends_on:
-      postgres:
-        condition: service_healthy
-      qdrant:
-        condition: service_started
-      neo4j:
-        condition: service_healthy
-      model-service:
-        condition: service_healthy
-
   kb-ingestion-worker:
+    profiles: [kb]
     build:
       context: ..
       dockerfile: infra/kb-ingestion-worker/Dockerfile
@@ -625,170 +543,4 @@ services:
       neo4j:
         condition: service_healthy
       model-service:
-        condition: service_healthy
-
-
-  auth-api:
-    build:
-      context: ../services
-      dockerfile: auth-api/Dockerfile
-    container_name: dataagent-auth-api
-    restart: unless-stopped
-    ports:
-      - "8200:8200"
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
-      KONG_ADMIN_URL: http://kong:8001
-      OPENBAO_ADDR: http://openbao:8200
-    volumes:
-      - openbao_data:/openbao/data:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
-      openbao:
-        condition: service_started
-
-
-  minio-service:
-    build:
-      context: ../services
-      dockerfile: minio-service/Dockerfile
-    container_name: dataagent-minio-service
-    restart: unless-stopped
-    ports:
-      - "8400:8400"
-    environment:
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
-    depends_on:
-      minio:
-        condition: service_healthy
-
-
-  release-worker:
-    build:
-      context: ../services
-      dockerfile: release-worker/Dockerfile
-    container_name: dataagent-release-worker
-    restart: unless-stopped
-    ports:
-      - "8100:8100"
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
-      KAFKA_BOOTSTRAP: kafka:9092
-      KAFKA_USERNAME: release-worker
-      KAFKA_PASSWORD: ${RELEASE_WORKER_KAFKA_PASSWORD}
-      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
-      KAFKA_SASL_MECHANISM: PLAIN
-      CELERY_BROKER: redis://redis:6379/0
-      KONG_ADMIN_URL: http://kong:8001
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
-      MONGO_URI: mongodb://mongo:27017
-      MONGO_DB: dataagent
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      mongo:
-        condition: service_healthy
-
-  audit-bridge:
-    build:
-      context: ../services/audit-bridge
-    container_name: dataagent-audit-bridge
-    restart: unless-stopped
-    environment:
-      KEYCLOAK_URL: http://keycloak:8080
-      KEYCLOAK_REALM: aeroflow
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      KAFKA_TOPIC: audit.auth.events
-      KAFKA_SASL_USERNAME: audit-bridge
-      KAFKA_SASL_PASSWORD: ${AUDIT_BRIDGE_KAFKA_PASSWORD}
-      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
-      KAFKA_SASL_MECHANISM: PLAIN
-      POLL_INTERVAL_SECONDS: "10"
-      STATE_FILE: /data/last_event_time.txt
-    volumes:
-      - audit_bridge_data:/data
-    depends_on:
-      kafka:
-        condition: service_healthy
-      keycloak:
-        condition: service_started
-
-  audit-consumer:
-    build:
-      context: ../services/audit-consumer
-    container_name: dataagent-audit-consumer
-    restart: unless-stopped
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      KAFKA_TOPIC: audit.auth.events
-      KAFKA_GROUP_ID: audit-consumer-group
-      KAFKA_SASL_USERNAME: audit-consumer
-      KAFKA_SASL_PASSWORD: ${AUDIT_CONSUMER_KAFKA_PASSWORD}
-      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
-      KAFKA_SASL_MECHANISM: PLAIN
-      DB_HOST: postgres
-      DB_PORT: "5432"
-      DB_NAME: ${POSTGRES_DB:-dataagent}
-      DB_USER: ${POSTGRES_USER:-admin}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
-    depends_on:
-      kafka:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-
-  jwks-refresher:
-    build:
-      context: ../services/jwks-refresher
-    container_name: dataagent-jwks-refresher
-    restart: unless-stopped
-    environment:
-      KEYCLOAK_URL: http://keycloak:8080
-      KEYCLOAK_REALM: aeroflow
-      KONG_ADMIN_URL: http://kong:8001
-      KONG_CONSUMER: keycloak-users
-      REFRESH_INTERVAL_SECONDS: "300"
-      JWKS_STATE_FILE: /data/last_kid.txt
-    volumes:
-      - jwks_refresher_data:/data
-    depends_on:
-      keycloak:
-        condition: service_started
-      kong:
-        condition: service_healthy
-
-  frontend:
-    build:
-      context: ..
-      dockerfile: infra/Dockerfile.dev
-    container_name: dataagent-frontend
-    restart: unless-stopped
-    volumes:
-      - ..:/app
-      - /app/node_modules
-    ports:
-      - "5173:3000"
-    environment:
-      VITE_KEYCLOAK_URL: http://localhost:8080
-      VITE_KEYCLOAK_REALM: aeroflow
-      VITE_KEYCLOAK_CLIENT: aeroflow-frontend
-      VITE_API_BASE_URL: http://localhost:8000
-    depends_on:
-      keycloak:
-        condition: service_started
-      kong:
         condition: service_healthy

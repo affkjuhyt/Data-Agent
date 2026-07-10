@@ -99,10 +99,28 @@ _CHUNK_SUMMARY_SCHEMA: dict[str, Any] = {
                 "additionalProperties": False,
             },
         },
+        # Relationships BETWEEN this chunk's entities, grounded in the chunk text
+        # (the evidence lives here, not in the lossy doc summary). from/to must be
+        # names from `entities`. Gold remaps them to canonical names and a final
+        # doc-level pass reconciles the union across chunks.
+        "relationships": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "from":  {"type": "string"},
+                    "to":    {"type": "string"},
+                    "type":  {"type": "string"},
+                    "score": {"type": "number"},
+                },
+                "required": ["from", "to", "type", "score"],
+                "additionalProperties": False,
+            },
+        },
         "intents": {"type": "array", "items": {"type": "string"}},
         "skip":    {"type": "boolean"},
     },
-    "required": ["summary", "entities", "intents", "skip"],
+    "required": ["summary", "entities", "relationships", "intents", "skip"],
     "additionalProperties": False,
 }
 

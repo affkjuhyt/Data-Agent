@@ -4,10 +4,10 @@
 services:
   migrate:
     build:
-      context: ../..
+      context: ..
       dockerfile: alembic/Dockerfile
     restart: "no"
-    command: alembic -c alembic/alembic.ini upgrade head
+    command: alembic -c alembic/alembic.ini upgrade heads
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/dataagent
     depends_on:
@@ -19,7 +19,7 @@ services:
     restart: "no"
     command: psql postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/dataagent -f /seed.sql
     volumes:
-      - ../../services/workflow-runtime/migrations/seed.sql:/seed.sql:ro
+      - ../services/workflow-runtime/migrations/seed.sql:/seed.sql:ro
     depends_on:
       migrate:
         condition: service_completed_successfully

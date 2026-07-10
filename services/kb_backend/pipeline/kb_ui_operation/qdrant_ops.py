@@ -1,7 +1,6 @@
 """Business logic for Qdrant collection management and semantic search."""
 import logging
 import uuid
-import httpx
 from fastapi import HTTPException
 from qdrant_client import models
 from sqlalchemy import update as sa_update, select
@@ -141,26 +140,20 @@ async def _resolve_collection_info(postgres, collection_id: str) -> tuple[str, s
 async def semantic_search(
     qdrant,
     postgres,
+    model,
     collection_id: str,
     query: str,
     tenant_id: str,
     limit: int,
-    model_service_url: str,
 ) -> list:
     collection_name, embed_model_id = await _resolve_collection_info(postgres, collection_id)
 
-    embed_payload: dict = {"texts": [query]}
-    if embed_model_id:
-        embed_payload["model_id"] = embed_model_id
-
+    # Reuse the pooled, health-gated ModelServiceClient (injected via svc()) rather
+    # than opening a throwaway httpx connection per request. embed() targets the
+    # same /embed endpoint with the same payload shape.
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            emb_resp = await client.post(
-                f"{model_service_url}/embed",
-                json=embed_payload,
-            )
-            emb_resp.raise_for_status()
-            vector = emb_resp.json()["embeddings"][0]
+        vectors = await model.embed([query], embed_model_id)
+        vector = vectors[0]
     except Exception as e:
         log.error("qdrant_ops: embedding failed for collection %s: %s", collection_id, e)
         raise HTTPException(status_code=502, detail="Embedding service unavailable")

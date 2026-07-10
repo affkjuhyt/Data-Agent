@@ -14,12 +14,12 @@ propagated through Kong's header injection into the backend.
 from fastapi import APIRouter, Depends
 
 from basemodel.services_databaseconnector.shared_model import ResponseModel
-from services.kb_backend.dependencies.auth import authenticate, ROLE_PERMISSIONS
+from services.kb_backend.dependencies.auth import authenticate, RBAC
 
 router = APIRouter(prefix="/api/knowledge", tags=["Identity"])
 
 
 @router.get("/whoami", response_model=ResponseModel)
 async def whoami(ctx: dict = Depends(authenticate)):
-    granted = sorted(ROLE_PERMISSIONS.get(ctx["role"], set()))
+    granted = sorted(RBAC.permissions_for(ctx["role"]))
     return ResponseModel(code=200, data={**ctx, "permissions": granted})

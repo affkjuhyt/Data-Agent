@@ -1,4 +1,5 @@
 import asyncio
+import os
 import uuid
 from typing import Any
 
@@ -19,6 +20,36 @@ from basemodel.services_databaseconnector.postgres_model import (
 import basemodel.services_databaseconnector.postgres_orm  # noqa: F401 — registers ORM classes into REGISTRY
 
 log = logging.getLogger(__name__)
+
+
+def _engine_kwargs() -> dict[str, Any]:
+    """Build create_async_engine kwargs from env, defaulting to SQLAlchemy's own
+    defaults so existing deployments are unchanged.
+
+    Why this matters for concurrency: the async engine hands out connections from
+    a bounded pool (`pool_size` kept open + up to `max_overflow` burst). When all
+    are checked out, further requests WAIT up to `pool_timeout` seconds, then fail.
+    Under concurrent UI + retrieval + long-lived SSE progress streams (each of
+    which periodically checks out a connection), the 5+10 default can become the
+    ceiling. These knobs let ops raise the ceiling without a code change.
+
+    `command_timeout` (asyncpg) caps how long a single statement may run. Without
+    it a stuck query holds its pooled connection forever — one runaway query can
+    starve the whole pool. Default unset (no cap) to preserve current behaviour;
+    set POSTGRES_STATEMENT_TIMEOUT to enable.
+    """
+    kwargs: dict[str, Any] = {
+        "pool_pre_ping": True,
+        "pool_size":     int(os.getenv("POSTGRES_POOL_SIZE", "5")),
+        "max_overflow":  int(os.getenv("POSTGRES_MAX_OVERFLOW", "10")),
+        "pool_timeout":  int(os.getenv("POSTGRES_POOL_TIMEOUT", "30")),
+        "pool_recycle":  int(os.getenv("POSTGRES_POOL_RECYCLE", "1800")),
+    }
+    stmt_timeout = os.getenv("POSTGRES_STATEMENT_TIMEOUT")
+    if stmt_timeout:
+        # asyncpg accepts command_timeout (seconds) via connect_args.
+        kwargs["connect_args"] = {"command_timeout": float(stmt_timeout)}
+    return kwargs
 
 
 # Helpers
@@ -162,7 +193,7 @@ def _apply_keyset(stmt, root_cls, cursor, order_by):
 def _prepare_insert(data: BaseModel) -> DMLPreparation:
     table_name, orm_cls = _resolve(data)
     return DMLPreparation(
-        instance=orm_cls(**data.model_dump(mode="python")),
+        instance=orm_cls(**data.model_dump(mode="json")),
         orm_cls=orm_cls,
         table_name=table_name,
     )
@@ -269,33 +300,6 @@ def _prepare_read(data: ReadJoinRequest) -> DQLPreparation:
 
 
 def _prepare_count(data: ReadJoinRequest) -> DQLPreparation:
-    """COUNT(*) over the same joins/filters as _prepare_read (no keyset/limit).
-    Powers `total` for the numbered pager — keyset itself never needs this, but the
-    UI does to render '1 … N'."""
-    unknown = [t for t in data.joins_table if t not in REGISTRY]
-    if unknown:
-        raise AttributeError(f"Unknown table(s): {unknown}")
-
-    orm_map = {t: REGISTRY[t].orm for t in data.joins_table}
-    from_cls = orm_map[data.joins_table[0]]
-
-    stmt = select(func.count()).select_from(from_cls)
-    for i in range(1, len(data.joins_table)):
-        stmt = stmt.join(orm_map[data.joins_table[i]])
-
-    if data.tenant_id is not None:
-        tenant_uuid = uuid.UUID(data.tenant_id) if isinstance(data.tenant_id, str) else data.tenant_id
-        stmt = stmt.where(from_cls.tenant_id == tenant_uuid)
-    for f in data.filters:
-        stmt = stmt.where(_apply_op(getattr(orm_map[f.table_name], f.column_name), f))
-    try:
-        stmt = stmt.where(from_cls.is_deleted == False)
-    except AttributeError:
-        pass
-    return DQLPreparation(compiled_query=stmt)
-
-
-def _prepare_count(data: ReadJoinRequest) -> DQLPreparation:
     """COUNT(*) over the same joins/filters as _prepare_read (no keyset/limit/offset).
     Used to compute `total` for numbered pagination."""
     unknown = [t for t in data.joins_table if t not in REGISTRY]
@@ -384,16 +388,16 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def _tenant_session(factory, tenant_id: str):
+    # is_local=true: setting scoped to current transaction, auto-reset on commit/rollback.
+    # Avoids releasing the connection back to the pool between set_config and the actual
+    # operation, which would lose the session-level setting on a different connection.
     async with factory() as session:
-        await session.execute(text("SELECT set_config('app.tenant_id', :tid, false)"), {"tid": str(tenant_id)})
-        await session.commit()
+        await session.execute(text("SELECT set_config('app.tenant_id', :tid, true)"), {"tid": str(tenant_id)})
         try:
             yield session
         finally:
             try:
                 await session.rollback()
-                await session.execute(text("SELECT set_config('app.tenant_id', '', false)"))
-                await session.commit()
             except Exception:
                 pass
 
@@ -416,7 +420,7 @@ class PostgresClient:
 
         for attempt in range(retry.count):
             try:
-                self._engine = create_async_engine(self._url, pool_pre_ping=True)
+                self._engine = create_async_engine(self._url, **_engine_kwargs())
                 self._session_factory = async_sessionmaker(self._engine, expire_on_commit=False)
                 async with self._engine.connect() as conn:
                     await conn.execute(text("SELECT 1"))
@@ -501,17 +505,26 @@ class PostgresClient:
             return ResponseModel(code=400, error=str(e))
 
         tenant_id = str(getattr(data, "tenant_id", None) or "")
+        pks = [col.name for col in prep.orm_cls.__table__.primary_key]
+        pk_data: dict = {}
         async with self.get_client(tenant_id=tenant_id or None) as session:
             session.add(prep.instance)
             try:
+                # flush() evaluates Python-side column defaults (uuid4) and sends the INSERT
+                # within the current transaction — so is_local tenant context is still active.
+                # We extract PK after flush (defaults resolved) but before commit.
+                await session.flush()
+                pks = [col.name for col in prep.orm_cls.__table__.primary_key]
+                pk_data = {pk: str(getattr(prep.instance, pk)) for pk in pks if
+                           getattr(prep.instance, pk) is not None}
                 await session.commit()
                 await session.refresh(prep.instance)
+                # Read PK values inside the session before _tenant_session.finally
+                # calls rollback() which expires all instance attributes.
+                pk_data = {pk: str(getattr(prep.instance, pk)) for pk in pks if
+                           getattr(prep.instance, pk) is not None}
             except IntegrityError as e:
                 await session.rollback()
-                # Distinguish the constraint that failed (Postgres SQLSTATE via the
-                # underlying asyncpg error) instead of blanket-labelling everything
-                # "already exists" — a foreign-key or not-null failure is a very
-                # different problem from a duplicate.
                 sqlstate = getattr(getattr(e, "orig", None), "sqlstate", None)
                 if sqlstate == "23505":      # unique_violation
                     return ResponseModel(code=409, error=f"Record already exists in {prep.table_name}")
@@ -523,9 +536,7 @@ class PostgresClient:
                     return ResponseModel(code=400, error=f"{prep.table_name}: a value failed a constraint check")
                 log.warning("insert integrity error in %s (sqlstate=%s): %s", prep.table_name, sqlstate, e)
                 return ResponseModel(code=409, error=f"Integrity error in {prep.table_name}")
-        pks = [col.name for col in prep.orm_cls.__table__.primary_key]
-        return ResponseModel(code=200, data={pk: str(getattr(prep.instance, pk)) for pk in pks if
-                                             getattr(prep.instance, pk) is not None})
+        return ResponseModel(code=200, data=pk_data)
 
     async def soft_delete(self, data: BaseModel) -> ResponseModel:
         try:

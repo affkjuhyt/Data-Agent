@@ -7,7 +7,9 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
-import { WORKFLOW_RUNTIME_URL as API_BASE } from '../../lib/config';
+import { API_URL } from '../../lib/config';
+import { apiGet, apiMutate } from '../../lib/apiClient';
+import keycloak from '../../lib/keycloak';
 
 /* ─── Types ─────────────────────────────────────────────────── */
 
@@ -17,14 +19,21 @@ interface TraceStep {
   status: 'success' | 'error' | 'running';
   latencyMs: number;
   startMs: number;
+  startAbsMs: number;       // absolute epoch ms, dùng để tính offset chính xác cho inner spans
   tokens: number;
   cost: number;
   input: string;
   output: string;
   iteration: number;
   isRetryStart: boolean;
+  isConcurrentBranch: boolean;  // true = span cùng tên trước đó vẫn CHƯA kết thúc (chạy song song thật, vd ToT branching) — khác "retry" (chạy sau khi cái trước đã xong, vd judge loop)
   verdict?: 'PASS' | 'FAIL';
   errorType?: string;
+  agentConvId?: string;
+  agentLfTraceId?: string;
+  agentLfSpanId?: string;
+  agentGroupId?: string;        // multi-agent: conv_id của agent group này thuộc về
+  isAgentGroupHeader?: boolean; // true = dòng tổng của 1 agent trong multi-agent timeline
 }
 
 interface Message {
@@ -52,42 +61,88 @@ interface AgentOption {
 /* ─── Span palette ───────────────────────────────────────────── */
 
 function spanType(node: string): { label: string; color: string; bg: string } {
+  if (node.startsWith('[target]'))
+    return { label: 'TARGET',     color: '#C084FC', bg: 'rgba(192,132,252,0.14)' };
+  if (node.startsWith('[task]'))
+    return { label: 'TASK',       color: '#67E8F9', bg: 'rgba(103,232,249,0.12)' };
+  if (node.startsWith('[agent]'))
+    return { label: 'AGENT',      color: '#A78BFA', bg: 'rgba(167,139,250,0.18)' };
+  if (node === 'single-agent')
+    return { label: 'AGENT',      color: '#A78BFA', bg: 'rgba(167,139,250,0.12)' };
   if (node === 'router')
     return { label: 'ROUTING',    color: '#F0B429', bg: 'rgba(240,180,41,0.18)' };
   if (node.includes('guardrail'))
     return { label: 'GUARD',      color: '#F8A4A4', bg: 'rgba(248,164,164,0.14)' };
-  if (node.includes('planner') || node.includes('rewrite') || node.includes('responder') || node.includes('suggestion'))
+  if (node === 'orchestrator-synthesizer')
+    return { label: 'SYNTH',      color: '#86EFAC', bg: 'rgba(134,239,172,0.12)' };
+  if (node.includes('planner') || node.includes('responder') || node.includes('suggestion') || node.includes('input_refine') || node.includes('input-refine') || node.includes('summary'))
     return { label: 'GENERATION', color: '#EBD07C', bg: 'rgba(235,208,124,0.14)' };
   if (node.includes('kb_search'))
     return { label: 'RETRIEVAL',  color: '#93C5FD', bg: 'rgba(147,197,253,0.12)' };
-  if (node.includes('mcp'))
+  if (node.includes('mcp') || node.includes('tool_executor') || node.startsWith('tool/'))
     return { label: 'TOOL',       color: '#86EFAC', bg: 'rgba(134,239,172,0.12)' };
   if (node.includes('rrf') || node.includes('reranker'))
     return { label: 'RANK',       color: '#F3E2A7', bg: 'rgba(243,226,167,0.10)' };
   if (node.includes('judge'))
     return { label: 'EVAL',       color: '#C084FC', bg: 'rgba(192,132,252,0.14)' };
-  return   { label: 'SPAN',       color: '#BFA66A', bg: 'rgba(191,166,106,0.12)' };
+  if (node.includes('human_approval'))
+    return { label: 'APPROVAL',   color: '#7DD3FC', bg: 'rgba(125,211,252,0.14)' };
+  return   { label: 'NODE',       color: '#BFA66A', bg: 'rgba(191,166,106,0.12)' };
 }
 
 /* ─── Helpers ────────────────────────────────────────────────── */
 
-const _SKIP_NODES = new Set(['LangGraph', 'join_retrieval', 'join_end']);
+const _SKIP_NODES = new Set(['LangGraph', 'join_retrieval', 'join_end', 'ChatOpenAI']);
+const _HIDE_SPAN  = new Set(['orchestrator']); // hide span itself but keep children visible
 const _shouldSkip = (name: string) => _SKIP_NODES.has(name) || name.startsWith('_route') || name.startsWith('route_');
+
+// Span hạ tầng OTEL tự động (postgres connect, mongo ping/find, wrapper HTTP
+// request của FastAPI/httpx instrumentation...) — không phải node thật của
+// app, chỉ gây nhiễu waterfall. Nhận diện qua scope.name trong metadata
+// (opentelemetry.instrumentation.* — khác với span thật của app luôn có
+// scope.name = "langfuse-sdk" hoặc không có scope).
+function _isInfraSpan(o: any): boolean {
+  const scopeName = o?.metadata?.scope?.name as string | undefined;
+  return !!scopeName && scopeName.startsWith('opentelemetry.instrumentation.');
+}
+
+// "LangGraph" là tên mặc định của CallbackHandler cho MỌI graph invocation —
+// dùng chung ở CẢ orchestrator (bọc guardrail/input_refine/single_agent/...)
+// LẪN workflow-runtime (bọc planner/judge/tool_executor/... của 1 agent run).
+// Chỉ span của workflow-runtime mới cần ẩn con (chờ user expand single-agent/
+// [task]) — span của orchestrator là gốc thật, con của nó luôn phải hiện
+// ngay. Phân biệt qua service.name trong resourceAttributes (OTEL), KHÔNG
+// thể phân biệt bằng tên vì cả 2 đều tên "LangGraph".
+function _isAgentInternalWrapper(o: any): boolean {
+  return o?.name === 'LangGraph' &&
+    o?.metadata?.resourceAttributes?.['service.name'] === 'workflow-runtime';
+}
 
 function trimInput(name: string, raw: any): string {
   if (!raw || typeof raw !== 'object') return String(raw ?? '');
   const q   = raw.query ?? '';
   const cfg = raw.config ?? {};
-  const clip = (s: string, n = 200) => s.length > n ? s.slice(0, n) + '…' : s;
+  const clip = (s: string, n = 300) => s.length > n ? s.slice(0, n) + '…' : s;
   switch (true) {
+    // ── Orchestrator spans ──
+    case name.startsWith('[task]'):
+      return JSON.stringify({ agent_name: raw.agent_name || raw.agent_id, agent_id: raw.agent_id, prompt: clip(raw.prompt ?? '') }, null, 2);
+    case name.startsWith('[target]'):
+      return JSON.stringify({ description: raw.description }, null, 2);
+    case name === 'orchestrator-synthesizer':
+      return JSON.stringify({ query: q, outputs_count: raw.outputs_count ?? 0 }, null, 2);
+    case name === 'orchestrator-planner':
+      return JSON.stringify({ query: q }, null, 2);
+    // ── Agent (LangGraph) spans ──
     case name.includes('guardrail'):
       return JSON.stringify({ query: q }, null, 2);
     case name.includes('planner'):
       return JSON.stringify({ query: q, memory_context: (raw.memory_context ?? []).length + ' items' }, null, 2);
+    case name.includes('input_refine'):
     case name.includes('rewrite'):
       return JSON.stringify({ query: q, messages: (raw.messages ?? []).length + ' messages' }, null, 2);
     case name.includes('kb_search'):
-      return JSON.stringify({ query: q, mode: cfg.kb_mode, top_k: cfg.top_k }, null, 2);
+      return JSON.stringify({ query: q }, null, 2);
     case name.includes('mcp'):
       return JSON.stringify({ query: q, tool_calls: (raw.tool_calls ?? []).length + ' calls' }, null, 2);
     case name.includes('rrf'):
@@ -101,17 +156,100 @@ function trimInput(name: string, raw: any): string {
     case name.includes('judge'):
       return JSON.stringify({ query: q, response: clip(raw.response ?? ''), tool_errors: (raw.tool_errors ?? []).length + ' errors' }, null, 2);
     default:
-      return JSON.stringify({ query: q }, null, 2);
+      return JSON.stringify(raw, null, 2);
   }
 }
 
-function mapObservations(obs: any[]): TraceStep[] {
-  const filtered = obs
-    .filter(o => !_shouldSkip(o.name) && o.type === 'SPAN')
+function mapObservations(obs: any[], traceId?: string): TraceStep[] {
+  // Build parent lookup (full object, không chỉ tên) — cần cả metadata để
+  // phân biệt "LangGraph" của orchestrator vs của workflow-runtime.
+  const byId = new Map<string, any>(obs.map(o => [o.id as string, o]));
+  const infraById = new Map<string, boolean>(obs.map(o => [o.id as string, _isInfraSpan(o)]));
+
+  // Detect context to avoid mixing orchestrator-level and agent-internal spans:
+  // - outer multi-agent trace  : has [task] spans → hasTaskSpan = true
+  // - outer single-agent trace : has 'single-agent' span → hasSingleAgentSpan = true
+  // - expanded agent view      : neither flag → include all visible spans
+  const names = obs.map(o => o.name as string);
+  const hasTaskSpan        = names.some(n => n?.startsWith('[task]'));
+  const hasSingleAgentSpan = names.some(n => n === 'single-agent');
+  // Either outer-trace context → exclude agent-internal spans (behind skipped LangGraph wrapper)
+  const isOuterTrace = hasTaskSpan || hasSingleAgentSpan;
+
+  const byTime = obs
+    .filter(o => {
+      if (_isInfraSpan(o)) return false;
+      if (_shouldSkip(o.name) || _HIDE_SPAN.has(o.name)) return false;
+      // level=DEBUG: node có ý nghĩa quan sát thấp trên happy path (vd
+      // judge_phase1 khi PASS — services/workflow-runtime/graph.py hạ level
+      // xuống DEBUG lúc không bounce). Ẩn khỏi trace mặc định, đúng ý nghĩa
+      // chuẩn của field "level" — không cần bật riêng cho từng tên node.
+      if (o.level === 'DEBUG') return false;
+      // LƯU Ý: từng có `if (o.name?.startsWith('judge')) return true;` ở đây
+      // (thời filter còn ràng buộc type==='SPAN', judge là GENERATION/CHAIN
+      // nên cần miễn trừ riêng). Đã bỏ — nó khiến judge/judge_phase1 bỏ qua
+      // luôn rule ẩn-con-của-LangGraph-wrapper bên dưới, nên hiện ĐỒNG THỜI
+      // ở cả outer trace lẫn bên trong single-agent đã expand (cùng 1 id →
+      // click 1 cái thì cả 2 cùng highlight). Giờ filter không còn ràng buộc
+      // type==='SPAN' nữa (chỉ còn ở nhánh fallback không có parent trong
+      // set), nên judge/judge_phase1 cứ để rơi xuống rule parent-hierarchy
+      // như mọi node khác (planner/kb_search/...) là đủ, không cần miễn trừ.
+      // Ẩn mọi span rơi vào tag mặc định "NODE" (spanType() không nhận diện
+      // được) — đây là các node hạ tầng/định tuyến không có giá trị hiển thị
+      // (vd fetch_agents, execute, single_agent wrapper) — khác "single-agent"
+      // (gạch ngang, tag AGENT, span thủ công) nên KHÔNG bị ẩn nhầm.
+      if (spanType(o.name).label === 'NODE') return false;
+      const parentId = o.parentObservationId as string | undefined;
+      const parentObs = parentId ? byId.get(parentId) : undefined;
+      const parentName = parentObs?.name as string | undefined;
+      // Parent not in this observation set (external root) → include only SPANs
+      if (!parentId || parentName === undefined) return o.type === 'SPAN';
+      // Parent là "LangGraph" của workflow-runtime (wrapper nội bộ 1 agent run)
+      // → ẩn con, chờ user expand single-agent/[task]. "LangGraph" của
+      // orchestrator (wrapper gốc, bọc guardrail/input_refine/...) → LUÔN
+      // hiện con, không quan tâm isOuterTrace (đây chính là các bước top-level
+      // thật sự, không phải chi tiết ẩn bên trong 1 agent).
+      if (parentName === 'LangGraph') {
+        return _isAgentInternalWrapper(parentObs) ? !isOuterTrace : true;
+      }
+      // Parent là skip/infra node khác (join_retrieval, ChatOpenAI, route/_route,
+      // FastAPI/httpx auto-instrumentation POST span) — "promote" con lên 1 cấp:
+      //   outer trace   → exclude (sẽ hiện khi expand [task]/single-agent)
+      //   expanded view → include (đây là các span top-level thật của agent)
+      if (_shouldSkip(parentName) || infraById.get(parentId)) return !isOuterTrace;
+      // Parent exists and is not skipped → always include
+      return true;
+    })
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+
+  // Re-order: [target] spans must always appear before their child [task] spans.
+  // Async timing in the backend can cause target_span.startTime to land slightly
+  // after the first task's startTime in Langfuse, producing wrong sort order.
+  const taskPool  = byTime.filter(o => o.name.startsWith('[task]'));
+  const nonTasks  = byTime.filter(o => !o.name.startsWith('[task]'));
+  const placed    = new Set<string>();
+  const ordered: typeof byTime = [];
+  for (const span of nonTasks) {
+    ordered.push(span);
+    if (span.name.startsWith('[target]')) {
+      const tStart = new Date(span.startTime).getTime();
+      const tEnd   = span.endTime ? new Date(span.endTime).getTime() : Infinity;
+      const children = taskPool
+        .filter(t => !placed.has(t.id) && new Date(t.startTime).getTime() >= tStart && new Date(t.startTime).getTime() <= tEnd)
+        .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+      for (const c of children) { placed.add(c.id); ordered.push(c); }
+    }
+  }
+  for (const t of taskPool) { if (!placed.has(t.id)) ordered.push(t); }
+
+  const filtered = ordered;
   const traceStart = filtered.length > 0 ? new Date(filtered[0].startTime).getTime() : 0;
   const nameCounts: Record<string, number> = {};
   let currentMaxIteration = 0;
+  // Theo dõi endTime của lần xuất hiện GẦN NHẤT theo từng tên — để phân biệt
+  // "chạy song song thật" (vd nhiều candidate của ToT planner qua asyncio.gather)
+  // với "chạy tuần tự sau khi cái trước đã xong" (vd judge loop thất bại → thử lại).
+  const lastEndByName: Record<string, number> = {};
   return filtered.map(o => {
     const count = nameCounts[o.name] ?? 0;
     nameCounts[o.name] = count + 1;
@@ -128,12 +266,27 @@ function mapObservations(obs: any[]): TraceStep[] {
         errorType = out.judge_error_type ?? undefined;
       } catch { /* ignore */ }
     }
+    // [task] và single-agent spans có thể expand để xem LangGraph trace bên trong
+    const isExpandable = o.name?.startsWith('[task]') || o.name === 'single-agent';
+    const agentConvId = isExpandable
+      ? (typeof o.metadata === 'object' && o.metadata !== null ? (o.metadata as any).conversation_id ?? undefined : undefined)
+      : undefined;
+    // Dùng o.id (= span id trong Langfuse) để proxy fetch đúng observations khi orchestrated
+    const agentLfTraceId = isExpandable ? traceId : undefined;
+    const agentLfSpanId  = isExpandable ? o.id : undefined;
+    const absMs = new Date(o.startTime).getTime();
+    const latencyMs = o.endTime ? Math.round(new Date(o.endTime).getTime() - absMs) : 0;
+    const endAbsMs = absMs + latencyMs;
+    const prevEnd = lastEndByName[o.name];
+    const isConcurrentBranch = isRetryStart && prevEnd !== undefined && absMs < prevEnd;
+    lastEndByName[o.name] = Math.max(prevEnd ?? 0, endAbsMs);
     return {
       id: o.id,
       node: displayName,
       status: o.level === 'ERROR' ? 'error' : 'success',
-      startMs: Math.round(new Date(o.startTime).getTime() - traceStart),
-      latencyMs: o.endTime ? Math.round(new Date(o.endTime).getTime() - new Date(o.startTime).getTime()) : 0,
+      startMs: Math.round(absMs - traceStart),
+      startAbsMs: absMs,
+      latencyMs,
       tokens: o.usage ? ((o.usage.input ?? 0) + (o.usage.output ?? 0)) : 0,
       cost: o.calculatedTotalCost ?? 0,
       input: trimInput(o.name, o.input),
@@ -142,8 +295,12 @@ function mapObservations(obs: any[]): TraceStep[] {
         : typeof o.output === 'object' ? JSON.stringify(o.output, null, 2) : String(o.output ?? ''),
       iteration,
       isRetryStart,
+      isConcurrentBranch,
       verdict,
       errorType,
+      agentConvId,
+      agentLfTraceId,
+      agentLfSpanId,
     };
   });
 }
@@ -166,19 +323,38 @@ function routeMessage(text: string, agents: AgentOption[]): { name: string; conf
 
 /* ─── WaterfallRow ───────────────────────────────────────────── */
 
-function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs }: {
+function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs, indent, expandable, expanded, expandLoading, onExpand }: {
   step: TraceStep; index: number; selected: boolean;
-  onSelect: (i: number) => void; startMs: number; totalMs: number;
+  onSelect: () => void; startMs: number; totalMs: number;
+  indent?: boolean; expandable?: boolean; expanded?: boolean;
+  expandLoading?: boolean; onExpand?: () => void;
 }) {
   const t = spanType(step.node);
   const leftPct  = (startMs / Math.max(totalMs, 1)) * 100;
   const widthPct = Math.max(0.6, (step.latencyMs / Math.max(totalMs, 1)) * 100);
   const isErr = step.status === 'error';
+  const displayNode = step.node.replace(/^\[(target|task|agent)\]\s*/, '');
+  const isOrchNode = step.node.startsWith('[target]') || step.node.startsWith('[task]');
   return (
+    <div style={{ display: 'flex', alignItems: 'stretch', paddingLeft: indent ? 20 : 0, borderLeft: indent ? '2px solid rgba(103,232,249,0.2)' : 'none', marginLeft: indent ? 12 : 0 }}>
+      <div style={{ flexShrink: 0, width: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {expandable && (
+          <button
+            onClick={e => { e.stopPropagation(); onExpand?.(); }}
+            style={{ width: 18, height: '100%', background: 'transparent', border: 'none', cursor: 'pointer', color: 'rgba(103,232,249,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+            title="Xem trace agent"
+          >
+            {expandLoading
+              ? <span style={{ fontSize: 9 }}>⟳</span>
+              : <ChevronDown size={10} style={{ transform: expanded ? 'rotate(0deg)' : 'rotate(-90deg)', transition: 'transform 0.15s' }} />
+            }
+          </button>
+        )}
+      </div>
     <button
-      onClick={() => onSelect(index)}
+      onClick={() => onSelect()}
       style={{
-        width: '100%', display: 'grid',
+        flex: 1, display: 'grid',
         gridTemplateColumns: '176px 1fr 52px',
         alignItems: 'center', gap: 8, padding: '5px 12px',
         background: selected ? 'rgba(235,208,124,0.10)' : 'transparent',
@@ -193,9 +369,11 @@ function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs }: {
         <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 5px', borderRadius: 3, background: t.bg, color: t.color, letterSpacing: '0.04em', flexShrink: 0 }}>
           {t.label}
         </span>
-        <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.88)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {step.node}
-        </span>
+        {!isOrchNode && (
+          <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.88)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {displayNode}
+          </span>
+        )}
       </div>
       {step.verdict ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -228,6 +406,7 @@ function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs }: {
         {step.latencyMs}ms
       </span>
     </button>
+    </div>
   );
 }
 
@@ -249,19 +428,69 @@ function JsonView({ value }: { value: string | object }) {
 
 /* ─── TracePanel ─────────────────────────────────────────────── */
 
-function TracePanel({ steps, traceLoading, traceId }: {
-  steps: TraceStep[]; traceLoading: boolean; traceId: string | null;
-}) {
-  const [tab, setTab]         = useState<'input' | 'output' | 'metadata'>('input');
-  const [selected, setSelected] = useState(0);
-  // splitPct = % height given to the waterfall section (clamped 20–75)
-  const [splitPct, setSplitPct] = useState(40);
-  const isDragging  = useRef(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+function getDescendants(obs: any[], parentId: string): any[] {
+  const childrenMap = new Map<string, any[]>();
+  for (const o of obs) {
+    const pid = o.parentObservationId ?? '__root__';
+    if (!childrenMap.has(pid)) childrenMap.set(pid, []);
+    childrenMap.get(pid)!.push(o);
+  }
+  const result: any[] = [];
+  const queue = [parentId];
+  while (queue.length) {
+    const cur = queue.shift()!;
+    for (const kid of childrenMap.get(cur) ?? []) {
+      result.push(kid);
+      if (kid.id) queue.push(kid.id);
+    }
+  }
+  return result;
+}
 
+function TracePanel({ steps, traceLoading, traceId, rawObservations }: {
+  steps: TraceStep[]; traceLoading: boolean; traceId: string | null; rawObservations: any[];
+}) {
+  const [tab, setTab]           = useState<'input' | 'output' | 'metadata'>('input');
+  // Track by ID instead of index to prevent index-shift when expanding rows
+  const [selectedId, setSelectedId] = useState<string>('');
+  const [splitPct, setSplitPct] = useState(40);
+  const isDragging    = useRef(false);
+  const containerRef  = useRef<HTMLDivElement>(null);
+
+  // expand state cho task rows (single-agent inline expand)
+  const [expanded,       setExpanded]       = useState<Set<string>>(new Set());
+  const [subSteps,       setSubSteps]       = useState<Record<string, TraceStep[]>>({});
+  // collapse state cho multi-agent group headers (default: tất cả expanded)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+
+  const toggleGroup = (groupId: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId); else next.add(groupId);
+      return next;
+    });
+  };
+
+  const toggleExpand = (step: TraceStep) => {
+    // Use span ID as key (agentConvId may be missing for single-agent path)
+    const key = step.agentLfSpanId ?? step.agentConvId!;
+    const next = new Set(expanded);
+    if (next.has(key)) { next.delete(key); setExpanded(next); return; }
+    next.add(key);
+    setExpanded(next);
+    if (subSteps[key] || !step.agentLfSpanId) return;
+
+    // 1 trace duy nhất cho cả request (xem handleSendStream) → rawObservations
+    // luôn chứa toàn bộ cây, không cần fetch thêm khi expand 1 [task]/single-agent.
+    const descendants = getDescendants(rawObservations, step.agentLfSpanId);
+    const mapped = mapObservations(descendants);
+    setSubSteps(prev => ({ ...prev, [key]: mapped }));
+  };
+
+  // Reset to first row when steps change (new result)
   useEffect(() => {
-    if (selected >= steps.length && steps.length > 0) setSelected(0);
-  }, [steps, selected]);
+    if (steps.length > 0) { setSelectedId(steps[0].id); setTab('input'); setCollapsedGroups(new Set()); }
+  }, [steps]);
 
   /* Drag handlers */
   useEffect(() => {
@@ -277,10 +506,44 @@ function TracePanel({ steps, traceLoading, traceId }: {
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }, []);
 
-  const starts   = steps.map(s => s.startMs);
-  const totalMs  = Math.max(...steps.map(s => s.startMs + s.latencyMs), 1);
-  const totalTok = steps.reduce((s, t) => s + t.tokens, 0);
-  const sel = steps[selected];
+  // flat list: steps + sub-steps interleaved
+  const allRows: Array<{ step: TraceStep; indent: boolean }> = [];
+  for (const step of steps) {
+    // Inner node của multi-agent group: chỉ hiện khi group chưa bị collapse
+    if (step.agentGroupId && !step.isAgentGroupHeader) {
+      if (!collapsedGroups.has(step.agentGroupId)) {
+        allRows.push({ step, indent: true });
+      }
+      continue;
+    }
+
+    allRows.push({ step, indent: false });
+
+    // Expand inline cho [task] / single-agent spans (legacy single-trace path)
+    const expandKey = step.agentLfSpanId ?? step.agentConvId;
+    if (expandKey && expanded.has(expandKey)) {
+      for (const sub of (subSteps[expandKey] ?? [])) {
+        const subStartMs = (step.startAbsMs > 0 && sub.startAbsMs > 0)
+          ? step.startMs + (sub.startAbsMs - step.startAbsMs)
+          : sub.startMs + step.startMs;
+        allRows.push({ step: { ...sub, startMs: subStartMs }, indent: true });
+      }
+    }
+  }
+  const headerTotalMs = Math.max(...steps.map(s => s.startMs + s.latencyMs), 1);
+  const totalMs  = Math.max(...allRows.map(r => r.step.startMs + r.step.latencyMs), 1);
+  // Tổng tokens/cost cho KPI header: tính trực tiếp trên rawObservations (đã
+  // fetch đủ toàn bộ cây trace 1 lần, xem comment ở toggleExpand phía trên),
+  // KHÔNG tính trên allRows/steps — 2 cái đó phụ thuộc UI expand state (group
+  // agent nào chưa expand thì tokens/cost các generation con của nó bị 0, vì
+  // span "single-agent"/"[task]" bọc ngoài không tự mang usage rollup). Tính
+  // trên steps/allRows từng khiến TOKENS đổi giá trị mỗi lần bấm expand
+  // (trước đó bị undercount) còn COST thì undercount vĩnh viễn vì không
+  // dùng allRows. rawObservations ổn định, không đổi theo expand/collapse.
+  const totalTok  = rawObservations.reduce((s, o) => s + ((o?.usage?.input ?? 0) + (o?.usage?.output ?? 0)), 0);
+  const totalCost = rawObservations.reduce((s, o) => s + (o?.calculatedTotalCost ?? 0), 0);
+  // Find selected by ID — immune to index shifts from expand/collapse
+  const sel = allRows.find(r => r.step.id === selectedId)?.step ?? allRows[0]?.step;
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#0B0B0E', minWidth: 0 }}>
@@ -313,9 +576,9 @@ function TracePanel({ steps, traceLoading, traceId }: {
       {/* ── KPI strip ── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
         {[
-          { k: 'latency', v: (totalMs / 1000).toFixed(2) + 's', c: '#F5F5F5' },
+          { k: 'latency', v: (headerTotalMs / 1000).toFixed(2) + 's', c: '#F5F5F5' },
           { k: 'tokens',  v: totalTok.toLocaleString(),          c: '#EBD07C' },
-          { k: 'cost',    v: '$' + steps.reduce((s, t) => s + t.cost, 0).toFixed(4), c: '#C5DD83' },
+          { k: 'cost',    v: '$' + totalCost.toFixed(4),         c: '#C5DD83' },
           { k: 'spans',   v: String(steps.length),               c: '#F3E2A7' },
         ].map(({ k, v, c }, i) => (
           <div key={k} style={{ padding: '7px 10px', borderRight: i < 3 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
@@ -336,7 +599,7 @@ function TracePanel({ steps, traceLoading, traceId }: {
               Observations
             </span>
             <span style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.28)', fontFamily: 'var(--font-mono)' }}>
-              {traceLoading ? 'streaming…' : steps.length + ' spans · ' + totalMs + 'ms'}
+              {traceLoading ? 'streaming…' : steps.length + ' spans · ' + headerTotalMs + 'ms'}
             </span>
           </div>
           {/* rows */}
@@ -347,12 +610,12 @@ function TracePanel({ steps, traceLoading, traceId }: {
                   <div key={i} className="pulse-soft" style={{ height: 22, borderRadius: 4, background: 'rgba(255,255,255,0.04)', opacity: 1 - i * 0.18 }} />
                 ))}
               </div>
-            ) : steps.length === 0 ? (
+            ) : allRows.length === 0 ? (
               <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', textAlign: 'center', padding: '20px 12px' }}>
                 Send a message to capture a trace
               </p>
-            ) : steps.map((s, i) => (
-              <React.Fragment key={s.id}>
+            ) : allRows.map(({ step: s, indent }, i) => (
+              <React.Fragment key={s.id + i}>
                 {s.isRetryStart && (
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: 6,
@@ -361,14 +624,26 @@ function TracePanel({ steps, traceLoading, traceId }: {
                     fontFamily: 'var(--font-mono)', letterSpacing: '0.08em',
                   }}>
                     <div style={{ flex: 1, height: 1, background: 'rgba(192,132,252,0.25)' }} />
-                    <span>retry #{s.iteration}</span>
+                    <span>{s.isConcurrentBranch ? `song song #${s.iteration}` : `retry #${s.iteration}`}</span>
                     <div style={{ flex: 1, height: 1, background: 'rgba(192,132,252,0.25)' }} />
                   </div>
                 )}
                 <WaterfallRow
                   step={s} index={i}
-                  selected={selected === i} onSelect={setSelected}
-                  startMs={starts[i]} totalMs={totalMs}
+                  selected={selectedId === s.id} onSelect={() => { setSelectedId(s.id); setTab('input'); }}
+                  startMs={s.startMs} totalMs={totalMs}
+                  indent={indent}
+                  expandable={!!s.isAgentGroupHeader || !!s.agentLfSpanId}
+                  expanded={
+                    s.isAgentGroupHeader
+                      ? !collapsedGroups.has(s.agentGroupId!)
+                      : !!(s.agentLfSpanId ?? s.agentConvId) && expanded.has(s.agentLfSpanId ?? s.agentConvId!)
+                  }
+                  expandLoading={false}
+                  onExpand={() => {
+                    if (s.isAgentGroupHeader && s.agentGroupId) toggleGroup(s.agentGroupId);
+                    else if (s.agentLfSpanId) toggleExpand(s);
+                  }}
                 />
               </React.Fragment>
             ))}
@@ -399,9 +674,9 @@ function TracePanel({ steps, traceLoading, traceId }: {
               {/* span header */}
               <div style={{ padding: '7px 14px 5px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flexShrink: 0 }}>
                 {(() => { const t = spanType(sel.node); return <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 5px', borderRadius: 3, background: t.bg, color: t.color }}>{t.label}</span>; })()}
-                <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.88)', fontWeight: 500 }}>{sel.node}</span>
+                <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.88)', fontWeight: 500 }}>{sel.node.replace(/^\[(target|task)\]\s*/, '')}</span>
                 <span style={{ marginLeft: 'auto', fontSize: 9.5, color: 'rgba(255,255,255,0.32)', fontFamily: 'var(--font-mono)' }}>
-                  +{starts[selected]}ms → +{starts[selected] + sel.latencyMs}ms
+                  +{sel.startMs}ms → +{sel.startMs + sel.latencyMs}ms
                 </span>
               </div>
               {/* span meta row */}
@@ -571,6 +846,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
   const [sending, setSending]     = useState(false);
   const [traceSteps, setTraceSteps]   = useState<TraceStep[]>([]);
   const [traceLoading, setTraceLoading] = useState(false);
+  const [rawObservations, setRawObservations] = useState<any[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [pendingOptions, setPendingOptions]     = useState<string[] | null>(null);
   const [pendingApproval, setPendingApproval]   = useState<PendingApproval | null>(null);
@@ -606,10 +882,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
   useEffect(() => {
     (async () => {
       try {
-        const res  = await fetch(`${API_BASE}/api/catalog/agents`, {
-          headers: { 'X-Tenant-ID': import.meta.env.VITE_TENANT_ID ?? 'tenant-dev' },
-        });
-        const data: { id: string; name: string; description: string; routing_keywords?: string[] }[] = await res.json();
+        const data = await apiGet<{ id: string; name: string; description: string; routing_keywords?: string[] }[]>('/api/catalog/agents');
         const opts: AgentOption[] = data.map(a => ({
           id: a.id, label: a.name, description: a.description,
           routing_keywords: a.routing_keywords,
@@ -627,10 +900,13 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   /* ── canSend ── */
-  const canSend = input.trim().length > 0 && !sending && (mode === 'unified' || !!selectedAgent);
+  // Khoá gửi tin nhắn trong lúc trace panel đang fetch/poll (traceLoading) —
+  // gửi tiếp sẽ tạo request mới đè lên session đang chờ trace, dễ gây nhầm
+  // lẫn thứ tự conversation.
+  const canSend = input.trim().length > 0 && !sending && !traceLoading && (mode === 'unified' || !!selectedAgent);
 
-  /* ── Send Single ── */
-  const handleSendSingle = async (text: string) => {
+  /* ── Send — unified handler cho cả single agent và multi-agent ── */
+  const handleSendStream = async (text: string) => {
     const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
     const userMsgId = Date.now().toString();
     const placeholderId = (Date.now() + 1).toString();
@@ -638,25 +914,25 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     setInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setSending(true);
+    setTraceLoading(true);
     setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', content: '', timestamp: now }]);
 
     try {
-      const res = await fetch(`${API_BASE}/api/conversations/run`, {
+      const res = await fetch(`${API_URL}/api/orchestrate/stream`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(keycloak?.token ? { Authorization: `Bearer ${keycloak.token}` } : {}) },
         body: JSON.stringify({
-          query: text, agent_id: selectedAgent,
-          conversation_id: conversationId,
+          query:    text,
+          agent_id: mode === 'single' ? selectedAgent : undefined,
+          user_id:  keycloak?.tokenParsed?.sub ?? 'playground',
           messages: messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
         }),
       });
 
-      const convId = res.headers.get('X-Conversation-Id');
-      if (convId && !conversationId) setConversationId(convId);
-
       const reader  = res.body!.getReader();
       const decoder = new TextDecoder();
-      let fullText  = '';
+      let fullText   = '';
+      let sessionId: string | undefined;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -667,27 +943,29 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
           const data = line.slice(6);
           if (data === '[DONE]') continue;
           if (data.startsWith('[ERROR]')) {
-            fullText = data.slice(7).trim() || 'Đã xảy ra lỗi, vui lòng thử lại.';
-            setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: fullText } : m));
+            const errMsg = data.slice(7).trim() || 'Đã xảy ra lỗi, vui lòng thử lại.';
+            setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: errMsg } : m));
             break;
           }
           try {
             const parsed = JSON.parse(data);
             if (parsed?.__suggestions) {
               setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, suggestions: parsed.__suggestions } : m));
-            } else if (parsed?.__options) {
-              setPendingOptions(parsed.__options);
+            } else if (parsed?.__session_id) {
+              // session_id = trace_id — biết ngay từ đầu, dùng để fetch 1 trace
+              // duy nhất (bao gồm cả outer node lẫn agent con) sau khi stream xong.
+              sessionId = parsed.__session_id;
+              setConversationId(sessionId ?? null);
+            } else if (parsed?.__clarification) {
+              setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: '' } : m));
             } else if (parsed?.__pending_review) {
-              setMessages(prev => prev.map(m => m.id === placeholderId
-                ? { ...m, content: '' }
-                : m,
-              ));
+              setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: '' } : m));
               setPendingApproval({
                 convId:        parsed.__pending_review.conv_id ?? parsed.__pending_review,
                 placeholderId,
                 payload:       parsed.__pending_review.payload ?? null,
               });
-            } else {
+            } else if (typeof parsed === 'string') {
               fullText += parsed;
               setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: fullText } : m));
             }
@@ -698,78 +976,38 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
         }
       }
 
-      if (convId) {
-        setTraceLoading(true);
-        (async () => {
-          for (let i = 0; i < 5; i++) {
-            await new Promise(r => setTimeout(r, 2000));
-            try {
-              const tr  = await fetch(`${API_BASE}/api/traces/${convId}`);
-              const { observations } = await tr.json();
-              const steps = mapObservations(observations ?? []);
-              if (steps.length > 0) { setTraceSteps(steps); break; }
-            } catch { break; }
-          }
-          setTraceLoading(false);
-        })();
+      // Stream xong → fetch trace theo session_id (= trace_id). Langfuse v3 ghi
+      // dữ liệu BẤT ĐỒNG BỘ (Redis queue → Clickhouse worker), nên lần fetch
+      // đầu có thể chỉ thấy 1 phần observations (vd thiếu "suggestion" — node
+      // chạy sau cùng, ghi lên Clickhouse trễ hơn). KHÔNG dừng poll ngay khi
+      // có kết quả đầu tiên — đợi số lượng observations ỔN ĐỊNH (2 lần liên
+      // tiếp bằng nhau) mới coi là đã lấy đủ.
+      if (sessionId) {
+        const id = sessionId;
+        let prevCount = -1;
+        for (let i = 0; i < 10; i++) {
+          try {
+            const { observations, traceId: obsTraceId } = await apiGet<any>(`/api/orchestrate/traces/${id}`);
+            const mapped = mapObservations(observations ?? [], obsTraceId);
+            if (mapped.length > 0) {
+              setTraceSteps(mapped);
+              setRawObservations(observations ?? []);
+              if (mapped.length === prevCount) break; // ổn định 2 lần liên tiếp → dừng
+              prevCount = mapped.length;
+            }
+          } catch { break; }
+          await new Promise(r => setTimeout(r, 800));
+        }
       }
+      setTraceLoading(false);
     } catch {
       setMessages(prev => prev.map(m =>
         m.id === placeholderId ? { ...m, content: 'Lỗi: không kết nối được backend.' } : m,
       ));
+      setTraceLoading(false);
     } finally {
       setSending(false);
     }
-  };
-
-  /* ── Send Unified ── */
-  const handleSendUnified = (text: string) => {
-    const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-    setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: text, timestamp: now }]);
-    setInput('');
-    if (textareaRef.current) textareaRef.current.style.height = 'auto';
-    setSending(true);
-    setTraceLoading(true);
-
-    const decision = routeMessage(text, agents);
-
-    setTimeout(() => {
-      const reply: Message = {
-        id: (Date.now() + 1).toString(), role: 'assistant',
-        content: decision.conf > 0.5
-          ? `Routed to **${decision.name}**. Based on its knowledge base I synthesized an answer with high confidence.`
-          : "I'm not fully sure which specialist fits best here. Could you add a bit more detail?",
-        timestamp: now, routed: decision,
-        suggestions: ['Can you show me an example?', 'What are the next steps?', 'Summarize briefly'],
-      };
-      setMessages(prev => [...prev, reply]);
-
-      const routerSpan: TraceStep = {
-        id: 'router-' + Date.now(), node: 'router', status: 'success',
-        startMs: 0, latencyMs: 90 + Math.round(Math.random() * 40), tokens: 64, cost: 0,
-        input:  JSON.stringify({ message: text, strategy: 'HYBRID' }, null, 2),
-        output: JSON.stringify({ routed_agent: decision.name, confidence: +decision.conf.toFixed(2) }, null, 2),
-        iteration: 0, isRetryStart: false,
-      };
-      const t0 = routerSpan.latencyMs;
-      const tPlan = 160 + Math.round(Math.random() * 80);
-      const tKb   = 200 + Math.round(Math.random() * 120);
-      const tMcp  = 180 + Math.round(Math.random() * 100);
-      const tRrf  = 20, tRerank = 15;
-      const tRetrieve = Math.max(tKb, tMcp);
-      const tResp = 380 + Math.round(Math.random() * 200);
-      setTraceSteps([
-        routerSpan,
-        { id: 'p-'  + Date.now(), node: 'planner',    status: 'success', startMs: t0,                                       latencyMs: tPlan,   tokens: 320, cost: 0, input: JSON.stringify({ query: text }, null, 2), output: '{"plan": "retrieve relevant docs, synthesize response"}', iteration: 0, isRetryStart: false },
-        { id: 'kb-' + Date.now(), node: 'kb_search',  status: 'success', startMs: t0 + tPlan,                               latencyMs: tKb,     tokens: 0,   cost: 0, input: JSON.stringify({ query: text, top_k: 5 }, null, 2), output: '{"chunks": 4}', iteration: 0, isRetryStart: false },
-        { id: 'mc-' + Date.now(), node: 'mcp',        status: 'success', startMs: t0 + tPlan,                               latencyMs: tMcp,    tokens: 0,   cost: 0, input: JSON.stringify({ query: text }, null, 2), output: '{"results": 2}', iteration: 0, isRetryStart: false },
-        { id: 'rr-' + Date.now(), node: 'rrf_ranking',status: 'success', startMs: t0 + tPlan + tRetrieve,                   latencyMs: tRrf,    tokens: 0,   cost: 0, input: '{}', output: '{}', iteration: 0, isRetryStart: false },
-        { id: 're-' + Date.now(), node: 'reranker',   status: 'success', startMs: t0 + tPlan + tRetrieve + tRrf,            latencyMs: tRerank, tokens: 0,   cost: 0, input: '{}', output: '{}', iteration: 0, isRetryStart: false },
-        { id: 'r-'  + Date.now(), node: 'responder',  status: 'success', startMs: t0 + tPlan + tRetrieve + tRrf + tRerank,  latencyMs: tResp,   tokens: 640 + Math.round(Math.random() * 200), cost: 0, input: JSON.stringify({ query: text, chunks: 4 }, null, 2), output: reply.content, iteration: 0, isRetryStart: false },
-      ]);
-      setSending(false);
-      setTraceLoading(false);
-    }, 1200);
   };
 
   const handleApproval = async (approved: boolean) => {
@@ -777,12 +1015,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     setApprovalLoading(true);
     const { convId, placeholderId } = pendingApproval;
     try {
-      const res = await fetch(`${API_BASE}/api/reviews/${convId}/resume`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approved, note: approvalNote }),
-      });
-      const data = await res.json();
+      const data = await apiMutate<any>('POST', `/api/reviews/${convId}/resume`, { approved, note: approvalNote });
       const responseText = data.response || (approved ? '' : 'Yêu cầu không được phê duyệt.');
       setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: responseText } : m));
     } catch {
@@ -796,11 +1029,10 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
 
   const handleSend = (override?: string) => {
     const text = (override ?? input).trim();
-    if (!text || sending) return;
+    if (!text || sending || traceLoading) return;
     setPendingOptions(null);
-    if (mode === 'unified') { handleSendUnified(text); return; }
-    if (!selectedAgent) return;
-    handleSendSingle(text);
+    if (mode === 'single' && !selectedAgent) return;
+    handleSendStream(text);
   };
 
   /* ── Derived ── */
@@ -830,7 +1062,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
           </div>
           <div style={{ display: 'flex', gap: 2, padding: 3, background: 'rgba(255,255,255,0.06)', borderRadius: 9, border: '1px solid rgba(255,255,255,0.1)' }}>
             {([['unified', 'Unified Chat'], ['single', 'Single Agent']] as const).map(([id, label]) => (
-              <button key={id} onClick={() => { setMode(id); setMessages([]); setTraceSteps([]); }} style={{
+              <button key={id} onClick={() => { setMode(id); setMessages([]); setTraceSteps([]); setRawObservations([]); }} style={{
                 padding: '5px 11px', borderRadius: 7, fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer',
                 background: mode === id ? 'rgba(235,208,124,0.18)' : 'transparent',
                 color: mode === id ? '#EBD07C' : 'rgba(255,255,255,0.4)',
@@ -888,9 +1120,9 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
             </div>
           )}
           {mode === 'unified' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(240,180,41,0.12)', border: '1px solid rgba(240,180,41,0.4)', borderRadius: 9, padding: '6px 11px' }}>
-              <Route size={13} style={{ color: '#F0B429' }} />
-              <span style={{ fontSize: 11, fontWeight: 600, color: '#F0B429' }}>Router picks agent</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(192,132,252,0.12)', border: '1px solid rgba(192,132,252,0.4)', borderRadius: 9, padding: '6px 11px' }}>
+              <Brain size={13} style={{ color: '#C084FC' }} />
+              <span style={{ fontSize: 11, fontWeight: 600, color: '#C084FC' }}>Multi-agent orchestrator</span>
             </div>
           )}
           <button
@@ -921,7 +1153,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
           <div style={{ padding: '7px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
               {mode === 'unified'
-                ? <><Route size={11} />Unified chat — router selects an agent per message</>
+                ? <><Brain size={11} style={{ color: '#C084FC' }} /><span style={{ color: 'rgba(192,132,252,0.7)' }}>Orchestrator — ToT planner assigns agents automatically</span></>
                 : selectedAgentObj
                   ? <><Bot size={11} />{selectedAgentObj.label}</>
                   : <><Bot size={11} style={{ opacity: 0.4 }} /><span style={{ color: 'rgba(255,255,255,0.25)' }}>No agent selected</span></>
@@ -1090,17 +1322,20 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
               <textarea
                 ref={textareaRef}
                 value={input}
+                disabled={traceLoading}
                 onChange={e => { setInput(e.target.value); adjustHeight(); }}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                 placeholder={
-                  mode === 'unified'
-                    ? 'Ask anything — router picks the right agent…'
-                    : !selectedAgent
-                      ? 'Select an agent first…'
-                      : 'Ask the agent anything… (Enter to send)'
+                  traceLoading
+                    ? 'Đang tải trace, vui lòng đợi…'
+                    : mode === 'unified'
+                      ? 'Ask anything — orchestrator plans & assigns agents…'
+                      : !selectedAgent
+                        ? 'Select an agent first…'
+                        : 'Ask the agent anything… (Enter to send)'
                 }
                 rows={1}
-                style={{ flex: 1, background: 'transparent', fontSize: 13, color: 'rgba(255,255,255,0.8)', resize: 'none', outline: 'none', border: 'none', lineHeight: 1.55, fontFamily: 'inherit', maxHeight: 120, overflowY: 'auto' }}
+                style={{ flex: 1, background: 'transparent', fontSize: 13, color: 'rgba(255,255,255,0.8)', resize: 'none', outline: 'none', border: 'none', lineHeight: 1.55, fontFamily: 'inherit', maxHeight: 120, overflowY: 'auto', cursor: traceLoading ? 'not-allowed' : 'text' }}
               />
               <button
                 onClick={() => handleSend()}
@@ -1129,7 +1364,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
               transition={{ duration: 0.25, ease: 'easeInOut' }}
               style={{ position: 'absolute', top: 0, right: 0, bottom: 0, width: '45%', display: 'flex', overflow: 'hidden' }}
             >
-              <TracePanel steps={traceSteps} traceLoading={traceLoading} traceId={conversationId} />
+              <TracePanel steps={traceSteps} traceLoading={traceLoading} traceId={conversationId} rawObservations={rawObservations} />
             </motion.div>
           )}
         </AnimatePresence>

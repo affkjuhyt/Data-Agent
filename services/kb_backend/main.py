@@ -55,21 +55,51 @@ _light_rag  = LightRAGPipeline()
 _ingestion  = IngestionPipeline()
 
 
+def _supervise(task: asyncio.Task) -> asyncio.Task:
+    """Attach a done-callback that surfaces a background loop dying.
+
+    The health-check and cache-sweep loops are `while True` and must never
+    complete while the process is up. If one escapes its own try/except (e.g. a
+    reconnect path raising an unexpected error), the task ends and its exception
+    is otherwise swallowed until GC prints "Task exception was never retrieved".
+    A dead health loop is dangerous: the connector's `_healthy` flag freezes, so
+    `svc()` gating goes stale (permanent 503, or worse, handing out a dead
+    client). Log it loudly so it is visible immediately instead of silently.
+    """
+    def _on_done(t: asyncio.Task) -> None:
+        if t.cancelled():
+            return  # expected on shutdown
+        exc = t.exception()
+        if exc is not None:
+            log.error("Background task %r died with an unhandled exception — "
+                      "health gating for this service is now STALE", t.get_name(),
+                      exc_info=exc)
+        else:
+            log.error("Background task %r exited unexpectedly (loops should run "
+                      "for the process lifetime)", t.get_name())
+    task.add_done_callback(_on_done)
+    return task
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── Postgres bootstrap ────────────────────────────────────────────────────
-    # Connect to template1 (always exists) to check/create aeroflow_kb.
-    # The Docker container creates aeroflow_kb on first init, so this is a
-    # safety net for fresh non-Docker starts only.
+    # Connect to template1 (always exists) to check/create the target DB.
+    # Handles any DB name (aeroflow_kb in standalone stacks, dataagent in the
+    # full-platform overlay). Safety net for fresh non-Docker starts only —
+    # in Docker the init scripts already created the DB before this runs.
+    _pg_db = _POSTGRES_URL.rsplit("/", 1)[-1].split("?")[0]
     admin_url = _POSTGRES_URL.rsplit("/", 1)[0] + "/template1"
     admin_engine = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
     try:
         async with admin_engine.connect() as conn:
             exists = await conn.scalar(
-                text("SELECT 1 FROM pg_database WHERE datname = 'aeroflow_kb'")
+                text("SELECT 1 FROM pg_database WHERE datname = :name"),
+                {"name": _pg_db},
             )
             if not exists:
-                await conn.execute(text("CREATE DATABASE aeroflow_kb"))
+                # DDL cannot be parameterized; _pg_db comes from our own env var.
+                await conn.execute(text(f"CREATE DATABASE {_pg_db}"))
     finally:
         await admin_engine.dispose()
 
@@ -122,18 +152,18 @@ async def lifespan(app: FastAPI):
     # ── Background: health check loops ────────────────────────────────────────
     hc = HealthCheckLoopConfig()
     hc_tasks = [
-        asyncio.create_task(_postgres.health_check_loop(hc),       name="hc-postgres"),
+        _supervise(asyncio.create_task(_postgres.health_check_loop(hc),       name="hc-postgres")),
     ]
     if not KB_LITE:
         hc_tasks += [
-            asyncio.create_task(_qdrant.health_check_loop(hc),         name="hc-qdrant"),
-            asyncio.create_task(_neo4j.health_check_loop(hc),          name="hc-neo4j"),
-            asyncio.create_task(_mongo.health_check_loop(hc),          name="hc-mongo"),
-            asyncio.create_task(_minio.health_check_loop(hc),          name="hc-minio"),
-            asyncio.create_task(_model.health_check_loop(hc),          name="hc-model"),
-            asyncio.create_task(_kafka_producer.health_check_loop(hc), name="hc-kafka-producer"),
+            _supervise(asyncio.create_task(_qdrant.health_check_loop(hc),         name="hc-qdrant")),
+            _supervise(asyncio.create_task(_neo4j.health_check_loop(hc),          name="hc-neo4j")),
+            _supervise(asyncio.create_task(_mongo.health_check_loop(hc),          name="hc-mongo")),
+            _supervise(asyncio.create_task(_minio.health_check_loop(hc),          name="hc-minio")),
+            _supervise(asyncio.create_task(_model.health_check_loop(hc),          name="hc-model")),
+            _supervise(asyncio.create_task(_kafka_producer.health_check_loop(hc), name="hc-kafka-producer")),
             # Background sweep that reclaims expired LightRAG query-cache entries (24h TTL).
-            asyncio.create_task(cache_sweep_loop(_qdrant.get_client()), name="cache-sweep"),
+            _supervise(asyncio.create_task(cache_sweep_loop(_qdrant.get_client()), name="cache-sweep")),
         ]
 
     yield

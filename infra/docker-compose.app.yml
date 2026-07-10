@@ -1,5 +1,6 @@
 services:
   workflow-runtime:
+    profiles: [runtime]
     build:
       context: ..
       dockerfile: services/workflow-runtime/Dockerfile
@@ -55,6 +56,7 @@ services:
         condition: service_started
 
   sandbox-executor:
+    profiles: [runtime]
     build:
       context: ../services/sandbox-executor
     container_name: dataagent-sandbox-executor
@@ -132,6 +134,7 @@ services:
   # user namespace (see docs/Sandbox_SchemaCrawler_Implementation.md §8.7
   # for the residual risk this does NOT close).
   sandbox-dockerd:
+    profiles: [runtime]
     image: ${SANDBOX_DOCKERD_IMAGE:-docker:27-dind-rootless}
     container_name: dataagent-sandbox-dockerd
     restart: unless-stopped
@@ -200,6 +203,7 @@ services:
     command: ["build", "-t", "sandbox-runner:latest", "/build"]
 
   flow-builder:
+    profiles: [authoring]
     build:
       context: ..
       dockerfile: services/flow-builder/Dockerfile
@@ -224,6 +228,7 @@ services:
         condition: service_started
 
   kb-backend:
+    profiles: [kb, runtime]
     build:
       context: ..
       # Real Dockerfile lives at infra/Dockerfile.kb (the code dir is services/kb_backend
@@ -254,6 +259,7 @@ services:
         condition: service_healthy
 
   auth-api:
+    profiles: [iam]
     build:
       context: ../services
       dockerfile: auth-api/Dockerfile
@@ -290,6 +296,7 @@ services:
         condition: service_started
 
   minio-service:
+    profiles: [kb, release]
     build:
       context: ../services
       dockerfile: minio-service/Dockerfile
@@ -308,6 +315,7 @@ services:
         condition: service_healthy
 
   release-worker:
+    profiles: [release]
     build:
       context: ../services
       dockerfile: release-worker/Dockerfile
@@ -348,6 +356,7 @@ services:
         condition: service_healthy
 
   audit-bridge:
+    profiles: [iam]
     build:
       context: ../services
       dockerfile: audit-bridge/Dockerfile
@@ -377,6 +386,7 @@ services:
         condition: service_healthy
 
   audit-consumer:
+    profiles: [iam]
     build:
       context: ../services
       dockerfile: audit-consumer/Dockerfile
@@ -404,6 +414,7 @@ services:
         condition: service_healthy
 
   memory-consumer:
+    profiles: [runtime]
     build:
       context: ../services/memory-consumer
     container_name: dataagent-memory-consumer
@@ -424,6 +435,7 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
       QDRANT_URL: http://qdrant:6333
       LITELLM_BASE_URL: http://litellm:4000
+      EMBEDDING_DIM: "1024"
     depends_on:
       kafka:
         condition: service_healthy
@@ -435,6 +447,7 @@ services:
         condition: service_started
 
   schema-crawler-worker:
+    profiles: [runtime]
     build:
       context: ../services/schema-crawler-worker
     container_name: dataagent-schema-crawler-worker
@@ -471,6 +484,7 @@ services:
         condition: service_started
 
   jwks-refresher:
+    profiles: [legacy-jwt]
     build:
       context: ../services
       dockerfile: jwks-refresher/Dockerfile
@@ -497,7 +511,36 @@ services:
       kong:
         condition: service_healthy
 
+  orchestrator:
+    profiles: [runtime]
+    build:
+      context: ..
+      dockerfile: services/orchestrator/Dockerfile
+    container_name: dataagent-orchestrator
+    restart: unless-stopped
+    ports:
+      - "8003:8003"
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
+      LITELLM_BASE_URL: http://litellm:4000
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-sk-dev}
+      WORKFLOW_RUNTIME_URL: http://workflow-runtime:8001
+      LANGFUSE_HOST: http://langfuse:3000
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-change-me}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-change-me}
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: orchestrator
+    depends_on:
+      postgres:
+        condition: service_healthy
+      litellm:
+        condition: service_started
+      workflow-runtime:
+        condition: service_started
+
   frontend:
+    profiles: [authoring]
     build:
       context: ..
       dockerfile: docker/Dockerfile.dev

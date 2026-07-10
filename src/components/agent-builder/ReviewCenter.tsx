@@ -1,7 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Eye, Clock, CheckCircle, XCircle, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
-
-const API = import.meta.env.VITE_WORKFLOW_RUNTIME_URL ?? 'http://localhost:8001';
+import { apiGet, apiMutate } from '../../lib/apiClient';
 
 interface PendingReview {
   conv_id:      string;
@@ -31,11 +30,7 @@ function ReviewCard({ review, onResolved }: { review: PendingReview; onResolved:
   const submit = async (approved: boolean) => {
     setLoading(true);
     try {
-      await fetch(`${API}/api/reviews/${review.conv_id}/resume`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approved, note }),
-      });
+      await apiMutate('POST', `/api/reviews/${review.conv_id}/resume`, { approved, note });
       onResolved();
     } finally {
       setLoading(false);
@@ -168,8 +163,7 @@ export default function ReviewCenter() {
 
   const fetch_ = useCallback(async () => {
     try {
-      const r = await fetch(`${API}/api/reviews/pending`);
-      const data = await r.json();
+      const data = await apiGet<any[]>('/api/reviews/pending');
       setReviews(data);
     } catch {
       /* ignore */

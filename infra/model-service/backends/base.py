@@ -1,53 +1,89 @@
-"""Backend capability protocols.
-
-A *backend* serves one capability — chat, embed, or rerank. Several backends may
-be registered for the same capability (e.g. a remote Colab GPU and a local CPU
-model); the registry (registry.py) picks the ACTIVE one at call time. Callers
-(the routers) only ever talk to the active backend and never know whether the
-work runs locally or is forwarded to a remote server.
-
-Adding a new way to serve a capability = implement the matching protocol and
-register an instance in backends/__init__.py.
-"""
 from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+from pydantic import BaseModel
+
+
+# ── Wire schemas (request/response models for the endpoints in app.py) ────────────
+class EmbedRequest(BaseModel):
+    texts: list[str]
+    model_id: str | None = None
+
+class EmbedResponse(BaseModel):
+    embeddings: list[list[float]]
+    model_id: str | None
+
+
+class RerankRequest(BaseModel):
+    query: str
+    documents: list[str]
+    top_n: int = 5
+    model_id: str | None = None
+
+
+class RerankResult(BaseModel):
+    index: int
+    relevance_score: float
+
+
+class RerankResponse(BaseModel):
+    results: list[RerankResult]
+
+
+class GenerateRequest(BaseModel):
+    prompt: str | None = None
+    system_prompt: str = ""
+    messages: list[dict] | None = None
+    json_schema: dict | None = None
+    json_mode: bool = True
+    max_tokens: int = 512
+    temperature: float = 0.1
+    model: str | None = None
+
+
+class GenerateResponse(BaseModel):
+    content: str
+
+
+# ── OpenAI-compatible /v1/embeddings (BGE-M3, used by memory services via litellm) ──
+class OAIEmbedRequest(BaseModel):
+    input: str | list[str]
+    model: str = "bge-m3"
+
+
+class OAIEmbedObject(BaseModel):
+    object: str = "embedding"
+    index: int
+    embedding: list[float]
+
+
+class OAIEmbedResponse(BaseModel):
+    object: str = "list"
+    data: list[OAIEmbedObject]
+    model: str
+    usage: dict
+
 
 @runtime_checkable
-class ChatBackend(Protocol):
-    name: str
-
-    def available(self) -> bool:
-        """True when this backend is configured and able to serve right now."""
-        ...
-
-    def chat(self, messages: list[dict], response_format: dict | None,
-             max_tokens: int, temperature: float) -> str:
-        """Return the assistant content string for an OpenAI-style chat request."""
+class EmbedCaller(Protocol):
+    def embed(self, texts: list[str]) -> list[list[float]]:
         ...
 
 
 @runtime_checkable
-class EmbedBackend(Protocol):
-    name: str
-
-    def available(self) -> bool:
-        ...
-
-    def embed(self, texts: list[str], model_id: str | None) -> tuple[list[list[float]], str | None]:
-        """Return (embeddings, model_id_used). model_id selects a specific model
-        when the backend supports it (remote backends may ignore it)."""
-        ...
-
-
-@runtime_checkable
-class RerankBackend(Protocol):
-    name: str
-
-    def available(self) -> bool:
-        ...
-
+class RerankCaller(Protocol):
     def rerank(self, query: str, documents: list[str], top_n: int) -> list[tuple[int, float]]:
-        """Return up to top_n (document_index, relevance_score) pairs, best first."""
         ...
+
+
+@runtime_checkable
+class ChatCaller(Protocol):
+    def chat(self, messages: list[dict], response_format: dict | None, **opts) -> str:
+        """Chat-completion from a full messages list."""
+        ...
+
+    def generate(self, prompt: str, system_prompt: str, response_format: dict | None, **opts) -> str:
+        """Convenience: build a (system?, user) messages list from a raw prompt and chat."""
+        ...
+
