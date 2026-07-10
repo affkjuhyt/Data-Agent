@@ -6,6 +6,12 @@ import {
   Route, Sparkles, Copy, GripHorizontal,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import {
+  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area,
+  ScatterChart, Scatter, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
+  RadialBarChart, RadialBar, ComposedChart,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+} from 'recharts';
 import { cn } from '../../lib/utils';
 import { API_URL } from '../../lib/config';
 import { apiGet, apiMutate } from '../../lib/apiClient';
@@ -36,6 +42,15 @@ interface TraceStep {
   isAgentGroupHeader?: boolean; // true = dòng tổng của 1 agent trong multi-agent timeline
 }
 
+interface ChartSpec {
+  chart_type: 'bar' | 'line' | 'area' | 'pie' | 'scatter' | 'radar' | 'radialBar' | 'composed';
+  title: string;
+  x_key: string;
+  y_keys: string[];
+  data: Record<string, unknown>[];
+  series?: Array<{ key: string; type: 'bar' | 'line' | 'area' }>;  // chỉ dùng khi chart_type === 'composed'
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -43,6 +58,7 @@ interface Message {
   timestamp: string;
   suggestions?: string[];
   routed?: { name: string; conf: number } | null;
+  chartSpecs?: ChartSpec[];
 }
 
 interface PendingApproval {
@@ -789,6 +805,109 @@ function MarkdownContent({ text }: { text: string }) {
   return <>{nodes}</>;
 }
 
+/* ─── Chart renderer ─────────────────────────────────────────── */
+
+const _CHART_COLORS = ['#EBD07C', '#93C5FD', '#86EFAC', '#F8A4A4', '#C084FC', '#7DD3FC'];
+
+function ChartRenderer({ spec }: { spec: ChartSpec }) {
+  const tooltipStyle = {
+    background: '#1A1A1A',
+    border: '1px solid rgba(255,255,255,0.12)',
+    borderRadius: 8,
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.85)',
+  };
+
+  return (
+    <div style={{ marginTop: 8, padding: '10px 14px 4px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10 }}>
+      {spec.title && (
+        <p style={{ fontSize: 11.5, fontWeight: 700, color: 'rgba(255,255,255,0.7)', margin: '0 0 8px' }}>{spec.title}</p>
+      )}
+      <div style={{ width: '100%', height: 220 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          {spec.chart_type === 'line' ? (
+            <LineChart data={spec.data}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
+              <XAxis dataKey={spec.x_key} stroke="rgba(255,255,255,0.4)" fontSize={10} axisLine={false} tickLine={false} />
+              <YAxis stroke="rgba(255,255,255,0.4)" fontSize={10} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={tooltipStyle} />
+              {spec.y_keys.map((k, i) => (
+                <Line key={k} type="monotone" dataKey={k} stroke={_CHART_COLORS[i % _CHART_COLORS.length]} strokeWidth={2} dot={false} />
+              ))}
+            </LineChart>
+          ) : spec.chart_type === 'area' ? (
+            <AreaChart data={spec.data}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
+              <XAxis dataKey={spec.x_key} stroke="rgba(255,255,255,0.4)" fontSize={10} axisLine={false} tickLine={false} />
+              <YAxis stroke="rgba(255,255,255,0.4)" fontSize={10} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={tooltipStyle} />
+              {spec.y_keys.map((k, i) => (
+                <Area key={k} type="monotone" dataKey={k} stroke={_CHART_COLORS[i % _CHART_COLORS.length]} fill={_CHART_COLORS[i % _CHART_COLORS.length]} fillOpacity={0.2} />
+              ))}
+            </AreaChart>
+          ) : spec.chart_type === 'pie' ? (
+            <PieChart>
+              <Tooltip contentStyle={tooltipStyle} />
+              <Pie data={spec.data} dataKey={spec.y_keys[0]} nameKey={spec.x_key} outerRadius={80}>
+                {spec.data.map((_, i) => <Cell key={i} fill={_CHART_COLORS[i % _CHART_COLORS.length]} />)}
+              </Pie>
+            </PieChart>
+          ) : spec.chart_type === 'scatter' ? (
+            <ScatterChart>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+              <XAxis dataKey={spec.x_key} type="number" stroke="rgba(255,255,255,0.4)" fontSize={10} axisLine={false} tickLine={false} />
+              <YAxis dataKey={spec.y_keys[0]} type="number" stroke="rgba(255,255,255,0.4)" fontSize={10} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={tooltipStyle} cursor={{ strokeDasharray: '3 3' }} />
+              <Scatter data={spec.data} fill={_CHART_COLORS[0]} />
+            </ScatterChart>
+          ) : spec.chart_type === 'radar' ? (
+            <RadarChart data={spec.data}>
+              <PolarGrid stroke="rgba(255,255,255,0.12)" />
+              <PolarAngleAxis dataKey={spec.x_key} stroke="rgba(255,255,255,0.4)" fontSize={10} />
+              <PolarRadiusAxis stroke="rgba(255,255,255,0.2)" fontSize={9} />
+              <Tooltip contentStyle={tooltipStyle} />
+              {spec.y_keys.map((k, i) => (
+                <Radar key={k} dataKey={k} stroke={_CHART_COLORS[i % _CHART_COLORS.length]} fill={_CHART_COLORS[i % _CHART_COLORS.length]} fillOpacity={0.25} />
+              ))}
+            </RadarChart>
+          ) : spec.chart_type === 'radialBar' ? (
+            <RadialBarChart data={spec.data} innerRadius="20%" outerRadius="90%">
+              <Tooltip contentStyle={tooltipStyle} />
+              <RadialBar dataKey={spec.y_keys[0]} background>
+                {spec.data.map((_, i) => <Cell key={i} fill={_CHART_COLORS[i % _CHART_COLORS.length]} />)}
+              </RadialBar>
+              <Legend iconSize={8} wrapperStyle={{ fontSize: 10, color: 'rgba(255,255,255,0.6)' }} />
+            </RadialBarChart>
+          ) : spec.chart_type === 'composed' && spec.series ? (
+            <ComposedChart data={spec.data}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
+              <XAxis dataKey={spec.x_key} stroke="rgba(255,255,255,0.4)" fontSize={10} axisLine={false} tickLine={false} />
+              <YAxis stroke="rgba(255,255,255,0.4)" fontSize={10} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={tooltipStyle} />
+              {spec.series.map((s, i) => {
+                const color = _CHART_COLORS[i % _CHART_COLORS.length];
+                if (s.type === 'line') return <Line key={s.key} type="monotone" dataKey={s.key} stroke={color} strokeWidth={2} dot={false} />;
+                if (s.type === 'area') return <Area key={s.key} type="monotone" dataKey={s.key} stroke={color} fill={color} fillOpacity={0.2} />;
+                return <Bar key={s.key} dataKey={s.key} fill={color} radius={[4, 4, 0, 0]} />;
+              })}
+            </ComposedChart>
+          ) : (
+            <BarChart data={spec.data}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
+              <XAxis dataKey={spec.x_key} stroke="rgba(255,255,255,0.4)" fontSize={10} axisLine={false} tickLine={false} />
+              <YAxis stroke="rgba(255,255,255,0.4)" fontSize={10} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={tooltipStyle} />
+              {spec.y_keys.map((k, i) => (
+                <Bar key={k} dataKey={k} fill={_CHART_COLORS[i % _CHART_COLORS.length]} radius={[4, 4, 0, 0]} />
+              ))}
+            </BarChart>
+          )}
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
 /* ─── ChatBubble ─────────────────────────────────────────────── */
 
 function ChatBubble({ msg }: { msg: Message }) {
@@ -824,6 +943,7 @@ function ChatBubble({ msg }: { msg: Message }) {
             ? <p style={{ margin: 0 }}>{msg.content}</p>
             : <MarkdownContent text={msg.content} />
           }
+          {!isUser && msg.chartSpecs?.map((spec, i) => <ChartRenderer key={i} spec={spec} />)}
           <p style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.25)', marginTop: 6 }}>{msg.timestamp}</p>
         </div>
       </div>
@@ -965,6 +1085,8 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                 placeholderId,
                 payload:       parsed.__pending_review.payload ?? null,
               });
+            } else if (parsed?.__chart) {
+              setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, chartSpecs: parsed.__chart } : m));
             } else if (typeof parsed === 'string') {
               fullText += parsed;
               setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: fullText } : m));

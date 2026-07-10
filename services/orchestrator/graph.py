@@ -95,6 +95,8 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
                     conversation_id = data
                 elif event_type == "pending_review":
                     await adispatch_custom_event("pending_review", data)
+                elif event_type == "chart":
+                    await adispatch_custom_event("chart", data)
             success = True
         except Exception as e:
             logger.warning("single_agent | failed: %s", e)
