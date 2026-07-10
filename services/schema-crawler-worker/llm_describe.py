@@ -39,6 +39,7 @@ def _columns_block(columns: list[dict]) -> str:
     lines = []
     for c in columns:
         comment = _truncate(c.get("comment") or "", _MAX_COMMENT_CHARS)
+        comment = comment.replace("<", "&lt;").replace(">", "&gt;")
         lines.append(f"  {c['name']}:{c['type']}:<column_comment>{comment}</column_comment>")
     return "\n".join(lines)
 

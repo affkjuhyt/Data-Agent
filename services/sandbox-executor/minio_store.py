@@ -49,14 +49,24 @@ _BOTO_CONFIG = Config(
 )
 
 
+_client_instance = None
+
+
 def _client():
-    return boto3.client(
-        "s3",
-        endpoint_url=MINIO_ENDPOINT,
-        aws_access_key_id=MINIO_ACCESS_KEY,
-        aws_secret_access_key=MINIO_SECRET_KEY,
-        config=_BOTO_CONFIG,
-    )
+    # boto3 clients are thread-safe and cheap to reuse — building one from
+    # scratch on every put_code/delete_code/ensure_bucket call (this sits on
+    # the hot request path, see module docstring) adds needless connection
+    # setup overhead for no benefit.
+    global _client_instance
+    if _client_instance is None:
+        _client_instance = boto3.client(
+            "s3",
+            endpoint_url=MINIO_ENDPOINT,
+            aws_access_key_id=MINIO_ACCESS_KEY,
+            aws_secret_access_key=MINIO_SECRET_KEY,
+            config=_BOTO_CONFIG,
+        )
+    return _client_instance
 
 
 def ensure_bucket() -> None:

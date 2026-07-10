@@ -355,6 +355,8 @@ def _is_due(last_crawled_at: "datetime | None") -> bool:
     every table failed last time) always counts as due."""
     if last_crawled_at is None:
         return True
+    if last_crawled_at.tzinfo is None:
+        last_crawled_at = last_crawled_at.replace(tzinfo=timezone.utc)
     return (datetime.now(timezone.utc) - last_crawled_at).total_seconds() >= CRAWL_INTERVAL_SECONDS
 
 

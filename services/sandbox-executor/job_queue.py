@@ -75,6 +75,10 @@ class Job:
     # ever slice `output_chunks[n:]`, which is safe under the GIL without
     # an explicit lock for this single-writer/many-reader access pattern.
     output_chunks: list[tuple[str, str]] = dataclasses.field(default_factory=list)
+    # Set whenever status changes or a new output chunk is appended, so
+    # wait_for_change() below can block on it instead of busy-polling —
+    # cleared again after each waiter wakes and re-checks its condition.
+    change_event: asyncio.Event = dataclasses.field(default_factory=asyncio.Event)
 
 
 class JobQueue:
@@ -111,8 +115,14 @@ class JobQueue:
         self._jobs: dict[str, Job] = {}
         self._payloads: dict[str, dict] = {}
         self._workers: list[asyncio.Task] = []
+        # Captured in start() (runs on the event loop) so append_output —
+        # called from a worker OS thread via asyncio.to_thread, not the
+        # event loop — can wake waiters with the thread-safe call_soon_
+        # threadsafe instead of calling Event.set() directly off-thread.
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     def start(self) -> None:
+        self._loop = asyncio.get_event_loop()
         self._workers = [
             asyncio.create_task(self._worker_loop(), name=f"sandbox-job-worker-{i}")
             for i in range(self._num_workers)
@@ -166,6 +176,8 @@ class JobQueue:
         job = self._jobs.get(job_id)
         if job is not None:
             job.output_chunks.append((stream, text))
+            if self._loop is not None:
+                self._loop.call_soon_threadsafe(job.change_event.set)
 
     async def wait_for_change(
         self,
@@ -174,21 +186,28 @@ class JobQueue:
         timeout_s: float,
         last_output_len: int = 0,
     ) -> Job | None:
-        """Polls the in-memory store for a status change OR new output
-        chunks, used by the SSE stream endpoint. Not condition-variable-
-        based — the job store is a plain dict with no per-job signal to
-        wait on, and this is v1's deliberately simple in-memory design
-        (see module docstring); a short internal poll interval is cheap
-        here since it never leaves the process."""
+        """Waits on the job's own asyncio.Event for a status change OR new
+        output chunks, used by the SSE stream endpoint — no fixed-interval
+        busy-poll, so many concurrent SSE connections cost nothing while
+        idle. Each waiter clears the event right after waking (safe: no
+        `await` between wake and clear, so no other coroutine can slip a
+        change in between) and re-checks its own condition, since one
+        event covers both status and output-chunk changes."""
         deadline = time.monotonic() + timeout_s
-        while time.monotonic() < deadline:
+        while True:
             job = self._jobs.get(job_id)
             if job is None:
                 return None
             if job.status != last_status or len(job.output_chunks) != last_output_len:
                 return job
-            await asyncio.sleep(0.1)
-        return self._jobs.get(job_id)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return job
+            try:
+                await asyncio.wait_for(job.change_event.wait(), timeout=remaining)
+            except asyncio.TimeoutError:
+                return self._jobs.get(job_id)
+            job.change_event.clear()
 
     def _sweep_expired(self) -> None:
         now = time.monotonic()
@@ -209,6 +228,7 @@ class JobQueue:
             if job is None:
                 continue
             job.status = JobStatus.RUNNING
+            job.change_event.set()
             try:
                 job.result = await self._executor(payload)
                 job.status = JobStatus.DONE
@@ -220,3 +240,4 @@ class JobQueue:
                 job.error = str(e)
                 job.status = JobStatus.ERROR
             job.finished_at = time.monotonic()
+            job.change_event.set()

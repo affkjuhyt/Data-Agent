@@ -243,6 +243,8 @@ def _json_default(obj):
         return obj.isoformat()
     if isinstance(obj, uuid.UUID):
         return str(obj)
+    if isinstance(obj, (bytes, bytearray)):
+        return obj.hex()
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 

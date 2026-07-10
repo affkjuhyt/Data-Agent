@@ -752,6 +752,28 @@ class ContainerPool:
             else:
                 self._idle.put(pc)
 
+        self._top_up()
+
+    def _top_up(self) -> None:
+        """_replace() gives up after _SPAWN_RETRIES exhausted attempts
+        (e.g. a Docker daemon overloaded at that moment) and just logs an
+        error, permanently leaving the pool short of self.size with no
+        other path back to full strength. Each janitor pass retries the
+        shortfall so a transient spawn failure self-heals on the next
+        tick instead of quietly shrinking the pool forever."""
+        with self._lock:
+            shortfall = self.size - len(self._all)
+        for _ in range(shortfall):
+            try:
+                self._idle.put(self._spawn())
+            except PoolSpawnError as e:
+                logger.error(
+                    "sandbox pool | janitor top-up: failed to spawn replacement container — "
+                    "pool still running short of its configured size %d: %s",
+                    self.size, e,
+                )
+                break
+
     def _reconcile_labels(self) -> None:
         """docs/1.md Kế hoạch 1 mục (a)/(f): cross-check this pool's
         internal state against Docker's own view of which containers

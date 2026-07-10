@@ -50,18 +50,23 @@ def _get_connection(connection_params: dict):
                 pass
             _connections.pop(key, None)
 
-        conn = snowflake.connector.connect(
-            account=connection_params["account"],
-            user=connection_params["user"],
-            password=connection_params["password"],
-            warehouse=connection_params.get("warehouse"),
-            database=connection_params.get("database"),
-            schema=connection_params.get("schema"),
-            role=connection_params.get("role"),
-            client_session_keep_alive=True,
-        )
+    # Connect outside the lock — this is a blocking network round-trip
+    # (~1-2s), and holding _connections_lock for its duration would stall
+    # every other thread trying to fetch/cache a connection for any
+    # warehouse, not just this one.
+    conn = snowflake.connector.connect(
+        account=connection_params["account"],
+        user=connection_params["user"],
+        password=connection_params["password"],
+        warehouse=connection_params.get("warehouse"),
+        database=connection_params.get("database"),
+        schema=connection_params.get("schema"),
+        role=connection_params.get("role"),
+        client_session_keep_alive=True,
+    )
+    with _connections_lock:
         _connections[key] = conn
-        return conn
+    return conn
 
 
 def _drop_connection(connection_params: dict, conn) -> None:
