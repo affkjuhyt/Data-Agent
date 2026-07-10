@@ -33,7 +33,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./sql/create-extra-dbs.sql:/docker-entrypoint-initdb.d/01-create-dbs.sql:ro
-      - ./Postgres/init.sql:/docker-entrypoint-initdb.d/02-kb-tables.sql:ro
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/02-kb-tables.sql:ro
       - ./sql/init.sql:/docker-entrypoint-initdb.d/03-app-schema.sql:ro
       - ./sql/release-init.sql:/docker-entrypoint-initdb.d/04-release-schema.sql:ro
     ports:
