@@ -51,6 +51,33 @@ CANON_OVERLAP = os.getenv("CANON_OVERLAP", "0") == "1"
 # ("thành_phố_hồ_chí_minh").
 QUERY_ALIAS_RESOLVE = os.getenv("QUERY_ALIAS_RESOLVE", "0") == "1"
 
+# ── Hybrid lexical (BM25 / full-text) retrieval branch ────────────────────────
+# 2025 best-practice: pure dense retrieval under-ranks exact keyword / proper-noun
+# matches ("Nghị định 13", a part number, a person's name). A sparse lexical pass
+# recovers them; the two are fused via RRF, which is what makes hybrid beat either
+# alone. Implemented over Postgres full-text search on the active chunk text so it
+# needs no extra store. Env-gated (off by default; enable once the FTS GIN index
+# migration f2b3c4d5e6f7 has run).
+HYBRID_LEXICAL = os.getenv("HYBRID_LEXICAL", "0") == "1"
+LEXICAL_LIMIT = int(os.getenv("LEXICAL_LIMIT", "5"))
+# Postgres text-search configuration. "simple" does NO stemming and keeps
+# Vietnamese diacritics intact — the right choice for the proper-noun / keyword
+# queries this branch targets (a stemming config would fold "Nghị"→"nghi").
+LEXICAL_TS_CONFIG = os.getenv("LEXICAL_TS_CONFIG", "simple")
+
+# ── Content-purpose intent vocabulary ─────────────────────────────────────────
+# The closed label set documents are tagged with (doc-point `intents` field) and
+# that the canonicalize LLM must choose from. Single-sourced here so the prompt
+# and the doc-narrowing filter can never drift apart.
+CONTENT_INTENTS = [
+    s.strip() for s in os.getenv(
+        "CONTENT_INTENTS",
+        "information_retrieval,regulation_compliance,technical_specification,"
+        "financial_reporting,process_description,organisational_info,"
+        "question_answering,data_definition,historical_record,announcement",
+    ).split(",") if s.strip()
+]
+
 # Pipeline tuning
 QDRANT_PASS1_LIMIT = int(os.getenv("QDRANT_PASS1_LIMIT", "3"))
 QDRANT_PASS2_LIMIT = int(os.getenv("QDRANT_PASS2_LIMIT", "2"))
@@ -60,3 +87,17 @@ NEO4J_MAX_NEIGHBOURS = int(os.getenv("NEO4J_MAX_NEIGHBOURS", "5"))
 NEO4J_TOP_ENTITIES = int(os.getenv("NEO4J_TOP_ENTITIES", "3"))
 RRF_TOP_N = int(os.getenv("RRF_TOP_N", "10"))
 RERANK_TOP_N = int(os.getenv("RERANK_TOP_N", "5"))
+
+# ── Reciprocal Rank Fusion + fan-out limits (previously hardcoded) ─────────────
+# RRF constant: 60 is the canonical default from Cormack et al. (2009); larger k
+# flattens the weight of top ranks. Kept configurable rather than a magic literal.
+RRF_K = int(os.getenv("RRF_K", "60"))
+# Graph-seed headroom: keep a few more expansion seeds than NEO4J_TOP_ENTITIES so
+# the query's own entities survive the top-N cut alongside frequency-ranked ones.
+GRAPH_SEED_MARGIN = int(os.getenv("GRAPH_SEED_MARGIN", "3"))
+# Max answer-type hints applied per query (person/location/…) in the typed pass.
+MAX_PREFERRED_TYPES = int(os.getenv("MAX_PREFERRED_TYPES", "2"))
+# Max distinct front-layer typed entity groups searched in the typed pass.
+MAX_TYPED_GROUPS = int(os.getenv("MAX_TYPED_GROUPS", "3"))
+# How many expanded neighbour names to echo in the SSE graph_expand progress event.
+GRAPH_PREVIEW_LIMIT = int(os.getenv("GRAPH_PREVIEW_LIMIT", "20"))

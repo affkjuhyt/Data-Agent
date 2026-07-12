@@ -4,24 +4,19 @@ A tenant has many knowledge bases (the "kind" of knowledge a document belongs to
 Documents reference one at ingestion; retrieval can be scoped to it.
 """
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel
 
 from basemodel.services_databaseconnector.shared_model import ResponseModel
+from services.kb_backend.schemas import CreateKnowledgeBaseRequest
 from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
-from services.kb_backend.pipeline.kb_ui_operation.knowledge_base_ops import (
+from services.kb_backend.operations.knowledge_base_ops import (
     list_knowledge_bases, create_knowledge_base, delete_knowledge_base,
 )
 
 router = APIRouter(prefix="/api/knowledge/knowledge-bases", tags=["Knowledge-Bases"])
 
-_DEFAULT_TENANT = "a0000000-0000-0000-0000-000000000001"
-
-
-class RequestCreateKnowledgeBase(BaseModel):
-    name: str
-    description: str = ""
+from services.kb_backend.config import DEFAULT_TENANT_ID as _DEFAULT_TENANT
 
 
 @router.get("", response_model=ResponseModel)
@@ -35,7 +30,7 @@ async def list_knowledge_bases_route(request: Request, ctx: dict = Depends(authe
 
 @router.post("", response_model=ResponseModel)
 async def create_knowledge_base_route(
-    body: RequestCreateKnowledgeBase, request: Request, ctx: dict = Depends(require_perm("add_data")),
+    body: CreateKnowledgeBaseRequest, request: Request, ctx: dict = Depends(require_perm("add_data")),
 ):
     result = await create_knowledge_base(
         postgres=svc(request, "postgres"),

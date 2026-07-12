@@ -59,7 +59,7 @@ from services.database_connector.neo4j_connector import Neo4jClient
 from services.database_connector.mongo_connector import MongoClient
 from services.database_connector.minio_connector import MinIOClient
 from services.kb_backend.pipeline.light_rag import config as cfg
-from services.kb_backend.pipeline.kb_ui_operation import trash_ops
+from services.kb_backend.operations import trash_ops
 
 # Connection strings — same sources the service uses (env + light_rag config).
 POSTGRES_URL = os.getenv("POSTGRES_URL", "postgresql+asyncpg://admin:dev123@postgres/aeroflow_kb")

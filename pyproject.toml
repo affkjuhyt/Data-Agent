@@ -61,6 +61,12 @@ filterwarnings = [
     # still raise (filter scope is the pytest wrapper, not the underlying
     # ResourceWarning class). Drop this once anyio ships a sync __del__.
     "ignore::pytest.PytestUnraisableExceptionWarning",
+    # basemodel Pydantic models use `model_name` / `model_id` fields, which collide
+    # with pydantic's protected `model_` namespace and emit a UserWarning at import.
+    # It's a naming choice in basemodel, not a bug — ignore so importing the ORM in
+    # tests doesn't error under `filterwarnings = error`. (Real fix: set
+    # `model_config['protected_namespaces'] = ()` on those basemodel classes.)
+    "ignore:Field .* has conflict with protected namespace:UserWarning",
 ]
 
 # ─── Coverage ──────────────────────────────────────────────────────────────

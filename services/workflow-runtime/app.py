@@ -15,7 +15,7 @@ litellm.failure_callback = [cb for cb in litellm.failure_callback if cb != "lang
 import asyncio
 from contextlib import asynccontextmanager
 
-from services.log_set_up.logger import setup_logging
+from services.shared.logger import setup_logging
 
 setup_logging("workflow-runtime")
 
