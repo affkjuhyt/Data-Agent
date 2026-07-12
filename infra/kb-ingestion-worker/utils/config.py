@@ -15,6 +15,16 @@ KAFKA_TOPIC_SILVER            = os.getenv("KAFKA_TOPIC_SILVER",            "kb.p
 KAFKA_TOPIC_GOLD              = os.getenv("KAFKA_TOPIC_GOLD",              "kb.promote.gold")
 KAFKA_TOPIC_CONFLICT_RESOLVE  = os.getenv("KAFKA_TOPIC_CONFLICT_RESOLVE",  "kb.resolve.conflict")
 
+# ── Dead-letter queue + bounded retry (silver & gold) ─────────────────────────
+# Previously a silver/gold exception was logged, the document marked FAILED, and
+# the Kafka offset committed anyway — a terminal, non-replayable state requiring a
+# manual re-promote. Now a failure is retried in-band up to INGESTION_MAX_ATTEMPTS
+# (re-published to the SAME stage topic with an incremented `attempts` counter),
+# and only after the attempts are exhausted is it routed to the DLQ topic — where
+# it stays inspectable and replayable instead of vanishing.
+KAFKA_TOPIC_DLQ       = os.getenv("KAFKA_TOPIC_DLQ",       "kb.ingestion.dlq")
+INGESTION_MAX_ATTEMPTS = int(os.getenv("INGESTION_MAX_ATTEMPTS", "3"))
+
 # ── Consume concurrency ───────────────────────────────────────────────────────
 # The consume loop dispatches up to CONSUME_CONCURRENCY handlers in-flight at once
 # (bounded by a semaphore) instead of processing one Kafka message at a time.

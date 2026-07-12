@@ -3,35 +3,28 @@
 Serves AssetDetailWorkspace and KnowledgeHub (chunk/version management).
 """
 from fastapi import APIRouter, Depends, Query, Request
-from pydantic import BaseModel
 
 from basemodel.services_databaseconnector.shared_model import ResponseModel
-from services.kb_backend.UI_model.knowledge import (
-    RequestActivateChunkVersion,
-    RequestTableRowUpdate,
-    RequestDocConfig,
+from services.kb_backend.schemas import (
+    ActivateChunkVersionRequest,
+    UpdateTableRowRequest,
+    CreateDocConfigRequest,
+    CreateChunkVersionRequest,
 )
 from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
-from services.kb_backend.pipeline.kb_ui_operation.chunk_ops import (
+from services.kb_backend.operations.chunk_ops import (
     get_chunks, delete_chunk, activate_chunk_version,
     delete_chunk_version, create_chunk_version,
 )
-from services.kb_backend.pipeline.kb_ui_operation.table_ops import get_tables, update_table_row
-from services.kb_backend.pipeline.kb_ui_operation.warehouse_ops import (
+from services.kb_backend.operations.table_ops import get_tables, update_table_row
+from services.kb_backend.operations.warehouse_ops import (
     get_warehouse_configs, create_warehouse_config, activate_warehouse_config,
 )
-from services.kb_backend.pipeline.kb_ui_operation.document_ops import get_doc_history
+from services.kb_backend.operations.document_ops import get_doc_history
 
 router = APIRouter(prefix="/api/knowledge/documents", tags=["Knowledge-Documents"])
-
-
-class NewVersionBody(BaseModel):
-    text: str
-    entities: list[str] = []
-    intents: list[str] = []
-    embedding_model: str = ""
 
 
 # ── Chunks ────────────────────────────────────────────────────────────────────
@@ -61,7 +54,7 @@ async def delete_chunk_route(
 @router.patch("/{doc_id}/chunks/{chunk_id}/activate", response_model=ResponseModel)
 async def activate_chunk_version_route(
     doc_id: str, chunk_id: str,
-    body: RequestActivateChunkVersion,
+    body: ActivateChunkVersionRequest,
     request: Request, ctx: dict = Depends(require_perm("add_chunk_version")),
 ):
     result = await activate_chunk_version(
@@ -89,7 +82,7 @@ async def delete_chunk_version_route(
 @router.post("/{doc_id}/chunks/{chunk_id}/versions", response_model=ResponseModel)
 async def create_chunk_version_route(
     doc_id: str, chunk_id: str,
-    body: NewVersionBody,
+    body: CreateChunkVersionRequest,
     request: Request, ctx: dict = Depends(require_perm("add_chunk_version")),
 ):
     result = await create_chunk_version(
@@ -122,7 +115,7 @@ async def get_tables_route(
 @router.patch("/{doc_id}/tables/{table_id}/rows/{row_index}", response_model=ResponseModel)
 async def update_table_row_route(
     doc_id: str, table_id: str, row_index: int,
-    body: RequestTableRowUpdate,
+    body: UpdateTableRowRequest,
     request: Request, ctx: dict = Depends(authenticate),
 ):
     result = await update_table_row(
@@ -142,7 +135,7 @@ async def get_doc_configs(doc_id: str, request: Request, ctx: dict = Depends(aut
 
 @router.post("/{doc_id}/configs", response_model=ResponseModel)
 async def create_doc_config(
-    doc_id: str, body: RequestDocConfig,
+    doc_id: str, body: CreateDocConfigRequest,
     request: Request, ctx: dict = Depends(require_perm("add_warehouse_config")),
 ):
     result = await create_warehouse_config(

@@ -522,6 +522,10 @@ services:
   # First start has no model — pull it once:
   #   docker exec dataagent-ollama ollama pull llama3.1:8b
   ollama:
+    # In-Docker LLM backend — CPU-only on macOS: running an 8B model here pegs all
+    # cores and is very slow. NOT in the `kb` profile. On macOS prefer the NATIVE
+    # ollama (Metal GPU) that model-service points at via host.docker.internal.
+    # Use `--profile models up ollama` only if you deliberately want the CPU backend.
     profiles: [models]
     image: ollama/ollama
     container_name: dataagent-ollama
@@ -551,8 +555,11 @@ services:
       # ./model-service/models and the dim of the Qdrant collections.
       EMBED_MODEL: ${EMBED_MODEL:-intfloat/multilingual-e5-small}
       RERANK_MODEL: ${RERANK_MODEL:-cross-encoder/mmarco-mMiniLMv2-L12-H384-v1}
-      # LLM gateway → local Ollama (GPU). /generate forwards to REMOTE_LLM_URL + /v1/...
-      REMOTE_LLM_URL: ${REMOTE_LLM_URL:-http://ollama:11434}
+      # LLM gateway → NATIVE ollama on the Mac host (Metal GPU = fast, doesn't peg
+      # CPU). Requires host ollama to listen on all interfaces:
+      #   launchctl setenv OLLAMA_HOST 0.0.0.0 && (restart ollama)
+      # For the in-Docker CPU backend instead: set REMOTE_LLM_URL=http://ollama:11434.
+      REMOTE_LLM_URL: ${REMOTE_LLM_URL:-http://host.docker.internal:11434}
       REMOTE_LLM_MODEL: ${REMOTE_LLM_MODEL:-llama3.1:8b}
     volumes:
       # Weights are no longer baked into the image — they download here on first

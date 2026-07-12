@@ -5,11 +5,11 @@ These are the primary routes consumed by AppStateContext and AssetInventory.
 from fastapi import APIRouter, Depends, Query, Request
 
 from basemodel.services_databaseconnector.shared_model import ResponseModel
-from services.kb_backend.UI_model.data import RequestUpdateDocument
+from services.kb_backend.schemas import UpdateDocumentRequest
 from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
-from services.kb_backend.pipeline.kb_ui_operation.document_ops import (
+from services.kb_backend.operations.document_ops import (
     fetch_one_or_404, list_documents, promote_document, delete_document,
 )
 
@@ -43,7 +43,7 @@ async def list_documents_route(
 @router.patch("/documents/{data_id}", response_model=ResponseModel)
 async def promote_document_route(
     data_id: str,
-    body: RequestUpdateDocument,
+    body: UpdateDocumentRequest,
     request: Request,
     ctx: dict = Depends(require_perm("process_layer")),
 ):

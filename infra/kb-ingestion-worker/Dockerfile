@@ -19,7 +19,7 @@ RUN apt-get update && python -m playwright install --with-deps chromium && rm -r
 
 # Copy only what the worker imports — nothing from app/
 COPY services/__init__.py          /app/services/__init__.py
-COPY services/log_set_up/          /app/services/log_set_up/
+COPY services/shared/              /app/services/shared/
 COPY services/database_connector/  /app/services/database_connector/
 COPY basemodel/                    /app/basemodel/
 COPY infra/kb-ingestion-worker/    /app/infra/kb-ingestion-worker/

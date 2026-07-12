@@ -4,7 +4,6 @@ POST /api/knowledge/warehouses/connect — test connection, discover tables
 POST /api/knowledge/warehouses/select-tables — save connection + config, returns warehouse_id
 """
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
 import logging
 
 from basemodel.services_databaseconnector.shared_model import ResponseModel
@@ -14,7 +13,7 @@ from basemodel.services_databaseconnector.postgres_model import (
     KBWarehouseDelete,
     WarehouseConfigPayload,
 )
-from services.kb_backend.dependencies.auth import authenticate
+from services.kb_backend.schemas import ConnectSnowflakeRequest, SelectTablesRequest
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
 from services.database_connector.snowflake_connector import SnowflakeConnector
@@ -22,29 +21,6 @@ from services.database_connector.snowflake_connector import SnowflakeConnector
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/knowledge/warehouses", tags=["Warehouse-Connection"])
-
-
-class ConnectSnowflakeRequest(BaseModel):
-    account_identifier: str
-    user: str
-    password: str
-    warehouse: str
-    database: str
-    schema: str
-    role: str | None = None
-
-
-class SelectTablesRequest(BaseModel):
-    connection_name: str
-    warehouse_type: str  # "Snowflake" | "Databricks"
-    account_identifier: str
-    user: str
-    password: str
-    warehouse: str
-    database: str
-    schema: str
-    selected_table_ids: list[str]
-    role: str | None = None
 
 
 @router.post("/connect", response_model=ResponseModel)

@@ -87,7 +87,7 @@ class PermissionRegistry:
 
 # ── Policy definition ──────────────────────────────────────────────────────────
 # Keep in sync with src/lib/permissions.ts → ROLE_PERMISSIONS. The aliases match
-# ingestion.DEV_ROLE_PERMISSION_IDS keys.
+# config.ROLE_PERMISSION_IDS keys.
 _ALL = {
     "delete_data", "edit_conflict", "process_layer", "add_data", "add_warehouse",
     "add_filtering_policy", "edit_filtering_policy", "delete_filtering_policy",

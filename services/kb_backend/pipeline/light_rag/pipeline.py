@@ -34,7 +34,7 @@ import uuid as _uuid
 from neo4j import AsyncDriver
 from qdrant_client import models as qmodels
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
-from sqlalchemy import select as sa_select
+from sqlalchemy import func, select as sa_select
 
 from services.database_connector.qdrant_connector import vector_search as qdrant_vector_search
 from services.database_connector.postgres_connector import PostgresClient
@@ -54,8 +54,6 @@ from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import
 from services.kb_backend.pipeline.light_rag import config as cfg
 
 log = logging.getLogger(__name__)
-
-_RRF_K = 60
 
 
 def _sigmoid(x: float) -> float:
@@ -84,27 +82,36 @@ def _clamp01(x) -> float:
 # STEP 1 — Canonicalize Query
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# The content-purpose vocabulary is single-sourced from config (cfg.CONTENT_INTENTS)
+# so this prompt and the doc-narrowing filter can never drift. Wrapped to ~3 per line
+# for prompt readability.
+def _intent_vocab_block() -> str:
+    labels = cfg.CONTENT_INTENTS
+    lines = ["  " + ", ".join(labels[i:i + 3]) for i in range(0, len(labels), 3)]
+    return "\n".join(lines)
+
+
 _CANONICALIZE_SYSTEM = """\
 Convert the user's query into a structured semantic format for knowledge retrieval.
 Detect the language (English or Vietnamese) and keep names in that language.
 
 Respond ONLY with valid JSON:
-{"intent": "<label>", "intents": ["<purpose>"], "entities": ["<e1>", "<e2>"], "relationships": [["<e1>", "<rel>", "<e2>"]]}
+{{"intent": "<label>", "intents": ["<purpose>"], "entities": ["<e1>", "<e2>"], "relationships": [["<e1>", "<rel>", "<e2>"]]}}
 
 "intent" is the query SHAPE (one free label, e.g. distance_query, causal_query).
 "intents" is 1-3 content-PURPOSE labels describing what kind of document content
 would answer this query. ALWAYS English snake_case. Choose from this fixed set
 (these are the same labels documents are tagged with — they are the filter keys):
-  information_retrieval, regulation_compliance, technical_specification,
-  financial_reporting, process_description, organisational_info,
-  question_answering, data_definition, historical_record, announcement
+{vocab}
 
 Examples:
 Query: "Distance between NYU and Trento"
-{"intent":"distance_query","intents":["information_retrieval"],"entities":["NYU","Trento"],"relationships":[["NYU","geographic_distance","Trento"]]}
+{{"intent":"distance_query","intents":["information_retrieval"],"entities":["NYU","Trento"],"relationships":[["NYU","geographic_distance","Trento"]]}}
 
 Query: "Nghị định 13 quy định gì về bảo vệ dữ liệu cá nhân?"
-{"intent":"regulation_query","intents":["regulation_compliance","data_definition"],"entities":["Nghị định 13"],"relationships":[]}"""
+{{"intent":"regulation_query","intents":["regulation_compliance","data_definition"],"entities":["Nghị định 13"],"relationships":[]}}""".format(
+    vocab=_intent_vocab_block()
+)
 
 
 def _parse_json_obj(raw: str) -> dict:
@@ -508,6 +515,73 @@ async def resolve_query_aliases(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# STEP — Lexical (BM25 / full-text) retrieval — the sparse branch of hybrid search
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def lexical_search(
+        postgres: PostgresClient,
+        query: str,
+        tenant_id: str,
+        limit: int,
+        knowledge_base: str | None = None,
+        ts_config: str = "simple",
+) -> list[dict]:
+    """BM25-style lexical retrieval over the active chunk text via Postgres full-text
+    search — the sparse branch of hybrid retrieval. Recovers exact keyword / proper-
+    noun matches that dense embeddings under-rank ("Nghị định 13", a part number, a
+    person's name) — the strongest single 2025 recommendation for keyword queries.
+
+    Returns hits shaped exactly like `qdrant_search` (point_id = block_id, payload
+    carries block_id + a text snippet for the reranker) so they slot straight into
+    the RRF fusion; ts_rank_cd is the lexical relevance but RRF only consumes rank
+    position. Tenant- (and knowledge_base-, when given) scoped via the KBData join —
+    the same isolation the vector passes enforce, independently.
+    """
+    if not query.strip():
+        return []
+    try:
+        tenant_uuid = _uuid.UUID(tenant_id)
+    except (ValueError, AttributeError):
+        return []
+    tsquery = func.websearch_to_tsquery(ts_config, query)
+    tsvector = func.to_tsvector(ts_config, KBTextBlockVersionORM.content)
+    rank = func.ts_rank_cd(tsvector, tsquery)
+    stmt = (
+        sa_select(KBTextBlockORM.block_id, rank.label("score"), KBTextBlockVersionORM.content)
+        .join(KBTextBlockVersionORM, KBTextBlockVersionORM.block_id == KBTextBlockORM.block_id)
+        .join(KBDataORM, KBDataORM.data_id == KBTextBlockORM.owner_id)
+        .where(tsvector.op("@@")(tsquery))
+        .where(KBTextBlockVersionORM.is_active.is_(True))
+        .where(KBTextBlockVersionORM.is_deleted.is_(False))
+        .where(KBDataORM.tenant_id == tenant_uuid)
+        .where(KBDataORM.is_deleted.is_(False))
+        .order_by(rank.desc())
+        .limit(limit)
+    )
+    if knowledge_base:
+        try:
+            stmt = stmt.where(KBDataORM.knowledge_base_id == _uuid.UUID(knowledge_base))
+        except ValueError:
+            pass  # non-UUID kb tag → skip the defense-in-depth filter
+    try:
+        async with postgres.get_client() as session:
+            rows = (await session.execute(stmt)).all()
+    except Exception as exc:
+        log.warning("lexical_search | failed: %s", exc)
+        return []
+    hits = [
+        {
+            "point_id": str(block_id),
+            "score": float(score or 0.0),
+            "payload": {"block_id": str(block_id), "summary": (content or "")[:500]},
+        }
+        for block_id, score, content in rows
+    ]
+    log.info("lexical_search | %d lexical hits", len(hits))
+    return hits
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # STEP 4 — Entity Ranking + Neo4j Graph Expansion
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -602,7 +676,7 @@ def rrf_merge(ranked_lists: list[list[dict]], top_n: int) -> list[dict]:
             pid = hit.get("point_id")
             if not pid:
                 continue
-            scores[pid] = scores.get(pid, 0.0) + 1.0 / (_RRF_K + rank)
+            scores[pid] = scores.get(pid, 0.0) + 1.0 / (cfg.RRF_K + rank)
             meta.setdefault(pid, hit)
     sorted_ids = sorted(scores, key=lambda x: scores[x], reverse=True)
     merged = [
@@ -786,9 +860,118 @@ def _build_result_list(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class LightRAGPipeline:
-    """Stateless pipeline — all DB clients injected per run() call."""
+    """Stateless pipeline — all DB clients injected per call.
 
-    async def run_stream(
+    Both entry points share ONE implementation, `_run_events` (an async generator
+    that yields a progress dict per step; the final event is always
+    {"step": "done", ...} or {"step": "error", ...}):
+      • run_stream() forwards those events verbatim to the SSE endpoint;
+      • run() drains them and returns the final result payload.
+    Merging the two removed the earlier run()/run_stream() duplication — and with it
+    the drift where the streaming path silently dropped the front-layer
+    entities/intent/entity_types query-enhancement and the CANON_OVERLAP path.
+    """
+
+    # ── small, single-purpose helpers shared by the generator ─────────────────
+
+    @staticmethod
+    async def _cache_hit_results(
+            postgres: PostgresClient, hit: dict, tenant_id: str,
+            knowledge_base: str | None,
+    ) -> tuple[list[dict], int]:
+        """Hydrate the block_ids a semantic-cache hit points at, fresh from Postgres.
+        Returns (results, hydrated_block_count)."""
+        block_refs = hit.get("block_refs") or []
+        block_ids = [r["block_id"] for r in block_refs if r.get("block_id")]
+        pg_rows, pg_tables = await asyncio.gather(
+            _fetch_chunks_postgres(postgres, block_ids, tenant_id, knowledge_base),
+            _fetch_tables_postgres(postgres, block_ids),
+        )
+        cached_final = [
+            {"payload": {"block_id": r["block_id"]},
+             "rerank_rank": i, "rerank_score": r.get("score", 0.0)}
+            for i, r in enumerate(block_refs, start=1) if r.get("block_id")
+        ]
+        return _build_result_list(cached_final, pg_rows, pg_tables), len(pg_rows)
+
+    @staticmethod
+    def _derive_query_entities(canonical: dict) -> list[str]:
+        """Canonicalized, de-duplicated entity list from a canonicalize result — the
+        flat entities plus the endpoints of any relationships."""
+        return list(dict.fromkeys(
+            _canon(e)
+            for e in [*canonical.get("entities", []),
+                      *_entities_from_relationships(canonical.get("relationships", []))]
+            if e and str(e).strip()
+        ))
+
+    @staticmethod
+    async def _typed_pass_lists(
+            qdrant: AsyncQdrantClient, collection: str, query_vec: list[float],
+            tenant_id: str, knowledge_base: str | None,
+            query_entities: list[str], canon_entity_types: dict[str, str],
+            neo4j_entities: list[str], ptypes: list[str],
+    ) -> list[list[dict]]:
+        """Type-aware pass: search each entity in its OWN ent_<type> payload field.
+        Front-layer typed entities are grouped by their declared type; the answer-type
+        hints (ptypes) add extra typed searches over all candidate names. Returns one
+        ranked list per typed search (possibly empty). Bounds from config."""
+        if not cfg.TYPE_AWARE:
+            return []
+        searches = []
+        groups: dict[str, list[str]] = {}
+        for name in query_entities:
+            t = canon_entity_types.get(name)
+            if t:
+                groups.setdefault(t, []).append(name)
+        for t, names in list(groups.items())[:cfg.MAX_TYPED_GROUPS]:
+            searches.append(qdrant_search(
+                qdrant, collection, query_vec, tenant_id,
+                limit=cfg.QDRANT_PASS2_LIMIT, knowledge_base=knowledge_base,
+                typed_field=(f"ent_{t}", names),
+            ))
+        typed_names = list(dict.fromkeys([*neo4j_entities, *query_entities]))
+        if typed_names:
+            for t in ptypes[:cfg.MAX_PREFERRED_TYPES]:
+                if t not in groups:
+                    searches.append(qdrant_search(
+                        qdrant, collection, query_vec, tenant_id,
+                        limit=cfg.QDRANT_PASS2_LIMIT, knowledge_base=knowledge_base,
+                        typed_field=(f"ent_{t}", typed_names),
+                    ))
+        if not searches:
+            return []
+        return list(await asyncio.gather(*searches))
+
+    @staticmethod
+    def _split_pass1_filter(
+            query_entities: list[str], canon_entity_types: dict[str, str],
+    ) -> tuple[list[str], dict[str, list[str]]]:
+        """Route front-layer query entities to the right pass-1 payload field:
+        typed names → their ent_<type> group (when TYPE_AWARE), the rest → the
+        generic `entities` field. Returns (untyped_names, {type: [names]})."""
+        untyped: list[str] = []
+        groups: dict[str, list[str]] = {}
+        for n in query_entities:
+            t = canon_entity_types.get(n)
+            if cfg.TYPE_AWARE and t:
+                groups.setdefault(t, []).append(n)
+            else:
+                untyped.append(n)
+        return untyped, groups
+
+    @staticmethod
+    def _graph_seeds(pass1: list[dict], query_entities: list[str]) -> list[str]:
+        """Graph-expansion seeds: top entities from pass-1 (frequency×score) UNION
+        the query's own entities, capped at NEO4J_TOP_ENTITIES + GRAPH_SEED_MARGIN."""
+        return list(dict.fromkeys([
+            *_rank_entities([pass1], cfg.NEO4J_TOP_ENTITIES),
+            *query_entities,
+        ]))[:cfg.NEO4J_TOP_ENTITIES + cfg.GRAPH_SEED_MARGIN]
+
+    # ── the one true pipeline ─────────────────────────────────────────────────
+
+    async def _run_events(
             self,
             query: str,
             tenant_id: str,
@@ -798,12 +981,21 @@ class LightRAGPipeline:
             postgres: PostgresClient,
             collection: str = cfg.QDRANT_COLLECTION,
             knowledge_base: str | None = None,
+            entities: list[str] | None = None,
+            intent: str | None = None,
+            entity_types: dict[str, str] | None = None,
     ):
-        """Async generator — yields one dict per pipeline step for SSE streaming.
+        """Async generator yielding one dict per pipeline step — the single
+        implementation behind both run() and run_stream(). Each dict has at least
+        {"step": "<name>", "ms": float}; the final event is {"step": "done", ...}
+        or {"step": "error", ...}.
 
-        Each dict has at minimum {"step": "<name>", "ms": float}.
-        The final event is always {"step": "done", "source": ..., "results": ..., "timings": ...}.
-        On error, yields {"step": "error", "message": str} and stops.
+        `entities` / `intent` / `entity_types` are the front-layer query-enhancement
+        INSERT fields: when entities are provided the internal canonicalize LLM call
+        is skipped and they filter pass-1 (MatchAny, unfiltered fallback) + seed the
+        graph; entity_types (name → person/location/…) point each entity at its own
+        ent_<type> payload field. Both entry points expose them, so the streaming
+        endpoint no longer loses the enhancement.
         """
         timings: dict[str, float] = {}
         _t0 = time.perf_counter()
@@ -812,14 +1004,14 @@ class LightRAGPipeline:
             return round((time.perf_counter() - start) * 1000, 1)
 
         try:
-            # ── 1. Embed query ──────────────────────────────────────────────────
+            # ── 1. Embed query — needed for cache lookup and vector search ──────
             _t = time.perf_counter()
             query_vecs = await model.embed([query])
             query_vec = query_vecs[0] if query_vecs else []
             timings["embed_query_ms"] = _ms(_t)
             yield {"step": "embed_query", "dim": len(query_vec), "ms": timings["embed_query_ms"]}
 
-            # ── 2. Cache lookup ─────────────────────────────────────────────────
+            # ── 2. Cache lookup BEFORE the expensive canonicalize LLM call ──────
             hit = None
             if query_vec:
                 _t = time.perf_counter()
@@ -832,26 +1024,13 @@ class LightRAGPipeline:
                 yield {"step": "cache_lookup", "hit": bool(hit), "ms": timings["cache_lookup_ms"]}
 
             if hit:
-                # ── Cache hit path ──────────────────────────────────────────────
-                block_refs = hit.get("block_refs") or []
-                block_ids = [r["block_id"] for r in block_refs if r.get("block_id")]
-                yield {"step": "cache_hit", "block_count": len(block_ids)}
-
                 _t = time.perf_counter()
-                pg_rows, pg_tables = await asyncio.gather(
-                    _fetch_chunks_postgres(postgres, block_ids, tenant_id, knowledge_base),
-                    _fetch_tables_postgres(postgres, block_ids),
-                )
+                results, hydrated = await self._cache_hit_results(
+                    postgres, hit, tenant_id, knowledge_base)
                 timings["hydrate_ms"] = _ms(_t)
-                yield {"step": "hydrate", "block_count": len(pg_rows), "ms": timings["hydrate_ms"]}
-
-                cached_final = [
-                    {"payload": {"block_id": r["block_id"]},
-                     "rerank_rank": i, "rerank_score": r.get("score", 0.0)}
-                    for i, r in enumerate(block_refs, start=1) if r.get("block_id")
-                ]
+                yield {"step": "cache_hit", "block_count": hydrated,
+                       "ms": timings["hydrate_ms"]}
                 timings["total_ms"] = round((time.perf_counter() - _t0) * 1000, 1)
-                results = _build_result_list(cached_final, pg_rows, pg_tables)
                 yield {
                     "step": "done", "source": "cache",
                     "canonical": {"intent": "cached", "entities": [], "relationships": []},
@@ -859,73 +1038,123 @@ class LightRAGPipeline:
                 }
                 return
 
-            # ── 3. Canonicalize ─────────────────────────────────────────────────
+            # ── 3. Query understanding ──────────────────────────────────────────
+            #   Front layer gave entities → NO internal LLM call; they filter pass 1
+            #   and seed the graph. Otherwise → canonicalize; with CANON_OVERLAP it
+            #   overlaps pass-1/doc-narrowing (which only need the embedding).
+            canon_task = None
+            pass1_filter: list[str] | None = None
+            canon_entity_types: dict[str, str] = {}
+            _t_canon = time.perf_counter()
+            if entities:
+                canonical = {"intent": intent or "general",
+                             "entities": list(entities), "relationships": []}
+                query_entities = list(dict.fromkeys(
+                    _canon(e) for e in entities if e and str(e).strip()))
+                for name, etype in (entity_types or {}).items():
+                    cn, t = _canon(name), str(etype).strip().lower()
+                    if cn and t in ENTITY_TYPE_FIELDS:
+                        canon_entity_types[cn] = t
+                if cfg.QUERY_ALIAS_RESOLVE and query_entities:
+                    _t = time.perf_counter()
+                    query_entities = await resolve_query_aliases(postgres, tenant_id, query_entities)
+                    timings["alias_resolve_ms"] = _ms(_t)
+                    # A name rewritten by alias resolution keeps no type claim — the
+                    # type was asserted about the original surface form.
+                    canon_entity_types = {
+                        n: t for n, t in canon_entity_types.items() if n in set(query_entities)}
+                pass1_filter = query_entities or None
+                yield {"step": "canonicalize", "intent": canonical["intent"],
+                       "entities": query_entities, "relationships": [],
+                       "source": "front_layer", "ms": 0.0}
+            else:
+                query_entities = []
+                canon_task = asyncio.create_task(canonicalize(model, query))
+                if not cfg.CANON_OVERLAP:
+                    canonical = await canon_task
+                    canon_task = None
+                    timings["canonicalize_ms"] = _ms(_t_canon)
+                    yield {"step": "canonicalize", "intent": canonical.get("intent", ""),
+                           "entities": canonical.get("entities", []),
+                           "relationships": canonical.get("relationships", []),
+                           "ms": timings["canonicalize_ms"]}
+
+            # ── 4. Qdrant pass 1 — front-layer entities point the filter at the
+            #      right payload fields (typed → ent_<type>, untyped → entities);
+            #      unfiltered fallback when nothing matches. ───────────────────────
             _t = time.perf_counter()
-            canonical = await canonicalize(model, query)
-            timings["canonicalize_ms"] = _ms(_t)
-            yield {
-                "step": "canonicalize",
-                "intent": canonical.get("intent", ""),
-                "entities": canonical.get("entities", []),
-                "relationships": canonical.get("relationships", []),
-                "ms": timings["canonicalize_ms"],
-            }
-
-            query_entities = list(dict.fromkeys(
-                _canon(e)
-                for e in [*canonical["entities"], *_entities_from_relationships(canonical["relationships"])]
-                if e and str(e).strip()
-            ))
-
-            # ── 3b. Alias resolution (env-gated) ────────────────────────────────
-            if cfg.QUERY_ALIAS_RESOLVE and query_entities:
-                _t = time.perf_counter()
-                query_entities = await resolve_query_aliases(postgres, tenant_id, query_entities)
-                timings["alias_resolve_ms"] = _ms(_t)
-                yield {"step": "alias_resolve", "entities": query_entities,
-                       "ms": timings["alias_resolve_ms"]}
-
-            # ── 4. Qdrant pass 1 ────────────────────────────────────────────────
-            _t = time.perf_counter()
+            pass1_untyped, pass1_groups = self._split_pass1_filter(
+                query_entities if pass1_filter else [], canon_entity_types)
             pass1 = await qdrant_search(
                 qdrant, collection, query_vec, tenant_id,
                 limit=cfg.QDRANT_PASS1_LIMIT,
+                entities=pass1_untyped or None,
+                typed_entity_groups=pass1_groups or None,
                 knowledge_base=knowledge_base,
             )
+            if pass1_filter and not pass1:
+                log.info("run | entity-filtered pass1 empty — unfiltered fallback")
+                pass1 = await qdrant_search(
+                    qdrant, collection, query_vec, tenant_id,
+                    limit=cfg.QDRANT_PASS1_LIMIT, knowledge_base=knowledge_base,
+                )
             timings["qdrant_pass1_ms"] = _ms(_t)
             yield {"step": "qdrant_pass1", "hits": len(pass1), "ms": timings["qdrant_pass1_ms"]}
 
-            # ── 4b. Doc narrowing (env-gated) ───────────────────────────────────
+            # 3-late (internal-canonicalize path only): join the overlapped LLM call,
+            # then derive + alias-resolve the query entities for graph seeding.
+            if canon_task is not None:
+                canonical = await canon_task
+                timings["canonicalize_ms"] = _ms(_t_canon)  # wall time incl. overlap
+                yield {"step": "canonicalize", "intent": canonical.get("intent", ""),
+                       "entities": canonical.get("entities", []),
+                       "relationships": canonical.get("relationships", []),
+                       "ms": timings["canonicalize_ms"]}
+            if not entities:
+                query_entities = self._derive_query_entities(canonical)
+                if cfg.QUERY_ALIAS_RESOLVE and query_entities:
+                    _t = time.perf_counter()
+                    query_entities = await resolve_query_aliases(postgres, tenant_id, query_entities)
+                    timings["alias_resolve_ms"] = _ms(_t)
+
+            # ── 4b. 2-step document narrowing (env-gated DOC_NARROWING) ──────────
             pass_doc: list[dict] = []
             if cfg.DOC_NARROWING:
                 _t = time.perf_counter()
                 narrow_ids = await doc_narrow_ids(
                     qdrant, query_vec, tenant_id, knowledge_base,
-                    intents=canonical.get("intents"),
-                )
+                    intents=canonical.get("intents"))
                 if narrow_ids:
                     pass_doc = await qdrant_search(
                         qdrant, collection, query_vec, tenant_id,
-                        limit=cfg.DOC_PASS_CHUNK_LIMIT,
-                        knowledge_base=knowledge_base,
-                        data_ids=narrow_ids,
-                    )
+                        limit=cfg.DOC_PASS_CHUNK_LIMIT, knowledge_base=knowledge_base,
+                        data_ids=narrow_ids)
                 timings["doc_narrow_ms"] = _ms(_t)
                 yield {"step": "doc_narrow", "docs": len(narrow_ids), "hits": len(pass_doc),
                        "ms": timings["doc_narrow_ms"]}
 
-            # ── 5. Rank entities ─────────────────────────────────────────────────
+            # ── 4c. Lexical (BM25) pass — the sparse branch of hybrid retrieval
+            #      (env-gated HYBRID_LEXICAL). Recovers exact keyword / proper-noun
+            #      matches; joins the RRF fusion as another ranked list. ────────────
+            pass_lex: list[dict] = []
+            if cfg.HYBRID_LEXICAL:
+                _t = time.perf_counter()
+                pass_lex = await lexical_search(
+                    postgres, query, tenant_id, cfg.LEXICAL_LIMIT,
+                    knowledge_base=knowledge_base, ts_config=cfg.LEXICAL_TS_CONFIG)
+                timings["lexical_ms"] = _ms(_t)
+                yield {"step": "lexical", "hits": len(pass_lex), "ms": timings["lexical_ms"]}
+
+            # ── 5. Graph-expansion seeds + answer-type hints ────────────────────
             _t = time.perf_counter()
-            top_entities = list(dict.fromkeys([
-                *_rank_entities([pass1], cfg.NEO4J_TOP_ENTITIES),
-                *query_entities,
-            ]))[:cfg.NEO4J_TOP_ENTITIES + 3]
+            top_entities = self._graph_seeds(pass1, query_entities)
             ptypes = preferred_entity_types(query, canonical.get("intent", "")) if cfg.TYPE_AWARE else []
             timings["rank_entities_ms"] = _ms(_t)
+            log.info("run | graph seeds: %r preferred_types: %r", top_entities, ptypes)
             yield {"step": "rank_entities", "seeds": top_entities,
                    "preferred_types": ptypes, "ms": timings["rank_entities_ms"]}
 
-            # ── 6. Graph expand ──────────────────────────────────────────────────
+            # ── 6. Neo4j graph expansion ────────────────────────────────────────
             _t = time.perf_counter()
             neo4j_entities: list[str] = []
             if top_entities:
@@ -933,65 +1162,49 @@ class LightRAGPipeline:
                     neo4j_entities = await graph_expand(
                         neo4j, top_entities, tenant_id,
                         cfg.NEO4J_MAX_HOPS, cfg.NEO4J_MAX_NEIGHBOURS,
-                        query_vec, knowledge_base=knowledge_base,
-                        preferred_types=ptypes,
-                    )
+                        query_vec, knowledge_base=knowledge_base, preferred_types=ptypes)
                 except Exception as exc:
-                    log.warning("run_stream | graph_expand failed: %s", exc)
+                    log.warning("run | graph_expand failed: %s", exc)
             timings["graph_expand_ms"] = _ms(_t)
-            yield {
-                "step": "graph_expand",
-                "seeds": len(top_entities),
-                "expanded": len(neo4j_entities),
-                "neo4j_entities": neo4j_entities[:20],
-                "ms": timings["graph_expand_ms"],
-            }
+            yield {"step": "graph_expand", "seeds": len(top_entities),
+                   "expanded": len(neo4j_entities),
+                   "neo4j_entities": neo4j_entities[:cfg.GRAPH_PREVIEW_LIMIT],
+                   "ms": timings["graph_expand_ms"]}
 
-            # ── 7. Qdrant pass 2 ─────────────────────────────────────────────────
+            # ── 7. Qdrant pass 2 — expanded Neo4j entities ──────────────────────
             _t = time.perf_counter()
             pass2: list[dict] = []
             if neo4j_entities:
                 pass2 = await qdrant_search(
                     qdrant, collection, query_vec, tenant_id,
-                    limit=cfg.QDRANT_PASS2_LIMIT,
-                    entities=neo4j_entities,
-                    knowledge_base=knowledge_base,
-                )
+                    limit=cfg.QDRANT_PASS2_LIMIT, entities=neo4j_entities,
+                    knowledge_base=knowledge_base)
             timings["qdrant_pass2_ms"] = _ms(_t)
             yield {"step": "qdrant_pass2", "hits": len(pass2), "ms": timings["qdrant_pass2_ms"]}
 
-            # ── 7b. Typed pass (env-gated TYPE_AWARE) ────────────────────────────
+            # ── 7b. Typed pass (env-gated TYPE_AWARE) ───────────────────────────
             _t = time.perf_counter()
-            typed_lists: list[list[dict]] = []
-            if cfg.TYPE_AWARE and ptypes:
-                typed_names = list(dict.fromkeys([*neo4j_entities, *query_entities]))
-                if typed_names:
-                    typed_lists = list(await asyncio.gather(*(
-                        qdrant_search(
-                            qdrant, collection, query_vec, tenant_id,
-                            limit=cfg.QDRANT_PASS2_LIMIT,
-                            knowledge_base=knowledge_base,
-                            typed_field=(f"ent_{t}", typed_names),
-                        )
-                        for t in ptypes[:2]
-                    )))
-                timings["typed_pass_ms"] = _ms(_t)
-                yield {"step": "typed_pass", "types": ptypes[:2],
+            typed_lists = await self._typed_pass_lists(
+                qdrant, collection, query_vec, tenant_id, knowledge_base,
+                query_entities, canon_entity_types, neo4j_entities, ptypes)
+            timings["typed_pass_ms"] = _ms(_t)
+            if typed_lists:
+                yield {"step": "typed_pass", "types": ptypes[:cfg.MAX_PREFERRED_TYPES],
                        "hits": sum(len(l) for l in typed_lists), "ms": timings["typed_pass_ms"]}
 
-            # ── 8. RRF merge ─────────────────────────────────────────────────────
+            # ── 8. RRF merge — dense (pass1+pass2+typed+doc) + sparse (lexical) ──
             _t = time.perf_counter()
-            rrf_top = rrf_merge([pass1, pass2, *typed_lists, pass_doc], top_n=cfg.RRF_TOP_N)
+            rrf_top = rrf_merge([pass1, pass2, *typed_lists, pass_doc, pass_lex], top_n=cfg.RRF_TOP_N)
             timings["rrf_merge_ms"] = _ms(_t)
             yield {"step": "rrf_merge", "unique": len(rrf_top), "ms": timings["rrf_merge_ms"]}
 
-            # ── 9. Rerank ─────────────────────────────────────────────────────────
+            # ── 9. Rerank by cross-encoder on stored summaries ──────────────────
             _t = time.perf_counter()
             final = await rerank(model, query, rrf_top, cfg.RERANK_TOP_N)
             timings["rerank_ms"] = _ms(_t)
             yield {"step": "rerank", "top_n": len(final), "ms": timings["rerank_ms"]}
 
-            # ── 10. Hydrate ───────────────────────────────────────────────────────
+            # ── 10. Hydrate active chunk text/source + tables from Postgres ─────
             block_ids = [
                 str((h.get("payload") or {}).get("block_id") or "")
                 for h in final if (h.get("payload") or {}).get("block_id")
@@ -1005,320 +1218,50 @@ class LightRAGPipeline:
             timings["hydrate_ms"] = _ms(_t)
             yield {"step": "hydrate", "block_count": len(pg_rows), "ms": timings["hydrate_ms"]}
 
-            # ── 11. Cache store ───────────────────────────────────────────────────
+            # ── 11. Cache the post-rerank decision (block_ids + scores) ─────────
             _t = time.perf_counter()
             if query_vec and results:
                 await cache_store(
                     qdrant, cfg.QDRANT_CACHE_COLLECTION,
-                    query_vec, tenant_id, knowledge_base, results,
-                )
+                    query_vec, tenant_id, knowledge_base, results)
             timings["cache_store_ms"] = _ms(_t)
-            yield {"step": "cache_store", "stored": bool(query_vec and results), "ms": timings["cache_store_ms"]}
+            yield {"step": "cache_store", "stored": bool(query_vec and results),
+                   "ms": timings["cache_store_ms"]}
 
             timings["total_ms"] = round((time.perf_counter() - _t0) * 1000, 1)
-            yield {
-                "step": "done", "source": "pipeline",
-                "canonical": canonical,
-                "results": results,
-                "timings": timings,
-            }
+            log.info("run | query=%r kb=%s rrf=%d hydrated=%d total=%.0fms",
+                     query[:60], knowledge_base, len(rrf_top), len(results), timings["total_ms"])
+            yield {"step": "done", "source": "pipeline",
+                   "canonical": canonical, "results": results, "timings": timings}
 
         except Exception as exc:
-            log.exception("run_stream | unhandled error: %s", exc)
+            log.exception("_run_events | unhandled error: %s", exc)
             yield {"step": "error", "message": str(exc)[:300]}
 
-    async def run(
-            self,
-            query: str,
-            tenant_id: str,
-            qdrant: AsyncQdrantClient,
-            neo4j: AsyncDriver,
-            model: ModelServiceClient,
-            postgres: PostgresClient,
-            collection: str = cfg.QDRANT_COLLECTION,
-            knowledge_base: str | None = None,
-            entities: list[str] | None = None,
-            intent: str | None = None,
-            entity_types: dict[str, str] | None = None,
-    ) -> dict:
-        """`entities` / `intent` / `entity_types` are INSERT fields for a front
-        layer (query enhancement) that has already done query understanding: when
-        entities are provided, the internal canonicalize LLM call is skipped
-        entirely, and the provided entities both FILTER pass 1 (MatchAny, with
-        unfiltered fallback) and seed the graph expansion. entity_types (name →
-        person/location/…) sharpen the typed pass: each entity is searched in its
-        OWN type's payload field. Without them, behavior is unchanged."""
-        # Wall-clock timing for every important operation, returned as `timings` (ms).
-        timings: dict[str, float] = {}
-        _t0 = time.perf_counter()
+    async def run_stream(self, *args, **kwargs):
+        """SSE entry point — forwards every progress event from the shared
+        generator, front-layer query-enhancement fields (entities/intent/
+        entity_types) included."""
+        async for event in self._run_events(*args, **kwargs):
+            yield event
 
-        def _mark(name: str, start: float) -> None:
-            timings[name] = round((time.perf_counter() - start) * 1000, 1)
-
-        # 1. Embed query — needed for both the cache lookup and vector search.
-        _t = time.perf_counter()
-        query_vecs = await model.embed([query])
-        query_vec = query_vecs[0] if query_vecs else []
-        _mark("embed_query_ms", _t)
-
-        # 2. Cache lookup BEFORE the expensive canonicalize LLM call — a hit skips the whole
-        #    pipeline (including canonicalize) and just re-hydrates the cached blocks fresh.
-        if query_vec:
-            _t = time.perf_counter()
-            hit = await cache_lookup(
-                qdrant, cfg.QDRANT_CACHE_COLLECTION,
-                query_vec, tenant_id, cfg.CACHE_THRESHOLD,
-                knowledge_base=knowledge_base,
-            )
-            _mark("cache_lookup_ms", _t)
-            if hit:
-                block_refs = hit.get("block_refs") or []
-                block_ids = [r["block_id"] for r in block_refs if r.get("block_id")]
-                cached_final = [
-                    {"payload": {"block_id": r["block_id"]},
-                     "rerank_rank": i, "rerank_score": r.get("score", 0.0)}
-                    for i, r in enumerate(block_refs, start=1) if r.get("block_id")
-                ]
-                _t = time.perf_counter()
-                pg_rows, pg_tables = await asyncio.gather(
-                    _fetch_chunks_postgres(postgres, block_ids, tenant_id, knowledge_base),
-                    _fetch_tables_postgres(postgres, block_ids),
-                )
-                _mark("hydrate_ms", _t)
-                timings["total_ms"] = round((time.perf_counter() - _t0) * 1000, 1)
-                return {
-                    "source": "cache",
-                    "canonical": {"intent": "cached", "entities": [], "relationships": []},
-                    "results": _build_result_list(cached_final, pg_rows, pg_tables),
-                    "timings": timings,
-                }
-
-        # 3. Query understanding.
-        #    Front layer provided entities/intent → NO internal LLM call; the
-        #    provided entities filter pass 1 and seed the graph.
-        #    Otherwise → canonicalize LLM call; with CANON_OVERLAP=1 it runs
-        #    concurrently with pass-1/doc-narrowing (it doesn't gate them there).
-        canon_task = None
-        pass1_filter: list[str] | None = None
-        # Front-layer entity types, keyed by canonical form — drive the per-entity
-        # typed search ("Việt Minh appears AS AN ORGANIZATION").
-        canon_entity_types: dict[str, str] = {}
-        _t_canon = time.perf_counter()
-        if entities:
-            canonical = {
-                "intent": intent or "general",
-                "entities": list(entities),
-                "relationships": [],
-            }
-            query_entities = list(dict.fromkeys(
-                _canon(e) for e in entities if e and str(e).strip()
-            ))
-            for name, etype in (entity_types or {}).items():
-                cn, t = _canon(name), str(etype).strip().lower()
-                if cn and t in ENTITY_TYPE_FIELDS:
-                    canon_entity_types[cn] = t
-            if cfg.QUERY_ALIAS_RESOLVE and query_entities:
-                _t = time.perf_counter()
-                query_entities = await resolve_query_aliases(postgres, tenant_id, query_entities)
-                _mark("alias_resolve_ms", _t)
-                # A name rewritten by alias resolution keeps no type claim — the
-                # type was asserted about the original surface form.
-                canon_entity_types = {
-                    n: t for n, t in canon_entity_types.items() if n in set(query_entities)
-                }
-            pass1_filter = query_entities or None
-        else:
-            query_entities = []
-            canon_task = asyncio.create_task(canonicalize(model, query))
-            if not cfg.CANON_OVERLAP:
-                canonical = await canon_task
-                canon_task = None
-                _mark("canonicalize_ms", _t_canon)
-
-        # 4. Qdrant pass 1 — vector similarity within tenant + knowledge_base.
-        #    With front-layer entities the filter knows WHERE to look in the
-        #    payload: typed names go to their own ent_<type> field ("Việt Minh" →
-        #    ent_organization), untyped names to the generic entities field —
-        #    all OR'd. Unfiltered fallback when nothing matches (a non-matching
-        #    filter excludes EVERY point — zero candidates would kill the
-        #    pipeline). Without front-layer entities: unfiltered.
-        _t = time.perf_counter()
-        pass1_groups: dict[str, list[str]] = {}
-        pass1_untyped: list[str] = []
-        if pass1_filter:
-            for n in query_entities:
-                t = canon_entity_types.get(n)
-                if cfg.TYPE_AWARE and t:
-                    pass1_groups.setdefault(t, []).append(n)
-                else:
-                    pass1_untyped.append(n)
-        pass1: list[dict] = await qdrant_search(
-            qdrant, collection, query_vec, tenant_id,
-            limit=cfg.QDRANT_PASS1_LIMIT,
-            entities=pass1_untyped or None,
-            typed_entity_groups=pass1_groups or None,
-            knowledge_base=knowledge_base,
-        )
-        if pass1_filter and not pass1:
-            log.info("run | entity-filtered pass1 empty — unfiltered fallback")
-            pass1 = await qdrant_search(
-                qdrant, collection, query_vec, tenant_id,
-                limit=cfg.QDRANT_PASS1_LIMIT,
-                knowledge_base=knowledge_base,
-            )
-        _mark("qdrant_pass1_ms", _t)
-
-        # 3-late (internal-canonicalize path only): join the overlapped LLM call,
-        # then derive + alias-resolve the query entities for graph seeding. The
-        # front-layer path already did all of this before pass 1.
-        if canon_task is not None:
-            canonical = await canon_task
-            _mark("canonicalize_ms", _t_canon)  # wall time incl. the overlap window
-        if not entities:
-            query_entities = list(dict.fromkeys(
-                _canon(e)
-                for e in [*canonical["entities"], *_entities_from_relationships(canonical["relationships"])]
-                if e and str(e).strip()
-            ))
-            if cfg.QUERY_ALIAS_RESOLVE and query_entities:
-                _t = time.perf_counter()
-                query_entities = await resolve_query_aliases(postgres, tenant_id, query_entities)
-                _mark("alias_resolve_ms", _t)
-
-        # 4b. 2-step document narrowing — narrow the doc-summary collection to the
-        #     top-m documents by INTENT (doc points are tagged with content-purpose
-        #     intents; the query's intents drive the OR filter, vector falls back if
-        #     none match), then pull chunks restricted to those data_ids. Joins the
-        #     RRF fusion as an extra ranked list (flat pass1 always stays — the doc
-        #     pass is the precision path, not the only path). Runs AFTER canonicalize
-        #     so the query intents are available. Env-gated: DOC_NARROWING=1.
-        _t = time.perf_counter()
-        pass_doc: list[dict] = []
-        if cfg.DOC_NARROWING:
-            narrow_ids = await doc_narrow_ids(
-                qdrant, query_vec, tenant_id, knowledge_base,
-                intents=canonical.get("intents"),
-            )
-            if narrow_ids:
-                pass_doc = await qdrant_search(
-                    qdrant, collection, query_vec, tenant_id,
-                    limit=cfg.DOC_PASS_CHUNK_LIMIT,
-                    knowledge_base=knowledge_base,
-                    data_ids=narrow_ids,
-                )
-        _mark("doc_narrow_ms", _t)
-
-        # 5. Graph-expansion seeds: entities from the top pass-1 chunks UNION the query's
-        #    own canonical entities. Answer-type hints (question shape + intent) bias
-        #    the expansion and drive the typed pass below.
-        _t = time.perf_counter()
-        top_entities = list(dict.fromkeys([
-            *_rank_entities([pass1], cfg.NEO4J_TOP_ENTITIES),
-            *query_entities,
-        ]))[:cfg.NEO4J_TOP_ENTITIES + 3]
-        ptypes = preferred_entity_types(query, canonical.get("intent", "")) if cfg.TYPE_AWARE else []
-        _mark("rank_entities_ms", _t)
-        log.info("run | graph seeds: %r preferred_types: %r", top_entities, ptypes)
-
-        # 6. Neo4j graph expansion — scoped to tenant + knowledge_base, entity names
-        #    as keys; matching-type neighbours get a soft ranking boost.
-        _t = time.perf_counter()
-        neo4j_entities: list[str] = []
-        if top_entities:
-            try:
-                neo4j_entities = await graph_expand(
-                    neo4j, top_entities, tenant_id,
-                    cfg.NEO4J_MAX_HOPS, cfg.NEO4J_MAX_NEIGHBOURS,
-                    query_vec,
-                    knowledge_base=knowledge_base,
-                    preferred_types=ptypes,
-                )
-            except Exception as exc:
-                log.warning("run | graph_expand failed: %s", exc)
-        _mark("graph_expand_ms", _t)
-
-        # 7. Qdrant pass 2 — expanded Neo4j entities (any), scoped to tenant + knowledge_base
-        _t = time.perf_counter()
-        pass2: list[dict] = []
-        if neo4j_entities:
-            pass2 = await qdrant_search(
-                qdrant, collection, query_vec, tenant_id,
-                limit=cfg.QDRANT_PASS2_LIMIT,
-                entities=neo4j_entities,
-                knowledge_base=knowledge_base,
-            )
-        _mark("qdrant_pass2_ms", _t)
-
-        _t = time.perf_counter()
-        typed_lists: list[list[dict]] = []
-        if cfg.TYPE_AWARE:
-            searches = []
-            groups: dict[str, list[str]] = {}
-            for name in query_entities:
-                t = canon_entity_types.get(name)
-                if t:
-                    groups.setdefault(t, []).append(name)
-            for t, names in list(groups.items())[:3]:
-                searches.append(qdrant_search(
-                    qdrant, collection, query_vec, tenant_id,
-                    limit=cfg.QDRANT_PASS2_LIMIT,
-                    knowledge_base=knowledge_base,
-                    typed_field=(f"ent_{t}", names),
-                ))
-            typed_names = list(dict.fromkeys([*neo4j_entities, *query_entities]))
-            if typed_names:
-                for t in ptypes[:2]:
-                    if t not in groups:
-                        searches.append(qdrant_search(
-                            qdrant, collection, query_vec, tenant_id,
-                            limit=cfg.QDRANT_PASS2_LIMIT,
-                            knowledge_base=knowledge_base,
-                            typed_field=(f"ent_{t}", typed_names),
-                        ))
-            if searches:
-                typed_lists = list(await asyncio.gather(*searches))
-        _mark("typed_pass_ms", _t)
-
-        # 8. RRF merge — pass1 + pass2 + typed lists (+ doc-narrowed pass) → top-N
-        _t = time.perf_counter()
-        rrf_top = rrf_merge([pass1, pass2, *typed_lists, pass_doc], top_n=cfg.RRF_TOP_N)
-        _mark("rrf_merge_ms", _t)
-
-        # 9. Rerank by cross-encoder on stored summaries → top-N
-        _t = time.perf_counter()
-        final = await rerank(model, query, rrf_top, cfg.RERANK_TOP_N)
-        _mark("rerank_ms", _t)
-
-        # 10. Hydrate — fetch active chunk text/source + any attached tables from Postgres,
-        #     concurrently (both keyed by block_id).
-        block_ids = [
-            str((h.get("payload") or {}).get("block_id") or "")
-            for h in final
-            if (h.get("payload") or {}).get("block_id")
-        ]
-        _t = time.perf_counter()
-        pg_rows, pg_tables = await asyncio.gather(
-            _fetch_chunks_postgres(postgres, block_ids, tenant_id, knowledge_base),
-            _fetch_tables_postgres(postgres, block_ids),
-        )
-        results = _build_result_list(final, pg_rows, pg_tables)
-        _mark("hydrate_ms", _t)
-
-        # 11. Cache the post-rerank decision (block_ids + scores) for near-identical queries.
-        _t = time.perf_counter()
-        if query_vec and results:
-            await cache_store(
-                qdrant, cfg.QDRANT_CACHE_COLLECTION,
-                query_vec, tenant_id, knowledge_base, results,
-            )
-        _mark("cache_store_ms", _t)
-
-        timings["total_ms"] = round((time.perf_counter() - _t0) * 1000, 1)
-        log.info("run | query=%r kb=%s rrf=%d hydrated=%d total=%.0fms",
-                 query[:60], knowledge_base, len(rrf_top), len(results), timings["total_ms"])
+    async def run(self, *args, **kwargs) -> dict:
+        """Blocking entry point — drains the shared generator and returns the final
+        result payload {source, canonical, results, timings}. Accepts the same
+        arguments as _run_events (front-layer entities/intent/entity_types included).
+        Raises RuntimeError if the pipeline ended in an error event (the router maps
+        it to a 500), preserving the old fail-fast contract."""
+        final: dict = {}
+        async for event in self._run_events(*args, **kwargs):
+            step = event.get("step")
+            if step == "error":
+                raise RuntimeError(event.get("message", "pipeline error"))
+            if step == "done":
+                final = event
         return {
-            "source": "pipeline",
-            "canonical": canonical,
-            "results": results,
-            "timings": timings,
+            "source": final.get("source", "pipeline"),
+            "canonical": final.get(
+                "canonical", {"intent": "general", "entities": [], "relationships": []}),
+            "results": final.get("results", []),
+            "timings": final.get("timings", {}),
         }

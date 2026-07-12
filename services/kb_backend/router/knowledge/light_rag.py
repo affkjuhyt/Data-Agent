@@ -2,44 +2,17 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 
 from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc
-from services.kb_backend.pipeline.light_rag import config as cfg
+from services.kb_backend.schemas import RetrieveRequest, RetrieveResponse
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/pipeline/light-rag", tags=["LightRAG"])
-
-
-class RetrieveRequest(BaseModel):
-    query: str
-    tenant_id: str = ""
-    collection: str = cfg.QDRANT_COLLECTION
-    # Restrict retrieval to one knowledge base (the "kind of knowledge"). Empty = all KBs.
-    knowledge_base: str = ""
-    # Insert fields for a query-enhancement front layer: when entities are given,
-    # the pipeline skips its internal canonicalize LLM call and uses them as the
-    # pass-1 filter + graph seeds. Empty = pipeline does its own extraction.
-    entities: list[str] = []
-    intent: str = ""
-    # Optional entity name → type (person/organization/location/...) from the
-    # front layer. Enables per-entity typed search: "find chunks where Việt Minh
-    # appears AS AN ORGANIZATION" (ent_organization MatchAny) — disambiguates
-    # homonyms and sharpens the typed pass.
-    entity_types: dict[str, str] = {}
-
-
-class RetrieveResponse(BaseModel):
-    source: str
-    canonical: dict[str, Any]
-    results: list[dict[str, Any]]
-    timings: dict[str, float] = {}
 
 
 @router.post("/retrieve", response_model=RetrieveResponse)
@@ -96,6 +69,9 @@ async def retrieve_stream(
                 postgres=svc(request, "postgres"),
                 collection=body.collection,
                 knowledge_base=knowledge_base,
+                entities=body.entities or None,
+                intent=body.intent or None,
+                entity_types=body.entity_types or None,
             ):
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as exc:

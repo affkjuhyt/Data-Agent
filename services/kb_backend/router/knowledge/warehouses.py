@@ -5,16 +5,16 @@ Shared helpers are also re-exported for documents.py aliases.
 from fastapi import APIRouter, Depends, Query, Request
 
 from basemodel.services_databaseconnector.shared_model import ResponseModel
-from services.kb_backend.UI_model.knowledge import RequestWarehouseConfigCreate
+from services.kb_backend.schemas import CreateWarehouseConfigRequest
 from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
-from services.kb_backend.pipeline.kb_ui_operation.warehouse_ops import (
+from services.kb_backend.operations.warehouse_ops import (
     get_warehouse_configs, create_warehouse_config,
     activate_warehouse_config, delete_warehouse_config,
     delete_config_table, list_warehouses,
 )
-from services.kb_backend.pipeline.kb_ui_operation.warehouse_connect_ops import (
+from services.kb_backend.operations.warehouse_connect_ops import (
     delete_warehouse_connection,
 )
 
@@ -42,7 +42,7 @@ async def get_configs(
 
 @router.post("/{warehouse_id}/configs", response_model=ResponseModel)
 async def create_config(
-    warehouse_id: str, body: RequestWarehouseConfigCreate,
+    warehouse_id: str, body: CreateWarehouseConfigRequest,
     request: Request, ctx: dict = Depends(require_perm("add_warehouse_config")),
 ):
     result = await create_warehouse_config(

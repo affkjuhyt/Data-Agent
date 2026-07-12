@@ -2,11 +2,11 @@
 from fastapi import APIRouter, Depends, Query, Request
 
 from basemodel.services_databaseconnector.shared_model import ResponseModel
-from services.kb_backend.UI_model.conflict import RequestResolveConflict
+from services.kb_backend.schemas import ResolveConflictRequest
 from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
-from services.kb_backend.pipeline.kb_ui_operation.conflict_ops import (
+from services.kb_backend.operations.conflict_ops import (
     list_conflicts, get_conflict, resolve_conflict,
 )
 
@@ -45,7 +45,7 @@ async def get_conflict_route(
 
 @router.patch("/{conflict_id}", response_model=ResponseModel)
 async def resolve_conflict_route(
-    conflict_id: str, body: RequestResolveConflict,
+    conflict_id: str, body: ResolveConflictRequest,
     request: Request, ctx: dict = Depends(require_perm("edit_conflict")),
 ):
     result = await resolve_conflict(

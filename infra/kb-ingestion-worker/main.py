@@ -32,7 +32,7 @@ from services.database_connector.qdrant_connector import (
 from services.database_connector.neo4j_connector import Neo4jClient
 from services.database_connector.mongo_connector import MongoClient
 from services.database_connector.minio_connector import MinIOClient
-from services.database_connector.kafka_connector import KafkaConsumerClient
+from services.database_connector.kafka_connector import KafkaConsumerClient, KafkaProducerClient
 from services.database_connector.model_connector import ModelServiceClient
 
 logging.basicConfig(
@@ -166,6 +166,9 @@ async def main() -> None:
     model    = ModelServiceClient()
     consumer = KafkaConsumerClient()
     consumer.set_group_id(cfg.KAFKA_CONSUMER_GROUP)
+    # Producer for the DLQ / bounded-retry path (failed silver/gold documents are
+    # re-published instead of being dropped after the offset commits).
+    producer = KafkaProducerClient()
 
     postgres.set_url(cfg.POSTGRES_URL)
     qdrant.set_url(cfg.QDRANT_URL)
@@ -174,6 +177,7 @@ async def main() -> None:
     minio.set_url(cfg.MINIO_URL)
     model.set_url(cfg.MODEL_SERVICE_URL)
     consumer.set_url(cfg.KAFKA_URL)
+    producer.set_url(cfg.KAFKA_URL)
 
     log.info("Opening connections...")
     await postgres.open(retry)
@@ -183,6 +187,7 @@ async def main() -> None:
     await minio.open(retry)
     await model.open(retry)
     await consumer.open(retry)
+    await producer.open(retry)
 
     await _validate_or_create_qdrant_collection(qdrant, model)
     await _ensure_neo4j_indexes(neo4j)
@@ -228,6 +233,7 @@ async def main() -> None:
             graph=graph,
             model=model,
             docling_parser=docling_parser,
+            producer=producer,
         )
     finally:
         conflict_task.cancel()
@@ -241,6 +247,7 @@ async def main() -> None:
         await minio.close()
         await model.close()
         await consumer.close()
+        await producer.close()
         log.info("Worker shutdown complete")
 
 
