@@ -296,7 +296,7 @@ Auto-managed (downloads itself — no manual file placement):
     `infra/model-service/models/`, or run:
     `docker compose -f infra/docker-compose.kb_e2e.yml run --rm model-service python -c "import models, config as c; models.load(c.EMBED_MODEL, c.RERANK_MODEL)"`
 - DB content lives in Docker **named volumes** (persist across image rebuilds) and is seeded by the
-  tracked [`infra/Postgres/init.sql`](./infra/Postgres/init.sql) + [`infra/Postgres/seed.sql`](./infra/Postgres/seed.sql).
+  tracked [`infra/postgres/init.sql`](./infra/postgres/init.sql) + [`infra/postgres/seed.sql`](./infra/postgres/seed.sql).
 
 ### KB-UI testing stack
 
