@@ -9,6 +9,7 @@ import SettingsView from './components/Settings/Overview';
 import { AgentRuntimeView } from './components/agent-builder/agents/AgentRuntime';
 import { TraceExplorer } from './components/agent-builder/agents/AgentTraces';
 import { ExecutiveDashboard } from './components/ExecutiveDashboard';
+import WorkflowEngine from './components/agent-builder/workflow/Overview';
 
 export interface ComingSoonInfo {
   title: string;
@@ -31,6 +32,7 @@ export const ROUTE_MAP: Record<string, Record<string, RouteEntry>> = {
   build: {
     AGENTS:    { render: () => <AgentRuntimeView /> },
     KNOWLEDGE: { render: () => <KnowledgeOpsCenter /> },
+    WORKFLOWS: { render: () => <WorkflowEngine /> },
     ROUTER: {
       comingSoon: {
         title: 'Router',

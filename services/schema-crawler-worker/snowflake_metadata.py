@@ -7,13 +7,75 @@ sync call here costs nothing and keeps the worker self-contained the same
 way memory-consumer doesn't import workflow-runtime's async Postgres client
 either. discover_and_describe() is the one function tests monkeypatch to
 avoid a real Snowflake account (see "Mock for now" in the implementation doc).
+
+Connections are pooled by their full param set (same technique as
+sandbox-executor/snowflake_readonly.py) — this worker calls
+discover_and_describe() once per warehouse on every cron tick plus once per
+DDL-triggered single-table crawl, so re-authenticating from scratch each
+time would add ~1-2s of avoidable latency/load to every call.
 """
 import logging
+import threading
 
 import snowflake.connector
 from snowflake.connector import DictCursor
 
 logger = logging.getLogger(__name__)
+
+_connections: dict[tuple, "snowflake.connector.SnowflakeConnection"] = {}
+_connections_lock = threading.Lock()
+
+
+def _connection_key(connection_params: dict) -> tuple:
+    return (
+        connection_params["account"],
+        connection_params["user"],
+        connection_params["password"],
+        connection_params.get("warehouse"),
+        connection_params.get("database"),
+        connection_params.get("schema"),
+        connection_params.get("role"),
+    )
+
+
+def _get_connection(connection_params: dict):
+    key = _connection_key(connection_params)
+    with _connections_lock:
+        conn = _connections.get(key)
+        if conn is not None:
+            try:
+                if not conn.is_closed():
+                    return conn
+            except Exception:
+                pass
+            _connections.pop(key, None)
+
+    # Connect outside the lock — this is a blocking network round-trip
+    # (~1-2s), and holding _connections_lock for its duration would stall
+    # every other thread trying to fetch/cache a connection for any
+    # warehouse, not just this one.
+    conn = snowflake.connector.connect(
+        account=connection_params["account"],
+        user=connection_params["user"],
+        password=connection_params["password"],
+        warehouse=connection_params.get("warehouse"),
+        database=connection_params.get("database"),
+        schema=connection_params.get("schema"),
+        role=connection_params.get("role"),
+        client_session_keep_alive=True,
+    )
+    with _connections_lock:
+        _connections[key] = conn
+    return conn
+
+
+def _drop_connection(connection_params: dict, conn) -> None:
+    with _connections_lock:
+        _connections.pop(_connection_key(connection_params), None)
+    try:
+        conn.close()
+    except Exception:
+        pass
 
 
 def discover_and_describe(connection_params: dict, selected_tables: list[str] | None = None) -> dict[str, dict]:
@@ -24,16 +86,7 @@ def discover_and_describe(connection_params: dict, selected_tables: list[str] | 
     table in the configured schema (doc §2.3 — "Worker thu thập ... metadata
     cấp bảng").
     """
-    conn = snowflake.connector.connect(
-        account=connection_params["account"],
-        user=connection_params["user"],
-        password=connection_params["password"],
-        warehouse=connection_params.get("warehouse"),
-        database=connection_params.get("database"),
-        schema=connection_params.get("schema"),
-        role=connection_params.get("role"),
-        client_session_keep_alive=False,
-    )
+    conn = _get_connection(connection_params)
     try:
         cursor = conn.cursor(DictCursor)
         cursor.execute("""
@@ -79,5 +132,9 @@ def discover_and_describe(connection_params: dict, selected_tables: list[str] | 
                 "last_altered": stats.get("LAST_ALTERED"),
             }
         return result
-    finally:
-        conn.close()
+    except Exception:
+        # Connection may be dead (idle timeout, network blip) — drop it from
+        # the pool so the next call reconnects instead of reusing a broken
+        # connection forever.
+        _drop_connection(connection_params, conn)
+        raise
