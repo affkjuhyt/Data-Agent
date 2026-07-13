@@ -322,6 +322,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         started_at = time.monotonic()
 
         pending_suggestions: list[str] | None = None
+        pending_charts: list[dict] | None = None
         # Khai báo sớm (trước try) — nếu exception xảy ra trước khi được gán
         # lại bên dưới, khối finally vẫn tham chiếu được an toàn.
         responder_options: list[str] | None = None
@@ -377,6 +378,10 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                             topics = out.get("suggestions", [])
                             if topics:
                                 pending_suggestions = topics
+                    elif node == "visualization":
+                        out = event["data"].get("output", {})
+                        if isinstance(out, dict) and out.get("chart_specs"):
+                            pending_charts = out["chart_specs"]
                     elif node == "planner":
                         out = event["data"].get("output", {})
                         if isinstance(out, dict):
@@ -440,6 +445,12 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                     yield f"data: {json.dumps(assistant_text)}\n\n"
                 else:
                     clean_text, responder_options = _strip_think_and_options(last_responder_text)
+                    # Ghép câu nhắc "có chart" KHÔNG qua LLM — Responder chạy song song với
+                    # Visualization nên tự nó không biết chart có vẽ được hay không lúc sinh
+                    # văn bản; đây là điểm DUY NHẤT đã biết chắc cả 2 nhánh đều xong.
+                    if pending_charts:
+                        suffix = "biểu đồ" if len(pending_charts) == 1 else f"{len(pending_charts)} biểu đồ"
+                        clean_text = clean_text.rstrip() + f"\n\n📊 Đã tạo {suffix} minh hoạ bên dưới."
                     assistant_text = clean_text
                     full_response.append(clean_text)
                     for chunk in _chunk_words(clean_text):
@@ -450,6 +461,9 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                 yield f"data: {json.dumps({'__options': responder_options})}\n\n"
             elif pending_suggestions:
                 yield f"data: {json.dumps({'__suggestions': pending_suggestions})}\n\n"
+
+            if pending_charts:
+                yield f"data: {json.dumps({'__chart': pending_charts})}\n\n"
 
             await asyncio.to_thread(flush_langfuse)
             yield "data: [DONE]\n\n"

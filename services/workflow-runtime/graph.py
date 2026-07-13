@@ -7,6 +7,7 @@ from nodes.model_harness.planner import planner_node
 from nodes.model_harness.responder import responder_node
 from nodes.model_harness.rrf_ranking import rrf_ranking_node
 from nodes.model_harness.reranker import reranker_node
+from nodes.model_harness.visualization import visualization_node
 from nodes.sandbox.kb_search import kb_search_node
 from nodes.sandbox.mcp import mcp_node
 from nodes.sandbox.tool_executor import tool_executor_node
@@ -25,6 +26,7 @@ NODE_TYPE_MAP = {
     "db_connector":     db_connector_node,
     "rrf_ranking":      rrf_ranking_node,
     "reranker":         reranker_node,
+    "visualization":    visualization_node,
     "responder":        responder_node,
     "judge":            judge_node,
     "human_approval":   human_approval_node,
@@ -162,6 +164,7 @@ async def judge_phase1_node(state: AgentState) -> dict:
         "kb_chunks": [], "mcp_results": [], "tool_results": [], "tool_errors": [],
         "db_results": [], "db_error": None,
         "rrf_results": [], "reranked_chunks": [],
+        "chart_specs": [], "chart_error": None,
     }
 
 

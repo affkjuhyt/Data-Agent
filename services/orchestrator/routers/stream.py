@@ -116,6 +116,8 @@ async def stream_orchestration(req: OrchestrateRequest, request: Request):
                             yield _sse(event["data"])
                         elif name == "pending_review":
                             yield _sse({"__pending_review": event["data"]})
+                        elif name == "chart":
+                            yield _sse({"__chart": event["data"]})
 
             except Exception as e:
                 logger.error("stream | graph error: %s", e)

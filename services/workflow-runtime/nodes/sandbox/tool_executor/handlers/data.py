@@ -55,7 +55,7 @@ async def _get_schema_text(tenant_id: str, conn_cfg: dict) -> str:
 
 
 async def _run_one_query(
-    name: str, sql: str, conn_cfg: dict, query: str, schema_text: str, planner_mdl: str,
+    name: str, sql: str, conn_cfg: dict, query: str, schema_text: str, sql_mdl: str,
 ) -> tuple[dict | None, dict | None]:
     """Chạy 1 câu SQL vào đúng 1 DB, tự sửa lỗi tối đa 3 lần (fold lỗi vào
     prompt sinh lại SQL, y hệt logic cũ) — độc lập với các DB khác đang chạy
@@ -90,8 +90,8 @@ async def _run_one_query(
             if attempt >= 2:
                 break
             try:
-                resp = litellm.completion(
-                    model=planner_mdl, api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
+                resp = await litellm.acompletion(
+                    model=sql_mdl, api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
                     messages=[{"role": "user", "content":
                         f"Chuyển câu hỏi sau thành SQL.\n\nSchema:\n{schema_text}\n\n"
                         f"Chỉ trả SQL thuần, không giải thích.\n\nSQL trước lỗi: {last_err}\nSửa lại.\n\nCâu hỏi: {query}"
@@ -120,7 +120,7 @@ async def _text_to_sql_handler(call: dict, cfg: dict) -> tuple[list[dict], list[
         return [], [{"tool_name": "text_to_sql", "error": "no query provided"}]
 
     tenant_id   = cfg.get("tenant_id", "") or ""
-    planner_mdl = cfg.get("planner_model", "planner")
+    sql_mdl = cfg.get("text_to_sql_model", "text_to_sql")
 
     schema_texts = {name: await _get_schema_text(tenant_id, conn_cfg) for name, conn_cfg in db_connections.items()}
 
@@ -129,8 +129,8 @@ async def _text_to_sql_handler(call: dict, cfg: dict) -> tuple[list[dict], list[
         note = db_connections[name].get("note", "")
         schema_block = f"{schema_texts[name]}\n{note}".strip()
         try:
-            resp = litellm.completion(
-                model=planner_mdl, api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
+            resp = await litellm.acompletion(
+                model=sql_mdl, api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
                 messages=[{"role": "user", "content":
                     f"Chuyển câu hỏi sau thành SQL.\n\nSchema:\n{schema_block}\n\n"
                     f"Chỉ trả SQL thuần, không giải thích.\n\nCâu hỏi: {query}"
@@ -153,8 +153,8 @@ async def _text_to_sql_handler(call: dict, cfg: dict) -> tuple[list[dict], list[
             f"\n\nCâu hỏi: {query}"
         )
         try:
-            resp = litellm.completion(
-                model=planner_mdl, api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
+            resp = await litellm.acompletion(
+                model=sql_mdl, api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0, max_tokens=1024, timeout=20,
                 response_format={"type": "json_object"},
@@ -175,7 +175,7 @@ async def _text_to_sql_handler(call: dict, cfg: dict) -> tuple[list[dict], list[
             return [], [{"tool_name": "text_to_sql", "error": "LLM did not select any valid database"}]
 
     outcomes = await asyncio.gather(*(
-        _run_one_query(name, sql, db_connections[name], query, schema_texts[name], planner_mdl)
+        _run_one_query(name, sql, db_connections[name], query, schema_texts[name], sql_mdl)
         for name, sql in queries
     ))
 

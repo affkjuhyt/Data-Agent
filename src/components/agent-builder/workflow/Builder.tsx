@@ -4,7 +4,7 @@ import {
   ArrowLeft, ChevronDown, Bot, Database, Activity, Zap, Cpu,
   Search, ShieldCheck, Wrench, Layers, Filter,
   GitBranch, Bell, RefreshCw, GripVertical, X, Copy, Trash2, Tag, Plus,
-  Eye, EyeOff, PlugZap,
+  Eye, EyeOff, PlugZap, BarChart3,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { Workflow } from '../../../types/workflow';
@@ -44,7 +44,8 @@ type FlowNodeType =
   | 'trigger' | 'guardrail' | 'planner' | 'kb_search' | 'mcp' | 'tool_executor'
   | 'rrf_ranking' | 'reranker' | 'responder' | 'output'
   | 'human_approval' | 'condition' | 'db_query'
-  | 'send_notification' | 'loop' | 'judge' | 'metadata_injector' | 'db_connector';
+  | 'send_notification' | 'loop' | 'judge' | 'metadata_injector' | 'db_connector'
+  | 'visualization';
 
 export interface FlowNodeData extends Record<string, unknown> {
   nodeType: FlowNodeType;
@@ -103,6 +104,7 @@ const NODE_STYLE: Record<string, { typeLabel: string; Icon: any; color: string }
   judge:             { typeLabel: 'Judge',          Icon: CheckCircle2, color: '#F59E0B' },
   metadata_injector: { typeLabel: 'Metadata Injector', Icon: Tag,      color: '#6366F1' },
   db_connector:      { typeLabel: 'DB Connector',    Icon: Database,    color: '#0EA5B5' },
+  visualization:     { typeLabel: 'Visualization',   Icon: BarChart3,   color: '#EC4899' },
 };
 
 // â”€â”€â”€ Custom Node â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -112,7 +114,7 @@ const CustomFlowNode = (props: NodeProps) => {
   const { selected, id } = props;
   const cfg       = NODE_STYLE[data.nodeType] || NODE_STYLE.trigger;
   const hasInput  = data.nodeType !== 'trigger';
-  const hasOutput = data.nodeType !== 'output';
+  const hasOutput = data.nodeType !== 'output' && data.nodeType !== 'visualization';
   const [hovered, setHovered] = useState(false);
 
   const { setNodes, setEdges } = useReactFlow();
@@ -1161,6 +1163,10 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
           </>
         )}
 
+        {d.nodeType === 'visualization' && (
+          <InfoNote text="Tự động vẽ biểu đồ khi user yêu cầu VÀ node này được nối cạnh từ 1 nguồn có dữ liệu dạng bảng (DB Connector luôn có; KB Search/MCP/Tool Executor chỉ vẽ được nếu dữ liệu trả về đúng dạng bảng). Chạy song song với nhánh trả lời text — không cần nối tiếp Responder." />
+        )}
+
         {d.nodeType === 'responder' && (
           <>
             <Field label="Model"><Readonly value={models.responder ?? '—'} /></Field>
@@ -1239,6 +1245,7 @@ const ALL_LIBRARY_NODES: Array<{
   { nodeType: 'tool_executor',     label: 'Tool Executor',     color: '#F97316', Icon: Zap,         allowMultiple: false },
   { nodeType: 'rrf_ranking',       label: 'RRF Ranking',       color: '#8B5CF6', Icon: Layers,      allowMultiple: false },
   { nodeType: 'reranker',          label: 'Reranker',          color: '#8B5CF6', Icon: Filter,      allowMultiple: false },
+  { nodeType: 'visualization',     label: 'Visualization',     color: '#EC4899', Icon: BarChart3,   allowMultiple: false },
   { nodeType: 'responder',         label: 'Responder',         color: '#3B82F6', Icon: Cpu,         allowMultiple: false },
   { nodeType: 'output',            label: 'Output',            color: '#6B7280', Icon: Activity,    allowMultiple: false },
   { nodeType: 'human_approval',    label: 'Human Approval',    color: '#D9B86C', Icon: ShieldCheck, allowMultiple: false },

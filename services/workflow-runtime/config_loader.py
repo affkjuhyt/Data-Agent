@@ -37,6 +37,8 @@ DEV_CONFIG = {
     "allowed_tools": [],
     "tool_config": {},
     "judge_model": "openai/judge",
+    "visualize_model": "openai/visualize",
+    "text_to_sql_model": "openai/text_to_sql",
     "loop_max_iterations": 3,
     "agent_id": os.environ.get("DEV_AGENT_ID", "00000000-0000-0000-0000-000000000030"),
     "agent_version_id": None,
