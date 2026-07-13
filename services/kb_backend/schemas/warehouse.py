@@ -49,6 +49,13 @@ class SelectTablesRequest(BaseModel):
     schema: str
     selected_table_ids: list[str]
     role: str | None = None
+    # secrets_vault id (key_type=WAREHOUSE_PASSWORD) that schema-crawler-worker
+    # resolves the real password from at crawl time via OpenBao — `password`
+    # above is only ever used for the one-off live connection test in this
+    # request, never persisted (see warehouse_connect.py). Optional: a
+    # warehouse without a secret_id simply isn't auto-crawled (see
+    # docs/Schema_Crawler_Risk_Remediation_Plan.md #1).
+    secret_id: str | None = None
 
 
 # ── Response ──────────────────────────────────────────────────────────────────

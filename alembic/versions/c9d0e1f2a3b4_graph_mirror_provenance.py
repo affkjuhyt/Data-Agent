@@ -1,6 +1,6 @@
 """graph mirror provenance: tenant/kb scoping + per-chunk block_id on KBNeo4j tables
 
-Revision ID: d4e5f6a7b8c9
+Revision ID: c9d0e1f2a3b4
 Revises: c3d4e5f6a7b8
 Create Date: 2026-06-27
 
@@ -8,6 +8,16 @@ KBNeo4jNode/KBNeo4jRelationship become the Postgres mirror of the ingestion grap
 Nodes gain tenant_id/knowledge_base and an optional connection_id. Relationships
 become one row per (entity pair, chunk): block_id joins the primary key so an edge
 exists while >=1 row references it and its count is COUNT(*) over the pair.
+
+Renamed from its original revision id d4e5f6a7b8c9 — that id collided with
+d4e5f6a7b8c9_schema_catalog.py (an independent branch also forking off
+c3d4e5f6a7b8, added by a different PR around the same time). Same class of
+bug as the b2c3d4e5f6a7 collision documented in
+docs/Sandbox_SchemaCrawler_Implementation.md §4/§8 — two branches picked the
+same hex id independently. Fixed the same way: rename the newer of the two
+(this one; schema_catalog's id already had a real dependent —
+c75156d1bd53's merge — so it was left untouched) and add a merge migration
+(d0e1f2a3b4c5) joining this branch back into the main line.
 """
 from typing import Union
 
@@ -16,7 +26,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
 
 
-revision: str = "d4e5f6a7b8c9"
+revision: str = "c9d0e1f2a3b4"
 down_revision: Union[str, None] = "c3d4e5f6a7b8"
 branch_labels = None
 depends_on = None

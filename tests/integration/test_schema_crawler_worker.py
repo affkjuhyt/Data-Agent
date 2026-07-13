@@ -60,7 +60,9 @@ def migrated_db(fresh_db) -> dict[str, str]:
     return fresh_db
 
 
-def _seed_tenant_and_warehouse(dsn: str, selected_tables: list[str] | None = None) -> tuple[str, str]:
+def _seed_tenant_and_warehouse(
+    dsn: str, selected_tables: list[str] | None = None, secret_id: str | None = None,
+) -> tuple[str, str]:
     tenant_id, warehouse_id = str(uuid.uuid4()), str(uuid.uuid4())
     conn = psycopg2.connect(dsn)
     conn.autocommit = True
@@ -76,11 +78,14 @@ def _seed_tenant_and_warehouse(dsn: str, selected_tables: list[str] | None = Non
                 (warehouse_id, tenant_id),
             )
             import json as _json
+            connection = {
+                "account": "test-account", "username": "test-user",
+                "warehouse": "TEST_WH", "database": "TEST_DB", "schema": "ANALYTICS", "role": None,
+            }
+            if secret_id:
+                connection["secret_id"] = secret_id
             config = {
-                "connection": {
-                    "account": "test-account", "username": "test-user",
-                    "warehouse": "TEST_WH", "database": "TEST_DB", "schema": "ANALYTICS", "role": None,
-                },
+                "connection": connection,
                 "selected_tables": [{"name": t} for t in (selected_tables or [])],
             }
             cur.execute(
@@ -227,6 +232,65 @@ def test_handle_ddl_event_crawls_single_table(worker, monkeypatch):
     worker_mod, conn, qdrant, dsn = worker
     monkeypatch.setenv("SNOWFLAKE_CRAWLER_PASSWORD", "test-pw")
     tenant_id, warehouse_id = _seed_tenant_and_warehouse(dsn, [])  # no selected_tables — DDL event targets one directly
+
+    worker_mod.handle_ddl_event(conn, qdrant, {
+        "tenant_id": tenant_id, "warehouse_id": warehouse_id, "table_name": "fact_stock_price",
+    })
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT table_name FROM "SchemaCatalog" WHERE tenant_id=%s AND warehouse_id=%s""",
+            (tenant_id, warehouse_id),
+        )
+        rows = cur.fetchall()
+    assert rows == [("fact_stock_price",)]
+
+
+def test_crawl_all_resolves_password_via_openbao_secret_id(worker, monkeypatch):
+    """A warehouse whose connection config carries a secret_id (see
+    docs/Schema_Crawler_Risk_Remediation_Plan.md #1) must resolve its
+    password through warehouse_secrets.resolve_snowflake_password() instead
+    of the legacy shared-env-var fallback."""
+    worker_mod, conn, qdrant, dsn = worker
+    monkeypatch.delenv("SNOWFLAKE_CRAWLER_PASSWORD", raising=False)
+    tenant_id, warehouse_id = _seed_tenant_and_warehouse(dsn, ["fact_stock_price"], secret_id="vault-secret-1")
+
+    resolve_calls = []
+
+    def _fake_resolve(cur, t_id, secret_id):
+        resolve_calls.append((t_id, secret_id))
+        return "resolved-pw"
+
+    monkeypatch.setattr(worker_mod, "resolve_snowflake_password", _fake_resolve)
+
+    worker_mod.crawl_all(conn, qdrant)
+
+    assert resolve_calls == [(tenant_id, "vault-secret-1")]
+    with conn.cursor() as cur:
+        cur.execute('SELECT COUNT(*) FROM "SchemaCatalog" WHERE tenant_id=%s', (tenant_id,))
+        assert cur.fetchone()[0] == 1
+
+
+def test_crawl_all_skips_warehouse_when_secret_id_resolution_fails(worker, monkeypatch):
+    worker_mod, conn, qdrant, dsn = worker
+    monkeypatch.delenv("SNOWFLAKE_CRAWLER_PASSWORD", raising=False)
+    tenant_id, _ = _seed_tenant_and_warehouse(dsn, ["fact_stock_price"], secret_id="vault-secret-missing")
+
+    monkeypatch.setattr(worker_mod, "resolve_snowflake_password", lambda cur, t_id, secret_id: None)
+
+    worker_mod.crawl_all(conn, qdrant)
+
+    with conn.cursor() as cur:
+        cur.execute('SELECT COUNT(*) FROM "SchemaCatalog" WHERE tenant_id=%s', (tenant_id,))
+        assert cur.fetchone()[0] == 0
+
+
+def test_handle_ddl_event_resolves_password_via_openbao_secret_id(worker, monkeypatch):
+    worker_mod, conn, qdrant, dsn = worker
+    monkeypatch.delenv("SNOWFLAKE_CRAWLER_PASSWORD", raising=False)
+    tenant_id, warehouse_id = _seed_tenant_and_warehouse(dsn, [], secret_id="vault-secret-1")
+
+    monkeypatch.setattr(worker_mod, "resolve_snowflake_password", lambda cur, t_id, secret_id: "resolved-pw")
 
     worker_mod.handle_ddl_event(conn, qdrant, {
         "tenant_id": tenant_id, "warehouse_id": warehouse_id, "table_name": "fact_stock_price",

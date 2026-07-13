@@ -124,9 +124,13 @@ def test_alembic_upgrade_head_on_fresh_db(fresh_db):
     )
 
     # alembic_version row must be set to the head revision (currently
-    # auth_api_secrets_vault_schema — bump this when a new head lands).
+    # d0e1f2a3b4c5, the merge of graph_mirror_provenance + kb_fts_index —
+    # bump this when a new head lands). This assertion was stale at
+    # "b8c9d0e1f2a3" (several heads behind) when the graph_mirror_provenance/
+    # d4e5f6a7b8c9 revision-id collision was fixed — see
+    # alembic/versions/c9d0e1f2a3b4_graph_mirror_provenance.py.
     rev = _current_revision(fresh_db["dsn"])
-    assert rev == "b8c9d0e1f2a3", f"expected head rev, got {rev}"
+    assert rev == "d0e1f2a3b4c5", f"expected head rev, got {rev}"
 
 
 # ─── 2. RLS migration was actually applied (regression net for issue #3) ───

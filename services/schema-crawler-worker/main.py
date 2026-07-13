@@ -28,9 +28,10 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 
 from schema_hash import schema_hash
-from snowflake_metadata import discover_and_describe
+from snowflake_metadata import discover_and_describe, evict_idle_connections
 from llm_describe import describe_table, render_text_description
 from embed import embed
+from warehouse_secrets import resolve_snowflake_password
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [schema-crawler-worker] %(levelname)s %(message)s")
 log = logging.getLogger("schema-crawler-worker")
@@ -39,7 +40,13 @@ DB_HOST = os.environ.get("DB_HOST", "postgres")
 DB_PORT = int(os.environ.get("DB_PORT", "5432"))
 DB_NAME = os.environ.get("DB_NAME", "dataagent")
 DB_USER = os.environ.get("DB_USER", "admin")
-DB_PASS = os.environ.get("DB_PASSWORD", "dev123")
+# No hardcoded fallback — a missing DB_PASSWORD must fail loudly the moment a
+# real connection is attempted (wait_for_postgres()), not silently connect
+# with a guessable placeholder (see docs/Schema_Crawler_Risk_Remediation_Plan.md
+# #2). Left un-defaulted (not required) at import time so unit tests that
+# import this module for its pure functions don't need it set.
+DB_PASS = os.environ.get("DB_PASSWORD")
+DB_SSLMODE = os.environ.get("DB_SSLMODE", "prefer")
 
 QDRANT_URL = os.environ.get("QDRANT_URL", "http://qdrant:6333")
 QDRANT_COLLECTION = "schema_catalog"
@@ -70,9 +77,14 @@ def _safe_json(raw: bytes):
 
 
 def wait_for_postgres(retries: int = 20, delay: int = 5):
+    if not DB_PASS:
+        raise RuntimeError("DB_PASSWORD environment variable is required and was not set")
     for attempt in range(1, retries + 1):
         try:
-            conn = psycopg2.connect(host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASS)
+            conn = psycopg2.connect(
+                host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASS,
+                sslmode=DB_SSLMODE,
+            )
             conn.autocommit = False
             log.info("PostgreSQL connected")
             return conn
@@ -143,30 +155,52 @@ def get_active_snowflake_warehouses(cur) -> list[dict]:
     return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
-def connection_params(config: dict, warehouse_id: str) -> dict | None:
-    """KBWarehouseConfig.config["connection"] never persists a password (see
-    select_warehouse_tables() in warehouse_connect.py) — this platform has
-    no secret-store integration for warehouse credentials yet (gap, see
-    implementation doc §7). SNOWFLAKE_CRAWLER_PASSWORD is a stand-in: a
-    single shared crawler-account password, or per-warehouse via
-    SNOWFLAKE_PASSWORD__<warehouse_id>."""
-    conn = (config or {}).get("connection") or {}
-    if not conn.get("account"):
+def connection_params(pg_conn, tenant_id: str, config: dict, warehouse_id: str) -> dict | None:
+    """KBWarehouseConfig.config["connection"]["secret_id"] (if set by
+    select_warehouse_tables() — see warehouse_connect.py) points at a
+    secrets_vault row of key_type WAREHOUSE_PASSWORD; the real password is
+    resolved from OpenBao per-tenant, replacing the previous shared
+    SNOWFLAKE_CRAWLER_PASSWORD credential (see
+    docs/Schema_Crawler_Risk_Remediation_Plan.md #1).
+
+    Legacy fallback kept for warehouses not yet migrated to a secret_id:
+    SNOWFLAKE_PASSWORD__<warehouse_id>, or the shared SNOWFLAKE_CRAWLER_PASSWORD
+    — deprecated, only used when connection.secret_id is absent. Remove once
+    every active warehouse has a secret_id (see plan's rollout note)."""
+    conn_cfg = (config or {}).get("connection") or {}
+    if not conn_cfg.get("account"):
         return None
-    # Env var names can't contain "-", but warehouse_id is typically a UUID.
-    env_warehouse_id = warehouse_id.replace("-", "_")
-    password = os.environ.get(f"SNOWFLAKE_PASSWORD__{env_warehouse_id}") or os.environ.get("SNOWFLAKE_CRAWLER_PASSWORD")
-    if not password:
-        log.warning("connection_params | no password configured for warehouse=%s, skipping", warehouse_id)
-        return None
+
+    secret_id = conn_cfg.get("secret_id")
+    if secret_id:
+        with pg_conn.cursor() as cur:
+            password = resolve_snowflake_password(cur, tenant_id, secret_id)
+        if not password:
+            log.warning(
+                "connection_params | failed to resolve secret_id=%s for warehouse=%s, skipping",
+                secret_id, warehouse_id,
+            )
+            return None
+    else:
+        # Env var names can't contain "-", but warehouse_id is typically a UUID.
+        env_warehouse_id = warehouse_id.replace("-", "_")
+        password = os.environ.get(f"SNOWFLAKE_PASSWORD__{env_warehouse_id}") or os.environ.get("SNOWFLAKE_CRAWLER_PASSWORD")
+        if not password:
+            log.warning("connection_params | no secret_id and no legacy password configured for warehouse=%s, skipping", warehouse_id)
+            return None
+        log.warning(
+            "connection_params | warehouse=%s using deprecated shared-password fallback — "
+            "configure connection.secret_id via secrets_vault instead", warehouse_id,
+        )
+
     return {
-        "account": conn["account"],
-        "user": conn.get("username", ""),
+        "account": conn_cfg["account"],
+        "user": conn_cfg.get("username", ""),
         "password": password,
-        "warehouse": conn.get("warehouse"),
-        "database": conn.get("database"),
-        "schema": conn.get("schema"),
-        "role": conn.get("role"),
+        "warehouse": conn_cfg.get("warehouse"),
+        "database": conn_cfg.get("database"),
+        "schema": conn_cfg.get("schema"),
+        "role": conn_cfg.get("role"),
     }
 
 
@@ -366,6 +400,7 @@ def crawl_all(conn, qdrant: QdrantClient, pending_ddl: "dict[tuple, dict] | None
     whole batch finishes — a warehouse list with many tenants/tables can
     otherwise take long enough to starve the DDL-trigger path of its main
     selling point (fast turnaround) for the whole duration of one cron pass."""
+    evict_idle_connections()
     with conn.cursor() as cur:
         warehouses = get_active_snowflake_warehouses(cur)
         last_crawled = _last_crawled_by_warehouse(cur)
@@ -377,7 +412,7 @@ def crawl_all(conn, qdrant: QdrantClient, pending_ddl: "dict[tuple, dict] | None
         if not _is_due(last_crawled.get((tenant_id, warehouse_id))):
             continue
 
-        conn_params = connection_params(w["config"], warehouse_id)
+        conn_params = connection_params(conn, tenant_id, w["config"], warehouse_id)
         if not conn_params:
             continue
         table_names = selected_table_names(w["config"])
@@ -424,7 +459,7 @@ def handle_ddl_event(conn, qdrant: QdrantClient, event: dict):
         )
         return
 
-    conn_params = connection_params(row[1], warehouse_id)
+    conn_params = connection_params(conn, tenant_id, row[1], warehouse_id)
     if not conn_params:
         return
 

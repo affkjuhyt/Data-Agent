@@ -150,6 +150,10 @@ async def select_warehouse_tables(
                 "database":  body.database,
                 "schema":    body.schema,
                 "role":      body.role,
+                # Never body.password — schema-crawler-worker resolves the
+                # real password from secrets_vault/OpenBao via secret_id at
+                # crawl time (see services/schema-crawler-worker/warehouse_secrets.py).
+                "secret_id": body.secret_id,
             },
         ),
     ))

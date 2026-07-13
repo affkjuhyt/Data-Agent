@@ -473,13 +473,25 @@ services:
       DB_NAME: ${POSTGRES_DB:-dataagent}
       DB_USER: ${POSTGRES_USER:-admin}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      DB_SSLMODE: ${DB_SSLMODE:-prefer}
       QDRANT_URL: http://qdrant:6333
       LITELLM_BASE_URL: http://litellm:4000
       EMBEDDING_DIM: ${EMBEDDING_DIM:-1024}
       CRAWL_INTERVAL_SECONDS: "86400"
-      # Gap (see docs/Sandbox_SchemaCrawler_Implementation.md §7): KBWarehouseConfig
-      # never persists a Snowflake password. Single shared crawler-account password
-      # until a secrets-store (OpenBao) integration exists for per-tenant credentials.
+      # warehouse_secrets.py — resolves a warehouse's connection.secret_id
+      # against OpenBao via its own read-only AppRole
+      # (infra/openbao/openbao-schema-crawler-approle-setup.sh), replacing
+      # the shared-password fallback below (see
+      # docs/Schema_Crawler_Risk_Remediation_Plan.md #1). Empty until that
+      # script has been run once and the printed values copied in —
+      # resolution then just no-ops (logs a warning, warehouse is skipped)
+      # instead of crashing.
+      OPENBAO_ADDR: http://openbao:8200
+      OPENBAO_ROLE_ID: ${SCHEMA_CRAWLER_OPENBAO_ROLE_ID:-}
+      OPENBAO_SECRET_ID: ${SCHEMA_CRAWLER_OPENBAO_SECRET_ID:-}
+      # Deprecated legacy fallback — only used for a warehouse whose
+      # connection config has no secret_id yet. Remove once every active
+      # warehouse has been migrated to a secrets_vault secret_id.
       SNOWFLAKE_CRAWLER_PASSWORD: ${SNOWFLAKE_CRAWLER_PASSWORD:-}
     depends_on:
       kafka:
@@ -489,6 +501,8 @@ services:
       qdrant:
         condition: service_started
       litellm:
+        condition: service_started
+      openbao:
         condition: service_started
 
   jwks-refresher:
