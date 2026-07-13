@@ -168,6 +168,7 @@ async def call_agent_stream(
       ("conv_id", str)         — conversation id từ response header
       ("token", str)           — text token
       ("pending_review", dict) — tool approval interrupt
+      ("chart", dict)          — chart_spec từ Visualization node (workflow-runtime)
     """
     if not agent_id:
         raise ValueError("agent_id is empty")
@@ -209,6 +210,8 @@ async def call_agent_stream(
                     pass  # orchestrator tự gen suggestions
                 elif "__pending_review" in parsed:
                     yield ("pending_review", parsed["__pending_review"])
+                elif "__chart" in parsed:
+                    yield ("chart", parsed["__chart"])
                 # bỏ qua __options và các event khác
     finally:
         await cm.__aexit__(None, None, None)

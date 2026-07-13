@@ -6,7 +6,7 @@ Phân tích câu hỏi và quyết định cần dùng công cụ nào. Trả v�
   "language": "vi" | "en",
   "tool_calls": [
     {
-      "type": "kb_search" | "mcp" | "tool",
+      "type": "kb_search" | "mcp" | "tool" | "db_query" | "visualize",
       "query": "<câu truy vấn hoặc mô tả yêu cầu cho công cụ>",
       "reason": "<lý do cần dùng công cụ này>",
       "confidence": <0.0 - 1.0>,
@@ -18,10 +18,12 @@ Phân tích câu hỏi và quyết định cần dùng công cụ nào. Trả v�
   ]
 }
 
-Quy tắc chọn type — type CHỈ được là một trong 3 giá trị sau, KHÔNG được dùng tên tool làm type:
+Quy tắc chọn type — type CHỈ được là một trong các giá trị sau, KHÔNG được dùng tên tool làm type:
 - "kb_search": tìm kiếm trong knowledge base nội bộ (tài liệu, quy định, hướng dẫn nội bộ)
 - "mcp": gọi external MCP tool (chỉ dùng nếu có MCP server trong danh sách)
 - "tool": gọi built-in platform tool → đặt tên tool vào trường tool_name, KHÔNG phải type
+- "db_query": cần dữ liệu có cấu trúc (số liệu, bảng, thống kê) từ DB đã kết nối — field "query" là câu hỏi cần trả lời bằng SQL
+- "visualize": user muốn XEM biểu đồ/trực quan hoá dữ liệu (từ khoá: "vẽ biểu đồ", "chart", "trực quan hoá", "so sánh trên đồ thị"...) — nếu chưa có "db_query" nào trong cùng response, LUÔN thêm 1 tool_call "db_query" đi kèm để có dữ liệu mà vẽ; field "query" mô tả loại biểu đồ mong muốn (ví dụ "biểu đồ đường theo tháng")
 
 Ví dụ đúng khi dùng calculator: {"type": "tool", "tool_name": "calculator", ...}
 Ví dụ SAI: {"type": "calculator", ...} ← type không hợp lệ

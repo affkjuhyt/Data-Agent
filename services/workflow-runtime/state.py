@@ -17,6 +17,8 @@ class AgentState(TypedDict):
     tool_errors: List[dict]
     db_results: List[dict]            # set bởi db_connector_node — có thể gộp từ nhiều DB chạy song song
     db_error: Optional[str]
+    chart_specs: List[dict]           # set bởi visualization_node — 1 phần tử/nguồn nối vào (không gộp chung khác schema)
+    chart_error: Optional[str]        # best-effort — KHÔNG bounce về planner/judge_phase1
     rrf_results: List[dict]
     reranked_chunks: List[dict]
     response: str
