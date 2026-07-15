@@ -37,16 +37,18 @@ jobs:
         run: mypy --install-types --non-interactive services libs app || true
         # ^ `|| true` while strict surface is small — drop once mypy passes clean.
         #   (basemodel moved under libs/ in the libs-layer refactor.)
-      - name: Strict typecheck · core libs (BLOCKING)
-        # libs/basemodel + libs/database_connector + libs/shared are kept
-        # strict-clean (disallow_untyped_defs + disallow_any_generics). This FAILS
-        # the build on any new untyped def or bare generic in those innermost
-        # layers. --ignore-missing-imports keeps it reproducible without installing
-        # every service's runtime deps.
+      - name: Strict typecheck · core libs + orchestrator (BLOCKING)
+        # These surfaces are kept strict-clean (disallow_untyped_defs +
+        # disallow_any_generics). This FAILS the build on any new untyped def or
+        # bare generic in them. --ignore-missing-imports keeps it reproducible
+        # without installing every service's runtime deps. services/orchestrator is
+        # passed as a path (not a module glob) because it is not an importable
+        # package — the pyproject per-module override can't reach it.
         run: |
           mypy --disallow-untyped-defs --disallow-any-generics \
                --ignore-missing-imports --follow-imports=silent \
-               libs/basemodel libs/database_connector libs/shared
+               libs/basemodel libs/database_connector libs/shared \
+               services/orchestrator
 
   python-test:
     name: Python · pytest (unit + integration)

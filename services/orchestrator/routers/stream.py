@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from typing import Any
 import asyncio
 import json
 import logging
@@ -21,16 +23,16 @@ router = APIRouter()
 
 
 @router.get("/api/orchestrate/health")
-async def health():
+async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-def _sse(data) -> str:
+def _sse(data: Any) -> str:
     return f"data: {json.dumps(data)}\n\n"
 
 
 @router.post("/api/orchestrate/stream")
-async def stream_orchestration(req: OrchestrateRequest, request: Request):
+async def stream_orchestration(req: OrchestrateRequest, request: Request) -> StreamingResponse:
 
     tenant_id = request.headers.get("X-Tenant-Id", "") or config.DEV_TENANT_ID
     # hex32 (không dấu gạch ngang) — format trace_id chuẩn OTEL, dùng chung
@@ -76,7 +78,7 @@ async def stream_orchestration(req: OrchestrateRequest, request: Request):
     graph = get_graph()
     lf = get_langfuse_client()
 
-    async def event_stream():
+    async def event_stream() -> AsyncIterator[str]:
         # session_id = trace_id — emit ngay để frontend fetch trace sau này
         # không phải đợi __conv_ids của từng agent con.
         yield _sse({"__session_id": session_id})

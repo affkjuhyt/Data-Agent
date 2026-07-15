@@ -95,8 +95,8 @@ with an existing baseline to burn down. Ratchet plan:
   | `libs/basemodel` | **0** ✅ | enforced |
   | `libs/shared` | **0** ✅ | enforced |
   | `libs/database_connector` | **0** ✅ | enforced — all 3 lib layers now strict-clean |
-  | `services/orchestrator` | ~100 | next |
-  | `services/kb_backend` | ~337 | largest surface |
+  | `services/orchestrator` | **0** ✅ | enforced (passed as a path — not an importable package) |
+  | `services/kb_backend` | ~337 | largest surface, next |
 
   > Only globs matching real importable packages work in the `pyproject` override;
   > hyphenated service dirs (`services/auth-api`, …) must be enforced by invoking mypy

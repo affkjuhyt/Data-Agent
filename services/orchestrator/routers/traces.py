@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 import base64
 import logging
 import os
@@ -12,8 +13,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/api/orchestrate/traces/{trace_id}")
-async def get_trace(trace_id: str):
+# response_model=None: the handler may return a JSONResponse OR a plain dict, so
+# tell FastAPI not to infer a response_model from the union return annotation
+# (a Response subclass in the union is not a valid response field). The annotation
+# stays for static typing.
+@router.get("/api/orchestrate/traces/{trace_id}", response_model=None)
+async def get_trace(trace_id: str) -> JSONResponse | dict[str, Any]:
     """Proxy sang Langfuse REST API — trả về toàn bộ observation tree của 1
     trace. Orchestrator luôn biết trace_id ngay từ đầu request (= session_id,
     xem routers/stream.py), nên không cần fallback tra theo sessionId như

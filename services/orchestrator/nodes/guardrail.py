@@ -1,3 +1,4 @@
+from typing import Any
 import functools
 import logging
 import time
@@ -5,6 +6,7 @@ import unicodedata
 
 from libs.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
 
+_REGEX_TIMEOUT: float | None
 try:
     import regex as re_lib
     _REGEX_TIMEOUT = 0.1
@@ -25,7 +27,7 @@ def _normalize(text: str) -> str:
 
 
 @functools.lru_cache(maxsize=64)
-def _compile_patterns(patterns_tuple: tuple) -> list:
+def _compile_patterns(patterns_tuple: tuple[Any, ...]) -> list[Any]:
     compiled = []
     for pid, p, confidence in patterns_tuple:
         try:
@@ -35,7 +37,7 @@ def _compile_patterns(patterns_tuple: tuple) -> list:
     return compiled
 
 
-def _regex_check(text: str, patterns: list) -> tuple[bool, str, dict | None]:
+def _regex_check(text: str, patterns: list[Any]) -> tuple[bool, str, dict[str, Any] | None]:
     text = _normalize(text)[:_MAX_CHECK_CHARS]
     patterns_tuple = tuple((item["id"], item["pattern"], item.get("confidence", "low")) for item in patterns)
     for pid, p_str, confidence, compiled_re in _compile_patterns(patterns_tuple):
@@ -51,7 +53,7 @@ def _regex_check(text: str, patterns: list) -> tuple[bool, str, dict | None]:
     return False, "", None
 
 
-def _build_input_context(query: str, messages: list[dict] | None) -> str:
+def _build_input_context(query: str, messages: list[dict[str, Any]] | None) -> str:
     """Ghép lịch sử hội thoại gần nhất + câu hỏi hiện tại làm ngữ cảnh cho
     LLM check — trước đây chỉ check mỗi query trần, thiếu ngữ cảnh hội thoại."""
     if not messages:
@@ -62,7 +64,7 @@ def _build_input_context(query: str, messages: list[dict] | None) -> str:
     return "\n".join(lines)
 
 
-async def run_guardrail(query: str, cfg: dict, messages: list[dict] | None = None) -> tuple[bool, str]:
+async def run_guardrail(query: str, cfg: dict[str, Any], messages: list[dict[str, Any]] | None = None) -> tuple[bool, str]:
     """
     Trả về (triggered, reason).
     cfg có thể truyền vào guardrail_input_patterns, guardrail_llm_enabled, guardrail_model, v.v.

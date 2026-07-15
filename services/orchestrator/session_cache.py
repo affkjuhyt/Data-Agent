@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from typing import Any, Iterable
 import json
 import logging
 
 from planner import restore_plan
-from planner.dpts import Plan
+from planner.dpts import Plan, PlanningProcess
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,9 @@ def _cache_key(tenant_id: str, session_id: str) -> str:
     return f"plan_session:{tenant_id}:{session_id}"
 
 
-async def load_cached_plan(redis, tenant_id: str, session_id: str, query: str):
+async def load_cached_plan(
+    redis: Any, tenant_id: str, session_id: str, query: str
+) -> tuple[PlanningProcess, Plan, dict[str, Any]] | None:
     """Resume an in-flight ToT planning/execution session (client retried the
     same session_id, e.g. after a client-side timeout) instead of re-planning
     and re-running already-completed agent calls from scratch."""
@@ -40,8 +43,9 @@ async def load_cached_plan(redis, tenant_id: str, session_id: str, query: str):
     return process, plan, env.get("progress") or {}
 
 
-async def save_cached_plan(redis, tenant_id: str, session_id: str, query: str, process, plan,
-                            completed_node_ids) -> None:
+async def save_cached_plan(redis: Any, tenant_id: str, session_id: str, query: str,
+                            process: PlanningProcess, plan: Plan,
+                            completed_node_ids: Iterable[str]) -> None:
     if redis is None or not redis.is_healthy():
         return
     env = {
@@ -56,7 +60,7 @@ async def save_cached_plan(redis, tenant_id: str, session_id: str, query: str, p
     await redis.set(_cache_key(tenant_id, session_id), json.dumps(env, ensure_ascii=False), ttl=_CACHE_TTL)
 
 
-async def clear_cached_plan(redis, tenant_id: str, session_id: str) -> None:
+async def clear_cached_plan(redis: Any, tenant_id: str, session_id: str) -> None:
     if redis is None or not redis.is_healthy():
         return
     await redis.delete(_cache_key(tenant_id, session_id))

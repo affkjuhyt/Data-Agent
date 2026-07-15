@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class TaskNode:
     latency_ms: int = 0
 
 
-def build_rounds(tasks: list[dict]) -> tuple[list[list[TaskNode]], list[dict]]:
+def build_rounds(tasks: list[dict[str, Any]]) -> tuple[list[list[TaskNode]], list[dict[str, Any]]]:
     """
     Nhận tasks[] từ 1 target, trả về (rounds, stuck_tasks).
     stuck_tasks không rỗng khi phát hiện circular/broken dependency.
@@ -41,7 +41,7 @@ def build_rounds(tasks: list[dict]) -> tuple[list[list[TaskNode]], list[dict]]:
 
     done_set: set[int] = set()
     rounds: list[list[TaskNode]] = []
-    stuck_tasks: list[dict] = []
+    stuck_tasks: list[dict[str, Any]] = []
 
     remaining = list(range(len(nodes)))
     while remaining:

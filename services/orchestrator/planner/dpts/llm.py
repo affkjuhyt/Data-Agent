@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any, cast
 import json
 import logging
 import random
@@ -27,7 +28,7 @@ class ChildThought:
     thought: str
     confidence: float
     is_terminal: bool = False
-    target: dict = field(default_factory=dict)
+    target: dict[str, Any] = field(default_factory=dict)
 
 
 STEP_SCHEMA = {
@@ -69,7 +70,7 @@ _INSTRUCTION = (
 )
 
 
-def _build_agents_block(agents: list[dict]) -> str:
+def _build_agents_block(agents: list[dict[str, Any]]) -> str:
     if not agents:
         return ""
     lines = ["\n\nAVAILABLE AGENTS (use agent_id exactly as listed):"]
@@ -83,8 +84,8 @@ def build_messages(
     goal: str,
     path_steps: list[str],
     avoid: list[str] | None,
-    agents: list[dict] | None = None,
-) -> list[dict]:
+    agents: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     system = _system_base() + _build_agents_block(agents or [])
     steps = "".join(f"\n- {s}" for s in path_steps)
     user = f"GOAL:\n{goal}\n\nPLAN SO FAR ({len(path_steps)} steps):{steps or ' (none yet)'}\n\n"
@@ -104,7 +105,7 @@ class LLM:
         self.max_tokens = max_tokens
 
     async def generate(
-        self, node: Node, k: int | None = None, agents: list[dict] | None = None
+        self, node: Node, k: int | None = None, agents: list[dict[str, Any]] | None = None
     ) -> list[ChildThought]:
         import asyncio
         import config
@@ -136,12 +137,16 @@ class LLM:
             return _parse(content)
 
         results = await asyncio.gather(*(one_child() for _ in range(k)), return_exceptions=True)
-        out = []
+        out: list[ChildThought] = []
         for r in results:
             if isinstance(r, Exception):
                 logger.warning("llm generate error: %s", r)
                 continue
-            out.extend(r)
+            # asyncio.gather(..., return_exceptions=True) types each result as
+            # list[ChildThought] | BaseException; the Exception check above
+            # doesn't statically rule out a non-Exception BaseException (e.g.
+            # CancelledError), so narrow explicitly instead of changing the check.
+            out.extend(cast(list[ChildThought], r))
         out.sort(key=lambda c: c.confidence, reverse=True)
         return out[:k]
 
@@ -154,7 +159,7 @@ class MockLLM:
         self.branching = branching
         self.seed = seed
 
-    async def generate(self, node: Node, k: int | None = None, agents: list[dict] | None = None) -> list[ChildThought]:
+    async def generate(self, node: Node, k: int | None = None, agents: list[dict[str, Any]] | None = None) -> list[ChildThought]:
         k = k or self.branching
         cd = node.depth + 1
         terminal = cd >= self.plan_depth
@@ -201,7 +206,7 @@ def _parse(content: str) -> list[ChildThought]:
     return out
 
 
-def _loads_lenient(content: str) -> list:
+def _loads_lenient(content: str) -> list[Any]:
     content = content.strip()
     try:
         obj = json.loads(content)
