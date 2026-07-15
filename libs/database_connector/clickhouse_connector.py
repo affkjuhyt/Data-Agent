@@ -30,7 +30,7 @@ _COLUMNS_SQL = (
 )
 
 
-def _new_client(conn: dict):
+def _new_client(conn: dict[str, Any]) -> Any:
     """Build a synchronous clickhouse_connect client from a conn dict."""
     import clickhouse_connect  # lazy: keep the dep optional until CH is actually used
 
@@ -43,13 +43,13 @@ def _new_client(conn: dict):
     )
 
 
-def _rows_as_dicts(result) -> list[dict[str, Any]]:
+def _rows_as_dicts(result: Any) -> list[dict[str, Any]]:
     cols = result.column_names
     return [dict(zip(cols, row, strict=False)) for row in result.result_rows]
 
 
 # ── one-shot helpers (ephemeral connect-per-query) ──────────────────────────
-async def query(conn: dict, sql: str) -> list[dict[str, Any]]:
+async def query(conn: dict[str, Any], sql: str) -> list[dict[str, Any]]:
     """Run one SQL against ClickHouse and return rows as dicts. Connect + close
     per call, mirroring the asyncpg usage in the db_connector node."""
     def _run() -> list[dict[str, Any]]:
@@ -62,7 +62,7 @@ async def query(conn: dict, sql: str) -> list[dict[str, Any]]:
     return await asyncio.to_thread(_run)
 
 
-async def columns(conn: dict) -> list[dict[str, Any]]:
+async def columns(conn: dict[str, Any]) -> list[dict[str, Any]]:
     """Introspect columns of the current database as
     ``[{table_name, column_name, data_type}, ...]`` (same shape the Postgres path
     produces from information_schema)."""
@@ -74,21 +74,23 @@ class ClickHouseClient:
     __slots__ = ("_client", "_conn", "_connected", "_healthy")
 
     def __init__(self) -> None:
-        self._client = None
-        self._conn: dict | None = None
+        self._client: Any | None = None
+        self._conn: dict[str, Any] | None = None
         self._healthy: bool = False
         self._connected: bool = False
 
-    def set_conn(self, conn: dict) -> None:
+    def set_conn(self, conn: dict[str, Any]) -> None:
         self._conn = conn
 
-    async def open(self, retry: RetryConfig | None = RetryConfig()) -> ClickHouseClient:
+    async def open(self, retry: RetryConfig = RetryConfig()) -> ClickHouseClient:
         if self._conn is None:
             raise RuntimeError("ClickHouse conn is not set — call set_conn() first")
         retry = retry or RetryConfig()
         for attempt in range(retry.count):
             try:
                 self._client = await asyncio.to_thread(_new_client, self._conn)
+                # Just assigned above.
+                assert self._client is not None
                 await asyncio.to_thread(self._client.ping)
                 self._connected = True
                 self._healthy = True
@@ -109,7 +111,7 @@ class ClickHouseClient:
         self._connected = False
         self._healthy = False
 
-    async def health_check_loop(self, config: HealthCheckLoopConfig | None = HealthCheckLoopConfig()) -> None:
+    async def health_check_loop(self, config: HealthCheckLoopConfig = HealthCheckLoopConfig()) -> None:
         config = config or HealthCheckLoopConfig()
         log.info("ClickHouse health check loop started")
         while True:
@@ -135,7 +137,7 @@ class ClickHouseClient:
     def is_connected(self) -> bool:
         return self._connected
 
-    def _db(self):
+    def _db(self) -> Any:
         if self._client is None:
             raise RuntimeError("ClickHouseClient is not open — call open() first")
         return self._client

@@ -1,6 +1,6 @@
 from qdrant_client import models
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
-from typing import List
+from typing import Any, List
 import asyncio
 import logging
 from libs.basemodel.services_databaseconnector.qdrant_model import (
@@ -41,8 +41,8 @@ def _build_qdrant_filters(
         knowledge_base: str | None = None) -> models.Filter | None:
 
 
-    def build_matching_field():
-        fields = []
+    def build_matching_field() -> list[models.FieldCondition]:
+        fields: list[models.FieldCondition] = []
         for matching_entity in data:
             for value in matching_entity.values:
                 fields.append(
@@ -74,6 +74,8 @@ def _build_qdrant_filters(
         return must_
 
     def build_paginating() -> list[models.FieldCondition]:
+        # Only called when pagination_config and pagination_cursor are set (see caller below).
+        assert pagination_config is not None
         paging_filter = models.FieldCondition(
             key=pagination_config.pagination_on,
             range=models.Range(gt=pagination_config.pagination_cursor),
@@ -110,9 +112,9 @@ def _build_qdrant_filters(
     )
 
 
-def _build_batch_points(tenant_id: str, points: List[PointData]):
+def _build_batch_points(tenant_id: str, points: List[PointData]) -> list[models.PointStruct]:
 
-    def add_tenant(payload: PointPayload):
+    def add_tenant(payload: PointPayload) -> PointPayload:
         payload.tenant_id = tenant_id
         return payload
 
@@ -130,7 +132,7 @@ def _build_batch_points(tenant_id: str, points: List[PointData]):
 class QdrantClient:
     # Follow DatabaseConnector Protocol in server/basemodel/protocol_model.py
     __slots__ = ("_client","_retry" ,"_connection_wait", "_healthy", "_connected", "_timeout", "_timeout_incremental", "_url")
-    def __init__(self):
+    def __init__(self) -> None:
         self._client: AsyncQdrantClient | None = None
         self._timeout:int = 10
         self._timeout_incremental:int = 1
@@ -139,10 +141,13 @@ class QdrantClient:
         self._connected:bool = False
         self._url:str|None = None
 
-    def set_url(self, url: str):
+    def set_url(self, url: str) -> None:
         self._url = url
 
     async def _check_health(self, config: HealthCheckLoopConfig) -> None:
+        # _check_health is only invoked from health_check_loop after a
+        # successful open(), so the client is guaranteed to be set.
+        assert self._client is not None
         await asyncio.wait_for(
             self._client.get_collections(),
             timeout=config.timeout_for_health_check,
@@ -155,7 +160,7 @@ class QdrantClient:
         except Exception as e:
             log.warning(f"Qdrant reconnect failed: {e}")
 
-    async def health_check_loop(self, config: HealthCheckLoopConfig):
+    async def health_check_loop(self, config: HealthCheckLoopConfig) -> None:
         log.info("Qdrant health check loop started")
         while True:
             try:
@@ -167,13 +172,15 @@ class QdrantClient:
                 await self._reconnect()
             await asyncio.sleep(config.interval)
 
-    async def open(self, retry: RetryConfig):
+    async def open(self, retry: RetryConfig) -> AsyncQdrantClient:
         if self._client is not None:
             return self._client
         log.info("Qdrant Connection established")
         self._create_connection()
         for _ in range(retry.count):
             try:
+                # _create_connection() above always sets self._client.
+                assert self._client is not None
                 await asyncio.wait_for(
                     self._client.get_collections(),
                     timeout = self._timeout + min(self._timeout, _ * self._timeout_incremental)
@@ -206,12 +213,12 @@ class QdrantClient:
             self._connected = False
             self._healthy = False
 
-    def is_healthy(self):
+    def is_healthy(self) -> bool:
         if self._client is None:
             raise ConnectionError("Connection must be first established")
         return self._healthy
 
-    def is_connected(self):
+    def is_connected(self) -> bool:
         if self._client is None:
             raise ConnectionError("Connection must be first established")
         return self._connected
@@ -232,13 +239,13 @@ class QdrantClient:
                 )
         return self._client
 
-async def delete_collection(client: AsyncQdrantClient, item: DeleteCollectionRequest) -> ResponseModel:
+async def delete_collection(client: AsyncQdrantClient, item: DeleteCollectionRequest) -> ResponseModel[Any]:
     if not await client.collection_exists(item.collection_name):
         return ResponseModel(code=404, error="Collection does not exist")
     await client.delete_collection(item.collection_name)
     return ResponseModel(code=200)
 
-async def create_collection(client: AsyncQdrantClient, item: CreateCollectionRequest) -> ResponseModel:
+async def create_collection(client: AsyncQdrantClient, item: CreateCollectionRequest) -> ResponseModel[Any]:
     if await client.collection_exists(item.name):
         return ResponseModel(code=409, error="Collection already exists")
 
@@ -261,7 +268,7 @@ async def create_collection(client: AsyncQdrantClient, item: CreateCollectionReq
     return ResponseModel(code=200)
 
 
-async def add_points(client: AsyncQdrantClient, item: AddPointsRequest) -> ResponseModel:
+async def add_points(client: AsyncQdrantClient, item: AddPointsRequest) -> ResponseModel[Any]:
     if not await client.collection_exists(item.collection_name):
         return ResponseModel(code=404, error="Collection does not exist")
 
@@ -275,7 +282,7 @@ async def add_points(client: AsyncQdrantClient, item: AddPointsRequest) -> Respo
     return ResponseModel(code=200)
 
 
-async def soft_delete_points(client: AsyncQdrantClient, item: SoftDeletePointsRequest) -> ResponseModel:
+async def soft_delete_points(client: AsyncQdrantClient, item: SoftDeletePointsRequest) -> ResponseModel[Any]:
     if not await client.collection_exists(item.collection_name):
         return ResponseModel(code=404, error="Collection does not exist")
 
@@ -317,7 +324,7 @@ async def soft_delete_points(client: AsyncQdrantClient, item: SoftDeletePointsRe
 
     return ResponseModel(code=200)
 
-async def delete_points(client: AsyncQdrantClient, item: DeletePointsRequest) -> ResponseModel:
+async def delete_points(client: AsyncQdrantClient, item: DeletePointsRequest) -> ResponseModel[Any]:
     if not await client.collection_exists(item.collection_name):
         return ResponseModel(code=404, error="Collection does not exist")
 
@@ -333,7 +340,7 @@ async def delete_points(client: AsyncQdrantClient, item: DeletePointsRequest) ->
 
 
 
-async def query_by_payload(client: AsyncQdrantClient, item: QueryByPayloadRequest) -> ResponseModel:
+async def query_by_payload(client: AsyncQdrantClient, item: QueryByPayloadRequest) -> ResponseModel[Any]:
     if not await client.collection_exists(item.collection_name):
         return ResponseModel(code=404, error="Collection does not exist")
 
@@ -341,7 +348,7 @@ async def query_by_payload(client: AsyncQdrantClient, item: QueryByPayloadReques
         collection_name=item.collection_name,
         scroll_filter=_build_qdrant_filters(
             tenant_id=item.tenant_id,
-            data=item.matching_payload,
+            data=item.matching_payload or [],
             match_type=item.match_type,
             pagination_config=item.pagination_config),
         limit=item.limit,
@@ -352,7 +359,7 @@ async def query_by_payload(client: AsyncQdrantClient, item: QueryByPayloadReques
     return ResponseModel(code=200, data = list(results))
 
 
-async def vector_search(client: AsyncQdrantClient, item: SearchRequest) -> ResponseModel:
+async def vector_search(client: AsyncQdrantClient, item: SearchRequest) -> ResponseModel[Any]:
     if not await client.collection_exists(item.collection_name):
         return ResponseModel(code=404, error="Collection does not exist")
 

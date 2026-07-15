@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 from libs.basemodel.services_databaseconnector.shared_model import HealthCheckLoopConfig, RetryConfig
 
@@ -21,7 +21,7 @@ class ElasticsearchClient:
     __slots__ = ("_client", "_url", "_timeout", "_connection_wait", "_healthy", "_connected")
 
     def __init__(self) -> None:
-        self._client = None
+        self._client: Any | None = None
         self._url: Optional[str] = None
         self._timeout: int = 10
         self._connection_wait: int = 5
@@ -32,7 +32,7 @@ class ElasticsearchClient:
     def set_url(self, url: str) -> None:
         self._url = url
 
-    async def open(self, retry: RetryConfig | None = RetryConfig()) -> "ElasticsearchClient":
+    async def open(self, retry: RetryConfig = RetryConfig()) -> "ElasticsearchClient":
         if self._url is None:
             raise RuntimeError("Elasticsearch URL is not set — call set_url() first")
         from elasticsearch import AsyncElasticsearch
@@ -61,10 +61,12 @@ class ElasticsearchClient:
         self._connected = False
         self._healthy = False
 
-    async def health_check_loop(self, config: HealthCheckLoopConfig | None = HealthCheckLoopConfig()) -> None:
+    async def health_check_loop(self, config: HealthCheckLoopConfig = HealthCheckLoopConfig()) -> None:
         log.info("Elasticsearch health check loop started")
         while True:
             try:
+                # health_check_loop only runs after a successful open().
+                assert self._client is not None
                 await asyncio.wait_for(self._client.ping(), timeout=config.timeout_for_health_check)
                 self._healthy = True
             except Exception as e:
@@ -86,13 +88,13 @@ class ElasticsearchClient:
     def is_connected(self) -> bool:
         return self._connected
 
-    def _db(self):
+    def _db(self) -> Any:
         if self._client is None:
             raise RuntimeError("ElasticsearchClient is not open — call open() first")
         return self._client
 
     # ── operations (all query logic lives here) ─────────────────────────
-    async def ensure_index(self, index: str, properties: dict[str, dict]) -> None:
+    async def ensure_index(self, index: str, properties: dict[str, dict[str, Any]]) -> None:
         """Create the index with the given field mappings if it does not exist.
 
         properties: ES mapping ``properties`` block, e.g.
@@ -120,7 +122,7 @@ class ElasticsearchClient:
         res = await self._db().search(index=index, size=1, query=query)
         hits = res.get("hits", {}).get("hits", [])
         if hits and hits[0]["_score"] >= min_score:
-            return hits[0]["_source"]
+            return cast("dict[str, Any]", hits[0]["_source"])
         return None
 
     async def delete_document(self, index: str, doc_id: str) -> bool:

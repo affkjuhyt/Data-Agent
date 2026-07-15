@@ -26,11 +26,11 @@ def _get_factory() -> async_sessionmaker:
     return _factory
 
 
-def _to_dict(instance) -> dict[str, Any]:
+def _to_dict(instance: Any) -> dict[str, Any]:
     return {c.name: getattr(instance, c.name) for c in instance.__table__.columns}
 
 
-async def read(table: str, filters: dict) -> ResponseModel:
+async def read(table: str, filters: dict[str, Any]) -> ResponseModel[Any]:
     filters = dict(filters)
     limit = filters.pop("limit", 200)
     schema = REGISTRY.get(table)
@@ -45,7 +45,7 @@ async def read(table: str, filters: dict) -> ResponseModel:
     return ResponseModel(code=200, data=[_to_dict(r) for r in rows])
 
 
-async def read_join(query: dict) -> ResponseModel:
+async def read_join(query: dict[str, Any]) -> ResponseModel[Any]:
     q = dict(query)
     if isinstance(q.get("order_by"), str):
         q.pop("order_by")
@@ -58,7 +58,7 @@ async def read_join(query: dict) -> ResponseModel:
     return ResponseModel(code=200, data=[dict(r) for r in rows])
 
 
-async def create(table: str, data: dict) -> ResponseModel:
+async def create(table: str, data: dict[str, Any]) -> ResponseModel[Any]:
     schema = REGISTRY.get(table)
     if schema is None:
         return ResponseModel(code=400, error=f"Unknown table: {table}")
@@ -77,7 +77,7 @@ async def create(table: str, data: dict) -> ResponseModel:
     return ResponseModel(code=200, data={pk: getattr(instance, pk) for pk in pks})
 
 
-async def update(table: str, data: dict) -> ResponseModel:
+async def update(table: str, data: dict[str, Any]) -> ResponseModel[Any]:
     schema = REGISTRY.get(table)
     if schema is None:
         return ResponseModel(code=400, error=f"Unknown table: {table}")
@@ -99,7 +99,7 @@ async def update(table: str, data: dict) -> ResponseModel:
     return ResponseModel(code=200)
 
 
-async def delete(table: str, data: dict) -> ResponseModel:
+async def delete(table: str, data: dict[str, Any]) -> ResponseModel[Any]:
     schema = REGISTRY.get(table)
     if schema is None:
         return ResponseModel(code=400, error=f"Unknown table: {table}")

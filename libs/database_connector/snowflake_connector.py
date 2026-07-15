@@ -19,8 +19,8 @@ NETWORK_TIMEOUT_S = 30
 class SnowflakeConnector:
     """Manages Snowflake connections and metadata discovery."""
 
-    def __init__(self):
-        self.connection = None
+    def __init__(self) -> None:
+        self.connection: Any | None = None
 
     async def validate_and_connect(
         self,
@@ -30,8 +30,8 @@ class SnowflakeConnector:
         warehouse: str,
         database: str,
         schema: str,
-        role: str = None,
-    ) -> dict:
+        role: str | None = None,
+    ) -> dict[str, Any]:
         """
         Test Snowflake connection and return success/error.
 
@@ -51,7 +51,7 @@ class SnowflakeConnector:
                 "tables": list[dict] if success else []
             }
         """
-        def _connect():
+        def _connect() -> Any:
             return snowflake.connector.connect(
                 account=account_identifier,
                 user=user,
@@ -102,12 +102,14 @@ class SnowflakeConnector:
             "tables": tables,
         }
 
-    async def discover_tables(self) -> list[dict]:
+    async def discover_tables(self) -> list[dict[str, Any]]:
         """Fetch list of tables in the current schema with row counts."""
         if not self.connection:
             return []
 
-        def _query():
+        def _query() -> Any:
+            # Guaranteed non-None by the `if not self.connection` check above.
+            assert self.connection is not None
             cursor = self.connection.cursor(DictCursor)
             cursor.execute("""
                 SELECT
@@ -141,12 +143,14 @@ class SnowflakeConnector:
         log.info("Discovered %d tables", len(tables))
         return tables
 
-    async def get_table_schema(self, table_name: str) -> dict:
+    async def get_table_schema(self, table_name: str) -> dict[str, Any]:
         """Get column schema for a specific table."""
         if not self.connection:
             return {}
 
-        def _query():
+        def _query() -> Any:
+            # Guaranteed non-None by the `if not self.connection` check above.
+            assert self.connection is not None
             cursor = self.connection.cursor(DictCursor)
             cursor.execute("""
                 SELECT
@@ -179,12 +183,14 @@ class SnowflakeConnector:
 
     async def query_table(
         self, table_name: str, limit: int = 100, offset: int = 0
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Query table data with pagination."""
         if not self.connection:
             return {"rows": [], "total_rows": 0}
 
-        def _query():
+        def _query() -> Any:
+            # Guaranteed non-None by the `if not self.connection` check above.
+            assert self.connection is not None
             cursor = self.connection.cursor(DictCursor)
             cursor.execute(f"SELECT COUNT(*) as cnt FROM {table_name}")
             total = cursor.fetchone()["CNT"]

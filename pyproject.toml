@@ -188,6 +188,7 @@ exclude = [
 [[tool.mypy.overrides]]
 module = [
     "libs.basemodel.*",
+    "libs.database_connector.*",
     "libs.shared.*",
 ]
 disallow_untyped_defs = true

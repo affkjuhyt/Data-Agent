@@ -1,3 +1,4 @@
+from typing import Any, cast
 import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
@@ -10,7 +11,7 @@ log = logging.getLogger(__name__)
 class MongoClient:
     __slots__ = ("_client", "_db", "_db_name", "_connection_wait", "_healthy", "_connected", "_timeout", "_url")
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._client: AsyncIOMotorClient | None = None
         self._db: AsyncIOMotorDatabase | None = None
         self._db_name: str = "dataagent"
@@ -24,7 +25,7 @@ class MongoClient:
         self._url = url
         self._db_name = url.split("/")[-1] or "dataagent"
 
-    async def open(self, retry: RetryConfig | None = RetryConfig()) -> AsyncIOMotorDatabase:
+    async def open(self, retry: RetryConfig = RetryConfig()) -> AsyncIOMotorDatabase:
         if self._url is None:
             raise RuntimeError("Mongo URL is not yet set")
 
@@ -62,7 +63,7 @@ class MongoClient:
         self._connected = False
         self._healthy = False
 
-    async def health_check_loop(self, config: HealthCheckLoopConfig | None = HealthCheckLoopConfig()) -> None:
+    async def health_check_loop(self, config: HealthCheckLoopConfig = HealthCheckLoopConfig()) -> None:
         log.info("Mongo health check loop started")
         while True:
             try:
@@ -86,34 +87,39 @@ class MongoClient:
         return self._db
 
     # ── operations (query logic lives in the connector) ─────────────────
-    async def create_index(self, collection: str, keys, **kwargs) -> None:
+    async def create_index(self, collection: str, keys: Any, **kwargs: Any) -> None:
         await self.get_client()[collection].create_index(keys, **kwargs)
 
-    async def upsert(self, collection: str, filter: dict, document: dict) -> None:
+    async def upsert(self, collection: str, filter: dict[str, Any], document: dict[str, Any]) -> None:
         """Replace (or insert) the single document matching ``filter``."""
         await self.get_client()[collection].replace_one(filter, document, upsert=True)
 
-    async def set_fields(self, collection: str, filter: dict, fields: dict) -> int:
+    async def set_fields(self, collection: str, filter: dict[str, Any], fields: dict[str, Any]) -> int:
         result = await self.get_client()[collection].update_one(filter, {"$set": fields})
-        return result.modified_count
+        return cast(int, result.modified_count)
 
-    async def find_one(self, collection: str, filter: dict, projection: dict | None = None) -> dict | None:
-        return await self.get_client()[collection].find_one(filter, projection or {"_id": 0})
+    async def find_one(self, collection: str, filter: dict[str, Any], projection: dict[str, Any] | None = None) -> dict[str, Any] | None:
+        return cast(
+            "dict[str, Any] | None",
+            await self.get_client()[collection].find_one(filter, projection or {"_id": 0}),
+        )
 
-    async def find_many(self, collection: str, filter: dict, projection: dict | None = None,
-                        limit: int = 0) -> list[dict]:
+    async def find_many(self, collection: str, filter: dict[str, Any], projection: dict[str, Any] | None = None,
+                        limit: int = 0) -> list[dict[str, Any]]:
         cursor = self.get_client()[collection].find(filter, projection or {"_id": 0})
-        return await cursor.to_list(length=limit or None)
+        return cast("list[dict[str, Any]]", await cursor.to_list(length=limit or None))
 
-    async def delete_one(self, collection: str, filter: dict) -> int:
+    async def delete_one(self, collection: str, filter: dict[str, Any]) -> int:
         result = await self.get_client()[collection].delete_one(filter)
-        return result.deleted_count
+        return cast(int, result.deleted_count)
 
-    async def delete_many(self, collection: str, filter: dict) -> int:
+    async def delete_many(self, collection: str, filter: dict[str, Any]) -> int:
         result = await self.get_client()[collection].delete_many(filter)
-        return result.deleted_count
+        return cast(int, result.deleted_count)
 
     async def _check_health(self, config: HealthCheckLoopConfig) -> None:
+        # _check_health only runs from health_check_loop after a successful open().
+        assert self._client is not None
         await asyncio.wait_for(
             self._client.admin.command("ping"),
             timeout=config.timeout_for_health_check,

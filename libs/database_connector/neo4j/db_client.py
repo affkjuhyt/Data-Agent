@@ -2,6 +2,7 @@
 Thin wrapper exposing run_query(cypher) without a driver argument.
 Initialized by app/main.py on startup.
 """
+from typing import Any
 from neo4j._async.driver import AsyncDriver
 
 from libs.basemodel.services_databaseconnector.shared_model import ResponseModel, RetryConfig
@@ -20,7 +21,7 @@ async def init(url: str) -> None:
         _driver = None
 
 
-async def run_query(cypher: str, params: dict | None = None) -> ResponseModel:
+async def run_query(cypher: str, params: dict[str, Any] | None = None) -> ResponseModel[Any]:
     if _driver is None:
         return ResponseModel(code=503, error="Neo4j not connected")
     from libs.database_connector.neo4j_connector import run_query as _rq

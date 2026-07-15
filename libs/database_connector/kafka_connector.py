@@ -5,7 +5,7 @@ Two classes: KafkaProducerClient (for publishing events) and KafkaConsumerClient
 """
 import asyncio
 import json
-from typing import Callable, Awaitable
+from typing import Any, Awaitable, Callable
 from urllib.parse import urlparse
 
 from aiokafka import AIOKafkaProducer, AIOKafkaConsumer, TopicPartition
@@ -77,6 +77,8 @@ class KafkaProducerClient:
         log.info("Kafka producer closed")
 
     async def _check_health(self, config: HealthCheckLoopConfig) -> None:
+        # _check_health only runs from health_check_loop after a successful open().
+        assert self._producer is not None
         # Flush with timeout to verify the connection is live
         await asyncio.wait_for(self._producer.flush(), timeout=config.timeout_for_health_check)
 
@@ -112,7 +114,7 @@ class KafkaProducerClient:
             raise RuntimeError("KafkaProducerClient not open")
         return self._producer
 
-    async def produce(self, topic: str, value: dict, key: str | None = None) -> None:
+    async def produce(self, topic: str, value: dict[str, Any], key: str | None = None) -> None:
         if self._producer is None:
             raise RuntimeError("KafkaProducerClient not open")
         await self._producer.send_and_wait(topic, value=value, key=key)
@@ -233,7 +235,7 @@ class KafkaConsumerClient:
     async def start_consuming(
         self,
         topics: list[str],
-        handler: Callable[[dict], Awaitable[None]],
+        handler: Callable[[dict[str, Any]], Awaitable[None]],
         concurrency: int = 1,
     ) -> None:
         """Subscribe to topics and run handler for each message. Runs forever (call as create_task).
@@ -258,8 +260,11 @@ class KafkaConsumerClient:
         log.info("Kafka consumer started topics=%s group=%s concurrency=%d",
                  topics, self._group_id, concurrency)
 
-        async def _commit(message) -> None:
+        async def _commit(message: Any) -> None:
             try:
+                # start_consuming() sets self._consumer just above and only clears
+                # it in this method's own finally blocks, after the consume loop ends.
+                assert self._consumer is not None
                 await self._consumer.commit(
                     {TopicPartition(message.topic, message.partition): message.offset + 1}
                 )
@@ -283,9 +288,9 @@ class KafkaConsumerClient:
             return
 
         sem = asyncio.Semaphore(concurrency)
-        inflight: set[asyncio.Task] = set()
+        inflight: set[asyncio.Task[Any]] = set()
 
-        async def _run(message) -> None:
+        async def _run(message: Any) -> None:
             try:
                 await handler(message.value)
             except Exception as e:

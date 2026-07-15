@@ -4,7 +4,7 @@ URL format: http://access_key:secret_key@host:port
             or http://host:port (credentials via env / set_credentials)
 """
 import asyncio
-from typing import BinaryIO
+from typing import Any, BinaryIO, cast
 from urllib.parse import urlparse
 
 import aioboto3
@@ -50,7 +50,7 @@ class MinIOClient:
     def _make_session(self) -> aioboto3.Session:
         return aioboto3.Session()
 
-    def _client_kwargs(self) -> dict:
+    def _client_kwargs(self) -> dict[str, Any]:
         return {
             "endpoint_url": self._endpoint,
             "aws_access_key_id": self._access_key,
@@ -58,6 +58,8 @@ class MinIOClient:
         }
 
     async def _check_health(self, config: HealthCheckLoopConfig) -> None:
+        # _check_health only runs from health_check_loop after a successful open().
+        assert self._session is not None
         async with self._session.client("s3", **self._client_kwargs()) as s3:
             await asyncio.wait_for(s3.list_buckets(), timeout=config.timeout_for_health_check)
 
@@ -119,6 +121,8 @@ class MinIOClient:
     # ── Operations ────────────────────────────────────────────────────────────
 
     async def ensure_bucket(self, bucket: str) -> None:
+        # Operations are only called after open()/get_client() establishes the session.
+        assert self._session is not None
         async with self._session.client("s3", **self._client_kwargs()) as s3:
             try:
                 await s3.head_bucket(Bucket=bucket)
@@ -132,6 +136,8 @@ class MinIOClient:
     async def upload(self, bucket: str, key: str, data: bytes,
                      content_type: str = "application/octet-stream") -> None:
         import io
+        # Operations are only called after open()/get_client() establishes the session.
+        assert self._session is not None
         async with self._session.client("s3", **self._client_kwargs()) as s3:
             await s3.upload_fileobj(
                 io.BytesIO(data), bucket, key,
@@ -141,20 +147,28 @@ class MinIOClient:
 
     async def upload_fileobj(self, bucket: str, key: str, fileobj: BinaryIO,
                              content_type: str = "application/octet-stream") -> None:
+        # Operations are only called after open()/get_client() establishes the session.
+        assert self._session is not None
         async with self._session.client("s3", **self._client_kwargs()) as s3:
             await s3.upload_fileobj(fileobj, bucket, key, ExtraArgs={"ContentType": content_type})
 
     async def download(self, bucket: str, key: str) -> bytes:
+        # Operations are only called after open()/get_client() establishes the session.
+        assert self._session is not None
         async with self._session.client("s3", **self._client_kwargs()) as s3:
             resp = await s3.get_object(Bucket=bucket, Key=key)
-            return await resp["Body"].read()
+            return cast(bytes, await resp["Body"].read())
 
     async def delete(self, bucket: str, key: str) -> None:
+        # Operations are only called after open()/get_client() establishes the session.
+        assert self._session is not None
         async with self._session.client("s3", **self._client_kwargs()) as s3:
             await s3.delete_object(Bucket=bucket, Key=key)
         log.info("MinIO delete bucket=%s key=%s", bucket, key)
 
-    async def head(self, bucket: str, key: str) -> dict:
+    async def head(self, bucket: str, key: str) -> dict[str, Any]:
+        # Operations are only called after open()/get_client() establishes the session.
+        assert self._session is not None
         async with self._session.client("s3", **self._client_kwargs()) as s3:
             resp = await s3.head_object(Bucket=bucket, Key=key)
         return {"content_length": resp["ContentLength"],

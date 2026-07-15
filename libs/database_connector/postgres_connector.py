@@ -1,7 +1,7 @@
 import asyncio
 import os
 import uuid
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import select, update as sa_update, delete as sa_delete, text, tuple_, func
 from sqlalchemy.engine import CursorResult
@@ -53,11 +53,11 @@ def _engine_kwargs() -> dict[str, Any]:
 
 
 # Helpers
-def _orm_to_dict(instance) -> dict[str, Any]:
+def _orm_to_dict(instance: Any) -> dict[str, Any]:
     return {c.name: getattr(instance, c.name) for c in instance.__table__.columns}
 
 
-def _orm_to_dict_deep(instance) -> dict[str, Any]:
+def _orm_to_dict_deep(instance: Any) -> dict[str, Any]:
     result = {c.name: getattr(instance, c.name) for c in instance.__table__.columns}
     state = sa_attributes.instance_state(instance)
     mapper = sa_inspect(type(instance))
@@ -76,16 +76,16 @@ def _orm_to_dict_deep(instance) -> dict[str, Any]:
     return result
 
 
-def _rel_key_to(orm_cls, target_cls) -> str:
+def _rel_key_to(orm_cls: Any, target_cls: Any) -> str:
     for rel in sa_inspect(orm_cls).relationships:
         if rel.mapper.class_ is target_cls:
-            return rel.key
+            return cast(str, rel.key)
     raise AttributeError(
         f"No relationship from {orm_cls.__tablename__} to {target_cls.__tablename__}"
     )
 
 
-def _build_load_option(root_orm_cls, path: str):
+def _build_load_option(root_orm_cls: Any, path: str) -> Any:
     table_names = path.split(".")
     current_cls = root_orm_cls
     option = None
@@ -103,7 +103,7 @@ def _build_load_option(root_orm_cls, path: str):
     return option
 
 
-def _resolve(data: BaseModel):
+def _resolve(data: BaseModel) -> tuple[str, Any]:
     table_name = MODEL_TO_TABLE.get(type(data))
     if table_name is None:
         raise AttributeError(f"Unregistered model: {type(data).__name__}")
@@ -123,12 +123,12 @@ _OP_MAP = {
 }
 
 
-def _apply_op(col, f):
+def _apply_op(col: Any, f: Any) -> Any:
     value = f.value
     is_uuid_col = hasattr(col.type, 'python_type') and col.type.python_type == uuid.UUID
     # Convert string→UUID for UUID columns. For IN, coerce each element of the list.
     if is_uuid_col:
-        def _coerce(v):
+        def _coerce(v: Any) -> Any:
             if isinstance(v, str):
                 try:
                     return uuid.UUID(v)
@@ -142,7 +142,7 @@ def _apply_op(col, f):
     return _OP_MAP[f.operator](col, value)
 
 
-def _validate_order_by(order_by, allowed_tables: set[str]) -> None:
+def _validate_order_by(order_by: Any, allowed_tables: set[str]) -> None:
     if order_by is None:
         return
     if order_by.table_name not in allowed_tables:
@@ -156,7 +156,7 @@ def _validate_order_by(order_by, allowed_tables: set[str]) -> None:
             f"order_by column '{order_by.column}' does not exist on '{order_by.table_name}'"
         )
 
-def _apply_keyset(stmt, root_cls, cursor, order_by):
+def _apply_keyset(stmt: Any, root_cls: Any, cursor: Any, order_by: Any) -> Any:
     """Keyset pagination with a stable tiebreaker.
 
     Orders by (inserted_at, <pk>) and, when a cursor (the last row of the prior
@@ -346,7 +346,7 @@ class PostgresTransaction:
         self._jobs.append((op, data))
         return self
 
-    async def commit(self) -> ResponseModel:
+    async def commit(self) -> ResponseModel[Any]:
         # Phase 1 — compile all jobs before touching the DB
         preps: list[tuple[TransactionOp, Any]] = []
         for op, data in self._jobs:
@@ -387,7 +387,7 @@ class PostgresTransaction:
 from contextlib import asynccontextmanager
 
 @asynccontextmanager
-async def _tenant_session(factory, tenant_id: str):
+async def _tenant_session(factory: Any, tenant_id: str) -> Any:
     # is_local=true: setting scoped to current transaction, auto-reset on commit/rollback.
     # Avoids releasing the connection back to the pool between set_config and the actual
     # operation, which would lose the session-level setting on a different connection.
@@ -405,7 +405,7 @@ async def _tenant_session(factory, tenant_id: str):
 class PostgresClient:
     __slots__ = ("_engine", "_session_factory", "_connection_wait", "_healthy", "_connected", "_timeout", "_url",)
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._engine: AsyncEngine | None = None
         self._session_factory: async_sessionmaker[AsyncSession] | None = None
         self._timeout: int = 10
@@ -414,7 +414,7 @@ class PostgresClient:
         self._connected: bool = False
         self._url: str | None = None
 
-    async def open(self, retry: RetryConfig | None = RetryConfig()) -> AsyncSession:
+    async def open(self, retry: RetryConfig = RetryConfig()) -> AsyncSession:
         if self._url is None:
             raise RuntimeError("Postgres URL is not yet set")
 
@@ -430,6 +430,8 @@ class PostgresClient:
                 return self.get_client()
             except OperationalError as e:
                 log.info(f"Attempt #{attempt + 1}/{retry.count}: Postgres connection failed — {e}")
+                # Set just above in this same iteration's try block.
+                assert self._engine is not None
                 await self._engine.dispose()
                 self._engine = None
                 self._session_factory = None
@@ -448,7 +450,7 @@ class PostgresClient:
         self._connected = False
         self._healthy = False
 
-    async def health_check_loop(self, config: HealthCheckLoopConfig | None = HealthCheckLoopConfig()) -> None:
+    async def health_check_loop(self, config: HealthCheckLoopConfig = HealthCheckLoopConfig()) -> None:
         log.info("Postgres health check loop started")
         while True:
             try:
@@ -471,7 +473,7 @@ class PostgresClient:
     def is_connected(self) -> bool:
         return self._connected
 
-    def get_client(self, tenant_id: str | None = None):
+    def get_client(self, tenant_id: str | None = None) -> Any:
         if self._session_factory is None:
             raise RuntimeError("PostgresClient is not open — call open() first")
         if tenant_id is None:
@@ -479,6 +481,8 @@ class PostgresClient:
         return _tenant_session(self._session_factory, tenant_id)
 
     async def _check_health(self, config: HealthCheckLoopConfig) -> None:
+        # _check_health only runs from health_check_loop after a successful open().
+        assert self._engine is not None
         async with self._engine.connect() as conn:
             await asyncio.wait_for(
                 conn.execute(text("SELECT 1")),
@@ -498,15 +502,17 @@ class PostgresClient:
             raise RuntimeError("PostgresClient is not open — call open() first")
         return PostgresTransaction(self._session_factory)
 
-    async def insert(self, data: BaseModel) -> ResponseModel:
+    async def insert(self, data: BaseModel) -> ResponseModel[Any]:
         try:
             prep = _prepare_insert(data)
         except AttributeError as e:
             return ResponseModel(code=400, error=str(e))
 
         tenant_id = str(getattr(data, "tenant_id", None) or "")
+        # _prepare_insert() always sets orm_cls.
+        assert prep.orm_cls is not None
         pks = [col.name for col in prep.orm_cls.__table__.primary_key]
-        pk_data: dict = {}
+        pk_data: dict[str, Any] = {}
         async with self.get_client(tenant_id=tenant_id or None) as session:
             session.add(prep.instance)
             try:
@@ -538,7 +544,7 @@ class PostgresClient:
                 return ResponseModel(code=409, error=f"Integrity error in {prep.table_name}")
         return ResponseModel(code=200, data=pk_data)
 
-    async def soft_delete(self, data: BaseModel) -> ResponseModel:
+    async def soft_delete(self, data: BaseModel) -> ResponseModel[Any]:
         try:
             prep = _prepare_soft_delete(data)
         except AttributeError as e:
@@ -555,7 +561,7 @@ class PostgresClient:
             return ResponseModel(code=404, error="Record not found or already deleted")
         return ResponseModel(code=200)
 
-    async def delete(self, data: BaseModel) -> ResponseModel:
+    async def delete(self, data: BaseModel) -> ResponseModel[Any]:
         try:
             prep = _prepare_delete(data)
         except AttributeError as e:
@@ -570,7 +576,7 @@ class PostgresClient:
                 raise
         return ResponseModel(code=200)
 
-    async def read_deep(self, data: SelectInLoadRequest) -> ResponseModel:
+    async def read_deep(self, data: SelectInLoadRequest) -> ResponseModel[Any]:
         try:
             prep = _prepare_deep_search(data)
         except AttributeError as e:
@@ -581,7 +587,7 @@ class PostgresClient:
             rows = result.scalars().all()
         return ResponseModel(code=200, data=[_orm_to_dict_deep(r) for r in rows])
 
-    async def flush(self, table_name: str) -> ResponseModel:
+    async def flush(self, table_name: str) -> ResponseModel[Any]:
         try:
             prep = _prepare_flush(table_name)
         except AttributeError as e:
@@ -596,7 +602,7 @@ class PostgresClient:
                 raise
         return ResponseModel(code=200)
 
-    async def read(self, data: ReadJoinRequest) -> ResponseModel:
+    async def read(self, data: ReadJoinRequest) -> ResponseModel[Any]:
         try:
             prep = _prepare_read(data)
         except AttributeError as e:
@@ -607,7 +613,7 @@ class PostgresClient:
             rows = result.mappings().all()
         return ResponseModel(code=200, data=[dict(r) for r in rows])
 
-    async def read_count(self, data: ReadJoinRequest) -> ResponseModel:
+    async def read_count(self, data: ReadJoinRequest) -> ResponseModel[Any]:
         """Total row count for the same filters as read() — for numbered pagination."""
         try:
             prep = _prepare_count(data)

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from typing import cast
 
 import redis.asyncio as aioredis
 
@@ -11,7 +12,7 @@ log = logging.getLogger(__name__)
 class RedisClient:
     __slots__ = ("_client", "_healthy", "_connected", "_url")
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._client: aioredis.Redis | None = None
         self._healthy: bool = False
         self._connected: bool = False
@@ -20,7 +21,7 @@ class RedisClient:
     def set_url(self, url: str) -> None:
         self._url = url
 
-    async def open(self, retry: RetryConfig | None = RetryConfig()) -> None:
+    async def open(self, retry: RetryConfig = RetryConfig()) -> None:
         if self._url is None:
             raise RuntimeError("Redis URL is not yet set")
 
@@ -50,7 +51,7 @@ class RedisClient:
         self._connected = False
         self._healthy = False
 
-    async def health_check_loop(self, config: HealthCheckLoopConfig | None = HealthCheckLoopConfig()) -> None:
+    async def health_check_loop(self, config: HealthCheckLoopConfig = HealthCheckLoopConfig()) -> None:
         log.info("Redis health check loop started")
         while True:
             try:
@@ -79,7 +80,7 @@ class RedisClient:
     async def get(self, key: str) -> str | None:
         if self._client is None:
             return None
-        return await self._client.get(key)
+        return cast("str | None", await self._client.get(key))
 
     async def set(self, key: str, value: str, ttl: int | None = None) -> None:
         if self._client is None:

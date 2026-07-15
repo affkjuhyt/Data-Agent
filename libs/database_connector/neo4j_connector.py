@@ -1,3 +1,4 @@
+from typing import Any
 import re
 import uuid
 import asyncio
@@ -17,7 +18,7 @@ log = logging.getLogger(__name__)
 class Neo4jClient:
     __slots__ = ("_client", "_connection_wait", "_healthy", "_connected", "_timeout", "_timeout_incremental", "_url")
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._client: AsyncDriver | None = None
         self._timeout: int = 10
         self._timeout_incremental: int = 1
@@ -26,10 +27,11 @@ class Neo4jClient:
         self._connected: bool = False
         self._url: str | None = None
 
-    def set_url(self, url: str):
+    def set_url(self, url: str) -> None:
         self._url = url
 
     async def _check_health(self, config: HealthCheckLoopConfig) -> None:
+        assert self._client is not None  # health loop runs only after open()
         await asyncio.wait_for(
             self._client.verify_connectivity(),
             timeout=config.timeout_for_health_check,
@@ -42,7 +44,7 @@ class Neo4jClient:
         except Exception as e:
             log.warning(f"Neo4j reconnect failed: {e}")
 
-    async def health_check_loop(self, config: HealthCheckLoopConfig):
+    async def health_check_loop(self, config: HealthCheckLoopConfig) -> None:
         log.info("Neo4j health check loop started")
         while True:
             try:
@@ -59,6 +61,7 @@ class Neo4jClient:
             return self._client
         log.info("Neo4j Connection established")
         self._create_connection()
+        assert self._client is not None  # _create_connection sets self._client
         for _ in range(retry.count):
             try:
                 await asyncio.wait_for(
@@ -120,7 +123,7 @@ def _validate_node_name(value: str) -> str:
     return value
 
 
-async def add_node(driver: AsyncDriver, item: AddNodeRequest) -> ResponseModel:
+async def add_node(driver: AsyncDriver, item: AddNodeRequest) -> ResponseModel[Any]:
     try:
         label = _validate_node_name(item.node.label)
     except ValueError as e:
@@ -140,7 +143,7 @@ async def add_node(driver: AsyncDriver, item: AddNodeRequest) -> ResponseModel:
     return ResponseModel(code=200, data={"id": record["id"]})
 
 
-async def add_relationship(driver: AsyncDriver, item: AddRelationshipRequest) -> ResponseModel:
+async def add_relationship(driver: AsyncDriver, item: AddRelationshipRequest) -> ResponseModel[Any]:
     props = {**(item.relationship.properties or {}), "type": item.relationship.type}
     direction = item.relationship.direction
 
@@ -175,7 +178,7 @@ _WRITE_KEYWORDS = re.compile(
 )
 
 
-async def run_query(driver: AsyncDriver, cypher: str, params: dict | None = None) -> ResponseModel:
+async def run_query(driver: AsyncDriver, cypher: str, params: dict[str, Any] | None = None) -> ResponseModel[Any]:
     normalized = cypher.strip()
     if not normalized.upper().startswith("MATCH"):
         return ResponseModel(code=400, error="Only MATCH queries are permitted")
@@ -188,7 +191,7 @@ async def run_query(driver: AsyncDriver, cypher: str, params: dict | None = None
     return ResponseModel(code=200, data=data)
 
 
-async def graph_expand(driver: AsyncDriver, item: GraphExpandRequest) -> ResponseModel:
+async def graph_expand(driver: AsyncDriver, item: GraphExpandRequest) -> ResponseModel[Any]:
     similarity_expr = (
         """
         CASE WHEN neighbour.embedding IS NOT NULL
