@@ -1,3 +1,4 @@
+from typing import Any
 import json
 import os
 import logging
@@ -49,7 +50,7 @@ DEV_CONFIG = {
 }
 
 
-async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict:
+async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict[str, Any] | None:
     from libs.database_connector.postgres_connector import client
     from mongo_client import load_flow_nodes, load_flow_edges
 
@@ -154,7 +155,7 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
         return {**DEV_CONFIG, "agent_id": agent_id}
 
 
-async def _resolve_warehouse_secret(node_cfg: dict, tenant_id: str | None) -> None:
+async def _resolve_warehouse_secret(node_cfg: dict[str, Any], tenant_id: str | None) -> None:
     """Mutates node_cfg in place: resolves execute_sql's `secret_id` (set by
     _extract_node_config below) into a real password via OpenBao, and always
     strips `secret_id` itself so it never reaches the HTTP body sent to
@@ -176,7 +177,7 @@ async def _resolve_warehouse_secret(node_cfg: dict, tenant_id: str | None) -> No
         logger.warning("could not resolve snowflakeSecretId=%s for tenant=%s — execute_sql will fail auth", secret_id, tenant_id)
 
 
-async def _resolve_db_connector_secrets(node_cfg: dict, tenant_id: str | None) -> None:
+async def _resolve_db_connector_secrets(node_cfg: dict[str, Any], tenant_id: str | None) -> None:
     """Mutates node_cfg in place: resolves each DB Connector connection's
     `secret_id` (set by _extract_node_config below) into a real password via
     OpenBao, and always strips `secret_id` so it never reaches the SQL
@@ -200,7 +201,7 @@ async def _resolve_db_connector_secrets(node_cfg: dict, tenant_id: str | None) -
             logger.warning("could not resolve db_connector secret_id=%s for connection=%s tenant=%s — will fail auth", secret_id, name, tenant_id)
 
 
-def _extract_node_config(flow_nodes: list[dict]) -> dict:
+def _extract_node_config(flow_nodes: list[dict[str, Any]]) -> dict[str, Any]:
     """Đọc config từng node canvas — override retrieval_config nếu user tùy chỉnh."""
     cfg = {}
     for node in flow_nodes:
@@ -220,7 +221,7 @@ def _extract_node_config(flow_nodes: list[dict]) -> dict:
         elif t == "metadata_injector":
             # "key1=value1,key2=value2" — cặp thiếu dấu "=" hoặc key rỗng bị
             # bỏ qua an toàn thay vì raise, vì đây là input tự do trên canvas.
-            parsed: dict = {}
+            parsed: dict[str, Any] = {}
             for pair in c.get("metadataKv", "").split(","):
                 if "=" not in pair:
                     continue
@@ -257,7 +258,7 @@ def _extract_node_config(flow_nodes: list[dict]) -> dict:
             allowed = c.get("allowedBuiltinTools", [])
             if allowed:
                 cfg["allowed_tools"] = allowed
-            tool_config: dict = {**cfg.get("tool_config", {})}
+            tool_config: dict[str, Any] = {**cfg.get("tool_config", {})}
             if c.get("defaultFilePath") or c.get("pandasAllowedDir"):
                 tool_config["text_to_pandas"] = {
                     "default_file_path": c.get("defaultFilePath", ""),

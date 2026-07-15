@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, date
 from decimal import Decimal
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional, cast
 from uuid import UUID
 
 try:
@@ -23,7 +23,7 @@ from libs.basemodel.services_databaseconnector.postgres_model import (
 )
 
 
-def _json_fallback(obj):
+def _json_fallback(obj: Any) -> Any:
     if isinstance(obj, (datetime, date)):
         return obj.isoformat()
     if isinstance(obj, UUID):
@@ -46,7 +46,7 @@ def _json_fallback(obj):
     return repr(obj)
 
 
-def _json_dumps(obj):
+def _json_dumps(obj: Any) -> str:
     return json.dumps(obj, default=_json_fallback)
 
 
@@ -64,12 +64,12 @@ _MAX_LIST_LEN = 20
 _MAX_DICT_KEYS = 50
 
 
-def _sanitize_trace(data: dict) -> dict:
+def _sanitize_trace(data: dict[str, Any]) -> dict[str, Any]:
     """Redact sensitive fields and limit size before persisting to AgentTraces."""
     if not isinstance(data, dict):
         return data
 
-    result = {}
+    result: dict[str, Any] = {}
     for k, v in list(data.items())[:_MAX_DICT_KEYS]:
         if k.lower() in _SENSITIVE_KEYS:
             result[k] = "[REDACTED]"
@@ -98,7 +98,7 @@ _DEV_AGENT_VER_ID = os.getenv("DEV_AGENT_VER_ID", "00000000-0000-0000-0000-00000
 _ROLE_WEIGHTS = {"admin": 3, "editor": 2, "viewer": 1}
 
 
-async def init_db():
+async def init_db() -> None:
     url = os.environ.get("RUNTIME_DB_URL") or os.environ.get("DATABASE_URL")
     if not url:
         logger.warning("RUNTIME_DB_URL/DATABASE_URL not set — DB persistence disabled")
@@ -108,7 +108,7 @@ async def init_db():
     logger.info("db engine ready")
 
 
-async def close_db():
+async def close_db() -> None:
     await client.close()
     logger.info("db engine closed")
 
@@ -162,10 +162,12 @@ async def create_conversation(
     if result.code != 200:
         logger.error("create_conversation failed: %s", result.error)
         return None
-    return result.data.get("id")
+    if result.data is None:  # code==200 always carries data in practice; guard for mypy
+        return None
+    return cast(Optional[str], result.data.get("id"))
 
 
-async def get_messages(conversation_id: str, tenant_id: str = _DEV_TENANT_ID, limit: int = 20) -> list[dict]:
+async def get_messages(conversation_id: str, tenant_id: str = _DEV_TENANT_ID, limit: int = 20) -> list[dict[str, Any]]:
     """Load message history từ DB cho conversation đã có."""
     if not client.is_connected():
         return []
@@ -188,7 +190,7 @@ async def get_messages(conversation_id: str, tenant_id: str = _DEV_TENANT_ID, li
         return []
 
 
-async def get_messages_ui(conversation_id: str, tenant_id: str = _DEV_TENANT_ID, limit: int = 50) -> list[dict]:
+async def get_messages_ui(conversation_id: str, tenant_id: str = _DEV_TENANT_ID, limit: int = 50) -> list[dict[str, Any]]:
     """Load messages với metadata cho UI restoration."""
     if not client.is_connected():
         return []
@@ -222,7 +224,7 @@ async def save_message(
     content: str,
     tokens: int = 0,
     latency_ms: int = 0,
-    metadata: Optional[dict] = None,
+    metadata: Optional[dict[str, Any]] = None,
 ) -> Optional[str]:
     if not client.is_connected():
         return None
@@ -237,18 +239,20 @@ async def save_message(
     if result.code != 200:
         logger.error("save_message failed: %s", result.error)
         return None
-    return result.data.get("id")
+    if result.data is None:  # code==200 always carries data in practice; guard for mypy
+        return None
+    return cast(Optional[str], result.data.get("id"))
 
 
 async def save_trace(
     message_id: str,
     trace_index: int,
     tool_name: str,
-    input: dict,
-    output: dict,
+    input: dict[str, Any],
+    output: dict[str, Any],
     status: str = "success",
     latency_ms: int = 0,
-):
+) -> None:
     if not client.is_connected():
         return
     result = await client.insert(AgentTracesInsert(

@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter, Request
 
 from runtime_services.conversation_runner import run_conversation_stream
@@ -7,13 +9,13 @@ from schemas import RunRequest
 router = APIRouter()
 
 
-@router.post("/api/conversations/run")
-async def run_conversation(req: RunRequest, request: Request):
+@router.post("/api/conversations/run", response_model=None)
+async def run_conversation(req: RunRequest, request: Request) -> Any:
     return await run_conversation_stream(req, request)
 
 
 @router.get("/api/conversations/{conv_id}/messages")
-async def get_conversation_messages(conv_id: str, request: Request):
+async def get_conversation_messages(conv_id: str, request: Request) -> dict[str, Any]:
     tenant_id = request.headers.get("X-Tenant-ID", "dev-tenant")
     messages = await get_messages_ui(conv_id, tenant_id=tenant_id)
     return {"messages": messages}

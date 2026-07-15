@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse, StreamingResponse
 
@@ -13,15 +15,15 @@ def _check_kind(kind: str) -> JSONResponse | None:
 
 
 @router.get("/api/sandbox/status")
-async def sandbox_status():
+async def sandbox_status() -> JSONResponse:
     return await get_sandbox_status()
 
 
 @router.get("/api/sandbox/job/{kind}/{job_id}")
-async def sandbox_job(kind: str, job_id: str):
+async def sandbox_job(kind: str, job_id: str) -> JSONResponse:
     return _check_kind(kind) or await get_sandbox_job(kind, job_id)
 
 
-@router.get("/api/sandbox/stream/{kind}/{job_id}")
-async def sandbox_stream(kind: str, job_id: str):
+@router.get("/api/sandbox/stream/{kind}/{job_id}", response_model=None)
+async def sandbox_stream(kind: str, job_id: str) -> Any:
     return _check_kind(kind) or StreamingResponse(stream_sandbox_job(kind, job_id), media_type="text/event-stream")

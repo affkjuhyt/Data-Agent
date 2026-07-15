@@ -1,3 +1,4 @@
+from typing import Any
 import logging
 import os
 import litellm
@@ -10,7 +11,7 @@ _LITELLM_BASE = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
 _LITELLM_KEY = os.environ.get("LITELLM_API_KEY", "sk-dev")
 
 
-def reranker_node(state: AgentState) -> dict:
+def reranker_node(state: AgentState) -> dict[str, Any]:
     rrf_results = state.get("rrf_results", [])
     if not rrf_results:
         return {"reranked_chunks": []}

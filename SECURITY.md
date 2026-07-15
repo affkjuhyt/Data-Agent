@@ -97,9 +97,10 @@ with an existing baseline to burn down. Ratchet plan:
   | `libs/database_connector` | **0** ✅ | enforced — all 3 lib layers now strict-clean |
   | `services/orchestrator` | **0** ✅ | enforced (passed as a path) |
   | `services/kb_backend` | **0** ✅ | enforced — the largest surface (~335 fixed) |
+  | `services/workflow-runtime` | **0** ✅ | enforced (~230 fixed) |
 
-  All three lib layers and the two largest services are now strict-clean and
-  gated. Remaining services (auth-api, workflow-runtime, workers, …) stay
+  All three lib layers and the three largest services are now strict-clean and
+  gated. Remaining services (auth-api, flow-builder, workers, …) stay
   report-only; add each to the blocking step's path list as it reaches zero.
 
   > Only globs matching real importable packages work in the `pyproject` override;

@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from typing import Optional
+from typing import Any, Optional, cast
 
 import redis.asyncio as aioredis
 
@@ -16,7 +16,7 @@ _SCHEMA_TTL = int(os.environ.get("DB_SCHEMA_CACHE_TTL_SECONDS", str(10 * 60)))  
 _client: Optional[aioredis.Redis] = None
 
 
-async def init_redis():
+async def init_redis() -> None:
     global _client
     try:
         _client = aioredis.from_url(_REDIS_URL, decode_responses=True)
@@ -27,7 +27,7 @@ async def init_redis():
         _client = None
 
 
-async def close_redis():
+async def close_redis() -> None:
     global _client
     if _client:
         await _client.aclose()
@@ -38,7 +38,7 @@ def _key(conversation_id: str) -> str:
     return f"conv:{conversation_id}:messages"
 
 
-async def cache_get_messages(conversation_id: str) -> Optional[list[dict]]:
+async def cache_get_messages(conversation_id: str) -> Optional[list[dict[str, Any]]]:
     if not _client:
         return None
     try:
@@ -51,7 +51,7 @@ async def cache_get_messages(conversation_id: str) -> Optional[list[dict]]:
         return None
 
 
-async def cache_append_messages(conversation_id: str, messages: list[dict]):
+async def cache_append_messages(conversation_id: str, messages: list[dict[str, Any]]) -> None:
     if not _client:
         return
     try:
@@ -65,7 +65,7 @@ async def cache_append_messages(conversation_id: str, messages: list[dict]):
         logger.warning("redis | cache_append failed conv=%s: %s", conversation_id, e)
 
 
-async def cache_set_messages(conversation_id: str, messages: list[dict]):
+async def cache_set_messages(conversation_id: str, messages: list[dict[str, Any]]) -> None:
     """Ghi đè toàn bộ cache — dùng khi load từ DB lần đầu."""
     if not _client or not messages:
         return
@@ -93,13 +93,13 @@ async def cache_get_schema(tenant_id: str, host: str, port: int, database: str) 
     if not _client:
         return None
     try:
-        return await _client.get(_schema_key(tenant_id, host, port, database))
+        return cast(Optional[str], await _client.get(_schema_key(tenant_id, host, port, database)))
     except Exception as e:
         logger.warning("redis | cache_get_schema failed db=%s: %s", database, e)
         return None
 
 
-async def cache_set_schema(tenant_id: str, host: str, port: int, database: str, schema_text: str):
+async def cache_set_schema(tenant_id: str, host: str, port: int, database: str, schema_text: str) -> None:
     if not _client:
         return
     try:

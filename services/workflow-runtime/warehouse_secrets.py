@@ -19,6 +19,7 @@ delete them. See infra/openbao/openbao-approle-setup.sh.
 import asyncio
 import logging
 import os
+from typing import cast
 
 import hvac
 from sqlalchemy import text
@@ -98,7 +99,7 @@ async def _resolve_vault_password(tenant_id: str, secret_id: str, key_type: str)
             vault.secrets.kv.v2.read_secret_version,
             mount_point=_VAULT_MOUNT, path=path, raise_on_deleted_version=True,
         )
-        return resp["data"]["data"].get("value")
+        return cast("str | None", resp["data"]["data"].get("value"))
     except Exception as e:
         logger.warning("failed to read secret %s from vault path=%s: %s", secret_id, path, e)
         return None

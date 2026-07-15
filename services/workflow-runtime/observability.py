@@ -1,19 +1,25 @@
 import logging
 import os
 from functools import lru_cache
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Optional deps — pre-bound to None with an Any annotation so the fallback needs
+# no `type: ignore` and type-checks identically with or without langfuse/otel.
+get_client: Any = None
+CallbackHandler: Any = None
+_otel_trace: Any = None
+_AVAILABLE = False
 try:
-    from langfuse import get_client
-    from langfuse.langchain import CallbackHandler
-    from opentelemetry import trace as _otel_trace
+    from langfuse import get_client as _lf_get_client
+    from langfuse.langchain import CallbackHandler as _LfCallbackHandler
+    from opentelemetry import trace as _otel_trace_mod
+    get_client = _lf_get_client
+    CallbackHandler = _LfCallbackHandler
+    _otel_trace = _otel_trace_mod
     _AVAILABLE = True
 except (ImportError, ModuleNotFoundError):
-    get_client = None  # type: ignore[assignment]
-    CallbackHandler = None  # type: ignore[assignment,misc]
-    _otel_trace = None  # type: ignore[assignment]
-    _AVAILABLE = False
     logger.warning("langfuse | import failed — Langfuse tracing disabled. Check langchain is installed.", exc_info=True)
 
 
@@ -22,7 +28,7 @@ def _configured() -> bool:
 
 
 @lru_cache(maxsize=1)
-def get_langfuse_client():
+def get_langfuse_client() -> Any:
     """Singleton Langfuse client (SDK v3, OTEL-based). None nếu chưa cấu hình."""
     if not _AVAILABLE or not _configured():
         return None
@@ -33,7 +39,7 @@ def get_langfuse_client():
         return None
 
 
-def get_langchain_callback_handler(conv_id: str | None = None):
+def get_langchain_callback_handler(conv_id: str | None = None) -> Any:
     """CallbackHandler cho graph.astream_events của 1 agent run.
 
     2 nhánh hành vi tùy nguồn gốc request:

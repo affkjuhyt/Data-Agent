@@ -5,7 +5,7 @@ called from the text_to_sql handler) — these endpoints are the only write path
 used by an Admin when a data source's schema changes.
 """
 import logging
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Request
@@ -23,7 +23,7 @@ class ColumnMeta(BaseModel):
     name: str
     type: str
     description: Optional[str] = None
-    sample_values: Optional[list] = None
+    sample_values: Optional[list[Any]] = None
     is_nullable: bool = True
 
 
@@ -36,7 +36,7 @@ class SchemaMemoryUpsert(BaseModel):
 
 
 @router.get("/api/schema-memory")
-async def list_schema_memory(request: Request, data_source: Optional[str] = None):
+async def list_schema_memory(request: Request, data_source: Optional[str] = None) -> list[dict[str, Any]]:
     tenant_id = _resolve_tenant(request.headers.get("X-Tenant-ID"))
     from libs.database_connector.postgres_connector import client
     if not client.is_connected():
@@ -66,7 +66,7 @@ async def list_schema_memory(request: Request, data_source: Optional[str] = None
 
 
 @router.put("/api/schema-memory")
-async def upsert_schema_memory(payload: SchemaMemoryUpsert, request: Request):
+async def upsert_schema_memory(payload: SchemaMemoryUpsert, request: Request) -> dict[str, str]:
     """Upsert by (tenant_id, data_source, table_name) — matches uq_schemamemory_table."""
     tenant_id = _resolve_tenant(request.headers.get("X-Tenant-ID"))
     from libs.database_connector.postgres_connector import client
@@ -107,7 +107,7 @@ async def upsert_schema_memory(payload: SchemaMemoryUpsert, request: Request):
 
 
 @router.delete("/api/schema-memory/{schema_memory_id}")
-async def delete_schema_memory(schema_memory_id: str, request: Request):
+async def delete_schema_memory(schema_memory_id: str, request: Request) -> dict[str, bool]:
     tenant_id = _resolve_tenant(request.headers.get("X-Tenant-ID"))
     from libs.database_connector.postgres_connector import client
     if not client.is_connected():

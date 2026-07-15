@@ -1,4 +1,4 @@
-TOOL_DEFINITIONS: dict[str, dict] = {
+TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
     "text_to_sql": {
         "category":    "data",
         "description": "Chuyển câu hỏi tự nhiên thành SQL và thực thi trên database. Dùng khi cần truy vấn dữ liệu có cấu trúc từ DB.",
@@ -57,6 +57,7 @@ TOOL_DEFINITIONS: dict[str, dict] = {
     },
 }
 
+from typing import Any
 from nodes.sandbox.tool_executor.node import tool_executor_node  # noqa: E402
 
 __all__ = ["tool_executor_node", "TOOL_DEFINITIONS"]

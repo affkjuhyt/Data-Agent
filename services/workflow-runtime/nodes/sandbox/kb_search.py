@@ -1,3 +1,4 @@
+from typing import Any
 import logging
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -18,7 +19,7 @@ class KBChunk(BaseModel):
     score: float
 
 
-async def kb_search_node(state: AgentState) -> dict:
+async def kb_search_node(state: AgentState) -> dict[str, Any]:
     cfg         = state["config"]
     kb_endpoint = cfg.get("kb_endpoint", "")
     tenant_id   = cfg.get("tenant_id", "")
@@ -76,3 +77,8 @@ async def kb_search_node(state: AgentState) -> dict:
     except Exception as e:
         logger.warning("kb_search | failed after retries: %s — returning empty", e)
         return {"kb_chunks": [], "kb_error": str(e)}
+
+    # Unreachable in practice: AsyncRetrying(reraise=True) always either
+    # returns from inside the loop or raises (caught above) — this satisfies
+    # the type checker's need for an explicit fallthrough return.
+    return {"kb_chunks": []}

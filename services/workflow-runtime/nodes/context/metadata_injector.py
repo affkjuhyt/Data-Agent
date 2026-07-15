@@ -1,7 +1,8 @@
+from typing import Any
 from state import AgentState
 
 
-async def metadata_injector_node(state: AgentState) -> dict:
+async def metadata_injector_node(state: AgentState) -> dict[str, Any]:
     """Copy metadata tĩnh (đã parse sẵn ở config_loader._extract_node_config,
     key "injected_metadata") từ config vào state — để planner/responder đọc
     qua state["injected_metadata"] thay vì phải tự đọc state["config"].

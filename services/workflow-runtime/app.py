@@ -13,6 +13,7 @@ litellm.success_callback = [cb for cb in litellm.success_callback if cb != "lang
 litellm.failure_callback = [cb for cb in litellm.failure_callback if cb != "langfuse"]
 
 import asyncio
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from libs.shared.logger import setup_logging
@@ -39,7 +40,7 @@ from libs.shared.observability import setup_observability
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await init_db()
     await init_qdrant()
     await init_workflow_qdrant()
@@ -48,13 +49,19 @@ async def lifespan(app: FastAPI):
     await init_redis()
     await init_kafka_producer()
 
+    def _invalidate_graph_version(workflow_version_id: str) -> None:
+        # invalidate_graph_version() returns the evicted-entry count for logging
+        # at its own call sites; the listener callback contract is fire-and-forget
+        # (Callable[[str], None]), so the count is intentionally discarded here.
+        invalidate_graph_version(workflow_version_id)
+
     tasks = [
         asyncio.create_task(pg_client.health_check_loop()),
         asyncio.create_task(mongo_client.health_check_loop()),
         # Evict locally-cached graphs when another replica/flow-builder signals a
         # republished version. No-op if REDIS_URL is unset.
         asyncio.create_task(
-            run_graph_invalidation_listener(REDIS_URL, invalidate_graph_version)
+            run_graph_invalidation_listener(REDIS_URL, _invalidate_graph_version)
         ),
     ]
 
