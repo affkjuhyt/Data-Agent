@@ -2,6 +2,7 @@
 /api/data/* — document list, promote, delete.
 These are the primary routes consumed by AppStateContext and AssetInventory.
 """
+from typing import Any
 from fastapi import APIRouter, Depends, Query, Request
 
 from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
@@ -19,7 +20,7 @@ router = APIRouter(prefix="/api/data", tags=["Data"])
 @router.get("/documents", response_model=ResponseModel)
 async def list_documents_route(
     request: Request,
-    ctx: dict = Depends(authenticate),
+    ctx: dict[str, Any] = Depends(authenticate),
     tier: str | None = Query(None, description="bronze|silver|gold — omit for all"),
     cursor: str | None = Query(None, description="opaque keyset cursor; omit for first page"),
     source: str | None = Query(
@@ -27,7 +28,7 @@ async def list_documents_route(
         description="comma-separated source chips (doc,media,web,warehouse). "
                     "Omit for all sources; empty string selects nothing.",
     ),
-):
+) -> ResponseModel[Any]:
     # None → no source filter; otherwise split (an empty string → [] → selects nothing).
     source_types = None if source is None else [s for s in source.split(",") if s]
     result = await list_documents(
@@ -45,8 +46,8 @@ async def promote_document_route(
     data_id: str,
     body: UpdateDocumentRequest,
     request: Request,
-    ctx: dict = Depends(require_perm("process_layer")),
-):
+    ctx: dict[str, Any] = Depends(require_perm("process_layer")),
+) -> ResponseModel[Any]:
     postgres = svc(request, "postgres")
     record = await fetch_one_or_404(postgres, data_id, ctx["tenant_id"])
     result = await promote_document(
@@ -65,8 +66,8 @@ async def promote_document_route(
 async def delete_document_route(
     data_id: str,
     request: Request,
-    ctx: dict = Depends(require_perm("delete_data")),
-):
+    ctx: dict[str, Any] = Depends(require_perm("delete_data")),
+) -> ResponseModel[Any]:
     postgres = svc(request, "postgres")
     record = await fetch_one_or_404(postgres, data_id, ctx["tenant_id"])
     await delete_document(

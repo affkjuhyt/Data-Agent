@@ -4,6 +4,7 @@ A knowledge base is the "kind" of knowledge a document belongs to (e.g. finance,
 legal, engineering). A tenant has many knowledge bases; documents reference one so
 retrieval can be scoped to it.
 """
+from typing import Any
 import logging
 import uuid
 
@@ -26,7 +27,7 @@ _DEFAULT_KB_ID = uuid.UUID("00000000-0000-0003-0000-000000000001")
 log = logging.getLogger(__name__)
 
 
-def _to_knowledge_base(row: dict) -> dict:
+def _to_knowledge_base(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id":          to_string(row.get("knowledge_base_id")),
         "name":        row.get("name", ""),
@@ -37,7 +38,7 @@ def _to_knowledge_base(row: dict) -> dict:
     }
 
 
-async def list_knowledge_bases(postgres, tenant_id: str | None) -> list:
+async def list_knowledge_bases(postgres: Any, tenant_id: str | None) -> list[Any]:
     resp = await postgres.read(ReadJoinRequest(
         tenant_id=tenant_id, joins_table=["KBKnowledgeBase"], limit=500,
     ))
@@ -51,12 +52,12 @@ async def list_knowledge_bases(postgres, tenant_id: str | None) -> list:
 
 
 async def create_knowledge_base(
-    postgres,
+    postgres: Any,
     name: str,
     description: str,
     tenant_id: str,
     created_by: str,
-) -> dict:
+) -> dict[str, Any]:
     name = (name or "").strip()
     if not name:
         raise HTTPException(status_code=422, detail="Knowledge base name is required")
@@ -76,7 +77,7 @@ async def create_knowledge_base(
     return {"knowledge_base_id": resp.data.get("knowledge_base_id"), "name": name}
 
 
-async def delete_knowledge_base(postgres, knowledge_base_id: str, tenant_id: str) -> None:
+async def delete_knowledge_base(postgres: Any, knowledge_base_id: str, tenant_id: str) -> None:
     try:
         kb_uuid = uuid.UUID(knowledge_base_id)
     except ValueError:

@@ -2,7 +2,7 @@
 import logging
 import os
 from fastapi import HTTPException
-from typing import LiteralString
+from typing import Any, LiteralString
 
 from libs.basemodel.services_databaseconnector.postgres_model import (
     ReadJoinRequest, WhereFilter,
@@ -19,7 +19,7 @@ _READONLY_PREFIXES = ("CREATE", "MERGE", "DELETE", "SET", "REMOVE", "DROP")
 _MAX_NODES = int(os.getenv("NEO4J_MAX_GRAPH_NODES", "200"))
 
 
-def _pick_type(labels) -> str | None:
+def _pick_type(labels: list[str] | None) -> str | None:
     """A node's display type = its first specific label. 'Entity' is a base label
     shared by everything, so prefer a more specific one when present."""
     if not labels:
@@ -30,7 +30,7 @@ def _pick_type(labels) -> str | None:
     return labels[0]
 
 
-async def _graph_from_postgres(postgres, tenant_id: str | None) -> tuple[list, list]:
+async def _graph_from_postgres(postgres: Any, tenant_id: str | None) -> tuple[list[Any], list[Any]]:
     """Read the graph mirror that the ingestion pipeline maintains, scoped by tenant.
     KBNeo4jRelationship holds one row per (pair, chunk), so edges are de-duplicated
     to one bridge per pair; only live (is_deleted=false) rows are drawn."""
@@ -66,7 +66,7 @@ async def _graph_from_postgres(postgres, tenant_id: str | None) -> tuple[list, l
         ],
         limit=1000,
     ))
-    edges: list[dict] = []
+    edges: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     for r in (rel_resp.data or []):
         f, t = to_string(r.get("from_node")), to_string(r.get("to_node"))
@@ -77,7 +77,7 @@ async def _graph_from_postgres(postgres, tenant_id: str | None) -> tuple[list, l
     return nodes, edges
 
 
-async def get_graph(postgres, neo4j, tenant_id: str | None) -> dict:
+async def get_graph(postgres: Any, neo4j: Any, tenant_id: str | None) -> dict[str, Any]:
     if not tenant_id:
         # No tenant context — fall back to Postgres registry immediately
         nodes, edges = await _graph_from_postgres(postgres, tenant_id)
@@ -100,8 +100,8 @@ async def get_graph(postgres, neo4j, tenant_id: str | None) -> dict:
             result = await session.run(_GRAPH_QUERY, tenant_id=tenant_id, max=_MAX_NODES)
             records = await result.data()
 
-        seen_nodes: dict[int, dict] = {}
-        edges: list[dict] = []
+        seen_nodes: dict[int, dict[str, Any]] = {}
+        edges = []
         for rec in records:
             nid = rec.get("nid")
             if nid is not None and nid not in seen_nodes:
@@ -134,7 +134,7 @@ async def get_graph(postgres, neo4j, tenant_id: str | None) -> dict:
         return {"nodes": nodes, "edges": edges}
 
 
-async def get_schema(neo4j, postgres=None, tenant_id: str | None = None) -> dict:
+async def get_schema(neo4j: Any, postgres: Any = None, tenant_id: str | None = None) -> dict[str, Any]:
     _LABEL_QUERY: LiteralString = "CALL db.labels() YIELD label RETURN label LIMIT 100"
     _REL_QUERY:   LiteralString = "CALL db.relationshipTypes() YIELD relationshipType RETURN relationshipType LIMIT 100"
     try:
@@ -156,7 +156,7 @@ async def get_schema(neo4j, postgres=None, tenant_id: str | None = None) -> dict
     return {"entities": [], "connections": {}}
 
 
-async def run_cypher(neo4j, cypher: str, tenant_id: str | None = None) -> dict:
+async def run_cypher(neo4j: Any, cypher: str, tenant_id: str | None = None) -> dict[str, Any]:
     """Run a read-only Cypher query and return the matched subgraph as
     {nodes, edges} — the same shape as /graph — so the UI can render the query
     result straight onto the canvas. Returns an EMPTY subgraph (not an error)
@@ -168,7 +168,7 @@ async def run_cypher(neo4j, cypher: str, tenant_id: str | None = None) -> dict:
     if any(cypher.strip().upper().startswith(kw) for kw in _READONLY_PREFIXES):
         raise HTTPException(status_code=400, detail="Only read-only Cypher queries are allowed")
 
-    def _nid(n) -> str:
+    def _nid(n: Any) -> str:
         return str(getattr(n, "element_id", None) or n.id)
 
     try:

@@ -1,4 +1,5 @@
 """Business logic for Qdrant collection management and semantic search."""
+from typing import Any, cast
 import logging
 import uuid
 from fastapi import HTTPException
@@ -14,7 +15,7 @@ from services.kb_backend.schemas import to_string
 log = logging.getLogger(__name__)
 
 
-def _vector_params(info):
+def _vector_params(info: Any) -> tuple[int, str]:
     """Pull (dimension, distance) from a CollectionInfo, handling both the
     single-vector and named-vectors configs."""
     vectors = info.config.params.vectors
@@ -26,7 +27,7 @@ def _vector_params(info):
     return 0, "cosine"
 
 
-async def _tenant_point_count(client, name: str, tenant_id: str) -> int:
+async def _tenant_point_count(client: Any, name: str, tenant_id: str) -> int:
     """Count points in `name` that belong to this tenant (excluding soft-deleted).
     Collections without a tenant_id payload (e.g. caches) simply return 0."""
     try:
@@ -37,13 +38,13 @@ async def _tenant_point_count(client, name: str, tenant_id: str) -> int:
             ]),
             exact=True,
         )
-        return result.count
+        return cast(int, result.count)
     except Exception as e:
         log.warning("qdrant_ops: tenant count failed for %s: %s", name, e)
         return 0
 
 
-async def list_collections(postgres, qdrant, tenant_id: str | None) -> list:
+async def list_collections(postgres: Any, qdrant: Any, tenant_id: str | None) -> list[Any]:
     """List the REAL collections present in Qdrant. Point counts are scoped to the
     caller's tenant; `total_points` is the all-tenant total for context. Active
     state is overlaid from the Postgres registry when a name matches."""
@@ -55,7 +56,7 @@ async def list_collections(postgres, qdrant, tenant_id: str | None) -> list:
         return []
 
     # Overlay registry metadata (active flag, embedding model) by collection name.
-    registry: dict[str, dict] = {}
+    registry: dict[str, dict[str, Any]] = {}
     try:
         resp = await postgres.read(ReadJoinRequest(
             tenant_id=tenant_id,
@@ -67,7 +68,7 @@ async def list_collections(postgres, qdrant, tenant_id: str | None) -> list:
     except Exception as e:
         log.warning("qdrant_ops: registry overlay unavailable: %s", e)
 
-    out: list[dict] = []
+    out: list[dict[str, Any]] = []
     for c in live:
         name = c.name
         dim, distance, total, indexed_pct = 0, "cosine", 0, 100
@@ -96,7 +97,7 @@ async def list_collections(postgres, qdrant, tenant_id: str | None) -> list:
     return out
 
 
-async def toggle_collection(postgres, collection_id: str, is_active: bool) -> dict:
+async def toggle_collection(postgres: Any, collection_id: str, is_active: bool) -> dict[str, Any]:
     # collection_id is now the real Qdrant collection NAME (live listing). Match the
     # registry row by UUID when it parses as one, otherwise by name. No matching
     # row is a no-op — the UI still reflects the toggled state.
@@ -111,7 +112,7 @@ async def toggle_collection(postgres, collection_id: str, is_active: bool) -> di
     return {"collection_id": collection_id, "active": is_active}
 
 
-async def _resolve_collection_info(postgres, collection_id: str) -> tuple[str, str | None]:
+async def _resolve_collection_info(postgres: Any, collection_id: str) -> tuple[str, str | None]:
     """Return (collection_name, embed_model_id) for a given collection UUID.
 
     collection_name: real Qdrant string name used to address the collection.
@@ -138,14 +139,14 @@ async def _resolve_collection_info(postgres, collection_id: str) -> tuple[str, s
 
 
 async def semantic_search(
-    qdrant,
-    postgres,
-    model,
+    qdrant: Any,
+    postgres: Any,
+    model: Any,
     collection_id: str,
     query: str,
     tenant_id: str,
     limit: int,
-) -> list:
+) -> list[Any]:
     collection_name, embed_model_id = await _resolve_collection_info(postgres, collection_id)
 
     # Reuse the pooled, health-gated ModelServiceClient (injected via svc()) rather

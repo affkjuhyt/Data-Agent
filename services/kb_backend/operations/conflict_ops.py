@@ -1,4 +1,5 @@
 """Business logic for conflict listing, detail, and resolution."""
+from typing import Any
 import datetime
 import logging
 import os
@@ -26,7 +27,7 @@ log = logging.getLogger(__name__)
 # UI maps to display labels via src/lib/enums.ts.
 
 
-def _summary(row: dict) -> dict:
+def _summary(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "conflict_id":   to_string(row.get("conflict_id")),
         "conflict_type": row.get("conflict_type") or "content_conflict",
@@ -35,7 +36,7 @@ def _summary(row: dict) -> dict:
     }
 
 
-def _detail(row: dict) -> dict:
+def _detail(row: dict[str, Any]) -> dict[str, Any]:
     return {
         **_summary(row),
         "where_happens":           f"batch/{to_string(row.get('batch_id'))}" if row.get("batch_id") else "unknown",
@@ -53,13 +54,13 @@ def _detail(row: dict) -> dict:
 
 
 async def list_conflicts(
-    postgres,
+    postgres: Any,
     tenant_id: str | None,
     user_id: str,
     pending_page: int = 1,
     awaiting_page: int = 1,
     resolved_page: int = 1,
-) -> dict:
+) -> dict[str, Any]:
     batch_resp = await postgres.read(ReadJoinRequest(
         tenant_id=tenant_id, joins_table=["KBConflictBatch"], limit=PAGE_SIZE,
         order_by=OrderBy(table_name="KBConflictBatch", column="inserted_at", order=OrderDirection.ASC),
@@ -67,7 +68,7 @@ async def list_conflicts(
     batches = {to_string(r["batch_id"]): r for r in (batch_resp.data or [])}
 
     # Fetch each status bucket separately so cursors are independent
-    async def _fetch_bucket(status: str, page: int) -> list[dict]:
+    async def _fetch_bucket(status: str, page: int) -> list[dict[str, Any]]:
         ckey = f"conflicts:{status}:{tenant_id}"
         cursor_ts = get_cursor(user_id, ckey, page)
         resp = await postgres.read(ReadJoinRequest(
@@ -86,7 +87,7 @@ async def list_conflicts(
     awaiting_raw = await _fetch_bucket("awaiting", awaiting_page)
     resolved_raw = await _fetch_bucket("resolved", resolved_page)
 
-    pending_batches: dict[str, dict] = {}
+    pending_batches: dict[str, dict[str, Any]] = {}
     for row in pending_raw:
         bid = to_string(row.get("batch_id", ""))
         if bid not in pending_batches:
@@ -108,7 +109,7 @@ async def list_conflicts(
     }
 
 
-async def get_conflict(postgres, conflict_id: str, tenant_id: str | None) -> dict:
+async def get_conflict(postgres: Any, conflict_id: str, tenant_id: str | None) -> dict[str, Any]:
     resp = await postgres.read(ReadJoinRequest(
         tenant_id=tenant_id,
         joins_table=["KBConflict"],
@@ -152,18 +153,18 @@ _IMMEDIATE_METHODS = {"keep_existing", "no_action"}
 
 
 async def resolve_conflict(
-    postgres,
+    postgres: Any,
     conflict_id: str,
     method: str,
     instruction: str,
     resolved_by: str,
-    kafka_producer=None,
+    kafka_producer: Any = None,
     tenant_id: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     conflict_uuid = uuid.UUID(conflict_id) if isinstance(conflict_id, str) else conflict_id
     immediate = method in _IMMEDIATE_METHODS
     new_status = "resolved" if immediate else "awaiting"
-    values = {
+    values: dict[str, Any] = {
         "status":                 new_status,
         "resolution_method":      method,
         "resolution_instruction": instruction or None,

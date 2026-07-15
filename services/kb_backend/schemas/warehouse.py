@@ -1,7 +1,7 @@
 """Warehouse connection + config schemas — domain, request, response."""
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -23,9 +23,9 @@ class CreateWarehouseConfigRequest(BaseModel):
     name: str
     version: str
     status: Optional[str] = "Draft"
-    tables: list
+    tables: list[Any]
     sync_schedule: Optional[str] = Field(default="Manual", alias="syncSchedule")
-    connection: Optional[dict] = None
+    connection: Optional[dict[str, Any]] = None
 
 
 class ConnectSnowflakeRequest(BaseModel):

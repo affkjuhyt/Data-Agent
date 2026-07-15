@@ -4,6 +4,7 @@ Silver and gold promotion run in the kb-ingestion-worker service.
 """
 from __future__ import annotations
 
+from typing import Any
 import logging
 
 from libs.basemodel.services_databaseconnector.postgres_model import Language, SourceType
@@ -25,7 +26,7 @@ class IngestionPipeline:
         req: BronzeUploadRequest,
         minio: MinIOClient,
         postgres: PostgresClient,
-    ) -> dict:
+    ) -> dict[str, Any]:
         return await upload_to_bronze(
             minio=minio,
             postgres=postgres,
@@ -47,7 +48,7 @@ class IngestionPipeline:
         self,
         req: WebBronzeRequest,
         postgres: PostgresClient,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Register a web portal as bronze — no file, just the live URL."""
         return await register_web_bronze(
             postgres=postgres,

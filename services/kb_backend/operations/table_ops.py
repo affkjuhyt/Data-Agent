@@ -1,4 +1,5 @@
 """Business logic for table read and inline cell editing."""
+from typing import Any
 import logging
 import uuid
 from fastapi import HTTPException
@@ -16,7 +17,7 @@ from services.kb_backend.schemas import to_string
 log = logging.getLogger(__name__)
 
 
-async def _assert_tenant(postgres, doc_id: str, tenant_id: str) -> None:
+async def _assert_tenant(postgres: Any, doc_id: str, tenant_id: str) -> None:
     async with postgres.get_client() as session:
         row = await session.scalar(
             sa_select(KBDataORM.data_id)
@@ -30,7 +31,7 @@ async def _assert_tenant(postgres, doc_id: str, tenant_id: str) -> None:
         raise HTTPException(status_code=404, detail="Document not found")
 
 
-async def _doc_tier(postgres, doc_id: str, tenant_id: str) -> str:
+async def _doc_tier(postgres: Any, doc_id: str, tenant_id: str) -> str:
     """Return the document's current tier (bronze|silver|gold), 404 if not owned."""
     async with postgres.get_client() as session:
         tier = await session.scalar(
@@ -46,12 +47,12 @@ async def _doc_tier(postgres, doc_id: str, tenant_id: str) -> str:
     return str(getattr(tier, "value", tier)).lower()
 
 
-def _shape_silver_tables(staging: dict | None) -> list[dict]:
+def _shape_silver_tables(staging: dict[str, Any] | None) -> list[dict[str, Any]]:
     """Shape Mongo kb_silver_staging chunk tables into the UI table shape.
     Silver tables aren't in Postgres yet (KBTextTable is written at Gold), so the
     staging chunk's `table` ({table_name, description, data:{headers, rows}}) is the
     source. Read-only at this tier — inline editing happens after Gold promotion."""
-    out: list[dict] = []
+    out: list[dict[str, Any]] = []
     for c in (staging or {}).get("chunks") or []:
         if not c.get("table_involved") or not c.get("table"):
             continue
@@ -75,9 +76,9 @@ def _shape_silver_tables(staging: dict | None) -> list[dict]:
 
 
 async def get_tables(
-    postgres, mongo, doc_id: str, tenant_id: str,
+    postgres: Any, mongo: Any, doc_id: str, tenant_id: str,
     user_id: str, page: int = 1,
-) -> dict:
+) -> dict[str, Any]:
     # Silver tables live only in Mongo staging; Postgres KBTextTable is written at
     # Gold. Read from whichever store matches the document's tier (mirrors get_chunks).
     tier = await _doc_tier(postgres, doc_id, tenant_id)
@@ -146,7 +147,7 @@ async def get_tables(
     }
 
 
-async def update_table_row(postgres, table_id: str, row_index: int, updates: dict, doc_id: str, tenant_id: str) -> dict:
+async def update_table_row(postgres: Any, table_id: str, row_index: int, updates: dict[str, Any], doc_id: str, tenant_id: str) -> dict[str, Any]:
     await _assert_tenant(postgres, doc_id, tenant_id)
     resp = await postgres.read(ReadJoinRequest(
         joins_table=["KBTextTable"],

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any, AsyncGenerator, cast
 import json
 import logging
 
@@ -19,13 +20,13 @@ router = APIRouter(prefix="/api/pipeline/light-rag", tags=["LightRAG"])
 async def retrieve(
     body: RetrieveRequest,
     request: Request,
-    ctx: dict = Depends(authenticate),
-):
+    ctx: dict[str, Any] = Depends(authenticate),
+) -> RetrieveResponse:
     tenant_id = body.tenant_id or ctx["tenant_id"] or "default"
     knowledge_base = body.knowledge_base or None
     log.info("POST /retrieve | query=%r tenant=%s kb=%s", body.query[:80], tenant_id, knowledge_base)
     try:
-        return await svc(request, "light_rag").run(
+        return cast(RetrieveResponse, await svc(request, "light_rag").run(
             query=body.query,
             tenant_id=tenant_id,
             qdrant=svc(request, "qdrant").get_client(),
@@ -37,7 +38,7 @@ async def retrieve(
             entities=body.entities or None,
             intent=body.intent or None,
             entity_types=body.entity_types or None,
-        )
+        ))
     except Exception as exc:
         log.exception("light_rag | unhandled error: %s", exc)
         raise HTTPException(status_code=500, detail="Retrieval failed")
@@ -47,8 +48,8 @@ async def retrieve(
 async def retrieve_stream(
     body: RetrieveRequest,
     request: Request,
-    ctx: dict = Depends(authenticate),
-):
+    ctx: dict[str, Any] = Depends(authenticate),
+) -> StreamingResponse:
     """SSE endpoint — streams one event per pipeline step so the UI can show progress.
 
     Each SSE data line is a JSON dict with at minimum {"step": "<name>", "ms": float}.
@@ -58,7 +59,7 @@ async def retrieve_stream(
     knowledge_base = body.knowledge_base or None
     log.info("POST /retrieve/stream | query=%r tenant=%s kb=%s", body.query[:80], tenant_id, knowledge_base)
 
-    async def generate():
+    async def generate() -> AsyncGenerator[str, None]:
         try:
             async for event in svc(request, "light_rag").run_stream(
                 query=body.query,
@@ -85,7 +86,7 @@ async def retrieve_stream(
     )
 
 
-@router.get("/health")
-async def health(request: Request, ctx: dict = Depends(authenticate)):
+@router.get("/health", response_model=None)
+async def health(request: Request, ctx: dict[str, Any] = Depends(authenticate)) -> Any:
     pipeline = getattr(request.app.state, "light_rag", None)
     return {"status": "ok" if pipeline else "not_initialised"}

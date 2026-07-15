@@ -1,4 +1,5 @@
 """/api/knowledge/neo4j — graph visualization and Cypher query runner."""
+from typing import Any
 from fastapi import APIRouter, Depends, Request
 
 from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
@@ -11,7 +12,7 @@ router = APIRouter(prefix="/api/knowledge/neo4j", tags=["Knowledge-Neo4j"])
 
 
 @router.get("/graph", response_model=ResponseModel)
-async def get_graph_route(request: Request, ctx: dict = Depends(authenticate)):
+async def get_graph_route(request: Request, ctx: dict[str, Any] = Depends(authenticate)) -> ResponseModel[Any]:
     result = await get_graph(
         postgres=svc(request, "postgres"),
         neo4j=svc(request, "neo4j"),
@@ -21,7 +22,7 @@ async def get_graph_route(request: Request, ctx: dict = Depends(authenticate)):
 
 
 @router.get("/schema", response_model=ResponseModel)
-async def get_schema_route(request: Request, ctx: dict = Depends(authenticate)):
+async def get_schema_route(request: Request, ctx: dict[str, Any] = Depends(authenticate)) -> ResponseModel[Any]:
     result = await get_schema(
         neo4j=svc(request, "neo4j"),
         postgres=svc(request, "postgres"),
@@ -32,8 +33,8 @@ async def get_schema_route(request: Request, ctx: dict = Depends(authenticate)):
 
 @router.post("/query", response_model=ResponseModel)
 async def run_cypher_route(
-    body: Neo4jQueryRequest, request: Request, ctx: dict = Depends(authenticate),
-):
+    body: Neo4jQueryRequest, request: Request, ctx: dict[str, Any] = Depends(authenticate),
+) -> ResponseModel[Any]:
     result = await run_cypher(
         neo4j=svc(request, "neo4j"),
         cypher=body.cypher,

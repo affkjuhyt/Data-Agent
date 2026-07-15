@@ -96,7 +96,10 @@ async def _open_clients() -> tuple[PostgresClient, QdrantService, Neo4jClient, M
     return postgres, qdrant, neo4j, mongo, minio
 
 
-async def _flush_all_documents(postgres, qdrant, neo4j, mongo, minio) -> None:
+async def _flush_all_documents(
+    postgres: PostgresClient, qdrant: QdrantService, neo4j: Neo4jClient,
+    mongo: MongoClient, minio: MinIOClient,
+) -> None:
     """Run the Trash document-flush for EVERY KBData row (any tenant, incl.
     soft-deleted) — the exact path the UI permanent-delete uses."""
     section("Documents (via trash_ops.flush)")
@@ -125,7 +128,9 @@ async def _flush_all_documents(postgres, qdrant, neo4j, mongo, minio) -> None:
     ok(f"flushed {flushed}/{len(docs)} documents" + (f" ({failed} failed)" if failed else ""))
 
 
-async def _reset_extras(postgres, qdrant, neo4j, mongo) -> None:
+async def _reset_extras(
+    postgres: PostgresClient, qdrant: QdrantService, neo4j: Neo4jClient, mongo: MongoClient,
+) -> None:
     """Clear the shared / non-doc-scoped state flush does not touch."""
     # Qdrant — shared collections (entity_registry, query_cache).
     section("Qdrant (shared collections)")

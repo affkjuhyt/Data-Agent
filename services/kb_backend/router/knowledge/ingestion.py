@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any, AsyncGenerator
 import asyncio
 import datetime
 import json
@@ -7,6 +8,7 @@ import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from libs.basemodel.services_databaseconnector.postgres_model import (
     Language, SourceType, Document, Image, Video, Web, Warehouse,
@@ -26,7 +28,7 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/pipeline/ingestion", tags=["Ingestion"])
 
-_META_CLS = {
+_META_CLS: dict[SourceType, type[BaseModel]] = {
     SourceType.DOC:       Document,
     SourceType.WEB:       Web,
     SourceType.IMAGE:     Image,
@@ -38,7 +40,7 @@ _TERMINAL_STATUSES = {"PUBLISHED", "FAILED"}
 
 
 
-async def _fetch_kbdata_or_404(postgres, tenant_id: str, data_id: str) -> dict:
+async def _fetch_kbdata_or_404(postgres: Any, tenant_id: str, data_id: str) -> dict[str, Any]:
     """Fetch the single KBData row for (tenant, data_id) or raise 404.
 
     Thin 404 wrapper over document_ops.fetch_one — the query itself lives in ops.
@@ -51,7 +53,7 @@ async def _fetch_kbdata_or_404(postgres, tenant_id: str, data_id: str) -> dict:
     return record
 
 
-async def _log_promotion_queued(mongo, data_id: str, stage: str) -> None:
+async def _log_promotion_queued(mongo: Any, data_id: str, stage: str) -> None:
     """Upsert the ingestion-log doc marking a promotion to `stage` as queued."""
     now = datetime.datetime.now(datetime.timezone.utc)
     db = mongo.get_client()
@@ -67,7 +69,7 @@ async def _log_promotion_queued(mongo, data_id: str, stage: str) -> None:
     )
 
 
-@router.post("/bronze")
+@router.post("/bronze", response_model=None)
 async def ingest_bronze(
     request: Request,
     file: UploadFile = File(...),
@@ -77,8 +79,8 @@ async def ingest_bronze(
     source_type: str = Form(...),
     doc_metadata: str = Form("{}"),
     knowledge_base_id: str = Form(""),
-    ctx: dict = Depends(require_perm("add_data")),
-):
+    ctx: dict[str, Any] = Depends(require_perm("add_data")),
+) -> Any:
     """
     Ingest document to BRONZE layer.
 
@@ -151,12 +153,12 @@ async def ingest_bronze(
         raise HTTPException(status_code=500, detail="Ingestion failed")
 
 
-@router.post("/bronze/web")
+@router.post("/bronze/web", response_model=None)
 async def ingest_bronze_web(
     request: Request,
     body: WebIngestRequest,
-    ctx: dict = Depends(require_perm("add_data")),
-):
+    ctx: dict[str, Any] = Depends(require_perm("add_data")),
+) -> Any:
     """
     Ingest a web portal to BRONZE by URL (no file upload).
 
@@ -213,8 +215,8 @@ async def ingest_bronze_web(
 async def promote_to_silver(
     data_id: str,
     request: Request,
-    ctx: dict = Depends(require_perm("process_layer")),
-):
+    ctx: dict[str, Any] = Depends(require_perm("process_layer")),
+) -> PromoteResponse:
     postgres       = svc(request, "postgres")
     kafka_producer = svc(request, "kafka_producer")
     mongo          = svc(request, "mongo")
@@ -253,8 +255,8 @@ async def promote_to_silver(
 async def promote_to_gold(
     data_id: str,
     request: Request,
-    ctx: dict = Depends(require_perm("process_layer")),
-):
+    ctx: dict[str, Any] = Depends(require_perm("process_layer")),
+) -> PromoteResponse:
     postgres       = svc(request, "postgres")
     kafka_producer = svc(request, "kafka_producer")
     mongo          = svc(request, "mongo")
@@ -293,10 +295,10 @@ async def promote_to_gold(
     )
 
 
-@router.get("/documents/{data_id}/logs")
+@router.get("/documents/{data_id}/logs", response_model=None)
 async def get_ingestion_logs(
-    data_id: str, request: Request, ctx: dict = Depends(authenticate),
-):
+    data_id: str, request: Request, ctx: dict[str, Any] = Depends(authenticate),
+) -> Any:
     """Stored per-document ingestion logs (Mongo ``kb_ingestion_logs``).
 
     Tenant-scoped: only returns logs for a document the caller's tenant owns —
@@ -307,7 +309,7 @@ async def get_ingestion_logs(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    def _iso(v):
+    def _iso(v: Any) -> str | None:
         return v.isoformat() if hasattr(v, "isoformat") else (str(v) if v else None)
 
     rec = await svc(request, "mongo").get_client()["kb_ingestion_logs"].find_one({"data_id": data_id})
@@ -334,8 +336,8 @@ async def get_ingestion_logs(
 async def stream_pipeline_events(
     data_id: str,
     request: Request,
-    ctx: dict = Depends(authenticate),
-):
+    ctx: dict[str, Any] = Depends(authenticate),
+) -> StreamingResponse:
     """SSE endpoint — streams structured pipeline events from MongoDB in real time.
 
     Polls ``pipeline_events`` collection for events with seq > last_seen,
@@ -345,7 +347,7 @@ async def stream_pipeline_events(
     mongo = svc(request, "mongo")
     _TERMINAL = {"pipeline.done", "pipeline.error"}
 
-    async def generate():
+    async def generate() -> AsyncGenerator[str, None]:
         db = mongo.get_client()
         last_seq = 0
         # Keep the stream warm: emit an SSE comment at least every HEARTBEAT_S of
@@ -420,11 +422,11 @@ def _progress_pct(status: str, stage: str, processed: int, total: int) -> float:
 
 
 @router.get("/documents/{data_id}/progress")
-async def stream_progress(data_id: str, request: Request, ctx: dict = Depends(authenticate)):
+async def stream_progress(data_id: str, request: Request, ctx: dict[str, Any] = Depends(authenticate)) -> StreamingResponse:
     """SSE endpoint — streams ingestion progress with chunk-based percentage."""
     mongo = svc(request, "mongo")
 
-    async def generate():
+    async def generate() -> AsyncGenerator[str, None]:
         db = mongo.get_client()
         last_count = 0
 

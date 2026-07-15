@@ -1,4 +1,5 @@
 """Business logic for document listing, promotion, and deletion."""
+from typing import Any, cast
 import logging
 import uuid
 from fastapi import HTTPException
@@ -19,7 +20,7 @@ from services.kb_backend.operations.trash_ops import qdrant_set_deleted_by_data_
 log = logging.getLogger(__name__)
 
 
-async def fetch_one(postgres, data_id: str, tenant_id: str | None) -> dict | None:
+async def fetch_one(postgres: Any, data_id: str, tenant_id: str | None) -> dict[str, Any] | None:
     resp = await postgres.read(ReadJoinRequest(
         tenant_id=tenant_id,
         joins_table=["KBData"],
@@ -27,11 +28,11 @@ async def fetch_one(postgres, data_id: str, tenant_id: str | None) -> dict | Non
         limit=1,
     ))
     if resp.code == 200 and resp.data:
-        return resp.data[0]
+        return cast(dict[str, Any], resp.data[0])
     return None
 
 
-async def fetch_one_or_404(postgres, data_id: str, tenant_id: str | None) -> dict:
+async def fetch_one_or_404(postgres: Any, data_id: str, tenant_id: str | None) -> dict[str, Any]:
     """fetch_one plus a 404 guard, for routes that require the record to exist.
     Centralises the not-found contract so routers stay pass-throughs and every
     'missing document' returns a real 404 (+ message) instead of HTTP 200."""
@@ -41,7 +42,7 @@ async def fetch_one_or_404(postgres, data_id: str, tenant_id: str | None) -> dic
     return record
 
 
-async def name_exists(postgres, tenant_id: str, name: str) -> bool:
+async def name_exists(postgres: Any, tenant_id: str, name: str) -> bool:
     """True if a KBData document with this (globally-unique) name already exists.
     Lets the router reject duplicates with a clear 409 instead of a generic insert 500."""
     resp = await postgres.read(ReadJoinRequest(
@@ -53,7 +54,7 @@ async def name_exists(postgres, tenant_id: str, name: str) -> bool:
     return resp.code == 200 and bool(resp.data)
 
 
-async def get_doc_history(postgres, doc_id: str, tenant_id: str) -> list[dict]:
+async def get_doc_history(postgres: Any, doc_id: str, tenant_id: str) -> list[dict[str, Any]]:
     """Lifecycle-history rows for a document, newest first, tenant-scoped.
 
     Raises HTTPException(400) on malformed ids so the router stays a thin pass-through.
@@ -104,12 +105,12 @@ _SOURCE_CATEGORY_TYPES: dict[str, list[str]] = {
 
 
 async def list_documents(
-    postgres,
+    postgres: Any,
     tenant_id: str | None,
     tier: str | None = None,
     cursor: str | None = None,
     source_types: list[str] | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Stateless keyset page. The client holds the opaque `cursor` token (the keyset
     boundary the server handed back as `next_cursor`); page 1 omits it. The server
     keeps no per-user pagination state.
@@ -210,10 +211,10 @@ async def list_documents(
 
 
 async def promote_document(
-    postgres, kafka_producer,
+    postgres: Any, kafka_producer: Any,
     data_id: str, target: str, status: str,
-    ctx: dict, record: dict,
-) -> dict:
+    ctx: dict[str, Any], record: dict[str, Any],
+) -> dict[str, Any]:
     tenant_id = ctx["tenant_id"]
     if target == "silver":
         await kafka_producer.produce(
@@ -249,10 +250,10 @@ async def promote_document(
     # so the caller sees the post-promotion state without an extra DB read.
     record_after = dict(record)
     record_after["current_tier"] = target
-    return DocResponse.model_validate(record_after).model_dump()
+    return cast(dict[str, Any], DocResponse.model_validate(record_after).model_dump())
 
 
-async def delete_document(postgres, qdrant, data_id: str, tenant_id: str | None, record: dict) -> None:
+async def delete_document(postgres: Any, qdrant: Any, data_id: str, tenant_id: str | None, record: dict[str, Any]) -> None:
     """Soft-delete a document: flag KBData AND mirror the is_deleted tag onto the
     document's Qdrant points (chunk points by data_id + the doc-summary point), so a
     'deleted' document is no longer retrievable."""

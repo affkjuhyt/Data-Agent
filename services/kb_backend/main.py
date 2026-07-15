@@ -1,3 +1,5 @@
+from typing import Any
+from collections.abc import AsyncIterator
 import asyncio
 import logging
 import os
@@ -54,7 +56,7 @@ _light_rag  = LightRAGPipeline()
 _ingestion  = IngestionPipeline()
 
 
-def _supervise(task: asyncio.Task) -> asyncio.Task:
+def _supervise(task: asyncio.Task[Any]) -> asyncio.Task[Any]:
     """Attach a done-callback that surfaces a background loop dying.
 
     The health-check and cache-sweep loops are `while True` and must never
@@ -65,7 +67,7 @@ def _supervise(task: asyncio.Task) -> asyncio.Task:
     `svc()` gating goes stale (permanent 503, or worse, handing out a dead
     client). Log it loudly so it is visible immediately instead of silently.
     """
-    def _on_done(t: asyncio.Task) -> None:
+    def _on_done(t: asyncio.Task[Any]) -> None:
         if t.cancelled():
             return  # expected on shutdown
         exc = t.exception()
@@ -81,7 +83,7 @@ def _supervise(task: asyncio.Task) -> asyncio.Task:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # ── Postgres bootstrap ────────────────────────────────────────────────────
     # Connect to template1 (always exists) to check/create the target DB.
     # Handles any DB name (aeroflow_kb in standalone stacks, dataagent in the
@@ -198,5 +200,5 @@ app.include_router(router)
 
 
 @app.get("/health", tags=["Health"])
-async def health():
+async def health() -> dict[str, str]:
     return {"status": "ok"}

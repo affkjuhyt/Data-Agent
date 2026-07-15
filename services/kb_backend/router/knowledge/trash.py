@@ -7,6 +7,7 @@ flush permanently removes the entity. A document flush removes EVERYTHING keyed 
 its data_id: Postgres rows, Qdrant points, Neo4j edges, the MinIO source object, and
 the per-document Mongo staging/logs/events.
 """
+from typing import Any
 from fastapi import APIRouter, Depends, Request
 
 from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
@@ -22,8 +23,8 @@ router = APIRouter(prefix="/api/knowledge/trash", tags=["Knowledge-Trash"])
 async def list_trash_route(
     level: str,
     request: Request,
-    ctx: dict = Depends(authenticate),
-):
+    ctx: dict[str, Any] = Depends(authenticate),
+) -> ResponseModel[Any]:
     """level ∈ document | chunk | version. Returns the soft-deleted items + total."""
     data = await list_trash(svc(request, "postgres"), level, ctx["tenant_id"])
     return ResponseModel(code=200, data=data)
@@ -34,8 +35,8 @@ async def restore_route(
     level: str,
     item_id: str,
     request: Request,
-    ctx: dict = Depends(require_perm("delete_data")),
-):
+    ctx: dict[str, Any] = Depends(require_perm("delete_data")),
+) -> ResponseModel[Any]:
     await restore(svc(request, "postgres"), svc(request, "qdrant"), level, item_id, ctx["tenant_id"])
     return ResponseModel(code=200, data=None)
 
@@ -45,8 +46,8 @@ async def flush_route(
     level: str,
     item_id: str,
     request: Request,
-    ctx: dict = Depends(require_perm("delete_data")),
-):
+    ctx: dict[str, Any] = Depends(require_perm("delete_data")),
+) -> ResponseModel[Any]:
     """Permanently delete (flush) the item — not reversible."""
     await flush(
         svc(request, "postgres"), svc(request, "qdrant"), svc(request, "neo4j"),

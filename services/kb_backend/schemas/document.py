@@ -70,7 +70,7 @@ class DocumentMetadata(BaseModel):
 class UpdateDocumentRequest(BaseModel):
     current_tier: Optional[str] = None  # bronze | silver | gold
     status: Optional[str] = None
-    metadata: Optional[dict] = None
+    metadata: Optional[dict[str, Any]] = None
 
 
 # ── Response ──────────────────────────────────────────────────────────────────
@@ -86,7 +86,11 @@ class DocResponse(BaseModel):
     abstract: str | None = None
     metadata: DocumentMetadata
 
-    @computed_field
+    # mypy (without the pydantic plugin) doesn't model `@computed_field` stacked on
+    # `@property` — a known tooling limitation, not a type defect. Scoped ignore
+    # avoids enabling the global plugin (which would re-check every model on the
+    # already-clean strict surfaces).
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def status(self) -> str:
         return {"gold": "PUBLISHED", "silver": "EMBEDDING"}.get(self.current_tier, "RAW")
