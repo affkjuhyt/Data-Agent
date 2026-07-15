@@ -30,6 +30,7 @@ worst case ~1-2s (short connect/read timeout, no retries).
 """
 import logging
 import os
+from typing import Any
 
 import boto3
 from botocore.config import Config
@@ -49,10 +50,10 @@ _BOTO_CONFIG = Config(
 )
 
 
-_client_instance = None
+_client_instance: Any = None
 
 
-def _client():
+def _client() -> Any:
     # boto3 clients are thread-safe and cheap to reuse — building one from
     # scratch on every put_code/delete_code/ensure_bucket call (this sits on
     # the hot request path, see module docstring) adds needless connection

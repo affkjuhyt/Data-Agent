@@ -8,6 +8,7 @@ reads from that topic and writes to the audit_logs PostgreSQL table.
 Delivery: at-least-once (Kafka acks=all, manual offset commit).
 State: last-seen event timestamp persisted to /tmp/last_event_time.txt.
 """
+from typing import Any, cast
 import os
 import json
 import logging
@@ -41,7 +42,7 @@ STATE_FILE = os.environ.get("STATE_FILE", "/data/last_event_time.txt")
 def wait_for_kafka(bootstrap: str, retries: int = 30, delay: int = 5) -> KafkaProducer:
     for attempt in range(1, retries + 1):
         try:
-            kwargs: dict = dict(
+            kwargs: dict[str, Any] = dict(
                 bootstrap_servers=bootstrap,
                 value_serializer=lambda v: json.dumps(v).encode("utf-8"),
                 acks="all",
@@ -78,13 +79,13 @@ _refresh_token: str | None = None
 _refresh_deadline: float = 0.0
 
 
-def _post_token(data: dict) -> dict:
+def _post_token(data: dict[str, Any]) -> dict[str, Any]:
     r = requests.post(_TOKEN_URL, data={"client_id": "admin-cli", **data}, timeout=10)
     r.raise_for_status()
-    return r.json()
+    return cast(dict[str, Any], r.json())
 
 
-def _store_token(tok: dict) -> None:
+def _store_token(tok: dict[str, Any]) -> None:
     global _token, _token_deadline, _refresh_token, _refresh_deadline
     now = time.monotonic()
     _token = tok["access_token"]
@@ -108,7 +109,8 @@ def get_admin_token(force: bool = False) -> str:
     if _refresh_token and now < _refresh_deadline:
         try:
             _store_token(_post_token({"grant_type": "refresh_token", "refresh_token": _refresh_token}))
-            return _token  # type: ignore[return-value]
+            assert _token is not None  # _store_token just set the global
+            return _token
         except requests.HTTPError:
             log.warning("token refresh failed; falling back to password grant")
 
@@ -117,7 +119,8 @@ def get_admin_token(force: bool = False) -> str:
         "username": KC_ADMIN,
         "password": KC_PASS,
     }))
-    return _token  # type: ignore[return-value]
+    assert _token is not None  # _store_token just set the global
+    return _token
 
 
 def load_last_ts() -> int:
@@ -132,7 +135,7 @@ def save_last_ts(ts: int) -> None:
     atomic_write_text(STATE_FILE, str(ts))
 
 
-def poll_events(token: str, since_ms: int) -> list:
+def poll_events(token: str, since_ms: int) -> list[Any]:
     # dateFrom narrows the server-side query so we don't fetch events we'll filter out anyway.
     # Keycloak expects a date string; subtract 1 minute to avoid dropping events at boundary.
     from datetime import datetime, timezone, timedelta
@@ -150,7 +153,7 @@ def poll_events(token: str, since_ms: int) -> list:
     return [e for e in r.json() if e.get("time", 0) > since_ms]
 
 
-def main():
+def main() -> None:
     producer = wait_for_kafka(KAFKA_BOOTSTRAP)
 
     while True:

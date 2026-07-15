@@ -20,6 +20,7 @@ recomputes counts, deletes bridges that hit zero, and prunes the now-edgeless no
 """
 from __future__ import annotations
 
+from typing import Any
 import logging
 import uuid
 
@@ -41,7 +42,7 @@ log = logging.getLogger(__name__)
 _NODE_NAMESPACE = uuid.UUID("9f1a6c1e-7b2d-5e4a-9c3f-2a8d4e6b1c70")
 
 
-def _as_uuid(value) -> uuid.UUID | None:
+def _as_uuid(value: Any) -> uuid.UUID | None:
     if value is None or isinstance(value, uuid.UUID):
         return value
     try:
@@ -67,8 +68,8 @@ class GraphStore:
         knowledge_base: str,
         data_id: str,
         block_id: str,
-        entities: list[dict],
-        relationships: list[dict],
+        entities: list[dict[str, Any]],
+        relationships: list[dict[str, Any]],
         embed_model_id: str = "",
     ) -> None:
         """Add one chunk's entity nodes + edge bridges to both stores, with the chunk
@@ -123,7 +124,8 @@ class GraphStore:
 
 
     async def _embed_entities(
-        self, connected_canonicals, entity_by_canonical, embed_model_id,
+        self, connected_canonicals: list[str], entity_by_canonical: dict[str, dict[str, Any]],
+        embed_model_id: str,
     ) -> dict[str, list[float] | None]:
         embed_texts = [
             (entity_by_canonical[canonical].get("description")
@@ -139,8 +141,9 @@ class GraphStore:
         return {canonical: vector for canonical, vector in zip(connected_canonicals, vectors)}
 
     async def _stage_postgres(
-        self, session, tenant_id, knowledge_base, data_id, block_id,
-        connected_canonicals, entity_by_canonical, entity_pairs,
+        self, session: Any, tenant_id: str, knowledge_base: str, data_id: str, block_id: str,
+        connected_canonicals: list[str], entity_by_canonical: dict[str, dict[str, Any]],
+        entity_pairs: list[tuple[str, str]],
     ) -> None:
         """Stage node upserts + edge-mention inserts on the caller's open session
         (flush only — the caller commits last)."""
@@ -180,7 +183,9 @@ class GraphStore:
             await session.execute(edge_statement)
         await session.flush()
 
-    async def _count_pairs(self, session, tenant_id, knowledge_base, entity_pairs) -> dict[tuple[str, str], int]:
+    async def _count_pairs(
+        self, session: Any, tenant_id: str, knowledge_base: str, entity_pairs: list[tuple[str, str]],
+    ) -> dict[tuple[str, str], int]:
         """Live edge count per pair, visible within the caller's transaction."""
         counts_by_pair: dict[tuple[str, str], int] = {}
         for canonical_a, canonical_b in entity_pairs:
@@ -194,8 +199,9 @@ class GraphStore:
         return counts_by_pair
 
     async def _write_neo4j(
-        self, tenant_id, knowledge_base, connected_canonicals,
-        entity_by_canonical, vectors_by_canonical, embed_model_id, counts_by_pair,
+        self, tenant_id: str, knowledge_base: str, connected_canonicals: list[str],
+        entity_by_canonical: dict[str, dict[str, Any]], vectors_by_canonical: dict[str, list[float] | None],
+        embed_model_id: str, counts_by_pair: dict[tuple[str, str], int],
     ) -> None:
         """Nodes (+ secondary label) and bridges in ONE transaction — all or nothing."""
         async with self._neo4j.session() as session:
@@ -242,7 +248,9 @@ class GraphStore:
                 await transaction.rollback()
                 raise
 
-    async def _reconcile_neo4j(self, tenant_id, knowledge_base, entity_pairs) -> None:
+    async def _reconcile_neo4j(
+        self, tenant_id: str, knowledge_base: str, entity_pairs: list[tuple[str, str]],
+    ) -> None:
         """The Postgres commit failed after Neo4j committed. Re-derive each touched
         pair's count from Postgres (now without this chunk) and reconcile Neo4j —
         delete bridges that fell to zero, fix the rest, prune nodes left edgeless."""
@@ -273,7 +281,7 @@ class GraphStore:
         except Exception as exc:
             log.error("GraphStore: Neo4j reconcile after Postgres commit failure failed: %s", exc)
 
-    async def _remove(self, tenant_id, knowledge_base, column, value) -> None:
+    async def _remove(self, tenant_id: str, knowledge_base: str, column: Any, value: Any) -> None:
         target = _as_uuid(value)
         if target is None:
             return
@@ -330,7 +338,7 @@ class GraphStore:
 
         await self._prune_postgres_orphans(tenant_id, knowledge_base)
 
-    async def _prune_postgres_orphans(self, tenant_id, knowledge_base) -> None:
+    async def _prune_postgres_orphans(self, tenant_id: str, knowledge_base: str) -> None:
         async with self._postgres.get_client() as session:
             await session.execute(
                 text(

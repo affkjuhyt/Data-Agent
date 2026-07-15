@@ -21,6 +21,7 @@ an exec too long or that should have been retired but weren't.
 """
 from __future__ import annotations
 
+from typing import Any, cast
 import collections
 import enum
 import logging
@@ -96,10 +97,10 @@ class CircuitBreakerOpenError(Exception):
     immediately (503/backpressure) without ever touching the idle queue."""
 
 
-def memory_usage_bytes(container) -> int | None:
+def memory_usage_bytes(container: Any) -> int | None:
     try:
         stats = container.stats(stream=False)
-        return stats.get("memory_stats", {}).get("usage")
+        return cast(int | None, stats.get("memory_stats", {}).get("usage"))
     except Exception:
         # Broad on purpose — a stats-read failure (docker connection blip,
         # container gone) should degrade to "unknown," never crash the
@@ -107,7 +108,7 @@ def memory_usage_bytes(container) -> int | None:
         return None
 
 
-def memory_drifted(container, baseline_bytes: int, factor: float) -> bool:
+def memory_drifted(container: Any, baseline_bytes: int, factor: float) -> bool:
     """True if current memory usage is more than `factor`x the idle
     baseline recorded right after the container was created — a proxy for
     "cleanup didn't actually bring this container back to idle"."""
@@ -121,7 +122,7 @@ def memory_drifted(container, baseline_bytes: int, factor: float) -> bool:
 
 @dataclass
 class PooledContainer:
-    container: object
+    container: Any
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     created_at: float = field(default_factory=time.monotonic)
     use_count: int = 0
@@ -291,7 +292,7 @@ class CircuitBreaker:
 class ContainerPool:
     def __init__(
         self,
-        client,
+        client: Any,
         image: str,
         size: int,
         memory_mb: int,
@@ -406,7 +407,7 @@ class ContainerPool:
             self._destroy(pc)
         logger.info("sandbox pool | shut down, %d container(s) removed", len(containers))
 
-    def stats(self) -> dict:
+    def stats(self) -> dict[str, Any]:
         """Snapshot for an ops dashboard/health check — not used on the
         request path, so an approximate read (no cross-field locking
         beyond each individual access) is fine here."""
@@ -723,6 +724,7 @@ class ContainerPool:
                 if pc.acquired_at is not None and now - pc.acquired_at > self.stuck_exec_s
             ]
         for pc in stuck:
+            assert pc.acquired_at is not None  # guaranteed by the `stuck` filter above
             logger.warning(
                 "sandbox pool | container %s stuck busy for %.0fs — force retiring",
                 pc.id, now - pc.acquired_at,

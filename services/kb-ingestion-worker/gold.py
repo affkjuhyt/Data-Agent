@@ -32,7 +32,7 @@ import time as _time
 import unicodedata
 import uuid
 from collections import Counter
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from qdrant_client import models as qmodels
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
@@ -115,7 +115,7 @@ async def _llm_generate_json(
     temperature: float = 0.1,
     max_retries: int = 2,
     system_type: str = "",
-) -> tuple[dict, str, int]:
+) -> tuple[dict[str, Any], str, int]:
     """Returns (parsed_dict, last_raw_response, attempts_used).
 
     `system_type` is a key of SYSTEM_PROMPTS and of utils.llm_schemas: it selects the
@@ -186,7 +186,7 @@ def _to_entity_list(raw_value: Any) -> list[dict[str, Any]]:
     Surface forms keep their original diacritics; only comparison uses _fold."""
     if not isinstance(raw_value, list):
         return []
-    parsed_entities = []
+    parsed_entities: list[dict[str, Any]] = []
     seen_names: set[str] = set()
     for item in raw_value:
         if isinstance(item, dict):
@@ -421,15 +421,15 @@ async def _commit_chunk_atomic(
     block_index: int,
     content: str,
     table_involved: bool,
-    table: dict | None,
-    payload_meta: dict,
+    table: dict[str, Any] | None,
+    payload_meta: dict[str, Any],
     embedding: list[float],
     summary: str,
     approved_by: str,
     embed_model_id: str,
     knowledge_base: str = "",
     entities: list[str] | None = None,
-    entity_type_fields: dict | None = None,
+    entity_type_fields: dict[str, Any] | None = None,
     emitter: PipelineEventEmitter = NULL_EMITTER,
 ) -> str:
     block_id: str | None = None
@@ -540,7 +540,7 @@ async def canonicalize_chunk_entities(
     postgres: PostgresClient,
     model: ModelServiceClient,
     tenant_id: str,
-    raw_entities: list[dict],
+    raw_entities: list[dict[str, Any]],
     *,
     knowledge_base: str = "",
     embed_model_id: str = "",
@@ -589,11 +589,11 @@ async def canonicalize_chunk_entities(
 
 
 def remap_chunk_relationships(
-    relationships: list[dict], raw_to_canonical: dict[str, str]
-) -> list[dict]:
+    relationships: list[dict[str, Any]] | None, raw_to_canonical: dict[str, str]
+) -> list[dict[str, Any]]:
     """Remap a chunk's silver relationships (chunk-local names) onto canonical
     entities. Drops edges whose endpoints didn't canonicalize or are self-loops."""
-    remapped: list[dict] = []
+    remapped: list[dict[str, Any]] = []
     for relationship in (relationships or []):
         canonical_from = raw_to_canonical.get(_fold(str(relationship.get("from", ""))))
         canonical_to = raw_to_canonical.get(_fold(str(relationship.get("to", ""))))
@@ -617,7 +617,7 @@ def _heuristic_summary(content: str) -> str:
 
 
 # ── Main stage function ────────────────────────────────────────────────────────
-async def _detect_conflict(existing_summary: str, incoming_summary: str) -> tuple[dict, str]:
+async def _detect_conflict(existing_summary: str, incoming_summary: str) -> tuple[dict[str, Any], str]:
     """Returns (conflict_result_dict, raw_llm_answer)."""
     user = (
         f"Existing chunk summary:\n{existing_summary}\n\n"
@@ -633,9 +633,13 @@ async def _detect_conflict(existing_summary: str, incoming_summary: str) -> tupl
         return {"has_conflict": False}, f"ERROR: {exc}"
 
 async def _detect_and_record_conflict(
-    *, postgres, qdrant, tenant_id, data_id, knowledge_base, embed_model_id, approved_by,
-    block_index, content, summary, intents, table_involved, table, embedding, chunk,
-    ensure_conflict_batch, emitter,
+    *, postgres: PostgresClient, qdrant: AsyncQdrantClient, tenant_id: str, data_id: str,
+    knowledge_base: str, embed_model_id: str, approved_by: str,
+    block_index: int, content: str, summary: str, intents: list[str],
+    table_involved: bool, table: dict[str, Any] | None, embedding: list[float],
+    chunk: dict[str, Any],
+    ensure_conflict_batch: Callable[[], Awaitable[str | None]],
+    emitter: PipelineEventEmitter,
 ) -> bool:
     """Search the chunk's nearest neighbour; if it clears the similarity floor and the
     LLM confirms a conflict, record it (PENDING) and return True. A failed conflict
@@ -729,9 +733,11 @@ async def _detect_and_record_conflict(
 
 
 async def _add_chunk_to_graph(
-    *, graph, tenant_id, knowledge_base, data_id, block_id, chunk, canonicals,
-    type_by_canonical, description_by_canonical, display_by_canonical, raw_to_canonical,
-    embed_model_id, database, block_index, emitter,
+    *, graph: GraphStore, tenant_id: str, knowledge_base: str, data_id: str, block_id: str,
+    chunk: dict[str, Any], canonicals: list[str],
+    type_by_canonical: dict[str, str], description_by_canonical: dict[str, str],
+    display_by_canonical: dict[str, str], raw_to_canonical: dict[str, str],
+    embed_model_id: str, database: Any, block_index: int, emitter: PipelineEventEmitter,
 ) -> bool:
     try:
         await graph.add_chunk(
@@ -759,9 +765,11 @@ async def _add_chunk_to_graph(
 
 
 async def _process_chunk(
-    *, chunk, postgres, qdrant, graph, model, tenant_id, data_id, knowledge_base,
-    embed_model_id, approved_by, database, ensure_conflict_batch, emitter,
-) -> dict:
+    *, chunk: dict[str, Any], postgres: PostgresClient, qdrant: AsyncQdrantClient,
+    graph: GraphStore, model: ModelServiceClient, tenant_id: str, data_id: str,
+    knowledge_base: str, embed_model_id: str, approved_by: str, database: Any,
+    ensure_conflict_batch: Callable[[], Awaitable[str | None]], emitter: PipelineEventEmitter,
+) -> dict[str, Any]:
     block_index = chunk["block_index"]
     content = chunk["content"]
     summary = (chunk.get("summary") or "").strip() or _heuristic_summary(content)
@@ -834,7 +842,9 @@ async def _process_chunk(
     return {"outcome": "committed", "summary": summary, "intents": intents, "graph_failed": graph_failed}
 
 
-async def _reduce_document_summary(committed_summaries, database, data_id, emitter) -> str:
+async def _reduce_document_summary(
+    committed_summaries: list[str], database: Any, data_id: str, emitter: PipelineEventEmitter,
+) -> str:
     await set_chunk_progress(database, data_id, status="GOLD_REDUCE")
     async with emitter.step("gold.doc.reduce", summaries=len(committed_summaries)) as reduce_scope:
         doc_summary = await _reduce_summaries(committed_summaries, emitter)
@@ -843,8 +853,9 @@ async def _reduce_document_summary(committed_summaries, database, data_id, emitt
 
 
 async def _write_doc_summary_point(
-    *, qdrant, model, database, data_id, tenant_id, knowledge_base, embed_model_id,
-    doc_summary, top_intents, committed_count, emitter,
+    *, qdrant: AsyncQdrantClient, model: ModelServiceClient, database: Any, data_id: str,
+    tenant_id: str, knowledge_base: str, embed_model_id: str,
+    doc_summary: str, top_intents: list[str], committed_count: int, emitter: PipelineEventEmitter,
 ) -> None:
     await set_chunk_progress(database, data_id, status="GOLD_GRAPH")
     async with emitter.step("gold.doc.commit", data_id=data_id) as doc_scope:
@@ -869,7 +880,9 @@ async def _write_doc_summary_point(
         doc_scope.set(intents=top_intents)
 
 
-async def _update_document_tier(postgres, database, data_id, top_intents) -> None:
+async def _update_document_tier(
+    postgres: PostgresClient, database: Any, data_id: str, top_intents: list[str],
+) -> None:
     try:
         async with postgres.get_client() as session:
             try:
@@ -892,7 +905,9 @@ async def _update_document_tier(postgres, database, data_id, top_intents) -> Non
         raise
 
 
-async def _reconcile_conflict_batch(postgres, conflict_batch_id, pending_conflict_count) -> None:
+async def _reconcile_conflict_batch(
+    postgres: PostgresClient, conflict_batch_id: str | None, pending_conflict_count: int,
+) -> None:
     """PENDING only while real conflicts await human resolution; otherwise RESOLVED."""
     if conflict_batch_id is None:
         return
@@ -915,7 +930,10 @@ async def _reconcile_conflict_batch(postgres, conflict_batch_id, pending_conflic
         log.warning("Gold: batch status reconcile failed batch_id=%s: %s", conflict_batch_id, exc)
 
 
-async def _record_gold_lifecycle(postgres, database, data_id, approved_by, counts, embed_model_id) -> None:
+async def _record_gold_lifecycle(
+    postgres: PostgresClient, database: Any, data_id: str, approved_by: str,
+    counts: dict[str, int], embed_model_id: str,
+) -> None:
     """Audit row — best-effort, never fails the stage."""
     try:
         await postgres.insert(KBLifecycleHistoryInsert(
@@ -953,7 +971,7 @@ async def promote_to_gold(
     tenant_id: str,
     approved_by: str,
     emitter: PipelineEventEmitter = NULL_EMITTER,
-) -> dict:
+) -> dict[str, Any]:
     embed_model_id = await _get_collection_embed_model_id(postgres, cfg.QDRANT_COLLECTION)
     log.info("Gold: collection '%s' → embed_model_id=%s", cfg.QDRANT_COLLECTION, embed_model_id or "none")
 
@@ -965,7 +983,7 @@ async def promote_to_gold(
     if not staging:
         raise ValueError(f"No silver staging found for data_id={data_id}")
 
-    chunks: list[dict] = staging.get("chunks", [])
+    chunks: list[dict[str, Any]] = staging.get("chunks", [])
     log.info("Gold: processing %d chunks data_id=%s", len(chunks), data_id)
 
     conflict_batch_id: str | None = None
@@ -981,6 +999,7 @@ async def promote_to_gold(
                 status=ConflictStatus.PENDING,
             ))
             if batch_response.code == 200:
+                assert batch_response.data is not None  # code == 200 guarantees a data payload
                 conflict_batch_id = batch_response.data["batch_id"]
             else:
                 log.warning("Gold: conflict batch creation failed data_id=%s code=%s", data_id, batch_response.code)

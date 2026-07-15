@@ -13,6 +13,7 @@ Tenants' Snowflake connections come from the existing KBWarehouse /
 KBWarehouseConfig tables (services/kb_backend's warehouse-connect flow) —
 this worker is a second reader of that data, not a new connection registry.
 """
+from typing import Any
 import json
 import logging
 import os
@@ -60,7 +61,7 @@ KAFKA_RECONNECT_INTERVAL_SECONDS = int(os.environ.get("KAFKA_RECONNECT_INTERVAL_
 MAX_PENDING_DDL_EVENTS = int(os.environ.get("MAX_PENDING_DDL_EVENTS", "500"))    # caps cost-abuse via event flooding
 
 
-def _safe_json(raw: bytes):
+def _safe_json(raw: bytes) -> Any:
     if not raw:
         return None
     try:
@@ -69,7 +70,7 @@ def _safe_json(raw: bytes):
         return None
 
 
-def wait_for_postgres(retries: int = 20, delay: int = 5):
+def wait_for_postgres(retries: int = 20, delay: int = 5) -> Any:
     for attempt in range(1, retries + 1):
         try:
             conn = psycopg2.connect(host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASS)
@@ -82,7 +83,7 @@ def wait_for_postgres(retries: int = 20, delay: int = 5):
     raise RuntimeError("PostgreSQL unavailable after retries")
 
 
-def _kafka_sasl_kwargs() -> dict:
+def _kafka_sasl_kwargs() -> dict[str, Any]:
     if not KAFKA_SASL_USER:
         return {}
     return dict(
@@ -119,7 +120,7 @@ def try_kafka_consumer(retries: int = 5, delay: int = 3) -> KafkaConsumer | None
     return None
 
 
-def ensure_qdrant_collection(qdrant: QdrantClient):
+def ensure_qdrant_collection(qdrant: QdrantClient) -> None:
     names = [c.name for c in qdrant.get_collections().collections]
     if QDRANT_COLLECTION not in names:
         qdrant.create_collection(QDRANT_COLLECTION, vectors_config=VectorParams(size=EMBEDDING_DIM, distance=Distance.COSINE))
@@ -128,7 +129,7 @@ def ensure_qdrant_collection(qdrant: QdrantClient):
 
 # ─── Tenant warehouse registry (KBWarehouse / KBWarehouseConfig) ───────────
 
-def get_active_snowflake_warehouses(cur) -> list[dict]:
+def get_active_snowflake_warehouses(cur: Any) -> list[dict[str, Any]]:
     """Reads the existing per-tenant warehouse-connection registry — see
     services/kb_backend/router/knowledge/warehouse_connect.py — instead of
     inventing a parallel one for this worker."""
@@ -143,7 +144,7 @@ def get_active_snowflake_warehouses(cur) -> list[dict]:
     return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
-def connection_params(config: dict, warehouse_id: str) -> dict | None:
+def connection_params(config: dict[str, Any], warehouse_id: str) -> dict[str, Any] | None:
     """KBWarehouseConfig.config["connection"] never persists a password (see
     select_warehouse_tables() in warehouse_connect.py) — this platform has
     no secret-store integration for warehouse credentials yet (gap, see
@@ -170,7 +171,7 @@ def connection_params(config: dict, warehouse_id: str) -> dict | None:
     }
 
 
-def selected_table_names(config: dict) -> list[str] | None:
+def selected_table_names(config: dict[str, Any]) -> list[str] | None:
     tables = (config or {}).get("selected_tables") or []
     names = [t["name"] for t in tables if t.get("name")]
     return names or None
@@ -186,7 +187,7 @@ def _point_id(tenant_id: str, warehouse_id: str, schema_name: str, table_name: s
     return str(uuid.uuid5(uuid.NAMESPACE_OID, f"{tenant_id}|{warehouse_id}|{schema_name}|{table_name}"))
 
 
-def process_table(cur, qdrant: QdrantClient, tenant_id: str, warehouse_id: str, meta: dict) -> bool:
+def process_table(cur: Any, qdrant: QdrantClient, tenant_id: str, warehouse_id: str, meta: dict[str, Any]) -> bool:
     """Returns True if the table was (re)described+embedded, False if
     skipped because its schema hasn't changed since the last crawl."""
     schema_name = meta["schema_name"]
@@ -248,7 +249,7 @@ def process_table(cur, qdrant: QdrantClient, tenant_id: str, warehouse_id: str, 
 
 
 def _cleanup_missing_tables(
-    cur, qdrant: QdrantClient, tenant_id: str, warehouse_id: str, schema_name: str,
+    cur: Any, qdrant: QdrantClient, tenant_id: str, warehouse_id: str, schema_name: str,
     discovered_table_names: set[str], cutoff: datetime,
 ) -> int:
     """Only called for a full-warehouse crawl — removes SchemaCatalog rows
@@ -284,9 +285,9 @@ def _cleanup_missing_tables(
 
 
 def crawl_warehouse(
-    conn, qdrant: QdrantClient, tenant_id: str, warehouse_id: str, conn_params: dict,
+    conn: Any, qdrant: QdrantClient, tenant_id: str, warehouse_id: str, conn_params: dict[str, Any],
     table_names: list[str] | None, full_crawl: bool = False,
-):
+) -> None:
     """Commits once per table (not once for the whole warehouse) — keeps the
     window where a Postgres rollback could leave an already-written Qdrant
     point orphaned (doc §3 / PR review) down to "this one table", instead of
@@ -337,7 +338,7 @@ def crawl_warehouse(
             log.exception("crawl_warehouse | cleanup of missing tables failed warehouse=%s", warehouse_id)
 
 
-def _last_crawled_by_warehouse(cur) -> "dict[tuple[str, str], datetime]":
+def _last_crawled_by_warehouse(cur: Any) -> "dict[tuple[str, str], datetime]":
     """One aggregate query for every (tenant, warehouse)'s most recent
     last_crawled_at, instead of one query per warehouse — crawl_all() now
     runs every POLL_INTERVAL_SECONDS tick (see main()), so an N+1 pattern
@@ -360,7 +361,7 @@ def _is_due(last_crawled_at: "datetime | None") -> bool:
     return (datetime.now(timezone.utc) - last_crawled_at).total_seconds() >= CRAWL_INTERVAL_SECONDS
 
 
-def crawl_all(conn, qdrant: QdrantClient, pending_ddl: "dict[tuple, dict] | None" = None):
+def crawl_all(conn: Any, qdrant: QdrantClient, pending_ddl: "dict[tuple[Any, ...], dict[str, Any]] | None" = None) -> None:
     """pending_ddl, if given, lets already-due DDL events get processed
     between each warehouse of this cron batch instead of only after the
     whole batch finishes — a warehouse list with many tenants/tables can
@@ -391,7 +392,7 @@ def crawl_all(conn, qdrant: QdrantClient, pending_ddl: "dict[tuple, dict] | None
             process_due_ddl_events(conn, qdrant, pending_ddl)
 
 
-def handle_ddl_event(conn, qdrant: QdrantClient, event: dict):
+def handle_ddl_event(conn: Any, qdrant: QdrantClient, event: dict[str, Any]) -> None:
     """doc §2.8 — targeted single-table crawl, called after the debounce
     window in main()'s loop elapses.
 
@@ -431,7 +432,7 @@ def handle_ddl_event(conn, qdrant: QdrantClient, event: dict):
     crawl_warehouse(conn, qdrant, tenant_id, warehouse_id, conn_params, [table_name])
 
 
-def _valid_ddl_event(event) -> bool:
+def _valid_ddl_event(event: Any) -> bool:
     """Schema check before trusting an event enough to even queue it — every
     field must be a non-empty string. Doesn't validate that tenant_id is the
     *correct* owner of warehouse_id (handle_ddl_event() re-derives that from
@@ -442,7 +443,7 @@ def _valid_ddl_event(event) -> bool:
     return all(isinstance(event.get(f), str) and event.get(f) for f in ("tenant_id", "warehouse_id", "table_name"))
 
 
-def poll_ddl_events(consumer: KafkaConsumer, pending_ddl: dict[tuple, dict]) -> None:
+def poll_ddl_events(consumer: KafkaConsumer, pending_ddl: dict[tuple[Any, ...], dict[str, Any]]) -> None:
     """doc §2.8 — one poll cycle: drain whatever's available, (re)stamp each
     table's debounce deadline. A second event for the same table within the
     window overwrites the first's `due` rather than queuing a second
@@ -466,7 +467,7 @@ def poll_ddl_events(consumer: KafkaConsumer, pending_ddl: dict[tuple, dict]) -> 
             log.info("ddl event received, debouncing %ds: %s", DDL_DEBOUNCE_SECONDS, event)
 
 
-def process_due_ddl_events(conn, qdrant: QdrantClient, pending_ddl: dict[tuple, dict]) -> list[dict]:
+def process_due_ddl_events(conn: Any, qdrant: QdrantClient, pending_ddl: dict[tuple[Any, ...], dict[str, Any]]) -> list[dict[str, Any]]:
     """Pops and crawls every entry whose debounce window has elapsed.
     Returns the events actually processed (for logging/tests)."""
     now = time.time()
@@ -497,13 +498,13 @@ def maybe_reconnect_kafka(
     return consumer, now
 
 
-def main():
+def main() -> None:
     conn = wait_for_postgres()
     qdrant = QdrantClient(url=QDRANT_URL)
     ensure_qdrant_collection(qdrant)
     consumer = try_kafka_consumer()
 
-    pending_ddl: dict[tuple, dict] = {}
+    pending_ddl: dict[tuple[Any, ...], dict[str, Any]] = {}
     last_kafka_attempt = time.time()
 
     log.info("schema-crawler-worker started. crawl_interval=%ss kafka=%s", CRAWL_INTERVAL_SECONDS, bool(consumer))

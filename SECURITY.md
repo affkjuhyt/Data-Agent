@@ -84,24 +84,25 @@ with an existing baseline to burn down. Ratchet plan:
 - **ruff** (incl. `BLE` blind-except, `ASYNC` blocking-call lints) is blocking.
 - **Coverage gate** (`fail_under` in `pyproject.toml`) fails the test job on a coverage
   collapse; ratchet upward (35 → 50 → 70) after each measured CI run.
-- **Strict typing** (`mypy --disallow-untyped-defs --disallow-any-generics`): the two
-  innermost, most-reused layers — `libs/basemodel` + `libs/shared` — are kept
-  **strict-clean and enforced BLOCKING** in CI ("Strict typecheck · core libs"). The
-  rest of the tree is report-only. Burn-down backlog (strict-error counts, expand the
-  `pyproject` override + a blocking invocation per layer as each reaches zero):
+- **Strict typing** (`mypy --disallow-untyped-defs --disallow-any-generics`): the
+  **entire Python codebase** — all 3 `libs/` layers and all 15 `services/` — is now
+  **strict-clean and enforced BLOCKING** in CI ("Strict typecheck · core libs +
+  services"). ~1,750 strict errors were driven to zero across the campaign. The CI step
+  runs one mypy invocation **per surface** (services aren't importable packages and share
+  top-level basenames like `config.py`/`app.py`, which collide when checked together);
+  `set -e` fails the job on the first surface that regresses.
 
-  | Layer | strict errors | note |
+  | Surface group | strict errors | note |
   | --- | --- | --- |
-  | `libs/basemodel` | **0** ✅ | enforced |
-  | `libs/shared` | **0** ✅ | enforced |
-  | `libs/database_connector` | **0** ✅ | enforced — all 3 lib layers now strict-clean |
-  | `services/orchestrator` | **0** ✅ | enforced (passed as a path) |
-  | `services/kb_backend` | **0** ✅ | enforced — the largest surface (~335 fixed) |
-  | `services/workflow-runtime` | **0** ✅ | enforced (~230 fixed) |
+  | `libs/{basemodel,database_connector,shared}` | **0** ✅ | enforced — innermost layers |
+  | `services/{orchestrator,kb_backend,workflow-runtime}` | **0** ✅ | enforced — the 3 largest (~670 fixed) |
+  | `services/{auth-api,flow-builder,model-service,minio-service}` | **0** ✅ | enforced |
+  | `services/{release-worker,sandbox-executor,kb-ingestion-worker}` | **0** ✅ | enforced |
+  | `services/{schema-crawler-worker,memory-consumer,audit-bridge,audit-consumer,jwks-refresher}` | **0** ✅ | enforced |
 
-  All three lib layers and the three largest services are now strict-clean and
-  gated. Remaining services (auth-api, flow-builder, workers, …) stay
-  report-only; add each to the blocking step's path list as it reaches zero.
+  Two services (`auth-api`, `release-worker`) had a dynamic `__all__ = [n for n in
+  globals() ...]` that defeated mypy's `import *` resolution in their routers; both were
+  converted to the exact static list the comprehension produced (behaviour-identical).
 
   > Only globs matching real importable packages work in the `pyproject` override;
   > hyphenated service dirs (`services/auth-api`, …) must be enforced by invoking mypy

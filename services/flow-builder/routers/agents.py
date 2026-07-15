@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException
 
@@ -26,7 +27,7 @@ router = APIRouter()
 async def api_create_agent(
     body: CreateAgentRequest,
     x_tenant_id: str = Header(default=None),
-):
+) -> dict[str, Any]:
     tenant_id = x_tenant_id or DEV_TENANT_ID
     ensure_db_available()
     try:
@@ -37,7 +38,7 @@ async def api_create_agent(
 
 
 @router.get("/api/agents")
-async def api_list_agents(x_tenant_id: str = Header(default=None)):
+async def api_list_agents(x_tenant_id: str = Header(default=None)) -> list[dict[str, Any]]:
     tenant_id = x_tenant_id or DEV_TENANT_ID
     ensure_db_available()
     rows = await list_agents(tenant_id)
@@ -45,7 +46,7 @@ async def api_list_agents(x_tenant_id: str = Header(default=None)):
 
 
 @router.get("/api/agents/{agent_id}")
-async def api_get_agent(agent_id: str, x_tenant_id: str = Header(default=None)):
+async def api_get_agent(agent_id: str, x_tenant_id: str = Header(default=None)) -> dict[str, Any]:
     tenant_id = x_tenant_id or DEV_TENANT_ID
     ensure_db_available()
     agent = await get_agent(agent_id, tenant_id=tenant_id)
@@ -56,7 +57,7 @@ async def api_get_agent(agent_id: str, x_tenant_id: str = Header(default=None)):
 
 
 @router.delete("/api/agents/{agent_id}", status_code=204)
-async def api_delete_agent(agent_id: str, x_tenant_id: str = Header(default=None)):
+async def api_delete_agent(agent_id: str, x_tenant_id: str = Header(default=None)) -> None:
     tenant_id = x_tenant_id or DEV_TENANT_ID
     ensure_db_available()
     try:
@@ -71,7 +72,7 @@ async def api_delete_agent(agent_id: str, x_tenant_id: str = Header(default=None
 
 
 @router.patch("/api/agents/{agent_id}")
-async def api_update_agent(agent_id: str, body: UpdateDraftRequest, x_tenant_id: str = Header(default=None)):
+async def api_update_agent(agent_id: str, body: UpdateDraftRequest, x_tenant_id: str = Header(default=None)) -> dict[str, Any]:
     tenant_id = x_tenant_id or DEV_TENANT_ID
     ensure_db_available()
     try:
@@ -82,7 +83,7 @@ async def api_update_agent(agent_id: str, body: UpdateDraftRequest, x_tenant_id:
 
 
 @router.post("/api/agents/{agent_id}/publish")
-async def api_publish_agent(agent_id: str, body: PublishRequest, x_tenant_id: str = Header(default=None)):
+async def api_publish_agent(agent_id: str, body: PublishRequest, x_tenant_id: str = Header(default=None)) -> dict[str, Any]:
     tenant_id = x_tenant_id or DEV_TENANT_ID
     ensure_db_available()
     try:
@@ -95,7 +96,7 @@ async def api_publish_agent(agent_id: str, body: PublishRequest, x_tenant_id: st
 
 
 @router.post("/api/agents/{agent_id}/unpublish")
-async def api_unpublish_agent(agent_id: str, x_tenant_id: str = Header(default=None)):
+async def api_unpublish_agent(agent_id: str, x_tenant_id: str = Header(default=None)) -> dict[str, Any]:
     tenant_id = x_tenant_id or DEV_TENANT_ID
     ensure_db_available()
     try:

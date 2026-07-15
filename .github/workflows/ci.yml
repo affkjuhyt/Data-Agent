@@ -53,7 +53,12 @@ jobs:
         run: |
           for target in \
             libs/basemodel libs/database_connector libs/shared \
-            services/orchestrator services/kb_backend services/workflow-runtime; do
+            services/orchestrator services/kb_backend services/workflow-runtime \
+            services/auth-api services/flow-builder services/model-service \
+            services/minio-service services/release-worker services/sandbox-executor \
+            services/kb-ingestion-worker services/schema-crawler-worker \
+            services/memory-consumer services/audit-bridge services/audit-consumer \
+            services/jwks-refresher; do
             echo "== mypy strict: $target =="
             mypy --disallow-untyped-defs --disallow-any-generics \
                  --ignore-missing-imports --follow-imports=silent "$target"

@@ -1,3 +1,4 @@
+from typing import Any, AsyncIterator
 import asyncio
 import logging
 from contextlib import asynccontextmanager
@@ -11,6 +12,7 @@ from backends.base import (
     RerankRequest, RerankResult, RerankResponse,
     GenerateRequest, GenerateResponse,
     OAIEmbedRequest, OAIEmbedObject, OAIEmbedResponse,
+    EmbedCaller, RerankCaller, ChatCaller,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -19,7 +21,7 @@ log = logging.getLogger("model-service")
 router = APIRouter()
 
 @router.get("/health")
-def health() -> dict:
+def health() -> dict[str, Any]:
     ready = registry.has(Capability.EMBED) and registry.has(Capability.RERANK)
     return {"status": "ok" if ready else "loading", "llm": chat_status(registry)}
 
@@ -32,6 +34,8 @@ def embed(req: EmbedRequest) -> EmbedResponse:
             raise HTTPException(422, f"embedding model_id '{req.model_id}' not in registry "
                                      "(DB sync not complete or not seeded in KBModel)")
         raise HTTPException(503, "no embedding model loaded")
+    if not isinstance(entry.caller, EmbedCaller):
+        raise HTTPException(500, f"model '{entry.name}' is not an embedding backend")
     embeddings = entry.caller.embed(req.texts)
     used_id = str(entry.model_id) if entry.model_id else req.model_id
     return EmbedResponse(embeddings=embeddings, model_id=used_id)
@@ -58,6 +62,8 @@ def rerank(req: RerankRequest) -> RerankResponse:
         if req.model_id:
             raise HTTPException(422, f"rerank model_id '{req.model_id}' not in registry")
         raise HTTPException(503, "no rerank model loaded")
+    if not isinstance(entry.caller, RerankCaller):
+        raise HTTPException(500, f"model '{entry.name}' is not a rerank backend")
     ranked = entry.caller.rerank(req.query, req.documents, req.top_n)
     return RerankResponse(results=[RerankResult(index=i, relevance_score=s) for i, s in ranked])
 
@@ -69,6 +75,8 @@ def generate(req: GenerateRequest) -> GenerateResponse:
         if req.model:
             raise HTTPException(422, f"chat model '{req.model}' not in registry")
         raise HTTPException(503, "no LLM backend available (set REMOTE_LLM_URL)")
+    if not isinstance(entry.caller, ChatCaller):
+        raise HTTPException(500, f"model '{entry.name}' is not a chat backend")
 
     if req.json_schema is not None:
         response_format = {"type": "json_schema",
@@ -103,7 +111,7 @@ def _probe_llm_backend() -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # register model
     bootstrap(registry)
     #Load model

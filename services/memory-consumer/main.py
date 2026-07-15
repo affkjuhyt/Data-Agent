@@ -14,6 +14,7 @@ offset is committed anyway, so one bad message can't block the partition
 forever (audit-consumer instead blocks indefinitely on failure — this is the
 documented improvement, see docs/STM_LTM_Memory_Implementation.md).
 """
+from typing import Any, Optional, cast
 import json
 import logging
 import os
@@ -33,7 +34,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [memory-consumer] %(
 log = logging.getLogger("memory-consumer")
 
 
-def _safe_json(raw: bytes):
+def _safe_json(raw: bytes) -> Any:
     if not raw:
         return None
     try:
@@ -106,7 +107,7 @@ def _qdrant_point_id(tenant_id: str, agent_id: str, user_ref: str, domain: str, 
 
 # ─── Infra bootstrap ────────────────────────────────────────────────────────
 
-def wait_for_postgres(retries: int = 20, delay: int = 5):
+def wait_for_postgres(retries: int = 20, delay: int = 5) -> Any:
     for attempt in range(1, retries + 1):
         try:
             conn = psycopg2.connect(host=DB_HOST, port=DB_PORT, dbname=DB_NAME, user=DB_USER, password=DB_PASS)
@@ -119,7 +120,7 @@ def wait_for_postgres(retries: int = 20, delay: int = 5):
     raise RuntimeError("PostgreSQL unavailable after retries")
 
 
-def _kafka_sasl_kwargs() -> dict:
+def _kafka_sasl_kwargs() -> dict[str, Any]:
     if not KAFKA_SASL_USER:
         return {}
     return dict(
@@ -167,7 +168,7 @@ def wait_for_kafka_producer(retries: int = 30, delay: int = 5) -> KafkaProducer:
     raise RuntimeError("Kafka unavailable after retries")
 
 
-def ensure_qdrant_collection(qdrant: QdrantClient):
+def ensure_qdrant_collection(qdrant: QdrantClient) -> None:
     names = [c.name for c in qdrant.get_collections().collections]
     if QDRANT_COLLECTION not in names:
         qdrant.create_collection(QDRANT_COLLECTION, vectors_config=VectorParams(size=EMBEDDING_DIM, distance=Distance.COSINE))
@@ -176,7 +177,7 @@ def ensure_qdrant_collection(qdrant: QdrantClient):
 
 # ─── LLM calls ───────────────────────────────────────────────────────────────
 
-def call_llm_extract(query: str, response: str) -> list[dict]:
+def call_llm_extract(query: str, response: str) -> list[dict[str, Any]]:
     # .replace() instead of .format() — the template's own JSON example uses
     # literal braces, and query/response are arbitrary user text (code, JSON,
     # math) that could contain them too. .format() would require escaping the
@@ -217,12 +218,12 @@ def embed(text: str) -> list[float]:
         timeout=30,
     )
     r.raise_for_status()
-    return r.json()["data"][0]["embedding"]
+    return cast(list[float], r.json()["data"][0]["embedding"])
 
 
 # ─── Postgres helpers ────────────────────────────────────────────────────────
 
-def fetch_turn(cur, conversation_id: str, message_id: str) -> tuple[str, str]:
+def fetch_turn(cur: Any, conversation_id: str, message_id: str) -> tuple[Optional[str], Optional[str]]:
     """Re-reads the assistant message + the immediately preceding user message.
     Postgres Messages is the source of truth; the Kafka payload is just a pointer."""
     cur.execute('SELECT content, created_at FROM "Messages" WHERE id = %s', (message_id,))
@@ -241,7 +242,7 @@ def fetch_turn(cur, conversation_id: str, message_id: str) -> tuple[str, str]:
     return user_text, assistant_text
 
 
-def get_retention_config(cur, tenant_id: str, domain: str) -> tuple[int | None, int]:
+def get_retention_config(cur: Any, tenant_id: str, domain: str) -> tuple[int | None, int]:
     cur.execute(
         'SELECT retention_days, max_records_per_user FROM "MemoryRetentionConfig" WHERE tenant_id=%s AND domain=%s',
         (tenant_id, domain),
@@ -252,7 +253,7 @@ def get_retention_config(cur, tenant_id: str, domain: str) -> tuple[int | None, 
     return row[0], row[1]
 
 
-def enforce_agent_memories_cap(cur, tenant_id: str, agent_id: str, user_ref: str, domain: str, cap: int):
+def enforce_agent_memories_cap(cur: Any, tenant_id: str, agent_id: str, user_ref: str, domain: str, cap: int) -> None:
     cur.execute(
         """SELECT COUNT(*) FROM "AgentMemories"
            WHERE tenant_id=%s AND agent_id=%s AND user_ref=%s AND domain=%s AND deleted_at IS NULL""",
@@ -277,7 +278,7 @@ def enforce_agent_memories_cap(cur, tenant_id: str, agent_id: str, user_ref: str
 
 # ─── Insight processing (doc §V — 4-decision lifecycle) ────────────────────
 
-def _catch_all_search(qdrant: QdrantClient, vector: list[float], tenant_id: str, agent_id: str, domain: str):
+def _catch_all_search(qdrant: QdrantClient, vector: list[float], tenant_id: str, agent_id: str, domain: str) -> Optional[Any]:
     """Novelty-detection search scoped to catch-all entries only (doc §V
     thresholds), not against controlled-vocab facts — those represent a
     single canonical value per fact_key and have no novelty question to
@@ -322,7 +323,7 @@ def _resolve_catch_all_key(qdrant: QdrantClient, vector: list[float], tenant_id:
     return new_key, "ADD"
 
 
-def _delete_catch_all_match(cur, qdrant: QdrantClient, tenant_id: str, agent_id: str, user_ref: str,
+def _delete_catch_all_match(cur: Any, qdrant: QdrantClient, tenant_id: str, agent_id: str, user_ref: str,
                              domain: str, content: str) -> None:
     """Best-effort match against the user's catch-all facts (doc §V DELETE
     example) — same spirit as cancel_future_memory()'s fuzzy match. No
@@ -351,9 +352,9 @@ def _delete_catch_all_match(cur, qdrant: QdrantClient, tenant_id: str, agent_id:
         log.warning("qdrant delete failed point=%s: %s", hit.id, e)
 
 
-def process_semantic_insight(cur, qdrant: QdrantClient, tenant_id: str, agent_id: str, user_ref: str,
-                              insight: dict, message_id: str, index: int):
-    domain, base_fact_key = _normalize_fact_key(insight.get("domain"), insight.get("fact_key"))
+def process_semantic_insight(cur: Any, qdrant: QdrantClient, tenant_id: str, agent_id: str, user_ref: str,
+                              insight: dict[str, Any], message_id: str, index: int) -> None:
+    domain, base_fact_key = _normalize_fact_key(insight.get("domain") or "", insight.get("fact_key") or "")
     content = (insight.get("content") or "").strip()
     action = insight.get("action", "add")
     is_catch_all = base_fact_key == CATCH_ALL_FACT_KEY
@@ -455,7 +456,7 @@ def _episodic_id(message_id: str, kind: str, index: int) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_OID, f"{message_id}|{kind}|{index}"))
 
 
-def process_episodic_past(cur, tenant_id: str, agent_id: str, user_ref: str, insight: dict, episodic_id: str):
+def process_episodic_past(cur: Any, tenant_id: str, agent_id: str, user_ref: str, insight: dict[str, Any], episodic_id: str) -> None:
     content = (insight.get("content") or "").strip()
     if not content:
         return
@@ -471,7 +472,7 @@ def process_episodic_past(cur, tenant_id: str, agent_id: str, user_ref: str, ins
     )
 
 
-def process_episodic_future(cur, tenant_id: str, agent_id: str, user_ref: str, insight: dict, future_id: str):
+def process_episodic_future(cur: Any, tenant_id: str, agent_id: str, user_ref: str, insight: dict[str, Any], future_id: str) -> None:
     content = (insight.get("content") or "").strip()
     execution_time = insight.get("execution_time")
     if not content or not execution_time:
@@ -485,7 +486,7 @@ def process_episodic_future(cur, tenant_id: str, agent_id: str, user_ref: str, i
     )
 
 
-def cancel_future_memory(cur, tenant_id: str, agent_id: str, user_ref: str, insight: dict):
+def cancel_future_memory(cur: Any, tenant_id: str, agent_id: str, user_ref: str, insight: dict[str, Any]) -> None:
     """Best-effort match against the user's pending reminders (doc §V DELETE example).
     No match -> no-op; ambiguous matches resolve to the soonest one."""
     content = (insight.get("content") or "").strip()
@@ -500,7 +501,7 @@ def cancel_future_memory(cur, tenant_id: str, agent_id: str, user_ref: str, insi
     )
 
 
-def process_insight(cur, qdrant: QdrantClient, tenant_id: str, agent_id: str, user_ref: str, insight: dict, message_id: str, index: int):
+def process_insight(cur: Any, qdrant: QdrantClient, tenant_id: str, agent_id: str, user_ref: str, insight: dict[str, Any], message_id: str, index: int) -> None:
     memory_type = insight.get("memory_type")
     action = insight.get("action", "add")
 
@@ -531,7 +532,7 @@ def process_insight(cur, qdrant: QdrantClient, tenant_id: str, agent_id: str, us
 
 # ─── Event handling ──────────────────────────────────────────────────────────
 
-def handle_event(conn, qdrant: QdrantClient, event: dict):
+def handle_event(conn: Any, qdrant: QdrantClient, event: dict[str, Any]) -> None:
     tenant_id = event["tenant_id"]
     agent_id = event["agent_id"]
     user_ref = event.get("user_ref") or "anonymous"
@@ -566,7 +567,7 @@ def handle_event(conn, qdrant: QdrantClient, event: dict):
     conn.commit()
 
 
-def publish_to_dlq(producer: KafkaProducer, raw_event):
+def publish_to_dlq(producer: KafkaProducer, raw_event: Any) -> None:
     try:
         producer.send(DLQ_TOPIC, value=raw_event)
         producer.flush(timeout=5)
@@ -575,7 +576,7 @@ def publish_to_dlq(producer: KafkaProducer, raw_event):
         log.error("failed to publish to DLQ — event dropped: %s", e)
 
 
-def main():
+def main() -> None:
     conn = wait_for_postgres()
     consumer = wait_for_kafka_consumer()
     dlq_producer = wait_for_kafka_producer()

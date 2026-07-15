@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any, cast
 import asyncio
 import logging
 import os
@@ -33,7 +34,7 @@ def _endpoints(url_env: str, key_env: str) -> list[tuple[str, str | None]]:
 def _discover_name(url: str, api_key: str | None, prefer: str = "id") -> str | None:
     try:
         model = C._get(url, "/v1/models", api_key, timeout=5)["data"][0]
-        return model.get(prefer) or model.get("id")
+        return cast("str | None", model.get(prefer) or model.get("id"))
     except Exception as e:  # noqa: BLE001
         log.warning("Registry: /v1/models discovery failed for %s (%s)", url, e)
         return None
@@ -94,13 +95,13 @@ def bootstrap(registry: Registry) -> None:
 
 
 # ── Postgres: resolve each embed/rerank model's UUID by name (create if missing) ──
-async def _resolve_or_create(conn, model_name: str, task_type: str) -> _uuid.UUID:
+async def _resolve_or_create(conn: asyncpg.Connection, model_name: str, task_type: str) -> _uuid.UUID:
     found = await conn.fetchval(
         'SELECT model_id FROM "KBModel" WHERE model_name = $1 AND task_type = $2 AND is_deleted = false',
         model_name, task_type,
     )
     if found is not None:
-        return found
+        return cast(_uuid.UUID, found)
     new_id = _uuid.uuid4()
     async with conn.transaction():
         await conn.execute(
@@ -140,7 +141,7 @@ async def sync_with_retry(registry: Registry) -> None:
             await asyncio.sleep(delay)
 
 
-def chat_status(registry: Registry) -> dict:
+def chat_status(registry: Registry) -> dict[str, Any]:
     entry = registry.default(Capability.CHAT)
     if entry is None:
         return {"configured": False, "ready": False, "model": None}

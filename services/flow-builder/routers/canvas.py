@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
@@ -10,7 +11,7 @@ router = APIRouter()
 
 
 @router.post("/api/workflow-versions/{workflow_version_id}/canvas")
-async def api_save_canvas(workflow_version_id: str, body: CanvasPayload):
+async def api_save_canvas(workflow_version_id: str, body: CanvasPayload) -> dict[str, Any]:
     try:
         await save_canvas(workflow_version_id, body.nodes, body.edges)
         return {"saved": True, "workflow_version_id": workflow_version_id}
@@ -20,7 +21,7 @@ async def api_save_canvas(workflow_version_id: str, body: CanvasPayload):
 
 
 @router.get("/api/workflow-versions/{workflow_version_id}/canvas")
-async def api_load_canvas(workflow_version_id: str):
+async def api_load_canvas(workflow_version_id: str) -> dict[str, Any]:
     try:
         return await load_canvas(workflow_version_id)
     except Exception as e:

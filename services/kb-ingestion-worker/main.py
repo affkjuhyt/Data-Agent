@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import sys
+from typing import Any
 
 # Project root → services.*, basemodel.*
 # Worker dir  → pipeline stages (silver, gold, conflict_resolver) + the `utils`
@@ -51,7 +52,7 @@ async def _probe_embed_dim(model: ModelServiceClient) -> int:
 
 
 async def _ensure_qdrant_collection(
-    client,
+    client: Any,
     name: str,
     embed_dim: int,
     *,
@@ -82,7 +83,7 @@ async def _ensure_qdrant_collection(
         raise RuntimeError(f"Failed to create Qdrant collection '{name}': {result.error}")
 
 
-async def _ensure_payload_indexes(client) -> None:
+async def _ensure_payload_indexes(client: Any) -> None:
     """Create the payload indexes filtered search depends on. The chunk
     collection's data_id index backs step-2 of 2-step retrieval (doc point ids →
     MatchAny filter on chunk points) — without it filtered HNSW search degrades

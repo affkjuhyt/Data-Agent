@@ -1,3 +1,4 @@
+from typing import Any
 from fastapi import APIRouter
 
 from auth_core import *
@@ -8,17 +9,17 @@ router = APIRouter()
 
 @router.get("/api/auth/ip-allowlist/config")
 def get_ip_config(
-    user: dict = Depends(require_role("platform-admin")),
-):
+    user: dict[str, Any] = Depends(require_role("platform-admin")),
+) -> dict[str, Any]:
     return {"mode": _get_ip_mode()}
 
 
 @router.put("/api/auth/ip-allowlist/config")
 def set_ip_config(
-    body: dict,
+    body: dict[str, Any],
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(require_role("platform-admin")),
-):
+    user: dict[str, Any] = Depends(require_role("platform-admin")),
+) -> dict[str, Any]:
     mode = body.get("mode", "allowlist")
     if mode not in ("allowlist", "allow_all"):
         raise HTTPException(status_code=422, detail="mode must be 'allowlist' or 'allow_all'")
@@ -46,8 +47,8 @@ def set_ip_config(
 @router.get("/api/auth/ip-allowlists")
 def list_ip_allowlists(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(require_role("platform-admin")),
-):
+    user: dict[str, Any] = Depends(require_role("platform-admin")),
+) -> list[dict[str, Any]]:
     conn = get_db()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -65,8 +66,8 @@ def list_ip_allowlists(
 def create_ip_rule(
     body: IPRuleIn,
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(require_role("platform-admin")),
-):
+    user: dict[str, Any] = Depends(require_role("platform-admin")),
+) -> dict[str, Any]:
     try:
         ipaddress.ip_network(body.cidr, strict=False)
     except ValueError:
@@ -95,8 +96,8 @@ def create_ip_rule(
 def toggle_ip_rule(
     rule_id: str = Path(...),
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(require_role("platform-admin")),
-):
+    user: dict[str, Any] = Depends(require_role("platform-admin")),
+) -> dict[str, Any]:
     conn = get_db()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -120,8 +121,8 @@ def toggle_ip_rule(
 def delete_ip_rule(
     rule_id: str = Path(...),
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(require_role("platform-admin")),
-):
+    user: dict[str, Any] = Depends(require_role("platform-admin")),
+) -> None:
     conn = get_db()
     try:
         with conn.cursor() as cur:

@@ -5,6 +5,7 @@ No imports from app/.
 """
 from __future__ import annotations
 
+from typing import Any
 import asyncio
 import logging
 
@@ -34,7 +35,7 @@ async def _route_ingestion_failure(
     *,
     stage: str,
     source_topic: str,
-    event: dict,
+    event: dict[str, Any],
     exc: Exception,
 ) -> None:
     """Retry-or-dead-letter a failed silver/gold document instead of dropping it.
@@ -73,7 +74,7 @@ async def _route_ingestion_failure(
                      "as FAILED — replay manually)", stage, data_id, route_exc)
 
 
-async def _reset_events_for_new_run(db, data_id: str) -> None:
+async def _reset_events_for_new_run(db: Any, data_id: str) -> None:
     """Drop a prior *completed* run's pipeline events before a new run begins.
 
     Events accumulate per data_id (the emitter just resumes the seq counter), so a
@@ -117,7 +118,7 @@ async def consume_loop(
     gold_sem     = asyncio.Semaphore(cfg.GOLD_CONCURRENCY)
     conflict_sem = asyncio.Semaphore(cfg.CONFLICT_CONCURRENCY)
 
-    async def handle_silver(event: dict, data_id: str, tenant_id: str, approved_by: str) -> None:
+    async def handle_silver(event: dict[str, Any], data_id: str, tenant_id: str, approved_by: str) -> None:
         async with silver_sem:
             # Update status/stage but PRESERVE the logs array so the document's
             # full ingestion history is kept across Bronze→Silver→Gold transitions.
@@ -161,7 +162,7 @@ async def consume_loop(
                     producer, stage="silver", source_topic=cfg.KAFKA_TOPIC_SILVER,
                     event=event, exc=exc)
 
-    async def handle_gold(event: dict, data_id: str, tenant_id: str, approved_by: str) -> None:
+    async def handle_gold(event: dict[str, Any], data_id: str, tenant_id: str, approved_by: str) -> None:
         async with gold_sem:
             # Preserve prior (Silver) log entries — only update status/stage so the
             # Gold logs append onto the document's existing history.
@@ -217,7 +218,7 @@ async def consume_loop(
                 return
             await _resolve_conflict(conflict, postgres, qdrant_svc, graph, model)
 
-    async def handler(event: dict) -> None:
+    async def handler(event: dict[str, Any]) -> None:
         stage       = event.get("event", "")
         data_id     = event.get("data_id", "")
         tenant_id   = event.get("tenant_id", "")

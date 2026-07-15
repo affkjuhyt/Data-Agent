@@ -4,6 +4,7 @@ load_dotenv(find_dotenv())
 
 import asyncio
 from contextlib import asynccontextmanager
+from typing import AsyncGenerator
 
 from libs.shared.logger import setup_logging
 
@@ -21,7 +22,7 @@ from libs.shared.observability import setup_observability
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_db()
     await init_mongo()
 

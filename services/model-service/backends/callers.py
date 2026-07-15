@@ -9,6 +9,7 @@ and a model with a quirky endpoint is just edited in place.
 Only the stdlib HTTP helpers are shared (urllib, so the image needs no extra dep)."""
 from __future__ import annotations
 
+from typing import Any, cast
 import json
 import urllib.request
 
@@ -16,7 +17,7 @@ import config as cfg
 
 
 # HTTP helpers
-def _post(base_url: str, path: str, payload: dict, api_key: str | None = None) -> dict:
+def _post(base_url: str, path: str, payload: dict[str, Any], api_key: str | None = None) -> dict[str, Any]:
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -27,16 +28,16 @@ def _post(base_url: str, path: str, payload: dict, api_key: str | None = None) -
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=cfg.REMOTE_TIMEOUT) as r:
-        return json.loads(r.read().decode("utf-8"))
+        return cast(dict[str, Any], json.loads(r.read().decode("utf-8")))
 
 
-def _get(base_url: str, path: str, api_key: str | None = None, timeout: float = 30) -> dict:
+def _get(base_url: str, path: str, api_key: str | None = None, timeout: float = 30) -> dict[str, Any]:
     headers = {}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     req = urllib.request.Request(base_url + path, headers=headers, method="GET")
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8"))
+        return cast(dict[str, Any], json.loads(r.read().decode("utf-8")))
 
 # EMBED
 class VietnameseEmbedCaller:
@@ -48,17 +49,17 @@ class VietnameseEmbedCaller:
         if not texts:
             return []
         data = _post(self._url, "/embed", {"texts": texts}, self._key)
-        return data["embeddings"]
+        return cast(list[list[float]], data["embeddings"])
 
 
 class MultilingualE5SmallCaller:
-    def __init__(self, handle) -> None:
+    def __init__(self, handle: Any) -> None:
         self._handle = handle
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-        return self._handle.encode(texts, normalize_embeddings=True).tolist()
+        return cast(list[list[float]], self._handle.encode(texts, normalize_embeddings=True).tolist())
 
 
 # RERANK
@@ -89,17 +90,17 @@ class CloudflareQwenChatCaller:
             self._model = _get(self._url, "/v1/models", self._key)["data"][0]["id"]
         return self._model
 
-    def chat(self, messages: list[dict], response_format: dict | None, **opts) -> str:
+    def chat(self, messages: list[dict[str, Any]], response_format: dict[str, Any] | None, **opts: Any) -> str:
         params = {**self._defaults, **{k: v for k, v in opts.items() if v is not None}}
-        body: dict = {"model": self._model_id(), "messages": messages, "stream": False, **params}
+        body: dict[str, Any] = {"model": self._model_id(), "messages": messages, "stream": False, **params}
         if response_format is not None:
             body["response_format"] = response_format
         data = _post(self._url, "/v1/chat/completions", body, self._key)
         return (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
 
     def generate(self, prompt: str, system_prompt: str = "",
-                 response_format: dict | None = None, **opts) -> str:
-        messages: list[dict] = []
+                 response_format: dict[str, Any] | None = None, **opts: Any) -> str:
+        messages: list[dict[str, Any]] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
@@ -116,17 +117,17 @@ class LlamaServerChatCaller:
         self._model = "qwen3-8b-instruct"
         self._defaults = {"temperature": 0.1, "max_tokens": 512}
 
-    def chat(self, messages: list[dict], response_format: dict | None, **opts) -> str:
+    def chat(self, messages: list[dict[str, Any]], response_format: dict[str, Any] | None, **opts: Any) -> str:
         params = {**self._defaults, **{k: v for k, v in opts.items() if v is not None}}
-        body: dict = {"model": self._model, "messages": messages, "stream": False, **params}
+        body: dict[str, Any] = {"model": self._model, "messages": messages, "stream": False, **params}
         if response_format is not None:
             body["response_format"] = response_format
         data = _post(self._url, "/v1/chat/completions", body, self._key)
         return (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
 
     def generate(self, prompt: str, system_prompt: str = "",
-                 response_format: dict | None = None, **opts) -> str:
-        messages: list[dict] = []
+                 response_format: dict[str, Any] | None = None, **opts: Any) -> str:
+        messages: list[dict[str, Any]] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})

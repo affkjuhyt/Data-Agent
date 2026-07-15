@@ -19,7 +19,7 @@ def create_app() -> FastAPI:
     app.include_router(governance.router)
 
     @app.on_event("startup")
-    async def startup():
+    async def startup() -> None:
         await run_startup_tasks()
 
     return app

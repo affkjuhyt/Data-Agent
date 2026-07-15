@@ -5,6 +5,7 @@ so silver.py needs no changes.
 """
 from __future__ import annotations
 
+from typing import Any
 import asyncio
 import logging
 import os
@@ -100,8 +101,8 @@ def _table_description(name: str, headers: list[str], rows: list[list[str]]) -> 
     return desc
 
 
-def _build_parsed_tables(doc) -> list[dict | None]:
-    result: list[dict | None] = []
+def _build_parsed_tables(doc: Any) -> list[dict[str, Any] | None]:
+    result: list[dict[str, Any] | None] = []
     for idx, table_item in enumerate(doc.tables):
         data = table_item.data
         if not data.grid:
@@ -128,12 +129,12 @@ def _build_parsed_tables(doc) -> list[dict | None]:
     return result
 
 
-def _iter_chunks(doc, parsed_tables: list[dict | None], max_chars: int) -> Generator[dict, None, None]:
+def _iter_chunks(doc: Any, parsed_tables: list[dict[str, Any] | None], max_chars: int) -> Generator[dict[str, Any], None, None]:
     doc_idx = 0
     chunk_idx = 0
     buf: list[str] = []
 
-    def flush() -> dict | None:
+    def flush() -> dict[str, Any] | None:
         nonlocal chunk_idx
         text = "\n\n".join(buf).strip()
         buf.clear()
@@ -184,7 +185,7 @@ def _iter_chunks(doc, parsed_tables: list[dict | None], max_chars: int) -> Gener
         yield chunk
 
 
-def _run_parse_sync(file_bytes: bytes, extension: str, max_chunk_chars: int = MAX_CHUNK_CHARS) -> dict:
+def _run_parse_sync(file_bytes: bytes, extension: str, max_chunk_chars: int = MAX_CHUNK_CHARS) -> dict[str, Any]:
     if _converter is None:
         raise RuntimeError("Converter not loaded — call load_converter() first")
     suffix = f".{extension.lstrip('.')}"
