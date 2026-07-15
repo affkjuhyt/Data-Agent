@@ -6,10 +6,12 @@ from fastapi import FastAPI
 
 import config
 from basemodel.services_databaseconnector.shared_model import RetryConfig
-from routers.orchestrate import router as orchestrate_router
+from executor.agent_client import close_shared_client
 from routers.reviews import router as reviews_router
 from routers.stream import router as stream_router
+from routers.traces import router as traces_router
 from services.database_connector.redis_connector import RedisClient
+from services.shared.observability import setup_observability
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,8 @@ async def lifespan(app: FastAPI):
     redis_health_task = asyncio.create_task(redis_client.health_check_loop())
 
     yield
+    # shutdown
+    await close_shared_client()
 
     redis_health_task.cancel()
     try:
@@ -51,7 +55,11 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(title="GTEL Orchestrator", version="0.1.0", lifespan=lifespan)
-    app.include_router(orchestrate_router)
+    # OTEL tracing (FastAPI + httpx auto-instrument) — traceparent header tự
+    # inject khi agent_client.py gọi workflow-runtime, và tự extract phía bên
+    # kia. Đây là nền cho việc nối 1 trace Langfuse xuyên 2 service.
+    setup_observability("orchestrator", app)
     app.include_router(reviews_router)
     app.include_router(stream_router)
+    app.include_router(traces_router)
     return app

@@ -332,6 +332,114 @@ async def _upsert_entity(
               canonical, raw, incoming_aliases)
 
 
+# ── Resolution helpers (extracted from normalize_entities_detailed for SRP) ────
+
+def _clean_raw_entities(raw_entities: list[dict]) -> list[dict]:
+    """NFC-normalise + strip each raw entity's name/description/aliases/type and drop
+    the unnamed ones. Returns the cleaned list the resolution loop iterates over."""
+    return [
+        {
+            "name":        unicodedata.normalize("NFC", entity["name"]).strip(),
+            "description": (entity.get("description") or "").strip(),
+            "entity_type": (entity.get("type") or "").strip().lower(),
+            "aliases":     [
+                unicodedata.normalize("NFC", alias).strip()
+                for alias in (entity.get("aliases") or [])
+                if isinstance(alias, str) and alias.strip()
+            ],
+        }
+        for entity in raw_entities
+        if isinstance(entity, dict) and entity.get("name", "").strip()
+    ]
+
+
+async def _resolve_embedded_entity(
+    qdrant: AsyncQdrantClient,
+    postgres: PostgresClient,
+    tenant_id: str,
+    entry: dict,
+    embedding: list[float],
+    verify_fn,
+    knowledge_base: str,
+    embed_model_id: str,
+) -> dict:
+    """Three-band merge decision for ONE alias-missed entity that now has an
+    embedding, then persist (upsert + alias learning) the resolved canonical.
+
+    Bands (e5 cosines overlap between same/different-entity pairs):
+      1. type guard — a specific-type mismatch always blocks the merge
+      2. score >= ENTITY_SIMILARITY_THRESHOLD → merge
+      3. score >= ENTITY_VERIFY_BAND → merge only if verify_fn confirms
+    Returns the detail dict {raw, aliases, canonical, action, similarity}. Learning
+    is safe here: this branch is reached only for a near-exact or LLM-confirmed
+    merge, or for a brand-new canonical — never for unverified embedding proximity.
+    """
+    raw, aliases, description = entry["name"], entry["aliases"], entry["description"]
+    canonical_candidate = to_canonical(raw)
+    surface_forms = [raw, *aliases]
+
+    merged_to: str | None = None
+    action = "new"
+    score_out: float | None = None
+    candidate = await _best_candidate(qdrant, tenant_id, embedding)
+    if candidate:
+        cand_canonical, score, cand_payload = candidate
+        score_out = round(score, 4)
+        if _types_conflict(entry["entity_type"], cand_payload.get("entity_type", "")):
+            log.info(
+                "entity_registry | type guard: %r (%s) vs %r (%s) score=%.3f — no merge",
+                raw, entry["entity_type"],
+                cand_payload.get("display_name", cand_canonical),
+                cand_payload.get("entity_type"), score,
+            )
+        elif score >= cfg.ENTITY_SIMILARITY_THRESHOLD:
+            merged_to, action = cand_canonical, "matched_hard"
+        elif verify_fn is not None:
+            confirmed = await verify_fn(
+                raw, description,
+                cand_payload.get("display_name", cand_canonical),
+                cand_payload.get("description", ""),
+            )
+            if confirmed:
+                merged_to, action = cand_canonical, "matched_verified"
+            else:
+                log.info(
+                    "entity_registry | merge-verify rejected: %r vs %r score=%.3f",
+                    raw, cand_payload.get("display_name", cand_canonical), score,
+                )
+
+    canonical = merged_to or canonical_candidate
+    await _upsert_entity(
+        qdrant, tenant_id, canonical, raw, aliases, description, embedding,
+        entity_type=entry["entity_type"],
+        knowledge_base=knowledge_base, embed_model_id=embed_model_id,
+    )
+    await _register_aliases(postgres, tenant_id, canonical, surface_forms)
+    return {
+        "raw":        raw,
+        "aliases":    aliases,
+        "canonical":  canonical,
+        "action":     action,
+        "similarity": score_out,
+    }
+
+
+def _dedupe_by_canonical(
+    names: list[str], details: list[dict],
+) -> tuple[list[str], list[dict]]:
+    """Collapse the positional (name, detail) lists to unique canonicals, first
+    occurrence winning, dropping empty placeholders."""
+    seen: set[str] = set()
+    out_names: list[str] = []
+    out_details: list[dict] = []
+    for name, detail in zip(names, details):
+        if name and name not in seen:
+            seen.add(name)
+            out_names.append(name)
+            out_details.append(detail)
+    return out_names, out_details
+
+
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 async def normalize_entities(
@@ -375,20 +483,7 @@ async def normalize_entities_detailed(
             action     — "matched_alias" | "matched_hard" | "matched_soft" | "new"
             similarity — cosine score if embedding-matched, None otherwise
     """
-    cleaned_entities = [
-        {
-            "name":        unicodedata.normalize("NFC", entity["name"]).strip(),
-            "description": (entity.get("description") or "").strip(),
-            "entity_type": (entity.get("type") or "").strip().lower(),
-            "aliases":     [
-                unicodedata.normalize("NFC", alias).strip()
-                for alias in (entity.get("aliases") or [])
-                if isinstance(alias, str) and alias.strip()
-            ],
-        }
-        for entity in raw_entities
-        if isinstance(entity, dict) and entity.get("name", "").strip()
-    ]
+    cleaned_entities = _clean_raw_entities(raw_entities)
     if not cleaned_entities:
         return [], []
 
@@ -397,6 +492,7 @@ async def normalize_entities_detailed(
     # Entities whose embedding lookup is still needed (alias misses).
     needs_embedding: list[tuple[int, dict]] = []
 
+    # Pass 1 — exact alias lookup (deterministic, no embedding).
     for idx, entry in enumerate(cleaned_entities):
         result.append("")   # placeholder, filled below
         details.append({})
@@ -416,6 +512,7 @@ async def normalize_entities_detailed(
         else:
             needs_embedding.append((idx, entry))
 
+    # Pass 2 — embedding-based three-band resolution for the alias misses.
     if needs_embedding:
         try:
             embeddings = await model.embed(
@@ -426,99 +523,22 @@ async def normalize_entities_detailed(
             embeddings = None
 
         for pos, (idx, entry) in enumerate(needs_embedding):
-            raw                 = entry["name"]
-            aliases             = entry["aliases"]
-            description         = entry["description"]
-            canonical_candidate = to_canonical(raw)
+            canonical_candidate = to_canonical(entry["name"])
             if not canonical_candidate:
                 continue
-            surface_forms = [raw, *aliases]
-
             if embeddings is None:
+                # No embeddings → register nothing, just use the canonical form.
                 result[idx] = canonical_candidate
                 details[idx] = {
-                    "raw": raw, "aliases": aliases, "canonical": canonical_candidate,
-                    "action": "new", "similarity": None,
+                    "raw": entry["name"], "aliases": entry["aliases"],
+                    "canonical": canonical_candidate, "action": "new", "similarity": None,
                 }
                 continue
+            detail = await _resolve_embedded_entity(
+                qdrant, postgres, tenant_id, entry, embeddings[pos], verify_fn,
+                knowledge_base, embed_model_id,
+            )
+            result[idx] = detail["canonical"]
+            details[idx] = detail
 
-            embedding = embeddings[pos]
-
-            # Three-band merge decision (e5 cosines overlap between same-entity
-            # and different-entity pairs, so the bands are: auto / verify / new):
-            #   1. type guard — specific-type mismatch always blocks
-            #   2. score >= ENTITY_SIMILARITY_THRESHOLD → merge
-            #   3. score >= ENTITY_VERIFY_BAND → merge only if verify_fn confirms
-            merged_to: str | None = None
-            action = "new"
-            score_out: float | None = None
-            candidate = await _best_candidate(qdrant, tenant_id, embedding)
-            if candidate:
-                cand_canonical, score, cand_payload = candidate
-                score_out = round(score, 4)
-                if _types_conflict(entry["entity_type"], cand_payload.get("entity_type", "")):
-                    log.info(
-                        "entity_registry | type guard: %r (%s) vs %r (%s) score=%.3f — no merge",
-                        raw, entry["entity_type"],
-                        cand_payload.get("display_name", cand_canonical),
-                        cand_payload.get("entity_type"), score,
-                    )
-                elif score >= cfg.ENTITY_SIMILARITY_THRESHOLD:
-                    merged_to, action = cand_canonical, "matched_hard"
-                elif verify_fn is not None:
-                    confirmed = await verify_fn(
-                        raw, description,
-                        cand_payload.get("display_name", cand_canonical),
-                        cand_payload.get("description", ""),
-                    )
-                    if confirmed:
-                        merged_to, action = cand_canonical, "matched_verified"
-                    else:
-                        log.info(
-                            "entity_registry | merge-verify rejected: %r vs %r score=%.3f",
-                            raw, cand_payload.get("display_name", cand_canonical), score,
-                        )
-
-            if merged_to:
-                result[idx] = merged_to
-                details[idx] = {
-                    "raw":        raw,
-                    "aliases":    aliases,
-                    "canonical":  merged_to,
-                    "action":     action,
-                    "similarity": score_out,
-                }
-                # Learning is allowed here precisely because the merge was either
-                # near-exact or LLM-confirmed — unverified embedding proximity
-                # never reaches this branch.
-                await _register_aliases(postgres, tenant_id, merged_to, surface_forms)
-                await _upsert_entity(
-                    qdrant, tenant_id, merged_to, raw, aliases, description, embedding,
-                    entity_type=entry["entity_type"],
-                    knowledge_base=knowledge_base, embed_model_id=embed_model_id,
-                )
-            else:
-                await _upsert_entity(
-                    qdrant, tenant_id, canonical_candidate, raw, aliases, description, embedding,
-                    entity_type=entry["entity_type"],
-                    knowledge_base=knowledge_base, embed_model_id=embed_model_id,
-                )
-                await _register_aliases(postgres, tenant_id, canonical_candidate, surface_forms)
-                result[idx] = canonical_candidate
-                details[idx] = {
-                    "raw":        raw,
-                    "aliases":    aliases,
-                    "canonical":  canonical_candidate,
-                    "action":     "new",
-                    "similarity": score_out,
-                }
-
-    seen: set[str] = set()
-    deduped_names: list[str] = []
-    deduped_details: list[dict] = []
-    for name, detail in zip(result, details):
-        if name and name not in seen:
-            seen.add(name)
-            deduped_names.append(name)
-            deduped_details.append(detail)
-    return deduped_names, deduped_details
+    return _dedupe_by_canonical(result, details)

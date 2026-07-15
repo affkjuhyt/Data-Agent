@@ -11,7 +11,7 @@ import aioboto3
 from botocore.exceptions import ClientError
 
 from basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
-from services.log_set_up import create_logger
+from services.shared.logger import create_logger
 
 log = create_logger("services.minio", "service_minio")
 

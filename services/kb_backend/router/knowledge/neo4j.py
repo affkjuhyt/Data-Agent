@@ -2,10 +2,10 @@
 from fastapi import APIRouter, Depends, Request
 
 from basemodel.services_databaseconnector.shared_model import ResponseModel
-from services.kb_backend.UI_model.knowledge import RequestNeo4jQuery
+from services.kb_backend.schemas import Neo4jQueryRequest
 from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc
-from services.kb_backend.pipeline.kb_ui_operation.neo4j_ops import get_graph, get_schema, run_cypher
+from services.kb_backend.operations.neo4j_ops import get_graph, get_schema, run_cypher
 
 router = APIRouter(prefix="/api/knowledge/neo4j", tags=["Knowledge-Neo4j"])
 
@@ -32,7 +32,7 @@ async def get_schema_route(request: Request, ctx: dict = Depends(authenticate)):
 
 @router.post("/query", response_model=ResponseModel)
 async def run_cypher_route(
-    body: RequestNeo4jQuery, request: Request, ctx: dict = Depends(authenticate),
+    body: Neo4jQueryRequest, request: Request, ctx: dict = Depends(authenticate),
 ):
     result = await run_cypher(
         neo4j=svc(request, "neo4j"),

@@ -2,20 +2,20 @@
 from fastapi import APIRouter, Depends, Query, Request
 
 from basemodel.services_databaseconnector.shared_model import ResponseModel
-from services.kb_backend.UI_model.policy import (
-    RequestCreateFilterPolicy, RequestUpdateFilterPolicy, RequestExtractionCustom,
+from services.kb_backend.schemas import (
+    CreateFilterPolicyRequest, UpdateFilterPolicyRequest, UpdateExtractionPolicyRequest,
 )
 from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
-from services.kb_backend.pipeline.kb_ui_operation.policy_ops import (
+from services.kb_backend.operations.policy_ops import (
     list_filter_policies, create_filter_policy, update_filter_policy,
     delete_filter_policy, get_extraction_policy, update_extraction_policy,
 )
 
 router = APIRouter(prefix="/api/knowledge/policies", tags=["Knowledge-Policies"])
 
-_DEFAULT_TENANT = "a0000000-0000-0000-0000-000000000001"
+from services.kb_backend.config import DEFAULT_TENANT_ID as _DEFAULT_TENANT
 
 
 @router.get("/filtering", response_model=ResponseModel)
@@ -34,7 +34,7 @@ async def list_filter_policies_route(
 
 @router.post("/filtering", response_model=ResponseModel)
 async def create_filter_policy_route(
-    body: RequestCreateFilterPolicy, request: Request, ctx: dict = Depends(require_perm("add_filtering_policy")),
+    body: CreateFilterPolicyRequest, request: Request, ctx: dict = Depends(require_perm("add_filtering_policy")),
 ):
     result = await create_filter_policy(
         postgres=svc(request, "postgres"),
@@ -49,7 +49,7 @@ async def create_filter_policy_route(
 
 @router.put("/filtering/{policy_id}", response_model=ResponseModel)
 async def update_filter_policy_route(
-    policy_id: str, body: RequestUpdateFilterPolicy,
+    policy_id: str, body: UpdateFilterPolicyRequest,
     request: Request, ctx: dict = Depends(require_perm("edit_filtering_policy")),
 ):
     result = await update_filter_policy(
@@ -83,7 +83,7 @@ async def get_extraction_policy_route(request: Request, ctx: dict = Depends(auth
 
 @router.put("/extraction/custom", response_model=ResponseModel)
 async def update_extraction_policy_route(
-    body: RequestExtractionCustom, request: Request, ctx: dict = Depends(require_perm("edit_extraction_policy")),
+    body: UpdateExtractionPolicyRequest, request: Request, ctx: dict = Depends(require_perm("edit_extraction_policy")),
 ):
     result = await update_extraction_policy(
         postgres=svc(request, "postgres"),

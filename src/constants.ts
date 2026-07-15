@@ -26,6 +26,7 @@ import {
   ScrollText,
   PlugZap,
   Webhook,
+  Workflow,
 } from 'lucide-react';
 import { Role, NavItem } from './types';
 
@@ -57,6 +58,7 @@ export const MODULE_SUB_ITEMS: Record<string, SubNavItem[]> = {
     { id: 'AGENTS',    label: 'Agents',    icon: Bot },
     { id: 'ROUTER',    label: 'Router',    icon: Route,    comingSoon: true },
     { id: 'KNOWLEDGE', label: 'Knowledge', icon: Database },
+    { id: 'WORKFLOWS', label: 'Workflows', icon: Workflow },
     { id: 'TOOLS',     label: 'Tools',     icon: Wrench,   comingSoon: true },
   ],
 

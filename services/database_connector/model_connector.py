@@ -3,7 +3,7 @@ import asyncio
 import httpx
 
 from basemodel.services_databaseconnector.shared_model import HealthCheckLoopConfig, RetryConfig
-from services.log_set_up import create_logger
+from services.shared.logger import create_logger
 
 log = create_logger("services.model", "service_model")
 

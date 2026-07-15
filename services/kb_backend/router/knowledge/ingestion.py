@@ -7,15 +7,16 @@ import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 
 from basemodel.services_databaseconnector.postgres_model import (
     Language, SourceType, Document, Image, Video, Web, Warehouse,
 )
+from services.kb_backend.config import ROLE_PERMISSION_IDS
+from services.kb_backend.schemas import PromoteResponse, WebIngestRequest
 from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
-from services.kb_backend.pipeline.kb_ui_operation.document_ops import (
+from services.kb_backend.operations.document_ops import (
     fetch_one as _fetch_doc, name_exists as _name_exists,
 )
 from services.kb_backend.pipeline.ingestion import config as cfg
@@ -24,16 +25,6 @@ from services.kb_backend.pipeline.ingestion.bronze import BronzeUploadRequest, W
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/pipeline/ingestion", tags=["Ingestion"])
-
-# Maps an app role literal (from the Kong-injected X-Role) to the RolePermissions.id
-# stamped on a newly ingested KBData row (KBData.role_id FK). These UUIDs MUST match
-# the RolePermissions rows seeded in infra/Postgres/seed.sql.
-DEV_ROLE_PERMISSION_IDS: dict[str, str] = {
-    "PLATFORM_ADMIN":    "00000000-0000-0000-0000-000000000010",
-    "AI_ENGINEER":       "00000000-0000-0000-0000-000000000011",
-    "BUSINESS_OPERATOR": "00000000-0000-0000-0000-000000000012",
-    "EXECUTIVE":         "00000000-0000-0000-0000-000000000013",
-}
 
 _META_CLS = {
     SourceType.DOC:       Document,
@@ -45,11 +36,6 @@ _META_CLS = {
 
 _TERMINAL_STATUSES = {"PUBLISHED", "FAILED"}
 
-
-class PromoteResponse(BaseModel):
-    data_id: str
-    stage: str
-    message: str
 
 
 async def _fetch_kbdata_or_404(postgres, tenant_id: str, data_id: str) -> dict:
@@ -67,7 +53,7 @@ async def _fetch_kbdata_or_404(postgres, tenant_id: str, data_id: str) -> dict:
 
 async def _log_promotion_queued(mongo, data_id: str, stage: str) -> None:
     """Upsert the ingestion-log doc marking a promotion to `stage` as queued."""
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
     db = mongo.get_client()
     await db["kb_ingestion_logs"].update_one(
         {"data_id": data_id},
@@ -134,7 +120,7 @@ async def ingest_bronze(
 
     # Map role name → RolePermissions UUID; fall back to role as-is if already a UUID.
     # Role comes from headers (X-Role), not request body
-    resolved_role_id = str(DEV_ROLE_PERMISSION_IDS.get(ctx["role"], ctx["role"]))
+    resolved_role_id = str(ROLE_PERMISSION_IDS.get(ctx["role"], ctx["role"]))
 
     log.info("POST /ingestion/bronze tenant=%s source=%s size=%d", ctx["tenant_id"], src, len(file_bytes))
     try:
@@ -165,19 +151,10 @@ async def ingest_bronze(
         raise HTTPException(status_code=500, detail="Ingestion failed")
 
 
-class WebIngestBody(BaseModel):
-    name: str
-    url: str
-    web_name: str | None = None
-    language: str = "english"
-    abstract: str | None = None
-    knowledge_base_id: str | None = None
-
-
 @router.post("/bronze/web")
 async def ingest_bronze_web(
     request: Request,
-    body: WebIngestBody,
+    body: WebIngestRequest,
     ctx: dict = Depends(require_perm("add_data")),
 ):
     """
@@ -207,7 +184,7 @@ async def ingest_bronze_web(
             detail=f"A document named '{name}' already exists. Choose a different Knowledge Name.",
         )
 
-    resolved_role_id = str(DEV_ROLE_PERMISSION_IDS.get(ctx["role"], ctx["role"]))
+    resolved_role_id = str(ROLE_PERMISSION_IDS.get(ctx["role"], ctx["role"]))
     log.info("POST /ingestion/bronze/web tenant=%s url=%s", ctx["tenant_id"], url)
     try:
         return await svc(request, "ingestion").bronze_web(

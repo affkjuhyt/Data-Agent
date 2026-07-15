@@ -15,6 +15,8 @@ volumes:
   qdrant_data:
   neo4j_data:
   neo4j_logs:
+  langfuse_clickhouse_data:
+  langfuse_clickhouse_logs:
   ollama_models:
   hf_cache:
 
@@ -31,7 +33,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./sql/create-extra-dbs.sql:/docker-entrypoint-initdb.d/01-create-dbs.sql:ro
-      - ./Postgres/init.sql:/docker-entrypoint-initdb.d/02-kb-tables.sql:ro
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/02-kb-tables.sql:ro
       - ./sql/init.sql:/docker-entrypoint-initdb.d/03-app-schema.sql:ro
       - ./sql/release-init.sql:/docker-entrypoint-initdb.d/04-release-schema.sql:ro
     ports:
@@ -43,6 +45,7 @@ services:
       retries: 10
 
   mongo:
+    profiles: [kb, authoring, runtime, release]
     image: mongo:7.0
     container_name: dataagent-mongo
     restart: unless-stopped
@@ -60,6 +63,7 @@ services:
       start_period: 20s
 
   redis:
+    profiles: [kb, authoring, runtime, release, observability]
     image: redis:7-alpine
     container_name: dataagent-redis
     restart: unless-stopped
@@ -74,6 +78,7 @@ services:
       retries: 5
 
   qdrant:
+    profiles: [kb, runtime]
     image: qdrant/qdrant:v1.13.6
     container_name: dataagent-qdrant
     restart: unless-stopped
@@ -83,6 +88,7 @@ services:
       - qdrant_data:/qdrant/storage
 
   neo4j:
+    profiles: [kb, runtime]
     build:
       context: ./Neo4j
     container_name: knowledge_graph_neo4j
@@ -204,6 +210,7 @@ services:
 
   # Kafka
   kafka:
+    profiles: [kb, runtime, iam, release]
     build:
       context: ..
       dockerfile: infra/kafka/Dockerfile
@@ -249,6 +256,7 @@ services:
 
   # MinIO
   minio:
+    profiles: [kb, release, observability, runtime]
     image: minio/minio:RELEASE.2024-01-16T16-07-38Z
     container_name: dataagent-minio
     restart: unless-stopped
@@ -270,6 +278,7 @@ services:
 
   #ElasticSearch
   elasticsearch:
+    profiles: [observability]
     image: elasticsearch:8.12.0
     container_name: dataagent-elasticsearch
     restart: unless-stopped
@@ -284,6 +293,7 @@ services:
 
   #Jaeger
   jaeger:
+    profiles: [observability]
     image: jaegertracing/all-in-one:1.55
     container_name: dataagent-jaeger
     restart: unless-stopped
@@ -295,6 +305,7 @@ services:
 
   # Openbao
   openbao:
+    profiles: [iam, runtime]
     image: openbao/openbao:latest
     container_name: dataagent-openbao
     restart: unless-stopped
@@ -310,6 +321,7 @@ services:
 
   # Litellm
   litellm:
+    profiles: [kb, runtime]
     image: ghcr.io/berriai/litellm:main-stable
     container_name: dataagent-litellm
     restart: unless-stopped
@@ -331,19 +343,121 @@ services:
       redis:
         condition: service_started
 
-  #Langfuse
-  langfuse:
-    image: langfuse/langfuse:2
-    container_name: dataagent-langfuse
+  # Langfuse v3 — SDK Python v3 (OTEL-based, dùng trong services/orchestrator,
+  # services/workflow-runtime) yêu cầu self-hosted server ≥ 3.125.0, KHÔNG
+  # tương thích server v2. v3 tách write-path (Clickhouse cho trace/observation,
+  # MinIO cho blob lớn, Redis cho queue) khỏi Postgres (chỉ còn giữ org/user/
+  # API-key). Xem: https://langfuse.com/self-hosting/upgrade-guides/upgrade-v2-to-v3
+  clickhouse:
+    profiles: [observability, testdb]
+    image: docker.io/clickhouse/clickhouse-server
+    container_name: dataagent-clickhouse
     restart: unless-stopped
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-dev-clickhouse-pw-changeme}
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+    ports:
+      # 9000 bị MinIO chiếm ở host rồi (xem service minio dưới) — đổi cổng host,
+      # cổng nội bộ trong docker network vẫn là clickhouse:9000 như bình thường.
+      - "127.0.0.1:8123:8123"
+      - "127.0.0.1:9002:9000"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  # Tạo bucket "langfuse" trên MinIO có sẵn (dùng chung instance với bucket
+  # "knowledge-base", KHÔNG cần MinIO riêng) — chạy 1 lần rồi thoát.
+  langfuse-minio-init:
+    profiles: [observability]
+    image: minio/mc
+    container_name: dataagent-langfuse-minio-init
+    restart: "no"
+    entrypoint: >
+      sh -c "mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minio} ${MINIO_ROOT_PASSWORD:-minio_secret} &&
+             mc mb --ignore-existing local/langfuse &&
+             echo 'MinIO: langfuse bucket ready.'"
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  langfuse-worker: &langfuse-worker-def
+    profiles: [observability]
+    image: docker.io/langfuse/langfuse-worker:3
+    container_name: dataagent-langfuse-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      clickhouse:
+        condition: service_healthy
+      langfuse-minio-init:
+        condition: service_completed_successfully
+    environment: &langfuse-env
+      NEXTAUTH_URL: http://localhost:3001
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/langfuse
+      SALT: ${LANGFUSE_SALT:-dev-langfuse-salt-changeme}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-420a3155e0050c9931ae7c80c6bb7adf7af9648ec64e4f97164ca66c0dbeecad}
+      TELEMETRY_ENABLED: "false"
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-dev-clickhouse-pw-changeme}
+      # Clickhouse của mình single-node, không có Zookeeper/cluster — thiếu biến
+      # này Langfuse tự hiểu nhầm là cluster mode, chạy DDL "ON CLUSTER" và lỗi.
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
+      # URL browser dùng để tải media đính kèm trực tiếp từ MinIO — đổi thành
+      # IP/hostname thật của máy nếu truy cập Langfuse UI từ máy khác.
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://localhost:9000
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      # KHÔNG set REDIS_AUTH (kể cả rỗng) — redis service hiện tại không bật
+      # auth (redis:7-alpine mặc định). Set "" vẫn khiến Langfuse gửi lệnh AUTH
+      # (bị Redis từ chối vì server không có password nào cả) — phải bỏ hẳn key.
+
+  langfuse:
+    profiles: [observability]
+    <<: *langfuse-worker-def
+    image: docker.io/langfuse/langfuse:3
+    container_name: dataagent-langfuse
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      clickhouse:
+        condition: service_healthy
+      langfuse-minio-init:
+        condition: service_completed_successfully
+      langfuse-worker:
+        condition: service_started
     ports:
       - "3001:3000"
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/langfuse
+      <<: *langfuse-env
       NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-dev-langfuse-nextauth-secret-changeme}
-      SALT: ${LANGFUSE_SALT:-dev-langfuse-salt-changeme}
-      NEXTAUTH_URL: http://localhost:3001
-      TELEMETRY_ENABLED: "false"
       LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_EMAIL:-admin@example.com}
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_PASSWORD:-Admin@12345678}
       LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_NAME:-Admin}
@@ -352,63 +466,13 @@ services:
       LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
       LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
       AUTH_DISABLE_SIGNUP: "false"
-    depends_on:
-      postgres:
-        condition: service_healthy
 
-  workflow-runtime:
-    build:
-      context: ..
-      dockerfile: services/workflow-runtime/Dockerfile
-    container_name: dataagent-workflow-runtime
-    restart: unless-stopped
-    ports:
-      - "8001:8001"
-    env_file: ../.env
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
-      RUNTIME_DB_URL: postgresql+asyncpg://runtime_writer:${RUNTIME_DB_PASSWORD:-runtime_dev_pw}@postgres:5432/${POSTGRES_DB:-dataagent}
-      MONGODB_URL: mongodb://mongo:27017/dataagent
-      REDIS_URL: redis://redis:6379
-      LITELLM_BASE_URL: http://litellm:4000
-      LANGFUSE_HOST: http://langfuse:3000
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
-      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
-      QDRANT_URL: http://qdrant:6333
-      EMBEDDING_DIM: "1024"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      mongo:
-        condition: service_started
-      redis:
-        condition: service_started
-      litellm:
-        condition: service_started
-
-  flow-builder:
-    build:
-      context: ..
-      dockerfile: services/flow-builder/Dockerfile
-    container_name: dataagent-flow-builder
-    restart: unless-stopped
-    ports:
-      - "8002:8002"
-    env_file: ../.env
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
-      MONGODB_URL: mongodb://mongo:27017/dataagent
-    depends_on:
-      postgres:
-        condition: service_healthy
-      mongo:
-        condition: service_started
-
-  # Local LLM backend on the host GPU. model-service /generate forwards here.
-  # Requires NVIDIA GPU + Docker GPU support (Docker Desktop WSL2 / nvidia-container-toolkit).
-  # First start has no model — pull it once:
-  #   docker exec dataagent-ollama ollama pull llama3.1:8b
   ollama:
+    # In-Docker LLM backend — CPU-only on macOS: running an 8B model here pegs all
+    # cores and is very slow. NOT in the `kb` profile. On macOS prefer the NATIVE
+    # ollama (Metal GPU) that model-service points at via host.docker.internal.
+    # Use `--profile models up ollama` only if you deliberately want the CPU backend.
+    profiles: [models]
     image: ollama/ollama
     container_name: dataagent-ollama
     restart: unless-stopped
@@ -425,6 +489,7 @@ services:
     #           capabilities: [gpu]
 
   model-service:
+    profiles: [kb, runtime]
     build:
       context: ./model-service
     container_name: dataagent-model-service
@@ -436,8 +501,11 @@ services:
       # ./model-service/models and the dim of the Qdrant collections.
       EMBED_MODEL: ${EMBED_MODEL:-intfloat/multilingual-e5-small}
       RERANK_MODEL: ${RERANK_MODEL:-cross-encoder/mmarco-mMiniLMv2-L12-H384-v1}
-      # LLM gateway → local Ollama (GPU). /generate forwards to REMOTE_LLM_URL + /v1/...
-      REMOTE_LLM_URL: ${REMOTE_LLM_URL:-http://ollama:11434}
+      # LLM gateway → NATIVE ollama on the Mac host (Metal GPU = fast, doesn't peg
+      # CPU). Requires host ollama to listen on all interfaces:
+      #   launchctl setenv OLLAMA_HOST 0.0.0.0 && (restart ollama)
+      # For the in-Docker CPU backend instead: set REMOTE_LLM_URL=http://ollama:11434.
+      REMOTE_LLM_URL: ${REMOTE_LLM_URL:-http://host.docker.internal:11434}
       REMOTE_LLM_MODEL: ${REMOTE_LLM_MODEL:-llama3.1:8b}
     volumes:
       # Weights are no longer baked into the image — they download here on first
@@ -451,40 +519,8 @@ services:
       # First start downloads the embed + rerank models into the volume above.
       start_period: 300s
 
-  kb-backend:
-    build:
-      context: ..
-      dockerfile: infra/Dockerfile.kb
-    container_name: dataagent-kb-backend
-    restart: unless-stopped
-    # Gateway-only: not published to the host. Reachable solely via Kong
-    # (http://kb-backend:8000 on the shared network). With KB_DEV_AUTH unset the
-    # backend is fail-closed — it rejects any request lacking X-Kong-Verified.
-    # For direct local dev without Kong, re-add `ports: ["8050:8000"]` and set
-    # KB_DEV_AUTH=true below.
-    expose:
-      - "8000"
-    environment:
-      POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/${POSTGRES_DB:-dataagent}
-      QDRANT_URL: http://qdrant:6333
-      NEO4J_URI: bolt://neo4j:7687
-      MODEL_SERVICE_URL: http://model-service:8001
-      # MinIO creds: the Dockerfile default password is wrong — pin to the real root creds.
-      MINIO_URL: http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-minio_secret}@minio:9000
-      MINIO_BUCKET: knowledge-base
-      # Plaintext Kafka listener (this client has no SASL support).
-      KAFKA_URL: kafka:9094
-    depends_on:
-      postgres:
-        condition: service_healthy
-      qdrant:
-        condition: service_started
-      neo4j:
-        condition: service_healthy
-      model-service:
-        condition: service_healthy
-
   kb-ingestion-worker:
+    profiles: [kb]
     build:
       context: ..
       dockerfile: infra/kb-ingestion-worker/Dockerfile
@@ -514,198 +550,4 @@ services:
       neo4j:
         condition: service_healthy
       model-service:
-        condition: service_healthy
-
-
-  auth-api:
-    build:
-      context: ../services
-      dockerfile: auth-api/Dockerfile
-    container_name: dataagent-auth-api
-    restart: unless-stopped
-    ports:
-      - "8200:8200"
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
-      KONG_ADMIN_URL: http://kong:8001
-      OPENBAO_ADDR: http://openbao:8200
-    volumes:
-      - openbao_data:/openbao/data:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
-      openbao:
-        condition: service_started
-
-
-  minio-service:
-    build:
-      context: ../services
-      dockerfile: minio-service/Dockerfile
-    container_name: dataagent-minio-service
-    restart: unless-stopped
-    ports:
-      - "8400:8400"
-    environment:
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
-    depends_on:
-      minio:
-        condition: service_healthy
-
-
-  release-worker:
-    build:
-      context: ../services
-      dockerfile: release-worker/Dockerfile
-    container_name: dataagent-release-worker
-    restart: unless-stopped
-    ports:
-      - "8100:8100"
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
-      KAFKA_BOOTSTRAP: kafka:9092
-      KAFKA_USERNAME: release-worker
-      KAFKA_PASSWORD: ${RELEASE_WORKER_KAFKA_PASSWORD}
-      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
-      KAFKA_SASL_MECHANISM: PLAIN
-      CELERY_BROKER: redis://redis:6379/0
-      KONG_ADMIN_URL: http://kong:8001
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
-      MONGO_URI: mongodb://mongo:27017
-      MONGO_DB: dataagent
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      mongo:
-        condition: service_healthy
-
-  audit-bridge:
-    build:
-      context: ../services
-      dockerfile: audit-bridge/Dockerfile
-    container_name: dataagent-audit-bridge
-    restart: unless-stopped
-    environment:
-      KEYCLOAK_URL: http://keycloak:8080
-      KEYCLOAK_REALM: aeroflow
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      KAFKA_TOPIC: audit.auth.events
-      KAFKA_SASL_USERNAME: audit-bridge
-      KAFKA_SASL_PASSWORD: ${AUDIT_BRIDGE_KAFKA_PASSWORD}
-      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
-      KAFKA_SASL_MECHANISM: PLAIN
-      POLL_INTERVAL_SECONDS: "10"
-      STATE_FILE: /data/last_event_time.txt
-    volumes:
-      - audit_bridge_data:/data
-    depends_on:
-      kafka:
-        condition: service_healthy
-      keycloak:
-        condition: service_started
-
-  audit-consumer:
-    build:
-      context: ../services
-      dockerfile: audit-consumer/Dockerfile
-    container_name: dataagent-audit-consumer
-    restart: unless-stopped
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      KAFKA_TOPIC: audit.auth.events
-      KAFKA_GROUP_ID: audit-consumer-group
-      KAFKA_SASL_USERNAME: audit-consumer
-      KAFKA_SASL_PASSWORD: ${AUDIT_CONSUMER_KAFKA_PASSWORD}
-      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
-      KAFKA_SASL_MECHANISM: PLAIN
-      DB_HOST: postgres
-      DB_PORT: "5432"
-      DB_NAME: ${POSTGRES_DB:-dataagent}
-      DB_USER: ${POSTGRES_USER:-admin}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
-    depends_on:
-      kafka:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-
-  jwks-refresher:
-    build:
-      context: ../services
-      dockerfile: jwks-refresher/Dockerfile
-    container_name: dataagent-jwks-refresher
-    restart: unless-stopped
-    environment:
-      KEYCLOAK_URL: http://keycloak:8080
-      KEYCLOAK_REALM: aeroflow
-      KONG_ADMIN_URL: http://kong:8001
-      KONG_CONSUMER: keycloak-users
-      REFRESH_INTERVAL_SECONDS: "300"
-      JWKS_STATE_FILE: /data/last_kid.txt
-    volumes:
-      - jwks_refresher_data:/data
-    depends_on:
-      keycloak:
-        condition: service_started
-      kong:
-        condition: service_healthy
-
-  orchestrator:
-    build:
-      context: ..
-      dockerfile: services/orchestrator/Dockerfile
-    container_name: dataagent-orchestrator
-    restart: unless-stopped
-    env_file: ../.env
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
-      LITELLM_BASE_URL: http://litellm:4000
-      LITELLM_API_KEY: ${LITELLM_API_KEY:-sk-dev}
-      WORKFLOW_RUNTIME_URL: http://workflow-runtime:8001
-      LANGFUSE_HOST: http://langfuse:3000
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-change-me}
-      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-change-me}
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
-      OTEL_SERVICE_NAME: orchestrator
-    depends_on:
-      postgres:
-        condition: service_healthy
-      litellm:
-        condition: service_started
-      workflow-runtime:
-        condition: service_started
-
-  frontend:
-    build:
-      context: ..
-      dockerfile: infra/Dockerfile.dev
-    container_name: dataagent-frontend
-    restart: unless-stopped
-    volumes:
-      - ..:/app
-      - /app/node_modules
-    ports:
-      - "5173:3000"
-    environment:
-      VITE_KEYCLOAK_URL: http://localhost:8080
-      VITE_KEYCLOAK_REALM: aeroflow
-      VITE_KEYCLOAK_CLIENT: aeroflow-frontend
-      VITE_API_BASE_URL: http://localhost:8000
-    depends_on:
-      keycloak:
-        condition: service_started
-      kong:
         condition: service_healthy

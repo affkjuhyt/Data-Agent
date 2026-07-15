@@ -13,7 +13,7 @@ from basemodel.services_databaseconnector.shared_model import ResponseModel
 from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
-from services.kb_backend.pipeline.kb_ui_operation.trash_ops import list_trash, restore, flush
+from services.kb_backend.operations.trash_ops import list_trash, restore, flush
 
 router = APIRouter(prefix="/api/knowledge/trash", tags=["Knowledge-Trash"])
 

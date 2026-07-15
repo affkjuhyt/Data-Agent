@@ -1,0 +1,141 @@
+{
+  "info": {
+    "name": "KB Pipeline Smoke Test (dev, no-JWT)",
+    "description": "Kiểm thử luồng KB: upload(bronze) -> promote silver -> promote gold -> retrieve.\nGọi qua Kong :8000. Auth dev bằng cách forge header X-Kong-* (route kb-route KHÔNG gắn JWT plugin — CHỈ dùng cho local dev).\nĐổi collection variables cho khớp môi trường. `data_id` tự set sau bước Upload.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000" },
+    { "key": "tenant_id", "value": "a0000000-0000-0000-0000-000000000001" },
+    { "key": "user_id", "value": "00000000-0000-0000-0000-000000000099" },
+    { "key": "user_name", "value": "platform-admin" },
+    { "key": "roles", "value": "platform-admin" },
+    { "key": "role_id", "value": "00000000-0000-0000-0000-000000000010" },
+    { "key": "kb_id", "value": "00000000-0000-0003-0000-000000000001" },
+    { "key": "data_id", "value": "" }
+  ],
+  "auth": { "type": "noauth" },
+  "item": [
+    {
+      "name": "0. List documents (kiểm tra auth)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "X-Kong-Verified", "value": "true" },
+          { "key": "X-Tenant-Id", "value": "{{tenant_id}}" },
+          { "key": "X-User-Id", "value": "{{user_id}}" },
+          { "key": "X-User-Name", "value": "{{user_name}}" },
+          { "key": "X-User-Roles", "value": "{{roles}}" },
+          { "key": "X-Role-Id", "value": "{{role_id}}" }
+        ],
+        "url": { "raw": "{{base_url}}/api/data/documents", "host": ["{{base_url}}"], "path": ["api","data","documents"] }
+      }
+    },
+    {
+      "name": "1. Upload (bronze)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const j = pm.response.json();",
+              "const id = j.data_id || (j.data && j.data.data_id);",
+              "if (id) { pm.collectionVariables.set('data_id', id); console.log('data_id =', id); }",
+              "pm.test('bronze ok', () => pm.expect(pm.response.code).to.be.oneOf([200,201]));"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-Kong-Verified", "value": "true" },
+          { "key": "X-Tenant-Id", "value": "{{tenant_id}}" },
+          { "key": "X-User-Id", "value": "{{user_id}}" },
+          { "key": "X-User-Name", "value": "{{user_name}}" },
+          { "key": "X-User-Roles", "value": "{{roles}}" },
+          { "key": "X-Role-Id", "value": "{{role_id}}" }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "file", "type": "file", "src": [], "description": "Chọn 1 file .md/.pdf/.docx — Docling parse được" },
+            { "key": "name", "value": "KB Smoke Test {{$timestamp}}", "type": "text", "description": "Tên tài liệu (unique toàn hệ thống)" },
+            { "key": "abstract", "value": "tai lieu test", "type": "text" },
+            { "key": "language", "value": "vietnamese", "type": "text", "description": "english | vietnamese" },
+            { "key": "source_type", "value": "doc", "type": "text", "description": "doc | web | image | video | warehouse" },
+            { "key": "doc_metadata", "value": "{\"doc_type\":\"regulation\",\"author\":\"tester\",\"published_date\":null}", "type": "text" },
+            { "key": "knowledge_base_id", "value": "{{kb_id}}", "type": "text" }
+          ]
+        },
+        "url": { "raw": "{{base_url}}/api/pipeline/ingestion/bronze", "host": ["{{base_url}}"], "path": ["api","pipeline","ingestion","bronze"] }
+      }
+    },
+    {
+      "name": "2. Promote silver",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-Kong-Verified", "value": "true" },
+          { "key": "X-Tenant-Id", "value": "{{tenant_id}}" },
+          { "key": "X-User-Id", "value": "{{user_id}}" },
+          { "key": "X-User-Name", "value": "{{user_name}}" },
+          { "key": "X-User-Roles", "value": "{{roles}}" },
+          { "key": "X-Role-Id", "value": "{{role_id}}" }
+        ],
+        "url": { "raw": "{{base_url}}/api/pipeline/ingestion/promote/{{data_id}}/silver", "host": ["{{base_url}}"], "path": ["api","pipeline","ingestion","promote","{{data_id}}","silver"] }
+      }
+    },
+    {
+      "name": "3. Xem logs (theo dõi tiến độ)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "X-Kong-Verified", "value": "true" },
+          { "key": "X-Tenant-Id", "value": "{{tenant_id}}" },
+          { "key": "X-User-Id", "value": "{{user_id}}" },
+          { "key": "X-User-Name", "value": "{{user_name}}" },
+          { "key": "X-User-Roles", "value": "{{roles}}" },
+          { "key": "X-Role-Id", "value": "{{role_id}}" }
+        ],
+        "url": { "raw": "{{base_url}}/api/pipeline/ingestion/documents/{{data_id}}/logs", "host": ["{{base_url}}"], "path": ["api","pipeline","ingestion","documents","{{data_id}}","logs"] }
+      }
+    },
+    {
+      "name": "4. Promote gold",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-Kong-Verified", "value": "true" },
+          { "key": "X-Tenant-Id", "value": "{{tenant_id}}" },
+          { "key": "X-User-Id", "value": "{{user_id}}" },
+          { "key": "X-User-Name", "value": "{{user_name}}" },
+          { "key": "X-User-Roles", "value": "{{roles}}" },
+          { "key": "X-Role-Id", "value": "{{role_id}}" }
+        ],
+        "url": { "raw": "{{base_url}}/api/pipeline/ingestion/promote/{{data_id}}/gold", "host": ["{{base_url}}"], "path": ["api","pipeline","ingestion","promote","{{data_id}}","gold"] }
+      }
+    },
+    {
+      "name": "5. Retrieve (LightRAG)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-Kong-Verified", "value": "true" },
+          { "key": "X-Tenant-Id", "value": "{{tenant_id}}" },
+          { "key": "X-User-Id", "value": "{{user_id}}" },
+          { "key": "X-User-Name", "value": "{{user_name}}" },
+          { "key": "X-User-Roles", "value": "{{roles}}" },
+          { "key": "X-Role-Id", "value": "{{role_id}}" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"Nghị định 13 quy định gì về bảo vệ dữ liệu cá nhân?\",\n  \"knowledge_base\": \"\"\n}"
+        },
+        "url": { "raw": "{{base_url}}/api/pipeline/light-rag/retrieve", "host": ["{{base_url}}"], "path": ["api","pipeline","light-rag","retrieve"] }
+      }
+    }
+  ]
+}

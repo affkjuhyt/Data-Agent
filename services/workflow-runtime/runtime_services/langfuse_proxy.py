@@ -1,6 +1,7 @@
 import base64
 import logging
 import os
+from typing import Optional
 
 import httpx
 from fastapi.responses import JSONResponse
@@ -8,7 +9,10 @@ from fastapi.responses import JSONResponse
 logger = logging.getLogger(__name__)
 
 
-async def get_trace_observations(conv_id: str):
+async def get_trace_observations(
+    conv_id: str,
+    trace_id: Optional[str] = None,
+):
     public_key = os.environ.get("LANGFUSE_PUBLIC_KEY")
     secret_key = os.environ.get("LANGFUSE_SECRET_KEY")
     host = os.environ.get("LANGFUSE_HOST", "http://localhost:3001")
@@ -21,6 +25,20 @@ async def get_trace_observations(conv_id: str):
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
+            if trace_id:
+                # Orchestrated mode: trả về TẤT CẢ observations của trace.
+                # BFS để filter descendants được xử lý client-side (getDescendants trong frontend).
+                obs_resp = await client.get(
+                    f"{host}/api/public/observations",
+                    # Langfuse v3's /api/public/observations validate limit <= 100.
+                    params={"traceId": trace_id, "limit": 100},
+                    headers=auth_headers,
+                )
+                obs_resp.raise_for_status()
+                return {"observations": obs_resp.json().get("data", []), "traceId": trace_id}
+
+            # Standalone fallback: agent chạy trực tiếp không qua orchestrator,
+            # workflow-runtime tạo trace riêng với sessionId=conv_id.
             traces_response = await client.get(
                 f"{host}/api/public/traces",
                 params={"sessionId": conv_id},
@@ -32,8 +50,6 @@ async def get_trace_observations(conv_id: str):
             if not traces:
                 return {"observations": []}
 
-            # Chỉ lấy trace mới nhất (1 turn chat = 1 trace)
-            # Gộp tất cả traces sẽ khiến UI hiểu nhầm multiple turns là retry
             latest = max(traces, key=lambda t: t.get("timestamp", ""))
             obs_resp = await client.get(
                 f"{host}/api/public/observations",
@@ -44,7 +60,7 @@ async def get_trace_observations(conv_id: str):
             return {"observations": obs_resp.json().get("data", []), "traceId": latest["id"]}
 
     except httpx.HTTPStatusError as e:
-        logger.error("langfuse proxy HTTP error: %s", e.response.status_code)
+        logger.error("langfuse proxy HTTP error: %s body=%s", e.response.status_code, e.response.text)
         return JSONResponse(status_code=502, content={"detail": f"Langfuse HTTP {e.response.status_code}"})
     except Exception:
         logger.exception("langfuse proxy error")

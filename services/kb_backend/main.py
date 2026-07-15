@@ -9,7 +9,6 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from basemodel.services_databaseconnector.postgres_orm.base import Base
-import basemodel.services_databaseconnector.postgres_orm  # noqa: F401 — registers ORM models
 
 from basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
 from services.database_connector.postgres_connector import PostgresClient

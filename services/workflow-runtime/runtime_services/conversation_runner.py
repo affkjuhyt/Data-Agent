@@ -9,7 +9,6 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.types import Command
 
 from config_loader import load_agent_config
 from db import create_conversation, get_messages, save_message, save_trace, validate_agent_tenant
@@ -25,10 +24,43 @@ from memory_middleware import (
     retrieve_pending_reminders,
 )
 from workflow_memory import record_workflow_outcome, retrieve_workflow_memory
-from observability import get_langfuse_handler
+from observability import get_langchain_callback_handler, flush_langfuse
 from schemas import RunRequest
+from services.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
 
 logger = logging.getLogger(__name__)
+
+_FAKE_STREAM_WORD_DELAY = 0.02  # giây/từ — hiệu ứng gõ chữ khi replay text đã duyệt xong
+
+
+def _strip_think_and_options(text: str) -> tuple[str, list[str] | None]:
+    """Xử lý 1 lần trên TOÀN BỘ text (không cần incremental nữa — đã có sẵn cả
+    chuỗi vì responder không còn stream live) — bỏ <think>...</think>, tách
+    <OPTIONS>...</OPTIONS> ra riêng."""
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    text = re.sub(r"<think>.*", "", text, flags=re.DOTALL)  # thiếu close tag (bị cắt max_tokens)
+
+    options: list[str] | None = None
+    match = re.search(r"<OPTIONS>(.*?)</OPTIONS>", text, flags=re.DOTALL)
+    if match:
+        try:
+            parsed = json.loads(match.group(1).strip())
+            if isinstance(parsed, list) and parsed:
+                options = [str(o) for o in parsed[:3]]
+        except (json.JSONDecodeError, ValueError):
+            pass
+        text = text[:match.start()] + text[match.end():]
+    else:
+        open_match = re.search(r"<OPTIONS>.*", text, flags=re.DOTALL)
+        if open_match:
+            text = text[:open_match.start()]
+
+    return text.strip(), options
+
+
+def _chunk_words(text: str) -> list[str]:
+    words = text.split(" ")
+    return [w if i == 0 else " " + w for i, w in enumerate(words)]
 
 
 class _LRUCache:
@@ -103,7 +135,7 @@ _DATA_TOOL_TASK_TYPE = {
     "text_to_pandas": "report_gen",
 }
 
-_SKIP_TRACE_NODES = frozenset({"LangGraph", "join_retrieval", "join_end"})
+_SKIP_TRACE_NODES = frozenset({"LangGraph", "join_retrieval", "join_end", "judge_phase1"})
 
 def _skip_trace(name: str) -> bool:
     return name in _SKIP_TRACE_NODES or name.startswith(("_route", "route_"))
@@ -180,6 +212,9 @@ async def run_conversation_stream(req: RunRequest, request: Request):
     # see. Kong-style convention: comma-separated roles already verified
     # upstream (see tests/integration/conftest.py headers_factory).
     cfg["user_roles"] = [r.strip() for r in request.headers.get("X-User-Roles", "").split(",") if r.strip()]
+    # Strip verbose build-time fields — không cần runtime, chỉ làm Langfuse input thêm to
+    cfg.pop("flow_nodes", None)
+    cfg.pop("flow_edges", None)
     if not await validate_agent_tenant(agent_id, tenant_id):
         return JSONResponse(status_code=403, content={"detail": "Agent not found or access denied"})
 
@@ -240,7 +275,6 @@ async def run_conversation_stream(req: RunRequest, request: Request):
     history = compress_tool_results(history)
 
     conv_id = req.conversation_id or await create_conversation(
-        agent_version_id=cfg.get("agent_version_id", None),
         user_ref=user_ref,
         channel=request.headers.get("X-Channel", "web"),
         tenant_id=tenant_id,
@@ -261,62 +295,50 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         "judge_verdict": None,
         "judge_error_type": None,
         "judge_reason": None,
+        "judge_phase1_error": None,
         "human_approved": None,
         "human_note": None,
         "rrf_results": [],
         "reranked_chunks": [],
         "response": "",
         "suggestions": [],
-        "guardrail_triggered": False,
-        "guardrail_message": "",
-        "guardrail_stage": None,
-        "guardrail_reason": None,
         "intent": None,
         "language": None,
         "config": cfg,
     }
 
-    handler = get_langfuse_handler(
-        run_name=f"conv-{conv_id or 'new'}",
-        session_id=conv_id,
-        user_id=user_ref,
-        metadata={
-            "agent_id": agent_id,
-            "agent_version_id": cfg.get("agent_version_id"),
-            "tenant_id": tenant_id,
-            "channel": request.headers.get("X-Channel", "web"),
-            "responder_model": cfg.get("responder_model"),
-            "planner_model": cfg.get("planner_model"),
-        },
-    )
+    # Nếu request đến từ orchestrator, traceparent header (W3C) đã được
+    # FastAPIInstrumentor (app.py) extract thành OTEL context hiện hành —
+    # get_langchain_callback_handler() tự nối span vào đúng trace đó. Nếu gọi
+    # thẳng workflow-runtime (không qua orchestrator, vd. test agent lẻ trong
+    # agent-builder), fallback tạo trace riêng với session_id=conv_id.
+    handler = get_langchain_callback_handler(conv_id=conv_id)
     callbacks = [handler] if handler else []
 
-    _OPTIONS_OPEN  = "<OPTIONS>"
-    _OPTIONS_CLOSE = "</OPTIONS>"
-    _THINK_OPEN    = "<think>"
-    _THINK_CLOSE   = "</think>"
+    guardrail_cfg = req.guardrail_cfg.model_dump() if req.guardrail_cfg else {}
 
     async def event_stream():
         full_response: list[str] = []
-        guardrail_triggered = False
-        guardrail_msg = ""
-        guardrail_stage = None
-        guardrail_reason = None
-        # selective buffering để chặn <OPTIONS> tag khỏi frontend
-        pending = ""           # giữ tạm token cuối để detect prefix của <OPTIONS>
-        options_mode = False   # True khi đã qua <OPTIONS>
-        options_buffer = ""    # nội dung sau <OPTIONS>
-        think_mode = False     # True khi đang trong <think>...</think>
-        think_buffer = ""      # buffer think content (bị discard)
         started_at = time.monotonic()
 
         pending_suggestions: list[str] | None = None
+        pending_charts: list[dict] | None = None
+        # Khai báo sớm (trước try) — nếu exception xảy ra trước khi được gán
+        # lại bên dưới, khối finally vẫn tham chiếu được an toàn.
+        responder_options: list[str] | None = None
 
         # per-node trace tracking
         node_start_times: dict[str, float] = {}
         node_traces: list[dict] = []
         detected_language: str | None = None
         detected_intent: str | None = None
+
+        # Race Judge (tự chạy trong graph, có thể khiến responder chạy lại
+        # nhiều lần) + Guardrail output check trên CÙNG 1 bản text — mỗi lần
+        # responder sinh ra bản mới, huỷ task check của bản cũ (sắp lỗi thời
+        # nếu Judge yêu cầu sinh lại), bắn task check mới cho bản hiện tại.
+        last_responder_text = ""
+        guardrail_task: asyncio.Task | None = None
 
         lg_config = {"callbacks": callbacks, "configurable": {"thread_id": conv_id}}
 
@@ -350,108 +372,44 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                                     "status":     tt.get("status", "success"),
                                 })
                     # node-specific logic
-                    if node == "guardrail_input":
-                        out = event["data"].get("output", {})
-                        if isinstance(out, dict) and out.get("guardrail_triggered"):
-                            guardrail_triggered = True
-                            guardrail_msg    = out.get("guardrail_message", "")
-                            guardrail_stage  = out.get("guardrail_stage")
-                            guardrail_reason = out.get("guardrail_reason")
-                    elif node == "suggestion":
+                    if node == "suggestion":
                         out = event["data"].get("output", {})
                         if isinstance(out, dict):
                             topics = out.get("suggestions", [])
                             if topics:
                                 pending_suggestions = topics
+                    elif node == "visualization":
+                        out = event["data"].get("output", {})
+                        if isinstance(out, dict) and out.get("chart_specs"):
+                            pending_charts = out["chart_specs"]
                     elif node == "planner":
                         out = event["data"].get("output", {})
                         if isinstance(out, dict):
                             detected_language = out.get("language")
                             detected_intent   = out.get("intent")
+                    elif node == "responder":
+                        out = event["data"].get("output", {})
+                        text = out.get("response", "") if isinstance(out, dict) else ""
+                        last_responder_text = text
+                        # Bản trước (nếu có) sắp lỗi thời — Judge vừa cho responder
+                        # chạy lại, huỷ kết quả check dở dang của bản cũ.
+                        if guardrail_task and not guardrail_task.done():
+                            guardrail_task.cancel()
+                        guardrail_task = asyncio.create_task(
+                            llm_guardrail_check(text, guardrail_cfg, check_type="output")
+                        )
 
-                elif kind == "on_chat_model_stream" and node == "responder":
-                    token = event["data"]["chunk"].content or ""
-                    if not token:
-                        continue
+            # Graph đã chạy xong hẳn — nếu có Judge, nghĩa là đã PASS hoặc hết
+            # loop_max_iterations (force-accept); last_responder_text là bản
+            # duy nhất đáng tin. Không có gì được gửi ra SSE cho tới đây.
 
-                    # Strip <think>...</think> — discard toàn bộ thinking block
-                    if think_mode:
-                        think_buffer += token
-                        if _THINK_CLOSE in think_buffer:
-                            token = think_buffer.split(_THINK_CLOSE, 1)[1]
-                            think_mode = False
-                            think_buffer = ""
-                        else:
-                            continue
-                        if not token:
-                            continue
-                    elif _THINK_OPEN in (pending + token):
-                        combined = pending + token
-                        idx = combined.find(_THINK_OPEN)
-                        before = combined[:idx]
-                        if before:
-                            full_response.append(before)
-                            yield f"data: {json.dumps(before)}\n\n"
-                        pending = ""
-                        think_mode = True
-                        think_buffer = combined[idx + len(_THINK_OPEN):]
-                        continue
-
-                    if options_mode:
-                        options_buffer += token
-                    else:
-                        pending += token
-                        tag_pos = pending.find(_OPTIONS_OPEN)
-                        if tag_pos != -1:
-                            # flush text trước tag, bắt đầu buffer options
-                            before = pending[:tag_pos]
-                            if before:
-                                full_response.append(before)
-                                yield f"data: {json.dumps(before)}\n\n"
-                            options_mode = True
-                            options_buffer = pending[tag_pos + len(_OPTIONS_OPEN):]
-                            pending = ""
-                        else:
-                            # flush phần chắc chắn không phải prefix của <OPTIONS>
-                            max_hold = len(_OPTIONS_OPEN) - 1
-                            flush_to = len(pending)
-                            for hold in range(min(max_hold, len(pending)), 0, -1):
-                                if _OPTIONS_OPEN.startswith(pending[-hold:]):
-                                    flush_to = len(pending) - hold
-                                    break
-                            to_send = pending[:flush_to]
-                            if to_send:
-                                full_response.append(to_send)
-                                yield f"data: {json.dumps(to_send)}\n\n"
-                            pending = pending[flush_to:]
-
-            # flush pending còn lại (không phải <OPTIONS>)
-            if pending:
-                full_response.append(pending)
-                yield f"data: {json.dumps(pending)}\n\n"
-
-            # parse responder options nếu có
-            responder_options: list[str] | None = None
-            if options_mode:
-                close_pos = options_buffer.find(_OPTIONS_CLOSE)
-                if close_pos != -1:
-                    try:
-                        parsed = json.loads(options_buffer[:close_pos].strip())
-                        if isinstance(parsed, list) and parsed:
-                            responder_options = [str(o) for o in parsed[:3]]
-                    except (json.JSONDecodeError, Exception):
-                        pass
-                # fallback: </OPTIONS> bị thiếu (LLM cắt giữa chừng / max_tokens hit)
-                if not responder_options:
-                    fallback = options_buffer.replace(_OPTIONS_CLOSE, "").strip()
-                    if fallback:
-                        full_response.append(fallback)
-                        yield f"data: {json.dumps(fallback)}\n\n"
-
-            # Detect interrupt (human_approval node đang chờ reviewer)
+            # Detect interrupt (human_approval node đang chờ reviewer) — nếu có,
+            # chưa tới lúc đánh giá output (chưa chắc đây là bản cuối).
             try:
                 snap = graph.get_state(lg_config)
                 if snap.next:
+                    if guardrail_task and not guardrail_task.done():
+                        guardrail_task.cancel()
                     interrupt_payload = None
                     for task in snap.tasks:
                         for intr in getattr(task, "interrupts", []):
@@ -470,21 +428,54 @@ async def run_conversation_stream(req: RunRequest, request: Request):
             except Exception:
                 pass  # graph không có checkpointer → skip
 
-            if guardrail_triggered:
-                yield f"data: {json.dumps('Xin lỗi, tôi không thể trả lời câu hỏi này.')}\n\n"
-            elif responder_options:
+            if guardrail_task:
+                try:
+                    triggered, reason = await guardrail_task
+                except asyncio.CancelledError:
+                    # Không nên xảy ra (task cuối cùng luôn được để chạy hết),
+                    # nhưng fail-closed nếu có.
+                    triggered, reason = True, "Xin lỗi, tôi không thể tiếp tục trả lời câu hỏi này."
+                except GuardrailCheckError as e:
+                    logger.warning("conversation_runner | guardrail output check failed, fail-closed. error=%s", e)
+                    triggered, reason = True, "Xin lỗi, tôi không thể tiếp tục trả lời câu hỏi này."
+
+                if triggered:
+                    assistant_text = reason or "Xin lỗi, tôi không thể trả lời câu hỏi này."
+                    full_response.append(assistant_text)
+                    yield f"data: {json.dumps(assistant_text)}\n\n"
+                else:
+                    clean_text, responder_options = _strip_think_and_options(last_responder_text)
+                    # Ghép câu nhắc "có chart" KHÔNG qua LLM — Responder chạy song song với
+                    # Visualization nên tự nó không biết chart có vẽ được hay không lúc sinh
+                    # văn bản; đây là điểm DUY NHẤT đã biết chắc cả 2 nhánh đều xong.
+                    if pending_charts:
+                        suffix = "biểu đồ" if len(pending_charts) == 1 else f"{len(pending_charts)} biểu đồ"
+                        clean_text = clean_text.rstrip() + f"\n\n📊 Đã tạo {suffix} minh hoạ bên dưới."
+                    assistant_text = clean_text
+                    full_response.append(clean_text)
+                    for chunk in _chunk_words(clean_text):
+                        yield f"data: {json.dumps(chunk)}\n\n"
+                        await asyncio.sleep(_FAKE_STREAM_WORD_DELAY)
+
+            if responder_options:
                 yield f"data: {json.dumps({'__options': responder_options})}\n\n"
             elif pending_suggestions:
                 yield f"data: {json.dumps({'__suggestions': pending_suggestions})}\n\n"
 
+            if pending_charts:
+                yield f"data: {json.dumps({'__chart': pending_charts})}\n\n"
+
+            await asyncio.to_thread(flush_langfuse)
             yield "data: [DONE]\n\n"
 
         except Exception:
             logger.exception("event_stream error")
             yield "data: [ERROR] Đã xảy ra lỗi, vui lòng thử lại.\n\n"
         finally:
+            if guardrail_task and not guardrail_task.done():
+                guardrail_task.cancel()
             latency = int((time.monotonic() - started_at) * 1000)
-            assistant_text = guardrail_msg if guardrail_triggered else "".join(full_response)
+            assistant_text = "".join(full_response)
 
             if conv_id:
                 await save_message(conv_id, "user", req.query)
@@ -494,11 +485,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                     assistant_text,
                     latency_ms=latency,
                     metadata={
-                        "guardrail": {
-                            "triggered": guardrail_triggered,
-                            "stage": guardrail_stage,
-                            "reason": guardrail_reason,
-                        },
+                        "agent_version_id": cfg.get("agent_version_id"),
                         "language": detected_language,
                         "intent": detected_intent,
                         "responder_model": cfg.get("responder_model"),
@@ -528,17 +515,19 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                             trace_index=0,
                             tool_name="responder",
                             input={"query": req.query},
-                            output={"response": assistant_text, "guardrail_triggered": guardrail_triggered},
+                            output={"response": assistant_text},
                             latency_ms=latency,
                         )
 
             # orchestrated=True: orchestrator sẽ ghi memory sau synthesize, agent không ghi
-            if not req.orchestrated and cfg.get("memory_enabled") and not guardrail_triggered and conv_id:
+            if not req.orchestrated and cfg.get("memory_enabled") and conv_id:
                 final_state = {**state, "response": assistant_text}
                 await apply_memory_policy(
                     final_state, agent_id, tenant_id, user_ref,
                     conversation_id=conv_id, message_id=assistant_msg_id,
                 )
+
+            flush_langfuse()
 
             for nt in (node_traces if cfg.get("memory_enabled") and not req.orchestrated else []):
                 if not nt["tool_name"].startswith("tool/"):
