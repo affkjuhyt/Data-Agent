@@ -20,7 +20,7 @@ import asyncio
 import logging
 from typing import Any
 
-from basemodel.services_databaseconnector.shared_model import HealthCheckLoopConfig, RetryConfig
+from libs.basemodel.services_databaseconnector.shared_model import HealthCheckLoopConfig, RetryConfig
 
 log = logging.getLogger(__name__)
 

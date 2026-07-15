@@ -11,13 +11,13 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 import logging
-from basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig, ResponseModel
+from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig, ResponseModel
 from pydantic import BaseModel
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     REGISTRY, MODEL_TO_TABLE, ReadJoinRequest, SelectInLoadRequest, DMLPreparation, DQLPreparation,
     FilterOperator, TransactionOp, TransactionJobResult,
 )
-import basemodel.services_databaseconnector.postgres_orm  # noqa: F401 — registers ORM classes into REGISTRY
+import libs.basemodel.services_databaseconnector.postgres_orm  # noqa: F401 — registers ORM classes into REGISTRY
 
 log = logging.getLogger(__name__)
 

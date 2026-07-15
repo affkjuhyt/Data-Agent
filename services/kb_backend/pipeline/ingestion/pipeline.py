@@ -6,9 +6,9 @@ from __future__ import annotations
 
 import logging
 
-from basemodel.services_databaseconnector.postgres_model import Language, SourceType
-from services.database_connector.minio_connector import MinIOClient
-from services.database_connector.postgres_connector import PostgresClient
+from libs.basemodel.services_databaseconnector.postgres_model import Language, SourceType
+from libs.database_connector.minio_connector import MinIOClient
+from libs.database_connector.postgres_connector import PostgresClient
 
 from services.kb_backend.pipeline.ingestion.bronze import (
     BronzeUploadRequest, WebBronzeRequest, upload_to_bronze, register_web_bronze,

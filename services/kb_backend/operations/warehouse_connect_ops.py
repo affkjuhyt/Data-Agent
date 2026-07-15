@@ -2,7 +2,7 @@
 import logging
 from typing import Optional
 
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     KBWarehouseDelete,
     ReadJoinRequest, WhereFilter,
 )

@@ -16,7 +16,7 @@ from sqlalchemy import update as sa_update
 
 from utils import llm_client
 
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     KBLifecycleHistoryInsert,
     PolicyFilteringType,
     ReadJoinRequest,
@@ -24,10 +24,10 @@ from basemodel.services_databaseconnector.postgres_model import (
     Tier,
     WhereFilter,
 )
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import KBDataORM
-from services.database_connector.minio_connector import MinIOClient
-from services.database_connector.mongo_connector import MongoClient
-from services.database_connector.postgres_connector import PostgresClient
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import KBDataORM
+from libs.database_connector.minio_connector import MinIOClient
+from libs.database_connector.mongo_connector import MongoClient
+from libs.database_connector.postgres_connector import PostgresClient
 
 from utils import config as cfg
 from utils.log_writer import set_chunk_progress, write_log

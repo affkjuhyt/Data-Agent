@@ -43,7 +43,7 @@ def _resolve_tenant(header: str | None) -> str:
 async def list_agents(request: Request):
     tenant_id = _resolve_tenant(request.headers.get("X-Tenant-ID"))
     try:
-        from services.database_connector.postgres_connector import client
+        from libs.database_connector.postgres_connector import client
         if not client.is_connected():
             raise RuntimeError("db not connected")
         async with client.get_client(tenant_id=tenant_id) as session:

@@ -50,7 +50,7 @@ DEV_CONFIG = {
 
 
 async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict:
-    from services.database_connector.postgres_connector import client
+    from libs.database_connector.postgres_connector import client
     from mongo_client import load_flow_nodes, load_flow_edges
 
     if not client.is_connected():

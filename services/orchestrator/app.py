@@ -5,13 +5,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 import config
-from basemodel.services_databaseconnector.shared_model import RetryConfig
+from libs.basemodel.services_databaseconnector.shared_model import RetryConfig
 from executor.agent_client import close_shared_client
 from routers.reviews import router as reviews_router
 from routers.stream import router as stream_router
 from routers.traces import router as traces_router
-from services.database_connector.redis_connector import RedisClient
-from services.shared.observability import setup_observability
+from libs.database_connector.redis_connector import RedisClient
+from libs.shared.observability import setup_observability
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # ── Postgres (agent catalog) ──────────────────────────────────────────
     if config.DATABASE_URL:
-        from services.database_connector.postgres_connector import client
+        from libs.database_connector.postgres_connector import client
         client.set_url(config.DATABASE_URL)
         await client.open()
         logger.info("orchestrator DB connected")
@@ -49,7 +49,7 @@ async def lifespan(app: FastAPI):
         pass
     await redis_client.close()
     if config.DATABASE_URL:
-        from services.database_connector.postgres_connector import client
+        from libs.database_connector.postgres_connector import client
         await client.close()
 
 

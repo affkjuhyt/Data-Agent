@@ -3,7 +3,7 @@ import logging
 import time
 import unicodedata
 
-from services.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
+from libs.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
 
 try:
     import regex as re_lib

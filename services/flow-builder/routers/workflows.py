@@ -18,7 +18,7 @@ from db_pg import (
 from config import REDIS_URL
 from dependencies import ensure_db_available
 from schemas import CreateWorkflowRequest, PublishVersionRequest
-from services.shared.cache_invalidation import publish_graph_invalidation
+from libs.shared.cache_invalidation import publish_graph_invalidation
 from utils import serialize
 
 logger = logging.getLogger(__name__)

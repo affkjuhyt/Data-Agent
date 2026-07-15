@@ -39,7 +39,7 @@ from qdrant_client.async_qdrant_client import AsyncQdrantClient
 from sqlalchemy import cast as sa_cast, func as sa_func, update as sa_update
 from sqlalchemy.dialects.postgresql import JSONB
 
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     ConflictSeverity,
     ConflictStatus,
     ConflictType,
@@ -49,7 +49,7 @@ from basemodel.services_databaseconnector.postgres_model import (
     Tier,
 )
 from sqlalchemy import select as sa_select
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBDataORM,
     KBTextBlockORM,
     KBTextBlockVersionORM,
@@ -57,13 +57,13 @@ from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import
     KBQdrantCollectionORM,
     KBConflictBatchORM,
 )
-from basemodel.services_databaseconnector.qdrant_model import (
+from libs.basemodel.services_databaseconnector.qdrant_model import (
     SearchRequest,
 )
-from services.database_connector.model_connector import ModelServiceClient
-from services.database_connector.mongo_connector import MongoClient
-from services.database_connector.postgres_connector import PostgresClient
-from services.database_connector.qdrant_connector import (
+from libs.database_connector.model_connector import ModelServiceClient
+from libs.database_connector.mongo_connector import MongoClient
+from libs.database_connector.postgres_connector import PostgresClient
+from libs.database_connector.qdrant_connector import (
     vector_search as qdrant_vector_search,
 )
 

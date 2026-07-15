@@ -1,6 +1,6 @@
 from fastapi import HTTPException
 
-from services.database_connector.postgres_connector import client
+from libs.database_connector.postgres_connector import client
 
 
 def ensure_db_available():

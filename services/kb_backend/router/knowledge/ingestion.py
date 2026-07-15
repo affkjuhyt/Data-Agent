@@ -8,7 +8,7 @@ import logging
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     Language, SourceType, Document, Image, Video, Web, Warehouse,
 )
 from services.kb_backend.config import ROLE_PERMISSION_IDS

@@ -5,8 +5,8 @@ import asyncio
 from neo4j import AsyncGraphDatabase
 from neo4j._async.driver import AsyncDriver
 import logging
-from basemodel.services_databaseconnector.shared_model import ResponseModel, RetryConfig, HealthCheckLoopConfig
-from basemodel.services_databaseconnector.neo4j_model import (
+from libs.basemodel.services_databaseconnector.shared_model import ResponseModel, RetryConfig, HealthCheckLoopConfig
+from libs.basemodel.services_databaseconnector.neo4j_model import (
     AddNodeRequest, AddRelationshipRequest, GraphExpandRequest,
     RelationshipDirection
 )

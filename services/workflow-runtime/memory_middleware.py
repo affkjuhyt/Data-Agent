@@ -12,8 +12,8 @@ from sqlalchemy import select, func, update
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams, Filter, FieldCondition, MatchValue
 
-from services.database_connector.postgres_connector import client
-from basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
+from libs.database_connector.postgres_connector import client
+from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
     AgentMemoriesORM, MemoryPolicyORM, EpisodicMemoryORM, FutureMemoryORM,
 )
 from kafka_producer import produce_event

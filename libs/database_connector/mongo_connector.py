@@ -2,7 +2,7 @@ import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
 import logging
-from basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
+from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
 
 log = logging.getLogger(__name__)
 

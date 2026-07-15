@@ -22,18 +22,18 @@ from utils.graph_store import GraphStore
 from utils.worker import consume_loop
 from conflict_resolver import conflict_resolve_loop
 
-from basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
-from basemodel.services_databaseconnector.qdrant_model import CreateCollectionRequest
-from services.database_connector.postgres_connector import PostgresClient
-from services.database_connector.qdrant_connector import (
+from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
+from libs.basemodel.services_databaseconnector.qdrant_model import CreateCollectionRequest
+from libs.database_connector.postgres_connector import PostgresClient
+from libs.database_connector.qdrant_connector import (
     QdrantClient as QdrantService,
     create_collection as qdrant_create_collection,
 )
-from services.database_connector.neo4j_connector import Neo4jClient
-from services.database_connector.mongo_connector import MongoClient
-from services.database_connector.minio_connector import MinIOClient
-from services.database_connector.kafka_connector import KafkaConsumerClient, KafkaProducerClient
-from services.database_connector.model_connector import ModelServiceClient
+from libs.database_connector.neo4j_connector import Neo4jClient
+from libs.database_connector.mongo_connector import MongoClient
+from libs.database_connector.minio_connector import MinIOClient
+from libs.database_connector.kafka_connector import KafkaConsumerClient, KafkaProducerClient
+from libs.database_connector.model_connector import ModelServiceClient
 
 logging.basicConfig(
     level=logging.INFO,

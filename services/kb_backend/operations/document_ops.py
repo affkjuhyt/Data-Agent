@@ -3,10 +3,10 @@ import logging
 import uuid
 from fastapi import HTTPException
 from sqlalchemy import select as sa_select, func as sa_func
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     ReadJoinRequest, WhereFilter, OrderBy, OrderDirection, KBDataDelete, FilterOperator,
 )
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBLifecycleHistoryORM, KBDataORM, KBTextBlockORM,
 )
 from services.kb_backend.pipeline.ingestion import config as ing_cfg

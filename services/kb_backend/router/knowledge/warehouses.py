@@ -4,7 +4,7 @@ Shared helpers are also re-exported for documents.py aliases.
 """
 from fastapi import APIRouter, Depends, Query, Request
 
-from basemodel.services_databaseconnector.shared_model import ResponseModel
+from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
 from services.kb_backend.schemas import CreateWarehouseConfigRequest
 from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc

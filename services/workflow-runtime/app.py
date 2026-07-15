@@ -15,7 +15,7 @@ litellm.failure_callback = [cb for cb in litellm.failure_callback if cb != "lang
 import asyncio
 from contextlib import asynccontextmanager
 
-from services.shared.logger import setup_logging
+from libs.shared.logger import setup_logging
 
 setup_logging("workflow-runtime")
 
@@ -32,10 +32,10 @@ from redis_cache import init_redis, close_redis
 from mongo_client import close_mongo, init_mongo
 from routers import catalog, conversations, health, sandbox_ops, schema_memory, schema_catalog as schema_catalog_router, traces, reviews, db_connector
 from runtime_services.conversation_runner import invalidate_graph_version
-from services.database_connector.mongo_connector import client as mongo_client
-from services.database_connector.postgres_connector import client as pg_client
-from services.shared.cache_invalidation import run_graph_invalidation_listener
-from services.shared.observability import setup_observability
+from libs.database_connector.mongo_connector import client as mongo_client
+from libs.database_connector.postgres_connector import client as pg_client
+from libs.shared.cache_invalidation import run_graph_invalidation_listener
+from libs.shared.observability import setup_observability
 
 
 @asynccontextmanager

@@ -29,7 +29,7 @@ async def fetch_guardrail_config(tenant_id: str | None = None) -> dict:
     if _guardrail_cfg and (now - _guardrail_cfg_at) < _GUARDRAIL_CACHE_TTL:
         return _guardrail_cfg
 
-    from services.database_connector.postgres_connector import client
+    from libs.database_connector.postgres_connector import client
 
     if not client.is_connected():
         logger.warning("guardrail_config | DB not connected, using last known config")
@@ -72,7 +72,7 @@ async def fetch_published_agents(tenant_id: str) -> list[dict]:
     Lấy danh sách agents đã publish của tenant trực tiếp từ PostgreSQL.
     Trả về list[{id, name, description}].
     """
-    from services.database_connector.postgres_connector import client
+    from libs.database_connector.postgres_connector import client
 
     if not client.is_connected():
         logger.warning("catalog | DB not connected, returning empty agent list")

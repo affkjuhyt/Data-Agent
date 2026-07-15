@@ -8,12 +8,12 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from services.database_connector.kafka_connector import KafkaConsumerClient, KafkaProducerClient
-from services.database_connector.minio_connector import MinIOClient
-from services.database_connector.model_connector import ModelServiceClient
-from services.database_connector.mongo_connector import MongoClient
-from services.database_connector.postgres_connector import PostgresClient
-from services.database_connector.qdrant_connector import QdrantClient as QdrantService
+from libs.database_connector.kafka_connector import KafkaConsumerClient, KafkaProducerClient
+from libs.database_connector.minio_connector import MinIOClient
+from libs.database_connector.model_connector import ModelServiceClient
+from libs.database_connector.mongo_connector import MongoClient
+from libs.database_connector.postgres_connector import PostgresClient
+from libs.database_connector.qdrant_connector import QdrantClient as QdrantService
 
 from utils import config as cfg
 from utils.docling_parser import InlineDoclingParser

@@ -20,8 +20,8 @@ from docling.datamodel.pipeline_options import (
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling_core.types.doc import PictureItem, SectionHeaderItem, TableItem, TextItem
 
-from basemodel.services_docling.docling_model import DoclingResult, ParsedChunk, ParsedTable
-from services.database_connector.minio_connector import MinIOClient
+from libs.basemodel.services_docling.docling_model import DoclingResult, ParsedChunk, ParsedTable
+from libs.database_connector.minio_connector import MinIOClient
 
 log = logging.getLogger(__name__)
 

@@ -44,7 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /install /usr/local
 
 # Copy source — ordered least-to-most frequently changed for layer cache efficiency
-COPY basemodel/ ./basemodel/
+COPY libs/ ./libs/
 COPY services/  ./services/
 
 # Make all packages importable without an editable install

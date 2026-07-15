@@ -8,17 +8,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from basemodel.services_databaseconnector.postgres_orm.base import Base
+from libs.basemodel.services_databaseconnector.postgres_orm.base import Base
 
-from basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
-from services.database_connector.postgres_connector import PostgresClient
-from services.database_connector.qdrant_connector import QdrantClient as QdrantService
-from services.database_connector.neo4j_connector import Neo4jClient
-from services.database_connector.mongo_connector import MongoClient
-from services.database_connector.minio_connector import MinIOClient
-from services.database_connector.kafka_connector import KafkaProducerClient
-from services.database_connector.model_connector import ModelServiceClient
-from services.shared.observability import setup_observability
+from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
+from libs.database_connector.postgres_connector import PostgresClient
+from libs.database_connector.qdrant_connector import QdrantClient as QdrantService
+from libs.database_connector.neo4j_connector import Neo4jClient
+from libs.database_connector.mongo_connector import MongoClient
+from libs.database_connector.minio_connector import MinIOClient
+from libs.database_connector.kafka_connector import KafkaProducerClient
+from libs.database_connector.model_connector import ModelServiceClient
+from libs.shared.observability import setup_observability
 
 from services.kb_backend.pipeline.light_rag.pipeline import LightRAGPipeline, cache_sweep_loop
 from services.kb_backend.pipeline.light_rag import config as cfg

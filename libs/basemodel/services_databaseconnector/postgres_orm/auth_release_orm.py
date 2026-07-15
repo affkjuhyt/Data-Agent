@@ -9,8 +9,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from basemodel.services_databaseconnector.postgres_model import register
-from basemodel.services_databaseconnector.postgres_orm.base import Base
+from libs.basemodel.services_databaseconnector.postgres_model import register
+from libs.basemodel.services_databaseconnector.postgres_orm.base import Base
 
 
 # ─── Platform Core ────────────────────────────────────────────────────────────

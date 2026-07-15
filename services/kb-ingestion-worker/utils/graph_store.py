@@ -27,12 +27,12 @@ from neo4j import AsyncDriver
 from sqlalchemy import delete as sa_delete, func as sa_func, select as sa_select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBNeo4jNodeORM,
     KBNeo4jRelationshipORM,
 )
-from services.database_connector.model_connector import ModelServiceClient
-from services.database_connector.postgres_connector import PostgresClient
+from libs.database_connector.model_connector import ModelServiceClient
+from libs.database_connector.postgres_connector import PostgresClient
 
 from utils.entity_types import ENTITY_TYPE_LABELS, to_entity_type
 

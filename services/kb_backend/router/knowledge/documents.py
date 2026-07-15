@@ -4,7 +4,7 @@ Serves AssetDetailWorkspace and KnowledgeHub (chunk/version management).
 """
 from fastapi import APIRouter, Depends, Query, Request
 
-from basemodel.services_databaseconnector.shared_model import ResponseModel
+from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
 from services.kb_backend.schemas import (
     ActivateChunkVersionRequest,
     UpdateTableRowRequest,

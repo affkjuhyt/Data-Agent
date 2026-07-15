@@ -8,7 +8,7 @@ import uuid
 
 from pydantic import BaseModel
 
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     KBDataInsert,
     KBLifecycleHistoryInsert,
     Language,
@@ -16,8 +16,8 @@ from basemodel.services_databaseconnector.postgres_model import (
     Tier,
     Web,
 )
-from services.database_connector.minio_connector import MinIOClient
-from services.database_connector.postgres_connector import PostgresClient
+from libs.database_connector.minio_connector import MinIOClient
+from libs.database_connector.postgres_connector import PostgresClient
 from services.kb_backend.pipeline.ingestion import config as cfg
 
 

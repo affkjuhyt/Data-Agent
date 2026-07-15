@@ -1,6 +1,6 @@
 """Re-export of the shared postgres enums under the schemas namespace.
 Convenience aggregator so schema modules import enums from one place."""
-from basemodel.services_databaseconnector.postgres_model import (  # noqa: F401
+from libs.basemodel.services_databaseconnector.postgres_model import (  # noqa: F401
     Language,
     SourceType,
     Tier,

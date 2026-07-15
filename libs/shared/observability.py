@@ -17,7 +17,7 @@ is unset, or ``OTEL_SDK_DISABLED`` is truthy, the service still starts and still
 logs JSON — it just does not export spans. Observability must never crash a service.
 
 Import path differs per service build (same file, different sys.path root):
-    from services.shared.observability import setup_observability   # kb / flow-builder / workflow-runtime
+    from libs.shared.observability import setup_observability   # kb / flow-builder / workflow-runtime
     from shared.observability import setup_observability            # auth-api / minio / release-worker / workers
 """
 from __future__ import annotations

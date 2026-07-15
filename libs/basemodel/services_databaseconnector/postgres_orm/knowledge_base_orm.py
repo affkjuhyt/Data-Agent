@@ -6,10 +6,10 @@ from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, Str
 from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     register, ConflictStatus, SimilarityMetric, Tier,
 )
-from basemodel.services_databaseconnector.postgres_orm.base import Base
+from libs.basemodel.services_databaseconnector.postgres_orm.base import Base
 
 
 @register("orm")

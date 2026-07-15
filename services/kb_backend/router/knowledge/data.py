@@ -4,7 +4,7 @@ These are the primary routes consumed by AppStateContext and AssetInventory.
 """
 from fastapi import APIRouter, Depends, Query, Request
 
-from basemodel.services_databaseconnector.shared_model import ResponseModel
+from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
 from services.kb_backend.schemas import UpdateDocumentRequest
 from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc

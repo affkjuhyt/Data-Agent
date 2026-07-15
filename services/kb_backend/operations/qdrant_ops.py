@@ -5,10 +5,10 @@ from fastapi import HTTPException
 from qdrant_client import models
 from sqlalchemy import update as sa_update, select
 
-from basemodel.services_databaseconnector.postgres_model import ReadJoinRequest
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import KBQdrantCollectionORM
-from basemodel.services_databaseconnector.qdrant_model import SearchRequest, MatchType
-from services.database_connector.qdrant_connector import vector_search as qdrant_vector_search
+from libs.basemodel.services_databaseconnector.postgres_model import ReadJoinRequest
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import KBQdrantCollectionORM
+from libs.basemodel.services_databaseconnector.qdrant_model import SearchRequest, MatchType
+from libs.database_connector.qdrant_connector import vector_search as qdrant_vector_search
 from services.kb_backend.schemas import to_string
 
 log = logging.getLogger(__name__)

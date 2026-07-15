@@ -49,15 +49,15 @@ import sys
 from sqlalchemy import select as sa_select, delete as sa_delete
 from qdrant_client import models as qmodels
 
-from basemodel.services_databaseconnector.shared_model import RetryConfig
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.shared_model import RetryConfig
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBDataORM, KBConflictORM, KBConflictBatchORM,
 )
-from services.database_connector.postgres_connector import PostgresClient
-from services.database_connector.qdrant_connector import QdrantClient as QdrantService
-from services.database_connector.neo4j_connector import Neo4jClient
-from services.database_connector.mongo_connector import MongoClient
-from services.database_connector.minio_connector import MinIOClient
+from libs.database_connector.postgres_connector import PostgresClient
+from libs.database_connector.qdrant_connector import QdrantClient as QdrantService
+from libs.database_connector.neo4j_connector import Neo4jClient
+from libs.database_connector.mongo_connector import MongoClient
+from libs.database_connector.minio_connector import MinIOClient
 from services.kb_backend.pipeline.light_rag import config as cfg
 from services.kb_backend.operations import trash_ops
 

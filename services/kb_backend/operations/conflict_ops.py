@@ -8,13 +8,13 @@ from sqlalchemy import select, update as sa_update
 
 _KAFKA_TOPIC_CONFLICT_RESOLVE = os.getenv("KAFKA_TOPIC_CONFLICT_RESOLVE", "kb.resolve.conflict")
 
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     ReadJoinRequest, WhereFilter, OrderBy, OrderDirection,
 )
 from services.kb_backend.operations.pagination import (
     PAGE_SIZE, get_cursor, advance, build_page,
 )
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBConflictORM,
     KBTextBlockVersionORM,
 )

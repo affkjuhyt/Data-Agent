@@ -14,8 +14,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from dotenv import load_dotenv, find_dotenv
 from sqlalchemy import delete, func, select, text
 
-from services.database_connector.postgres_connector import client
-from basemodel.services_databaseconnector.postgres_orm.workflow_orm import AgentMemoriesORM, EpisodicMemoryORM
+from libs.database_connector.postgres_connector import client
+from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import AgentMemoriesORM, EpisodicMemoryORM
 
 load_dotenv(find_dotenv())
 

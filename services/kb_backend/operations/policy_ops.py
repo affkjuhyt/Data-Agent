@@ -5,7 +5,7 @@ import uuid
 from fastapi import HTTPException
 from sqlalchemy import update as sa_update
 
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     ReadJoinRequest, OrderBy, OrderDirection,
     KBFilterPolicyInsert, KBFilterPolicyDelete,
     KBExtractionPolicyInsert,
@@ -14,7 +14,7 @@ from basemodel.services_databaseconnector.postgres_model import (
 from services.kb_backend.operations.pagination import (
     PAGE_SIZE, get_cursor, advance, build_page,
 )
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBFilterPolicyORM, KBExtractionPolicyORM,
 )
 from services.kb_backend.schemas import to_string
@@ -172,7 +172,7 @@ async def update_extraction_policy(
             )
             await session.commit()
     else:
-        from basemodel.services_databaseconnector.postgres_model import PolicyExtractionType
+        from libs.basemodel.services_databaseconnector.postgres_model import PolicyExtractionType
         await postgres.insert(KBExtractionPolicyInsert(
             tenant_id=tenant_id,
             policy_name="Default Extraction Policy",

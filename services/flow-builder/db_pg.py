@@ -9,11 +9,11 @@ from sqlalchemy import select, update as sa_update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from services.database_connector.postgres_connector import client
-from basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
+from libs.database_connector.postgres_connector import client
+from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
     AgentsORM, WorkflowsORM, WorkflowVersionsORM, AgentVersionsORM, AgentKBORM,
 )
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     AgentsDelete, AgentVersionsDelete, WorkflowVersionsDelete,
 )
 

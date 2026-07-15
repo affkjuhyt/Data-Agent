@@ -1,7 +1,7 @@
 """/api/knowledge/policies — FilterPolicy and ExtractionPolicy CRUD."""
 from fastapi import APIRouter, Depends, Query, Request
 
-from basemodel.services_databaseconnector.shared_model import ResponseModel
+from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
 from services.kb_backend.schemas import (
     CreateFilterPolicyRequest, UpdateFilterPolicyRequest, UpdateExtractionPolicyRequest,
 )

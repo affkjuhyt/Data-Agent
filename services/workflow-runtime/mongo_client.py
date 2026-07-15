@@ -1,6 +1,6 @@
 import os
 import logging
-from services.database_connector.mongo_connector import client
+from libs.database_connector.mongo_connector import client
 
 logger = logging.getLogger(__name__)
 

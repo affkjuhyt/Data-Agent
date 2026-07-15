@@ -1,7 +1,7 @@
 """/api/knowledge/conflicts — ConflictWorkspace data."""
 from fastapi import APIRouter, Depends, Query, Request
 
-from basemodel.services_databaseconnector.shared_model import ResponseModel
+from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
 from services.kb_backend.schemas import ResolveConflictRequest
 from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc

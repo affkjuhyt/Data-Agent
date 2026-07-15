@@ -1,7 +1,7 @@
 """Snowflake INFORMATION_SCHEMA crawl (doc §2.3).
 
 Deliberately a thin, synchronous, standalone module (not the async
-SnowflakeConnector in services/database_connector) — this worker is a
+SnowflakeConnector in libs/database_connector) — this worker is a
 blocking cron/Kafka loop in the same style as memory-consumer/main.py, so a
 sync call here costs nothing and keeps the worker self-contained the same
 way memory-consumer doesn't import workflow-runtime's async Postgres client

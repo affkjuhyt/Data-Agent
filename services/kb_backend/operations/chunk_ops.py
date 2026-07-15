@@ -4,14 +4,14 @@ import uuid
 from fastapi import HTTPException
 from sqlalchemy import select as sa_select, update as sa_update
 
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     ReadJoinRequest, SelectInLoadRequest, WhereFilter, OrderBy, OrderDirection,
     KBTextBlockDelete, KBTextBlockVersionDelete, KBTextBlockVersionInsert,
 )
 from services.kb_backend.operations.pagination import (
     PAGE_SIZE, get_cursor, advance, build_page,
 )
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBDataORM, KBTextBlockVersionORM,
 )
 from services.kb_backend.schemas import (

@@ -11,8 +11,8 @@ from urllib.parse import urlparse
 from aiokafka import AIOKafkaProducer, AIOKafkaConsumer, TopicPartition
 from aiokafka.errors import KafkaConnectionError
 
-from basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
-from services.shared.logger import create_logger
+from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
+from libs.shared.logger import create_logger
 
 log = create_logger("services.kafka", "service_kafka")
 

@@ -20,7 +20,7 @@ from nodes.suggestion import run_suggestion
 from observability import get_langfuse_client
 from planner import create_plan, report_node_failure
 from schemas import TargetResult, TaskResult
-from services.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
+from libs.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
 from session_cache import clear_cached_plan, load_cached_plan, save_cached_plan
 from state import OrchestratorState
 from summary import summarize, synthesis_judge_check

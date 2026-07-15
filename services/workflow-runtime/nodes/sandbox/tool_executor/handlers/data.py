@@ -31,7 +31,7 @@ async def _get_schema_text(tenant_id: str, conn_cfg: dict) -> str:
     db_type = (conn_cfg.get("type") or "postgres").lower()
     try:
         if db_type == "clickhouse":
-            from services.database_connector import clickhouse_connector as _ch  # noqa: PLC0415
+            from libs.database_connector import clickhouse_connector as _ch  # noqa: PLC0415
             rows = await _ch.columns(conn_cfg)  # [{table_name, column_name, data_type}, ...]
         else:
             import asyncpg  # noqa: PLC0415
@@ -73,7 +73,7 @@ async def _run_one_query(
     for attempt in range(3):
         try:
             if db_type == "clickhouse":
-                from services.database_connector import clickhouse_connector as _ch  # noqa: PLC0415
+                from libs.database_connector import clickhouse_connector as _ch  # noqa: PLC0415
                 data = await _ch.query(conn_cfg, current_sql)
             else:
                 import asyncpg  # noqa: PLC0415

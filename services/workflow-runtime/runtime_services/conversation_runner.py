@@ -26,7 +26,7 @@ from memory_middleware import (
 from workflow_memory import record_workflow_outcome, retrieve_workflow_memory
 from observability import get_langchain_callback_handler, flush_langfuse
 from schemas import RunRequest
-from services.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
+from libs.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
 
 logger = logging.getLogger(__name__)
 

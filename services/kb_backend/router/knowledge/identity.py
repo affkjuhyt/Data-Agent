@@ -13,7 +13,7 @@ propagated through Kong's header injection into the backend.
 """
 from fastapi import APIRouter, Depends
 
-from basemodel.services_databaseconnector.shared_model import ResponseModel
+from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
 from services.kb_backend.dependencies.auth import authenticate, RBAC
 
 router = APIRouter(prefix="/api/knowledge", tags=["Identity"])

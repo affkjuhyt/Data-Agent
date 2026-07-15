@@ -63,7 +63,7 @@ async def _resolve_vault_password(tenant_id: str, secret_id: str, key_type: str)
     isn't active, doesn't match `key_type`, or OpenBao is unreachable —
     callers treat None the same as "no password configured" (fails the
     eventual DB auth cleanly downstream, doesn't crash config load)."""
-    from services.database_connector.postgres_connector import client as pg_client
+    from libs.database_connector.postgres_connector import client as pg_client
 
     if not pg_client.is_connected():
         logger.warning("postgres not connected — cannot resolve secret %s", secret_id)

@@ -1,7 +1,7 @@
 """/api/knowledge/qdrant — collection management + semantic search."""
 from fastapi import APIRouter, Depends, Request
 
-from basemodel.services_databaseconnector.shared_model import ResponseModel
+from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
 from services.kb_backend.schemas import ToggleQdrantCollectionRequest, QdrantSearchRequest
 from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc

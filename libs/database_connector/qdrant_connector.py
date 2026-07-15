@@ -3,7 +3,7 @@ from qdrant_client.async_qdrant_client import AsyncQdrantClient
 from typing import List
 import asyncio
 import logging
-from basemodel.services_databaseconnector.qdrant_model import (
+from libs.basemodel.services_databaseconnector.qdrant_model import (
     # Enums
     DistanceMetric, MatchType,
 
@@ -23,7 +23,7 @@ from basemodel.services_databaseconnector.qdrant_model import (
     SoftDeletePointsRequest,
 )
 
-from basemodel.services_databaseconnector.shared_model import (
+from libs.basemodel.services_databaseconnector.shared_model import (
     ResponseModel,
     RetryConfig,
     HealthCheckLoopConfig,

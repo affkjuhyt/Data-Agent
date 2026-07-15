@@ -72,7 +72,7 @@ filterwarnings = [
 # ─── Coverage ──────────────────────────────────────────────────────────────
 [tool.coverage.run]
 branch = true
-source = ["app", "services", "basemodel", "model"]
+source = ["app", "services", "libs", "model"]
 omit = [
     "*/tests/*",
     "*/__pycache__/*",
@@ -99,7 +99,7 @@ exclude_lines = [
 # fixtures, ORM attrs) may still flag — vet before deleting and add real
 # whitelist entries to .vulture_whitelist.py. Run: `vulture`.
 [tool.vulture]
-paths = ["services", "basemodel", ".vulture_whitelist.py"]
+paths = ["services", "libs", ".vulture_whitelist.py"]
 min_confidence = 80
 exclude = [
     "*/migrations/*",
@@ -172,7 +172,7 @@ exclude = [
 [[tool.mypy.overrides]]
 module = [
     "services.auth-api.*",
-    "services.shared.*",
+    "libs.shared.*",
     "infra.kong.*",
 ]
 disallow_untyped_defs = true

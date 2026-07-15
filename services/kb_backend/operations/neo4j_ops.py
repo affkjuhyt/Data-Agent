@@ -4,7 +4,7 @@ import os
 from fastapi import HTTPException
 from typing import LiteralString
 
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     ReadJoinRequest, WhereFilter,
 )
 from services.kb_backend.schemas import to_string

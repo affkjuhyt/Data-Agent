@@ -1,5 +1,5 @@
 import os
-from services.database_connector.mongo_connector import client
+from libs.database_connector.mongo_connector import client
 
 
 async def init_mongo():

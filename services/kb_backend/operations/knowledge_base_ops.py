@@ -10,12 +10,12 @@ import uuid
 from fastapi import HTTPException
 from sqlalchemy import update as sa_update
 
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     ReadJoinRequest,
     KBKnowledgeBaseInsert,
     KBKnowledgeBaseDelete,
 )
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBDataORM,
 )
 from services.kb_backend.schemas import to_string

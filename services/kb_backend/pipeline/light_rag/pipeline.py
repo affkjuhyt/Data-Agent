@@ -36,15 +36,15 @@ from qdrant_client import models as qmodels
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
 from sqlalchemy import func, select as sa_select
 
-from services.database_connector.qdrant_connector import vector_search as qdrant_vector_search
-from services.database_connector.postgres_connector import PostgresClient
-from services.database_connector.model_connector import ModelServiceClient
-from basemodel.services_databaseconnector.qdrant_model import (
+from libs.database_connector.qdrant_connector import vector_search as qdrant_vector_search
+from libs.database_connector.postgres_connector import PostgresClient
+from libs.database_connector.model_connector import ModelServiceClient
+from libs.basemodel.services_databaseconnector.qdrant_model import (
     MatchingPayload,
     MatchType,
     SearchRequest,
 )
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBDataORM,
     KBTextBlockORM,
     KBTextBlockVersionORM,
@@ -480,7 +480,7 @@ async def resolve_query_aliases(
     Tenant-scoped rows win over global (tenant_id NULL) seed aliases."""
     if not entities:
         return entities
-    from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+    from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
         KBEntityLookupORM,
     )
     try:

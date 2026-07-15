@@ -22,7 +22,7 @@ from fastapi import HTTPException
 from qdrant_client import models as qmodels
 from sqlalchemy import select as sa_select, update as sa_update, delete as sa_delete
 
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBDataORM,
     KBTextBlockORM,
     KBTextBlockVersionORM,

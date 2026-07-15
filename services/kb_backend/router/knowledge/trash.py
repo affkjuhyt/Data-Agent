@@ -9,7 +9,7 @@ the per-document Mongo staging/logs/events.
 """
 from fastapi import APIRouter, Depends, Request
 
-from basemodel.services_databaseconnector.shared_model import ResponseModel
+from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
 from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm

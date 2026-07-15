@@ -14,7 +14,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
 
-from basemodel.services_databaseconnector.postgres_orm.workflow_orm import SchemaCatalogORM
+from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import SchemaCatalogORM
 from routers.catalog import _resolve_tenant
 
 logger = logging.getLogger(__name__)
@@ -44,7 +44,7 @@ async def list_schema_catalog(
     schema_name: Optional[str] = None,
 ):
     tenant_id = _resolve_tenant(request.headers.get("X-Tenant-ID"))
-    from services.database_connector.postgres_connector import client
+    from libs.database_connector.postgres_connector import client
     if not client.is_connected():
         raise HTTPException(status_code=503, detail="database not connected")
 
@@ -65,7 +65,7 @@ async def list_schema_catalog(
 @router.get("/api/schema-catalog/{catalog_id}")
 async def get_schema_catalog_entry(catalog_id: str, request: Request):
     tenant_id = _resolve_tenant(request.headers.get("X-Tenant-ID"))
-    from services.database_connector.postgres_connector import client
+    from libs.database_connector.postgres_connector import client
     if not client.is_connected():
         raise HTTPException(status_code=503, detail="database not connected")
 

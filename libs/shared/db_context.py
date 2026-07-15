@@ -17,7 +17,7 @@ defeats the point of RLS.
 
 Usage (FastAPI route):
 
-    from services.shared.db_context import get_tenant_db
+    from libs.shared.db_context import get_tenant_db
 
     @router.get("/things")
     def list_things(db = Depends(get_tenant_db)):
@@ -27,7 +27,7 @@ Usage (FastAPI route):
 
 Usage (script / one-off):
 
-    from services.shared.db_context import tenant_scoped_db
+    from libs.shared.db_context import tenant_scoped_db
 
     with tenant_scoped_db(tenant_id="<uuid>") as conn:
         with conn.cursor() as cur:

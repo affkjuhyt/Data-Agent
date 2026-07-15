@@ -95,7 +95,7 @@ def schema_catalog_client(migrated_db):
         import importlib as _il
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
-        from services.database_connector.postgres_connector import client as pg_client
+        from libs.database_connector.postgres_connector import client as pg_client
 
         schema_catalog_mod = _il.import_module("routers.schema_catalog")
         _il.reload(schema_catalog_mod)

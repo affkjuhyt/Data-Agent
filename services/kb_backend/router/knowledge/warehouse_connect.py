@@ -6,8 +6,8 @@ POST /api/knowledge/warehouses/select-tables — save connection + config, retur
 from fastapi import APIRouter, Depends, HTTPException, Request
 import logging
 
-from basemodel.services_databaseconnector.shared_model import ResponseModel
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
+from libs.basemodel.services_databaseconnector.postgres_model import (
     KBWarehouseInsert,
     KBWarehouseConfigInsert,
     KBWarehouseDelete,
@@ -16,7 +16,7 @@ from basemodel.services_databaseconnector.postgres_model import (
 from services.kb_backend.schemas import ConnectSnowflakeRequest, SelectTablesRequest
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
-from services.database_connector.snowflake_connector import SnowflakeConnector
+from libs.database_connector.snowflake_connector import SnowflakeConnector
 
 log = logging.getLogger(__name__)
 

@@ -7,9 +7,9 @@ from typing import Any
 from sqlalchemy import select, update as sa_update, delete as sa_delete
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
-from basemodel.services_databaseconnector.postgres_model import REGISTRY, ReadJoinRequest
-from basemodel.services_databaseconnector.shared_model import ResponseModel
-import basemodel.services_databaseconnector.postgres_orm  # noqa — registers ORM models
+from libs.basemodel.services_databaseconnector.postgres_model import REGISTRY, ReadJoinRequest
+from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
+import libs.basemodel.services_databaseconnector.postgres_orm  # noqa — registers ORM models
 
 _factory: async_sessionmaker | None = None
 
@@ -50,7 +50,7 @@ async def read_join(query: dict) -> ResponseModel:
     if isinstance(q.get("order_by"), str):
         q.pop("order_by")
     req = ReadJoinRequest.model_validate(q)
-    from services.database_connector.postgres_connector import _prepare_read
+    from libs.database_connector.postgres_connector import _prepare_read
     prep = _prepare_read(req)
     async with _get_factory()() as session:
         result = await session.execute(prep.compiled_query)

@@ -46,11 +46,11 @@ from qdrant_client import models
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
 from sqlalchemy import select as sa_select
 
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBEntityLookupORM,
 )
-from services.database_connector.model_connector import ModelServiceClient
-from services.database_connector.postgres_connector import PostgresClient
+from libs.database_connector.model_connector import ModelServiceClient
+from libs.database_connector.postgres_connector import PostgresClient
 from utils import config as cfg
 
 log = logging.getLogger(__name__)
