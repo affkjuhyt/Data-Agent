@@ -108,14 +108,14 @@ services:
   # ── KB-owned: embedding/rerank/LLM gateway ────────────────────────────────────
   model-service:
     build:
-      context: ./model-service
+      context: ../services/model-service
     container_name: kb-model-service
     restart: unless-stopped
     ports:
       - "8600:8001"
     environment:
       # Multilingual (Vietnamese corpus) — must match the weights cached in
-      # ./model-service/models and the dim of the Qdrant collections.
+      # ../services/model-service/models and the dim of the Qdrant collections.
       EMBED_MODEL: ${EMBED_MODEL:-intfloat/multilingual-e5-small}
       RERANK_MODEL: ${RERANK_MODEL:-cross-encoder/mmarco-mMiniLMv2-L12-H384-v1}
       REMOTE_EMBED_URL: ${REMOTE_EMBED_URL:-}
@@ -131,7 +131,7 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       # Weights download here on first start and persist across recreates.
-      - ./model-service/models:/app/models
+      - ../services/model-service/models:/app/models
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 30s
@@ -180,7 +180,7 @@ services:
   kb-ingestion-worker:
     build:
       context: ..
-      dockerfile: infra/kb-ingestion-worker/Dockerfile
+      dockerfile: services/kb-ingestion-worker/Dockerfile
     container_name: kb-ingestion-worker
     restart: unless-stopped
     environment:
