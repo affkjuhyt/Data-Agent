@@ -2,12 +2,12 @@
 """
 LLM Benchmark Script — Qwen3 on llama-server
 Usage:
-  python3 model/llama-server/benchmark-llm.py                  # full suite
-  python3 model/llama-server/benchmark-llm.py --single         # single request only
-  python3 model/llama-server/benchmark-llm.py --concurrent     # concurrent only
-  python3 model/llama-server/benchmark-llm.py --thinking       # thinking mode only
-  python3 model/llama-server/benchmark-llm.py --memory         # memory stats only
-  python3 model/llama-server/benchmark-llm.py --host 127.0.0.1 --port 8088
+  python3 model/llama-server/benchmark_llm.py                  # full suite
+  python3 model/llama-server/benchmark_llm.py --single         # single request only
+  python3 model/llama-server/benchmark_llm.py --concurrent     # concurrent only
+  python3 model/llama-server/benchmark_llm.py --thinking       # thinking mode only
+  python3 model/llama-server/benchmark_llm.py --memory         # memory stats only
+  python3 model/llama-server/benchmark_llm.py --host 127.0.0.1 --port 8088
 """
 import argparse, json, os, sys, threading, time, urllib.request
 

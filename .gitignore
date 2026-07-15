@@ -84,3 +84,6 @@ infra/kafka/rw.props
 *.stackdump
 .kong-bringup.log
 infra/.*-up.log
+
+# Model
+services/model-service/models/models--intfloat--multilingual-e5-small
