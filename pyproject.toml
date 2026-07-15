@@ -175,13 +175,20 @@ exclude = [
     "build/",
 ]
 
-# Strict per-module: enforce only on greenfield/security-critical surfaces first.
-# Expand this list as services are cleaned up.
+# Strict per-module: the innermost, most-reused layers are held to
+# `disallow_untyped_defs` + `disallow_any_generics` and are kept green (0 errors)
+# — enforced BLOCKING by the CI "Strict typecheck · core libs" step, not just
+# reported. Expand this list as each service is cleaned up (see the burn-down in
+# SECURITY.md / RUNBOOK.md: database_connector, kb_backend, orchestrator next).
+#
+# NOTE: these globs only match real importable packages. Hyphenated service dirs
+# (`services/auth-api`, …) are NOT importable as `services.auth-api.*`, so such a
+# glob is a no-op ("unused section"); enforce those by invoking mypy on the dir
+# directly in CI instead.
 [[tool.mypy.overrides]]
 module = [
-    "services.auth-api.*",
+    "libs.basemodel.*",
     "libs.shared.*",
-    "infra.kong.*",
 ]
 disallow_untyped_defs = true
 disallow_any_generics = true

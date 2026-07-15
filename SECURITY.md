@@ -84,6 +84,23 @@ with an existing baseline to burn down. Ratchet plan:
 - **ruff** (incl. `BLE` blind-except, `ASYNC` blocking-call lints) is blocking.
 - **Coverage gate** (`fail_under` in `pyproject.toml`) fails the test job on a coverage
   collapse; ratchet upward (35 → 50 → 70) after each measured CI run.
+- **Strict typing** (`mypy --disallow-untyped-defs --disallow-any-generics`): the two
+  innermost, most-reused layers — `libs/basemodel` + `libs/shared` — are kept
+  **strict-clean and enforced BLOCKING** in CI ("Strict typecheck · core libs"). The
+  rest of the tree is report-only. Burn-down backlog (strict-error counts, expand the
+  `pyproject` override + a blocking invocation per layer as each reaches zero):
+
+  | Layer | strict errors | note |
+  | --- | --- | --- |
+  | `libs/basemodel` | **0** ✅ | enforced |
+  | `libs/shared` | **0** ✅ | enforced |
+  | `libs/database_connector` | ~167 | next — infra clients, high reuse |
+  | `services/orchestrator` | ~100 | |
+  | `services/kb_backend` | ~337 | largest surface |
+
+  > Only globs matching real importable packages work in the `pyproject` override;
+  > hyphenated service dirs (`services/auth-api`, …) must be enforced by invoking mypy
+  > on the directory directly in CI.
 
 ## 6. Reporting a vulnerability
 

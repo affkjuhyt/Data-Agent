@@ -24,21 +24,26 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import Any, Callable
 
 import structlog
 
 # OpenTelemetry is optional at import time — never let a missing dep crash a service.
+# `trace` is annotated Any and pre-bound to None so the fallback assignment needs no
+# `type: ignore` and type-checks the same whether or not the OTel libs are installed.
+trace: Any = None
+_OTEL = False
 try:
-    from opentelemetry import trace
+    from opentelemetry import trace as _otel_trace
     from opentelemetry.sdk.resources import SERVICE_NAME, Resource
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 
+    trace = _otel_trace
     _OTEL = True
 except Exception:  # pragma: no cover - exercised only when libs are absent
-    trace = None  # type: ignore[assignment]
-    _OTEL = False
+    pass
 
 _log = logging.getLogger("observability")
 
@@ -48,15 +53,15 @@ def _env_disabled() -> bool:
 
 
 # ── logging ────────────────────────────────────────────────────────────────
-def _add_service_name(service_name: str):
-    def processor(_logger, _method_name, event_dict):
+def _add_service_name(service_name: str) -> Callable[..., dict[str, Any]]:
+    def processor(_logger: Any, _method_name: Any, event_dict: dict[str, Any]) -> dict[str, Any]:
         event_dict.setdefault("service", service_name)
         return event_dict
 
     return processor
 
 
-def _add_trace_context(_logger, _method_name, event_dict):
+def _add_trace_context(_logger: Any, _method_name: Any, event_dict: dict[str, Any]) -> dict[str, Any]:
     """Inject the active span's trace_id/span_id so logs correlate with traces."""
     if not _OTEL:
         return event_dict
@@ -139,7 +144,7 @@ def _instrument_logging() -> None:
         pass
 
 
-def instrument_fastapi(app) -> None:
+def instrument_fastapi(app: Any) -> None:
     """Auto-instrument a FastAPI app + its outbound httpx/requests calls."""
     if not _OTEL or _env_disabled():
         return
@@ -189,7 +194,7 @@ def _instrument_databases() -> None:
         pass
 
 
-def setup_observability(service_name: str, app=None) -> None:
+def setup_observability(service_name: str, app: Any = None) -> None:
     """Single call for any service.
 
     FastAPI services pass ``app`` to get request/response spans + header
@@ -206,7 +211,7 @@ def setup_observability(service_name: str, app=None) -> None:
         _instrument_logging()
 
 
-def get_tracer(name: str):
+def get_tracer(name: str) -> Any:
     """Convenience accessor for manual spans (no-op tracer if OTel is absent)."""
     if not _OTEL:
         return None

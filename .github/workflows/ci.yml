@@ -33,9 +33,19 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: pip install mypy
-      - run: mypy --install-types --non-interactive services libs app || true
+      - name: Typecheck · whole tree (report)
+        run: mypy --install-types --non-interactive services libs app || true
         # ^ `|| true` while strict surface is small — drop once mypy passes clean.
         #   (basemodel moved under libs/ in the libs-layer refactor.)
+      - name: Strict typecheck · core libs (BLOCKING)
+        # libs/basemodel + libs/shared are kept strict-clean (disallow_untyped_defs
+        # + disallow_any_generics). This FAILS the build on any new untyped def or
+        # bare generic in those innermost layers. --ignore-missing-imports keeps it
+        # reproducible without installing every service's runtime deps.
+        run: |
+          mypy --disallow-untyped-defs --disallow-any-generics \
+               --ignore-missing-imports --follow-imports=silent \
+               libs/basemodel libs/shared
 
   python-test:
     name: Python · pytest (unit + integration)

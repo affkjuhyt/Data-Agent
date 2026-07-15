@@ -40,9 +40,12 @@ class _ServiceFilter(logging.Filter):
         self._env = env
 
     def filter(self, record: logging.LogRecord) -> bool:
-        record.labels = getattr(record, "labels", {})
-        record.labels.setdefault("service", self._service)
-        record.labels.setdefault("env", self._env)
+        # `labels` is a dynamic ECS field, not a declared LogRecord attribute —
+        # read it into a typed local so the setdefault calls type-check.
+        labels: dict[str, str] = getattr(record, "labels", {})
+        labels.setdefault("service", self._service)
+        labels.setdefault("env", self._env)
+        record.labels = labels
 
         # opentelemetry-instrumentation-logging gắn otelTraceID/otelSpanID vào record
         # — đưa vào ECS field trace.id/span.id để nhảy Kibana <-> Jaeger

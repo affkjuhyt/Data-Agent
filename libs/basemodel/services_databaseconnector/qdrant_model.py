@@ -1,7 +1,7 @@
 import datetime
 from enum import Enum
 from pydantic import BaseModel, ConfigDict
-from typing import Any, List
+from typing import Any, List, Optional
 import uuid
 
 
@@ -31,7 +31,7 @@ class HealthCheckLoopConfig(BaseModel):
 
 # Point Data Requirement
 class PointPayload(BaseModel):
-    tenant_id: str = None
+    tenant_id: Optional[str] = None
     data_id: uuid.UUID
     block_id: uuid.UUID
     summary: str

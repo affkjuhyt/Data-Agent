@@ -2,13 +2,13 @@ import datetime
 import uuid
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Annotated, Literal, Optional, Type, Union
+from typing import Any, Annotated, Callable, Literal, Optional, Self, Type, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 _ROLES = frozenset({"insert", "delete", "orm"})
 _SUFFIXES = ("ORM", "Insert", "Delete")
-_partial: dict[str, dict] = {}
+_partial: dict[str, dict[str, Any]] = {}
 
 Method = Literal["insert", "delete", "orm"]
 
@@ -24,7 +24,7 @@ REGISTRY: dict[str, OperationSchema] = {}
 MODEL_TO_TABLE: dict[type, str] = {}
 
 
-def register(method: Method):
+def register(method: Method) -> Callable[[type], type]:
     def decorator(cls: type) -> type:
         table = cls.__name__
         for suffix in _SUFFIXES:
@@ -224,7 +224,7 @@ class WarehouseConfigPayload(BaseModel):
     host: Optional[str] = None
     port: Optional[int] = None
     database: Optional[str] = None
-    selected_tables: Optional[list] = None  # list of table objects {name, schema, rowCount, description, columns}
+    selected_tables: Optional[list[Any]] = None  # list of table objects {name, schema, rowCount, description, columns}
     sync_schedule: Optional[str] = None
     schema_filter: Optional[list[str]] = None
     connection: Optional[dict[str, Any]] = None  # full connection credentials/details
@@ -312,7 +312,7 @@ class KBLifecycleHistoryInsert(BaseModel):
     from_tier: Optional[Tier] = None
     approved_by: Optional[str] = None
     notes: Optional[str] = None
-    pipeline_metadata: Optional[dict] = None
+    pipeline_metadata: Optional[dict[str, Any]] = None
     model_config = ConfigDict(use_enum_values=True)
 
 
@@ -770,7 +770,7 @@ class SystemPromptsInsert(TenantInsertModel):
 class GuardrailsInsert(InsertModel):
     name: str
     type: str
-    conditions: dict = {}
+    conditions: dict[str, Any] = {}
     action: str
     priority: int = 0
     guardrail_model_id: Optional[str] = None
@@ -792,7 +792,7 @@ class MCPInsert(TenantInsertModel):
     endpoint_url: str
     api_key_ref: Optional[str] = None
     status: str = "disconnected"
-    capabilities: Optional[dict] = None
+    capabilities: Optional[dict[str, Any]] = None
     created_by: Optional[str] = None
 
 
@@ -830,11 +830,11 @@ class AgentVersionsInsert(InsertModel):
     status: str = "draft"
     workflow_version_id: Optional[str] = None
     responder_model_id: Optional[str] = None
-    llm_config: Optional[dict] = None
+    llm_config: Optional[dict[str, Any]] = None
     system_prompt_id: Optional[str] = None
     guardrail_id: Optional[str] = None
     memory_enabled: bool = False
-    retrieval_config: Optional[dict] = None
+    retrieval_config: Optional[dict[str, Any]] = None
     changelog: Optional[str] = None
     created_by: Optional[str] = None
 
@@ -873,7 +873,7 @@ class AgentMemoriesInsert(TenantInsertModel):
 class MemoryPolicyInsert(InsertModel):
     agent_id: str
     action_type: str
-    condition: Optional[dict] = None
+    condition: Optional[dict[str, Any]] = None
     enabled: bool = True
     created_by: Optional[str] = None
 
@@ -889,8 +889,8 @@ class ConversationsInsert(TenantInsertModel):
 class MessagesInsert(InsertModel):
     conversation_id: str
     role: str
-    content: dict
-    msg_metadata: Optional[dict] = None
+    content: dict[str, Any]
+    msg_metadata: Optional[dict[str, Any]] = None
     tokens_used: Optional[int] = None
     latency_ms: Optional[int] = None
 
@@ -900,8 +900,8 @@ class AgentTracesInsert(InsertModel):
     message_id: str
     trace_index: int
     tool_name: str
-    input: Optional[dict] = None
-    output: Optional[dict] = None
+    input: Optional[dict[str, Any]] = None
+    output: Optional[dict[str, Any]] = None
     status: str = "success"
     latency_ms: Optional[int] = None
 
@@ -1336,7 +1336,7 @@ class SelectInLoadRequest(BaseModel):
     load_paths: list[str]               # table name dot-notation e.g. ["KBTextBlock.KBTextBlockVersion", "KBTable"]
     filters: list[WhereFilter] = []
     limit: int = 50
-    cursor: Optional[dict] = None  # last row of prior page (keyset); see pagination.advance
+    cursor: Optional[dict[str, Any]] = None  # last row of prior page (keyset); see pagination.advance
     order_by: Optional[OrderBy] = None
 
 
@@ -1346,11 +1346,11 @@ class ReadJoinRequest(BaseModel):
     selected_columns: list[SelectedColumn] = []
     filters: list[WhereFilter] = []
     limit: int = 50
-    cursor: Optional[dict] = None  # last row of prior page (keyset); see pagination.advance
+    cursor: Optional[dict[str, Any]] = None  # last row of prior page (keyset); see pagination.advance
     order_by: Optional[OrderBy] = None
 
     @model_validator(mode="after")
-    def _check_consistency(self):
+    def _check_consistency(self) -> Self:
         if not self.joins_table:
             raise ValueError("joins_table must contain at least one table name")
         table_set = set(self.joins_table)

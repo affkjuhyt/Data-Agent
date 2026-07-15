@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import litellm
 
@@ -30,7 +30,7 @@ class GuardrailCheckError(Exception):
 
 async def llm_guardrail_check(
     text: str,
-    cfg: dict,
+    cfg: dict[str, Any],
     check_type: Literal["input", "output"] = "input",
 ) -> tuple[bool, str]:
     """Trả về (triggered, reason). Raise GuardrailCheckError nếu lệnh gọi LLM
