@@ -13,11 +13,11 @@ the `kb-ingestion-worker`.
 | Path | Contents |
 |---|---|
 | [`src/`](./src) | React 19 + TypeScript + Vite frontend (Knowledge Base UI). `src/lib/apiClient.ts` is the FastAPI client (bearer-only — Kong injects identity) |
-| [`services/`](./services) | Backend microservices: `kb_backend`, `auth-api`, `flow-builder`, `workflow-runtime`, `minio-service`, `release-worker`, `audit-bridge`, `audit-consumer`, `jwks-refresher` |
-| [`infra/`](./infra) | Docker Compose stack, service Dockerfiles, and infra services (`docling`, `model-service`, `kb-ingestion-worker`, `Postgres`, `Neo4j`, `Qdrant`, `kafka`, `kong`) |
-| [`basemodel/`](./basemodel) | Shared data models and database connectors |
+| [`services/`](./services) | Backend microservices: `kb_backend`, `kb-ingestion-worker`, `auth-api`, `flow-builder`, `workflow-runtime`, `orchestrator`, `model-service`, `minio-service`, `sandbox-executor`, `schema-crawler-worker`, `release-worker`, `audit-bridge`, `audit-consumer`, `memory-consumer`, `jwks-refresher` |
+| [`libs/`](./libs) | Shared cross-service layer: `libs/basemodel` (domain models/ORM), `libs/database_connector` (infra clients), `libs/shared` (logger, auth, observability). Innermost architecture layer — enforced by `.importlinter` |
+| [`infra/`](./infra) | Docker Compose stack + service infra (`Postgres`, `Neo4j`, `Qdrant`, `MinIO`, `kafka`, `kong`, `keycloak`, observability) |
 | [`alembic/`](./alembic) | Database migrations |
-| [`docs/`](./docs) | Architecture and subsystem docs |
+| [`RUNBOOK.md`](./RUNBOOK.md) · [`SECURITY.md`](./SECURITY.md) | Deploy/operate runbook · security posture & release hardening |
 
 ---
 

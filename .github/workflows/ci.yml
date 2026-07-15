@@ -33,8 +33,9 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: pip install mypy
-      - run: mypy --install-types --non-interactive services basemodel app || true
+      - run: mypy --install-types --non-interactive services libs app || true
         # ^ `|| true` while strict surface is small — drop once mypy passes clean.
+        #   (basemodel moved under libs/ in the libs-layer refactor.)
 
   python-test:
     name: Python · pytest (unit + integration)
@@ -182,3 +183,37 @@ jobs:
         run: npm run typecheck:strict || true
       - name: Prettier format check (report)
         run: npm run format:check || true
+
+  security-scan:
+    # Supply-chain guardrails: known-CVE dependencies + filesystem vuln/secret/
+    # misconfig scan. REPORT-ONLY for now (`|| true` / exit-code 0) because there
+    # is an existing baseline to burn down — flip pip-audit to blocking and set
+    # trivy `exit-code: 1` on HIGH,CRITICAL once the baseline is clean.
+    name: Security · deps CVE + fs scan (report)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install pip-audit
+      - name: Dependency CVE scan (pip-audit · report)
+        # Audit every service's pinned deps. `-r` per requirements.txt; `|| true`
+        # so a known CVE doesn't block the pipeline yet. Drop `|| true` per file
+        # as each is triaged/patched.
+        run: |
+          for req in $(git ls-files '*requirements*.txt'); do
+            echo "::group::pip-audit $req"
+            pip-audit -r "$req" --desc on || true
+            echo "::endgroup::"
+          done
+      - name: Filesystem vuln + secret + misconfig scan (trivy · report)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          exit-code: "0"   # report-only; set to "1" to block once baseline is clean
+          ignore-unfixed: true

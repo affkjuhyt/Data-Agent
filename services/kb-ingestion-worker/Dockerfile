@@ -15,6 +15,9 @@ RUN pip install --no-cache-dir torch torchvision --index-url https://download.py
 
 # Headless Chromium + its OS libraries for the web (SPA) render path. --with-deps
 # installs the apt libraries Chromium needs; the browser lives in the image.
+# Install into a world-readable path (not /root/.cache) so the non-root app user
+# added below can still find the browser at runtime.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN apt-get update && python -m playwright install --with-deps chromium && rm -rf /var/lib/apt/lists/*
 
 # Copy only what the worker imports — nothing from app/
@@ -25,5 +28,11 @@ COPY services/kb-ingestion-worker/    /app/services/kb-ingestion-worker/
 # /app        → resolves services.*, libs.*
 # worker dir  → resolves local imports (config, silver, gold, worker, etc.)
 ENV PYTHONPATH=/app:/app/services/kb-ingestion-worker
+
+# Drop root — worker needs a writable HOME for Chromium's user cache/profile;
+# the browser itself lives at /ms-playwright (root-owned, world-readable).
+RUN addgroup --system app && adduser --system --ingroup app --home /home/app app \
+    && chown -R app:app /home/app
+USER app
 
 CMD ["python", "services/kb-ingestion-worker/main.py"]

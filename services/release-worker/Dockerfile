@@ -8,12 +8,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Cài Python deps
-COPY release-worker/requirements.txt .
+COPY services/release-worker/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source
-COPY release-worker/ .
-COPY shared/ ./shared/
+COPY services/release-worker/ .
+# shared code now lives in libs/shared; mount it under the bare `shared`
+# package name this service imports (import shared.xxx).
+COPY libs/shared/ ./shared/
+
+# Drop root — read-only app surface.
+RUN addgroup --system app && adduser --system --ingroup app app
+USER app
 
 EXPOSE 8100
 
