@@ -1,19 +1,19 @@
 import os
 
-POSTGRES_URL      = os.getenv("POSTGRES_URL",      "postgresql+asyncpg://aeroflow:aeroflow_secret@postgres/aeroflow_kb")
-MONGO_URL         = os.getenv("MONGO_URL",         "mongodb://mongo:27017/dataagent")
-MINIO_URL         = os.getenv("MINIO_URL",         "http://minioadmin:minioadmin@minio:9000")
-KAFKA_URL         = os.getenv("KAFKA_URL",         "kafka:9092")
-QDRANT_URL        = os.getenv("QDRANT_URL",        "http://qdrant:6333")
-NEO4J_URI         = os.getenv("NEO4J_URI",         "bolt://neo4j:7687")
+POSTGRES_URL = os.getenv("POSTGRES_URL", "postgresql+asyncpg://aeroflow:aeroflow_secret@postgres/aeroflow_kb")
+MONGO_URL = os.getenv("MONGO_URL", "mongodb://mongo:27017/dataagent")
+MINIO_URL = os.getenv("MINIO_URL", "http://minioadmin:minioadmin@minio:9000")
+KAFKA_URL = os.getenv("KAFKA_URL", "kafka:9092")
+QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333")
+NEO4J_URI = os.getenv("NEO4J_URI", "bolt://neo4j:7687")
 # The LLM/embed/rerank backend is owned entirely by model-service. The worker
 # only knows this URL and never which backend (local vs Colab) serves a call.
 MODEL_SERVICE_URL = os.getenv("MODEL_SERVICE_URL", "http://model-service:8001")
 
-KAFKA_CONSUMER_GROUP          = os.getenv("KAFKA_CONSUMER_GROUP",          "kb-ingestion")
-KAFKA_TOPIC_SILVER            = os.getenv("KAFKA_TOPIC_SILVER",            "kb.promote.silver")
-KAFKA_TOPIC_GOLD              = os.getenv("KAFKA_TOPIC_GOLD",              "kb.promote.gold")
-KAFKA_TOPIC_CONFLICT_RESOLVE  = os.getenv("KAFKA_TOPIC_CONFLICT_RESOLVE",  "kb.resolve.conflict")
+KAFKA_CONSUMER_GROUP = os.getenv("KAFKA_CONSUMER_GROUP", "kb-ingestion")
+KAFKA_TOPIC_SILVER = os.getenv("KAFKA_TOPIC_SILVER", "kb.promote.silver")
+KAFKA_TOPIC_GOLD = os.getenv("KAFKA_TOPIC_GOLD", "kb.promote.gold")
+KAFKA_TOPIC_CONFLICT_RESOLVE = os.getenv("KAFKA_TOPIC_CONFLICT_RESOLVE", "kb.resolve.conflict")
 
 # ── Dead-letter queue + bounded retry (silver & gold) ─────────────────────────
 # Previously a silver/gold exception was logged, the document marked FAILED, and
@@ -22,7 +22,7 @@ KAFKA_TOPIC_CONFLICT_RESOLVE  = os.getenv("KAFKA_TOPIC_CONFLICT_RESOLVE",  "kb.r
 # (re-published to the SAME stage topic with an incremented `attempts` counter),
 # and only after the attempts are exhausted is it routed to the DLQ topic — where
 # it stays inspectable and replayable instead of vanishing.
-KAFKA_TOPIC_DLQ       = os.getenv("KAFKA_TOPIC_DLQ",       "kb.ingestion.dlq")
+KAFKA_TOPIC_DLQ = os.getenv("KAFKA_TOPIC_DLQ", "kb.ingestion.dlq")
 INGESTION_MAX_ATTEMPTS = int(os.getenv("INGESTION_MAX_ATTEMPTS", "3"))
 
 # ── Consume concurrency ───────────────────────────────────────────────────────
@@ -35,14 +35,14 @@ INGESTION_MAX_ATTEMPTS = int(os.getenv("INGESTION_MAX_ATTEMPTS", "3"))
 #   - GOLD is I/O-bound (LLM extraction + embedding HTTP + pooled DB writes) and
 #     overlaps cheaply, so it runs several in parallel. This is the real win:
 #     a doc's gold I/O can now proceed while another doc is still OCR-ing in silver.
-CONSUME_CONCURRENCY   = int(os.getenv("CONSUME_CONCURRENCY",   "8"))
-SILVER_CONCURRENCY    = int(os.getenv("SILVER_CONCURRENCY",    "1"))
-GOLD_CONCURRENCY      = int(os.getenv("GOLD_CONCURRENCY",      "6"))
+CONSUME_CONCURRENCY = int(os.getenv("CONSUME_CONCURRENCY", "8"))
+SILVER_CONCURRENCY = int(os.getenv("SILVER_CONCURRENCY", "1"))
+GOLD_CONCURRENCY = int(os.getenv("GOLD_CONCURRENCY", "6"))
 # Conflict resolution is I/O-bound (DB reads + LLM merge + Qdrant/Neo4j writes).
 # Keep it below GOLD_CONCURRENCY to avoid starving gold tasks of LLM/embed capacity.
-CONFLICT_CONCURRENCY  = int(os.getenv("CONFLICT_CONCURRENCY",  "3"))
+CONFLICT_CONCURRENCY = int(os.getenv("CONFLICT_CONCURRENCY", "3"))
 
-MINIO_BUCKET      = os.getenv("MINIO_BUCKET",      "knowledge-base")
+MINIO_BUCKET = os.getenv("MINIO_BUCKET", "knowledge-base")
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "knowledge")
 
 # ── Document-level collection (2-step retrieval) ──────────────────────────────
@@ -56,13 +56,13 @@ QDRANT_DOC_COLLECTION = os.getenv("QDRANT_DOC_COLLECTION", "knowledge_documents"
 # by one LLM call; if the concatenated result still exceeds DOC_SUMMARY_TARGET_CHARS
 # the pass repeats, at most DOC_SUMMARY_MAX_DEPTH times (then hard-truncate) — a
 # small model can return summaries that don't shrink, so the loop must be bounded.
-DOC_SUMMARY_BATCH_CHARS  = int(os.getenv("DOC_SUMMARY_BATCH_CHARS",  "4000"))
+DOC_SUMMARY_BATCH_CHARS = int(os.getenv("DOC_SUMMARY_BATCH_CHARS", "4000"))
 DOC_SUMMARY_TARGET_CHARS = int(os.getenv("DOC_SUMMARY_TARGET_CHARS", "4000"))
-DOC_SUMMARY_MAX_DEPTH    = int(os.getenv("DOC_SUMMARY_MAX_DEPTH",    "4"))
+DOC_SUMMARY_MAX_DEPTH = int(os.getenv("DOC_SUMMARY_MAX_DEPTH", "4"))
 
 # Entity/relationship extraction now happens ONCE per document (from the rolled-up
 # summary) instead of per chunk, so the caps are higher than the old per-chunk 5.
-MAX_DOC_ENTITIES      = int(os.getenv("MAX_DOC_ENTITIES",      "15"))
+MAX_DOC_ENTITIES = int(os.getenv("MAX_DOC_ENTITIES", "15"))
 MAX_DOC_RELATIONSHIPS = int(os.getenv("MAX_DOC_RELATIONSHIPS", "15"))
 
 # Language of the extraction prompts: "vi" (native Vietnamese instructions — the
@@ -90,21 +90,37 @@ WEB_USE_PLAYWRIGHT = os.getenv("WEB_USE_PLAYWRIGHT", "1") not in ("0", "false", 
 # Max seconds to wait for the page's network to settle (template/content to finish
 # painting) after DOMContentLoaded before grabbing the rendered HTML.
 WEB_RENDER_WAIT = float(os.getenv("WEB_RENDER_WAIT", "12"))
-# Similarity floor for the top-1 candidate. Anything at/above this score is handed
-# to the LLM, which decides whether it's genuinely a conflict. No auto-resolve —
-# every confirmed conflict is surfaced as PENDING for human review.
-CONFLICT_SIMILARITY_THRESHOLD  = float(os.getenv("CONFLICT_SIMILARITY_THRESHOLD",  "0.90"))
+# Similarity floor for a stage-2 candidate to enter the stage-3 reasoning-pivot
+# comparison. No auto-resolve — every confirmed conflict is surfaced as PENDING
+# for human review.
+
+#Conflict
+CONFLICT_SIMILARITY_THRESHOLD = float(os.getenv("CONFLICT_SIMILARITY_THRESHOLD", "0.90"))
+# Max candidate chunks retrieved per question in the conflict pipeline's stage 2.
+CONFLICT_TOP_K_DOCS = int(os.getenv("CONFLICT_TOP_K_DOCS", "5"))
+# A stage-3 candidate whose irrelevant_score is at/above this floor is dropped before conflict-type assignment.
+CONFLICT_IRRELEVANT_THRESHOLD = float(os.getenv("CONFLICT_IRRELEVANT_THRESHOLD", "0.5"))
+# Stage-1 fallback source length (chars) when a chunk has no summary yet.
+CONFLICT_QUESTION_SOURCE_CHAR_LIMIT = int(os.getenv("CONFLICT_QUESTION_SOURCE_CHAR_LIMIT", "2000"))
+# A chunk can answer several distinct questions (stage 1); this bounds how many
+# questions run stage 2+3 concurrently.
+CONFLICT_QUESTION_CONCURRENCY = int(os.getenv("CONFLICT_QUESTION_CONCURRENCY", "3"))
+# Within ONE question, how many candidate documents stage 3 scores concurrently.
+CONFLICT_DOCUMENT_CONCURRENCY = int(os.getenv("CONFLICT_DOCUMENT_CONCURRENCY", "3"))
+# A valid-but-empty pivot list isn't a JSON error, so _llm_generate_json's own
+# retry never fires for it. This caps extra attempts when that happens.
+CONFLICT_SEMANTIC_RETRY_ATTEMPTS = int(os.getenv("CONFLICT_SEMANTIC_RETRY_ATTEMPTS", "2"))
 
 # Entity registry
-ENTITY_COLLECTION             = os.getenv("ENTITY_COLLECTION",              "entity_registry")
+ENTITY_COLLECTION = os.getenv("ENTITY_COLLECTION", "entity_registry")
 # Measured on multilingual-e5-small (its cosine range is compressed toward 1.0):
 # same-entity pairs score 0.95-0.98 but DIFFERENT countries score up to 0.949
 # (Bangladesh~Ấn Độ 0.9492 vs TP.HCM~Sài Gòn 0.9495 — overlapping!). So:
 #   >= ENTITY_SIMILARITY_THRESHOLD (0.96): automatic merge (type-guarded)
 #   >= ENTITY_VERIFY_BAND (0.85): merge ONLY if the LLM confirms same-entity
 #   below: new entity. Cosine alone cannot decide merges with this model.
-ENTITY_SIMILARITY_THRESHOLD   = float(os.getenv("ENTITY_SIMILARITY_THRESHOLD",   "0.96"))
-ENTITY_VERIFY_BAND            = float(os.getenv("ENTITY_VERIFY_BAND",            "0.85"))
+ENTITY_SIMILARITY_THRESHOLD = float(os.getenv("ENTITY_SIMILARITY_THRESHOLD", "0.96"))
+ENTITY_VERIFY_BAND = float(os.getenv("ENTITY_VERIFY_BAND", "0.85"))
 # Soft (cosine + word-overlap Jaccard) matching is DISABLED by default: Vietnamese
 # breaks it both ways — true synonyms share zero tokens ("Sài Gòn"/"TP.HCM") so the
 # soft path never fires for them, while distinct entities share long runs of generic
@@ -112,16 +128,16 @@ ENTITY_VERIFY_BAND            = float(os.getenv("ENTITY_VERIFY_BAND",           
 # it confirms FALSE merges. Hard cosine + the LLM-alias table cover the real cases;
 # under-merging (duplicate node, joinable later) is far cheaper than over-merging
 # (permanently corrupted graph node).
-ENTITY_SOFT_MATCH             = os.getenv("ENTITY_SOFT_MATCH", "0") == "1"
-ENTITY_SOFT_THRESHOLD         = float(os.getenv("ENTITY_SOFT_THRESHOLD",          "0.72"))
-ENTITY_WORD_OVERLAP_THRESHOLD = float(os.getenv("ENTITY_WORD_OVERLAP_THRESHOLD",  "0.50"))
+ENTITY_SOFT_MATCH = os.getenv("ENTITY_SOFT_MATCH", "0") == "1"
+ENTITY_SOFT_THRESHOLD = float(os.getenv("ENTITY_SOFT_THRESHOLD", "0.72"))
+ENTITY_WORD_OVERLAP_THRESHOLD = float(os.getenv("ENTITY_WORD_OVERLAP_THRESHOLD", "0.50"))
 
-LLM_MODEL          = os.getenv("LLM_MODEL",          "llama3")
-VLM_MODEL          = os.getenv("VLM_MODEL",           "qwen2.5-vl")
+LLM_MODEL = os.getenv("LLM_MODEL", "llama3")
+VLM_MODEL = os.getenv("VLM_MODEL", "qwen2.5-vl")
 
 # Fallback embed model UUID used by conflict_resolver when it has no collection
 # context.  The gold pipeline resolves the real UUID per-collection at task time
 # (via _resolve_collection_embed_model in gold.py) — this is only a last resort.
 EMBED_MODEL_ID: str = os.getenv("EMBED_MODEL_ID", "")
 VLM_FRAME_INTERVAL = int(os.getenv("VLM_FRAME_INTERVAL", "30"))
-USE_VLM            = os.getenv("USE_VLM", "false").lower() == "true"
+USE_VLM = os.getenv("USE_VLM", "false").lower() == "true"

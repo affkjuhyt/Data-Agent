@@ -1,30 +1,7 @@
-"""
-Gold stage — document-level promotion.
 
-promote_to_gold is decomposed into step functions; the emitter.step wrapper emits
-each step's start/complete/error so no SSE event is written by hand in the flow.
-
-Per chunk (_process_chunk):
-  1. Embed the chunk text (silver already produced summary + intents).
-  2. Conflict detect (_detect_and_record_conflict): nearest-neighbour search; if the
-     LLM confirms a conflict, record it PENDING and skip the chunk.
-  3. Atomic commit (_commit_chunk_atomic): Postgres block+version + Qdrant chunk
-     point, committed together (Qdrant point rolled back if Postgres fails).
-  4. Canonicalize the chunk's entities + add its bridges to the graph
-     (GraphStore.add_chunk), keyed by block_id for provenance.
-
-Per document:
-  5. Reduce chunk summaries → ONE document summary (_reduce_document_summary).
-  6. Upsert the doc-summary point LAST (_write_doc_summary_point) — a document absent
-     from the doc collection is invisible to 2-step retrieval, so this is the
-     transaction boundary.
-  7. Flip KBData tier to GOLD (_update_document_tier).
-
-A failure in steps 5–7 leaves committed chunks but no doc point and no GOLD tier;
-re-promotion first cleans up the previous partial state, so retry is safe.
-"""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -32,7 +9,7 @@ import time as _time
 import unicodedata
 import uuid
 from collections import Counter
-from typing import Any
+from typing import Any, NamedTuple
 
 from qdrant_client import models as qmodels
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
@@ -58,6 +35,8 @@ from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import
     KBConflictBatchORM,
 )
 from basemodel.services_databaseconnector.qdrant_model import (
+    MatchingPayload,
+    MatchType,
     SearchRequest,
 )
 from services.database_connector.model_connector import ModelServiceClient
@@ -79,13 +58,7 @@ from utils.prompts import GOLD_SYSTEM_PROMPTS as SYSTEM_PROMPTS
 log = logging.getLogger(__name__)
 
 _JSON_FENCE = re.compile(r"```(?:json)?\s*([\s\S]*?)```", re.IGNORECASE)
-_JSON_OBJ   = re.compile(r"\{[\s\S]*\}", re.DOTALL)
-
-# Words that are never meaningful knowledge-graph entities regardless of context.
-# English + Vietnamese (documents are primarily Vietnamese). Compared against the
-# NFC-casefolded entity name, so diacritics must be written exactly.
-_GENERIC_BLACKLIST: frozenset[str] = frozenset({
-})
+_JSON_OBJ = re.compile(r"\{[\s\S]*\}", re.DOTALL)
 
 
 def _fold(s: str) -> str:
@@ -109,15 +82,14 @@ def _json_hint(raw: str, exc: json.JSONDecodeError) -> str:
 
 
 async def _llm_generate_json(
-    system_prompt: str,
-    user: str,
-    max_tokens: int = 1024,
-    temperature: float = 0.1,
-    max_retries: int = 2,
-    system_type: str = "",
+        system_prompt: str,
+        user: str,
+        max_tokens: int = 1024,
+        temperature: float = 0.1,
+        max_retries: int = 2,
+        system_type: str = "",
 ) -> tuple[dict, str, int]:
     """Returns (parsed_dict, last_raw_response, attempts_used).
-
     `system_type` is a key of SYSTEM_PROMPTS and of utils.llm_schemas: it selects the
     JSON schema llm_client forwards to the model-service /generate gateway, which the
     served model applies as its response_format for constrained decoding.
@@ -154,6 +126,19 @@ async def _llm_generate_json(
     raise ValueError(f"LLM failed to return valid JSON after {max_retries} attempts: {last_hint}")
 
 
+async def _retry_while_empty(produce_result, max_attempts: int, log_context: str) -> list:
+    """Call produce_result up to max_attempts times, returning the first non-empty
+    list. A valid-but-empty response isn't a JSON error, so _llm_generate_json's
+    own retry never fires for it — this closes that gap for list-shaped results."""
+    result: list = []
+    for attempt in range(max_attempts):
+        result = await produce_result()
+        if result:
+            return result
+        log.warning("Gold: %s returned empty (attempt %d/%d)", log_context, attempt + 1, max_attempts)
+    return result
+
+
 async def verify_merge_pair(name_a: str, desc_a: str, name_b: str, desc_b: str) -> bool:
     """LLM same-entity judgment for gray-band registry merges. Conservative on
     any failure: False (don't merge — a duplicate node is recoverable, a wrong
@@ -167,7 +152,6 @@ async def verify_merge_pair(name_a: str, desc_a: str, name_b: str, desc_b: str) 
     except Exception as exc:
         log.warning("Gold merge-verify: failed (%s) — NOT merging", exc)
         return False
-
 
 
 def _to_score(v: Any, default: float = 0.5) -> float:
@@ -190,10 +174,10 @@ def _to_entity_list(raw_value: Any) -> list[dict[str, Any]]:
     seen_names: set[str] = set()
     for item in raw_value:
         if isinstance(item, dict):
-            name        = str(item.get("name") or "").strip()
+            name = str(item.get("name") or "").strip()
             entity_type = _to_entity_type(item.get("type"))
             description = str(item.get("description") or "").strip()
-            score       = _to_score(item.get("score"))
+            score = _to_score(item.get("score"))
             aliases = [
                 alias.strip() for alias in (item.get("aliases") or [])
                 if isinstance(alias, str) and alias.strip()
@@ -204,13 +188,10 @@ def _to_entity_list(raw_value: Any) -> list[dict[str, Any]]:
             continue
         if not name or len(name) < 2:
             continue
-        if _fold(name) in _GENERIC_BLACKLIST:
-            log.debug("Gold: filtered generic entity %r", name)
-            continue
         # Aliases that are themselves generic words would poison the alias table.
         aliases = [
             alias for alias in aliases
-            if _fold(alias) not in _GENERIC_BLACKLIST and _fold(alias) != _fold(name)
+            if _fold(alias) not in _fold(alias) != _fold(name)
         ]
         folded_name = _fold(name)
         if folded_name in seen_names:
@@ -272,8 +253,8 @@ async def _reduce_batch(texts: list[str]) -> str:
 
 
 async def _reduce_summaries(
-    summaries: list[str],
-    emitter: PipelineEventEmitter = NULL_EMITTER,
+        summaries: list[str],
+        emitter: PipelineEventEmitter = NULL_EMITTER,
 ) -> str:
     """Recursively reduce chunk summaries into one document summary.
 
@@ -293,10 +274,10 @@ async def _reduce_summaries(
             break
         batches = _batch_texts(texts, cfg.DOC_SUMMARY_BATCH_CHARS)
         await emitter.emit("gold.doc.reduce.step", {
-            "depth":   depth,
-            "inputs":  len(texts),
+            "depth": depth,
+            "inputs": len(texts),
             "batches": len(batches),
-            "chars":   total,
+            "chars": total,
         })
         reduced = [await _reduce_batch(b) for b in batches]
         # No shrink → another pass won't help; stop and truncate below.
@@ -315,10 +296,11 @@ async def _reduce_summaries(
         doc_summary = doc_summary[: cfg.DOC_SUMMARY_TARGET_CHARS]
     return doc_summary
 
+
 # ── Resolvers (collection model / knowledge base / document name) ─────────────
 async def _get_collection_embed_model_id(
-    postgres: PostgresClient,
-    collection_name: str,
+        postgres: PostgresClient,
+        collection_name: str,
 ) -> str:
     """Return the embedding_model_id UUID for a named Qdrant collection.
 
@@ -341,6 +323,7 @@ async def _get_collection_embed_model_id(
             collection_name, exc,
         )
     return cfg.EMBED_MODEL_ID
+
 
 DEFAULT_KNOWLEDGE_BASE = "General Knowledge Base"
 
@@ -366,12 +349,12 @@ async def _get_data_row(postgres: PostgresClient, data_id: str) -> tuple[str, st
 # ── Re-promotion cleanup ──────────────────────────────────────────────────────
 
 async def _cleanup_previous_promotion(
-    postgres: PostgresClient,
-    qdrant: AsyncQdrantClient,
-    graph: GraphStore,
-    tenant_id: str,
-    data_id: str,
-    knowledge_base: str = "",
+        postgres: PostgresClient,
+        qdrant: AsyncQdrantClient,
+        graph: GraphStore,
+        tenant_id: str,
+        data_id: str,
+        knowledge_base: str = "",
 ) -> None:
     """Erase any previous (possibly partial) gold state for this document so a
     retry never duplicates chunk points, blocks, or graph edges. Idempotent."""
@@ -414,23 +397,23 @@ async def _cleanup_previous_promotion(
 # ── Atomic per-chunk commit (Postgres + Qdrant — Neo4j is document-level now) ──
 
 async def _commit_chunk_atomic(
-    postgres: PostgresClient,
-    qdrant: AsyncQdrantClient,
-    tenant_id: str,
-    data_id: str,
-    block_index: int,
-    content: str,
-    table_involved: bool,
-    table: dict | None,
-    payload_meta: dict,
-    embedding: list[float],
-    summary: str,
-    approved_by: str,
-    embed_model_id: str,
-    knowledge_base: str = "",
-    entities: list[str] | None = None,
-    entity_type_fields: dict | None = None,
-    emitter: PipelineEventEmitter = NULL_EMITTER,
+        postgres: PostgresClient,
+        qdrant: AsyncQdrantClient,
+        tenant_id: str,
+        data_id: str,
+        block_index: int,
+        content: str,
+        table_involved: bool,
+        table: dict | None,
+        payload_meta: dict,
+        embedding: list[float],
+        summary: str,
+        approved_by: str,
+        embed_model_id: str,
+        knowledge_base: str = "",
+        entities: list[str] | None = None,
+        entity_type_fields: dict | None = None,
+        emitter: PipelineEventEmitter = NULL_EMITTER,
 ) -> str:
     block_id: str | None = None
     qdrant_upserted = False
@@ -482,15 +465,15 @@ async def _commit_chunk_atomic(
                             id=block_id,
                             vector=embedding,
                             payload={
-                                "tenant_id":          tenant_id,
-                                "data_id":            data_id,
-                                "block_id":           block_id,
-                                "summary":            summary,
-                                "entities":           entities or [],
+                                "tenant_id": tenant_id,
+                                "data_id": data_id,
+                                "block_id": block_id,
+                                "summary": summary,
+                                "entities": entities or [],
                                 **(entity_type_fields or {}),
                                 "embedding_model_id": embed_model_id,
-                                "knowledge_base":     knowledge_base,
-                                "is_deleted":         False,
+                                "knowledge_base": knowledge_base,
+                                "is_deleted": False,
                             },
                         )
                     ],
@@ -502,9 +485,9 @@ async def _commit_chunk_atomic(
                 log.info("Gold: atomic commit OK block_index=%d block_id=%s", block_index, block_id)
 
                 await emitter.emit("gold.store.timing", {
-                    "index":       block_index,
+                    "index": block_index,
                     "postgres_ms": postgres_ms,
-                    "qdrant_ms":   qdrant_ms,
+                    "qdrant_ms": qdrant_ms,
                 })
 
                 return block_id
@@ -536,14 +519,14 @@ async def _commit_chunk_atomic(
 # ── Per-chunk entity canonicalization (shared by the gold loop + conflict resolver) ──
 
 async def canonicalize_chunk_entities(
-    qdrant: AsyncQdrantClient,
-    postgres: PostgresClient,
-    model: ModelServiceClient,
-    tenant_id: str,
-    raw_entities: list[dict],
-    *,
-    knowledge_base: str = "",
-    embed_model_id: str = "",
+        qdrant: AsyncQdrantClient,
+        postgres: PostgresClient,
+        model: ModelServiceClient,
+        tenant_id: str,
+        raw_entities: list[dict],
+        *,
+        knowledge_base: str = "",
+        embed_model_id: str = "",
 ) -> tuple[list[str], dict[str, str], dict[str, str], dict[str, str], dict[str, str]]:
     """Filter (blacklist/dedup) → registry-canonicalize one chunk's silver entities.
 
@@ -589,7 +572,7 @@ async def canonicalize_chunk_entities(
 
 
 def remap_chunk_relationships(
-    relationships: list[dict], raw_to_canonical: dict[str, str]
+        relationships: list[dict], raw_to_canonical: dict[str, str]
 ) -> list[dict]:
     """Remap a chunk's silver relationships (chunk-local names) onto canonical
     entities. Drops edges whose endpoints didn't canonicalize or are self-loops."""
@@ -617,121 +600,412 @@ def _heuristic_summary(content: str) -> str:
 
 
 # ── Main stage function ────────────────────────────────────────────────────────
-async def _detect_conflict(existing_summary: str, incoming_summary: str) -> tuple[dict, str]:
-    """Returns (conflict_result_dict, raw_llm_answer)."""
-    user = (
-        f"Existing chunk summary:\n{existing_summary}\n\n"
-        f"Incoming chunk summary:\n{incoming_summary}"
-    )
-    try:
-        result, raw, _ = await _llm_generate_json(
-            SYSTEM_PROMPTS["conflict"], user, max_tokens=128, system_type="conflict",
-        )
-        return result, raw
-    except Exception as exc:
-        log.warning("Gold: conflict detection failed (%s) — treating as no conflict", exc)
-        return {"has_conflict": False}, f"ERROR: {exc}"
 
-async def _detect_and_record_conflict(
-    *, postgres, qdrant, tenant_id, data_id, knowledge_base, embed_model_id, approved_by,
-    block_index, content, summary, intents, table_involved, table, embedding, chunk,
-    ensure_conflict_batch, emitter,
-) -> bool:
-    """Search the chunk's nearest neighbour; if it clears the similarity floor and the
-    LLM confirms a conflict, record it (PENDING) and return True. A failed conflict
-    insert is logged and treated as "no conflict" so the chunk is never lost."""
-    conflict_started = _time.monotonic()
+# The twelve criteria stage 3 scores each candidate on (definitions live in the
+# stage-3b system prompt, utils.prompts._PIVOT_COMPARE_SYSTEM_VI).
+_PIVOT_CRITERIA: tuple[str, ...] = (
+    "semantic_ambiguity_score", "semantic_multilingual_score",
+    "temporal_time_score", "temporal_version_score",
+    "factual_entities_score", "factual_relationships_score", "factual_quantity_score",
+    "reasoning_logic_score", "constraint_policy_score", "missing_information_score",
+    "duplicate_score", "irrelevant_score",
+)
+
+# Maps a dominant criterion to the closest existing ConflictType/ConflictSeverity
+# so the new pipeline stays compatible with the conflict-review DB schema and UI.
+_CRITERION_CONFLICT_TYPE: dict[str, ConflictType] = {
+    "duplicate_score": ConflictType.CONTENT_DUPLICATE,
+    "temporal_time_score": ConflictType.CONTENT_UPDATE,
+    "temporal_version_score": ConflictType.CONTENT_UPDATE,
+    "semantic_ambiguity_score": ConflictType.CONTENT_CONFLICT,
+    "semantic_multilingual_score": ConflictType.CONTENT_CONFLICT,
+    "missing_information_score": ConflictType.CONTENT_CONFLICT,
+    "constraint_policy_score": ConflictType.CONTENT_CONFLICT,
+    "factual_entities_score": ConflictType.CONTENT_CONTRADICTION,
+    "factual_relationships_score": ConflictType.CONTENT_CONTRADICTION,
+    "factual_quantity_score": ConflictType.CONTENT_CONTRADICTION,
+    "reasoning_logic_score": ConflictType.CONTENT_CONTRADICTION,
+}
+_CRITERION_SEVERITY: dict[str, ConflictSeverity] = {
+    "duplicate_score": ConflictSeverity.LOW,
+    "semantic_ambiguity_score": ConflictSeverity.LOW,
+    "semantic_multilingual_score": ConflictSeverity.LOW,
+    "temporal_time_score": ConflictSeverity.MEDIUM,
+    "temporal_version_score": ConflictSeverity.MEDIUM,
+    "missing_information_score": ConflictSeverity.MEDIUM,
+    "constraint_policy_score": ConflictSeverity.MEDIUM,
+    "factual_entities_score": ConflictSeverity.HIGH,
+    "factual_relationships_score": ConflictSeverity.HIGH,
+    "factual_quantity_score": ConflictSeverity.HIGH,
+    "reasoning_logic_score": ConflictSeverity.HIGH,
+}
+
+
+class QuestionPivots(NamedTuple):
+    """Stage-1 result: the question a chunk answers and the reasoning-pivot
+    chain leading to it."""
+    question: str
+    intent: str
+    entities: list[str]
+    pivots: list[str]
+
+
+def _parse_question_pivots_entry(entry: dict) -> QuestionPivots | None:
+    """One "questions" array entry → QuestionPivots, or None if unusable."""
+    question = str(entry.get("question") or "").strip()
+    pivots = [pivot for pivot in (entry.get("pivots") or []) if isinstance(pivot, str) and pivot.strip()]
+    if not question or not pivots:
+        return None
+    entities = [
+        entity_name for entity_name in (entry.get("question_entities") or [])
+        if isinstance(entity_name, str) and entity_name.strip()
+    ]
+    return QuestionPivots(
+        question=question, intent=str(entry.get("question_intent") or "").strip(),
+        entities=entities, pivots=pivots,
+    )
+
+
+def _parse_question_pivots_entries(entries: list) -> list[QuestionPivots]:
+    """A stage-1 "questions" array → QuestionPivots, dropping unusable entries."""
+    question_pivots_list: list[QuestionPivots] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        question_pivots = _parse_question_pivots_entry(entry)
+        if question_pivots is not None:
+            question_pivots_list.append(question_pivots)
+    return question_pivots_list
+
+
+async def _derive_question_pivots(chunk_text: str) -> list[QuestionPivots]:
+    """Stage 1 (single prompt, retried while empty): every distinct question this
+    chunk answers, each with its own intent, entities, and reasoning-pivot chain."""
+
+    async def _attempt() -> list[QuestionPivots]:
+        try:
+            result, _, _ = await _llm_generate_json(
+                SYSTEM_PROMPTS["pivot-question"], chunk_text, max_tokens=768,
+                system_type="pivot-question",
+            )
+        except Exception as exc:
+            log.warning("Gold: pivot-question extraction failed (%s)", exc)
+            return []
+        return _parse_question_pivots_entries(result.get("questions") or [])
+
+    return await _retry_while_empty(_attempt, cfg.CONFLICT_SEMANTIC_RETRY_ATTEMPTS, "pivot-question extraction")
+
+
+async def _retrieve_candidate_chunks(
+        *, qdrant, postgres, model, tenant_id, knowledge_base, embed_model_id,
+        question: str, question_intent: str, question_entities: list[str],
+) -> list:
+    """Stage 2 (no LLM call): embed "question | intent", filter to chunks tagged
+    with an existing canonical entity from question_entities, and return up to
+    CONFLICT_TOP_K_DOCS nearest chunks that clear the similarity floor.
+
+    Qdrant chunk points carry CANONICAL entity names (see canonicalize_chunk_entities),
+    not raw LLM surface forms, so question_entities is resolved through the same
+    registry, read-only, before it can be used as a filter."""
+    canonical_question_entities = await entity_registry.resolve_existing_entities(
+        qdrant, postgres, model, tenant_id, question_entities,
+    )
+    query_vector = (await model.embed([f"{question} | {question_intent}"], model_id=embed_model_id))[0]
+    matching_payload = (
+        [MatchingPayload(field="entities", values=canonical_question_entities)]
+        if canonical_question_entities else None
+    )
     search_response = await qdrant_vector_search(qdrant, SearchRequest(
         tenant_id=tenant_id,
         collection_name=cfg.QDRANT_COLLECTION,
-        query_vector=embedding,
-        limit=1,
+        query_vector=query_vector,
+        limit=cfg.CONFLICT_TOP_K_DOCS,
         knowledge_base=knowledge_base or None,
+        matching_payload=matching_payload,
+        match_type=MatchType.any,
     ))
     hits = search_response.data if search_response.code == 200 and search_response.data else []
-    top_score = max((hit.score for hit in hits), default=0.0)
+    return [hit for hit in hits if hit.score >= cfg.CONFLICT_SIMILARITY_THRESHOLD]
+
+
+def _hit_summary(hit: Any) -> str:
+    """Existing-chunk summary text carried in a Qdrant search hit's payload."""
+    return (hit.payload or {}).get("summary", "")
+
+
+async def _extract_chunk_pivots(question: str, chunk_text: str) -> list[str]:
+    """Stage 3, first CoT prompt (retried while empty): the reasoning-pivot chain
+    a candidate chunk offers toward the fixed question, in the stage-1 triplet
+    structure."""
+    user = f"Câu hỏi: {question}\n\nĐoạn văn bản: {chunk_text}"
+
+    async def _attempt() -> list[str]:
+        try:
+            result, _, _ = await _llm_generate_json(
+                SYSTEM_PROMPTS["pivot-chunk"], user, max_tokens=256, system_type="pivot-chunk",
+            )
+        except Exception as exc:
+            log.warning("Gold: pivot-chunk extraction failed (%s)", exc)
+            return []
+        return [pivot for pivot in (result.get("pivots") or []) if isinstance(pivot, str) and pivot.strip()]
+
+    return await _retry_while_empty(_attempt, cfg.CONFLICT_SEMANTIC_RETRY_ATTEMPTS, "pivot-chunk extraction")
+
+
+async def _compare_pivot_sets(question: str, incoming_pivots: list[str], existing_pivots: list[str]) -> dict:
+    """Stage 3, second CoT prompt: score the incoming vs. existing pivot chains
+    across the twelve conflict criteria."""
+    user = (
+        f"Câu hỏi: {question}\n\n"
+        f"Incoming pivots: {incoming_pivots}\n\n"
+        f"Existing pivots: {existing_pivots}"
+    )
+    try:
+        result, _, _ = await _llm_generate_json(
+            SYSTEM_PROMPTS["pivot-compare"], user, max_tokens=256, system_type="pivot-compare",
+        )
+        return {criterion: _to_score(result.get(criterion), default=0.0) for criterion in _PIVOT_CRITERIA}
+    except Exception as exc:
+        log.warning("Gold: pivot comparison failed (%s) — treating as irrelevant", exc)
+        return {criterion: (1.0 if criterion == "irrelevant_score" else 0.0) for criterion in _PIVOT_CRITERIA}
+
+
+async def _score_one_candidate(question: str, incoming_pivots: list[str], hit: Any) -> dict:
+    """Stage 3 (CoT) for ONE candidate: extract its pivots, then score against
+    the incoming pivots across the twelve criteria."""
+    existing_pivots = await _extract_chunk_pivots(question, _hit_summary(hit))
+    return await _compare_pivot_sets(question, incoming_pivots, existing_pivots)
+
+
+async def _score_candidates(
+        question: str, incoming_pivots: list[str], candidate_hits: list,
+) -> list[tuple[Any, dict]]:
+    """Stage 3: score every candidate concurrently (bounded by
+    CONFLICT_DOCUMENT_CONCURRENCY), then drop candidates below the relevance floor."""
+    document_semaphore = asyncio.Semaphore(cfg.CONFLICT_DOCUMENT_CONCURRENCY)
+
+    async def _score_bounded(hit: Any) -> dict:
+        async with document_semaphore:
+            return await _score_one_candidate(question, incoming_pivots, hit)
+
+    scores_by_candidate = await asyncio.gather(*(_score_bounded(hit) for hit in candidate_hits))
+    return [
+        (hit, scores) for hit, scores in zip(candidate_hits, scores_by_candidate)
+        if scores["irrelevant_score"] < cfg.CONFLICT_IRRELEVANT_THRESHOLD
+    ]
+
+
+def _normalize_criteria_matrix(criteria_by_candidate: list[dict]) -> list[dict]:
+    """Normalize each criterion column across candidates: pij = xij / sum_i(xij).
+    An all-zero column stays zero (no candidate stands out on that criterion)."""
+    column_totals = {
+        criterion: sum(row[criterion] for row in criteria_by_candidate) for criterion in _PIVOT_CRITERIA
+    }
+    return [
+        {
+            criterion: (row[criterion] / column_totals[criterion]) if column_totals[criterion] > 0 else 0.0
+            for criterion in _PIVOT_CRITERIA
+        }
+        for row in criteria_by_candidate
+    ]
+
+
+def _dominant_conflict_criterion(raw_scores: dict) -> str:
+    """The highest-scoring criterion for one candidate, excluding irrelevant_score."""
+    return max(
+        (criterion for criterion in _PIVOT_CRITERIA if criterion != "irrelevant_score"),
+        key=lambda criterion: raw_scores[criterion],
+    )
+
+
+def _select_strongest_conflict(qualifying: list[tuple[Any, dict]]) -> tuple[Any, dict, str]:
+    """Normalize criteria across qualifying candidates and return the one with the
+    strongest share of its own dominant criterion: (hit, scores, criterion)."""
+    normalized_matrix = _normalize_criteria_matrix([scores for _, scores in qualifying])
+    best_index = max(
+        range(len(qualifying)),
+        key=lambda index: normalized_matrix[index][_dominant_conflict_criterion(qualifying[index][1])],
+    )
+    best_hit, best_scores = qualifying[best_index]
+    return best_hit, best_scores, _dominant_conflict_criterion(best_scores)
+
+
+class QuestionPipelineResult(NamedTuple):
+    """Stage 2+3 result for ONE question — the unit of question-level concurrency."""
+    question_pivots: QuestionPivots
+    candidate_hits: list
+    qualifying: list[tuple[Any, dict]]
+
+
+async def _run_question_pipeline(
+        question_pivots: QuestionPivots, *, qdrant, postgres, model, tenant_id, knowledge_base, embed_model_id,
+) -> QuestionPipelineResult:
+    """Stage 2 + stage 3 for ONE question: retrieve candidate chunks, then score them."""
+    candidate_hits = await _retrieve_candidate_chunks(
+        qdrant=qdrant, postgres=postgres, model=model, tenant_id=tenant_id,
+        knowledge_base=knowledge_base, embed_model_id=embed_model_id,
+        question=question_pivots.question, question_intent=question_pivots.intent,
+        question_entities=question_pivots.entities,
+    )
+    qualifying = (
+        await _score_candidates(question_pivots.question, question_pivots.pivots, candidate_hits)
+        if candidate_hits else []
+    )
+    return QuestionPipelineResult(question_pivots, candidate_hits, qualifying)
+
+
+async def _run_question_pipelines(
+        question_pivots_list: list[QuestionPivots], *, qdrant, postgres, model, tenant_id,
+        knowledge_base, embed_model_id,
+) -> list[QuestionPipelineResult]:
+    """Run stage 2+3 for every question concurrently, bounded by
+    CONFLICT_QUESTION_CONCURRENCY."""
+    question_semaphore = asyncio.Semaphore(cfg.CONFLICT_QUESTION_CONCURRENCY)
+
+    async def _run_bounded(question_pivots: QuestionPivots) -> QuestionPipelineResult:
+        async with question_semaphore:
+            return await _run_question_pipeline(
+                question_pivots, qdrant=qdrant, postgres=postgres, model=model, tenant_id=tenant_id,
+                knowledge_base=knowledge_base, embed_model_id=embed_model_id,
+            )
+
+    return list(await asyncio.gather(*(_run_bounded(qp) for qp in question_pivots_list)))
+
+
+async def _persist_conflict_record(
+        *, postgres, ensure_conflict_batch, tenant_id, data_id, block_index, approved_by,
+        content, summary, embedding, intents, table_involved, table, embed_model_id, knowledge_base, chunk,
+        question_pivots: QuestionPivots, best_hit: Any, best_scores: dict,
+        conflict_type: ConflictType, severity: ConflictSeverity, dominant_criterion: str,
+) -> bool:
+    """Insert the winning candidate as a PENDING conflict row. Never raises —
+    returns False on any insert failure so the chunk falls through to a normal commit."""
+    try:
+        insert_response = await postgres.insert(KBConflictInsert(
+            tenant_id=tenant_id,
+            conflict_type=conflict_type,
+            severity=severity,
+            batch_id=await ensure_conflict_batch(),
+            status=ConflictStatus.PENDING,
+            detailed_explanation=(
+                f"{dominant_criterion} ({best_scores[dominant_criterion]:.2f}) — {question_pivots.question}"
+            ),
+            existing_snapshot={"block_id": str(best_hit.id), "summary": _hit_summary(best_hit)},
+            incoming_snapshot={
+                "block_index": block_index,
+                "data_id": data_id,
+                "tenant_id": tenant_id,
+                "approved_by": approved_by,
+                "content": content,
+                "summary": summary,
+                "embedding": embedding,
+                "intents": intents,
+                "table_involved": table_involved,
+                "table": table,
+                "embed_model_id": embed_model_id,
+                "knowledge_base": knowledge_base,
+                "entities": chunk.get("entities") or [],
+                "relationships": chunk.get("relationships") or [],
+                "question": question_pivots.question,
+                "question_intent": question_pivots.intent,
+                "question_entities": question_pivots.entities,
+                "incoming_pivots": question_pivots.pivots,
+                "conflict_criteria_scores": best_scores,
+            },
+        ))
+        if insert_response.code != 200:
+            raise RuntimeError(f"conflict insert returned code {insert_response.code}")
+    except Exception as exc:
+        log.error("Gold: conflict insert failed block_index=%d data_id=%s: %s", block_index, data_id, exc)
+        return False
+    return True
+
+
+async def _detect_and_record_conflict(
+        *, postgres, qdrant, model, tenant_id, data_id, knowledge_base, embed_model_id, approved_by,
+        block_index, content, summary, intents, table_involved, table, embedding, chunk,
+        ensure_conflict_batch, emitter,
+) -> bool:
+    """Reasoning-pivot conflict pipeline root"""
+    pipeline_started = _time.monotonic()
+
+    # Stage 1 — every distinct question this chunk answers, each with its own pivots
+    question_pivots_list = await _derive_question_pivots(
+        summary or content[:cfg.CONFLICT_QUESTION_SOURCE_CHAR_LIMIT]
+    )
+
+    # Stage 2, 3 — concurrent per question
+    results = await _run_question_pipelines(
+        question_pivots_list, qdrant=qdrant, postgres=postgres, model=model, tenant_id=tenant_id,
+        knowledge_base=knowledge_base, embed_model_id=embed_model_id,
+    )
+    total_candidates = sum(len(result.candidate_hits) for result in results)
+    top_score = max((hit.score for result in results for hit in result.candidate_hits), default=0.0)
     await emitter.emit("gold.conflict.check", {
-        "index":      block_index,
-        "candidates": len(hits),
-        "threshold":  cfg.CONFLICT_SIMILARITY_THRESHOLD,
-        "top_score":  round(top_score, 4),
+        "index": block_index,
+        "candidates": total_candidates,
+        "threshold": cfg.CONFLICT_SIMILARITY_THRESHOLD,
+        "top_score": round(top_score, 4),
     })
 
+    # Storing conflict
     conflict_recorded = False
-    for hit in hits:
-        if hit.score < cfg.CONFLICT_SIMILARITY_THRESHOLD:
+    for result in results:
+        if not result.qualifying:
             continue
-        existing_summary = (hit.payload or {}).get("summary", "")
-        conflict_result, conflict_raw = await _detect_conflict(existing_summary, summary)
-        if not conflict_result.get("has_conflict"):
-            break
-        raw_type = conflict_result.get("conflict_type", ConflictType.CONTENT_CONFLICT.value)
-        raw_severity = conflict_result.get("severity", ConflictSeverity.MEDIUM.value)
-        try:
-            conflict_type_enum = ConflictType(raw_type)
-        except ValueError:
-            conflict_type_enum = ConflictType.CONTENT_CONFLICT
-        try:
-            severity_enum = ConflictSeverity(raw_severity)
-        except ValueError:
-            severity_enum = ConflictSeverity.MEDIUM
-        try:
-            insert_response = await postgres.insert(KBConflictInsert(
-                tenant_id=tenant_id,
-                conflict_type=conflict_type_enum,
-                severity=severity_enum,
-                batch_id=await ensure_conflict_batch(),
-                status=ConflictStatus.PENDING,
-                detailed_explanation=conflict_result.get("explanation", ""),
-                existing_snapshot={"block_id": str(hit.id), "summary": existing_summary},
-                incoming_snapshot={
-                    "block_index":    block_index,
-                    "data_id":        data_id,
-                    "tenant_id":      tenant_id,
-                    "approved_by":    approved_by,
-                    "content":        content,
-                    "summary":        summary,
-                    "embedding":      embedding,
-                    "intents":        intents,
-                    "table_involved": table_involved,
-                    "table":          table,
-                    "embed_model_id": embed_model_id,
-                    "knowledge_base": knowledge_base,
-                    "entities":       chunk.get("entities") or [],
-                    "relationships":  chunk.get("relationships") or [],
-                },
-            ))
-            if insert_response.code != 200:
-                raise RuntimeError(f"conflict insert returned code {insert_response.code}")
-        except Exception as exc:
-            log.error("Gold: conflict insert failed block_index=%d data_id=%s: %s", block_index, data_id, exc)
-            break  # don't lose the chunk — fall through and commit it normally
+        best_hit, best_scores, dominant_criterion = _select_strongest_conflict(result.qualifying)
+        conflict_type = _CRITERION_CONFLICT_TYPE[dominant_criterion]
+        severity = _CRITERION_SEVERITY[dominant_criterion]
+        persisted = await _persist_conflict_record(
+            postgres=postgres,
+            ensure_conflict_batch=ensure_conflict_batch,
+            tenant_id=tenant_id,
+            data_id=data_id,
+            block_index=block_index,
+            approved_by=approved_by,
+            content=content,
+            summary=summary,
+            embedding=embedding,
+            intents=intents,
+            table_involved=table_involved,
+            table=table,
+            embed_model_id=embed_model_id,
+            knowledge_base=knowledge_base,
+            chunk=chunk,
+            question_pivots=result.question_pivots,
+            best_hit=best_hit,
+            best_scores=best_scores,
+            conflict_type=conflict_type,
+            severity=severity,
+            dominant_criterion=dominant_criterion,
+        )
+        if not persisted:
+            continue
         conflict_recorded = True
         await emitter.emit("gold.conflict.found", {
-            "index":            block_index,
-            "conflict_type":    raw_type,
-            "severity":         raw_severity,
-            "explanation":      conflict_result.get("explanation", ""),
-            "existing_summary": existing_summary,
-            "similarity":       round(hit.score, 4),
-            "raw_answer":       conflict_raw[:2000],
+            "index": block_index,
+            "conflict_type": conflict_type.value,
+            "severity": severity.value,
+            "dominant_criterion": dominant_criterion,
+            "question": result.question_pivots.question,
+            "existing_summary": _hit_summary(best_hit),
+            "similarity": round(best_hit.score, 4),
         })
-        log.info("Gold: conflict detected block_index=%d type=%s severity=%s",
-                 block_index, raw_type, raw_severity)
-        break
+        log.info("Gold: conflict detected block_index=%d type=%s severity=%s criterion=%s",
+                 block_index, conflict_type.value, severity.value, dominant_criterion)
 
     await emitter.emit("gold.conflict.timing", {
-        "index":       block_index,
-        "candidates":  len(hits),
-        "duration_ms": round((_time.monotonic() - conflict_started) * 1000),
+        "index": block_index,
+        "candidates": total_candidates,
+        "duration_ms": round((_time.monotonic() - pipeline_started) * 1000),
     })
     return conflict_recorded
 
 
 async def _add_chunk_to_graph(
-    *, graph, tenant_id, knowledge_base, data_id, block_id, chunk, canonicals,
-    type_by_canonical, description_by_canonical, display_by_canonical, raw_to_canonical,
-    embed_model_id, database, block_index, emitter,
+        *, graph, tenant_id, knowledge_base, data_id, block_id, chunk, canonicals,
+        type_by_canonical, description_by_canonical, display_by_canonical, raw_to_canonical,
+        embed_model_id, database, block_index, emitter,
 ) -> bool:
     try:
         await graph.add_chunk(
@@ -752,34 +1026,38 @@ async def _add_chunk_to_graph(
         return False
     except Exception as exc:
         log.error("Gold: graph update failed block_index=%d data_id=%s: %s", block_index, data_id, exc)
-        await write_log(database, data_id, "GRAPH_EXTRACTING",
-                        f"Graph update failed for chunk {block_index}: {exc}", level="ERROR")
+        await write_log(
+            db = database,
+            data_id= data_id,
+            status = "GRAPH_EXTRACTING",
+            message = f"Graph update failed for chunk {block_index}: {exc}",
+            level="ERROR")
         await emitter.emit("gold.graph.failed", {"index": block_index, "error": str(exc)[:300]})
         return True
 
 
 async def _process_chunk(
-    *, chunk, postgres, qdrant, graph, model, tenant_id, data_id, knowledge_base,
-    embed_model_id, approved_by, database, ensure_conflict_batch, emitter,
+        *, chunk, postgres, qdrant, graph, model, tenant_id, data_id, knowledge_base,
+        embed_model_id, approved_by, database, ensure_conflict_batch, emitter,
 ) -> dict:
     block_index = chunk["block_index"]
     content = chunk["content"]
     summary = (chunk.get("summary") or "").strip() or _heuristic_summary(content)
     intents = [
-        intent for intent in (chunk.get("intents") or []) if isinstance(intent, str) and intent.strip()
-    ] or ["document_content"]
+                  intent for intent in (chunk.get("intents") or []) if isinstance(intent, str) and intent.strip()
+              ] or ["document_content"]
 
     embed_started = _time.monotonic()
     embedding = (await model.embed([content[:4000]], model_id=embed_model_id))[0]
 
     await emitter.emit("gold.embed.complete", {
-        "index":       block_index,
-        "dim":         len(embedding),
+        "index": block_index,
+        "dim": len(embedding),
         "duration_ms": round((_time.monotonic() - embed_started) * 1000),
     })
 
     is_conflict = await _detect_and_record_conflict(
-        postgres=postgres, qdrant=qdrant, tenant_id=tenant_id, data_id=data_id,
+        postgres=postgres, qdrant=qdrant, model=model, tenant_id=tenant_id, data_id=data_id,
         knowledge_base=knowledge_base, embed_model_id=embed_model_id, approved_by=approved_by,
         block_index=block_index, content=content, summary=summary, intents=intents,
         table_involved=chunk.get("table_involved", False), table=chunk.get("table"),
@@ -804,10 +1082,10 @@ async def _process_chunk(
         table_involved=chunk.get("table_involved", False),
         table=chunk.get("table"),
         payload_meta={
-            "summary":            summary,
-            "entities":           canonicals,
+            "summary": summary,
+            "entities": canonicals,
             "embedding_model_id": embed_model_id,
-            "knowledge_base":     knowledge_base,
+            "knowledge_base": knowledge_base,
         },
         embedding=embedding,
         summary=summary,
@@ -819,8 +1097,8 @@ async def _process_chunk(
         emitter=emitter,
     )
     await emitter.emit("gold.commit.ok", {
-        "index":              block_index,
-        "block_id":           block_id,
+        "index": block_index,
+        "block_id": block_id,
         "embedding_model_id": embed_model_id,
     })
 
@@ -843,8 +1121,8 @@ async def _reduce_document_summary(committed_summaries, database, data_id, emitt
 
 
 async def _write_doc_summary_point(
-    *, qdrant, model, database, data_id, tenant_id, knowledge_base, embed_model_id,
-    doc_summary, top_intents, committed_count, emitter,
+        *, qdrant, model, database, data_id, tenant_id, knowledge_base, embed_model_id,
+        doc_summary, top_intents, committed_count, emitter,
 ) -> None:
     await set_chunk_progress(database, data_id, status="GOLD_GRAPH")
     async with emitter.step("gold.doc.commit", data_id=data_id) as doc_scope:
@@ -855,14 +1133,14 @@ async def _write_doc_summary_point(
                 id=data_id,
                 vector=doc_embedding,
                 payload={
-                    "tenant_id":          tenant_id,
-                    "data_id":            data_id,
-                    "summary":            doc_summary,
-                    "intents":            top_intents,
-                    "chunk_count":        committed_count,
+                    "tenant_id": tenant_id,
+                    "data_id": data_id,
+                    "summary": doc_summary,
+                    "intents": top_intents,
+                    "chunk_count": committed_count,
                     "embedding_model_id": embed_model_id,
-                    "knowledge_base":     knowledge_base,
-                    "is_deleted":         False,
+                    "knowledge_base": knowledge_base,
+                    "is_deleted": False,
                 },
             )],
         )
@@ -929,30 +1207,30 @@ async def _record_gold_lifecycle(postgres, database, data_id, approved_by, count
                 f"{counts['failed']} failed, {counts['graph_failed']} graph-failed"
             ),
             pipeline_metadata={
-                "stage":               "gold",
-                "chunks_committed":    counts["committed"],
-                "chunks_conflicted":   counts["conflicted"],
-                "chunks_skipped":      counts["skipped"],
-                "chunks_failed":       counts["failed"],
+                "stage": "gold",
+                "chunks_committed": counts["committed"],
+                "chunks_conflicted": counts["conflicted"],
+                "chunks_skipped": counts["skipped"],
+                "chunks_failed": counts["failed"],
                 "chunks_graph_failed": counts["graph_failed"],
-                "embed_model_id":      embed_model_id,
+                "embed_model_id": embed_model_id,
             },
         ))
     except Exception as exc:
         log.warning("Gold: lifecycle history insert failed data_id=%s: %s", data_id, exc)
-        await write_log(database, data_id, "PUBLISHED",f"Gold lifecycle history not recorded: {exc}", level="WARNING")
+        await write_log(database, data_id, "PUBLISHED", f"Gold lifecycle history not recorded: {exc}", level="WARNING")
 
 
 async def promote_to_gold(
-    postgres: PostgresClient,
-    qdrant: AsyncQdrantClient,
-    graph: GraphStore,
-    mongo: MongoClient,
-    model: ModelServiceClient,
-    data_id: str,
-    tenant_id: str,
-    approved_by: str,
-    emitter: PipelineEventEmitter = NULL_EMITTER,
+        postgres: PostgresClient,
+        qdrant: AsyncQdrantClient,
+        graph: GraphStore,
+        mongo: MongoClient,
+        model: ModelServiceClient,
+        data_id: str,
+        tenant_id: str,
+        approved_by: str,
+        emitter: PipelineEventEmitter = NULL_EMITTER,
 ) -> dict:
     embed_model_id = await _get_collection_embed_model_id(postgres, cfg.QDRANT_COLLECTION)
     log.info("Gold: collection '%s' → embed_model_id=%s", cfg.QDRANT_COLLECTION, embed_model_id or "none")
@@ -989,7 +1267,7 @@ async def promote_to_gold(
         return conflict_batch_id
 
     counts = {"committed": 0, "conflicted": 0, "pending": 0, "failed": 0, "skipped": 0, "graph_failed": 0}
-    committed_summaries: list[str] = []   # document order — feeds the reduce step
+    committed_summaries: list[str] = []  # document order — feeds the reduce step
     intent_counter: Counter[str] = Counter()
 
     async with emitter.step("gold", total_chunks=len(chunks)) as gold_scope:
@@ -1061,10 +1339,10 @@ async def promote_to_gold(
     await emitter.emit("pipeline.done", {})
 
     return {
-        "data_id":    data_id,
-        "committed":  counts["committed"],
+        "data_id": data_id,
+        "committed": counts["committed"],
         "conflicted": counts["conflicted"],
-        "skipped":    counts["skipped"],
-        "failed":     counts["failed"],
-        "layer":      Tier.GOLD.value,
+        "skipped": counts["skipped"],
+        "failed": counts["failed"],
+        "layer": Tier.GOLD.value,
     }

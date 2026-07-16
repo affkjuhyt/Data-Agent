@@ -18,16 +18,16 @@ _ENTITY_INTENT_SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "name":        {"type": "string"},
+                    "name": {"type": "string"},
                     "description": {"type": "string"},
-                    "score":       {"type": "number"},
+                    "score": {"type": "number"},
                 },
                 "required": ["name", "description", "score"],
                 "additionalProperties": False,
             },
         },
         "intents": {"type": "array", "items": {"type": "string"}},
-        "skip":    {"type": "boolean"},
+        "skip": {"type": "boolean"},
     },
     "required": ["summary", "entities", "intents", "skip"],
     "additionalProperties": False,
@@ -41,9 +41,9 @@ _RELATIONSHIP_SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "from":  {"type": "string"},
-                    "to":    {"type": "string"},
-                    "type":  {"type": "string"},
+                    "from": {"type": "string"},
+                    "to": {"type": "string"},
+                    "type": {"type": "string"},
                     "score": {"type": "number"},
                 },
                 "required": ["from", "to", "type", "score"],
@@ -55,15 +55,60 @@ _RELATIONSHIP_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
-_CONFLICT_SCHEMA: dict[str, Any] = {
+# Reasoning-pivot conflict pipeline, stage 1 (single prompt): every distinct
+# question a chunk answers, each with its own intent/entities/pivot chain.
+_PIVOT_QUESTION_ITEM_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "has_conflict":  {"type": "boolean"},
-        "conflict_type": {"type": "string"},
-        "severity":      {"type": "string"},
-        "explanation":   {"type": "string"},
+        "question": {"type": "string"},
+        "question_intent": {"type": "string"},
+        "question_entities": {"type": "array", "items": {"type": "string"}},
+        "pivots": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["has_conflict", "conflict_type", "severity", "explanation"],
+    "required": ["question", "question_intent", "question_entities", "pivots"],
+    "additionalProperties": False,
+}
+
+_PIVOT_QUESTION_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"questions": {"type": "array", "items": _PIVOT_QUESTION_ITEM_SCHEMA}},
+    "required": ["questions"],
+    "additionalProperties": False,
+}
+
+# Stage 3a: the pivot chain a candidate chunk offers toward a fixed question.
+_PIVOT_CHUNK_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"pivots": {"type": "array", "items": {"type": "string"}}},
+    "required": ["pivots"],
+    "additionalProperties": False,
+}
+
+# Stage 3b: score the incoming vs. candidate pivot chains across the twelve
+# conflict criteria (see utils.prompts for definitions).
+_PIVOT_COMPARE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "semantic_ambiguity_score": {"type": "number"},
+        "semantic_multilingual_score": {"type": "number"},
+        "temporal_time_score": {"type": "number"},
+        "temporal_version_score": {"type": "number"},
+        "factual_entities_score": {"type": "number"},
+        "factual_relationships_score": {"type": "number"},
+        "factual_quantity_score": {"type": "number"},
+        "reasoning_logic_score": {"type": "number"},
+        "constraint_policy_score": {"type": "number"},
+        "missing_information_score": {"type": "number"},
+        "duplicate_score": {"type": "number"},
+        "irrelevant_score": {"type": "number"},
+    },
+    "required": [
+        "semantic_ambiguity_score", "semantic_multilingual_score",
+        "temporal_time_score", "temporal_version_score",
+        "factual_entities_score", "factual_relationships_score", "factual_quantity_score",
+        "reasoning_logic_score", "constraint_policy_score", "missing_information_score",
+        "duplicate_score", "irrelevant_score",
+    ],
     "additionalProperties": False,
 }
 
@@ -71,7 +116,7 @@ _MODERATE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "blocked": {"type": "boolean"},
-        "reason":  {"type": "string"},
+        "reason": {"type": "string"},
     },
     "required": ["blocked", "reason"],
     "additionalProperties": False,
@@ -90,10 +135,10 @@ _CHUNK_SUMMARY_SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "name":        {"type": "string"},
-                    "type":        {"type": "string"},
+                    "name": {"type": "string"},
+                    "type": {"type": "string"},
                     "description": {"type": "string"},
-                    "score":       {"type": "number"},
+                    "score": {"type": "number"},
                 },
                 "required": ["name", "type", "description", "score"],
                 "additionalProperties": False,
@@ -108,9 +153,9 @@ _CHUNK_SUMMARY_SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "from":  {"type": "string"},
-                    "to":    {"type": "string"},
-                    "type":  {"type": "string"},
+                    "from": {"type": "string"},
+                    "to": {"type": "string"},
+                    "type": {"type": "string"},
                     "score": {"type": "number"},
                 },
                 "required": ["from", "to", "type", "score"],
@@ -118,7 +163,7 @@ _CHUNK_SUMMARY_SCHEMA: dict[str, Any] = {
             },
         },
         "intents": {"type": "array", "items": {"type": "string"}},
-        "skip":    {"type": "boolean"},
+        "skip": {"type": "boolean"},
     },
     "required": ["summary", "entities", "relationships", "intents", "skip"],
     "additionalProperties": False,
@@ -150,11 +195,11 @@ _DOC_ENTITY_SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "name":        {"type": "string"},
-                    "type":        {"type": "string", "enum": ENTITY_TYPES},
-                    "aliases":     {"type": "array", "items": {"type": "string"}},
+                    "name": {"type": "string"},
+                    "type": {"type": "string", "enum": ENTITY_TYPES},
+                    "aliases": {"type": "array", "items": {"type": "string"}},
                     "description": {"type": "string"},
-                    "score":       {"type": "number"},
+                    "score": {"type": "number"},
                 },
                 "required": ["name", "type", "aliases", "description", "score"],
                 "additionalProperties": False,
@@ -184,9 +229,9 @@ _ALIAS_VERIFY_SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "name":  {"type": "string"},
+                    "name": {"type": "string"},
                     "alias": {"type": "string"},
-                    "same":  {"type": "boolean"},
+                    "same": {"type": "boolean"},
                 },
                 "required": ["name", "alias", "same"],
                 "additionalProperties": False,
@@ -199,12 +244,14 @@ _ALIAS_VERIFY_SCHEMA: dict[str, Any] = {
 
 SCHEMAS_BY_SYSTEM_TYPE: dict[str, dict[str, Any]] = {
     "entity-intent": _ENTITY_INTENT_SCHEMA,
-    "relationship":  _RELATIONSHIP_SCHEMA,
-    "conflict":      _CONFLICT_SCHEMA,
-    "moderate":      _MODERATE_SCHEMA,
+    "relationship": _RELATIONSHIP_SCHEMA,
+    "pivot-question": _PIVOT_QUESTION_SCHEMA,
+    "pivot-chunk": _PIVOT_CHUNK_SCHEMA,
+    "pivot-compare": _PIVOT_COMPARE_SCHEMA,
+    "moderate": _MODERATE_SCHEMA,
     "chunk-summary": _CHUNK_SUMMARY_SCHEMA,
-    "doc-reduce":    _DOC_REDUCE_SCHEMA,
-    "doc-entity":    _DOC_ENTITY_SCHEMA,
-    "alias-verify":  _ALIAS_VERIFY_SCHEMA,
-    "merge-verify":  _MERGE_VERIFY_SCHEMA,
+    "doc-reduce": _DOC_REDUCE_SCHEMA,
+    "doc-entity": _DOC_ENTITY_SCHEMA,
+    "alias-verify": _ALIAS_VERIFY_SCHEMA,
+    "merge-verify": _MERGE_VERIFY_SCHEMA,
 }

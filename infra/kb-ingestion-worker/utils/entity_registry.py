@@ -1,40 +1,3 @@
-"""
-Entity Registry — semantic deduplication and normalisation for extracted entities.
-
-Vietnamese-aware design
-=======================
-Vietnamese tone marks and diacritics are LEXICAL — "bán" (sell), "bàn" (table) and
-"bạn" (friend) are different words. Canonicalization therefore NEVER strips
-diacritics: it Unicode-normalises (NFC) and casefolds, keeping every Vietnamese
-letter intact ("Đường sắt Việt Nam" → "đường_sắt_việt_nam").
-
-Vietnamese is also extremely synonym-rich: the same entity routinely appears as an
-official name, an abbreviation and a historical/colloquial name with ZERO shared
-tokens ("Thành phố Hồ Chí Minh" / "TP.HCM" / "Sài Gòn"; "Hoa Kỳ" / "Mỹ"). Pure
-string normalisation can never join these, and embedding similarity on the bare
-surface form is unreliable for short names. Resolution therefore runs in order:
-
-  1. EXACT alias lookup in Postgres "KBEntityLookup" (tenant-scoped, NULL = global
-     seed aliases). Aliases come from the doc-level extraction LLM, which is asked
-     to emit the other surface forms of each entity — so the synonym table grows
-     with the corpus and a known synonym resolves deterministically, no embedding
-     guesswork.
-  2. Embedding match in the entity_registry Qdrant collection. The embedded text is
-     "name: description" — the description carries the semantics that bridges
-     synonyms whose surface forms share nothing.
-       cosine ≥ ENTITY_SIMILARITY_THRESHOLD                     → definite match
-       cosine ≥ ENTITY_SOFT_THRESHOLD + word-overlap Jaccard    → same entity
-  3. No match → new entity; register canonical + aliases.
-
-Every successful match LEARNS: surface forms and LLM aliases not yet in
-KBEntityLookup are inserted, so the next document resolves them at step 1.
-
-Each unique entity (per tenant) is stored in the entity_registry Qdrant collection.
-Point ID is a deterministic UUID v5:  uuid5(NS, "{tenant_id}:{canonical}")
-so an upsert is idempotent — re-processing the same entity never creates a duplicate.
-The payload keeps `display_name`: the original surface form with case and
-diacritics exactly as written, used for Neo4j node display.
-"""
 from __future__ import annotations
 
 import logging
@@ -63,10 +26,7 @@ _ENTITY_NS = uuid.UUID("6ba7b812-9dad-11d1-80b4-00c04fd430c9")
 
 def to_canonical(name: str) -> str:
     """Convert any entity surface form to a lowercase_underscore canonical that
-    PRESERVES Unicode letters. NFC first so the same Vietnamese text always uses
-    composed code points regardless of how the source document encoded it
-    (decomposed "ậ" = a + circumflex + dot-below must equal composed "ậ").
-    casefold() lowercases Vietnamese letters correctly ("Đ" → "đ")."""
+    PRESERVES Unicode letters"""
     s = unicodedata.normalize("NFC", name).casefold().strip()
     s = re.sub(r"[\s\-/\\]+", "_", s)        # whitespace / hyphens / slashes → _
     s = re.sub(r"[^\w]", "", s)              # drop punctuation; \w keeps Unicode letters
@@ -210,8 +170,7 @@ def _tenant_filter(tenant_id: str) -> models.Filter:
 
 
 def _types_conflict(type_a: str, type_b: str) -> bool:
-    """Two SPECIFIC (non-concept) types that differ block a merge — LLM typing is
-    noisy, but a person and a location are never the same entity."""
+    """Two SPECIFIC (non-concept) types that differ block a merge """
     a, b = (type_a or "").strip().lower(), (type_b or "").strip().lower()
     return bool(a and b and a != "concept" and b != "concept" and a != b)
 
@@ -221,13 +180,7 @@ async def _best_candidate(
     tenant_id: str,
     embedding: list[float],
 ) -> tuple[str, float, dict] | None:
-    """Best embedding match at or above the verify band: (canonical, score, payload).
-
-    The DECISION (merge / verify / new) belongs to the caller — multilingual-e5
-    cosines overlap between same-entity and different-entity pairs (measured:
-    Bangladesh~Ấn Độ 0.949 vs TP.HCM~Sài Gòn 0.950), so a score alone is only a
-    candidate signal, never a verdict, except at the very top of the range.
-    """
+    """Best embedding match at or above the verify band: (canonical, score, payload)."""
     try:
         resp = await qdrant.query_points(
             collection_name=cfg.ENTITY_COLLECTION,
@@ -316,8 +269,6 @@ async def _upsert_entity(
                     "tenant_id":          tenant_id,
                     "knowledge_base":     knowledge_base,
                     "canonical":          canonical,
-                    # Original surface form — case and Vietnamese diacritics exactly
-                    # as written. Used as the Neo4j node display name.
                     "display_name":       raw,
                     "aliases":            incoming_aliases,
                     "description":        description,
@@ -438,6 +389,46 @@ def _dedupe_by_canonical(
             out_names.append(name)
             out_details.append(detail)
     return out_names, out_details
+
+
+async def resolve_existing_entities(
+    qdrant: AsyncQdrantClient,
+    postgres: PostgresClient,
+    model: ModelServiceClient,
+    tenant_id: str,
+    names: list[str],
+) -> list[str]:
+    """Read-only canonical lookup for surface-form names: exact alias match, then
+    a hard-band embedding match. Never registers a new entity — a name with no
+    existing match is dropped. For scoping a retrieval filter to entities that
+    already exist in the KB, not for ingesting new ones."""
+    cleaned_names = [
+        unicodedata.normalize("NFC", name).strip() for name in names if isinstance(name, str) and name.strip()
+    ]
+    if not cleaned_names:
+        return []
+
+    resolved: list[str] = []
+    names_needing_embedding: list[str] = []
+    for name in cleaned_names:
+        canonical = await _alias_lookup(postgres, tenant_id, [name])
+        if canonical:
+            resolved.append(canonical)
+        else:
+            names_needing_embedding.append(name)
+
+    if names_needing_embedding:
+        try:
+            embeddings = await model.embed(names_needing_embedding)
+        except Exception as exc:
+            log.warning("entity_registry | resolve_existing_entities embed failed: %s", exc)
+            embeddings = []
+        for name, embedding in zip(names_needing_embedding, embeddings):
+            candidate = await _best_candidate(qdrant, tenant_id, embedding)
+            if candidate and candidate[1] >= cfg.ENTITY_SIMILARITY_THRESHOLD:
+                resolved.append(candidate[0])
+
+    return list(dict.fromkeys(resolved))
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
