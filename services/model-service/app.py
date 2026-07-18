@@ -14,11 +14,32 @@ from backends.base import (
     OAIEmbedRequest, OAIEmbedObject, OAIEmbedResponse,
     EmbedCaller, RerankCaller, ChatCaller,
 )
+from backends.embed_service import EmbedService
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("model-service")
 
 router = APIRouter()
+
+
+def _default_encode(texts: list[str]) -> list[list[float]]:
+    """Resolve the current default embed caller at call time (the model loads
+    asynchronously after startup, so this can't be bound once)."""
+    entry = registry.default(Capability.EMBED)
+    if entry is None or not isinstance(entry.caller, EmbedCaller):
+        raise RuntimeError("no embedding model loaded")
+    return entry.caller.embed(texts)
+
+
+# Cache + dynamic-batch wrapper for the default embedding path (the hot path).
+_embed_service = EmbedService(
+    _default_encode,
+    cache_size=cfg.EMBED_CACHE_SIZE,
+    batch_max=cfg.EMBED_BATCH_MAX,
+    batch_wait_ms=cfg.EMBED_BATCH_WAIT_MS,
+    cache_enabled=cfg.EMBED_CACHE_ENABLED,
+    batch_enabled=cfg.EMBED_BATCH_ENABLED,
+)
 
 @router.get("/health")
 def health() -> dict[str, Any]:
@@ -27,7 +48,7 @@ def health() -> dict[str, Any]:
 
 
 @router.post("/embed", response_model=EmbedResponse)
-def embed(req: EmbedRequest) -> EmbedResponse:
+async def embed(req: EmbedRequest) -> EmbedResponse:
     entry = registry.by_id(req.model_id) if req.model_id else registry.default(Capability.EMBED)
     if entry is None:
         if req.model_id:
@@ -36,9 +57,21 @@ def embed(req: EmbedRequest) -> EmbedResponse:
         raise HTTPException(503, "no embedding model loaded")
     if not isinstance(entry.caller, EmbedCaller):
         raise HTTPException(500, f"model '{entry.name}' is not an embedding backend")
-    embeddings = entry.caller.embed(req.texts)
+    # Default embed model → cache + dynamic batch (the hot retrieval path). An
+    # explicitly-requested non-default model bypasses the shared cache/batcher.
+    if req.model_id and entry is not registry.default(Capability.EMBED):
+        embeddings = entry.caller.embed(req.texts)
+    else:
+        embeddings = await _embed_service.embed(entry.name, req.texts)
     used_id = str(entry.model_id) if entry.model_id else req.model_id
     return EmbedResponse(embeddings=embeddings, model_id=used_id)
+
+
+@router.get("/embed/stats")
+async def embed_stats() -> dict[str, Any]:
+    """Cache hit-rate + batching stats — watch this under load to confirm the
+    embed bottleneck is being amortised (KB-SCALE-10K.md lever #1)."""
+    return _embed_service.stats()
 
 @router.post("/v1/embeddings", response_model=OAIEmbedResponse)
 def openai_embeddings(req: OAIEmbedRequest) -> OAIEmbedResponse:
@@ -116,6 +149,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     bootstrap(registry)
     #Load model
     asyncio.create_task(sync_with_retry(registry), name="registry-sync")
+    _embed_service.start()  # launch the dynamic-batch flusher on this loop
     _probe_llm_backend()
     yield
 

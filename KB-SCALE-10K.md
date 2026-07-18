@@ -128,8 +128,11 @@ likewise pooled per replica.
 - [x] Kafka-decoupled ingestion; query cache; stateless kb-backend.
 
 **To build (in priority order):**
-1. [ ] **Embedding cache** in model-service (hash→vector, Redis) + **dynamic
-   batching** of embed requests.
+1. [x] **Embedding cache** (LRU, hash→vector) + **dynamic batching** in
+   model-service (`backends/embed_service.py`, `/embed/stats`). Measured: repeated
+   query embed **140 ms → 1.4 ms (100×)**; 20 concurrent unique embeds coalesced
+   into **2 encode() calls (~10× fewer forward passes)**. L2 Redis drops in behind
+   the same interface for multi-replica sharing.
 2. [ ] **Result-cache hardening**: Redis, tenant-scoped key, TTL, invalidate on
    `kb.promote.gold`.
 3. [ ] **PgBouncer** (transaction pooling) in front of Postgres; point RLS reads
