@@ -91,3 +91,10 @@ class RedisClient:
         if self._client is None:
             return
         await self._client.delete(key)
+
+    async def incr(self, key: str) -> int:
+        """Atomic INCR (creates the key at 1 if absent). Used for version-keyed
+        cache invalidation. Returns 0 when Redis is not connected."""
+        if self._client is None:
+            return 0
+        return cast(int, await self._client.incr(key))

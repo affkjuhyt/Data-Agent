@@ -133,8 +133,15 @@ likewise pooled per replica.
    query embed **140 ms → 1.4 ms (100×)**; 20 concurrent unique embeds coalesced
    into **2 encode() calls (~10× fewer forward passes)**. L2 Redis drops in behind
    the same interface for multi-replica sharing.
-2. [ ] **Result-cache hardening**: Redis, tenant-scoped key, TTL, invalidate on
-   `kb.promote.gold`.
+2. [x] **Result-cache hardening**: L0 Redis exact-key cache in front of retrieval
+   (`libs/shared/kb_result_cache.py`), tenant-scoped **versioned** key
+   (`kbrc:{tenant}:v{ver}:{kb}:{qhash}`), native TTL (900 s), and O(1)
+   invalidation — the worker `INCR`s the tenant version on **gold complete**, so
+   every cached result is orphaned at once (no SCAN). Best-effort (Redis down ≠
+   broken retrieval). Measured: exact-repeat retrieval **688 ms → 2.9 ms (237×),
+   skipping embed entirely**; version bump → cache miss → recompute verified.
+   (The in-pipeline Qdrant *semantic* cache stays as an independent L1 with its
+   own 24 h TTL; flushing it on gold too is a follow-up.)
 3. [ ] **PgBouncer** (transaction pooling) in front of Postgres; point RLS reads
    at **read replicas**.
 4. [ ] **Qdrant replication** (read QPS) + **Neo4j read replica** (or degrade).

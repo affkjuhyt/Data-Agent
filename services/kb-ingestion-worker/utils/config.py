@@ -9,6 +9,10 @@ NEO4J_URI         = os.getenv("NEO4J_URI",         "bolt://neo4j:7687")
 # The LLM/embed/rerank backend is owned entirely by model-service. The worker
 # only knows this URL and never which backend (local vs Colab) serves a call.
 MODEL_SERVICE_URL = os.getenv("MODEL_SERVICE_URL", "http://model-service:8001")
+# Result-cache invalidation: after gold completes, bump the tenant's retrieval-cache
+# version in Redis so searches reflect the new content (KB-SCALE-10K.md §2).
+REDIS_URL            = os.getenv("REDIS_URL", "redis://redis:6379/0")
+RESULT_CACHE_ENABLED = os.getenv("RESULT_CACHE_ENABLED", "true").lower() in {"1", "true", "yes"}
 
 KAFKA_CONSUMER_GROUP          = os.getenv("KAFKA_CONSUMER_GROUP",          "kb-ingestion")
 KAFKA_TOPIC_SILVER            = os.getenv("KAFKA_TOPIC_SILVER",            "kb.promote.silver")

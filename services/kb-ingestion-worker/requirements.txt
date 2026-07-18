@@ -17,3 +17,5 @@ trafilatura>=1.12.0
 # Headless Chromium so client-rendered (React/SPA) portals paint their content
 # before extraction. Browser binary is installed in the Dockerfile.
 playwright>=1.44.0
+
+redis>=5.0  # gold-complete result-cache invalidation (KB-SCALE-10K §2)

@@ -15,6 +15,7 @@ from libs.database_connector.model_connector import ModelServiceClient
 from libs.database_connector.mongo_connector import MongoClient
 from libs.database_connector.postgres_connector import PostgresClient
 from libs.database_connector.qdrant_connector import QdrantClient as QdrantService
+from libs.shared.kb_result_cache import ResultCache
 
 from utils import config as cfg
 from utils.docling_parser import InlineDoclingParser
@@ -107,6 +108,7 @@ async def consume_loop(
     model: ModelServiceClient,
     docling_parser: InlineDoclingParser,
     producer: KafkaProducerClient | None = None,
+    result_cache: ResultCache | None = None,
 ) -> None:
     db = mongo.get_client()
 
@@ -196,6 +198,10 @@ async def consume_loop(
                     f"{result['conflicted']} conflicts detected"
                 )
                 await write_log(db, data_id, "PUBLISHED", msg)
+                if result_cache is not None:
+                    # New gold content is now searchable → drop this tenant's stale
+                    # retrieval cache (KB-SCALE-10K §2: invalidate-on-gold). Best-effort.
+                    await result_cache.invalidate(tenant_id)
             except Exception as exc:
                 log.error("Worker: Gold failed data_id=%s: %s", data_id, exc)
                 await write_log(db, data_id, "FAILED", f"Gold stage failed: {exc}", level="ERROR")
