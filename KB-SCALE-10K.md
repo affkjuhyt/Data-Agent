@@ -142,14 +142,20 @@ likewise pooled per replica.
    skipping embed entirely**; version bump → cache miss → recompute verified.
    (The in-pipeline Qdrant *semantic* cache stays as an independent L1 with its
    own 24 h TTL; flushing it on gold too is a follow-up.)
-3. [ ] **PgBouncer** (transaction pooling) in front of Postgres; point RLS reads
-   at **read replicas**.
-4. [ ] **Qdrant replication** (read QPS) + **Neo4j read replica** (or degrade).
-5. [ ] **Graceful degradation** flags: per-request budget; skip graph_expand /
-   rerank when p95 breaches SLO; circuit-breaker on model-service/Neo4j.
-6. [ ] **Per-tenant rate limiting** at kb-gateway/Kong (protect the shared pool).
+3. [x] **PgBouncer** (transaction pooling) — `infra/docker-compose.scale.yml`.
+   Verified: 20 client connections multiplex onto ~10 real Postgres backends
+   (`DEFAULT_POOL_SIZE`). Cutover note (asyncpg `statement_cache_size=0`) is in the
+   overlay. Read replicas remain a deploy-topology step (managed PG / k8s).
+4. [ ] **Qdrant replication** (read QPS) + **Neo4j read replica** — deploy-topology
+   (k8s / managed); graceful degradation (#5) already sheds Neo4j load meanwhile.
+5. [x] **Graceful degradation**: `DEGRADE_BUDGET_MS` per-request budget in the
+   pipeline — past budget it skips Neo4j `graph_expand` + cross-encoder `rerank`
+   and returns RRF order; the skipped steps are surfaced in `degraded[]`.
+6. [x] **Per-tenant rate limiting** at kb-gateway (Go token-bucket per
+   `X-Tenant-Id`, `KB_GATEWAY_RATE_RPS`; 429 + `Retry-After`). Verified: one tenant
+   throttled while another is unaffected.
 7. [ ] **HPA** on kb-gateway / kb-backend / model-service (target 60 % CPU or a
-   custom RPS metric); GPU node pool for model-service.
+   custom RPS metric); GPU node pool for model-service — k8s manifests.
 8. [ ] **Observability SLOs**: p95 retrieval < 500 ms (cached) / < 1.5 s (cold),
    error rate < 0.1 %, cache hit-rate dashboard, per-tier saturation.
 

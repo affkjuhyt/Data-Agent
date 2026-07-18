@@ -166,6 +166,8 @@ services:
       RERANK_TOP_N: ${RERANK_TOP_N:-5}
       NEO4J_MAX_HOPS: ${NEO4J_MAX_HOPS:-1}
       NEO4J_MAX_NEIGHBOURS: ${NEO4J_MAX_NEIGHBOURS:-5}
+      # Graceful degradation: skip graph_expand + rerank past this budget (0=off).
+      DEGRADE_BUDGET_MS: ${DEGRADE_BUDGET_MS:-0}
       DOC_NARROWING: ${DOC_NARROWING:-1}
       DOC_PASS_TOP_M: ${DOC_PASS_TOP_M:-3}
       DOC_PASS_CHUNK_LIMIT: ${DOC_PASS_CHUNK_LIMIT:-5}

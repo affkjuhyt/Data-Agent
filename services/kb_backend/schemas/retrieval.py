@@ -26,3 +26,5 @@ class RetrieveResponse(BaseModel):
     canonical: dict[str, Any]
     results: list[dict[str, Any]]
     timings: dict[str, float] = {}
+    # Steps skipped under the latency budget (graceful degradation); empty = full run.
+    degraded: list[str] = []

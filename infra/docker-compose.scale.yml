@@ -1,0 +1,45 @@
+# ── 10k-CCU scaling components (KB-SCALE-10K.md §3) ───────────────────────────
+# Layer on top of the base compose. PgBouncer multiplexes many app-side
+# connections onto a small fixed pool of real Postgres backends — the classic
+# "10k users must not become 10k DB connections" fix.
+#
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.scale.yml \
+#     --env-file .env --profile kb up -d pgbouncer
+#
+# CUTOVER (kb-backend / worker): point POSTGRES_URL at pgbouncer and disable
+# asyncpg's prepared-statement cache (PgBouncer transaction pooling can't share
+# server-side prepared statements across pooled backends):
+#   POSTGRES_URL=postgresql+asyncpg://admin:dev123@pgbouncer:6432/dataagent
+#   + SQLAlchemy create_async_engine(..., connect_args={"statement_cache_size": 0,
+#                                                        "prepared_statement_cache_size": 0})
+# DEFAULT_POOL_SIZE (50) is the real Postgres connection count regardless of how
+# many app replicas/clients connect (up to MAX_CLIENT_CONN).
+
+services:
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: dataagent-pgbouncer
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: ${POSTGRES_USER:-admin}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      DB_NAME: ${POSTGRES_DB:-dataagent}
+      LISTEN_PORT: "6432"
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "10000"       # app-side connections it will accept
+      DEFAULT_POOL_SIZE: "50"        # real Postgres backends it opens
+      MIN_POOL_SIZE: "10"
+      RESERVE_POOL_SIZE: "10"
+      AUTH_TYPE: scram-sha-256
+    ports:
+      - "6432:6432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: [kb, runtime]
+    deploy:
+      resources:
+        limits:
+          memory: 128M

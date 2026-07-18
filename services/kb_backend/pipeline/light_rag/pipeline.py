@@ -1005,6 +1005,14 @@ class LightRAGPipeline:
         def _ms(start: float) -> float:
             return round((time.perf_counter() - start) * 1000, 1)
 
+        degraded: list[str] = []
+
+        def _over_budget() -> bool:
+            # Graceful degradation: past the latency budget, skip the costly
+            # optional steps (Neo4j graph expand, cross-encoder rerank) to hold p95
+            # and shed load under pressure. 0 = disabled (full pipeline always).
+            return cfg.DEGRADE_BUDGET_MS > 0 and _ms(_t0) > cfg.DEGRADE_BUDGET_MS
+
         try:
             # ── 1. Embed query — needed for cache lookup and vector search ──────
             _t = time.perf_counter()
@@ -1159,7 +1167,7 @@ class LightRAGPipeline:
             # ── 6. Neo4j graph expansion ────────────────────────────────────────
             _t = time.perf_counter()
             neo4j_entities: list[str] = []
-            if top_entities:
+            if top_entities and not _over_budget():
                 try:
                     neo4j_entities = await graph_expand(
                         neo4j, top_entities, tenant_id,
@@ -1167,9 +1175,11 @@ class LightRAGPipeline:
                         query_vec, knowledge_base=knowledge_base, preferred_types=ptypes)
                 except Exception as exc:
                     log.warning("run | graph_expand failed: %s", exc)
+            elif top_entities:
+                degraded.append("graph_expand")  # over budget → skip Neo4j
             timings["graph_expand_ms"] = _ms(_t)
             yield {"step": "graph_expand", "seeds": len(top_entities),
-                   "expanded": len(neo4j_entities),
+                   "expanded": len(neo4j_entities), "degraded": "graph_expand" in degraded,
                    "neo4j_entities": neo4j_entities[:cfg.GRAPH_PREVIEW_LIMIT],
                    "ms": timings["graph_expand_ms"]}
 
@@ -1202,9 +1212,14 @@ class LightRAGPipeline:
 
             # ── 9. Rerank by cross-encoder on stored summaries ──────────────────
             _t = time.perf_counter()
-            final = await rerank(model, query, rrf_top, cfg.RERANK_TOP_N)
+            if _over_budget():
+                final = rrf_top[:cfg.RERANK_TOP_N]  # skip cross-encoder; keep RRF order
+                degraded.append("rerank")
+            else:
+                final = await rerank(model, query, rrf_top, cfg.RERANK_TOP_N)
             timings["rerank_ms"] = _ms(_t)
-            yield {"step": "rerank", "top_n": len(final), "ms": timings["rerank_ms"]}
+            yield {"step": "rerank", "top_n": len(final), "degraded": "rerank" in degraded,
+                   "ms": timings["rerank_ms"]}
 
             # ── 10. Hydrate active chunk text/source + tables from Postgres ─────
             block_ids = [
@@ -1233,7 +1248,7 @@ class LightRAGPipeline:
             timings["total_ms"] = round((time.perf_counter() - _t0) * 1000, 1)
             log.info("run | query=%r kb=%s rrf=%d hydrated=%d total=%.0fms",
                      query[:60], knowledge_base, len(rrf_top), len(results), timings["total_ms"])
-            yield {"step": "done", "source": "pipeline",
+            yield {"step": "done", "source": "pipeline", "degraded": degraded,
                    "canonical": canonical, "results": results, "timings": timings}
 
         except Exception as exc:
@@ -1266,4 +1281,5 @@ class LightRAGPipeline:
                 "canonical", {"intent": "general", "entities": [], "relationships": []}),
             "results": final.get("results", []),
             "timings": final.get("timings", {}),
+            "degraded": final.get("degraded", []),
         }

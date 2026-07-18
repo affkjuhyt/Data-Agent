@@ -65,6 +65,15 @@ func newBackendProxy(target string) (*httputil.ReverseProxy, error) {
 	return p, nil
 }
 
+func envFloat(name string, def float64) float64 {
+	if v := os.Getenv(name); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			return f
+		}
+	}
+	return def
+}
+
 func main() {
 	addr := os.Getenv("KB_GATEWAY_ADDR")
 	if addr == "" {
@@ -82,6 +91,11 @@ func main() {
 		log.Fatalf("bad KB_BACKEND_URL: %v", err)
 	}
 
+	// Per-tenant rate limit (0 rps = disabled). burst defaults to 2× rps.
+	rps := envFloat("KB_GATEWAY_RATE_RPS", 0)
+	burst := envFloat("KB_GATEWAY_RATE_BURST", rps*2)
+	limiter := newTenantLimiter(rps, burst)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -95,10 +109,10 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           withRequestID(mux),
+		Handler:           limiter.middleware(withRequestID(mux)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-	log.Printf("kb-gateway listening on %s → %s", addr, backend)
+	log.Printf("kb-gateway listening on %s → %s (rate=%.0f rps/tenant)", addr, backend, rps)
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}

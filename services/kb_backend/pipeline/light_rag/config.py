@@ -34,6 +34,12 @@ DOC_PASS_CHUNK_LIMIT = int(os.getenv("DOC_PASS_CHUNK_LIMIT", "5"))  # chunks fro
 # expansion boosts matching-type neighbours and an extra typed-field search
 # joins the RRF fusion. Soft signals only — a wrong type hint can demote but
 # never exclude.
+# Graceful degradation (KB-SCALE-10K.md #5): once a retrieval exceeds this budget
+# (ms since request start), skip the optional-but-costly steps — Neo4j graph
+# expansion and cross-encoder rerank — to protect p95 + shed load off Neo4j /
+# model-service under pressure. 0 disables (full pipeline always).
+DEGRADE_BUDGET_MS = int(os.getenv("DEGRADE_BUDGET_MS", "0"))
+
 TYPE_AWARE = os.getenv("TYPE_AWARE", "1") == "1"
 TYPE_BOOST = float(os.getenv("TYPE_BOOST", "0.08"))   # added to cosine in graph ranking
 
