@@ -1,4 +1,5 @@
 """Business logic for warehouse config CRUD."""
+from typing import Any
 import base64
 import datetime
 import logging
@@ -6,12 +7,12 @@ import uuid
 from fastapi import HTTPException
 from sqlalchemy import select as sa_select, update as sa_update, func as sa_func
 
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     ReadJoinRequest, WhereFilter,
     KBWarehouseConfigInsert, KBWarehouseConfigDelete,
     WarehouseConfigPayload,
 )
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBDataORM, KBWarehouseConfigORM, KBWarehouseORM,
 )
 from services.kb_backend.operations.pagination import PAGE_SIZE, build_cursor_page
@@ -31,7 +32,7 @@ def _decode_offset(cursor: str | None) -> int:
         return 0
 
 
-async def list_warehouses(postgres, tenant_id: str, cursor: str | None = None) -> dict:
+async def list_warehouses(postgres: Any, tenant_id: str, cursor: str | None = None) -> dict[str, Any]:
     """Paginated, tenant-scoped warehouse list (own tables, not KBData). Returns the
     same row shape the document listing used to merge in, wrapped in the cursor-page
     envelope so the UI's useCursorPagination hook drives it like every other list."""
@@ -93,7 +94,7 @@ async def list_warehouses(postgres, tenant_id: str, cursor: str | None = None) -
     return build_cursor_page(docs, total, has_next, next_cursor)
 
 
-async def _assert_tenant(postgres, doc_id: str, tenant_id: str) -> None:
+async def _assert_tenant(postgres: Any, doc_id: str, tenant_id: str) -> None:
     doc_uuid = uuid.UUID(doc_id)
     async with postgres.get_client() as session:
         # Check regular documents first
@@ -123,7 +124,7 @@ async def _assert_tenant(postgres, doc_id: str, tenant_id: str) -> None:
         raise HTTPException(status_code=404, detail="Document not found")
 
 
-def _to_wconfig(row: dict) -> dict:
+def _to_wconfig(row: dict[str, Any]) -> dict[str, Any]:
     cfg = row.get("config") or {}
     tables_raw = cfg.get("selected_tables") or []
     connection = cfg.get("connection") or {
@@ -149,7 +150,7 @@ def _to_wconfig(row: dict) -> dict:
     }
 
 
-async def get_warehouse_configs(postgres, warehouse_id: str, tenant_id: str) -> list:
+async def get_warehouse_configs(postgres: Any, warehouse_id: str, tenant_id: str) -> list[Any]:
     await _assert_tenant(postgres, warehouse_id, tenant_id)
     resp = await postgres.read(ReadJoinRequest(
         joins_table=["KBWarehouseConfig"],
@@ -167,8 +168,8 @@ async def get_warehouse_configs(postgres, warehouse_id: str, tenant_id: str) -> 
 
 
 async def create_warehouse_config(
-    postgres, warehouse_id: str, body: dict, created_by: str, tenant_id: str,
-) -> dict:
+    postgres: Any, warehouse_id: str, body: dict[str, Any], created_by: str, tenant_id: str,
+) -> dict[str, Any]:
     await _assert_tenant(postgres, warehouse_id, tenant_id)
     resp = await postgres.read(ReadJoinRequest(
         joins_table=["KBWarehouseConfig"],
@@ -219,8 +220,8 @@ async def create_warehouse_config(
 
 
 async def activate_warehouse_config(
-    postgres, warehouse_id: str, config_id: str, tenant_id: str,
-) -> dict:
+    postgres: Any, warehouse_id: str, config_id: str, tenant_id: str,
+) -> dict[str, Any]:
     await _assert_tenant(postgres, warehouse_id, tenant_id)
     warehouse_uuid = uuid.UUID(warehouse_id) if isinstance(warehouse_id, str) else warehouse_id
     config_uuid = uuid.UUID(config_id) if isinstance(config_id, str) else config_id
@@ -239,7 +240,7 @@ async def activate_warehouse_config(
     return {"status": "ok", "config_id": config_id}
 
 
-async def delete_warehouse_config(postgres, config_id: str) -> None:
+async def delete_warehouse_config(postgres: Any, config_id: str) -> None:
     resp = await postgres.soft_delete(KBWarehouseConfigDelete(config_id=config_id))
     if resp.code == 404:
         raise HTTPException(status_code=404, detail="Config not found")
@@ -248,7 +249,7 @@ async def delete_warehouse_config(postgres, config_id: str) -> None:
         raise HTTPException(status_code=500, detail="Failed to delete config")
 
 
-async def delete_config_table(postgres, config_id: str, table_id: str) -> None:
+async def delete_config_table(postgres: Any, config_id: str, table_id: str) -> None:
     resp = await postgres.read(ReadJoinRequest(
         joins_table=["KBWarehouseConfig"],
         filters=[WhereFilter(

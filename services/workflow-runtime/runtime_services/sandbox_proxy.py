@@ -11,6 +11,7 @@ submits or mutates a job, only relays status/stream reads for an ops UI.
 import json
 import logging
 import os
+from collections.abc import AsyncIterator
 
 import httpx
 from fastapi.responses import JSONResponse
@@ -44,7 +45,7 @@ async def get_sandbox_job(kind: str, job_id: str) -> JSONResponse:
         return JSONResponse(status_code=503, content={"error": f"sandbox-executor unreachable: {e}"})
 
 
-async def stream_sandbox_job(kind: str, job_id: str):
+async def stream_sandbox_job(kind: str, job_id: str) -> AsyncIterator[bytes]:
     """Async generator of raw SSE bytes — the caller wraps this in a
     StreamingResponse. Relays sandbox-executor's own event framing
     unchanged (event:/data: lines) rather than re-parsing and re-emitting

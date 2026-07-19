@@ -9,6 +9,10 @@ NEO4J_URI         = os.getenv("NEO4J_URI",         "bolt://neo4j:7687")
 # The LLM/embed/rerank backend is owned entirely by model-service. The worker
 # only knows this URL and never which backend (local vs Colab) serves a call.
 MODEL_SERVICE_URL = os.getenv("MODEL_SERVICE_URL", "http://model-service:8001")
+# Result-cache invalidation: after gold completes, bump the tenant's retrieval-cache
+# version in Redis so searches reflect the new content (KB-SCALE-10K.md §2).
+REDIS_URL            = os.getenv("REDIS_URL", "redis://redis:6379/0")
+RESULT_CACHE_ENABLED = os.getenv("RESULT_CACHE_ENABLED", "true").lower() in {"1", "true", "yes"}
 
 KAFKA_CONSUMER_GROUP          = os.getenv("KAFKA_CONSUMER_GROUP",          "kb-ingestion")
 KAFKA_TOPIC_SILVER            = os.getenv("KAFKA_TOPIC_SILVER",            "kb.promote.silver")
@@ -38,6 +42,11 @@ INGESTION_MAX_ATTEMPTS = int(os.getenv("INGESTION_MAX_ATTEMPTS", "3"))
 CONSUME_CONCURRENCY   = int(os.getenv("CONSUME_CONCURRENCY",   "8"))
 SILVER_CONCURRENCY    = int(os.getenv("SILVER_CONCURRENCY",    "1"))
 GOLD_CONCURRENCY      = int(os.getenv("GOLD_CONCURRENCY",      "6"))
+# Chunks within ONE gold doc: 1 = strictly sequential (default; exact legacy
+# behaviour + maximal cross-chunk entity dedup). > 1 overlaps the per-chunk
+# LLM+embed waits (uses OLLAMA_NUM_PARALLEL) at the cost of slightly weaker
+# same-batch dedup (registry upserts keep it correct). KB-SCALE-10K.md §6.
+GOLD_CHUNK_CONCURRENCY = int(os.getenv("GOLD_CHUNK_CONCURRENCY", "1"))
 # Conflict resolution is I/O-bound (DB reads + LLM merge + Qdrant/Neo4j writes).
 # Keep it below GOLD_CONCURRENCY to avoid starving gold tasks of LLM/embed capacity.
 CONFLICT_CONCURRENCY  = int(os.getenv("CONFLICT_CONCURRENCY",  "3"))

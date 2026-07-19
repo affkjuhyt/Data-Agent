@@ -1,3 +1,4 @@
+from typing import Any, cast
 import asyncio
 import json
 import logging
@@ -24,7 +25,7 @@ _SOURCE_FIELD = {
 _CHART_TYPES = {"bar", "line", "area", "pie", "scatter", "radar", "radialBar", "composed"}
 
 
-def _incoming_source_types(cfg: dict) -> set[str]:
+def _incoming_source_types(cfg: dict[str, Any]) -> set[str]:
     """Đọc cfg["flow_nodes"]/cfg["flow_edges"] (đã có sẵn trong config mỗi lần
     chạy — xem config_loader.py:load_agent_config) để biết chính node
     "visualization" đang được nối cạnh từ (các) node nào trên canvas — CHỈ lấy
@@ -35,17 +36,17 @@ def _incoming_source_types(cfg: dict) -> set[str]:
     }
     viz_ids = {nid for nid, t in id_to_type.items() if t == "visualization"}
     return {
-        id_to_type.get(e.get("source"))
+        cast(str, id_to_type.get(e.get("source")))
         for e in cfg.get("flow_edges", [])
         if e.get("target") in viz_ids and id_to_type.get(e.get("source")) in _SOURCE_FIELD
     }
 
 
-def _parse_tabular_rows(items: list[dict]) -> list[dict]:
+def _parse_tabular_rows(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Chỉ nhận item mà content parse được thành JSON list[dict]/dict — bỏ
     qua an toàn (không raise) nếu là prose/text thường. CỐ Ý không nhờ LLM
     "đọc hiểu" văn bản rồi tự bịa số liệu ra chart — tránh hallucination."""
-    rows: list[dict] = []
+    rows: list[dict[str, Any]] = []
     for item in items:
         if not isinstance(item, dict):
             continue
@@ -63,7 +64,7 @@ def _parse_tabular_rows(items: list[dict]) -> list[dict]:
     return rows
 
 
-async def _pick_chart_schema(query: str, columns: list[str], sample_rows: list[dict], cfg: dict) -> dict | None:
+async def _pick_chart_schema(query: str, columns: list[str], sample_rows: list[dict[str, Any]], cfg: dict[str, Any]) -> dict[str, Any] | None:
     """1 lệnh LLM DUY NHẤT — CHỈ chọn chart_type/title/x_key/y_keys (và
     "series" nếu chart_type="composed") từ tên cột + vài dòng mẫu. KHÔNG sinh
     "data" — visualization_node tự map dữ liệu THẬT từ rows vào đúng field đã
@@ -100,7 +101,7 @@ async def _pick_chart_schema(query: str, columns: list[str], sample_rows: list[d
         )
         if not resp.choices:
             return None
-        schema = json.loads(resp.choices[0].message.content or "{}")
+        schema: dict[str, Any] = json.loads(resp.choices[0].message.content or "{}")
         if (
             not schema.get("x_key")
             or not isinstance(schema.get("y_keys"), list)
@@ -114,7 +115,7 @@ async def _pick_chart_schema(query: str, columns: list[str], sample_rows: list[d
         return None
 
 
-def _build_chart_spec(schema: dict, columns: list[str], rows: list[dict]) -> dict | None:
+def _build_chart_spec(schema: dict[str, Any], columns: list[str], rows: list[dict[str, Any]]) -> dict[str, Any] | None:
     if schema["x_key"] not in columns:
         return None
     y_keys = [k for k in schema["y_keys"] if k in columns]
@@ -148,7 +149,7 @@ def _build_chart_spec(schema: dict, columns: list[str], rows: list[dict]) -> dic
     return spec
 
 
-async def _build_spec_for_source(query: str, rows: list[dict], cfg: dict) -> dict | None:
+async def _build_spec_for_source(query: str, rows: list[dict[str, Any]], cfg: dict[str, Any]) -> dict[str, Any] | None:
     if not rows:
         return None
     columns = list(rows[0].keys())
@@ -158,7 +159,7 @@ async def _build_spec_for_source(query: str, rows: list[dict], cfg: dict) -> dic
     return _build_chart_spec(schema, columns, rows)
 
 
-async def visualization_node(state: AgentState) -> dict:
+async def visualization_node(state: AgentState) -> dict[str, Any]:
     tool_calls = state.get("tool_calls", [])
     viz_call = next((tc for tc in tool_calls if tc.get("type") == "visualize"), None)
     if not viz_call:
@@ -174,7 +175,10 @@ async def visualization_node(state: AgentState) -> dict:
     # Mỗi nguồn nối vào → 1 chart RIÊNG (không gộp chung rows từ các nguồn có
     # schema khác nhau vào 1 chart, vd DB Connector {month,revenue} và MCP
     # {region,sales} không cùng cấu trúc cột) — chạy song song, độc lập.
-    per_source_rows = [_parse_tabular_rows(state.get(_SOURCE_FIELD[t]) or []) for t in sorted(connected)]
+    per_source_rows = [
+        _parse_tabular_rows(cast(list[dict[str, Any]], state.get(_SOURCE_FIELD[t]) or []))
+        for t in sorted(connected)
+    ]
     specs = await asyncio.gather(*(_build_spec_for_source(query, rows, cfg) for rows in per_source_rows))
     chart_specs = [s for s in specs if s is not None]
 

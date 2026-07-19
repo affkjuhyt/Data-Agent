@@ -1,176 +1,316 @@
-import React from 'react';
-import { 
-  ShieldCheck, 
-  Lock, 
-  Eye, 
-  ShieldAlert, 
-  CheckCircle2, 
-  XCircle, 
-  AlertCircle, 
-  FileText, 
-  Download, 
+import React, { useState } from 'react';
+import {
+  ShieldCheck,
+  ShieldAlert,
   Settings2,
-  MoreVertical,
-  Activity,
-  History,
-  ArrowRight,
   TrendingUp,
-  Globe
+  Globe,
+  ScanLine,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import { useCompliance, PII_TYPES, type ComplianceSettings, type PiiScanResult, type ReprocessResult } from '../../lib/useCompliance';
 
-const POLICIES = [
-  { id: 'pol-1', name: 'PII Redaction Threshold', module: 'Knowledge Base', status: 'COMPLIANT', severity: 'HIGH' },
-  { id: 'pol-2', name: 'Zero-Trust Model Access', module: 'AI Runtime', status: 'VIOLATION (2)', severity: 'CRITICAL' },
-  { id: 'pol-3', name: 'Retention Lock (Gold Layer)', module: 'Storage', status: 'COMPLIANT', severity: 'MEDIUM' },
-  { id: 'pol-4', name: 'Audit Trace Residency', module: 'Governance', status: 'PENDING_SCAN', severity: 'HIGH' },
-];
+const REGIONS = ['Asia-SE1', 'US-East-1', 'EU-West-3'];
+
+// Which governance policy card is wired to which persisted setting toggle.
+const POLICY_TOGGLE: Record<string, keyof ComplianceSettings> = {
+  'pol-pii': 'pii_masking',
+  'pol-zt': 'zero_trust',
+  'pol-ret': 'retention_lock',
+  'pol-aud': 'audit_residency',
+};
+
+const Toggle = ({ on, disabled, onClick }: { on: boolean; disabled?: boolean; onClick: () => void }) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    className={`relative w-12 h-6 rounded-full transition-all disabled:opacity-40 ${on ? 'bg-brand-500' : 'bg-white/10'}`}
+    aria-pressed={on}
+  >
+    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${on ? 'translate-x-6' : ''}`} />
+  </button>
+);
 
 export const SecurityComplianceSection = () => {
+  const { settings, score, loading, saving, error, updateSettings, scanPii, reprocessPii } = useCompliance();
+
+  const [scanText, setScanText] = useState('');
+  const [scanResult, setScanResult] = useState<PiiScanResult | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanErr, setScanErr] = useState<string | null>(null);
+
+  const [reprocessing, setReprocessing] = useState(false);
+  const [reprocessResult, setReprocessResult] = useState<ReprocessResult | null>(null);
+
+  const runReprocess = async () => {
+    setReprocessing(true);
+    setReprocessResult(null);
+    try {
+      setReprocessResult(await reprocessPii());
+    } catch {
+      setReprocessResult(null);
+    } finally {
+      setReprocessing(false);
+    }
+  };
+
+  const runScan = async () => {
+    if (!scanText.trim()) return;
+    setScanning(true);
+    setScanErr(null);
+    try {
+      setScanResult(await scanPii(scanText, settings?.pii_types));
+    } catch (e) {
+      setScanErr(e instanceof Error ? e.message : 'Scan failed');
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const toggle = (key: keyof ComplianceSettings) => {
+    if (!settings) return;
+    updateSettings({ [key]: !settings[key] } as Partial<ComplianceSettings>).catch(() => {});
+  };
+
+  const togglePiiType = (t: string) => {
+    if (!settings) return;
+    const has = settings.pii_types.includes(t);
+    const next = has ? settings.pii_types.filter(x => x !== t) : [...settings.pii_types, t];
+    updateSettings({ pii_types: next }).catch(() => {});
+  };
+
   return (
     <div className="space-y-12">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight mb-2">Security & Compliance Center</h1>
+          <h1 className="text-3xl font-bold text-white tracking-tight mb-2">Security &amp; Compliance Center</h1>
           <p className="text-slate-500 font-medium leading-relaxed max-w-xl">
-            Governing zero-trust access, data residency, and enterprise compliance scores. PII masking and automated policy enforcement.
+            Zero-trust access, data residency, retention, and PII masking. These controls are enforced —
+            enabling PII masking redacts personal data at ingestion before it is embedded or stored.
           </p>
         </div>
-        <div className="flex bg-white/5 p-1 rounded-2xl border border-white/5">
-           <button className="px-5 py-2.5 bg-brand-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg">Real-time Policy</button>
-           <button className="px-5 py-2.5 text-slate-500 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">Audit Engine</button>
+        <div className="flex items-center gap-3">
+          {saving && <Loader2 className="w-4 h-4 text-brand-400 animate-spin" />}
+          {settings?.updated_at && (
+            <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+              Saved {new Date(settings.updated_at).toLocaleString()}
+            </span>
+          )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-8">
-           <div className="p-8 bg-white/[0.02] border border-white/5 rounded-[40px]">
+      {error && (
+        <div className="flex items-center gap-3 p-4 bg-red-400/10 border border-red-400/20 rounded-2xl text-red-300 text-sm">
+          <AlertCircle className="w-4 h-4" /> {error}
+        </div>
+      )}
+
+      {loading || !settings || !score ? (
+        <div className="flex items-center gap-3 text-slate-500 py-20 justify-center">
+          <Loader2 className="w-5 h-5 animate-spin" /> Loading compliance posture…
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-8">
+            {/* Governance policies — each wired to a real, persisted toggle */}
+            <div className="p-8 bg-white/[0.02] border border-white/5 rounded-[40px]">
               <div className="flex items-center justify-between mb-8">
-                 <h3 className="text-xl font-bold text-white tracking-tight">Enterprise Governance Policies</h3>
-                 <button className="flex items-center gap-2 text-xs font-bold text-brand-400 hover:text-brand-300">
-                   <Settings2 className="w-4 h-4" />
-                   Configure Scanners
-                 </button>
+                <h3 className="text-xl font-bold text-white tracking-tight">Enterprise Governance Policies</h3>
+                <Settings2 className="w-4 h-4 text-slate-500" />
               </div>
 
               <div className="space-y-4">
-                 {POLICIES.map((policy) => (
-                   <div key={policy.id} className="group flex items-center justify-between p-6 bg-white/5 hover:bg-white/[0.08] border border-white/5 rounded-3xl transition-all">
+                {score.policies.map((policy) => {
+                  const key = POLICY_TOGGLE[policy.id];
+                  const on = key ? Boolean(settings[key]) : false;
+                  return (
+                    <div key={policy.id} className="flex items-center justify-between p-6 bg-white/5 border border-white/5 rounded-3xl">
                       <div className="flex items-center gap-6">
-                         <div className={`p-4 rounded-2xl bg-slate-900 border border-white/10 ${
-                           policy.status.includes('VIOLATION') ? 'text-red-400' : 
-                           policy.status === 'COMPLIANT' ? 'text-emerald-400' : 'text-slate-500'
-                         }`}>
-                           {policy.status.includes('VIOLATION') ? <ShieldAlert className="w-5 h-5" /> : <ShieldCheck className="w-5 h-5" />}
-                         </div>
-                         <div>
-                            <div className="text-white font-bold text-sm tracking-tight mb-1">{policy.name}</div>
-                            <div className="flex items-center gap-3">
-                               <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{policy.module}</span>
-                               <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                                 policy.severity === 'CRITICAL' ? 'bg-red-400/10 border-red-400/20 text-red-400' :
-                                 policy.severity === 'HIGH' ? 'bg-amber-400/10 border-amber-400/20 text-amber-400' :
-                                 'bg-blue-400/10 border-blue-400/20 text-blue-400'
-                               }`}>
-                                 {policy.severity}
-                               </div>
-                            </div>
-                         </div>
+                        <div className={`p-4 rounded-2xl bg-slate-900 border border-white/10 ${on ? 'text-emerald-400' : 'text-slate-500'}`}>
+                          {on ? <ShieldCheck className="w-5 h-5" /> : <ShieldAlert className="w-5 h-5" />}
+                        </div>
+                        <div>
+                          <div className="text-white font-bold text-sm tracking-tight mb-1">{policy.name}</div>
+                          <div className="flex items-center gap-3">
+                            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{policy.module}</span>
+                            <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                              policy.severity === 'CRITICAL' ? 'bg-red-400/10 border-red-400/20 text-red-400' :
+                              policy.severity === 'HIGH' ? 'bg-amber-400/10 border-amber-400/20 text-amber-400' :
+                              'bg-blue-400/10 border-blue-400/20 text-blue-400'
+                            }`}>{policy.severity}</div>
+                          </div>
+                        </div>
                       </div>
-                      
                       <div className="flex items-center gap-6">
-                         <div className="text-right">
-                            <div className={`text-xs font-bold ${
-                               policy.status === 'COMPLIANT' ? 'text-emerald-400' : 
-                               policy.status.includes('VIOLATION') ? 'text-red-400' : 'text-slate-500'
-                            }`}>{policy.status}</div>
-                            <div className="text-[9px] font-black text-slate-600 uppercase tracking-widest text-right">Policy Status</div>
-                         </div>
-                         <ArrowRight className="w-4 h-4 text-slate-700 opacity-0 group-hover:opacity-100 transition-all cursor-pointer" />
+                        <div className={`text-xs font-bold ${on ? 'text-emerald-400' : 'text-slate-500'}`}>{policy.status}</div>
+                        {key && <Toggle on={on} disabled={saving} onClick={() => toggle(key)} />}
                       </div>
-                   </div>
-                 ))}
+                    </div>
+                  );
+                })}
               </div>
-           </div>
 
-           <div className="p-8 bg-[#0a0a0a] border border-white/5 rounded-[40px] relative overflow-hidden">
-             <div className="absolute top-0 right-0 p-8">
+              {/* PII categories to redact — only meaningful when masking is on */}
+              <div className={`mt-6 p-6 bg-white/[0.02] border border-white/5 rounded-3xl ${settings.pii_masking ? '' : 'opacity-50'}`}>
+                <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">PII categories redacted at ingestion</div>
+                <div className="flex flex-wrap gap-2">
+                  {PII_TYPES.map(t => {
+                    const active = settings.pii_types.includes(t);
+                    return (
+                      <button
+                        key={t}
+                        disabled={!settings.pii_masking || saving}
+                        onClick={() => togglePiiType(t)}
+                        className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all disabled:cursor-not-allowed ${
+                          active ? 'bg-brand-500/20 border-brand-400/30 text-brand-300' : 'bg-white/5 border-white/10 text-slate-500'
+                        }`}
+                      >{t}</button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Apply the current masking policy to already-ingested documents */}
+              <div className="mt-4 flex items-center justify-between gap-4 p-6 bg-white/[0.02] border border-white/5 rounded-3xl">
+                <div>
+                  <div className="text-white font-bold text-sm">Reprocess existing documents</div>
+                  <div className="text-[11px] text-slate-500 mt-1">
+                    Re-runs the Gold pipeline on already-ingested content so the current masking policy is applied retroactively.
+                  </div>
+                  {reprocessResult && (
+                    <div className="text-[11px] mt-2 text-emerald-400">
+                      Re-queued {reprocessResult.enqueued}/{reprocessResult.total} document(s)
+                      {reprocessResult.failed > 0 && <span className="text-amber-400"> · {reprocessResult.failed} failed</span>}
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={runReprocess}
+                  disabled={reprocessing}
+                  className="shrink-0 px-5 py-3 bg-white/5 hover:bg-white/10 disabled:opacity-40 border border-white/10 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2"
+                >
+                  {reprocessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                  Reprocess
+                </button>
+              </div>
+            </div>
+
+            {/* Data residency + retention — editable and persisted */}
+            <div className="p-8 bg-[#0a0a0a] border border-white/5 rounded-[40px] relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-8">
                 <Globe className="w-24 h-24 text-brand-500/5 rotate-12" />
-             </div>
-              <h3 className="text-xl font-bold text-white mb-8">Data Residency & Sovereignty</h3>
-              <div className="grid grid-cols-3 gap-6">
-                 {[
-                   { region: 'Asia-SE1', compliance: 'HIPAA, GDPR', state: 'LOCKED' },
-                   { region: 'US-East-1', compliance: 'SOC2-TypeII', state: 'RESTRICTED' },
-                   { region: 'EU-West-3', compliance: 'GDPR, EBA', state: 'LOCKED' },
-                 ].map(r => (
-                   <div key={r.region} className="p-6 bg-white/5 border border-white/10 rounded-3xl">
-                      <div className="text-brand-400 font-bold text-xs mb-2 italic">#{r.region}</div>
-                      <div className="text-white font-bold text-lg mb-4">{r.state}</div>
-                      <div className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-1 leading-none">Standards</div>
-                      <div className="text-[10px] text-slate-400 font-medium">{r.compliance}</div>
-                   </div>
-                 ))}
               </div>
-           </div>
-        </div>
+              <h3 className="text-xl font-bold text-white mb-8">Data Residency &amp; Retention</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
+                <div>
+                  <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-2 block">Residency Region</label>
+                  <select
+                    value={settings.residency_region}
+                    onChange={e => updateSettings({ residency_region: e.target.value }).catch(() => {})}
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-sm"
+                  >
+                    {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-2 block">Standards</label>
+                  <input
+                    defaultValue={settings.residency_standards}
+                    onBlur={e => { if (e.target.value !== settings.residency_standards) updateSettings({ residency_standards: e.target.value }).catch(() => {}); }}
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-sm"
+                    placeholder="GDPR, SOC2…"
+                  />
+                </div>
+                <div>
+                  <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-2 block">Retention (days)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    defaultValue={settings.retention_days}
+                    onBlur={e => { const v = Number(e.target.value); if (v >= 0 && v !== settings.retention_days) updateSettings({ retention_days: v }).catch(() => {}); }}
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
 
-        <div className="space-y-8">
-           <div className="p-8 bg-white/[0.02] border border-white/5 rounded-[40px]">
+          <div className="space-y-8">
+            {/* Compliance score — computed from the real controls above */}
+            <div className="p-8 bg-white/[0.02] border border-white/5 rounded-[40px]">
               <div className="flex items-center justify-between mb-8">
-                 <h3 className="text-lg font-bold text-white">Compliance Score</h3>
-                 <TrendingUp className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-lg font-bold text-white">Compliance Score</h3>
+                <TrendingUp className="w-5 h-5 text-emerald-400" />
               </div>
               <div className="flex items-end gap-3 mb-8">
-                 <span className="text-5xl font-bold text-white leading-none">94.2</span>
-                 <span className="text-slate-500 font-bold mb-1">/ 100</span>
+                <motion.span
+                  key={score.score}
+                  initial={{ opacity: 0.3 }}
+                  animate={{ opacity: 1 }}
+                  className="text-5xl font-bold text-white leading-none"
+                >{score.score}</motion.span>
+                <span className="text-slate-500 font-bold mb-1">/ 100</span>
               </div>
               <div className="space-y-4">
-                 {[
-                   { label: 'Platform Security', val: 98 },
-                   { label: 'Data Residency', val: 82 },
-                   { label: 'Audit Velocity', val: 100 },
-                 ].map(m => (
-                   <div key={m.label} className="space-y-1.5">
-                      <div className="flex justify-between text-[10px] font-black text-slate-600 uppercase tracking-widest">
-                        <span>{m.label}</span>
-                        <span>{m.val}%</span>
-                      </div>
-                      <div className="h-1 bg-white/5 rounded-full overflow-hidden">
-                        <div className="h-full bg-brand-500 rounded-full" style={{ width: `${m.val}%` }} />
-                      </div>
-                   </div>
-                 ))}
+                {score.breakdown.map(m => (
+                  <div key={m.label} className="space-y-1.5">
+                    <div className="flex justify-between text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                      <span>{m.label}</span><span>{m.val}%</span>
+                    </div>
+                    <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                      <div className="h-full bg-brand-500 rounded-full transition-all" style={{ width: `${Math.min(m.val, 100)}%` }} />
+                    </div>
+                  </div>
+                ))}
               </div>
-              <button className="w-full mt-10 py-4 bg-brand-500 hover:bg-brand-400 text-white rounded-[20px] font-bold shadow-lg transition-all">
-                 Generate Compliance Report
-              </button>
-           </div>
+            </div>
 
-           <div className="p-8 bg-slate-900 border border-white/5 rounded-[40px]">
+            {/* PII scan tool — live preview of what masking would redact */}
+            <div className="p-8 bg-slate-900 border border-white/5 rounded-[40px]">
               <div className="flex items-center gap-3 mb-6">
-                <History className="w-5 h-5 text-brand-400" />
-                <h3 className="text-lg font-bold text-white">Security Log</h3>
+                <ScanLine className="w-5 h-5 text-brand-400" />
+                <h3 className="text-lg font-bold text-white">PII Scanner</h3>
               </div>
-              <div className="space-y-4">
-                 {[
-                   { op: 'SECRET_ROTATION', time: '12m ago', user: 'Linh N.' },
-                   { op: 'RBAC_ELEVATION', time: '1h ago', user: 'System' },
-                   { op: 'PII_REDACTION_FAIL', time: '2h ago', user: 'KB-Indexer' },
-                 ].map((log, i) => (
-                   <div key={i} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
-                      <div>
-                        <div className="text-[10px] font-black text-white hover:text-brand-400 transition-colors cursor-pointer">{log.op}</div>
-                        <div className="text-[10px] text-slate-500">{log.time}</div>
-                      </div>
-                      <div className="text-[10px] font-mono text-slate-600 uppercase">{log.user}</div>
-                   </div>
-                 ))}
-              </div>
-              <button className="w-full mt-6 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] hover:text-white transition-colors">View All Events</button>
-           </div>
+              <textarea
+                value={scanText}
+                onChange={e => setScanText(e.target.value)}
+                rows={4}
+                placeholder="Paste text to detect PII (email, phone, CCCD/CMND, card…)"
+                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-sm resize-none"
+              />
+              <button
+                onClick={runScan}
+                disabled={scanning || !scanText.trim()}
+                className="w-full mt-4 py-3 bg-brand-500 hover:bg-brand-400 disabled:opacity-40 text-white rounded-[20px] font-bold transition-all flex items-center justify-center gap-2"
+              >
+                {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanLine className="w-4 h-4" />}
+                Scan for PII
+              </button>
+              {scanErr && <div className="mt-3 text-xs text-red-400">{scanErr}</div>}
+              {scanResult && (
+                <div className="mt-5 space-y-3">
+                  <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest">
+                    <span className="text-slate-500">Detected</span>
+                    <span className={scanResult.total ? 'text-amber-400' : 'text-emerald-400'}>{scanResult.total} item(s)</span>
+                  </div>
+                  {Object.entries(scanResult.counts).length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(scanResult.counts).map(([t, n]) => (
+                        <span key={t} className="px-2 py-0.5 rounded-full bg-amber-400/10 border border-amber-400/20 text-amber-400 text-[10px] font-bold">{t}: {n}</span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="p-4 bg-black/40 border border-white/5 rounded-2xl text-[11px] text-slate-400 font-mono whitespace-pre-wrap break-words">
+                    {scanResult.preview || '(empty)'}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

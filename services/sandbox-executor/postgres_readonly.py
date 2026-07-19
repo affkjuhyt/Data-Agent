@@ -11,6 +11,7 @@ role (infra/sql/create-extra-dbs.sql — `sandbox_reader`, CONNECT+USAGE+SELECT
 only, no INSERT/UPDATE/DELETE/DDL grant) and the sql_guard SELECT-only check
 below.
 """
+from typing import Any
 import asyncio
 import logging
 
@@ -32,11 +33,11 @@ class PostgresQueryError(Exception):
 # interactive agent calling execute_sql repeatedly. asyncpg is asyncio-native
 # (unlike snowflake.connector), so no thread offload or threading.Lock here —
 # everything runs directly on the event loop, guarded by an asyncio.Lock.
-_connections: dict[tuple, "asyncpg.Connection"] = {}
+_connections: dict[tuple[Any, ...], "asyncpg.Connection"] = {}
 _connections_lock = asyncio.Lock()
 
 
-def _connection_key(connection_params: dict) -> tuple:
+def _connection_key(connection_params: dict[str, Any]) -> tuple[Any, ...]:
     return (
         connection_params["host"],
         connection_params.get("port", 5432),
@@ -46,7 +47,7 @@ def _connection_key(connection_params: dict) -> tuple:
     )
 
 
-async def _get_connection(connection_params: dict) -> "asyncpg.Connection":
+async def _get_connection(connection_params: dict[str, Any]) -> "asyncpg.Connection":
     key = _connection_key(connection_params)
     async with _connections_lock:
         conn = _connections.get(key)
@@ -66,7 +67,7 @@ async def _get_connection(connection_params: dict) -> "asyncpg.Connection":
         return conn
 
 
-async def _drop_connection(connection_params: dict, conn) -> None:
+async def _drop_connection(connection_params: dict[str, Any], conn: "asyncpg.Connection") -> None:
     async with _connections_lock:
         _connections.pop(_connection_key(connection_params), None)
     try:
@@ -75,7 +76,7 @@ async def _drop_connection(connection_params: dict, conn) -> None:
         pass
 
 
-async def execute_readonly_query(sql: str, connection_params: dict) -> dict:
+async def execute_readonly_query(sql: str, connection_params: dict[str, Any]) -> dict[str, Any]:
     """Returns {"rows": list[dict], "row_count": int, "is_truncated": bool}.
 
     connection_params: {host, port, user, password, dbname}

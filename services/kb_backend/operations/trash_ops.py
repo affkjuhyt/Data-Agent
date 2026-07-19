@@ -15,6 +15,7 @@ Every is_deleted mutation here keeps Postgres and Qdrant in lock-step.
 """
 from __future__ import annotations
 
+from typing import Any
 import logging
 import uuid
 
@@ -22,7 +23,7 @@ from fastapi import HTTPException
 from qdrant_client import models as qmodels
 from sqlalchemy import select as sa_select, update as sa_update, delete as sa_delete
 
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBDataORM,
     KBTextBlockORM,
     KBTextBlockVersionORM,
@@ -47,7 +48,9 @@ def _doc_filter(tenant_id: str | None, data_id: str) -> qmodels.Filter:
     return qmodels.Filter(must=must)
 
 
-async def qdrant_set_deleted_by_data_id(qdrant, tenant_id, data_id, value: bool) -> None:
+async def qdrant_set_deleted_by_data_id(
+    qdrant: Any, tenant_id: str | None, data_id: str, value: bool
+) -> None:
     """Set is_deleted=value on a document's chunk points (data_id filter) and its
     doc-summary point — both collections, best-effort."""
     client = qdrant.get_client()
@@ -62,7 +65,7 @@ async def qdrant_set_deleted_by_data_id(qdrant, tenant_id, data_id, value: bool)
             log.warning("trash: set is_deleted=%s failed on %s data_id=%s: %s", value, collection, data_id, exc)
 
 
-async def qdrant_set_deleted_by_block(qdrant, block_id, value: bool) -> None:
+async def qdrant_set_deleted_by_block(qdrant: Any, block_id: str, value: bool) -> None:
     """Set is_deleted=value on the single chunk point whose id == block_id."""
     try:
         await qdrant.get_client().set_payload(
@@ -74,7 +77,7 @@ async def qdrant_set_deleted_by_block(qdrant, block_id, value: bool) -> None:
         log.warning("trash: set is_deleted=%s failed for block_id=%s: %s", value, block_id, exc)
 
 
-async def _qdrant_delete_by_data_id(qdrant, tenant_id, data_id) -> None:
+async def _qdrant_delete_by_data_id(qdrant: Any, tenant_id: str | None, data_id: str) -> None:
     client = qdrant.get_client()
     for collection in (lr_cfg.QDRANT_COLLECTION, lr_cfg.QDRANT_DOC_COLLECTION):
         try:
@@ -86,7 +89,7 @@ async def _qdrant_delete_by_data_id(qdrant, tenant_id, data_id) -> None:
             log.warning("trash: qdrant delete failed on %s data_id=%s: %s", collection, data_id, exc)
 
 
-async def _qdrant_delete_block(qdrant, block_id) -> None:
+async def _qdrant_delete_block(qdrant: Any, block_id: str) -> None:
     try:
         await qdrant.get_client().delete(
             collection_name=lr_cfg.QDRANT_COLLECTION,
@@ -102,7 +105,7 @@ def _preview(text: str | None) -> str:
 
 
 # ── List ──────────────────────────────────────────────────────────────────────
-async def list_trash(postgres, level: str, tenant_id: str | None) -> dict:
+async def list_trash(postgres: Any, level: str, tenant_id: str | None) -> dict[str, Any]:
     """Soft-deleted items at the given level (newest first), scoped to the tenant."""
     if level not in LEVELS:
         raise HTTPException(status_code=422, detail=f"Unknown trash level: {level}")
@@ -188,7 +191,7 @@ async def list_trash(postgres, level: str, tenant_id: str | None) -> dict:
 
 
 # ── Restore (reverse the is_deleted tag in Postgres + Qdrant) ─────────────────
-async def restore(postgres, qdrant, level: str, item_id: str, tenant_id: str | None) -> None:
+async def restore(postgres: Any, qdrant: Any, level: str, item_id: str, tenant_id: str | None) -> None:
     if level not in LEVELS:
         raise HTTPException(status_code=422, detail=f"Unknown trash level: {level}")
     iid = uuid.UUID(item_id)
@@ -232,8 +235,8 @@ _DOC_MONGO_COLLECTIONS = ("kb_silver_staging", "kb_ingestion_logs", "pipeline_ev
 
 
 async def flush(
-    postgres, qdrant, neo4j, level: str, item_id: str, tenant_id: str | None,
-    minio=None, mongo=None,
+    postgres: Any, qdrant: Any, neo4j: Any, level: str, item_id: str, tenant_id: str | None,
+    minio: Any = None, mongo: Any = None,
 ) -> None:
     if level not in LEVELS:
         raise HTTPException(status_code=422, detail=f"Unknown trash level: {level}")

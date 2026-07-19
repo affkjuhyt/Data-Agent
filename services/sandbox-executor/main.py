@@ -15,6 +15,8 @@ agent's tool-call still waits for a final result, because
 code_interpreter.py polls to completion before returning (mục i, "đã
 chốt mô hình đồng bộ").
 """
+from typing import Any, TYPE_CHECKING
+from collections.abc import AsyncIterator
 import asyncio
 import datetime
 import json
@@ -39,7 +41,7 @@ from docker_runner import (
     get_pool,
     shutdown_pool,
 )
-from job_queue import JobQueue, JobStatus, QueueFullError, TERMINAL_STATUSES
+from job_queue import Job, JobQueue, JobStatus, QueueFullError, TERMINAL_STATUSES
 from output import truncate_output, DEFAULT_MAX_OUTPUT_CHARS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [sandbox-executor] %(levelname)s %(message)s")
@@ -64,7 +66,7 @@ sql_queue: JobQueue | None = None
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     global python_queue, sql_queue
     # Spins up the warm container pool (docs/1.md Kế hoạch 1) once at
     # startup instead of paying container create+start cost per request.
@@ -140,25 +142,42 @@ class PostgresConnectionParams(BaseModel):
 # account. The two backends are never active at once, so this is a single
 # module-level switch rather than a per-request field.
 _SQL_BACKEND = os.environ.get("SANDBOX_SQL_BACKEND", "snowflake")
+SQLBackendError: type[Exception]
+_ConnectionParams: type[BaseModel]
 if _SQL_BACKEND == "postgres":
-    from postgres_readonly import execute_readonly_query, PostgresQueryError as SQLBackendError
+    from postgres_readonly import execute_readonly_query, PostgresQueryError
+    SQLBackendError = PostgresQueryError
     _ConnectionParams = PostgresConnectionParams
 elif _SQL_BACKEND == "snowflake":
-    from snowflake_readonly import execute_readonly_query, SnowflakeQueryError as SQLBackendError
+    from snowflake_readonly import execute_readonly_query, SnowflakeQueryError
+    SQLBackendError = SnowflakeQueryError
     _ConnectionParams = SnowflakeConnectionParams
 else:
     raise ValueError(f"unknown SANDBOX_SQL_BACKEND: {_SQL_BACKEND!r}")
 
+# mypy can't narrow which of the two branches above ran (it's a plain
+# runtime string compare, not one of the sys.version_info/sys.platform/
+# TYPE_CHECKING conditions it special-cases), so `_ConnectionParams` reads
+# as "type[BaseModel]" to it — not usable as a field annotation. Under
+# TYPE_CHECKING only, pin it to one concrete class so the checker sees a
+# normal, unambiguous type alias; at runtime TYPE_CHECKING is False and
+# `_ConnectionParamsT` is simply the class already selected above, so the
+# actual pydantic model field is unchanged either way.
+if TYPE_CHECKING:
+    _ConnectionParamsT = SnowflakeConnectionParams
+else:
+    _ConnectionParamsT = _ConnectionParams
+
 
 class ExecuteSQLRequest(BaseModel):
     sql: str
-    connection: _ConnectionParams
+    connection: _ConnectionParamsT
 
 
 # -- job executors (run inside JobQueue's worker loop, not on the request
 #    path) -----------------------------------------------------------------
 
-async def _run_execute_python(payload: dict) -> dict:
+async def _run_execute_python(payload: dict[str, Any]) -> dict[str, Any]:
     code = payload["code"]
     job_id = payload["job_id"]
 
@@ -176,6 +195,10 @@ async def _run_execute_python(payload: dict) -> dict:
     # runs" branch as the container's own kill+wipe (mục c).
     minio_key = f"python/{job_id}.py"
     await asyncio.to_thread(minio_store.put_code, minio_key, code)
+    # _run_execute_python only ever runs as python_queue's own worker-loop
+    # executor (wired up in lifespan()), which starts only after
+    # python_queue has already been assigned — never None by this point.
+    assert python_queue is not None
     try:
         result = await asyncio.to_thread(
             run_python_sandboxed, code, payload["timeout_s"], payload["memory_mb"], payload["cpus"],
@@ -204,7 +227,7 @@ async def _run_execute_python(payload: dict) -> dict:
     }
 
 
-async def _run_execute_sql(payload: dict) -> dict:
+async def _run_execute_sql(payload: dict[str, Any]) -> dict[str, Any]:
     sql = payload["sql"]
     job_id = payload["job_id"]
 
@@ -227,7 +250,7 @@ async def _run_execute_sql(payload: dict) -> dict:
 
 # -- HTTP surface ------------------------------------------------------------
 
-def _json_default(obj):
+def _json_default(obj: Any) -> Any:
     # execute_sql rows can carry column types neither asyncpg nor
     # snowflake-connector's DictCursor hand back as JSON-native Python
     # types — stdlib json.dumps doesn't know how to encode any of these
@@ -249,16 +272,16 @@ def _json_default(obj):
 
 
 class SandboxJSONResponse(JSONResponse):
-    def render(self, content) -> bytes:
+    def render(self, content: Any) -> bytes:
         return json.dumps(content, ensure_ascii=False, default=_json_default).encode("utf-8")
 
 
 @app.get("/health")
-async def health():
+async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-def _job_summary(job, kind: str) -> dict:
+def _job_summary(job: Job, kind: str) -> dict[str, Any]:
     """Lightweight view for the ops dashboard's job list (docs/1.md mục
     h) — never the raw monotonic timestamps (time.monotonic() has no
     fixed epoch, so it means nothing to a human reading it directly),
@@ -280,11 +303,14 @@ def _job_summary(job, kind: str) -> dict:
 
 
 @app.get("/status")
-async def get_status():
+async def get_status() -> dict[str, Any]:
     """Ops dashboard endpoint (docs/1.md mục h) — pool health (idle/busy/
     circuit breaker state) plus a snapshot of recent jobs in both queues.
     Not on the request path; polled periodically by a dashboard, not by
     sandbox execution itself."""
+    # Set once in lifespan() before this app ever starts serving requests.
+    assert python_queue is not None
+    assert sql_queue is not None
     return {
         "pool": get_pool().stats(),
         "jobs": {
@@ -294,7 +320,7 @@ async def get_status():
     }
 
 
-def _submit(queue: JobQueue, payload: dict) -> JSONResponse:
+def _submit(queue: JobQueue, payload: dict[str, Any]) -> JSONResponse:
     try:
         job_id = queue.submit(payload)
     except QueueFullError as e:
@@ -328,11 +354,11 @@ def _job_status_response(queue: JobQueue, job_id: str) -> JSONResponse:
     return SandboxJSONResponse(status_code=200, content=body)
 
 
-def _sse_line(event: str, payload: dict) -> str:
+def _sse_line(event: str, payload: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, default=_json_default)}\n\n"
 
 
-async def _sse_events(queue: JobQueue, job_id: str):
+async def _sse_events(queue: JobQueue, job_id: str) -> AsyncIterator[str]:
     """docs/1.md mục h: "stream trạng thái/stdout-stderr của lần exec
     đang chạy" — status transitions (queued -> running -> done/rejected/
     error) AND stdout/stderr chunks as the container produces them, not
@@ -383,32 +409,38 @@ async def _sse_events(queue: JobQueue, job_id: str):
 
 
 @app.post("/execute/python")
-async def execute_python(req: ExecutePythonRequest):
+async def execute_python(req: ExecutePythonRequest) -> JSONResponse:
+    assert python_queue is not None  # set in lifespan() before requests are served
     return _submit(python_queue, {
         "code": req.code, "timeout_s": req.timeout_s, "memory_mb": req.memory_mb, "cpus": req.cpus,
     })
 
 
 @app.get("/execute/python/{job_id}")
-async def get_execute_python(job_id: str):
+async def get_execute_python(job_id: str) -> JSONResponse:
+    assert python_queue is not None  # set in lifespan() before requests are served
     return _job_status_response(python_queue, job_id)
 
 
 @app.get("/execute/python/{job_id}/stream")
-async def stream_execute_python(job_id: str):
+async def stream_execute_python(job_id: str) -> StreamingResponse:
+    assert python_queue is not None  # set in lifespan() before requests are served
     return StreamingResponse(_sse_events(python_queue, job_id), media_type="text/event-stream")
 
 
 @app.post("/execute/sql")
-async def execute_sql(req: ExecuteSQLRequest):
+async def execute_sql(req: ExecuteSQLRequest) -> JSONResponse:
+    assert sql_queue is not None  # set in lifespan() before requests are served
     return _submit(sql_queue, {"sql": req.sql, "connection": req.connection.model_dump(by_alias=True)})
 
 
 @app.get("/execute/sql/{job_id}")
-async def get_execute_sql(job_id: str):
+async def get_execute_sql(job_id: str) -> JSONResponse:
+    assert sql_queue is not None  # set in lifespan() before requests are served
     return _job_status_response(sql_queue, job_id)
 
 
 @app.get("/execute/sql/{job_id}/stream")
-async def stream_execute_sql(job_id: str):
+async def stream_execute_sql(job_id: str) -> StreamingResponse:
+    assert sql_queue is not None  # set in lifespan() before requests are served
     return StreamingResponse(_sse_events(sql_queue, job_id), media_type="text/event-stream")

@@ -13,11 +13,11 @@ the `kb-ingestion-worker`.
 | Path | Contents |
 |---|---|
 | [`src/`](./src) | React 19 + TypeScript + Vite frontend (Knowledge Base UI). `src/lib/apiClient.ts` is the FastAPI client (bearer-only — Kong injects identity) |
-| [`services/`](./services) | Backend microservices: `kb_backend`, `auth-api`, `flow-builder`, `workflow-runtime`, `minio-service`, `release-worker`, `audit-bridge`, `audit-consumer`, `jwks-refresher` |
-| [`infra/`](./infra) | Docker Compose stack, service Dockerfiles, and infra services (`docling`, `model-service`, `kb-ingestion-worker`, `Postgres`, `Neo4j`, `Qdrant`, `kafka`, `kong`) |
-| [`basemodel/`](./basemodel) | Shared data models and database connectors |
+| [`services/`](./services) | Backend microservices: `kb_backend`, `kb-ingestion-worker`, `auth-api`, `flow-builder`, `workflow-runtime`, `orchestrator`, `model-service`, `minio-service`, `sandbox-executor`, `schema-crawler-worker`, `release-worker`, `audit-bridge`, `audit-consumer`, `memory-consumer`, `jwks-refresher` |
+| [`libs/`](./libs) | Shared cross-service layer: `libs/basemodel` (domain models/ORM), `libs/database_connector` (infra clients), `libs/shared` (logger, auth, observability). Innermost architecture layer — enforced by `.importlinter` |
+| [`infra/`](./infra) | Docker Compose stack + service infra (`Postgres`, `Neo4j`, `Qdrant`, `MinIO`, `kafka`, `kong`, `keycloak`, observability) |
 | [`alembic/`](./alembic) | Database migrations |
-| [`docs/`](./docs) | Architecture and subsystem docs |
+| [`RUNBOOK.md`](./RUNBOOK.md) · [`SECURITY.md`](./SECURITY.md) | Deploy/operate runbook · security posture & release hardening |
 
 ---
 
@@ -233,18 +233,29 @@ npm run test          # vitest run
 
 ## Full Stack — Docker
 
-The Docker stack lives under [`infra/`](./infra). Use these files as the source of truth:
+The Docker stack lives under [`infra/`](./infra). The **base file is the single source
+of truth** — every service lives there, tagged with a **profile** (`kb`, `runtime`,
+`observability`, `iam`, `release`, `models`, …). Pick the layer you need with
+`--profile`, not a separate `-f` file:
 
-- [`infra/docker-compose.yml`](./infra/docker-compose.yml): aggregate entrypoint with every service group
-- [`infra/docker-compose.storage.yml`](./infra/docker-compose.storage.yml): storage layer
-- [`infra/docker-compose.security.yml`](./infra/docker-compose.security.yml): auth, gateway, and secret-management layer
-- [`infra/docker-compose.messaging.yml`](./infra/docker-compose.messaging.yml): messaging layer
-- [`infra/docker-compose.observability.yml`](./infra/docker-compose.observability.yml): observability and AI-support layer
-- [`infra/docker-compose.app.yml`](./infra/docker-compose.app.yml): application and frontend layer
-- [`infra/docker-compose.local.yml`](./infra/docker-compose.local.yml): local developer override (adds `migrate` + `seed`)
-- [`infra/docker-compose.dev.yml`](./infra/docker-compose.dev.yml): shared dev server override (adds `migrate` + `seed`)
-- [`infra/docker-compose.test.yml`](./infra/docker-compose.test.yml): test-only PostgreSQL fixture
-- [`infra/docker-compose.kb_e2e.yml`](./infra/docker-compose.kb_e2e.yml): isolated KB-UI integration stack — data plane + ingestion worker + Keycloak + DB-less Kong
+```bash
+docker compose -f infra/docker-compose.yml --profile kb up -d               # KB data plane
+docker compose -f infra/docker-compose.yml --profile observability up -d    # Jaeger + ES + Kibana + Filebeat + Langfuse
+```
+
+> The old per-concern split files (`storage` / `messaging` / `observability`) were
+> folded into the base file's profiles — see git history if you need the diff.
+
+Compose files (all under [`infra/`](./infra)):
+
+- [`docker-compose.yml`](./infra/docker-compose.yml): **base / source of truth** — every service, gated by profiles
+- [`docker-compose.app.yml`](./infra/docker-compose.app.yml): application + frontend tier (also profile-gated)
+- [`docker-compose.security.yml`](./infra/docker-compose.security.yml): overlay — HA Keycloak (2 nodes + HAProxy) and hardened Kong admin
+- [`docker-compose.prod.yml`](./infra/docker-compose.prod.yml): production hardening overlay — required secrets, TLS, WAL archiving + `postgres-backup` sidecar, `redis.conf`
+- [`docker-compose.local.yml`](./infra/docker-compose.local.yml): local developer override (adds `migrate` + `seed`)
+- [`docker-compose.dev.yml`](./infra/docker-compose.dev.yml): shared dev server override (adds `migrate` + `seed`)
+- [`docker-compose.test.yml`](./infra/docker-compose.test.yml): test-only PostgreSQL fixture
+- [`docker-compose.kb_e2e.yml`](./infra/docker-compose.kb_e2e.yml): isolated KB-UI integration stack — data plane + ingestion worker + Keycloak + DB-less Kong
 
 ### Prerequisites
 
@@ -381,9 +392,10 @@ The base stack includes these service groups:
 ```bash
 source ~/.bashrc   # nếu chưa load alias dc
 # hoặc thêm thủ công vào ~/.bashrc:
+# litellm's host-gateway (host.docker.internal) is already in the base file,
+# so the old -f docker-compose.llm.yml overlay is no longer needed.
 alias dc='docker compose -f ~/Data-Agent/docker/docker-compose.yml \
-                         -f ~/Data-Agent/docker/docker-compose.local.yml \
-                         -f ~/Data-Agent/docker/docker-compose.llm.yml'
+                         -f ~/Data-Agent/docker/docker-compose.local.yml'
 ```
 
 ---

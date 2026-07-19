@@ -37,6 +37,7 @@ diacritics exactly as written, used for Neo4j node display.
 """
 from __future__ import annotations
 
+from typing import Any, Awaitable, Callable
 import logging
 import re
 import unicodedata
@@ -46,11 +47,11 @@ from qdrant_client import models
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
 from sqlalchemy import select as sa_select
 
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBEntityLookupORM,
 )
-from services.database_connector.model_connector import ModelServiceClient
-from services.database_connector.postgres_connector import PostgresClient
+from libs.database_connector.model_connector import ModelServiceClient
+from libs.database_connector.postgres_connector import PostgresClient
 from utils import config as cfg
 
 log = logging.getLogger(__name__)
@@ -220,7 +221,7 @@ async def _best_candidate(
     qdrant: AsyncQdrantClient,
     tenant_id: str,
     embedding: list[float],
-) -> tuple[str, float, dict] | None:
+) -> tuple[str, float, dict[str, Any]] | None:
     """Best embedding match at or above the verify band: (canonical, score, payload).
 
     The DECISION (merge / verify / new) belongs to the caller — multilingual-e5
@@ -276,7 +277,7 @@ async def _upsert_entity(
     if existing:
         payload = existing[0].payload or {}
         current_aliases: list[str] = payload.get("aliases", [])
-        updates: dict = {}
+        updates: dict[str, Any] = {}
         merged = list(dict.fromkeys([*current_aliases, *incoming_aliases]))
         if merged != current_aliases:
             updates["aliases"] = merged
@@ -334,7 +335,7 @@ async def _upsert_entity(
 
 # ── Resolution helpers (extracted from normalize_entities_detailed for SRP) ────
 
-def _clean_raw_entities(raw_entities: list[dict]) -> list[dict]:
+def _clean_raw_entities(raw_entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """NFC-normalise + strip each raw entity's name/description/aliases/type and drop
     the unnamed ones. Returns the cleaned list the resolution loop iterates over."""
     return [
@@ -357,12 +358,12 @@ async def _resolve_embedded_entity(
     qdrant: AsyncQdrantClient,
     postgres: PostgresClient,
     tenant_id: str,
-    entry: dict,
+    entry: dict[str, Any],
     embedding: list[float],
-    verify_fn,
+    verify_fn: Callable[[str, str, str, str], Awaitable[bool]] | None,
     knowledge_base: str,
     embed_model_id: str,
-) -> dict:
+) -> dict[str, Any]:
     """Three-band merge decision for ONE alias-missed entity that now has an
     embedding, then persist (upsert + alias learning) the resolved canonical.
 
@@ -425,13 +426,13 @@ async def _resolve_embedded_entity(
 
 
 def _dedupe_by_canonical(
-    names: list[str], details: list[dict],
-) -> tuple[list[str], list[dict]]:
+    names: list[str], details: list[dict[str, Any]],
+) -> tuple[list[str], list[dict[str, Any]]]:
     """Collapse the positional (name, detail) lists to unique canonicals, first
     occurrence winning, dropping empty placeholders."""
     seen: set[str] = set()
     out_names: list[str] = []
-    out_details: list[dict] = []
+    out_details: list[dict[str, Any]] = []
     for name, detail in zip(names, details):
         if name and name not in seen:
             seen.add(name)
@@ -447,8 +448,8 @@ async def normalize_entities(
     postgres: PostgresClient,
     model: ModelServiceClient,
     tenant_id: str,
-    raw_entities: list[dict],
-    verify_fn=None,
+    raw_entities: list[dict[str, Any]],
+    verify_fn: Callable[[str, str, str, str], Awaitable[bool]] | None = None,
     knowledge_base: str = "",
     embed_model_id: str = "",
 ) -> list[str]:
@@ -464,11 +465,11 @@ async def normalize_entities_detailed(
     postgres: PostgresClient,
     model: ModelServiceClient,
     tenant_id: str,
-    raw_entities: list[dict],
-    verify_fn=None,
+    raw_entities: list[dict[str, Any]],
+    verify_fn: Callable[[str, str, str, str], Awaitable[bool]] | None = None,
     knowledge_base: str = "",
     embed_model_id: str = "",
-) -> tuple[list[str], list[dict]]:
+) -> tuple[list[str], list[dict[str, Any]]]:
     """Normalise raw entities and return canonicalization details for each.
 
     Each raw entity: {"name": str, "description": str, "aliases": [str], ...} —
@@ -488,9 +489,9 @@ async def normalize_entities_detailed(
         return [], []
 
     result: list[str] = []
-    details: list[dict] = []
+    details: list[dict[str, Any]] = []
     # Entities whose embedding lookup is still needed (alias misses).
-    needs_embedding: list[tuple[int, dict]] = []
+    needs_embedding: list[tuple[int, dict[str, Any]]] = []
 
     # Pass 1 — exact alias lookup (deterministic, no embedding).
     for idx, entry in enumerate(cleaned_entities):

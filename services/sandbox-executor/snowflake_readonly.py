@@ -6,6 +6,7 @@ level) — no INSERT/UPDATE/DELETE/DDL grant exists for this role at all. The
 sql_guard SELECT-only check below is the second, cheaper layer in front of
 that.
 """
+from typing import Any, cast
 import asyncio
 import logging
 import threading
@@ -29,11 +30,11 @@ class SnowflakeQueryError(Exception):
 # single tool call. Connections are pooled by their full param set (password
 # included, since a different password is a different identity) and reused
 # across calls/requests within this process.
-_connections: dict[tuple, "snowflake.connector.SnowflakeConnection"] = {}
+_connections: dict[tuple[Any, ...], "snowflake.connector.SnowflakeConnection"] = {}
 _connections_lock = threading.Lock()
 
 
-def _connection_key(connection_params: dict) -> tuple:
+def _connection_key(connection_params: dict[str, Any]) -> tuple[Any, ...]:
     return (
         connection_params["account"],
         connection_params["user"],
@@ -45,7 +46,7 @@ def _connection_key(connection_params: dict) -> tuple:
     )
 
 
-def _get_connection(connection_params: dict):
+def _get_connection(connection_params: dict[str, Any]) -> "snowflake.connector.SnowflakeConnection":
     key = _connection_key(connection_params)
     with _connections_lock:
         conn = _connections.get(key)
@@ -71,7 +72,7 @@ def _get_connection(connection_params: dict):
         return conn
 
 
-def _drop_connection(connection_params: dict, conn) -> None:
+def _drop_connection(connection_params: dict[str, Any], conn: "snowflake.connector.SnowflakeConnection") -> None:
     with _connections_lock:
         _connections.pop(_connection_key(connection_params), None)
     try:
@@ -80,7 +81,7 @@ def _drop_connection(connection_params: dict, conn) -> None:
         pass
 
 
-async def execute_readonly_query(sql: str, connection_params: dict) -> dict:
+async def execute_readonly_query(sql: str, connection_params: dict[str, Any]) -> dict[str, Any]:
     """Returns {"rows": list[dict], "row_count": int, "is_truncated": bool}.
 
     connection_params: {account, user, password, warehouse, database, schema, role}
@@ -90,7 +91,7 @@ async def execute_readonly_query(sql: str, connection_params: dict) -> dict:
     except SQLGuardError as e:
         raise SnowflakeQueryError(f"SQL rejected: {e}") from e
 
-    def _query():
+    def _query() -> list[Any]:
         conn = _get_connection(connection_params)
         try:
             cursor = conn.cursor(DictCursor)
@@ -101,7 +102,7 @@ async def execute_readonly_query(sql: str, connection_params: dict) -> dict:
             cursor.execute(
                 f"SELECT * FROM (\n{sql}\n) AS _sandboxed_query LIMIT {MAX_ROWS + 1}"  # noqa: S608 — sql is guard-validated SELECT-only
             )
-            return cursor.fetchall()
+            return cast(list[Any], cursor.fetchall())
         except Exception:
             # Connection may be dead (idle timeout, network blip) — drop it
             # from the pool so the next call reconnects instead of reusing

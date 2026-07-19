@@ -3,11 +3,12 @@ Warehouse connection management and discovery.
 POST /api/knowledge/warehouses/connect — test connection, discover tables
 POST /api/knowledge/warehouses/select-tables — save connection + config, returns warehouse_id
 """
+from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 import logging
 
-from basemodel.services_databaseconnector.shared_model import ResponseModel
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
+from libs.basemodel.services_databaseconnector.postgres_model import (
     KBWarehouseInsert,
     KBWarehouseConfigInsert,
     KBWarehouseDelete,
@@ -16,7 +17,7 @@ from basemodel.services_databaseconnector.postgres_model import (
 from services.kb_backend.schemas import ConnectSnowflakeRequest, SelectTablesRequest
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
-from services.database_connector.snowflake_connector import SnowflakeConnector
+from libs.database_connector.snowflake_connector import SnowflakeConnector
 
 log = logging.getLogger(__name__)
 
@@ -27,8 +28,8 @@ router = APIRouter(prefix="/api/knowledge/warehouses", tags=["Warehouse-Connecti
 async def test_warehouse_connection(
     body: ConnectSnowflakeRequest,
     request: Request,
-    ctx: dict = Depends(require_perm("add_warehouse")),
-):
+    ctx: dict[str, Any] = Depends(require_perm("add_warehouse")),
+) -> ResponseModel[Any]:
     """Test Snowflake connection and discover tables in the schema."""
     log.info("Testing Snowflake connection account=%s database=%s", body.account_identifier, body.database)
 
@@ -60,8 +61,8 @@ async def test_warehouse_connection(
 async def select_warehouse_tables(
     body: SelectTablesRequest,
     request: Request,
-    ctx: dict = Depends(require_perm("add_warehouse")),
-):
+    ctx: dict[str, Any] = Depends(require_perm("add_warehouse")),
+) -> ResponseModel[Any]:
     """
     Validate Snowflake connection, fetch column schemas, then persist:
       1. KBWarehouse record
@@ -93,7 +94,7 @@ async def select_warehouse_tables(
         # 2. Fetch column schemas for selected tables. A metadata failure here is
         #    surfaced (502) rather than swallowed — persisting a table with empty
         #    columns would silently save a half-broken warehouse.
-        table_schemas: dict[str, dict] = {}
+        table_schemas: dict[str, dict[str, Any]] = {}
         try:
             for table_id in body.selected_table_ids:
                 schema = await connector.get_table_schema(table_id)

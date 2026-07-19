@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any, cast
 import asyncio
 import logging
 import os
@@ -33,7 +34,7 @@ def _endpoints(url_env: str, key_env: str) -> list[tuple[str, str | None]]:
 def _discover_name(url: str, api_key: str | None, prefer: str = "id") -> str | None:
     try:
         model = C._get(url, "/v1/models", api_key, timeout=5)["data"][0]
-        return model.get(prefer) or model.get("id")
+        return cast("str | None", model.get(prefer) or model.get("id"))
     except Exception as e:  # noqa: BLE001
         log.warning("Registry: /v1/models discovery failed for %s (%s)", url, e)
         return None
@@ -56,7 +57,17 @@ def register_embedding_models(registry: Registry) -> None:
 
 
 def register_rerank_models(registry: Registry) -> None:
-    """One model per remote /rerank URL."""
+    """In-process cross-encoder (default) + one model per remote /rerank URL."""
+    import config as _cfg
+    try:
+        registry.register(ModelEntry(
+            name=_cfg.RERANK_MODEL,
+            capability=Capability.RERANK,
+            caller=C.LocalRerankCaller(model_store.load_rerank(_cfg.RERANK_MODEL)),
+        ), default=True)
+    except Exception as exc:
+        log.warning("register_rerank | local cross-encoder %s failed to load: %s",
+                    _cfg.RERANK_MODEL, exc)
     for i, (url, key) in enumerate(_endpoints("REMOTE_RERANK_URL", "REMOTE_API_KEY")):
         name = _discover_name(url, key, prefer="rerank") or f"remote-rerank-{i}"
         registry.register(ModelEntry(
@@ -75,11 +86,14 @@ def register_chat_models(registry: Registry) -> None:
         caller=C.LlamaServerChatCaller(),
     ))
     for i, (url, key) in enumerate(_endpoints("REMOTE_LLM_URL", "REMOTE_LLM_KEY")):
-        name = _discover_name(url, key) or f"remote-chat-{i}"
+        # Pin the model when REMOTE_LLM_MODEL is set (a multi-model server like
+        # ollama otherwise resolves to /v1/models[0] non-deterministically).
+        model = cfg.REMOTE_LLM_MODEL
+        name = model or _discover_name(url, key) or f"remote-chat-{i}"
         registry.register(ModelEntry(
             name=name,
             capability=Capability.CHAT,
-            caller=C.CloudflareQwenChatCaller(url, key),
+            caller=C.CloudflareQwenChatCaller(url, key, model),
         ), default=(i == 0))
 
 
@@ -94,13 +108,13 @@ def bootstrap(registry: Registry) -> None:
 
 
 # ── Postgres: resolve each embed/rerank model's UUID by name (create if missing) ──
-async def _resolve_or_create(conn, model_name: str, task_type: str) -> _uuid.UUID:
+async def _resolve_or_create(conn: asyncpg.Connection, model_name: str, task_type: str) -> _uuid.UUID:
     found = await conn.fetchval(
         'SELECT model_id FROM "KBModel" WHERE model_name = $1 AND task_type = $2 AND is_deleted = false',
         model_name, task_type,
     )
     if found is not None:
-        return found
+        return cast(_uuid.UUID, found)
     new_id = _uuid.uuid4()
     async with conn.transaction():
         await conn.execute(
@@ -140,7 +154,7 @@ async def sync_with_retry(registry: Registry) -> None:
             await asyncio.sleep(delay)
 
 
-def chat_status(registry: Registry) -> dict:
+def chat_status(registry: Registry) -> dict[str, Any]:
     entry = registry.default(Capability.CHAT)
     if entry is None:
         return {"configured": False, "ready": False, "model": None}

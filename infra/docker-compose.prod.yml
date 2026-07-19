@@ -31,9 +31,79 @@ services:
       POSTGRES_HOST_AUTH_METHOD: scram-sha-256
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in production}
+    # WAL archiving for point-in-time recovery (was docker-compose.storage.yml,
+    # folded here since it's a prod-only concern). `archive_command` writes WAL
+    # segments to /backups/wal; the postgres-backup sidecar below prunes them.
+    # `test ! -f` keeps archiving idempotent on Postgres' retry. max_wal_senders
+    # is set so a future streaming replica can attach without a restart.
+    command: >
+      postgres
+      -c wal_level=replica
+      -c archive_mode=on
+      -c archive_command='test ! -f /backups/wal/%f && cp %p /backups/wal/%f'
+      -c max_wal_senders=3
+      -c max_replication_slots=3
+    # Overlay MERGES volumes with the base file — these APPEND to base's four
+    # init scripts (they don't replace them). 05-grants creates the
+    # runtime_writer role that workflow-runtime's RUNTIME_DB_URL connects as.
+    volumes:
+      - postgres_backups:/backups
+      - ./sql/grant-runtime-writer.sql:/docker-entrypoint-initdb.d/05-grants.sql:ro
+
+  # ─── Postgres logical backup sidecar (was docker-compose.storage.yml) ───────
+  # pg_dump every BACKUP_INTERVAL_HOURS (default 6h), pruned at
+  # BACKUP_RETENTION_DAYS (default 7). WAL is archived by Postgres itself
+  # (archive_command above); this sidecar additionally prunes old WAL.
+  # For PITR: restore latest dump + replay WAL to a target timestamp. See
+  # docs/disaster-recovery.md "Postgres restore". NOT a replacement for
+  # streaming replication — use pgBackRest / a managed service for real prod.
+  postgres-backup:
+    image: postgres:16-alpine
+    container_name: dataagent-postgres-backup
+    restart: always
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-admin}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in production}
+      PGDATABASE: ${POSTGRES_DB:-dataagent}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-6}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-7}
+    volumes:
+      - postgres_backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Plain shell loop instead of cron — one process, fewer moving parts.
+    command: >
+      sh -c '
+        set -eu
+        mkdir -p /backups/dumps /backups/wal
+        echo "[backup] retention=${BACKUP_RETENTION_DAYS}d interval=${BACKUP_INTERVAL_HOURS}h"
+        while :; do
+          ts=$$(date +%Y%m%d_%H%M%S)
+          dump=/backups/dumps/dump_$${ts}.sql.gz
+          echo "[backup] $$(date -Iseconds) writing $${dump}"
+          if pg_dump --format=plain --no-owner --no-privileges | gzip > "$${dump}.tmp"; then
+            mv "$${dump}.tmp" "$${dump}"
+            echo "[backup] OK size=$$(stat -c%s "$${dump}") bytes"
+          else
+            echo "[backup] FAILED — leaving previous dumps in place"
+            rm -f "$${dump}.tmp"
+          fi
+          find /backups/dumps -name "dump_*.sql.gz" -mtime +$${BACKUP_RETENTION_DAYS} -delete
+          find /backups/wal -type f -mtime +$${BACKUP_RETENTION_DAYS} -delete
+          sleep $$((BACKUP_INTERVAL_HOURS * 3600))
+        done
+      '
 
   redis:
     restart: always
+    # Custom redis.conf (was docker-compose.storage.yml). bind 0.0.0.0 +
+    # protected-mode no, NO requirepass — Langfuse must not send AUTH (see the
+    # REDIS_AUTH note in the base file's langfuse-worker block).
+    command: redis-server /usr/local/etc/redis/redis.conf
+    volumes:
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
 
   mongo:
     restart: always
@@ -90,3 +160,8 @@ services:
 #      first, then dropping INTERNAL from KAFKA_LISTENERS — a coordinated change,
 #      tracked as its own step.
 # ─────────────────────────────────────────────────────────────────────────────
+
+# Top-level volumes MERGE with the base file. postgres_backups is prod-only
+# (the backup sidecar + WAL archive dir), so it's declared here, not in base.
+volumes:
+  postgres_backups:

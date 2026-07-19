@@ -1,7 +1,7 @@
 """Snowflake INFORMATION_SCHEMA crawl (doc §2.3).
 
 Deliberately a thin, synchronous, standalone module (not the async
-SnowflakeConnector in services/database_connector) — this worker is a
+SnowflakeConnector in libs/database_connector) — this worker is a
 blocking cron/Kafka loop in the same style as memory-consumer/main.py, so a
 sync call here costs nothing and keeps the worker self-contained the same
 way memory-consumer doesn't import workflow-runtime's async Postgres client
@@ -14,6 +14,7 @@ discover_and_describe() once per warehouse on every cron tick plus once per
 DDL-triggered single-table crawl, so re-authenticating from scratch each
 time would add ~1-2s of avoidable latency/load to every call.
 """
+from typing import Any
 import logging
 import threading
 
@@ -22,11 +23,11 @@ from snowflake.connector import DictCursor
 
 logger = logging.getLogger(__name__)
 
-_connections: dict[tuple, "snowflake.connector.SnowflakeConnection"] = {}
+_connections: dict[tuple[Any, ...], "snowflake.connector.SnowflakeConnection"] = {}
 _connections_lock = threading.Lock()
 
 
-def _connection_key(connection_params: dict) -> tuple:
+def _connection_key(connection_params: dict[str, Any]) -> tuple[Any, ...]:
     return (
         connection_params["account"],
         connection_params["user"],
@@ -38,7 +39,7 @@ def _connection_key(connection_params: dict) -> tuple:
     )
 
 
-def _get_connection(connection_params: dict):
+def _get_connection(connection_params: dict[str, Any]) -> "snowflake.connector.SnowflakeConnection":
     key = _connection_key(connection_params)
     with _connections_lock:
         conn = _connections.get(key)
@@ -69,7 +70,7 @@ def _get_connection(connection_params: dict):
     return conn
 
 
-def _drop_connection(connection_params: dict, conn) -> None:
+def _drop_connection(connection_params: dict[str, Any], conn: "snowflake.connector.SnowflakeConnection") -> None:
     with _connections_lock:
         _connections.pop(_connection_key(connection_params), None)
     try:
@@ -78,7 +79,7 @@ def _drop_connection(connection_params: dict, conn) -> None:
         pass
 
 
-def discover_and_describe(connection_params: dict, selected_tables: list[str] | None = None) -> dict[str, dict]:
+def discover_and_describe(connection_params: dict[str, Any], selected_tables: list[str] | None = None) -> dict[str, dict[str, Any]]:
     """Returns {table_name: {schema_name, table_name, columns, row_count, last_altered}}.
 
     connection_params: {account, user, password, warehouse, database, schema, role}
@@ -99,7 +100,7 @@ def discover_and_describe(connection_params: dict, selected_tables: list[str] | 
 
         names = selected_tables or list(table_stats.keys())
 
-        columns_by_table: dict[str, list[dict]] = {}
+        columns_by_table: dict[str, list[dict[str, Any]]] = {}
         if names:
             placeholders = ", ".join(["%s"] * len(names))
             cursor.execute(
@@ -117,7 +118,7 @@ def discover_and_describe(connection_params: dict, selected_tables: list[str] | 
                     "comment": r["COMMENT"],
                 })
 
-        result: dict[str, dict] = {}
+        result: dict[str, dict[str, Any]] = {}
         for table_name in names:
             columns = columns_by_table.get(table_name, [])
             if not columns:

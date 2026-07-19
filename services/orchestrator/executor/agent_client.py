@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from typing import Any
 import json
 import logging
 
@@ -15,7 +17,7 @@ logger = logging.getLogger(__name__)
 _client: httpx.AsyncClient | None = None
 
 
-def _traced_headers(base: dict, traceparent: str | None) -> dict:
+def _traced_headers(base: dict[str, Any], traceparent: str | None) -> dict[str, Any]:
     """Chèn header traceparent (W3C) dựng THỦ CÔNG từ (trace_id, span_id) của
     LangfuseSpan hiện tại — KHÔNG dựa vào opentelemetry.propagate.inject(),
     tường minh, không phụ thuộc ambient context."""
@@ -25,7 +27,7 @@ def _traced_headers(base: dict, traceparent: str | None) -> dict:
     return headers
 
 
-def traceparent_of(span) -> str | None:
+def traceparent_of(span: Any) -> str | None:
     """Dựng chuỗi traceparent W3C từ 1 LangfuseSpan (span.trace_id, span.id)."""
     if span is None:
         return None
@@ -77,7 +79,7 @@ async def call_agent(
     tenant_id: str = "",
     orchestrated: bool = False,
     traceparent: str | None = None,
-    guardrail_cfg: dict | None = None,
+    guardrail_cfg: dict[str, Any] | None = None,
 ) -> tuple[str, str | None]:
     """
     Gọi POST /api/conversations/run trên workflow-runtime.
@@ -130,7 +132,9 @@ async def call_agent(
 
 
 @_retry_transient
-async def _open_agent_stream(client: httpx.AsyncClient, url: str, payload: dict, headers: dict):
+async def _open_agent_stream(
+    client: httpx.AsyncClient, url: str, payload: dict[str, Any], headers: dict[str, Any]
+) -> tuple[Any, httpx.Response]:
     """Mở connection SSE — retry ở đây (trước khi đọc byte nào) là an toàn.
     KHÔNG retry phần đọc aiter_lines() bên dưới (call_agent_stream) — 1
     generator đã yield token rồi mà retry lại sẽ gây duplicate token cho
@@ -148,7 +152,7 @@ async def _open_agent_stream(client: httpx.AsyncClient, url: str, payload: dict,
 _GUARDRAIL_CFG_KEYS = ("guardrail_model", "guardrail_max_tokens", "guardrail_timeout")
 
 
-def extract_guardrail_cfg(cfg: dict) -> dict:
+def extract_guardrail_cfg(cfg: dict[str, Any]) -> dict[str, Any]:
     """Chỉ lấy 3 field workflow-runtime cần để tự chạy output-guardrail check
     của chính nó — không gửi input_patterns/allowed_topics (không liên quan
     tới output check)."""
@@ -161,8 +165,8 @@ async def call_agent_stream(
     user_id: str = "orchestrator",
     tenant_id: str = "",
     traceparent: str | None = None,
-    guardrail_cfg: dict | None = None,
-):
+    guardrail_cfg: dict[str, Any] | None = None,
+) -> AsyncIterator[tuple[str, Any]]:
     """
     Async generator — yield (event_type, data):
       ("conv_id", str)         — conversation id từ response header

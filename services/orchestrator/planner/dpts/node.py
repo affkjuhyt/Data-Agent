@@ -35,7 +35,7 @@ class Node:
 
     kv_ref: Any = None  # vLLM PagedAttention block ref (placeholder)
     token_sequence: list[int] = field(default_factory=list)
-    target: dict = field(default_factory=dict)  # Target Description + Tasks
+    target: dict[str, Any] = field(default_factory=dict)  # Target Description + Tasks
     terminal_reason: str = ""  # "llm" | "depth_cap"
     goal: str = ""
     path_steps: list[str] = field(default_factory=list)

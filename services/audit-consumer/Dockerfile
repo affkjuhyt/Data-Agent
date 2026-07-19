@@ -1,8 +1,13 @@
-# Build context is ../services (set in compose) so shared/ is available.
+# Build context is the repo root (set in compose) so libs/ is reachable.
 FROM python:3.12-slim
 WORKDIR /app
-COPY audit-consumer/requirements.txt .
+COPY services/audit-consumer/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY shared/ ./shared/
-COPY audit-consumer/main.py .
+# shared code now lives in libs/shared; mount it under the bare `shared`
+# package name this service imports (import shared.xxx).
+COPY libs/shared/ ./shared/
+COPY services/audit-consumer/main.py .
+# Drop root — the consumer only reads its code and talks to Kafka/DB.
+RUN addgroup --system app && adduser --system --ingroup app app
+USER app
 CMD ["python", "-u", "main.py"]

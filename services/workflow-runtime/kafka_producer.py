@@ -4,7 +4,7 @@ import logging
 import os
 import threading
 import uuid
-from typing import Optional
+from typing import Any, Optional
 
 from kafka import KafkaProducer
 
@@ -20,7 +20,7 @@ _producer: Optional[KafkaProducer] = None
 _lock = threading.Lock()
 
 
-def _json_default(obj):
+def _json_default(obj: Any) -> Any:
     """tenant_id/agent_id/conversation_id/message_id often arrive as raw UUID
     objects from SQLAlchemy/asyncpg — json.dumps can't serialize those by default."""
     if isinstance(obj, uuid.UUID):
@@ -30,13 +30,13 @@ def _json_default(obj):
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
 
 
-async def init_kafka_producer():
+async def init_kafka_producer() -> None:
     """Connect lazily/fire-and-forget — a Kafka outage must never block the
     request/response cycle. produce_event() degrades to a no-op + log if
     the broker is unreachable."""
     global _producer
     try:
-        kwargs: dict = dict(
+        kwargs: dict[str, Any] = dict(
             bootstrap_servers=_KAFKA_BOOTSTRAP,
             value_serializer=lambda v: json.dumps(v, default=_json_default, ensure_ascii=False).encode("utf-8"),
             key_serializer=lambda k: k.encode("utf-8") if isinstance(k, str) else k,
@@ -58,7 +58,7 @@ async def init_kafka_producer():
         _producer = None
 
 
-async def close_kafka_producer():
+async def close_kafka_producer() -> None:
     global _producer
     if _producer:
         try:
@@ -69,7 +69,7 @@ async def close_kafka_producer():
         _producer = None
 
 
-def produce_event(topic: str, key: Optional[str], value: dict) -> None:
+def produce_event(topic: str, key: Optional[str], value: dict[str, Any]) -> None:
     """Fire-and-forget — does not block on broker ack, matches release-worker's produce_event()."""
     if not _producer:
         logger.warning("kafka producer | not connected, dropping event for topic=%s", topic)

@@ -11,6 +11,17 @@ REMOTE_TIMEOUT    = float(os.getenv("REMOTE_TIMEOUT", "300"))
 REMOTE_LLM_URL    = os.getenv("REMOTE_LLM_URL", "").rstrip("/")
 REMOTE_LLM_KEY    = os.getenv("REMOTE_LLM_KEY", "")
 REMOTE_LLM_MODEL  = os.getenv("REMOTE_LLM_MODEL", "")
+
+# ── Embedding cache + dynamic batching (KB-SCALE-10K.md lever #1) ──────────────
+def _flag(name: str, default: str = "true") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+EMBED_CACHE_ENABLED = _flag("EMBED_CACHE_ENABLED")
+EMBED_CACHE_SIZE    = int(os.getenv("EMBED_CACHE_SIZE", "50000"))   # ~50k query vectors
+EMBED_BATCH_ENABLED = _flag("EMBED_BATCH_ENABLED")
+EMBED_BATCH_MAX     = int(os.getenv("EMBED_BATCH_MAX", "64"))       # texts per encode
+EMBED_BATCH_WAIT_MS = float(os.getenv("EMBED_BATCH_WAIT_MS", "8"))  # coalesce window
+
 POSTGRES_DSN = os.getenv(
     "POSTGRES_DSN",
     "postgresql://aeroflow:aeroflow_secret@postgres/aeroflow_kb",

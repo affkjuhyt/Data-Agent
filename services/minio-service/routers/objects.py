@@ -1,4 +1,5 @@
-from typing import Optional
+from collections.abc import Iterator
+from typing import Any, Optional
 
 import structlog
 from botocore.exceptions import ClientError
@@ -12,7 +13,7 @@ router = APIRouter(prefix="/api/storage/buckets/{bucket}/objects")
 
 
 @router.get("")
-def list_objects(bucket: str, prefix: Optional[str] = Query(default="")):
+def list_objects(bucket: str, prefix: Optional[str] = Query(default="")) -> dict[str, Any]:
     try:
         resp = s3().list_objects_v2(Bucket=bucket, Prefix=prefix or "")
     except ClientError as e:
@@ -25,7 +26,7 @@ def list_objects(bucket: str, prefix: Optional[str] = Query(default="")):
 
 
 @router.head("/{key:path}")
-def head_object(bucket: str, key: str):
+def head_object(bucket: str, key: str) -> dict[str, Any]:
     try:
         resp = s3().head_object(Bucket=bucket, Key=key)
         return {"content_length": resp["ContentLength"], "last_modified": resp["LastModified"].isoformat()}
@@ -35,7 +36,7 @@ def head_object(bucket: str, key: str):
 
 
 @router.put("/{key:path}", status_code=201)
-def upload_object(bucket: str, key: str, file: UploadFile = File(...)):
+def upload_object(bucket: str, key: str, file: UploadFile = File(...)) -> dict[str, Any]:
     try:
         s3().upload_fileobj(file.file, bucket, key)
         log.info("object.uploaded", bucket=bucket, key=key)
@@ -45,14 +46,14 @@ def upload_object(bucket: str, key: str, file: UploadFile = File(...)):
 
 
 @router.get("/{key:path}")
-def download_object(bucket: str, key: str):
+def download_object(bucket: str, key: str) -> StreamingResponse:
     try:
         resp = s3().get_object(Bucket=bucket, Key=key)
     except ClientError as e:
         code = e.response["Error"]["Code"]
         raise HTTPException(status_code=404 if code in ("404", "NoSuchKey") else 500, detail=str(e))
 
-    def stream():
+    def stream() -> Iterator[bytes]:
         for chunk in resp["Body"].iter_chunks(chunk_size=8192):
             yield chunk
 
@@ -64,7 +65,7 @@ def download_object(bucket: str, key: str):
 
 
 @router.delete("/{key:path}", status_code=204)
-def delete_object(bucket: str, key: str):
+def delete_object(bucket: str, key: str) -> None:
     try:
         s3().delete_object(Bucket=bucket, Key=key)
         log.info("object.deleted", bucket=bucket, key=key)

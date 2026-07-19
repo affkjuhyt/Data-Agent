@@ -10,13 +10,13 @@ import json
 import logging
 import re
 import uuid
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import update as sa_update
 
 from utils import llm_client
 
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     KBLifecycleHistoryInsert,
     PolicyFilteringType,
     ReadJoinRequest,
@@ -24,10 +24,10 @@ from basemodel.services_databaseconnector.postgres_model import (
     Tier,
     WhereFilter,
 )
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import KBDataORM
-from services.database_connector.minio_connector import MinIOClient
-from services.database_connector.mongo_connector import MongoClient
-from services.database_connector.postgres_connector import PostgresClient
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import KBDataORM
+from libs.database_connector.minio_connector import MinIOClient
+from libs.database_connector.mongo_connector import MongoClient
+from libs.database_connector.postgres_connector import PostgresClient
 
 from utils import config as cfg
 from utils.log_writer import set_chunk_progress, write_log
@@ -42,7 +42,7 @@ _JSON_OBJ   = re.compile(r'\{[\s\S]*\}', re.DOTALL)
 
 # ── LLM helpers ───────────────────────────────────────────────────────────────
 
-async def _llm_generate_json(system_type: str, user: str, max_tokens: int = 512) -> dict:
+async def _llm_generate_json(system_type: str, user: str, max_tokens: int = 512) -> dict[str, Any]:
     raw = await llm_client.generate_json(
         user,
         system_prompt=SYSTEM_PROMPTS[system_type],
@@ -53,12 +53,12 @@ async def _llm_generate_json(system_type: str, user: str, max_tokens: int = 512)
     m = _JSON_FENCE.search(raw)
     cleaned = m.group(1).strip() if m else raw.strip()
     try:
-        return json.loads(cleaned)
+        return cast(dict[str, Any], json.loads(cleaned))
     except json.JSONDecodeError:
         obj_m = _JSON_OBJ.search(cleaned)
         if obj_m:
             try:
-                return json.loads(obj_m.group(0))
+                return cast(dict[str, Any], json.loads(obj_m.group(0)))
             except json.JSONDecodeError:
                 pass
         log.warning("_llm_generate_json: malformed JSON from LLM (system_type=%s) — returning {}", system_type)
@@ -75,11 +75,11 @@ async def _vlm_describe(image_bytes: bytes, content_type: str = "image/jpeg") ->
 
 # ── Parsing helpers ────────────────────────────────────────────────────────────
 
-def _docling_chunks_to_dicts(docling_result) -> list[dict]:
+def _docling_chunks_to_dicts(docling_result: Any) -> list[dict[str, Any]]:
     """Map a DoclingResult into the silver chunk dicts (shared by doc + web)."""
-    chunks: list[dict] = []
+    chunks: list[dict[str, Any]] = []
     for parsed_chunk in docling_result.chunks:
-        chunk: dict = {
+        chunk: dict[str, Any] = {
             "block_index": parsed_chunk.block_index,
             "content": parsed_chunk.content,
             "table_involved": parsed_chunk.table_involved,
@@ -95,7 +95,7 @@ def _docling_chunks_to_dicts(docling_result) -> list[dict]:
     return chunks
 
 
-async def _parse_doc(docling, bucket: str, object_key: str, extension: str) -> list[dict]:
+async def _parse_doc(docling: Any, bucket: str, object_key: str, extension: str) -> list[dict[str, Any]]:
     """docling: any object with .parse(bucket, object_key, extension) -> DoclingResult"""
     result = await docling.parse(bucket=bucket, object_key=object_key, extension=extension)
     return _docling_chunks_to_dicts(result)
@@ -120,7 +120,7 @@ async def _fetch_url_static(url: str) -> str:
     ) as client:
         resp = await client.get(url)
         resp.raise_for_status()
-        return resp.text
+        return cast(str, resp.text)
 
 
 async def _fetch_url_rendered(url: str) -> str:
@@ -141,7 +141,7 @@ async def _fetch_url_rendered(url: str) -> str:
                 await page.wait_for_load_state("networkidle", timeout=int(cfg.WEB_RENDER_WAIT * 1000))
             except PWTimeout:
                 log.info("Web render: networkidle not reached for %s — using current DOM", url)
-            return await page.content()
+            return cast(str, await page.content())
         finally:
             await browser.close()
 
@@ -191,7 +191,7 @@ def _extract_main_content(html: str, url: str) -> tuple[str, str]:
     return html, "html"
 
 
-async def _parse_web(docling, url: str) -> list[dict]:
+async def _parse_web(docling: Any, url: str) -> list[dict[str, Any]]:
     """bronze→silver web path: fetch the portal, strip boilerplate to markdown,
     then Docling-chunk it like a document."""
     if not url:
@@ -204,15 +204,15 @@ async def _parse_web(docling, url: str) -> list[dict]:
     return _docling_chunks_to_dicts(result)
 
 
-async def _parse_image(file_bytes: bytes, extension: str) -> list[dict]:
+async def _parse_image(file_bytes: bytes, extension: str) -> list[dict[str, Any]]:
     content_type = f"image/{extension.lstrip('.')}"
     description = await _vlm_describe(file_bytes, content_type)
     return [{"block_index": 0, "content": description, "table_involved": False, "table": None}]
 
 
-async def _parse_video(file_bytes: bytes) -> list[dict]:
+async def _parse_video(file_bytes: bytes) -> list[dict[str, Any]]:
     try:
-        import av  # type: ignore[import]
+        import av
     except ImportError:
         log.error("PyAV not installed — cannot extract video frames.")
         raise
@@ -222,7 +222,7 @@ async def _parse_video(file_bytes: bytes) -> list[dict]:
     if video_stream is None:
         raise ValueError("No video stream found in file")
 
-    chunks: list[dict] = []
+    chunks: list[dict[str, Any]] = []
     for i, frame in enumerate(container.decode(video_stream)):
         if i % cfg.VLM_FRAME_INTERVAL != 0:
             continue
@@ -266,9 +266,9 @@ async def _llm_policy_blocked(content: str, nlp_rules: list[str]) -> bool:
 async def _filter_chunks(
     postgres: PostgresClient,
     tenant_id: str,
-    chunks: list[dict],
+    chunks: list[dict[str, Any]],
     emitter: PipelineEventEmitter = NULL_EMITTER,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     policies_response = await postgres.read(ReadJoinRequest(
         tenant_id=tenant_id,
         joins_table=["KBFilterPolicy"],
@@ -290,7 +290,7 @@ async def _filter_chunks(
                 exact_phrases.extend(rule_values)
             # NLP/LLM-based policies skipped — exact-match only for reliability
 
-    accepted_chunks: list[dict] = []
+    accepted_chunks: list[dict[str, Any]] = []
     for chunk in chunks:
         content = chunk["content"]
         block_index = chunk["block_index"]
@@ -327,11 +327,11 @@ def _strip_surrogates(text: str) -> str:
     return "".join(char for char in text if not 0xD800 <= ord(char) <= 0xDFFF)
 
 
-def _clean_chunk_entities(raw_entities: Any) -> list[dict]:
+def _clean_chunk_entities(raw_entities: Any) -> list[dict[str, Any]]:
     """Parse + sanitize per-chunk entities from the LLM. Names/descriptions are
     surrogate-stripped; names stay in the chunk's own language. Gold applies the
     generic-word blacklist, dedup, and canonicalization."""
-    cleaned_entities: list[dict] = []
+    cleaned_entities: list[dict[str, Any]] = []
     for entity in raw_entities or []:
         if not isinstance(entity, dict):
             continue
@@ -348,12 +348,12 @@ def _clean_chunk_entities(raw_entities: Any) -> list[dict]:
     return cleaned_entities
 
 
-def _clean_chunk_relationships(raw_relationships: Any, entity_names: list[str]) -> list[dict]:
+def _clean_chunk_relationships(raw_relationships: Any, entity_names: list[str]) -> list[dict[str, Any]]:
     """Keep only relationships whose from/to are among THIS chunk's entities (drops
     hallucinated endpoints). Names stay in the chunk's language — gold remaps them
     to canonical entities."""
     allowed_names = {_strip_surrogates(name).strip().lower() for name in entity_names}
-    cleaned_relationships: list[dict] = []
+    cleaned_relationships: list[dict[str, Any]] = []
     for relationship in raw_relationships or []:
         if not isinstance(relationship, dict):
             continue
@@ -370,7 +370,7 @@ def _clean_chunk_relationships(raw_relationships: Any, entity_names: list[str]) 
     return cleaned_relationships
 
 
-def _fallback_chunk_summary(content: str) -> dict:
+def _fallback_chunk_summary(content: str) -> dict[str, Any]:
     """Heuristic summary when the LLM can't return valid JSON: first sentence,
     truncated. Splits on Latin sentence punctuation, which Vietnamese also uses."""
     first_sentence = re.split(r"[.!?…]", content, maxsplit=1)[0].strip()
@@ -379,7 +379,7 @@ def _fallback_chunk_summary(content: str) -> dict:
             "relationships": [], "skip": False}
 
 
-async def summarize_chunk(content: str) -> dict:
+async def summarize_chunk(content: str) -> dict[str, Any]:
     """One LLM call → {summary, entities, intents, skip}. Entities are extracted
     PER CHUNK here (in the chunk's own language). Never raises — falls back to the
     heuristic summary so a flaky LLM can't fail the whole silver stage."""
@@ -411,11 +411,11 @@ async def summarize_chunk(content: str) -> dict:
 
 
 async def _summarize_chunks(
-    chunks: list[dict],
+    chunks: list[dict[str, Any]],
     emitter: PipelineEventEmitter = NULL_EMITTER,
-    database=None,
+    database: Any | None = None,
     data_id: str | None = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Annotate every chunk with summary + intents (bounded-concurrency LLM calls)
     and drop chunks the LLM flags as boilerplate. Table chunks are never dropped —
     the table itself is valuable structured data even if the prose around it isn't."""
@@ -425,7 +425,7 @@ async def _summarize_chunks(
     summary_semaphore = asyncio.Semaphore(cfg.SILVER_SUMMARY_CONCURRENCY)
     completed_count = 0
 
-    async def _summarize_one(chunk: dict) -> dict:
+    async def _summarize_one(chunk: dict[str, Any]) -> dict[str, Any]:
         nonlocal completed_count
         async with summary_semaphore:
             result = await summarize_chunk(chunk["content"])
@@ -436,7 +436,7 @@ async def _summarize_chunks(
 
     summary_results = await asyncio.gather(*(_summarize_one(chunk) for chunk in chunks))
 
-    kept_chunks: list[dict] = []
+    kept_chunks: list[dict[str, Any]] = []
     for chunk, summary_result in zip(chunks, summary_results):
         if summary_result["skip"] and not chunk.get("table_involved"):
             log.info("Silver summary: block_index=%d flagged boilerplate — dropping",
@@ -462,7 +462,7 @@ async def _summarize_chunks(
 
 # ── Main stage function ────────────────────────────────────────────────────────
 
-async def _load_kb_data(postgres: PostgresClient, tenant_id: str, data_id: str) -> dict:
+async def _load_kb_data(postgres: PostgresClient, tenant_id: str, data_id: str) -> dict[str, Any]:
     data_response = await postgres.read(ReadJoinRequest(
         tenant_id=tenant_id,
         joins_table=["KBData"],
@@ -471,14 +471,14 @@ async def _load_kb_data(postgres: PostgresClient, tenant_id: str, data_id: str) 
     ))
     if data_response.code != 200 or not data_response.data:
         raise ValueError(f"KBData not found: data_id={data_id}")
-    return data_response.data[0]
+    return cast(dict[str, Any], data_response.data[0])
 
 
 async def _parse_source(
-    minio: MinIOClient, docling, kb_data: dict, data_id: str,
+    minio: MinIOClient, docling: Any, kb_data: dict[str, Any], data_id: str,
     source_type: SourceType, path: str, extension: str,
     emitter: PipelineEventEmitter,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Parse the bronze source into raw chunks. The emit envelope is handled by the
     caller's `silver.parse` step; this only adds the parser name to that scope."""
     if source_type == SourceType.DOC:
@@ -505,7 +505,7 @@ async def _parse_source(
 
 async def _persist_silver(
     postgres: PostgresClient, mongo: MongoClient, data_id: str, tenant_id: str,
-    source_type: SourceType, accepted_chunks: list[dict], raw_chunk_count: int,
+    source_type: SourceType, accepted_chunks: list[dict[str, Any]], raw_chunk_count: int,
     approved_by: str,
 ) -> None:
     """Write the silver staging doc + flip the tier, each guarded so a failure rolls
@@ -567,13 +567,13 @@ async def _persist_silver(
 async def promote_to_silver(
     minio: MinIOClient,
     postgres: PostgresClient,
-    docling,
+    docling: Any,
     mongo: MongoClient,
     data_id: str,
     tenant_id: str,
     approved_by: str,
     emitter: PipelineEventEmitter = NULL_EMITTER,
-) -> dict:
+) -> dict[str, Any]:
     """
     Load bronze file → parse → filter → summarize → store chunks to MongoDB silver
     staging, then flip KBData tier to SILVER. Gold promotion is NOT triggered here —

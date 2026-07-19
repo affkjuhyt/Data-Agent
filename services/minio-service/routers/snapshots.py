@@ -1,4 +1,5 @@
-from typing import Optional
+from collections.abc import Iterator
+from typing import Any, Optional
 
 import structlog
 from botocore.exceptions import ClientError
@@ -13,7 +14,7 @@ router = APIRouter(prefix="/api/storage/snapshots")
 
 
 @router.head("/{environment}/{version}")
-def head_snapshot(environment: str, version: str):
+def head_snapshot(environment: str, version: str) -> dict[str, Any]:
     key = f"rollback-snapshots/{environment}-{version}.tar.gz"
     try:
         resp = s3().head_object(Bucket=BUCKET_ARTIFACTS, Key=key)
@@ -31,7 +32,7 @@ def head_snapshot(environment: str, version: str):
 
 
 @router.put("/{environment}/{version}", status_code=201)
-def upload_snapshot(environment: str, version: str, file: UploadFile = File(...)):
+def upload_snapshot(environment: str, version: str, file: UploadFile = File(...)) -> dict[str, Any]:
     key = f"rollback-snapshots/{environment}-{version}.tar.gz"
     try:
         s3().upload_fileobj(file.file, BUCKET_ARTIFACTS, key)
@@ -42,7 +43,7 @@ def upload_snapshot(environment: str, version: str, file: UploadFile = File(...)
 
 
 @router.get("/{environment}/{version}")
-def download_snapshot(environment: str, version: str):
+def download_snapshot(environment: str, version: str) -> StreamingResponse:
     key = f"rollback-snapshots/{environment}-{version}.tar.gz"
     try:
         resp = s3().get_object(Bucket=BUCKET_ARTIFACTS, Key=key)
@@ -50,7 +51,7 @@ def download_snapshot(environment: str, version: str):
         code = e.response["Error"]["Code"]
         raise HTTPException(status_code=404 if code in ("404", "NoSuchKey") else 500, detail=str(e))
 
-    def stream():
+    def stream() -> Iterator[bytes]:
         for chunk in resp["Body"].iter_chunks(chunk_size=8192):
             yield chunk
 
@@ -62,7 +63,7 @@ def download_snapshot(environment: str, version: str):
 
 
 @router.get("")
-def list_snapshots(environment: Optional[str] = Query(default=None)):
+def list_snapshots(environment: Optional[str] = Query(default=None)) -> dict[str, Any]:
     prefix = f"rollback-snapshots/{environment}-" if environment else "rollback-snapshots/"
     resp = s3().list_objects_v2(Bucket=BUCKET_ARTIFACTS, Prefix=prefix)
     snapshots = [

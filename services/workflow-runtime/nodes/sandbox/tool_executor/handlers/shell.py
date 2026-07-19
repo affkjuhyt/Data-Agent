@@ -1,3 +1,4 @@
+from typing import Any
 import asyncio
 import logging
 import subprocess
@@ -8,7 +9,7 @@ from nodes.sandbox.tool_executor._utils import _get_query
 logger = logging.getLogger(__name__)
 
 
-async def _bash_handler(call: dict, cfg: dict) -> tuple[dict | None, dict | None]:
+async def _bash_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     tool_cfg = cfg.get("tool_config", {}).get("bash", {})
     if not tool_cfg.get("enabled", False):
         return None, {"tool_name": "bash", "error": "bash tool not enabled for this agent (set tool_config.bash.enabled=true)"}

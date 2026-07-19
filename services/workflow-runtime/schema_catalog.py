@@ -11,7 +11,7 @@ straight into the SQL-generation prompt without a second DB round-trip.
 """
 import logging
 import os
-from typing import List, Optional
+from typing import Any, List, Optional, cast
 
 import httpx
 from qdrant_client import AsyncQdrantClient
@@ -29,7 +29,7 @@ _SCORE_THRESHOLD = 0.5  # doc §2.5b — schema discovery favors recall over pre
 _qdrant: Optional[AsyncQdrantClient] = None
 
 
-async def init_schema_catalog_qdrant():
+async def init_schema_catalog_qdrant() -> None:
     global _qdrant
     _qdrant = AsyncQdrantClient(url=_QDRANT_URL, check_compatibility=False)
     collections = await _qdrant.get_collections()
@@ -44,7 +44,7 @@ async def init_schema_catalog_qdrant():
         logger.info("qdrant | collection '%s' ready", _COLLECTION)
 
 
-async def close_schema_catalog_qdrant():
+async def close_schema_catalog_qdrant() -> None:
     global _qdrant
     if _qdrant:
         await _qdrant.close()
@@ -52,7 +52,7 @@ async def close_schema_catalog_qdrant():
         logger.info("qdrant | '%s' closed", _COLLECTION)
 
 
-async def _embed(text: str) -> Optional[list]:
+async def _embed(text: str) -> Optional[list[Any]]:
     try:
         async with httpx.AsyncClient(timeout=30) as http:
             resp = await http.post(
@@ -61,7 +61,7 @@ async def _embed(text: str) -> Optional[list]:
                 json={"model": "embedder", "input": text},
             )
             resp.raise_for_status()
-            return resp.json()["data"][0]["embedding"]
+            return cast(list[Any], resp.json()["data"][0]["embedding"])
     except Exception as e:
         logger.warning("schema_catalog | embed failed: %s", e)
         return None
@@ -72,7 +72,7 @@ async def retrieve_schema_catalog(
     query: str,
     schema_name: Optional[str] = None,
     limit: int = 5,
-) -> List[dict]:
+) -> List[dict[str, Any]]:
     """Hybrid (vector + metadata filter) lookup. Returns Qdrant payloads
     directly — they already carry everything format_catalog_context() needs
     (text_description, columns, row_count, join_hints), unlike
@@ -103,7 +103,7 @@ async def retrieve_schema_catalog(
         return []
 
 
-def format_catalog_context(tables: List[dict]) -> str:
+def format_catalog_context(tables: List[dict[str, Any]]) -> str:
     """Renders Schema Catalog payloads as abbreviated DDL + business
     description for the SQL-generation prompt — same shape of output as
     workflow_memory.format_schema_context(), different source."""

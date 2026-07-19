@@ -11,6 +11,8 @@ import logging
 
 from sentence_transformers import CrossEncoder, SentenceTransformer
 
+from device import detect_device
+
 log = logging.getLogger(__name__)
 
 _embed: dict[str, SentenceTransformer] = {}
@@ -21,8 +23,9 @@ def load_embed(name: str) -> SentenceTransformer:
     """Return the SentenceTransformer for `name`, loading + caching on first use."""
     model = _embed.get(name)
     if model is None:
-        log.info("Loading embedding model %s …", name)
-        model = _embed[name] = SentenceTransformer(name)
+        dev = detect_device()
+        log.info("Loading embedding model %s on device=%s …", name, dev)
+        model = _embed[name] = SentenceTransformer(name, device=dev)
         log.info("Embedding model %s ready", name)
     return model
 
@@ -31,7 +34,8 @@ def load_rerank(name: str) -> CrossEncoder:
     """Return the CrossEncoder reranker for `name`, loading + caching on first use."""
     model = _rerank.get(name)
     if model is None:
-        log.info("Loading reranker model %s …", name)
-        model = _rerank[name] = CrossEncoder(name)
+        dev = detect_device()
+        log.info("Loading reranker model %s on device=%s …", name, dev)
+        model = _rerank[name] = CrossEncoder(name, device=dev)
         log.info("Reranker model %s ready", name)
     return model

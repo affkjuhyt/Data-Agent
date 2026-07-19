@@ -1,3 +1,4 @@
+from typing import Any
 """Transcript compression (sandbox_schema_docs.docx §1.8).
 
 Tier 1 (output truncation) already lives at the point each tool result is
@@ -26,7 +27,7 @@ COMPRESS_THRESHOLD = 2000  # chars — only compress a result longer than this
 COMPRESS_MARKER = "[result compressed: {n} chars]"
 
 
-def compress_tool_results(messages: list[dict]) -> list[dict]:
+def compress_tool_results(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Compress tool results already consumed in the transcript.
 
     'Consumed' = immediately followed by an assistant message. Error

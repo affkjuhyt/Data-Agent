@@ -45,8 +45,8 @@ class CreateChunkVersionRequest(BaseModel):
 
 class CreateDocConfigRequest(BaseModel):
     version_number: str
-    connection: Optional[dict] = None
-    tables: list
+    connection: Optional[dict[str, Any]] = None
+    tables: list[Any]
 
 
 # ── Response ──────────────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 import asyncio
 import logging
 import time
@@ -7,6 +8,7 @@ from contextlib import nullcontext
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import StateGraph, START, END
 
 import config
@@ -20,7 +22,7 @@ from nodes.suggestion import run_suggestion
 from observability import get_langfuse_client
 from planner import create_plan, report_node_failure
 from schemas import TargetResult, TaskResult
-from services.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
+from libs.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
 from session_cache import clear_cached_plan, load_cached_plan, save_cached_plan
 from state import OrchestratorState
 from summary import summarize, synthesis_judge_check
@@ -28,13 +30,16 @@ from summary import summarize, synthesis_judge_check
 logger = logging.getLogger(__name__)
 
 _MAX_REPLAN = 2
-_checkpointer = MemorySaver()
+# The state holds a live PlanningProcess (needed for report_node_failure) which the
+# default msgpack serde can't encode → checkpoint writes crashed the multi-agent
+# turn after the answer already streamed. pickle_fallback pickles such objects.
+_checkpointer = MemorySaver(serde=JsonPlusSerializer(pickle_fallback=True))
 _FAKE_STREAM_WORD_DELAY = 0.02  # giây/từ — hiệu ứng gõ chữ khi replay text đã duyệt xong
 
 
 # ── Route ─────────────────────────────────────────────────────────────────────
 
-def route_node(state: OrchestratorState) -> dict:
+def route_node(state: OrchestratorState) -> dict[str, Any]:
     return {}
 
 
@@ -44,7 +49,7 @@ def _route_mode(state: OrchestratorState) -> str:
 
 # ── Single agent path ─────────────────────────────────────────────────────────
 
-async def single_agent_node(state: OrchestratorState, config: RunnableConfig) -> dict:
+async def single_agent_node(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     # Gate input guardrail — await task đã bắn nền từ routers/stream.py, ngay
     # trước khi gọi ra ngoài (side-effect thật, workflow-runtime có thể chạy
     # bash/SQL). Nếu guardrail đã xong từ sớm (thường vậy) thì không mất thêm
@@ -135,12 +140,12 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
 
 # ── Multi agent path ──────────────────────────────────────────────────────────
 
-async def fetch_agents_node(state: OrchestratorState) -> dict:
+async def fetch_agents_node(state: OrchestratorState) -> dict[str, Any]:
     agents = await fetch_published_agents(state["tenant_id"])
     return {"agents": agents}
 
 
-async def tot_planner_node(state: OrchestratorState, config: RunnableConfig) -> dict:
+async def tot_planner_node(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     t0 = time.monotonic()
     redis = (config.get("configurable") or {}).get("redis")
     tenant_id, session_id, query = state["tenant_id"], state["session_id"], state["rewritten_query"]
@@ -196,7 +201,7 @@ def _route_after_summary(state: OrchestratorState) -> str:
     return "blocked" if state.get("guardrail_triggered") else "suggestion"
 
 
-async def execute_node(state: OrchestratorState, config: RunnableConfig) -> dict:
+async def execute_node(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     # Gate input guardrail — cùng lý do như single_agent_node: đây là điểm
     # ngay trước khi gọi ra ngoài để thực thi các agent con thật.
     guardrail_task = (config.get("configurable") or {}).get("guardrail_task")
@@ -271,7 +276,7 @@ async def execute_node(state: OrchestratorState, config: RunnableConfig) -> dict
     }
 
 
-async def _guardrail_output_check(text: str, cfg: dict) -> tuple[bool, str]:
+async def _guardrail_output_check(text: str, cfg: dict[str, Any]) -> tuple[bool, str]:
     try:
         return await llm_guardrail_check(text, cfg, check_type="output")
     except GuardrailCheckError as e:
@@ -280,7 +285,7 @@ async def _guardrail_output_check(text: str, cfg: dict) -> tuple[bool, str]:
         return True, "Xin lỗi, tôi không thể tiếp tục trả lời câu hỏi này."
 
 
-async def summary_node(state: OrchestratorState) -> dict:
+async def summary_node(state: OrchestratorState) -> dict[str, Any]:
     t0 = time.monotonic()
     outputs = [
         tr.task_results[0].output
@@ -336,7 +341,7 @@ async def summary_node(state: OrchestratorState) -> dict:
     }
 
 
-async def suggestion_node(state: OrchestratorState) -> dict:
+async def suggestion_node(state: OrchestratorState) -> dict[str, Any]:
     suggestions = await run_suggestion(
         state["rewritten_query"],
         state.get("messages", []),
@@ -348,7 +353,7 @@ async def suggestion_node(state: OrchestratorState) -> dict:
 
 # ── Build graph ───────────────────────────────────────────────────────────────
 
-def build_graph():
+def build_graph() -> Any:
     builder = StateGraph(OrchestratorState)
 
     builder.add_node("input_refine", input_refine_node)
@@ -404,5 +409,5 @@ def build_graph():
 _graph = build_graph()
 
 
-def get_graph():
+def get_graph() -> Any:
     return _graph

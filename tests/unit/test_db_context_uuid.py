@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.shared.db_context import _validated_uuid
+from libs.shared.db_context import _validated_uuid
 
 pytestmark = pytest.mark.unit
 

@@ -19,7 +19,7 @@ import math
 import os
 import logging
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, List, Optional, cast
 from uuid import UUID, uuid4
 
 import httpx
@@ -27,8 +27,8 @@ from sqlalchemy import select
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
 
-from services.database_connector.postgres_connector import client
-from basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
+from libs.database_connector.postgres_connector import client
+from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
     WorkflowMemoryORM, SchemaMemoryORM,
 )
 
@@ -47,7 +47,7 @@ _DURATION_NORMALIZER_MS = 5000  # duration_ms at which inverse_duration = 0.5 (h
 _qdrant: Optional[AsyncQdrantClient] = None
 
 
-async def init_workflow_qdrant():
+async def init_workflow_qdrant() -> None:
     global _qdrant
     _qdrant = AsyncQdrantClient(url=_QDRANT_URL, check_compatibility=False)
     collections = await _qdrant.get_collections()
@@ -62,7 +62,7 @@ async def init_workflow_qdrant():
         logger.info("qdrant | collection '%s' ready", _COLLECTION)
 
 
-async def close_workflow_qdrant():
+async def close_workflow_qdrant() -> None:
     global _qdrant
     if _qdrant:
         await _qdrant.close()
@@ -70,7 +70,7 @@ async def close_workflow_qdrant():
         logger.info("qdrant | '%s' closed", _COLLECTION)
 
 
-async def _embed(text: str) -> Optional[list]:
+async def _embed(text: str) -> Optional[list[Any]]:
     try:
         async with httpx.AsyncClient(timeout=30) as http:
             resp = await http.post(
@@ -79,7 +79,7 @@ async def _embed(text: str) -> Optional[list]:
                 json={"model": "embedder", "input": text},
             )
             resp.raise_for_status()
-            return resp.json()["data"][0]["embedding"]
+            return cast(list[Any], resp.json()["data"][0]["embedding"])
     except Exception as e:
         logger.warning("workflow_memory | embed failed, point will be PG-only: %s", e)
         return None
@@ -92,7 +92,7 @@ async def record_workflow_outcome(
     agent_id: str,
     task_type: str,
     task_description: str,
-    param_snapshot: dict,
+    param_snapshot: dict[str, Any],
     outcome: str,
     duration_ms: Optional[int] = None,
 ) -> None:
@@ -137,7 +137,7 @@ async def record_workflow_outcome(
         logger.warning("workflow_memory | record failed: %s", e)
 
 
-def _workflow_score(row: dict, relevance: float) -> float:
+def _workflow_score(row: dict[str, Any], relevance: float) -> float:
     """doc §IV: relevance × recency × inverse(duration)."""
     now = datetime.now(timezone.utc)
     created_at = row.get("created_at")
@@ -161,7 +161,7 @@ async def retrieve_workflow_memory(
     task_type: str,
     query: str,
     limit: int = 3,
-) -> List[dict]:
+) -> List[dict[str, Any]]:
     """doc §IV: retrieve BEFORE the agent plans a data task. Semantic search
     filtered by task_type + outcome=success, ranked by relevance × recency ×
     inverse(duration)."""
@@ -222,7 +222,7 @@ async def retrieve_schema_memory(
     data_source: str,
     table_names: Optional[list[str]] = None,
     user_roles: Optional[list[str]] = None,
-) -> List[dict]:
+) -> List[dict[str, Any]]:
     """doc §IV: NOT semantic search — exact match on (tenant_id, data_source,
     table_name[]). Result is injected directly into the SQL-generation
     prompt. table_names=None loads every table registered for the
@@ -264,7 +264,7 @@ async def retrieve_schema_memory(
         return []
 
 
-def format_schema_context(tables: List[dict]) -> str:
+def format_schema_context(tables: List[dict[str, Any]]) -> str:
     """Renders Schema Memory rows as abbreviated DDL for the SQL-generation prompt."""
     if not tables:
         return ""

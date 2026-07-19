@@ -51,13 +51,13 @@ class PipelineEventEmitter:
             event_scope.set(chunks=len(chunks))
     """
 
-    def __init__(self, database, data_id: str, sequence: int) -> None:
+    def __init__(self, database: Any, data_id: str, sequence: int) -> None:
         self._database = database
         self._data_id = data_id
         self._sequence = sequence
 
     @classmethod
-    async def create(cls, database, data_id: str) -> "PipelineEventEmitter":
+    async def create(cls, database: Any, data_id: str) -> "PipelineEventEmitter":
         """Instantiate and resume from the last known sequence for this data_id."""
         try:
             latest_event = await database["pipeline_events"].find_one(

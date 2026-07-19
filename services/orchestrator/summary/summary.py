@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import cast
 import json
 import logging
 from functools import lru_cache
@@ -75,7 +76,7 @@ async def summarize(original_query: str, agent_outputs: list[str]) -> str:
         )
     logger.info("summary | query_len=%d outputs=%d ans_len=%d",
                 len(original_query), len(agent_outputs), len(answer))
-    return answer
+    return cast(str, answer)
 
 
 async def synthesis_judge_check(original_query: str, agent_outputs: list[str], text: str) -> tuple[bool, str]:

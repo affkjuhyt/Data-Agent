@@ -11,15 +11,16 @@ the simplest way to verify the gateway→router identity chain end-to-end:
 The 200 body is the proof the JWT claims (sub, tenant_id, role_id, realm roles)
 propagated through Kong's header injection into the backend.
 """
+from typing import Any
 from fastapi import APIRouter, Depends
 
-from basemodel.services_databaseconnector.shared_model import ResponseModel
+from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
 from services.kb_backend.dependencies.auth import authenticate, RBAC
 
 router = APIRouter(prefix="/api/knowledge", tags=["Identity"])
 
 
 @router.get("/whoami", response_model=ResponseModel)
-async def whoami(ctx: dict = Depends(authenticate)):
+async def whoami(ctx: dict[str, Any] = Depends(authenticate)) -> ResponseModel[Any]:
     granted = sorted(RBAC.permissions_for(ctx["role"]))
     return ResponseModel(code=200, data={**ctx, "permissions": granted})

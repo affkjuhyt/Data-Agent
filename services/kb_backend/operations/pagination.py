@@ -17,7 +17,7 @@ from __future__ import annotations
 import base64
 import json
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 PAGE_SIZE = 50
 
@@ -28,7 +28,7 @@ PAGE_SIZE = 50
 # as `next_cursor`. The client holds the token and sends it back to fetch the next
 # page. Decoding yields the dict the connector's _apply_keyset expects.
 
-def encode_cursor(row: dict, pk: str = "data_id") -> Optional[str]:
+def encode_cursor(row: dict[str, Any], pk: str = "data_id") -> Optional[str]:
     """base64(JSON) of the keyset boundary. None if the row can't anchor a cursor."""
     inserted_at = row.get("inserted_at")
     pk_val = row.get(pk)
@@ -43,7 +43,7 @@ def encode_cursor(row: dict, pk: str = "data_id") -> Optional[str]:
     return base64.urlsafe_b64encode(raw).decode()
 
 
-def decode_cursor(token: Optional[str]) -> Optional[dict]:
+def decode_cursor(token: Optional[str]) -> Optional[dict[str, Any]]:
     """Reverse encode_cursor → {inserted_at, <pk>} for the connector keyset, or None."""
     if not token:
         return None
@@ -61,7 +61,7 @@ def decode_cursor(token: Optional[str]) -> Optional[dict]:
         return None
 
 
-def build_cursor_page(items: list, total: int, has_next: bool, next_cursor: Optional[str]) -> dict:
+def build_cursor_page(items: list[Any], total: int, has_next: bool, next_cursor: Optional[str]) -> dict[str, Any]:
     """Page envelope for stateless cursor pagination: carries total + next_cursor.
     `next_cursor` is encoded by the caller from the raw DB row (which still has the
     inserted_at/data_id keyset columns — the response DTO usually drops them)."""
@@ -78,22 +78,22 @@ def build_cursor_page(items: list, total: int, has_next: bool, next_cursor: Opti
 # after _store[uid][key][N] using a keyset (inserted_at, pk) comparison. The whole
 # row is kept so the connector — which knows each table's pk — can read the
 # tiebreaker back out. Storing only inserted_at skipped rows tied on that timestamp.
-_store: Dict[str, Dict[str, Dict[int, dict]]] = {}
+_store: Dict[str, Dict[str, Dict[int, dict[str, Any]]]] = {}
 
 
-def get_cursor(user_id: str, cursor_key: str, page: int) -> Optional[dict]:
+def get_cursor(user_id: str, cursor_key: str, page: int) -> Optional[dict[str, Any]]:
     """Return the prior page's last-row cursor for `page`. None if page 1 or unset."""
     if page <= 1:
         return None
     return _store.get(user_id, {}).get(cursor_key, {}).get(page)
 
 
-def put_cursor(user_id: str, cursor_key: str, next_page: int, cursor_row: dict) -> None:
+def put_cursor(user_id: str, cursor_key: str, next_page: int, cursor_row: dict[str, Any]) -> None:
     """Store the last-row cursor that marks the start of `next_page`."""
     _store.setdefault(user_id, {}).setdefault(cursor_key, {})[next_page] = cursor_row
 
 
-def advance(user_id: str, cursor_key: str, current_page: int, raw_rows: list) -> None:
+def advance(user_id: str, cursor_key: str, current_page: int, raw_rows: list[Any]) -> None:
     """Store the LAST row of this page as the keyset cursor for the next page.
 
     Keyset resumes with WHERE (inserted_at, pk) > (cursor.inserted_at, cursor.pk),
@@ -107,7 +107,7 @@ def advance(user_id: str, cursor_key: str, current_page: int, raw_rows: list) ->
     put_cursor(user_id, cursor_key, current_page + 1, last)
 
 
-def build_page(items: list, page: int) -> dict:
+def build_page(items: list[Any], page: int) -> dict[str, Any]:
     return {
         "items":     items,
         "page":      page,

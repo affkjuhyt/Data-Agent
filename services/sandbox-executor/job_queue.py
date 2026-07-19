@@ -23,6 +23,7 @@ instance until that's revisited (see doc's own risk note for this mục).
 """
 from __future__ import annotations
 
+from typing import Any
 import asyncio
 import dataclasses
 import enum
@@ -62,7 +63,7 @@ class QueueFullError(Exception):
 class Job:
     id: str
     status: JobStatus = JobStatus.QUEUED
-    result: dict | None = None
+    result: dict[str, Any] | None = None
     error: str | None = None
     created_at: float = dataclasses.field(default_factory=time.monotonic)
     finished_at: float | None = None
@@ -101,9 +102,9 @@ class JobQueue:
 
     def __init__(
         self,
-        executor: Callable[[dict], Awaitable[dict]],
+        executor: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]],
         num_workers: int,
-        rejection_exc: type[Exception] = (),
+        rejection_exc: type[Exception] | tuple[type[Exception], ...] = (),
         job_ttl_s: float = 600.0,
         maxsize: int = 200,
     ):
@@ -113,8 +114,8 @@ class JobQueue:
         self._job_ttl_s = job_ttl_s
         self._queue: asyncio.Queue[str] = asyncio.Queue(maxsize=maxsize)
         self._jobs: dict[str, Job] = {}
-        self._payloads: dict[str, dict] = {}
-        self._workers: list[asyncio.Task] = []
+        self._payloads: dict[str, dict[str, Any]] = {}
+        self._workers: list[asyncio.Task[Any]] = []
         # Captured in start() (runs on the event loop) so append_output —
         # called from a worker OS thread via asyncio.to_thread, not the
         # event loop — can wake waiters with the thread-safe call_soon_
@@ -138,7 +139,7 @@ class JobQueue:
                 pass
         self._workers = []
 
-    def submit(self, payload: dict) -> str:
+    def submit(self, payload: dict[str, Any]) -> str:
         """Returns the generated job_id. The executor receives `payload`
         with `job_id` merged in (so it can key e.g. a MinIO audit-copy
         object by the same id the caller polls for), without every caller
@@ -227,6 +228,7 @@ class JobQueue:
             payload = self._payloads.pop(job_id, None)
             if job is None:
                 continue
+            assert payload is not None  # submit() always inserts payload alongside the job
             job.status = JobStatus.RUNNING
             job.change_event.set()
             try:

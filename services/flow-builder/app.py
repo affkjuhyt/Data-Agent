@@ -4,8 +4,9 @@ load_dotenv(find_dotenv())
 
 import asyncio
 from contextlib import asynccontextmanager
+from typing import AsyncGenerator
 
-from services.shared.logger import setup_logging
+from libs.shared.logger import setup_logging
 
 setup_logging("flow-builder")
 
@@ -15,13 +16,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from db_mongo import close_mongo, init_mongo
 from db_pg import close_db, init_db
 from routers import agents, canvas, health, workflows
-from services.database_connector.mongo_connector import client as mongo_client
-from services.database_connector.postgres_connector import client as pg_client
-from services.shared.observability import setup_observability
+from libs.database_connector.mongo_connector import client as mongo_client
+from libs.database_connector.postgres_connector import client as pg_client
+from libs.shared.observability import setup_observability
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await init_db()
     await init_mongo()
 

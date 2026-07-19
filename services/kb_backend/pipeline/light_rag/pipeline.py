@@ -22,6 +22,8 @@ Pipeline flow (steps in [] are env-gated):
 """
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from typing import Any
 import asyncio
 import json
 import logging
@@ -31,20 +33,22 @@ import time
 import unicodedata
 import uuid as _uuid
 
+import httpx
+
 from neo4j import AsyncDriver
 from qdrant_client import models as qmodels
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
 from sqlalchemy import func, select as sa_select
 
-from services.database_connector.qdrant_connector import vector_search as qdrant_vector_search
-from services.database_connector.postgres_connector import PostgresClient
-from services.database_connector.model_connector import ModelServiceClient
-from basemodel.services_databaseconnector.qdrant_model import (
+from libs.database_connector.qdrant_connector import vector_search as qdrant_vector_search
+from libs.database_connector.postgres_connector import PostgresClient
+from libs.database_connector.model_connector import ModelServiceClient
+from libs.basemodel.services_databaseconnector.qdrant_model import (
     MatchingPayload,
     MatchType,
     SearchRequest,
 )
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBDataORM,
     KBTextBlockORM,
     KBTextBlockVersionORM,
@@ -64,7 +68,7 @@ def _sigmoid(x: float) -> float:
         return 0.0
 
 
-def _clamp01(x) -> float:
+def _clamp01(x: Any) -> float:
     try:
         return max(0.0, min(1.0, float(x)))
     except (TypeError, ValueError):
@@ -114,7 +118,7 @@ Query: "Nghị định 13 quy định gì về bảo vệ dữ liệu cá nhân?
 )
 
 
-def _parse_json_obj(raw: str) -> dict:
+def _parse_json_obj(raw: str) -> dict[str, Any]:
     """Strip ```json fences and parse; {} on failure."""
     if not raw:
         return {}
@@ -132,7 +136,7 @@ def _parse_json_obj(raw: str) -> dict:
         return {}
 
 
-async def canonicalize(model: ModelServiceClient, query: str) -> dict:
+async def canonicalize(model: ModelServiceClient, query: str) -> dict[str, Any]:
     """Query understanding via the model-service LLM gateway — the pipeline does not
     know or care which LLM backend (local / Colab) actually serves the request."""
     try:
@@ -179,7 +183,7 @@ async def cache_lookup(
         tenant_id: str,
         threshold: float,
         knowledge_base: str | None = None,
-) -> dict | None:
+) -> dict[str, Any] | None:
     try:
         if not await qdrant.collection_exists(collection):
             return None
@@ -205,7 +209,7 @@ async def cache_store(
         query_vector: list[float],
         tenant_id: str,
         knowledge_base: str | None,
-        results: list[dict],
+        results: list[dict[str, Any]],
 ) -> None:
     """Cache the post-rerank *retrieval decision* keyed by the query embedding.
 
@@ -273,7 +277,7 @@ ENTITY_TYPE_FIELDS = frozenset({
 # Question-shape → expected answer entity types. Deterministic heuristics on the
 # query text (Vietnamese + English) plus the LLM intent label. Used as SOFT
 # ranking/expansion signals only.
-_TYPE_HINTS: list[tuple[re.Pattern, list[str]]] = [
+_TYPE_HINTS: list[tuple[re.Pattern[str], list[str]]] = [
     (re.compile(r"\b(ai|người nào|của ai|do ai|who|whom)\b", re.IGNORECASE), ["person", "organization"]),
     (re.compile(r"\b(ở đâu|tại đâu|nơi nào|nước nào|quốc gia nào|thành phố nào|where)\b", re.IGNORECASE), ["location"]),
     (re.compile(r"\b(khi nào|năm nào|năm bao nhiêu|thời gian nào|thế kỷ nào|triều đại nào|when)\b", re.IGNORECASE),
@@ -306,7 +310,7 @@ def preferred_entity_types(query: str, intent: str = "") -> list[str]:
     return list(dict.fromkeys(out))
 
 
-def _entities_from_relationships(relationships: list) -> list[str]:
+def _entities_from_relationships(relationships: list[Any]) -> list[str]:
     """Pull the endpoint entity names out of canonical relationships [[e1, rel, e2], ...].
 
     These are entities the query explicitly relates, so they make good extra retrieval/
@@ -378,7 +382,7 @@ async def qdrant_search(
         data_ids: list[str] | None = None,
         typed_field: tuple[str, list[str]] | None = None,
         typed_entity_groups: dict[str, list[str]] | None = None,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     # tenant_id + knowledge_base are applied as hard AND filters inside vector_search;
     # every matching_payload below is an OR (match_type=any) over the candidates:
     #   entities             — untyped names against the generic entities field
@@ -480,7 +484,7 @@ async def resolve_query_aliases(
     Tenant-scoped rows win over global (tenant_id NULL) seed aliases."""
     if not entities:
         return entities
-    from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+    from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
         KBEntityLookupORM,
     )
     try:
@@ -525,7 +529,7 @@ async def lexical_search(
         limit: int,
         knowledge_base: str | None = None,
         ts_config: str = "simple",
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """BM25-style lexical retrieval over the active chunk text via Postgres full-text
     search — the sparse branch of hybrid retrieval. Recovers exact keyword / proper-
     noun matches that dense embeddings under-rank ("Nghị định 13", a part number, a
@@ -585,7 +589,7 @@ async def lexical_search(
 # STEP 4 — Entity Ranking + Neo4j Graph Expansion
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _rank_entities(pass1_results: list[list[dict]], top_n: int) -> list[str]:
+def _rank_entities(pass1_results: list[list[dict[str, Any]]], top_n: int) -> list[str]:
     """Score entities extracted from Qdrant pass1 results by frequency × relevance score.
 
     Entities that appear in many high-scoring results are ranked highest and
@@ -668,9 +672,9 @@ async def graph_expand(
 # STEP 8 — RRF Merge
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def rrf_merge(ranked_lists: list[list[dict]], top_n: int) -> list[dict]:
+def rrf_merge(ranked_lists: list[list[dict[str, Any]]], top_n: int) -> list[dict[str, Any]]:
     scores: dict[str, float] = {}
-    meta: dict[str, dict] = {}
+    meta: dict[str, dict[str, Any]] = {}
     for result_list in ranked_lists:
         for rank, hit in enumerate(result_list, start=1):
             pid = hit.get("point_id")
@@ -687,6 +691,52 @@ def rrf_merge(ranked_lists: list[list[dict]], top_n: int) -> list[dict]:
     return merged
 
 
+_rrf_client: httpx.AsyncClient | None = None
+
+
+def _get_rrf_client() -> httpx.AsyncClient:
+    global _rrf_client
+    if _rrf_client is None:
+        _rrf_client = httpx.AsyncClient(timeout=cfg.RRF_REMOTE_TIMEOUT_S)
+    return _rrf_client
+
+
+async def rrf_fuse(ranked_lists: list[list[dict[str, Any]]], top_n: int) -> list[dict[str, Any]]:
+    """RRF fusion. Offloads the CPU-bound kernel to the Go kb-compute service when
+    KB_COMPUTE_URL is set — sends ONLY point_ids (light payload), then re-attaches
+    the full hit meta locally with the exact same first-seen rule as rrf_merge, so
+    the result is byte-for-byte identical. Any error → transparent fallback to the
+    in-process Python kernel, so retrieval never breaks if kb-compute is down."""
+    if not cfg.KB_COMPUTE_URL:
+        return rrf_merge(ranked_lists, top_n)
+    try:
+        id_lists = [
+            [{"point_id": pid} for h in lst if (pid := h.get("point_id"))]
+            for lst in ranked_lists
+        ]
+        resp = await _get_rrf_client().post(
+            f"{cfg.KB_COMPUTE_URL}/rrf-fuse",
+            json={"lists": id_lists, "top_n": top_n, "k": cfg.RRF_K},
+        )
+        resp.raise_for_status()
+        fused = resp.json()["hits"]
+        meta: dict[str, dict[str, Any]] = {}
+        for result_list in ranked_lists:
+            for hit in result_list:
+                pid = hit.get("point_id")
+                if pid:
+                    meta.setdefault(pid, hit)
+        merged = [
+            {**meta[h["point_id"]], "rrf_score": h["rrf_score"], "rrf_rank": h["rrf_rank"]}
+            for h in fused
+        ]
+        log.info("rrf | via kb-compute → %d hits", len(merged))
+        return merged
+    except Exception as exc:
+        log.warning("rrf | kb-compute failed (%s) — in-process fallback", exc)
+        return rrf_merge(ranked_lists, top_n)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # STEP 9 — Reranking (cross-encoder/ms-marco-MiniLM-L-6-v2 via model-service)
 # Scores summaries stored in Qdrant — actual text is hydrated in step 11.
@@ -695,9 +745,9 @@ def rrf_merge(ranked_lists: list[list[dict]], top_n: int) -> list[dict]:
 async def rerank(
         model: ModelServiceClient,
         query: str,
-        hits: list[dict],
+        hits: list[dict[str, Any]],
         top_n: int,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     if not hits:
         return []
     documents = [(h.get("payload") or {}).get("summary", "") for h in hits]
@@ -733,7 +783,7 @@ async def _fetch_chunks_postgres(
         block_ids: list[str],
         tenant_id: str,
         knowledge_base: str | None = None,
-) -> dict[str, dict]:
+) -> dict[str, dict[str, Any]]:
     """Return a dict keyed by block_id (str) with the active version's text + source info.
 
     One batched query (block_id IN …) joins KBTextBlock → active KBTextBlockVersion → KBData,
@@ -741,7 +791,7 @@ async def _fetch_chunks_postgres(
     """
     if not block_ids:
         return {}
-    rows: dict[str, dict] = {}
+    rows: dict[str, dict[str, Any]] = {}
     try:
         uuids = [_uuid.UUID(b) for b in block_ids]
         stmt = (
@@ -789,7 +839,7 @@ async def _fetch_chunks_postgres(
 async def _fetch_tables_postgres(
         postgres: PostgresClient,
         block_ids: list[str],
-) -> dict[str, list[dict]]:
+) -> dict[str, list[dict[str, Any]]]:
     """Return block_id (str) → list of {table_name: table_description} for the block's
     *active* version. Chunks that carry a table (table_involved) have one; the rest none.
 
@@ -798,7 +848,7 @@ async def _fetch_tables_postgres(
     """
     if not block_ids:
         return {}
-    result: dict[str, list[dict]] = {}
+    result: dict[str, list[dict[str, Any]]] = {}
     try:
         uuids = [_uuid.UUID(b) for b in block_ids]
         async with postgres.get_client() as session:
@@ -821,10 +871,10 @@ async def _fetch_tables_postgres(
 
 
 def _build_result_list(
-        final: list[dict],
-        pg_rows: dict[str, dict],
-        pg_tables: dict[str, list[dict]],
-) -> list[dict]:
+        final: list[dict[str, Any]],
+        pg_rows: dict[str, dict[str, Any]],
+        pg_tables: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
     """Merge rerank scores with actual chunk text, Postgres source info, and any tables.
 
     Each result is a chunk dict: the chunk fields plus a `table` list of
@@ -876,9 +926,9 @@ class LightRAGPipeline:
 
     @staticmethod
     async def _cache_hit_results(
-            postgres: PostgresClient, hit: dict, tenant_id: str,
+            postgres: PostgresClient, hit: dict[str, Any], tenant_id: str,
             knowledge_base: str | None,
-    ) -> tuple[list[dict], int]:
+    ) -> tuple[list[dict[str, Any]], int]:
         """Hydrate the block_ids a semantic-cache hit points at, fresh from Postgres.
         Returns (results, hydrated_block_count)."""
         block_refs = hit.get("block_refs") or []
@@ -895,7 +945,7 @@ class LightRAGPipeline:
         return _build_result_list(cached_final, pg_rows, pg_tables), len(pg_rows)
 
     @staticmethod
-    def _derive_query_entities(canonical: dict) -> list[str]:
+    def _derive_query_entities(canonical: dict[str, Any]) -> list[str]:
         """Canonicalized, de-duplicated entity list from a canonicalize result — the
         flat entities plus the endpoints of any relationships."""
         return list(dict.fromkeys(
@@ -911,7 +961,7 @@ class LightRAGPipeline:
             tenant_id: str, knowledge_base: str | None,
             query_entities: list[str], canon_entity_types: dict[str, str],
             neo4j_entities: list[str], ptypes: list[str],
-    ) -> list[list[dict]]:
+    ) -> list[list[dict[str, Any]]]:
         """Type-aware pass: search each entity in its OWN ent_<type> payload field.
         Front-layer typed entities are grouped by their declared type; the answer-type
         hints (ptypes) add extra typed searches over all candidate names. Returns one
@@ -961,7 +1011,7 @@ class LightRAGPipeline:
         return untyped, groups
 
     @staticmethod
-    def _graph_seeds(pass1: list[dict], query_entities: list[str]) -> list[str]:
+    def _graph_seeds(pass1: list[dict[str, Any]], query_entities: list[str]) -> list[str]:
         """Graph-expansion seeds: top entities from pass-1 (frequency×score) UNION
         the query's own entities, capped at NEO4J_TOP_ENTITIES + GRAPH_SEED_MARGIN."""
         return list(dict.fromkeys([
@@ -984,7 +1034,7 @@ class LightRAGPipeline:
             entities: list[str] | None = None,
             intent: str | None = None,
             entity_types: dict[str, str] | None = None,
-    ):
+    ) -> AsyncIterator[dict[str, Any]]:
         """Async generator yielding one dict per pipeline step — the single
         implementation behind both run() and run_stream(). Each dict has at least
         {"step": "<name>", "ms": float}; the final event is {"step": "done", ...}
@@ -1002,6 +1052,14 @@ class LightRAGPipeline:
 
         def _ms(start: float) -> float:
             return round((time.perf_counter() - start) * 1000, 1)
+
+        degraded: list[str] = []
+
+        def _over_budget() -> bool:
+            # Graceful degradation: past the latency budget, skip the costly
+            # optional steps (Neo4j graph expand, cross-encoder rerank) to hold p95
+            # and shed load under pressure. 0 = disabled (full pipeline always).
+            return cfg.DEGRADE_BUDGET_MS > 0 and _ms(_t0) > cfg.DEGRADE_BUDGET_MS
 
         try:
             # ── 1. Embed query — needed for cache lookup and vector search ──────
@@ -1047,7 +1105,7 @@ class LightRAGPipeline:
             canon_entity_types: dict[str, str] = {}
             _t_canon = time.perf_counter()
             if entities:
-                canonical = {"intent": intent or "general",
+                canonical: dict[str, Any] = {"intent": intent or "general",
                              "entities": list(entities), "relationships": []}
                 query_entities = list(dict.fromkeys(
                     _canon(e) for e in entities if e and str(e).strip()))
@@ -1118,7 +1176,7 @@ class LightRAGPipeline:
                     timings["alias_resolve_ms"] = _ms(_t)
 
             # ── 4b. 2-step document narrowing (env-gated DOC_NARROWING) ──────────
-            pass_doc: list[dict] = []
+            pass_doc: list[dict[str, Any]] = []
             if cfg.DOC_NARROWING:
                 _t = time.perf_counter()
                 narrow_ids = await doc_narrow_ids(
@@ -1136,7 +1194,7 @@ class LightRAGPipeline:
             # ── 4c. Lexical (BM25) pass — the sparse branch of hybrid retrieval
             #      (env-gated HYBRID_LEXICAL). Recovers exact keyword / proper-noun
             #      matches; joins the RRF fusion as another ranked list. ────────────
-            pass_lex: list[dict] = []
+            pass_lex: list[dict[str, Any]] = []
             if cfg.HYBRID_LEXICAL:
                 _t = time.perf_counter()
                 pass_lex = await lexical_search(
@@ -1157,7 +1215,7 @@ class LightRAGPipeline:
             # ── 6. Neo4j graph expansion ────────────────────────────────────────
             _t = time.perf_counter()
             neo4j_entities: list[str] = []
-            if top_entities:
+            if top_entities and not _over_budget():
                 try:
                     neo4j_entities = await graph_expand(
                         neo4j, top_entities, tenant_id,
@@ -1165,15 +1223,17 @@ class LightRAGPipeline:
                         query_vec, knowledge_base=knowledge_base, preferred_types=ptypes)
                 except Exception as exc:
                     log.warning("run | graph_expand failed: %s", exc)
+            elif top_entities:
+                degraded.append("graph_expand")  # over budget → skip Neo4j
             timings["graph_expand_ms"] = _ms(_t)
             yield {"step": "graph_expand", "seeds": len(top_entities),
-                   "expanded": len(neo4j_entities),
+                   "expanded": len(neo4j_entities), "degraded": "graph_expand" in degraded,
                    "neo4j_entities": neo4j_entities[:cfg.GRAPH_PREVIEW_LIMIT],
                    "ms": timings["graph_expand_ms"]}
 
             # ── 7. Qdrant pass 2 — expanded Neo4j entities ──────────────────────
             _t = time.perf_counter()
-            pass2: list[dict] = []
+            pass2: list[dict[str, Any]] = []
             if neo4j_entities:
                 pass2 = await qdrant_search(
                     qdrant, collection, query_vec, tenant_id,
@@ -1194,15 +1254,20 @@ class LightRAGPipeline:
 
             # ── 8. RRF merge — dense (pass1+pass2+typed+doc) + sparse (lexical) ──
             _t = time.perf_counter()
-            rrf_top = rrf_merge([pass1, pass2, *typed_lists, pass_doc, pass_lex], top_n=cfg.RRF_TOP_N)
+            rrf_top = await rrf_fuse([pass1, pass2, *typed_lists, pass_doc, pass_lex], top_n=cfg.RRF_TOP_N)
             timings["rrf_merge_ms"] = _ms(_t)
             yield {"step": "rrf_merge", "unique": len(rrf_top), "ms": timings["rrf_merge_ms"]}
 
             # ── 9. Rerank by cross-encoder on stored summaries ──────────────────
             _t = time.perf_counter()
-            final = await rerank(model, query, rrf_top, cfg.RERANK_TOP_N)
+            if _over_budget():
+                final = rrf_top[:cfg.RERANK_TOP_N]  # skip cross-encoder; keep RRF order
+                degraded.append("rerank")
+            else:
+                final = await rerank(model, query, rrf_top, cfg.RERANK_TOP_N)
             timings["rerank_ms"] = _ms(_t)
-            yield {"step": "rerank", "top_n": len(final), "ms": timings["rerank_ms"]}
+            yield {"step": "rerank", "top_n": len(final), "degraded": "rerank" in degraded,
+                   "ms": timings["rerank_ms"]}
 
             # ── 10. Hydrate active chunk text/source + tables from Postgres ─────
             block_ids = [
@@ -1231,27 +1296,27 @@ class LightRAGPipeline:
             timings["total_ms"] = round((time.perf_counter() - _t0) * 1000, 1)
             log.info("run | query=%r kb=%s rrf=%d hydrated=%d total=%.0fms",
                      query[:60], knowledge_base, len(rrf_top), len(results), timings["total_ms"])
-            yield {"step": "done", "source": "pipeline",
+            yield {"step": "done", "source": "pipeline", "degraded": degraded,
                    "canonical": canonical, "results": results, "timings": timings}
 
         except Exception as exc:
             log.exception("_run_events | unhandled error: %s", exc)
             yield {"step": "error", "message": str(exc)[:300]}
 
-    async def run_stream(self, *args, **kwargs):
+    async def run_stream(self, *args: Any, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
         """SSE entry point — forwards every progress event from the shared
         generator, front-layer query-enhancement fields (entities/intent/
         entity_types) included."""
         async for event in self._run_events(*args, **kwargs):
             yield event
 
-    async def run(self, *args, **kwargs) -> dict:
+    async def run(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         """Blocking entry point — drains the shared generator and returns the final
         result payload {source, canonical, results, timings}. Accepts the same
         arguments as _run_events (front-layer entities/intent/entity_types included).
         Raises RuntimeError if the pipeline ended in an error event (the router maps
         it to a 500), preserving the old fail-fast contract."""
-        final: dict = {}
+        final: dict[str, Any] = {}
         async for event in self._run_events(*args, **kwargs):
             step = event.get("step")
             if step == "error":
@@ -1264,4 +1329,5 @@ class LightRAGPipeline:
                 "canonical", {"intent": "general", "entities": [], "relationships": []}),
             "results": final.get("results", []),
             "timings": final.get("timings", {}),
+            "degraded": final.get("degraded", []),
         }

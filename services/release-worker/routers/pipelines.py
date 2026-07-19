@@ -1,3 +1,4 @@
+from typing import Any
 from fastapi import APIRouter
 
 from release_core import *
@@ -9,8 +10,8 @@ router = APIRouter()
 @router.post("/api/release/pipeline/trigger")
 def trigger_pipeline(
     req: TriggerPipelineRequest,
-    user: dict = Depends(get_current_user),
-):
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
     """Trigger pipeline thủ công — produce Kafka event."""
     pipeline_id = f"pipe-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6]}"
     event = {
@@ -34,8 +35,8 @@ def approve_deployment(
     pipeline_id: str,
     environment: str,
     req: ApprovalRequest,
-    user: dict = Depends(get_current_user),
-):
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
     """Approval / Reject deployment lên staging / production."""
     if "platform-admin" not in user["roles"] and "ai-engineer" not in user["roles"]:
         raise HTTPException(status_code=403, detail="Insufficient role for approval")
@@ -79,8 +80,8 @@ def approve_deployment(
 @router.post("/api/release/rollback")
 def trigger_rollback(
     req: RollbackRequest,
-    user: dict = Depends(get_current_user),
-):
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
     """Trigger rollback — produce Kafka event + dispatch Celery task."""
     if "platform-admin" not in user["roles"]:
         raise HTTPException(status_code=403, detail="Only platform-admin can trigger rollback")
@@ -107,8 +108,8 @@ def trigger_rollback(
 def list_pipelines(
     status: Optional[str] = None,
     limit: int = 50,
-    user: dict = Depends(get_current_user),
-):
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
     """List tất cả pipelines — cho UI Deployments tab."""
     with get_pg_conn() as conn:
         with conn.cursor() as cur:
@@ -143,7 +144,7 @@ def list_pipelines(
 
 
 @router.get("/api/release/rollback-targets")
-def list_rollback_targets(user: dict = Depends(get_current_user)):
+def list_rollback_targets(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
     """
     Trả danh sách pipeline có thể rollback: lấy 2 lần deploy gần nhất mỗi (name, env)
     từ release_history, tính current vs previous version.
@@ -189,8 +190,8 @@ def list_rollback_targets(user: dict = Depends(get_current_user)):
 def get_release_history(
     environment: Optional[str] = None,
     limit: int = 50,
-    user: dict = Depends(get_current_user),
-):
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
     """Query release history từ PostgreSQL."""
     with get_pg_conn() as conn:
         with conn.cursor() as cur:
@@ -222,7 +223,7 @@ def get_release_history(
 
 
 @router.get("/api/release/pipelines/{pipeline_id}")
-def get_pipeline(pipeline_id: str, user: dict = Depends(get_current_user)):
+def get_pipeline(pipeline_id: str, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
     """Xem chi tiết pipeline và các steps."""
     with get_pg_conn() as conn:
         with conn.cursor() as cur:

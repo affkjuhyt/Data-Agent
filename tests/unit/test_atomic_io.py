@@ -10,7 +10,7 @@ import os
 
 import pytest
 
-from services.shared.atomic_io import atomic_write_text
+from libs.shared.atomic_io import atomic_write_text
 
 pytestmark = pytest.mark.unit
 

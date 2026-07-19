@@ -1,3 +1,4 @@
+from typing import Any
 from fastapi import APIRouter
 
 from auth_core import *
@@ -6,11 +7,11 @@ from schemas import *
 router = APIRouter()
 
 
-def _is_platform_admin(user: dict) -> bool:
+def _is_platform_admin(user: dict[str, Any]) -> bool:
     return "platform-admin" in user["roles"]
 
 
-def _is_tenant_admin_for(user: dict, x_tenant_id: str) -> bool:
+def _is_tenant_admin_for(user: dict[str, Any], x_tenant_id: str) -> bool:
     # tenant-admin is only ever effective within the caller's own tenant —
     # require_role() doesn't check this itself (see auth_core.require_role),
     # so every call site that admits tenant-admin must check it manually,
@@ -21,9 +22,9 @@ def _is_tenant_admin_for(user: dict, x_tenant_id: str) -> bool:
 @router.get("/api/auth/secrets")
 def list_secrets(
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(get_current_user),
+    user: dict[str, Any] = Depends(get_current_user),
     _panic: None = Depends(_vault_panic_check),
-):
+) -> list[dict[str, Any]]:
     is_platform_admin = _is_platform_admin(user)
     if not is_platform_admin and not _is_tenant_admin_for(user, x_tenant_id):
         raise HTTPException(status_code=403, detail="Required role: platform-admin or tenant-admin")
@@ -57,9 +58,9 @@ def list_secrets(
 def create_secret(
     body: SecretIn,
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(get_current_user),
+    user: dict[str, Any] = Depends(get_current_user),
     _panic: None = Depends(_vault_panic_check),
-):
+) -> dict[str, Any]:
     if body.key_type not in VALID_KEY_TYPES:
         raise HTTPException(status_code=422, detail=f"Invalid key_type: {body.key_type}")
     if body.key_type not in _TRANSIT_TYPES and not body.value:
@@ -137,9 +138,9 @@ def create_secret(
 def delete_secret(
     secret_id:    str = Path(...),
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(get_current_user),
+    user: dict[str, Any] = Depends(get_current_user),
     _panic: None = Depends(_vault_panic_check),
-):
+) -> None:
     is_platform_admin = _is_platform_admin(user)
     if not is_platform_admin and not _is_tenant_admin_for(user, x_tenant_id):
         raise HTTPException(status_code=403, detail="Required role: platform-admin or tenant-admin")
@@ -194,10 +195,10 @@ def delete_secret(
 def rotate_secret(
     secret_id:    str = Path(...),
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(require_role("platform-admin")),
-    body: dict = None,
+    user: dict[str, Any] = Depends(require_role("platform-admin")),
+    body: dict[str, Any] | None = None,
     _panic: None = Depends(_vault_panic_check),
-):
+) -> dict[str, Any]:
     new_value = (body or {}).get("value", "")
 
     conn = get_db()
@@ -268,9 +269,9 @@ def reveal_secret(
     secret_id:     str = Path(...),
     access_reason: str | None = Query(None),
     x_tenant_id:   str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(require_role("platform-admin")),
+    user: dict[str, Any] = Depends(require_role("platform-admin")),
     _panic: None = Depends(_vault_panic_check),
-):
+) -> dict[str, Any]:
     conn = get_db()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:

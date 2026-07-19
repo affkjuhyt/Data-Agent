@@ -1,3 +1,4 @@
+from typing import Any
 import os
 import time
 import logging
@@ -20,7 +21,7 @@ _LANGUAGE_RULE   = "IMPORTANT — Language: Respond in {LANGUAGE}. Vietnamese me
 _LANGUAGE_LABELS = {"vi": "Vietnamese", "en": "English"}
 
 
-def _to_lc_messages(messages: list[dict]) -> list[dict]:
+def _to_lc_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {"role": m["role"], "content": m["content"]}
         for m in messages
@@ -28,7 +29,7 @@ def _to_lc_messages(messages: list[dict]) -> list[dict]:
     ]
 
 
-async def responder_node(state: AgentState) -> dict:
+async def responder_node(state: AgentState) -> dict[str, Any]:
     cfg = state["config"]
     intent = state.get("intent", "question")
     language = state.get("language") or "vi"

@@ -1,0 +1,74 @@
+# kb-backend (Python FastAPI) — Deployment + Service + HPA.
+# Stateless business/CRUD/retrieval tier. Scales on CPU; it's I/O-bound so keep
+# per-replica cheap and add replicas. Point Postgres at PgBouncer.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kb-backend
+  labels: { app: kb-backend }
+spec:
+  replicas: 3
+  selector:
+    matchLabels: { app: kb-backend }
+  template:
+    metadata:
+      labels: { app: kb-backend }
+    spec:
+      containers:
+        - name: kb-backend
+          image: REGISTRY/kb-backend:latest   # built from infra/Dockerfile.kb
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef: { name: kb-backend-secrets }   # DB/urls/passwords
+          env:
+            - { name: POSTGRES_URL, value: "postgresql+asyncpg://admin:$(PG_PW)@pgbouncer:6432/dataagent" }
+            - { name: MODEL_SERVICE_URL, value: "http://model-service:8001" }
+            - { name: REDIS_URL, value: "redis://redis:6379/0" }
+            - { name: RESULT_CACHE_TTL, value: "900" }
+            # Shed graph_expand + rerank past this budget under load.
+            - { name: DEGRADE_BUDGET_MS, value: "1200" }
+          resources:
+            requests: { cpu: "250m", memory: "256Mi" }
+            limits:   { cpu: "1",    memory: "512Mi" }
+          readinessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: 8000 }
+            initialDelaySeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kb-backend
+spec:
+  selector: { app: kb-backend }
+  ports:
+    - { port: 8000, targetPort: 8000 }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: kb-backend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: kb-backend
+  minReplicas: 3
+  maxReplicas: 12
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 60 }
+    # For CCU-accurate scaling, prefer a custom RPS metric (Prometheus Adapter):
+    # - type: Pods
+    #   pods:
+    #     metric: { name: http_requests_per_second }
+    #     target: { type: AverageValue, averageValue: "300" }
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 180

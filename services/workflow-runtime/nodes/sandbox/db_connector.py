@@ -1,8 +1,9 @@
+from typing import Any
 from nodes.sandbox.tool_executor.handlers.data import _text_to_sql_handler
 from state import AgentState
 
 
-async def db_connector_node(state: AgentState) -> dict:
+async def db_connector_node(state: AgentState) -> dict[str, Any]:
     """Retrieval node độc lập, đứng ngang hàng kb_search/mcp dưới Planner —
     kéo vào canvas là dùng được ngay, không cần bật thêm gì ở Tool Executor.
     Toàn bộ logic (đọc schema, chọn DB khi có nhiều kết nối, sinh SQL, chạy

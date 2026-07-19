@@ -1,8 +1,8 @@
 """Business logic for warehouse connection CRUD."""
 import logging
-from typing import Optional
+from typing import Any, Optional, cast
 
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     KBWarehouseDelete,
     ReadJoinRequest, WhereFilter,
 )
@@ -11,7 +11,7 @@ from fastapi import HTTPException
 log = logging.getLogger(__name__)
 
 
-async def get_warehouse_connection(postgres, warehouse_id: str) -> Optional[dict]:
+async def get_warehouse_connection(postgres: Any, warehouse_id: str) -> Optional[dict[str, Any]]:
     """Fetch a warehouse connection by ID."""
     try:
         resp = await postgres.read(ReadJoinRequest(
@@ -25,15 +25,15 @@ async def get_warehouse_connection(postgres, warehouse_id: str) -> Optional[dict
         ))
         if resp.code != 200 or not resp.data:
             return None
-        return resp.data[0]
+        return cast(dict[str, Any], resp.data[0])
     except Exception as e:
         log.error("Failed to fetch warehouse: %s", e)
         return None
 
 
 async def list_warehouse_connections(
-    postgres, tenant_id: str, limit: int = 50
-) -> list:
+    postgres: Any, tenant_id: str, limit: int = 50
+) -> list[Any]:
     """List all warehouse connections for a tenant."""
     try:
         resp = await postgres.read(ReadJoinRequest(
@@ -49,7 +49,7 @@ async def list_warehouse_connections(
         return []
 
 
-async def delete_warehouse_connection(postgres, warehouse_id: str) -> None:
+async def delete_warehouse_connection(postgres: Any, warehouse_id: str) -> None:
     """Delete a warehouse connection and all associated metadata."""
     try:
         resp = await postgres.soft_delete(KBWarehouseDelete(warehouse_id=warehouse_id))

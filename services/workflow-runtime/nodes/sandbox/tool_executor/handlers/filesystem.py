@@ -1,3 +1,4 @@
+from typing import Any
 import asyncio
 import logging
 import pathlib
@@ -8,7 +9,7 @@ from nodes.sandbox.tool_executor._utils import _safe_path, _get_query
 logger = logging.getLogger(__name__)
 
 
-async def _file_read_handler(call: dict, cfg: dict) -> tuple[dict | None, dict | None]:
+async def _file_read_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     tool_cfg    = cfg.get("tool_config", {}).get("file_read", {})
     allowed_dir = tool_cfg.get("allowed_dir", "")
     file_path   = call.get("arguments", {}).get("file_path", "")
@@ -28,7 +29,7 @@ async def _file_read_handler(call: dict, cfg: dict) -> tuple[dict | None, dict |
         return None, {"tool_name": "file_read", "error": str(e)}
 
 
-async def _grep_handler(call: dict, cfg: dict) -> tuple[dict | None, dict | None]:
+async def _grep_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     import subprocess
 
     tool_cfg    = cfg.get("tool_config", {}).get("grep", {})
@@ -91,7 +92,7 @@ async def _grep_handler(call: dict, cfg: dict) -> tuple[dict | None, dict | None
             "metadata": {"pattern": pattern, "path": search_path}}, None
 
 
-async def _glob_handler(call: dict, cfg: dict) -> tuple[dict | None, dict | None]:
+async def _glob_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     tool_cfg    = cfg.get("tool_config", {}).get("glob", {})
     allowed_dir = tool_cfg.get("allowed_dir", "")
 
@@ -118,7 +119,7 @@ async def _glob_handler(call: dict, cfg: dict) -> tuple[dict | None, dict | None
     return {"id": f"glob_{uuid.uuid4().hex[:8]}", "content": content, "source": "tool/glob"}, None
 
 
-async def _file_write_handler(call: dict, cfg: dict) -> tuple[dict | None, dict | None]:
+async def _file_write_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     tool_cfg    = cfg.get("tool_config", {}).get("file_write", {})
     allowed_dir = tool_cfg.get("allowed_dir", "")
 
@@ -143,7 +144,7 @@ async def _file_write_handler(call: dict, cfg: dict) -> tuple[dict | None, dict 
         return None, {"tool_name": "file_write", "error": str(e)}
 
 
-async def _file_edit_handler(call: dict, cfg: dict) -> tuple[dict | None, dict | None]:
+async def _file_edit_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     tool_cfg    = cfg.get("tool_config", {}).get("file_edit", {})
     allowed_dir = tool_cfg.get("allowed_dir", "")
 

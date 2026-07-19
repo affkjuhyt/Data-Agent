@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import sys
+from typing import Any
 
 # Project root → services.*, basemodel.*
 # Worker dir  → pipeline stages (silver, gold, conflict_resolver) + the `utils`
@@ -22,18 +23,20 @@ from utils.graph_store import GraphStore
 from utils.worker import consume_loop
 from conflict_resolver import conflict_resolve_loop
 
-from basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
-from basemodel.services_databaseconnector.qdrant_model import CreateCollectionRequest
-from services.database_connector.postgres_connector import PostgresClient
-from services.database_connector.qdrant_connector import (
+from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
+from libs.basemodel.services_databaseconnector.qdrant_model import CreateCollectionRequest
+from libs.database_connector.postgres_connector import PostgresClient
+from libs.database_connector.qdrant_connector import (
     QdrantClient as QdrantService,
     create_collection as qdrant_create_collection,
 )
-from services.database_connector.neo4j_connector import Neo4jClient
-from services.database_connector.mongo_connector import MongoClient
-from services.database_connector.minio_connector import MinIOClient
-from services.database_connector.kafka_connector import KafkaConsumerClient, KafkaProducerClient
-from services.database_connector.model_connector import ModelServiceClient
+from libs.database_connector.neo4j_connector import Neo4jClient
+from libs.database_connector.mongo_connector import MongoClient
+from libs.database_connector.minio_connector import MinIOClient
+from libs.database_connector.kafka_connector import KafkaConsumerClient, KafkaProducerClient
+from libs.database_connector.model_connector import ModelServiceClient
+from libs.database_connector.redis_connector import RedisClient
+from libs.shared.kb_result_cache import ResultCache
 
 logging.basicConfig(
     level=logging.INFO,
@@ -51,7 +54,7 @@ async def _probe_embed_dim(model: ModelServiceClient) -> int:
 
 
 async def _ensure_qdrant_collection(
-    client,
+    client: Any,
     name: str,
     embed_dim: int,
     *,
@@ -82,7 +85,7 @@ async def _ensure_qdrant_collection(
         raise RuntimeError(f"Failed to create Qdrant collection '{name}': {result.error}")
 
 
-async def _ensure_payload_indexes(client) -> None:
+async def _ensure_payload_indexes(client: Any) -> None:
     """Create the payload indexes filtered search depends on. The chunk
     collection's data_id index backs step-2 of 2-step retrieval (doc point ids →
     MatchAny filter on chunk points) — without it filtered HNSW search degrades
@@ -169,6 +172,7 @@ async def main() -> None:
     # Producer for the DLQ / bounded-retry path (failed silver/gold documents are
     # re-published instead of being dropped after the offset commits).
     producer = KafkaProducerClient()
+    redis    = RedisClient()
 
     postgres.set_url(cfg.POSTGRES_URL)
     qdrant.set_url(cfg.QDRANT_URL)
@@ -178,6 +182,7 @@ async def main() -> None:
     model.set_url(cfg.MODEL_SERVICE_URL)
     consumer.set_url(cfg.KAFKA_URL)
     producer.set_url(cfg.KAFKA_URL)
+    redis.set_url(cfg.REDIS_URL)
 
     log.info("Opening connections...")
     await postgres.open(retry)
@@ -188,6 +193,11 @@ async def main() -> None:
     await model.open(retry)
     await consumer.open(retry)
     await producer.open(retry)
+    try:
+        await redis.open(retry)  # best-effort; invalidation is advisory
+    except Exception as e:  # noqa: BLE001
+        log.warning("Redis unavailable — gold-complete cache invalidation disabled: %s", e)
+    result_cache = ResultCache(redis, 900, cfg.RESULT_CACHE_ENABLED)
 
     await _validate_or_create_qdrant_collection(qdrant, model)
     await _ensure_neo4j_indexes(neo4j)
@@ -234,6 +244,7 @@ async def main() -> None:
             model=model,
             docling_parser=docling_parser,
             producer=producer,
+            result_cache=result_cache,
         )
     finally:
         conflict_task.cancel()

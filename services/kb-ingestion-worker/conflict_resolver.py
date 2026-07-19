@@ -17,6 +17,7 @@ Resolution methods:
 """
 from __future__ import annotations
 
+from typing import Any, Awaitable, Callable, cast
 import asyncio
 import datetime
 import logging
@@ -26,18 +27,18 @@ from qdrant_client import models as qmodels
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
 from sqlalchemy import select, update as sa_update
 
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     ConflictResolution,
     ConflictStatus,
 )
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBConflictORM,
     KBTextBlockORM,
     KBTextBlockVersionORM,
 )
-from services.database_connector.model_connector import ModelServiceClient
-from services.database_connector.postgres_connector import PostgresClient
-from services.database_connector.qdrant_connector import QdrantClient as QdrantService
+from libs.database_connector.model_connector import ModelServiceClient
+from libs.database_connector.postgres_connector import PostgresClient
+from libs.database_connector.qdrant_connector import QdrantClient as QdrantService
 
 from gold import (
     _commit_chunk_atomic,
@@ -130,7 +131,7 @@ async def _revert_to_awaiting(
 
 
 # ── Resolution handlers ───────────────────────────────────────────────────────
-async def _handle_keep_existing(conflict: KBConflictORM, **_) -> None:
+async def _handle_keep_existing(conflict: KBConflictORM, **_: Any) -> None:
     """Incoming was already skipped at ingestion time — nothing to do."""
     log.info("conflict_resolver | keep_existing conflict_id=%s — no-op", conflict.conflict_id)
 
@@ -273,7 +274,7 @@ async def _handle_merge(
     # point stays attached to the EXISTING document, so preserve its data_id from
     # the live point — the incoming snapshot may belong to a different document.
     existing_data_id = ""
-    carried_entity_fields: dict = {}
+    carried_entity_fields: dict[str, Any] = {}
     try:
         live_points = await qdrant_client.retrieve(
             collection_name=cfg.QDRANT_COLLECTION, ids=[block_id], with_payload=True,
@@ -353,7 +354,7 @@ async def _handle_delete(
 
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 
-_HANDLERS = {
+_HANDLERS: dict[str, Callable[..., Awaitable[None]]] = {
     ConflictResolution.KEEP_EXISTING.value: _handle_keep_existing,
     ConflictResolution.KEEP_INCOMING.value: _handle_keep_incoming,
     ConflictResolution.MERGE.value:         _handle_merge,
@@ -419,7 +420,7 @@ async def fetch_awaiting_conflict(
             .where(KBConflictORM.is_deleted.is_(False))
             .limit(1)
         )
-        return result.scalars().first()
+        return cast(KBConflictORM | None, result.scalars().first())
 
 
 # ── Polling loop ──────────────────────────────────────────────────────────────

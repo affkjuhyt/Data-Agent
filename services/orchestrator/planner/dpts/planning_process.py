@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from typing import Any, Callable
 import asyncio
 import logging
 import uuid
 
 from .candidate_pool import CandidatePool
 from .expanding_queue import ExpandingQueue
-from .llm import node_extraction
+from .llm import LLM, MockLLM, node_extraction
 from .memory import MemoryEstimator
 from .node import Node, NodeState
 from .plan import Plan, plan_formulate
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 _STATE_VERSION = 1
 
 
-def _node_to_dict(n: Node) -> dict:
+def _node_to_dict(n: Node) -> dict[str, Any]:
     return {
         "node_id": n.node_id,
         "thought": n.thought,
@@ -36,7 +37,7 @@ def _node_to_dict(n: Node) -> dict:
     }
 
 
-def _node_from_dict(d: dict) -> Node:
+def _node_from_dict(d: dict[str, Any]) -> Node:
     return Node(
         thought=d["thought"],
         confidence=d["confidence"],
@@ -58,10 +59,11 @@ class PlanningProcess:
     """Main workflow: LLM -> node extraction -> Tree/N -> expanding queue ->
     terminal node -> plan exist -> Plan Formulate. Planner gate handles failures."""
 
-    def __init__(self, llm, *, h_es: float = 0.5, h_ds: float = 0.7,
+    def __init__(self, llm: LLM | MockLLM, *, h_es: float = 0.5, h_ds: float = 0.7,
                  branching: int = 3, estimator: MemoryEstimator | None = None,
                  exploit_ratio: float = 0.5, max_plan_depth: int = 4,
-                 max_layers: int = 64, on_layer=None) -> None:
+                 max_layers: int = 64,
+                 on_layer: Callable[[dict[str, Any]], None] | None = None) -> None:
         self.llm = llm
         self.h_es = h_es
         self.h_ds = h_ds
@@ -76,12 +78,12 @@ class PlanningProcess:
         self.gate = PlannerGate(self.tree, self.pool, self.queue)
 
         self.user_input = ""
-        self.agents: list[dict] = []   # published agents injected before planning
+        self.agents: list[dict[str, Any]] = []   # published agents injected before planning
         self.produced: set[str] = set()
         self.layers_run = 0
 
     # ── public workflow ────────────────────────────────────────────────
-    async def plan(self, user_input: str, agents: list[dict] | None = None) -> Plan | None:
+    async def plan(self, user_input: str, agents: list[dict[str, Any]] | None = None) -> Plan | None:
         self.agents = agents or []
         await self.seed(user_input)
         return await self.run_until_terminal()
@@ -90,7 +92,7 @@ class PlanningProcess:
         # previous plan fail expand signal
         return await self.run_until_terminal()
 
-    def report_broken_node(self, node_id: str) -> dict:
+    def report_broken_node(self, node_id: str) -> dict[str, Any]:
         # executor -> Planner gate
         result = self.gate.report_broken_node(node_id)
         self.produced -= set(result["trimmed"])
@@ -131,7 +133,7 @@ class PlanningProcess:
     async def _expand_layer(self) -> None:
         exploit = list(self.queue.exploitation)
         explore = list(self.queue.exploration)
-        nodes = [self.tree.get(i) for i in exploit + explore if self.tree.get(i)]
+        nodes = [n for n in (self.tree.get(i) for i in exploit + explore) if n is not None]
         results = await asyncio.gather(*(self._generate(n) for n in nodes))
         children = {n.node_id: c for n, c in zip(nodes, results)}
         for nid in exploit:
@@ -180,8 +182,10 @@ class PlanningProcess:
         weak = self.queue.weakest_exploitation()
         if weak and child.confidence > weak[1]:
             self.queue.remove(weak[0])
+            weak_node = self.tree.get(weak[0])
+            assert weak_node is not None  # queue only ever holds live tree node ids
             # lower exploitation dequeued -> N
-            self._pool(self.tree.get(weak[0]))
+            self._pool(weak_node)
             self.queue.add_exploitation(child.node_id, child.confidence)
             child.state = NodeState.EXPLOITATION
         else:
@@ -193,14 +197,18 @@ class PlanningProcess:
             nid = self.pool.pop_best_open()
             if not nid:
                 break
-            self.queue.add_exploitation(nid, self.tree.get(nid).confidence)
-            self.tree.get(nid).state = NodeState.EXPLOITATION
+            node = self.tree.get(nid)
+            assert node is not None  # pool only ever holds ids of live tree nodes
+            self.queue.add_exploitation(nid, node.confidence)
+            node.state = NodeState.EXPLOITATION
         while self.queue.has_exploration_slot():
             nid = self.pool.pop_best_open()
             if not nid:
                 break
-            self.queue.add_exploration(nid, self.tree.get(nid).confidence)
-            self.tree.get(nid).state = NodeState.EXPLORATION
+            node = self.tree.get(nid)
+            assert node is not None  # pool only ever holds ids of live tree nodes
+            self.queue.add_exploration(nid, node.confidence)
+            node.state = NodeState.EXPLORATION
 
     # ── helpers ─────────────────────────────────────────────────────────
     async def _generate(self, node: Node) -> list[Node]:
@@ -215,7 +223,7 @@ class PlanningProcess:
                 c.terminal_reason = "depth_cap"
         return children
 
-    def _route_terminals(self, parent: Node, children: list[Node]) -> list[Node]:
+    def _route_terminals(self, parent: Node | None, children: list[Node]) -> list[Node]:
         non_terminal = []
         for c in children:
             if not c.is_terminal:
@@ -242,7 +250,9 @@ class PlanningProcess:
 
     def _formulate(self, terminal_id: str) -> Plan:
         self.produced.add(terminal_id)
-        self.tree.get(terminal_id).state = NodeState.TERMINAL
+        terminal_node = self.tree.get(terminal_id)
+        assert terminal_node is not None  # terminal_id came from pool.pop_terminal, always a stored node
+        terminal_node.state = NodeState.TERMINAL
         path = self.tree.path_to_root(terminal_id)
         plan = plan_formulate(f"plan_{uuid.uuid4().hex[:12]}", self.user_input, path)
         logger.info("plan formulate | plan=%s terminal=%s targets=%d", plan.plan_id, terminal_id, len(plan.targets))
@@ -252,9 +262,14 @@ class PlanningProcess:
         if self.on_layer is not None:
             self.on_layer(self.snapshot())
 
-    def snapshot(self) -> dict:
+    def snapshot(self) -> dict[str, Any]:
+        def _confidence(nid: str) -> float:
+            node = self.tree.get(nid)
+            assert node is not None  # pool only ever holds ids of live tree nodes
+            return node.confidence
+
         members = set(self.pool.open_ids()) | set(self.pool.terminal_ids())
-        pool_sorted = sorted(members, key=lambda i: self.tree.get(i).confidence, reverse=True)
+        pool_sorted = sorted(members, key=_confidence, reverse=True)
         nodes = []
         for nid, node in self.tree._nodes.items():
             nodes.append({
@@ -272,7 +287,7 @@ class PlanningProcess:
             "plan_ready": bool(self.pool.pop_terminal(exclude=self.produced)),
         }
 
-    def dump_state(self) -> dict:
+    def dump_state(self) -> dict[str, Any]:
         return {
             "version": _STATE_VERSION,
             "user_input": self.user_input,
@@ -283,7 +298,7 @@ class PlanningProcess:
             "nodes": [_node_to_dict(n) for n in self.tree._nodes.values()],
         }
 
-    def load_state(self, state: dict) -> None:
+    def load_state(self, state: dict[str, Any]) -> None:
         self.user_input = state.get("user_input", "")
         self.agents = state.get("agents", [])
         self.produced = set(state.get("produced", []))

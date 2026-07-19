@@ -12,6 +12,7 @@ per-system_type schema registry (llm_schemas) is passed to the gateway as
 """
 from __future__ import annotations
 
+from typing import Any, cast
 import logging
 
 import httpx
@@ -38,21 +39,21 @@ def _get_client() -> httpx.AsyncClient:
     return _client
 
 
-def _schema(system_type: str) -> dict | None:
+def _schema(system_type: str) -> dict[str, Any] | None:
     return SCHEMAS_BY_SYSTEM_TYPE.get(system_type)
 
 
-async def _generate(payload: dict, timeout: float) -> str:
+async def _generate(payload: dict[str, Any], timeout: float) -> str:
     resp = await _get_client().post(f"{_BASE}/generate", json=payload, timeout=timeout)
     resp.raise_for_status()
-    return resp.json().get("content", "")
+    return cast(str, resp.json().get("content", ""))
 
 
 async def generate_json(
     prompt: str, *, system_prompt: str = "", system_type: str = "",
     max_tokens: int = 512, temperature: float = 0.1, timeout: float = _DEFAULT_TIMEOUT,
 ) -> str:
-    payload: dict = {
+    payload: dict[str, Any] = {
         "prompt": prompt, "system_prompt": system_prompt, "json_mode": True,
         "max_tokens": max_tokens, "temperature": temperature,
     }
@@ -73,7 +74,7 @@ async def generate_plain(
 
 
 async def chat_plain(
-    messages: list[dict], *, max_tokens: int = 1024, temperature: float = 0.3,
+    messages: list[dict[str, Any]], *, max_tokens: int = 1024, temperature: float = 0.3,
     timeout: float = _DEFAULT_TIMEOUT, system_type: str = "",
 ) -> str:
     return await _generate({
@@ -83,10 +84,10 @@ async def chat_plain(
 
 
 async def chat_json(
-    messages: list[dict], *, max_tokens: int = 512, temperature: float = 0.1,
+    messages: list[dict[str, Any]], *, max_tokens: int = 512, temperature: float = 0.1,
     timeout: float = _DEFAULT_TIMEOUT, grammar_gbnf: str = "", system_type: str = "",
 ) -> str:
-    payload: dict = {
+    payload: dict[str, Any] = {
         "messages": messages, "json_mode": True,
         "max_tokens": max_tokens, "temperature": temperature,
     }

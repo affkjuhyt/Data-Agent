@@ -16,6 +16,8 @@ import uuid as _uuid
 from dataclasses import dataclass
 from enum import Enum
 
+from .base import ChatCaller, EmbedCaller, RerankCaller
+
 
 class Capability(str, Enum):
     EMBED = "embed"
@@ -27,7 +29,7 @@ class Capability(str, Enum):
 class ModelEntry:
     name: str
     capability: Capability
-    caller: object
+    caller: EmbedCaller | RerankCaller | ChatCaller
     model_id: _uuid.UUID | None = None
 
 

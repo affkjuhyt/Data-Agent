@@ -15,7 +15,7 @@ import secrets
 import string
 import threading
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Optional, cast
 
 import bcrypt
 import httpx
@@ -94,7 +94,7 @@ class _PooledConn:
     starts clean: psycopg2's putconn() does NOT reset connection state.
     """
 
-    def __init__(self, pool: pg_pool.ThreadedConnectionPool, conn) -> None:
+    def __init__(self, pool: pg_pool.ThreadedConnectionPool, conn: Any) -> None:
         object.__setattr__(self, "_pool", pool)
         object.__setattr__(self, "_conn", conn)
 
@@ -107,20 +107,20 @@ class _PooledConn:
             pass
         pool.putconn(conn)
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         return getattr(object.__getattribute__(self, "_conn"), name)
 
-    def __setattr__(self, name, value):
+    def __setattr__(self, name: str, value: Any) -> None:
         setattr(object.__getattribute__(self, "_conn"), name, value)
 
 
-def get_db():
+def get_db() -> "_PooledConn":
     raw = _get_owner_pool().getconn()
     raw.autocommit = False
     return _PooledConn(_get_owner_pool(), raw)
 
 
-def _ensure_settings_table():
+def _ensure_settings_table() -> None:
     conn = get_db()
     try:
         with conn.cursor() as cur:
@@ -145,6 +145,23 @@ def _ensure_settings_table():
             """)
             # Add access_reason column to key_rotations (idempotent)
             cur.execute("ALTER TABLE key_rotations ADD COLUMN IF NOT EXISTS access_reason text")
+            # Per-tenant compliance controls (PII masking, residency, retention).
+            # Read at ingestion time by kb-ingestion-worker to gate PII redaction.
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS compliance_settings (
+                    tenant_id           varchar(64)  PRIMARY KEY,
+                    pii_masking         boolean      NOT NULL DEFAULT false,
+                    pii_types           text         NOT NULL DEFAULT 'EMAIL,PHONE,CCCD,CMND,CREDIT_CARD,IP',
+                    residency_region    varchar(32)  NOT NULL DEFAULT 'Asia-SE1',
+                    residency_standards text         NOT NULL DEFAULT 'GDPR',
+                    retention_days      integer      NOT NULL DEFAULT 365,
+                    retention_lock      boolean      NOT NULL DEFAULT false,
+                    zero_trust          boolean      NOT NULL DEFAULT false,
+                    audit_residency     boolean      NOT NULL DEFAULT false,
+                    updated_at          timestamptz  DEFAULT now(),
+                    updated_by          varchar(128) DEFAULT ''
+                )
+            """)
         conn.commit()
     except Exception as e:
         log.warning("schema_migration_failed", error=str(e))
@@ -154,7 +171,7 @@ def _ensure_settings_table():
 
 # ── Panic mode guard ──────────────────────────────────────────────────────────
 
-def _vault_panic_check():
+def _vault_panic_check() -> None:
     conn = get_db()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -169,7 +186,7 @@ def _vault_panic_check():
 
 # ── Auto-rotation background task ─────────────────────────────────────────────
 
-def _run_auto_rotation():
+def _run_auto_rotation() -> None:
     conn = get_db()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -227,7 +244,7 @@ def _run_auto_rotation():
             conn2.close()
 
 
-async def _auto_rotation_loop():
+async def _auto_rotation_loop() -> None:
     await asyncio.sleep(60)  # wait for startup to settle
     while True:
         try:
@@ -239,7 +256,7 @@ async def _auto_rotation_loop():
         await asyncio.sleep(86400)  # run every 24 hours
 
 
-async def _sync_kong_on_startup():
+async def _sync_kong_on_startup() -> None:
     # Wait for Kong to finish setup before syncing
     await asyncio.sleep(15)
     try:
@@ -249,7 +266,7 @@ async def _sync_kong_on_startup():
     except Exception as e:
         log.warning("startup_kong_sync_failed", error=str(e))
 
-async def startup():
+async def startup() -> None:
     # Cap the route threadpool to the DB pool size. Sync (`def`) routes run in
     # this threadpool and each borrows one pooled connection; psycopg2's pool
     # RAISES when exhausted, so we must not let more route threads run than the
@@ -300,7 +317,7 @@ _IP_PROTECTED_SERVICES = ["aeroflow-backend", "release-worker"]
 _IP_PROTECTED_ROUTES   = ["auth-api-keys-route", "auth-api-secrets-route"]
 
 
-def _upsert_ip_plugin(scope_url: str, payload: dict):
+def _upsert_ip_plugin(scope_url: str, payload: dict[str, Any]) -> None:
     res = httpx.get(scope_url, timeout=5)
     existing = [p for p in res.json().get("data", []) if p.get("name") == "ip-restriction"]
     if existing:
@@ -309,7 +326,7 @@ def _upsert_ip_plugin(scope_url: str, payload: dict):
         httpx.post(scope_url, json=payload, timeout=5)
 
 
-def _sync_kong(tenant_id: str):
+def _sync_kong(tenant_id: str) -> None:
     mode = _get_ip_mode()
     if mode == "allow_all":
         allow = ["0.0.0.0/0", "::/0"]
@@ -330,7 +347,7 @@ def _sync_kong(tenant_id: str):
 
 # ── Health ────────────────────────────────────────────────────────────────────
 
-def _fmt_ip(r: dict) -> dict:
+def _fmt_ip(r: dict[str, Any]) -> dict[str, Any]:
     return {
         "id":         str(r["id"]),
         "cidr":       r["cidr"],
@@ -356,10 +373,10 @@ def _gen_key(scope: str) -> tuple[str, str]:
 
 
 def _hash_key(raw: str) -> str:
-    return bcrypt.hashpw(raw.encode(), bcrypt.gensalt(rounds=12)).decode()
+    return cast(str, bcrypt.hashpw(raw.encode(), bcrypt.gensalt(rounds=12)).decode())
 
-def _fmt_key(r: dict) -> dict:
-    def _iso(v): return v.isoformat() if v else None
+def _fmt_key(r: dict[str, Any]) -> dict[str, Any]:
+    def _iso(v: Any) -> Optional[str]: return v.isoformat() if v else None
     return {
         "id":           str(r["id"]),
         "name":         r["name"],
@@ -424,14 +441,14 @@ def _transit_key_name(tenant_id: str, key_name: str) -> str:
     return f"{tenant_id[:8]}-{safe}"[:63]
 
 
-def _get_gov_setting(cur, key: str) -> bool:
+def _get_gov_setting(cur: Any, key: str) -> bool:
     cur.execute("SELECT value FROM platform_settings WHERE key = %s", (key,))
     row = cur.fetchone()
     return row["value"].lower() == "true" if row else False
 
 
-def _fmt_secret(r: dict) -> dict:
-    def _iso(v): return v.isoformat() if v else None
+def _fmt_secret(r: dict[str, Any]) -> dict[str, Any]:
+    def _iso(v: Any) -> Optional[str]: return v.isoformat() if v else None
     return {
         "id":              str(r["id"]),
         "key_name":        r["key_name"],
@@ -446,5 +463,81 @@ def _fmt_secret(r: dict) -> dict:
         "created_at":      _iso(r["created_at"]),
     }
 
-__all__ = [name for name in globals() if not name.startswith("__")]
+# Static re-export list. Was a dynamic comprehension over globals(), which mypy
+# can't evaluate — so `from auth_core import *` in the routers resolved to nothing
+# and every re-exported name (fastapi's HTTPException/Depends, psycopg2, the _VAULT_*
+# helpers, …) showed as undefined under strict. This explicit list is the exact set
+# that comprehension produced (incl. single-underscore names the routers rely on).
+__all__ = [
+    "asyncio",
+    "ipaddress",
+    "os",
+    "secrets",
+    "string",
+    "threading",
+    "datetime",
+    "timedelta",
+    "timezone",
+    "Any",
+    "Optional",
+    "bcrypt",
+    "httpx",
+    "hvac",
+    "psycopg2",
+    "pg_pool",
+    "structlog",
+    "Depends",
+    "Header",
+    "HTTPException",
+    "Path",
+    "Query",
+    "get_current_user",
+    "require_role",
+    "log",
+    "PG_DSN",
+    "KONG_ADMIN",
+    "OPENBAO_ADDR",
+    "_TOKEN_FILE",
+    "_load_openbao_token",
+    "OPENBAO_TOKEN",
+    "get_vault",
+    "_PRIVATE_FALLBACK",
+    "POOL_MIN",
+    "POOL_MAX",
+    "_OWNER_POOL_MAX",
+    "_owner_pool",
+    "_owner_pool_lock",
+    "_get_owner_pool",
+    "_PooledConn",
+    "get_db",
+    "_ensure_settings_table",
+    "_vault_panic_check",
+    "_run_auto_rotation",
+    "_auto_rotation_loop",
+    "_sync_kong_on_startup",
+    "startup",
+    "_get_ip_mode",
+    "_get_active_cidrs",
+    "_IP_PROTECTED_SERVICES",
+    "_IP_PROTECTED_ROUTES",
+    "_upsert_ip_plugin",
+    "_sync_kong",
+    "_fmt_ip",
+    "SCOPE_PREFIX",
+    "VALID_SCOPES",
+    "_gen_key",
+    "_hash_key",
+    "_fmt_key",
+    "VALID_KEY_TYPES",
+    "TENANT_MANAGEABLE_KEY_TYPES",
+    "_VAULT_MOUNT",
+    "_TRANSIT_MOUNT",
+    "_GOV_KEYS",
+    "_TRANSIT_TYPES",
+    "_ALGO_TO_TRANSIT",
+    "_vault_path",
+    "_transit_key_name",
+    "_get_gov_setting",
+    "_fmt_secret",
+]
 

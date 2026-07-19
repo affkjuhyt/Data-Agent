@@ -1,0 +1,117 @@
+{
+  "info": {
+    "name": "Data Agent — End-to-End (local, no-JWT)",
+    "description": "Drives the full agent turn locally. Orchestrator/workflow-runtime have no auth in dev — identity comes from forged X-Tenant-Id / X-User-ID / X-User-Roles headers (same as the k6 scripts). Set the collection variables, then run 'Agent turn (stream)'. Prereqs: orchestrator (:8003), workflow-runtime (:8001), litellm (:4000 → ollama). See KB-SCALE-10K / docker-compose.agent-test.yml.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "orchestrator", "value": "http://localhost:8003" },
+    { "key": "workflow_runtime", "value": "http://localhost:8001" },
+    { "key": "litellm", "value": "http://localhost:4000" },
+    { "key": "tenant_id", "value": "a0000000-0000-0000-0000-000000000001" },
+    { "key": "user_id", "value": "11111111-1111-1111-1111-111111111111" },
+    { "key": "agent_id", "value": "00000000-0000-0000-0000-000000000030" },
+    { "key": "session_id", "value": "" },
+    { "key": "litellm_key", "value": "sk-dev" }
+  ],
+  "item": [
+    {
+      "name": "0. Orchestrator health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{orchestrator}}/api/orchestrate/health", "host": ["{{orchestrator}}"], "path": ["api", "orchestrate", "health"] }
+      }
+    },
+    {
+      "name": "1. Agent turn (stream) — single agent",
+      "description": "The main end-to-end entry point. SSE stream (text/event-stream). agent_id set → single-agent path (planner→responder→judge). Response is 'data: ...' frames ending with 'data: [DONE]'. First frame carries {\"__session_id\": \"...\"}. Postman shows the raw stream in the body.",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Accept", "value": "text/event-stream" },
+          { "key": "X-Tenant-Id", "value": "{{tenant_id}}" },
+          { "key": "X-User-ID", "value": "{{user_id}}" },
+          { "key": "X-User-Roles", "value": "platform-admin,tenant-admin,engineer" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"Tóm tắt các quy định chính về bảo vệ dữ liệu cá nhân\",\n  \"user_id\": \"postman-user\",\n  \"agent_id\": \"{{agent_id}}\",\n  \"use_cache\": true\n}"
+        },
+        "url": { "raw": "{{orchestrator}}/api/orchestrate/stream", "host": ["{{orchestrator}}"], "path": ["api", "orchestrate", "stream"] }
+      }
+    },
+    {
+      "name": "2. Agent turn (stream) — multi-agent (ToT planner)",
+      "description": "Omit agent_id → the orchestrator's Tree-of-Thoughts planner fans out to multiple agents (several extra LLM calls, much heavier). Use to measure worst-case turn cost.",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Accept", "value": "text/event-stream" },
+          { "key": "X-Tenant-Id", "value": "{{tenant_id}}" },
+          { "key": "X-User-ID", "value": "{{user_id}}" },
+          { "key": "X-User-Roles", "value": "platform-admin,tenant-admin,engineer" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"So sánh trách nhiệm của bên kiểm soát và bên xử lý dữ liệu\",\n  \"user_id\": \"postman-user\"\n}"
+        },
+        "url": { "raw": "{{orchestrator}}/api/orchestrate/stream", "host": ["{{orchestrator}}"], "path": ["api", "orchestrate", "stream"] }
+      }
+    },
+    {
+      "name": "3. Resume (HITL clarification)",
+      "description": "Only when a turn emits a {\"__clarification\":{...}} frame before [DONE]. Copy __session_id from the stream into session_id. Returns JSON (not SSE).",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Tenant-Id", "value": "{{tenant_id}}" },
+          { "key": "X-User-ID", "value": "{{user_id}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"session_id\": \"{{session_id}}\",\n  \"clarification\": \"ý tôi là tháng dương lịch gần nhất\"\n}"
+        },
+        "url": { "raw": "{{orchestrator}}/api/orchestrate/resume", "host": ["{{orchestrator}}"], "path": ["api", "orchestrate", "resume"] }
+      }
+    },
+    {
+      "name": "4. (downstream) workflow-runtime conversation run",
+      "description": "The single-agent executor the orchestrator calls per agent. Direct SSE; useful to isolate agent-execution latency from the orchestrator layer.",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Accept", "value": "text/event-stream" },
+          { "key": "X-Tenant-ID", "value": "{{tenant_id}}" },
+          { "key": "X-User-ID", "value": "{{user_id}}" },
+          { "key": "X-User-Roles", "value": "platform-admin,tenant-admin,engineer" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"query\": \"Quyền của chủ thể dữ liệu gồm những gì\",\n  \"agent_id\": \"{{agent_id}}\",\n  \"messages\": [],\n  \"orchestrated\": false\n}"
+        },
+        "url": { "raw": "{{workflow_runtime}}/api/conversations/run", "host": ["{{workflow_runtime}}"], "path": ["api", "conversations", "run"] }
+      }
+    },
+    {
+      "name": "5. (LLM tier) litellm chat completion",
+      "description": "The LLM the agent funnels into (the bottleneck). Isolates raw LLM latency. Needs the sk-dev key.",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "Authorization", "value": "Bearer {{litellm_key}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"model\": \"responder\",\n  \"messages\": [{\"role\": \"user\", \"content\": \"Trả lời ngắn: 2+2=?\"}],\n  \"max_tokens\": 20\n}"
+        },
+        "url": { "raw": "{{litellm}}/v1/chat/completions", "host": ["{{litellm}}"], "path": ["v1", "chat", "completions"] }
+      }
+    }
+  ]
+}

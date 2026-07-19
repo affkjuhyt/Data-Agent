@@ -12,6 +12,12 @@ SUMMARY_MODEL = os.environ.get("ORCHESTRATOR_SUMMARY_MODEL", "openai/orchestrato
 SYNTHESIS_JUDGE_MODEL = os.environ.get("ORCHESTRATOR_JUDGE_MODEL", "openai/orchestrator-judge")
 MAX_SYNTHESIS_RETRY = int(os.environ.get("ORCHESTRATOR_MAX_SYNTHESIS_RETRY", "2"))
 
+# ── Admission control ────────────────────────────────────────────────────────
+# Cap concurrent agent turns so a slow/abandoned turn can't pile onto the LLM/GPU
+# and wedge everything (see AGENT-E2E.md §5). Over the cap → 429 (shed, retry).
+# 0 = unlimited. Size it to the LLM tier's real parallelism (one small GPU ≈ 4–8).
+MAX_CONCURRENT_TURNS = int(os.environ.get("ORCHESTRATOR_MAX_CONCURRENT_TURNS", "8"))
+
 # ── Database ─────────────────────────────────────────────────────────────────
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 DEV_TENANT_ID = os.environ.get("DEV_TENANT_ID", "00000000-0000-0000-0000-000000000001")

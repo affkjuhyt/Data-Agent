@@ -23,6 +23,12 @@ RUN mkdir -p /app/models
 
 COPY . .
 
+# Drop root — weights download at runtime into /app/models, so it must be
+# writable by the app user (the compose host-volume mount inherits this owner).
+RUN addgroup --system app && adduser --system --ingroup app app \
+    && chown -R app:app /app/models
+USER app
+
 EXPOSE 8001
 
 CMD ["uvicorn", "app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8001"]

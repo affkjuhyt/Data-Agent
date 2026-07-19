@@ -25,6 +25,7 @@ re-promotion first cleans up the previous partial state, so retry is safe.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -32,14 +33,14 @@ import time as _time
 import unicodedata
 import uuid
 from collections import Counter
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from qdrant_client import models as qmodels
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
-from sqlalchemy import cast as sa_cast, func as sa_func, update as sa_update
+from sqlalchemy import cast as sa_cast, func as sa_func, text as sa_text, update as sa_update
 from sqlalchemy.dialects.postgresql import JSONB
 
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     ConflictSeverity,
     ConflictStatus,
     ConflictType,
@@ -49,7 +50,7 @@ from basemodel.services_databaseconnector.postgres_model import (
     Tier,
 )
 from sqlalchemy import select as sa_select
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBDataORM,
     KBTextBlockORM,
     KBTextBlockVersionORM,
@@ -57,13 +58,14 @@ from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import
     KBQdrantCollectionORM,
     KBConflictBatchORM,
 )
-from basemodel.services_databaseconnector.qdrant_model import (
+from libs.basemodel.services_databaseconnector.qdrant_model import (
     SearchRequest,
 )
-from services.database_connector.model_connector import ModelServiceClient
-from services.database_connector.mongo_connector import MongoClient
-from services.database_connector.postgres_connector import PostgresClient
-from services.database_connector.qdrant_connector import (
+from libs.database_connector.model_connector import ModelServiceClient
+from libs.shared.pii_detector import mask as pii_mask, mask_deep
+from libs.database_connector.mongo_connector import MongoClient
+from libs.database_connector.postgres_connector import PostgresClient
+from libs.database_connector.qdrant_connector import (
     vector_search as qdrant_vector_search,
 )
 
@@ -115,7 +117,7 @@ async def _llm_generate_json(
     temperature: float = 0.1,
     max_retries: int = 2,
     system_type: str = "",
-) -> tuple[dict, str, int]:
+) -> tuple[dict[str, Any], str, int]:
     """Returns (parsed_dict, last_raw_response, attempts_used).
 
     `system_type` is a key of SYSTEM_PROMPTS and of utils.llm_schemas: it selects the
@@ -186,7 +188,7 @@ def _to_entity_list(raw_value: Any) -> list[dict[str, Any]]:
     Surface forms keep their original diacritics; only comparison uses _fold."""
     if not isinstance(raw_value, list):
         return []
-    parsed_entities = []
+    parsed_entities: list[dict[str, Any]] = []
     seen_names: set[str] = set()
     for item in raw_value:
         if isinstance(item, dict):
@@ -421,15 +423,15 @@ async def _commit_chunk_atomic(
     block_index: int,
     content: str,
     table_involved: bool,
-    table: dict | None,
-    payload_meta: dict,
+    table: dict[str, Any] | None,
+    payload_meta: dict[str, Any],
     embedding: list[float],
     summary: str,
     approved_by: str,
     embed_model_id: str,
     knowledge_base: str = "",
     entities: list[str] | None = None,
-    entity_type_fields: dict | None = None,
+    entity_type_fields: dict[str, Any] | None = None,
     emitter: PipelineEventEmitter = NULL_EMITTER,
 ) -> str:
     block_id: str | None = None
@@ -540,7 +542,7 @@ async def canonicalize_chunk_entities(
     postgres: PostgresClient,
     model: ModelServiceClient,
     tenant_id: str,
-    raw_entities: list[dict],
+    raw_entities: list[dict[str, Any]],
     *,
     knowledge_base: str = "",
     embed_model_id: str = "",
@@ -589,11 +591,11 @@ async def canonicalize_chunk_entities(
 
 
 def remap_chunk_relationships(
-    relationships: list[dict], raw_to_canonical: dict[str, str]
-) -> list[dict]:
+    relationships: list[dict[str, Any]] | None, raw_to_canonical: dict[str, str]
+) -> list[dict[str, Any]]:
     """Remap a chunk's silver relationships (chunk-local names) onto canonical
     entities. Drops edges whose endpoints didn't canonicalize or are self-loops."""
-    remapped: list[dict] = []
+    remapped: list[dict[str, Any]] = []
     for relationship in (relationships or []):
         canonical_from = raw_to_canonical.get(_fold(str(relationship.get("from", ""))))
         canonical_to = raw_to_canonical.get(_fold(str(relationship.get("to", ""))))
@@ -617,7 +619,7 @@ def _heuristic_summary(content: str) -> str:
 
 
 # ── Main stage function ────────────────────────────────────────────────────────
-async def _detect_conflict(existing_summary: str, incoming_summary: str) -> tuple[dict, str]:
+async def _detect_conflict(existing_summary: str, incoming_summary: str) -> tuple[dict[str, Any], str]:
     """Returns (conflict_result_dict, raw_llm_answer)."""
     user = (
         f"Existing chunk summary:\n{existing_summary}\n\n"
@@ -633,9 +635,13 @@ async def _detect_conflict(existing_summary: str, incoming_summary: str) -> tupl
         return {"has_conflict": False}, f"ERROR: {exc}"
 
 async def _detect_and_record_conflict(
-    *, postgres, qdrant, tenant_id, data_id, knowledge_base, embed_model_id, approved_by,
-    block_index, content, summary, intents, table_involved, table, embedding, chunk,
-    ensure_conflict_batch, emitter,
+    *, postgres: PostgresClient, qdrant: AsyncQdrantClient, tenant_id: str, data_id: str,
+    knowledge_base: str, embed_model_id: str, approved_by: str,
+    block_index: int, content: str, summary: str, intents: list[str],
+    table_involved: bool, table: dict[str, Any] | None, embedding: list[float],
+    chunk: dict[str, Any],
+    ensure_conflict_batch: Callable[[], Awaitable[str | None]],
+    emitter: PipelineEventEmitter,
 ) -> bool:
     """Search the chunk's nearest neighbour; if it clears the similarity floor and the
     LLM confirms a conflict, record it (PENDING) and return True. A failed conflict
@@ -729,9 +735,11 @@ async def _detect_and_record_conflict(
 
 
 async def _add_chunk_to_graph(
-    *, graph, tenant_id, knowledge_base, data_id, block_id, chunk, canonicals,
-    type_by_canonical, description_by_canonical, display_by_canonical, raw_to_canonical,
-    embed_model_id, database, block_index, emitter,
+    *, graph: GraphStore, tenant_id: str, knowledge_base: str, data_id: str, block_id: str,
+    chunk: dict[str, Any], canonicals: list[str],
+    type_by_canonical: dict[str, str], description_by_canonical: dict[str, str],
+    display_by_canonical: dict[str, str], raw_to_canonical: dict[str, str],
+    embed_model_id: str, database: Any, block_index: int, emitter: PipelineEventEmitter,
 ) -> bool:
     try:
         await graph.add_chunk(
@@ -759,12 +767,31 @@ async def _add_chunk_to_graph(
 
 
 async def _process_chunk(
-    *, chunk, postgres, qdrant, graph, model, tenant_id, data_id, knowledge_base,
-    embed_model_id, approved_by, database, ensure_conflict_batch, emitter,
-) -> dict:
+    *, chunk: dict[str, Any], postgres: PostgresClient, qdrant: AsyncQdrantClient,
+    graph: GraphStore, model: ModelServiceClient, tenant_id: str, data_id: str,
+    knowledge_base: str, embed_model_id: str, approved_by: str, database: Any,
+    ensure_conflict_batch: Callable[[], Awaitable[str | None]], emitter: PipelineEventEmitter,
+    pii_mask_types: list[str] | None = None,
+) -> dict[str, Any]:
     block_index = chunk["block_index"]
+    # Compliance: redact PII in the chunk IN PLACE before it is embedded,
+    # summarised, conflict-checked, canonicalised or persisted — so no raw PII
+    # reaches the model, Qdrant, Postgres or the knowledge graph. Mutating the
+    # chunk dict means every downstream `chunk.get(...)` (table, entities,
+    # relationships, the conflict snapshot, the graph writer) sees masked data.
+    if pii_mask_types:
+        masked_content, _content_pii = pii_mask(chunk["content"], pii_mask_types)
+        chunk["content"] = masked_content
+        if _content_pii:
+            await emitter.emit("gold.pii.masked", {"index": block_index, "counts": _content_pii})
+        for _field in ("table", "entities", "relationships"):
+            if chunk.get(_field):
+                chunk[_field], _ = mask_deep(chunk[_field], pii_mask_types)
     content = chunk["content"]
     summary = (chunk.get("summary") or "").strip() or _heuristic_summary(content)
+    if pii_mask_types:
+        summary, _ = pii_mask(summary, pii_mask_types)
+        chunk["summary"] = summary
     intents = [
         intent for intent in (chunk.get("intents") or []) if isinstance(intent, str) and intent.strip()
     ] or ["document_content"]
@@ -834,7 +861,9 @@ async def _process_chunk(
     return {"outcome": "committed", "summary": summary, "intents": intents, "graph_failed": graph_failed}
 
 
-async def _reduce_document_summary(committed_summaries, database, data_id, emitter) -> str:
+async def _reduce_document_summary(
+    committed_summaries: list[str], database: Any, data_id: str, emitter: PipelineEventEmitter,
+) -> str:
     await set_chunk_progress(database, data_id, status="GOLD_REDUCE")
     async with emitter.step("gold.doc.reduce", summaries=len(committed_summaries)) as reduce_scope:
         doc_summary = await _reduce_summaries(committed_summaries, emitter)
@@ -843,8 +872,9 @@ async def _reduce_document_summary(committed_summaries, database, data_id, emitt
 
 
 async def _write_doc_summary_point(
-    *, qdrant, model, database, data_id, tenant_id, knowledge_base, embed_model_id,
-    doc_summary, top_intents, committed_count, emitter,
+    *, qdrant: AsyncQdrantClient, model: ModelServiceClient, database: Any, data_id: str,
+    tenant_id: str, knowledge_base: str, embed_model_id: str,
+    doc_summary: str, top_intents: list[str], committed_count: int, emitter: PipelineEventEmitter,
 ) -> None:
     await set_chunk_progress(database, data_id, status="GOLD_GRAPH")
     async with emitter.step("gold.doc.commit", data_id=data_id) as doc_scope:
@@ -869,7 +899,9 @@ async def _write_doc_summary_point(
         doc_scope.set(intents=top_intents)
 
 
-async def _update_document_tier(postgres, database, data_id, top_intents) -> None:
+async def _update_document_tier(
+    postgres: PostgresClient, database: Any, data_id: str, top_intents: list[str],
+) -> None:
     try:
         async with postgres.get_client() as session:
             try:
@@ -892,7 +924,9 @@ async def _update_document_tier(postgres, database, data_id, top_intents) -> Non
         raise
 
 
-async def _reconcile_conflict_batch(postgres, conflict_batch_id, pending_conflict_count) -> None:
+async def _reconcile_conflict_batch(
+    postgres: PostgresClient, conflict_batch_id: str | None, pending_conflict_count: int,
+) -> None:
     """PENDING only while real conflicts await human resolution; otherwise RESOLVED."""
     if conflict_batch_id is None:
         return
@@ -915,7 +949,10 @@ async def _reconcile_conflict_batch(postgres, conflict_batch_id, pending_conflic
         log.warning("Gold: batch status reconcile failed batch_id=%s: %s", conflict_batch_id, exc)
 
 
-async def _record_gold_lifecycle(postgres, database, data_id, approved_by, counts, embed_model_id) -> None:
+async def _record_gold_lifecycle(
+    postgres: PostgresClient, database: Any, data_id: str, approved_by: str,
+    counts: dict[str, int], embed_model_id: str,
+) -> None:
     """Audit row — best-effort, never fails the stage."""
     try:
         await postgres.insert(KBLifecycleHistoryInsert(
@@ -943,6 +980,28 @@ async def _record_gold_lifecycle(postgres, database, data_id, approved_by, count
         await write_log(database, data_id, "PUBLISHED",f"Gold lifecycle history not recorded: {exc}", level="WARNING")
 
 
+async def _load_pii_policy(postgres: PostgresClient, tenant_id: str) -> list[str]:
+    """Return the PII categories to redact for this tenant (empty list = masking
+    off). The ``compliance_settings`` table is owned by auth-api and may not exist
+    yet on a fresh stack, so any lookup error is treated as 'masking disabled'."""
+    try:
+        async with postgres.get_client() as session:
+            result = await session.execute(
+                sa_text(
+                    "SELECT pii_masking, pii_types FROM compliance_settings WHERE tenant_id = :tid"
+                ),
+                {"tid": tenant_id},
+            )
+            row = result.mappings().first()
+    except Exception as exc:
+        log.warning("Gold: PII policy lookup failed tenant=%s: %s — masking disabled", tenant_id, exc)
+        return []
+    if not row or not row["pii_masking"]:
+        return []
+    raw = (row["pii_types"] or "").strip()
+    return [seg for seg in (part.strip().upper() for part in raw.split(",")) if seg]
+
+
 async def promote_to_gold(
     postgres: PostgresClient,
     qdrant: AsyncQdrantClient,
@@ -953,19 +1012,24 @@ async def promote_to_gold(
     tenant_id: str,
     approved_by: str,
     emitter: PipelineEventEmitter = NULL_EMITTER,
-) -> dict:
+) -> dict[str, Any]:
     embed_model_id = await _get_collection_embed_model_id(postgres, cfg.QDRANT_COLLECTION)
     log.info("Gold: collection '%s' → embed_model_id=%s", cfg.QDRANT_COLLECTION, embed_model_id or "none")
 
     doc_name, knowledge_base = await _get_data_row(postgres, data_id)
     log.info("Gold: data_id=%s → knowledge_base=%s", data_id, knowledge_base or "none")
 
+    # Compliance: resolve the tenant's PII-masking policy once (empty = off).
+    pii_mask_types = await _load_pii_policy(postgres, tenant_id)
+    if pii_mask_types:
+        log.info("Gold: PII masking ENABLED tenant=%s types=%s", tenant_id, pii_mask_types)
+
     database = mongo.get_client()
     staging = await database["kb_silver_staging"].find_one({"data_id": data_id})
     if not staging:
         raise ValueError(f"No silver staging found for data_id={data_id}")
 
-    chunks: list[dict] = staging.get("chunks", [])
+    chunks: list[dict[str, Any]] = staging.get("chunks", [])
     log.info("Gold: processing %d chunks data_id=%s", len(chunks), data_id)
 
     conflict_batch_id: str | None = None
@@ -981,6 +1045,7 @@ async def promote_to_gold(
                 status=ConflictStatus.PENDING,
             ))
             if batch_response.code == 200:
+                assert batch_response.data is not None  # code == 200 guarantees a data payload
                 conflict_batch_id = batch_response.data["batch_id"]
             else:
                 log.warning("Gold: conflict batch creation failed data_id=%s code=%s", data_id, batch_response.code)
@@ -998,8 +1063,14 @@ async def promote_to_gold(
         # Erase any previous (possibly partial) promotion so retries never duplicate.
         await _cleanup_previous_promotion(postgres, qdrant, graph, tenant_id, data_id, knowledge_base)
 
-        for chunk_index, chunk in enumerate(chunks):
-            await set_chunk_progress(database, data_id, processed=chunk_index)  # chunks completed so far
+        # Per-chunk work. conc=1 → strictly sequential (legacy path). conc>1 →
+        # bounded gather so the per-chunk LLM+embed waits overlap and actually use
+        # OLLAMA_NUM_PARALLEL. Aggregation below is identical either way; asyncio is
+        # cooperative so the `counts`/`done` += mutations are atomic between awaits.
+        conc = max(1, cfg.GOLD_CHUNK_CONCURRENCY)
+        done = {"n": 0}
+
+        async def _handle_chunk(chunk: dict[str, Any]) -> dict[str, Any] | None:
             block_index = chunk["block_index"]
             try:
                 async with emitter.step("gold.chunk", index=block_index, length=len(chunk["content"])):
@@ -1008,14 +1079,32 @@ async def promote_to_gold(
                         tenant_id=tenant_id, data_id=data_id, knowledge_base=knowledge_base,
                         embed_model_id=embed_model_id, approved_by=approved_by, database=database,
                         ensure_conflict_batch=_ensure_conflict_batch, emitter=emitter,
+                        pii_mask_types=pii_mask_types,
                     )
             except Exception as exc:
                 counts["failed"] += 1
                 log.error("Gold: chunk failed block_index=%d data_id=%s: %s", block_index, data_id, exc)
                 await write_log(database, data_id, "GRAPH_EXTRACTING",
                                 f"Chunk {block_index} failed during gold promotion: {exc}", level="ERROR")
-                continue
+                return None
+            done["n"] += 1
+            await set_chunk_progress(database, data_id, processed=done["n"])
+            return result
 
+        if conc <= 1:
+            results = [await _handle_chunk(chunk) for chunk in chunks]
+        else:
+            sem = asyncio.Semaphore(conc)
+
+            async def _guarded(chunk: dict[str, Any]) -> dict[str, Any] | None:
+                async with sem:
+                    return await _handle_chunk(chunk)
+
+            results = await asyncio.gather(*(_guarded(chunk) for chunk in chunks))
+
+        for result in results:
+            if result is None:
+                continue
             if result["outcome"] == "conflict":
                 counts["conflicted"] += 1
                 counts["pending"] += 1
