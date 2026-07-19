@@ -51,7 +51,7 @@ services:
     restart: unless-stopped
     environment:
       LLM_BASE_URL: "${LLM_BASE_URL:-http://host.docker.internal:11434}"
-      LLM_MODEL: "${LLM_MODEL:-qwen2.5:3b}"
+      LLM_MODEL: "${LLM_MODEL:-qwen2.5:1.5b}"
       PROBE_INTERVAL: "${LLM_PROBE_INTERVAL:-30}"
       PROBE_CONCURRENCY: "${LLM_PROBE_CONCURRENCY:-3}"
     extra_hosts:

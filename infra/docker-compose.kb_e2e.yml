@@ -152,8 +152,9 @@ services:
     ports:
       - "8050:8000"
     environment:
-      # 1 async worker plateaus ~1900 rps/~1 core; set = CPU cores for more (KB-SCALE-10K.md §6).
-      UVICORN_WORKERS: ${UVICORN_WORKERS:-1}
+      # 10k CCU needs >=4: 1 worker's crud/Postgres path saturates (KB-SCALE-10K.md §6).
+      # 1 worker plateaus ~1900 rps/~1 core; set = CPU cores per replica for more.
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-4}
       POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/${POSTGRES_DB:-dataagent}
       QDRANT_URL: http://qdrant:6333
       NEO4J_URI: bolt://neo4j:7687

@@ -1,6 +1,8 @@
 from typing import Any, AsyncIterator
 import asyncio
 import logging
+import threading
+import time
 from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import APIRouter, FastAPI, HTTPException
@@ -41,6 +43,28 @@ _embed_service = EmbedService(
     cache_enabled=cfg.EMBED_CACHE_ENABLED,
     batch_enabled=cfg.EMBED_BATCH_ENABLED,
 )
+
+# LLM gateway (canonicalize/extraction) usage counters — the REAL production
+# signal for the wired model, recorded on every /generate call. Guarded by a lock
+# because FastAPI runs sync routes in a threadpool.
+_llm_lock = threading.Lock()
+_llm_stats: dict[str, Any] = {
+    "total": 0, "errors": 0, "ms_sum": 0.0, "ms_last": 0.0, "model": "", "tokens": 0,
+}
+
+
+def _record_llm(ms: float, model: str, ok: bool, out_len: int) -> None:
+    with _llm_lock:
+        _llm_stats["total"] += 1
+        if not ok:
+            _llm_stats["errors"] += 1
+        else:
+            _llm_stats["ms_sum"] += ms
+            _llm_stats["ms_last"] = ms
+            _llm_stats["tokens"] += out_len
+        if model:
+            _llm_stats["model"] = model
+
 
 @router.get("/health")
 def health() -> dict[str, Any]:
@@ -88,6 +112,27 @@ def metrics_endpoint() -> PlainTextResponse:
         f"kb_embed_avg_batch {batch.get('avg_batch', 0.0)}",
         "# TYPE kb_model_device gauge",
         f'kb_model_device{{device="{detect_device()}"}} 1',
+    ]
+
+    # LLM gateway (canonicalize) — the wired model's real usage + latency.
+    with _llm_lock:
+        g = dict(_llm_stats)
+    ok = g["total"] - g["errors"]
+    avg_ms = (g["ms_sum"] / ok) if ok else 0.0
+    ml = f'model="{g["model"] or cfg.REMOTE_LLM_MODEL or "none"}"'
+    lines += [
+        "# TYPE kb_llm_generate_total counter",
+        f"kb_llm_generate_total {g['total']}",
+        "# TYPE kb_llm_generate_errors_total counter",
+        f"kb_llm_generate_errors_total {g['errors']}",
+        "# TYPE kb_llm_generate_ms_avg gauge",
+        f"kb_llm_generate_ms_avg {avg_ms:.3f}",
+        "# TYPE kb_llm_generate_ms_last gauge",
+        f"kb_llm_generate_ms_last {g['ms_last']:.3f}",
+        "# TYPE kb_llm_generate_chars_total counter",
+        f"kb_llm_generate_chars_total {g['tokens']}",
+        "# TYPE kb_llm_gateway_model gauge",
+        f"kb_llm_gateway_model{{{ml}}} 1",
     ]
     return PlainTextResponse("\n".join(lines) + "\n")
 
@@ -164,12 +209,18 @@ def generate(req: GenerateRequest) -> GenerateResponse:
     else:
         response_format = None
 
-    if req.messages is not None:
-        content = entry.caller.chat(req.messages, response_format,
-                                    max_tokens=req.max_tokens, temperature=req.temperature)
-    else:
-        content = entry.caller.generate(req.prompt or "", req.system_prompt, response_format,
+    _t0 = time.perf_counter()
+    try:
+        if req.messages is not None:
+            content = entry.caller.chat(req.messages, response_format,
                                         max_tokens=req.max_tokens, temperature=req.temperature)
+        else:
+            content = entry.caller.generate(req.prompt or "", req.system_prompt, response_format,
+                                            max_tokens=req.max_tokens, temperature=req.temperature)
+    except Exception:
+        _record_llm((time.perf_counter() - _t0) * 1000, entry.name, ok=False, out_len=0)
+        raise
+    _record_llm((time.perf_counter() - _t0) * 1000, entry.name, ok=True, out_len=len(content))
     return GenerateResponse(content=content)
 
 

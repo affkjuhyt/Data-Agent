@@ -608,6 +608,297 @@
      "expr": "kb_llm_up"
     }
    ]
+  },
+  {
+   "id": 16,
+   "title": "LLM gateway — canonicalize (model đang phục vụ + hiệu năng thật)",
+   "type": "row",
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 35
+   },
+   "panels": []
+  },
+  {
+   "id": 17,
+   "title": "Model phục vụ (canonicalize)",
+   "type": "stat",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "h": 6,
+    "w": 6,
+    "x": 0,
+    "y": 36
+   },
+   "options": {
+    "textMode": "name",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "kb_llm_gateway_model",
+     "legendFormat": "{{model}}"
+    }
+   ]
+  },
+  {
+   "id": 18,
+   "title": "/generate — tổng lời gọi",
+   "type": "stat",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "h": 6,
+    "w": 6,
+    "x": 6,
+    "y": 36
+   },
+   "options": {
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "kb_llm_generate_total",
+     "legendFormat": "{{model}}"
+    }
+   ]
+  },
+  {
+   "id": 19,
+   "title": "/generate — lỗi",
+   "type": "stat",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "h": 6,
+    "w": 6,
+    "x": 12,
+    "y": 36
+   },
+   "options": {
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "red",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "kb_llm_generate_errors_total",
+     "legendFormat": "{{model}}"
+    }
+   ]
+  },
+  {
+   "id": 20,
+   "title": "/generate — latency lần cuối",
+   "type": "stat",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "h": 6,
+    "w": 6,
+    "x": 18,
+    "y": 36
+   },
+   "options": {
+    "textMode": "auto",
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ]
+    }
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ms",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "steps": [
+       {
+        "color": "green",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 1000
+       },
+       {
+        "color": "red",
+        "value": 3000
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "kb_llm_generate_ms_last",
+     "legendFormat": "{{model}}"
+    }
+   ]
+  },
+  {
+   "id": 21,
+   "title": "/generate rate (calls/s)",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "h": 7,
+    "w": 12,
+    "x": 0,
+    "y": 42
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 15,
+      "lineWidth": 2,
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "rate(kb_llm_generate_total[1m])",
+     "legendFormat": "calls/s"
+    },
+    {
+     "refId": "B",
+     "expr": "rate(kb_llm_generate_errors_total[1m])",
+     "legendFormat": "errors/s"
+    }
+   ]
+  },
+  {
+   "id": 22,
+   "title": "/generate latency (ms) — avg vs last",
+   "type": "timeseries",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "h": 7,
+    "w": 12,
+    "x": 12,
+    "y": 42
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ms",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 15,
+      "lineWidth": 2,
+      "spanNulls": true
+     }
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "kb_llm_generate_ms_avg",
+     "legendFormat": "avg"
+    },
+    {
+     "refId": "B",
+     "expr": "kb_llm_generate_ms_last",
+     "legendFormat": "last"
+    }
+   ]
   }
  ]
 }
