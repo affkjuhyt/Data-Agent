@@ -142,6 +142,21 @@ services:
       # First start downloads the embed + rerank models into the volume above.
       start_period: 300s
 
+  # ── KB-owned: Go CPU kernels (RRF fusion; deterministic, no ML) ───────────────
+  kb-compute:
+    build:
+      context: ..
+      dockerfile: services/kb-compute/Dockerfile
+    image: kb-compute:latest
+    container_name: kb-compute
+    restart: unless-stopped
+    # No host port: kb-backend reaches it in-network at kb-compute:8600. No
+    # depends_on — kb-backend falls back to in-process fusion if it's absent.
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
   # ── KB-owned: retrieval/query backend ─────────────────────────────────────────
   kb-backend:
     build:
@@ -161,6 +176,8 @@ services:
       NEO4J_URL: bolt://neo4j:7687
       MONGO_URL: mongodb://mongo:27017/${POSTGRES_DB:-dataagent}
       MODEL_SERVICE_URL: http://model-service:8001
+      # Offload RRF fusion to Go kb-compute (empty → in-process Python; auto-fallback on error).
+      KB_COMPUTE_URL: ${KB_COMPUTE_URL-http://kb-compute:8600}
       MINIO_URL: http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-minio_secret}@minio:9000
       MINIO_BUCKET: knowledge-base
       # Plaintext Kafka listener (this client has no SASL support).

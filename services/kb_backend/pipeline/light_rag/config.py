@@ -98,6 +98,11 @@ RERANK_TOP_N = int(os.getenv("RERANK_TOP_N", "5"))
 # RRF constant: 60 is the canonical default from Cormack et al. (2009); larger k
 # flattens the weight of top ranks. Kept configurable rather than a magic literal.
 RRF_K = int(os.getenv("RRF_K", "60"))
+# Offload the (CPU-bound, deterministic) RRF fusion kernel to the Go kb-compute
+# service (/rrf-fuse). Empty = fuse in-process (Python rrf_merge). Any error →
+# transparent fallback to the Python kernel, so retrieval never breaks if Go is down.
+KB_COMPUTE_URL = os.getenv("KB_COMPUTE_URL", "").rstrip("/")
+RRF_REMOTE_TIMEOUT_S = float(os.getenv("RRF_REMOTE_TIMEOUT_S", "2.0"))
 # Graph-seed headroom: keep a few more expansion seeds than NEO4J_TOP_ENTITIES so
 # the query's own entities survive the top-N cut alongside frequency-ranked ones.
 GRAPH_SEED_MARGIN = int(os.getenv("GRAPH_SEED_MARGIN", "3"))
