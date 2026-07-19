@@ -518,6 +518,39 @@ the LLM tier itself scales.**
 The scaling mechanism is in place (partitions + `--scale`); the win is now a
 **pipeline-code + LLM-tier** problem, not an orchestration one.
 
+#### Pipeline optimisation implemented + the single-GPU ceiling
+
+**Code (done):** gold's chunk loop (`gold.py`) was strictly sequential
+(`for chunk: await _process_chunk`). Made it **bounded-concurrent** via
+`GOLD_CHUNK_CONCURRENCY` (default 1 = exact legacy behaviour; >1 overlaps the
+per-chunk LLM+embed waits), mirroring silver's existing `_summarize_chunks`
+gather. Also exposed `SILVER_CONCURRENCY` (docs-in-silver, default 1) as a compose
+passthrough. Both are opt-in so default correctness/dedup is unchanged. The entity
+registry uses deterministic UUIDs + upserts, so concurrency can't create duplicate
+canonicals — worst case is slightly weaker same-batch dedup.
+
+**Measured on this box (GOLD_CHUNK_CONCURRENCY=4, SILVER_CONCURRENCY=3): ~no
+throughput gain.** Workers stayed ~0.5 % CPU, `/generate` held **~0.16–0.30
+calls/s** with `ms_avg` 21–34 s — *identical* to the sequential run. Reason: the
+**single M3 GPU is saturated** — issuing more concurrent LLM calls just splits the
+same GPU, so each call slows proportionally and total tokens/s is flat. **The
+optimisation is production-correct** (it wins when the GPU has spare capacity or
+behind a GPU pool) **but on one GPU the LLM tier is a hard ceiling.** The only
+lever that helps *here* is a **smaller/faster model** (measured earlier: 0.5b
+~170 tok/s vs 1.5b ~94 vs 3b ~55) or **fewer LLM calls per chunk**.
+
+#### Huge-file limit test (one 222 KB / 500-section document)
+
+Bronze **accepted** it (limit is `MAX_FILE_SIZE_MB=200`, so ~900× headroom).
+Docling chunks ~**1 chunk per section** (the 36 KB/70-section doc → exactly 70
+chunks), so this file → ~500 chunks → ~500+ LLM calls. At the GPU-bound
+~0.2–0.3 calls/s that is **~30–45 min for a single file**, and it queues behind any
+other docs on its partition. **The limit is not size or a chunk cap — it's LLM/GPU
+time.** Practical guidance: (1) a huge doc monopolises its partition for a long
+time — shard very large docs or give them a dedicated topic/worker; (2) throughput
+scales with **GPU capacity**, not worker/partition count; (3) cap chunks-per-doc or
+batch per-chunk extraction to bound worst-case ingestion time.
+
 ---
 
 ## 7. Cost envelope (rough, monthly, cloud)

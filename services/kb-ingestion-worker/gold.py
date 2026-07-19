@@ -25,6 +25,7 @@ re-promotion first cleans up the previous partial state, so retry is safe.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -36,7 +37,7 @@ from typing import Any, Awaitable, Callable
 
 from qdrant_client import models as qmodels
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
-from sqlalchemy import cast as sa_cast, func as sa_func, update as sa_update
+from sqlalchemy import cast as sa_cast, func as sa_func, text as sa_text, update as sa_update
 from sqlalchemy.dialects.postgresql import JSONB
 
 from libs.basemodel.services_databaseconnector.postgres_model import (
@@ -61,6 +62,7 @@ from libs.basemodel.services_databaseconnector.qdrant_model import (
     SearchRequest,
 )
 from libs.database_connector.model_connector import ModelServiceClient
+from libs.shared.pii_detector import mask as pii_mask, mask_deep
 from libs.database_connector.mongo_connector import MongoClient
 from libs.database_connector.postgres_connector import PostgresClient
 from libs.database_connector.qdrant_connector import (
@@ -769,10 +771,27 @@ async def _process_chunk(
     graph: GraphStore, model: ModelServiceClient, tenant_id: str, data_id: str,
     knowledge_base: str, embed_model_id: str, approved_by: str, database: Any,
     ensure_conflict_batch: Callable[[], Awaitable[str | None]], emitter: PipelineEventEmitter,
+    pii_mask_types: list[str] | None = None,
 ) -> dict[str, Any]:
     block_index = chunk["block_index"]
+    # Compliance: redact PII in the chunk IN PLACE before it is embedded,
+    # summarised, conflict-checked, canonicalised or persisted — so no raw PII
+    # reaches the model, Qdrant, Postgres or the knowledge graph. Mutating the
+    # chunk dict means every downstream `chunk.get(...)` (table, entities,
+    # relationships, the conflict snapshot, the graph writer) sees masked data.
+    if pii_mask_types:
+        masked_content, _content_pii = pii_mask(chunk["content"], pii_mask_types)
+        chunk["content"] = masked_content
+        if _content_pii:
+            await emitter.emit("gold.pii.masked", {"index": block_index, "counts": _content_pii})
+        for _field in ("table", "entities", "relationships"):
+            if chunk.get(_field):
+                chunk[_field], _ = mask_deep(chunk[_field], pii_mask_types)
     content = chunk["content"]
     summary = (chunk.get("summary") or "").strip() or _heuristic_summary(content)
+    if pii_mask_types:
+        summary, _ = pii_mask(summary, pii_mask_types)
+        chunk["summary"] = summary
     intents = [
         intent for intent in (chunk.get("intents") or []) if isinstance(intent, str) and intent.strip()
     ] or ["document_content"]
@@ -961,6 +980,28 @@ async def _record_gold_lifecycle(
         await write_log(database, data_id, "PUBLISHED",f"Gold lifecycle history not recorded: {exc}", level="WARNING")
 
 
+async def _load_pii_policy(postgres: PostgresClient, tenant_id: str) -> list[str]:
+    """Return the PII categories to redact for this tenant (empty list = masking
+    off). The ``compliance_settings`` table is owned by auth-api and may not exist
+    yet on a fresh stack, so any lookup error is treated as 'masking disabled'."""
+    try:
+        async with postgres.get_client() as session:
+            result = await session.execute(
+                sa_text(
+                    "SELECT pii_masking, pii_types FROM compliance_settings WHERE tenant_id = :tid"
+                ),
+                {"tid": tenant_id},
+            )
+            row = result.mappings().first()
+    except Exception as exc:
+        log.warning("Gold: PII policy lookup failed tenant=%s: %s — masking disabled", tenant_id, exc)
+        return []
+    if not row or not row["pii_masking"]:
+        return []
+    raw = (row["pii_types"] or "").strip()
+    return [seg for seg in (part.strip().upper() for part in raw.split(",")) if seg]
+
+
 async def promote_to_gold(
     postgres: PostgresClient,
     qdrant: AsyncQdrantClient,
@@ -977,6 +1018,11 @@ async def promote_to_gold(
 
     doc_name, knowledge_base = await _get_data_row(postgres, data_id)
     log.info("Gold: data_id=%s → knowledge_base=%s", data_id, knowledge_base or "none")
+
+    # Compliance: resolve the tenant's PII-masking policy once (empty = off).
+    pii_mask_types = await _load_pii_policy(postgres, tenant_id)
+    if pii_mask_types:
+        log.info("Gold: PII masking ENABLED tenant=%s types=%s", tenant_id, pii_mask_types)
 
     database = mongo.get_client()
     staging = await database["kb_silver_staging"].find_one({"data_id": data_id})
@@ -1017,8 +1063,14 @@ async def promote_to_gold(
         # Erase any previous (possibly partial) promotion so retries never duplicate.
         await _cleanup_previous_promotion(postgres, qdrant, graph, tenant_id, data_id, knowledge_base)
 
-        for chunk_index, chunk in enumerate(chunks):
-            await set_chunk_progress(database, data_id, processed=chunk_index)  # chunks completed so far
+        # Per-chunk work. conc=1 → strictly sequential (legacy path). conc>1 →
+        # bounded gather so the per-chunk LLM+embed waits overlap and actually use
+        # OLLAMA_NUM_PARALLEL. Aggregation below is identical either way; asyncio is
+        # cooperative so the `counts`/`done` += mutations are atomic between awaits.
+        conc = max(1, cfg.GOLD_CHUNK_CONCURRENCY)
+        done = {"n": 0}
+
+        async def _handle_chunk(chunk: dict[str, Any]) -> dict[str, Any] | None:
             block_index = chunk["block_index"]
             try:
                 async with emitter.step("gold.chunk", index=block_index, length=len(chunk["content"])):
@@ -1027,14 +1079,32 @@ async def promote_to_gold(
                         tenant_id=tenant_id, data_id=data_id, knowledge_base=knowledge_base,
                         embed_model_id=embed_model_id, approved_by=approved_by, database=database,
                         ensure_conflict_batch=_ensure_conflict_batch, emitter=emitter,
+                        pii_mask_types=pii_mask_types,
                     )
             except Exception as exc:
                 counts["failed"] += 1
                 log.error("Gold: chunk failed block_index=%d data_id=%s: %s", block_index, data_id, exc)
                 await write_log(database, data_id, "GRAPH_EXTRACTING",
                                 f"Chunk {block_index} failed during gold promotion: {exc}", level="ERROR")
-                continue
+                return None
+            done["n"] += 1
+            await set_chunk_progress(database, data_id, processed=done["n"])
+            return result
 
+        if conc <= 1:
+            results = [await _handle_chunk(chunk) for chunk in chunks]
+        else:
+            sem = asyncio.Semaphore(conc)
+
+            async def _guarded(chunk: dict[str, Any]) -> dict[str, Any] | None:
+                async with sem:
+                    return await _handle_chunk(chunk)
+
+            results = await asyncio.gather(*(_guarded(chunk) for chunk in chunks))
+
+        for result in results:
+            if result is None:
+                continue
             if result["outcome"] == "conflict":
                 counts["conflicted"] += 1
                 counts["pending"] += 1

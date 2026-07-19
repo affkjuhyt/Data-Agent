@@ -205,6 +205,11 @@ services:
       LLM_MODEL: llama3
       HF_HOME: /root/.cache/huggingface
       USE_VLM: "false"
+      # Ingestion throughput tuning (KB-SCALE-10K.md §6): overlap per-chunk LLM+embed
+      # inside a gold doc + run more silver docs concurrently. Defaults preserve
+      # legacy sequential behaviour.
+      GOLD_CHUNK_CONCURRENCY: "${GOLD_CHUNK_CONCURRENCY:-1}"
+      SILVER_CONCURRENCY: "${SILVER_CONCURRENCY:-1}"
     volumes:
       - docling_cache:/root/.cache/huggingface
     depends_on:

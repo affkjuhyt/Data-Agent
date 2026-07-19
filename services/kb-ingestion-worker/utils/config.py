@@ -42,6 +42,11 @@ INGESTION_MAX_ATTEMPTS = int(os.getenv("INGESTION_MAX_ATTEMPTS", "3"))
 CONSUME_CONCURRENCY   = int(os.getenv("CONSUME_CONCURRENCY",   "8"))
 SILVER_CONCURRENCY    = int(os.getenv("SILVER_CONCURRENCY",    "1"))
 GOLD_CONCURRENCY      = int(os.getenv("GOLD_CONCURRENCY",      "6"))
+# Chunks within ONE gold doc: 1 = strictly sequential (default; exact legacy
+# behaviour + maximal cross-chunk entity dedup). > 1 overlaps the per-chunk
+# LLM+embed waits (uses OLLAMA_NUM_PARALLEL) at the cost of slightly weaker
+# same-batch dedup (registry upserts keep it correct). KB-SCALE-10K.md §6.
+GOLD_CHUNK_CONCURRENCY = int(os.getenv("GOLD_CHUNK_CONCURRENCY", "1"))
 # Conflict resolution is I/O-bound (DB reads + LLM merge + Qdrant/Neo4j writes).
 # Keep it below GOLD_CONCURRENCY to avoid starving gold tasks of LLM/embed capacity.
 CONFLICT_CONCURRENCY  = int(os.getenv("CONFLICT_CONCURRENCY",  "3"))
