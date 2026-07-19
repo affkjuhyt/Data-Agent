@@ -103,3 +103,29 @@ After both fixes: **single turn ~5 s, 3 concurrent ~10.5 s, 0 hangs** (was 60 s+
 The lesson: the agent turn is fine; the single GPU is a **shared contention point** —
 any second ollama consumer (KB, the monitoring probe, ingestion) starves it and the
 agent appears to hang. Keep one model per GPU, or scale the GPU tier.
+
+### The snowball: abandoned LLM calls (why retrying makes it worse)
+
+A third, nastier cause. When a client times out / disconnects mid-turn, the
+in-flight LLM generations are **not cancelled** — ollama keeps generating, litellm
+keeps the request. Retrying stacks more. Observed after a burst of test calls: **41
+open connections, 27 queued /chat requests, each ollama generation 40–80 s**. With
+`OLLAMA_NUM_PARALLEL=4` only 4 run; the rest queue (`OLLAMA_MAX_QUEUE=512`), so every
+new turn waits behind the backlog → hangs. **Retrying a hung call adds load and
+cancels nothing → it snowballs** ("càng gọi càng treo").
+
+Immediate remedy: clear the backlog — `pkill -f 'ollama serve' && ollama serve` (or
+restart the ollama container) + `docker restart dataagent-litellm`. Then turns are
+~4–5 s again.
+
+Production stability fixes (the real ask):
+1. **Cancel downstream LLM calls on client disconnect** — the SSE handler must
+   propagate cancellation to litellm→ollama so an abandoned turn stops burning GPU.
+2. **Short per-call LLM timeout + no retries** — `request_timeout: 30`,
+   `num_retries: 0` (set in `config.agent-local.yaml`) so a stuck call frees its GPU
+   slot fast instead of holding it for 120 s.
+3. **Admission control at the orchestrator** — cap concurrent turns and shed with
+   backpressure (429) instead of piling onto the GPU (same pattern as the KB gateway).
+4. **Client:** bounded timeout + backoff, never blind-retry a slow turn.
+5. Ultimately throughput is **GPU-bound** — a faster model or a GPU pool drains the
+   queue so a transient backlog doesn't wedge everything.

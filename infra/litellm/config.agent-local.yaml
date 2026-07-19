@@ -16,6 +16,7 @@ model_list:
 
 litellm_settings:
   drop_params: true          # tolerate params ollama doesn't support
-  request_timeout: 120
+  request_timeout: 30        # fail a stuck LLM call fast so it frees the GPU slot
+  num_retries: 0             # don't pile retries onto a contended GPU
 # No master_key → no proxy auth (local perf test only), so agent services reach it
 # without a key.
