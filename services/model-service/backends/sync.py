@@ -76,11 +76,14 @@ def register_chat_models(registry: Registry) -> None:
         caller=C.LlamaServerChatCaller(),
     ))
     for i, (url, key) in enumerate(_endpoints("REMOTE_LLM_URL", "REMOTE_LLM_KEY")):
-        name = _discover_name(url, key) or f"remote-chat-{i}"
+        # Pin the model when REMOTE_LLM_MODEL is set (a multi-model server like
+        # ollama otherwise resolves to /v1/models[0] non-deterministically).
+        model = cfg.REMOTE_LLM_MODEL
+        name = model or _discover_name(url, key) or f"remote-chat-{i}"
         registry.register(ModelEntry(
             name=name,
             capability=Capability.CHAT,
-            caller=C.CloudflareQwenChatCaller(url, key),
+            caller=C.CloudflareQwenChatCaller(url, key, model),
         ), default=(i == 0))
 
 

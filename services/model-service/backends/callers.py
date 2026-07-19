@@ -79,10 +79,13 @@ class VietnameseRerankCaller:
 
 # CHAT
 class CloudflareQwenChatCaller:
-    def __init__(self, url: str, api_key: str | None = None) -> None:
+    def __init__(self, url: str, api_key: str | None = None, model: str = "") -> None:
         self._url = url
         self._key = api_key
-        self._model = ""
+        # If a model is pinned (REMOTE_LLM_MODEL), use it — a server that serves
+        # several models (e.g. ollama) would otherwise be picked non-deterministically
+        # by /v1/models[0]. Empty string = auto-discover the first advertised model.
+        self._model = model
         self._defaults = {"temperature": 0.1, "max_tokens": 1024}
 
     def _model_id(self) -> str:

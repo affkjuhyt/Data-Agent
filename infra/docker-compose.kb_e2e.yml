@@ -121,10 +121,12 @@ services:
       REMOTE_EMBED_URL: ${REMOTE_EMBED_URL:-}
       REMOTE_RERANK_URL: ${REMOTE_RERANK_URL:-}
       REMOTE_API_KEY: ${REMOTE_API_KEY:-}
-      # LLM gateway → remote GPU tunnel by default (override per model-backend.ps1).
-      REMOTE_LLM_URL: ${REMOTE_LLM_URL:-http://host.docker.internal:8088}
+      # LLM gateway → host ollama (OpenAI-compat) pinned to a small model for the
+      # canonicalize/extraction step (KB-SCALE-10K.md §6: 1.5b ~1.7× faster than 3b,
+      # ample for structured extraction). Override for a remote GPU / larger model.
+      REMOTE_LLM_URL: ${REMOTE_LLM_URL:-http://host.docker.internal:11434}
       REMOTE_LLM_KEY: ${REMOTE_LLM_KEY:-}
-      REMOTE_LLM_MODEL: ${REMOTE_LLM_MODEL:-}
+      REMOTE_LLM_MODEL: ${REMOTE_LLM_MODEL:-qwen2.5:1.5b}
       OMP_NUM_THREADS: "2"
       POSTGRES_DSN: postgresql://${POSTGRES_USER:-admin}@postgres/${POSTGRES_DB:-dataagent}
     extra_hosts:
