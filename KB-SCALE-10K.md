@@ -346,6 +346,54 @@ the entities-bypass isn't just an optimisation, it's mandatory. Ranked levers:
    LLM queue sized by tok/s (backlog ÷ tok/s = drain time); never share that queue
    with any online path. FLASH_ATTENTION=1 is already on (good).
 
+#### Applied + re-measured (levers #2 and #3)
+
+**#3 — `OLLAMA_NUM_PARALLEL=4` (measured effect).** Default was 1, so 4 parallel
+requests queued head-of-line. With 4 (4 concurrent, qwen2.5:3b):
+
+| 4 concurrent | NUM_PARALLEL=1 | NUM_PARALLEL=4 |
+|---|---|---|
+| TTFT (per request) | 0.16–8.2 s | **0.47–0.74 s** (all start ~immediately) |
+| Aggregate tok/s | 52.6 | **61.7** (+17 %) |
+| Per-request tok/s | ~56 | ~17.5 (shares the GPU) |
+
+Verdict: it **erases head-of-line blocking** (TTFT 8.2 s → 0.7 s — the big win for
+concurrent fairness) but only +17 % aggregate, because the M3 GPU is
+**compute-bound** — one GPU split 4 ways. On a datacenter GPU with spare compute,
+continuous batching pays off much more. Set it on any shared LLM node. *(On this
+laptop it's set on a manual `ollama serve`, since `brew services` rewrites the
+plist on restart — for a permanent brew setup, use `launchctl setenv` or a wrapper.)*
+
+**#2 — small canonicalize model, wired end-to-end.** `CloudflareQwenChatCaller`
+now honours `REMOTE_LLM_MODEL`; model-service's gateway points at host ollama with
+**qwen2.5:1.5b**. Verified: retrieve *without* entities → pipeline calls
+`/generate` (200) → 5 results in **~1.9 s** (`/generate` alone ~2.0 s). **Quality
+caveat:** on Vietnamese extraction 1.5b is noticeably rougher than 3b (3b returned
+clean `{"entities":[…]}`, 1.5b a messier object) — pair the small model with
+`json_schema` structured output (lever #5) before trusting it in production, or
+keep 3b where extraction quality matters.
+
+#### Full re-measurement after the LLM changes (regression check)
+
+Re-ran the whole suite after wiring the LLM. The LLM changes **do not touch the
+CCU path** (retrieval bypasses the LLM via `entities`) — confirmed:
+
+- **Backend sweep** (`ccu-test.js`, 1 worker): 50→300 concurrent = ~1,700–1,770
+  rps, 0 % errors. No regression.
+- **10k gateway, kb-backend at 1 worker: 88.3 % success** — the **crud/Postgres
+  path** collapsed (crud p95 → 15 s timeout; 5,759 crud vs 1,017 retrieve
+  failures) while retrieve median stayed 90 ms. Reproducible across a gateway
+  restart + exporter-off + warm cache, so it's the DB path, not contention.
+- **10k gateway, kb-backend at 4 workers: 100.00 % success** (71,940/71,940, 0
+  failures), crud p95 **15 s → 112 ms**, retrieve p95 **24 s → 118 ms**, 449 rps.
+
+**Conclusion:** 10k CCU on this box **requires `UVICORN_WORKERS ≥ 4`** — one worker's
+crud/Postgres path is the binding constraint at 10k (it's exactly the GIL-serialised
+DB weakness from the backend sweep, now hit at full CCU). This supersedes the
+earlier "baseline 1 worker": **for the 10k target, run 4 workers per backend
+replica.** The gateway transport pool + backend workers together give a clean
+10k CCU; neither alone suffices.
+
 ---
 
 ## 7. Cost envelope (rough, monthly, cloud)
