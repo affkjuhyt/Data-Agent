@@ -1,0 +1,21 @@
+# Agent E2E perf-test overlay. Points LiteLLM at the host ollama so a full agent
+# turn (planner → responder → judge → …) runs offline for measurement. Layer on
+# base + app.yml and bring up only the services one turn needs (NOT app.yml's
+# kb-backend — it collides with the kb_e2e stack on :8050):
+#
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml \
+#     -f infra/docker-compose.agent-test.yml up -d \
+#     litellm openbao orchestrator workflow-runtime sandbox-executor memory-consumer
+services:
+  litellm:
+    volumes:
+      - ./litellm/config.agent-local.yaml:/app/config.yaml:ro
+
+  # The orchestrator/runtime default REDIS_URL to localhost — point them at the
+  # redis container so session/cache ops work (they reconnect-loop otherwise).
+  orchestrator:
+    environment:
+      REDIS_URL: redis://redis:6379
+  workflow-runtime:
+    environment:
+      REDIS_URL: redis://redis:6379
