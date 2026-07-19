@@ -145,6 +145,23 @@ def _ensure_settings_table() -> None:
             """)
             # Add access_reason column to key_rotations (idempotent)
             cur.execute("ALTER TABLE key_rotations ADD COLUMN IF NOT EXISTS access_reason text")
+            # Per-tenant compliance controls (PII masking, residency, retention).
+            # Read at ingestion time by kb-ingestion-worker to gate PII redaction.
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS compliance_settings (
+                    tenant_id           varchar(64)  PRIMARY KEY,
+                    pii_masking         boolean      NOT NULL DEFAULT false,
+                    pii_types           text         NOT NULL DEFAULT 'EMAIL,PHONE,CCCD,CMND,CREDIT_CARD,IP',
+                    residency_region    varchar(32)  NOT NULL DEFAULT 'Asia-SE1',
+                    residency_standards text         NOT NULL DEFAULT 'GDPR',
+                    retention_days      integer      NOT NULL DEFAULT 365,
+                    retention_lock      boolean      NOT NULL DEFAULT false,
+                    zero_trust          boolean      NOT NULL DEFAULT false,
+                    audit_residency     boolean      NOT NULL DEFAULT false,
+                    updated_at          timestamptz  DEFAULT now(),
+                    updated_by          varchar(128) DEFAULT ''
+                )
+            """)
         conn.commit()
     except Exception as e:
         log.warning("schema_migration_failed", error=str(e))

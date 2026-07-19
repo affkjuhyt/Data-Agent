@@ -19,7 +19,7 @@ from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.operations.document_ops import (
-    fetch_one as _fetch_doc, name_exists as _name_exists,
+    fetch_one as _fetch_doc, name_exists as _name_exists, reprocess_gold_documents,
 )
 from services.kb_backend.pipeline.ingestion import config as cfg
 from services.kb_backend.pipeline.ingestion.bronze import BronzeUploadRequest, WebBronzeRequest
@@ -293,6 +293,20 @@ async def promote_to_gold(
         stage="gold",
         message="Gold promotion queued — processing asynchronously",
     )
+
+
+@router.post("/reprocess-pii", response_model=None)
+async def reprocess_pii_route(
+    request: Request,
+    ctx: dict[str, Any] = Depends(require_perm("process_layer")),
+) -> dict[str, Any]:
+    """Re-run Gold promotion for every live Gold-tier document of the tenant so
+    the current PII-masking policy is applied to already-ingested content.
+    Returns how many documents were re-queued (and any that could not be)."""
+    postgres       = svc(request, "postgres")
+    kafka_producer = svc(request, "kafka_producer")
+    log.info("POST /ingestion/reprocess-pii tenant=%s", ctx["tenant_id"])
+    return await reprocess_gold_documents(postgres, kafka_producer, ctx)
 
 
 @router.get("/documents/{data_id}/logs", response_model=None)

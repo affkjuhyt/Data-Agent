@@ -253,6 +253,62 @@ async def promote_document(
     return cast(dict[str, Any], DocResponse.model_validate(record_after).model_dump())
 
 
+async def reprocess_gold_documents(
+    postgres: Any, kafka_producer: Any, ctx: dict[str, Any],
+) -> dict[str, Any]:
+    """Re-enqueue Gold promotion for every live Gold-tier document of the tenant.
+
+    Used after enabling or changing PII masking: re-running the existing gold
+    pipeline re-embeds and re-persists each chunk through the (now stricter)
+    masking path, so PII is redacted from already-ingested documents too. It
+    relies on the Silver staging (Mongo) still being present — the normal
+    pipeline never deletes it. A document whose staging was purged will fail in
+    the worker and route to the DLQ (surfaced in ``failed``), never silently.
+    """
+    tenant_id = ctx["tenant_id"]
+    tenant_uuid = uuid.UUID(tenant_id)
+    async with postgres.get_client() as session:
+        result = await session.execute(
+            sa_select(KBDataORM.data_id).where(
+                KBDataORM.tenant_id == tenant_uuid,
+                KBDataORM.current_tier == "gold",
+                KBDataORM.is_deleted.is_(False),
+            )
+        )
+        data_ids = [str(row[0]) for row in result.all()]
+
+    enqueued: list[str] = []
+    failed: list[str] = []
+    for data_id in data_ids:
+        try:
+            await kafka_producer.produce(
+                topic=ing_cfg.KAFKA_TOPIC_GOLD,
+                value={
+                    "event":       "promote_gold",
+                    "data_id":     data_id,
+                    "tenant_id":   tenant_id,
+                    "approved_by": ctx["user_name"],
+                },
+                key=data_id,
+            )
+            enqueued.append(data_id)
+        except Exception as exc:
+            log.error("reprocess_gold: enqueue failed data_id=%s: %s", data_id, exc)
+            failed.append(data_id)
+
+    log.info(
+        "reprocess_gold tenant=%s total=%d enqueued=%d failed=%d by=%s",
+        tenant_id, len(data_ids), len(enqueued), len(failed), ctx["user_id"],
+    )
+    return {
+        "total":      len(data_ids),
+        "enqueued":   len(enqueued),
+        "failed":     len(failed),
+        "data_ids":   enqueued,
+        "failed_ids": failed,
+    }
+
+
 async def delete_document(postgres: Any, qdrant: Any, data_id: str, tenant_id: str | None, record: dict[str, Any]) -> None:
     """Soft-delete a document: flag KBData AND mirror the is_deleted tag onto the
     document's Qdrant points (chunk points by data_id + the doc-summary point), so a
