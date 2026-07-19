@@ -74,6 +74,15 @@ func envFloat(name string, def float64) float64 {
 	return def
 }
 
+func envInt(name string, def int) int {
+	if v := os.Getenv(name); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return def
+}
+
 func main() {
 	addr := os.Getenv("KB_GATEWAY_ADDR")
 	if addr == "" {
@@ -96,6 +105,13 @@ func main() {
 	burst := envFloat("KB_GATEWAY_RATE_BURST", rps*2)
 	limiter := newTenantLimiter(rps, burst)
 
+	// DDoS/flood guard: global rate + per-IP rate + max-concurrent (all 0 = off).
+	ddos := newDDoSGuard(
+		envFloat("KB_GATEWAY_GLOBAL_RPS", 0),
+		envFloat("KB_GATEWAY_IP_RPS", 0),
+		envInt("KB_GATEWAY_MAX_CONCURRENT", 0),
+	)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -109,7 +125,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           limiter.middleware(withRequestID(mux)),
+		Handler:           withRequestID(ddos.middleware(limiter.middleware(mux))),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	log.Printf("kb-gateway listening on %s → %s (rate=%.0f rps/tenant)", addr, backend, rps)

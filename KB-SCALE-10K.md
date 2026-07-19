@@ -165,8 +165,13 @@ likewise pooled per replica.
 6. [x] **Per-tenant rate limiting** at kb-gateway (Go token-bucket per
    `X-Tenant-Id`, `KB_GATEWAY_RATE_RPS`; 429 + `Retry-After`). Verified: one tenant
    throttled while another is unaffected.
-7. [ ] **HPA** on kb-gateway / kb-backend / model-service (target 60 % CPU or a
-   custom RPS metric); GPU node pool for model-service — k8s manifests.
+7. [x] **HPA** — `k8s/` manifests: Deployment + Service + HorizontalPodAutoscaler
+   for kb-gateway (2→10), kb-backend (3→12), model-service (2→8), CPU-target with a
+   custom-RPS-metric note. **model-service auto-detects its device** (`device.py`:
+   CUDA > Apple MPS > CPU, surfaced at `GET /capabilities`) so the same image runs
+   GPU-less (here) or on a GPU node pool — the manifest only changes scheduling.
+   Plus **DDoS/flood protection** at kb-gateway (global + per-IP rate + max-concurrent
+   → 429/503, verified: 10 parallel @ max-concurrent=2 → 8×503+2×200).
 8. [ ] **Observability SLOs**: p95 retrieval < 500 ms (cached) / < 1.5 s (cold),
    error rate < 0.1 %, cache hit-rate dashboard, per-tier saturation.
 

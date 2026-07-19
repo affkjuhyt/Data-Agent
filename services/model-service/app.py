@@ -47,6 +47,20 @@ def health() -> dict[str, Any]:
     return {"status": "ok" if ready else "loading", "llm": chat_status(registry)}
 
 
+@router.get("/capabilities")
+def capabilities_endpoint() -> dict[str, Any]:
+    """What compute this server has and is using (CUDA GPU / Apple MPS / CPU),
+    plus the loaded models + embed cache/batch config. Lets a client/ops probe
+    the backend instead of assuming a GPU."""
+    from device import capabilities
+
+    caps = capabilities()
+    caps["embed_model"] = cfg.EMBED_MODEL
+    caps["rerank_model"] = cfg.RERANK_MODEL
+    caps["embed_service"] = _embed_service.stats()
+    return caps
+
+
 @router.post("/embed", response_model=EmbedResponse)
 async def embed(req: EmbedRequest) -> EmbedResponse:
     entry = registry.by_id(req.model_id) if req.model_id else registry.default(Capability.EMBED)
