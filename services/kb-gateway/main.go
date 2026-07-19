@@ -50,6 +50,27 @@ func newBackendProxy(target string) (*httputil.ReverseProxy, error) {
 		return nil, err
 	}
 	p := httputil.NewSingleHostReverseProxy(u)
+
+	// High-CCU transport. The stdlib default keeps only MaxIdleConnsPerHost=2
+	// idle connections to the backend, so under thousands of concurrent users the
+	// proxy churns fresh TCP connections per request → ephemeral-port exhaustion →
+	// clients see bare EOF (measured: 15% EOF at 10k CCU on one box, KB-SCALE-10K.md §6).
+	// Pool aggressively and let the count be tuned by env.
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.MaxIdleConns = envInt("KB_GATEWAY_MAX_IDLE_CONNS", 4000)
+	t.MaxIdleConnsPerHost = envInt("KB_GATEWAY_MAX_IDLE_PER_HOST", 2000)
+	t.MaxConnsPerHost = envInt("KB_GATEWAY_MAX_CONNS_PER_HOST", 0) // 0 = unlimited
+	t.IdleConnTimeout = 90 * time.Second
+	p.Transport = t
+
+	// Turn upstream failures into a recorded 502 instead of a hijacked/dropped
+	// socket, so the metrics middleware counts them and clients get a clean status.
+	p.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		log.Printf("proxy error rid=%s: %v", r.Header.Get("X-Request-Id"), err)
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"error":"upstream unavailable"}`))
+	}
+
 	base := p.Director
 	p.Director = func(r *http.Request) {
 		base(r)

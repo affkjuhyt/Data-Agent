@@ -228,19 +228,31 @@ observed live in Grafana → **KB — High CCU** (`http://localhost:3000/d/kb-cc
 | Failures | **15.3 %**, all `EOF` | at absolute peak, **not** 5xx/429 |
 | Machine | **49 % free mem, load 4.5** | the laptop itself never thrashed |
 
-**Where the ceiling is on one box:** the single gateway container (capped at
-128 MB for the laptop) saturates its connection/buffer budget when all 10k VUs
-pile on at once → clients see `EOF`, not graceful `429`. kb-backend stayed
-`healthy` throughout. Two things remove it, both already built:
+**Root cause of the EOF tail (found + fixed):** the gateway's reverse proxy used
+Go's default `http.Transport`, which keeps only **`MaxIdleConnsPerHost=2`** idle
+connections to kb-backend. Under 10k CCU the proxy churned a fresh TCP connection
+per request → ephemeral-port exhaustion → clients saw bare `EOF` (not `429`).
+Fixed in `services/kb-gateway/main.go`: pooled transport
+(`MaxIdleConnsPerHost=2000`, unlimited `MaxConnsPerHost`), a `502` ErrorHandler so
+upstream failures are counted instead of dropped, and gateway RAM 128 MB → 512 MB.
 
-1. **Horizontal scale** — the HPA + Deployment manifests in `k8s/` run N gateway
-   + backend replicas; 10k spread over replicas clears the EOF tail.
-2. **Turn on gateway shedding** (`KB_GATEWAY_*` envs > 0) — converts the 15 %
-   `EOF` into clean `429/503` (graceful degradation) instead of dropped sockets.
+**Same 10k run, after the fix:**
 
-**Honest single-laptop verdict:** clean sustainable ceiling ≈ **5–6k CCU**; 10k
-is reachable but with a latency/error tail that only horizontal replicas (prod)
-remove. On CPU, cold embed is the other tail — a GPU node erases it.
+| Metric | Before | After |
+|---|---|---|
+| Success | 84.7 % | **99.99 %** (5 / 71,338 failed) |
+| retrieve median / p95 | 38 ms / 3.97 s | **29 ms / 445 ms** |
+| crud median / p95 | 73 ms / 4.02 s | **51 ms / 1.94 s** |
+| Throughput | 430 rps | **446 rps** |
+| Failures | 15.3 % `EOF` | **0.007 %** |
+
+**Single-laptop verdict:** with the pooled transport, one M3 laptop serves
+**10,000 CCU at ~99.99 % success, retrieve p95 445 ms** — the laptop was never the
+ceiling; a two-line stdlib default was. Remaining minor tail (crud p95 ~2 s, max
+~11 s) comes from the single kb-backend replica + CPU cold-embed; both are removed
+in prod by the `k8s/` HPA (N backend replicas) and a GPU embed node. Optional
+graceful shedding (`KB_GATEWAY_*` envs > 0) converts any residual overload into
+clean `429/503` instead of latency.
 
 ---
 

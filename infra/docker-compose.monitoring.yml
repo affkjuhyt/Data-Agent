@@ -31,13 +31,15 @@ services:
       KB_GATEWAY_GLOBAL_RPS: "${KB_GATEWAY_GLOBAL_RPS:-0}"
       KB_GATEWAY_IP_RPS: "${KB_GATEWAY_IP_RPS:-0}"
       KB_GATEWAY_MAX_CONCURRENT: "${KB_GATEWAY_MAX_CONCURRENT:-0}"
+      # High-CCU connection pooling to kb-backend (avoids EOF from port churn).
+      KB_GATEWAY_MAX_IDLE_PER_HOST: "${KB_GATEWAY_MAX_IDLE_PER_HOST:-2000}"
     ports:
       - "8010:8000"
     profiles: [monitoring]
     deploy:
       resources:
         limits:
-          memory: 128M
+          memory: 512M
 
   prometheus:
     image: prom/prometheus:v2.54.1
