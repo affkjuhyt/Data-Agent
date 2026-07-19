@@ -35,6 +35,7 @@ export default defineConfig(({ mode }) => {
           "/api/catalog":        rt,     // workflow-runtime — agent list
           "/api/llm-providers":  rt,
           "/api/runtime-config": rt,
+          "/api/sandbox":        rt,     // workflow-runtime — sandbox job APIs
           "/api":                { target: "http://localhost:8000", changeOrigin: true },
         };
       })(),
