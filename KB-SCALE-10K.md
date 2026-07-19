@@ -289,6 +289,29 @@ than one core. Set `UVICORN_WORKERS` = CPU cores per replica; the DB path benefi
 most (crud p95 6× better) because it was serialized on the single process's GIL.
 Next DB lever if pushed further: the PgBouncer pooler in `docker-compose.scale.yml`.
 
+### LLM tier — generation benchmark (`scripts/benchmark_llm.py`, ollama qwen2.5:3b)
+
+Measured on host (Metal), streamed OpenAI-compatible `/v1/chat/completions`:
+
+| Probe | Result | Read |
+|---|---|---|
+| Single TTFT | **~120–210 ms** | fast first token |
+| Single speed | **~55 tok/s** | steady generation |
+| Concurrent ×4 aggregate | **~53 tok/s** (= single) | **no concurrency gain** |
+| Concurrent ×4 TTFT | 2.6–8.2 s | requests queue behind each other |
+
+**Finding:** the LLM **serialises** — aggregate throughput under 4 parallel
+requests equals a single stream (~55 tok/s), because one GPU = one queue. This is
+exactly why every CCU test **bypasses the LLM** (canonicalize via front-layer
+`entities`): the LLM belongs to ingestion / offline canonicalize, **never the 10k
+retrieval hot path**. If an LLM step must be online, it needs its own queue +
+autoscaled GPU pool sized by tok/s, budgeted separately from the retrieval tier.
+
+**Now viewable live in Grafana:** a stdlib `services/llm-exporter/` probes the LLM
+every 30 s and exposes `/metrics` (`kb_llm_tokens_per_sec`, `kb_llm_single_ttft_ms`,
+`kb_llm_concurrent_agg_tps`, …); Prometheus scrapes it and the **"LLM tier"** row on
+the *KB — High CCU* dashboard shows TTFT, tok/s (single vs concurrent), and latency.
+
 ---
 
 ## 7. Cost envelope (rough, monthly, cloud)

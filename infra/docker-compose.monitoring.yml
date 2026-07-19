@@ -41,6 +41,27 @@ services:
         limits:
           memory: 512M
 
+  # Probes the host LLM (ollama) and exposes generation perf as /metrics.
+  llm-exporter:
+    build:
+      context: ..
+      dockerfile: services/llm-exporter/Dockerfile
+    image: llm-exporter:latest
+    container_name: llm-exporter
+    restart: unless-stopped
+    environment:
+      LLM_BASE_URL: "${LLM_BASE_URL:-http://host.docker.internal:11434}"
+      LLM_MODEL: "${LLM_MODEL:-qwen2.5:3b}"
+      PROBE_INTERVAL: "${LLM_PROBE_INTERVAL:-30}"
+      PROBE_CONCURRENCY: "${LLM_PROBE_CONCURRENCY:-3}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    profiles: [monitoring]
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
   prometheus:
     image: prom/prometheus:v2.54.1
     container_name: dataagent-prometheus

@@ -11,9 +11,11 @@ Usage:
 """
 import argparse, json, os, sys, threading, time, urllib.request
 
-DEFAULT_HOST  = "127.0.0.1"
-DEFAULT_PORT  = 8088
-DEFAULT_MODEL = "qwen3-8b-instruct-q4_k_m.gguf"
+# Defaults target ollama (the LLM actually running on this host); override via
+# env or flags. llama-server users: --port 8088 --model qwen3-8b-instruct-q4_k_m.gguf
+DEFAULT_HOST  = os.getenv("LLM_HOST", "127.0.0.1")
+DEFAULT_PORT  = int(os.getenv("LLM_PORT", "11434"))
+DEFAULT_MODEL = os.getenv("LLM_MODEL", "qwen2.5:3b")
 
 SINGLE_PROMPTS = [
     ("short",   "Say hello in one sentence. /no_think",           50),
@@ -35,10 +37,14 @@ THINKING_PROMPTS = [
 
 
 def get_server_pid():
-    try:
-        return int(os.popen("pgrep -f 'llama-server' | head -1").read().strip())
-    except:
-        return None
+    for pat in ("llama-server", "ollama runner", "ollama"):
+        try:
+            pid = os.popen(f"pgrep -f '{pat}' | head -1").read().strip()
+            if pid:
+                return int(pid)
+        except Exception:
+            continue
+    return None
 
 
 def get_rss_mb(pid):
@@ -53,11 +59,15 @@ def get_rss_mb(pid):
 
 
 def health_check(base_url):
-    try:
-        with urllib.request.urlopen(f"{base_url}/health", timeout=3) as r:
-            return b'"ok"' in r.read()
-    except:
-        return False
+    # llama-server exposes /health; ollama/OpenAI servers answer /v1/models or /.
+    for path in ("/health", "/v1/models", "/"):
+        try:
+            with urllib.request.urlopen(f"{base_url}{path}", timeout=3) as r:
+                if r.status == 200:
+                    return True
+        except Exception:
+            continue
+    return False
 
 
 def stream_request(base_url, model, messages, max_tokens):
