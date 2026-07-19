@@ -425,6 +425,21 @@ the drain rate, in-flight explodes (47 → 13,608) and requests time out. **Knee
 stack co-located** (load 20+ on 11 cores) — not the architecture's limit; splitting
 load-gen off and adding HPA replicas scales past it.
 
+**Proof the ceiling is the co-located load-gen, not the stack.** Re-drove the
+*same* gateway + 4-worker backend with a closed-loop generator using **few
+connections** (low k6 overhead) instead of 15k VUs:
+
+| Load shape | rps served | retrieve p95 | errors |
+|---|---|---|---|
+| 15,000 VUs (co-located, load 20+) | 445 | ~30 s | 32 % |
+| closed-loop, 100 conns | **3,540** | 31 ms | 0 % |
+| closed-loop, 300 conns | **3,573** | 90 ms | 0 % |
+
+The identical stack serves **~3,570 rps — 8× the 445** — once the load generator
+stops stealing the machine. At 15 s think-time that's **~53,000 CCU** of request
+rate from one laptop's serving path; the 10–12k "knee" was purely k6 co-location.
+Real deployments run load off-box and add HPA replicas, multiplying this further.
+
 **3. Rate-limit / DDoS shedding (turn `KB_GATEWAY_*` limits on, drive past them).**
 With `GLOBAL_RPS=100, MAX_CONCURRENT=50, IP_RPS=100` and ~130 rps offered:
 
