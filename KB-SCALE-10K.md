@@ -394,6 +394,53 @@ earlier "baseline 1 worker": **for the 10k target, run 4 workers per backend
 replica.** The gateway transport pool + backend workers together give a clean
 10k CCU; neither alone suffices.
 
+### Expert / advanced tests (beyond verify + sweep)
+
+**1. Cold-cache stress (`UNIQUE_PCT=100` — every query a cache miss → real embed
+CPU path).** No GPU, so this finds the embed ceiling the result cache normally hides:
+
+| Cold CCU | retrieve median | retrieve p95 | success |
+|---|---|---|---|
+| 1,000 | 37 ms | 65 ms | 100 % |
+| 3,000 | 1.66 s | 3.74 s | 100 % |
+
+Embed (CPU, model-service ~75 %) saturates between **1,000–3,000 concurrent cold
+queries** — latency explodes 65 ms → 3.7 s (0 errors, just slow). Warm 10k was
+p95 118 ms, so **the result cache is doing the heavy lifting**; the true cold
+ceiling is ~1–1.5k CCU. A GPU embed node removes it. (`kb_embed_avg_batch` ≈ 1.4 —
+the dynamic batcher barely coalesces query-embeds; it pays off for ingestion, not
+one-query-per-request retrieval.)
+
+**2. Stress-to-breakpoint (4 workers, warm, ramp past 10k → find the knee).**
+
+| CCU | success | retrieve p95 | in-flight | served rps |
+|---|---|---|---|---|
+| 10,000 | **100 %** | 118 ms | 47 | 449 |
+| 15,000 | 68 % | ~30 s | 9,116 | 433 |
+| 20,000 | 50 % | ~31 s | 13,608 | 446 |
+
+Served throughput plateaus at **~445 rps**; past 10k CCU the offered load exceeds
+the drain rate, in-flight explodes (47 → 13,608) and requests time out. **Knee ≈
+10–12k CCU.** Caveat: this is the ceiling of **one laptop running k6 + the whole
+stack co-located** (load 20+ on 11 cores) — not the architecture's limit; splitting
+load-gen off and adding HPA replicas scales past it.
+
+**3. Rate-limit / DDoS shedding (turn `KB_GATEWAY_*` limits on, drive past them).**
+With `GLOBAL_RPS=100, MAX_CONCURRENT=50, IP_RPS=100` and ~130 rps offered:
+
+| Gateway status | share |
+|---|---|
+| 200 | 84.7 % |
+| **429 (shed)** | **15.3 %** |
+
+Overload is shed as **clean, immediate `429`** — no timeouts, no `EOF`, the exact
+opposite of the raw-capacity run's dropped sockets. This is the production-correct
+failure mode: protect the backend, tell the client to back off. *(Note: the shed
+shows in `kb_gateway_requests_total{status="429"}` but not the dedicated
+`kb_gateway_rejected_total{reason}` counter — the limiter path returns 429 without
+incrementing it; a small metrics-wiring gap worth closing so the "Rejections" panel
+reflects rate-limit sheds too.)*
+
 ---
 
 ## 7. Cost envelope (rough, monthly, cloud)
