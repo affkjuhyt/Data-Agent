@@ -27,8 +27,14 @@ H=(-H "X-Kong-Verified: true" -H "X-Tenant-Id: $TENANT"
    -H "X-User-Roles: platform-admin,tenant-admin,kb-admin,engineer")
 
 TS=$(date +%s)
-DOC=$(mktemp /tmp/ingdoc.XXXXXX.md)
-cat > "$DOC" <<'EOF'
+# Use an external document if DOC_FILE is set (e.g. a large multi-chunk file);
+# otherwise generate a small single-chunk doc.
+if [ -n "${DOC_FILE:-}" ] && [ -f "${DOC_FILE}" ]; then
+  DOC="${DOC_FILE}"; OWN_DOC=0
+else
+  OWN_DOC=1
+  DOC=$(mktemp /tmp/ingdoc.XXXXXX.md)
+  cat > "$DOC" <<'EOF'
 # Nghị định về bảo vệ dữ liệu cá nhân
 
 Nghị định này quy định về điều kiện bảo vệ dữ liệu cá nhân, trách nhiệm của tổ
@@ -38,6 +44,8 @@ quyền yêu cầu xóa, chỉnh sửa và rút lại sự đồng ý. Việc ch
 ngoài phải tuân thủ quy định về đánh giá tác động. Cơ quan chuyên trách có trách
 nhiệm thanh tra, kiểm tra và xử lý vi phạm theo quy định của pháp luật.
 EOF
+fi
+echo "  doc: $DOC ($(wc -c < "$DOC" | tr -d ' ') bytes)"
 
 log_of() { curl -s "${H[@]}" "$API/api/pipeline/ingestion/documents/$1/logs"; }
 
@@ -104,4 +112,4 @@ printf "  gold stage:       %.1fs\n" "$gold_wall"
 if [ "$pub" -gt 0 ]; then
   printf "  throughput (e2e): %.3f docs/s  (%.1fs/doc)\n" "$(echo "scale=3; $pub / $wall" | bc)" "$(echo "scale=1; $wall / $pub" | bc)"
 fi
-rm -f "$DOC"
+[ "${OWN_DOC:-1}" = "1" ] && rm -f "$DOC"

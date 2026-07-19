@@ -476,6 +476,48 @@ documents — add Kafka partitions + more `kb-ingestion-worker` replicas
 (`docker-compose.scale.yml`) to multiply docs/sec; it never shares a queue with the
 online retrieval path, so it can't hurt CCU.
 
+#### Scaled + large-document run (where the code needs work)
+
+Scaled the worker: `kb.promote.silver`/`kb.promote.gold` partitions 1 → 3, worker
+replicas 1 → 3 (removed the worker's `container_name` so `--scale` works; the
+producer keys promote messages by `data_id` so docs hash across partitions).
+Kafka rebalanced cleanly — each of the 3 workers owns one silver + one gold
+partition. Then ingested **36 KB docs that chunk into 70 chunks each**.
+
+**Result: scaling the workers barely moved throughput.** The 3 workers sat at
+~0.5 % CPU (idle-waiting); the bottleneck is the **shared LLM tier**. Under 3
+concurrent workers, `kb_llm_generate_ms_avg` ballooned from ~2 s to **29–34 s per
+call** (they all funnel into one ollama, which serialises on the single GPU), and
+the whole batch crawled at **~0.2 `/generate`/s**. 6×70-chunk docs make *hundreds*
+of LLM calls — silver alone hadn't finished after 5 min. **Ingestion is
+LLM-bound, and the LLM is a single shared queue, so adding workers is wasted until
+the LLM tier itself scales.**
+
+**Code optimisation targets (ranked):**
+
+1. **Gold processes chunks sequentially** — `for chunk in chunks: await
+   _process_chunk(...)` (`services/kb-ingestion-worker/gold.py:1065`). 70 chunks ×
+   ~per-chunk LLM+embed run strictly one-after-another. Process chunks with a
+   **bounded `asyncio.gather`** (e.g. 4–8 in flight) so LLM/embed waits overlap and
+   actually use `OLLAMA_NUM_PARALLEL`. (Care: cross-chunk graph build + canonical
+   dedup + conflict batch need ordering-safe handling.)
+2. **Per-chunk LLM calls** — gold calls the LLM per chunk for canonicalize +
+   conflict-detect (+ merge-verify), and silver extracts per chunk. **Batch N
+   chunks into one `/generate`** (like the embed dynamic-batcher) to cut call count
+   ~N×.
+3. **`model-service /generate` has no batching/queue** (unlike the embed path).
+   Add dynamic batching / a small admission queue so concurrent worker calls
+   coalesce instead of each blocking ~34 s.
+4. **Scale the LLM tier, not the workers** — the shared ollama is the ceiling;
+   more workers only help once there's a GPU pool / multiple LLM replicas / higher
+   `OLLAMA_NUM_PARALLEL` backed by VRAM. Worker count should track LLM capacity.
+5. **Reduce per-chunk LLM need** — gate canonicalize/conflict LLM calls (only when
+   entities actually overlap/conflict) or do a single doc-level pass instead of one
+   per chunk.
+
+The scaling mechanism is in place (partitions + `--scale`); the win is now a
+**pipeline-code + LLM-tier** problem, not an orchestration one.
+
 ---
 
 ## 7. Cost envelope (rough, monthly, cloud)

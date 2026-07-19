@@ -90,6 +90,37 @@ services:
         limits:
           memory: 512M
 
+  # ── Ingestion parallelism (KB-SCALE-10K.md §6) ──────────────────────────────
+  # bronze→silver→gold is embarrassingly parallel across documents (the producer
+  # keys promote messages by data_id, so docs hash across partitions). Give the
+  # silver/gold topics >= N partitions so N workers in group `kb-ingestion` each
+  # own one, then scale the worker. Idempotent — `--alter` only ever increases.
+  #
+  #   docker compose -f infra/docker-compose.kb_e2e.yml -f infra/docker-compose.scale.yml \
+  #     --profile kb run --rm kafka-topic-scale
+  #   docker compose -f infra/docker-compose.kb_e2e.yml up -d --scale kb-ingestion-worker=3
+  #
+  # (INGEST_PARTITIONS must be >= the worker replica count or extra workers idle.)
+  kafka-topic-scale:
+    image: infra-kafka
+    networks: [dan]
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        for t in kb.promote.silver kb.promote.gold; do
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9094 \
+            --alter --topic "$$t" --partitions "${INGEST_PARTITIONS:-3}" || true
+        done
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9094 --describe \
+          --topic kb.promote.silver --topic kb.promote.gold | grep PartitionCount
+    restart: "no"
+    profiles: [kb, runtime]
+
+networks:
+  dan:
+    external: true
+    name: data-agent-network
+
 volumes:
   qdrant0_data:
   qdrant1_data:

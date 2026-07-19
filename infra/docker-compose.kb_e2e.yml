@@ -188,7 +188,9 @@ services:
     build:
       context: ..
       dockerfile: services/kb-ingestion-worker/Dockerfile
-    container_name: kb-ingestion-worker
+    # No container_name → horizontally scalable: `--scale kb-ingestion-worker=N`
+    # spawns N consumers in group kb-ingestion. Needs the silver/gold topics to
+    # have >= N partitions (see docker-compose.scale.yml). KB-SCALE-10K.md §6.
     restart: unless-stopped
     environment:
       POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/${POSTGRES_DB:-dataagent}
