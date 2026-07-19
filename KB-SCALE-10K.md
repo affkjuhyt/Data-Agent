@@ -210,8 +210,37 @@ Run from a **k8s staging cluster or k6 Cloud**, not a laptop.
 
 ```bash
 # 10k CCU model (think-time built into the script; run distributed)
-VUS=10000 DURATION=10m THINK=15 k6 run scripts/loadtest/ccu-test.js
+VUS=10000 DURATION=10m THINK=15 k6 run scripts/loadtest/ccu-10k.js
 ```
+
+### Measured on this MacBook M3 Pro (18 GB, no GPU) — 2026-07-19
+
+Full 10k run on one laptop (`VUS=10000 DURATION=60s THINK=15 UNIQUE_PCT=10`),
+observed live in Grafana → **KB — High CCU** (`http://localhost:3000/d/kb-ccu`):
+
+| Metric | Value | Read |
+|---|---|---|
+| Concurrent users | **10,000** (`vus_max`) | real 10k CCU driven locally |
+| Throughput | **430 rps** (68,852 reqs) | matches Little's Law for the window |
+| Success | **84.7 %** (58,317 / 68,852) | median stays fast under load |
+| retrieve median / p95 | **38 ms / 3.97 s** | cache absorbs the bulk; tail blows out at peak |
+| crud median / p95 | **73 ms / 4.02 s** | same shape |
+| Failures | **15.3 %**, all `EOF` | at absolute peak, **not** 5xx/429 |
+| Machine | **49 % free mem, load 4.5** | the laptop itself never thrashed |
+
+**Where the ceiling is on one box:** the single gateway container (capped at
+128 MB for the laptop) saturates its connection/buffer budget when all 10k VUs
+pile on at once → clients see `EOF`, not graceful `429`. kb-backend stayed
+`healthy` throughout. Two things remove it, both already built:
+
+1. **Horizontal scale** — the HPA + Deployment manifests in `k8s/` run N gateway
+   + backend replicas; 10k spread over replicas clears the EOF tail.
+2. **Turn on gateway shedding** (`KB_GATEWAY_*` envs > 0) — converts the 15 %
+   `EOF` into clean `429/503` (graceful degradation) instead of dropped sockets.
+
+**Honest single-laptop verdict:** clean sustainable ceiling ≈ **5–6k CCU**; 10k
+is reachable but with a latency/error tail that only horizontal replicas (prod)
+remove. On CPU, cold embed is the other tail — a GPU node erases it.
 
 ---
 
