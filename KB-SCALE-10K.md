@@ -450,11 +450,31 @@ With `GLOBAL_RPS=100, MAX_CONCURRENT=50, IP_RPS=100` and ~130 rps offered:
 
 Overload is shed as **clean, immediate `429`** — no timeouts, no `EOF`, the exact
 opposite of the raw-capacity run's dropped sockets. This is the production-correct
-failure mode: protect the backend, tell the client to back off. *(Note: the shed
-shows in `kb_gateway_requests_total{status="429"}` but not the dedicated
-`kb_gateway_rejected_total{reason}` counter — the limiter path returns 429 without
-incrementing it; a small metrics-wiring gap worth closing so the "Rejections" panel
-reflects rate-limit sheds too.)*
+failure mode: protect the backend, tell the client to back off. The shed is now
+counted by reason in `kb_gateway_rejected_total{reason}` (ratelimit_tenant /
+ratelimit_global / ratelimit_ip / overload) — verified matching the 429/503 status
+counts — so the Grafana "Rejections" panel reflects rate-limit sheds, not just the
+concurrency-cap 503s.
+
+**4. Ingestion throughput (medallion bronze→silver→gold, `scripts/loadtest/
+ingestion_throughput.sh`).** Unlike the CCU tests, this drives the LLM + embed path
+on purpose. N=6 small (1-chunk) docs, single worker:
+
+| Stage | time | note |
+|---|---|---|
+| bronze (×6, sync) | 0.4 s | MinIO + DB, no LLM |
+| silver | 30.9 s | **82 % of wall** — Docling parse + LLM extraction |
+| gold | 6.4 s | per-chunk LLM + embed + Qdrant/Neo4j |
+| **end-to-end** | **37.7 s** | **≈ 0.16 docs/s (~6.2 s/doc), 6/6 PUBLISHED** |
+
+Ingestion is **throughput-bound by the single Kafka worker + model-service
+`/generate`**, not by HTTP (promote returns instantly; the worker does the work
+async). Silver (parse + extract) dominates. These are tiny docs — real
+multi-chunk documents scale the LLM/embed work per doc, so 0.16 docs/s is an
+optimistic floor. **Scale path:** ingestion is embarrassingly parallel across
+documents — add Kafka partitions + more `kb-ingestion-worker` replicas
+(`docker-compose.scale.yml`) to multiply docs/sec; it never shares a queue with the
+online retrieval path, so it can't hurt CCU.
 
 ---
 
