@@ -112,20 +112,24 @@ func main() {
 		envInt("KB_GATEWAY_MAX_CONCURRENT", 0),
 	)
 
+	m := newMetrics()
+
+	// Proxied traffic runs through: metrics → request-id → DDoS → per-tenant → proxy.
+	// FAN-OUT SEAM: a composite handler (call kb-backend + kb-compute concurrently and
+	// merge) would slot in here — the reason the BFF is Go, not Kong.
+	protected := m.middleware(withRequestID(ddos.middleware(limiter.middleware(proxy))))
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok","service":"kb-gateway"}`))
 	})
-	// FAN-OUT SEAM: a handler like GET /api/knowledge/dashboard would call
-	// kb-backend (metadata) AND kb-compute (derived ranking) concurrently with
-	// goroutines and merge — that composition is why the BFF is Go, not Kong.
-	// For the scaffold everything else is a transparent proxy to kb-backend.
-	mux.Handle("/", proxy)
+	mux.HandleFunc("/metrics", m.handler) // Prometheus — unprotected, unrecorded
+	mux.Handle("/", protected)
 
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           withRequestID(ddos.middleware(limiter.middleware(mux))),
+		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	log.Printf("kb-gateway listening on %s → %s (rate=%.0f rps/tenant)", addr, backend, rps)

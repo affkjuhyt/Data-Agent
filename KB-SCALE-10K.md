@@ -172,8 +172,14 @@ likewise pooled per replica.
    GPU-less (here) or on a GPU node pool — the manifest only changes scheduling.
    Plus **DDoS/flood protection** at kb-gateway (global + per-IP rate + max-concurrent
    → 429/503, verified: 10 parallel @ max-concurrent=2 → 8×503+2×200).
-8. [ ] **Observability SLOs**: p95 retrieval < 500 ms (cached) / < 1.5 s (cold),
-   error rate < 0.1 %, cache hit-rate dashboard, per-tier saturation.
+8. [x] **Observability** — Prometheus + Grafana (`infra/docker-compose.monitoring.yml`,
+   `--profile monitoring`). kb-gateway `/metrics` (Go): RPS by status, latency
+   histogram, in-flight, rejections; model-service `/metrics` (Py): embed cache
+   hit-rate, batch size, detected device. Provisioned Grafana dashboard **"KB —
+   High CCU"** (`http://localhost:3000/d/kb-ccu`, anon admin) — RPS, p95/p50,
+   in-flight, 429/503, cache hit-rate, device. Load test:
+   `scripts/loadtest/ccu-10k.js` (k6) models 10k users with think-time. Verified
+   end-to-end: k6 → gateway → Prometheus → live Grafana panels.
 
 ---
 

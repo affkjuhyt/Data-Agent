@@ -4,6 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import APIRouter, FastAPI, HTTPException
+from fastapi.responses import PlainTextResponse
 import config as cfg
 import model_store
 from backends import registry, bootstrap, sync_with_retry, chat_status, Capability
@@ -59,6 +60,36 @@ def capabilities_endpoint() -> dict[str, Any]:
     caps["rerank_model"] = cfg.RERANK_MODEL
     caps["embed_service"] = _embed_service.stats()
     return caps
+
+
+@router.get("/metrics")
+def metrics_endpoint() -> PlainTextResponse:
+    """Prometheus metrics — embed cache hit-rate + dynamic-batch efficiency +
+    the detected compute device (KB-SCALE-10K.md #8)."""
+    from device import detect_device
+
+    s = _embed_service.stats()
+    cache = s.get("cache", {})
+    batch = s.get("batcher", {})
+    lines = [
+        "# TYPE kb_embed_cache_hits counter",
+        f"kb_embed_cache_hits {cache.get('hits', 0)}",
+        "# TYPE kb_embed_cache_misses counter",
+        f"kb_embed_cache_misses {cache.get('misses', 0)}",
+        "# TYPE kb_embed_cache_hit_rate gauge",
+        f"kb_embed_cache_hit_rate {cache.get('hit_rate', 0.0)}",
+        "# TYPE kb_embed_cache_size gauge",
+        f"kb_embed_cache_size {cache.get('size', 0)}",
+        "# TYPE kb_embed_batches counter",
+        f"kb_embed_batches {batch.get('batches', 0)}",
+        "# TYPE kb_embed_batched_texts counter",
+        f"kb_embed_batched_texts {batch.get('batched_texts', 0)}",
+        "# TYPE kb_embed_avg_batch gauge",
+        f"kb_embed_avg_batch {batch.get('avg_batch', 0.0)}",
+        "# TYPE kb_model_device gauge",
+        f'kb_model_device{{device="{detect_device()}"}} 1',
+    ]
+    return PlainTextResponse("\n".join(lines) + "\n")
 
 
 @router.post("/embed", response_model=EmbedResponse)
