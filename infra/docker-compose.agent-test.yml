@@ -26,3 +26,11 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       OTEL_SDK_DISABLED: "true"
+
+# auth-api references kong-admin-net (defined only in docker-compose.security.yml).
+# Declare it external here so bringing auth-api up with this overlay resolves it to
+# the pre-created network (docker network create --internal --subnet 172.30.0.0/24
+# kong-admin-net) instead of failing with "network is ambiguous".
+networks:
+  kong-admin-net:
+    external: true

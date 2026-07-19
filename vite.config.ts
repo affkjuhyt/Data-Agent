@@ -36,6 +36,8 @@ export default defineConfig(({ mode }) => {
           "/api/llm-providers":  rt,
           "/api/runtime-config": rt,
           "/api/sandbox":        rt,     // workflow-runtime — sandbox job APIs
+          // auth-api validates the real Bearer token itself — no injected identity.
+          "/api/auth":           { target: "http://localhost:8200", changeOrigin: true },
           "/api":                { target: "http://localhost:8000", changeOrigin: true },
         };
       })(),
