@@ -136,3 +136,39 @@ Production stability fixes (the real ask):
 5. Ultimately throughput is **GPU-bound** — a faster model or a GPU pool drains the
    queue so a transient backlog doesn't wedge everything. Tune
    `ORCHESTRATOR_MAX_CONCURRENT_TURNS` to the LLM tier's real parallelism.
+
+## 6. Evaluation + product readiness
+
+`scripts/agent_eval.py` runs a 10-case labelled query set (factual, summary,
+comparison, list, short, greeting, out-of-domain, ambiguous, prompt-injection,
+data-query) and scores each turn on speed + behavioural quality.
+
+Two real defects were found and fixed during evaluation (both made every answer
+**empty** while the turn still `[DONE]`d in ~4.6 s):
+
+1. **`runtime_writer` role lacked SELECT** on the agent-config tables → "permission
+   denied" in workflow-runtime. Fixed by GRANT (in `seed_dev_agent.sql`).
+2. **`LLMProviders.model_id` had no provider prefix** ("responder") → the
+   workflow-runtime responder calls the litellm *SDK* directly, which raised "LLM
+   Provider NOT provided". Fixed to `openai/responder` so the SDK routes to the
+   litellm proxy → ollama.
+
+After the fixes (ollama qwen2.5:3b behind litellm):
+
+| Dimension | Result |
+|---|---|
+| Correctness | **8/10 PASS** — relevant, coherent answers (1.1–1.3k chars on detailed Qs); 0 empty |
+| Reliability | **0 hangs**, 100 % `[DONE]`, admission-shed 429 under load |
+| Speed — TTFB | **~20–50 ms** (first token) — streaming UX feels instant |
+| Speed — full turn | **p50 34.7 s / p95 48 s** — a 3B model generating a ~1k-token answer on one M3 GPU (responder alone ≈ 18 s at ~55 tok/s), plus planner/judge/suggestion calls |
+| Guardrail | **Weak** — prompt-injection not blocked, ambiguous not clarified (tunable: guardrail config/model) |
+| Throughput | GPU-bound — ~2 concurrent real-answer turns; scales with GPU |
+
+**Verdict:** the **architecture + pipeline are product-grade** (reliable, correct,
+streaming, self-protecting). The gap to "product" is the **LLM tier**: a 3B model on
+one laptop GPU makes a *complete* answer take 30–48 s. Levers to interactive speed:
+(a) a hosted/faster LLM or GPU pool → 2–5 s turns; (b) cap responder `max_tokens`
+(1k-token answers are long); (c) per-step model routing — a tiny model for
+guardrail/planner, a strong one for the responder; (d) lean on streaming (TTFB is
+already instant). Guardrail quality is a separate, tunable track (config + a better
+guardrail model / rules).

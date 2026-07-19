@@ -9,10 +9,20 @@
 -- wildcard to the host ollama (see infra/docker-compose.agent-test.yml).
 BEGIN;
 
+-- model_id needs the litellm provider prefix ("openai/") — the workflow-runtime
+-- responder calls the litellm SDK directly (litellm.acompletion(model=…)), which
+-- errors "LLM Provider NOT provided" for a bare name. "openai/responder" → the SDK
+-- treats it as an OpenAI-compatible endpoint and routes to the litellm proxy, whose
+-- wildcard maps it to ollama.
 INSERT INTO "LLMProviders"(id, name, model_id, endpoint_url, type, is_default, is_active)
-VALUES ('00000000-0000-0000-0000-0000000000a1', 'local-ollama', 'responder',
+VALUES ('00000000-0000-0000-0000-0000000000a1', 'local-ollama', 'openai/responder',
         'http://litellm:4000', 'openai', true, true)
 ON CONFLICT (id) DO NOTHING;
+
+-- The runtime connects as the least-privilege runtime_writer role, which on a fresh
+-- DB lacks SELECT on the agent-config tables → "permission denied" → empty answers.
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO runtime_writer;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO runtime_writer;
 
 -- Agents ↔ AgentVersions is a circular FK: insert the agent without a published
 -- version first, then the version, then point the agent at it.
