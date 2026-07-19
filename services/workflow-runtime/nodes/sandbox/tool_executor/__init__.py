@@ -1,3 +1,5 @@
+from typing import Any
+
 TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
     "text_to_sql": {
         "category":    "data",
