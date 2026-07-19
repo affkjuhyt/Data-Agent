@@ -312,6 +312,40 @@ every 30 s and exposes `/metrics` (`kb_llm_tokens_per_sec`, `kb_llm_single_ttft_
 `kb_llm_concurrent_agg_tps`, …); Prometheus scrapes it and the **"LLM tier"** row on
 the *KB — High CCU* dashboard shows TTFT, tok/s (single vs concurrent), and latency.
 
+#### LLM evaluation + optimisation levers
+
+At ~55 tok/s single-stream and **serialised** concurrency, one node does
+55 tok/s ÷ ~40 tokens/canonicalize ≈ **1.4 canonicalize/s**. Serving 10k CCU at
+670 rps online would need ~480× that — **architecturally impossible per-query**, so
+the entities-bypass isn't just an optimisation, it's mandatory. Ranked levers:
+
+1. **Never call the LLM online per query (done) + cache canonicalization.** The
+   front-layer `entities` bypass keeps it off the hot path; add a query→entities
+   cache (same shape as the result cache) so the few queries that *do* need
+   extraction skip the LLM on repeats.
+2. **Smaller model for extraction (measured).** Canonicalize/entity-extraction is
+   structured, not reasoning — it doesn't need 3B. Warm single-stream speed:
+
+   | Model | tok/s | TTFT | vs 3B |
+   |---|---|---|---|
+   | qwen2.5:0.5b | ~170 | ~70 ms | **3.1× faster** |
+   | qwen2.5:1.5b | ~94 | ~88 ms | 1.7× faster |
+   | qwen2.5:3b | ~55 | ~124 ms | baseline |
+
+   Use **0.5b–1.5b for canonicalize**, keep 3b only where extraction quality
+   matters (validate quality before switching production ingestion).
+3. **Enable real concurrency.** `OLLAMA_NUM_PARALLEL` is unset → ollama picked 1,
+   which is why 4 parallel requests serialised (TTFT 2.6–8.2 s). Set
+   `OLLAMA_NUM_PARALLEL=4` + `OLLAMA_MAX_QUEUE` for continuous batching so
+   concurrent callers interleave instead of queueing head-of-line.
+4. **Pin the model** (`OLLAMA_KEEP_ALIVE=-1`). A cold model swap cost ~10 s in the
+   sweep (1.5b first call) — pin the canonicalize model so it never reloads.
+5. **Cap `max_tokens` + structured/JSON output + stop sequences** for canonicalize
+   — entities are short; don't let it generate 150 tokens when 20 will do.
+6. **Ingestion = throughput, not latency.** Batch documents through a dedicated
+   LLM queue sized by tok/s (backlog ÷ tok/s = drain time); never share that queue
+   with any online path. FLASH_ATTENTION=1 is already on (good).
+
 ---
 
 ## 7. Cost envelope (rough, monthly, cloud)
