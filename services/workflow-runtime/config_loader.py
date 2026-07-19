@@ -122,6 +122,13 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
         await _resolve_warehouse_secret(node_cfg, tenant_id)
         await _resolve_db_connector_secrets(node_cfg, tenant_id)
 
+        # A connected KB makes kb_search available to the planner even when the
+        # agent has no explicit flow canvas — so answers get grounded in documents
+        # (RAG) instead of the LLM's parametric memory.
+        allowed_tools = list(node_cfg.get("allowed_tools") or DEV_CONFIG["allowed_tools"])
+        if kb_rows and "kb_search" not in allowed_tools:
+            allowed_tools.append("kb_search")
+
         return {
             **DEV_CONFIG,
             # identity
@@ -145,6 +152,8 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
             "mcp_endpoints": mcp_endpoints,
             # node-level config từ canvas
             **node_cfg,
+            # kb_search available whenever a KB is connected (RAG grounding)
+            "allowed_tools": allowed_tools,
             # flow_nodes + flow_edges cho dynamic graph
             "flow_nodes": flow_nodes,
             "flow_edges": flow_edges,

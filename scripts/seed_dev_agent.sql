@@ -42,3 +42,14 @@ UPDATE "Agents" SET published_version_id = '00000000-0000-0000-0000-0000000000b1
 WHERE id = '00000000-0000-0000-0000-000000000030';
 
 COMMIT;
+
+-- RAG grounding: connect the agent to the KB so the planner's kb_search retrieves
+-- real chunks (config_loader auto-adds kb_search to allowed_tools when a KB is
+-- linked). endpoint_url points at kb-backend; kb_search appends /api/pipeline/...
+INSERT INTO "KBConnections"(id, tenant_id, name, endpoint_url, status)
+VALUES ('00000000-0000-0000-0000-0000000000c1','a0000000-0000-0000-0000-000000000001',
+        'local-kb','http://kb-backend:8000','active')
+ON CONFLICT (id) DO UPDATE SET endpoint_url=EXCLUDED.endpoint_url;
+INSERT INTO "AgentKB"(version_id, kb_connection_id)
+VALUES ('00000000-0000-0000-0000-0000000000b1','00000000-0000-0000-0000-0000000000c1')
+ON CONFLICT DO NOTHING;

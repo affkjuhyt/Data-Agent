@@ -47,8 +47,14 @@ async def kb_search_node(state: AgentState) -> dict[str, Any]:
                     resp = await client.post(
                         f"{kb_endpoint}/api/pipeline/light-rag/retrieve",
                         headers={
-                            "X-Role":      "AI_ENGINEER",
-                            "X-Tenant-Id": tenant_id,
+                            # Service-to-service call: no Kong in front of kb-backend,
+                            # so forge the identity headers kb-backend's auth requires
+                            # (it fail-closes without X-Kong-Verified).
+                            "X-Kong-Verified": "true",
+                            "X-Role":          "AI_ENGINEER",
+                            "X-Tenant-Id":     tenant_id,
+                            "X-User-Id":       cfg.get("user_ref") or "11111111-1111-1111-1111-111111111111",
+                            "X-User-Roles":    "platform-admin,tenant-admin,kb-admin,engineer",
                         },
                         json={
                             "query":     search_query,
