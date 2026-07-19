@@ -144,7 +144,11 @@ async def stream_orchestration(req: OrchestrateRequest, request: Request) -> Res
                     await asyncio.to_thread(lf.flush)
                 if not guardrail_task.done():
                     guardrail_task.cancel()
-                yield _sse("Đã xảy ra lỗi, vui lòng thử lại.")
+                # The answer may already have streamed in full — a failure in a
+                # post-answer step (checkpoint serialisation, judge, suggestion)
+                # must NOT surface as a scary error on top of a good answer.
+                if not final_response.strip():
+                    yield _sse("Đã xảy ra lỗi, vui lòng thử lại.")
                 yield "data: [DONE]\n\n"
                 return
             finally:

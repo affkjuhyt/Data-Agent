@@ -8,6 +8,7 @@ from contextlib import nullcontext
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import StateGraph, START, END
 
 import config
@@ -29,7 +30,10 @@ from summary import summarize, synthesis_judge_check
 logger = logging.getLogger(__name__)
 
 _MAX_REPLAN = 2
-_checkpointer = MemorySaver()
+# The state holds a live PlanningProcess (needed for report_node_failure) which the
+# default msgpack serde can't encode → checkpoint writes crashed the multi-agent
+# turn after the answer already streamed. pickle_fallback pickles such objects.
+_checkpointer = MemorySaver(serde=JsonPlusSerializer(pickle_fallback=True))
 _FAKE_STREAM_WORD_DELAY = 0.02  # giây/từ — hiệu ứng gõ chữ khi replay text đã duyệt xong
 
 
