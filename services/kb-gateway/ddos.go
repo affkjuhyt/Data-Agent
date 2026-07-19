@@ -20,6 +20,7 @@ type ddosGuard struct {
 	globalBurst float64
 	perIP       *tenantLimiter
 	sem         chan struct{}
+	onReject    func(reason string) // optional: count a shed request (metrics)
 }
 
 func newDDoSGuard(globalRPS, ipRPS float64, maxConcurrent int) *ddosGuard {
@@ -75,6 +76,9 @@ func (g *ddosGuard) middleware(next http.Handler) http.Handler {
 			case g.sem <- struct{}{}:
 				defer func() { <-g.sem }()
 			default:
+				if g.onReject != nil {
+					g.onReject("overload")
+				}
 				w.Header().Set("Retry-After", "1")
 				http.Error(w, `{"error":"overloaded","detail":"max concurrent requests reached"}`,
 					http.StatusServiceUnavailable)
@@ -83,6 +87,9 @@ func (g *ddosGuard) middleware(next http.Handler) http.Handler {
 		}
 		// 2. Global rate ceiling.
 		if !g.allowGlobal() {
+			if g.onReject != nil {
+				g.onReject("ratelimit_global")
+			}
 			w.Header().Set("Retry-After", "1")
 			http.Error(w, `{"error":"rate_limited","detail":"global request rate exceeded"}`,
 				http.StatusTooManyRequests)
@@ -90,6 +97,9 @@ func (g *ddosGuard) middleware(next http.Handler) http.Handler {
 		}
 		// 3. Per-source-IP rate limit.
 		if !g.perIP.allow(clientIP(r)) {
+			if g.onReject != nil {
+				g.onReject("ratelimit_ip")
+			}
 			w.Header().Set("Retry-After", "1")
 			http.Error(w, `{"error":"rate_limited","detail":"per-IP request rate exceeded"}`,
 				http.StatusTooManyRequests)

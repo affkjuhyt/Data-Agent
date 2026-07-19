@@ -17,11 +17,12 @@ type tokenBucket struct {
 }
 
 type tenantLimiter struct {
-	mu      sync.Mutex
-	buckets map[string]*tokenBucket
-	rps     float64
-	burst   float64
-	maxKeys int
+	mu       sync.Mutex
+	buckets  map[string]*tokenBucket
+	rps      float64
+	burst    float64
+	maxKeys  int
+	onReject func(reason string) // optional: count a shed request (metrics)
 }
 
 func newTenantLimiter(rps, burst float64) *tenantLimiter {
@@ -77,6 +78,9 @@ func (l *tenantLimiter) middleware(next http.Handler) http.Handler {
 			key = "_anon"
 		}
 		if !l.allow(key) {
+			if l.onReject != nil {
+				l.onReject("ratelimit_tenant")
+			}
 			w.Header().Set("Retry-After", "1")
 			http.Error(w, `{"error":"rate_limited","detail":"per-tenant request rate exceeded"}`,
 				http.StatusTooManyRequests)

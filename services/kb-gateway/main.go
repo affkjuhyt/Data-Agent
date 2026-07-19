@@ -134,6 +134,10 @@ func main() {
 	)
 
 	m := newMetrics()
+	// Count shed requests by reason so kb_gateway_rejected_total reflects rate-limit
+	// / overload sheds (not just the status histogram).
+	limiter.onReject = m.reject
+	ddos.onReject = m.reject
 
 	// Proxied traffic runs through: metrics → request-id → DDoS → per-tenant → proxy.
 	// FAN-OUT SEAM: a composite handler (call kb-backend + kb-compute concurrently and
