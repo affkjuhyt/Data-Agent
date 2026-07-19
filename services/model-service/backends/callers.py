@@ -63,6 +63,20 @@ class MultilingualE5SmallCaller:
 
 
 # RERANK
+class LocalRerankCaller:
+    """In-process cross-encoder rerank (mirrors the local embed caller). Scores each
+    [query, document] pair and returns the top-N (index, score) sorted desc."""
+    def __init__(self, handle: Any) -> None:
+        self._handle = handle  # a sentence_transformers.CrossEncoder
+
+    def rerank(self, query: str, documents: list[str], top_n: int) -> list[tuple[int, float]]:
+        if not documents:
+            return []
+        scores = self._handle.predict([[query, d] for d in documents])
+        ranked = sorted(((i, float(s)) for i, s in enumerate(scores)), key=lambda x: x[1], reverse=True)
+        return ranked[:top_n]
+
+
 class VietnameseRerankCaller:
     def __init__(self, url: str, api_key: str | None = None) -> None:
         self._url = url

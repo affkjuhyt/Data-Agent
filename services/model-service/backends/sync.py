@@ -57,7 +57,17 @@ def register_embedding_models(registry: Registry) -> None:
 
 
 def register_rerank_models(registry: Registry) -> None:
-    """One model per remote /rerank URL."""
+    """In-process cross-encoder (default) + one model per remote /rerank URL."""
+    import config as _cfg
+    try:
+        registry.register(ModelEntry(
+            name=_cfg.RERANK_MODEL,
+            capability=Capability.RERANK,
+            caller=C.LocalRerankCaller(model_store.load_rerank(_cfg.RERANK_MODEL)),
+        ), default=True)
+    except Exception as exc:
+        log.warning("register_rerank | local cross-encoder %s failed to load: %s",
+                    _cfg.RERANK_MODEL, exc)
     for i, (url, key) in enumerate(_endpoints("REMOTE_RERANK_URL", "REMOTE_API_KEY")):
         name = _discover_name(url, key, prefer="rerank") or f"remote-rerank-{i}"
         registry.register(ModelEntry(
