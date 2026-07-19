@@ -146,8 +146,19 @@ likewise pooled per replica.
    Verified: 20 client connections multiplex onto ~10 real Postgres backends
    (`DEFAULT_POOL_SIZE`). Cutover note (asyncpg `statement_cache_size=0`) is in the
    overlay. Read replicas remain a deploy-topology step (managed PG / k8s).
-4. [ ] **Qdrant replication** (read QPS) + **Neo4j read replica** — deploy-topology
-   (k8s / managed); graceful degradation (#5) already sheds Neo4j load meanwhile.
+4. [x] **Qdrant replication** — 2-node distributed cluster in
+   `infra/docker-compose.scale.yml` (`--profile qdrant-cluster`). Verified: a
+   collection with `shard_number=2, replication_factor=2` keeps 4 shard-copies
+   (2 local + 2 remote), a point inserted on node-0 reads back from BOTH nodes,
+   and reads survive killing node-1 (which re-syncs on restart). **Use ≥3 nodes in
+   prod** — a 2-node Raft loses write quorum when one dies (reads still served).
+   Cutover: point `QDRANT_URL` at a cluster node + recreate the `knowledge`
+   collection with `replication_factor=2`.
+   **Neo4j read replica** — NOT possible on the current **Community** edition
+   (5.20.0); causal clustering / read replicas are **Enterprise-only**. Mitigation
+   is already shipped: graceful degradation (#5) skips `graph_expand` under load and
+   the result cache absorbs repeats — and Neo4j is only ~3% (27 ms) of a retrieval,
+   not a 10k-CCU bottleneck. Add read replicas only when moving to Neo4j Enterprise.
 5. [x] **Graceful degradation**: `DEGRADE_BUDGET_MS` per-request budget in the
    pipeline — past budget it skips Neo4j `graph_expand` + cross-encoder `rerank`
    and returns RRF order; the skipped steps are surfaced in `degraded[]`.

@@ -43,3 +43,53 @@ services:
       resources:
         limits:
           memory: 128M
+
+  # ── Qdrant replication cluster (KB-SCALE-10K.md §3, #4) ─────────────────────
+  # 2-node distributed Qdrant. Collections created with replication_factor=2 keep
+  # a copy of every shard on both nodes → read QPS spreads across replicas and a
+  # single node can die without losing the collection. Opt-in via
+  #   docker compose -f infra/docker-compose.yml -f infra/docker-compose.scale.yml \
+  #     --env-file .env --profile qdrant-cluster up -d
+  # This is a SEPARATE cluster from the single-node dataagent-qdrant (ports
+  # 6343/6344, own volumes) so it can be brought up/verified without disturbing
+  # the running KB. CUTOVER: point kb-backend/worker QDRANT_URL at qdrant-node-0
+  # and recreate the "knowledge" collection with shard_number≥2, replication_factor=2.
+  qdrant-node-0:
+    image: qdrant/qdrant:v1.13.6
+    container_name: dataagent-qdrant-0
+    restart: unless-stopped
+    environment:
+      QDRANT__CLUSTER__ENABLED: "true"
+    command: ["./qdrant", "--uri", "http://qdrant-node-0:6335"]
+    ports:
+      - "6343:6333"
+    volumes:
+      - qdrant0_data:/qdrant/storage
+    profiles: [qdrant-cluster]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  qdrant-node-1:
+    image: qdrant/qdrant:v1.13.6
+    container_name: dataagent-qdrant-1
+    restart: unless-stopped
+    environment:
+      QDRANT__CLUSTER__ENABLED: "true"
+    command: ["./qdrant", "--bootstrap", "http://qdrant-node-0:6335", "--uri", "http://qdrant-node-1:6335"]
+    ports:
+      - "6344:6333"
+    volumes:
+      - qdrant1_data:/qdrant/storage
+    depends_on:
+      - qdrant-node-0
+    profiles: [qdrant-cluster]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+volumes:
+  qdrant0_data:
+  qdrant1_data:
