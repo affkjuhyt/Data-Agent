@@ -150,6 +150,8 @@ services:
     ports:
       - "8050:8000"
     environment:
+      # 1 async worker plateaus ~1900 rps/~1 core; set = CPU cores for more (KB-SCALE-10K.md §6).
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-1}
       POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/${POSTGRES_DB:-dataagent}
       QDRANT_URL: http://qdrant:6333
       NEO4J_URI: bolt://neo4j:7687

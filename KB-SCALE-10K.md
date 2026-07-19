@@ -254,6 +254,41 @@ in prod by the `k8s/` HPA (N backend replicas) and a GPU embed node. Optional
 graceful shedding (`KB_GATEWAY_*` envs > 0) converts any residual overload into
 clean `429/503` instead of latency.
 
+### Backend tier — direct closed-loop sweep (`ccu-test.js`, no think-time)
+
+Hitting kb-backend directly on `:8050` (bypassing the gateway) with N *in-flight*
+requests — this measures one replica's raw concurrency ceiling, not CCU:
+
+| Concurrency | rps | retrieve p95 | crud p95 | errors |
+|---|---|---|---|---|
+| 50 | 1,778 | 28 ms | 65 ms | 0 % |
+| 150 | 1,865 | 76 ms | 393 ms | 0 % |
+| 300 | 1,917 | 144 ms | 842 ms | 0 % |
+| 600 | 1,850 | 311 ms | 1.86 s | 0 % |
+
+**Finding:** throughput **plateaus at ~1,900 rps from concurrency 50 upward** —
+one `uvicorn --workers 1` process saturates ~1 core; extra load only queues
+(latency climbs linearly, rps flat, **0 % errors** — the async worker never drops).
+The **crud/Postgres path degrades faster** than retrieval (cache-hit), so the DB
+path is the latency-sensitive one, not retrieval.
+
+**Fix (found + applied):** `uvicorn --workers` is now env-tunable
+(`UVICORN_WORKERS`, default 1) in `infra/Dockerfile.kb` + `docker-compose.kb_e2e.yml`.
+Same VUS=300 sweep with **4 workers**:
+
+| VUS=300 | 1 worker | 4 workers |
+|---|---|---|
+| Throughput | 1,917 rps | **4,578 rps** (2.4×) |
+| retrieve p95 | 144 ms | **66 ms** |
+| crud p95 | 842 ms | **140 ms** (6× better) |
+| errors | 0 % | 0 % |
+
+**Backend verdict:** one container at 4 workers serves **4,578 rps ≈ 7× the ~670
+rps** that 10k CCU needs — the backend tier is *not* the ceiling once it uses more
+than one core. Set `UVICORN_WORKERS` = CPU cores per replica; the DB path benefits
+most (crud p95 6× better) because it was serialized on the single process's GIL.
+Next DB lever if pushed further: the PgBouncer pooler in `docker-compose.scale.yml`.
+
 ---
 
 ## 7. Cost envelope (rough, monthly, cloud)

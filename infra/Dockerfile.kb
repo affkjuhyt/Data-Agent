@@ -79,8 +79,9 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
 
-CMD ["uvicorn", "services.kb_backend.main:app", \
-     "--host", "0.0.0.0", \
-     "--port", "8000", \
-     "--workers", "1", \
-     "--log-level", "info"]
+# Workers are env-tunable. One async worker plateaus at ~1900 rps / ~1 core
+# (measured, KB-SCALE-10K.md §6); set UVICORN_WORKERS = CPU cores to use the rest
+# and add headroom for CPU-bound steps (RRF fusion, serialize) + cold-embed load.
+# Shell form so ${UVICORN_WORKERS} expands at runtime.
+ENV UVICORN_WORKERS=1
+CMD uvicorn services.kb_backend.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS} --log-level info
