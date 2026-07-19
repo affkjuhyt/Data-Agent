@@ -119,13 +119,20 @@ restart the ollama container) + `docker restart dataagent-litellm`. Then turns a
 ~4–5 s again.
 
 Production stability fixes (the real ask):
-1. **Cancel downstream LLM calls on client disconnect** — the SSE handler must
-   propagate cancellation to litellm→ollama so an abandoned turn stops burning GPU.
-2. **Short per-call LLM timeout + no retries** — `request_timeout: 30`,
-   `num_retries: 0` (set in `config.agent-local.yaml`) so a stuck call frees its GPU
-   slot fast instead of holding it for 120 s.
-3. **Admission control at the orchestrator** — cap concurrent turns and shed with
-   backpressure (429) instead of piling onto the GPU (same pattern as the KB gateway).
+1. **Cancel-on-disconnect (DONE).** `stream.py` wraps the SSE generator so a client
+   disconnect `aclose()`s it → GeneratorExit propagates into the LangGraph stream →
+   the in-flight LLM node task is cancelled (httpx connection to litellm closes) and
+   the admission slot is released. Verified: disconnecting mid-turn frees the slot
+   immediately (a following turn gets 200, not 429).
+2. **Admission control (DONE).** `ORCHESTRATOR_MAX_CONCURRENT_TURNS` (default 8; set
+   to **2** on this single-GPU box in `docker-compose.agent-test.yml`) caps
+   concurrent turns; over the cap the orchestrator sheds **429 + Retry-After**
+   instead of piling onto the GPU — same backpressure pattern as the KB gateway.
+   Verified: 5 concurrent at cap 2 → 2×200, 3×429.
+3. **Short per-call LLM timeout + no retries (DONE).** `request_timeout: 30`,
+   `num_retries: 0` in `config.agent-local.yaml` — a stuck call frees its GPU slot
+   fast instead of holding it 120 s.
 4. **Client:** bounded timeout + backoff, never blind-retry a slow turn.
 5. Ultimately throughput is **GPU-bound** — a faster model or a GPU pool drains the
-   queue so a transient backlog doesn't wedge everything.
+   queue so a transient backlog doesn't wedge everything. Tune
+   `ORCHESTRATOR_MAX_CONCURRENT_TURNS` to the LLM tier's real parallelism.

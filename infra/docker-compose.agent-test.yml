@@ -19,6 +19,9 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       OTEL_SDK_DISABLED: "true"
+      # Small cap on this single-GPU box so admission control is easy to see;
+      # size to the LLM tier's real parallelism in prod (default 8).
+      ORCHESTRATOR_MAX_CONCURRENT_TURNS: "2"
   workflow-runtime:
     environment:
       REDIS_URL: redis://redis:6379

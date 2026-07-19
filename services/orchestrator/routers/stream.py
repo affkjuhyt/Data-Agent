@@ -8,8 +8,8 @@ import logging
 import uuid
 from contextlib import nullcontext
 
-from fastapi import APIRouter, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Request, Response
+from fastapi.responses import JSONResponse, StreamingResponse
 
 import config
 from agent_catalog import fetch_guardrail_config
@@ -20,6 +20,11 @@ from schemas import OrchestrateRequest
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Admission control: number of agent turns streaming right now. Single-threaded
+# asyncio, so ±1 is atomic between awaits — no lock needed. Guards the shared
+# LLM/GPU from a pile-up of slow/abandoned turns (AGENT-E2E.md §5).
+_active_turns = 0
 
 
 @router.get("/api/orchestrate/health")
@@ -32,7 +37,19 @@ def _sse(data: Any) -> str:
 
 
 @router.post("/api/orchestrate/stream")
-async def stream_orchestration(req: OrchestrateRequest, request: Request) -> StreamingResponse:
+async def stream_orchestration(req: OrchestrateRequest, request: Request) -> Response:
+
+    # Admission control — shed instead of piling a slow turn onto the busy GPU.
+    global _active_turns
+    if 0 < config.MAX_CONCURRENT_TURNS <= _active_turns:
+        logger.warning("orchestrate | shed 429: %d turns in flight (cap %d)",
+                       _active_turns, config.MAX_CONCURRENT_TURNS)
+        return JSONResponse(
+            {"error": "overloaded",
+             "detail": "too many concurrent agent turns — retry shortly"},
+            status_code=429, headers={"Retry-After": "2"},
+        )
+    _active_turns += 1
 
     tenant_id = request.headers.get("X-Tenant-Id", "") or config.DEV_TENANT_ID
     # hex32 (không dấu gạch ngang) — format trace_id chuẩn OTEL, dùng chung
@@ -78,7 +95,7 @@ async def stream_orchestration(req: OrchestrateRequest, request: Request) -> Str
     graph = get_graph()
     lf = get_langfuse_client()
 
-    async def event_stream() -> AsyncIterator[str]:
+    async def _run() -> AsyncIterator[str]:
         # session_id = trace_id — emit ngay để frontend fetch trace sau này
         # không phải đợi __conv_ids của từng agent con.
         yield _sse({"__session_id": session_id})
@@ -179,5 +196,20 @@ async def stream_orchestration(req: OrchestrateRequest, request: Request) -> Str
             yield _sse({"__conv_ids": conv_infos})
 
         yield "data: [DONE]\n\n"
+
+    async def event_stream() -> AsyncIterator[str]:
+        # Cancel-on-disconnect + admission release: if the client goes away,
+        # Starlette aclose()s this generator → GeneratorExit propagates into
+        # _run() → graph.astream_events is closed → the in-flight LLM node task is
+        # cancelled (httpx connection to litellm closes). Either way the finally
+        # frees the admission slot so a dropped turn can't wedge the GPU.
+        global _active_turns
+        try:
+            async for chunk in _run():
+                yield chunk
+        finally:
+            _active_turns = max(0, _active_turns - 1)
+            if not guardrail_task.done():
+                guardrail_task.cancel()
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
