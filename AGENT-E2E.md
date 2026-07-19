@@ -81,3 +81,25 @@ a GPU pool (or a smaller/faster model per step) is the lever. Note: with the tin
 local model the guardrail/responder quality is poor (guardrail false-positives on
 1.5b; empty responder text on 3b) — the numbers measure the *pipeline latency*, not
 answer quality; a production LLM removes that.
+
+## 5. Stability — why calls hang, and the fix
+
+Symptom: `/api/orchestrate/stream` emits the `__session_id` frame then **hangs 60 s+**
+with no `[DONE]`. Two root causes, both about the **single shared GPU**:
+
+1. **ollama juggling >1 model on one GPU.** The agent uses `qwen2.5:3b` (litellm),
+   but the **llm-exporter** monitoring probe and the KB `model-service` keep
+   `qwen2.5:1.5b` resident. With two models loaded, ollama **swap-thrashes** the GPU
+   → each LLM call jumps from ~2 s to ~15–20 s → a multi-call turn stretches past the
+   client timeout and looks hung. **Fix: keep exactly one model resident** — stop
+   the other consumers (`docker stop llm-exporter kb-model-service`) and unload the
+   stray model (`curl :11434/api/generate -d '{"model":"qwen2.5:1.5b","keep_alive":0}'`),
+   or in prod give each tier its own GPU / a GPU pool.
+2. **OTEL tracing to `jaeger:4317` (not running).** Both services export spans there
+   and spam "export timeout"; disabled with `OTEL_SDK_DISABLED=true` (in
+   `docker-compose.agent-test.yml`). Bring up jaeger instead if you want traces.
+
+After both fixes: **single turn ~5 s, 3 concurrent ~10.5 s, 0 hangs** (was 60 s+).
+The lesson: the agent turn is fine; the single GPU is a **shared contention point** —
+any second ollama consumer (KB, the monitoring probe, ingestion) starves it and the
+agent appears to hang. Keep one model per GPU, or scale the GPU tier.

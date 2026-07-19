@@ -13,9 +13,13 @@ services:
 
   # The orchestrator/runtime default REDIS_URL to localhost — point them at the
   # redis container so session/cache ops work (they reconnect-loop otherwise).
+  # OTEL_SDK_DISABLED stops the per-request span export to jaeger:4317 (which isn't
+  # running) — it was spamming "export timeout" and adding request overhead.
   orchestrator:
     environment:
       REDIS_URL: redis://redis:6379
+      OTEL_SDK_DISABLED: "true"
   workflow-runtime:
     environment:
       REDIS_URL: redis://redis:6379
+      OTEL_SDK_DISABLED: "true"
