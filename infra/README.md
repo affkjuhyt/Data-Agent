@@ -17,8 +17,11 @@ The frontend has no mock server and no auth bypass: `kb-backend` is **fail-close
 | **Full platform** | [`docker-compose.yml`](./docker-compose.yml) + an override | The whole Data Agent OS — every service group (storage, security, messaging, observability, all app services). | Running the entire platform, not just KB. |
 | **Test fixture** | [`docker-compose.test.yml`](./docker-compose.test.yml) | Isolated PostgreSQL only. | Connector / ORM tests. |
 
-> `kb-backend` is also published on `:8050` — hitting it directly bypasses Kong and returns
-> `401` by design (handy to confirm fail-closed behaviour).
+> Dev stacks re-publish `kb-backend` on `127.0.0.1:8050` (loopback only). It returns `401`
+> for a request with no identity headers, but it is **not** an auth boundary: identity is
+> plain `X-Kong-Verified` / `X-Tenant-Id` / `X-User-Roles` headers that Kong injects after
+> stripping client copies, so anything reaching this port can forge them and act as any
+> tenant or role. Only Kong (`:8000`) is trusted — never publish `:8050` beyond loopback.
 
 ## Bring up only one feature — Compose profiles
 
@@ -198,7 +201,7 @@ All users share tenant `a0000000-0000-0000-0000-000000000001` (the seeded dev te
 |---|---|
 | `3000` | Vite dev server (frontend) |
 | `8000` | Kong proxy (all API traffic goes here) |
-| `8050` | kb-backend direct (fail-closed — returns 401 without Kong token) |
+| `8050` | kb-backend direct, loopback only (debug — NOT an auth boundary, see note above) |
 | `8080` | Keycloak |
 | `8600` | model-service |
 | `8900` | Kong admin API (debug only — not on host in production) |

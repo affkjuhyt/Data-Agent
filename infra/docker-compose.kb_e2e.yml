@@ -148,7 +148,8 @@ services:
     container_name: kb-backend
     restart: unless-stopped
     ports:
-      - "8050:8000"
+      # Loopback only — direct callers bypass Kong and can forge identity headers.
+      - "127.0.0.1:8050:8000"
     environment:
       POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/${POSTGRES_DB:-dataagent}
       QDRANT_URL: http://qdrant:6333

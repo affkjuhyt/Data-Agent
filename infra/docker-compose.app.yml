@@ -242,8 +242,12 @@ services:
       dockerfile: infra/Dockerfile.kb
     container_name: dataagent-kb-backend
     restart: unless-stopped
-    ports:
-      - "8050:8000"
+    # NOT published to the host: identity is a set of plain X-* headers that Kong
+    # injects after stripping client-supplied copies, so a caller that reaches this
+    # port directly can forge `X-Kong-Verified: true` and act as any tenant/role.
+    # Kong reaches it in-network; dev stacks re-publish it on loopback only.
+    expose:
+      - "8000"
     environment:
       POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/${POSTGRES_DB:-dataagent}
       QDRANT_URL: http://qdrant:6333

@@ -99,10 +99,11 @@ services:
     environment:
       NEO4J_AUTH: none
 
-      # For allocating 10gb for neo4j graph
-      NEO4J_server_memory_heap_initial__size: '4g'
-      NEO4J_server_memory_heap_max__size: '4g'
-      NEO4J_server_memory_pagecache_size: '3g'
+      # Sized for a dev machine by default (heap+pagecache must fit the Docker VM,
+      # which is half of host RAM on a WSL2 default). docker-compose.prod.yml raises these.
+      NEO4J_server_memory_heap_initial__size: ${NEO4J_HEAP_SIZE:-512m}
+      NEO4J_server_memory_heap_max__size: ${NEO4J_HEAP_SIZE:-512m}
+      NEO4J_server_memory_pagecache_size: ${NEO4J_PAGECACHE_SIZE:-256m}
       NEO4J_server_jvm_additional: '-XX:+ExitOnOutOfMemoryError'
 
       NEO4J_dbms_routing_driver_connection_pool_max__size: 50
@@ -112,11 +113,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '4.0'
-          memory: '10G'
+          cpus: ${NEO4J_CPUS:-1.5}
+          memory: ${NEO4J_MEMORY:-1500M}
         reservations:
-          cpus: '4.0'
-          memory: '10G'
+          cpus: '0.5'
+          memory: 512M
 
     volumes:
       - neo4j_data:/data
