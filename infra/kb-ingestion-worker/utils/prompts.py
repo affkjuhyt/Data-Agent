@@ -477,8 +477,18 @@ true). Thực thể liên quan nhưng KHÁC nhau là false: hai quốc gia khác
 ~ "Đại học Quốc gia TP.HCM" → false).
 Chỉ trả JSON: {"same":true} hoặc {"same":false}."""
 
-# _PIVOT_*_SYSTEM_VI (above) are Vietnamese-only by design — added to both language
-# branches below so the conflict pipeline is unaffected by PROMPT_LANG.
+# Merge finalize: after merging text that involved a table, decide whether the
+# merged result still presents that table's structured data (Vietnamese-only).
+_TABLE_MERGE_SYSTEM_VI = """\
+Đoạn văn bản đã hợp nhất dưới đây từng liên quan đến một BẢNG dữ liệu. Hãy quyết
+định xem nội dung sau khi hợp nhất CÒN trình bày bảng đó (dữ liệu dạng hàng/cột)
+hay không.
+- keep_table=true: nội dung vẫn mô tả hoặc chứa bảng dữ liệu có cấu trúc.
+- keep_table=false: nội dung đã trở thành văn xuôi thuần, không còn bảng.
+Chỉ trả JSON: {"keep_table": true} hoặc {"keep_table": false}."""
+
+# _PIVOT_*_SYSTEM_VI and _TABLE_MERGE_SYSTEM_VI are Vietnamese-only by design — added
+# to both language branches so the conflict pipeline is unaffected by PROMPT_LANG.
 _GOLD_PROMPTS_BY_LANG: dict[str, dict[str, str]] = {
     "en": {
         "doc-reduce":     _DOC_REDUCE_SYSTEM,
@@ -487,6 +497,7 @@ _GOLD_PROMPTS_BY_LANG: dict[str, dict[str, str]] = {
         "pivot-question": _PIVOT_QUESTION_SYSTEM_VI,
         "pivot-chunk":    _PIVOT_CHUNK_SYSTEM_VI,
         "pivot-compare":  _PIVOT_COMPARE_SYSTEM_VI,
+        "table-merge":    _TABLE_MERGE_SYSTEM_VI,
         "alias-verify":   _ALIAS_VERIFY_SYSTEM,
         "merge-verify":   _MERGE_VERIFY_SYSTEM,
     },
@@ -497,6 +508,7 @@ _GOLD_PROMPTS_BY_LANG: dict[str, dict[str, str]] = {
         "pivot-question": _PIVOT_QUESTION_SYSTEM_VI,
         "pivot-chunk":    _PIVOT_CHUNK_SYSTEM_VI,
         "pivot-compare":  _PIVOT_COMPARE_SYSTEM_VI,
+        "table-merge":    _TABLE_MERGE_SYSTEM_VI,
         "alias-verify":   _ALIAS_VERIFY_SYSTEM_VI,
         "merge-verify":   _MERGE_VERIFY_SYSTEM_VI,
     },

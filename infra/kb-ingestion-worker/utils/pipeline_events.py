@@ -14,11 +14,8 @@ Collection schema:
 from __future__ import annotations
 
 import datetime
-import logging
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
-
-log = logging.getLogger(__name__)
 
 
 class StepScope:
@@ -38,17 +35,8 @@ class StepScope:
 class PipelineEventEmitter:
     """Writes structured events to MongoDB ``pipeline_events``.
 
-    Uses an atomic per-document counter stored in ``pipeline_event_seq`` so
-    events from separate silver and gold Kafka messages are sequenced correctly
-    even though they run in different worker invocations.
-
-    Usage::
-
-        emitter = await PipelineEventEmitter.create(mongo_db, data_id)
-        await emitter.emit("silver.chunk.found", {"index": 0, "preview": "..."})
-        async with emitter.step("silver.parse", parser="docling") as event_scope:
-            chunks = await parse(...)
-            event_scope.set(chunks=len(chunks))
+    Sequenced by an atomic counter in ``pipeline_event_seq``, so silver and gold —
+    separate Kafka messages in separate worker invocations — still order correctly.
     """
 
     def __init__(self, database, data_id: str, sequence: int) -> None:
@@ -59,16 +47,12 @@ class PipelineEventEmitter:
     @classmethod
     async def create(cls, database, data_id: str) -> "PipelineEventEmitter":
         """Instantiate and resume from the last known sequence for this data_id."""
-        try:
-            latest_event = await database["pipeline_events"].find_one(
-                {"data_id": data_id},
-                sort=[("seq", -1)],
-                projection={"seq": 1},
-            )
-            sequence = latest_event["seq"] if latest_event else 0
-        except Exception as exc:
-            log.warning("PipelineEventEmitter.create: seq lookup failed (%s) — starting at 0", exc)
-            sequence = 0
+        latest_event = await database["pipeline_events"].find_one(
+            {"data_id": data_id},
+            sort=[("seq", -1)],
+            projection={"seq": 1},
+        )
+        sequence = latest_event["seq"] if latest_event else 0
         return cls(database, data_id, sequence)
 
     async def emit(self, event: str, payload: dict[str, Any] | None = None) -> None:
@@ -82,10 +66,9 @@ class PipelineEventEmitter:
                 "payload": payload or {},
             })
         except Exception as exc:
-            log.warning(
-                "PipelineEventEmitter.emit dropped event=%r data_id=%s: %s",
-                event, self._data_id, exc,
-            )
+            raise RuntimeError(
+                f"pipeline event insert failed event={event!r} data_id={self._data_id}: {exc}"
+            ) from exc
 
     @asynccontextmanager
     async def step(self, name: str, **start_payload: Any) -> AsyncIterator[StepScope]:

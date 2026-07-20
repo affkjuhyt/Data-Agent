@@ -92,16 +92,31 @@ WEB_USE_PLAYWRIGHT = os.getenv("WEB_USE_PLAYWRIGHT", "1") not in ("0", "false", 
 WEB_RENDER_WAIT = float(os.getenv("WEB_RENDER_WAIT", "12"))
 # Similarity floor for a stage-2 candidate to enter the stage-3 reasoning-pivot
 # comparison. No auto-resolve — every confirmed conflict is surfaced as PENDING
-# for human review.
+# for human review. Stage 2 matches the incoming chunk's vector against stored chunk
+# vectors, so this is a chunk-to-chunk cosine. Measured on multilingual-e5-small over
+# the Vietnamese policy corpus, against one baseline chunk:
+#   contradiction (12 vs 20 days, otherwise identical wording) 0.970
+#   same policy re-dated / re-versioned                        0.921
+#   same facts fully reworded (a real duplicate)               0.906
+#   same topic, compatible extra clauses                       0.846
+#   different topic entirely (salary policy)                   0.687
+# Conflicting rewrites bunch at 0.90-0.97, so a 0.90 floor sat inside that band and
+# dropped duplicates/related chunks; the nearest unrelated chunk is far below at 0.69.
+# 0.80 keeps that separation with margin and leaves precision to stage 3's
+# irrelevant_score, which is the real semantic gate. Recall matters more here: a
+# missed candidate is a conflict that silently never surfaces.
 
 #Conflict
-CONFLICT_SIMILARITY_THRESHOLD = float(os.getenv("CONFLICT_SIMILARITY_THRESHOLD", "0.90"))
-# Max candidate chunks retrieved per question in the conflict pipeline's stage 2.
+CONFLICT_SIMILARITY_THRESHOLD = float(os.getenv("CONFLICT_SIMILARITY_THRESHOLD", "0.80"))
+# Max candidate chunks retrieved per chunk in the conflict pipeline's stage 2.
 CONFLICT_TOP_K_DOCS = int(os.getenv("CONFLICT_TOP_K_DOCS", "5"))
 # A stage-3 candidate whose irrelevant_score is at/above this floor is dropped before conflict-type assignment.
 CONFLICT_IRRELEVANT_THRESHOLD = float(os.getenv("CONFLICT_IRRELEVANT_THRESHOLD", "0.5"))
 # Stage-1 fallback source length (chars) when a chunk has no summary yet.
 CONFLICT_QUESTION_SOURCE_CHAR_LIMIT = int(os.getenv("CONFLICT_QUESTION_SOURCE_CHAR_LIMIT", "2000"))
+# During a batch merge, a re-check conflict is raised when the merged working
+# content's strongest criterion against the next incoming clears this floor.
+CONFLICT_MERGE_RECHECK_THRESHOLD = float(os.getenv("CONFLICT_MERGE_RECHECK_THRESHOLD", "0.5"))
 # A chunk can answer several distinct questions (stage 1); this bounds how many
 # questions run stage 2+3 concurrently.
 CONFLICT_QUESTION_CONCURRENCY = int(os.getenv("CONFLICT_QUESTION_CONCURRENCY", "3"))

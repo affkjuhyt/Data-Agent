@@ -7,7 +7,6 @@ from __future__ import annotations
 import asyncio
 import io
 import json
-import logging
 import re
 import uuid
 from typing import Any
@@ -30,11 +29,10 @@ from services.database_connector.mongo_connector import MongoClient
 from services.database_connector.postgres_connector import PostgresClient
 
 from utils import config as cfg
-from utils.log_writer import set_chunk_progress, write_log
+from utils.log_writer import IngestionLogger
 from utils.pipeline_events import NULL_EMITTER, PipelineEventEmitter
 from utils.prompts import SILVER_SYSTEM_PROMPTS as SYSTEM_PROMPTS
-
-log = logging.getLogger(__name__)
+from utils.stage_chain import StageChain
 
 _JSON_FENCE = re.compile(r"```(?:json)?\s*([\s\S]*?)```", re.IGNORECASE)
 _JSON_OBJ   = re.compile(r'\{[\s\S]*\}', re.DOTALL)
@@ -61,7 +59,6 @@ async def _llm_generate_json(system_type: str, user: str, max_tokens: int = 512)
                 return json.loads(obj_m.group(0))
             except json.JSONDecodeError:
                 pass
-        log.warning("_llm_generate_json: malformed JSON from LLM (system_type=%s) — returning {}", system_type)
         return {}
 
 
@@ -140,7 +137,7 @@ async def _fetch_url_rendered(url: str) -> str:
             try:
                 await page.wait_for_load_state("networkidle", timeout=int(cfg.WEB_RENDER_WAIT * 1000))
             except PWTimeout:
-                log.info("Web render: networkidle not reached for %s — using current DOM", url)
+                pass
             return await page.content()
         finally:
             await browser.close()
@@ -151,27 +148,22 @@ async def _fetch_url(url: str) -> str:
     need JS to paint content); fall back to a static fetch if rendering fails."""
     if cfg.WEB_USE_PLAYWRIGHT:
         try:
-            html = await _fetch_url_rendered(url)
-            log.info("Web fetch: rendered %s → %d bytes (headless Chromium)", url, len(html))
-            return html
-        except Exception as exc:
-            log.warning("Web fetch: headless render failed for %s (%s) — falling back to static", url, exc)
+            return await _fetch_url_rendered(url)
+        except Exception:
+            pass
     return await _fetch_url_static(url)
 
 
 def _extract_main_content(html: str, url: str) -> tuple[str, str]:
-    """Isolate ONLY the main content and return (content, extension).
+    """Isolate ONLY a page's main content and return (content, extension).
 
-    Docling on its own keeps the entire DOM — nav bars, ads, sidebars, cookie
-    banners, footers. So we run a readability-style extractor (trafilatura) FIRST
-    to drop that boilerplate and emit clean markdown; Docling then chunks the
-    markdown exactly like a document. Falls back to raw HTML (parsed as .html) if
-    trafilatura can't isolate content, so a page never fails outright.
+    trafilatura runs before Docling, which would otherwise keep the whole DOM (nav, ads,
+    banners); Docling then chunks its markdown like any document. Falls back to raw HTML
+    so a page trafilatura cannot strip never fails outright.
     """
     try:
         import trafilatura
     except ImportError:
-        log.warning("trafilatura missing — feeding raw HTML to Docling (boilerplate NOT stripped)")
         return html, "html"
 
     for fmt in ("markdown", "txt"):
@@ -181,13 +173,11 @@ def _extract_main_content(html: str, url: str) -> tuple[str, str]:
                 include_tables=True, include_comments=False, include_images=False,
                 favor_precision=True,
             )
-        except Exception as exc:
-            log.warning("trafilatura extract(%s) failed: %s", fmt, exc)
+        except Exception:
             extracted = None
         if extracted and extracted.strip():
             return extracted, "md"
 
-    log.warning("trafilatura found no main content for %s — falling back to raw HTML", url)
     return html, "html"
 
 
@@ -199,7 +189,6 @@ async def _parse_web(docling, url: str) -> list[dict]:
     html = await _fetch_url(url)
     loop = asyncio.get_event_loop()
     content, extension = await loop.run_in_executor(None, _extract_main_content, html, url)
-    log.info("Silver web: %s → %d chars main content (%s)", url, len(content), extension)
     result = await docling.parse_bytes(content.encode("utf-8"), extension)
     return _docling_chunks_to_dicts(result)
 
@@ -213,9 +202,8 @@ async def _parse_image(file_bytes: bytes, extension: str) -> list[dict]:
 async def _parse_video(file_bytes: bytes) -> list[dict]:
     try:
         import av  # type: ignore[import]
-    except ImportError:
-        log.error("PyAV not installed — cannot extract video frames.")
-        raise
+    except ImportError as exc:
+        raise RuntimeError("PyAV not installed — cannot extract video frames") from exc
 
     container = av.open(io.BytesIO(file_bytes))
     video_stream = next((s for s in container.streams if s.type == "video"), None)
@@ -297,8 +285,6 @@ async def _filter_chunks(
 
         matched_phrase = _exact_match_blocked(content, exact_phrases) if exact_phrases else None
         if matched_phrase:
-            log.info("Silver filter: exact-match blocked block_index=%d phrase=%r",
-                     block_index, matched_phrase)
             await emitter.emit("silver.filter.blocked", {
                 "index": block_index,
                 "method": "exact_match",
@@ -405,22 +391,20 @@ async def summarize_chunk(content: str) -> dict:
                         summary_result.get("relationships"), [entity["name"] for entity in entities]),
                     "skip":     bool(summary_result.get("skip", False)),
                 }
-        except Exception as exc:
-            log.warning("Silver summary: attempt %d failed: %s", attempt + 1, exc)
+        except Exception:
+            pass
     return _fallback_chunk_summary(content)
 
 
 async def _summarize_chunks(
     chunks: list[dict],
+    logger: IngestionLogger,
     emitter: PipelineEventEmitter = NULL_EMITTER,
-    database=None,
-    data_id: str | None = None,
 ) -> list[dict]:
     """Annotate every chunk with summary + intents (bounded-concurrency LLM calls)
     and drop chunks the LLM flags as boilerplate. Table chunks are never dropped —
     the table itself is valuable structured data even if the prose around it isn't."""
-    if database is not None and data_id is not None:
-        await set_chunk_progress(database, data_id, total=len(chunks), processed=0)
+    await logger.progress(total=len(chunks), processed=0)
 
     summary_semaphore = asyncio.Semaphore(cfg.SILVER_SUMMARY_CONCURRENCY)
     completed_count = 0
@@ -430,8 +414,7 @@ async def _summarize_chunks(
         async with summary_semaphore:
             result = await summarize_chunk(chunk["content"])
         completed_count += 1
-        if database is not None and data_id is not None:
-            await set_chunk_progress(database, data_id, processed=completed_count)
+        await logger.progress(processed=completed_count)
         return result
 
     summary_results = await asyncio.gather(*(_summarize_one(chunk) for chunk in chunks))
@@ -439,8 +422,6 @@ async def _summarize_chunks(
     kept_chunks: list[dict] = []
     for chunk, summary_result in zip(chunks, summary_results):
         if summary_result["skip"] and not chunk.get("table_involved"):
-            log.info("Silver summary: block_index=%d flagged boilerplate — dropping",
-                     chunk["block_index"])
             await emitter.emit("silver.summary.skipped", {
                 "index":  chunk["block_index"],
                 "reason": "boilerplate_no_descriptive_content",
@@ -475,7 +456,7 @@ async def _load_kb_data(postgres: PostgresClient, tenant_id: str, data_id: str) 
 
 
 async def _parse_source(
-    minio: MinIOClient, docling, kb_data: dict, data_id: str,
+    minio: MinIOClient, docling, kb_data: dict,
     source_type: SourceType, path: str, extension: str,
     emitter: PipelineEventEmitter,
 ) -> list[dict]:
@@ -496,17 +477,36 @@ async def _parse_source(
         return await _parse_web(docling, web_url)
     if source_type in (SourceType.IMAGE, SourceType.VIDEO):
         file_bytes = await minio.download(cfg.MINIO_BUCKET, path)
-        log.info("Silver: downloaded %d bytes data_id=%s", len(file_bytes), data_id)
         if source_type == SourceType.IMAGE:
             return await _parse_image(file_bytes, extension)
         return await _parse_video(file_bytes)
     raise ValueError(f"Unsupported source_type for silver promotion: {source_type}")
 
 
+async def _rollback_silver_staging(mongo: MongoClient, data_id: str) -> None:
+    try:
+        await mongo.get_client()["kb_silver_staging"].delete_one({"data_id": data_id})
+    except Exception:
+        pass
+
+
+async def _rollback_silver_tier(postgres: PostgresClient, data_id: str) -> None:
+    async with postgres.get_client() as session:
+        try:
+            await session.execute(
+                sa_update(KBDataORM)
+                .where(KBDataORM.data_id == uuid.UUID(data_id))
+                .values(current_tier=Tier.BRONZE.value)
+            )
+            await session.commit()
+        except Exception:
+            await session.rollback()
+
+
 async def _persist_silver(
-    postgres: PostgresClient, mongo: MongoClient, data_id: str, tenant_id: str,
+    postgres: PostgresClient, mongo: MongoClient, *, data_id: str, tenant_id: str,
     source_type: SourceType, accepted_chunks: list[dict], raw_chunk_count: int,
-    approved_by: str,
+    approved_by: str, stage_record: StageChain,
 ) -> None:
     """Write the silver staging doc + flip the tier, each guarded so a failure rolls
     back and is recorded in the document history before propagating."""
@@ -522,24 +522,29 @@ async def _persist_silver(
             upsert=True,
         )
     except Exception as exc:
-        await write_log(database, data_id, "FAILED", f"Silver staging write failed: {exc}", level="ERROR")
-        raise
+        raise RuntimeError(f"silver staging write failed: {exc}") from exc
+    stage_record.push(
+        f"silver_staging_written_{data_id}",
+        rollback_func=_rollback_silver_staging,
+        rollback_args=(mongo, data_id),
+    )
 
-    try:
-        async with postgres.get_client() as session:
-            try:
-                await session.execute(
-                    sa_update(KBDataORM)
-                    .where(KBDataORM.data_id == uuid.UUID(data_id))
-                    .values(current_tier=Tier.SILVER.value)
-                )
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
-    except Exception as exc:
-        await write_log(database, data_id, "FAILED", f"Silver tier update failed: {exc}", level="ERROR")
-        raise
+    async with postgres.get_client() as session:
+        try:
+            await session.execute(
+                sa_update(KBDataORM)
+                .where(KBDataORM.data_id == uuid.UUID(data_id))
+                .values(current_tier=Tier.SILVER.value)
+            )
+            await session.commit()
+        except Exception as exc:
+            await session.rollback()
+            raise RuntimeError(f"silver tier update failed: {exc}") from exc
+    stage_record.push(
+        f"silver_tier_updated_{data_id}",
+        rollback_func=_rollback_silver_tier,
+        rollback_args=(postgres, data_id),
+    )
 
     # Lifecycle history is an audit row — best-effort, never fails the stage.
     try:
@@ -558,10 +563,8 @@ async def _persist_silver(
                 "tables_found":    tables_found,
             },
         ))
-    except Exception as exc:
-        log.warning("Silver: lifecycle history insert failed data_id=%s: %s", data_id, exc)
-        await write_log(database, data_id, "RUNNING",
-                        f"Silver lifecycle history not recorded: {exc}", level="WARNING")
+    except Exception:
+        pass
 
 
 async def promote_to_silver(
@@ -580,57 +583,68 @@ async def promote_to_silver(
     it waits for an explicit user request (POST /promote/{data_id}/gold).
     Returns: {data_id, chunks_count, layer}
     """
-    kb_data = await _load_kb_data(postgres, tenant_id, data_id)
-    source_type = SourceType(kb_data["source_type"])
-    path: str = kb_data["path"]
-    extension: str = kb_data["extension"]
-    parser_name = "docling" if source_type in (SourceType.DOC, SourceType.WEB) else "vlm"
+    database = mongo.get_client()
+    logger = IngestionLogger(db=database, data_id=data_id)
+    stage_record = StageChain()
 
-    async with emitter.step("silver", source_type=source_type.value, parser=parser_name) as silver_scope:
-        async with emitter.step("silver.parse", parser=parser_name) as parse_scope:
-            raw_chunks = await _parse_source(
-                minio, docling, kb_data, data_id, source_type, path, extension, emitter,
+    await logger.logging("Silver stage started", status="RUNNING", stage="silver")
+    try:
+        kb_data = await _load_kb_data(postgres, tenant_id=tenant_id, data_id=data_id)
+        source_type = SourceType(kb_data["source_type"])
+        path: str = kb_data["path"]
+        extension: str = kb_data["extension"]
+        parser_name = "docling" if source_type in (SourceType.DOC, SourceType.WEB) else "vlm"
+
+        async with emitter.step("silver", source_type=source_type.value, parser=parser_name) as silver_scope:
+            await logger.logging("Parsing document with Docling", status="CHUNKING")
+            async with emitter.step("silver.parse", parser=parser_name) as parse_scope:
+                raw_chunks = await _parse_source(
+                    minio, docling, kb_data, source_type, path, extension, emitter,
+                )
+                parse_scope.set(chunks=len(raw_chunks))
+            stage_record.push("parsed")
+
+            for chunk in raw_chunks:
+                content = chunk["content"]
+                await emitter.emit("silver.chunk.found", {
+                    "index":          chunk["block_index"],
+                    "preview":        content[:200],
+                    "length":         len(content),
+                    "table_involved": chunk.get("table_involved", False),
+                    "table_name":     (chunk.get("table") or {}).get("table_name"),
+                })
+
+            async with emitter.step("silver.filter") as filter_scope:
+                accepted_chunks = await _filter_chunks(postgres, tenant_id=tenant_id, chunks=raw_chunks, emitter=emitter)
+                filter_scope.set(total=len(raw_chunks), accepted=len(accepted_chunks))
+            stage_record.push("filtered")
+
+            async with emitter.step("silver.summary", total=len(accepted_chunks)) as summary_scope:
+                accepted_chunks = await _summarize_chunks(accepted_chunks, logger=logger, emitter=emitter)
+                summary_scope.set(kept=len(accepted_chunks))
+            stage_record.push("summarized")
+
+            for new_index, chunk in enumerate(accepted_chunks):
+                chunk["block_index"] = new_index
+
+            await _persist_silver(
+                postgres, mongo, data_id=data_id, tenant_id=tenant_id, source_type=source_type,
+                accepted_chunks=accepted_chunks, raw_chunk_count=len(raw_chunks), approved_by=approved_by,
+                stage_record=stage_record,
             )
-            parse_scope.set(chunks=len(raw_chunks))
-        log.info("Silver: parsed %d chunks data_id=%s", len(raw_chunks), data_id)
 
-        for chunk in raw_chunks:
-            content = chunk["content"]
-            await emitter.emit("silver.chunk.found", {
-                "index":          chunk["block_index"],
-                "preview":        content[:200],
-                "length":         len(content),
-                "table_involved": chunk.get("table_involved", False),
-                "table_name":     (chunk.get("table") or {}).get("table_name"),
-            })
-
-        async with emitter.step("silver.filter") as filter_scope:
-            accepted_chunks = await _filter_chunks(postgres, tenant_id, raw_chunks, emitter)
-            filter_scope.set(total=len(raw_chunks), accepted=len(accepted_chunks))
-        log.info("Silver: %d/%d chunks passed filters data_id=%s",
-                 len(accepted_chunks), len(raw_chunks), data_id)
-
-        async with emitter.step("silver.summary", total=len(accepted_chunks)) as summary_scope:
-            accepted_chunks = await _summarize_chunks(
-                accepted_chunks, emitter, database=mongo.get_client(), data_id=data_id,
+            silver_scope.set(
+                accepted=len(accepted_chunks),
+                rejected=len(raw_chunks) - len(accepted_chunks),
+                total=len(raw_chunks),
             )
-            summary_scope.set(kept=len(accepted_chunks))
-        log.info("Silver: %d chunks after summary/boilerplate pass data_id=%s",
-                 len(accepted_chunks), data_id)
+    except Exception as exc:
+        await logger.logging(f"Silver stage failed: {exc}", level="ERROR", status="FAILED")
+        await stage_record.unwind()
+        await emitter.emit("pipeline.error", {"stage": "silver", "error": str(exc)[:300]})
+        raise
 
-        for new_index, chunk in enumerate(accepted_chunks):
-            chunk["block_index"] = new_index
-
-        await _persist_silver(
-            postgres, mongo, data_id, tenant_id, source_type,
-            accepted_chunks, len(raw_chunks), approved_by,
-        )
-        silver_scope.set(
-            accepted=len(accepted_chunks),
-            rejected=len(raw_chunks) - len(accepted_chunks),
-            total=len(raw_chunks),
-        )
-
-    log.info("Silver complete data_id=%s chunks=%d — waiting for gold promotion request",
-             data_id, len(accepted_chunks))
+    await logger.logging(
+        f"Silver complete — {len(accepted_chunks)} chunks accepted, queued for gold", status="EMBEDDING",
+    )
     return {"data_id": data_id, "chunks_count": len(accepted_chunks), "layer": Tier.SILVER.value}

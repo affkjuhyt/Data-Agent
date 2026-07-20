@@ -122,6 +122,14 @@ _MODERATE_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+# Merge finalize: does the merged content still warrant keeping the block's table?
+_TABLE_MERGE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"keep_table": {"type": "boolean"}},
+    "required": ["keep_table"],
+    "additionalProperties": False,
+}
+
 # Silver per-chunk call: summary + per-chunk entities (in the chunk's own
 # language) + intents + skip flag. Entities are extracted PER CHUNK here so each
 # chunk's Qdrant point carries its own entity set (gold canonicalizes + stamps
@@ -249,6 +257,7 @@ SCHEMAS_BY_SYSTEM_TYPE: dict[str, dict[str, Any]] = {
     "pivot-chunk": _PIVOT_CHUNK_SCHEMA,
     "pivot-compare": _PIVOT_COMPARE_SCHEMA,
     "moderate": _MODERATE_SCHEMA,
+    "table-merge": _TABLE_MERGE_SCHEMA,
     "chunk-summary": _CHUNK_SUMMARY_SCHEMA,
     "doc-reduce": _DOC_REDUCE_SCHEMA,
     "doc-entity": _DOC_ENTITY_SCHEMA,
