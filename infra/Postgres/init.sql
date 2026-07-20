@@ -159,27 +159,39 @@ CREATE TABLE IF NOT EXISTS "KBExtractionPolicy" (
 -- ── KBConflictBatch ───────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS "KBConflictBatch" (
-    batch_id    uuid PRIMARY KEY,
-    tenant_id   uuid REFERENCES "Tenants"(id),
-    batch_title varchar(512) NOT NULL,
-    status      varchar(32) NOT NULL,
-    created_at  timestamptz NOT NULL DEFAULT now(),
-    inserted_at timestamptz NOT NULL DEFAULT now(),
-    is_deleted  boolean NOT NULL DEFAULT false
+    batch_id          uuid PRIMARY KEY,
+    tenant_id         uuid REFERENCES "Tenants"(id),
+    -- The one text block this batch is anchored on; every conflict in it targets this block.
+    existing_block_id uuid,
+    batch_title       varchar(512) NOT NULL,
+    status            varchar(32) NOT NULL,
+    created_at        timestamptz NOT NULL DEFAULT now(),
+    inserted_at       timestamptz NOT NULL DEFAULT now(),
+    is_deleted        boolean NOT NULL DEFAULT false
 );
+
+-- One open batch per block: two chunks conflicting with the same block concurrently
+-- must join the same batch, not race into two.
+CREATE UNIQUE INDEX IF NOT EXISTS "idx_kbconflictbatch_open_block"
+    ON "KBConflictBatch" (tenant_id, existing_block_id)
+    WHERE status <> 'resolved' AND is_deleted = false;
 
 -- ── KBConflict ────────────────────────────────────────────────────────────────
 
+-- The queryable index only. The incoming chunk's content/embedding/entities live in
+-- Mongo (kb_conflict_payload), keyed by (tenant_id, conflict_id).
 CREATE TABLE IF NOT EXISTS "KBConflict" (
     conflict_id            uuid PRIMARY KEY,
     tenant_id              uuid REFERENCES "Tenants"(id),
+    -- The document whose chunk raised this conflict; scopes re-promotion cleanup.
+    data_id                uuid REFERENCES "KBData"(data_id),
     conflict_type          varchar(64) NOT NULL,
     severity               varchar(16) NOT NULL,
     batch_id               uuid REFERENCES "KBConflictBatch"(batch_id),
     status                 varchar(32) NOT NULL,
     detailed_explanation   text,
-    existing_snapshot      jsonb,
-    incoming_snapshot      jsonb,
+    -- Set when a merge re-check reopened this conflict, so a re-approved merge forces through.
+    from_recheck           boolean NOT NULL DEFAULT false,
     resolution_instruction text,
     resolution_method      varchar(20),
     resolved_by            varchar(255),
@@ -189,6 +201,8 @@ CREATE TABLE IF NOT EXISTS "KBConflict" (
     inserted_at            timestamptz NOT NULL DEFAULT now(),
     is_deleted             boolean NOT NULL DEFAULT false
 );
+
+CREATE INDEX IF NOT EXISTS "idx_kbconflict_data_id" ON "KBConflict" (data_id);
 
 -- ── KBWarehouse ───────────────────────────────────────────────────────────────
 

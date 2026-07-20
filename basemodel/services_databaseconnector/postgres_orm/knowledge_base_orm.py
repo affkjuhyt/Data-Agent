@@ -205,10 +205,19 @@ class KBConflictBatchORM(Base):
 
     __table_args__ = (
         Index("idx_kbconflictbatch_inserted_at_desc", text("inserted_at DESC")),
+        # One open batch per block: two chunks conflicting with the same block
+        # concurrently must join the same batch, not race into two.
+        Index(
+            "idx_kbconflictbatch_open_block", "tenant_id", "existing_block_id",
+            unique=True,
+            postgresql_where=text("status <> 'resolved' AND is_deleted = false"),
+        ),
     )
 
     batch_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=True, index=True)
+    # The one text block this batch is anchored on; every conflict in it targets this block.
+    existing_block_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True, index=True)
     batch_title: Mapped[str] = mapped_column(String(512), nullable=False)
     status: Mapped[str] = mapped_column(String(32), default=ConflictStatus.PENDING.value, nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
@@ -229,13 +238,15 @@ class KBConflictORM(Base):
 
     conflict_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=True, index=True)
+    # The document whose chunk raised this conflict; scopes re-promotion cleanup.
+    data_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBData.data_id"), nullable=True, index=True)
     conflict_type: Mapped[str] = mapped_column(String(64), nullable=False)
     severity: Mapped[str] = mapped_column(String(16), nullable=False)
     batch_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBConflictBatch.batch_id"), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(32), default=ConflictStatus.PENDING.value, nullable=False)
     detailed_explanation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    existing_snapshot: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    incoming_snapshot: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    # Set when a merge re-check reopened this conflict, so a re-approved merge forces through.
+    from_recheck: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
     resolution_instruction: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     resolution_method: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     resolved_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

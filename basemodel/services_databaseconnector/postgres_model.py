@@ -340,19 +340,20 @@ class KBExtractionPolicyInsert(TenantModel):
 @register("insert")
 class KBConflictBatchInsert(TenantModel):
     batch_title: str
+    existing_block_id: Optional[str] = None
     status: ConflictStatus = ConflictStatus.PENDING
     model_config = ConfigDict(use_enum_values=True)
 
 
 @register("insert")
 class KBConflictInsert(TenantModel):
+    """The conflict's index row. Its chunk payload lives in Mongo, keyed (tenant_id, conflict_id)."""
     conflict_type: ConflictType
     severity: ConflictSeverity
+    data_id: Optional[str] = None
     batch_id: Optional[str] = None
     status: ConflictStatus = ConflictStatus.PENDING
     detailed_explanation: Optional[str] = None
-    existing_snapshot: Optional[dict[str, Any]] = None
-    incoming_snapshot: Optional[dict[str, Any]] = None
     resolution_instruction: Optional[str] = None
     model_config = ConfigDict(use_enum_values=True)
 
