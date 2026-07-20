@@ -25,9 +25,14 @@ class PendingConflictBatch(BaseModel):
 
 # ── Request ───────────────────────────────────────────────────────────────────
 
-class ResolveConflictRequest(BaseModel):
-    selected_resolution_method: str  # UI sends "Merge" / "Keep Existing" (Title Case)
+class BatchConflictChoice(BaseModel):
+    conflict_id: str
+    selected_resolution_method: str
     resolution_instruction: Optional[str] = None
+
+
+class ResolveBatchRequest(BaseModel):
+    resolutions: list[BatchConflictChoice]
 
 
 # ── Response ──────────────────────────────────────────────────────────────────
@@ -58,4 +63,9 @@ class ConflictDetailResponse(BaseModel):
 
 class ConflictResolvedResponse(BaseModel):
     conflict_id: str
+    status: str
+
+
+class BatchResolvedResponse(BaseModel):
+    batch_id: str
     status: str

@@ -19,8 +19,9 @@ from services.kb_backend.schemas.table import (  # noqa: F401
     TableColumn, UpdateTableRowRequest, TableResponse,
 )
 from services.kb_backend.schemas.conflict import (  # noqa: F401
-    ConflictSummary, PendingConflictBatch, ResolveConflictRequest,
+    ConflictSummary, PendingConflictBatch,
     ConflictBucketsResponse, ConflictDetailResponse, ConflictResolvedResponse,
+    BatchConflictChoice, ResolveBatchRequest, BatchResolvedResponse,
 )
 from services.kb_backend.schemas.policy import (  # noqa: F401
     CreateFilterPolicyRequest, UpdateFilterPolicyRequest, UpdateExtractionPolicyRequest,

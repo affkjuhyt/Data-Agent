@@ -14,7 +14,10 @@ from services.kb_backend.schemas import DocResponse, to_string
 from services.kb_backend.operations.pagination import (
     PAGE_SIZE, decode_cursor, encode_cursor, build_cursor_page,
 )
-from services.kb_backend.operations.trash_ops import qdrant_set_deleted_by_data_id
+from services.kb_backend.operations.trash_ops import (
+    qdrant_set_deleted_by_data_id,
+    set_postgres_deleted,
+)
 
 log = logging.getLogger(__name__)
 
@@ -253,13 +256,25 @@ async def promote_document(
 
 
 async def delete_document(postgres, qdrant, data_id: str, tenant_id: str | None, record: dict) -> None:
-    """Soft-delete a document: flag KBData AND mirror the is_deleted tag onto the
-    document's Qdrant points (chunk points by data_id + the doc-summary point), so a
-    'deleted' document is no longer retrievable."""
-    tid = tenant_id or str(record.get("tenant_id", ""))
-    resp = await postgres.soft_delete(KBDataDelete(tenant_id=tid, data_id=data_id))
-    if resp.code != 200:
-        log.error("delete_document: DB error: %s", resp.error)
+    """Soft-delete a document in Postgres and Qdrant, or in neither.
+
+    Retrieval filters on Qdrant's is_deleted, so a Postgres-only delete would keep
+    serving a deleted document in search results — undo it instead.
+    """
+    document_tenant_id = tenant_id or str(record.get("tenant_id", ""))
+    response = await postgres.soft_delete(KBDataDelete(tenant_id=document_tenant_id, data_id=data_id))
+    if response.code != 200:
+        log.error("delete_document: DB error: %s", response.error)
         raise HTTPException(status_code=500, detail="Delete failed")
-    await qdrant_set_deleted_by_data_id(qdrant, tid, data_id, True)
+
+    try:
+        await qdrant_set_deleted_by_data_id(qdrant, document_tenant_id, data_id, True)
+    except Exception as exc:
+        log.error("delete_document %s: Qdrant mirror failed (%s) — restoring", data_id, exc)
+        try:
+            await set_postgres_deleted(postgres, "document", uuid.UUID(data_id), False)
+        except Exception as rollback_exc:
+            log.error("delete_document %s: ROLLBACK FAILED (%s) — deleted in Postgres, "
+                      "still searchable", data_id, rollback_exc)
+        raise HTTPException(status_code=503, detail="Delete failed — vector store unavailable")
     log.info("delete_document %s", data_id)

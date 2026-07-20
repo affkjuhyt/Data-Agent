@@ -48,52 +48,45 @@ def _doc_filter(tenant_id: str | None, data_id: str) -> qmodels.Filter:
 
 
 async def qdrant_set_deleted_by_data_id(qdrant, tenant_id, data_id, value: bool) -> None:
-    """Set is_deleted=value on a document's chunk points (data_id filter) and its
-    doc-summary point — both collections, best-effort."""
+    """Set is_deleted=value on a document's chunk points and its doc-summary point.
+
+    Raises: retrieval filters on is_deleted, so a swallowed failure leaves a restored
+    document permanently unsearchable, or a deleted one still being returned.
+    """
     client = qdrant.get_client()
     for collection in (lr_cfg.QDRANT_COLLECTION, lr_cfg.QDRANT_DOC_COLLECTION):
-        try:
-            await client.set_payload(
-                collection_name=collection,
-                payload={"is_deleted": value},
-                points=_doc_filter(tenant_id, data_id),
-            )
-        except Exception as exc:
-            log.warning("trash: set is_deleted=%s failed on %s data_id=%s: %s", value, collection, data_id, exc)
+        await client.set_payload(
+            collection_name=collection,
+            payload={"is_deleted": value},
+            points=_doc_filter(tenant_id, data_id),
+        )
 
 
 async def qdrant_set_deleted_by_block(qdrant, block_id, value: bool) -> None:
-    """Set is_deleted=value on the single chunk point whose id == block_id."""
-    try:
-        await qdrant.get_client().set_payload(
-            collection_name=lr_cfg.QDRANT_COLLECTION,
-            payload={"is_deleted": value},
-            points=[block_id],
-        )
-    except Exception as exc:
-        log.warning("trash: set is_deleted=%s failed for block_id=%s: %s", value, block_id, exc)
+    """Set is_deleted=value on the single chunk point whose id == block_id. Raises."""
+    await qdrant.get_client().set_payload(
+        collection_name=lr_cfg.QDRANT_COLLECTION,
+        payload={"is_deleted": value},
+        points=[block_id],
+    )
 
 
 async def _qdrant_delete_by_data_id(qdrant, tenant_id, data_id) -> None:
+    """Hard-delete a document's chunk and doc-summary points. Raises."""
     client = qdrant.get_client()
     for collection in (lr_cfg.QDRANT_COLLECTION, lr_cfg.QDRANT_DOC_COLLECTION):
-        try:
-            await client.delete(
-                collection_name=collection,
-                points_selector=qmodels.FilterSelector(filter=_doc_filter(tenant_id, data_id)),
-            )
-        except Exception as exc:
-            log.warning("trash: qdrant delete failed on %s data_id=%s: %s", collection, data_id, exc)
+        await client.delete(
+            collection_name=collection,
+            points_selector=qmodels.FilterSelector(filter=_doc_filter(tenant_id, data_id)),
+        )
 
 
 async def _qdrant_delete_block(qdrant, block_id) -> None:
-    try:
-        await qdrant.get_client().delete(
-            collection_name=lr_cfg.QDRANT_COLLECTION,
-            points_selector=qmodels.PointIdsList(points=[block_id]),
-        )
-    except Exception as exc:
-        log.warning("trash: qdrant delete failed for block_id=%s: %s", block_id, exc)
+    """Hard-delete one chunk point. Raises."""
+    await qdrant.get_client().delete(
+        collection_name=lr_cfg.QDRANT_COLLECTION,
+        points_selector=qmodels.PointIdsList(points=[block_id]),
+    )
 
 
 def _preview(text: str | None) -> str:
@@ -188,40 +181,55 @@ async def list_trash(postgres, level: str, tenant_id: str | None) -> dict:
 
 
 # ── Restore (reverse the is_deleted tag in Postgres + Qdrant) ─────────────────
+
+async def set_postgres_deleted(postgres, level: str, item_id: uuid.UUID, is_deleted: bool) -> int:
+    """Flip one trash item's Postgres is_deleted flag; returns rows affected."""
+    orm_by_level = {
+        "document": (KBDataORM, KBDataORM.data_id),
+        "chunk":    (KBTextBlockORM, KBTextBlockORM.block_id),
+        "version":  (KBTextBlockVersionORM, KBTextBlockVersionORM.version_id),
+    }
+    orm, id_column = orm_by_level[level]
+    async with postgres.get_client() as session:
+        try:
+            result = await session.execute(
+                sa_update(orm)
+                .where(id_column == item_id, orm.is_deleted.is_(not is_deleted))
+                .values(is_deleted=is_deleted)
+            )
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+    return result.rowcount or 0
+
+
 async def restore(postgres, qdrant, level: str, item_id: str, tenant_id: str | None) -> None:
+    """Un-delete a trash item in Postgres and Qdrant, or in neither.
+
+    Retrieval filters on Qdrant's is_deleted, so a Postgres-only restore would report
+    success for a document that stays invisible to search — re-trash it instead.
+    """
     if level not in LEVELS:
         raise HTTPException(status_code=422, detail=f"Unknown trash level: {level}")
-    iid = uuid.UUID(item_id)
+    item_uuid = uuid.UUID(item_id)
 
-    async with postgres.get_client() as session:
-        if level == "document":
-            res = await session.execute(
-                sa_update(KBDataORM)
-                .where(KBDataORM.data_id == iid, KBDataORM.is_deleted.is_(True))
-                .values(is_deleted=False)
-            )
-        elif level == "chunk":
-            res = await session.execute(
-                sa_update(KBTextBlockORM)
-                .where(KBTextBlockORM.block_id == iid, KBTextBlockORM.is_deleted.is_(True))
-                .values(is_deleted=False)
-            )
-        else:  # version
-            res = await session.execute(
-                sa_update(KBTextBlockVersionORM)
-                .where(KBTextBlockVersionORM.version_id == iid, KBTextBlockVersionORM.is_deleted.is_(True))
-                .values(is_deleted=False)
-            )
-        await session.commit()
-
-    if res.rowcount == 0:
+    if await set_postgres_deleted(postgres, level, item_uuid, False) == 0:
         raise HTTPException(status_code=404, detail=f"{level} not in trash")
 
-    # Mirror the un-delete onto Qdrant.
-    if level == "document":
-        await qdrant_set_deleted_by_data_id(qdrant, tenant_id, item_id, False)
-    elif level == "chunk":
-        await qdrant_set_deleted_by_block(qdrant, item_id, False)
+    try:
+        if level == "document":
+            await qdrant_set_deleted_by_data_id(qdrant, tenant_id, item_id, False)
+        elif level == "chunk":
+            await qdrant_set_deleted_by_block(qdrant, item_id, False)
+    except Exception as exc:
+        log.error("trash restore %s %s: Qdrant mirror failed (%s) — re-trashing", level, item_id, exc)
+        try:
+            await set_postgres_deleted(postgres, level, item_uuid, True)
+        except Exception as rollback_exc:
+            log.error("trash restore %s %s: ROLLBACK FAILED (%s) — live in Postgres, "
+                      "hidden in Qdrant", level, item_id, rollback_exc)
+        raise HTTPException(status_code=503, detail="Restore failed — vector store unavailable")
     log.info("trash restore %s %s", level, item_id)
 
 
@@ -273,21 +281,27 @@ async def flush(
                 sa_select(KBDataORM.path).where(KBDataORM.data_id == iid)
             )
 
+        # Qdrant and the graph go before the Postgres rows: each delete is idempotent,
+        # so a failure here aborts with the row intact and the retry re-converges.
+        # Dropping the rows first would strand whatever is left with nothing to drive
+        # a cleanup from.
         await _qdrant_delete_by_data_id(qdrant, tenant_id, item_id)
         # Drop this document's graph edges; KB-shared entity nodes survive.
-        try:
-            async with neo4j.get_client().session() as session:
-                await (await session.run(
-                    "MATCH ()-[r:RELATES {data_id: $did}]-() DELETE r", did=item_id)).consume()
-        except Exception as exc:
-            log.warning("trash flush: neo4j cleanup failed data_id=%s: %s", item_id, exc)
+        async with neo4j.get_client().session() as session:
+            await (await session.run(
+                "MATCH ()-[r:RELATES {data_id: $did}]-() DELETE r", did=item_id)).consume()
+
         async with postgres.get_client() as session:
-            # blocks cascade to versions+tables (FK ON DELETE CASCADE); owner FKs do not.
-            await session.execute(sa_delete(KBTextBlockORM).where(KBTextBlockORM.owner_id == iid))
-            await session.execute(sa_delete(KBTableORM).where(KBTableORM.owner_id == iid))
-            await session.execute(sa_delete(KBLifecycleHistoryORM).where(KBLifecycleHistoryORM.data_id == iid))
-            await session.execute(sa_delete(KBDataORM).where(KBDataORM.data_id == iid))
-            await session.commit()
+            try:
+                # blocks cascade to versions+tables (FK ON DELETE CASCADE); owner FKs do not.
+                await session.execute(sa_delete(KBTextBlockORM).where(KBTextBlockORM.owner_id == iid))
+                await session.execute(sa_delete(KBTableORM).where(KBTableORM.owner_id == iid))
+                await session.execute(sa_delete(KBLifecycleHistoryORM).where(KBLifecycleHistoryORM.data_id == iid))
+                await session.execute(sa_delete(KBDataORM).where(KBDataORM.data_id == iid))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
 
         # MinIO source object — best-effort; a missing/failed delete must not leave
         # the document half-flushed (the DB rows are already gone).
@@ -309,12 +323,22 @@ async def flush(
     elif level == "chunk":
         await _qdrant_delete_block(qdrant, item_id)
         async with postgres.get_client() as session:
-            await session.execute(sa_delete(KBTextBlockORM).where(KBTextBlockORM.block_id == iid))
-            await session.commit()
+            try:
+                await session.execute(sa_delete(KBTextBlockORM).where(KBTextBlockORM.block_id == iid))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
 
     else:  # version — Postgres only
         async with postgres.get_client() as session:
-            await session.execute(sa_delete(KBTextBlockVersionORM).where(KBTextBlockVersionORM.version_id == iid))
-            await session.commit()
+            try:
+                await session.execute(
+                    sa_delete(KBTextBlockVersionORM).where(KBTextBlockVersionORM.version_id == iid)
+                )
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
 
     log.info("trash flush %s %s (permanent)", level, item_id)
