@@ -10,3 +10,7 @@ const env = (import.meta as any).env ?? {};
 /** Kong gateway — KB backend API plus the release/auth proxy paths. */
 export const API_URL = (env.VITE_API_URL as string | undefined) ?? 'http://localhost:8000';
 
+/** workflow-runtime — sandbox queue/stream endpoints, which Kong does not front. */
+export const WORKFLOW_RUNTIME_URL =
+  (env.VITE_WORKFLOW_RUNTIME_URL as string | undefined) ?? 'http://localhost:8001';
+
