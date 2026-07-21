@@ -78,10 +78,10 @@ async def call_agent(
     orchestrated: bool = False,
     traceparent: str | None = None,
     guardrail_cfg: dict | None = None,
-) -> tuple[str, str | None]:
+) -> tuple[str, str | None, list[dict]]:
     """
     Gọi POST /api/conversations/run trên workflow-runtime.
-    Trả về (output_text, conversation_id).
+    Trả về (output_text, conversation_id, citations).
     """
     if not agent_id:
         raise ValueError("agent_id is empty — planner failed to assign an agent for this task.")
@@ -93,6 +93,7 @@ async def call_agent(
     url = f"{config.WORKFLOW_RUNTIME_URL}/api/conversations/run"
     collected: list[str] = []
     conversation_id: str | None = None
+    citations: list[dict] = []
 
     client = get_shared_client()
     headers = {"X-User-ID": user_id}
@@ -118,6 +119,8 @@ async def call_agent(
                     token = json.loads(raw)
                     if isinstance(token, str):
                         collected.append(token)
+                    elif isinstance(token, dict) and "__citations" in token:
+                        citations = token["__citations"]
                 except json.JSONDecodeError:
                     collected.append(raw)
 
@@ -126,7 +129,7 @@ async def call_agent(
 
     result = "".join(collected).strip()
     logger.debug("agent_call | agent=%s conv=%s len=%d", agent_id, conversation_id, len(result))
-    return result, conversation_id
+    return result, conversation_id, citations
 
 
 @_retry_transient
@@ -169,6 +172,7 @@ async def call_agent_stream(
       ("token", str)           — text token
       ("pending_review", dict) — tool approval interrupt
       ("chart", dict)          — chart_spec từ Visualization node (workflow-runtime)
+      ("citations", list[dict]) — nguồn đã được responder trích dẫn (workflow-runtime)
     """
     if not agent_id:
         raise ValueError("agent_id is empty")
@@ -212,6 +216,8 @@ async def call_agent_stream(
                     yield ("pending_review", parsed["__pending_review"])
                 elif "__chart" in parsed:
                     yield ("chart", parsed["__chart"])
+                elif "__citations" in parsed:
+                    yield ("citations", parsed["__citations"])
                 # bỏ qua __options và các event khác
     finally:
         await cm.__aexit__(None, None, None)

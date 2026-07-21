@@ -30,6 +30,7 @@ class OrchestratorState(TypedDict):
                                    # và để session_cache lưu/khôi phục khi client retry
     completed_node_ids: list[str] # node đã chạy thành công (resume tránh gọi lại agent)
     final_response: str
+    citations: list[dict]
     suggestions: list[str]
     target_results: list[Any]
     recovered: bool

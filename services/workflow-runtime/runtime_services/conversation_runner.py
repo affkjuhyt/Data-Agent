@@ -301,6 +301,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         "rrf_results": [],
         "reranked_chunks": [],
         "response": "",
+        "citations": [],
         "suggestions": [],
         "intent": None,
         "language": None,
@@ -323,6 +324,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
 
         pending_suggestions: list[str] | None = None
         pending_charts: list[dict] | None = None
+        pending_citations: list[dict] | None = None
         # Khai báo sớm (trước try) — nếu exception xảy ra trước khi được gán
         # lại bên dưới, khối finally vẫn tham chiếu được an toàn.
         responder_options: list[str] | None = None
@@ -338,6 +340,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         # responder sinh ra bản mới, huỷ task check của bản cũ (sắp lỗi thời
         # nếu Judge yêu cầu sinh lại), bắn task check mới cho bản hiện tại.
         last_responder_text = ""
+        last_responder_citations: list[dict] = []
         guardrail_task: asyncio.Task | None = None
 
         lg_config = {"callbacks": callbacks, "configurable": {"thread_id": conv_id}}
@@ -391,6 +394,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                         out = event["data"].get("output", {})
                         text = out.get("response", "") if isinstance(out, dict) else ""
                         last_responder_text = text
+                        last_responder_citations = out.get("citations", []) if isinstance(out, dict) else []
                         # Bản trước (nếu có) sắp lỗi thời — Judge vừa cho responder
                         # chạy lại, huỷ kết quả check dở dang của bản cũ.
                         if guardrail_task and not guardrail_task.done():
@@ -445,6 +449,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                     yield f"data: {json.dumps(assistant_text)}\n\n"
                 else:
                     clean_text, responder_options = _strip_think_and_options(last_responder_text)
+                    pending_citations = last_responder_citations or None
                     # Ghép câu nhắc "có chart" KHÔNG qua LLM — Responder chạy song song với
                     # Visualization nên tự nó không biết chart có vẽ được hay không lúc sinh
                     # văn bản; đây là điểm DUY NHẤT đã biết chắc cả 2 nhánh đều xong.
@@ -464,6 +469,9 @@ async def run_conversation_stream(req: RunRequest, request: Request):
 
             if pending_charts:
                 yield f"data: {json.dumps({'__chart': pending_charts})}\n\n"
+
+            if pending_citations:
+                yield f"data: {json.dumps({'__citations': pending_citations})}\n\n"
 
             await asyncio.to_thread(flush_langfuse)
             yield "data: [DONE]\n\n"
@@ -491,6 +499,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                         "responder_model": cfg.get("responder_model"),
                         **({"pending_options": responder_options} if responder_options else {}),
                         **({"pending_approval": conv_id} if conv_id and conv_id in _pending_reviews else {}),
+                        **({"citations": pending_citations} if pending_citations else {}),
                     },
                 )
                 await cache_append_messages(conv_id, [

@@ -64,6 +64,7 @@ async def stream_orchestration(req: OrchestrateRequest, request: Request):
         "process":                 None,
         "completed_node_ids":      [],
         "final_response":          "",
+        "citations":               [],
         "suggestions":             [],
         "target_results":          [],
         "recovered":               False,
@@ -118,6 +119,8 @@ async def stream_orchestration(req: OrchestrateRequest, request: Request):
                             yield _sse({"__pending_review": event["data"]})
                         elif name == "chart":
                             yield _sse({"__chart": event["data"]})
+                        elif name == "citations":
+                            yield _sse({"__citations": event["data"]})
 
             except Exception as e:
                 logger.error("stream | graph error: %s", e)

@@ -51,6 +51,16 @@ interface ChartSpec {
   series?: Array<{ key: string; type: 'bar' | 'line' | 'area' }>;  // chỉ dùng khi chart_type === 'composed'
 }
 
+interface Citation {
+  index: number;
+  source: string;
+  type: 'kb' | 'mcp' | 'db' | 'web' | 'tool';
+  score?: number | null;
+  snippet: string;
+  url?: string | null;
+  doc_id?: string | null;
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -59,6 +69,7 @@ interface Message {
   suggestions?: string[];
   routed?: { name: string; conf: number } | null;
   chartSpecs?: ChartSpec[];
+  citations?: Citation[];
 }
 
 interface PendingApproval {
@@ -734,12 +745,35 @@ function TracePanel({ steps, traceLoading, traceId, rawObservations }: {
 
 /* ─── Markdown renderer ──────────────────────────────────────── */
 
-function renderInline(text: string): React.ReactNode[] {
-  return text.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g).map((part, i) => {
+const _CITATION_COLORS: Record<Citation['type'], string> = {
+  kb: '#93C5FD', web: '#86EFAC', mcp: '#C084FC', tool: '#86EFAC', db: '#93C5FD',
+};
+
+function renderInline(text: string, citations?: Citation[]): React.ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\)|\[\d+\])/g).map((part, i) => {
     if (part.startsWith('**') && part.endsWith('**'))
       return <strong key={i} style={{ fontWeight: 600, color: '#fff' }}>{part.slice(2, -2)}</strong>;
     if (part.startsWith('`') && part.endsWith('`'))
       return <code key={i} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85em', background: 'rgba(255,255,255,0.1)', padding: '1px 5px', borderRadius: 4, color: '#EBD07C' }}>{part.slice(1, -1)}</code>;
+    const cite = part.match(/^\[(\d+)\]$/);
+    if (cite && citations) {
+      const c = citations.find(x => x.index === Number(cite[1]));
+      if (c) {
+        const color = _CITATION_COLORS[c.type] ?? '#93C5FD';
+        const scoreStr = typeof c.score === 'number' ? ` · score ${c.score.toFixed(2)}` : '';
+        return (
+          <sup key={i} title={`${c.source}${scoreStr}\n${c.snippet}`} style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            minWidth: 15, height: 15, padding: '0 4px', marginLeft: 1,
+            borderRadius: 4, fontSize: 9.5, fontWeight: 700,
+            fontFamily: 'var(--font-mono)', verticalAlign: 2,
+            background: `${color}29`, color,
+          }}>
+            {cite[1]}
+          </sup>
+        );
+      }
+    }
     const link = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
     if (link)
       return <a key={i} href={link[2]} target="_blank" rel="noopener noreferrer" style={{ color: '#93C5FD', textDecoration: 'underline' }}>{link[1]}</a>;
@@ -747,7 +781,7 @@ function renderInline(text: string): React.ReactNode[] {
   });
 }
 
-function MarkdownContent({ text }: { text: string }) {
+function MarkdownContent({ text, citations }: { text: string; citations?: Citation[] }) {
   const lines = text.split('\n');
   const nodes: React.ReactNode[] = [];
   let i = 0;
@@ -771,7 +805,7 @@ function MarkdownContent({ text }: { text: string }) {
     if (hm) {
       const lvl = hm[1].length;
       const sz = ['18px', '16px', '14px', '13px'][lvl - 1] ?? '13px';
-      nodes.push(<p key={`h${i}`} style={{ fontSize: sz, fontWeight: 700, color: '#fff', margin: lvl <= 2 ? '12px 0 4px' : '8px 0 2px' }}>{renderInline(hm[2])}</p>);
+      nodes.push(<p key={`h${i}`} style={{ fontSize: sz, fontWeight: 700, color: '#fff', margin: lvl <= 2 ? '12px 0 4px' : '8px 0 2px' }}>{renderInline(hm[2], citations)}</p>);
       i++; continue;
     }
     // Unordered list
@@ -780,7 +814,7 @@ function MarkdownContent({ text }: { text: string }) {
       while (i < lines.length && /^[-*]\s/.test(lines[i])) { items.push(lines[i].replace(/^[-*]\s/, '')); i++; }
       nodes.push(
         <ul key={`ul${i}`} style={{ margin: '4px 0', paddingLeft: 18 }}>
-          {items.map((item, j) => <li key={j} style={{ margin: '2px 0', fontSize: 13, color: 'rgba(255,255,255,0.78)' }}>{renderInline(item)}</li>)}
+          {items.map((item, j) => <li key={j} style={{ margin: '2px 0', fontSize: 13, color: 'rgba(255,255,255,0.78)' }}>{renderInline(item, citations)}</li>)}
         </ul>
       );
       continue;
@@ -791,7 +825,7 @@ function MarkdownContent({ text }: { text: string }) {
       while (i < lines.length && /^\d+\.\s/.test(lines[i])) { items.push(lines[i].replace(/^\d+\.\s/, '')); i++; }
       nodes.push(
         <ol key={`ol${i}`} style={{ margin: '4px 0', paddingLeft: 20 }}>
-          {items.map((item, j) => <li key={j} style={{ margin: '2px 0', fontSize: 13, color: 'rgba(255,255,255,0.78)' }}>{renderInline(item)}</li>)}
+          {items.map((item, j) => <li key={j} style={{ margin: '2px 0', fontSize: 13, color: 'rgba(255,255,255,0.78)' }}>{renderInline(item, citations)}</li>)}
         </ol>
       );
       continue;
@@ -799,7 +833,7 @@ function MarkdownContent({ text }: { text: string }) {
     // Blank line
     if (!line.trim()) { i++; continue; }
     // Paragraph
-    nodes.push(<p key={`p${i}`} style={{ margin: '3px 0', fontSize: 13, lineHeight: 1.55 }}>{renderInline(line)}</p>);
+    nodes.push(<p key={`p${i}`} style={{ margin: '3px 0', fontSize: 13, lineHeight: 1.55 }}>{renderInline(line, citations)}</p>);
     i++;
   }
   return <>{nodes}</>;
@@ -908,6 +942,63 @@ function ChartRenderer({ spec }: { spec: ChartSpec }) {
   );
 }
 
+/* ─── Citation panel ─────────────────────────────────────────── */
+
+const _CITATION_TAGS: Record<Citation['type'], string> = {
+  kb: 'KB', web: 'Web', mcp: 'MCP', tool: 'Tool', db: 'DB',
+};
+
+function CitationPanel({ citations }: { citations: Citation[] }) {
+  return (
+    <div style={{ marginTop: 8, padding: '10px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10 }}>
+      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.02em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.45)', marginBottom: 8 }}>
+        📎 Nguồn tham khảo
+      </div>
+      {citations.map((c, i) => {
+        const color = _CITATION_COLORS[c.type] ?? '#93C5FD';
+        const href = c.url || (c.type === 'kb' && c.doc_id ? `/api/knowledge/documents/${c.doc_id}/file` : null);
+        return (
+          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '6px 0', borderTop: i === 0 ? 'none' : '1px solid rgba(255,255,255,0.08)' }}>
+            <div style={{
+              flexShrink: 0, width: 16, height: 16, borderRadius: 4, marginTop: 1,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 9.5, fontWeight: 700, fontFamily: 'var(--font-mono)',
+              background: `${color}29`, color,
+            }}>
+              {c.index}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+                {href ? (
+                  <a href={href} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, fontWeight: 600, color, textDecoration: 'none' }}>
+                    {c.source}
+                  </a>
+                ) : (
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>{c.source}</span>
+                )}
+                <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.45)', letterSpacing: '0.03em' }}>
+                  {_CITATION_TAGS[c.type] ?? c.type}
+                </span>
+                {typeof c.score === 'number' && (
+                  <span style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.25)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>
+                    {c.score.toFixed(2)}
+                  </span>
+                )}
+              </div>
+              <div style={{
+                fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 2, lineHeight: 1.5,
+                overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+              }}>
+                {c.snippet}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ─── ChatBubble ─────────────────────────────────────────────── */
 
 function ChatBubble({ msg }: { msg: Message }) {
@@ -941,9 +1032,10 @@ function ChatBubble({ msg }: { msg: Message }) {
           )}
           {isUser
             ? <p style={{ margin: 0 }}>{msg.content}</p>
-            : <MarkdownContent text={msg.content} />
+            : <MarkdownContent text={msg.content} citations={msg.citations} />
           }
           {!isUser && msg.chartSpecs?.map((spec, i) => <ChartRenderer key={i} spec={spec} />)}
+          {!isUser && msg.citations && msg.citations.length > 0 && <CitationPanel citations={msg.citations} />}
           <p style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.25)', marginTop: 6 }}>{msg.timestamp}</p>
         </div>
       </div>
@@ -1087,6 +1179,8 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
               });
             } else if (parsed?.__chart) {
               setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, chartSpecs: parsed.__chart } : m));
+            } else if (parsed?.__citations) {
+              setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, citations: parsed.__citations } : m));
             } else if (typeof parsed === 'string') {
               fullText += parsed;
               setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: fullText } : m));
@@ -1107,9 +1201,15 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
       if (sessionId) {
         const id = sessionId;
         let prevCount = -1;
-        for (let i = 0; i < 10; i++) {
+        let consecutiveErrors = 0;
+        // 20 lần x 1000ms = 20s tổng — Langfuse worker (Redis→Clickhouse) đôi khi
+        // trễ hơn khoảng đệm cũ (10x800ms=8s), nhất là ngay sau khi cả cụm service
+        // vừa restart. 1 lỗi network thoáng qua không được làm dừng hẳn polling —
+        // chỉ bỏ cuộc sau nhiều lần lỗi LIÊN TIẾP (backend thật sự có vấn đề).
+        for (let i = 0; i < 20; i++) {
           try {
             const { observations, traceId: obsTraceId } = await apiGet<any>(`/api/orchestrate/traces/${id}`);
+            consecutiveErrors = 0;
             const mapped = mapObservations(observations ?? [], obsTraceId);
             if (mapped.length > 0) {
               setTraceSteps(mapped);
@@ -1117,8 +1217,11 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
               if (mapped.length === prevCount) break; // ổn định 2 lần liên tiếp → dừng
               prevCount = mapped.length;
             }
-          } catch { break; }
-          await new Promise(r => setTimeout(r, 800));
+          } catch {
+            consecutiveErrors++;
+            if (consecutiveErrors >= 4) break;
+          }
+          await new Promise(r => setTimeout(r, 1000));
         }
       }
       setTraceLoading(false);

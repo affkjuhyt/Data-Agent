@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import uuid
+from urllib.parse import quote
 
 import litellm
 
@@ -12,14 +13,30 @@ _LITELLM_BASE = __import__("os").environ.get("LITELLM_BASE_URL", "http://localho
 _LITELLM_KEY  = __import__("os").environ.get("LITELLM_API_KEY",  "sk-dev")
 
 
-async def _web_search_handler(call: dict, _cfg: dict) -> tuple[dict | None, dict | None]:
+async def _web_search_handler(call: dict, _cfg: dict) -> tuple[list[dict] | None, dict | None]:
     query = _get_query(call)
     if not query:
         return None, {"tool_name": "web_search", "error": "no query provided"}
     try:
-        from langchain_community.tools import DuckDuckGoSearchRun  # noqa: PLC0415
-        result = await asyncio.to_thread(DuckDuckGoSearchRun().run, query)
-        return {"id": f"web_{uuid.uuid4().hex[:8]}", "content": result, "source": "tool/web_search"}, None
+        # DuckDuckGoSearchAPIWrapper.results() (khác DuckDuckGoSearchRun) trả về
+        # list[{"title", "link", "snippet"}] — mỗi kết quả giữ được URL riêng, cần
+        # thiết để citation trỏ đúng trang thay vì 1 nhãn "web_search" chung chung.
+        from langchain_community.utilities import DuckDuckGoSearchAPIWrapper  # noqa: PLC0415
+        raw_results = await asyncio.to_thread(
+            DuckDuckGoSearchAPIWrapper().results, query, max_results=3,
+        )
+        items = [
+            {
+                "id":      f"web_{uuid.uuid4().hex[:8]}",
+                "content": f"{r.get('title', '')}\n{r.get('snippet', '')}",
+                "source":  r.get("title", "") or r.get("link", ""),
+                "url":     r.get("link", ""),
+            }
+            for r in raw_results if r.get("snippet")
+        ]
+        if not items:
+            return None, {"tool_name": "web_search", "error": "no results found"}
+        return items, None
     except Exception as e:
         return None, {"tool_name": "web_search", "error": str(e)}
 
@@ -60,7 +77,8 @@ async def _wikipedia_handler(call: dict, _cfg: dict) -> tuple[dict | None, dict 
                 return None, {"tool_name": "wikipedia", "error": "empty article content"}
             return {"id": f"wiki_{uuid.uuid4().hex[:8]}",
                     "content": f"# {title}\n\n{content}",
-                    "source": "tool/wikipedia"}, None
+                    "source": title,
+                    "url": f"https://en.wikipedia.org/wiki/{quote(title.replace(' ', '_'))}"}, None
     except Exception as e:
         return None, {"tool_name": "wikipedia", "error": str(e)}
 
