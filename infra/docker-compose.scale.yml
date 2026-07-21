@@ -1,0 +1,126 @@
+# ── 10k-CCU scaling components (KB-SCALE-10K.md §3) ───────────────────────────
+# Layer on top of the base compose. PgBouncer multiplexes many app-side
+# connections onto a small fixed pool of real Postgres backends — the classic
+# "10k users must not become 10k DB connections" fix.
+#
+#   docker compose -f infra/docker-compose.yml -f infra/docker-compose.scale.yml \
+#     --env-file .env --profile kb up -d pgbouncer
+#
+# CUTOVER (kb-backend / worker): point POSTGRES_URL at pgbouncer and disable
+# asyncpg's prepared-statement cache (PgBouncer transaction pooling can't share
+# server-side prepared statements across pooled backends):
+#   POSTGRES_URL=postgresql+asyncpg://admin:dev123@pgbouncer:6432/dataagent
+#   + SQLAlchemy create_async_engine(..., connect_args={"statement_cache_size": 0,
+#                                                        "prepared_statement_cache_size": 0})
+# DEFAULT_POOL_SIZE (50) is the real Postgres connection count regardless of how
+# many app replicas/clients connect (up to MAX_CLIENT_CONN).
+
+services:
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: dataagent-pgbouncer
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: ${POSTGRES_USER:-admin}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      DB_NAME: ${POSTGRES_DB:-dataagent}
+      LISTEN_PORT: "6432"
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "10000"       # app-side connections it will accept
+      DEFAULT_POOL_SIZE: "50"        # real Postgres backends it opens
+      MIN_POOL_SIZE: "10"
+      RESERVE_POOL_SIZE: "10"
+      AUTH_TYPE: scram-sha-256
+    ports:
+      - "6432:6432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: [kb, runtime]
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  # ── Qdrant replication cluster (KB-SCALE-10K.md §3, #4) ─────────────────────
+  # 2-node distributed Qdrant. Collections created with replication_factor=2 keep
+  # a copy of every shard on both nodes → read QPS spreads across replicas and a
+  # single node can die without losing the collection. Opt-in via
+  #   docker compose -f infra/docker-compose.yml -f infra/docker-compose.scale.yml \
+  #     --env-file .env --profile qdrant-cluster up -d
+  # This is a SEPARATE cluster from the single-node dataagent-qdrant (ports
+  # 6343/6344, own volumes) so it can be brought up/verified without disturbing
+  # the running KB. CUTOVER: point kb-backend/worker QDRANT_URL at qdrant-node-0
+  # and recreate the "knowledge" collection with shard_number≥2, replication_factor=2.
+  qdrant-node-0:
+    image: qdrant/qdrant:v1.13.6
+    container_name: dataagent-qdrant-0
+    restart: unless-stopped
+    environment:
+      QDRANT__CLUSTER__ENABLED: "true"
+    command: ["./qdrant", "--uri", "http://qdrant-node-0:6335"]
+    ports:
+      - "6343:6333"
+    volumes:
+      - qdrant0_data:/qdrant/storage
+    profiles: [qdrant-cluster]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  qdrant-node-1:
+    image: qdrant/qdrant:v1.13.6
+    container_name: dataagent-qdrant-1
+    restart: unless-stopped
+    environment:
+      QDRANT__CLUSTER__ENABLED: "true"
+    command: ["./qdrant", "--bootstrap", "http://qdrant-node-0:6335", "--uri", "http://qdrant-node-1:6335"]
+    ports:
+      - "6344:6333"
+    volumes:
+      - qdrant1_data:/qdrant/storage
+    depends_on:
+      - qdrant-node-0
+    profiles: [qdrant-cluster]
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ── Ingestion parallelism (KB-SCALE-10K.md §6) ──────────────────────────────
+  # bronze→silver→gold is embarrassingly parallel across documents (the producer
+  # keys promote messages by data_id, so docs hash across partitions). Give the
+  # silver/gold topics >= N partitions so N workers in group `kb-ingestion` each
+  # own one, then scale the worker. Idempotent — `--alter` only ever increases.
+  #
+  #   docker compose -f infra/docker-compose.kb_e2e.yml -f infra/docker-compose.scale.yml \
+  #     --profile kb run --rm kafka-topic-scale
+  #   docker compose -f infra/docker-compose.kb_e2e.yml up -d --scale kb-ingestion-worker=3
+  #
+  # (INGEST_PARTITIONS must be >= the worker replica count or extra workers idle.)
+  kafka-topic-scale:
+    image: infra-kafka
+    networks: [dan]
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        for t in kb.promote.silver kb.promote.gold; do
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9094 \
+            --alter --topic "$$t" --partitions "${INGEST_PARTITIONS:-3}" || true
+        done
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9094 --describe \
+          --topic kb.promote.silver --topic kb.promote.gold | grep PartitionCount
+    restart: "no"
+    profiles: [kb, runtime]
+
+networks:
+  dan:
+    external: true
+    name: data-agent-network
+
+volumes:
+  qdrant0_data:
+  qdrant1_data:

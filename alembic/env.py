@@ -7,8 +7,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import context
 
-from basemodel.services_databaseconnector.postgres_orm.base import Base
-import basemodel.services_databaseconnector.postgres_orm  # noqa: F401 — registers all ORM classes
+from libs.basemodel.services_databaseconnector.postgres_orm.base import Base
+import libs.basemodel.services_databaseconnector.postgres_orm  # noqa: F401 — registers all ORM classes
 
 config = context.config
 if config.config_file_name is not None:

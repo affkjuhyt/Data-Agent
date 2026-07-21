@@ -1,3 +1,4 @@
+from typing import Any
 import asyncio
 import json
 import logging
@@ -13,7 +14,7 @@ _LITELLM_BASE = __import__("os").environ.get("LITELLM_BASE_URL", "http://localho
 _LITELLM_KEY  = __import__("os").environ.get("LITELLM_API_KEY",  "sk-dev")
 
 
-async def _get_schema_text(tenant_id: str, conn_cfg: dict) -> str:
+async def _get_schema_text(tenant_id: str, conn_cfg: dict[str, Any]) -> str:
     """Tự đọc information_schema.columns của Postgres — thay hoàn toàn cho việc
     gõ tay schema_hint hay mượn hệ Schema Catalog (hệ đó viết cứng cho
     Snowflake, không hỗ trợ Postgres/DB Connector — xem plan). Cache qua Redis
@@ -28,21 +29,26 @@ async def _get_schema_text(tenant_id: str, conn_cfg: dict) -> str:
     if cached is not None:
         return cached
 
+    db_type = (conn_cfg.get("type") or "postgres").lower()
     try:
-        import asyncpg  # noqa: PLC0415
-        conn = await asyncpg.connect(
-            host=host, port=port, user=conn_cfg.get("user", ""),
-            password=conn_cfg.get("password", ""), database=database,
-        )
-        try:
-            rows = await conn.fetch(
-                "SELECT table_name, column_name, data_type FROM information_schema.columns "
-                "WHERE table_schema = 'public' ORDER BY table_name, ordinal_position"
+        if db_type == "clickhouse":
+            from libs.database_connector import clickhouse_connector as _ch  # noqa: PLC0415
+            rows = await _ch.columns(conn_cfg)  # [{table_name, column_name, data_type}, ...]
+        else:
+            import asyncpg  # noqa: PLC0415
+            conn = await asyncpg.connect(
+                host=host, port=port, user=conn_cfg.get("user", ""),
+                password=conn_cfg.get("password", ""), database=database,
             )
-        finally:
-            await conn.close()
+            try:
+                rows = await conn.fetch(
+                    "SELECT table_name, column_name, data_type FROM information_schema.columns "
+                    "WHERE table_schema = 'public' ORDER BY table_name, ordinal_position"
+                )
+            finally:
+                await conn.close()
     except Exception as e:
-        logger.warning("text_to_sql | schema introspection failed host=%s db=%s: %s", host, database, e)
+        logger.warning("text_to_sql | schema introspection failed type=%s host=%s db=%s: %s", db_type, host, database, e)
         return ""
 
     tables: dict[str, list[str]] = {}
@@ -55,35 +61,40 @@ async def _get_schema_text(tenant_id: str, conn_cfg: dict) -> str:
 
 
 async def _run_one_query(
-    name: str, sql: str, conn_cfg: dict, query: str, schema_text: str, sql_mdl: str,
-) -> tuple[dict | None, dict | None]:
+    name: str, sql: str, conn_cfg: dict[str, Any], query: str, schema_text: str, sql_mdl: str,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     """Chạy 1 câu SQL vào đúng 1 DB, tự sửa lỗi tối đa 3 lần (fold lỗi vào
     prompt sinh lại SQL, y hệt logic cũ) — độc lập với các DB khác đang chạy
     song song (asyncio.gather ở _text_to_sql_handler), lỗi ở đây không ảnh
     hưởng query của DB khác."""
     current_sql = sql
     last_err: str | None = None
+    db_type = (conn_cfg.get("type") or "postgres").lower()
 
     for attempt in range(3):
         try:
-            import asyncpg  # noqa: PLC0415
-            conn = await asyncpg.connect(
-                host=conn_cfg.get("host", ""), port=conn_cfg.get("port", 5432),
-                user=conn_cfg.get("user", ""), password=conn_cfg.get("password", ""),
-                database=conn_cfg.get("database", ""),
-            )
-            try:
-                rows = await conn.fetch(current_sql)
-                data = [dict(r) for r in rows]
-                logger.info("text_to_sql | db=%s attempt=%d → %d rows", name, attempt + 1, len(data))
-                return {
-                    "id":       f"sql_{uuid.uuid4().hex[:8]}",
-                    "content":  json.dumps(data, ensure_ascii=False, default=str),
-                    "source":   "tool/sql",
-                    "metadata": {"sql": current_sql, "row_count": len(data), "db_name": name},
-                }, None
-            finally:
-                await conn.close()
+            if db_type == "clickhouse":
+                from libs.database_connector import clickhouse_connector as _ch  # noqa: PLC0415
+                data = await _ch.query(conn_cfg, current_sql)
+            else:
+                import asyncpg  # noqa: PLC0415
+                conn = await asyncpg.connect(
+                    host=conn_cfg.get("host", ""), port=conn_cfg.get("port", 5432),
+                    user=conn_cfg.get("user", ""), password=conn_cfg.get("password", ""),
+                    database=conn_cfg.get("database", ""),
+                )
+                try:
+                    rows = await conn.fetch(current_sql)
+                    data = [dict(r) for r in rows]
+                finally:
+                    await conn.close()
+            logger.info("text_to_sql | db=%s type=%s attempt=%d → %d rows", name, db_type, attempt + 1, len(data))
+            return {
+                "id":       f"sql_{uuid.uuid4().hex[:8]}",
+                "content":  json.dumps(data, ensure_ascii=False, default=str),
+                "source":   "tool/sql",
+                "metadata": {"sql": current_sql, "row_count": len(data), "db_name": name, "db_type": db_type},
+            }, None
         except Exception as e:
             last_err = str(e)
             logger.warning("text_to_sql | db=%s attempt=%d failed: %s", name, attempt + 1, e)
@@ -105,13 +116,13 @@ async def _run_one_query(
     return None, {"tool_name": "text_to_sql", "db_name": name, "error": f"failed after 3 attempts: {last_err}", "sql": current_sql}
 
 
-async def _text_to_sql_handler(call: dict, cfg: dict) -> tuple[list[dict], list[dict]]:
+async def _text_to_sql_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Trả về (results, errors) — CÓ THỂ nhiều kết quả nếu câu hỏi cần
     nhiều DB cùng lúc (LLM tự quyết định, xem plan mục "Multi-DB"). 1 kết nối
     → hành vi đơn giản, không qua bước phân loại DB. ≥2 kết nối → 1 lệnh LLM
     DUY NHẤT vừa chọn (các) DB liên quan vừa sinh SQL cho từng DB — không
     phải 2 lệnh riêng biệt."""
-    db_connections: dict = cfg.get("tool_config", {}).get("db_connections", {})
+    db_connections: dict[str, Any] = cfg.get("tool_config", {}).get("db_connections", {})
     if not db_connections:
         return [], [{"tool_name": "text_to_sql", "error": "no database connection configured"}]
 
@@ -184,7 +195,7 @@ async def _text_to_sql_handler(call: dict, cfg: dict) -> tuple[list[dict], list[
     return results, errors
 
 
-async def _text_to_pandas_handler(call: dict, cfg: dict) -> tuple[dict | None, dict | None]:
+async def _text_to_pandas_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     tool_cfg     = cfg.get("tool_config", {}).get("text_to_pandas", {})
     default_file = tool_cfg.get("default_file_path", "")
     allowed_dir  = tool_cfg.get("allowed_dir", "")
@@ -216,7 +227,7 @@ async def _text_to_pandas_handler(call: dict, cfg: dict) -> tuple[dict | None, d
 
     try:
         import pandas as pd  # noqa: PLC0415, F401
-        ns: dict = {}
+        ns: dict[str, Any] = {}
         exec(compile(code, "<pandas_tool>", "exec"), ns)  # noqa: S102
         result = ns.get("result")
         if result is None:

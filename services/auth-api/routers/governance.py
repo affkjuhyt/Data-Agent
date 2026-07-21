@@ -1,3 +1,4 @@
+from typing import Any
 from fastapi import APIRouter
 
 from auth_core import *
@@ -8,8 +9,8 @@ router = APIRouter()
 
 @router.get("/api/auth/secrets/governance")
 def get_governance(
-    user: dict = Depends(require_role("platform-admin")),
-):
+    user: dict[str, Any] = Depends(require_role("platform-admin")),
+) -> dict[str, Any]:
     conn = get_db()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -23,9 +24,9 @@ def get_governance(
 
 @router.put("/api/auth/secrets/governance")
 def set_governance(
-    body: dict,
-    user: dict = Depends(require_role("platform-admin")),
-):
+    body: dict[str, Any],
+    user: dict[str, Any] = Depends(require_role("platform-admin")),
+) -> dict[str, Any]:
     conn = get_db()
     try:
         with conn.cursor() as cur:
@@ -48,8 +49,8 @@ def set_governance(
 @router.post("/api/auth/secrets/panic", status_code=200)
 def trigger_panic(
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(require_role("platform-admin")),
-):
+    user: dict[str, Any] = Depends(require_role("platform-admin")),
+) -> dict[str, Any]:
     conn = get_db()
     revoked = []
     try:
@@ -91,9 +92,9 @@ def trigger_panic(
 @router.get("/api/auth/secrets/hsm/status")
 def hsm_status(
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(require_role("platform-admin")),
+    user: dict[str, Any] = Depends(require_role("platform-admin")),
     _panic: None = Depends(_vault_panic_check),
-):
+) -> dict[str, Any]:
     vault = get_vault()
     keys_out = []
     try:
@@ -135,11 +136,11 @@ def hsm_status(
 @router.post("/api/auth/secrets/{secret_id}/sign")
 def sign_data(
     secret_id:    str = Path(...),
-    body:         SignIn = None,
+    body:         SignIn | None = None,
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(require_role("platform-admin")),
+    user: dict[str, Any] = Depends(require_role("platform-admin")),
     _panic: None = Depends(_vault_panic_check),
-):
+) -> dict[str, Any]:
     if not body or not body.data:
         raise HTTPException(status_code=422, detail="data (base64) is required")
 
@@ -178,11 +179,11 @@ def sign_data(
 @router.post("/api/auth/secrets/{secret_id}/verify")
 def verify_data(
     secret_id:    str = Path(...),
-    body:         VerifyIn = None,
+    body:         VerifyIn | None = None,
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(require_role("platform-admin")),
+    user: dict[str, Any] = Depends(require_role("platform-admin")),
     _panic: None = Depends(_vault_panic_check),
-):
+) -> dict[str, Any]:
     if not body or not body.data or not body.signature:
         raise HTTPException(status_code=422, detail="data and signature are required")
 
@@ -220,8 +221,8 @@ def verify_data(
 @router.get("/api/auth/secrets/pii-log")
 def secrets_pii_log(
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(require_role("platform-admin")),
-):
+    user: dict[str, Any] = Depends(require_role("platform-admin")),
+) -> list[dict[str, Any]]:
     conn = get_db()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -254,8 +255,8 @@ def secrets_pii_log(
 @router.get("/api/auth/secrets/audit-log")
 def secrets_audit_log(
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(require_role("platform-admin")),
-):
+    user: dict[str, Any] = Depends(require_role("platform-admin")),
+) -> list[dict[str, Any]]:
     conn = get_db()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:

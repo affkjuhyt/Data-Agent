@@ -34,6 +34,12 @@ DOC_PASS_CHUNK_LIMIT = int(os.getenv("DOC_PASS_CHUNK_LIMIT", "5"))  # chunks fro
 # expansion boosts matching-type neighbours and an extra typed-field search
 # joins the RRF fusion. Soft signals only — a wrong type hint can demote but
 # never exclude.
+# Graceful degradation (KB-SCALE-10K.md #5): once a retrieval exceeds this budget
+# (ms since request start), skip the optional-but-costly steps — Neo4j graph
+# expansion and cross-encoder rerank — to protect p95 + shed load off Neo4j /
+# model-service under pressure. 0 disables (full pipeline always).
+DEGRADE_BUDGET_MS = int(os.getenv("DEGRADE_BUDGET_MS", "0"))
+
 TYPE_AWARE = os.getenv("TYPE_AWARE", "1") == "1"
 TYPE_BOOST = float(os.getenv("TYPE_BOOST", "0.08"))   # added to cosine in graph ranking
 
@@ -51,6 +57,33 @@ CANON_OVERLAP = os.getenv("CANON_OVERLAP", "0") == "1"
 # ("thành_phố_hồ_chí_minh").
 QUERY_ALIAS_RESOLVE = os.getenv("QUERY_ALIAS_RESOLVE", "0") == "1"
 
+# ── Hybrid lexical (BM25 / full-text) retrieval branch ────────────────────────
+# 2025 best-practice: pure dense retrieval under-ranks exact keyword / proper-noun
+# matches ("Nghị định 13", a part number, a person's name). A sparse lexical pass
+# recovers them; the two are fused via RRF, which is what makes hybrid beat either
+# alone. Implemented over Postgres full-text search on the active chunk text so it
+# needs no extra store. Env-gated (off by default; enable once the FTS GIN index
+# migration f2b3c4d5e6f7 has run).
+HYBRID_LEXICAL = os.getenv("HYBRID_LEXICAL", "0") == "1"
+LEXICAL_LIMIT = int(os.getenv("LEXICAL_LIMIT", "5"))
+# Postgres text-search configuration. "simple" does NO stemming and keeps
+# Vietnamese diacritics intact — the right choice for the proper-noun / keyword
+# queries this branch targets (a stemming config would fold "Nghị"→"nghi").
+LEXICAL_TS_CONFIG = os.getenv("LEXICAL_TS_CONFIG", "simple")
+
+# ── Content-purpose intent vocabulary ─────────────────────────────────────────
+# The closed label set documents are tagged with (doc-point `intents` field) and
+# that the canonicalize LLM must choose from. Single-sourced here so the prompt
+# and the doc-narrowing filter can never drift apart.
+CONTENT_INTENTS = [
+    s.strip() for s in os.getenv(
+        "CONTENT_INTENTS",
+        "information_retrieval,regulation_compliance,technical_specification,"
+        "financial_reporting,process_description,organisational_info,"
+        "question_answering,data_definition,historical_record,announcement",
+    ).split(",") if s.strip()
+]
+
 # Pipeline tuning
 QDRANT_PASS1_LIMIT = int(os.getenv("QDRANT_PASS1_LIMIT", "3"))
 QDRANT_PASS2_LIMIT = int(os.getenv("QDRANT_PASS2_LIMIT", "2"))
@@ -60,3 +93,22 @@ NEO4J_MAX_NEIGHBOURS = int(os.getenv("NEO4J_MAX_NEIGHBOURS", "5"))
 NEO4J_TOP_ENTITIES = int(os.getenv("NEO4J_TOP_ENTITIES", "3"))
 RRF_TOP_N = int(os.getenv("RRF_TOP_N", "10"))
 RERANK_TOP_N = int(os.getenv("RERANK_TOP_N", "5"))
+
+# ── Reciprocal Rank Fusion + fan-out limits (previously hardcoded) ─────────────
+# RRF constant: 60 is the canonical default from Cormack et al. (2009); larger k
+# flattens the weight of top ranks. Kept configurable rather than a magic literal.
+RRF_K = int(os.getenv("RRF_K", "60"))
+# Offload the (CPU-bound, deterministic) RRF fusion kernel to the Go kb-compute
+# service (/rrf-fuse). Empty = fuse in-process (Python rrf_merge). Any error →
+# transparent fallback to the Python kernel, so retrieval never breaks if Go is down.
+KB_COMPUTE_URL = os.getenv("KB_COMPUTE_URL", "").rstrip("/")
+RRF_REMOTE_TIMEOUT_S = float(os.getenv("RRF_REMOTE_TIMEOUT_S", "2.0"))
+# Graph-seed headroom: keep a few more expansion seeds than NEO4J_TOP_ENTITIES so
+# the query's own entities survive the top-N cut alongside frequency-ranked ones.
+GRAPH_SEED_MARGIN = int(os.getenv("GRAPH_SEED_MARGIN", "3"))
+# Max answer-type hints applied per query (person/location/…) in the typed pass.
+MAX_PREFERRED_TYPES = int(os.getenv("MAX_PREFERRED_TYPES", "2"))
+# Max distinct front-layer typed entity groups searched in the typed pass.
+MAX_TYPED_GROUPS = int(os.getenv("MAX_TYPED_GROUPS", "3"))
+# How many expanded neighbour names to echo in the SSE graph_expand progress event.
+GRAPH_PREVIEW_LIMIT = int(os.getenv("GRAPH_PREVIEW_LIMIT", "20"))

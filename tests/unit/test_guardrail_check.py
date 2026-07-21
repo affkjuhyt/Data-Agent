@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from services.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
+from libs.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
 
 pytestmark = pytest.mark.unit
 
@@ -27,7 +27,7 @@ async def test_input_check_uses_check_type_input(monkeypatch):
         captured["messages"] = kwargs["messages"]
         return _canned({"triggered": False})
 
-    import services.shared.guardrail_check as mod
+    import libs.shared.guardrail_check as mod
     monkeypatch.setattr(mod.litellm, "acompletion", fake_acompletion)
 
     triggered, reason = await llm_guardrail_check("câu hỏi test", {}, check_type="input")
@@ -46,7 +46,7 @@ async def test_output_check_uses_check_type_output_and_returns_reason(monkeypatc
         captured["messages"] = kwargs["messages"]
         return _canned({"triggered": True, "reason": "vi phạm ví dụ"})
 
-    import services.shared.guardrail_check as mod
+    import libs.shared.guardrail_check as mod
     monkeypatch.setattr(mod.litellm, "acompletion", fake_acompletion)
 
     triggered, reason = await llm_guardrail_check("câu trả lời test", {}, check_type="output")
@@ -65,7 +65,7 @@ async def test_allowed_topics_only_applied_to_input_not_output(monkeypatch):
         captured["messages"] = kwargs["messages"]
         return _canned({"triggered": False})
 
-    import services.shared.guardrail_check as mod
+    import libs.shared.guardrail_check as mod
     monkeypatch.setattr(mod.litellm, "acompletion", fake_acompletion)
 
     # "CHỦ ĐỀ ĐƯỢC PHÉP" (không kèm dấu ":") tự nó đã xuất hiện trong prompt gốc
@@ -85,7 +85,7 @@ async def test_raises_guardrail_check_error_on_llm_failure(monkeypatch):
     async def fake_acompletion(**kwargs):
         raise RuntimeError("timeout")
 
-    import services.shared.guardrail_check as mod
+    import libs.shared.guardrail_check as mod
     monkeypatch.setattr(mod.litellm, "acompletion", fake_acompletion)
 
     with pytest.raises(GuardrailCheckError):
@@ -98,7 +98,7 @@ async def test_raises_guardrail_check_error_on_bad_json(monkeypatch):
         resp.choices = [MagicMock(message=MagicMock(content="not json"))]
         return resp
 
-    import services.shared.guardrail_check as mod
+    import libs.shared.guardrail_check as mod
     monkeypatch.setattr(mod.litellm, "acompletion", fake_acompletion)
 
     with pytest.raises(GuardrailCheckError):

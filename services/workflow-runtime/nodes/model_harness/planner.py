@@ -1,3 +1,4 @@
+from typing import Any
 import os
 import re
 import time
@@ -17,7 +18,7 @@ class _ToolCall(BaseModel):
     reason: str
     confidence: float
     tool_name: str | None = None
-    arguments: dict = {}
+    arguments: dict[str, Any] = {}
     parallel: bool = True
     depends_on: list[int] = []
 
@@ -34,7 +35,7 @@ _LITELLM_KEY = os.environ.get("LITELLM_API_KEY", "sk-dev")
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "prompts")
 _SYSTEM = open(os.path.join(_PROMPTS_DIR, "planner_system.txt"), encoding="utf-8").read()
 
-_FALLBACK_TOOL_CALLS = [
+_FALLBACK_TOOL_CALLS: list[dict[str, Any]] = [
     {"type": "kb_search", "query": None, "reason": "planner fallback", "confidence": 0.5, "parallel": True, "depends_on": []}
 ]
 
@@ -56,7 +57,7 @@ def _extract_json_object(raw: str) -> str | None:
     return None
 
 
-async def planner_node(state: AgentState) -> dict:
+async def planner_node(state: AgentState) -> dict[str, Any]:
     t0 = time.monotonic()
     cfg = state.get("config", {})
 

@@ -1,27 +1,21 @@
 """/api/knowledge/qdrant — collection management + semantic search."""
+from typing import Any
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, Field
 
-from basemodel.services_databaseconnector.shared_model import ResponseModel
-from services.kb_backend.UI_model.knowledge import RequestToggleQdrantCollection
+from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
+from services.kb_backend.schemas import ToggleQdrantCollectionRequest, QdrantSearchRequest
 from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
-from services.kb_backend.pipeline.kb_ui_operation.qdrant_ops import (
+from services.kb_backend.operations.qdrant_ops import (
     list_collections, toggle_collection, semantic_search,
 )
 
 router = APIRouter(prefix="/api/knowledge/qdrant", tags=["Knowledge-Qdrant"])
 
 
-class SearchBody(BaseModel):
-    query: str
-    tenant_id: str = ""
-    limit: int = Field(default=10, ge=1, le=20)
-
-
 @router.get("/collections", response_model=ResponseModel)
-async def list_collections_route(request: Request, ctx: dict = Depends(authenticate)):
+async def list_collections_route(request: Request, ctx: dict[str, Any] = Depends(authenticate)) -> ResponseModel[Any]:
     result = await list_collections(
         postgres=svc(request, "postgres"),
         qdrant=svc(request, "qdrant"),
@@ -32,9 +26,9 @@ async def list_collections_route(request: Request, ctx: dict = Depends(authentic
 
 @router.patch("/collections/{collection_id}", response_model=ResponseModel)
 async def toggle_collection_route(
-    collection_id: str, body: RequestToggleQdrantCollection,
-    request: Request, ctx: dict = Depends(require_perm("toggle_qdrant")),
-):
+    collection_id: str, body: ToggleQdrantCollectionRequest,
+    request: Request, ctx: dict[str, Any] = Depends(require_perm("toggle_qdrant")),
+) -> ResponseModel[Any]:
     result = await toggle_collection(
         postgres=svc(request, "postgres"),
         collection_id=collection_id,
@@ -45,9 +39,9 @@ async def toggle_collection_route(
 
 @router.post("/collections/{collection_id}/search", response_model=ResponseModel)
 async def semantic_search_route(
-    collection_id: str, body: SearchBody,
-    request: Request, ctx: dict = Depends(authenticate),
-):
+    collection_id: str, body: QdrantSearchRequest,
+    request: Request, ctx: dict[str, Any] = Depends(authenticate),
+) -> ResponseModel[Any]:
     result = await semantic_search(
         qdrant=svc(request, "qdrant"),
         postgres=svc(request, "postgres"),

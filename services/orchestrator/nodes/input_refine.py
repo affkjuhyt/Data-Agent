@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 import asyncio
 import json
 import logging
@@ -24,8 +25,8 @@ _SYSTEM = open(os.path.join(_PROMPTS_DIR, "input_refine_system.txt"), encoding="
 
 async def run_input_refine(
     query: str,
-    messages: list[dict],
-    cfg: dict,
+    messages: list[dict[str, Any]],
+    cfg: dict[str, Any],
 ) -> tuple[str, list[str]]:
     """
     Standalone function cho SSE endpoint.
@@ -90,7 +91,7 @@ async def run_input_refine(
         return query, []
 
 
-async def input_refine_node(state: OrchestratorState, config: RunnableConfig) -> dict:
+async def input_refine_node(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     """LangGraph node — rewrite hoặc hỏi clarification trong 1 LLM call.
 
     Đua với guardrail_task (bắn nền từ routers/stream.py ngay từ t=0, xem

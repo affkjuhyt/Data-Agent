@@ -1,12 +1,13 @@
 """/api/knowledge/conflicts — ConflictWorkspace data."""
+from typing import Any
 from fastapi import APIRouter, Depends, Query, Request
 
-from basemodel.services_databaseconnector.shared_model import ResponseModel
-from services.kb_backend.UI_model.conflict import RequestResolveConflict
+from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
+from services.kb_backend.schemas import ResolveConflictRequest
 from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
-from services.kb_backend.pipeline.kb_ui_operation.conflict_ops import (
+from services.kb_backend.operations.conflict_ops import (
     list_conflicts, get_conflict, resolve_conflict,
 )
 
@@ -15,11 +16,11 @@ router = APIRouter(prefix="/api/knowledge/conflicts", tags=["Knowledge-Conflicts
 
 @router.get("", response_model=ResponseModel)
 async def list_conflicts_route(
-    request: Request, ctx: dict = Depends(authenticate),
+    request: Request, ctx: dict[str, Any] = Depends(authenticate),
     pending_page:  int = Query(1, ge=1),
     awaiting_page: int = Query(1, ge=1),
     resolved_page: int = Query(1, ge=1),
-):
+) -> ResponseModel[Any]:
     result = await list_conflicts(
         postgres=svc(request, "postgres"),
         tenant_id=ctx["tenant_id"],
@@ -33,8 +34,8 @@ async def list_conflicts_route(
 
 @router.get("/{conflict_id}", response_model=ResponseModel)
 async def get_conflict_route(
-    conflict_id: str, request: Request, ctx: dict = Depends(authenticate),
-):
+    conflict_id: str, request: Request, ctx: dict[str, Any] = Depends(authenticate),
+) -> ResponseModel[Any]:
     result = await get_conflict(
         postgres=svc(request, "postgres"),
         conflict_id=conflict_id,
@@ -45,9 +46,9 @@ async def get_conflict_route(
 
 @router.patch("/{conflict_id}", response_model=ResponseModel)
 async def resolve_conflict_route(
-    conflict_id: str, body: RequestResolveConflict,
-    request: Request, ctx: dict = Depends(require_perm("edit_conflict")),
-):
+    conflict_id: str, body: ResolveConflictRequest,
+    request: Request, ctx: dict[str, Any] = Depends(require_perm("edit_conflict")),
+) -> ResponseModel[Any]:
     result = await resolve_conflict(
         postgres=svc(request, "postgres"),
         conflict_id=conflict_id,

@@ -49,17 +49,17 @@ import sys
 from sqlalchemy import select as sa_select, delete as sa_delete
 from qdrant_client import models as qmodels
 
-from basemodel.services_databaseconnector.shared_model import RetryConfig
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.shared_model import RetryConfig
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBDataORM, KBConflictORM, KBConflictBatchORM,
 )
-from services.database_connector.postgres_connector import PostgresClient
-from services.database_connector.qdrant_connector import QdrantClient as QdrantService
-from services.database_connector.neo4j_connector import Neo4jClient
-from services.database_connector.mongo_connector import MongoClient
-from services.database_connector.minio_connector import MinIOClient
+from libs.database_connector.postgres_connector import PostgresClient
+from libs.database_connector.qdrant_connector import QdrantClient as QdrantService
+from libs.database_connector.neo4j_connector import Neo4jClient
+from libs.database_connector.mongo_connector import MongoClient
+from libs.database_connector.minio_connector import MinIOClient
 from services.kb_backend.pipeline.light_rag import config as cfg
-from services.kb_backend.pipeline.kb_ui_operation import trash_ops
+from services.kb_backend.operations import trash_ops
 
 # Connection strings — same sources the service uses (env + light_rag config).
 POSTGRES_URL = os.getenv("POSTGRES_URL", "postgresql+asyncpg://admin:dev123@postgres/aeroflow_kb")
@@ -96,7 +96,10 @@ async def _open_clients() -> tuple[PostgresClient, QdrantService, Neo4jClient, M
     return postgres, qdrant, neo4j, mongo, minio
 
 
-async def _flush_all_documents(postgres, qdrant, neo4j, mongo, minio) -> None:
+async def _flush_all_documents(
+    postgres: PostgresClient, qdrant: QdrantService, neo4j: Neo4jClient,
+    mongo: MongoClient, minio: MinIOClient,
+) -> None:
     """Run the Trash document-flush for EVERY KBData row (any tenant, incl.
     soft-deleted) — the exact path the UI permanent-delete uses."""
     section("Documents (via trash_ops.flush)")
@@ -125,7 +128,9 @@ async def _flush_all_documents(postgres, qdrant, neo4j, mongo, minio) -> None:
     ok(f"flushed {flushed}/{len(docs)} documents" + (f" ({failed} failed)" if failed else ""))
 
 
-async def _reset_extras(postgres, qdrant, neo4j, mongo) -> None:
+async def _reset_extras(
+    postgres: PostgresClient, qdrant: QdrantService, neo4j: Neo4jClient, mongo: MongoClient,
+) -> None:
     """Clear the shared / non-doc-scoped state flush does not touch."""
     # Qdrant — shared collections (entity_registry, query_cache).
     section("Qdrant (shared collections)")

@@ -1,3 +1,4 @@
+from typing import Any
 import json
 import logging
 
@@ -8,7 +9,7 @@ from state import AgentState
 logger = logging.getLogger(__name__)
 
 
-def _build_payload(state: AgentState) -> dict:
+def _build_payload(state: AgentState) -> dict[str, Any]:
     """Tự động generate payload dựa trên state hiện tại — không cần biết node trước là gì."""
     query = state.get("query", "")
 
@@ -85,7 +86,7 @@ def _build_payload(state: AgentState) -> dict:
     }
 
 
-def human_approval_node(state: AgentState) -> dict:
+def human_approval_node(state: AgentState) -> dict[str, Any]:
     payload = _build_payload(state)
     payload["query"] = state.get("query", "")
 

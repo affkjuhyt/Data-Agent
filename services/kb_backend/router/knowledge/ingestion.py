@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any, AsyncGenerator
 import asyncio
 import datetime
 import json
@@ -9,14 +10,16 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     Language, SourceType, Document, Image, Video, Web, Warehouse,
 )
+from services.kb_backend.config import ROLE_PERMISSION_IDS
+from services.kb_backend.schemas import PromoteResponse, WebIngestRequest
 from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
-from services.kb_backend.pipeline.kb_ui_operation.document_ops import (
-    fetch_one as _fetch_doc, name_exists as _name_exists,
+from services.kb_backend.operations.document_ops import (
+    fetch_one as _fetch_doc, name_exists as _name_exists, reprocess_gold_documents,
 )
 from services.kb_backend.pipeline.ingestion import config as cfg
 from services.kb_backend.pipeline.ingestion.bronze import BronzeUploadRequest, WebBronzeRequest
@@ -25,17 +28,7 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/pipeline/ingestion", tags=["Ingestion"])
 
-# Maps an app role literal (from the Kong-injected X-Role) to the RolePermissions.id
-# stamped on a newly ingested KBData row (KBData.role_id FK). These UUIDs MUST match
-# the RolePermissions rows seeded in infra/Postgres/seed.sql.
-DEV_ROLE_PERMISSION_IDS: dict[str, str] = {
-    "PLATFORM_ADMIN":    "00000000-0000-0000-0000-000000000010",
-    "AI_ENGINEER":       "00000000-0000-0000-0000-000000000011",
-    "BUSINESS_OPERATOR": "00000000-0000-0000-0000-000000000012",
-    "EXECUTIVE":         "00000000-0000-0000-0000-000000000013",
-}
-
-_META_CLS = {
+_META_CLS: dict[SourceType, type[BaseModel]] = {
     SourceType.DOC:       Document,
     SourceType.WEB:       Web,
     SourceType.IMAGE:     Image,
@@ -46,13 +39,8 @@ _META_CLS = {
 _TERMINAL_STATUSES = {"PUBLISHED", "FAILED"}
 
 
-class PromoteResponse(BaseModel):
-    data_id: str
-    stage: str
-    message: str
 
-
-async def _fetch_kbdata_or_404(postgres, tenant_id: str, data_id: str) -> dict:
+async def _fetch_kbdata_or_404(postgres: Any, tenant_id: str, data_id: str) -> dict[str, Any]:
     """Fetch the single KBData row for (tenant, data_id) or raise 404.
 
     Thin 404 wrapper over document_ops.fetch_one — the query itself lives in ops.
@@ -65,9 +53,9 @@ async def _fetch_kbdata_or_404(postgres, tenant_id: str, data_id: str) -> dict:
     return record
 
 
-async def _log_promotion_queued(mongo, data_id: str, stage: str) -> None:
+async def _log_promotion_queued(mongo: Any, data_id: str, stage: str) -> None:
     """Upsert the ingestion-log doc marking a promotion to `stage` as queued."""
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
     db = mongo.get_client()
     await db["kb_ingestion_logs"].update_one(
         {"data_id": data_id},
@@ -81,7 +69,7 @@ async def _log_promotion_queued(mongo, data_id: str, stage: str) -> None:
     )
 
 
-@router.post("/bronze")
+@router.post("/bronze", response_model=None)
 async def ingest_bronze(
     request: Request,
     file: UploadFile = File(...),
@@ -91,8 +79,8 @@ async def ingest_bronze(
     source_type: str = Form(...),
     doc_metadata: str = Form("{}"),
     knowledge_base_id: str = Form(""),
-    ctx: dict = Depends(require_perm("add_data")),
-):
+    ctx: dict[str, Any] = Depends(require_perm("add_data")),
+) -> Any:
     """
     Ingest document to BRONZE layer.
 
@@ -134,7 +122,7 @@ async def ingest_bronze(
 
     # Map role name → RolePermissions UUID; fall back to role as-is if already a UUID.
     # Role comes from headers (X-Role), not request body
-    resolved_role_id = str(DEV_ROLE_PERMISSION_IDS.get(ctx["role"], ctx["role"]))
+    resolved_role_id = str(ROLE_PERMISSION_IDS.get(ctx["role"], ctx["role"]))
 
     log.info("POST /ingestion/bronze tenant=%s source=%s size=%d", ctx["tenant_id"], src, len(file_bytes))
     try:
@@ -165,21 +153,12 @@ async def ingest_bronze(
         raise HTTPException(status_code=500, detail="Ingestion failed")
 
 
-class WebIngestBody(BaseModel):
-    name: str
-    url: str
-    web_name: str | None = None
-    language: str = "english"
-    abstract: str | None = None
-    knowledge_base_id: str | None = None
-
-
-@router.post("/bronze/web")
+@router.post("/bronze/web", response_model=None)
 async def ingest_bronze_web(
     request: Request,
-    body: WebIngestBody,
-    ctx: dict = Depends(require_perm("add_data")),
-):
+    body: WebIngestRequest,
+    ctx: dict[str, Any] = Depends(require_perm("add_data")),
+) -> Any:
     """
     Ingest a web portal to BRONZE by URL (no file upload).
 
@@ -207,7 +186,7 @@ async def ingest_bronze_web(
             detail=f"A document named '{name}' already exists. Choose a different Knowledge Name.",
         )
 
-    resolved_role_id = str(DEV_ROLE_PERMISSION_IDS.get(ctx["role"], ctx["role"]))
+    resolved_role_id = str(ROLE_PERMISSION_IDS.get(ctx["role"], ctx["role"]))
     log.info("POST /ingestion/bronze/web tenant=%s url=%s", ctx["tenant_id"], url)
     try:
         return await svc(request, "ingestion").bronze_web(
@@ -236,8 +215,8 @@ async def ingest_bronze_web(
 async def promote_to_silver(
     data_id: str,
     request: Request,
-    ctx: dict = Depends(require_perm("process_layer")),
-):
+    ctx: dict[str, Any] = Depends(require_perm("process_layer")),
+) -> PromoteResponse:
     postgres       = svc(request, "postgres")
     kafka_producer = svc(request, "kafka_producer")
     mongo          = svc(request, "mongo")
@@ -276,8 +255,8 @@ async def promote_to_silver(
 async def promote_to_gold(
     data_id: str,
     request: Request,
-    ctx: dict = Depends(require_perm("process_layer")),
-):
+    ctx: dict[str, Any] = Depends(require_perm("process_layer")),
+) -> PromoteResponse:
     postgres       = svc(request, "postgres")
     kafka_producer = svc(request, "kafka_producer")
     mongo          = svc(request, "mongo")
@@ -316,10 +295,24 @@ async def promote_to_gold(
     )
 
 
-@router.get("/documents/{data_id}/logs")
+@router.post("/reprocess-pii", response_model=None)
+async def reprocess_pii_route(
+    request: Request,
+    ctx: dict[str, Any] = Depends(require_perm("process_layer")),
+) -> dict[str, Any]:
+    """Re-run Gold promotion for every live Gold-tier document of the tenant so
+    the current PII-masking policy is applied to already-ingested content.
+    Returns how many documents were re-queued (and any that could not be)."""
+    postgres       = svc(request, "postgres")
+    kafka_producer = svc(request, "kafka_producer")
+    log.info("POST /ingestion/reprocess-pii tenant=%s", ctx["tenant_id"])
+    return await reprocess_gold_documents(postgres, kafka_producer, ctx)
+
+
+@router.get("/documents/{data_id}/logs", response_model=None)
 async def get_ingestion_logs(
-    data_id: str, request: Request, ctx: dict = Depends(authenticate),
-):
+    data_id: str, request: Request, ctx: dict[str, Any] = Depends(authenticate),
+) -> Any:
     """Stored per-document ingestion logs (Mongo ``kb_ingestion_logs``).
 
     Tenant-scoped: only returns logs for a document the caller's tenant owns —
@@ -330,7 +323,7 @@ async def get_ingestion_logs(
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    def _iso(v):
+    def _iso(v: Any) -> str | None:
         return v.isoformat() if hasattr(v, "isoformat") else (str(v) if v else None)
 
     rec = await svc(request, "mongo").get_client()["kb_ingestion_logs"].find_one({"data_id": data_id})
@@ -357,8 +350,8 @@ async def get_ingestion_logs(
 async def stream_pipeline_events(
     data_id: str,
     request: Request,
-    ctx: dict = Depends(authenticate),
-):
+    ctx: dict[str, Any] = Depends(authenticate),
+) -> StreamingResponse:
     """SSE endpoint — streams structured pipeline events from MongoDB in real time.
 
     Polls ``pipeline_events`` collection for events with seq > last_seen,
@@ -368,7 +361,7 @@ async def stream_pipeline_events(
     mongo = svc(request, "mongo")
     _TERMINAL = {"pipeline.done", "pipeline.error"}
 
-    async def generate():
+    async def generate() -> AsyncGenerator[str, None]:
         db = mongo.get_client()
         last_seq = 0
         # Keep the stream warm: emit an SSE comment at least every HEARTBEAT_S of
@@ -443,11 +436,11 @@ def _progress_pct(status: str, stage: str, processed: int, total: int) -> float:
 
 
 @router.get("/documents/{data_id}/progress")
-async def stream_progress(data_id: str, request: Request, ctx: dict = Depends(authenticate)):
+async def stream_progress(data_id: str, request: Request, ctx: dict[str, Any] = Depends(authenticate)) -> StreamingResponse:
     """SSE endpoint — streams ingestion progress with chunk-based percentage."""
     mongo = svc(request, "mongo")
 
-    async def generate():
+    async def generate() -> AsyncGenerator[str, None]:
         db = mongo.get_client()
         last_count = 0
 

@@ -1,3 +1,5 @@
+from typing import Any
+
 import structlog
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, HTTPException
@@ -10,13 +12,13 @@ router = APIRouter(prefix="/api/storage/buckets")
 
 
 @router.get("")
-def list_buckets():
+def list_buckets() -> dict[str, Any]:
     resp = s3().list_buckets()
     return {"buckets": [b["Name"] for b in resp.get("Buckets", [])]}
 
 
 @router.post("", status_code=201)
-def create_bucket(body: BucketCreate):
+def create_bucket(body: BucketCreate) -> dict[str, Any]:
     client = s3()
     try:
         client.head_bucket(Bucket=body.name)

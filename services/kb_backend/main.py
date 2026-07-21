@@ -1,3 +1,5 @@
+from typing import Any
+from collections.abc import AsyncIterator
 import asyncio
 import logging
 import os
@@ -8,18 +10,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from basemodel.services_databaseconnector.postgres_orm.base import Base
-import basemodel.services_databaseconnector.postgres_orm  # noqa: F401 — registers ORM models
+from libs.basemodel.services_databaseconnector.postgres_orm.base import Base
 
-from basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
-from services.database_connector.postgres_connector import PostgresClient
-from services.database_connector.qdrant_connector import QdrantClient as QdrantService
-from services.database_connector.neo4j_connector import Neo4jClient
-from services.database_connector.mongo_connector import MongoClient
-from services.database_connector.minio_connector import MinIOClient
-from services.database_connector.kafka_connector import KafkaProducerClient
-from services.database_connector.model_connector import ModelServiceClient
-from services.shared.observability import setup_observability
+from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
+from libs.database_connector.postgres_connector import PostgresClient
+from libs.database_connector.qdrant_connector import QdrantClient as QdrantService
+from libs.database_connector.neo4j_connector import Neo4jClient
+from libs.database_connector.mongo_connector import MongoClient
+from libs.database_connector.minio_connector import MinIOClient
+from libs.database_connector.redis_connector import RedisClient
+from libs.shared.kb_result_cache import ResultCache
+from libs.database_connector.kafka_connector import KafkaProducerClient
+from libs.database_connector.model_connector import ModelServiceClient
+from libs.shared.observability import setup_observability
 
 from services.kb_backend.pipeline.light_rag.pipeline import LightRAGPipeline, cache_sweep_loop
 from services.kb_backend.pipeline.light_rag import config as cfg
@@ -31,6 +34,11 @@ _POSTGRES_URL  = os.environ.get("POSTGRES_URL",  "postgresql+asyncpg://aeroflow:
 _MONGO_URL     = os.environ.get("MONGO_URL",     "mongodb://mongo:27017/dataagent")
 _MINIO_URL     = os.environ.get("MINIO_URL",     "http://minioadmin:minioadmin@minio:9000")
 _KAFKA_URL     = os.environ.get("KAFKA_URL",     "kafka:9092")
+_REDIS_URL     = os.environ.get("REDIS_URL",     "redis://redis:6379/0")
+# L0 result cache (KB-SCALE-10K.md lever #2): exact-repeat queries return before
+# embedding. Best-effort — Redis down just means no cache.
+_RESULT_CACHE_ENABLED = os.environ.get("RESULT_CACHE_ENABLED", "true").lower() in {"1", "true", "yes"}
+_RESULT_CACHE_TTL     = int(os.environ.get("RESULT_CACHE_TTL", "900"))  # 15 min
 
 # Lite/auth-verification mode. When true, only Postgres is opened at startup;
 # the heavy data-plane stores (Qdrant, Neo4j, Mongo, MinIO, model-service, Kafka)
@@ -49,13 +57,15 @@ _minio    = MinIOClient()
 _model    = ModelServiceClient()
 
 _kafka_producer = KafkaProducerClient()
+_redis    = RedisClient()
+_result_cache = ResultCache(_redis, _RESULT_CACHE_TTL, _RESULT_CACHE_ENABLED)
 
 # Stateless pipelines — clients injected per request from app.state
 _light_rag  = LightRAGPipeline()
 _ingestion  = IngestionPipeline()
 
 
-def _supervise(task: asyncio.Task) -> asyncio.Task:
+def _supervise(task: asyncio.Task[Any]) -> asyncio.Task[Any]:
     """Attach a done-callback that surfaces a background loop dying.
 
     The health-check and cache-sweep loops are `while True` and must never
@@ -66,7 +76,7 @@ def _supervise(task: asyncio.Task) -> asyncio.Task:
     `svc()` gating goes stale (permanent 503, or worse, handing out a dead
     client). Log it loudly so it is visible immediately instead of silently.
     """
-    def _on_done(t: asyncio.Task) -> None:
+    def _on_done(t: asyncio.Task[Any]) -> None:
         if t.cancelled():
             return  # expected on shutdown
         exc = t.exception()
@@ -82,7 +92,7 @@ def _supervise(task: asyncio.Task) -> asyncio.Task:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # ── Postgres bootstrap ────────────────────────────────────────────────────
     # Connect to template1 (always exists) to check/create the target DB.
     # Handles any DB name (aeroflow_kb in standalone stacks, dataagent in the
@@ -122,6 +132,7 @@ async def lifespan(app: FastAPI):
     _minio.set_url(_MINIO_URL)
     _model.set_url(cfg.MODEL_SERVICE_URL)
     _kafka_producer.set_url(_KAFKA_URL)
+    _redis.set_url(_REDIS_URL)
 
     # ── Open all connections ──────────────────────────────────────────────────
     await _postgres.open(retry)
@@ -137,6 +148,10 @@ async def lifespan(app: FastAPI):
         await _minio.open(retry)
         await _model.open(retry)
         await _kafka_producer.open(retry)
+        try:
+            await _redis.open(retry)  # best-effort; result cache degrades to no-op
+        except Exception as e:  # noqa: BLE001
+            log.warning("Redis (result cache) unavailable — retrieval works uncached: %s", e)
 
     # ── Expose on app.state ───────────────────────────────────────────────────
     app.state.postgres       = _postgres
@@ -146,6 +161,8 @@ async def lifespan(app: FastAPI):
     app.state.minio          = _minio
     app.state.model          = _model
     app.state.kafka_producer = _kafka_producer
+    app.state.redis          = _redis
+    app.state.result_cache   = _result_cache
     app.state.light_rag      = _light_rag
     app.state.ingestion      = _ingestion
 
@@ -199,5 +216,5 @@ app.include_router(router)
 
 
 @app.get("/health", tags=["Health"])
-async def health():
+async def health() -> dict[str, str]:
     return {"status": "ok"}

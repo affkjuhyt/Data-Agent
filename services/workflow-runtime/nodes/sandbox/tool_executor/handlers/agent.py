@@ -1,3 +1,4 @@
+from typing import Any
 import logging
 import uuid
 
@@ -8,7 +9,7 @@ logger = logging.getLogger(__name__)
 _WORKFLOW_RUNTIME_URL = __import__("os").environ.get("WORKFLOW_RUNTIME_URL", "http://localhost:8001")
 
 
-async def _delegate_to_agent_handler(call: dict, cfg: dict) -> tuple[dict | None, dict | None]:
+async def _delegate_to_agent_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     target_agent = call.get("arguments", {}).get("target_agent", "")
     prompt       = call.get("arguments", {}).get("prompt", "") or _get_query(call)
 

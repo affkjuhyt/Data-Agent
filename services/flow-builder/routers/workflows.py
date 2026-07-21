@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Header, HTTPException
 
@@ -18,7 +19,7 @@ from db_pg import (
 from config import REDIS_URL
 from dependencies import ensure_db_available
 from schemas import CreateWorkflowRequest, PublishVersionRequest
-from services.shared.cache_invalidation import publish_graph_invalidation
+from libs.shared.cache_invalidation import publish_graph_invalidation
 from utils import serialize
 
 logger = logging.getLogger(__name__)
@@ -26,7 +27,7 @@ router = APIRouter()
 
 
 @router.post("/api/agents/{agent_id}/workflows", status_code=201)
-async def api_create_workflow(agent_id: str, body: CreateWorkflowRequest):
+async def api_create_workflow(agent_id: str, body: CreateWorkflowRequest) -> dict[str, Any]:
     ensure_db_available()
     agent = await get_agent(agent_id)
     if not agent:
@@ -39,21 +40,21 @@ async def api_create_workflow(agent_id: str, body: CreateWorkflowRequest):
 
 
 @router.get("/api/agents/{agent_id}/workflows")
-async def api_list_workflows(agent_id: str):
+async def api_list_workflows(agent_id: str) -> list[dict[str, Any]]:
     ensure_db_available()
     rows = await list_workflows(agent_id)
     return [serialize(row) for row in rows]
 
 
 @router.get("/api/workflows/{workflow_id}/versions")
-async def api_list_workflow_versions(workflow_id: str):
+async def api_list_workflow_versions(workflow_id: str) -> list[dict[str, Any]]:
     ensure_db_available()
     rows = await list_workflow_versions(workflow_id)
     return [serialize(row) for row in rows]
 
 
 @router.post("/api/workflows/{workflow_id}/versions", status_code=201)
-async def api_create_draft_version(workflow_id: str):
+async def api_create_draft_version(workflow_id: str) -> dict[str, Any]:
     ensure_db_available()
     try:
         return await create_draft_version(workflow_id)
@@ -65,7 +66,7 @@ async def api_create_draft_version(workflow_id: str):
 
 
 @router.delete("/api/workflow-versions/{version_id}", status_code=204)
-async def api_delete_workflow_version(version_id: str, x_tenant_id: str = Header(default=None)):
+async def api_delete_workflow_version(version_id: str, x_tenant_id: str = Header(default=None)) -> None:
     ensure_db_available()
     tenant_id = x_tenant_id or DEV_TENANT_ID
     try:
@@ -78,7 +79,7 @@ async def api_delete_workflow_version(version_id: str, x_tenant_id: str = Header
 
 
 @router.delete("/api/workflows/{workflow_id}", status_code=204)
-async def api_delete_workflow(workflow_id: str, x_tenant_id: str = Header(default=None)):
+async def api_delete_workflow(workflow_id: str, x_tenant_id: str = Header(default=None)) -> None:
     ensure_db_available()
     tenant_id = x_tenant_id or DEV_TENANT_ID
     try:
@@ -96,7 +97,7 @@ async def api_delete_workflow(workflow_id: str, x_tenant_id: str = Header(defaul
 async def api_publish_workflow_version(
     workflow_version_id: str,
     body: PublishVersionRequest = PublishVersionRequest(),
-):
+) -> dict[str, Any]:
     ensure_db_available()
     try:
         result = await publish_workflow_version(workflow_version_id, body.changelog)
@@ -112,7 +113,7 @@ async def api_publish_workflow_version(
 
 
 @router.post("/api/workflow-versions/{workflow_version_id}/republish")
-async def api_republish_workflow_version(workflow_version_id: str):
+async def api_republish_workflow_version(workflow_version_id: str) -> dict[str, Any]:
     ensure_db_available()
     try:
         result = await republish_workflow_version(workflow_version_id)

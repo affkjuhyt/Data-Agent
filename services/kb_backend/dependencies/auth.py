@@ -18,7 +18,7 @@ server-side (the UI gates the same actions for UX, but this is authoritative —
 the UI map is bypassable by calling the API directly).
 """
 import re
-from typing import Iterable
+from typing import Any, Callable, Iterable
 
 from fastapi import Depends, Header, HTTPException
 
@@ -87,7 +87,7 @@ class PermissionRegistry:
 
 # ── Policy definition ──────────────────────────────────────────────────────────
 # Keep in sync with src/lib/permissions.ts → ROLE_PERMISSIONS. The aliases match
-# ingestion.DEV_ROLE_PERMISSION_IDS keys.
+# config.ROLE_PERMISSION_IDS keys.
 _ALL = {
     "delete_data", "edit_conflict", "process_layer", "add_data", "add_warehouse",
     "add_filtering_policy", "edit_filtering_policy", "delete_filtering_policy",
@@ -113,7 +113,7 @@ def authenticate(
     x_tenant_id:     str = Header(default="", alias="X-Tenant-Id"),
     x_user_roles:    str = Header(default="", alias="X-User-Roles"),
     x_role_id:       str = Header(default="", alias="X-Role-Id"),
-) -> dict:
+) -> dict[str, Any]:
     """Resolve {role, roles, tenant_id, user_id, user_name} from the Kong-verified headers.
 
     Fail-closed: anything not stamped `X-Kong-Verified: true` by the gateway is
@@ -145,9 +145,9 @@ def authenticate(
     }
 
 
-def require_perm(*perms: str):
+def require_perm(*perms: str) -> Callable[..., dict[str, Any]]:
     """Dependency factory: 403 unless the caller's role grants any of `perms`."""
-    def _dep(ctx: dict = Depends(authenticate)) -> dict:
+    def _dep(ctx: dict[str, Any] = Depends(authenticate)) -> dict[str, Any]:
         if not RBAC.can(ctx["role"], *perms):
             raise HTTPException(
                 status_code=403,

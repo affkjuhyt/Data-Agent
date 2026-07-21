@@ -1,3 +1,4 @@
+from typing import Any
 import os
 import re
 import time
@@ -37,7 +38,7 @@ def _citation_type(chunk: dict) -> str:
     return "tool"
 
 
-def _to_lc_messages(messages: list[dict]) -> list[dict]:
+def _to_lc_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {"role": m["role"], "content": m["content"]}
         for m in messages
@@ -45,7 +46,7 @@ def _to_lc_messages(messages: list[dict]) -> list[dict]:
     ]
 
 
-async def responder_node(state: AgentState) -> dict:
+async def responder_node(state: AgentState) -> dict[str, Any]:
     cfg = state["config"]
     intent = state.get("intent", "question")
     language = state.get("language") or "vi"

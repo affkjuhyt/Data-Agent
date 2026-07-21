@@ -1,3 +1,5 @@
+from typing import Any
+
 import structlog
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, File, HTTPException, UploadFile
@@ -10,7 +12,7 @@ router = APIRouter(prefix="/api/storage/audit-archive")
 
 
 @router.put("/{tenant_id}/{year}/{month}", status_code=201)
-def upload_audit_archive(tenant_id: str, year: int, month: int, file: UploadFile = File(...)):
+def upload_audit_archive(tenant_id: str, year: int, month: int, file: UploadFile = File(...)) -> dict[str, Any]:
     key = f"{tenant_id}/{year}/{month:02d}.jsonl"
     try:
         s3().upload_fileobj(file.file, BUCKET_AUDIT, key)
@@ -21,7 +23,7 @@ def upload_audit_archive(tenant_id: str, year: int, month: int, file: UploadFile
 
 
 @router.get("/{tenant_id}")
-def list_audit_archives(tenant_id: str):
+def list_audit_archives(tenant_id: str) -> dict[str, Any]:
     resp = s3().list_objects_v2(Bucket=BUCKET_AUDIT, Prefix=f"{tenant_id}/")
     archives = [
         {"key": obj["Key"], "size": obj["Size"], "last_modified": obj["LastModified"].isoformat()}

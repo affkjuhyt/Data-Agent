@@ -205,7 +205,7 @@ async def wm(migrated_db, qdrant_container, monkeypatch):
 
         monkeypatch.setattr(wm_mod, "_embed", _fake_embed)
 
-        from services.database_connector.postgres_connector import client
+        from libs.database_connector.postgres_connector import client
         client.set_url(migrated_db["dsn"])
         await client.open()
         await wm_mod.init_workflow_qdrant()
@@ -293,14 +293,14 @@ async def test_retrieve_workflow_memory_isolates_tenants(wm):
 
 
 def _dsn_from_client() -> str:
-    from services.database_connector.postgres_connector import client
+    from libs.database_connector.postgres_connector import client
     return client._url.replace("postgresql+asyncpg://", "postgresql://")
 
 
 async def test_retrieve_schema_memory_exact_match_and_format(wm):
     wm_mod, tenant_id, _ = wm
-    from basemodel.services_databaseconnector.postgres_orm.workflow_orm import SchemaMemoryORM
-    from services.database_connector.postgres_connector import client
+    from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import SchemaMemoryORM
+    from libs.database_connector.postgres_connector import client
     from uuid import UUID
 
     async with client.get_client(tenant_id=tenant_id) as session:
@@ -342,7 +342,7 @@ def schema_memory_client(migrated_db):
         import importlib as _il
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
-        from services.database_connector.postgres_connector import client as pg_client
+        from libs.database_connector.postgres_connector import client as pg_client
 
         schema_memory_mod = _il.import_module("routers.schema_memory")
         _il.reload(schema_memory_mod)
@@ -454,7 +454,7 @@ async def text_to_sql_env(migrated_db, monkeypatch):
     sys.path[:0] = added
     try:
         import importlib as _il
-        from services.database_connector.postgres_connector import client as pg_client
+        from libs.database_connector.postgres_connector import client as pg_client
 
         data_mod = _il.import_module("nodes.sandbox.tool_executor.handlers.data")
         _il.reload(data_mod)
@@ -473,7 +473,7 @@ async def text_to_sql_env(migrated_db, monkeypatch):
             cur.execute("INSERT INTO demo_orders (total) VALUES (100), (250)")
         conn.close()
 
-        from basemodel.services_databaseconnector.postgres_orm.workflow_orm import SchemaMemoryORM
+        from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import SchemaMemoryORM
         from uuid import UUID
         async with pg_client.get_client(tenant_id=tenant_id) as session:
             session.add(SchemaMemoryORM(
@@ -589,7 +589,7 @@ async def test_text_to_sql_falls_back_to_static_schema_hint_when_no_schema_memor
     sys.path[:0] = added
     try:
         import importlib as _il
-        from services.database_connector.postgres_connector import client as pg_client
+        from libs.database_connector.postgres_connector import client as pg_client
 
         data_mod = _il.import_module("nodes.sandbox.tool_executor.handlers.data")
         _il.reload(data_mod)

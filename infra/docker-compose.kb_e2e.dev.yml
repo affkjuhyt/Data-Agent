@@ -43,7 +43,7 @@ services:
   # init scripts run in lexicographic order; 05 runs after the base file's 04.
   postgres:
     volumes:
-      - ./Postgres/seed.sql:/docker-entrypoint-initdb.d/05-kb-seed.sql:ro
+      - ./postgres/seed.sql:/docker-entrypoint-initdb.d/05-kb-seed.sql:ro
 
   keycloak:
     healthcheck:

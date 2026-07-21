@@ -1,3 +1,4 @@
+from typing import Any
 import asyncio
 import logging
 import uuid
@@ -26,8 +27,8 @@ def _is_valid_url(url: str) -> bool:
 
 
 async def _execute_call(
-    client: httpx.AsyncClient, call: dict, mcp_endpoints: list, fallback_query: str
-) -> tuple[list, dict | None]:
+    client: httpx.AsyncClient, call: dict[str, Any], mcp_endpoints: list[Any], fallback_query: str
+) -> tuple[list[Any], dict[str, Any] | None]:
     tool_name = call.get("tool_name", "")
     endpoint = next(
         (ep for ep in mcp_endpoints if ep.get("name") == call.get("endpoint_name")),
@@ -75,7 +76,7 @@ async def _execute_call(
         return [], {"tool_name": tool_name, "endpoint": url, "error": str(e)}
 
 
-async def mcp_node(state: AgentState) -> dict:
+async def mcp_node(state: AgentState) -> dict[str, Any]:
     mcp_endpoints = state["config"].get("mcp_endpoints", [])
     if not mcp_endpoints:
         return {"mcp_results": [], "mcp_errors": []}
