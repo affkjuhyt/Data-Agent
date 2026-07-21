@@ -5,7 +5,7 @@ VALUES (1, 'dev')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO "Tenants" (id, name, slug, plan_id, data_residency, is_active)
-VALUES ('00000000-0000-0000-0000-000000000001', 'Dev Tenant', 'dev', 1, 'Asia-SE1', true)
+VALUES ('a0000000-0000-0000-0000-000000000001', 'Dev Tenant', 'dev', 1, 'Asia-SE1', true)
 ON CONFLICT (id) DO NOTHING;
 
 -- model_id cần tiền tố provider ("openai/") vì litellm SDK gọi trực tiếp
@@ -22,7 +22,7 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO "SystemPrompts" (id, tenant_id, name, content, version)
 VALUES (
   '00000000-0000-0000-0000-000000000020',
-  '00000000-0000-0000-0000-000000000001',
+  'a0000000-0000-0000-0000-000000000001',
   'Default',
   'You are a helpful assistant for GTEL platform.',
   1
@@ -32,7 +32,7 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO "Agents" (id, tenant_id, name, description)
 VALUES (
   '00000000-0000-0000-0000-000000000030',
-  '00000000-0000-0000-0000-000000000001',
+  'a0000000-0000-0000-0000-000000000001',
   'Default Agent',
   'Default dev agent'
 )

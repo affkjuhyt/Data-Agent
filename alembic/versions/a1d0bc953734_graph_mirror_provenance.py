@@ -1,7 +1,7 @@
 """graph mirror provenance: tenant/kb scoping + per-chunk block_id on KBNeo4j tables
 
-Revision ID: d4e5f6a7b8c9
-Revises: c3d4e5f6a7b8
+Revision ID: a1d0bc953734
+Revises: 57abfbeabb56
 Create Date: 2026-06-27
 
 KBNeo4jNode/KBNeo4jRelationship become the Postgres mirror of the ingestion graph.
@@ -16,8 +16,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
 
 
-revision: str = "d4e5f6a7b8c9"
-down_revision: Union[str, None] = "c3d4e5f6a7b8"
+revision: str = "a1d0bc953734"
+down_revision: Union[str, None] = "57abfbeabb56"
 branch_labels = None
 depends_on = None
 
