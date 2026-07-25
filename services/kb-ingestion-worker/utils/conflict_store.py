@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import datetime
 
-from basemodel.services_databaseconnector.mongo_model import (
+from libs.basemodel.services_databaseconnector.mongo_model import (
     CONFLICT_PAYLOAD_COLLECTION,
     CONFLICT_RESOLUTION_COLLECTION,
 )
