@@ -17,6 +17,7 @@ class TaskNode:
     depend_on: list[int] = field(default_factory=list)
     output: Optional[str] = None
     conversation_id: Optional[str] = None  # từ X-Conversation-Id header
+    citations: list[dict] = field(default_factory=list)
     success: bool = False
     done: bool = False
     start_ms: int = 0    # relative to executor start

@@ -45,8 +45,10 @@ TOOL_REGISTRY: dict[str, object] = {
 }
 
 
-async def _run_timed(handler: Any, call: dict[str, Any], cfg: dict[str, Any]) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None, int]:
-    """Run one handler and return (tool_name, result, error, latency_ms)."""
+async def _run_timed(handler: Any, call: dict[str, Any], cfg: dict[str, Any]) -> tuple[str, list[dict[str, Any]] | dict[str, Any] | None, dict[str, Any] | None, int]:
+    """Run one handler and return (tool_name, result, error, latency_ms).
+    result có thể là 1 dict (đa số handler) hoặc list[dict] (vd. web_search —
+    mỗi kết quả tìm kiếm giữ 1 URL riêng, không gộp thành 1 item)."""
     tool_name = call.get("tool_name", "unknown")
     t0 = time.monotonic()
     try:
@@ -107,10 +109,10 @@ async def tool_executor_node(state: AgentState) -> dict[str, Any]:
             # branch above already handles the exception case, so here it's
             # always the tuple _run_timed actually returns.
             tool_name, r, e, lat = cast(
-                "tuple[str, dict[str, Any] | None, dict[str, Any] | None, int]", outcome
+                "tuple[str, list[dict[str, Any]] | dict[str, Any] | None, dict[str, Any] | None, int]", outcome
             )
-            if r:
-                results.append(r)
+            r_list = r if isinstance(r, list) else ([r] if r else [])
+            results.extend(r_list)
             if e:
                 errors.append(e)
             traces.append({
@@ -119,7 +121,7 @@ async def tool_executor_node(state: AgentState) -> dict[str, Any]:
                 "arguments":  call.get("arguments", {}),
                 "status":     "error" if e else "success",
                 "error":      e.get("error") if e else None,
-                "result_id":  r.get("id") if r else None,
+                "result_id":  r_list[0].get("id") if r_list else None,
                 "latency_ms": lat,
             })
 

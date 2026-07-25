@@ -82,6 +82,7 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
 
     buffer: list[str] = []
     conversation_id = None
+    citations: list[dict] = []
     success = False
     with ctx as span:
         try:
@@ -102,6 +103,9 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
                     await adispatch_custom_event("pending_review", data)
                 elif event_type == "chart":
                     await adispatch_custom_event("chart", data)
+                elif event_type == "citations":
+                    citations = data
+                    await adispatch_custom_event("citations", data)
             success = True
         except Exception as e:
             logger.warning("single_agent | failed: %s", e)
@@ -123,6 +127,7 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
         output=response_text,
         success=success,
         conversation_id=conversation_id,
+        citations=citations,
         latency_ms=latency_ms,
     )
     return {
@@ -285,13 +290,38 @@ async def _guardrail_output_check(text: str, cfg: dict[str, Any]) -> tuple[bool,
         return True, "Xin lỗi, tôi không thể tiếp tục trả lời câu hỏi này."
 
 
+def _merge_citations(target_results: list) -> list[dict]:
+    """Gộp citations từ tất cả agent con thành công thành 1 bảng nguồn duy nhất,
+    dedupe theo source + renumber liên tục — bước tổng hợp (summarize()) viết
+    lại toàn bộ câu trả lời nên KHÔNG giữ được vị trí [n] chính xác của từng
+    agent con, chỉ có thể đảm bảo đúng ở mức "những nguồn nào đã được dùng".
+    Chỉ lấy citations của task_results[0] mỗi target — khớp đúng với cách
+    `outputs` (feed vào summarize()) cũng chỉ lấy task_results[0], để không
+    hiện nguồn của 1 sub-task mà nội dung của nó chưa từng được đưa vào bản
+    tổng hợp."""
+    merged: list[dict] = []
+    seen_sources: set[str] = set()
+    for tr in target_results:
+        if not (tr.success and tr.task_results):
+            continue
+        for c in tr.task_results[0].citations:
+            key = c.get("source", "")
+            if key in seen_sources:
+                continue
+            seen_sources.add(key)
+            merged.append({**c, "index": len(merged) + 1})
+    return merged
+
+
 async def summary_node(state: OrchestratorState) -> dict[str, Any]:
     t0 = time.monotonic()
+    target_results = state.get("target_results", [])
     outputs = [
         tr.task_results[0].output
-        for tr in state.get("target_results", [])
+        for tr in target_results
         if tr.success and tr.task_results
     ]
+    citations = _merge_citations(target_results)
     cfg = state.get("cfg", {})
     query = state["rewritten_query"]
 
@@ -335,8 +365,12 @@ async def summary_node(state: OrchestratorState) -> dict[str, Any]:
         await adispatch_custom_event("token", chunk)
         await asyncio.sleep(_FAKE_STREAM_WORD_DELAY)
 
+    if citations:
+        await adispatch_custom_event("citations", citations)
+
     return {
         "final_response": text,
+        "citations": citations,
         "summary_ms": round((time.monotonic() - t0) * 1000),
     }
 

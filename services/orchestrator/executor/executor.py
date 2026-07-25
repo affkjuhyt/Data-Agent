@@ -50,7 +50,7 @@ async def _run_task(
 
     with ctx as span:
         try:
-            output, conv_id = await call_agent(
+            output, conv_id, citations = await call_agent(
                 agent_id=node.agent_id,
                 prompt=prompt,
                 user_id=user_id,
@@ -61,6 +61,7 @@ async def _run_task(
             )
             node.output = output
             node.conversation_id = conv_id
+            node.citations = citations
             node.success = True
         except Exception as e:
             logger.warning("task failed | '%s': %s", node.title, e)
@@ -141,6 +142,7 @@ async def _execute_target(
                     success=node.success,
                     error=node.output if not node.success else None,
                     conversation_id=node.conversation_id,
+                    citations=node.citations,
                     start_ms=node.start_ms,
                     latency_ms=node.latency_ms,
                 ))

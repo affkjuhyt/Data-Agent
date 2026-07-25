@@ -17,6 +17,8 @@ class KBChunk(BaseModel):
     id: str
     content: str
     score: float
+    source: str = ""    # doc_name — tên tài liệu hiển thị cho citation
+    doc_id: str = ""     # để FE build link mở file gốc: /api/knowledge/documents/{doc_id}/file
 
 
 async def kb_search_node(state: AgentState) -> dict[str, Any]:
@@ -71,6 +73,8 @@ async def kb_search_node(state: AgentState) -> dict[str, Any]:
                                 id      = item.get("source", {}).get("block_id", ""),
                                 content = item.get("chunk_context", ""),
                                 score   = item.get("chunk_score", 0.0),
+                                source  = item.get("source", {}).get("doc_name", ""),
+                                doc_id  = item.get("source", {}).get("doc_id", ""),
                             ).model_dump())
                         except ValidationError:
                             skipped += 1

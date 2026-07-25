@@ -45,6 +45,7 @@ class TaskResult(BaseModel):
     conversation_id: Optional[str] = None  # frontend dùng để fetch Langfuse trace
     start_ms: int = 0
     latency_ms: int = 0
+    citations: list[dict] = Field(default_factory=list)
 
 
 class TargetResult(BaseModel):

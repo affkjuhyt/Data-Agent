@@ -22,6 +22,7 @@ class AgentState(TypedDict):
     rrf_results: List[dict[str, Any]]
     reranked_chunks: List[dict[str, Any]]
     response: str
+    citations: List[dict]      # set bởi responder_node — nguồn thực sự được trích dẫn trong response
     suggestions: List[str]
     intent: Optional[str]             # "question" | "task" — set by planner
     language: Optional[str]           # "vi" | "en" — set by planner
