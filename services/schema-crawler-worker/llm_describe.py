@@ -4,6 +4,7 @@ shape as memory-consumer's call_llm_extract(): one chat completion, JSON
 response_format, no retry here (the crawl loop's outer per-table try/except
 in main.py skips a table on failure and picks it up again next cron tick).
 """
+from typing import Any
 import json
 import logging
 import os
@@ -35,7 +36,7 @@ def _truncate(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[:limit] + "…"
 
 
-def _columns_block(columns: list[dict]) -> str:
+def _columns_block(columns: list[dict[str, Any]]) -> str:
     lines = []
     for c in columns:
         comment = _truncate(c.get("comment") or "", _MAX_COMMENT_CHARS)
@@ -44,11 +45,11 @@ def _columns_block(columns: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _cap_str_list(values: list, limit_items: int = _MAX_OUTPUT_ITEMS) -> list[str]:
+def _cap_str_list(values: list[Any], limit_items: int = _MAX_OUTPUT_ITEMS) -> list[str]:
     return [_truncate(str(v), _MAX_OUTPUT_STR_CHARS) for v in values[:limit_items]]
 
 
-def describe_table(table_name: str, columns: list[dict], row_count: int | None) -> dict:
+def describe_table(table_name: str, columns: list[dict[str, Any]], row_count: int | None) -> dict[str, Any]:
     """Returns {keywords: [...], categories: {...}, use_cases: [...], join_hints: [...]}."""
     prompt = (
         _DESCRIBE_PROMPT
@@ -89,7 +90,7 @@ def describe_table(table_name: str, columns: list[dict], row_count: int | None) 
     }
 
 
-def render_text_description(table_name: str, description: dict) -> str:
+def render_text_description(table_name: str, description: dict[str, Any]) -> str:
     """doc §2.4.2 layout — also the string that gets embedded, so it must
     read naturally for both keyword and vector search."""
     lines = [f"Name: {table_name}"]

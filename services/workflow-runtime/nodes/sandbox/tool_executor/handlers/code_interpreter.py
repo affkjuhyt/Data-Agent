@@ -16,6 +16,7 @@ this module exposes to the agent loop is unchanged: the tool-call still
 blocks until a final result (mục i, "đã chốt mô hình đồng bộ") — only the
 transport underneath changed.
 """
+from typing import Any
 import asyncio
 import logging
 import os
@@ -37,7 +38,7 @@ _POLL_MAX_DELAY_S = 1.0
 _POLL_OVERHEAD_S = 15
 
 
-async def _submit_and_poll(http: httpx.AsyncClient, path: str, body: dict, overall_timeout_s: float) -> dict:
+async def _submit_and_poll(http: httpx.AsyncClient, path: str, body: dict[str, Any], overall_timeout_s: float) -> dict[str, Any]:
     """POSTs to enqueue, then polls GET {path}/{job_id} with backoff until
     a terminal status or overall_timeout_s elapses. Returns the terminal
     response body with `_http_status` merged in, so callers can tell a
@@ -48,7 +49,7 @@ async def _submit_and_poll(http: httpx.AsyncClient, path: str, body: dict, overa
     if resp.status_code == 503:
         # Queue was already full (docs/1.md mục i backpressure) — rejected
         # before a job_id was even minted, nothing to poll.
-        data = resp.json()
+        data: dict[str, Any] = resp.json()
         data["_http_status"] = 503
         return data
     resp.raise_for_status()
@@ -73,7 +74,7 @@ async def _submit_and_poll(http: httpx.AsyncClient, path: str, body: dict, overa
         return data
 
 
-async def _execute_python_handler(call: dict, cfg: dict) -> tuple[dict | None, dict | None]:
+async def _execute_python_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     code = call.get("arguments", {}).get("code") or call.get("query", "")
     if not code:
         return None, {"tool_name": "execute_python", "error": "no code provided"}
@@ -121,7 +122,7 @@ async def _execute_python_handler(call: dict, cfg: dict) -> tuple[dict | None, d
     }, None
 
 
-async def _execute_sql_handler(call: dict, cfg: dict) -> tuple[dict | None, dict | None]:
+async def _execute_sql_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     sql = call.get("arguments", {}).get("sql") or call.get("query", "")
     if not sql:
         return None, {"tool_name": "execute_sql", "error": "no sql provided"}

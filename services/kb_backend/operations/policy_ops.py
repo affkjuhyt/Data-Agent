@@ -1,11 +1,12 @@
 """Business logic for filter policy and extraction policy CRUD."""
+from typing import Any, cast
 import json
 import logging
 import uuid
 from fastapi import HTTPException
 from sqlalchemy import update as sa_update
 
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     ReadJoinRequest, OrderBy, OrderDirection,
     KBFilterPolicyInsert, KBFilterPolicyDelete,
     KBExtractionPolicyInsert,
@@ -14,7 +15,7 @@ from basemodel.services_databaseconnector.postgres_model import (
 from services.kb_backend.operations.pagination import (
     PAGE_SIZE, get_cursor, advance, build_page,
 )
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBFilterPolicyORM, KBExtractionPolicyORM,
 )
 from services.kb_backend.schemas import to_string
@@ -34,10 +35,10 @@ _BASE_EXTRACTION = (
 # No translation needed — see src/lib/enums.ts for the shared canonical set.
 
 
-def _to_filter_policy(row: dict) -> dict:
+def _to_filter_policy(row: dict[str, Any]) -> dict[str, Any]:
     ptype = row.get("configformat") or "natural_language"
     cfg = row.get("config") or {}
-    rules: list = cfg.get("rules") or []
+    rules: list[Any] = cfg.get("rules") or []
     content = json.dumps(rules) if ptype == "exact_word" else (rules[0] if rules else "")
     return {
         "id":         to_string(row.get("policy_id")),
@@ -53,16 +54,16 @@ def _to_filter_policy(row: dict) -> dict:
 def _rules_from_body(ptype: str, content: str) -> list[str]:
     if ptype == "exact_word":
         try:
-            return json.loads(content)
+            return cast(list[str], json.loads(content))
         except (ValueError, TypeError):
             return [w.strip() for w in content.split(",") if w.strip()]
     return [content] if content else []
 
 
 async def list_filter_policies(
-    postgres, tenant_id: str | None,
+    postgres: Any, tenant_id: str | None,
     user_id: str, page: int = 1,
-) -> dict:
+) -> dict[str, Any]:
     cursor_key = f"policies:filter:{tenant_id}"
     cursor_ts  = get_cursor(user_id, cursor_key, page)
     resp = await postgres.read(ReadJoinRequest(
@@ -81,11 +82,11 @@ async def list_filter_policies(
 
 
 async def create_filter_policy(
-    postgres,
+    postgres: Any,
     name: str, ptype: str, content: str,
     tenant_id: str, created_by: str,
     active: bool = True,
-) -> dict:
+) -> dict[str, Any]:
     # created_by stores the human-readable username (not the user_id UUID) so the
     # UI shows "added_by: helios-admin" rather than an opaque id.
     resp = await postgres.insert(KBFilterPolicyInsert(
@@ -107,8 +108,8 @@ async def create_filter_policy(
     return {"policy_id": resp.data.get("policy_id")}
 
 
-async def update_filter_policy(postgres, policy_id: str, body: dict) -> dict:
-    updates: dict = {}
+async def update_filter_policy(postgres: Any, policy_id: str, body: dict[str, Any]) -> dict[str, Any]:
+    updates: dict[str, Any] = {}
     if "name" in body:
         updates["policy_name"] = body["name"]
     if "active" in body:
@@ -133,7 +134,7 @@ async def update_filter_policy(postgres, policy_id: str, body: dict) -> dict:
     return {"status": "ok", "policy_id": policy_id}
 
 
-async def delete_filter_policy(postgres, policy_id: str, tenant_id: str) -> None:
+async def delete_filter_policy(postgres: Any, policy_id: str, tenant_id: str) -> None:
     resp = await postgres.soft_delete(KBFilterPolicyDelete(
         tenant_id=tenant_id,
         policy_id=policy_id,
@@ -145,7 +146,7 @@ async def delete_filter_policy(postgres, policy_id: str, tenant_id: str) -> None
         raise HTTPException(status_code=500, detail="Failed to delete filter policy")
 
 
-async def get_extraction_policy(postgres, tenant_id: str | None) -> dict:
+async def get_extraction_policy(postgres: Any, tenant_id: str | None) -> dict[str, Any]:
     resp = await postgres.read(ReadJoinRequest(
         tenant_id=tenant_id, joins_table=["KBExtractionPolicy"], limit=1,
     ))
@@ -156,8 +157,8 @@ async def get_extraction_policy(postgres, tenant_id: str | None) -> dict:
 
 
 async def update_extraction_policy(
-    postgres, custom: str, tenant_id: str, created_by: str,
-) -> dict:
+    postgres: Any, custom: str, tenant_id: str, created_by: str,
+) -> dict[str, Any]:
     resp = await postgres.read(ReadJoinRequest(
         tenant_id=tenant_id, joins_table=["KBExtractionPolicy"], limit=1,
     ))
@@ -172,7 +173,7 @@ async def update_extraction_policy(
             )
             await session.commit()
     else:
-        from basemodel.services_databaseconnector.postgres_model import PolicyExtractionType
+        from libs.basemodel.services_databaseconnector.postgres_model import PolicyExtractionType
         await postgres.insert(KBExtractionPolicyInsert(
             tenant_id=tenant_id,
             policy_name="Default Extraction Policy",

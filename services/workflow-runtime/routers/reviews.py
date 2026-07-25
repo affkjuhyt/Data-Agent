@@ -1,5 +1,6 @@
 import time
 import logging
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -18,7 +19,7 @@ class ResumeRequest(BaseModel):
 
 
 @router.get("/api/reviews/pending")
-async def list_pending():
+async def list_pending() -> list[dict[str, Any]]:
     return [
         {
             "conv_id":      cid,
@@ -32,7 +33,7 @@ async def list_pending():
 
 
 @router.get("/api/reviews/{conv_id}")
-async def get_pending(conv_id: str):
+async def get_pending(conv_id: str) -> dict[str, Any]:
     entry = _pending_reviews.get(conv_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Review not found or already resolved")
@@ -46,7 +47,7 @@ async def get_pending(conv_id: str):
 
 
 @router.post("/api/reviews/{conv_id}/resume")
-async def resume_review(conv_id: str, body: ResumeRequest):
+async def resume_review(conv_id: str, body: ResumeRequest) -> dict[str, Any]:
     entry = _pending_reviews.get(conv_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Review not found or already resolved")

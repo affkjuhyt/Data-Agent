@@ -6,10 +6,12 @@ Neo4j aren't running in lite deployments, or a live service went down and the
 background health-check loop marked it unhealthy — instead of letting the route
 blow up later with a low-level ConnectionError (500).
 """
+from typing import Any
+
 from fastapi import HTTPException, Request
 
 
-def svc(request: Request, name: str):
+def svc(request: Request, name: str) -> Any:
     obj = getattr(request.app.state, name, None)
     if obj is None:
         raise HTTPException(

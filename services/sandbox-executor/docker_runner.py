@@ -32,6 +32,7 @@ import logging
 import os
 import threading
 from collections.abc import Callable
+from typing import Any
 
 import docker
 
@@ -137,7 +138,7 @@ _pool: ContainerPool | None = None
 _pool_lock = threading.Lock()
 
 
-def _get_client():
+def _get_client() -> Any:
     """Talks to a rootless Docker-in-Docker sidecar (`sandbox-dockerd` in
     infra/docker-compose.app.yml) when SANDBOX_DOCKER_HOST is set, instead of
     the host's own /var/run/docker.sock. A compromise of this process then
@@ -198,7 +199,7 @@ def shutdown_pool() -> None:
         _pool = None
 
 
-def _cleanup(pc, pool: ContainerPool) -> tuple[bool, str]:
+def _cleanup(pc: Any, pool: ContainerPool) -> tuple[bool, str]:
     """Kills everything but PID 1 and wipes /tmp; returns (clean, reason)
     where clean is True only if exactly PID 1 remains and memory usage is
     back near the container's recorded idle baseline. Broad except on
@@ -260,7 +261,7 @@ def run_python_sandboxed(
     memory_mb: int = DEFAULT_MEMORY_MB,
     cpus: float = DEFAULT_CPUS,
     on_output: Callable[[str, str], None] | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Returns {"stdout": str, "stderr": str, "exit_code": int, "timed_out": bool}.
 
     `on_output(stream, text)`, if given, is called synchronously from the
@@ -287,7 +288,7 @@ def run_python_sandboxed(
     except TimeoutError as e:
         raise SandboxRunError(str(e)) from e
 
-    outcome: dict = {}
+    outcome: dict[str, Any] = {}
     timed_out = False
     retire_reason = None
 
@@ -296,7 +297,7 @@ def run_python_sandboxed(
     # explicitly handled below) would leak pc in pool._busy until the
     # janitor's stuck-exec sweep rescues it minutes later.
     try:
-        def _do_exec():
+        def _do_exec() -> None:
             try:
                 # Low-level exec_create/exec_start(stream=True) instead of
                 # the high-level exec_run() — the latter blocks until the

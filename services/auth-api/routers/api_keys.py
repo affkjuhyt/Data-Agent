@@ -1,3 +1,4 @@
+from typing import Any
 from fastapi import APIRouter
 
 from auth_core import *
@@ -10,8 +11,8 @@ router = APIRouter()
 @router.get("/api/auth/api-keys")
 def list_api_keys(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(require_role("platform-admin")),
-):
+    user: dict[str, Any] = Depends(require_role("platform-admin")),
+) -> list[dict[str, Any]]:
     conn = get_db()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -26,9 +27,9 @@ def list_api_keys(
 
 @router.get("/api/auth/api-keys/list-via-rls")
 def list_api_keys_via_rls(
-    db = Depends(get_tenant_db),
-    user: dict = Depends(require_role("platform-admin")),
-):
+    db: Any = Depends(get_tenant_db),
+    user: dict[str, Any] = Depends(require_role("platform-admin")),
+) -> list[dict[str, Any]]:
     """RLS-only variant — same data, no WHERE clause in SQL.
 
     PoC for the rollout in [P0 #2]: trust Postgres RLS to scope rows by
@@ -54,8 +55,8 @@ def list_api_keys_via_rls(
 def create_api_key(
     body: APIKeyIn,
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(require_role("platform-admin")),
-):
+    user: dict[str, Any] = Depends(require_role("platform-admin")),
+) -> dict[str, Any]:
     if body.scope not in VALID_SCOPES:
         raise HTTPException(status_code=422, detail=f"Invalid scope: {body.scope}")
 
@@ -86,8 +87,8 @@ def create_api_key(
 def revoke_api_key(
     key_id: str = Path(...),
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(require_role("platform-admin")),
-):
+    user: dict[str, Any] = Depends(require_role("platform-admin")),
+) -> dict[str, Any]:
     conn = get_db()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -109,8 +110,8 @@ def revoke_api_key(
 def rotate_api_key(
     key_id: str = Path(...),
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
-    user: dict = Depends(require_role("platform-admin")),
-):
+    user: dict[str, Any] = Depends(require_role("platform-admin")),
+) -> dict[str, Any]:
     conn = get_db()
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:

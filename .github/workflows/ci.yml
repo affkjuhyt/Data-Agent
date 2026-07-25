@@ -33,8 +33,36 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: pip install mypy
-      - run: mypy --install-types --non-interactive services basemodel app || true
+      - name: Typecheck · whole tree (report)
+        run: mypy --install-types --non-interactive services libs app || true
         # ^ `|| true` while strict surface is small — drop once mypy passes clean.
+        #   (basemodel moved under libs/ in the libs-layer refactor.)
+      - name: Strict typecheck · core libs + services (BLOCKING)
+        # These surfaces are kept strict-clean (disallow_untyped_defs +
+        # disallow_any_generics). This FAILS the build on any new untyped def or
+        # bare generic in them. --ignore-missing-imports keeps it reproducible
+        # without installing every service's runtime deps.
+        #
+        # Each surface is checked in its OWN mypy invocation: the services are not
+        # importable packages and several share top-level module basenames
+        # (config.py, app.py, state.py, graph.py, …). Passing them together makes
+        # mypy collide those basenames and resolve `import config` to the wrong
+        # service — spurious attr-defined errors. Per-surface runs avoid that.
+        # `set -e` (GH Actions default bash -eo pipefail) fails the job on the
+        # first surface that regresses.
+        run: |
+          for target in \
+            libs/basemodel libs/database_connector libs/shared \
+            services/orchestrator services/kb_backend services/workflow-runtime \
+            services/auth-api services/flow-builder services/model-service \
+            services/minio-service services/release-worker services/sandbox-executor \
+            services/kb-ingestion-worker services/schema-crawler-worker \
+            services/memory-consumer services/audit-bridge services/audit-consumer \
+            services/jwks-refresher; do
+            echo "== mypy strict: $target =="
+            mypy --disallow-untyped-defs --disallow-any-generics \
+                 --ignore-missing-imports --follow-imports=silent "$target"
+          done
 
   python-test:
     name: Python · pytest (unit + integration)
@@ -182,3 +210,37 @@ jobs:
         run: npm run typecheck:strict || true
       - name: Prettier format check (report)
         run: npm run format:check || true
+
+  security-scan:
+    # Supply-chain guardrails: known-CVE dependencies + filesystem vuln/secret/
+    # misconfig scan. REPORT-ONLY for now (`|| true` / exit-code 0) because there
+    # is an existing baseline to burn down — flip pip-audit to blocking and set
+    # trivy `exit-code: 1` on HIGH,CRITICAL once the baseline is clean.
+    name: Security · deps CVE + fs scan (report)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install pip-audit
+      - name: Dependency CVE scan (pip-audit · report)
+        # Audit every service's pinned deps. `-r` per requirements.txt; `|| true`
+        # so a known CVE doesn't block the pipeline yet. Drop `|| true` per file
+        # as each is triaged/patched.
+        run: |
+          for req in $(git ls-files '*requirements*.txt'); do
+            echo "::group::pip-audit $req"
+            pip-audit -r "$req" --desc on || true
+            echo "::endgroup::"
+          done
+      - name: Filesystem vuln + secret + misconfig scan (trivy · report)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          exit-code: "0"   # report-only; set to "1" to block once baseline is clean
+          ignore-unfixed: true

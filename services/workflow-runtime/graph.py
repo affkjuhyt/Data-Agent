@@ -1,3 +1,4 @@
+from typing import Any, Callable
 import logging
 from collections import defaultdict
 from langgraph.graph import StateGraph, START, END
@@ -37,7 +38,7 @@ _DEFAULT_FLOW_NODES = [
     {"id": t, "data": {"nodeType": t}}
     for t in ("planner", "kb_search", "mcp", "rrf_ranking", "reranker", "responder")
 ]
-_DEFAULT_FLOW_EDGES = [
+_DEFAULT_FLOW_EDGES: list[dict[str, Any]] = [
     {"source": "planner",     "target": "kb_search"},
     {"source": "planner",     "target": "mcp"},
     {"source": "kb_search",   "target": "rrf_ranking"},
@@ -47,7 +48,7 @@ _DEFAULT_FLOW_EDGES = [
 ]
 
 
-def _make_route_after_planner(retrieval_nodes: frozenset[str]):
+def _make_route_after_planner(retrieval_nodes: frozenset[str]) -> Callable[[AgentState], list[str]]:
     """Closure giới hạn destinations trong các node thực sự có trong graph."""
     def route_after_planner(state: AgentState) -> list[str]:
         tool_calls = state.get("tool_calls", [])
@@ -66,7 +67,7 @@ def _make_route_after_planner(retrieval_nodes: frozenset[str]):
     return route_after_planner
 
 
-def join_retrieval_node(state: AgentState) -> dict:
+def join_retrieval_node(state: AgentState) -> dict[str, Any]:
     return {}
 
 
@@ -79,7 +80,7 @@ _PHASE1_REASONS = {
 }
 
 
-async def judge_phase1_node(state: AgentState) -> dict:
+async def judge_phase1_node(state: AgentState) -> dict[str, Any]:
     """Judge Pha 1 (mới) — check thuần state, không LLM, ngay sau khi retrieval
     xong (trước rrf_ranking/reranker/responder). Bắt RETRIEVAL_ERROR (rỗng
     toàn bộ — kb_chunks/mcp_results/tool_results/db_results đều không có gì) và
@@ -136,7 +137,7 @@ async def judge_phase1_node(state: AgentState) -> dict:
     iteration = state.get("loop_iteration", 0)
     lf = get_langfuse_client()
 
-    def _pass() -> dict:
+    def _pass() -> dict[str, Any]:
         if lf:
             lf.update_current_span(level="DEBUG")
         return {"judge_phase1_error": None}
@@ -168,13 +169,13 @@ async def judge_phase1_node(state: AgentState) -> dict:
     }
 
 
-def _make_route_after_phase1(after_targets: list[str]):
+def _make_route_after_phase1(after_targets: list[str]) -> Callable[[AgentState], list[str]]:
     def route_after_phase1(state: AgentState) -> list[str]:
         return ["planner"] if state.get("judge_phase1_error") else after_targets
     return route_after_phase1
 
 
-def _make_route_after_judge(available: frozenset[str]):
+def _make_route_after_judge(available: frozenset[str]) -> Callable[[AgentState], str]:
     """Closure: route về node lỗi, chỉ route tới node thực sự có trong graph.
     RETRIEVAL_ERROR/TOOL_ERROR không còn xuất hiện ở đây — Judge Pha 1
     (judge_phase1_node, chạy trước rrf_ranking/reranker/responder) đã bắt 2
@@ -192,7 +193,7 @@ def _make_route_after_judge(available: frozenset[str]):
     return route_after_judge
 
 
-def _make_route_after_human_approval(targets: frozenset[str]):
+def _make_route_after_human_approval(targets: frozenset[str]) -> Callable[[AgentState], str]:
     def route_after_human_approval(state: AgentState) -> str:
         if state.get("human_approved") is False:
             return "end"
@@ -201,15 +202,19 @@ def _make_route_after_human_approval(targets: frozenset[str]):
     return route_after_human_approval
 
 
-def build_graph(flow_nodes: list[dict] | None = None, flow_edges: list[dict] | None = None, checkpointer=None):
+def build_graph(
+    flow_nodes: list[dict[str, Any]] | None = None,
+    flow_edges: list[dict[str, Any]] | None = None,
+    checkpointer: Any = None,
+) -> Any:
     return _build_dynamic_graph(
         flow_nodes or _DEFAULT_FLOW_NODES,
-        flow_edges if flow_nodes else _DEFAULT_FLOW_EDGES,
+        (flow_edges if flow_nodes else _DEFAULT_FLOW_EDGES) or [],
         checkpointer=checkpointer,
     )
 
 
-def _build_dynamic_graph(flow_nodes: list[dict], flow_edges: list[dict], checkpointer=None):
+def _build_dynamic_graph(flow_nodes: list[dict[str, Any]], flow_edges: list[dict[str, Any]], checkpointer: Any = None) -> Any:
     # Build node id → nodeType map (chỉ lấy node có trong NODE_TYPE_MAP)
     id_to_type: dict[str, str] = {}
     for n in flow_nodes:

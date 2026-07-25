@@ -273,8 +273,8 @@ services:
   auth-api:
     profiles: [iam]
     build:
-      context: ../services
-      dockerfile: auth-api/Dockerfile
+      context: ..
+      dockerfile: services/auth-api/Dockerfile
     container_name: dataagent-auth-api
     restart: unless-stopped
     ports:
@@ -310,8 +310,8 @@ services:
   minio-service:
     profiles: [kb, release]
     build:
-      context: ../services
-      dockerfile: minio-service/Dockerfile
+      context: ..
+      dockerfile: services/minio-service/Dockerfile
     container_name: dataagent-minio-service
     restart: unless-stopped
     ports:
@@ -329,8 +329,8 @@ services:
   release-worker:
     profiles: [release]
     build:
-      context: ../services
-      dockerfile: release-worker/Dockerfile
+      context: ..
+      dockerfile: services/release-worker/Dockerfile
     container_name: dataagent-release-worker
     restart: unless-stopped
     ports:
@@ -370,8 +370,8 @@ services:
   audit-bridge:
     profiles: [iam]
     build:
-      context: ../services
-      dockerfile: audit-bridge/Dockerfile
+      context: ..
+      dockerfile: services/audit-bridge/Dockerfile
     container_name: dataagent-audit-bridge
     restart: unless-stopped
     environment:
@@ -400,8 +400,8 @@ services:
   audit-consumer:
     profiles: [iam]
     build:
-      context: ../services
-      dockerfile: audit-consumer/Dockerfile
+      context: ..
+      dockerfile: services/audit-consumer/Dockerfile
     container_name: dataagent-audit-consumer
     restart: unless-stopped
     environment:
@@ -498,8 +498,8 @@ services:
   jwks-refresher:
     profiles: [legacy-jwt]
     build:
-      context: ../services
-      dockerfile: jwks-refresher/Dockerfile
+      context: ..
+      dockerfile: services/jwks-refresher/Dockerfile
     container_name: dataagent-jwks-refresher
     restart: unless-stopped
     environment:

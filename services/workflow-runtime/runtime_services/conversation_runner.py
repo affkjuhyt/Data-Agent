@@ -1,9 +1,11 @@
+from typing import Any, Coroutine, cast
 import asyncio
 import json
 import logging
 import re
 import time
 from collections import OrderedDict
+from collections.abc import AsyncIterator
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -26,7 +28,7 @@ from memory_middleware import (
 from workflow_memory import record_workflow_outcome, retrieve_workflow_memory
 from observability import get_langchain_callback_handler, flush_langfuse
 from schemas import RunRequest
-from services.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
+from libs.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
 
 logger = logging.getLogger(__name__)
 
@@ -74,15 +76,15 @@ class _LRUCache:
 
     def __init__(self, maxsize: int = 64) -> None:
         self._maxsize = maxsize
-        self._data: "OrderedDict[str, object]" = OrderedDict()
+        self._data: "OrderedDict[str, Any]" = OrderedDict()
 
-    def get(self, key: str):
+    def get(self, key: str) -> Any:
         if key not in self._data:
             return None
         self._data.move_to_end(key)
         return self._data[key]
 
-    def set(self, key: str, value: object) -> None:
+    def set(self, key: str, value: Any) -> None:
         self._data[key] = value
         self._data.move_to_end(key)
         while len(self._data) > self._maxsize:
@@ -111,15 +113,15 @@ _default_graph = build_graph()
 _checkpointer = MemorySaver()
 
 # conv_id → {agent_id, query, interrupt_payload, suspended_at}
-_pending_reviews: dict[str, dict] = {}
+_pending_reviews: dict[str, dict[str, Any]] = {}
 
 # asyncio only holds a weak reference to a task created via create_task — if
 # nothing else references it, it can be GC'd mid-execution. Keep a strong ref
 # here until done, per the stdlib docs' own recommendation for fire-and-forget tasks.
-_background_tasks: set[asyncio.Task] = set()
+_background_tasks: set[asyncio.Task[Any]] = set()
 
 
-def _fire_and_forget(coro) -> None:
+def _fire_and_forget(coro: Coroutine[Any, Any, Any]) -> None:
     task = asyncio.create_task(coro)
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
@@ -143,9 +145,9 @@ def _skip_trace(name: str) -> bool:
 
 async def _get_or_build_graph(
     cache_key: str,
-    flow_nodes: list,
-    flow_edges: list | None = None,
-    checkpointer=None,
+    flow_nodes: list[Any],
+    flow_edges: list[Any] | None = None,
+    checkpointer: Any = None,
 ) -> object:
     graph = _graph_cache.get(cache_key)
     if graph is not None:
@@ -178,11 +180,11 @@ def invalidate_graph_version(workflow_version_id: str) -> int:
     return removed
 
 
-async def run_conversation_stream(req: RunRequest, request: Request):
+async def run_conversation_stream(req: RunRequest, request: Request) -> StreamingResponse | JSONResponse:
     tenant_id = request.headers.get("X-Tenant-ID", _DEV_TENANT_ID)
     cfg = await load_agent_config(req.agent_id, tenant_id=tenant_id)
     if cfg is None:
-        async def _err():
+        async def _err() -> AsyncIterator[str]:
             yield "data: [ERROR] Agent chưa được publish.\n\n"
             yield "data: [DONE]\n\n"
         return StreamingResponse(_err(), media_type="text/event-stream")
@@ -224,7 +226,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
     # orchestrated=False: single agent mode, tự fetch memory như bình thường
     if req.orchestrated:
         memory_context = list(req.memory_context)
-        workflow_memory_context = []
+        workflow_memory_context: list[dict[str, Any]] = []
     else:
         memory_context = []
         if cfg.get("memory_enabled"):
@@ -317,19 +319,19 @@ async def run_conversation_stream(req: RunRequest, request: Request):
 
     guardrail_cfg = req.guardrail_cfg.model_dump() if req.guardrail_cfg else {}
 
-    async def event_stream():
+    async def event_stream() -> AsyncIterator[str]:
         full_response: list[str] = []
         started_at = time.monotonic()
 
         pending_suggestions: list[str] | None = None
-        pending_charts: list[dict] | None = None
+        pending_charts: list[dict[str, Any]] | None = None
         # Khai báo sớm (trước try) — nếu exception xảy ra trước khi được gán
         # lại bên dưới, khối finally vẫn tham chiếu được an toàn.
         responder_options: list[str] | None = None
 
         # per-node trace tracking
         node_start_times: dict[str, float] = {}
-        node_traces: list[dict] = []
+        node_traces: list[dict[str, Any]] = []
         detected_language: str | None = None
         detected_intent: str | None = None
 
@@ -338,7 +340,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
         # responder sinh ra bản mới, huỷ task check của bản cũ (sắp lỗi thời
         # nếu Judge yêu cầu sinh lại), bắn task check mới cho bản hiện tại.
         last_responder_text = ""
-        guardrail_task: asyncio.Task | None = None
+        guardrail_task: asyncio.Task[Any] | None = None
 
         lg_config = {"callbacks": callbacks, "configurable": {"thread_id": conv_id}}
 
@@ -415,7 +417,7 @@ async def run_conversation_stream(req: RunRequest, request: Request):
                         for intr in getattr(task, "interrupts", []):
                             interrupt_payload = intr.value
                             break
-                    _pending_reviews[conv_id] = {
+                    _pending_reviews[cast(str, conv_id)] = {
                         "agent_id":   req.agent_id,
                         "query":      req.query,
                         "payload":    interrupt_payload,

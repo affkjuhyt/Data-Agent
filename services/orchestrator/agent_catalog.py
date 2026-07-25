@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 import logging
 import time
 
@@ -9,11 +10,11 @@ logger = logging.getLogger(__name__)
 
 _GUARDRAIL_CACHE_TTL = 60.0  # giây — guardrail chạy đầu mọi request, cache
                              # để tránh 1 query DB/request (xem load test).
-_guardrail_cfg: dict = {}
+_guardrail_cfg: dict[str, Any] = {}
 _guardrail_cfg_at: float = 0.0
 
 
-async def fetch_guardrail_config(tenant_id: str | None = None) -> dict:
+async def fetch_guardrail_config(tenant_id: str | None = None) -> dict[str, Any]:
     """
     Load cấu hình guardrail platform-wide (regex patterns, allowed topics,
     model) từ bảng "Guardrails" — cache trong process TTL 60s.
@@ -29,7 +30,7 @@ async def fetch_guardrail_config(tenant_id: str | None = None) -> dict:
     if _guardrail_cfg and (now - _guardrail_cfg_at) < _GUARDRAIL_CACHE_TTL:
         return _guardrail_cfg
 
-    from services.database_connector.postgres_connector import client
+    from libs.database_connector.postgres_connector import client
 
     if not client.is_connected():
         logger.warning("guardrail_config | DB not connected, using last known config")
@@ -67,12 +68,12 @@ async def fetch_guardrail_config(tenant_id: str | None = None) -> dict:
     return _guardrail_cfg
 
 
-async def fetch_published_agents(tenant_id: str) -> list[dict]:
+async def fetch_published_agents(tenant_id: str) -> list[dict[str, Any]]:
     """
     Lấy danh sách agents đã publish của tenant trực tiếp từ PostgreSQL.
     Trả về list[{id, name, description}].
     """
-    from services.database_connector.postgres_connector import client
+    from libs.database_connector.postgres_connector import client
 
     if not client.is_connected():
         logger.warning("catalog | DB not connected, returning empty agent list")

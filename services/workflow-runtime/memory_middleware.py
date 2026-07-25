@@ -3,7 +3,7 @@ import os
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, List, Optional, cast
 from uuid import UUID, uuid4
 
 import httpx
@@ -12,8 +12,8 @@ from sqlalchemy import select, func, update
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams, Filter, FieldCondition, MatchValue
 
-from services.database_connector.postgres_connector import client
-from basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
+from libs.database_connector.postgres_connector import client
+from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
     AgentMemoriesORM, MemoryPolicyORM, EpisodicMemoryORM, FutureMemoryORM,
 )
 from kafka_producer import produce_event
@@ -42,7 +42,7 @@ _EPISODIC_LOOKBACK_DAYS = 30
 _qdrant: Optional[AsyncQdrantClient] = None
 
 
-async def init_qdrant():
+async def init_qdrant() -> None:
     global _qdrant
     _qdrant = AsyncQdrantClient(url=_QDRANT_URL)
     collections = await _qdrant.get_collections()
@@ -57,7 +57,7 @@ async def init_qdrant():
         logger.info("qdrant | collection '%s' ready", _COLLECTION)
 
 
-async def close_qdrant():
+async def close_qdrant() -> None:
     global _qdrant
     if _qdrant:
         await _qdrant.close()
@@ -65,7 +65,7 @@ async def close_qdrant():
         logger.info("qdrant | closed")
 
 
-async def _embed(text: str) -> Optional[list]:
+async def _embed(text: str) -> Optional[list[Any]]:
     try:
         async with httpx.AsyncClient(timeout=30) as client_:
             resp = await client_.post(
@@ -74,15 +74,15 @@ async def _embed(text: str) -> Optional[list]:
                 json={"model": "embedder", "input": text},
             )
             resp.raise_for_status()
-            return resp.json()["data"][0]["embedding"]
+            return cast(list[Any], resp.json()["data"][0]["embedding"])
     except Exception as e:
         logger.warning("embed failed — falling back to full-text search: %s", e)
         return None
 
 
-def _rrf(vec_ids: list, fts_ids: list, k: int = 60) -> list:
+def _rrf(vec_ids: list[Any], fts_ids: list[Any], k: int = 60) -> list[Any]:
     """Reciprocal Rank Fusion — combine vector and full-text search candidate sets for recall."""
-    scores: dict = {}
+    scores: dict[str, Any] = {}
     for rank, id_ in enumerate(vec_ids):
         scores[id_] = scores.get(id_, 0.0) + 1 / (k + rank + 1)
     for rank, id_ in enumerate(fts_ids):
@@ -90,7 +90,7 @@ def _rrf(vec_ids: list, fts_ids: list, k: int = 60) -> list:
     return sorted(scores, key=lambda x: scores[x], reverse=True)
 
 
-def _retrieval_score(row: dict, relevance: float, weights: dict) -> float:
+def _retrieval_score(row: dict[str, Any], relevance: float, weights: dict[str, Any]) -> float:
     """score = α·recency + β·importance + γ·relevance (doc §IV)."""
     now = datetime.now(timezone.utc)
     touched_at = row.get("updated_at")
@@ -102,7 +102,10 @@ def _retrieval_score(row: dict, relevance: float, weights: dict) -> float:
         age_days = _RECENCY_HALFLIFE_DAYS  # unknown age -> neutral recency
     recency = math.exp(-age_days / _RECENCY_HALFLIFE_DAYS)
     importance = row.get("importance") if row.get("importance") is not None else 0.5
-    return weights["alpha"] * recency + weights["beta"] * importance + weights["gamma"] * relevance
+    return cast(
+        float,
+        weights["alpha"] * recency + weights["beta"] * importance + weights["gamma"] * relevance,
+    )
 
 
 async def retrieve_memories(
@@ -112,7 +115,7 @@ async def retrieve_memories(
     query: str,
     limit: int = 5,
     domain: Optional[str] = None,
-) -> List[dict]:
+) -> List[dict[str, Any]]:
     """Semantic LTM retrieval: RRF merges vector+FTS candidates for recall, then
     re-ranks the merged pool by the recency/importance/relevance formula (doc §IV)."""
     if not client.is_connected():
@@ -139,7 +142,7 @@ async def retrieve_memories(
             )
             return {h.payload["pg_id"]: h.score for h in hits}
 
-        async def _fts_search(session) -> list:
+        async def _fts_search(session: Any) -> list[Any]:
             fts_q = (
                 select(
                     AgentMemoriesORM.id, AgentMemoriesORM.embedding_ref, AgentMemoriesORM.content,
@@ -163,7 +166,7 @@ async def retrieve_memories(
                     ((AgentMemoriesORM.scope == "user") & (AgentMemoriesORM.user_ref == user_ref))
                 )
             rows = (await session.execute(fts_q.limit(limit * 4))).fetchall()
-            return rows
+            return cast(list[Any], rows)
 
         async with client.get_client(tenant_id=tenant_id) as session:
             vec_scores, fts_rows = await asyncio.gather(
@@ -196,7 +199,11 @@ async def retrieve_memories(
 
             # RRF widens the candidate pool for recall; final ranking uses the weighted formula.
             candidate_ids = _rrf(vec_ids, fts_ids)[:limit * 2] if (vec_ids or fts_ids) else []
-            weights = _RETRIEVAL_WEIGHTS.get(domain, _RETRIEVAL_WEIGHTS["default"])
+            weights = (
+                _RETRIEVAL_WEIGHTS.get(domain, _RETRIEVAL_WEIGHTS["default"])
+                if domain is not None
+                else _RETRIEVAL_WEIGHTS["default"]
+            )
 
             scored = []
             for id_ in candidate_ids:
@@ -223,7 +230,7 @@ async def retrieve_episodic_past(
     user_ref: str,
     limit: int = 10,
     days: int = _EPISODIC_LOOKBACK_DAYS,
-) -> List[dict]:
+) -> List[dict[str, Any]]:
     """doc §IV — Episodic Past: WHERE user_ref=? AND created_at > now()-30d ORDER BY importance DESC."""
     if not client.is_connected():
         return []
@@ -248,7 +255,7 @@ async def retrieve_episodic_past(
         return []
 
 
-async def retrieve_pending_reminders(tenant_id: str, agent_id: str, user_ref: str) -> List[dict]:
+async def retrieve_pending_reminders(tenant_id: str, agent_id: str, user_ref: str) -> List[dict[str, Any]]:
     """doc §IV/§3.4 — Episodic Future: surfaced once at the start of a new
     session. doc §3.4 also specifies what happens after surfacing: a
     one-off reminder is marked executed; a recurring one gets a new row at
@@ -301,7 +308,7 @@ async def retrieve_pending_reminders(tenant_id: str, agent_id: str, user_ref: st
 
 
 async def apply_memory_policy(
-    state: dict,
+    state: dict[str, Any],
     agent_id: str,
     tenant_id: str,
     user_ref: str,

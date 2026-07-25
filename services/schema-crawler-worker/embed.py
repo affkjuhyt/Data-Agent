@@ -3,6 +3,7 @@ endpoint and EMBEDDING_DIM convention as workflow_memory.py/memory-consumer,
 so the schema_catalog collection lives in the same vector space as the rest
 of the platform's embeddings (default EMBEDDING_DIM=1024 matches BGE-M3)."""
 import os
+from typing import cast
 
 import httpx
 
@@ -18,4 +19,4 @@ def embed(text: str) -> list[float]:
         timeout=30,
     )
     r.raise_for_status()
-    return r.json()["data"][0]["embedding"]
+    return cast(list[float], r.json()["data"][0]["embedding"])

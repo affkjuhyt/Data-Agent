@@ -1,3 +1,4 @@
+from typing import Any, cast
 import asyncio
 import logging
 import time
@@ -44,7 +45,7 @@ TOOL_REGISTRY: dict[str, object] = {
 }
 
 
-async def _run_timed(handler, call: dict, cfg: dict) -> tuple[str, dict | None, dict | None, int]:
+async def _run_timed(handler: Any, call: dict[str, Any], cfg: dict[str, Any]) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None, int]:
     """Run one handler and return (tool_name, result, error, latency_ms)."""
     tool_name = call.get("tool_name", "unknown")
     t0 = time.monotonic()
@@ -55,7 +56,7 @@ async def _run_timed(handler, call: dict, cfg: dict) -> tuple[str, dict | None, 
         return tool_name, None, {"tool_name": tool_name, "error": str(exc)}, int((time.monotonic() - t0) * 1000)
 
 
-async def tool_executor_node(state: AgentState) -> dict:
+async def tool_executor_node(state: AgentState) -> dict[str, Any]:
     cfg     = state["config"]
     allowed = set(cfg.get("allowed_tools", []))
     if not allowed:
@@ -69,7 +70,7 @@ async def tool_executor_node(state: AgentState) -> dict:
         return {"tool_results": [], "tool_errors": [], "_tool_traces": []}
 
     tasks = []
-    call_map: list[dict] = []
+    call_map: list[dict[str, Any]] = []
     results, errors, traces = [], [], []
     for call in calls:
         tool_name = call.get("tool_name", "")
@@ -79,14 +80,14 @@ async def tool_executor_node(state: AgentState) -> dict:
             continue
         try:
             check_sandbox_tool_granted(tool_name, cfg)
-        except ToolNotGrantedError as e:
+        except ToolNotGrantedError as grant_err:
             # doc §1.9 — grant check, independent of and prior to sandbox
             # content validation (security_visitor/sql_guard never run for
             # a call rejected here).
-            logger.warning("tool_executor | %s", e)
-            errors.append({"tool_name": tool_name, "error": str(e)})
+            logger.warning("tool_executor | %s", grant_err)
+            errors.append({"tool_name": tool_name, "error": str(grant_err)})
             traces.append({"tool_name": tool_name, "query": call.get("query", ""), "arguments": call.get("arguments", {}),
-                           "status": "error", "error": str(e), "result_id": None, "latency_ms": 0})
+                           "status": "error", "error": str(grant_err), "result_id": None, "latency_ms": 0})
             continue
         tasks.append(_run_timed(handler, call, cfg))
         call_map.append(call)
@@ -101,7 +102,13 @@ async def tool_executor_node(state: AgentState) -> dict:
             traces.append({"tool_name": tool_name, "query": call.get("query", ""), "arguments": call.get("arguments", {}),
                            "status": "error", "error": str(outcome), "latency_ms": 0})
         else:
-            tool_name, r, e, lat = outcome
+            # asyncio.gather(..., return_exceptions=True) types each entry as
+            # tuple[...] | BaseException — the isinstance(outcome, Exception)
+            # branch above already handles the exception case, so here it's
+            # always the tuple _run_timed actually returns.
+            tool_name, r, e, lat = cast(
+                "tuple[str, dict[str, Any] | None, dict[str, Any] | None, int]", outcome
+            )
             if r:
                 results.append(r)
             if e:

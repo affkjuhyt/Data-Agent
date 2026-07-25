@@ -13,7 +13,7 @@ import types
 
 import pytest
 
-from services.shared.cache_invalidation import (
+from libs.shared.cache_invalidation import (
     GRAPH_INVALIDATE_CHANNEL,
     publish_graph_invalidation,
     run_graph_invalidation_listener,

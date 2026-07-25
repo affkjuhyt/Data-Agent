@@ -1,3 +1,4 @@
+from typing import Any
 import asyncio
 import logging
 import uuid
@@ -12,7 +13,7 @@ _LITELLM_BASE = __import__("os").environ.get("LITELLM_BASE_URL", "http://localho
 _LITELLM_KEY  = __import__("os").environ.get("LITELLM_API_KEY",  "sk-dev")
 
 
-async def _web_search_handler(call: dict, _cfg: dict) -> tuple[dict | None, dict | None]:
+async def _web_search_handler(call: dict[str, Any], _cfg: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     query = _get_query(call)
     if not query:
         return None, {"tool_name": "web_search", "error": "no query provided"}
@@ -24,7 +25,7 @@ async def _web_search_handler(call: dict, _cfg: dict) -> tuple[dict | None, dict
         return None, {"tool_name": "web_search", "error": str(e)}
 
 
-async def _wikipedia_handler(call: dict, _cfg: dict) -> tuple[dict | None, dict | None]:
+async def _wikipedia_handler(call: dict[str, Any], _cfg: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     query = _get_query(call)
     if not query:
         return None, {"tool_name": "wikipedia", "error": "no query provided"}
@@ -65,7 +66,7 @@ async def _wikipedia_handler(call: dict, _cfg: dict) -> tuple[dict | None, dict 
         return None, {"tool_name": "wikipedia", "error": str(e)}
 
 
-async def _calculator_handler(call: dict, cfg: dict) -> tuple[dict | None, dict | None]:
+async def _calculator_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     expression = call.get("arguments", {}).get("expression", "") or _get_query(call)
     if not expression:
         return None, {"tool_name": "calculator", "error": "no expression provided"}

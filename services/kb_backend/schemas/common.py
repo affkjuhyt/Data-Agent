@@ -2,27 +2,27 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel
 
 
 # ── Row-shaping helpers (used by response validators + kb_ui_operation) ────────
 
-def to_string(v) -> str:
+def to_string(v: Any) -> str:
     return str(v) if v is not None else ""
 
 
-def parse_jsonb(v) -> dict:
+def parse_jsonb(v: Any) -> dict[str, Any]:
     if isinstance(v, str):
         try:
-            return json.loads(v)
+            return cast("dict[str, Any]", json.loads(v))
         except (ValueError, TypeError):
             return {}
-    return v or {}
+    return cast("dict[str, Any]", v or {})
 
 
-def coerce_jsonb_dict(v) -> dict:
+def coerce_jsonb_dict(v: Any) -> dict[str, Any]:
     """Parse a JSONB value to a dict, recovering from the list shape left by a
     legacy double-encode bug: `object || "stringified-json"` concatenates into an
     array `[{...}, "{...}"]` instead of merging into one object. Merge every dict /
@@ -31,7 +31,7 @@ def coerce_jsonb_dict(v) -> dict:
     parsed = parse_jsonb(v)
     if isinstance(parsed, dict):
         return parsed
-    recovered: dict = {}
+    recovered: dict[str, Any] = {}
     for el in (parsed if isinstance(parsed, list) else []):
         if isinstance(el, dict):
             recovered.update(el)

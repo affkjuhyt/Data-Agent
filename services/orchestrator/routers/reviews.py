@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 @router.post("/api/orchestrate/resume", response_model=OrchestrateResponse)
-async def resume_orchestration(req: ClarificationResume):
+async def resume_orchestration(req: ClarificationResume) -> OrchestrateResponse:
     """
     Resume orchestration sau khi user cung cấp clarification.
     session_id là thread_id của LangGraph checkpointer VÀ Langfuse trace_id —

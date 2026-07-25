@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 import logging
 
 import config
@@ -8,7 +9,7 @@ from .dpts import LLM, MockLLM, Plan, PlanningProcess, StaticMemoryEstimator
 logger = logging.getLogger(__name__)
 
 
-def _build_llm():
+def _build_llm() -> LLM | MockLLM:
     if config.USE_MOCK_PLANNER:
         return MockLLM(plan_depth=config.MAX_PLAN_DEPTH, branching=config.BRANCHING)
     return LLM(branching=config.BRANCHING)
@@ -26,13 +27,13 @@ def _new_process() -> PlanningProcess:
     )
 
 
-def restore_plan(state: dict) -> PlanningProcess:
+def restore_plan(state: dict[str, Any]) -> PlanningProcess:
     process = _new_process()
     process.load_state(state)
     return process
 
 
-async def create_plan(user_input: str, agents: list[dict] | None = None) -> tuple[PlanningProcess, Plan] | None:
+async def create_plan(user_input: str, agents: list[dict[str, Any]] | None = None) -> tuple[PlanningProcess, Plan] | None:
     process = _new_process()
     plan = await process.plan(user_input, agents=agents)
     if plan is None:
@@ -42,7 +43,7 @@ async def create_plan(user_input: str, agents: list[dict] | None = None) -> tupl
     return process, plan
 
 
-async def report_node_failure(process: PlanningProcess, node_id: str) -> dict:
+async def report_node_failure(process: PlanningProcess, node_id: str) -> dict[str, Any]:
     """Executor reported a broken node — trim its branch and re-expand the SAME tree."""
     try:
         result = process.report_broken_node(node_id)

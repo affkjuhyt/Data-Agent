@@ -1,17 +1,18 @@
 """Business logic for chunk and chunk-version CRUD."""
+from typing import Any
 import logging
 import uuid
 from fastapi import HTTPException
 from sqlalchemy import select as sa_select, update as sa_update
 
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     ReadJoinRequest, SelectInLoadRequest, WhereFilter, OrderBy, OrderDirection,
     KBTextBlockDelete, KBTextBlockVersionDelete, KBTextBlockVersionInsert,
 )
 from services.kb_backend.operations.pagination import (
     PAGE_SIZE, get_cursor, advance, build_page,
 )
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBDataORM, KBTextBlockVersionORM,
 )
 from services.kb_backend.schemas import (
@@ -21,7 +22,7 @@ from services.kb_backend.schemas import (
 log = logging.getLogger(__name__)
 
 
-async def _assert_tenant(postgres, doc_id: str, tenant_id: str) -> None:
+async def _assert_tenant(postgres: Any, doc_id: str, tenant_id: str) -> None:
     """Raise 404 if doc_id does not belong to tenant_id."""
     async with postgres.get_client() as session:
         row = await session.scalar(
@@ -36,7 +37,7 @@ async def _assert_tenant(postgres, doc_id: str, tenant_id: str) -> None:
         raise HTTPException(status_code=404, detail="Document not found")
 
 
-async def _doc_tier(postgres, doc_id: str, tenant_id: str) -> str:
+async def _doc_tier(postgres: Any, doc_id: str, tenant_id: str) -> str:
     """Return the document's current tier (bronze|silver|gold), 404 if not owned."""
     async with postgres.get_client() as session:
         tier = await session.scalar(
@@ -52,11 +53,11 @@ async def _doc_tier(postgres, doc_id: str, tenant_id: str) -> str:
     return str(getattr(tier, "value", tier)).lower()
 
 
-def _shape_silver_chunks(staging: dict | None) -> list[dict]:
+def _shape_silver_chunks(staging: dict[str, Any] | None) -> list[dict[str, Any]]:
     """Shape Mongo kb_silver_staging chunks into the UI Chunk shape. Silver chunks
     aren't versioned yet (versions are created at Gold), so each becomes a single
     active version carrying the parsed text + the silver summary's intents."""
-    out: list[dict] = []
+    out: list[dict[str, Any]] = []
     for c in (staging or {}).get("chunks") or []:
         idx = c.get("block_index", len(out))
         content = c.get("content") or ""
@@ -78,7 +79,7 @@ def _shape_silver_chunks(staging: dict | None) -> list[dict]:
     return out
 
 
-async def _get_silver_chunks(mongo, doc_id: str, page: int) -> dict:
+async def _get_silver_chunks(mongo: Any, doc_id: str, page: int) -> dict[str, Any]:
     """Silver chunks live in Mongo staging (not yet promoted to Postgres KBTextBlock)."""
     staging = await mongo.get_client()["kb_silver_staging"].find_one({"data_id": doc_id})
     all_chunks = _shape_silver_chunks(staging)
@@ -91,14 +92,14 @@ async def _get_silver_chunks(mongo, doc_id: str, page: int) -> dict:
     }
 
 
-def _shape_chunks(rows: list[dict]) -> list[ChunkResponse]:
+def _shape_chunks(rows: list[dict[str, Any]]) -> list[ChunkResponse]:
     """Group flat (block, version) rows into nested ChunkResponse list.
     Each block gets all its versions; the active version's text becomes
     the block's display text. `entities` come from the per-chunk version payload.
     intents are a DOCUMENT-level concept now (KBData.doc_metadata), NOT per-chunk,
     so the version `intent` is left blank — the document's intents are surfaced on
     the document itself (DocumentMetadata.intents)."""
-    blocks: dict[str, dict] = {}
+    blocks: dict[str, dict[str, Any]] = {}
     for r in rows:
         bid = to_string(r["block_id"])
         if bid not in blocks:
@@ -121,9 +122,9 @@ def _shape_chunks(rows: list[dict]) -> list[ChunkResponse]:
 
 
 async def get_chunks(
-    postgres, mongo, doc_id: str, tenant_id: str,
+    postgres: Any, mongo: Any, doc_id: str, tenant_id: str,
     user_id: str, page: int = 1,
-) -> dict:
+) -> dict[str, Any]:
     # Silver chunks are staged in Mongo; only Gold promotes them into Postgres
     # KBTextBlock. Read from whichever store matches the document's tier.
     tier = await _doc_tier(postgres, doc_id, tenant_id)
@@ -148,7 +149,7 @@ async def get_chunks(
     raw = resp.data or []
     advance(user_id, cursor_key, page, raw)
 
-    flat: list[dict] = []
+    flat: list[dict[str, Any]] = []
     for block in raw:
         for v in (block.get("KBTextBlockVersion") or []):
             flat.append({
@@ -166,7 +167,7 @@ async def get_chunks(
     return build_page([c.model_dump() for c in _shape_chunks(flat)], page)
 
 
-async def delete_chunk(postgres, chunk_id: str, doc_id: str, tenant_id: str, qdrant=None) -> None:
+async def delete_chunk(postgres: Any, chunk_id: str, doc_id: str, tenant_id: str, qdrant: Any = None) -> None:
     """Soft-delete a chunk in Postgres and Qdrant, or in neither.
 
     Retrieval filters on Qdrant's is_deleted, so a Postgres-only delete would keep
@@ -198,7 +199,7 @@ async def delete_chunk(postgres, chunk_id: str, doc_id: str, tenant_id: str, qdr
         raise HTTPException(status_code=503, detail="Delete failed — vector store unavailable")
 
 
-async def activate_chunk_version(postgres, chunk_id: str, version_number, doc_id: str, tenant_id: str) -> dict:
+async def activate_chunk_version(postgres: Any, chunk_id: str, version_number: Any, doc_id: str, tenant_id: str) -> dict[str, Any]:
     await _assert_tenant(postgres, doc_id, tenant_id)
     block_uuid = uuid.UUID(chunk_id) if isinstance(chunk_id, str) else chunk_id
     # One transaction: the block must never be left with every version deactivated.
@@ -223,7 +224,7 @@ async def activate_chunk_version(postgres, chunk_id: str, version_number, doc_id
     return {"status": "ok"}
 
 
-async def delete_chunk_version(postgres, chunk_id: str, version_number: int, doc_id: str, tenant_id: str) -> None:
+async def delete_chunk_version(postgres: Any, chunk_id: str, version_number: int, doc_id: str, tenant_id: str) -> None:
     await _assert_tenant(postgres, doc_id, tenant_id)
     resp = await postgres.read(ReadJoinRequest(
         joins_table=["KBTextBlockVersion"],
@@ -243,10 +244,10 @@ async def delete_chunk_version(postgres, chunk_id: str, version_number: int, doc
 
 
 async def create_chunk_version(
-    postgres, chunk_id: str,
-    text: str, entities: list, intents: list,
+    postgres: Any, chunk_id: str,
+    text: str, entities: list[Any], intents: list[Any],
     created_by: str, doc_id: str, tenant_id: str,
-) -> dict:
+) -> dict[str, Any]:
     await _assert_tenant(postgres, doc_id, tenant_id)
     resp = await postgres.read(ReadJoinRequest(
         joins_table=["KBTextBlockVersion"],

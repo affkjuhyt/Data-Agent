@@ -4,6 +4,7 @@ Postgres is the conflict index — type, severity, status, the user's chosen met
 The text each conflict is about lives in Mongo: the batch's working document holds the
 existing side, the payload document holds the incoming chunk.
 """
+from typing import Any
 import logging
 import os
 import uuid
@@ -12,14 +13,14 @@ from fastapi import HTTPException
 from sqlalchemy import String, column, select, update as sa_update, values
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 
-from basemodel.services_databaseconnector.mongo_model import (
+from libs.basemodel.services_databaseconnector.mongo_model import (
     CONFLICT_PAYLOAD_COLLECTION,
     CONFLICT_RESOLUTION_COLLECTION,
 )
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     ConflictResolution, ReadJoinRequest, WhereFilter, OrderBy, OrderDirection,
 )
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBConflictBatchORM,
     KBConflictORM,
     KBTextBlockVersionORM,
@@ -57,7 +58,7 @@ MODE_INVALID = "invalid"
 
 # ── Shared helpers ────────────────────────────────────────────────────────────
 
-def _summary(row: dict) -> dict:
+def _summary(row: dict[str, Any]) -> dict[str, Any]:
     """The fields a conflict list row shows."""
     return {
         "conflict_id":   to_string(row.get("conflict_id")),
@@ -67,7 +68,7 @@ def _summary(row: dict) -> dict:
     }
 
 
-def _detail(row: dict) -> dict:
+def _detail(row: dict[str, Any]) -> dict[str, Any]:
     """The index row's own fields. Both snapshots come from Mongo — see get_conflict."""
     return {
         **_summary(row),
@@ -250,13 +251,13 @@ async def _publish_resolve_event(kafka_producer, batch_id: str, tenant_id: str |
 # ── Operations ────────────────────────────────────────────────────────────────
 
 async def list_conflicts(
-    postgres,
+    postgres: Any,
     tenant_id: str | None,
     user_id: str,
     pending_page: int = 1,
     awaiting_page: int = 1,
     resolved_page: int = 1,
-) -> dict:
+) -> dict[str, Any]:
     """The three status buckets; pending conflicts are grouped under their batch."""
     batch_response = await postgres.read(ReadJoinRequest(
         tenant_id=tenant_id, joins_table=["KBConflictBatch"], limit=PAGE_SIZE,
@@ -268,7 +269,7 @@ async def list_conflicts(
     awaiting_rows = await _fetch_status_bucket(postgres, tenant_id, user_id, _STATUS_AWAITING, awaiting_page)
     resolved_rows = await _fetch_status_bucket(postgres, tenant_id, user_id, _STATUS_RESOLVED, resolved_page)
 
-    pending_batches: dict[str, dict] = {}
+    pending_batches: dict[str, dict[str, Any]] = {}
     for row in pending_rows:
         batch_id = to_string(row.get("batch_id", ""))
         if batch_id not in pending_batches:
@@ -290,7 +291,7 @@ async def list_conflicts(
     }
 
 
-async def get_conflict(postgres, mongo, conflict_id: str, tenant_id: str | None) -> dict:
+async def get_conflict(postgres: Any, mongo: Any, conflict_id: str, tenant_id: str | None) -> dict[str, Any]:
     """One conflict: its Postgres index row, with both snapshots assembled from Mongo."""
     response = await postgres.read(ReadJoinRequest(
         tenant_id=tenant_id,
@@ -327,13 +328,13 @@ async def get_conflict(postgres, mongo, conflict_id: str, tenant_id: str | None)
 
 
 async def resolve_batch(
-    postgres,
+    postgres: Any,
     batch_id: str,
     resolutions: list[dict],
     resolved_by: str,
-    kafka_producer=None,
+    kafka_producer: Any = None,
     tenant_id: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Apply the user's per-conflict choices for a whole batch and hand it to the worker."""
     response = await postgres.read(ReadJoinRequest(
         tenant_id=tenant_id,

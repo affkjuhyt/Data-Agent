@@ -1,9 +1,14 @@
-# Build context is ../services (set in compose) so shared/ is available.
+# Build context is the repo root (set in compose) so libs/ is reachable.
 FROM python:3.12-slim
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
-COPY jwks-refresher/requirements.txt .
+COPY services/jwks-refresher/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY shared/ ./shared/
-COPY jwks-refresher/main.py .
+# shared code now lives in libs/shared; mount it under the bare `shared`
+# package name this service imports (import shared.xxx).
+COPY libs/shared/ ./shared/
+COPY services/jwks-refresher/main.py .
+# Drop root — read-only app surface.
+RUN addgroup --system app && adduser --system --ingroup app app
+USER app
 CMD ["python", "-u", "main.py"]

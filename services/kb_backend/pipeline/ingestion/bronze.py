@@ -3,12 +3,13 @@ Bronze stage: validate → upload to MinIO → register in Postgres as BRONZE KB
 """
 from __future__ import annotations
 
+from typing import Any
 import logging
 import uuid
 
 from pydantic import BaseModel
 
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     KBDataInsert,
     KBLifecycleHistoryInsert,
     Language,
@@ -16,8 +17,8 @@ from basemodel.services_databaseconnector.postgres_model import (
     Tier,
     Web,
 )
-from services.database_connector.minio_connector import MinIOClient
-from services.database_connector.postgres_connector import PostgresClient
+from libs.database_connector.minio_connector import MinIOClient
+from libs.database_connector.postgres_connector import PostgresClient
 from services.kb_backend.pipeline.ingestion import config as cfg
 
 
@@ -31,7 +32,7 @@ class BronzeUploadRequest(BaseModel):
     source_type:  str
     added_by:     str
     abstract:     str
-    doc_metadata: dict
+    doc_metadata: dict[str, Any]
     file_bytes:   bytes
     content_type: str = "application/octet-stream"
     # Knowledge base (kind of knowledge) this document belongs to. None = unscoped.
@@ -73,9 +74,9 @@ async def upload_to_bronze(
     added_by: str,
     abstract: str,
     language: Language,
-    doc_metadata,  # MetadataType instance (Document | Image | Video | Web | Warehouse)
+    doc_metadata: Any,  # MetadataType instance (Document | Image | Video | Web | Warehouse)
     knowledge_base_id: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """
     Upload raw file to MinIO and register as BRONZE-tier KBData.
 
@@ -116,6 +117,7 @@ async def upload_to_bronze(
         await minio.delete(cfg.MINIO_BUCKET, object_key)
         raise RuntimeError(f"Postgres KBData insert failed: {data_res.error}")
 
+    assert data_res.data is not None  # code == 200 guarantees a data payload
     actual_data_id: str = data_res.data["data_id"]
 
     hist_res = await postgres.insert(KBLifecycleHistoryInsert(
@@ -155,7 +157,7 @@ async def register_web_bronze(
     abstract: str,
     language: Language,
     knowledge_base_id: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Register a web portal as BRONZE-tier KBData.
 
     Unlike file sources there is no MinIO object — the source IS the live URL,
@@ -183,6 +185,7 @@ async def register_web_bronze(
     if data_res.code != 200:
         raise RuntimeError(f"Postgres KBData insert failed: {data_res.error}")
 
+    assert data_res.data is not None  # code == 200 guarantees a data payload
     actual_data_id: str = data_res.data["data_id"]
 
     hist_res = await postgres.insert(KBLifecycleHistoryInsert(

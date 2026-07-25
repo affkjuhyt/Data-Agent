@@ -275,7 +275,7 @@ async def mm_env(migrated_db):
         import memory_middleware as mm
         importlib.reload(mm)
 
-        from services.database_connector.postgres_connector import client
+        from libs.database_connector.postgres_connector import client
         client.set_url(migrated_db["dsn"])
         await client.open()
 
@@ -386,11 +386,11 @@ async def wm_rbac_env(migrated_db):
         import workflow_memory as wm
         importlib.reload(wm)
 
-        from services.database_connector.postgres_connector import client
+        from libs.database_connector.postgres_connector import client
         client.set_url(migrated_db["dsn"])
         await client.open()
 
-        from basemodel.services_databaseconnector.postgres_orm.workflow_orm import SchemaMemoryORM
+        from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import SchemaMemoryORM
         tenant_id, _ = _seed_tenant_and_agent(migrated_db["dsn"])
 
         async with client.get_client(tenant_id=tenant_id) as session:

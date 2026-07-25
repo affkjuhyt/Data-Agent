@@ -34,6 +34,12 @@ DOC_PASS_CHUNK_LIMIT = int(os.getenv("DOC_PASS_CHUNK_LIMIT", "5"))  # chunks fro
 # expansion boosts matching-type neighbours and an extra typed-field search
 # joins the RRF fusion. Soft signals only — a wrong type hint can demote but
 # never exclude.
+# Graceful degradation (KB-SCALE-10K.md #5): once a retrieval exceeds this budget
+# (ms since request start), skip the optional-but-costly steps — Neo4j graph
+# expansion and cross-encoder rerank — to protect p95 + shed load off Neo4j /
+# model-service under pressure. 0 disables (full pipeline always).
+DEGRADE_BUDGET_MS = int(os.getenv("DEGRADE_BUDGET_MS", "0"))
+
 TYPE_AWARE = os.getenv("TYPE_AWARE", "1") == "1"
 TYPE_BOOST = float(os.getenv("TYPE_BOOST", "0.08"))   # added to cosine in graph ranking
 
@@ -92,6 +98,11 @@ RERANK_TOP_N = int(os.getenv("RERANK_TOP_N", "5"))
 # RRF constant: 60 is the canonical default from Cormack et al. (2009); larger k
 # flattens the weight of top ranks. Kept configurable rather than a magic literal.
 RRF_K = int(os.getenv("RRF_K", "60"))
+# Offload the (CPU-bound, deterministic) RRF fusion kernel to the Go kb-compute
+# service (/rrf-fuse). Empty = fuse in-process (Python rrf_merge). Any error →
+# transparent fallback to the Python kernel, so retrieval never breaks if Go is down.
+KB_COMPUTE_URL = os.getenv("KB_COMPUTE_URL", "").rstrip("/")
+RRF_REMOTE_TIMEOUT_S = float(os.getenv("RRF_REMOTE_TIMEOUT_S", "2.0"))
 # Graph-seed headroom: keep a few more expansion seeds than NEO4J_TOP_ENTITIES so
 # the query's own entities survive the top-N cut alongside frequency-ranked ones.
 GRAPH_SEED_MARGIN = int(os.getenv("GRAPH_SEED_MARGIN", "3"))

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -14,8 +14,8 @@ class CreateWorkflowRequest(BaseModel):
 
 
 class CanvasPayload(BaseModel):
-    nodes: list
-    edges: list
+    nodes: list[Any]
+    edges: list[Any]
 
 
 class PublishRequest(BaseModel):

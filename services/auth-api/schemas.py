@@ -24,6 +24,22 @@ class SecretIn(BaseModel):
     rotation_days: int = 90
 
 
+class ComplianceSettingsIn(BaseModel):
+    pii_masking:         Optional[bool] = None
+    pii_types:           Optional[list[str]] = None
+    residency_region:    Optional[str] = None
+    residency_standards: Optional[str] = None
+    retention_days:      Optional[int] = None
+    retention_lock:      Optional[bool] = None
+    zero_trust:          Optional[bool] = None
+    audit_residency:     Optional[bool] = None
+
+
+class PiiScanIn(BaseModel):
+    text:  str
+    types: Optional[list[str]] = None
+
+
 class SignIn(BaseModel):
     data: str
 

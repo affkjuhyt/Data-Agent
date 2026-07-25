@@ -108,30 +108,32 @@ services:
   # ── KB-owned: embedding/rerank/LLM gateway ────────────────────────────────────
   model-service:
     build:
-      context: ./model-service
+      context: ../services/model-service
     container_name: kb-model-service
     restart: unless-stopped
     ports:
       - "8600:8001"
     environment:
       # Multilingual (Vietnamese corpus) — must match the weights cached in
-      # ./model-service/models and the dim of the Qdrant collections.
+      # ../services/model-service/models and the dim of the Qdrant collections.
       EMBED_MODEL: ${EMBED_MODEL:-intfloat/multilingual-e5-small}
       RERANK_MODEL: ${RERANK_MODEL:-cross-encoder/mmarco-mMiniLMv2-L12-H384-v1}
       REMOTE_EMBED_URL: ${REMOTE_EMBED_URL:-}
       REMOTE_RERANK_URL: ${REMOTE_RERANK_URL:-}
       REMOTE_API_KEY: ${REMOTE_API_KEY:-}
-      # LLM gateway → remote GPU tunnel by default (override per model-backend.ps1).
-      REMOTE_LLM_URL: ${REMOTE_LLM_URL:-http://host.docker.internal:8088}
+      # LLM gateway → host ollama (OpenAI-compat) pinned to a small model for the
+      # canonicalize/extraction step (KB-SCALE-10K.md §6: 1.5b ~1.7× faster than 3b,
+      # ample for structured extraction). Override for a remote GPU / larger model.
+      REMOTE_LLM_URL: ${REMOTE_LLM_URL:-http://host.docker.internal:11434}
       REMOTE_LLM_KEY: ${REMOTE_LLM_KEY:-}
-      REMOTE_LLM_MODEL: ${REMOTE_LLM_MODEL:-}
+      REMOTE_LLM_MODEL: ${REMOTE_LLM_MODEL:-qwen2.5:1.5b}
       OMP_NUM_THREADS: "2"
       POSTGRES_DSN: postgresql://${POSTGRES_USER:-admin}@postgres/${POSTGRES_DB:-dataagent}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       # Weights download here on first start and persist across recreates.
-      - ./model-service/models:/app/models
+      - ../services/model-service/models:/app/models
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 30s
@@ -139,6 +141,21 @@ services:
       retries: 5
       # First start downloads the embed + rerank models into the volume above.
       start_period: 300s
+
+  # ── KB-owned: Go CPU kernels (RRF fusion; deterministic, no ML) ───────────────
+  kb-compute:
+    build:
+      context: ..
+      dockerfile: services/kb-compute/Dockerfile
+    image: kb-compute:latest
+    container_name: kb-compute
+    restart: unless-stopped
+    # No host port: kb-backend reaches it in-network at kb-compute:8600. No
+    # depends_on — kb-backend falls back to in-process fusion if it's absent.
+    deploy:
+      resources:
+        limits:
+          memory: 64M
 
   # ── KB-owned: retrieval/query backend ─────────────────────────────────────────
   kb-backend:
@@ -151,12 +168,17 @@ services:
       # Loopback only — direct callers bypass Kong and can forge identity headers.
       - "127.0.0.1:8050:8000"
     environment:
+      # 10k CCU needs >=4: 1 worker's crud/Postgres path saturates (KB-SCALE-10K.md §6).
+      # 1 worker plateaus ~1900 rps/~1 core; set = CPU cores per replica for more.
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-4}
       POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/${POSTGRES_DB:-dataagent}
       QDRANT_URL: http://qdrant:6333
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_URL: bolt://neo4j:7687
       MONGO_URL: mongodb://mongo:27017/${POSTGRES_DB:-dataagent}
       MODEL_SERVICE_URL: http://model-service:8001
+      # Offload RRF fusion to Go kb-compute (empty → in-process Python; auto-fallback on error).
+      KB_COMPUTE_URL: ${KB_COMPUTE_URL-http://kb-compute:8600}
       MINIO_URL: http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-minio_secret}@minio:9000
       MINIO_BUCKET: knowledge-base
       # Plaintext Kafka listener (this client has no SASL support).
@@ -167,6 +189,8 @@ services:
       RERANK_TOP_N: ${RERANK_TOP_N:-5}
       NEO4J_MAX_HOPS: ${NEO4J_MAX_HOPS:-1}
       NEO4J_MAX_NEIGHBOURS: ${NEO4J_MAX_NEIGHBOURS:-5}
+      # Graceful degradation: skip graph_expand + rerank past this budget (0=off).
+      DEGRADE_BUDGET_MS: ${DEGRADE_BUDGET_MS:-0}
       DOC_NARROWING: ${DOC_NARROWING:-1}
       DOC_PASS_TOP_M: ${DOC_PASS_TOP_M:-3}
       DOC_PASS_CHUNK_LIMIT: ${DOC_PASS_CHUNK_LIMIT:-5}
@@ -181,8 +205,10 @@ services:
   kb-ingestion-worker:
     build:
       context: ..
-      dockerfile: infra/kb-ingestion-worker/Dockerfile
-    container_name: kb-ingestion-worker
+      dockerfile: services/kb-ingestion-worker/Dockerfile
+    # No container_name → horizontally scalable: `--scale kb-ingestion-worker=N`
+    # spawns N consumers in group kb-ingestion. Needs the silver/gold topics to
+    # have >= N partitions (see docker-compose.scale.yml). KB-SCALE-10K.md §6.
     restart: unless-stopped
     environment:
       POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/${POSTGRES_DB:-dataagent}
@@ -197,6 +223,11 @@ services:
       LLM_MODEL: llama3
       HF_HOME: /root/.cache/huggingface
       USE_VLM: "false"
+      # Ingestion throughput tuning (KB-SCALE-10K.md §6): overlap per-chunk LLM+embed
+      # inside a gold doc + run more silver docs concurrently. Defaults preserve
+      # legacy sequential behaviour.
+      GOLD_CHUNK_CONCURRENCY: "${GOLD_CHUNK_CONCURRENCY:-1}"
+      SILVER_CONCURRENCY: "${SILVER_CONCURRENCY:-1}"
     volumes:
       - docling_cache:/root/.cache/huggingface
     depends_on:

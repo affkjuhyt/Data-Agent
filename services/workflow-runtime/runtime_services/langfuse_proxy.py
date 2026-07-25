@@ -1,7 +1,7 @@
 import base64
 import logging
 import os
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 from fastapi.responses import JSONResponse
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 async def get_trace_observations(
     conv_id: str,
     trace_id: Optional[str] = None,
-):
+) -> JSONResponse | dict[str, Any]:
     public_key = os.environ.get("LANGFUSE_PUBLIC_KEY")
     secret_key = os.environ.get("LANGFUSE_SECRET_KEY")
     host = os.environ.get("LANGFUSE_HOST", "http://localhost:3001")

@@ -14,6 +14,7 @@ Flow:
   5. Platform-admin OR tenant-admin of the matching tenant approves via POST endpoints.
   6. On approval: role_id + tenant_id user attributes set in Keycloak, account enabled.
 """
+from typing import Any, cast
 import os
 import urllib.request
 import urllib.parse
@@ -44,7 +45,7 @@ AVAILABLE_ROLES = [
     "data-analyst",
 ]
 
-_kc_token_cache: dict = {}
+_kc_token_cache: dict[str, Any] = {}
 
 
 def _kc_admin_token() -> str:
@@ -52,7 +53,7 @@ def _kc_admin_token() -> str:
     cached = _kc_token_cache.get("token")
     exp    = _kc_token_cache.get("exp", 0)
     if cached and time.time() < exp - 30:
-        return cached
+        return cast(str, cached)
     data = urllib.parse.urlencode({
         "client_id":  "admin-cli",
         "username":   KC_ADMIN,
@@ -67,10 +68,10 @@ def _kc_admin_token() -> str:
     import time
     _kc_token_cache["token"] = payload["access_token"]
     _kc_token_cache["exp"]   = time.time() + payload.get("expires_in", 60)
-    return _kc_token_cache["token"]
+    return cast(str, _kc_token_cache["token"])
 
 
-def _kc_get(path: str) -> dict | list:
+def _kc_get(path: str) -> dict[str, Any] | list[Any]:
     token = _kc_admin_token()
     req   = urllib.request.Request(
         f"{KC_URL}{path}",
@@ -78,14 +79,14 @@ def _kc_get(path: str) -> dict | list:
     )
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
-            return json.loads(r.read())
+            return cast("dict[str, Any] | list[Any]", json.loads(r.read()))
     except urllib.error.HTTPError as e:
         if e.code == 404:
             return []
         raise
 
 
-def _kc_put(path: str, body: dict) -> None:
+def _kc_put(path: str, body: dict[str, Any]) -> None:
     token = _kc_admin_token()
     data  = json.dumps(body).encode()
     req   = urllib.request.Request(
@@ -101,8 +102,12 @@ def _is_microsoft_sso_user(user_id: str) -> tuple[bool, str, str]:
     try:
         identities = _kc_get(f"/admin/realms/{KC_REALM}/users/{user_id}/federated-identity")
         for ident in identities:
+            if not isinstance(ident, dict):
+                continue
             if ident.get("identityProvider", "").lower() in ("microsoft", "azure-ad", "entra-id"):
                 user_rep = _kc_get(f"/admin/realms/{KC_REALM}/users/{user_id}")
+                if not isinstance(user_rep, dict):
+                    continue
                 email    = user_rep.get("email", "")
                 name     = (
                     f"{user_rep.get('firstName', '')} {user_rep.get('lastName', '')}".strip()
@@ -151,7 +156,7 @@ def _assign_kc_user_role_tenant(user_id: str, role: str, tenant_id: str) -> None
     logging.info("assign_kc: set role=%s tenant=%s for user %s", role, tenant_id, user_id)
 
 
-def _can_approve(actor: dict, requested_tenant_id: str) -> bool:
+def _can_approve(actor: dict[str, Any], requested_tenant_id: str) -> bool:
     """platform-admin can approve all; tenant-admin only for their own tenant."""
     roles = actor.get("roles", [])
     if "platform-admin" in roles:
@@ -164,7 +169,7 @@ def _can_approve(actor: dict, requested_tenant_id: str) -> bool:
 # ─── Endpoints ────────────────────────────────────────────────────────────────
 
 @router.get("/api/auth/me")
-def get_me(user: dict = Depends(get_current_user)):
+def get_me(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
     """
     Returns the calling user's approval gate status.
     - Regular Keycloak users → active
@@ -206,7 +211,7 @@ class ProfileBody(BaseModel):
 
 
 @router.post("/api/auth/me/profile")
-def submit_profile(body: ProfileBody, user: dict = Depends(get_current_user)):
+def submit_profile(body: ProfileBody, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
     """
     Called once by a new MS SSO user after they select their role and tenant.
     Creates the pending approval record and disables the Keycloak account.
@@ -252,13 +257,13 @@ def submit_profile(body: ProfileBody, user: dict = Depends(get_current_user)):
 
 
 @router.get("/api/auth/me/roles")
-def get_available_roles(_user: dict = Depends(get_current_user)):
+def get_available_roles(_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
     """Return the list of roles an SSO user can request."""
     return {"roles": AVAILABLE_ROLES}
 
 
 @router.get("/api/auth/me/tenants")
-def get_available_tenants(_user: dict = Depends(get_current_user)):
+def get_available_tenants(_user: dict[str, Any] = Depends(get_current_user)) -> list[dict[str, Any]]:
     """Return the list of active tenants for SSO profile setup."""
     conn = get_db()
     try:
@@ -274,8 +279,8 @@ def get_available_tenants(_user: dict = Depends(get_current_user)):
 @router.get("/api/auth/approvals")
 def list_approvals(
     status: str = "pending",
-    user: dict = Depends(get_current_user),
-):
+    user: dict[str, Any] = Depends(get_current_user),
+) -> list[dict[str, Any]]:
     """
     List Microsoft SSO approval requests.
     - platform-admin: sees all requests.
@@ -328,8 +333,8 @@ def list_approvals(
 @router.post("/api/auth/approvals/{user_id}/approve")
 def approve_user(
     user_id: str = Path(...),
-    actor:   dict = Depends(get_current_user),
-):
+    actor:   dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
     """
     Approve a pending MS SSO user.
     Assigns requested role + tenant to Keycloak user and enables their account.
@@ -379,8 +384,8 @@ def approve_user(
 @router.post("/api/auth/approvals/{user_id}/reject")
 def reject_user(
     user_id: str = Path(...),
-    actor:   dict = Depends(get_current_user),
-):
+    actor:   dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
     """Reject a pending MS SSO user. Keeps their Keycloak account disabled."""
     conn = get_db()
     try:

@@ -3,6 +3,8 @@ the actual node's execution path (nodes/sandbox/db_connector.py). Purely a
 one-shot connectivity check so a user can verify host/port/database/user/
 password BEFORE saving the workflow, without needing to run a full agent
 conversation to discover a typo. Never persists anything."""
+from typing import Any
+
 from fastapi import APIRouter, Header
 from pydantic import BaseModel
 
@@ -19,7 +21,7 @@ class TestConnectionRequest(BaseModel):
 
 
 @router.post("/api/db-connector/test-connection")
-async def test_connection(body: TestConnectionRequest, x_tenant_id: str = Header(default="", alias="X-Tenant-Id")):
+async def test_connection(body: TestConnectionRequest, x_tenant_id: str = Header(default="", alias="X-Tenant-Id")) -> dict[str, Any]:
     password = body.password
     if not password and body.secret_id:
         from warehouse_secrets import resolve_db_connector_password

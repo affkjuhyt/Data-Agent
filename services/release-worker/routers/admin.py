@@ -1,3 +1,4 @@
+from typing import Any
 from fastapi import APIRouter
 
 from release_core import *
@@ -7,7 +8,7 @@ router = APIRouter()
 
 
 @router.post("/api/release/admin/create-partition")
-def create_next_partition(user: dict = Depends(get_current_user)):
+def create_next_partition(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
     """
     Tạo partition release_history cho tháng tiếp theo.
     Thay thế cho pg_cron job — có thể gọi từ CI/CD đầu mỗi tháng.

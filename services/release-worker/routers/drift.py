@@ -1,3 +1,4 @@
+from typing import Any
 from fastapi import APIRouter
 
 from release_core import *
@@ -7,7 +8,7 @@ router = APIRouter()
 
 
 @router.post("/api/release/drift/detect")
-def api_detect_drift(user: dict = Depends(get_current_user)):
+def api_detect_drift(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
     """
     Trigger drift detection thủ công — không cần Celery worker.
     Gọi inline _detect_config_drift_core(), ghi DB, produce Kafka event.
@@ -28,8 +29,8 @@ def api_detect_drift(user: dict = Depends(get_current_user)):
 def list_drift_events(
     resolved: Optional[bool] = None,
     limit: int = 20,
-    user: dict = Depends(get_current_user),
-):
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
     """List drift events từ DB — hỗ trợ filter theo resolved status."""
     with get_pg_conn() as conn:
         with conn.cursor() as cur:
@@ -65,8 +66,8 @@ def list_drift_events(
 def resolve_drift_event(
     drift_id: int,
     req: DriftResolveRequest,
-    user: dict = Depends(get_current_user),
-):
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
     """Mark drift event as resolved sau khi team đã sync config."""
     if "platform-admin" not in user["roles"] and "ai-engineer" not in user["roles"]:
         raise HTTPException(status_code=403, detail="Insufficient role for drift resolution")

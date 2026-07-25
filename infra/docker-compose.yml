@@ -304,6 +304,35 @@ services:
       - "16686:16686"
       - "4317:4317"
 
+  # Kibana — UI để đọc log JSON (ECS) đã ship vào Elasticsearch. Nhảy Kibana
+  # <-> Jaeger qua trace.id/span.id mà libs/shared/logger.py gắn vào mỗi record.
+  kibana:
+    profiles: [observability]
+    image: kibana:8.12.0
+    container_name: dataagent-kibana
+    restart: unless-stopped
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+
+  # Filebeat — thu log stdout của mọi container (JSON ECS) rồi đẩy vào
+  # Elasticsearch. Đọc trực tiếp /var/lib/docker/containers trên host.
+  filebeat:
+    profiles: [observability]
+    image: docker.elastic.co/beats/filebeat:8.12.0
+    container_name: dataagent-filebeat
+    restart: unless-stopped
+    user: root
+    volumes:
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - elasticsearch
+
   # Openbao
   openbao:
     profiles: [iam, runtime]
@@ -492,14 +521,14 @@ services:
   model-service:
     profiles: [kb, runtime]
     build:
-      context: ./model-service
+      context: ../services/model-service
     container_name: dataagent-model-service
     restart: unless-stopped
     ports:
       - "8600:8001"
     environment:
       # Multilingual (Vietnamese corpus) — must match the weights cached in
-      # ./model-service/models and the dim of the Qdrant collections.
+      # ../services/model-service/models and the dim of the Qdrant collections.
       EMBED_MODEL: ${EMBED_MODEL:-intfloat/multilingual-e5-small}
       RERANK_MODEL: ${RERANK_MODEL:-cross-encoder/mmarco-mMiniLMv2-L12-H384-v1}
       # LLM gateway → NATIVE ollama on the Mac host (Metal GPU = fast, doesn't peg
@@ -510,8 +539,8 @@ services:
       REMOTE_LLM_MODEL: ${REMOTE_LLM_MODEL:-llama3.1:8b}
     volumes:
       # Weights are no longer baked into the image — they download here on first
-      # start and persist across recreates. See infra/model-service/Dockerfile.
-      - ./model-service/models:/app/models
+      # start and persist across recreates. See services/model-service/Dockerfile.
+      - ../services/model-service/models:/app/models
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 30s
@@ -524,7 +553,7 @@ services:
     profiles: [kb]
     build:
       context: ..
-      dockerfile: infra/kb-ingestion-worker/Dockerfile
+      dockerfile: services/kb-ingestion-worker/Dockerfile
     container_name: dataagent-kb-ingestion-worker
     restart: unless-stopped
     environment:

@@ -14,11 +14,12 @@ using the existing `allowed_tools` allowlist already in tool_executor_node,
 untouched by this module. DEFAULT_PRESET grants both, so agents configured
 before this feature existed keep their current behavior with no migration.
 """
+from typing import Any
 from dataclasses import dataclass, field
 
 SANDBOX_TOOLS = {"execute_python", "execute_sql"}
 
-PRESETS: dict[str, dict] = {
+PRESETS: dict[str, dict[str, Any]] = {
     "sql_readonly":    {"tools": ["execute_sql"]},
     "python_analysis": {"tools": ["execute_python"]},
     "full_data_agent":  {"tools": ["execute_sql", "execute_python"]},
@@ -42,7 +43,7 @@ class AgentToolConfig:
         return (base | set(self.tools)) - set(self.disallowed_tools)
 
 
-def _from_cfg(cfg: dict) -> AgentToolConfig:
+def _from_cfg(cfg: dict[str, Any]) -> AgentToolConfig:
     grant_cfg = cfg.get("tool_grant") or {}
     return AgentToolConfig(
         preset=grant_cfg.get("preset", DEFAULT_PRESET),
@@ -51,7 +52,7 @@ def _from_cfg(cfg: dict) -> AgentToolConfig:
     )
 
 
-def check_sandbox_tool_granted(tool_name: str, cfg: dict) -> None:
+def check_sandbox_tool_granted(tool_name: str, cfg: dict[str, Any]) -> None:
     """Raises ToolNotGrantedError if tool_name is a sandbox tool the agent's
     resolved grant doesn't include. No-op for every non-sandbox tool —
     kiểm tra grant, KHÔNG thay thế sandbox content validation (§1.3)."""

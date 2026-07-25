@@ -20,7 +20,7 @@ def create_app() -> FastAPI:
     app.include_router(audit_archive.router)
 
     @app.on_event("startup")
-    def init_buckets():
+    def init_buckets() -> None:
         client = s3()
         for bucket in (BUCKET_ARTIFACTS, BUCKET_AUDIT):
             ensure_bucket(client, bucket)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Union
+from typing import Any, TYPE_CHECKING, Union
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -16,7 +16,7 @@ class Task(BaseModel):
 
     @field_validator("depend_on", mode="before")
     @classmethod
-    def _coerce(cls, v):
+    def _coerce(cls, v: Any) -> list[Union[int, str]]:
         if v is None:
             return []
         if isinstance(v, (int, str)):
@@ -41,7 +41,7 @@ class Plan(BaseModel):
     confidence: float = 0.0
 
 
-def _to_target(raw: dict) -> Target:
+def _to_target(raw: dict[str, Any]) -> Target:
     tasks = [t if isinstance(t, Task) else Task(**t) for t in raw.get("tasks", [])]
     return Target(description=raw.get("description", ""), tasks=tasks)
 

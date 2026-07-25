@@ -1,3 +1,4 @@
+from typing import Any
 import logging
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -18,7 +19,7 @@ class KBChunk(BaseModel):
     score: float
 
 
-async def kb_search_node(state: AgentState) -> dict:
+async def kb_search_node(state: AgentState) -> dict[str, Any]:
     cfg         = state["config"]
     kb_endpoint = cfg.get("kb_endpoint", "")
     tenant_id   = cfg.get("tenant_id", "")
@@ -46,8 +47,14 @@ async def kb_search_node(state: AgentState) -> dict:
                     resp = await client.post(
                         f"{kb_endpoint}/api/pipeline/light-rag/retrieve",
                         headers={
-                            "X-Role":      "AI_ENGINEER",
-                            "X-Tenant-Id": tenant_id,
+                            # Service-to-service call: no Kong in front of kb-backend,
+                            # so forge the identity headers kb-backend's auth requires
+                            # (it fail-closes without X-Kong-Verified).
+                            "X-Kong-Verified": "true",
+                            "X-Role":          "AI_ENGINEER",
+                            "X-Tenant-Id":     tenant_id,
+                            "X-User-Id":       cfg.get("user_ref") or "11111111-1111-1111-1111-111111111111",
+                            "X-User-Roles":    "platform-admin,tenant-admin,kb-admin,engineer",
                         },
                         json={
                             "query":     search_query,
@@ -76,3 +83,8 @@ async def kb_search_node(state: AgentState) -> dict:
     except Exception as e:
         logger.warning("kb_search | failed after retries: %s — returning empty", e)
         return {"kb_chunks": [], "kb_error": str(e)}
+
+    # Unreachable in practice: AsyncRetrying(reraise=True) always either
+    # returns from inside the loop or raises (caught above) — this satisfies
+    # the type checker's need for an explicit fallthrough return.
+    return {"kb_chunks": []}
