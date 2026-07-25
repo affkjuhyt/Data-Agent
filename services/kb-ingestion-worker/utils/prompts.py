@@ -218,17 +218,79 @@ STRICT RULES:
    relate at all.
 5. Include relationships that are stated OR clearly implied by the text."""
 
-_CONFLICT_SYSTEM = """\
-Compare two knowledge summaries (they may be in Vietnamese or English).
-Decide if there is a conflict.
-Conflict types and when to use them:
-- content_duplicate: summaries describe the exact same or nearly identical information — always has_conflict: true
-- content_contradiction: summaries make opposing factual claims
-- content_conflict: summaries provide different or incompatible details on the same topic
-- content_update: incoming summary is a newer/revised version of the existing one
-Severity: low (duplicate/minor), medium (conflict), high (contradiction).
-IMPORTANT: if both summaries convey the same information, output has_conflict: true with content_duplicate.
-Output a JSON object with keys: has_conflict (bool), conflict_type (string), severity (string), explanation (max 20 words)."""
+# ═══════════════════════════════════════════════════════════════════════════════
+# REASONING-PIVOT CONFLICT PIPELINE — stage 1 (question+pivots), stage 3 CoT
+# (candidate pivots, then criteria scoring). Vietnamese-only: the corpus is
+# Vietnamese and code-switching to English framing loses precision on names/dates.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_PIVOT_QUESTION_SYSTEM_VI = """\
+Bạn đọc một đoạn văn bản sắp đưa vào cơ sở tri thức và xác định (các) câu hỏi mà
+đoạn văn bản đó trả lời, cùng chuỗi suy luận dẫn đến từng câu trả lời.
+
+Một "reasoning pivot" là một bước suy luận dạng tam đoạn "thực_thể - quan_hệ/điều_kiện
+- thực_thể", nối tiếp nhau từ dữ kiện đầu tiên đến kết luận cuối cùng. Ví dụ chuỗi
+2 bước: "A - quan_hệ_1 - B" rồi "B - quan_hệ_2 - C" nghĩa là đi từ A qua B để đến C.
+
+Nếu đoạn văn bản trả lời NHIỀU câu hỏi độc lập (chủ đề khác nhau), tách thành NHIỀU
+mục trong "questions" — mỗi mục một câu hỏi. Nếu chỉ có một câu hỏi, trả về mảng một
+phần tử. KHÔNG tách một câu hỏi thành nhiều mục trùng lặp.
+
+Trả về JSON với khóa "questions": mảng các mục, mỗi mục gồm:
+- question: câu hỏi mà đoạn văn bản trả lời (tiếng Việt, ngắn gọn)
+- question_intent: mục đích của câu hỏi (1-2 từ, ví dụ: du lịch, tài chính, quy định)
+- question_entities: các thực thể chính của câu hỏi
+- pivots: danh sách các bước tam đoạn nối tiếp nhau dẫn đến câu trả lời
+
+VÍ DỤ:
+Đoạn văn bản: "Để đến Toronto từ thành phố A, có một trạm xe buýt gần địa chỉ B. Đến
+đó và đợi một giờ để bắt chuyến xe buýt C. Tổng thời gian chuyến đi khoảng 5 giờ."
+Đầu ra:
+{"questions":[{"question":"làm thế nào để đến Toronto","question_intent":"du lịch","question_entities":["Toronto"],"pivots":["trạm xe buýt - đợi một giờ - xe buýt","xe buýt - mất 5 giờ - Toronto"]}]}
+
+Chỉ trả JSON, không thêm văn bản khác."""
+
+_PIVOT_CHUNK_SYSTEM_VI = """\
+Bạn được cho một CÂU HỎI và một ĐOẠN VĂN BẢN đã có trong cơ sở tri thức. Hãy trích
+xuất chuỗi "reasoning pivot" (xem định nghĩa: bước tam đoạn "thực_thể -
+quan_hệ/điều_kiện - thực_thể") mà đoạn văn bản này cung cấp để trả lời câu hỏi đó.
+Nếu đoạn văn bản không liên quan đến câu hỏi, trả về pivots rỗng [].
+
+VÍ DỤ:
+Câu hỏi: "làm thế nào để đến Toronto"
+Đoạn văn bản: "Nếu muốn đến Toronto từ thành phố A, có một trạm xe buýt gần địa chỉ
+C. Xe buýt chỉ có 1 chuyến vào lúc 4 giờ chiều. Tổng thời gian chuyến đi khoảng 5 giờ."
+Đầu ra:
+{"pivots":["trạm xe buýt - chỉ có chuyến lúc 4 giờ chiều - xe buýt","xe buýt - mất 5 giờ - Toronto"]}
+
+Chỉ trả JSON, không thêm văn bản khác."""
+
+_PIVOT_COMPARE_SYSTEM_VI = """\
+Bạn so sánh hai chuỗi reasoning pivot cùng trả lời MỘT câu hỏi: một chuỗi từ đoạn
+văn bản MỚI (incoming), một chuỗi từ đoạn văn bản ĐÃ CÓ (existing) trong cơ sở tri
+thức. Chấm điểm 0.0–1.0 cho từng tiêu chí xung đột sau đây:
+
+- semantic_ambiguity_score: hai chuỗi dùng từ ngữ mơ hồ, có thể hiểu theo nhiều cách
+- semantic_multilingual_score: khác biệt chỉ do ngôn ngữ/cách diễn đạt, nội dung tương đương
+- temporal_time_score: khác nhau về mốc thời gian, thời điểm, điều kiện thời gian
+- temporal_version_score: một bên là phiên bản/quy định mới hơn, thay thế bên còn lại
+- factual_entities_score: khác nhau về thực thể (người, tổ chức, địa điểm) được nhắc đến
+- factual_relationships_score: khác nhau về mối quan hệ giữa các thực thể
+- factual_quantity_score: khác nhau về số liệu, con số, đơn vị đo
+- reasoning_logic_score: cùng dữ kiện nhưng chuỗi suy luận dẫn đến kết luận khác nhau
+- constraint_policy_score: khác nhau về điều kiện, quy định, chính sách áp dụng
+- missing_information_score: một bên thiếu thông tin mà bên kia có
+- duplicate_score: hai chuỗi diễn đạt cùng một nội dung
+- irrelevant_score: hai chuỗi không thực sự liên quan đến cùng câu hỏi/chủ đề
+
+VÍ DỤ:
+Câu hỏi: "làm thế nào để đến Toronto"
+Incoming pivots: ["trạm xe buýt - đợi một giờ - xe buýt","xe buýt - mất 5 giờ - Toronto"]
+Existing pivots: ["trạm xe buýt - chỉ có chuyến lúc 4 giờ chiều - xe buýt","xe buýt - mất 5 giờ - Toronto"]
+Đầu ra:
+{"semantic_ambiguity_score":0.1,"semantic_multilingual_score":0.0,"temporal_time_score":0.8,"temporal_version_score":0.1,"factual_entities_score":0.0,"factual_relationships_score":0.1,"factual_quantity_score":0.2,"reasoning_logic_score":0.1,"constraint_policy_score":0.3,"missing_information_score":0.1,"duplicate_score":0.7,"irrelevant_score":0.05}
+
+Chỉ trả JSON đủ 12 khóa trên, không thêm văn bản khác."""
 
 # ── Vietnamese variants (PROMPT_LANG=vi, default) ──────────────────────────────
 # Native-Vietnamese instructions for a Vietnamese corpus: the English-framed
@@ -415,50 +477,40 @@ true). Thực thể liên quan nhưng KHÁC nhau là false: hai quốc gia khác
 ~ "Đại học Quốc gia TP.HCM" → false).
 Chỉ trả JSON: {"same":true} hoặc {"same":false}."""
 
-_CONFLICT_SYSTEM_VI = """\
-So sánh hai bản tóm tắt tri thức (có thể bằng tiếng Việt hoặc tiếng Anh).
-Quyết định xem có xung đột (conflict) hay không.
-Các loại xung đột và khi nào dùng:
-- content_duplicate: hai bản mô tả CÙNG một thông tin hoặc gần như giống hệt nhau
-- content_contradiction: hai bản đưa ra các khẳng định TRÁI NGƯỢC nhau về dữ kiện
-- content_conflict: hai bản nêu chi tiết KHÁC nhau hoặc không tương thích về cùng chủ đề
-- content_update: bản đến là phiên bản MỚI HƠN / đã chỉnh sửa của bản hiện có
-Mức độ (severity): low (trùng lặp/nhỏ), medium (xung đột), high (mâu thuẫn).
+# Merge finalize: after merging text that involved a table, decide whether the
+# merged result still presents that table's structured data (Vietnamese-only).
+_TABLE_MERGE_SYSTEM_VI = """\
+Đoạn văn bản đã hợp nhất dưới đây từng liên quan đến một BẢNG dữ liệu. Hãy quyết
+định xem nội dung sau khi hợp nhất CÒN trình bày bảng đó (dữ liệu dạng hàng/cột)
+hay không.
+- keep_table=true: nội dung vẫn mô tả hoặc chứa bảng dữ liệu có cấu trúc.
+- keep_table=false: nội dung đã trở thành văn xuôi thuần, không còn bảng.
+Chỉ trả JSON: {"keep_table": true} hoặc {"keep_table": false}."""
 
-Ví dụ (Hiện có ↔ Đến → kết quả):
-- content_duplicate: "Hà Nội là thủ đô của Việt Nam." ↔ "Thủ đô của Việt Nam là Hà Nội."
-  → has_conflict: true, content_duplicate, low
-- content_contradiction: "Công ty báo LÃI trong quý 2/2023." ↔ "Công ty báo LỖ trong quý 2/2023."
-  → has_conflict: true, content_contradiction, high
-- content_conflict: "Dự án khởi công năm 2018 với vốn 500 tỷ đồng." ↔ "Dự án khởi công năm 2019 với vốn 700 tỷ đồng."
-  → has_conflict: true, content_conflict, medium
-- content_update: "Lương tối thiểu vùng I là 4,42 triệu đồng (2022)." ↔ "Từ 01/7/2024, lương tối thiểu vùng I là 4,96 triệu đồng."
-  → has_conflict: true, content_update, medium
-- KHÔNG xung đột: "Hà Nội là thủ đô của Việt Nam." ↔ "Đà Nẵng là thành phố ven biển miền Trung Việt Nam."
-  → has_conflict: false (hai chủ đề khác nhau, bổ sung cho nhau)
-
-Chỉ đặt has_conflict: true khi thực sự rơi vào MỘT trong các loại trên. Nếu hai bản
-nói về chủ đề khác nhau, hoặc bổ sung cho nhau mà không đối nghịch, thì has_conflict: false.
-Nếu hai bản truyền đạt cùng một thông tin thì has_conflict: true với content_duplicate.
-Chỉ trả về một đối tượng JSON với các khóa: has_conflict (bool), conflict_type (string),
-severity (string), explanation (giải thích NGẮN bằng tiếng Việt, tối đa 20 từ)."""
-
+# _PIVOT_*_SYSTEM_VI and _TABLE_MERGE_SYSTEM_VI are Vietnamese-only by design — added
+# to both language branches so the conflict pipeline is unaffected by PROMPT_LANG.
 _GOLD_PROMPTS_BY_LANG: dict[str, dict[str, str]] = {
     "en": {
-        "doc-reduce":   _DOC_REDUCE_SYSTEM,
-        "doc-entity":   _DOC_ENTITY_SYSTEM,
-        "relationship": _RELATIONSHIP_SYSTEM,
-        "conflict":     _CONFLICT_SYSTEM,
-        "alias-verify": _ALIAS_VERIFY_SYSTEM,
-        "merge-verify": _MERGE_VERIFY_SYSTEM,
+        "doc-reduce":     _DOC_REDUCE_SYSTEM,
+        "doc-entity":     _DOC_ENTITY_SYSTEM,
+        "relationship":   _RELATIONSHIP_SYSTEM,
+        "pivot-question": _PIVOT_QUESTION_SYSTEM_VI,
+        "pivot-chunk":    _PIVOT_CHUNK_SYSTEM_VI,
+        "pivot-compare":  _PIVOT_COMPARE_SYSTEM_VI,
+        "table-merge":    _TABLE_MERGE_SYSTEM_VI,
+        "alias-verify":   _ALIAS_VERIFY_SYSTEM,
+        "merge-verify":   _MERGE_VERIFY_SYSTEM,
     },
     "vi": {
-        "doc-reduce":   _DOC_REDUCE_SYSTEM_VI,
-        "doc-entity":   _DOC_ENTITY_SYSTEM_VI,
-        "relationship": _RELATIONSHIP_SYSTEM_VI,
-        "conflict":     _CONFLICT_SYSTEM_VI,
-        "alias-verify": _ALIAS_VERIFY_SYSTEM_VI,
-        "merge-verify": _MERGE_VERIFY_SYSTEM_VI,
+        "doc-reduce":     _DOC_REDUCE_SYSTEM_VI,
+        "doc-entity":     _DOC_ENTITY_SYSTEM_VI,
+        "relationship":   _RELATIONSHIP_SYSTEM_VI,
+        "pivot-question": _PIVOT_QUESTION_SYSTEM_VI,
+        "pivot-chunk":    _PIVOT_CHUNK_SYSTEM_VI,
+        "pivot-compare":  _PIVOT_COMPARE_SYSTEM_VI,
+        "table-merge":    _TABLE_MERGE_SYSTEM_VI,
+        "alias-verify":   _ALIAS_VERIFY_SYSTEM_VI,
+        "merge-verify":   _MERGE_VERIFY_SYSTEM_VI,
     },
 }
 

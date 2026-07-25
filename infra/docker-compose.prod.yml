@@ -124,6 +124,19 @@ services:
       # Base runs Neo4j with AUTH none — require credentials in production.
       NEO4J_AUTH: ${NEO4J_AUTH:?NEO4J_AUTH must be set in production, e.g. neo4j/<strong-password>}
 
+      # Base defaults are dev-sized; production gets the full graph allocation.
+      NEO4J_server_memory_heap_initial__size: ${NEO4J_HEAP_SIZE:-4g}
+      NEO4J_server_memory_heap_max__size: ${NEO4J_HEAP_SIZE:-4g}
+      NEO4J_server_memory_pagecache_size: ${NEO4J_PAGECACHE_SIZE:-3g}
+    deploy:
+      resources:
+        limits:
+          cpus: ${NEO4J_CPUS:-4.0}
+          memory: ${NEO4J_MEMORY:-10G}
+        reservations:
+          cpus: ${NEO4J_CPUS:-4.0}
+          memory: ${NEO4J_MEMORY:-10G}
+
   # OpenBao with TLS. Base mounts ../infra/openbao at /openbao/config, so
   # config.prod.hcl (created alongside this file) is available in-container.
   # We add the certs mount and switch the config file.

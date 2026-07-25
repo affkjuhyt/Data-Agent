@@ -59,6 +59,27 @@ export interface ConflictDetail {
   resolved_by?: string;
 }
 
+// One conflict's chosen resolution while assembling a whole-batch submission
+export interface BatchConflictChoice {
+  method: ResolutionMethod;
+  instruction: string;
+}
+
+type BatchResolutionMode = 'all_keep_existing' | 'single_keep_incoming' | 'merge' | 'invalid';
+
+// Validate the batch-wide rules (mirrors the backend): keep_existing needs all;
+// keep_incoming needs exactly one with the rest keep_existing; merge needs no keep_incoming.
+export function classifyBatchResolution(methods: ResolutionMethod[]): BatchResolutionMode {
+  if (methods.length === 0) return 'invalid';
+  const distinct = new Set(methods);
+  if (distinct.size === 1 && distinct.has('keep_existing')) return 'all_keep_existing';
+  const keepIncomingCount = methods.filter(method => method === 'keep_incoming').length;
+  const onlyExistingOrIncoming = [...distinct].every(method => method === 'keep_incoming' || method === 'keep_existing');
+  if (keepIncomingCount === 1 && onlyExistingOrIncoming) return 'single_keep_incoming';
+  if (distinct.has('merge') && !distinct.has('keep_incoming')) return 'merge';
+  return 'invalid';
+}
+
 export const CONFLICT_TYPE_LABELS: Record<ConflictType, { title: string; desc: string }> = {
   table_schema: {
     title: ENUM_CONFLICT_TYPE_LABELS.table_schema,

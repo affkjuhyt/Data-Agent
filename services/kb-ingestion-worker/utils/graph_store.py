@@ -21,11 +21,16 @@ recomputes counts, deletes bridges that hit zero, and prunes the now-edgeless no
 from __future__ import annotations
 
 from typing import Any
-import logging
 import uuid
 
 from neo4j import AsyncDriver
-from sqlalchemy import delete as sa_delete, func as sa_func, select as sa_select, text
+from sqlalchemy import (
+    delete as sa_delete,
+    func as sa_func,
+    select as sa_select,
+    text,
+    tuple_ as sa_tuple,
+)
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
@@ -36,8 +41,6 @@ from libs.database_connector.model_connector import ModelServiceClient
 from libs.database_connector.postgres_connector import PostgresClient
 
 from utils.entity_types import ENTITY_TYPE_LABELS, to_entity_type
-
-log = logging.getLogger(__name__)
 
 _NODE_NAMESPACE = uuid.UUID("9f1a6c1e-7b2d-5e4a-9c3f-2a8d4e6b1c70")
 
@@ -74,8 +77,10 @@ class GraphStore:
     ) -> None:
         """Add one chunk's entity nodes + edge bridges to both stores, with the chunk
         recorded as edge provenance. Raises on failure after leaving both stores
-        consistent, so the caller can record the failure in the document history."""
-        entity_by_canonical = {e["canonical"]: e for e in entities if e.get("canonical")}
+        consistent"""
+        entity_by_canonical = {
+            entity["canonical"]: entity for entity in entities if entity.get("canonical")
+        }
         entity_pairs: list[tuple[str, str]] = []
         seen_pairs: set[tuple[str, str]] = set()
         for relationship in relationships or []:
@@ -91,7 +96,7 @@ class GraphStore:
         if not entity_pairs:
             return
 
-        connected_canonicals = sorted({c for pair in entity_pairs for c in pair})
+        connected_canonicals = sorted({canonical for pair in entity_pairs for canonical in pair})
         vectors_by_canonical = await self._embed_entities(
             connected_canonicals, entity_by_canonical, embed_model_id,
         )
@@ -136,8 +141,9 @@ class GraphStore:
         try:
             vectors = await self._model.embed(embed_texts, model_id=embed_model_id)
         except Exception as exc:
-            log.warning("GraphStore: entity embed failed (%s) — nodes get no vector", exc)
-            return {canonical: None for canonical in connected_canonicals}
+            raise RuntimeError(
+                f"entity embed failed for {len(connected_canonicals)} entities: {exc}"
+            ) from exc
         return {canonical: vector for canonical, vector in zip(connected_canonicals, vectors)}
 
     async def _stage_postgres(
@@ -170,32 +176,52 @@ class GraphStore:
             },
         )
         await session.execute(node_statement)
-        for canonical_a, canonical_b in entity_pairs:
-            edge_statement = pg_insert(KBNeo4jRelationshipORM).values(
-                from_node=_node_id(tenant_id, knowledge_base, canonical_a),
-                to_node=_node_id(tenant_id, knowledge_base, canonical_b),
-                block_id=_as_uuid(block_id),
-                data_id=_as_uuid(data_id),
-                tenant_id=_as_uuid(tenant_id),
-                knowledge_base=knowledge_base,
-                is_deleted=False,
-            ).on_conflict_do_nothing(index_elements=["from_node", "to_node", "block_id"])
-            await session.execute(edge_statement)
+
+        edge_rows = [
+            {
+                "from_node":      _node_id(tenant_id, knowledge_base, canonical_a),
+                "to_node":        _node_id(tenant_id, knowledge_base, canonical_b),
+                "block_id":       _as_uuid(block_id),
+                "data_id":        _as_uuid(data_id),
+                "tenant_id":      _as_uuid(tenant_id),
+                "knowledge_base": knowledge_base,
+                "is_deleted":     False,
+            }
+            for canonical_a, canonical_b in entity_pairs
+        ]
+        if edge_rows:
+            await session.execute(
+                pg_insert(KBNeo4jRelationshipORM).values(edge_rows)
+                .on_conflict_do_nothing(index_elements=["from_node", "to_node", "block_id"])
+            )
         await session.flush()
 
     async def _count_pairs(
         self, session: Any, tenant_id: str, knowledge_base: str, entity_pairs: list[tuple[str, str]],
     ) -> dict[tuple[str, str], int]:
         """Live edge count per pair, visible within the caller's transaction."""
-        counts_by_pair: dict[tuple[str, str], int] = {}
-        for canonical_a, canonical_b in entity_pairs:
-            counts_by_pair[(canonical_a, canonical_b)] = await session.scalar(
-                sa_select(sa_func.count()).select_from(KBNeo4jRelationshipORM).where(
-                    KBNeo4jRelationshipORM.from_node == _node_id(tenant_id, knowledge_base, canonical_a),
-                    KBNeo4jRelationshipORM.to_node == _node_id(tenant_id, knowledge_base, canonical_b),
-                    KBNeo4jRelationshipORM.is_deleted.is_(False),
-                )
+        if not entity_pairs:
+            return {}
+        pair_by_node_ids = {
+            (_node_id(tenant_id, knowledge_base, canonical_a),
+             _node_id(tenant_id, knowledge_base, canonical_b)): (canonical_a, canonical_b)
+            for canonical_a, canonical_b in entity_pairs
+        }
+        counted_rows = (await session.execute(
+            sa_select(
+                KBNeo4jRelationshipORM.from_node,
+                KBNeo4jRelationshipORM.to_node,
+                sa_func.count(),
             )
+            .where(sa_tuple(KBNeo4jRelationshipORM.from_node, KBNeo4jRelationshipORM.to_node)
+                   .in_(list(pair_by_node_ids)))
+            .where(KBNeo4jRelationshipORM.is_deleted.is_(False))
+            .group_by(KBNeo4jRelationshipORM.from_node, KBNeo4jRelationshipORM.to_node)
+        )).all()
+
+        counts_by_pair = {pair: 0 for pair in entity_pairs}
+        for from_node, to_node, edge_count in counted_rows:
+            counts_by_pair[pair_by_node_ids[(from_node, to_node)]] = edge_count
         return counts_by_pair
 
     async def _write_neo4j(
@@ -278,42 +304,56 @@ class GraphStore:
                     await transaction.rollback()
                     raise
             await self._prune_postgres_orphans(tenant_id, knowledge_base)
-        except Exception as exc:
-            log.error("GraphStore: Neo4j reconcile after Postgres commit failure failed: %s", exc)
+        except Exception:
+            pass
 
     async def _remove(self, tenant_id: str, knowledge_base: str, column: Any, value: Any) -> None:
         target = _as_uuid(value)
         if target is None:
             return
         async with self._postgres.get_client() as session:
-            affected_node_pairs = (await session.execute(
-                sa_select(KBNeo4jRelationshipORM.from_node, KBNeo4jRelationshipORM.to_node)
-                .where(column == target).distinct()
-            )).all()
-            if not affected_node_pairs:
-                return
-            await session.execute(sa_delete(KBNeo4jRelationshipORM).where(column == target))
-            await session.commit()
+            try:
+                affected_node_pairs = (await session.execute(
+                    sa_select(KBNeo4jRelationshipORM.from_node, KBNeo4jRelationshipORM.to_node)
+                    .where(column == target).distinct()
+                )).all()
+                if not affected_node_pairs:
+                    return
+                await session.execute(sa_delete(KBNeo4jRelationshipORM).where(column == target))
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
 
+        node_id_pairs = [(from_node_id, to_node_id) for from_node_id, to_node_id in affected_node_pairs]
         async with self._postgres.get_client() as session:
-            affected_node_ids = {node_id for pair in affected_node_pairs for node_id in pair}
+            affected_node_ids = {node_id for pair in node_id_pairs for node_id in pair}
             name_by_node_id = dict((await session.execute(
                 sa_select(KBNeo4jNodeORM.node_id, KBNeo4jNodeORM.node_name)
                 .where(KBNeo4jNodeORM.node_id.in_(affected_node_ids))
             )).all())
-            remaining_counts: list[tuple[str, str, int]] = []
-            for from_node_id, to_node_id in affected_node_pairs:
-                canonical_a, canonical_b = name_by_node_id.get(from_node_id), name_by_node_id.get(to_node_id)
-                if not canonical_a or not canonical_b:
-                    continue
-                support_count = await session.scalar(
-                    sa_select(sa_func.count()).select_from(KBNeo4jRelationshipORM).where(
-                        KBNeo4jRelationshipORM.from_node == from_node_id,
-                        KBNeo4jRelationshipORM.to_node == to_node_id,
-                        KBNeo4jRelationshipORM.is_deleted.is_(False),
+            # What each pair still has after the delete — one grouped count, not one per pair.
+            count_by_node_pair = {
+                (from_node_id, to_node_id): edge_count
+                for from_node_id, to_node_id, edge_count in (await session.execute(
+                    sa_select(
+                        KBNeo4jRelationshipORM.from_node,
+                        KBNeo4jRelationshipORM.to_node,
+                        sa_func.count(),
                     )
-                )
-                remaining_counts.append((canonical_a, canonical_b, support_count))
+                    .where(sa_tuple(KBNeo4jRelationshipORM.from_node,
+                                    KBNeo4jRelationshipORM.to_node).in_(node_id_pairs))
+                    .where(KBNeo4jRelationshipORM.is_deleted.is_(False))
+                    .group_by(KBNeo4jRelationshipORM.from_node, KBNeo4jRelationshipORM.to_node)
+                )).all()
+            }
+
+        remaining_counts = [
+            (name_by_node_id[from_node_id], name_by_node_id[to_node_id],
+             count_by_node_pair.get((from_node_id, to_node_id), 0))
+            for from_node_id, to_node_id in node_id_pairs
+            if name_by_node_id.get(from_node_id) and name_by_node_id.get(to_node_id)
+        ]
 
         async with self._neo4j.session() as session:
             transaction = await session.begin_transaction()
@@ -339,13 +379,18 @@ class GraphStore:
         await self._prune_postgres_orphans(tenant_id, knowledge_base)
 
     async def _prune_postgres_orphans(self, tenant_id: str, knowledge_base: str) -> None:
+        """Delete nodes no relationship references any more."""
         async with self._postgres.get_client() as session:
-            await session.execute(
-                text(
-                    'DELETE FROM "KBNeo4jNode" n WHERE n.tenant_id = :tenant_id AND n.knowledge_base = :knowledge_base '
-                    'AND NOT EXISTS (SELECT 1 FROM "KBNeo4jRelationship" r '
-                    'WHERE r.from_node = n.node_id OR r.to_node = n.node_id)'
-                ),
-                {"tenant_id": _as_uuid(tenant_id), "knowledge_base": knowledge_base},
-            )
-            await session.commit()
+            try:
+                await session.execute(
+                    text(
+                        'DELETE FROM "KBNeo4jNode" n WHERE n.tenant_id = :tenant_id AND n.knowledge_base = :knowledge_base '
+                        'AND NOT EXISTS (SELECT 1 FROM "KBNeo4jRelationship" r '
+                        'WHERE r.from_node = n.node_id OR r.to_node = n.node_id)'
+                    ),
+                    {"tenant_id": _as_uuid(tenant_id), "knowledge_base": knowledge_base},
+                )
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise

@@ -1,51 +1,13 @@
-"""
-Entity Registry — semantic deduplication and normalisation for extracted entities.
-
-Vietnamese-aware design
-=======================
-Vietnamese tone marks and diacritics are LEXICAL — "bán" (sell), "bàn" (table) and
-"bạn" (friend) are different words. Canonicalization therefore NEVER strips
-diacritics: it Unicode-normalises (NFC) and casefolds, keeping every Vietnamese
-letter intact ("Đường sắt Việt Nam" → "đường_sắt_việt_nam").
-
-Vietnamese is also extremely synonym-rich: the same entity routinely appears as an
-official name, an abbreviation and a historical/colloquial name with ZERO shared
-tokens ("Thành phố Hồ Chí Minh" / "TP.HCM" / "Sài Gòn"; "Hoa Kỳ" / "Mỹ"). Pure
-string normalisation can never join these, and embedding similarity on the bare
-surface form is unreliable for short names. Resolution therefore runs in order:
-
-  1. EXACT alias lookup in Postgres "KBEntityLookup" (tenant-scoped, NULL = global
-     seed aliases). Aliases come from the doc-level extraction LLM, which is asked
-     to emit the other surface forms of each entity — so the synonym table grows
-     with the corpus and a known synonym resolves deterministically, no embedding
-     guesswork.
-  2. Embedding match in the entity_registry Qdrant collection. The embedded text is
-     "name: description" — the description carries the semantics that bridges
-     synonyms whose surface forms share nothing.
-       cosine ≥ ENTITY_SIMILARITY_THRESHOLD                     → definite match
-       cosine ≥ ENTITY_SOFT_THRESHOLD + word-overlap Jaccard    → same entity
-  3. No match → new entity; register canonical + aliases.
-
-Every successful match LEARNS: surface forms and LLM aliases not yet in
-KBEntityLookup are inserted, so the next document resolves them at step 1.
-
-Each unique entity (per tenant) is stored in the entity_registry Qdrant collection.
-Point ID is a deterministic UUID v5:  uuid5(NS, "{tenant_id}:{canonical}")
-so an upsert is idempotent — re-processing the same entity never creates a duplicate.
-The payload keeps `display_name`: the original surface form with case and
-diacritics exactly as written, used for Neo4j node display.
-"""
 from __future__ import annotations
 
 from typing import Any, Awaitable, Callable
-import logging
 import re
 import unicodedata
 import uuid
 
 from qdrant_client import models
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
-from sqlalchemy import select as sa_select
+from sqlalchemy import or_ as sa_or, select as sa_select
 
 from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBEntityLookupORM,
@@ -53,8 +15,6 @@ from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm i
 from libs.database_connector.model_connector import ModelServiceClient
 from libs.database_connector.postgres_connector import PostgresClient
 from utils import config as cfg
-
-log = logging.getLogger(__name__)
 
 # Stable namespace for deterministic entity UUIDs
 _ENTITY_NS = uuid.UUID("6ba7b812-9dad-11d1-80b4-00c04fd430c9")
@@ -64,14 +24,11 @@ _ENTITY_NS = uuid.UUID("6ba7b812-9dad-11d1-80b4-00c04fd430c9")
 
 def to_canonical(name: str) -> str:
     """Convert any entity surface form to a lowercase_underscore canonical that
-    PRESERVES Unicode letters. NFC first so the same Vietnamese text always uses
-    composed code points regardless of how the source document encoded it
-    (decomposed "ậ" = a + circumflex + dot-below must equal composed "ậ").
-    casefold() lowercases Vietnamese letters correctly ("Đ" → "đ")."""
+    PRESERVES Unicode letters"""
     s = unicodedata.normalize("NFC", name).casefold().strip()
-    s = re.sub(r"[\s\-/\\]+", "_", s)        # whitespace / hyphens / slashes → _
-    s = re.sub(r"[^\w]", "", s)              # drop punctuation; \w keeps Unicode letters
-    s = re.sub(r"_+", "_", s).strip("_")     # collapse runs, trim edges
+    s = re.sub(r"[\s\-/\\]+", "_", s)  # whitespace / hyphens / slashes → _
+    s = re.sub(r"[^\w]", "", s)  # drop punctuation; \w keeps Unicode letters
+    s = re.sub(r"_+", "_", s).strip("_")  # collapse runs, trim edges
     return s
 
 
@@ -88,50 +45,60 @@ def _embed_text(name: str, description: str) -> str:
 # ── Exact alias lookup (Postgres KBEntityLookup) ──────────────────────────────
 
 async def _alias_lookup(
-    postgres: PostgresClient,
-    tenant_id: str,
-    surface_forms: list[str],
-) -> str | None:
-    """Return the canonical name for the first surface form with an exact alias
-    entry, or None. Alias keys are stored in canonical form so lookup is a pure
-    hash-index equality. Tenant-scoped rows win over global (tenant_id IS NULL)."""
-    alias_keys = [key for key in (to_canonical(form) for form in surface_forms) if key]
-    if not alias_keys:
-        return None
+        postgres: PostgresClient,
+        tenant_id: str,
+        surface_forms_by_entity: list[list[str]],
+) -> list[str | None]:
+    """Each entity's canonical from the alias table, in ONE query for all of them.
+
+    Alias keys are stored canonicalized, so the lookup is hash-index equality. An entity
+    resolves on its first surface form that has an entry; tenant rows beat global ones.
+    Raises: a swallowed failure reads as "no alias", which forks a second canonical for
+    an entity the registry already knows.
+    """
+    alias_keys_by_entity = [
+        [key for key in (to_canonical(form) for form in surface_forms) if key]
+        for surface_forms in surface_forms_by_entity
+    ]
+    every_alias_key = {key for alias_keys in alias_keys_by_entity for key in alias_keys}
+    if not every_alias_key:
+        return [None] * len(surface_forms_by_entity)
     try:
         tenant_uuid = uuid.UUID(tenant_id)
     except (ValueError, AttributeError):
         tenant_uuid = None
-    try:
-        async with postgres.get_client() as session:
-            rows = (await session.execute(
-                sa_select(
-                    KBEntityLookupORM.alias_name,
-                    KBEntityLookupORM.canonical_name,
-                    KBEntityLookupORM.tenant_id,
-                )
-                .where(KBEntityLookupORM.alias_name.in_(alias_keys))
-                .where(KBEntityLookupORM.is_deleted.is_(False))
-            )).all()
-    except Exception as exc:
-        log.warning("entity_registry | alias lookup failed: %s", exc)
-        return None
 
-    tenant_match: str | None = None
-    global_match: str | None = None
+    async with postgres.get_client() as session:
+        rows = (await session.execute(
+            sa_select(
+                KBEntityLookupORM.alias_name,
+                KBEntityLookupORM.canonical_name,
+                KBEntityLookupORM.tenant_id,
+            )
+            .where(KBEntityLookupORM.alias_name.in_(every_alias_key))
+            .where(KBEntityLookupORM.is_deleted.is_(False))
+        )).all()
+
+    tenant_canonical_by_key: dict[str, str] = {}
+    global_canonical_by_key: dict[str, str] = {}
     for alias_name, canonical_name, row_tenant_id in rows:
-        if row_tenant_id == tenant_uuid and tenant_match is None:
-            tenant_match = canonical_name
-        elif row_tenant_id is None and global_match is None:
-            global_match = canonical_name
-    return tenant_match or global_match
+        if row_tenant_id == tenant_uuid:
+            tenant_canonical_by_key.setdefault(alias_name, canonical_name)
+        elif row_tenant_id is None:
+            global_canonical_by_key.setdefault(alias_name, canonical_name)
+
+    return [
+        next((tenant_canonical_by_key[key] for key in alias_keys if key in tenant_canonical_by_key), None)
+        or next((global_canonical_by_key[key] for key in alias_keys if key in global_canonical_by_key), None)
+        for alias_keys in alias_keys_by_entity
+    ]
 
 
 async def _register_aliases(
-    postgres: PostgresClient,
-    tenant_id: str,
-    canonical: str,
-    surface_forms: list[str],
+        postgres: PostgresClient,
+        tenant_id: str,
+        canonical: str,
+        surface_forms: list[str],
 ) -> None:
     """Insert alias → canonical rows for any surface forms not yet known, so the
     next document resolves them exactly without an embedding call. Best-effort:
@@ -152,53 +119,44 @@ async def _register_aliases(
         tenant_uuid = None
     try:
         async with postgres.get_client() as session:
-            # Existing alias rows for these keys — ANY tenant scope. A key that
-            # already maps to a DIFFERENT canonical is a collision: never
-            # overwrite or shadow it (first registration wins; LLM association
-            # pollution must not rebind an existing entity's name).
-            taken_by_key: dict[str, str] = {}
-            for alias_name, mapped_canonical in (await session.execute(
+            # Both guards read the same table, so they share one query:
+            #  - a key already mapped to a DIFFERENT canonical is a collision — never
+            #    overwrite or shadow it (first registration wins; LLM association
+            #    pollution must not rebind an existing entity's name).
+            #  - a key that IS some other entity's canonical is equally off-limits
+            #    ("creative_commons" can never become an alias of the GFDL license).
+            foreign_canonical_keys = [key for key in alias_key_to_surface if key != canonical]
+            claimed_rows = (await session.execute(
                 sa_select(KBEntityLookupORM.alias_name, KBEntityLookupORM.canonical_name)
-                .where(KBEntityLookupORM.alias_name.in_(list(alias_key_to_surface)))
+                .where(sa_or(
+                    KBEntityLookupORM.alias_name.in_(list(alias_key_to_surface)),
+                    KBEntityLookupORM.canonical_name.in_(foreign_canonical_keys),
+                ))
                 .where(KBEntityLookupORM.is_deleted.is_(False))
-            )).all():
-                taken_by_key.setdefault(alias_name, mapped_canonical)
-            # Keys that ARE some other entity's canonical name are equally off-limits
-            # ("creative_commons" can never become an alias of the GFDL license).
-            other_canonicals = set((await session.execute(
-                sa_select(KBEntityLookupORM.canonical_name)
-                .where(KBEntityLookupORM.canonical_name.in_(
-                    [key for key in alias_key_to_surface if key != canonical]))
-                .where(KBEntityLookupORM.is_deleted.is_(False))
-            )).scalars())
+            )).all()
 
-            new_rows = []
-            for alias_key in alias_key_to_surface:
-                if alias_key in taken_by_key:
-                    if taken_by_key[alias_key] != canonical:
-                        log.warning(
-                            "entity_registry | alias collision: %r already → %r, "
-                            "NOT rebinding to %r", alias_key, taken_by_key[alias_key], canonical,
-                        )
-                    continue
-                if alias_key in other_canonicals:
-                    log.warning(
-                        "entity_registry | %r is another entity's canonical — "
-                        "refusing to alias it to %r", alias_key, canonical,
-                    )
-                    continue
-                new_rows.append(
-                    KBEntityLookupORM(alias_name=alias_key, canonical_name=canonical, tenant_id=tenant_uuid)
-                )
+            taken_by_key: dict[str, str] = {}
+            other_canonicals: set[str] = set()
+            for alias_name, mapped_canonical in claimed_rows:
+                if alias_name in alias_key_to_surface:
+                    taken_by_key.setdefault(alias_name, mapped_canonical)
+                if mapped_canonical in foreign_canonical_keys:
+                    other_canonicals.add(mapped_canonical)
+
+            new_rows = [
+                KBEntityLookupORM(alias_name=alias_key, canonical_name=canonical, tenant_id=tenant_uuid)
+                for alias_key in alias_key_to_surface
+                if alias_key not in taken_by_key and alias_key not in other_canonicals
+            ]
             if new_rows:
-                session.add_all(new_rows)
-                await session.commit()
-                log.debug(
-                    "entity_registry | learned %d alias(es) → %r",
-                    len(new_rows), canonical,
-                )
+                try:
+                    session.add_all(new_rows)
+                    await session.commit()
+                except Exception:
+                    await session.rollback()
+                    raise
     except Exception as exc:
-        log.warning("entity_registry | alias registration failed for %r: %s", canonical, exc)
+        raise RuntimeError(f"alias registration failed for canonical={canonical!r}: {exc}") from exc
 
 
 # ── Qdrant helpers ─────────────────────────────────────────────────────────────
@@ -211,8 +169,7 @@ def _tenant_filter(tenant_id: str) -> models.Filter:
 
 
 def _types_conflict(type_a: str, type_b: str) -> bool:
-    """Two SPECIFIC (non-concept) types that differ block a merge — LLM typing is
-    noisy, but a person and a location are never the same entity."""
+    """Two SPECIFIC (non-concept) types that differ block a merge """
     a, b = (type_a or "").strip().lower(), (type_b or "").strip().lower()
     return bool(a and b and a != "concept" and b != "concept" and a != b)
 
@@ -237,10 +194,9 @@ async def _best_candidate(
             query_filter=_tenant_filter(tenant_id),
             with_payload=True,
         )
-        hits = resp.points
     except Exception as exc:
-        log.warning("entity_registry | lookup failed: %s", exc)
-        return None
+        raise RuntimeError(f"entity registry candidate lookup failed: {exc}") from exc
+    hits = resp.points
     if not hits or hits[0].score < cfg.ENTITY_VERIFY_BAND:
         return None
     payload = hits[0].payload or {}
@@ -249,16 +205,16 @@ async def _best_candidate(
 
 
 async def _upsert_entity(
-    qdrant: AsyncQdrantClient,
-    tenant_id: str,
-    canonical: str,
-    raw: str,
-    aliases: list[str],
-    description: str,
-    embedding: list[float],
-    entity_type: str = "",
-    knowledge_base: str = "",
-    embed_model_id: str = "",
+        qdrant: AsyncQdrantClient,
+        tenant_id: str,
+        canonical: str,
+        raw: str,
+        aliases: list[str],
+        description: str,
+        embedding: list[float],
+        entity_type: str = "",
+        knowledge_base: str = "",
+        embed_model_id: str = "",
 ) -> None:
     """Insert a new entity or extend an existing canonical's aliases/description."""
     point_id = _entity_point_id(tenant_id, canonical)
@@ -272,7 +228,10 @@ async def _upsert_entity(
     except Exception:
         existing = []
 
-    incoming_aliases = [a for a in [raw, *aliases] if a and to_canonical(a) != canonical]
+    incoming_aliases = [
+        surface_form for surface_form in [raw, *aliases]
+        if surface_form and to_canonical(surface_form) != canonical
+    ]
 
     if existing:
         payload = existing[0].payload or {}
@@ -314,36 +273,32 @@ async def _upsert_entity(
                 id=point_id,
                 vector=embedding,
                 payload={
-                    "tenant_id":          tenant_id,
-                    "knowledge_base":     knowledge_base,
-                    "canonical":          canonical,
-                    # Original surface form — case and Vietnamese diacritics exactly
-                    # as written. Used as the Neo4j node display name.
-                    "display_name":       raw,
-                    "aliases":            incoming_aliases,
-                    "description":        description,
-                    "entity_type":        entity_type or "concept",
-                    "is_deleted":         False,
+                    "tenant_id": tenant_id,
+                    "knowledge_base": knowledge_base,
+                    "canonical": canonical,
+                    "display_name": raw,
+                    "aliases": incoming_aliases,
+                    "description": description,
+                    "entity_type": entity_type or "concept",
+                    "is_deleted": False,
                     "embedding_model_id": embed_model_id,
                 },
             )
         ],
     )
-    log.debug("entity_registry | registered canonical=%r raw=%r aliases=%r",
-              canonical, raw, incoming_aliases)
 
 
 # ── Resolution helpers (extracted from normalize_entities_detailed for SRP) ────
 
 def _clean_raw_entities(raw_entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """NFC-normalise + strip each raw entity's name/description/aliases/type and drop
-    the unnamed ones. Returns the cleaned list the resolution loop iterates over."""
+    the unnamed ones. Returns the list the resolution loop iterates over."""
     return [
         {
-            "name":        unicodedata.normalize("NFC", entity["name"]).strip(),
+            "name": unicodedata.normalize("NFC", entity["name"]).strip(),
             "description": (entity.get("description") or "").strip(),
             "entity_type": (entity.get("type") or "").strip().lower(),
-            "aliases":     [
+            "aliases": [
                 unicodedata.normalize("NFC", alias).strip()
                 for alias in (entity.get("aliases") or [])
                 if isinstance(alias, str) and alias.strip()
@@ -386,16 +341,10 @@ async def _resolve_embedded_entity(
     if candidate:
         cand_canonical, score, cand_payload = candidate
         score_out = round(score, 4)
-        if _types_conflict(entry["entity_type"], cand_payload.get("entity_type", "")):
-            log.info(
-                "entity_registry | type guard: %r (%s) vs %r (%s) score=%.3f — no merge",
-                raw, entry["entity_type"],
-                cand_payload.get("display_name", cand_canonical),
-                cand_payload.get("entity_type"), score,
-            )
-        elif score >= cfg.ENTITY_SIMILARITY_THRESHOLD:
+        type_conflict = _types_conflict(entry["entity_type"], cand_payload.get("entity_type", ""))
+        if not type_conflict and score >= cfg.ENTITY_SIMILARITY_THRESHOLD:
             merged_to, action = cand_canonical, "matched_hard"
-        elif verify_fn is not None:
+        elif not type_conflict and verify_fn is not None:
             confirmed = await verify_fn(
                 raw, description,
                 cand_payload.get("display_name", cand_canonical),
@@ -403,11 +352,6 @@ async def _resolve_embedded_entity(
             )
             if confirmed:
                 merged_to, action = cand_canonical, "matched_verified"
-            else:
-                log.info(
-                    "entity_registry | merge-verify rejected: %r vs %r score=%.3f",
-                    raw, cand_payload.get("display_name", cand_canonical), score,
-                )
 
     canonical = merged_to or canonical_candidate
     await _upsert_entity(
@@ -417,10 +361,10 @@ async def _resolve_embedded_entity(
     )
     await _register_aliases(postgres, tenant_id, canonical, surface_forms)
     return {
-        "raw":        raw,
-        "aliases":    aliases,
-        "canonical":  canonical,
-        "action":     action,
+        "raw": raw,
+        "aliases": aliases,
+        "canonical": canonical,
+        "action": action,
         "similarity": score_out,
     }
 
@@ -493,47 +437,39 @@ async def normalize_entities_detailed(
     # Entities whose embedding lookup is still needed (alias misses).
     needs_embedding: list[tuple[int, dict[str, Any]]] = []
 
-    # Pass 1 — exact alias lookup (deterministic, no embedding).
-    for idx, entry in enumerate(cleaned_entities):
-        result.append("")   # placeholder, filled below
+    # Pass 1 — exact alias lookup (deterministic, no embedding), one query for all.
+    surface_forms_by_entity = [[entry["name"], *entry["aliases"]] for entry in cleaned_entities]
+    canonical_by_entity = await _alias_lookup(postgres, tenant_id, surface_forms_by_entity)
+
+    for idx, (entry, canonical) in enumerate(zip(cleaned_entities, canonical_by_entity)):
+        result.append("")  # placeholder, filled below
         details.append({})
-        surface_forms = [entry["name"], *entry["aliases"]]
-        canonical = await _alias_lookup(postgres, tenant_id, surface_forms)
-        if canonical:
-            result[idx] = canonical
-            details[idx] = {
-                "raw":        entry["name"],
-                "aliases":    entry["aliases"],
-                "canonical":  canonical,
-                "action":     "matched_alias",
-                "similarity": None,
-            }
-            # Learn any surface form that wasn't in the table yet.
-            await _register_aliases(postgres, tenant_id, canonical, surface_forms)
-        else:
+        if not canonical:
             needs_embedding.append((idx, entry))
+            continue
+        result[idx] = canonical
+        details[idx] = {
+            "raw": entry["name"],
+            "aliases": entry["aliases"],
+            "canonical": canonical,
+            "action": "matched_alias",
+            "similarity": None,
+        }
+        # Learn any surface form that wasn't in the table yet.
+        await _register_aliases(postgres, tenant_id, canonical, surface_forms_by_entity[idx])
 
     # Pass 2 — embedding-based three-band resolution for the alias misses.
     if needs_embedding:
         try:
             embeddings = await model.embed(
-                [_embed_text(e["name"], e["description"]) for _, e in needs_embedding]
+                [_embed_text(entry["name"], entry["description"]) for _, entry in needs_embedding]
             )
         except Exception as exc:
-            log.warning("entity_registry | embed failed (%s) — falling back to canonical-only", exc)
-            embeddings = None
+            raise RuntimeError(f"entity registry embed failed for {len(needs_embedding)} entities: {exc}") from exc
 
         for pos, (idx, entry) in enumerate(needs_embedding):
             canonical_candidate = to_canonical(entry["name"])
             if not canonical_candidate:
-                continue
-            if embeddings is None:
-                # No embeddings → register nothing, just use the canonical form.
-                result[idx] = canonical_candidate
-                details[idx] = {
-                    "raw": entry["name"], "aliases": entry["aliases"],
-                    "canonical": canonical_candidate, "action": "new", "similarity": None,
-                }
                 continue
             detail = await _resolve_embedded_entity(
                 qdrant, postgres, tenant_id, entry, embeddings[pos], verify_fn,

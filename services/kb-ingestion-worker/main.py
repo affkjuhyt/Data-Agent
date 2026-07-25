@@ -3,7 +3,6 @@ kb-ingestion-worker entry point.
 Opens all service connections, loads Docling, then runs the Kafka consume loop.
 """
 import asyncio
-import logging
 import os
 import sys
 from typing import Any
@@ -18,8 +17,11 @@ for _p in (_root, _here):
         sys.path.insert(0, _p)
 
 from utils import config as cfg
+from utils import conflict_store
 from utils.docling_parser import InlineDoclingParser, load_converter
 from utils.graph_store import GraphStore
+from utils.log_writer import IngestionLogger
+from utils.stage_chain import StageChain
 from utils.worker import consume_loop
 from conflict_resolver import conflict_resolve_loop
 
@@ -37,12 +39,6 @@ from libs.database_connector.kafka_connector import KafkaConsumerClient, KafkaPr
 from libs.database_connector.model_connector import ModelServiceClient
 from libs.database_connector.redis_connector import RedisClient
 from libs.shared.kb_result_cache import ResultCache
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
-log = logging.getLogger("kb-ingestion-worker")
 
 
 async def _probe_embed_dim(model: ModelServiceClient) -> int:
@@ -63,25 +59,19 @@ async def _ensure_qdrant_collection(
     if await client.collection_exists(name):
         info = await client.get_collection(name)
         collection_dim = info.config.params.vectors.size
-        if collection_dim != embed_dim:
-            msg = (
-                f"Qdrant collection '{name}' has vector size {collection_dim} "
-                f"but the embedding model produces {embed_dim}-dim vectors."
+        if collection_dim != embed_dim and strict_dim_check:
+            raise RuntimeError(
+                f"Qdrant collection '{name}' has vector size {collection_dim} but the "
+                f"embedding model produces {embed_dim}-dim vectors. Drop the collection "
+                f"manually and restart the worker."
             )
-            if strict_dim_check:
-                raise RuntimeError(msg + "  Drop the collection manually and restart the worker.")
-            log.warning("%s  Proceeding with caution.", msg)
-        else:
-            log.info("Qdrant collection '%s' OK — dim=%d", name, collection_dim)
         return
 
     result = await qdrant_create_collection(client, CreateCollectionRequest(
         name=name,
         vector_size=embed_dim,
     ))
-    if result.code == 200:
-        log.info("Qdrant collection '%s' created (dim=%d)", name, embed_dim)
-    else:
+    if result.code != 200:
         raise RuntimeError(f"Failed to create Qdrant collection '{name}': {result.error}")
 
 
@@ -133,7 +123,6 @@ async def _ensure_payload_indexes(client: Any) -> None:
 async def _validate_or_create_qdrant_collection(qdrant: QdrantService, model: ModelServiceClient) -> None:
     """Validate / create the chunk, document, and entity registry collections."""
     embed_dim = await _probe_embed_dim(model)
-    log.info("Embedding model dim=%d (probed from model-service)", embed_dim)
 
     client = qdrant.get_client()
     await _ensure_qdrant_collection(client, cfg.QDRANT_COLLECTION,     embed_dim, strict_dim_check=True)
@@ -152,12 +141,20 @@ async def _ensure_neo4j_indexes(neo4j: Neo4jClient) -> None:
             for stmt in statements:
                 result = await session.run(stmt)
                 await result.consume()
-        log.info("Neo4j retrieval indexes ensured")
-    except Exception as exc:
-        log.warning("Neo4j index creation failed (non-fatal): %s", exc)
+    except Exception:
+        pass
+
+
+async def _cancel_tasks(tasks: list[asyncio.Task]) -> None:
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def main() -> None:
+    logger = IngestionLogger()
+    stage_record = StageChain()
+
     retry = RetryConfig()
     hc    = HealthCheckLoopConfig()
 
@@ -169,8 +166,6 @@ async def main() -> None:
     model    = ModelServiceClient()
     consumer = KafkaConsumerClient()
     consumer.set_group_id(cfg.KAFKA_CONSUMER_GROUP)
-    # Producer for the DLQ / bounded-retry path (failed silver/gold documents are
-    # re-published instead of being dropped after the offset commits).
     producer = KafkaProducerClient()
     redis    = RedisClient()
 
@@ -184,44 +179,63 @@ async def main() -> None:
     producer.set_url(cfg.KAFKA_URL)
     redis.set_url(cfg.REDIS_URL)
 
-    log.info("Opening connections...")
-    await postgres.open(retry)
-    await qdrant.open(retry)
-    await neo4j.open(retry)
-    await mongo.open(retry)
-    await minio.open(retry)
-    await model.open(retry)
-    await consumer.open(retry)
-    await producer.open(retry)
     try:
-        await redis.open(retry)  # best-effort; invalidation is advisory
-    except Exception as e:  # noqa: BLE001
-        log.warning("Redis unavailable — gold-complete cache invalidation disabled: %s", e)
-    result_cache = ResultCache(redis, 900, cfg.RESULT_CACHE_ENABLED)
+        await logger.logging("Opening connections...")
+        await postgres.open(retry)
+        stage_record.push("postgres_opened", rollback_func=postgres.close)
+        await qdrant.open(retry)
+        stage_record.push("qdrant_opened", rollback_func=qdrant.close)
+        await neo4j.open(retry)
+        stage_record.push("neo4j_opened", rollback_func=neo4j.close)
+        await mongo.open(retry)
+        stage_record.push("mongo_opened", rollback_func=mongo.close)
+        await minio.open(retry)
+        stage_record.push("minio_opened", rollback_func=minio.close)
+        await model.open(retry)
+        stage_record.push("model_opened", rollback_func=model.close)
+        await consumer.open(retry)
+        stage_record.push("consumer_opened", rollback_func=consumer.close)
+        await producer.open(retry)
+        stage_record.push("producer_opened", rollback_func=producer.close)
+        try:
+            await redis.open(retry)  # best-effort; invalidation is advisory
+            stage_record.push("redis_opened", rollback_func=redis.close)
+        except Exception as exc:
+            await logger.logging(
+                f"Redis unavailable — gold-complete cache invalidation disabled: {exc}", level="WARNING",
+            )
+        result_cache = ResultCache(redis, 900, cfg.RESULT_CACHE_ENABLED)
 
-    await _validate_or_create_qdrant_collection(qdrant, model)
-    await _ensure_neo4j_indexes(neo4j)
-    # The LLM is reached through the model-service /generate gateway (see utils.llm_client);
-    # system prompts are sent inline per call, so there is nothing to pre-register here.
+        await _validate_or_create_qdrant_collection(qdrant, model)
+        stage_record.push("qdrant_collections_validated")
+        await _ensure_neo4j_indexes(neo4j)
+        stage_record.push("neo4j_indexes_ensured")
+        await conflict_store.ensure_indexes(mongo.get_client())
+        stage_record.push("conflict_indexes_ensured")
 
-    log.info("Loading Docling converter (use_vlm=%s)...", cfg.USE_VLM)
-    load_converter(use_vlm=cfg.USE_VLM)
-    docling_parser = InlineDoclingParser(minio=minio)
+        await logger.logging(f"Loading Docling converter (use_vlm={cfg.USE_VLM})...")
+        load_converter(use_vlm=cfg.USE_VLM)
+        stage_record.push("docling_loaded")
+        docling_parser = InlineDoclingParser(minio=minio)
 
-    graph = GraphStore(neo4j.get_client(), postgres, model)
+        graph = GraphStore(neo4j.get_client(), postgres, model)
 
-    hc_tasks = [
-        asyncio.create_task(postgres.health_check_loop(hc), name="hc-postgres"),
-        asyncio.create_task(qdrant.health_check_loop(hc),   name="hc-qdrant"),
-        asyncio.create_task(neo4j.health_check_loop(hc),    name="hc-neo4j"),
-        asyncio.create_task(mongo.health_check_loop(hc),    name="hc-mongo"),
-        asyncio.create_task(minio.health_check_loop(hc),    name="hc-minio"),
-        asyncio.create_task(model.health_check_loop(hc),    name="hc-model"),
-        asyncio.create_task(consumer.health_check_loop(hc), name="hc-kafka-consumer"),
-    ]
+        hc_tasks = [
+            asyncio.create_task(postgres.health_check_loop(hc), name="hc-postgres"),
+            asyncio.create_task(qdrant.health_check_loop(hc),   name="hc-qdrant"),
+            asyncio.create_task(neo4j.health_check_loop(hc),    name="hc-neo4j"),
+            asyncio.create_task(mongo.health_check_loop(hc),    name="hc-mongo"),
+            asyncio.create_task(minio.health_check_loop(hc),    name="hc-minio"),
+            asyncio.create_task(model.health_check_loop(hc),    name="hc-model"),
+            asyncio.create_task(consumer.health_check_loop(hc), name="hc-kafka-consumer"),
+        ]
+        stage_record.push("health_check_tasks_started", rollback_func=_cancel_tasks, rollback_args=(hc_tasks,))
 
-    log.info("Worker ready — listening on %s, %s",
-             cfg.KAFKA_TOPIC_SILVER, cfg.KAFKA_TOPIC_GOLD)
+        await logger.logging(f"Worker ready — listening on {cfg.KAFKA_TOPIC_SILVER}, {cfg.KAFKA_TOPIC_GOLD}")
+    except Exception as exc:
+        await logger.logging(f"Worker startup failed: {exc}", level="ERROR")
+        await stage_record.unwind()
+        raise
 
     conflict_task = asyncio.create_task(
         conflict_resolve_loop(
@@ -229,6 +243,7 @@ async def main() -> None:
             qdrant_svc=qdrant,
             graph=graph,
             model=model,
+            mongo=mongo,
         ),
         name="conflict-resolver",
     )
@@ -259,7 +274,8 @@ async def main() -> None:
         await model.close()
         await consumer.close()
         await producer.close()
-        log.info("Worker shutdown complete")
+        await redis.close()
+        await logger.logging("Worker shutdown complete")
 
 
 if __name__ == "__main__":

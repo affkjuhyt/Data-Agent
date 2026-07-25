@@ -168,36 +168,59 @@ async def get_chunks(
 
 
 async def delete_chunk(postgres: Any, chunk_id: str, doc_id: str, tenant_id: str, qdrant: Any = None) -> None:
+    """Soft-delete a chunk in Postgres and Qdrant, or in neither.
+
+    Retrieval filters on Qdrant's is_deleted, so a Postgres-only delete would keep
+    serving a deleted chunk in search results — undo it instead.
+    """
     await _assert_tenant(postgres, doc_id, tenant_id)
-    resp = await postgres.soft_delete(KBTextBlockDelete(block_id=chunk_id))
-    if resp.code == 404:
+    response = await postgres.soft_delete(KBTextBlockDelete(block_id=chunk_id))
+    if response.code == 404:
         raise HTTPException(status_code=404, detail="Chunk not found")
-    if resp.code != 200:
-        log.error("delete_chunk: DB error: %s", resp.error)
+    if response.code != 200:
+        log.error("delete_chunk: DB error: %s", response.error)
         raise HTTPException(status_code=500, detail="Failed to delete chunk")
-    # Mirror the flag onto the chunk's Qdrant point (point id == block_id).
-    if qdrant is not None:
-        from services.kb_backend.operations.trash_ops import qdrant_set_deleted_by_block
+    if qdrant is None:
+        return
+
+    # The chunk's Qdrant point id == block_id.
+    from services.kb_backend.operations.trash_ops import (
+        qdrant_set_deleted_by_block, set_postgres_deleted,
+    )
+    try:
         await qdrant_set_deleted_by_block(qdrant, chunk_id, True)
+    except Exception as exc:
+        log.error("delete_chunk %s: Qdrant mirror failed (%s) — restoring", chunk_id, exc)
+        try:
+            await set_postgres_deleted(postgres, "chunk", uuid.UUID(chunk_id), False)
+        except Exception as rollback_exc:
+            log.error("delete_chunk %s: ROLLBACK FAILED (%s) — deleted in Postgres, "
+                      "still searchable", chunk_id, rollback_exc)
+        raise HTTPException(status_code=503, detail="Delete failed — vector store unavailable")
 
 
 async def activate_chunk_version(postgres: Any, chunk_id: str, version_number: Any, doc_id: str, tenant_id: str) -> dict[str, Any]:
     await _assert_tenant(postgres, doc_id, tenant_id)
     block_uuid = uuid.UUID(chunk_id) if isinstance(chunk_id, str) else chunk_id
+    # One transaction: the block must never be left with every version deactivated.
     async with postgres.get_client() as session:
-        await session.execute(
-            sa_update(KBTextBlockVersionORM)
-            .where(KBTextBlockVersionORM.block_id == block_uuid)
-            .values(is_active=False)
-        )
-        if version_number is not None:
+        try:
             await session.execute(
                 sa_update(KBTextBlockVersionORM)
                 .where(KBTextBlockVersionORM.block_id == block_uuid)
-                .where(KBTextBlockVersionORM.version_number == int(version_number))
-                .values(is_active=True)
+                .values(is_active=False)
             )
-        await session.commit()
+            if version_number is not None:
+                await session.execute(
+                    sa_update(KBTextBlockVersionORM)
+                    .where(KBTextBlockVersionORM.block_id == block_uuid)
+                    .where(KBTextBlockVersionORM.version_number == int(version_number))
+                    .values(is_active=True)
+                )
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
     return {"status": "ok"}
 
 

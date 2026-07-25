@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from typing import Any
 import asyncio
-import logging
 import os
 import re
 import tempfile
@@ -23,8 +22,6 @@ from docling_core.types.doc import PictureItem, SectionHeaderItem, TableItem, Te
 
 from libs.basemodel.services_docling.docling_model import DoclingResult, ParsedChunk, ParsedTable
 from libs.database_connector.minio_connector import MinIOClient
-
-log = logging.getLogger(__name__)
 
 # Hard upper bound on chunk size (chars). Soft lower bound below which a section
 # header will NOT start a new chunk — prevents back-to-back headers (e.g. title +
@@ -53,7 +50,6 @@ def load_converter(use_vlm: bool = False) -> None:
         _converter = DocumentConverter(
             format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
         )
-    log.info("Docling converter ready (use_vlm=%s)", use_vlm)
 
 
 # ── Internal parse helpers ────────────────────────────────────────────────────
@@ -197,7 +193,6 @@ def _run_parse_sync(file_bytes: bytes, extension: str, max_chunk_chars: int = MA
         doc = conversion.document
         parsed_tables = _build_parsed_tables(doc)
         chunks = list(_iter_chunks(doc, parsed_tables, max_chunk_chars))
-        log.info("Parsed %d chunk(s) from %s", len(chunks), extension)
         return {"has_figures": bool(list(doc.pictures)), "chunks": chunks}
     finally:
         os.unlink(tmp_path)
@@ -219,7 +214,6 @@ class InlineDoclingParser:
         max_chunk_chars: int = MAX_CHUNK_CHARS,
     ) -> DoclingResult:
         file_bytes = await self._minio.download(bucket, object_key)
-        log.info("InlineDocling: downloaded %d bytes key=%s", len(file_bytes), object_key)
         return await self.parse_bytes(file_bytes, extension, max_chunk_chars)
 
     async def parse_bytes(

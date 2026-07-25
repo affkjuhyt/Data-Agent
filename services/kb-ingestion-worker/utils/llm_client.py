@@ -13,20 +13,15 @@ per-system_type schema registry (llm_schemas) is passed to the gateway as
 from __future__ import annotations
 
 from typing import Any, cast
-import logging
 
 import httpx
 
 from utils import config as cfg
 from utils.llm_schemas import SCHEMAS_BY_SYSTEM_TYPE
 
-log = logging.getLogger(__name__)
-
 BACKEND = "gateway"
 _BASE = cfg.MODEL_SERVICE_URL.rstrip("/")
 _DEFAULT_TIMEOUT = 300.0
-
-log.info("LLM access: model-service gateway (%s/generate)", _BASE)
 
 # One shared connection pool for every LLM call
 _client: httpx.AsyncClient | None = None

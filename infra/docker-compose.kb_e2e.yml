@@ -165,7 +165,8 @@ services:
     container_name: kb-backend
     restart: unless-stopped
     ports:
-      - "8050:8000"
+      # Loopback only — direct callers bypass Kong and can forge identity headers.
+      - "127.0.0.1:8050:8000"
     environment:
       # 10k CCU needs >=4: 1 worker's crud/Postgres path saturates (KB-SCALE-10K.md §6).
       # 1 worker plateaus ~1900 rps/~1 core; set = CPU cores per replica for more.
