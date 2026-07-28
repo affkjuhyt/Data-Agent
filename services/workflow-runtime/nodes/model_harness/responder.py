@@ -1,5 +1,6 @@
 from typing import Any
 import os
+import re
 import time
 import logging
 
@@ -13,12 +14,28 @@ logger = logging.getLogger(__name__)
 _LITELLM_BASE = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
 _LITELLM_KEY  = os.environ.get("LITELLM_API_KEY",  "sk-dev")
 
-_PROMPTS_DIR     = os.path.join(os.path.dirname(__file__), "..", "..", "prompts")
-_SYSTEM_TEMPLATE = open(os.path.join(_PROMPTS_DIR, "responder_system.txt"),          encoding="utf-8").read()
-_OPTIONS_SUFFIX  = open(os.path.join(_PROMPTS_DIR, "responder_options_suffix.txt"),  encoding="utf-8").read()
-_LANGUAGE_RULE   = "IMPORTANT — Language: Respond in {LANGUAGE}. Vietnamese messages often contain English technical terms — still respond entirely in Vietnamese in that case."
+_PROMPTS_DIR      = os.path.join(os.path.dirname(__file__), "..", "..", "prompts")
+_SYSTEM_TEMPLATE  = open(os.path.join(_PROMPTS_DIR, "responder_system.txt"),           encoding="utf-8").read()
+_OPTIONS_SUFFIX   = open(os.path.join(_PROMPTS_DIR, "responder_options_suffix.txt"),   encoding="utf-8").read()
+_CITATION_SUFFIX  = open(os.path.join(_PROMPTS_DIR, "responder_citation_suffix.txt"),  encoding="utf-8").read()
+_LANGUAGE_RULE    = "IMPORTANT — Language: Respond in {LANGUAGE}. Vietnamese messages often contain English technical terms — still respond entirely in Vietnamese in that case."
 
 _LANGUAGE_LABELS = {"vi": "Vietnamese", "en": "English"}
+
+_CITATION_MARKER_RE = re.compile(r"\[(\d+)\]")
+
+
+def _citation_type(chunk: dict) -> str:
+    """kb | mcp | db | web | tool — dùng để FE tô màu badge theo loại nguồn.
+    rrf_sources do rrf_ranking_node gắn (giữ nguyên qua reranker vì reranker
+    chỉ spread **item, không xoá field lạ)."""
+    category = (chunk.get("rrf_sources") or ["kb"])[0]
+    if category != "tool":
+        return category
+    chunk_id = chunk.get("id", "")
+    if chunk_id.startswith("web_") or chunk_id.startswith("wiki_"):
+        return "web"
+    return "tool"
 
 
 def _to_lc_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -39,6 +56,7 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
         system_prompt += "\n\n" + _OPTIONS_SUFFIX
     system_prompt += "\n\n" + _LANGUAGE_RULE.replace("{LANGUAGE}", lang_label)
 
+    chunk_meta: dict[int, dict] = {}
     if state.get("reranked_chunks"):
         max_chunks = cfg.get("context_max_chunks", 5)
         max_chars  = cfg.get("context_max_chars", 4000)
@@ -47,7 +65,7 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
         parts = []
         total_chars = 0
         for i, c in enumerate(chunks):
-            source    = c.get("source", c.get("id", "unknown"))
+            source    = c.get("source") or c.get("id", "unknown")
             score     = c.get("score", c.get("rrf_score", ""))
             score_str = f" | score={score:.3f}" if isinstance(score, float) else ""
             header    = f"[{i+1}] source={source}{score_str}"
@@ -56,11 +74,23 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
                 content = content[:max_chars - total_chars]
             parts.append(f"{header}\n{content}")
             total_chars += len(content)
+
+            ctype = _citation_type(c)
+            chunk_meta[i + 1] = {
+                "index":   i + 1,
+                "source":  source,
+                "type":    ctype,
+                "score":   score if isinstance(score, float) else None,
+                "snippet": content[:200],
+                "url":     c.get("url") or None,
+                "doc_id":  c.get("doc_id") or None if ctype == "kb" else None,
+            }
+
             if total_chars >= max_chars:
                 break
 
         context = "\n\n---\n\n".join(parts)
-        system_prompt = f"{system_prompt}\n\nContext:\n{context}"
+        system_prompt = f"{system_prompt}\n\nContext:\n{context}\n\n{_CITATION_SUFFIX}"
 
     injected_metadata = state.get("injected_metadata")
     if injected_metadata:
@@ -107,4 +137,14 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
     logger.info("responder | latency=%dms prompt=%s completion=%s",
                 latency_ms, prompt_tokens, completion_tokens)
 
-    return {"response": full_text}
+    # Chỉ giữ citation THỰC SỰ xuất hiện trong câu trả lời (model có thể không
+    # cite hết context được cấp) — theo đúng thứ tự xuất hiện lần đầu trong text.
+    citations = []
+    seen = set()
+    for m in _CITATION_MARKER_RE.finditer(full_text):
+        n = int(m.group(1))
+        if n in chunk_meta and n not in seen:
+            seen.add(n)
+            citations.append(chunk_meta[n])
+
+    return {"response": full_text, "citations": citations}

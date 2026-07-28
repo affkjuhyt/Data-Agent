@@ -2,8 +2,11 @@
 /api/knowledge/documents/{id}/chunks|tables|configs
 Serves AssetDetailWorkspace and KnowledgeHub (chunk/version management).
 """
+import mimetypes
 from typing import Any
+
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.responses import Response
 
 from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
 from services.kb_backend.schemas import (
@@ -14,6 +17,7 @@ from services.kb_backend.schemas import (
 )
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
+from services.kb_backend.pipeline.ingestion.config import MINIO_BUCKET
 from services.kb_backend.operations.chunk_ops import (
     get_chunks, delete_chunk, activate_chunk_version,
     delete_chunk_version, create_chunk_version,
@@ -22,7 +26,7 @@ from services.kb_backend.operations.table_ops import get_tables, update_table_ro
 from services.kb_backend.operations.warehouse_ops import (
     get_warehouse_configs, create_warehouse_config, activate_warehouse_config,
 )
-from services.kb_backend.operations.document_ops import get_doc_history
+from services.kb_backend.operations.document_ops import get_doc_history, fetch_one_or_404
 
 router = APIRouter(prefix="/api/knowledge/documents", tags=["Knowledge-Documents"])
 
@@ -175,3 +179,21 @@ async def get_doc_history_route(
         ctx: dict[str, Any] = Depends(require_perm("viewDocuments"))) -> ResponseModel[Any]:
     result = await get_doc_history(svc(request, "postgres"), doc_id, tenant_id=ctx["tenant_id"], role_id=ctx["role_id"])
     return ResponseModel(code=200, data=result)
+
+
+# ── Original file (citation "open source doc") ─────────────────────────────────
+
+@router.get("/{doc_id}/file")
+async def get_document_file_route(doc_id: str, request: Request, ctx: dict[str, Any] = Depends(authenticate)) -> Response:
+    """Trả về file gốc đã upload (từ MinIO) — dùng cho tính năng citation (mở
+    tài liệu KB gốc). Tenant isolation tái dùng đúng fetch_one_or_404 (404 nếu
+    doc_id không thuộc tenant hiện tại) thay vì tự dựng check riêng."""
+    record = await fetch_one_or_404(svc(request, "postgres"), doc_id, ctx["tenant_id"])
+    data = await svc(request, "minio").download(MINIO_BUCKET, record["path"])
+    content_type = mimetypes.guess_type(record["name"])[0] or "application/octet-stream"
+    return Response(
+        content=data,
+        media_type=content_type,
+        headers={"Content-Disposition": f'inline; filename="{record["name"]}"'},
+    )
+
