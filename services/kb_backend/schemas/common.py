@@ -1,4 +1,3 @@
-"""Shared helpers + generic action/status responses used across domains."""
 from __future__ import annotations
 
 import json
@@ -6,8 +5,6 @@ from typing import Any, cast
 
 from pydantic import BaseModel
 
-
-# ── Row-shaping helpers (used by response validators + kb_ui_operation) ────────
 
 def to_string(v: Any) -> str:
     return str(v) if v is not None else ""
@@ -23,11 +20,6 @@ def parse_jsonb(v: Any) -> dict[str, Any]:
 
 
 def coerce_jsonb_dict(v: Any) -> dict[str, Any]:
-    """Parse a JSONB value to a dict, recovering from the list shape left by a
-    legacy double-encode bug: `object || "stringified-json"` concatenates into an
-    array `[{...}, "{...}"]` instead of merging into one object. Merge every dict /
-    JSON-string element back together so a single corrupt row can't 500 the caller.
-    """
     parsed = parse_jsonb(v)
     if isinstance(parsed, dict):
         return parsed
@@ -44,8 +36,6 @@ def coerce_jsonb_dict(v: Any) -> dict[str, Any]:
                 pass
     return recovered
 
-
-# ── Generic mutation / action responses ───────────────────────────────────────
 
 class StatusResponse(BaseModel):
     status: str

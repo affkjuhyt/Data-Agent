@@ -6,8 +6,6 @@ from typing import Any, Optional
 from pydantic import BaseModel
 
 
-# ── Domain ────────────────────────────────────────────────────────────────────
-
 class ConflictSummary(BaseModel):
     conflict_id: str
     conflict_type: str
@@ -23,8 +21,6 @@ class PendingConflictBatch(BaseModel):
     conflicts: list[ConflictSummary]
 
 
-# ── Request ───────────────────────────────────────────────────────────────────
-
 class BatchConflictChoice(BaseModel):
     conflict_id: str
     selected_resolution_method: str
@@ -34,8 +30,6 @@ class BatchConflictChoice(BaseModel):
 class ResolveBatchRequest(BaseModel):
     resolutions: list[BatchConflictChoice]
 
-
-# ── Response ──────────────────────────────────────────────────────────────────
 
 class ConflictBucketsResponse(BaseModel):
     pending: list[PendingConflictBatch]

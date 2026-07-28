@@ -1,4 +1,3 @@
-"""LightRAG retrieval schemas — request, response."""
 from __future__ import annotations
 
 from typing import Any
@@ -12,10 +11,7 @@ class RetrieveRequest(BaseModel):
     query: str
     tenant_id: str = ""
     collection: str = cfg.QDRANT_COLLECTION
-    # Restrict retrieval to one knowledge base. Empty = all KBs.
     knowledge_base: str = ""
-    # Front-layer query-enhancement fields: provided entities skip the internal
-    # canonicalize LLM and drive pass-1 filter + graph seeds.
     entities: list[str] = []
     intent: str = ""
     entity_types: dict[str, str] = {}
@@ -26,5 +22,4 @@ class RetrieveResponse(BaseModel):
     canonical: dict[str, Any]
     results: list[dict[str, Any]]
     timings: dict[str, float] = {}
-    # Steps skipped under the latency budget (graceful degradation); empty = full run.
     degraded: list[str] = []

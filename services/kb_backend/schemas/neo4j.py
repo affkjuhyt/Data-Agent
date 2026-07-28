@@ -4,8 +4,6 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 
-# ── Domain ────────────────────────────────────────────────────────────────────
-
 class Neo4jNode(BaseModel):
     id: str
     name: str | None
@@ -20,13 +18,9 @@ class Neo4jEdge(BaseModel):
     score: float | None
 
 
-# ── Request ───────────────────────────────────────────────────────────────────
-
 class Neo4jQueryRequest(BaseModel):
     cypher: str
 
-
-# ── Response ──────────────────────────────────────────────────────────────────
 
 class Neo4jGraphResponse(BaseModel):
     nodes: list[Neo4jNode]

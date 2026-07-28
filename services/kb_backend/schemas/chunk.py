@@ -8,8 +8,6 @@ from pydantic import BaseModel
 from services.kb_backend.schemas.enums import Status
 
 
-# ── Domain ────────────────────────────────────────────────────────────────────
-
 class ChunkVersionDetail(BaseModel):
     version_number: str
     create_at: str
@@ -30,8 +28,6 @@ class ChunkVersion(BaseModel):
     text: str
 
 
-# ── Request ───────────────────────────────────────────────────────────────────
-
 class ActivateChunkVersionRequest(BaseModel):
     version_number: str
 
@@ -48,8 +44,6 @@ class CreateDocConfigRequest(BaseModel):
     connection: Optional[dict[str, Any]] = None
     tables: list[Any]
 
-
-# ── Response ──────────────────────────────────────────────────────────────────
 
 class ChunkResponse(BaseModel):
     id: str
