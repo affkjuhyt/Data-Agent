@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
 from services.kb_backend.schemas import ResolveBatchRequest
-from services.kb_backend.dependencies.auth import authenticate
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.operations.conflict_ops import (
@@ -16,10 +15,10 @@ router = APIRouter(prefix="/api/knowledge/conflicts", tags=["Knowledge-Conflicts
 
 @router.get("", response_model=ResponseModel)
 async def list_conflicts_route(
-    request: Request, ctx: dict[str, Any] = Depends(authenticate),
-    pending_page:  int = Query(1, ge=1),
-    awaiting_page: int = Query(1, ge=1),
-    resolved_page: int = Query(1, ge=1),
+        request: Request, ctx: dict[str, Any] = Depends(require_perm("viewConflicts")),
+        pending_page: int = Query(1, ge=1),
+        awaiting_page: int = Query(1, ge=1),
+        resolved_page: int = Query(1, ge=1),
 ) -> ResponseModel[Any]:
     result = await list_conflicts(
         postgres=svc(request, "postgres"),
@@ -34,7 +33,9 @@ async def list_conflicts_route(
 
 @router.get("/{conflict_id}", response_model=ResponseModel)
 async def get_conflict_route(
-    conflict_id: str, request: Request, ctx: dict[str, Any] = Depends(authenticate),
+        conflict_id: str,
+        request: Request,
+        ctx: dict[str, Any] = Depends(require_perm("viewConflicts")),
 ) -> ResponseModel[Any]:
     result = await get_conflict(
         postgres=svc(request, "postgres"),
@@ -47,8 +48,9 @@ async def get_conflict_route(
 
 @router.post("/batches/{batch_id}/resolve", response_model=ResponseModel)
 async def resolve_batch_route(
-    batch_id: str, body: ResolveBatchRequest,
-    request: Request, ctx: dict = Depends(require_perm("edit_conflict")),
+        batch_id: str,
+        body: ResolveBatchRequest,
+        request: Request, ctx: dict = Depends(require_perm("editConflict")),
 ):
     result = await resolve_batch(
         postgres=svc(request, "postgres"),

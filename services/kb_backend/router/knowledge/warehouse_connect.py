@@ -1,8 +1,3 @@
-"""
-Warehouse connection management and discovery.
-POST /api/knowledge/warehouses/connect — test connection, discover tables
-POST /api/knowledge/warehouses/select-tables — save connection + config, returns warehouse_id
-"""
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 import logging
@@ -26,11 +21,10 @@ router = APIRouter(prefix="/api/knowledge/warehouses", tags=["Warehouse-Connecti
 
 @router.post("/connect", response_model=ResponseModel)
 async def test_warehouse_connection(
-    body: ConnectSnowflakeRequest,
-    request: Request,
-    ctx: dict[str, Any] = Depends(require_perm("add_warehouse")),
+        body: ConnectSnowflakeRequest,
+        request: Request,
+        ctx: dict[str, Any] = Depends(require_perm("addWarehouse")),
 ) -> ResponseModel[Any]:
-    """Test Snowflake connection and discover tables in the schema."""
     log.info("Testing Snowflake connection account=%s database=%s", body.account_identifier, body.database)
 
     connector = SnowflakeConnector()
@@ -59,23 +53,14 @@ async def test_warehouse_connection(
 
 @router.post("/select-tables", response_model=ResponseModel)
 async def select_warehouse_tables(
-    body: SelectTablesRequest,
-    request: Request,
-    ctx: dict[str, Any] = Depends(require_perm("add_warehouse")),
+        body: SelectTablesRequest,
+        request: Request,
+        ctx: dict[str, Any] = Depends(require_perm("addWarehouse")),
 ) -> ResponseModel[Any]:
-    """
-    Validate Snowflake connection, fetch column schemas, then persist:
-      1. KBWarehouse record
-      2. KBWarehouseConfig v1 (active) with connection details + selected tables
-
-    Returns warehouse_id — the UI uses this as the document ID so CONFIGS tab
-    can call GET /api/knowledge/documents/{warehouse_id}/configs later.
-    """
     log.info("Saving warehouse connection name=%s tables=%d", body.connection_name, len(body.selected_table_ids))
 
     postgres = svc(request, "postgres")
 
-    # 1. Connect and validate
     connector = SnowflakeConnector()
     try:
         result = await connector.validate_and_connect(
@@ -91,9 +76,6 @@ async def select_warehouse_tables(
         if not result["success"]:
             raise HTTPException(status_code=400, detail=result["message"])
 
-        # 2. Fetch column schemas for selected tables. A metadata failure here is
-        #    surfaced (502) rather than swallowed — persisting a table with empty
-        #    columns would silently save a half-broken warehouse.
         table_schemas: dict[str, dict[str, Any]] = {}
         try:
             for table_id in body.selected_table_ids:
@@ -108,7 +90,6 @@ async def select_warehouse_tables(
     finally:
         connector.close()
 
-    # 3. Build table objects merging discovery info + column schema
     discovered = {t["table_name"]: t for t in result.get("tables", [])}
     tables = []
     for table_id in body.selected_table_ids:
@@ -123,7 +104,6 @@ async def select_warehouse_tables(
             "columns": col_schema.get("columns", []),
         })
 
-    # 4. Create KBWarehouse record (tenant-scoped — owned by the caller's tenant)
     wh_ins = await postgres.insert(KBWarehouseInsert(
         tenant_id=ctx["tenant_id"],
         service=body.warehouse_type,
@@ -134,7 +114,6 @@ async def select_warehouse_tables(
         raise HTTPException(status_code=500, detail="Failed to create warehouse")
     warehouse_id: str = wh_ins.data["warehouse_id"]
 
-    # 5. Create initial config v1 (auto-activated)
     cfg_ins = await postgres.insert(KBWarehouseConfigInsert(
         warehouse_id=warehouse_id,
         version_number=1,
@@ -145,30 +124,28 @@ async def select_warehouse_tables(
             database=body.database,
             selected_tables=tables,
             connection={
-                "account":   body.account_identifier,
-                "username":  body.user,
+                "account": body.account_identifier,
+                "username": body.user,
                 "warehouse": body.warehouse,
-                "database":  body.database,
-                "schema":    body.schema,
-                "role":      body.role,
+                "database": body.database,
+                "schema": body.schema,
+                "role": body.role,
             },
         ),
     ))
     if cfg_ins.code != 200:
         log.error("warehouse_connect: failed to create config: %s", cfg_ins.error)
-        # Compensating cleanup: the warehouse row from step 4 is already committed.
-        # Without this it lingers as an orphan with no active config — usable-looking
-        # in listings but broken. Soft-delete it so the failed create leaves no trace.
         try:
             await postgres.soft_delete(KBWarehouseDelete(warehouse_id=warehouse_id))
         except Exception as e:
             log.error("warehouse_connect: orphan cleanup failed for %s: %s", warehouse_id, e)
         raise HTTPException(status_code=500, detail="Failed to create warehouse config")
 
-    log.info("Created warehouse %s with config %s (%d tables)", warehouse_id, cfg_ins.data.get("config_id"), len(tables))
+    log.info("Created warehouse %s with config %s (%d tables)", warehouse_id, cfg_ins.data.get("config_id"),
+             len(tables))
 
     return ResponseModel(code=200, data={
-        "warehouse_id":   warehouse_id,
+        "warehouse_id": warehouse_id,
         "connection_name": body.connection_name,
         "warehouse_type": body.warehouse_type.lower(),
         "message": f"Warehouse connected with {len(tables)} table(s)",
