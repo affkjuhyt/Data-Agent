@@ -1,4 +1,3 @@
-"""Business logic for warehouse connection CRUD."""
 import logging
 from typing import Any, Optional, cast
 
@@ -12,7 +11,6 @@ log = logging.getLogger(__name__)
 
 
 async def get_warehouse_connection(postgres: Any, warehouse_id: str) -> Optional[dict[str, Any]]:
-    """Fetch a warehouse connection by ID."""
     try:
         resp = await postgres.read(ReadJoinRequest(
             joins_table=["KBWarehouse"],
@@ -32,9 +30,8 @@ async def get_warehouse_connection(postgres: Any, warehouse_id: str) -> Optional
 
 
 async def list_warehouse_connections(
-    postgres: Any, tenant_id: str, limit: int = 50
+        postgres: Any, tenant_id: str, limit: int = 50
 ) -> list[Any]:
-    """List all warehouse connections for a tenant."""
     try:
         resp = await postgres.read(ReadJoinRequest(
             tenant_id=tenant_id,
@@ -50,7 +47,6 @@ async def list_warehouse_connections(
 
 
 async def delete_warehouse_connection(postgres: Any, warehouse_id: str) -> None:
-    """Delete a warehouse connection and all associated metadata."""
     try:
         resp = await postgres.soft_delete(KBWarehouseDelete(warehouse_id=warehouse_id))
         if resp.code == 404:

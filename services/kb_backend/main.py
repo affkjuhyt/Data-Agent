@@ -35,20 +35,11 @@ _MONGO_URL     = os.environ.get("MONGO_URL",     "mongodb://mongo:27017/dataagen
 _MINIO_URL     = os.environ.get("MINIO_URL",     "http://minioadmin:minioadmin@minio:9000")
 _KAFKA_URL     = os.environ.get("KAFKA_URL",     "kafka:9092")
 _REDIS_URL     = os.environ.get("REDIS_URL",     "redis://redis:6379/0")
-# L0 result cache (KB-SCALE-10K.md lever #2): exact-repeat queries return before
-# embedding. Best-effort — Redis down just means no cache.
 _RESULT_CACHE_ENABLED = os.environ.get("RESULT_CACHE_ENABLED", "true").lower() in {"1", "true", "yes"}
-_RESULT_CACHE_TTL     = int(os.environ.get("RESULT_CACHE_TTL", "900"))  # 15 min
+_RESULT_CACHE_TTL     = int(os.environ.get("RESULT_CACHE_TTL", "900"))
 
-# Lite/auth-verification mode. When true, only Postgres is opened at startup;
-# the heavy data-plane stores (Qdrant, Neo4j, Mongo, MinIO, model-service, Kafka)
-# are skipped so the API can boot for verifying the Kong→router identity chain
-# (user_id / tenant_id / role / permission) without standing up the full stack.
-# Routes that actually touch those stores will fail at request time — that's
-# expected; RBAC-gated mutations 403 before ever reaching a store.
 KB_LITE = os.getenv("KB_LITE", "false").lower() == "true"
 
-# One instance per service — shared for the full process lifetime
 _postgres = PostgresClient()
 _qdrant   = QdrantService()
 _neo4j    = Neo4jClient()
@@ -60,25 +51,14 @@ _kafka_producer = KafkaProducerClient()
 _redis    = RedisClient()
 _result_cache = ResultCache(_redis, _RESULT_CACHE_TTL, _RESULT_CACHE_ENABLED)
 
-# Stateless pipelines — clients injected per request from app.state
 _light_rag  = LightRAGPipeline()
 _ingestion  = IngestionPipeline()
 
 
 def _supervise(task: asyncio.Task[Any]) -> asyncio.Task[Any]:
-    """Attach a done-callback that surfaces a background loop dying.
-
-    The health-check and cache-sweep loops are `while True` and must never
-    complete while the process is up. If one escapes its own try/except (e.g. a
-    reconnect path raising an unexpected error), the task ends and its exception
-    is otherwise swallowed until GC prints "Task exception was never retrieved".
-    A dead health loop is dangerous: the connector's `_healthy` flag freezes, so
-    `svc()` gating goes stale (permanent 503, or worse, handing out a dead
-    client). Log it loudly so it is visible immediately instead of silently.
-    """
     def _on_done(t: asyncio.Task[Any]) -> None:
         if t.cancelled():
-            return  # expected on shutdown
+            return
         exc = t.exception()
         if exc is not None:
             log.error("Background task %r died with an unhandled exception — "
@@ -93,11 +73,6 @@ def _supervise(task: asyncio.Task[Any]) -> asyncio.Task[Any]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # ── Postgres bootstrap ────────────────────────────────────────────────────
-    # Connect to template1 (always exists) to check/create the target DB.
-    # Handles any DB name (aeroflow_kb in standalone stacks, dataagent in the
-    # full-platform overlay). Safety net for fresh non-Docker starts only —
-    # in Docker the init scripts already created the DB before this runs.
     _pg_db = _POSTGRES_URL.rsplit("/", 1)[-1].split("?")[0]
     admin_url = _POSTGRES_URL.rsplit("/", 1)[0] + "/template1"
     admin_engine = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
@@ -108,21 +83,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 {"name": _pg_db},
             )
             if not exists:
-                # DDL cannot be parameterized; _pg_db comes from our own env var.
                 await conn.execute(text(f"CREATE DATABASE {_pg_db}"))
     finally:
         await admin_engine.dispose()
 
-    # Schema is owned by infra/Postgres/init.sql (idempotent CREATE TABLE IF NOT
-    # EXISTS) and seeded by infra/Postgres/seed.sql at Postgres init. create_all
-    # stays as a safety net for non-Docker / fresh starts where those scripts did
-    # not run — it no-ops on tables that already exist. There is NO Python seeder.
     kb_engine = create_async_engine(_POSTGRES_URL)
     async with kb_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await kb_engine.dispose()
 
-    # ── Set URLs ──────────────────────────────────────────────────────────────
     retry = RetryConfig()
 
     _postgres.set_url(_POSTGRES_URL)
@@ -134,7 +103,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _kafka_producer.set_url(_KAFKA_URL)
     _redis.set_url(_REDIS_URL)
 
-    # ── Open all connections ──────────────────────────────────────────────────
     await _postgres.open(retry)
     if KB_LITE:
         log.warning(
@@ -149,11 +117,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await _model.open(retry)
         await _kafka_producer.open(retry)
         try:
-            await _redis.open(retry)  # best-effort; result cache degrades to no-op
+            await _redis.open(retry)
         except Exception as e:  # noqa: BLE001
             log.warning("Redis (result cache) unavailable — retrieval works uncached: %s", e)
 
-    # ── Expose on app.state ───────────────────────────────────────────────────
     app.state.postgres       = _postgres
     app.state.qdrant         = _qdrant
     app.state.neo4j          = _neo4j
@@ -166,7 +133,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.light_rag      = _light_rag
     app.state.ingestion      = _ingestion
 
-    # ── Background: health check loops ────────────────────────────────────────
     hc = HealthCheckLoopConfig()
     hc_tasks = [
         _supervise(asyncio.create_task(_postgres.health_check_loop(hc),       name="hc-postgres")),
@@ -179,13 +145,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             _supervise(asyncio.create_task(_minio.health_check_loop(hc),          name="hc-minio")),
             _supervise(asyncio.create_task(_model.health_check_loop(hc),          name="hc-model")),
             _supervise(asyncio.create_task(_kafka_producer.health_check_loop(hc), name="hc-kafka-producer")),
-            # Background sweep that reclaims expired LightRAG query-cache entries (24h TTL).
             _supervise(asyncio.create_task(cache_sweep_loop(_qdrant.get_client()), name="cache-sweep")),
         ]
 
     yield
 
-    # ── Shutdown ──────────────────────────────────────────────────────────────
     for task in hc_tasks:
         task.cancel()
     await asyncio.gather(*hc_tasks, return_exceptions=True)

@@ -1,4 +1,3 @@
-"""Business logic for filter policy and extraction policy CRUD."""
 from typing import Any, cast
 import json
 import logging
@@ -12,6 +11,7 @@ from libs.basemodel.services_databaseconnector.postgres_model import (
     KBExtractionPolicyInsert,
     PolicyFilteringType,
 )
+from services.kb_backend.operations.access import assert_child_scoped
 from services.kb_backend.operations.pagination import (
     PAGE_SIZE, get_cursor, advance, build_page,
 )
@@ -31,9 +31,6 @@ _BASE_EXTRACTION = (
     "• Concepts (CONCEPT): domain-specific abstract terms and definitions"
 )
 
-# configformat in DB is the canonical wire value (natural_language|exact_word).
-# No translation needed — see src/lib/enums.ts for the shared canonical set.
-
 
 def _to_filter_policy(row: dict[str, Any]) -> dict[str, Any]:
     ptype = row.get("configformat") or "natural_language"
@@ -41,13 +38,13 @@ def _to_filter_policy(row: dict[str, Any]) -> dict[str, Any]:
     rules: list[Any] = cfg.get("rules") or []
     content = json.dumps(rules) if ptype == "exact_word" else (rules[0] if rules else "")
     return {
-        "id":         to_string(row.get("policy_id")),
-        "name":       row.get("policy_name", ""),
-        "type":       ptype,
-        "content":    content,
-        "added_by":   row.get("created_by", ""),
+        "id": to_string(row.get("policy_id")),
+        "name": row.get("policy_name", ""),
+        "type": ptype,
+        "content": content,
+        "added_by": row.get("created_by", ""),
         "added_when": to_string(row.get("created_at", ""))[:10],
-        "active":     bool(row.get("is_active", False)),
+        "active": bool(row.get("is_active", False)),
     }
 
 
@@ -61,11 +58,11 @@ def _rules_from_body(ptype: str, content: str) -> list[str]:
 
 
 async def list_filter_policies(
-    postgres: Any, tenant_id: str | None,
-    user_id: str, page: int = 1,
+        postgres: Any, tenant_id: str | None,
+        user_id: str, page: int = 1,
 ) -> dict[str, Any]:
     cursor_key = f"policies:filter:{tenant_id}"
-    cursor_ts  = get_cursor(user_id, cursor_key, page)
+    cursor_ts = get_cursor(user_id, cursor_key, page)
     resp = await postgres.read(ReadJoinRequest(
         tenant_id=tenant_id,
         joins_table=["KBFilterPolicy"],
@@ -82,13 +79,11 @@ async def list_filter_policies(
 
 
 async def create_filter_policy(
-    postgres: Any,
-    name: str, ptype: str, content: str,
-    tenant_id: str, created_by: str,
-    active: bool = True,
+        postgres: Any,
+        name: str, ptype: str, content: str,
+        tenant_id: str, created_by: str,
+        active: bool = True,
 ) -> dict[str, Any]:
-    # created_by stores the human-readable username (not the user_id UUID) so the
-    # UI shows "added_by: helios-admin" rather than an opaque id.
     resp = await postgres.insert(KBFilterPolicyInsert(
         tenant_id=tenant_id,
         policy_name=name,
@@ -99,16 +94,13 @@ async def create_filter_policy(
     ))
     if resp.code != 200:
         log.error("create_filter_policy: DB error: %s", resp.error)
-        # Surface client-fixable problems (duplicate / bad reference / missing
-        # field) with their real status + message instead of a blanket 500, so the
-        # UI can show "name already exists" etc.
         if resp.code in (400, 409):
             raise HTTPException(status_code=resp.code, detail=resp.error or "Could not create filter policy")
         raise HTTPException(status_code=500, detail="Failed to create filter policy")
     return {"policy_id": resp.data.get("policy_id")}
 
 
-async def update_filter_policy(postgres: Any, policy_id: str, body: dict[str, Any]) -> dict[str, Any]:
+async def update_filter_policy(postgres: Any, policy_id: str, tenant_id: str, body: dict[str, Any]) -> dict[str, Any]:
     updates: dict[str, Any] = {}
     if "name" in body:
         updates["policy_name"] = body["name"]
@@ -117,17 +109,26 @@ async def update_filter_policy(postgres: Any, policy_id: str, body: dict[str, An
     if "type" in body and "content" in body:
         ptype = body["type"]
         content = body["content"]
-        updates["configformat"] = ptype if ptype in ("natural_language", "exact_word") else PolicyFilteringType.NATURAL_LANG.value
+        updates["configformat"] = ptype if ptype in ("natural_language",
+                                                     "exact_word") else PolicyFilteringType.NATURAL_LANG.value
         updates["config"] = {"rules": _rules_from_body(ptype, content)}
 
     if not updates:
         return {"status": "no-op"}
 
+    await assert_child_scoped(
+        postgres, KBFilterPolicyORM.policy_id, policy_id, KBFilterPolicyORM.tenant_id, tenant_id,
+        not_found_detail="Policy not found",
+    )
     policy_uuid = uuid.UUID(policy_id) if isinstance(policy_id, str) else policy_id
+    tenant_uuid = uuid.UUID(tenant_id) if isinstance(tenant_id, str) else tenant_id
     async with postgres.get_client() as session:
         await session.execute(
             sa_update(KBFilterPolicyORM)
-            .where(KBFilterPolicyORM.policy_id == policy_uuid)
+            .where(
+                KBFilterPolicyORM.policy_id == policy_uuid,
+                KBFilterPolicyORM.tenant_id == tenant_uuid,
+            )
             .values(**updates)
         )
         await session.commit()
@@ -157,7 +158,7 @@ async def get_extraction_policy(postgres: Any, tenant_id: str | None) -> dict[st
 
 
 async def update_extraction_policy(
-    postgres: Any, custom: str, tenant_id: str, created_by: str,
+        postgres: Any, custom: str, tenant_id: str, created_by: str,
 ) -> dict[str, Any]:
     resp = await postgres.read(ReadJoinRequest(
         tenant_id=tenant_id, joins_table=["KBExtractionPolicy"], limit=1,
@@ -165,10 +166,14 @@ async def update_extraction_policy(
     if resp.code == 200 and resp.data:
         pid = resp.data[0].get("policy_id")
         pid_uuid = uuid.UUID(pid) if isinstance(pid, str) else pid
+        tenant_uuid = uuid.UUID(tenant_id) if isinstance(tenant_id, str) else tenant_id
         async with postgres.get_client() as session:
             await session.execute(
                 sa_update(KBExtractionPolicyORM)
-                .where(KBExtractionPolicyORM.policy_id == pid_uuid)
+                .where(
+                    KBExtractionPolicyORM.policy_id == pid_uuid,
+                    KBExtractionPolicyORM.tenant_id == tenant_uuid,
+                )
                 .values(custom_override=custom)
             )
             await session.commit()

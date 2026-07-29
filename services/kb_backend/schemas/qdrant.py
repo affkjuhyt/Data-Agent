@@ -6,8 +6,6 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
-# ── Request ───────────────────────────────────────────────────────────────────
-
 class QdrantSearchRequest(BaseModel):
     query: str
     tenant_id: str = ""
@@ -17,8 +15,6 @@ class QdrantSearchRequest(BaseModel):
 class ToggleQdrantCollectionRequest(BaseModel):
     active: bool
 
-
-# ── Response ──────────────────────────────────────────────────────────────────
 
 class QdrantCollectionResponse(BaseModel):
     id: str

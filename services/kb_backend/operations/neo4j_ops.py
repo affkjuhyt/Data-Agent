@@ -1,4 +1,3 @@
-"""Business logic for Neo4j graph visualization and Cypher execution."""
 import logging
 import os
 from fastapi import HTTPException
@@ -13,15 +12,10 @@ log = logging.getLogger(__name__)
 
 _READONLY_PREFIXES = ("CREATE", "MERGE", "DELETE", "SET", "REMOVE", "DROP")
 
-# Hard cap on the number of nodes returned to the UI. The graph canvas degrades
-# badly past a few hundred nodes, so the backend enforces this for every path
-# (live Neo4j, Postgres fallback, and ad-hoc Cypher) regardless of the query.
 _MAX_NODES = int(os.getenv("NEO4J_MAX_GRAPH_NODES", "200"))
 
 
 def _pick_type(labels: list[str] | None) -> str | None:
-    """A node's display type = its first specific label. 'Entity' is a base label
-    shared by everything, so prefer a more specific one when present."""
     if not labels:
         return None
     for lbl in labels:
@@ -31,9 +25,6 @@ def _pick_type(labels: list[str] | None) -> str | None:
 
 
 async def _graph_from_postgres(postgres: Any, tenant_id: str | None) -> tuple[list[Any], list[Any]]:
-    """Read the graph mirror that the ingestion pipeline maintains, scoped by tenant.
-    KBNeo4jRelationship holds one row per (pair, chunk), so edges are de-duplicated
-    to one bridge per pair; only live (is_deleted=false) rows are drawn."""
     if not tenant_id:
         return [], []
 
@@ -51,7 +42,7 @@ async def _graph_from_postgres(postgres: Any, tenant_id: str | None) -> tuple[li
             "id":          to_string(r.get("node_id")),
             "name":        r.get("node_name", ""),
             "description": r.get("node_description"),
-            "type":        None,  # Postgres node registry has no label/type column
+            "type":        None,
         }
         for r in (node_resp.data or [])
     ]
@@ -79,12 +70,9 @@ async def _graph_from_postgres(postgres: Any, tenant_id: str | None) -> tuple[li
 
 async def get_graph(postgres: Any, neo4j: Any, tenant_id: str | None) -> dict[str, Any]:
     if not tenant_id:
-        # No tenant context — fall back to Postgres registry immediately
         nodes, edges = await _graph_from_postgres(postgres, tenant_id)
         return {"nodes": nodes, "edges": edges}
 
-    # Cap distinct nodes at $max first, then only keep edges that stay within
-    # that capped set — so the UI never receives more than _MAX_NODES nodes.
     _GRAPH_QUERY: LiteralString = (
         "MATCH (n) WHERE n.tenant_id = $tenant_id "
         "WITH collect(DISTINCT n)[0..$max] AS ns "
@@ -148,7 +136,6 @@ async def get_schema(neo4j: Any, postgres: Any = None, tenant_id: str | None = N
     except Exception as e:
         log.warning("neo4j_ops: schema query failed: %s", e)
 
-    # Fall back to Postgres node registry when Neo4j is unavailable or empty
     if postgres:
         nodes, _ = await _graph_from_postgres(postgres, tenant_id)
         entities = list(dict.fromkeys(n["name"] for n in nodes if n.get("name")))
@@ -157,14 +144,6 @@ async def get_schema(neo4j: Any, postgres: Any = None, tenant_id: str | None = N
 
 
 async def run_cypher(neo4j: Any, cypher: str, tenant_id: str | None = None) -> dict[str, Any]:
-    """Run a read-only Cypher query and return the matched subgraph as
-    {nodes, edges} — the same shape as /graph — so the UI can render the query
-    result straight onto the canvas. Returns an EMPTY subgraph (not an error)
-    when Neo4j is unavailable or the query yields no graph, so the client can
-    fall back to a local traversal of the already-loaded graph.
-
-    `tenant_id` is bound as the $tenant_id parameter so builder-generated queries
-    stay scoped to the caller's tenant — same isolation the /graph endpoint uses."""
     if any(cypher.strip().upper().startswith(kw) for kw in _READONLY_PREFIXES):
         raise HTTPException(status_code=400, detail="Only read-only Cypher queries are allowed")
 
@@ -173,10 +152,8 @@ async def run_cypher(neo4j: Any, cypher: str, tenant_id: str | None = None) -> d
 
     try:
         async with neo4j.get_client().session() as session:
-            # Passing tenant_id is harmless when the query doesn't reference it;
-            # Neo4j only errors on *missing* referenced params, not unused ones.
             result = await session.run(cypher, tenant_id=tenant_id)
-            graph = await result.graph()   # nodes + relationships traversed by the query
+            graph = await result.graph()
 
         nodes = [
             {

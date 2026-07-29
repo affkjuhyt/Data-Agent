@@ -1,4 +1,3 @@
-"""Business logic for warehouse config CRUD."""
 from typing import Any
 import base64
 import datetime
@@ -13,8 +12,9 @@ from libs.basemodel.services_databaseconnector.postgres_model import (
     WarehouseConfigPayload,
 )
 from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
-    KBDataORM, KBWarehouseConfigORM, KBWarehouseORM,
+    KBWarehouseConfigORM, KBWarehouseORM,
 )
+from services.kb_backend.operations.access import assert_child_scoped, kbdata_row_exists
 from services.kb_backend.operations.pagination import PAGE_SIZE, build_cursor_page
 from services.kb_backend.schemas import to_string
 
@@ -22,8 +22,6 @@ log = logging.getLogger(__name__)
 
 
 def _decode_offset(cursor: str | None) -> int:
-    """Opaque offset cursor. Warehouses are low-cardinality, so a simple
-    LIMIT/OFFSET page (encoded as base64) is plenty — no keyset needed."""
     if not cursor:
         return 0
     try:
@@ -33,9 +31,6 @@ def _decode_offset(cursor: str | None) -> int:
 
 
 async def list_warehouses(postgres: Any, tenant_id: str, cursor: str | None = None) -> dict[str, Any]:
-    """Paginated, tenant-scoped warehouse list (own tables, not KBData). Returns the
-    same row shape the document listing used to merge in, wrapped in the cursor-page
-    envelope so the UI's useCursorPagination hook drives it like every other list."""
     offset = _decode_offset(cursor)
     tenant_uuid = uuid.UUID(tenant_id)
     async with postgres.get_client() as session:
@@ -72,19 +67,19 @@ async def list_warehouses(postgres: Any, tenant_id: str, cursor: str | None = No
     for w in rows:
         service = (w.service or "").lower()
         docs.append({
-            "data_id":      str(w.warehouse_id),
-            "name":         w.description or f"Warehouse ({service.title()})",
-            "source_type":  "warehouse",
-            "extension":    None,
+            "data_id": str(w.warehouse_id),
+            "name": w.description or f"Warehouse ({service.title()})",
+            "source_type": "warehouse",
+            "extension": None,
             "current_tier": "gold",
-            "status":       "PUBLISHED",
-            "added_by":     creators.get(str(w.warehouse_id), ""),
-            "added_on":     str(w.created_at or ""),
-            "abstract":     None,
+            "status": "PUBLISHED",
+            "added_by": creators.get(str(w.warehouse_id), ""),
+            "added_on": str(w.created_at or ""),
+            "abstract": None,
             "metadata": {
-                "doc_type":       f"Warehouse/{service}",
-                "language":       None,
-                "access_role":    None,
+                "doc_type": f"Warehouse/{service}",
+                "language": None,
+                "access_role": None,
                 "warehouse_type": service,
             },
         })
@@ -94,54 +89,46 @@ async def list_warehouses(postgres: Any, tenant_id: str, cursor: str | None = No
     return build_cursor_page(docs, total, has_next, next_cursor)
 
 
-async def _assert_tenant(postgres: Any, doc_id: str, tenant_id: str) -> None:
-    doc_uuid = uuid.UUID(doc_id)
+async def _warehouse_row_exists(postgres: Any, warehouse_id: str, tenant_id: str) -> bool:
     async with postgres.get_client() as session:
-        # Check regular documents first
         row = await session.scalar(
-            sa_select(KBDataORM.data_id)
-            .where(
-                KBDataORM.data_id == doc_uuid,
-                KBDataORM.tenant_id == uuid.UUID(tenant_id),
-                KBDataORM.is_deleted == False,  # noqa: E712
-            )
-            .limit(1)
-        )
-        if row is not None:
-            return
-        # Warehouse records (created via wizard) live in KBWarehouse — tenant-scoped,
-        # so only the owning tenant may manage its configs.
-        wh_row = await session.scalar(
             sa_select(KBWarehouseORM.warehouse_id)
             .where(
-                KBWarehouseORM.warehouse_id == doc_uuid,
+                KBWarehouseORM.warehouse_id == uuid.UUID(warehouse_id),
                 KBWarehouseORM.tenant_id == uuid.UUID(tenant_id),
                 KBWarehouseORM.is_deleted == False,  # noqa: E712
             )
             .limit(1)
         )
-    if wh_row is None:
-        raise HTTPException(status_code=404, detail="Document not found")
+    return row is not None
+
+
+async def _assert_tenant(postgres: Any, doc_id: str, tenant_id: str, role_id: str | None = None) -> None:
+    if await kbdata_row_exists(postgres, doc_id, tenant_id, role_id, exclude_deleted=True):
+        return
+    if await _warehouse_row_exists(postgres, doc_id, tenant_id):
+        return
+    raise HTTPException(status_code=404, detail="Document not found")
 
 
 def _to_wconfig(row: dict[str, Any]) -> dict[str, Any]:
     cfg = row.get("config") or {}
     tables_raw = cfg.get("selected_tables") or []
     connection = cfg.get("connection") or {
-        "host":     cfg.get("host", ""),
-        "port":     str(cfg.get("port", "")),
+        "host": cfg.get("host", ""),
+        "port": str(cfg.get("port", "")),
         "database": cfg.get("database", ""),
     }
     ver_num = row.get("version_number", 1)
     ver_label = f"v{ver_num}"
     return {
-        "id":             to_string(row.get("config_id")),
-        "name":           f"Config {ver_label}",
-        "version":        ver_label,
-        "version_number": ver_label,   # UI uses this field name
-        "status":         "Active" if row.get("is_active") else "Inactive",
-        "created_at":     to_string(row.get("created_at", "")),
-        "connection":     connection,
+        "id": to_string(row.get("config_id")),
+        "name": f"Config {ver_label}",
+        "version": ver_label,
+        "version_number": ver_label,
+        "status": "Active" if row.get("is_active") else "Inactive",
+        "created_at": to_string(row.get("created_at", "")),
+        "connection": connection,
         "tables": [
             {"name": t, "schema": "", "rowCount": "—", "description": ""}
             if isinstance(t, str) else t
@@ -150,8 +137,9 @@ def _to_wconfig(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def get_warehouse_configs(postgres: Any, warehouse_id: str, tenant_id: str) -> list[Any]:
-    await _assert_tenant(postgres, warehouse_id, tenant_id)
+async def get_warehouse_configs(postgres: Any, warehouse_id: str, tenant_id: str, role_id: str | None = None) -> list[
+    Any]:
+    await _assert_tenant(postgres, warehouse_id, tenant_id, role_id)
     resp = await postgres.read(ReadJoinRequest(
         joins_table=["KBWarehouseConfig"],
         filters=[WhereFilter(
@@ -168,9 +156,10 @@ async def get_warehouse_configs(postgres: Any, warehouse_id: str, tenant_id: str
 
 
 async def create_warehouse_config(
-    postgres: Any, warehouse_id: str, body: dict[str, Any], created_by: str, tenant_id: str,
+        postgres: Any, warehouse_id: str, body: dict[str, Any], created_by: str, tenant_id: str,
+        role_id: str | None = None,
 ) -> dict[str, Any]:
-    await _assert_tenant(postgres, warehouse_id, tenant_id)
+    await _assert_tenant(postgres, warehouse_id, tenant_id, role_id)
     resp = await postgres.read(ReadJoinRequest(
         joins_table=["KBWarehouseConfig"],
         filters=[WhereFilter(
@@ -205,24 +194,23 @@ async def create_warehouse_config(
         log.error("warehouse_ops: create_warehouse_config insert failed: %s", ins.error)
         raise HTTPException(status_code=500, detail="Failed to create config")
 
-    # Return a full WarehouseConfigVersion shape so the UI can add it directly
     ver_label = f"v{new_version}"
     return {
-        "id":             str(ins.data.get("config_id")),
-        "name":           f"Config {ver_label}",
-        "version":        ver_label,
+        "id": str(ins.data.get("config_id")),
+        "name": f"Config {ver_label}",
+        "version": ver_label,
         "version_number": ver_label,
-        "status":         "Inactive",
-        "created_at":     datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "connection":     connection,
-        "tables":         tables,
+        "status": "Inactive",
+        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "connection": connection,
+        "tables": tables,
     }
 
 
 async def activate_warehouse_config(
-    postgres: Any, warehouse_id: str, config_id: str, tenant_id: str,
+        postgres: Any, warehouse_id: str, config_id: str, tenant_id: str, role_id: str | None = None,
 ) -> dict[str, Any]:
-    await _assert_tenant(postgres, warehouse_id, tenant_id)
+    await _assert_tenant(postgres, warehouse_id, tenant_id, role_id)
     warehouse_uuid = uuid.UUID(warehouse_id) if isinstance(warehouse_id, str) else warehouse_id
     config_uuid = uuid.UUID(config_id) if isinstance(config_id, str) else config_id
     async with postgres.get_client() as session:
@@ -233,14 +221,24 @@ async def activate_warehouse_config(
         )
         await session.execute(
             sa_update(KBWarehouseConfigORM)
-            .where(KBWarehouseConfigORM.config_id == config_uuid)
+            .where(
+                KBWarehouseConfigORM.config_id == config_uuid,
+                KBWarehouseConfigORM.warehouse_id == warehouse_uuid,
+            )
             .values(is_active=True)
         )
         await session.commit()
     return {"status": "ok", "config_id": config_id}
 
 
-async def delete_warehouse_config(postgres: Any, config_id: str) -> None:
+async def delete_warehouse_config(
+        postgres: Any, warehouse_id: str, config_id: str, tenant_id: str, role_id: str | None = None,
+) -> None:
+    await _assert_tenant(postgres, warehouse_id, tenant_id, role_id)
+    await assert_child_scoped(
+        postgres, KBWarehouseConfigORM.config_id, config_id,
+        KBWarehouseConfigORM.warehouse_id, warehouse_id, not_found_detail="Config not found",
+    )
     resp = await postgres.soft_delete(KBWarehouseConfigDelete(config_id=config_id))
     if resp.code == 404:
         raise HTTPException(status_code=404, detail="Config not found")
@@ -249,7 +247,14 @@ async def delete_warehouse_config(postgres: Any, config_id: str) -> None:
         raise HTTPException(status_code=500, detail="Failed to delete config")
 
 
-async def delete_config_table(postgres: Any, config_id: str, table_id: str) -> None:
+async def delete_config_table(
+        postgres: Any, warehouse_id: str, config_id: str, table_id: str, tenant_id: str, role_id: str | None = None,
+) -> None:
+    await _assert_tenant(postgres, warehouse_id, tenant_id, role_id)
+    await assert_child_scoped(
+        postgres, KBWarehouseConfigORM.config_id, config_id,
+        KBWarehouseConfigORM.warehouse_id, warehouse_id, not_found_detail="Config not found",
+    )
     resp = await postgres.read(ReadJoinRequest(
         joins_table=["KBWarehouseConfig"],
         filters=[WhereFilter(
@@ -267,10 +272,14 @@ async def delete_config_table(postgres: Any, config_id: str, table_id: str) -> N
     cfg["selected_tables"] = [t for t in (cfg.get("selected_tables") or []) if t != table_id]
 
     config_uuid = uuid.UUID(config_id) if isinstance(config_id, str) else config_id
+    warehouse_uuid = uuid.UUID(warehouse_id) if isinstance(warehouse_id, str) else warehouse_id
     async with postgres.get_client() as session:
         await session.execute(
             sa_update(KBWarehouseConfigORM)
-            .where(KBWarehouseConfigORM.config_id == config_uuid)
+            .where(
+                KBWarehouseConfigORM.config_id == config_uuid,
+                KBWarehouseConfigORM.warehouse_id == warehouse_uuid,
+            )
             .values(config=cfg)
         )
         await session.commit()

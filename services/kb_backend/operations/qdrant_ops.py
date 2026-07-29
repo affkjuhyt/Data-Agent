@@ -1,4 +1,3 @@
-"""Business logic for Qdrant collection management and semantic search."""
 from typing import Any, cast
 import logging
 import uuid
@@ -7,7 +6,9 @@ from qdrant_client import models
 from sqlalchemy import update as sa_update, select
 
 from libs.basemodel.services_databaseconnector.postgres_model import ReadJoinRequest
-from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import KBQdrantCollectionORM
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+    KBQdrantCollectionORM, KBQdrantConnectionORM,
+)
 from libs.basemodel.services_databaseconnector.qdrant_model import SearchRequest, MatchType
 from libs.database_connector.qdrant_connector import vector_search as qdrant_vector_search
 from services.kb_backend.schemas import to_string
@@ -16,8 +17,6 @@ log = logging.getLogger(__name__)
 
 
 def _vector_params(info: Any) -> tuple[int, str]:
-    """Pull (dimension, distance) from a CollectionInfo, handling both the
-    single-vector and named-vectors configs."""
     vectors = info.config.params.vectors
     if hasattr(vectors, "size"):
         return vectors.size, str(vectors.distance).split(".")[-1].lower()
@@ -28,8 +27,6 @@ def _vector_params(info: Any) -> tuple[int, str]:
 
 
 async def _tenant_point_count(client: Any, name: str, tenant_id: str) -> int:
-    """Count points in `name` that belong to this tenant (excluding soft-deleted).
-    Collections without a tenant_id payload (e.g. caches) simply return 0."""
     try:
         result = await client.count(
             collection_name=name,
@@ -45,9 +42,6 @@ async def _tenant_point_count(client: Any, name: str, tenant_id: str) -> int:
 
 
 async def list_collections(postgres: Any, qdrant: Any, tenant_id: str | None) -> list[Any]:
-    """List the REAL collections present in Qdrant. Point counts are scoped to the
-    caller's tenant; `total_points` is the all-tenant total for context. Active
-    state is overlaid from the Postgres registry when a name matches."""
     client = qdrant.get_client()
     try:
         live = (await client.get_collections()).collections
@@ -55,7 +49,6 @@ async def list_collections(postgres: Any, qdrant: Any, tenant_id: str | None) ->
         log.error("qdrant_ops: cannot list live collections: %s", e)
         return []
 
-    # Overlay registry metadata (active flag, embedding model) by collection name.
     registry: dict[str, dict[str, Any]] = {}
     try:
         resp = await postgres.read(ReadJoinRequest(
@@ -84,23 +77,38 @@ async def list_collections(postgres: Any, qdrant: Any, tenant_id: str | None) ->
         tenant_points = await _tenant_point_count(client, name, tenant_id) if tenant_id else 0
         reg = registry.get(name)
         out.append({
-            "id":              name,                 # the real Qdrant identifier
-            "name":            name,
-            "points":          tenant_points,        # scoped to this tenant
-            "total_points":    total,                # all tenants (context)
-            "active":          bool(reg.get("is_active", True)) if reg else True,
-            "dimensions":      dim,
-            "distance":        distance,
-            "indexed":         indexed_pct,
+            "id": name,
+            "name": name,
+            "points": tenant_points,
+            "total_points": total,
+            "active": bool(reg.get("is_active", True)) if reg else True,
+            "dimensions": dim,
+            "distance": distance,
+            "indexed": indexed_pct,
             "embedding_model": to_string(reg.get("embedding_model_id", "")) if reg else "",
         })
     return out
 
 
-async def toggle_collection(postgres: Any, collection_id: str, is_active: bool) -> dict[str, Any]:
-    # collection_id is now the real Qdrant collection NAME (live listing). Match the
-    # registry row by UUID when it parses as one, otherwise by name. No matching
-    # row is a no-op — the UI still reflects the toggled state.
+async def _assert_collection_belongs_to_tenant(postgres: Any, collection_id: str, tenant_id: str) -> None:
+    identity_condition = KBQdrantCollectionORM.collection_name == collection_id
+    try:
+        identity_condition = KBQdrantCollectionORM.collection_id == uuid.UUID(str(collection_id))
+    except (ValueError, AttributeError, TypeError):
+        pass
+    async with postgres.get_client() as session:
+        row = await session.scalar(
+            select(KBQdrantCollectionORM.collection_id)
+            .join(KBQdrantConnectionORM, KBQdrantCollectionORM.connection_id == KBQdrantConnectionORM.connection_id)
+            .where(identity_condition, KBQdrantConnectionORM.tenant_id == uuid.UUID(tenant_id))
+            .limit(1)
+        )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Collection not found")
+
+
+async def toggle_collection(postgres: Any, collection_id: str, is_active: bool, tenant_id: str) -> dict[str, Any]:
+    await _assert_collection_belongs_to_tenant(postgres, collection_id, tenant_id)
     stmt = sa_update(KBQdrantCollectionORM).values(is_active=is_active)
     try:
         stmt = stmt.where(KBQdrantCollectionORM.collection_id == uuid.UUID(str(collection_id)))
@@ -113,12 +121,6 @@ async def toggle_collection(postgres: Any, collection_id: str, is_active: bool) 
 
 
 async def _resolve_collection_info(postgres: Any, collection_id: str) -> tuple[str, str | None]:
-    """Return (collection_name, embed_model_id) for a given collection UUID.
-
-    collection_name: real Qdrant string name used to address the collection.
-    embed_model_id: UUID string from KBQdrantCollection.embedding_model_id, or None.
-    Falls back to (collection_id, None) if Postgres is unreachable.
-    """
     try:
         col_uuid = uuid.UUID(collection_id)
         async with postgres.get_client() as session:
@@ -139,19 +141,16 @@ async def _resolve_collection_info(postgres: Any, collection_id: str) -> tuple[s
 
 
 async def semantic_search(
-    qdrant: Any,
-    postgres: Any,
-    model: Any,
-    collection_id: str,
-    query: str,
-    tenant_id: str,
-    limit: int,
+        qdrant: Any,
+        postgres: Any,
+        model: Any,
+        collection_id: str,
+        query: str,
+        tenant_id: str,
+        limit: int,
 ) -> list[Any]:
     collection_name, embed_model_id = await _resolve_collection_info(postgres, collection_id)
 
-    # Reuse the pooled, health-gated ModelServiceClient (injected via svc()) rather
-    # than opening a throwaway httpx connection per request. embed() targets the
-    # same /embed endpoint with the same payload shape.
     try:
         vectors = await model.embed([query], embed_model_id)
         vector = vectors[0]
@@ -169,8 +168,6 @@ async def semantic_search(
             limit=limit,
         ))
     except Exception as e:
-        # Most common cause locally: the model-service embeds at a different
-        # dimension than the collection was built with (e.g. 384 vs 1024).
         msg = str(e)
         if "dimension" in msg.lower():
             detail = (f"Query embedding is {len(vector)}-dim but collection "
@@ -187,10 +184,10 @@ async def semantic_search(
     return [
         {
             "point_id": str(getattr(hit, "id", "")),
-            "score":    round(getattr(hit, "score", 0.0), 4),
-            "summary":  (getattr(hit, "payload", {}) or {}).get("summary", ""),
+            "score": round(getattr(hit, "score", 0.0), 4),
+            "summary": (getattr(hit, "payload", {}) or {}).get("summary", ""),
             "entities": (getattr(hit, "payload", {}) or {}).get("entities", []),
-            "intent":   (getattr(hit, "payload", {}) or {}).get("intents", []),
+            "intent": (getattr(hit, "payload", {}) or {}).get("intents", []),
         }
         for hit in (search_resp.data or [])
     ]

@@ -6,8 +6,6 @@ from typing import Any, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
-# ── Domain ────────────────────────────────────────────────────────────────────
-
 class KnowledgeConfigTable(BaseModel):
     id: str
     schema: str
@@ -15,8 +13,6 @@ class KnowledgeConfigTable(BaseModel):
     row_count: int
     columns: int
 
-
-# ── Request ───────────────────────────────────────────────────────────────────
 
 class CreateWarehouseConfigRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -50,8 +46,6 @@ class SelectTablesRequest(BaseModel):
     selected_table_ids: list[str]
     role: str | None = None
 
-
-# ── Response ──────────────────────────────────────────────────────────────────
 
 class WarehouseConfigResponse(BaseModel):
     id: str

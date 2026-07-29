@@ -6,8 +6,6 @@ from typing import Optional
 from pydantic import BaseModel
 
 
-# ── Request ───────────────────────────────────────────────────────────────────
-
 class CreateFilterPolicyRequest(BaseModel):
     name: str
     type: str
@@ -25,8 +23,6 @@ class UpdateFilterPolicyRequest(BaseModel):
 class UpdateExtractionPolicyRequest(BaseModel):
     custom: str
 
-
-# ── Response ──────────────────────────────────────────────────────────────────
 
 class FilterPolicyResponse(BaseModel):
     id: str

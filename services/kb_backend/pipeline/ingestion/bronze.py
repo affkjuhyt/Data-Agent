@@ -1,6 +1,3 @@
-"""
-Bronze stage: validate → upload to MinIO → register in Postgres as BRONZE KBData.
-"""
 from __future__ import annotations
 
 from typing import Any
@@ -25,8 +22,8 @@ from services.kb_backend.pipeline.ingestion import config as cfg
 class BronzeUploadRequest(BaseModel):
     tenant_id:    str
     role_id:      str
-    name:         str           # document display name (user-supplied Knowledge Name)
-    filename:     str           # original upload filename — used only for object storage
+    name:         str
+    filename:     str
     extension:    str
     language:     str
     source_type:  str
@@ -35,15 +32,14 @@ class BronzeUploadRequest(BaseModel):
     doc_metadata: dict[str, Any]
     file_bytes:   bytes
     content_type: str = "application/octet-stream"
-    # Knowledge base (kind of knowledge) this document belongs to. None = unscoped.
     knowledge_base_id: str | None = None
 
 
 class WebBronzeRequest(BaseModel):
     tenant_id:    str
     role_id:      str
-    name:         str           # document display name (Knowledge Name)
-    url:          str           # the web portal to crawl at bronze→silver
+    name:         str
+    url:          str
     web_name:     str = ""
     language:     str = "english"
     added_by:     str
@@ -74,16 +70,9 @@ async def upload_to_bronze(
     added_by: str,
     abstract: str,
     language: Language,
-    doc_metadata: Any,  # MetadataType instance (Document | Image | Video | Web | Warehouse)
+    doc_metadata: Any,
     knowledge_base_id: str | None = None,
 ) -> dict[str, Any]:
-    """
-    Upload raw file to MinIO and register as BRONZE-tier KBData.
-
-    ``name`` is the document display name (user-supplied Knowledge Name);
-    ``filename`` is the original upload filename, used only for the object key.
-    Returns: {data_id, path, name, layer}
-    """
     if len(file_data) > cfg.MAX_FILE_SIZE_BYTES:
         raise ValueError(
             f"File size {len(file_data)} bytes exceeds the "
@@ -117,7 +106,7 @@ async def upload_to_bronze(
         await minio.delete(cfg.MINIO_BUCKET, object_key)
         raise RuntimeError(f"Postgres KBData insert failed: {data_res.error}")
 
-    assert data_res.data is not None  # code == 200 guarantees a data payload
+    assert data_res.data is not None
     actual_data_id: str = data_res.data["data_id"]
 
     hist_res = await postgres.insert(KBLifecycleHistoryInsert(
@@ -158,13 +147,6 @@ async def register_web_bronze(
     language: Language,
     knowledge_base_id: str | None = None,
 ) -> dict[str, Any]:
-    """Register a web portal as BRONZE-tier KBData.
-
-    Unlike file sources there is no MinIO object — the source IS the live URL,
-    stored in doc_metadata. The bronze→silver step fetches it, strips boilerplate
-    to markdown, and Docling-chunks it (see silver._parse_web).
-    Returns: {data_id, name, url, layer}
-    """
     metadata_obj = Web(source_type=SourceType.WEB, url=url, web_name=web_name or name)
 
     kb_insert = KBDataInsert(
@@ -179,13 +161,13 @@ async def register_web_bronze(
         abstract=abstract,
         doc_metadata=metadata_obj,
         current_tier=Tier.BRONZE,
-        path=None,  # no object store key for a live web source
+        path=None,
     )
     data_res = await postgres.insert(kb_insert)
     if data_res.code != 200:
         raise RuntimeError(f"Postgres KBData insert failed: {data_res.error}")
 
-    assert data_res.data is not None  # code == 200 guarantees a data payload
+    assert data_res.data is not None
     actual_data_id: str = data_res.data["data_id"]
 
     hist_res = await postgres.insert(KBLifecycleHistoryInsert(

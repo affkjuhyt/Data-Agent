@@ -67,6 +67,9 @@ filterwarnings = [
     # tests doesn't error under `filterwarnings = error`. (Real fix: set
     # `model_config['protected_namespaces'] = ()` on those basemodel classes.)
     "ignore:Field .* has conflict with protected namespace:UserWarning",
+    # Same story for `schema` fields on warehouse request/response models — the
+    # name shadows BaseModel's deprecated `.schema()` classmethod, not a bug.
+    "ignore:Field name .* shadows an attribute in parent:UserWarning",
 ]
 
 # ─── Coverage ──────────────────────────────────────────────────────────────

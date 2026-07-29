@@ -1,18 +1,3 @@
-"""Trash — list / restore / permanently-delete (flush) soft-deleted KB entities.
-
-Three levels (the UI surfaces these as the three Trash modes):
-  • document — KBData.is_deleted. Restoring/flushing also syncs is_deleted on the
-               document's Qdrant points: every chunk point (data_id filter) and the
-               doc-summary point. Flush hard-deletes the Postgres rows (blocks
-               cascade to versions/tables via FK), the Qdrant points, and the
-               document's Neo4j relationships (KB-shared entity nodes are kept).
-  • chunk    — KBTextBlock.is_deleted. The Qdrant chunk point id == block_id, so
-               restore/flush syncs / deletes exactly that point.
-  • version  — KBTextBlockVersion.is_deleted. Postgres only — a Qdrant chunk point
-               is per-block (the active version's embedding), not per-version.
-
-Every is_deleted mutation here keeps Postgres and Qdrant in lock-step.
-"""
 from __future__ import annotations
 
 from typing import Any
@@ -40,7 +25,6 @@ LEVELS = ("document", "chunk", "version")
 _PREVIEW = 160
 
 
-# ── Qdrant sync helpers ───────────────────────────────────────────────────────
 def _doc_filter(tenant_id: str | None, data_id: str) -> qmodels.Filter:
     must = [qmodels.FieldCondition(key="data_id", match=qmodels.MatchValue(value=data_id))]
     if tenant_id:
@@ -49,13 +33,8 @@ def _doc_filter(tenant_id: str | None, data_id: str) -> qmodels.Filter:
 
 
 async def qdrant_set_deleted_by_data_id(
-    qdrant: Any, tenant_id: str | None, data_id: str, value: bool
+        qdrant: Any, tenant_id: str | None, data_id: str, value: bool
 ) -> None:
-    """Set is_deleted=value on a document's chunk points and its doc-summary point.
-
-    Raises: retrieval filters on is_deleted, so a swallowed failure leaves a restored
-    document permanently unsearchable, or a deleted one still being returned.
-    """
     client = qdrant.get_client()
     for collection in (lr_cfg.QDRANT_COLLECTION, lr_cfg.QDRANT_DOC_COLLECTION):
         await client.set_payload(
@@ -66,7 +45,6 @@ async def qdrant_set_deleted_by_data_id(
 
 
 async def qdrant_set_deleted_by_block(qdrant: Any, block_id: str, value: bool) -> None:
-    """Set is_deleted=value on the single chunk point whose id == block_id. Raises."""
     await qdrant.get_client().set_payload(
         collection_name=lr_cfg.QDRANT_COLLECTION,
         payload={"is_deleted": value},
@@ -75,7 +53,6 @@ async def qdrant_set_deleted_by_block(qdrant: Any, block_id: str, value: bool) -
 
 
 async def _qdrant_delete_by_data_id(qdrant: Any, tenant_id: str | None, data_id: str) -> None:
-    """Hard-delete a document's chunk and doc-summary points. Raises."""
     client = qdrant.get_client()
     for collection in (lr_cfg.QDRANT_COLLECTION, lr_cfg.QDRANT_DOC_COLLECTION):
         await client.delete(
@@ -85,7 +62,6 @@ async def _qdrant_delete_by_data_id(qdrant: Any, tenant_id: str | None, data_id:
 
 
 async def _qdrant_delete_block(qdrant: Any, block_id: str) -> None:
-    """Hard-delete one chunk point. Raises."""
     await qdrant.get_client().delete(
         collection_name=lr_cfg.QDRANT_COLLECTION,
         points_selector=qmodels.PointIdsList(points=[block_id]),
@@ -97,9 +73,33 @@ def _preview(text: str | None) -> str:
     return t[:_PREVIEW] + ("…" if len(t) > _PREVIEW else "")
 
 
-# ── List ──────────────────────────────────────────────────────────────────────
+def _tenant_condition(level: str, tenant_id: str) -> Any:
+    tenant_uuid = uuid.UUID(tenant_id)
+    if level == "document":
+        return KBDataORM.tenant_id == tenant_uuid
+    owned_data_ids = sa_select(KBDataORM.data_id).where(KBDataORM.tenant_id == tenant_uuid)
+    if level == "chunk":
+        return KBTextBlockORM.owner_id.in_(owned_data_ids)
+    owned_block_ids = sa_select(KBTextBlockORM.block_id).where(KBTextBlockORM.owner_id.in_(owned_data_ids))
+    return KBTextBlockVersionORM.block_id.in_(owned_block_ids)
+
+
+async def _assert_trash_item_owned_by_tenant(postgres: Any, level: str, item_id: uuid.UUID, tenant_id: str) -> None:
+    id_column_by_level = {
+        "document": KBDataORM.data_id,
+        "chunk": KBTextBlockORM.block_id,
+        "version": KBTextBlockVersionORM.version_id,
+    }
+    id_column = id_column_by_level[level]
+    async with postgres.get_client() as session:
+        owned = await session.scalar(
+            sa_select(id_column).where(id_column == item_id, _tenant_condition(level, tenant_id)).limit(1)
+        )
+    if owned is None:
+        raise HTTPException(status_code=404, detail=f"{level} not found")
+
+
 async def list_trash(postgres: Any, level: str, tenant_id: str | None) -> dict[str, Any]:
-    """Soft-deleted items at the given level (newest first), scoped to the tenant."""
     if level not in LEVELS:
         raise HTTPException(status_code=422, detail=f"Unknown trash level: {level}")
 
@@ -113,16 +113,16 @@ async def list_trash(postgres: Any, level: str, tenant_id: str | None) -> dict[s
             )).scalars().all()
             items = [
                 DocResponse.model_validate({
-                    "data_id":      str(r.data_id),
-                    "name":         r.name,
-                    "source_type":  r.source_type,
-                    "extension":    r.extension,
+                    "data_id": str(r.data_id),
+                    "name": r.name,
+                    "source_type": r.source_type,
+                    "extension": r.extension,
                     "current_tier": r.current_tier,
-                    "added_by":     r.added_by,
-                    "added_on":     str(r.added_on or ""),
-                    "abstract":     r.abstract,
-                    "metadata":     r.doc_metadata,
-                    "language":     r.language,
+                    "added_by": r.added_by,
+                    "added_on": str(r.added_on or ""),
+                    "abstract": r.abstract,
+                    "metadata": r.doc_metadata,
+                    "language": r.language,
                 }).model_dump()
                 for r in rows
             ]
@@ -145,16 +145,15 @@ async def list_trash(postgres: Any, level: str, tenant_id: str | None) -> dict[s
                 stmt.order_by(KBTextBlockORM.inserted_at.desc()).limit(300)
             )).all()
             items = [{
-                "id":          str(r.block_id),
-                "block_id":    str(r.block_id),
-                "data_id":     str(r.owner_id),
-                "doc_name":    r.name,
+                "id": str(r.block_id),
+                "block_id": str(r.block_id),
+                "data_id": str(r.owner_id),
+                "doc_name": r.name,
                 "block_index": r.block_index,
-                "preview":     _preview(r.content),
+                "preview": _preview(r.content),
             } for r in rows]
             return {"level": level, "items": items, "total": len(items)}
 
-        # version
         stmt = (
             sa_select(
                 KBTextBlockVersionORM.version_id, KBTextBlockVersionORM.block_id,
@@ -171,34 +170,34 @@ async def list_trash(postgres: Any, level: str, tenant_id: str | None) -> dict[s
             stmt.order_by(KBTextBlockVersionORM.inserted_at.desc()).limit(300)
         )).all()
         items = [{
-            "id":             str(r.version_id),
-            "version_id":     str(r.version_id),
-            "block_id":       str(r.block_id),
+            "id": str(r.version_id),
+            "version_id": str(r.version_id),
+            "block_id": str(r.block_id),
             "version_number": r.version_number,
-            "is_active":      bool(r.is_active),
-            "doc_name":       r.name,
-            "block_index":    r.block_index,
-            "preview":        _preview(r.content),
+            "is_active": bool(r.is_active),
+            "doc_name": r.name,
+            "block_index": r.block_index,
+            "preview": _preview(r.content),
         } for r in rows]
         return {"level": level, "items": items, "total": len(items)}
 
 
-# ── Restore (reverse the is_deleted tag in Postgres + Qdrant) ─────────────────
-
-async def set_postgres_deleted(postgres: Any, level: str, item_id: uuid.UUID, is_deleted: bool) -> int:
-    """Flip one trash item's Postgres is_deleted flag; returns rows affected."""
+async def set_postgres_deleted(
+        postgres: Any, level: str, item_id: uuid.UUID, is_deleted: bool, tenant_id: str | None = None,
+) -> int:
     orm_by_level = {
         "document": (KBDataORM, KBDataORM.data_id),
-        "chunk":    (KBTextBlockORM, KBTextBlockORM.block_id),
-        "version":  (KBTextBlockVersionORM, KBTextBlockVersionORM.version_id),
+        "chunk": (KBTextBlockORM, KBTextBlockORM.block_id),
+        "version": (KBTextBlockVersionORM, KBTextBlockVersionORM.version_id),
     }
     orm, id_column = orm_by_level[level]
+    conditions = [id_column == item_id, orm.is_deleted.is_(not is_deleted)]
+    if tenant_id:
+        conditions.append(_tenant_condition(level, tenant_id))
     async with postgres.get_client() as session:
         try:
             result = await session.execute(
-                sa_update(orm)
-                .where(id_column == item_id, orm.is_deleted.is_(not is_deleted))
-                .values(is_deleted=is_deleted)
+                sa_update(orm).where(*conditions).values(is_deleted=is_deleted)
             )
             await session.commit()
         except Exception:
@@ -208,16 +207,11 @@ async def set_postgres_deleted(postgres: Any, level: str, item_id: uuid.UUID, is
 
 
 async def restore(postgres: Any, qdrant: Any, level: str, item_id: str, tenant_id: str | None) -> None:
-    """Un-delete a trash item in Postgres and Qdrant, or in neither.
-
-    Retrieval filters on Qdrant's is_deleted, so a Postgres-only restore would report
-    success for a document that stays invisible to search — re-trash it instead.
-    """
     if level not in LEVELS:
         raise HTTPException(status_code=422, detail=f"Unknown trash level: {level}")
     item_uuid = uuid.UUID(item_id)
 
-    if await set_postgres_deleted(postgres, level, item_uuid, False) == 0:
+    if await set_postgres_deleted(postgres, level, item_uuid, False, tenant_id) == 0:
         raise HTTPException(status_code=404, detail=f"{level} not in trash")
 
     try:
@@ -236,27 +230,17 @@ async def restore(postgres: Any, qdrant: Any, level: str, item_id: str, tenant_i
     log.info("trash restore %s %s", level, item_id)
 
 
-# ── Flush (permanent delete) ──────────────────────────────────────────────────
-# Per-document Mongo collections keyed by data_id (silver staging + the two
-# ingestion-progress streams). Cleared on a document flush so no orphan survives.
 _DOC_MONGO_COLLECTIONS = ("kb_silver_staging", "kb_ingestion_logs", "pipeline_events")
 
 
 async def flush(
-    postgres: Any, qdrant: Any, neo4j: Any, level: str, item_id: str, tenant_id: str | None,
-    minio: Any = None, mongo: Any = None,
+        postgres: Any, qdrant: Any, neo4j: Any, level: str, item_id: str, tenant_id: str | None,
+        minio: Any = None, mongo: Any = None,
 ) -> None:
     if level not in LEVELS:
         raise HTTPException(status_code=422, detail=f"Unknown trash level: {level}")
     iid = uuid.UUID(item_id)
 
-    # Existence guard. A parent flush cascades its children away — a document
-    # flush hard-deletes its KBTextBlock rows, which FK-cascade to versions and
-    # tables. If the user trashed a chunk/version AND its parent document, then
-    # flushed the parent first, the child row is already gone while still listed
-    # in the trash. Re-check the level's own table (document→KBData,
-    # chunk→KBTextBlock, version→KBTextBlockVersion) and no-op if it's missing,
-    # so a second flush can't fire Qdrant/Neo4j/Mongo side-effects on a phantom row.
     async with postgres.get_client() as session:
         if level == "document":
             still_exists = await session.scalar(
@@ -266,7 +250,7 @@ async def flush(
             still_exists = await session.scalar(
                 sa_select(KBTextBlockORM.block_id).where(KBTextBlockORM.block_id == iid)
             )
-        else:  # version
+        else:
             still_exists = await session.scalar(
                 sa_select(KBTextBlockVersionORM.version_id).where(KBTextBlockVersionORM.version_id == iid)
             )
@@ -276,27 +260,22 @@ async def flush(
             level, item_id,
         )
         return
+    if tenant_id:
+        await _assert_trash_item_owned_by_tenant(postgres, level, iid, tenant_id)
 
     if level == "document":
-        # Read the MinIO object key before the KBData row is gone.
         async with postgres.get_client() as session:
             object_key = await session.scalar(
                 sa_select(KBDataORM.path).where(KBDataORM.data_id == iid)
             )
 
-        # Qdrant and the graph go before the Postgres rows: each delete is idempotent,
-        # so a failure here aborts with the row intact and the retry re-converges.
-        # Dropping the rows first would strand whatever is left with nothing to drive
-        # a cleanup from.
         await _qdrant_delete_by_data_id(qdrant, tenant_id, item_id)
-        # Drop this document's graph edges; KB-shared entity nodes survive.
         async with neo4j.get_client().session() as session:
             await (await session.run(
                 "MATCH ()-[r:RELATES {data_id: $did}]-() DELETE r", did=item_id)).consume()
 
         async with postgres.get_client() as session:
             try:
-                # blocks cascade to versions+tables (FK ON DELETE CASCADE); owner FKs do not.
                 await session.execute(sa_delete(KBTextBlockORM).where(KBTextBlockORM.owner_id == iid))
                 await session.execute(sa_delete(KBTableORM).where(KBTableORM.owner_id == iid))
                 await session.execute(sa_delete(KBLifecycleHistoryORM).where(KBLifecycleHistoryORM.data_id == iid))
@@ -306,15 +285,12 @@ async def flush(
                 await session.rollback()
                 raise
 
-        # MinIO source object — best-effort; a missing/failed delete must not leave
-        # the document half-flushed (the DB rows are already gone).
         if minio is not None and object_key:
             try:
                 await minio.get_client().delete(MINIO_BUCKET, object_key)
             except Exception as exc:
                 log.warning("trash flush: minio delete failed key=%s: %s", object_key, exc)
 
-        # Per-document Mongo staging + progress streams (keyed by data_id).
         if mongo is not None:
             db = mongo.get_client()
             for coll in _DOC_MONGO_COLLECTIONS:
@@ -333,7 +309,7 @@ async def flush(
                 await session.rollback()
                 raise
 
-    else:  # version — Postgres only
+    else:
         async with postgres.get_client() as session:
             try:
                 await session.execute(

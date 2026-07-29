@@ -1,4 +1,3 @@
-"""Document schemas — domain (source-type variants), request, response."""
 from __future__ import annotations
 
 import datetime
@@ -9,8 +8,6 @@ from pydantic import BaseModel, Field, computed_field, model_validator
 from services.kb_backend.schemas.common import coerce_jsonb_dict
 from services.kb_backend.schemas.enums import SourceType
 
-
-# ── Domain: source-type metadata variants (discriminated union) ───────────────
 
 class Document(BaseModel):
     source_type: Literal[SourceType.DOC]
@@ -49,7 +46,6 @@ MetadataType = Annotated[
 
 
 class DocumentMetadata(BaseModel):
-    """Contents of the KBData.metadata JSONB column, with language pulled in."""
     doc_type: str | None = None
     language: str | None = None
     access_role: str | None = None
@@ -65,31 +61,23 @@ class DocumentMetadata(BaseModel):
     intents: list[str] = []
 
 
-# ── Request ───────────────────────────────────────────────────────────────────
-
 class UpdateDocumentRequest(BaseModel):
-    current_tier: Optional[str] = None  # bronze | silver | gold
+    current_tier: Optional[str] = None
     status: Optional[str] = None
     metadata: Optional[dict[str, Any]] = None
 
-
-# ── Response ──────────────────────────────────────────────────────────────────
 
 class DocResponse(BaseModel):
     data_id: str
     name: str
     source_type: str
     extension: str | None = None
-    current_tier: str                 # bronze | silver | gold
+    current_tier: str
     added_by: str | None = None
     added_on: str | None = None
     abstract: str | None = None
     metadata: DocumentMetadata
 
-    # mypy (without the pydantic plugin) doesn't model `@computed_field` stacked on
-    # `@property` — a known tooling limitation, not a type defect. Scoped ignore
-    # avoids enabling the global plugin (which would re-check every model on the
-    # already-clean strict surfaces).
     @computed_field  # type: ignore[prop-decorator]
     @property
     def status(self) -> str:

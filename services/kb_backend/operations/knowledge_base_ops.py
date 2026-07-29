@@ -1,9 +1,3 @@
-"""Business logic for KnowledgeBase CRUD.
-
-A knowledge base is the "kind" of knowledge a document belongs to (e.g. finance,
-legal, engineering). A tenant has many knowledge bases; documents reference one so
-retrieval can be scoped to it.
-"""
 from typing import Any
 import logging
 import uuid
@@ -21,7 +15,6 @@ from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm i
 )
 from services.kb_backend.schemas import to_string
 
-# The seeded default knowledge base — cannot be deleted.
 _DEFAULT_KB_ID = uuid.UUID("00000000-0000-0003-0000-000000000001")
 
 log = logging.getLogger(__name__)
@@ -46,7 +39,6 @@ async def list_knowledge_bases(postgres: Any, tenant_id: str | None) -> list[Any
         log.error("list_knowledge_bases: DB error: %s", resp.error)
         raise HTTPException(status_code=500, detail="Failed to load knowledge bases")
     rows = [r for r in (resp.data or []) if not r.get("is_deleted")]
-    # Newest first for a stable management view.
     rows.sort(key=lambda r: to_string(r.get("created_at", "")), reverse=True)
     return [_to_knowledge_base(r) for r in rows]
 
@@ -71,7 +63,6 @@ async def create_knowledge_base(
     if resp.code == 409:
         raise HTTPException(status_code=409, detail=f"Knowledge base '{name}' already exists")
     if resp.code != 200:
-        # Unique (tenant_id, name) violation surfaces here too.
         log.error("create_knowledge_base: DB error: %s", resp.error)
         raise HTTPException(status_code=400, detail="Failed to create knowledge base")
     return {"knowledge_base_id": resp.data.get("knowledge_base_id"), "name": name}
@@ -88,7 +79,6 @@ async def delete_knowledge_base(postgres: Any, knowledge_base_id: str, tenant_id
 
     tenant_uuid = uuid.UUID(tenant_id)
 
-    # Reassign all documents that belong to this group back to the default KB.
     async with postgres.get_client(tenant_id=tenant_id) as session:
         await session.execute(
             sa_update(KBDataORM)

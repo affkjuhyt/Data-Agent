@@ -1,4 +1,3 @@
-"""Business logic for the Fleet dashboard stats aggregation."""
 from typing import Any, cast
 import logging
 import uuid
@@ -16,9 +15,6 @@ log = logging.getLogger(__name__)
 
 
 async def _gold_source_counts(postgres: Any, tenant_id: str | None) -> dict[str, int]:
-    """Gold-tier doc count per source_type via a single GROUP BY — NOT by fetching
-    rows and counting in Python (that capped at the read limit and silently dropped
-    everything past it, undercounting documents and missing rarer types like web)."""
     counts: dict[str, int] = {}
     try:
         async with postgres.get_client() as session:
@@ -37,8 +33,6 @@ async def _gold_source_counts(postgres: Any, tenant_id: str | None) -> dict[str,
 
 
 async def _warehouse_count(postgres: Any) -> int:
-    """Connected warehouses live in KBWarehouse (which has no tenant_id column, so
-    this is a global non-deleted count — matches the prior behaviour)."""
     try:
         async with postgres.get_client() as session:
             return int(await session.scalar(
@@ -52,10 +46,6 @@ async def _warehouse_count(postgres: Any) -> int:
 
 
 async def _neo4j_counts(neo4j: Any, tenant_id: str | None) -> tuple[int, int]:
-    """LIVE node + relationship counts from Neo4j. The previous code summed the
-    cached total_node/total_edge columns on KBNeo4jConnection rows, which are
-    stamped once and never reconciled — they drifted to tiny stale values (e.g.
-    14/12) while the real graph held thousands."""
     nodes = rels = 0
     try:
         driver = neo4j.get_client()
@@ -88,11 +78,6 @@ async def get_fleet_stats(postgres: Any, qdrant: Any, neo4j: Any, tenant_id: str
 
     neo4j_nodes, neo4j_relationships = await _neo4j_counts(neo4j, tenant_id)
 
-    # Count batches that actually still have pending conflicts — derived from
-    # KBConflict rows, not the KBConflictBatch.status column. The batch row is
-    # stamped PENDING at creation and never reconciled, so duplicate-only or
-    # already-drained batches linger as PENDING and overcount. This mirrors the
-    # ConflictWorkspace "pending" tab, which groups pending conflicts by batch.
     unresolved_batches = 0
     try:
         cf_resp = await postgres.read(ReadJoinRequest(

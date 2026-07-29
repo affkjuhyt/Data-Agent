@@ -1,7 +1,3 @@
-"""
-IngestionPipeline — stateless orchestrator for bronze ingestion only.
-Silver and gold promotion run in the kb-ingestion-worker service.
-"""
 from __future__ import annotations
 
 from typing import Any
@@ -19,8 +15,6 @@ log = logging.getLogger(__name__)
 
 
 class IngestionPipeline:
-    """Stateless. All services injected at call-time."""
-
     async def bronze(
         self,
         req: BronzeUploadRequest,
@@ -49,7 +43,6 @@ class IngestionPipeline:
         req: WebBronzeRequest,
         postgres: PostgresClient,
     ) -> dict[str, Any]:
-        """Register a web portal as bronze — no file, just the live URL."""
         return await register_web_bronze(
             postgres=postgres,
             name=req.name,
