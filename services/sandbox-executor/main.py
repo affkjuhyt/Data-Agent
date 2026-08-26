@@ -15,10 +15,11 @@ agent's tool-call still waits for a final result, because
 code_interpreter.py polls to completion before returning (mục i, "đã
 chốt mô hình đồng bộ").
 """
-from typing import Any, TYPE_CHECKING
+from typing import Any
 from collections.abc import AsyncIterator
 import asyncio
 import datetime
+import functools
 import json
 import logging
 import os
@@ -29,10 +30,11 @@ from decimal import Decimal
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 import minio_store
 from security_visitor import validate_python_code, SecurityError
+from sql_guard import validate_select_only, SQLGuardError
 from docker_runner import (
     run_python_sandboxed,
     ExecutionTimeoutError,
@@ -125,8 +127,9 @@ class SnowflakeConnectionParams(BaseModel):
 
 
 class PostgresConnectionParams(BaseModel):
-    """Wire shape for SANDBOX_SQL_BACKEND=postgres — local/dev/CI stand-in
-    for Snowflake (docs/sandbox_report.md, postgres_readonly.py). No
+    """Wire shape for the postgres backend — originally the local/dev/CI
+    stand-in for Snowflake (docs/sandbox_report.md, postgres_readonly.py),
+    now also the target of every DB Connector node connection. No
     warehouse/role concepts; just enough to reach a Postgres database."""
 
     host: str
@@ -136,42 +139,90 @@ class PostgresConnectionParams(BaseModel):
     dbname: str
 
 
-# docs/sandbox_report.md follow-up: SANDBOX_SQL_BACKEND picks which SQL
-# engine /execute/sql talks to. Default stays "snowflake" (production,
-# unchanged); "postgres" is for developers/CI without a real Snowflake
-# account. The two backends are never active at once, so this is a single
-# module-level switch rather than a per-request field.
-_SQL_BACKEND = os.environ.get("SANDBOX_SQL_BACKEND", "snowflake")
-SQLBackendError: type[Exception]
-_ConnectionParams: type[BaseModel]
-if _SQL_BACKEND == "postgres":
-    from postgres_readonly import execute_readonly_query, PostgresQueryError
-    SQLBackendError = PostgresQueryError
-    _ConnectionParams = PostgresConnectionParams
-elif _SQL_BACKEND == "snowflake":
-    from snowflake_readonly import execute_readonly_query, SnowflakeQueryError
-    SQLBackendError = SnowflakeQueryError
-    _ConnectionParams = SnowflakeConnectionParams
-else:
-    raise ValueError(f"unknown SANDBOX_SQL_BACKEND: {_SQL_BACKEND!r}")
+class ClickHouseConnectionParams(BaseModel):
+    """Wire shape for the clickhouse backend (clickhouse_readonly.py) — the
+    other target type the DB Connector canvas node offers."""
 
-# mypy can't narrow which of the two branches above ran (it's a plain
-# runtime string compare, not one of the sys.version_info/sys.platform/
-# TYPE_CHECKING conditions it special-cases), so `_ConnectionParams` reads
-# as "type[BaseModel]" to it — not usable as a field annotation. Under
-# TYPE_CHECKING only, pin it to one concrete class so the checker sees a
-# normal, unambiguous type alias; at runtime TYPE_CHECKING is False and
-# `_ConnectionParamsT` is simply the class already selected above, so the
-# actual pydantic model field is unchanged either way.
-if TYPE_CHECKING:
-    _ConnectionParamsT = SnowflakeConnectionParams
-else:
-    _ConnectionParamsT = _ConnectionParams
+    host: str
+    port: int = 8123
+    user: str
+    password: str
+    database: str
+
+
+# SANDBOX_SQL_BACKEND is now only the DEFAULT for a request that doesn't name
+# its own backend — it is no longer a global mode. It used to be: the module
+# imported exactly one backend at startup and `connection` was pinned to that
+# one shape, which meant /execute/sql could serve Snowflake OR Postgres but
+# never both. That made it unusable for the DB Connector node, whose whole
+# point is several per-tenant connections of possibly different engines in one
+# agent turn — so that node bypassed this service entirely and ran LLM SQL
+# through raw asyncpg with no guard at all. Dispatching per request is what
+# lets that path come back behind the guard.
+#
+# Backward compatible: code_interpreter.py's execute_sql tool still posts a
+# bare Snowflake connection with no "type", and still resolves to snowflake
+# under the unchanged default.
+_SQL_BACKEND = os.environ.get("SANDBOX_SQL_BACKEND", "snowflake")
+
+_CONNECTION_PARAMS: dict[str, type[BaseModel]] = {
+    "postgres":   PostgresConnectionParams,
+    "snowflake":  SnowflakeConnectionParams,
+    "clickhouse": ClickHouseConnectionParams,
+}
+
+if _SQL_BACKEND not in _CONNECTION_PARAMS:
+    raise ValueError(
+        f"unknown SANDBOX_SQL_BACKEND: {_SQL_BACKEND!r} "
+        f"(expected one of {sorted(_CONNECTION_PARAMS)})"
+    )
+
+
+@functools.cache
+def _load_backend(backend: str) -> tuple[Any, type[Exception]]:
+    """Import a backend's driver on first use and return
+    (execute_readonly_query, its error type).
+
+    Lazy and cached rather than imported at module scope: each backend pulls a
+    different driver (snowflake-connector-python / asyncpg / clickhouse-connect)
+    and an image is not obliged to carry all three. A missing driver now fails
+    the one request that needs it, with the ImportError text intact, instead of
+    stopping the whole service from starting.
+    """
+    if backend == "postgres":
+        from postgres_readonly import PostgresQueryError, execute_readonly_query
+        return execute_readonly_query, PostgresQueryError
+    if backend == "snowflake":
+        from snowflake_readonly import SnowflakeQueryError, execute_readonly_query
+        return execute_readonly_query, SnowflakeQueryError
+    if backend == "clickhouse":
+        from clickhouse_readonly import ClickHouseQueryError, execute_readonly_query
+        return execute_readonly_query, ClickHouseQueryError
+    raise ValueError(f"unknown SQL backend: {backend!r}")
 
 
 class ExecuteSQLRequest(BaseModel):
     sql: str
-    connection: _ConnectionParamsT
+    connection: dict[str, Any]
+
+    @field_validator("connection")
+    @classmethod
+    def _validate_connection(cls, value: dict[str, Any]) -> dict[str, Any]:
+        """Resolve `type` (defaulting to SANDBOX_SQL_BACKEND) and validate the
+        rest of the payload against that backend's own params model, so a
+        malformed connection is still a 422 before anything is queued — the
+        property the pinned-model version had, kept while allowing several
+        shapes. The resolved backend is stored back under "type" so
+        _run_execute_sql doesn't have to re-derive it.
+        """
+        backend = str(value.get("type") or _SQL_BACKEND).lower()
+        params_model = _CONNECTION_PARAMS.get(backend)
+        if params_model is None:
+            raise ValueError(
+                f"unknown connection type {backend!r} (expected one of {sorted(_CONNECTION_PARAMS)})"
+            )
+        params = params_model.model_validate({k: v for k, v in value.items() if k != "type"})
+        return {"type": backend, **params.model_dump(by_alias=True)}
 
 
 # -- job executors (run inside JobQueue's worker loop, not on the request
@@ -230,12 +281,32 @@ async def _run_execute_python(payload: dict[str, Any]) -> dict[str, Any]:
 async def _run_execute_sql(payload: dict[str, Any]) -> dict[str, Any]:
     sql = payload["sql"]
     job_id = payload["job_id"]
+    connection = dict(payload["connection"])
+    backend = connection.pop("type")
+
+    # Guard here as well as inside each backend. The backends keep their own
+    # call (defence in depth, and they are importable/testable on their own),
+    # but running it at the dispatcher is what lets the response distinguish
+    # "the model wrote a non-read query" from "the query failed to run".
+    # Callers use that to decide whether a retry is even appropriate: a guard
+    # rejection is a policy event, not a transient fault, so re-prompting the
+    # model for it just burns tokens and blurs the audit signal.
+    try:
+        validate_select_only(sql)
+    except SQLGuardError as e:
+        logger.warning("execute_sql | rejected by sql_guard (backend=%s): %s", backend, e)
+        return {"success": False, "error": f"SQL rejected: {e}", "rejected_by_guard": True}
+
+    try:
+        execute_readonly_query, backend_error = _load_backend(backend)
+    except Exception as e:  # unknown backend slipped past validation, or driver import blew up
+        return {"success": False, "error": f"SQL backend {backend!r} unavailable: {e}"}
 
     minio_key = f"sql/{job_id}.sql"
     await asyncio.to_thread(minio_store.put_code, minio_key, sql)
     try:
-        result = await execute_readonly_query(sql, payload["connection"])
-    except SQLBackendError as e:
+        result = await execute_readonly_query(sql, connection)
+    except backend_error as e:
         return {"success": False, "error": str(e)}
     finally:
         await asyncio.to_thread(minio_store.delete_code, minio_key)
@@ -245,6 +316,7 @@ async def _run_execute_sql(payload: dict[str, Any]) -> dict[str, Any]:
         "rows": result["rows"],
         "row_count": result["row_count"],
         "is_truncated": result["is_truncated"],
+        "backend": backend,
     }
 
 
@@ -431,7 +503,9 @@ async def stream_execute_python(job_id: str) -> StreamingResponse:
 @app.post("/execute/sql")
 async def execute_sql(req: ExecuteSQLRequest) -> JSONResponse:
     assert sql_queue is not None  # set in lifespan() before requests are served
-    return _submit(sql_queue, {"sql": req.sql, "connection": req.connection.model_dump(by_alias=True)})
+    # req.connection is already the validated, backend-tagged dict the
+    # field_validator produced — no second model_dump needed.
+    return _submit(sql_queue, {"sql": req.sql, "connection": req.connection})
 
 
 @app.get("/execute/sql/{job_id}")

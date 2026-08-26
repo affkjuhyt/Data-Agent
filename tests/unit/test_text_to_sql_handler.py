@@ -1,10 +1,17 @@
 """_text_to_sql_handler (services/workflow-runtime/nodes/sandbox/tool_executor/handlers/data.py)
-— DB Connector's core logic: auto schema introspection (via information_schema,
-cached through Redis), 1 LLM call that both picks relevant DB(s) and writes
-SQL (or a simpler direct-SQL prompt when there's only 1 connection), and
-parallel execution across DBs via asyncio.gather. Split into 3 test classes
-matching the 3 functions: _get_schema_text, _run_one_query, _text_to_sql_handler
-(the top-level orchestrator, tested with the first two mocked out)."""
+— DB Connector's core logic: schema introspection (cached through Redis), 1 LLM
+call that both picks relevant DB(s) and writes SQL (or a simpler direct-SQL
+prompt when there's only 1 connection), and parallel execution across DBs via
+asyncio.gather.
+
+Every database round-trip goes through sandbox-executor's /execute/sql — this
+module opens no connection of its own. The tests stub `_sandbox_sql` (the single
+seam where that HTTP call happens) rather than a database driver; a test that
+needs to stub `asyncpg` here would mean the unguarded path had come back.
+
+Split into 4 test classes: _sandbox_connection (wire-shape mapping),
+_get_schema_text, _run_one_query, _text_to_sql_handler (the top-level
+orchestrator, tested with the first three mocked out)."""
 from __future__ import annotations
 
 import json
@@ -31,22 +38,6 @@ def _sys_path():
             sys.path.remove(p)
 
 
-def _stub_asyncpg(monkeypatch, connect_mock) -> None:
-    fake_module = types.ModuleType("asyncpg")
-    fake_module.connect = connect_mock
-    monkeypatch.setitem(sys.modules, "asyncpg", fake_module)
-
-
-def _fake_conn(fetch_return=None, fetch_side_effect=None) -> MagicMock:
-    conn = MagicMock()
-    conn.close = AsyncMock()
-    if fetch_side_effect is not None:
-        conn.fetch = AsyncMock(side_effect=fetch_side_effect)
-    else:
-        conn.fetch = AsyncMock(return_value=fetch_return or [])
-    return conn
-
-
 def _stub_redis_cache(monkeypatch, get_return=None) -> types.ModuleType:
     fake_module = types.ModuleType("redis_cache")
     fake_module.cache_get_schema = AsyncMock(return_value=get_return)
@@ -61,21 +52,60 @@ def _llm_text(content: str) -> MagicMock:
     return resp
 
 
+def _ok(rows):
+    """_sandbox_sql success tuple: (rows, error, rejected_by_guard)."""
+    return (rows, None, False)
+
+
+def _err(message, *, rejected_by_guard=False):
+    return (None, message, rejected_by_guard)
+
+
+class TestSandboxConnection:
+    """The canvas says `database`; sandbox-executor's Postgres params model says
+    `dbname`. Getting this mapping wrong is a 422 at submit time, so pin it."""
+
+    def test_postgres_maps_database_to_dbname_and_defaults_port(self):
+        import nodes.sandbox.tool_executor.handlers.data as data
+
+        out = data._sandbox_connection({"host": "h", "database": "d", "user": "u", "password": "p"})
+
+        assert out == {"type": "postgres", "host": "h", "user": "u", "password": "p", "port": 5432, "dbname": "d"}
+
+    def test_clickhouse_keeps_database_and_defaults_to_8123(self):
+        import nodes.sandbox.tool_executor.handlers.data as data
+
+        out = data._sandbox_connection({"type": "clickhouse", "host": "h", "database": "d", "user": "u", "password": "p"})
+
+        assert out == {"type": "clickhouse", "host": "h", "user": "u", "password": "p", "port": 8123, "database": "d"}
+
+    def test_explicit_port_is_preserved(self):
+        import nodes.sandbox.tool_executor.handlers.data as data
+
+        assert data._sandbox_connection({"host": "h", "database": "d", "port": 6543})["port"] == 6543
+
+    def test_missing_password_becomes_empty_string_not_none(self):
+        """sandbox-executor's params model types password as str — None is a 422."""
+        import nodes.sandbox.tool_executor.handlers.data as data
+
+        assert data._sandbox_connection({"host": "h", "database": "d", "password": None})["password"] == ""
+
+
 class TestGetSchemaText:
-    async def test_cache_hit_skips_db_introspection(self, monkeypatch):
+    async def test_cache_hit_skips_introspection_entirely(self, monkeypatch):
         import nodes.sandbox.tool_executor.handlers.data as data
         _stub_redis_cache(monkeypatch, get_return="orders(id int)")
-        connect_mock = AsyncMock()
-        _stub_asyncpg(monkeypatch, connect_mock)
+        sandbox = AsyncMock()
+        monkeypatch.setattr(data, "_sandbox_sql", sandbox)
 
         result = await data._get_schema_text(
             "tenant-1", {"host": "h", "port": 5432, "database": "d", "user": "u", "password": "p"},
         )
 
         assert result == "orders(id int)"
-        connect_mock.assert_not_called()
+        sandbox.assert_not_awaited()
 
-    async def test_cache_miss_introspects_and_caches(self, monkeypatch):
+    async def test_cache_miss_introspects_via_sandbox_and_caches(self, monkeypatch):
         import nodes.sandbox.tool_executor.handlers.data as data
         fake_redis = _stub_redis_cache(monkeypatch, get_return=None)
         rows = [
@@ -83,32 +113,55 @@ class TestGetSchemaText:
             {"table_name": "orders", "column_name": "total", "data_type": "numeric"},
             {"table_name": "customers", "column_name": "id", "data_type": "integer"},
         ]
-        conn = _fake_conn(fetch_return=rows)
-        _stub_asyncpg(monkeypatch, AsyncMock(return_value=conn))
+        sandbox = AsyncMock(return_value=_ok(rows))
+        monkeypatch.setattr(data, "_sandbox_sql", sandbox)
 
         result = await data._get_schema_text(
             "tenant-1", {"host": "h", "port": 5432, "database": "d", "user": "u", "password": "p"},
         )
 
         assert result == "orders(id integer, total numeric)\ncustomers(id integer)"
-        conn.close.assert_awaited_once()
         fake_redis.cache_set_schema.assert_awaited_once_with("tenant-1", "h", 5432, "d", result)
 
-    async def test_introspection_failure_returns_empty_string_not_raise(self, monkeypatch):
+    async def test_postgres_introspection_uses_public_schema_predicate(self, monkeypatch):
         import nodes.sandbox.tool_executor.handlers.data as data
         _stub_redis_cache(monkeypatch, get_return=None)
-        _stub_asyncpg(monkeypatch, AsyncMock(side_effect=RuntimeError("connection refused")))
+        sandbox = AsyncMock(return_value=_ok([]))
+        monkeypatch.setattr(data, "_sandbox_sql", sandbox)
+
+        await data._get_schema_text("t", {"host": "h", "database": "d"})
+
+        sql = sandbox.await_args.args[0]
+        assert "information_schema.columns" in sql
+        assert "table_schema = 'public'" in sql
+
+    async def test_clickhouse_introspection_uses_currentdatabase_predicate(self, monkeypatch):
+        import nodes.sandbox.tool_executor.handlers.data as data
+        _stub_redis_cache(monkeypatch, get_return=None)
+        sandbox = AsyncMock(return_value=_ok([]))
+        monkeypatch.setattr(data, "_sandbox_sql", sandbox)
+
+        await data._get_schema_text("t", {"type": "clickhouse", "host": "h", "database": "d"})
+
+        assert "currentDatabase()" in sandbox.await_args.args[0]
+
+    async def test_introspection_failure_returns_empty_string_not_raise(self, monkeypatch):
+        """Degrades to an empty schema block rather than failing the turn — the
+        LLM then works from the connection note alone."""
+        import nodes.sandbox.tool_executor.handlers.data as data
+        fake_redis = _stub_redis_cache(monkeypatch, get_return=None)
+        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=_err("sandbox-executor unreachable: boom")))
 
         result = await data._get_schema_text("tenant-1", {"host": "h", "database": "d"})
 
         assert result == ""
+        fake_redis.cache_set_schema.assert_not_awaited()
 
 
 class TestRunOneQuery:
-    async def test_success_on_first_attempt(self, monkeypatch):
+    async def test_success_on_first_attempt_records_sandbox_provenance(self, monkeypatch):
         import nodes.sandbox.tool_executor.handlers.data as data
-        conn = _fake_conn(fetch_return=[{"total": 100}])
-        _stub_asyncpg(monkeypatch, AsyncMock(return_value=conn))
+        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=_ok([{"total": 100}])))
 
         result, error = await data._run_one_query(
             "Sales", "SELECT SUM(total) FROM orders", {"host": "h", "database": "d"},
@@ -118,12 +171,12 @@ class TestRunOneQuery:
         assert error is None
         assert result["metadata"]["db_name"] == "Sales"
         assert result["metadata"]["row_count"] == 1
-        conn.close.assert_awaited_once()
+        assert result["metadata"]["executed_via"] == "sandbox-executor"
 
     async def test_retries_and_succeeds_on_second_attempt(self, monkeypatch):
         import nodes.sandbox.tool_executor.handlers.data as data
-        conn = _fake_conn(fetch_side_effect=[RuntimeError("syntax error"), [{"total": 1}]])
-        _stub_asyncpg(monkeypatch, AsyncMock(return_value=conn))
+        sandbox = AsyncMock(side_effect=[_err("query execution failed: syntax error"), _ok([{"total": 1}])])
+        monkeypatch.setattr(data, "_sandbox_sql", sandbox)
         monkeypatch.setattr(data.litellm, "acompletion", AsyncMock(
             return_value=_llm_text("SELECT SUM(total) FROM orders_fixed"),
         ))
@@ -134,12 +187,14 @@ class TestRunOneQuery:
 
         assert error is None
         assert result is not None
-        assert conn.fetch.await_count == 2
+        assert sandbox.await_count == 2
+        # The regenerated SQL is what actually ran on the retry.
+        assert sandbox.await_args.args[0] == "SELECT SUM(total) FROM orders_fixed"
 
     async def test_exhausts_retries_and_returns_error_with_db_name(self, monkeypatch):
         import nodes.sandbox.tool_executor.handlers.data as data
-        conn = _fake_conn(fetch_side_effect=RuntimeError("always fails"))
-        _stub_asyncpg(monkeypatch, AsyncMock(return_value=conn))
+        sandbox = AsyncMock(return_value=_err("query execution failed: always fails"))
+        monkeypatch.setattr(data, "_sandbox_sql", sandbox)
         monkeypatch.setattr(data.litellm, "acompletion", AsyncMock(return_value=_llm_text("SELECT 1")))
 
         result, error = await data._run_one_query(
@@ -149,7 +204,46 @@ class TestRunOneQuery:
         assert result is None
         assert error["db_name"] == "Sales"
         assert "always fails" in error["error"]
-        assert conn.fetch.await_count == 3
+        assert sandbox.await_count == 3
+
+    async def test_guard_rejection_is_not_retried(self, monkeypatch):
+        """A non-read query is a policy event, not a transient fault: re-prompting
+        cannot legitimately fix it, so it must cost exactly one round-trip and no
+        LLM call."""
+        import nodes.sandbox.tool_executor.handlers.data as data
+        sandbox = AsyncMock(return_value=_err(
+            "SQL rejected: only SELECT (or WITH ... SELECT) statements are allowed, got: DROP",
+            rejected_by_guard=True,
+        ))
+        monkeypatch.setattr(data, "_sandbox_sql", sandbox)
+        completion = AsyncMock()
+        monkeypatch.setattr(data.litellm, "acompletion", completion)
+
+        result, error = await data._run_one_query(
+            "Sales", "DROP TABLE orders", {"host": "h", "database": "d"}, "q", "schema", "model",
+        )
+
+        assert result is None
+        assert sandbox.await_count == 1
+        completion.assert_not_awaited()
+        assert error["rejected_by_guard"] is True
+        assert error["db_name"] == "Sales"
+        assert "rejected by guard" in error["error"]
+
+    async def test_empty_result_set_is_success_not_error(self, monkeypatch):
+        """0 rows means the query ran — judge_phase1 deliberately leaves the
+        "ran fine but returned nothing" case to the LLM judge (graph.py:93-100),
+        so this must not be reported as a tool error."""
+        import nodes.sandbox.tool_executor.handlers.data as data
+        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=_ok([])))
+
+        result, error = await data._run_one_query(
+            "Sales", "SELECT 1 WHERE false", {"host": "h", "database": "d"}, "q", "schema", "model",
+        )
+
+        assert error is None
+        assert result["metadata"]["row_count"] == 0
+        assert result["content"] == "[]"
 
 
 class TestTextToSqlHandler:
@@ -259,3 +353,89 @@ class TestTextToSqlHandler:
         assert results[0]["metadata"]["db_name"] == "Sales"
         assert len(errors) == 1
         assert errors[0]["db_name"] == "Warehouse"
+
+
+class TestNoDirectDatabaseAccess:
+    """Regression guard for the defect this change fixes. If someone reopens a
+    direct driver connection in this module, the SQL stops passing through
+    sql_guard, the read-only role and the row cap — and every test above would
+    still pass, because they stub the seam one level up."""
+
+    def test_module_does_not_import_a_database_driver(self):
+        """Checks real import statements via the AST, not raw text — the module
+        docstring names asyncpg when explaining why it no longer uses it, and a
+        substring scan would fail on that prose while missing a driver imported
+        under an alias."""
+        import ast
+        import inspect
+
+        import nodes.sandbox.tool_executor.handlers.data as data
+
+        drivers = {"asyncpg", "clickhouse_connect", "clickhouse_connector", "psycopg", "psycopg2", "sqlalchemy"}
+        imported: set[str] = set()
+        for node in ast.walk(ast.parse(inspect.getsource(data))):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported.add(node.module.split(".")[0])
+                # `from libs.database_connector import clickhouse_connector`
+                imported.update(alias.name.split(".")[0] for alias in node.names)
+
+        offenders = imported & drivers
+        assert not offenders, (
+            f"handlers/data.py imports {sorted(offenders)} — agent-authored SQL must reach the "
+            "database only through sandbox-executor's /execute/sql, where sql_guard, the "
+            "read-only role and the row cap apply"
+        )
+
+    async def test_sandbox_sql_posts_to_execute_sql_with_tagged_connection(self, monkeypatch):
+        """The one place the HTTP call is made: assert the path and that the
+        backend type travels with the connection, so sandbox-executor dispatches
+        to the right engine instead of falling back to its default."""
+        import nodes.sandbox.tool_executor.handlers.data as data
+
+        captured = {}
+
+        async def fake_submit(http, path, body, overall_timeout_s):
+            captured["path"] = path
+            captured["body"] = body
+            return {"success": True, "rows": [{"n": 1}], "row_count": 1, "is_truncated": False}
+
+        monkeypatch.setattr(data, "submit_and_poll", fake_submit)
+
+        rows, error, rejected = await data._sandbox_sql(
+            "SELECT 1", {"type": "clickhouse", "host": "h", "database": "d", "user": "u", "password": "p"},
+        )
+
+        assert (rows, error, rejected) == ([{"n": 1}], None, False)
+        assert captured["path"] == "/execute/sql"
+        assert captured["body"]["sql"] == "SELECT 1"
+        assert captured["body"]["connection"]["type"] == "clickhouse"
+
+    async def test_sandbox_sql_propagates_guard_rejection_flag(self, monkeypatch):
+        import nodes.sandbox.tool_executor.handlers.data as data
+
+        async def fake_submit(http, path, body, overall_timeout_s):
+            return {"success": False, "error": "SQL rejected: DDL token not allowed: DROP", "rejected_by_guard": True}
+
+        monkeypatch.setattr(data, "submit_and_poll", fake_submit)
+
+        rows, error, rejected = await data._sandbox_sql("DROP TABLE t", {"host": "h", "database": "d"})
+
+        assert rows is None
+        assert rejected is True
+        assert "DDL token not allowed" in error
+
+    async def test_sandbox_sql_reports_overload_without_marking_it_a_guard_rejection(self, monkeypatch):
+        import nodes.sandbox.tool_executor.handlers.data as data
+
+        async def fake_submit(http, path, body, overall_timeout_s):
+            return {"error": "queue full", "_http_status": 503}
+
+        monkeypatch.setattr(data, "submit_and_poll", fake_submit)
+
+        rows, error, rejected = await data._sandbox_sql("SELECT 1", {"host": "h", "database": "d"})
+
+        assert rows is None
+        assert rejected is False
+        assert "overloaded" in error

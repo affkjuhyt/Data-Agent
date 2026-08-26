@@ -4,8 +4,10 @@ import json
 import logging
 import uuid
 
+import httpx
 import litellm
 
+from nodes.sandbox.tool_executor._sandbox_http import POLL_OVERHEAD_S, submit_and_poll
 from nodes.sandbox.tool_executor._utils import _safe_path, _strip_code_block, _get_query
 
 logger = logging.getLogger(__name__)
@@ -13,14 +15,93 @@ logger = logging.getLogger(__name__)
 _LITELLM_BASE = __import__("os").environ.get("LITELLM_BASE_URL", "http://localhost:4000")
 _LITELLM_KEY  = __import__("os").environ.get("LITELLM_API_KEY",  "sk-dev")
 
+# Wall-clock budget for one query at sandbox-executor, on top of which
+# submit_and_poll adds POLL_OVERHEAD_S for queue wait. Schema introspection
+# gets its own, shorter budget: it is a single information_schema scan, and a
+# slow one should not hold up the whole turn.
+_QUERY_TIMEOUT_S = 60
+_SCHEMA_TIMEOUT_S = 20
+
+# information_schema is spelled the same either side, only the "current
+# database" predicate differs. Both are plain SELECTs, so both pass sql_guard
+# on the way through sandbox-executor like any agent-written query.
+_COLUMNS_SQL = {
+    "postgres": (
+        "SELECT table_name, column_name, data_type FROM information_schema.columns "
+        "WHERE table_schema = 'public' ORDER BY table_name, ordinal_position"
+    ),
+    "clickhouse": (
+        "SELECT table_name, column_name, data_type FROM information_schema.columns "
+        "WHERE table_schema = currentDatabase() ORDER BY table_name, ordinal_position"
+    ),
+}
+
+
+def _sandbox_connection(conn_cfg: dict[str, Any]) -> dict[str, Any]:
+    """Map a DB Connector canvas connection onto sandbox-executor's wire shape.
+
+    The two disagree on one key: the canvas (and every other caller here) says
+    `database`, while sandbox-executor's Postgres params model says `dbname`.
+    ClickHouse keeps `database`. `type` tells sandbox-executor which backend to
+    dispatch to for this request.
+    """
+    db_type = (conn_cfg.get("type") or "postgres").lower()
+    common = {
+        "type":     db_type,
+        "host":     conn_cfg.get("host", ""),
+        "user":     conn_cfg.get("user", ""),
+        "password": conn_cfg.get("password", "") or "",
+    }
+    if db_type == "clickhouse":
+        return {**common, "port": int(conn_cfg.get("port") or 8123), "database": conn_cfg.get("database", "")}
+    return {**common, "port": int(conn_cfg.get("port") or 5432), "dbname": conn_cfg.get("database", "")}
+
+
+async def _sandbox_sql(
+    sql: str, conn_cfg: dict[str, Any], timeout_s: int = _QUERY_TIMEOUT_S,
+) -> tuple[list[dict[str, Any]] | None, str | None, bool]:
+    """Run one SQL through sandbox-executor. Returns (rows, error, rejected_by_guard).
+
+    This is the ONLY way this module reaches a database. It used to open an
+    asyncpg connection here and hand the LLM's SQL straight to conn.fetch() —
+    no parse, no SELECT-only check, no row cap, no statement timeout — while a
+    tested guard (services/sandbox-executor/sql_guard.py) sat unused one service
+    away. Everything now goes through that guard, the read-only DB role behind
+    it, and its MAX_ROWS wrap.
+
+    `rejected_by_guard` is surfaced separately from ordinary failures because
+    the two deserve opposite handling: a guard rejection means the model wrote a
+    non-read query, which re-prompting will not legitimately fix, so callers
+    must not spend a retry on it.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10) as http:
+            result = await submit_and_poll(
+                http, "/execute/sql",
+                {"sql": sql, "connection": _sandbox_connection(conn_cfg)},
+                overall_timeout_s=timeout_s + POLL_OVERHEAD_S,
+            )
+    except Exception as e:
+        return None, f"sandbox-executor unreachable: {e}", False
+
+    if result.get("_http_status") == 503:
+        return None, f"sandbox-executor is overloaded, try again shortly: {result.get('error', 'rejected')}", False
+
+    if not result.get("success"):
+        return None, str(result.get("error", "query failed")), bool(result.get("rejected_by_guard"))
+
+    rows: list[dict[str, Any]] = result.get("rows", [])
+    if result.get("is_truncated"):
+        logger.warning("text_to_sql | result truncated at sandbox-executor row cap")
+    return rows, None, False
+
 
 async def _get_schema_text(tenant_id: str, conn_cfg: dict[str, Any]) -> str:
-    """Tự đọc information_schema.columns của Postgres — thay hoàn toàn cho việc
-    gõ tay schema_hint hay mượn hệ Schema Catalog (hệ đó viết cứng cho
-    Snowflake, không hỗ trợ Postgres/DB Connector — xem plan). Cache qua Redis
-    (không phải bộ nhớ tiến trình — workflow-runtime chạy nhiều replica) khoá
-    theo (tenant_id, host, port, database), KHÔNG theo tên kết nối do người
-    dùng tự đặt hay user/password (không ảnh hưởng cấu trúc bảng)."""
+    """Đọc information_schema.columns qua sandbox-executor — không tự mở kết nối
+    ở tiến trình này nữa. Cache qua Redis (không phải bộ nhớ tiến trình —
+    workflow-runtime chạy nhiều replica) khoá theo (tenant_id, host, port,
+    database), KHÔNG theo tên kết nối do người dùng tự đặt hay user/password
+    (không ảnh hưởng cấu trúc bảng)."""
     from redis_cache import cache_get_schema, cache_set_schema
 
     host, port, database = conn_cfg.get("host", ""), conn_cfg.get("port", 5432), conn_cfg.get("database", "")
@@ -30,29 +111,18 @@ async def _get_schema_text(tenant_id: str, conn_cfg: dict[str, Any]) -> str:
         return cached
 
     db_type = (conn_cfg.get("type") or "postgres").lower()
-    try:
-        if db_type == "clickhouse":
-            from libs.database_connector import clickhouse_connector as _ch  # noqa: PLC0415
-            rows = await _ch.columns(conn_cfg)  # [{table_name, column_name, data_type}, ...]
-        else:
-            import asyncpg  # noqa: PLC0415
-            conn = await asyncpg.connect(
-                host=host, port=port, user=conn_cfg.get("user", ""),
-                password=conn_cfg.get("password", ""), database=database,
-            )
-            try:
-                rows = await conn.fetch(
-                    "SELECT table_name, column_name, data_type FROM information_schema.columns "
-                    "WHERE table_schema = 'public' ORDER BY table_name, ordinal_position"
-                )
-            finally:
-                await conn.close()
-    except Exception as e:
-        logger.warning("text_to_sql | schema introspection failed type=%s host=%s db=%s: %s", db_type, host, database, e)
+    rows, error, _ = await _sandbox_sql(
+        _COLUMNS_SQL.get(db_type, _COLUMNS_SQL["postgres"]), conn_cfg, timeout_s=_SCHEMA_TIMEOUT_S,
+    )
+    if error is not None:
+        # Same contract as before: introspection failure degrades to an empty
+        # schema block (the LLM then works from the connection note alone)
+        # rather than failing the whole turn.
+        logger.warning("text_to_sql | schema introspection failed type=%s host=%s db=%s: %s", db_type, host, database, error)
         return ""
 
     tables: dict[str, list[str]] = {}
-    for r in rows:
+    for r in rows or []:
         tables.setdefault(r["table_name"], []).append(f"{r['column_name']} {r['data_type']}")
     schema_text = "\n".join(f"{t}({', '.join(cols)})" for t, cols in tables.items())
 
@@ -63,55 +133,60 @@ async def _get_schema_text(tenant_id: str, conn_cfg: dict[str, Any]) -> str:
 async def _run_one_query(
     name: str, sql: str, conn_cfg: dict[str, Any], query: str, schema_text: str, sql_mdl: str,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    """Chạy 1 câu SQL vào đúng 1 DB, tự sửa lỗi tối đa 3 lần (fold lỗi vào
-    prompt sinh lại SQL, y hệt logic cũ) — độc lập với các DB khác đang chạy
-    song song (asyncio.gather ở _text_to_sql_handler), lỗi ở đây không ảnh
-    hưởng query của DB khác."""
+    """Chạy 1 câu SQL vào đúng 1 DB qua sandbox-executor, tự sửa lỗi kỹ thuật
+    tối đa 3 lần (fold lỗi vào prompt sinh lại SQL) — độc lập với các DB khác
+    đang chạy song song (asyncio.gather ở _text_to_sql_handler), lỗi ở đây không
+    ảnh hưởng query của DB khác.
+
+    KHÔNG retry khi sql_guard từ chối: đó là câu SQL không phải read-only (DDL/
+    DML/nhiều câu lệnh/comment), tức lỗi chính sách chứ không phải lỗi tạm thời.
+    Sinh lại chỉ tốn token và làm nhiễu tín hiệu audit — trả lỗi ngay, có cờ
+    riêng để trace/alert đếm được."""
     current_sql = sql
     last_err: str | None = None
     db_type = (conn_cfg.get("type") or "postgres").lower()
 
     for attempt in range(3):
-        try:
-            if db_type == "clickhouse":
-                from libs.database_connector import clickhouse_connector as _ch  # noqa: PLC0415
-                data = await _ch.query(conn_cfg, current_sql)
-            else:
-                import asyncpg  # noqa: PLC0415
-                conn = await asyncpg.connect(
-                    host=conn_cfg.get("host", ""), port=conn_cfg.get("port", 5432),
-                    user=conn_cfg.get("user", ""), password=conn_cfg.get("password", ""),
-                    database=conn_cfg.get("database", ""),
-                )
-                try:
-                    rows = await conn.fetch(current_sql)
-                    data = [dict(r) for r in rows]
-                finally:
-                    await conn.close()
+        rows, error, rejected_by_guard = await _sandbox_sql(current_sql, conn_cfg)
+
+        if error is None:
+            data = rows or []
             logger.info("text_to_sql | db=%s type=%s attempt=%d → %d rows", name, db_type, attempt + 1, len(data))
             return {
                 "id":       f"sql_{uuid.uuid4().hex[:8]}",
                 "content":  json.dumps(data, ensure_ascii=False, default=str),
                 "source":   "tool/sql",
-                "metadata": {"sql": current_sql, "row_count": len(data), "db_name": name, "db_type": db_type},
+                "metadata": {
+                    "sql": current_sql, "row_count": len(data), "db_name": name,
+                    "db_type": db_type, "executed_via": "sandbox-executor",
+                },
             }, None
-        except Exception as e:
-            last_err = str(e)
-            logger.warning("text_to_sql | db=%s attempt=%d failed: %s", name, attempt + 1, e)
-            if attempt >= 2:
-                break
-            try:
-                resp = await litellm.acompletion(
-                    model=sql_mdl, api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
-                    messages=[{"role": "user", "content":
-                        f"Chuyển câu hỏi sau thành SQL.\n\nSchema:\n{schema_text}\n\n"
-                        f"Chỉ trả SQL thuần, không giải thích.\n\nSQL trước lỗi: {last_err}\nSửa lại.\n\nCâu hỏi: {query}"
-                    }],
-                    temperature=0, max_tokens=512, timeout=15,
-                )
-                current_sql = _strip_code_block(resp.choices[0].message.content or "")
-            except Exception:
-                break
+
+        last_err = error
+
+        if rejected_by_guard:
+            logger.warning("text_to_sql | db=%s SQL rejected by sql_guard, not retrying: %s", name, error)
+            return None, {
+                "tool_name": "text_to_sql", "db_name": name,
+                "error": f"SQL rejected by guard: {error}",
+                "sql": current_sql, "rejected_by_guard": True,
+            }
+
+        logger.warning("text_to_sql | db=%s attempt=%d failed: %s", name, attempt + 1, error)
+        if attempt >= 2:
+            break
+        try:
+            resp = await litellm.acompletion(
+                model=sql_mdl, api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
+                messages=[{"role": "user", "content":
+                    f"Chuyển câu hỏi sau thành SQL.\n\nSchema:\n{schema_text}\n\n"
+                    f"Chỉ trả SQL thuần, không giải thích.\n\nSQL trước lỗi: {last_err}\nSửa lại.\n\nCâu hỏi: {query}"
+                }],
+                temperature=0, max_tokens=512, timeout=15,
+            )
+            current_sql = _strip_code_block(resp.choices[0].message.content or "")
+        except Exception:
+            break
 
     return None, {"tool_name": "text_to_sql", "db_name": name, "error": f"failed after 3 attempts: {last_err}", "sql": current_sql}
 

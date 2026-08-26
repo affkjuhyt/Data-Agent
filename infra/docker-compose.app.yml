@@ -73,12 +73,19 @@ services:
       # ~2.5x exec latency, but only applies once SANDBOX_RUNTIME=runsc is
       # actually enabled below. Left at the ${..:-3} default until then.
       SANDBOX_POOL_SIZE: ${SANDBOX_POOL_SIZE:-3}
-      # docs/sandbox_report.md follow-up: which engine /execute/sql talks
-      # to. Default "snowflake" is production behavior, unchanged. Set to
-      # "postgres" for local dev/CI without a real Snowflake account — the
-      # request body's `connection` then takes {host, port, user, password,
-      # dbname} instead, e.g. the `sandbox_reader` role against the
-      # `sandbox_dev` database on the shared `postgres` service
+      # DEFAULT engine for an /execute/sql request that doesn't name its own
+      # `connection.type` — no longer a global mode. Each request may now
+      # select postgres | snowflake | clickhouse, which is what lets the DB
+      # Connector node's per-tenant connections run here (behind sql_guard +
+      # the read-only role) instead of workflow-runtime opening its own
+      # unguarded asyncpg connection.
+      #
+      # Default "snowflake" is production behavior, unchanged: the execute_sql
+      # tool posts a bare Snowflake connection and still resolves to it. Set to
+      # "postgres" for local dev/CI without a real Snowflake account — an
+      # untyped `connection` then takes {host, port, user, password, dbname}
+      # instead, e.g. the `sandbox_reader` role against the `sandbox_dev`
+      # database on the shared `postgres` service
       # (infra/sql/create-extra-dbs.sql; only auto-created on a fresh
       # postgres_data volume).
       SANDBOX_SQL_BACKEND: ${SANDBOX_SQL_BACKEND:-snowflake}
