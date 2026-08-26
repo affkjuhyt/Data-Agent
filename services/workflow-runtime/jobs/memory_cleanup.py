@@ -8,14 +8,15 @@ import asyncio
 import logging
 import os
 import sys
+from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from dotenv import load_dotenv, find_dotenv
 from sqlalchemy import delete, func, select, text
 
-from services.database_connector.postgres_connector import client
-from basemodel.services_databaseconnector.postgres_orm.workflow_orm import AgentMemoriesORM, EpisodicMemoryORM
+from libs.database_connector.postgres_connector import client
+from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import AgentMemoriesORM, EpisodicMemoryORM
 
 load_dotenv(find_dotenv())
 
@@ -32,13 +33,13 @@ BATCH_SIZE = int(os.environ.get("MEMORY_CLEANUP_BATCH_SIZE", "1000"))
 DEFAULT_EPISODIC_MAX_PER_USER = 500
 
 
-async def _delete_in_batches(model, where_clause, label: str) -> int:
+async def _delete_in_batches(model: Any, where_clause: Any, label: str) -> int:
     total = 0
     while True:
         async with client.get_client() as session:
             subq = select(model.id).where(where_clause).limit(BATCH_SIZE)
             result = await session.execute(delete(model).where(model.id.in_(subq)))
-            deleted = result.rowcount
+            deleted: int = result.rowcount
             await session.commit()
         total += deleted
         logger.info("%s — batch deleted %d rows (total so far: %d)", label, deleted, total)
@@ -47,7 +48,7 @@ async def _delete_in_batches(model, where_clause, label: str) -> int:
     return total
 
 
-async def _cleanup_agent_memories():
+async def _cleanup_agent_memories() -> None:
     async with client.get_client() as session:
         counts = await session.execute(
             select(AgentMemoriesORM.tenant_id, func.count().label("cnt"))
@@ -75,7 +76,7 @@ async def _cleanup_agent_memories():
     logger.info("AgentMemories expired cleanup complete — total: %d", expired)
 
 
-async def _cleanup_episodic_memory():
+async def _cleanup_episodic_memory() -> None:
     """doc §3.3 — retention via MemoryRetentionConfig (expires_at set by the
     memory-consumer at write time); cap eviction archives the lowest-importance
     rows per (tenant, agent, user_ref, domain) when over max_records_per_user."""
@@ -119,7 +120,7 @@ async def _cleanup_episodic_memory():
         logger.info("EpisodicMemory cap eviction — archived %d rows across %d over-cap groups", archived_total, len(groups))
 
 
-async def run():
+async def run() -> None:
     url = os.environ["DATABASE_URL"]
     client.set_url(url)
     await client.open()

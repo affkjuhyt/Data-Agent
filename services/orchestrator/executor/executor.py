@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 import asyncio
 import logging
 import time
@@ -31,7 +32,7 @@ async def _run_task(
     tenant_id: str = "",
     orchestrated: bool = True,
     executor_start: float = 0.0,
-    guardrail_cfg: dict | None = None,
+    guardrail_cfg: dict[str, Any] | None = None,
 ) -> TaskNode:
     node.start_ms = round((time.monotonic() - executor_start) * 1000)
     t0 = time.monotonic()
@@ -49,7 +50,7 @@ async def _run_task(
 
     with ctx as span:
         try:
-            output, conv_id = await call_agent(
+            output, conv_id, citations = await call_agent(
                 agent_id=node.agent_id,
                 prompt=prompt,
                 user_id=user_id,
@@ -60,6 +61,7 @@ async def _run_task(
             )
             node.output = output
             node.conversation_id = conv_id
+            node.citations = citations
             node.success = True
         except Exception as e:
             logger.warning("task failed | '%s': %s", node.title, e)
@@ -84,7 +86,7 @@ async def _execute_target(
     agent_name_map: dict[str, str] | None = None,
     orchestrated: bool = True,
     executor_start: float = 0.0,
-    guardrail_cfg: dict | None = None,
+    guardrail_cfg: dict[str, Any] | None = None,
 ) -> tuple[TargetResult, bool, str]:
     """
     Chạy tất cả tasks trong 1 target theo rounds (song song trong round, tuần tự giữa rounds).
@@ -140,6 +142,7 @@ async def _execute_target(
                     success=node.success,
                     error=node.output if not node.success else None,
                     conversation_id=node.conversation_id,
+                    citations=node.citations,
                     start_ms=node.start_ms,
                     latency_ms=node.latency_ms,
                 ))
@@ -168,10 +171,10 @@ async def execute_plan(
     user_id: str = "orchestrator",
     original_query: str = "",
     tenant_id: str = "",
-    agents: list[dict] | None = None,
+    agents: list[dict[str, Any]] | None = None,
     skip_node_ids: set[str] | None = None,
     orchestrated: bool = True,
-    guardrail_cfg: dict | None = None,
+    guardrail_cfg: dict[str, Any] | None = None,
 ) -> ExecutionResult:
     """
     Vòng lặp chính: targets tuần tự, tasks trong mỗi target song song theo depend_on.

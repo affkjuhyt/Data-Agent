@@ -6,6 +6,7 @@ and inserts rows into the audit_logs partitioned table.
 
 Delivery: at-least-once. Offset committed after successful PostgreSQL COMMIT.
 """
+from typing import Any
 import json
 import logging
 import os
@@ -21,7 +22,7 @@ setup_observability("audit-consumer")
 log = logging.getLogger("audit-consumer")
 
 
-def _safe_json(raw: bytes):
+def _safe_json(raw: bytes) -> Any:
     if not raw:
         return None
     try:
@@ -61,7 +62,7 @@ def wait_for_postgres(retries: int = 20, delay: int = 5) -> psycopg2.extensions.
 def wait_for_kafka(bootstrap: str, retries: int = 30, delay: int = 5) -> KafkaConsumer:
     for attempt in range(1, retries + 1):
         try:
-            kwargs: dict = dict(
+            kwargs: dict[str, Any] = dict(
                 bootstrap_servers=bootstrap,
                 group_id=GROUP_ID,
                 auto_offset_reset="earliest",
@@ -85,7 +86,7 @@ def wait_for_kafka(bootstrap: str, retries: int = 30, delay: int = 5) -> KafkaCo
     raise RuntimeError("Kafka unavailable after retries")
 
 
-def get_tenant_id(cur, realm_id: str):
+def get_tenant_id(cur: Any, realm_id: str) -> Any:
     """Look up platform tenant from Keycloak realmId via keycloak_realm_configs."""
     if not realm_id:
         return None
@@ -97,14 +98,14 @@ def get_tenant_id(cur, realm_id: str):
     return row[0] if row else None
 
 
-def insert_event(cur, event: dict) -> bool:
+def insert_event(cur: Any, event: dict[str, Any]) -> bool:
     """Insert event into audit_logs. Returns False if event was already processed (dedup)."""
     source_event_id = event.get("id") or ""
     event_type = event.get("type", "UNKNOWN")
     user_id = event.get("userId") or "system"
     client_id = event.get("clientId") or ""
     status = "FAILED" if "ERROR" in event_type else "SUCCESS"
-    tenant_id = get_tenant_id(cur, event.get("realmId"))
+    tenant_id = get_tenant_id(cur, event.get("realmId") or "")
 
     # Dedup: skip if this source event was already written.
     # Partitioned tables can't have a global UNIQUE on source_event_id, so we
@@ -131,7 +132,7 @@ def insert_event(cur, event: dict) -> bool:
     return True
 
 
-def main():
+def main() -> None:
     conn = wait_for_postgres()
     consumer = wait_for_kafka(KAFKA_BOOTSTRAP)
 

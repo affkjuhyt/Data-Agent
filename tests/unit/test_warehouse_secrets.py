@@ -53,7 +53,7 @@ def _fake_pg_client(*, connected=True, row=None):
 
 
 def _patch_pg_client(monkeypatch, fake_client):
-    import services.database_connector.postgres_connector as pg_mod
+    import libs.database_connector.postgres_connector as pg_mod
     monkeypatch.setattr(pg_mod, "client", fake_client)
 
 

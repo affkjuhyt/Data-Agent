@@ -1,3 +1,4 @@
+from typing import Any
 import asyncio
 import json
 import logging
@@ -13,7 +14,7 @@ _LITELLM_BASE = __import__("os").environ.get("LITELLM_BASE_URL", "http://localho
 _LITELLM_KEY  = __import__("os").environ.get("LITELLM_API_KEY",  "sk-dev")
 
 
-async def _get_schema_text(tenant_id: str, conn_cfg: dict) -> str:
+async def _get_schema_text(tenant_id: str, conn_cfg: dict[str, Any]) -> str:
     """Tự đọc information_schema.columns của Postgres — thay hoàn toàn cho việc
     gõ tay schema_hint hay mượn hệ Schema Catalog (hệ đó viết cứng cho
     Snowflake, không hỗ trợ Postgres/DB Connector — xem plan). Cache qua Redis
@@ -31,7 +32,7 @@ async def _get_schema_text(tenant_id: str, conn_cfg: dict) -> str:
     db_type = (conn_cfg.get("type") or "postgres").lower()
     try:
         if db_type == "clickhouse":
-            from services.database_connector import clickhouse_connector as _ch  # noqa: PLC0415
+            from libs.database_connector import clickhouse_connector as _ch  # noqa: PLC0415
             rows = await _ch.columns(conn_cfg)  # [{table_name, column_name, data_type}, ...]
         else:
             import asyncpg  # noqa: PLC0415
@@ -60,8 +61,8 @@ async def _get_schema_text(tenant_id: str, conn_cfg: dict) -> str:
 
 
 async def _run_one_query(
-    name: str, sql: str, conn_cfg: dict, query: str, schema_text: str, planner_mdl: str,
-) -> tuple[dict | None, dict | None]:
+    name: str, sql: str, conn_cfg: dict[str, Any], query: str, schema_text: str, sql_mdl: str,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     """Chạy 1 câu SQL vào đúng 1 DB, tự sửa lỗi tối đa 3 lần (fold lỗi vào
     prompt sinh lại SQL, y hệt logic cũ) — độc lập với các DB khác đang chạy
     song song (asyncio.gather ở _text_to_sql_handler), lỗi ở đây không ảnh
@@ -73,7 +74,7 @@ async def _run_one_query(
     for attempt in range(3):
         try:
             if db_type == "clickhouse":
-                from services.database_connector import clickhouse_connector as _ch  # noqa: PLC0415
+                from libs.database_connector import clickhouse_connector as _ch  # noqa: PLC0415
                 data = await _ch.query(conn_cfg, current_sql)
             else:
                 import asyncpg  # noqa: PLC0415
@@ -100,8 +101,8 @@ async def _run_one_query(
             if attempt >= 2:
                 break
             try:
-                resp = litellm.completion(
-                    model=planner_mdl, api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
+                resp = await litellm.acompletion(
+                    model=sql_mdl, api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
                     messages=[{"role": "user", "content":
                         f"Chuyển câu hỏi sau thành SQL.\n\nSchema:\n{schema_text}\n\n"
                         f"Chỉ trả SQL thuần, không giải thích.\n\nSQL trước lỗi: {last_err}\nSửa lại.\n\nCâu hỏi: {query}"
@@ -115,13 +116,13 @@ async def _run_one_query(
     return None, {"tool_name": "text_to_sql", "db_name": name, "error": f"failed after 3 attempts: {last_err}", "sql": current_sql}
 
 
-async def _text_to_sql_handler(call: dict, cfg: dict) -> tuple[list[dict], list[dict]]:
+async def _text_to_sql_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Trả về (results, errors) — CÓ THỂ nhiều kết quả nếu câu hỏi cần
     nhiều DB cùng lúc (LLM tự quyết định, xem plan mục "Multi-DB"). 1 kết nối
     → hành vi đơn giản, không qua bước phân loại DB. ≥2 kết nối → 1 lệnh LLM
     DUY NHẤT vừa chọn (các) DB liên quan vừa sinh SQL cho từng DB — không
     phải 2 lệnh riêng biệt."""
-    db_connections: dict = cfg.get("tool_config", {}).get("db_connections", {})
+    db_connections: dict[str, Any] = cfg.get("tool_config", {}).get("db_connections", {})
     if not db_connections:
         return [], [{"tool_name": "text_to_sql", "error": "no database connection configured"}]
 
@@ -130,7 +131,7 @@ async def _text_to_sql_handler(call: dict, cfg: dict) -> tuple[list[dict], list[
         return [], [{"tool_name": "text_to_sql", "error": "no query provided"}]
 
     tenant_id   = cfg.get("tenant_id", "") or ""
-    planner_mdl = cfg.get("planner_model", "planner")
+    sql_mdl = cfg.get("text_to_sql_model", "text_to_sql")
 
     schema_texts = {name: await _get_schema_text(tenant_id, conn_cfg) for name, conn_cfg in db_connections.items()}
 
@@ -139,8 +140,8 @@ async def _text_to_sql_handler(call: dict, cfg: dict) -> tuple[list[dict], list[
         note = db_connections[name].get("note", "")
         schema_block = f"{schema_texts[name]}\n{note}".strip()
         try:
-            resp = litellm.completion(
-                model=planner_mdl, api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
+            resp = await litellm.acompletion(
+                model=sql_mdl, api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
                 messages=[{"role": "user", "content":
                     f"Chuyển câu hỏi sau thành SQL.\n\nSchema:\n{schema_block}\n\n"
                     f"Chỉ trả SQL thuần, không giải thích.\n\nCâu hỏi: {query}"
@@ -163,8 +164,8 @@ async def _text_to_sql_handler(call: dict, cfg: dict) -> tuple[list[dict], list[
             f"\n\nCâu hỏi: {query}"
         )
         try:
-            resp = litellm.completion(
-                model=planner_mdl, api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
+            resp = await litellm.acompletion(
+                model=sql_mdl, api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0, max_tokens=1024, timeout=20,
                 response_format={"type": "json_object"},
@@ -185,7 +186,7 @@ async def _text_to_sql_handler(call: dict, cfg: dict) -> tuple[list[dict], list[
             return [], [{"tool_name": "text_to_sql", "error": "LLM did not select any valid database"}]
 
     outcomes = await asyncio.gather(*(
-        _run_one_query(name, sql, db_connections[name], query, schema_texts[name], planner_mdl)
+        _run_one_query(name, sql, db_connections[name], query, schema_texts[name], sql_mdl)
         for name, sql in queries
     ))
 
@@ -194,7 +195,7 @@ async def _text_to_sql_handler(call: dict, cfg: dict) -> tuple[list[dict], list[
     return results, errors
 
 
-async def _text_to_pandas_handler(call: dict, cfg: dict) -> tuple[dict | None, dict | None]:
+async def _text_to_pandas_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     tool_cfg     = cfg.get("tool_config", {}).get("text_to_pandas", {})
     default_file = tool_cfg.get("default_file_path", "")
     allowed_dir  = tool_cfg.get("allowed_dir", "")
@@ -226,7 +227,7 @@ async def _text_to_pandas_handler(call: dict, cfg: dict) -> tuple[dict | None, d
 
     try:
         import pandas as pd  # noqa: PLC0415, F401
-        ns: dict = {}
+        ns: dict[str, Any] = {}
         exec(compile(code, "<pandas_tool>", "exec"), ns)  # noqa: S102
         result = ns.get("result")
         if result is None:

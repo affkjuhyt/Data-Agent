@@ -23,6 +23,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { ExecutionStatus, WorkflowExecution } from '../../../types/workflow';
 import { cn } from '../../../lib/utils';
+import SandboxQueuePanel from './SandboxQueuePanel';
 
 const MOCK_EXECUTIONS: WorkflowExecution[] = [
   {
@@ -96,7 +97,10 @@ interface ExecutionCenterProps {
   initialSearch?: string;
 }
 
+type CenterTab = 'HISTORY' | 'QUEUE' | 'SCHEDULES';
+
 const ExecutionCenter = ({ initialSearch }: ExecutionCenterProps = {}) => {
+  const [tab, setTab] = useState<CenterTab>('HISTORY');
   const [selectedExecution, setSelectedExecution] = useState<WorkflowExecution | null>(null);
   const [search, setSearch] = useState(initialSearch ?? '');
 
@@ -222,45 +226,72 @@ const ExecutionCenter = ({ initialSearch }: ExecutionCenterProps = {}) => {
     );
   };
 
+  const headerCopy: Record<CenterTab, { title: string; subtitle: string }> = {
+    HISTORY:   { title: 'Recent Executions', subtitle: 'Live execution history and trace viewer' },
+    QUEUE:     { title: 'Sandbox Queue', subtitle: 'Live container pool health and execute_python/execute_sql jobs (docs/1.md mục h)' },
+    SCHEDULES: { title: 'Schedules', subtitle: 'Recurring workflow triggers' },
+  };
+
   return (
-    <div className={cn('flex bg-[#FAFAF5] overflow-hidden rounded-2xl border border-[#ECE7DA]', selectedExecution ? 'h-[680px]' : '')}>
+    <div className={cn('flex bg-[#FAFAF5] overflow-hidden rounded-2xl border border-[#ECE7DA]', (selectedExecution || tab !== 'HISTORY') ? 'h-[680px]' : '')}>
       <div className={`flex-1 flex flex-col transition-all duration-500 min-w-0`}>
         {/* Header */}
         <div className="p-6 border-b border-[#ECE7DA] bg-white">
-          <div className="flex items-center justify-between mb-5">
+          <div className={cn('flex items-center justify-between', tab === 'HISTORY' ? 'mb-5' : '')}>
             <div className="flex items-center gap-3">
               <div className="p-2 bg-[#F3E2A7] rounded-xl border border-[#BFA66A]/50">
                 <History className="w-5 h-5 text-[#7C5A0E]" />
               </div>
               <div>
-                <h2 className="text-lg font-display font-bold text-[#111111]">Recent Executions</h2>
-                <p className="text-xs text-[#8A8A7A] mt-0.5">Live execution history and trace viewer</p>
+                <h2 className="text-lg font-display font-bold text-[#111111]">{headerCopy[tab].title}</h2>
+                <p className="text-xs text-[#8A8A7A] mt-0.5">{headerCopy[tab].subtitle}</p>
               </div>
             </div>
             <div className="flex items-center gap-1 p-1 bg-[#F8F5EE] rounded-xl border border-[#ECE7DA]">
-              <button className="px-4 py-1.5 bg-[#B88719] text-white rounded-lg text-xs font-bold shadow-sm">History</button>
-              <button className="px-4 py-1.5 text-[#8A8A7A] hover:text-[#111111] rounded-lg text-xs font-bold transition-all">Queue</button>
-              <button className="px-4 py-1.5 text-[#8A8A7A] hover:text-[#111111] rounded-lg text-xs font-bold transition-all">Schedules</button>
+              {(['HISTORY', 'QUEUE', 'SCHEDULES'] as CenterTab[]).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={cn(
+                    'px-4 py-1.5 rounded-lg text-xs font-bold transition-all',
+                    tab === t ? 'bg-[#B88719] text-white shadow-sm' : 'text-[#8A8A7A] hover:text-[#111111]',
+                  )}
+                >
+                  {t === 'HISTORY' ? 'History' : t === 'QUEUE' ? 'Queue' : 'Schedules'}
+                </button>
+              ))}
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8A8A7A]" />
-              <input
-                type="text"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search executions by trace ID, workflow name, or environment..."
-                className="w-full bg-[#FAFAF5] border border-[#ECE7DA] rounded-xl py-2 pl-10 pr-4 text-sm text-[#111111] placeholder-[#8A8A7A] focus:outline-none focus:border-[#BFA66A]"
-              />
+          {tab === 'HISTORY' && (
+            <div className="flex items-center gap-3">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8A8A7A]" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search executions by trace ID, workflow name, or environment..."
+                  className="w-full bg-[#FAFAF5] border border-[#ECE7DA] rounded-xl py-2 pl-10 pr-4 text-sm text-[#111111] placeholder-[#8A8A7A] focus:outline-none focus:border-[#BFA66A]"
+                />
+              </div>
+              <button className="p-2.5 bg-[#F8F5EE] hover:bg-[#F3E2A7] border border-[#ECE7DA] rounded-xl transition-colors text-[#5A5A5A]">
+                <Filter className="w-4 h-4" />
+              </button>
             </div>
-            <button className="p-2.5 bg-[#F8F5EE] hover:bg-[#F3E2A7] border border-[#ECE7DA] rounded-xl transition-colors text-[#5A5A5A]">
-              <Filter className="w-4 h-4" />
-            </button>
-          </div>
+          )}
         </div>
 
+        {tab === 'QUEUE' && <SandboxQueuePanel />}
+
+        {tab === 'SCHEDULES' && (
+          <div className="flex-1 flex items-center justify-center text-sm text-[#8A8A7A]">
+            Scheduled triggers are not part of this view yet.
+          </div>
+        )}
+
+        {tab === 'HISTORY' && (
+        <>
         {/* Table */}
         <div className="flex-1 overflow-auto">
           <table className="w-full">
@@ -338,15 +369,19 @@ const ExecutionCenter = ({ initialSearch }: ExecutionCenterProps = {}) => {
             </tbody>
           </table>
         </div>
+        </>
+        )}
       </div>
 
-      <AnimatePresence>
-        {selectedExecution && (
-          <div className="w-[420px] shrink-0 border-l border-[#ECE7DA]">
-            {renderTrace()}
-          </div>
-        )}
-      </AnimatePresence>
+      {tab === 'HISTORY' && (
+        <AnimatePresence>
+          {selectedExecution && (
+            <div className="w-[420px] shrink-0 border-l border-[#ECE7DA]">
+              {renderTrace()}
+            </div>
+          )}
+        </AnimatePresence>
+      )}
     </div>
   );
 };

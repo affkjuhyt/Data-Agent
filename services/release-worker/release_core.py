@@ -18,8 +18,9 @@ import subprocess
 import threading
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 import psycopg2
 import structlog
@@ -73,7 +74,9 @@ _ALLOWED_NETWORKS = [
     ipaddress.ip_network("192.168.0.0/16"),
 ]
 
-async def enforce_internal_origin(request: Request, call_next):
+async def enforce_internal_origin(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
     if request.url.path == "/health":
         return await call_next(request)
     client_ip = request.client.host if request.client else ""
@@ -93,11 +96,11 @@ celery_app.conf.result_serializer = "json"
 
 # ── PostgreSQL helper ─────────────────────────────────────────────────
 
-def get_pg_conn():
+def get_pg_conn() -> Any:
     return psycopg2.connect(PG_DSN)
 
 
-def update_pipeline_status(pipeline_id: str, status: str, error: Optional[str] = None):
+def update_pipeline_status(pipeline_id: str, status: str, error: Optional[str] = None) -> None:
     with get_pg_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -109,7 +112,9 @@ def update_pipeline_status(pipeline_id: str, status: str, error: Optional[str] =
 
 
 def record_pipeline_step(pipeline_id: str, step_name: str, status: str,
-                          output: dict = None, error: str = None, duration_ms: int = None):
+                          output: Optional[dict[str, Any]] = None,
+                          error: Optional[str] = None,
+                          duration_ms: Optional[int] = None) -> None:
     with get_pg_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -122,7 +127,8 @@ def record_pipeline_step(pipeline_id: str, step_name: str, status: str,
 
 
 def write_release_history(pipeline_id: str, package_id: str, environment: str,
-                           status: str, triggered_by: str, duration_ms: int = None):
+                           status: str, triggered_by: str,
+                           duration_ms: Optional[int] = None) -> None:
     with get_pg_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -134,7 +140,7 @@ def write_release_history(pipeline_id: str, package_id: str, environment: str,
 
 # ── Kafka Producer helper (singleton) ────────────────────────────────
 
-_producer: KafkaProducer = None
+_producer: Optional[KafkaProducer] = None
 _producer_lock = threading.Lock()
 
 
@@ -151,7 +157,7 @@ def get_producer() -> KafkaProducer:
     return _producer
 
 
-def produce_event(topic: str, event: dict):
+def produce_event(topic: str, event: dict[str, Any]) -> None:
     try:
         get_producer().send(topic, value=event)
         log.info("kafka.produced", topic=topic, event_type=event.get("event"))
@@ -162,7 +168,7 @@ def produce_event(topic: str, event: dict):
 # CELERY TASKS
 # ═══════════════════════════════════════════════════════════════════════
 
-def _run_pipeline_impl(pipeline_event: dict):
+def _run_pipeline_impl(pipeline_event: dict[str, Any]) -> dict[str, Any]:
     """
     Core pipeline implementation — gọi được từ cả Celery task lẫn thread trực tiếp.
     1. Create pipeline record
@@ -302,7 +308,7 @@ def _run_pipeline_impl(pipeline_event: dict):
 
 
 @celery_app.task(bind=True, max_retries=3)
-def execute_pipeline(self, pipeline_event: dict):
+def execute_pipeline(self: Any, pipeline_event: dict[str, Any]) -> dict[str, Any]:
     """Celery task wrapper — delegates to _run_pipeline_impl."""
     try:
         return _run_pipeline_impl(pipeline_event)
@@ -310,7 +316,7 @@ def execute_pipeline(self, pipeline_event: dict):
         raise self.retry(exc=exc, countdown=30)
 
 
-def run_security_scan(pipeline_id: str, artifact_path: str) -> dict:
+def run_security_scan(pipeline_id: str, artifact_path: str) -> dict[str, Any]:
     """Chạy Trivy + Bandit + pip-audit. Trả về kết quả tổng hợp."""
     with tracer.start_as_current_span("pipeline.scan.trivy"):
         trivy_result = _run_trivy(artifact_path)
@@ -338,7 +344,7 @@ def run_security_scan(pipeline_id: str, artifact_path: str) -> dict:
     }
 
 
-def _run_trivy(artifact_path: str) -> dict:
+def _run_trivy(artifact_path: str) -> dict[str, Any]:
     """Trivy container image scan — fail nếu có CVE Critical/High."""
     try:
         result = subprocess.run(
@@ -359,7 +365,7 @@ def _run_trivy(artifact_path: str) -> dict:
         return {"status": "FAIL", "error": "trivy timeout after 300s"}
 
 
-def _run_bandit(source_dir: str) -> dict:
+def _run_bandit(source_dir: str) -> dict[str, Any]:
     """Bandit SAST scan — fail nếu có High severity."""
     try:
         result = subprocess.run(
@@ -377,7 +383,7 @@ def _run_bandit(source_dir: str) -> dict:
         return {"status": "FAIL", "error": "bandit timeout after 120s"}
 
 
-def _run_pip_audit() -> dict:
+def _run_pip_audit() -> dict[str, Any]:
     """pip-audit dependency CVE scan."""
     try:
         result = subprocess.run(
@@ -396,7 +402,7 @@ def _run_pip_audit() -> dict:
 
 
 def _deploy_to_env(pipeline_id: str, package_id: str, environment: str,
-                   triggered_by: str):
+                   triggered_by: str) -> None:
     """Deploy package đến environment cụ thể."""
     with tracer.start_as_current_span("pipeline.deploy") as span:
         span.set_attribute("release.environment", environment)
@@ -414,7 +420,7 @@ def _deploy_to_env(pipeline_id: str, package_id: str, environment: str,
                  environment=environment, package_id=package_id)
 
 
-def _run_approval_deploy(pipeline_id: str, environment: str, triggered_by: str):
+def _run_approval_deploy(pipeline_id: str, environment: str, triggered_by: str) -> None:
     """
     Deploy sau khi approval — bỏ qua build/scan (đã chạy trước đó).
     Gọi trực tiếp _deploy_to_env cho environment đã được approve.
@@ -451,18 +457,18 @@ def _run_approval_deploy(pipeline_id: str, environment: str, triggered_by: str):
 # ROLLBACK TASKS
 # ═══════════════════════════════════════════════════════════════════════
 
-def _run_rollback_impl(rollback_event: dict):
+def _run_rollback_impl(rollback_event: dict[str, Any]) -> dict[str, Any]:
     """Core rollback implementation — gọi được từ thread trực tiếp."""
     return _execute_rollback_core(rollback_event)
 
 
 @celery_app.task
-def execute_rollback(rollback_event: dict):
+def execute_rollback(rollback_event: dict[str, Any]) -> dict[str, Any]:
     """Celery task wrapper cho rollback."""
     return _execute_rollback_core(rollback_event)
 
 
-def _execute_rollback_core(rollback_event: dict):
+def _execute_rollback_core(rollback_event: dict[str, Any]) -> dict[str, Any]:
     """
     Rollback với compensating transaction pattern.
     Từng bước có undo action; nếu fail → PARTIAL_ROLLBACK + alert.
@@ -484,9 +490,9 @@ def _execute_rollback_core(rollback_event: dict):
                  from_version=from_version, to_version=to_version,
                  environment=environment)
 
-        steps_result = []
+        steps_result: list[dict[str, Any]] = []
 
-        def _fail_rollback(step: int, error: str):
+        def _fail_rollback(step: int, error: str) -> None:
             log.error("rollback.partial_fail", rollback_id=rollback_id,
                       step=step, error=error)
             with get_pg_conn() as conn:
@@ -579,7 +585,7 @@ def _execute_rollback_core(rollback_event: dict):
             raise
 
 
-def _step1_update_release_pointer(environment: str, version: str):
+def _step1_update_release_pointer(environment: str, version: str) -> None:
     """Step 1: Update release pointer trong PostgreSQL."""
     with get_pg_conn() as conn:
         with conn.cursor() as cur:
@@ -593,7 +599,7 @@ def _step1_update_release_pointer(environment: str, version: str):
     log.info("rollback.step1.done", environment=environment, version=version)
 
 
-def _step2_reroute_kong(environment: str, version: str):
+def _step2_reroute_kong(environment: str, version: str) -> None:
     """Step 2: Reroute Kong upstream to rolled-back version.
     Updates the service URL so traffic is actually redirected.
     Set BACKEND_URL_<ENV> to override per-environment target.
@@ -621,7 +627,7 @@ def _step2_reroute_kong(environment: str, version: str):
              backend_url=backend_url)
 
 
-def _step3_redeploy_snapshot(environment: str, version: str):
+def _step3_redeploy_snapshot(environment: str, version: str) -> None:
     """
     Step 3: Redeploy từ MinIO snapshot (immutable).
     Best-effort: không raise nếu MinIO chưa có snapshot (dev environment).
@@ -667,7 +673,7 @@ def _step3_redeploy_snapshot(environment: str, version: str):
 # DRIFT DETECTION TASK (Celery Beat)
 # ═══════════════════════════════════════════════════════════════════════
 
-def _detect_config_drift_core() -> dict:
+def _detect_config_drift_core() -> dict[str, Any]:
     """
     Core drift detection logic — gọi được từ cả Celery beat lẫn HTTP API endpoint.
     So sánh production vs staging config; nếu có drift → ghi DB + produce Kafka event.
@@ -729,7 +735,7 @@ def _detect_config_drift_core() -> dict:
 
 
 @celery_app.task
-def detect_config_drift():
+def detect_config_drift() -> Optional[dict[str, Any]]:
     """
     Celery beat task — wrapper quanh _detect_config_drift_core().
     Schedule: chạy định kỳ để block promotion khi phát hiện drift.
@@ -738,9 +744,10 @@ def detect_config_drift():
         return _detect_config_drift_core()
     except Exception as e:
         log.error("drift.check.error", error=str(e))
+        return None
 
 
-def _get_env_config(environment: str) -> dict:
+def _get_env_config(environment: str) -> dict[str, Any]:
     with get_pg_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -754,7 +761,7 @@ def _get_env_config(environment: str) -> dict:
 # KAFKA CONSUMER (chạy song song với FastAPI)
 # ═══════════════════════════════════════════════════════════════════════
 
-def start_kafka_consumer():
+def start_kafka_consumer() -> None:
     """
     Consumer đọc từ release.pipeline.triggered và release.rollback.initiated.
     Chạy task trực tiếp trong thread (không dùng Celery .delay() để tránh cần
@@ -803,7 +810,7 @@ def start_kafka_consumer():
         consumer.commit()
 
 
-def _safe_json(raw: bytes) -> dict:
+def _safe_json(raw: bytes) -> dict[str, Any]:
     try:
         val = json.loads(raw.decode("utf-8"))
         return val if isinstance(val, dict) else {}
@@ -815,7 +822,7 @@ def _safe_json(raw: bytes) -> dict:
 # ═══════════════════════════════════════════════════════════════════════
 
 # ── Entry point ───────────────────────────────────────────────────────
-def _consumer_supervisor():
+def _consumer_supervisor() -> None:
     """Restart Kafka consumer whenever it crashes — handles broker unavailable,
     ACL errors on first boot, and transient network issues."""
     import time
@@ -828,7 +835,7 @@ def _consumer_supervisor():
         time.sleep(delay)
         delay = min(delay * 2, 60)  # exponential backoff, cap at 60s
 
-def run_server(app):
+def run_server(app: FastAPI) -> None:
     import uvicorn
 
     consumer_thread = threading.Thread(target=_consumer_supervisor, daemon=True)
@@ -837,5 +844,80 @@ def run_server(app):
     uvicorn.run(app, host="0.0.0.0", port=8100, log_level="info")
 
 
-__all__ = [name for name in globals() if not name.startswith("__")]
+# Static re-export list (was a dynamic globals() comprehension mypy can't
+# evaluate, which broke `import *` resolution in the routers under strict).
+# Exact set the comprehension produced.
+__all__ = [
+    "json",
+    "os",
+    "subprocess",
+    "threading",
+    "time",
+    "uuid",
+    "datetime",
+    "timezone",
+    "Any",
+    "Optional",
+    "psycopg2",
+    "structlog",
+    "Celery",
+    "ipaddress",
+    "FastAPI",
+    "HTTPException",
+    "Header",
+    "Depends",
+    "Request",
+    "Response",
+    "get_current_user",
+    "setup_observability",
+    "get_tracer",
+    "KafkaConsumer",
+    "KafkaProducer",
+    "log",
+    "tracer",
+    "_require",
+    "PG_DSN",
+    "KAFKA_BOOTSTRAP",
+    "KAFKA_USERNAME",
+    "KAFKA_PASSWORD",
+    "MINIO_ENDPOINT",
+    "MINIO_ACCESS_KEY",
+    "MINIO_SECRET_KEY",
+    "CELERY_BROKER",
+    "MONGO_URI",
+    "MONGO_DB",
+    "KAFKA_CONFIG",
+    "_ALLOWED_NETWORKS",
+    "enforce_internal_origin",
+    "celery_app",
+    "get_pg_conn",
+    "update_pipeline_status",
+    "record_pipeline_step",
+    "write_release_history",
+    "_producer",
+    "_producer_lock",
+    "get_producer",
+    "produce_event",
+    "_run_pipeline_impl",
+    "execute_pipeline",
+    "run_security_scan",
+    "_run_trivy",
+    "_run_bandit",
+    "_run_pip_audit",
+    "_deploy_to_env",
+    "_run_approval_deploy",
+    "_run_rollback_impl",
+    "execute_rollback",
+    "_execute_rollback_core",
+    "_step1_update_release_pointer",
+    "_step2_reroute_kong",
+    "_step3_redeploy_snapshot",
+    "_detect_config_drift_core",
+    "detect_config_drift",
+    "_get_env_config",
+    "start_kafka_consumer",
+    "_safe_json",
+    "_consumer_supervisor",
+    "run_server",
+]
 

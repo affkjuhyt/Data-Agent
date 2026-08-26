@@ -4,11 +4,17 @@ WORKDIR /app
 
 RUN apk add --no-cache gcc musl-dev libpq-dev curl
 
-COPY auth-api/requirements.txt .
+COPY services/auth-api/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY auth-api/ .
-COPY shared/ ./shared/
+COPY services/auth-api/ .
+# shared code now lives in libs/shared; mount it under the bare `shared`
+# package name this service imports (import shared.xxx).
+COPY libs/shared/ ./shared/
+
+# Drop root (alpine syntax) — read-only app surface.
+RUN addgroup -S app && adduser -S -G app app
+USER app
 
 EXPOSE 8200
 

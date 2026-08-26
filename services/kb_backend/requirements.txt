@@ -4,7 +4,6 @@ python-multipart
 pydantic==2.9.2
 sqlalchemy[asyncio]==2.0.35
 asyncpg==0.30.0
-alembic
 neo4j
 qdrant-client
 httpx==0.27.2
@@ -23,3 +22,5 @@ opentelemetry-instrumentation-fastapi==0.45b0
 opentelemetry-instrumentation-httpx==0.45b0
 opentelemetry-instrumentation-requests==0.45b0
 opentelemetry-instrumentation-logging==0.45b0
+
+redis>=5.0  # L0 result cache + gold-complete invalidation (KB-SCALE-10K §2)

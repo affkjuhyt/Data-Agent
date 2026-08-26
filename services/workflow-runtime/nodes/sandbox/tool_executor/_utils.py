@@ -1,3 +1,4 @@
+from typing import Any, cast
 import pathlib
 
 
@@ -22,5 +23,5 @@ def _strip_code_block(text: str) -> str:
     return text.strip()
 
 
-def _get_query(call: dict) -> str:
-    return call.get("query") or call.get("arguments", {}).get("query", "")
+def _get_query(call: dict[str, Any]) -> str:
+    return cast(str, call.get("query") or call.get("arguments", {}).get("query", ""))

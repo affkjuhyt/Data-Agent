@@ -154,7 +154,7 @@ def wait_for_services(retries: int = 30, delay: int = 10) -> None:
     raise RuntimeError("Services unavailable after retries")
 
 
-def main():
+def main() -> None:
     log.info(
         "Starting JWKS refresher — interval=%ds, kong=%s, keycloak=%s",
         REFRESH_INTERVAL,

@@ -1,16 +1,21 @@
 """/api/fleet/stats — FleetOverview dashboard stats."""
+from typing import Any
 from fastapi import APIRouter, Depends, Request
 
-from basemodel.services_databaseconnector.shared_model import ResponseModel
-from services.kb_backend.dependencies.auth import authenticate
+from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
+from services.kb_backend.schemas import FleetStats
+from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.dependencies.services import svc
-from services.kb_backend.pipeline.kb_ui_operation.fleet_ops import get_fleet_stats
+from services.kb_backend.operations.fleet_ops import get_fleet_stats
 
 router = APIRouter(prefix="/api/fleet", tags=["Fleet"])
 
 
-@router.get("/stats", response_model=ResponseModel)
-async def fleet_stats(request: Request, ctx: dict = Depends(authenticate)):
+@router.get("/stats", response_model=ResponseModel[FleetStats])
+async def fleet_stats(
+        request: Request,
+        ctx: dict[str, Any] = Depends(require_perm("viewFleetStats"))
+) -> ResponseModel[FleetStats]:
     result = await get_fleet_stats(
         postgres=svc(request, "postgres"),
         qdrant=svc(request, "qdrant"),

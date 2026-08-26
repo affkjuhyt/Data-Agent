@@ -1,3 +1,4 @@
+from typing import Any
 import json
 import logging
 import os
@@ -15,7 +16,7 @@ _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "prompts")
 _SYSTEM = open(os.path.join(_PROMPTS_DIR, "suggestion_system.txt"), encoding="utf-8").read()
 
 
-async def run_suggestion(query: str, messages: list[dict], final_response: str, cfg: dict) -> list[str]:
+async def run_suggestion(query: str, messages: list[dict[str, Any]], final_response: str, cfg: dict[str, Any]) -> list[str]:
     """
     Gen follow-up suggestions từ query + response.
     Chạy sau khi có final_response để suggestions liên quan hơn.

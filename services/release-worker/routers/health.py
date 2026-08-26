@@ -1,3 +1,5 @@
+from typing import Any
+
 from fastapi import APIRouter
 
 from release_core import *
@@ -7,5 +9,5 @@ router = APIRouter()
 
 
 @router.get("/health")
-def health():
+def health() -> dict[str, Any]:
     return {"status": "ok", "service": "release-worker"}

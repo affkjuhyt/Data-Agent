@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 import logging
 
 from .candidate_pool import CandidatePool
@@ -20,11 +21,16 @@ class PlannerGate:
 
     # broken node -> trim branches (Tree) + delete candidate associate with fail node (N);
     # re-expand parent only when it has no more child
-    def report_broken_node(self, node_id: str) -> dict:
+    def report_broken_node(self, node_id: str) -> dict[str, Any]:
         node = self.tree.get(node_id)
         if node is None:
             raise KeyError(node_id)
         parent_id = node.parent_id or self.tree.root_id
+        if parent_id is None:
+            # same failure the tree.get(None) lookup below would already
+            # surface as "parent is None" — raised here instead so parent_id
+            # is narrowed to str for the rest of this method.
+            raise RuntimeError("broken node has no parent")
         parent = self.tree.get(parent_id)
         if parent is None:
             raise RuntimeError("broken node has no parent")

@@ -61,12 +61,21 @@ filterwarnings = [
     # still raise (filter scope is the pytest wrapper, not the underlying
     # ResourceWarning class). Drop this once anyio ships a sync __del__.
     "ignore::pytest.PytestUnraisableExceptionWarning",
+    # basemodel Pydantic models use `model_name` / `model_id` fields, which collide
+    # with pydantic's protected `model_` namespace and emit a UserWarning at import.
+    # It's a naming choice in basemodel, not a bug — ignore so importing the ORM in
+    # tests doesn't error under `filterwarnings = error`. (Real fix: set
+    # `model_config['protected_namespaces'] = ()` on those basemodel classes.)
+    "ignore:Field .* has conflict with protected namespace:UserWarning",
+    # Same story for `schema` fields on warehouse request/response models — the
+    # name shadows BaseModel's deprecated `.schema()` classmethod, not a bug.
+    "ignore:Field name .* shadows an attribute in parent:UserWarning",
 ]
 
 # ─── Coverage ──────────────────────────────────────────────────────────────
 [tool.coverage.run]
 branch = true
-source = ["app", "services", "basemodel", "model"]
+source = ["app", "services", "libs", "model"]
 omit = [
     "*/tests/*",
     "*/__pycache__/*",
@@ -78,6 +87,14 @@ omit = [
 precision = 1
 show_missing = true
 skip_covered = false
+# Coverage gate — `pytest --cov` (CI: python-test job) exits non-zero below this.
+# Set to a conservative NON-BREAKING floor: it catches catastrophic drops (a
+# broken test-collection zeroing coverage) without failing on the current
+# baseline, which isn't measured here (the real number needs the full
+# unit+integration run with testcontainers, i.e. CI, not a dev laptop).
+# RATCHET: after the first green CI run, read the reported total and raise this
+# to (measured − 5). Target trajectory: 35 → 50 → 70. Never lower it.
+fail_under = 35
 exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.:",
@@ -93,7 +110,7 @@ exclude_lines = [
 # fixtures, ORM attrs) may still flag — vet before deleting and add real
 # whitelist entries to .vulture_whitelist.py. Run: `vulture`.
 [tool.vulture]
-paths = ["services", "basemodel", ".vulture_whitelist.py"]
+paths = ["services", "libs", ".vulture_whitelist.py"]
 min_confidence = 80
 exclude = [
     "*/migrations/*",
@@ -161,13 +178,21 @@ exclude = [
     "build/",
 ]
 
-# Strict per-module: enforce only on greenfield/security-critical surfaces first.
-# Expand this list as services are cleaned up.
+# Strict per-module: the innermost, most-reused layers are held to
+# `disallow_untyped_defs` + `disallow_any_generics` and are kept green (0 errors)
+# — enforced BLOCKING by the CI "Strict typecheck · core libs" step, not just
+# reported. Expand this list as each service is cleaned up (see the burn-down in
+# SECURITY.md / RUNBOOK.md: database_connector, kb_backend, orchestrator next).
+#
+# NOTE: these globs only match real importable packages. Hyphenated service dirs
+# (`services/auth-api`, …) are NOT importable as `services.auth-api.*`, so such a
+# glob is a no-op ("unused section"); enforce those by invoking mypy on the dir
+# directly in CI instead.
 [[tool.mypy.overrides]]
 module = [
-    "services.auth-api.*",
-    "services.shared.*",
-    "infra.kong.*",
+    "libs.basemodel.*",
+    "libs.database_connector.*",
+    "libs.shared.*",
 ]
 disallow_untyped_defs = true
 disallow_any_generics = true

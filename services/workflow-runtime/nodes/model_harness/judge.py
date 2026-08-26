@@ -1,3 +1,4 @@
+from typing import Any
 import json
 import logging
 import os
@@ -22,7 +23,7 @@ _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "prompts")
 _SYSTEM = open(os.path.join(_PROMPTS_DIR, "judge_system.txt"), encoding="utf-8").read().strip()
 
 
-async def judge_node(state: AgentState) -> dict:
+async def judge_node(state: AgentState) -> dict[str, Any]:
     t0  = time.monotonic()
     cfg = state.get("config", {})
 
@@ -112,7 +113,7 @@ async def judge_node(state: AgentState) -> dict:
     return _pass(iteration, reason=reason)
 
 
-def _pass(iteration: int, reason: str = "") -> dict:
+def _pass(iteration: int, reason: str = "") -> dict[str, Any]:
     return {
         "judge_verdict":     _VERDICT_PASS,
         "judge_error_type":  None,
@@ -121,8 +122,8 @@ def _pass(iteration: int, reason: str = "") -> dict:
     }
 
 
-def _fail(iteration: int, error_type: str, reason: str) -> dict:
-    reset: dict = {"response": ""}
+def _fail(iteration: int, error_type: str | None, reason: str) -> dict[str, Any]:
+    reset: dict[str, Any] = {"response": ""}
 
     if error_type == "PLANNING_ERROR":
         # Reset toàn bộ downstream của planner — planner sẽ re-emit tool_calls mới

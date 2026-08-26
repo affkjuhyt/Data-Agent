@@ -40,6 +40,18 @@ model_list:
       api_base: http://host.docker.internal:8089/v1
       api_key: not-needed
 
+  - model_name: visualize
+    litellm_params:
+      model: openai/haiku
+      api_base: http://host.docker.internal:8089/v1
+      api_key: not-needed
+
+  - model_name: text_to_sql
+    litellm_params:
+      model: openai/haiku
+      api_base: http://host.docker.internal:8089/v1
+      api_key: not-needed
+
   - model_name: embedder
     litellm_params:
       model: openai/bge-m3

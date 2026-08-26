@@ -4,6 +4,7 @@ shape as memory-consumer's call_llm_extract(): one chat completion, JSON
 response_format, no retry here (the crawl loop's outer per-table try/except
 in main.py skips a table on failure and picks it up again next cron tick).
 """
+from typing import Any
 import json
 import logging
 import os
@@ -19,12 +20,36 @@ _PROMPT_PATH = os.path.join(os.path.dirname(__file__), "describe_prompt.txt")
 with open(_PROMPT_PATH, encoding="utf-8") as _f:
     _DESCRIBE_PROMPT = _f.read()
 
+# Column comments come straight from the warehouse's own
+# INFORMATION_SCHEMA.COLUMNS.COMMENT — anyone with COMMENT privilege on the
+# source table can set that text, so it's untrusted input flowing into an
+# LLM prompt (indirect prompt injection). Truncating it and wrapping it in
+# an explicit "this is data, not instructions" tag is a mitigation, not a
+# guarantee — describe_table()'s output is still only a hint, never
+# executed directly.
+_MAX_COMMENT_CHARS = 300
+_MAX_OUTPUT_ITEMS = 15
+_MAX_OUTPUT_STR_CHARS = 300
 
-def _columns_block(columns: list[dict]) -> str:
-    return "\n".join(f"  {c['name']}:{c['type']}:{c.get('comment') or ''}" for c in columns)
+
+def _truncate(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[:limit] + "…"
 
 
-def describe_table(table_name: str, columns: list[dict], row_count: int | None) -> dict:
+def _columns_block(columns: list[dict[str, Any]]) -> str:
+    lines = []
+    for c in columns:
+        comment = _truncate(c.get("comment") or "", _MAX_COMMENT_CHARS)
+        comment = comment.replace("<", "&lt;").replace(">", "&gt;")
+        lines.append(f"  {c['name']}:{c['type']}:<column_comment>{comment}</column_comment>")
+    return "\n".join(lines)
+
+
+def _cap_str_list(values: list[Any], limit_items: int = _MAX_OUTPUT_ITEMS) -> list[str]:
+    return [_truncate(str(v), _MAX_OUTPUT_STR_CHARS) for v in values[:limit_items]]
+
+
+def describe_table(table_name: str, columns: list[dict[str, Any]], row_count: int | None) -> dict[str, Any]:
     """Returns {keywords: [...], categories: {...}, use_cases: [...], join_hints: [...]}."""
     prompt = (
         _DESCRIBE_PROMPT
@@ -53,15 +78,19 @@ def describe_table(table_name: str, columns: list[dict], row_count: int | None) 
     except (json.JSONDecodeError, ValueError):
         logger.warning("llm_describe | non-JSON-object response for table=%s: %r", table_name, content[:200])
         parsed = {}
+    categories = parsed.get("categories") or {}
     return {
-        "keywords": parsed.get("keywords") or [],
-        "categories": parsed.get("categories") or {},
-        "use_cases": parsed.get("use_cases") or [],
-        "join_hints": parsed.get("join_hints") or [],
+        "keywords": _cap_str_list(parsed.get("keywords") or []),
+        "categories": {
+            _truncate(str(k), _MAX_OUTPUT_STR_CHARS): _truncate(str(v), _MAX_OUTPUT_STR_CHARS)
+            for k, v in list(categories.items())[:_MAX_OUTPUT_ITEMS]
+        } if isinstance(categories, dict) else {},
+        "use_cases": _cap_str_list(parsed.get("use_cases") or []),
+        "join_hints": _cap_str_list(parsed.get("join_hints") or []),
     }
 
 
-def render_text_description(table_name: str, description: dict) -> str:
+def render_text_description(table_name: str, description: dict[str, Any]) -> str:
     """doc §2.4.2 layout — also the string that gets embedded, so it must
     read naturally for both keyword and vector search."""
     lines = [f"Name: {table_name}"]

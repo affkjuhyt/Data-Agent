@@ -1,3 +1,4 @@
+from typing import Any
 import logging
 from state import AgentState
 
@@ -6,7 +7,7 @@ logger = logging.getLogger(__name__)
 _K = 60
 
 
-def rrf_ranking_node(state: AgentState) -> dict:
+def rrf_ranking_node(state: AgentState) -> dict[str, Any]:
     kb_chunks    = state.get("kb_chunks", [])
     mcp_results  = state.get("mcp_results", [])
     tool_results = state.get("tool_results", [])
@@ -17,7 +18,7 @@ def rrf_ranking_node(state: AgentState) -> dict:
         return {"rrf_results": []}
 
     scores:  dict[str, float]      = {}
-    meta:    dict[str, dict]       = {}
+    meta:    dict[str, dict[str, Any]]       = {}
     sources: dict[str, list[str]]  = {}
 
     for source_name, items in [("kb", kb_chunks), ("mcp", mcp_results), ("tool", tool_results), ("db", db_results)]:

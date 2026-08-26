@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Request
 from sqlalchemy import text
@@ -40,10 +40,10 @@ def _resolve_tenant(header: str | None) -> str:
 
 
 @router.get("/api/catalog/agents")
-async def list_agents(request: Request):
+async def list_agents(request: Request) -> list[dict[str, Any]]:
     tenant_id = _resolve_tenant(request.headers.get("X-Tenant-ID"))
     try:
-        from services.database_connector.postgres_connector import client
+        from libs.database_connector.postgres_connector import client
         if not client.is_connected():
             raise RuntimeError("db not connected")
         async with client.get_client(tenant_id=tenant_id) as session:
@@ -67,18 +67,18 @@ async def list_agents(request: Request):
 
 
 @router.get("/api/nodes/registry")
-def get_node_registry():
+def get_node_registry() -> dict[str, Any]:
     return NODE_REGISTRY
 
 
 @router.get("/api/runtime-config")
-def get_runtime_config():
+def get_runtime_config() -> dict[str, int]:
     """Runtime defaults the flow builder reads instead of hardcoding them."""
     return {"rrf_k": RRF_K}
 
 
 @router.get("/api/llm-providers")
-def get_llm_providers(type: Optional[str] = None):
+def get_llm_providers(type: Optional[str] = None) -> list[dict[str, Any]]:
     providers = LLM_PROVIDERS
     if type:
         providers = [provider for provider in providers if provider["type"] == type]
@@ -86,12 +86,12 @@ def get_llm_providers(type: Optional[str] = None):
 
 
 @router.get("/api/kb-connections")
-def get_kb_connections(request: Request):
+def get_kb_connections(request: Request) -> list[Any]:
     tenant_id = request.headers.get("X-Tenant-ID", "tenant-dev")
     return []
 
 
 @router.get("/api/system-prompts")
-def get_system_prompts(request: Request):
+def get_system_prompts(request: Request) -> list[dict[str, Any]]:
     tenant_id = request.headers.get("X-Tenant-ID", "tenant-dev")
     return [prompt for prompt in SYSTEM_PROMPTS if prompt["tenant_id"] == tenant_id]

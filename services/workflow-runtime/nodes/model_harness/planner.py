@@ -1,4 +1,6 @@
+from typing import Any
 import os
+import re
 import time
 import logging
 import litellm
@@ -16,7 +18,7 @@ class _ToolCall(BaseModel):
     reason: str
     confidence: float
     tool_name: str | None = None
-    arguments: dict = {}
+    arguments: dict[str, Any] = {}
     parallel: bool = True
     depends_on: list[int] = []
 
@@ -33,12 +35,29 @@ _LITELLM_KEY = os.environ.get("LITELLM_API_KEY", "sk-dev")
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "prompts")
 _SYSTEM = open(os.path.join(_PROMPTS_DIR, "planner_system.txt"), encoding="utf-8").read()
 
-_FALLBACK_TOOL_CALLS = [
+_FALLBACK_TOOL_CALLS: list[dict[str, Any]] = [
     {"type": "kb_search", "query": None, "reason": "planner fallback", "confidence": 0.5, "parallel": True, "depends_on": []}
 ]
 
+_CODE_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 
-async def planner_node(state: AgentState) -> dict:
+
+def _extract_json_object(raw: str) -> str | None:
+    """Model đôi khi bọc JSON trong văn xuôi hoặc code fence thay vì trả JSON
+    thuần — model_validate_json(raw) fail ngay cả khi payload JSON bên trong
+    vẫn hợp lệ. Thử 2 cách trích trước khi chấp nhận fallback kb_search:
+    1) khối trong ```json ... ``` / ``` ... ```
+    2) từ dấu '{' đầu tiên tới dấu '}' cuối cùng trong raw"""
+    fence = _CODE_FENCE_RE.search(raw)
+    if fence:
+        return fence.group(1)
+    start, end = raw.find("{"), raw.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return raw[start:end + 1]
+    return None
+
+
+async def planner_node(state: AgentState) -> dict[str, Any]:
     t0 = time.monotonic()
     cfg = state.get("config", {})
 
@@ -125,12 +144,23 @@ async def planner_node(state: AgentState) -> dict:
                 latency_ms, prompt_tokens, completion_tokens)
 
     raw = response.choices[0].message.content or ""
+    parsed = None
     try:
         parsed = _PlannerOutput.model_validate_json(raw)
+    except (ValidationError, Exception):
+        extracted = _extract_json_object(raw)
+        if extracted is not None:
+            try:
+                parsed = _PlannerOutput.model_validate_json(extracted)
+                logger.info("planner | recovered valid JSON from wrapped response")
+            except (ValidationError, Exception):
+                pass
+
+    if parsed is not None:
         tool_calls = parsed.model_dump()["tool_calls"]
         intent = parsed.intent if parsed.intent in ("question", "task") else "question"
         language = parsed.language if parsed.language in ("vi", "en") else "vi"
-    except (ValidationError, Exception):
+    else:
         logger.warning("planner | failed to validate response, using fallback. raw=%r", raw)
         fallback = _FALLBACK_TOOL_CALLS.copy()
         fallback[0] = {**fallback[0], "query": state["query"]}

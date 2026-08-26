@@ -27,7 +27,6 @@
 # What this overlay adds / overrides:
 #   postgres        — adds KB seed data mount (05-kb-seed.sql)
 #   keycloak        — adds healthcheck (main compose omits it)
-#   neo4j           — reduces memory limits to dev-friendly sizes
 #   minio-init      — creates the knowledge-base bucket (KB-specific)
 #   kong-setup      — configures Kong routes + JWT plugin for KB services
 #   model-service   — adds remote GPU tunnel env vars + KB postgres DSN
@@ -43,7 +42,7 @@ services:
   # init scripts run in lexicographic order; 05 runs after the base file's 04.
   postgres:
     volumes:
-      - ./Postgres/seed.sql:/docker-entrypoint-initdb.d/05-kb-seed.sql:ro
+      - ./postgres/seed.sql:/docker-entrypoint-initdb.d/05-kb-seed.sql:ro
 
   keycloak:
     healthcheck:
@@ -52,20 +51,6 @@ services:
       timeout: 10s
       retries: 10
       start_period: 60s
-
-  neo4j:
-    environment:
-      NEO4J_server_memory_heap_initial__size: 512m
-      NEO4J_server_memory_heap_max__size: 512m
-      NEO4J_server_memory_pagecache_size: 256m
-    deploy:
-      resources:
-        limits:
-          cpus: "1.5"
-          memory: 1500M
-        reservations:
-          cpus: "0.5"
-          memory: 512M
 
   minio-init:
     image: minio/mc
@@ -119,7 +104,8 @@ services:
 
   kb-backend:
     ports:
-      - "8050:8000"
+      # Loopback only — direct callers bypass Kong and can forge identity headers.
+      - "127.0.0.1:8050:8000"
     environment:
       NEO4J_URL: bolt://neo4j:7687
       MONGO_URL: mongodb://mongo:27017/${POSTGRES_DB:-dataagent}

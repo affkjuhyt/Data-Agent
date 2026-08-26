@@ -8,20 +8,20 @@ the write path, agents/operators are the read path); there is no PUT/DELETE
 here, unlike routers/schema_memory.py's Admin CRUD.
 """
 import logging
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
 
-from basemodel.services_databaseconnector.postgres_orm.workflow_orm import SchemaCatalogORM
+from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import SchemaCatalogORM
 from routers.catalog import _resolve_tenant
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _serialize(row: SchemaCatalogORM) -> dict:
+def _serialize(row: SchemaCatalogORM) -> dict[str, Any]:
     return {
         "id": str(row.id),
         "warehouse_id": str(row.warehouse_id),
@@ -42,9 +42,9 @@ async def list_schema_catalog(
     request: Request,
     warehouse_id: Optional[str] = None,
     schema_name: Optional[str] = None,
-):
+) -> list[dict[str, Any]]:
     tenant_id = _resolve_tenant(request.headers.get("X-Tenant-ID"))
-    from services.database_connector.postgres_connector import client
+    from libs.database_connector.postgres_connector import client
     if not client.is_connected():
         raise HTTPException(status_code=503, detail="database not connected")
 
@@ -63,9 +63,9 @@ async def list_schema_catalog(
 
 
 @router.get("/api/schema-catalog/{catalog_id}")
-async def get_schema_catalog_entry(catalog_id: str, request: Request):
+async def get_schema_catalog_entry(catalog_id: str, request: Request) -> dict[str, Any]:
     tenant_id = _resolve_tenant(request.headers.get("X-Tenant-ID"))
-    from services.database_connector.postgres_connector import client
+    from libs.database_connector.postgres_connector import client
     if not client.is_connected():
         raise HTTPException(status_code=503, detail="database not connected")
 

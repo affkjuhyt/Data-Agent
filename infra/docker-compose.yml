@@ -33,7 +33,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./sql/create-extra-dbs.sql:/docker-entrypoint-initdb.d/01-create-dbs.sql:ro
-      - ./Postgres/init.sql:/docker-entrypoint-initdb.d/02-kb-tables.sql:ro
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/02-kb-tables.sql:ro
       - ./sql/init.sql:/docker-entrypoint-initdb.d/03-app-schema.sql:ro
       - ./sql/release-init.sql:/docker-entrypoint-initdb.d/04-release-schema.sql:ro
     ports:
@@ -99,10 +99,11 @@ services:
     environment:
       NEO4J_AUTH: none
 
-      # For allocating 10gb for neo4j graph
-      NEO4J_server_memory_heap_initial__size: '4g'
-      NEO4J_server_memory_heap_max__size: '4g'
-      NEO4J_server_memory_pagecache_size: '3g'
+      # Sized for a dev machine by default (heap+pagecache must fit the Docker VM,
+      # which is half of host RAM on a WSL2 default). docker-compose.prod.yml raises these.
+      NEO4J_server_memory_heap_initial__size: ${NEO4J_HEAP_SIZE:-512m}
+      NEO4J_server_memory_heap_max__size: ${NEO4J_HEAP_SIZE:-512m}
+      NEO4J_server_memory_pagecache_size: ${NEO4J_PAGECACHE_SIZE:-256m}
       NEO4J_server_jvm_additional: '-XX:+ExitOnOutOfMemoryError'
 
       NEO4J_dbms_routing_driver_connection_pool_max__size: 50
@@ -112,11 +113,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '4.0'
-          memory: '10G'
+          cpus: ${NEO4J_CPUS:-1.5}
+          memory: ${NEO4J_MEMORY:-1500M}
         reservations:
-          cpus: '4.0'
-          memory: '10G'
+          cpus: '0.5'
+          memory: 512M
 
     volumes:
       - neo4j_data:/data
@@ -256,7 +257,7 @@ services:
 
   # MinIO
   minio:
-    profiles: [kb, release, observability]
+    profiles: [kb, release, observability, runtime]
     image: minio/minio:RELEASE.2024-01-16T16-07-38Z
     container_name: dataagent-minio
     restart: unless-stopped
@@ -302,6 +303,35 @@ services:
     ports:
       - "16686:16686"
       - "4317:4317"
+
+  # Kibana — UI để đọc log JSON (ECS) đã ship vào Elasticsearch. Nhảy Kibana
+  # <-> Jaeger qua trace.id/span.id mà libs/shared/logger.py gắn vào mỗi record.
+  kibana:
+    profiles: [observability]
+    image: kibana:8.12.0
+    container_name: dataagent-kibana
+    restart: unless-stopped
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      - elasticsearch
+
+  # Filebeat — thu log stdout của mọi container (JSON ECS) rồi đẩy vào
+  # Elasticsearch. Đọc trực tiếp /var/lib/docker/containers trên host.
+  filebeat:
+    profiles: [observability]
+    image: docker.elastic.co/beats/filebeat:8.12.0
+    container_name: dataagent-filebeat
+    restart: unless-stopped
+    user: root
+    volumes:
+      - ./filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - elasticsearch
 
   # Openbao
   openbao:
@@ -467,61 +497,11 @@ services:
       LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
       AUTH_DISABLE_SIGNUP: "false"
 
-  workflow-runtime:
-    profiles: [runtime]
-    build:
-      context: ..
-      dockerfile: services/workflow-runtime/Dockerfile
-    container_name: dataagent-workflow-runtime
-    restart: unless-stopped
-    ports:
-      - "8001:8001"
-    env_file: ../.env
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
-      RUNTIME_DB_URL: postgresql+asyncpg://runtime_writer:${RUNTIME_DB_PASSWORD:-runtime_dev_pw}@postgres:5432/${POSTGRES_DB:-dataagent}
-      MONGODB_URL: mongodb://mongo:27017/dataagent
-      REDIS_URL: redis://redis:6379
-      LITELLM_BASE_URL: http://litellm:4000
-      LANGFUSE_HOST: http://langfuse:3000
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
-      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
-      QDRANT_URL: http://qdrant:6333
-      EMBEDDING_DIM: "1024"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      mongo:
-        condition: service_started
-      redis:
-        condition: service_started
-      litellm:
-        condition: service_started
-
-  flow-builder:
-    profiles: [authoring]
-    build:
-      context: ..
-      dockerfile: services/flow-builder/Dockerfile
-    container_name: dataagent-flow-builder
-    restart: unless-stopped
-    ports:
-      - "8002:8002"
-    env_file: ../.env
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
-      MONGODB_URL: mongodb://mongo:27017/dataagent
-    depends_on:
-      postgres:
-        condition: service_healthy
-      mongo:
-        condition: service_started
-
-  # Local LLM backend on the host GPU. model-service /generate forwards here.
-  # Requires NVIDIA GPU + Docker GPU support (Docker Desktop WSL2 / nvidia-container-toolkit).
-  # First start has no model — pull it once:
-  #   docker exec dataagent-ollama ollama pull llama3.1:8b
   ollama:
+    # In-Docker LLM backend — CPU-only on macOS: running an 8B model here pegs all
+    # cores and is very slow. NOT in the `kb` profile. On macOS prefer the NATIVE
+    # ollama (Metal GPU) that model-service points at via host.docker.internal.
+    # Use `--profile models up ollama` only if you deliberately want the CPU backend.
     profiles: [models]
     image: ollama/ollama
     container_name: dataagent-ollama
@@ -541,23 +521,26 @@ services:
   model-service:
     profiles: [kb, runtime]
     build:
-      context: ./model-service
+      context: ../services/model-service
     container_name: dataagent-model-service
     restart: unless-stopped
     ports:
       - "8600:8001"
     environment:
       # Multilingual (Vietnamese corpus) — must match the weights cached in
-      # ./model-service/models and the dim of the Qdrant collections.
+      # ../services/model-service/models and the dim of the Qdrant collections.
       EMBED_MODEL: ${EMBED_MODEL:-intfloat/multilingual-e5-small}
       RERANK_MODEL: ${RERANK_MODEL:-cross-encoder/mmarco-mMiniLMv2-L12-H384-v1}
-      # LLM gateway → local Ollama (GPU). /generate forwards to REMOTE_LLM_URL + /v1/...
-      REMOTE_LLM_URL: ${REMOTE_LLM_URL:-http://ollama:11434}
+      # LLM gateway → NATIVE ollama on the Mac host (Metal GPU = fast, doesn't peg
+      # CPU). Requires host ollama to listen on all interfaces:
+      #   launchctl setenv OLLAMA_HOST 0.0.0.0 && (restart ollama)
+      # For the in-Docker CPU backend instead: set REMOTE_LLM_URL=http://ollama:11434.
+      REMOTE_LLM_URL: ${REMOTE_LLM_URL:-http://host.docker.internal:11434}
       REMOTE_LLM_MODEL: ${REMOTE_LLM_MODEL:-llama3.1:8b}
     volumes:
       # Weights are no longer baked into the image — they download here on first
-      # start and persist across recreates. See infra/model-service/Dockerfile.
-      - ./model-service/models:/app/models
+      # start and persist across recreates. See services/model-service/Dockerfile.
+      - ../services/model-service/models:/app/models
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 30s
@@ -566,45 +549,11 @@ services:
       # First start downloads the embed + rerank models into the volume above.
       start_period: 300s
 
-  kb-backend:
-    profiles: [kb, runtime]
-    build:
-      context: ..
-      dockerfile: infra/Dockerfile.kb
-    container_name: dataagent-kb-backend
-    restart: unless-stopped
-    # Gateway-only: not published to the host. Reachable solely via Kong
-    # (http://kb-backend:8000 on the shared network). With KB_DEV_AUTH unset the
-    # backend is fail-closed — it rejects any request lacking X-Kong-Verified.
-    # For direct local dev without Kong, re-add `ports: ["8050:8000"]` and set
-    # KB_DEV_AUTH=true below.
-    expose:
-      - "8000"
-    environment:
-      POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/${POSTGRES_DB:-dataagent}
-      QDRANT_URL: http://qdrant:6333
-      NEO4J_URI: bolt://neo4j:7687
-      MODEL_SERVICE_URL: http://model-service:8001
-      # MinIO creds: the Dockerfile default password is wrong — pin to the real root creds.
-      MINIO_URL: http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-minio_secret}@minio:9000
-      MINIO_BUCKET: knowledge-base
-      # Plaintext Kafka listener (this client has no SASL support).
-      KAFKA_URL: kafka:9094
-    depends_on:
-      postgres:
-        condition: service_healthy
-      qdrant:
-        condition: service_started
-      neo4j:
-        condition: service_healthy
-      model-service:
-        condition: service_healthy
-
   kb-ingestion-worker:
     profiles: [kb]
     build:
       context: ..
-      dockerfile: infra/kb-ingestion-worker/Dockerfile
+      dockerfile: services/kb-ingestion-worker/Dockerfile
     container_name: dataagent-kb-ingestion-worker
     restart: unless-stopped
     environment:
@@ -631,206 +580,4 @@ services:
       neo4j:
         condition: service_healthy
       model-service:
-        condition: service_healthy
-
-
-  auth-api:
-    profiles: [iam]
-    build:
-      context: ../services
-      dockerfile: auth-api/Dockerfile
-    container_name: dataagent-auth-api
-    restart: unless-stopped
-    ports:
-      - "8200:8200"
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
-      KONG_ADMIN_URL: http://kong:8001
-      OPENBAO_ADDR: http://openbao:8200
-    volumes:
-      - openbao_data:/openbao/data:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
-      openbao:
-        condition: service_started
-
-
-  minio-service:
-    profiles: [kb, release]
-    build:
-      context: ../services
-      dockerfile: minio-service/Dockerfile
-    container_name: dataagent-minio-service
-    restart: unless-stopped
-    ports:
-      - "8400:8400"
-    environment:
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
-    depends_on:
-      minio:
-        condition: service_healthy
-
-
-  release-worker:
-    profiles: [release]
-    build:
-      context: ../services
-      dockerfile: release-worker/Dockerfile
-    container_name: dataagent-release-worker
-    restart: unless-stopped
-    ports:
-      - "8100:8100"
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
-      KAFKA_BOOTSTRAP: kafka:9092
-      KAFKA_USERNAME: release-worker
-      KAFKA_PASSWORD: ${RELEASE_WORKER_KAFKA_PASSWORD}
-      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
-      KAFKA_SASL_MECHANISM: PLAIN
-      CELERY_BROKER: redis://redis:6379/0
-      KONG_ADMIN_URL: http://kong:8001
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
-      MONGO_URI: mongodb://mongo:27017
-      MONGO_DB: dataagent
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      mongo:
-        condition: service_healthy
-
-  audit-bridge:
-    profiles: [iam]
-    build:
-      context: ../services
-      dockerfile: audit-bridge/Dockerfile
-    container_name: dataagent-audit-bridge
-    restart: unless-stopped
-    environment:
-      KEYCLOAK_URL: http://keycloak:8080
-      KEYCLOAK_REALM: aeroflow
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      KAFKA_TOPIC: audit.auth.events
-      KAFKA_SASL_USERNAME: audit-bridge
-      KAFKA_SASL_PASSWORD: ${AUDIT_BRIDGE_KAFKA_PASSWORD}
-      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
-      KAFKA_SASL_MECHANISM: PLAIN
-      POLL_INTERVAL_SECONDS: "10"
-      STATE_FILE: /data/last_event_time.txt
-    volumes:
-      - audit_bridge_data:/data
-    depends_on:
-      kafka:
-        condition: service_healthy
-      keycloak:
-        condition: service_started
-
-  audit-consumer:
-    profiles: [iam]
-    build:
-      context: ../services
-      dockerfile: audit-consumer/Dockerfile
-    container_name: dataagent-audit-consumer
-    restart: unless-stopped
-    environment:
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      KAFKA_TOPIC: audit.auth.events
-      KAFKA_GROUP_ID: audit-consumer-group
-      KAFKA_SASL_USERNAME: audit-consumer
-      KAFKA_SASL_PASSWORD: ${AUDIT_CONSUMER_KAFKA_PASSWORD}
-      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
-      KAFKA_SASL_MECHANISM: PLAIN
-      DB_HOST: postgres
-      DB_PORT: "5432"
-      DB_NAME: ${POSTGRES_DB:-dataagent}
-      DB_USER: ${POSTGRES_USER:-admin}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
-    depends_on:
-      kafka:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-
-  jwks-refresher:
-    profiles: [legacy-jwt]
-    build:
-      context: ../services
-      dockerfile: jwks-refresher/Dockerfile
-    container_name: dataagent-jwks-refresher
-    restart: unless-stopped
-    environment:
-      KEYCLOAK_URL: http://keycloak:8080
-      KEYCLOAK_REALM: aeroflow
-      KONG_ADMIN_URL: http://kong:8001
-      KONG_CONSUMER: keycloak-users
-      REFRESH_INTERVAL_SECONDS: "300"
-      JWKS_STATE_FILE: /data/last_kid.txt
-    volumes:
-      - jwks_refresher_data:/data
-    depends_on:
-      keycloak:
-        condition: service_started
-      kong:
-        condition: service_healthy
-
-  orchestrator:
-    profiles: [runtime]
-    build:
-      context: ..
-      dockerfile: services/orchestrator/Dockerfile
-    container_name: dataagent-orchestrator
-    restart: unless-stopped
-    env_file: ../.env
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
-      LITELLM_BASE_URL: http://litellm:4000
-      LITELLM_API_KEY: ${LITELLM_API_KEY:-sk-dev}
-      WORKFLOW_RUNTIME_URL: http://workflow-runtime:8001
-      LANGFUSE_HOST: http://langfuse:3000
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-change-me}
-      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-change-me}
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
-      OTEL_SERVICE_NAME: orchestrator
-    depends_on:
-      postgres:
-        condition: service_healthy
-      litellm:
-        condition: service_started
-      workflow-runtime:
-        condition: service_started
-
-  frontend:
-    profiles: [authoring]
-    build:
-      context: ..
-      dockerfile: infra/Dockerfile.dev
-    container_name: dataagent-frontend
-    restart: unless-stopped
-    volumes:
-      - ..:/app
-      - /app/node_modules
-    ports:
-      - "5173:3000"
-    environment:
-      VITE_KEYCLOAK_URL: http://localhost:8080
-      VITE_KEYCLOAK_REALM: aeroflow
-      VITE_KEYCLOAK_CLIENT: aeroflow-frontend
-      VITE_API_BASE_URL: http://localhost:8000
-    depends_on:
-      keycloak:
-        condition: service_started
-      kong:
         condition: service_healthy

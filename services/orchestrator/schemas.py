@@ -12,7 +12,7 @@ class OrchestrateRequest(BaseModel):
     agent_id: Optional[str] = None
     # Khi frontend nhận __clarification event, user trả lời rồi gửi lại request với field này
     clarification_response: Optional[str] = None
-    messages: list[dict] = Field(default_factory=list)
+    messages: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class TaskSchema(BaseModel):
@@ -45,6 +45,7 @@ class TaskResult(BaseModel):
     conversation_id: Optional[str] = None  # frontend dùng để fetch Langfuse trace
     start_ms: int = 0
     latency_ms: int = 0
+    citations: list[dict] = Field(default_factory=list)
 
 
 class TargetResult(BaseModel):

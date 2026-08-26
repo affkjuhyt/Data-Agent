@@ -40,7 +40,7 @@ curl http://localhost:8088/health
 curl http://localhost:8088/v1/models
 
 # 4. (optional) Benchmark
-python3 model/llama-server/benchmark-llm.py
+python3 model/llama-server/benchmark_llm.py
 ```
 
 ## Configuration (env overrides)

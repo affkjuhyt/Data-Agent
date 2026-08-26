@@ -1,3 +1,5 @@
+from typing import Any
+
 import boto3
 import structlog
 from botocore.exceptions import ClientError
@@ -7,7 +9,7 @@ from config import MINIO_ACCESS_KEY, MINIO_ENDPOINT, MINIO_SECRET_KEY
 log = structlog.get_logger()
 
 
-def s3():
+def s3() -> Any:
     return boto3.client(
         "s3",
         endpoint_url=MINIO_ENDPOINT,
@@ -16,7 +18,7 @@ def s3():
     )
 
 
-def ensure_bucket(client, bucket: str):
+def ensure_bucket(client: Any, bucket: str) -> None:
     try:
         client.head_bucket(Bucket=bucket)
     except ClientError as e:

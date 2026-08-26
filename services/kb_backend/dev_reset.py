@@ -1,44 +1,4 @@
 #!/usr/bin/env python3
-"""
-dev_reset.py — wipe all pipeline test data for a clean run, using the SAME
-document-flush path as the Trash "permanent delete" (``trash_ops.flush``).
-
-Why reuse flush
----------------
-The Trash bin's flush is the single, authoritative multi-store delete for a
-document. Driving the reset through it means the reset can never drift from the
-real delete path: whatever flush cleans (and in whatever order), the reset cleans
-identically. For every KBData row (any tenant, incl. soft-deleted) we run the
-document-level flush:
-
-  Qdrant   delete chunk + doc points by data_id  (knowledge, knowledge_documents)
-  Neo4j    delete this document's RELATES edges   (KB-shared :Entity nodes survive)
-  Postgres delete KBTextBlock → (versions, tables via ON DELETE CASCADE),
-           KBTable, KBLifecycleHistory, KBData
-  MinIO    delete the source object
-  Mongo    delete kb_silver_staging / kb_ingestion_logs / pipeline_events by data_id
-
-Full-reset extras (what per-document flush intentionally does NOT touch, because
-they are shared or not document-scoped):
-
-  Qdrant   clear entity_registry + query_cache collections
-  Neo4j    delete any remaining (now-orphan) :Entity nodes
-  Postgres clear KBConflict + KBConflictBatch (no FK to KBData → never cascaded)
-  Mongo    clear pipeline_event_seq
-
-Preserved (baseline / re-seeded data): Tenants, RolePermissions, KBModel,
-KBKnowledgeBase, filter/extraction policies, KBWarehouse(+configs).
-
-Usage
------
-    # Run INSIDE the kb-backend container (it has the package + connectors and
-    # reads the same POSTGRES_URL / QDRANT_URL / … the service uses):
-    docker exec e2e-kb-backend python /app/services/kb_backend/dev_reset.py
-
-    # Connection strings are read from the service env / light_rag config; override
-    # any of POSTGRES_URL / MONGO_URL / MINIO_URL (QDRANT_URL / NEO4J_URL come from
-    # services.kb_backend.pipeline.light_rag.config) if running elsewhere.
-"""
 from __future__ import annotations
 
 import asyncio
@@ -49,30 +9,26 @@ import sys
 from sqlalchemy import select as sa_select, delete as sa_delete
 from qdrant_client import models as qmodels
 
-from basemodel.services_databaseconnector.shared_model import RetryConfig
-from basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+from libs.basemodel.services_databaseconnector.shared_model import RetryConfig
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBDataORM, KBConflictORM, KBConflictBatchORM,
 )
-from services.database_connector.postgres_connector import PostgresClient
-from services.database_connector.qdrant_connector import QdrantClient as QdrantService
-from services.database_connector.neo4j_connector import Neo4jClient
-from services.database_connector.mongo_connector import MongoClient
-from services.database_connector.minio_connector import MinIOClient
+from libs.database_connector.postgres_connector import PostgresClient
+from libs.database_connector.qdrant_connector import QdrantClient as QdrantService
+from libs.database_connector.neo4j_connector import Neo4jClient
+from libs.database_connector.mongo_connector import MongoClient
+from libs.database_connector.minio_connector import MinIOClient
 from services.kb_backend.pipeline.light_rag import config as cfg
-from services.kb_backend.pipeline.kb_ui_operation import trash_ops
+from services.kb_backend.operations import trash_ops
 
-# Connection strings — same sources the service uses (env + light_rag config).
 POSTGRES_URL = os.getenv("POSTGRES_URL", "postgresql+asyncpg://admin:dev123@postgres/aeroflow_kb")
 MONGO_URL    = os.getenv("MONGO_URL",    "mongodb://mongo:27017/kb_staging")
 MINIO_URL    = os.getenv("MINIO_URL",    "http://minio:miniominio@minio:9000")
 
-# Shared / non-doc-scoped Qdrant collections flush leaves alone — cleared fully here.
 _EXTRA_QDRANT = ["entity_registry", "query_cache"]
 
-# Quiet the worker-style INFO logging from trash_ops so the reset output stays readable.
 logging.basicConfig(level=logging.WARNING)
 
-# ── Colour helpers ──────────────────────────────────────────────────────────────
 _USE_COLOUR = sys.stdout.isatty()
 
 def _c(code: str, text: str) -> str:
@@ -96,9 +52,10 @@ async def _open_clients() -> tuple[PostgresClient, QdrantService, Neo4jClient, M
     return postgres, qdrant, neo4j, mongo, minio
 
 
-async def _flush_all_documents(postgres, qdrant, neo4j, mongo, minio) -> None:
-    """Run the Trash document-flush for EVERY KBData row (any tenant, incl.
-    soft-deleted) — the exact path the UI permanent-delete uses."""
+async def _flush_all_documents(
+    postgres: PostgresClient, qdrant: QdrantService, neo4j: Neo4jClient,
+    mongo: MongoClient, minio: MinIOClient,
+) -> None:
     section("Documents (via trash_ops.flush)")
     async with postgres.get_client() as session:
         rows = (await session.execute(
@@ -125,9 +82,9 @@ async def _flush_all_documents(postgres, qdrant, neo4j, mongo, minio) -> None:
     ok(f"flushed {flushed}/{len(docs)} documents" + (f" ({failed} failed)" if failed else ""))
 
 
-async def _reset_extras(postgres, qdrant, neo4j, mongo) -> None:
-    """Clear the shared / non-doc-scoped state flush does not touch."""
-    # Qdrant — shared collections (entity_registry, query_cache).
+async def _reset_extras(
+    postgres: PostgresClient, qdrant: QdrantService, neo4j: Neo4jClient, mongo: MongoClient,
+) -> None:
     section("Qdrant (shared collections)")
     client = qdrant.get_client()
     for col in _EXTRA_QDRANT:
@@ -137,15 +94,12 @@ async def _reset_extras(postgres, qdrant, neo4j, mongo) -> None:
                 continue
             await client.delete(
                 collection_name=col,
-                points_selector=qmodels.FilterSelector(filter=qmodels.Filter()),  # empty = all
+                points_selector=qmodels.FilterSelector(filter=qmodels.Filter()),
             )
             ok(f"collection '{col}': all points deleted")
         except Exception as e:
             err(f"collection '{col}': {e}")
 
-    # Neo4j — any remaining (orphan) :Entity nodes. Per-doc flush only drops a
-    # document's RELATES edges; KB-shared entity nodes survive each flush, so a
-    # full reset removes whatever is left.
     section("Neo4j (orphan entities)")
     try:
         async with neo4j.get_client().session() as s:
@@ -156,7 +110,6 @@ async def _reset_extras(postgres, qdrant, neo4j, mongo) -> None:
     except Exception as e:
         err(f"entity cleanup: {e}")
 
-    # Postgres — conflicts have no FK to KBData, so flush never removed them.
     section("Postgres (conflicts)")
     try:
         async with postgres.get_client() as session:
@@ -167,7 +120,6 @@ async def _reset_extras(postgres, qdrant, neo4j, mongo) -> None:
     except Exception as e:
         err(f"conflict cleanup: {e}")
 
-    # Mongo — the per-document collections are cleared by flush; the seq counter is not.
     section("Mongo (event sequence)")
     try:
         res = await mongo.get_client()["pipeline_event_seq"].delete_many({})

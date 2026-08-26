@@ -202,6 +202,12 @@ NODE_REGISTRY = {
             },
         },
     },
+    "visualization": {
+        "display":  "Visualization",
+        "category": "default",
+        "locked":   False,
+        "schema":   {},
+    },
     "responder": {
         "display":  "Responder",
         "category": "default",

@@ -2,18 +2,18 @@ import json
 import os
 import logging
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Any, AsyncGenerator, Optional
 from uuid import UUID
 
 from sqlalchemy import select, update as sa_update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from services.database_connector.postgres_connector import client
-from basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
+from libs.database_connector.postgres_connector import client
+from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
     AgentsORM, WorkflowsORM, WorkflowVersionsORM, AgentVersionsORM, AgentKBORM,
 )
-from basemodel.services_databaseconnector.postgres_model import (
+from libs.basemodel.services_databaseconnector.postgres_model import (
     AgentsDelete, AgentVersionsDelete, WorkflowVersionsDelete,
 )
 
@@ -24,7 +24,7 @@ _DEV_RESPONDER_MODEL_ID = os.environ.get("DEV_RESPONDER_MODEL_ID", "00000000-000
 
 
 @asynccontextmanager
-async def _txn(session: AsyncSession):
+async def _txn(session: AsyncSession) -> AsyncGenerator[None, None]:
     """client.get_client(tenant_id=...) already autobegins a transaction (the
     set_config SELECT executes on the session), so `session.begin()` here would
     raise "A transaction is already begun on this Session". Commit/rollback the
@@ -37,7 +37,7 @@ async def _txn(session: AsyncSession):
         raise
 
 
-async def init_db():
+async def init_db() -> None:
     url = os.environ.get("DATABASE_URL", "")
     if not url:
         logger.warning("DATABASE_URL not set")
@@ -47,11 +47,11 @@ async def init_db():
     logger.info("db pool ready")
 
 
-async def close_db():
+async def close_db() -> None:
     await client.close()
 
 
-async def create_agent(name: str, description: str, tenant_id: str) -> dict:
+async def create_agent(name: str, description: str, tenant_id: str) -> dict[str, Any]:
     async with client.get_client(tenant_id=tenant_id) as session:
         async with _txn(session):
             agent = AgentsORM(
@@ -98,7 +98,7 @@ async def create_agent(name: str, description: str, tenant_id: str) -> dict:
             }
 
 
-async def list_agents(tenant_id: str) -> list[dict]:
+async def list_agents(tenant_id: str) -> list[dict[str, Any]]:
     async with client.get_client(tenant_id=tenant_id) as session:
         result = await session.execute(
             select(AgentsORM)
@@ -120,7 +120,7 @@ async def list_agents(tenant_id: str) -> list[dict]:
         ]
 
 
-async def get_agent(agent_id: str, tenant_id: str | None = None) -> Optional[dict]:
+async def get_agent(agent_id: str, tenant_id: str | None = None) -> Optional[dict[str, Any]]:
     async with client.get_client(tenant_id=tenant_id) as session:
         result = await session.execute(
             select(AgentsORM)
@@ -163,7 +163,7 @@ async def get_agent(agent_id: str, tenant_id: str | None = None) -> Optional[dic
         }
 
 
-async def create_workflow(agent_id: str, name: str, description: str = "") -> dict:
+async def create_workflow(agent_id: str, name: str, description: str = "") -> dict[str, Any]:
     async with client.get_client() as session:
         async with _txn(session):
             wf = WorkflowsORM(
@@ -185,7 +185,7 @@ async def create_workflow(agent_id: str, name: str, description: str = "") -> di
             return {"workflow_id": str(wf.id), "workflow_version_id": str(wv.id)}
 
 
-async def list_workflows(agent_id: str) -> list[dict]:
+async def list_workflows(agent_id: str) -> list[dict[str, Any]]:
     async with client.get_client() as session:
         result = await session.execute(
             select(WorkflowsORM)
@@ -195,7 +195,7 @@ async def list_workflows(agent_id: str) -> list[dict]:
         )
         rows = result.scalars().all()
 
-        def _pick_version(versions, status):
+        def _pick_version(versions: list[WorkflowVersionsORM], status: str) -> Optional[str]:
             matches = [v for v in versions if v.status == status]
             return str(max(matches, key=lambda v: v.version).id) if matches else None
 
@@ -213,7 +213,7 @@ async def list_workflows(agent_id: str) -> list[dict]:
         ]
 
 
-async def update_agent_draft(agent_id: str, fields: dict, tenant_id: str | None = None) -> dict:
+async def update_agent_draft(agent_id: str, fields: dict[str, Any], tenant_id: str | None = None) -> dict[str, Any]:
     agent_fields = {k: v for k, v in fields.items() if k in ("name", "description")}
     av_fields = {k: v for k, v in fields.items()
                  if k in ("responder_model_id", "system_prompt_id", "guardrail_id", "memory_enabled")}
@@ -243,7 +243,7 @@ async def update_agent_draft(agent_id: str, fields: dict, tenant_id: str | None 
     return {"agent_id": agent_id, "updated": list(fields.keys())}
 
 
-async def unpublish_agent(agent_id: str, tenant_id: str | None = None) -> dict:
+async def unpublish_agent(agent_id: str, tenant_id: str | None = None) -> dict[str, Any]:
     async with client.get_client(tenant_id=tenant_id) as session:
         async with _txn(session):
             result = await session.execute(
@@ -262,7 +262,7 @@ async def unpublish_agent(agent_id: str, tenant_id: str | None = None) -> dict:
     return {"agent_id": agent_id, "published": False}
 
 
-async def publish_workflow_version(workflow_version_id: str, changelog: str | None = None) -> dict:
+async def publish_workflow_version(workflow_version_id: str, changelog: str | None = None) -> dict[str, Any]:
     async with client.get_client() as session:
         async with _txn(session):
             wv = await session.get(WorkflowVersionsORM, UUID(workflow_version_id))
@@ -287,7 +287,7 @@ async def publish_workflow_version(workflow_version_id: str, changelog: str | No
     return {"workflow_version_id": workflow_version_id, "status": "published"}
 
 
-async def republish_workflow_version(workflow_version_id: str) -> dict:
+async def republish_workflow_version(workflow_version_id: str) -> dict[str, Any]:
     """Re-publish an archived version — archives current published atomically."""
     async with client.get_client() as session:
         async with _txn(session):
@@ -309,7 +309,7 @@ async def republish_workflow_version(workflow_version_id: str) -> dict:
     return {"workflow_version_id": workflow_version_id, "status": "published"}
 
 
-async def list_workflow_versions(workflow_id: str) -> list[dict]:
+async def list_workflow_versions(workflow_id: str) -> list[dict[str, Any]]:
     async with client.get_client() as session:
         result = await session.execute(
             select(WorkflowVersionsORM)
@@ -331,7 +331,7 @@ async def list_workflow_versions(workflow_id: str) -> list[dict]:
         ]
 
 
-async def create_draft_version(workflow_id: str) -> dict:
+async def create_draft_version(workflow_id: str) -> dict[str, Any]:
     async with client.get_client() as session:
         async with _txn(session):
             # Lấy max version hiện tại
@@ -471,7 +471,7 @@ async def delete_agent(agent_id: str, tenant_id: str | None = None) -> list[str]
     return version_ids
 
 
-async def publish_agent(agent_id: str, workflow_id: str, kb_connection_id: str | None = None, tenant_id: str | None = None) -> dict:
+async def publish_agent(agent_id: str, workflow_id: str, kb_connection_id: str | None = None, tenant_id: str | None = None) -> dict[str, Any]:
     async with client.get_client(tenant_id=tenant_id) as session:
         async with _txn(session):
             # 1. Verify workflow belongs to agent

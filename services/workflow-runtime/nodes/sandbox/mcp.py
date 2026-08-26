@@ -1,3 +1,4 @@
+from typing import Any
 import asyncio
 import logging
 import uuid
@@ -14,6 +15,7 @@ logger = logging.getLogger(__name__)
 class MCPResult(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     content: str
+    source: str = ""
 
 
 def _is_valid_url(url: str) -> bool:
@@ -25,8 +27,8 @@ def _is_valid_url(url: str) -> bool:
 
 
 async def _execute_call(
-    client: httpx.AsyncClient, call: dict, mcp_endpoints: list, fallback_query: str
-) -> tuple[list, dict | None]:
+    client: httpx.AsyncClient, call: dict[str, Any], mcp_endpoints: list[Any], fallback_query: str
+) -> tuple[list[Any], dict[str, Any] | None]:
     tool_name = call.get("tool_name", "")
     endpoint = next(
         (ep for ep in mcp_endpoints if ep.get("name") == call.get("endpoint_name")),
@@ -52,10 +54,17 @@ async def _execute_call(
         )
         resp.raise_for_status()
         raw = resp.json().get("results", [])
+        # Nhãn nguồn dùng cho citation = tên endpoint DO TENANT CẤU HÌNH (không phải
+        # field server ngoài trả về) — MCP server có thể không gửi gì hoặc gửi tên
+        # không đáng tin, nhưng endpoint.get("name") luôn an toàn để hiển thị vì
+        # chính tenant đặt tên đó khi cấu hình.
+        endpoint_label = endpoint.get("name") or f"mcp/{tool_name}"
         valid, skipped = [], 0
         for item in raw:
             try:
-                valid.append(MCPResult.model_validate(item).model_dump())
+                result = MCPResult.model_validate(item).model_dump()
+                result["source"] = endpoint_label
+                valid.append(result)
             except ValidationError:
                 skipped += 1
         if skipped:
@@ -67,7 +76,7 @@ async def _execute_call(
         return [], {"tool_name": tool_name, "endpoint": url, "error": str(e)}
 
 
-async def mcp_node(state: AgentState) -> dict:
+async def mcp_node(state: AgentState) -> dict[str, Any]:
     mcp_endpoints = state["config"].get("mcp_endpoints", [])
     if not mcp_endpoints:
         return {"mcp_results": [], "mcp_errors": []}

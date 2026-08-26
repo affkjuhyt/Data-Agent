@@ -62,7 +62,7 @@ class ExpandingQueue:
     def weakest_exploitation(self) -> Optional[tuple[str, float]]:
         if not self.exploitation:
             return None
-        nid = min(self.exploitation, key=self.exploitation.get)
+        nid = min(self.exploitation, key=lambda k: self.exploitation[k])
         return nid, self.exploitation[nid]
 
     def all_ids(self) -> set[str]:

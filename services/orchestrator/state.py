@@ -11,8 +11,8 @@ class OrchestratorState(TypedDict):
     user_ref: str
     session_id: str
     agent_id: Optional[str]       # None → multi agent mode
-    messages: list[dict]          # conversation history từ client
-    cfg: dict                     # global config (guardrail, rewrite, suggestion models)
+    messages: list[dict[str, Any]]          # conversation history từ client
+    cfg: dict[str, Any]                     # global config (guardrail, rewrite, suggestion models)
 
     # Guardrail
     guardrail_triggered: bool
@@ -24,12 +24,13 @@ class OrchestratorState(TypedDict):
     clarification_response: Optional[str]  # user trả lời sau interrupt
 
     # Execution
-    agents: list[dict]            # published agents từ catalog
+    agents: list[dict[str, Any]]            # published agents từ catalog
     plan: Optional[Any]           # Plan object từ ToT planner
     process: Optional[Any]        # PlanningProcess sống — cần cho report_node_failure()
                                    # và để session_cache lưu/khôi phục khi client retry
     completed_node_ids: list[str] # node đã chạy thành công (resume tránh gọi lại agent)
     final_response: str
+    citations: list[dict]
     suggestions: list[str]
     target_results: list[Any]
     recovered: bool
