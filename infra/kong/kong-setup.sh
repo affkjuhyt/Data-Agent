@@ -402,6 +402,17 @@ JWKS_URI="$KONG_KC_HOST/realms/$REALM/protocol/openid-connect/certs"
 KONG_GRACE=600   # seconds; matches Keycloak default access-token TTL (15m floor)
 KONG_REFRESH=300
 
+# Injected as X-Gateway-Key on every JWT-verified request so an upstream can
+# distinguish "Kong verified this" from "a caller reached my port and typed
+# X-Kong-Verified: true". MUST equal the upstream's KB_GATEWAY_KEY — set both
+# from the same value in .env. Empty (the default) reproduces the previous
+# behaviour: the plugin omits the header and upstreams keep trusting
+# X-Kong-Verified alone, which is only safe if nothing but Kong can reach them.
+KONG_GATEWAY_KEY="${KB_GATEWAY_KEY:-}"
+if [ -z "$KONG_GATEWAY_KEY" ]; then
+  echo "⚠️  KB_GATEWAY_KEY is empty — upstreams will accept X-Kong-Verified without proof it came from Kong."
+fi
+
 if [ "$SKIP_JWT" = "1" ]; then
   echo "⚠️  SKIP_JWT=1 — removing aeroflow-jwks plugins if present (dev mode)"
   curl -sf "$KONG_ADMIN/plugins?size=100" | python3 -c "
@@ -416,30 +427,30 @@ for p in data.get('data', []):
 else
   echo "🔐 Enabling aeroflow-jwks plugin on workflow-runtime..."
   upsert_plugin "$KONG_ADMIN/services/workflow-runtime/plugins" \
-    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"workflow-runtime\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE}}" \
+    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"workflow-runtime\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
     "aeroflow-jwks"
 
   echo "🔐 Enabling aeroflow-jwks plugin on flow-builder..."
   upsert_plugin "$KONG_ADMIN/services/flow-builder/plugins" \
-    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"flow-builder\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE}}" \
+    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"flow-builder\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
     "aeroflow-jwks"
 
   # ── 4b. aeroflow-jwks on release-worker ────────────────────────────────
   echo "🔐 Enabling aeroflow-jwks plugin on release-worker (aud=release-worker)..."
   upsert_plugin "$KONG_ADMIN/services/release-worker/plugins" \
-    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"release-worker\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE}}" \
+    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"release-worker\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
     "aeroflow-jwks"
 
   # ── 4c. aeroflow-jwks on auth-api ──────────────────────────────────────
   echo "🔐 Enabling aeroflow-jwks plugin on auth-api (aud=auth-api)..."
   upsert_plugin "$KONG_ADMIN/services/auth-api/plugins" \
-    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"auth-api\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE}}" \
+    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"auth-api\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
     "aeroflow-jwks"
 
   # ── 4d-pre. aeroflow-jwks on orchestrator ──────────────────────────────
   echo "🔐 Enabling aeroflow-jwks plugin on orchestrator (aud=aeroflow-backend)..."
   upsert_plugin "$KONG_ADMIN/services/orchestrator/plugins" \
-    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"aeroflow-backend\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE}}" \
+    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"aeroflow-backend\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
     "aeroflow-jwks"
 fi
 
@@ -448,7 +459,7 @@ fi
 # aeroflow-frontend client applies — no new Keycloak mapper needed.
 echo "🔐 Enabling aeroflow-jwks plugin on kb-backend (aud=aeroflow-backend)..."
 upsert_plugin "$KONG_ADMIN/services/kb-backend/plugins" \
-  "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"aeroflow-backend\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE}}" \
+  "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"aeroflow-backend\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
   "aeroflow-jwks"
 
 # ── 4e. CORS on kb-backend-route ───────────────────────────────────────

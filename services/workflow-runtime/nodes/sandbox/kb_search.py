@@ -4,13 +4,54 @@ import httpx
 from pydantic import BaseModel, ValidationError
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
 
+from libs.shared.service_identity import (
+    ServiceAssertionError,
+    get_secret,
+    mint_service_assertion,
+)
+from mtls import kb_backend_ssl_context
 from state import AgentState
 
 logger = logging.getLogger(__name__)
 
+SERVICE_NAME = "workflow-runtime"
+
 _RETRYABLE = lambda e: isinstance(e, httpx.TransportError) or (
     isinstance(e, httpx.HTTPStatusError) and e.response.status_code >= 500
 )
+
+
+def _identity_headers(cfg: dict[str, Any], tenant_id: str) -> dict[str, str]:
+    """Identity for the service-to-service call to kb-backend.
+
+    This used to forge Kong's marker plus a fixed admin role set
+    (`X-Kong-Verified: true`, `X-User-Roles: platform-admin,tenant-admin,...`)
+    on every retrieval, which meant kb-backend's role filter (access.py
+    document_role_filter) always saw an administrator no matter who asked. Now
+    the real caller's roles travel inside an HMAC-signed assertion that
+    kb-backend verifies; the identity headers are not sent at all, so there is
+    nothing left to forge and nothing for kb-backend to trust by accident.
+
+    Raises ServiceAssertionError when the caller has no roles, or no signing
+    secret is configured. Callers must let that fail the retrieval: falling back
+    to any default identity is what this change exists to remove.
+    """
+    roles = [r for r in (cfg.get("user_roles") or []) if r]
+    user_ref = cfg.get("user_ref") or ""
+
+    if not roles:
+        raise ServiceAssertionError(
+            "no caller roles on this turn — refusing to search the knowledge base without an identity"
+        )
+
+    assertion = mint_service_assertion(
+        service=SERVICE_NAME,
+        tenant_id=tenant_id,
+        user_id=user_ref,
+        roles=roles,
+        secret=get_secret(),
+    )
+    return {"X-Service-Assertion": assertion}
 
 
 class KBChunk(BaseModel):
@@ -29,6 +70,15 @@ async def kb_search_node(state: AgentState) -> dict[str, Any]:
     if not kb_endpoint:
         return {"kb_chunks": []}
 
+    try:
+        headers = _identity_headers(cfg, tenant_id)
+    except ServiceAssertionError as e:
+        # Fail closed. Previously this path could not fail, because it asserted
+        # an admin identity unconditionally; an agent turn with no caller
+        # identity must now return nothing rather than everything.
+        logger.warning("kb_search | refusing to search without a verifiable identity: %s", e)
+        return {"kb_chunks": [], "kb_error": f"knowledge base search not authorized: {e}"}
+
     timeout = httpx.Timeout(connect=5.0, read=30.0, write=5.0, pool=5.0)
 
     kb_call = next(
@@ -45,19 +95,14 @@ async def kb_search_node(state: AgentState) -> dict[str, Any]:
             reraise=True,
         ):
             with attempt:
-                async with httpx.AsyncClient(timeout=timeout) as client:
+                # verify= carries the client certificate when mTLS is enabled,
+                # so the transport authenticates this service to kb-backend and
+                # kb-backend's server certificate back to it. Falls back to
+                # plain HTTP verification when unconfigured (see mtls.py).
+                async with httpx.AsyncClient(timeout=timeout, verify=kb_backend_ssl_context()) as client:
                     resp = await client.post(
                         f"{kb_endpoint}/api/pipeline/light-rag/retrieve",
-                        headers={
-                            # Service-to-service call: no Kong in front of kb-backend,
-                            # so forge the identity headers kb-backend's auth requires
-                            # (it fail-closes without X-Kong-Verified).
-                            "X-Kong-Verified": "true",
-                            "X-Role":          "AI_ENGINEER",
-                            "X-Tenant-Id":     tenant_id,
-                            "X-User-Id":       cfg.get("user_ref") or "11111111-1111-1111-1111-111111111111",
-                            "X-User-Roles":    "platform-admin,tenant-admin,kb-admin,engineer",
-                        },
+                        headers=headers,
                         json={
                             "query":     search_query,
                             "tenant_id": tenant_id,

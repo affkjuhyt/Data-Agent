@@ -39,6 +39,20 @@ services:
       OPENBAO_ADDR: http://openbao:8200
       OPENBAO_ROLE_ID: ${OPENBAO_ROLE_ID:-}
       OPENBAO_SECRET_ID: ${OPENBAO_SECRET_ID:-}
+      # Signs the identity assertion kb_search sends to kb-backend
+      # (libs/shared/service_identity.py). Must equal kb-backend's value.
+      # Unset => kb_search cannot mint an assertion and returns no chunks, by
+      # design: it must never fall back to asserting an identity it can't prove.
+      SERVICE_AUTH_SECRET: ${SERVICE_AUTH_SECRET:-}
+      # Optional mutual TLS to kb-backend (infra/certs/gen-certs.sh). Both cert
+      # and key, or neither — half-configured raises at startup rather than
+      # silently connecting without a client certificate.
+      MTLS_CLIENT_CERT: ${MTLS_CLIENT_CERT:-}
+      MTLS_CLIENT_KEY: ${MTLS_CLIENT_KEY:-}
+      MTLS_CA_CERT: ${MTLS_CA_CERT:-}
+    volumes:
+      # Read-only: this service presents a client certificate, it never issues one.
+      - ../infra/certs:/certs:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -249,9 +263,10 @@ services:
       dockerfile: infra/Dockerfile.kb
     container_name: dataagent-kb-backend
     restart: unless-stopped
-    # NOT published to the host: identity is a set of plain X-* headers that Kong
-    # injects after stripping client-supplied copies, so a caller that reaches this
-    # port directly can forge `X-Kong-Verified: true` and act as any tenant/role.
+    # NOT published to the host. Network isolation is no longer the only thing
+    # standing between a caller and someone else's data — X-Kong-Verified now
+    # needs KB_GATEWAY_KEY to be believed, and service callers must present a
+    # signed assertion — but it remains the outer layer and should stay.
     # Kong reaches it in-network; dev stacks re-publish it on loopback only.
     expose:
       - "8000"
@@ -267,6 +282,17 @@ services:
       KAFKA_URL: kafka:9094
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       OTEL_SERVICE_NAME: kb-backend
+      # Verifies the assertion workflow-runtime signs. Same value both sides.
+      # Unset => every service assertion is rejected (401) rather than trusted.
+      SERVICE_AUTH_SECRET: ${SERVICE_AUTH_SECRET:-}
+      # Services permitted to assert an end user's identity here. Each entry can
+      # act as any user, so keep it minimal.
+      KB_ALLOWED_SERVICES: ${KB_ALLOWED_SERVICES:-workflow-runtime}
+      # Proof that an X-Kong-Verified request really came through Kong; must
+      # equal the aeroflow-jwks plugin's gateway_key (infra/kong/kong-setup.sh
+      # reads it from this same variable). Unset => the header is trusted on its
+      # own, as before, and kb-backend logs a warning on every request.
+      KB_GATEWAY_KEY: ${KB_GATEWAY_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

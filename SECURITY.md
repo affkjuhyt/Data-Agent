@@ -11,6 +11,29 @@ production release. Operational procedures are in [`RUNBOOK.md`](./RUNBOOK.md).
   Keycloak identity (`X-Kong-Verified`, realm `aeroflow`, `aeroflow-jwks` plugin). Any
   request without it gets `401`. Services never trust a raw bearer token directly —
   identity is injected by Kong.
+- **Gateway proof (`X-Gateway-Key`).** `X-Kong-Verified` is only a header: a caller that
+  reaches a service port directly can send it and be believed. The plugin now also injects
+  a shared secret (`gateway_key` ↔ `KB_GATEWAY_KEY`) that upstreams compare in constant
+  time, so the marker means "Kong verified a JWT", not "someone typed this". Leaving
+  `KB_GATEWAY_KEY` unset keeps the old, weaker behaviour and logs a warning on every
+  request — set it everywhere except a laptop.
+- **Service-to-service identity.** `workflow-runtime` calls `kb-backend` directly
+  (`kb_search` → LightRAG retrieve), so it cannot present a user's Keycloak token. It signs
+  an **HMAC assertion** (`libs/shared/service_identity.py`) carrying the real caller's
+  tenant, user and roles, with a 120 s expiry; `kb-backend` verifies it and takes identity
+  **only** from the token, ignoring accompanying `X-User-*` headers. Services permitted to
+  assert an identity are allowlisted via `KB_ALLOWED_SERVICES`.
+  - Previously this call forged `X-Kong-Verified: true` plus a fixed
+    `platform-admin,tenant-admin,kb-admin,engineer` role set, which made the document-level
+    role filter (`kb_backend/operations/access.py`) inoperative for all agent traffic.
+  - With no caller roles, or no `SERVICE_AUTH_SECRET`, retrieval now **fails closed** and
+    returns no chunks rather than defaulting to any identity.
+- **Mutual TLS (optional).** `infra/certs/gen-certs.sh` issues the CA plus `clientAuth`
+  certificates for Kong *and* `workflow-runtime`, and a `serverAuth` cert for the backend.
+  Setting `MTLS_CLIENT_CERT` / `MTLS_CLIENT_KEY` / `MTLS_CA_CERT` authenticates the
+  connection; the signed assertion authenticates the request. They are independent layers —
+  mTLS alone would let any CA-signed client assert any identity, and the assertion alone is
+  only as strong as the network.
 - **Multi-tenant isolation via Postgres RLS.** Tenant tables carry `tenant_id` with
   row-level-security policies; child tables without their own `tenant_id` are covered by
   FK-chain `EXISTS` policies (`enable_tenant_rls` + `rls_kb_child_tables` migrations).

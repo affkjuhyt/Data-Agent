@@ -213,6 +213,12 @@ async def run_conversation_stream(req: RunRequest, request: Request) -> Streamin
     # doc §3.7 — gates which Schema Memory tables _text_to_sql_handler may
     # see. Kong-style convention: comma-separated roles already verified
     # upstream (see tests/integration/conftest.py headers_factory).
+    #
+    # ALSO the caller identity kb_search asserts to kb-backend. It used to send
+    # a hardcoded admin role set instead, so kb-backend's document-level RBAC
+    # never applied to agent traffic; these two lines are the real identity it
+    # now signs and forwards. An empty list is meaningful — kb_search fails
+    # closed on it rather than substituting a default.
     cfg["user_roles"] = [r.strip() for r in request.headers.get("X-User-Roles", "").split(",") if r.strip()]
     # Strip verbose build-time fields — không cần runtime, chỉ làm Langfuse input thêm to
     cfg.pop("flow_nodes", None)
@@ -221,6 +227,10 @@ async def run_conversation_stream(req: RunRequest, request: Request) -> Streamin
         return JSONResponse(status_code=403, content={"detail": "Agent not found or access denied"})
 
     user_ref = request.headers.get("X-User-ID", "anonymous")
+    # kb_search signs this into its assertion to kb-backend. It read
+    # cfg["user_ref"] before, but nothing ever set the key, so it always fell
+    # through to a hardcoded UUID literal.
+    cfg["user_ref"] = user_ref
 
     # orchestrated=True: orchestrator đã fetch memory và pass xuống, dùng luôn
     # orchestrated=False: single agent mode, tự fetch memory như bình thường

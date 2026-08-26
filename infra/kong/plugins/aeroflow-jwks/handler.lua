@@ -162,6 +162,14 @@ function AeroflowJwks:access(conf)
   kong.service.request.clear_header("X-Tenant-Id")
   kong.service.request.clear_header("X-Role-Id")
   kong.service.request.clear_header("X-Kong-Verified")
+  -- Proof that X-Kong-Verified came from this plugin and not from a client
+  -- that reached the upstream directly. Cleared here for the same reason as
+  -- the identity headers, and re-set below only after the JWT verifies.
+  kong.service.request.clear_header("X-Gateway-Key")
+  -- A service asserting an end user's identity (workflow-runtime ->
+  -- kb-backend) is a backend-only path; a browser must never be able to
+  -- present one through the gateway.
+  kong.service.request.clear_header("X-Service-Assertion")
 
   -- 1. Bearer token
   local auth = kong.request.get_header("Authorization")
@@ -269,6 +277,13 @@ function AeroflowJwks:access(conf)
   kong.service.request.set_header("X-Tenant-Id",    payload.tenant_id         or "")
   kong.service.request.set_header("X-Role-Id",      payload.role_id           or "")
   kong.service.request.set_header("X-Kong-Verified", "true")
+  -- Upstreams compare this against their own KB_GATEWAY_KEY. Without it,
+  -- X-Kong-Verified is only as trustworthy as the network: any caller able to
+  -- reach the upstream port could send it and be believed. Optional so a
+  -- gateway configured before this field existed keeps working.
+  if conf.gateway_key and conf.gateway_key ~= "" then
+    kong.service.request.set_header("X-Gateway-Key", conf.gateway_key)
+  end
 
   -- Strip the Authorization header from the upstream request when hide_credentials is enabled.
   if conf.hide_credentials then

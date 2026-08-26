@@ -18,6 +18,12 @@ return {
         -- typically <=15 min in Keycloak's default profile.
         { grace_period          = { type = "number",  default = 600  }        },
         { hide_credentials      = { type = "boolean", default = true  }       },
+        -- Shared secret injected as X-Gateway-Key on verified requests, so an
+        -- upstream can tell "Kong verified a JWT for this request" apart from
+        -- "someone reached my port and typed X-Kong-Verified: true". Must match
+        -- KB_GATEWAY_KEY on the upstream. Marked encrypted so it is not echoed
+        -- back in plaintext by the Kong Admin API.
+        { gateway_key           = { type = "string",  required = false, encrypted = true } },
       },
     }},
   },
