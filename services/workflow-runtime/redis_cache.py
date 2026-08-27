@@ -86,7 +86,12 @@ def _schema_key(tenant_id: str, host: str, port: int, database: str) -> str:
     # đổi DB thật) hay user/password (đổi tài khoản không đổi cấu trúc bảng)
     # — key theo đúng danh tính DB vật lý, để 2 connection khác tên trỏ cùng
     # 1 DB tự nhiên share chung cache.
-    return f"db_schema:{tenant_id}:{host}:{port}:{database}"
+    # v2: the cached value is now the RAW introspected table list (JSON), not a
+    # pre-rendered schema string. Rendering became query-dependent (only the
+    # tables relevant to this question reach the prompt), so caching the
+    # rendered text would key one query's selection under every query. Bumping
+    # the prefix retires v1 values instead of feeding a JSON parser prose.
+    return f"db_schema_v2:{tenant_id}:{host}:{port}:{database}"
 
 
 async def cache_get_schema(tenant_id: str, host: str, port: int, database: str) -> Optional[str]:

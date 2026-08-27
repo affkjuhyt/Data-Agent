@@ -11,18 +11,31 @@ production release. Operational procedures are in [`RUNBOOK.md`](./RUNBOOK.md).
   Keycloak identity (`X-Kong-Verified`, realm `aeroflow`, `aeroflow-jwks` plugin). Any
   request without it gets `401`. Services never trust a raw bearer token directly —
   identity is injected by Kong.
+- **The agent tier is behind the gateway too.** `orchestrator` and
+  `workflow-runtime` are no longer published on host ports (`8003`/`8001`); Kong's
+  `orchestrator-route` and `runtime-route` are the only way in, and both services
+  now enforce the shared caller check instead of reading raw headers. Previously
+  neither verified anything and the orchestrator fell back to `DEV_TENANT_ID`, so
+  any caller reaching those ports could act as any tenant. The Vite dev proxy,
+  which used to inject a hardcoded `platform-admin` identity straight to them, now
+  routes through Kong like everything else.
 - **Gateway proof (`X-Gateway-Key`).** `X-Kong-Verified` is only a header: a caller that
   reaches a service port directly can send it and be believed. The plugin now also injects
-  a shared secret (`gateway_key` ↔ `KB_GATEWAY_KEY`) that upstreams compare in constant
+  a shared secret (`gateway_key` ↔ `GATEWAY_KEY`) that every upstream compares in constant
   time, so the marker means "Kong verified a JWT", not "someone typed this". Leaving
-  `KB_GATEWAY_KEY` unset keeps the old, weaker behaviour and logs a warning on every
-  request — set it everywhere except a laptop.
+  `GATEWAY_KEY` unset keeps the old, weaker behaviour and logs a warning on every
+  request — set it everywhere except a laptop. (`KB_GATEWAY_KEY` is still read as a
+  deprecated alias.)
 - **Service-to-service identity.** `workflow-runtime` calls `kb-backend` directly
   (`kb_search` → LightRAG retrieve), so it cannot present a user's Keycloak token. It signs
   an **HMAC assertion** (`libs/shared/service_identity.py`) carrying the real caller's
   tenant, user and roles, with a 120 s expiry; `kb-backend` verifies it and takes identity
   **only** from the token, ignoring accompanying `X-User-*` headers. Services permitted to
-  assert an identity are allowlisted via `KB_ALLOWED_SERVICES`.
+  assert an identity are allowlisted per service: `KB_ALLOWED_SERVICES`
+  (kb-backend ← workflow-runtime), `RUNTIME_ALLOWED_SERVICES` (workflow-runtime ←
+  orchestrator), `ORCHESTRATOR_ALLOWED_SERVICES` (empty — nothing calls it).
+  The trust decision itself lives once in `libs/shared/auth.resolve_caller`, so
+  every service makes it identically.
   - Previously this call forged `X-Kong-Verified: true` plus a fixed
     `platform-admin,tenant-admin,kb-admin,engineer` role set, which made the document-level
     role filter (`kb_backend/operations/access.py`) inoperative for all agent traffic.
@@ -34,6 +47,29 @@ production release. Operational procedures are in [`RUNBOOK.md`](./RUNBOOK.md).
   connection; the signed assertion authenticates the request. They are independent layers —
   mTLS alone would let any CA-signed client assert any identity, and the assertion alone is
   only as strong as the network.
+- **Data-access audit trail.** Every query an agent runs emits a `data.access`
+  event (`libs/shared/audit.py`) onto the existing Kafka pipeline; `audit-consumer`
+  writes it to `DataAccessLog` — who, which roles, which connection, which tables,
+  row count, latency, and the allow/deny/error outcome. Previously the audit
+  covered **authentication events only**, so "who read this data" had no answer and
+  the SQL lived only in Langfuse traces, which sample and expire.
+  - **Statements are redacted, never stored raw.** A `WHERE` clause routinely holds
+    exactly the personal data the audit protects, so literals become `?` and a
+    SHA-256 of the original is kept alongside — enough to correlate repeat queries
+    and prove which statement ran, without reproducing its arguments.
+  - **Every outcome is recorded, not just successes.** A guard rejection is logged
+    as `deny`, which is what makes "how often does the agent attempt a write?"
+    answerable.
+  - **Auditing records access, it does not gate it.** Emission is fire-and-forget
+    and can never fail a user's turn. A control that must *block* on an unavailable
+    audit log belongs at the policy layer.
+  - **Action for prod — append-only is NOT yet enforced.** Nothing updates or
+    deletes rows, but `app_user` still holds `UPDATE`/`DELETE` from the blanket
+    grant in `enable_tenant_rls`. Tamper-evidence needs an INSERT-only writer role
+    for the consumer plus revoking `UPDATE`/`DELETE` from everything else.
+  - **Action for prod — retention.** The topic is provisioned at 90 days
+    (`infra/kafka/kafka-setup.sh`); align it and the table's retention with the
+    policy covering the data being queried.
 - **Multi-tenant isolation via Postgres RLS.** Tenant tables carry `tenant_id` with
   row-level-security policies; child tables without their own `tenant_id` are covered by
   FK-chain `EXISTS` policies (`enable_tenant_rls` + `rls_kb_child_tables` migrations).

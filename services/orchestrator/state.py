@@ -9,6 +9,9 @@ class OrchestratorState(TypedDict):
     user_id: str
     tenant_id: str
     user_ref: str
+    # Real caller roles, forwarded to workflow-runtime so the agent asserts this
+    # user downstream instead of a fixed admin set. Empty => kb_search fails closed.
+    user_roles: list[str]
     session_id: str
     agent_id: Optional[str]       # None → multi agent mode
     messages: list[dict[str, Any]]          # conversation history từ client

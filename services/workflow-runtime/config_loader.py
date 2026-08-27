@@ -260,6 +260,14 @@ def _extract_node_config(flow_nodes: list[dict[str, Any]]) -> dict[str, Any]:
                     "secret_id": conn.get("secretId", ""),
                     "password":  "",
                     "note":      conn.get("note", ""),
+                    # Opt-in link to a crawled Schema Catalog warehouse
+                    # (SchemaCatalog.warehouse_id). Set => SQL generation uses the
+                    # curated, embedded catalog for this connection instead of
+                    # re-introspecting information_schema. Unset => introspection
+                    # fallback, which is correct but coarser. Not defaulted: guessing
+                    # which warehouse a connection maps to would feed the model
+                    # tables from a different database.
+                    "catalog_warehouse_id": conn.get("catalogWarehouseId", ""),
                 }
                 for conn in conns if conn.get("name") and conn.get("host") and conn.get("database")
             }

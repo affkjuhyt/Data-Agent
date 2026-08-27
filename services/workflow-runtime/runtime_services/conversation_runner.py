@@ -180,8 +180,15 @@ def invalidate_graph_version(workflow_version_id: str) -> int:
     return removed
 
 
-async def run_conversation_stream(req: RunRequest, request: Request) -> StreamingResponse | JSONResponse:
-    tenant_id = request.headers.get("X-Tenant-ID", _DEV_TENANT_ID)
+async def run_conversation_stream(
+    req: RunRequest, request: Request, caller: dict[str, Any] | None = None,
+) -> StreamingResponse | JSONResponse:
+    # `caller` is the verified identity from auth.get_current_user — either a
+    # Kong-gated user or the orchestrator's signed assertion. Reading these
+    # from raw headers (as this did) meant anything reaching port 8001 chose
+    # its own tenant, user and roles.
+    caller = caller or {}
+    tenant_id = caller.get("tenant_id") or _DEV_TENANT_ID
     cfg = await load_agent_config(req.agent_id, tenant_id=tenant_id)
     if cfg is None:
         async def _err() -> AsyncIterator[str]:
@@ -219,14 +226,14 @@ async def run_conversation_stream(req: RunRequest, request: Request) -> Streamin
     # never applied to agent traffic; these two lines are the real identity it
     # now signs and forwards. An empty list is meaningful — kb_search fails
     # closed on it rather than substituting a default.
-    cfg["user_roles"] = [r.strip() for r in request.headers.get("X-User-Roles", "").split(",") if r.strip()]
+    cfg["user_roles"] = list(caller.get("roles") or [])
     # Strip verbose build-time fields — không cần runtime, chỉ làm Langfuse input thêm to
     cfg.pop("flow_nodes", None)
     cfg.pop("flow_edges", None)
     if not await validate_agent_tenant(agent_id, tenant_id):
         return JSONResponse(status_code=403, content={"detail": "Agent not found or access denied"})
 
-    user_ref = request.headers.get("X-User-ID", "anonymous")
+    user_ref = caller.get("user_id") or "anonymous"
     # kb_search signs this into its assertion to kb-backend. It read
     # cfg["user_ref"] before, but nothing ever set the key, so it always fell
     # through to a hardcoded UUID literal.

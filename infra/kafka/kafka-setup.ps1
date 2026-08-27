@@ -81,6 +81,13 @@ New-Topic "__consumer_offsets" "--partitions 50 --replication-factor 1 --config 
     "topic: __consumer_offsets (50 partitions, compact)"
 New-Topic "audit.auth.events" "--partitions 3 --replication-factor 1 --config retention.ms=2592000000 --config cleanup.policy=delete" `
     "topic: audit.auth.events (3 partitions, 30d retention)"
+# Data-access audit: who ran which query. Higher volume than auth events (one
+# per query vs one per login), so more partitions. Retention is set LONGER than
+# auth events on purpose — this is the record an investigation reads back, and
+# 30 days is shorter than most incidents take to surface. Align it with whatever
+# retention policy applies to the data being queried.
+New-Topic "audit.data.access" "--partitions 6 --replication-factor 1 --config retention.ms=7776000000 --config cleanup.policy=delete" `
+    "topic: audit.data.access (6 partitions, 90d retention)"
 New-Topic "release.pipeline.triggered" "--partitions 3 --replication-factor 1" "topic: release.pipeline.triggered"
 New-Topic "release.pipeline.status"    "--partitions 3 --replication-factor 1" "topic: release.pipeline.status"
 New-Topic "release.rollback.initiated" "--partitions 3 --replication-factor 1" "topic: release.rollback.initiated"
@@ -95,6 +102,14 @@ Add-Acl "--allow-principal User:audit-consumer --operation Read --operation Desc
     "audit-consumer: Read + Describe on audit.auth.events"
 Add-Acl "--allow-principal User:audit-consumer --operation Read --group audit-consumer-group" `
     "audit-consumer: Read on group audit-consumer-group"
+
+# workflow-runtime PRODUCES data-access events; audit-consumer reads them.
+# Without these the producer's send is rejected and every record is lost with
+# only a client-side warning — the failure mode an audit can least afford.
+Add-Acl "--allow-principal User:workflow-runtime --operation Write --operation Describe --topic audit.data.access" `
+    "workflow-runtime: Write + Describe on audit.data.access"
+Add-Acl "--allow-principal User:audit-consumer --operation Read --operation Describe --topic audit.data.access" `
+    "audit-consumer: Read + Describe on audit.data.access"
 
 foreach ($topic in @("release.pipeline.triggered", "release.pipeline.status", "release.rollback.initiated")) {
     Add-Acl "--allow-principal User:release-worker --operation Write --operation Read --operation Describe --operation Create --topic $topic" `

@@ -8,10 +8,11 @@ import logging
 import uuid
 from contextlib import nullcontext
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
 import config
+from auth import get_current_user
 from agent_catalog import fetch_guardrail_config
 from graph import get_graph
 from nodes.guardrail import run_guardrail
@@ -37,7 +38,11 @@ def _sse(data: Any) -> str:
 
 
 @router.post("/api/orchestrate/stream")
-async def stream_orchestration(req: OrchestrateRequest, request: Request) -> Response:
+async def stream_orchestration(
+    req: OrchestrateRequest,
+    request: Request,
+    caller: dict[str, Any] = Depends(get_current_user),
+) -> Response:
 
     # Admission control — shed instead of piling a slow turn onto the busy GPU.
     global _active_turns
@@ -51,7 +56,11 @@ async def stream_orchestration(req: OrchestrateRequest, request: Request) -> Res
         )
     _active_turns += 1
 
-    tenant_id = request.headers.get("X-Tenant-Id", "") or config.DEV_TENANT_ID
+    # Verified identity, not raw headers: get_current_user has already proven
+    # this came from Kong (gateway key) or is a signed assertion. The old
+    # `headers.get(...) or DEV_TENANT_ID` fallback meant an unauthenticated
+    # caller silently became the dev tenant.
+    tenant_id = caller["tenant_id"] or config.DEV_TENANT_ID
     # hex32 (không dấu gạch ngang) — format trace_id chuẩn OTEL, dùng chung
     # làm LangGraph thread_id VÀ Langfuse trace_id (xem observability.py).
     session_id = (req.session_id or uuid.uuid4().hex).replace("-", "")
@@ -68,7 +77,10 @@ async def stream_orchestration(req: OrchestrateRequest, request: Request) -> Res
         "rewritten_query":         req.query,
         "user_id":                 req.user_id,
         "tenant_id":               tenant_id,
-        "user_ref":                request.headers.get("X-User-ID", "anonymous"),
+        "user_ref":                caller["user_id"] or "anonymous",
+        # Carried to workflow-runtime so the agent asserts the REAL caller
+        # downstream (kb_search fails closed on an empty list).
+        "user_roles":              caller["roles"],
         "session_id":              session_id,
         "agent_id":                req.agent_id,
         "messages":                req.messages,

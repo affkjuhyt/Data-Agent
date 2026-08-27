@@ -30,6 +30,7 @@ async def _run_task(
     prompt: str,
     user_id: str,
     tenant_id: str = "",
+    user_roles: list[str] | None = None,
     orchestrated: bool = True,
     executor_start: float = 0.0,
     guardrail_cfg: dict[str, Any] | None = None,
@@ -55,6 +56,7 @@ async def _run_task(
                 prompt=prompt,
                 user_id=user_id,
                 tenant_id=tenant_id,
+                user_roles=user_roles,
                 orchestrated=orchestrated,
                 traceparent=traceparent_of(span),
                 guardrail_cfg=guardrail_cfg,
@@ -83,6 +85,7 @@ async def _execute_target(
     user_id: str,
     original_query: str = "",
     tenant_id: str = "",
+    user_roles: list[str] | None = None,
     agent_name_map: dict[str, str] | None = None,
     orchestrated: bool = True,
     executor_start: float = 0.0,
@@ -125,7 +128,7 @@ async def _execute_target(
                 parts.append(f"Nhiệm vụ: {node.title}")
                 return await _run_task(
                     node, "\n\n".join(parts), user_id,
-                    tenant_id=tenant_id, orchestrated=orchestrated,
+                    tenant_id=tenant_id, user_roles=user_roles, orchestrated=orchestrated,
                     executor_start=executor_start, guardrail_cfg=guardrail_cfg,
                 )
 
@@ -171,6 +174,7 @@ async def execute_plan(
     user_id: str = "orchestrator",
     original_query: str = "",
     tenant_id: str = "",
+    user_roles: list[str] | None = None,
     agents: list[dict[str, Any]] | None = None,
     skip_node_ids: set[str] | None = None,
     orchestrated: bool = True,
@@ -192,7 +196,7 @@ async def execute_plan(
         logger.info("executor | target=%s '%s'", target.node_id, target.description[:60])
         target_result, success, target_output = await _execute_target(
             target, prior_context, user_id,
-            original_query=original_query, tenant_id=tenant_id,
+            original_query=original_query, tenant_id=tenant_id, user_roles=user_roles,
             agent_name_map=agent_name_map, orchestrated=orchestrated,
             executor_start=executor_start, guardrail_cfg=guardrail_cfg,
         )

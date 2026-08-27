@@ -27,26 +27,43 @@ docker compose -f infra/docker-compose.yml -f infra/docker-compose.app.yml \
 #   docker compose ... up -d sandbox-executor openbao
 ```
 
-Host ports: **orchestrator `:8003`**, workflow-runtime `:8001`, litellm `:4000`.
-No auth token — dev identity comes from forged headers.
+Host ports: **Kong `:8000`**, litellm `:4000`. The orchestrator (`8003`) and
+workflow-runtime (`8001`) are **not published** — they are reachable only through
+Kong, which verifies the Keycloak JWT and injects the identity headers plus the
+shared `X-Gateway-Key`. Forged identity headers no longer work: both services
+verify their caller (`libs/shared/auth.py`), and the orchestrator authenticates
+to workflow-runtime with a signed service assertion.
+
+Get a token the same way the KB stack does, then send it as `Authorization:
+Bearer $TOKEN` to `:8000`:
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8080/realms/aeroflow/protocol/openid-connect/token   -d grant_type=password -d client_id=aeroflow-frontend   -d username=helios-engineer -d password='H3lios@Eng001!' | jq -r .access_token)
+```
+
+Requires `GATEWAY_KEY` and `SERVICE_AUTH_SECRET` set in `.env` (same value across
+services) and `kong-setup.sh` re-run after changing `GATEWAY_KEY`.
 
 ## 2. APIs (Postman: `infra/agent-e2e.postman_collection.json`)
 
-Headers on every call: `X-Tenant-Id: a0000000-0000-0000-0000-000000000001`,
-`X-User-ID: 11111111-…`, `X-User-Roles: platform-admin,tenant-admin,engineer`.
+Header on every call: `Authorization: Bearer $TOKEN`. Identity headers are
+**injected by Kong from the token** — sending your own is pointless (the plugin
+clears them) and reaching a service port directly is no longer possible.
+
+All paths below go through Kong on `:8000`, not the service port.
 
 | # | Method + path | Purpose |
 |---|---|---|
-| 0 | `GET :8003/api/orchestrate/health` | liveness |
-| 1 | `POST :8003/api/orchestrate/stream` | **the agent turn** (SSE). Body `{query, user_id, agent_id}`. `agent_id` set → single-agent (predictable); omit → multi-agent ToT planner (heavier). Frames: `{"__session_id":…}`, text tokens `"…"`, `{"__suggestions":…}`/`{"__chart":…}`/`{"__clarification":…}`, then `[DONE]`. |
-| 2 | `POST :8003/api/orchestrate/stream` (no `agent_id`) | multi-agent worst-case cost |
-| 3 | `POST :8003/api/orchestrate/resume` | HITL — only after a `{"__clarification":…}` frame; JSON, not SSE. Body `{session_id, clarification}`. |
-| 4 | `POST :8001/api/conversations/run` | downstream single-agent executor (isolate agent-exec latency from the orchestrator layer). |
+| 0 | `GET :8000/api/orchestrate/health` | liveness |
+| 1 | `POST :8000/api/orchestrate/stream` | **the agent turn** (SSE). Body `{query, user_id, agent_id}`. `agent_id` set → single-agent (predictable); omit → multi-agent ToT planner (heavier). Frames: `{"__session_id":…}`, text tokens `"…"`, `{"__suggestions":…}`/`{"__chart":…}`/`{"__clarification":…}`, then `[DONE]`. |
+| 2 | `POST :8000/api/orchestrate/stream` (no `agent_id`) | multi-agent worst-case cost |
+| 3 | `POST :8000/api/orchestrate/resume` | HITL — only after a `{"__clarification":…}` frame; JSON, not SSE. Body `{session_id, clarification}`. |
+| 4 | `POST :8000/api/conversations/run` | downstream single-agent executor (isolate agent-exec latency from the orchestrator layer). |
 | 5 | `POST :4000/v1/chat/completions` | the LLM tier (bottleneck). `Authorization: Bearer sk-dev`. |
 
 Minimal turn:
 ```bash
-curl -N -X POST http://localhost:8003/api/orchestrate/stream \
+curl -N -X POST http://localhost:8000/api/orchestrate/stream \
   -H 'Content-Type: application/json' \
   -H 'X-Tenant-Id: a0000000-0000-0000-0000-000000000001' \
   -H 'X-User-ID: 11111111-1111-1111-1111-111111111111' \

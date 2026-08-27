@@ -6,16 +6,16 @@ and inserts rows into the audit_logs partitioned table.
 
 Delivery: at-least-once. Offset committed after successful PostgreSQL COMMIT.
 """
-from typing import Any
 import json
 import logging
 import os
 import time
+from typing import Any
 
+import data_access
 import psycopg2
 from kafka import KafkaConsumer
 from kafka.errors import NoBrokersAvailable
-
 from shared.observability import setup_observability
 
 setup_observability("audit-consumer")
@@ -36,6 +36,11 @@ KAFKA_SASL_PASS = os.environ.get("KAFKA_SASL_PASSWORD", "")
 KAFKA_SECURITY_PROTOCOL = os.environ.get("KAFKA_SECURITY_PROTOCOL", "SASL_PLAINTEXT")
 KAFKA_SASL_MECHANISM = os.environ.get("KAFKA_SASL_MECHANISM", "PLAIN")
 TOPIC = os.environ.get("KAFKA_TOPIC", "audit.auth.events")
+# Data-access events (who ran which query) ride the same consumer: same
+# broker, same database, same operational surface. Different topic and
+# different table because they record a different thing at a different
+# volume — see libs/.../audit_access_orm.py.
+DATA_ACCESS_TOPIC = os.environ.get("KAFKA_DATA_ACCESS_TOPIC", data_access.TOPIC)
 GROUP_ID = os.environ.get("KAFKA_GROUP_ID", "audit-consumer-group")
 DB_HOST = os.environ.get("DB_HOST", "postgres")
 DB_PORT = int(os.environ.get("DB_PORT", "5432"))
@@ -77,8 +82,8 @@ def wait_for_kafka(bootstrap: str, retries: int = 30, delay: int = 5) -> KafkaCo
                     sasl_plain_username=KAFKA_SASL_USER,
                     sasl_plain_password=KAFKA_SASL_PASS,
                 )
-            consumer = KafkaConsumer(TOPIC, **kwargs)
-            log.info("Kafka consumer ready, subscribed to %s", TOPIC)
+            consumer = KafkaConsumer(TOPIC, DATA_ACCESS_TOPIC, **kwargs)
+            log.info("Kafka consumer ready, subscribed to %s, %s", TOPIC, DATA_ACCESS_TOPIC)
             return consumer
         except NoBrokersAvailable:
             log.warning("Kafka not ready, attempt %d/%d, retry in %ds", attempt, retries, delay)
@@ -136,7 +141,7 @@ def main() -> None:
     conn = wait_for_postgres()
     consumer = wait_for_kafka(KAFKA_BOOTSTRAP)
 
-    log.info("Consuming from %s ...", TOPIC)
+    log.info("Consuming from %s and %s ...", TOPIC, DATA_ACCESS_TOPIC)
     while True:
         try:
             records = consumer.poll(timeout_ms=2000)
@@ -154,7 +159,13 @@ def main() -> None:
                         continue
                     try:
                         with conn.cursor() as cur:
-                            inserted = insert_event(cur, event)
+                            # Route by topic, not by sniffing the payload: the
+                            # two event shapes are unrelated and guessing would
+                            # silently mis-file one as the other.
+                            if msg.topic == DATA_ACCESS_TOPIC:
+                                inserted = data_access.insert_data_access(cur, event)
+                            else:
+                                inserted = insert_event(cur, event)
                         conn.commit()
                         if not inserted:
                             log.debug("Skipping duplicate event offset=%d", msg.offset)

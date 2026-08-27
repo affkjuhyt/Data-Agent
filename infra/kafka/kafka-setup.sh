@@ -70,6 +70,12 @@ run_kafka "/opt/kafka/bin/kafka-topics.sh \
   --config cleanup.policy=delete" \
   && echo "  → topic: audit.auth.events (3 partitions, 30d retention)"
 
+# Data-access audit: who ran which query. One event per query rather than per
+# login, so more partitions; retention deliberately LONGER than auth events,
+# because this is the record an investigation reads back and 30 days is shorter
+# than most incidents take to surface.
+run_kafka "/opt/kafka/bin/kafka-topics.sh   --bootstrap-server $BOOTSTRAP   --command-config /tmp/admin.props   --create --if-not-exists   --topic audit.data.access   --partitions 6   --replication-factor 1   --config retention.ms=7776000000   --config cleanup.policy=delete"   && echo "  → topic: audit.data.access (6 partitions, 90d retention)"
+
 run_kafka "/opt/kafka/bin/kafka-topics.sh \
   --bootstrap-server $BOOTSTRAP \
   --command-config /tmp/admin.props \
@@ -159,6 +165,13 @@ run_kafka "/opt/kafka/bin/kafka-acls.sh \
   --operation Describe \
   --topic audit.auth.events" \
   && echo "  → audit-consumer: Read + Describe on audit.auth.events"
+
+# workflow-runtime PRODUCES data-access events. Without this ACL the send is
+# rejected and every audit record is lost with only a client-side warning —
+# the failure mode an audit can least afford.
+run_kafka "/opt/kafka/bin/kafka-acls.sh   --bootstrap-server $BOOTSTRAP   --command-config /tmp/admin.props   --add   --allow-principal User:workflow-runtime   --operation Write   --operation Describe   --topic audit.data.access"   && echo "  → workflow-runtime: Write + Describe on audit.data.access"
+
+run_kafka "/opt/kafka/bin/kafka-acls.sh   --bootstrap-server $BOOTSTRAP   --command-config /tmp/admin.props   --add   --allow-principal User:audit-consumer   --operation Read   --operation Describe   --topic audit.data.access"   && echo "  → audit-consumer: Read + Describe on audit.data.access"
 
 run_kafka "/opt/kafka/bin/kafka-acls.sh \
   --bootstrap-server $BOOTSTRAP \

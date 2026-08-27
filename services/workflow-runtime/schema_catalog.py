@@ -71,6 +71,7 @@ async def retrieve_schema_catalog(
     tenant_id: str,
     query: str,
     schema_name: Optional[str] = None,
+    warehouse_id: Optional[str] = None,
     limit: int = 5,
 ) -> List[dict[str, Any]]:
     """Hybrid (vector + metadata filter) lookup. Returns Qdrant payloads
@@ -87,6 +88,8 @@ async def retrieve_schema_catalog(
             return []
 
         must = [FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id))]
+        if warehouse_id:
+            must.append(FieldCondition(key="warehouse_id", match=MatchValue(value=warehouse_id)))
         if schema_name:
             must.append(FieldCondition(key="schema_name", match=MatchValue(value=schema_name)))
 

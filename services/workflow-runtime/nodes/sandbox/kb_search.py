@@ -4,6 +4,7 @@ import httpx
 from pydantic import BaseModel, ValidationError
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
 
+from libs.shared import audit
 from libs.shared.service_identity import (
     ServiceAssertionError,
     get_secret,
@@ -77,6 +78,18 @@ async def kb_search_node(state: AgentState) -> dict[str, Any]:
         # an admin identity unconditionally; an agent turn with no caller
         # identity must now return nothing rather than everything.
         logger.warning("kb_search | refusing to search without a verifiable identity: %s", e)
+        audit.emit(audit.DataAccessEvent(
+            tenant_id=tenant_id,
+            user_id=cfg.get("user_ref", "") or "anonymous",
+            user_roles=list(cfg.get("user_roles") or []),
+            auth_source=cfg.get("auth_source", "") or "",
+            action=audit.ACTION_KB_RETRIEVE,
+            decision=audit.DECISION_DENY,
+            target=cfg.get("kb_endpoint", ""),
+            reason=str(e),
+            session_id=cfg.get("session_id", "") or "",
+            agent_id=str(cfg.get("agent_id", "") or ""),
+        ))
         return {"kb_chunks": [], "kb_error": f"knowledge base search not authorized: {e}"}
 
     timeout = httpx.Timeout(connect=5.0, read=30.0, write=5.0, pool=5.0)
@@ -127,6 +140,25 @@ async def kb_search_node(state: AgentState) -> dict[str, Any]:
                     if skipped:
                         logger.warning("kb_search | skipped %d invalid chunks", skipped)
                     logger.info("kb_search | tenant=%s found=%d", tenant_id, len(valid))
+                    audit.emit(audit.DataAccessEvent(
+                        tenant_id=tenant_id,
+                        user_id=cfg.get("user_ref", "") or "anonymous",
+                        user_roles=list(cfg.get("user_roles") or []),
+                        auth_source=cfg.get("auth_source", "") or "",
+                        action=audit.ACTION_KB_RETRIEVE,
+                        decision=audit.DECISION_ALLOW,
+                        target=cfg.get("kb_endpoint", ""),
+                        # The documents actually returned. Without these the
+                        # record says a search happened but not what it
+                        # disclosed, which is the half that matters after an
+                        # over-broad-permissions incident.
+                        target_objects=sorted({c["doc_id"] for c in valid if c.get("doc_id")}),
+                        statement_redacted=audit.redact_sql(search_query),
+                        statement_sha256=audit.statement_hash(search_query),
+                        row_count=len(valid),
+                        session_id=cfg.get("session_id", "") or "",
+                        agent_id=str(cfg.get("agent_id", "") or ""),
+                    ))
                     return {"kb_chunks": valid}
 
     except Exception as e:

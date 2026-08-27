@@ -408,9 +408,9 @@ KONG_REFRESH=300
 # from the same value in .env. Empty (the default) reproduces the previous
 # behaviour: the plugin omits the header and upstreams keep trusting
 # X-Kong-Verified alone, which is only safe if nothing but Kong can reach them.
-KONG_GATEWAY_KEY="${KB_GATEWAY_KEY:-}"
+KONG_GATEWAY_KEY="${GATEWAY_KEY:-${KB_GATEWAY_KEY:-}}"
 if [ -z "$KONG_GATEWAY_KEY" ]; then
-  echo "⚠️  KB_GATEWAY_KEY is empty — upstreams will accept X-Kong-Verified without proof it came from Kong."
+  echo "⚠️  GATEWAY_KEY is empty — upstreams will accept X-Kong-Verified without proof it came from Kong."
 fi
 
 if [ "$SKIP_JWT" = "1" ]; then

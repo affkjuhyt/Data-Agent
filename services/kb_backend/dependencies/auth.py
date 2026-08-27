@@ -1,16 +1,10 @@
-import hmac
 import logging
-import os
 import re
 from typing import Any, Callable
 
 from fastapi import Depends, Header, HTTPException
 
-from libs.shared.service_identity import (
-    ServiceAssertionError,
-    get_secret,
-    verify_service_assertion,
-)
+from libs.shared.auth import allowed_services, resolve_caller
 from services.kb_backend.config import resolve_role_id
 
 logger = logging.getLogger(__name__)
@@ -18,40 +12,12 @@ logger = logging.getLogger(__name__)
 # Services allowed to assert an end user's identity to this backend. Adding a
 # name here grants that service the power to act as any user, so it is a
 # deliberate allowlist rather than "any holder of the secret".
-_ALLOWED_ASSERTING_SERVICES = frozenset(
-    s.strip() for s in os.environ.get("KB_ALLOWED_SERVICES", "workflow-runtime").split(",") if s.strip()
-)
-
-# Shared secret proving a request carrying X-Kong-Verified really came through
-# Kong. The plugin sets it (infra/kong/plugins/aeroflow-jwks/handler.lua);
-# nothing else knows it. Without this, X-Kong-Verified is a string anyone who
-# can reach this port may send, which is precisely how the gateway's identity
-# guarantees were being bypassed.
-_GATEWAY_KEY_ENV = "KB_GATEWAY_KEY"
-
-
-def _gateway_key_ok(presented: str) -> bool:
-    """True when the Kong path may be trusted for this request.
-
-    Unset KB_GATEWAY_KEY keeps the pre-existing behaviour so an existing
-    deployment does not lock itself out on upgrade — but it is a downgrade, so
-    it is logged loudly rather than passing silently. Set it in every
-    environment that is not a laptop.
-    """
-    expected = os.environ.get(_GATEWAY_KEY_ENV, "")
-    if not expected:
-        logger.warning(
-            "auth | %s is not set — trusting X-Kong-Verified without proof the request came from Kong. "
-            "Any caller able to reach this service can impersonate any user.",
-            _GATEWAY_KEY_ENV,
-        )
-        return True
-    return hmac.compare_digest(expected, presented or "")
+_ALLOWED_SERVICES_ENV = "KB_ALLOWED_SERVICES"
+_DEFAULT_ALLOWED_SERVICES = "workflow-runtime"
 
 _UUID_RE = re.compile(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I
 )
-
 
 UNIVERSAL_PERMISSIONS: dict[str, bool] = {
     "viewDocuments": False, "editTableRow": False,
@@ -82,10 +48,8 @@ RESTRICTED_PERMISSIONS: dict[str, bool] = {
     "editWarehouseConfig": False,
 }
 
-
 def blank_permission_grants() -> dict[str, bool]:
     return {**UNIVERSAL_PERMISSIONS, **RESTRICTED_PERMISSIONS}
-
 
 class PermissionRegistry:
     __slots__ = ("_grants", "_aliases")
@@ -119,7 +83,6 @@ class PermissionRegistry:
     def known_roles(self) -> frozenset[str]:
         return frozenset(self._grants)
 
-
 RBAC = (
     PermissionRegistry()
     .alias("platform-admin", "PLATFORM_ADMIN")
@@ -131,30 +94,6 @@ RBAC = (
     .grant("BUSINESS_OPERATOR", *UNIVERSAL_PERMISSIONS)
 )
 
-
-def _context_from(
-    *, roles: list[str], tenant_id: str, user_id: str, user_name: str, source: str,
-) -> dict[str, Any]:
-    canonical = [RBAC.canonical_role(r) for r in roles]
-    tenant_id = (tenant_id or "").strip()
-    if not tenant_id or not _UUID_RE.match(tenant_id):
-        raise HTTPException(status_code=400, detail=f"{source} request missing valid tenant_id")
-
-    # First role wins, and role_id derives from it — so the caller-supplied
-    # ORDER of roles decides effective privilege. Harmless when the list is
-    # authentic (Kong emits the token's roles, the assertion is signed), but it
-    # is why neither path may take roles from an unauthenticated header.
-    role = canonical[0] if canonical else ""
-    return {
-        "role": role,
-        "roles": canonical,
-        "role_id": resolve_role_id(role) if role else "",
-        "tenant_id": tenant_id,
-        "user_id": user_id or "",
-        "user_name": (user_name or "").strip() or (user_id or ""),
-    }
-
-
 def authenticate(
         x_kong_verified: str = Header(default="", alias="X-Kong-Verified"),
         x_gateway_key: str = Header(default="", alias="X-Gateway-Key"),
@@ -165,61 +104,50 @@ def authenticate(
         x_user_roles: str = Header(default="", alias="X-User-Roles"),
         x_role_id: str = Header(default="", alias="X-Role-Id"),
 ) -> dict[str, Any]:
-    """Resolve the caller, by exactly one of two authenticated routes.
+    """Resolve the caller, then map their roles onto this service's RBAC.
 
-    1. A signed service assertion (workflow-runtime and anything else in
-       KB_ALLOWED_SERVICES). Identity comes ENTIRELY from the verified token —
-       the X-User-* headers are ignored on this path, so a service cannot sign
-       a narrow assertion and widen it with headers.
-    2. Kong, proven by X-Gateway-Key. Identity comes from the headers Kong
-       injects after verifying the Keycloak JWT, having first cleared any
-       client-supplied copies.
-
-    A request with neither is rejected. This is the fix for agent traffic
-    arriving with a self-declared `X-Kong-Verified: true` and a hardcoded admin
-    role set; there is no longer a route that accepts unproven identity.
+    The trust decision — signed service assertion, or Kong proven by the shared
+    gateway key, and nothing else — lives in libs/shared/auth.resolve_caller so
+    every service makes it identically. What stays here is kb-backend's own
+    layer: canonicalising Keycloak role names and deriving the role_id that
+    operations/access.py filters documents by.
     """
-    if x_service_assertion:
-        try:
-            payload = verify_service_assertion(
-                x_service_assertion,
-                secret=get_secret(),
-                allowed_services=_ALLOWED_ASSERTING_SERVICES,
-            )
-        except ServiceAssertionError as e:
-            logger.warning("auth | rejected service assertion: %s", e)
-            raise HTTPException(status_code=401, detail="Invalid service assertion") from e
-
-        ctx = _context_from(
-            roles=list(payload.get("roles", [])),
-            tenant_id=str(payload.get("tid", "")),
-            user_id=str(payload.get("uid", "")),
-            user_name=str(payload.get("uid", "")),
-            source="Service-asserted",
-        )
-        ctx["auth_source"] = f"service:{payload.get('svc', '')}"
-        return ctx
-
-    if x_kong_verified != "true":
-        raise HTTPException(status_code=401, detail="Request not verified")
-
-    if not _gateway_key_ok(x_gateway_key):
-        logger.warning("auth | X-Kong-Verified presented without a valid gateway key — rejecting")
-        raise HTTPException(status_code=401, detail="Request not verified")
-
-    raw_roles = [r for r in x_user_roles.split(",") if r.strip()]
-    if not raw_roles and x_role_id:
-        raw_roles = [x_role_id]
-
-    ctx = _context_from(
-        roles=raw_roles,
-        tenant_id=x_tenant_id,
-        user_id=x_user_id,
-        user_name=x_user_name,
-        source="Kong-verified",
+    caller = resolve_caller(
+        x_kong_verified=x_kong_verified,
+        x_gateway_key=x_gateway_key,
+        x_service_assertion=x_service_assertion,
+        x_user_id=x_user_id,
+        x_user_roles=x_user_roles,
+        x_tenant_id=x_tenant_id,
+        x_user_name=x_user_name,
+        x_role_id=x_role_id,
+        accepted_services=allowed_services(_ALLOWED_SERVICES_ENV, _DEFAULT_ALLOWED_SERVICES),
     )
-    ctx["auth_source"] = "gateway"
-    return ctx
+
+    raw_roles = list(caller.roles)
+    # Kong sends X-Role-Id when the token carries no role claim; the assertion
+    # path has no equivalent, its roles list is authoritative.
+    if not raw_roles and caller.raw_role_id:
+        raw_roles = [caller.raw_role_id]
+    roles = [RBAC.canonical_role(r) for r in raw_roles]
+
+    if not caller.tenant_id or not _UUID_RE.match(caller.tenant_id):
+        raise HTTPException(status_code=400, detail="Verified request missing valid tenant_id")
+
+    # First role wins, and role_id derives from it — so the ORDER of roles
+    # decides effective privilege. Safe only because both routes above deliver
+    # an authenticated list: Kong emits the token's roles, the assertion is
+    # signed. It is why neither may take roles from a bare header.
+    role = roles[0] if roles else ""
+    return {
+        "role": role,
+        "roles": roles,
+        "role_id": resolve_role_id(role) if role else "",
+        "tenant_id": caller.tenant_id,
+        "user_id": caller.user_id,
+        "user_name": caller.user_name,
+        "auth_source": caller.auth_source,
+    }
 
 def require_perm(*permission_names: str) -> Callable[..., dict[str, Any]]:
     def _dep(ctx: dict[str, Any] = Depends(authenticate)) -> dict[str, Any]:

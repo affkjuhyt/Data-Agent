@@ -91,6 +91,7 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
                 prompt=state["rewritten_query"],
                 user_id=state["user_id"],
                 tenant_id=state["tenant_id"],
+                user_roles=state.get("user_roles") or [],
                 traceparent=traceparent_of(span),
                 guardrail_cfg=extract_guardrail_cfg(state.get("cfg", {})),
             ):
@@ -240,6 +241,7 @@ async def execute_node(state: OrchestratorState, config: RunnableConfig) -> dict
         result = await execute_plan(
             plan,
             user_id=state["user_id"],
+            user_roles=state.get("user_roles") or [],
             original_query=query,
             tenant_id=tenant_id,
             agents=state["agents"],

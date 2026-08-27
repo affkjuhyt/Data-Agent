@@ -9,12 +9,40 @@ import httpx
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
 import config
+from libs.shared.service_identity import get_secret, mint_service_assertion
 
 logger = logging.getLogger(__name__)
 
 # Shared AsyncClient (connection pooling/keep-alive) — trước đây agent_client.py
 # tạo mới 1 httpx.AsyncClient() cho MỖI lời gọi, không tái sử dụng connection.
 _client: httpx.AsyncClient | None = None
+
+
+SERVICE_NAME = "orchestrator"
+
+
+def _identity_headers(user_id: str, tenant_id: str, user_roles: list[str] | None) -> dict[str, Any]:
+    """Assert the REAL caller's identity to workflow-runtime.
+
+    This call used to send a bare `X-User-ID` (plus an optional tenant) and no
+    roles at all, which workflow-runtime accepted without checking anything.
+    Two consequences, both fixed here: anyone reaching port 8001 could claim to
+    be the orchestrator, and because no roles arrived, the downstream agent had
+    nothing to act on — which is what drove kb_search to hardcode an admin set.
+
+    Signed with the same shared secret as every other service hop
+    (libs/shared/service_identity.py), so workflow-runtime takes identity from
+    the token and ignores headers entirely.
+    """
+    return {
+        "X-Service-Assertion": mint_service_assertion(
+            service=SERVICE_NAME,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            roles=user_roles or [],
+            secret=get_secret(),
+        )
+    }
 
 
 def _traced_headers(base: dict[str, Any], traceparent: str | None) -> dict[str, Any]:
@@ -77,6 +105,7 @@ async def call_agent(
     prompt: str,
     user_id: str = "orchestrator",
     tenant_id: str = "",
+    user_roles: list[str] | None = None,
     orchestrated: bool = False,
     traceparent: str | None = None,
     guardrail_cfg: dict[str, Any] | None = None,
@@ -98,10 +127,7 @@ async def call_agent(
     citations: list[dict] = []
 
     client = get_shared_client()
-    headers = {"X-User-ID": user_id}
-    if tenant_id:
-        headers["X-Tenant-Id"] = tenant_id
-    headers = _traced_headers(headers, traceparent)
+    headers = _traced_headers(_identity_headers(user_id, tenant_id, user_roles), traceparent)
 
     try:
         async with client.stream("POST", url, json=payload, headers=headers) as resp:
@@ -167,6 +193,7 @@ async def call_agent_stream(
     prompt: str,
     user_id: str = "orchestrator",
     tenant_id: str = "",
+    user_roles: list[str] | None = None,
     traceparent: str | None = None,
     guardrail_cfg: dict[str, Any] | None = None,
 ) -> AsyncIterator[tuple[str, Any]]:
@@ -188,10 +215,7 @@ async def call_agent_stream(
     url = f"{config.WORKFLOW_RUNTIME_URL}/api/conversations/run"
 
     client = get_shared_client()
-    headers = {"X-User-ID": user_id}
-    if tenant_id:
-        headers["X-Tenant-Id"] = tenant_id
-    headers = _traced_headers(headers, traceparent)
+    headers = _traced_headers(_identity_headers(user_id, tenant_id, user_roles), traceparent)
 
     cm, resp = await _open_agent_stream(client, url, payload, headers)
     try:

@@ -16,21 +16,23 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from libs.shared import audit
 from libs.shared.logger import setup_logging
 
 setup_logging("workflow-runtime")
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import CORS_ORIGINS, REDIS_URL
 from db import close_db, init_db
-from kafka_producer import close_kafka_producer, init_kafka_producer
+from kafka_producer import close_kafka_producer, init_kafka_producer, produce_event
 from memory_middleware import close_qdrant, init_qdrant
 from workflow_memory import close_workflow_qdrant, init_workflow_qdrant
 from schema_catalog import close_schema_catalog_qdrant, init_schema_catalog_qdrant
 from redis_cache import init_redis, close_redis
 from mongo_client import close_mongo, init_mongo
+from auth import get_current_user
 from routers import catalog, conversations, health, sandbox_ops, schema_memory, schema_catalog as schema_catalog_router, traces, reviews, db_connector
 from runtime_services.conversation_runner import invalidate_graph_version
 from libs.database_connector.mongo_connector import client as mongo_client
@@ -48,6 +50,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await init_mongo()
     await init_redis()
     await init_kafka_producer()
+    # Route data-access audit events through the producer that already
+    # exists. libs/shared/audit.py stays transport-free (leaf layer) and
+    # drops events until a sink is installed here.
+    audit.set_sink(produce_event)
 
     def _invalidate_graph_version(workflow_version_id: str) -> None:
         # invalidate_graph_version() returns the evicted-entry count for logging
@@ -80,6 +86,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await close_schema_catalog_qdrant()
     await close_db()
     await close_redis()
+    audit.set_sink(None)
     await close_kafka_producer()
 
 
@@ -95,14 +102,26 @@ def create_app() -> FastAPI:
         expose_headers=["X-Conversation-Id"],
     )
 
+    # /health stays open — Kong's upstream probe and the compose healthcheck
+    # both run before any token exists, and it returns nothing but a literal.
     app.include_router(health.router)
-    app.include_router(catalog.router)
-    app.include_router(conversations.router)
-    app.include_router(traces.router)
-    app.include_router(sandbox_ops.router)
-    app.include_router(schema_memory.router)
-    app.include_router(schema_catalog_router.router)
-    app.include_router(reviews.router)
-    app.include_router(db_connector.router)
+
+    # Every other router is authenticated at include time rather than route by
+    # route: this service had NO authentication at all, and a per-route
+    # dependency is one a new endpoint can silently forget. Kong already fronts
+    # these paths (infra/kong/kong-setup.sh runtime-route); the dependency is
+    # what makes reaching the port directly useless.
+    authed = [Depends(get_current_user)]
+    for r in (
+        catalog.router,
+        conversations.router,
+        traces.router,
+        sandbox_ops.router,
+        schema_memory.router,
+        schema_catalog_router.router,
+        reviews.router,
+        db_connector.router,
+    ):
+        app.include_router(r, dependencies=authed)
 
     return app

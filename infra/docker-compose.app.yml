@@ -6,8 +6,12 @@ services:
       dockerfile: services/workflow-runtime/Dockerfile
     container_name: dataagent-workflow-runtime
     restart: unless-stopped
-    ports:
-      - "8001:8001"
+    # NOT published to the host. Kong fronts these paths (runtime-route in
+    # infra/kong/kong-setup.sh) and the service now rejects anything that did not
+    # arrive with a gateway key or a signed service assertion — but the port stays
+    # closed as the outer layer. Reach it via Kong on :8000.
+    expose:
+      - "8001"
     env_file: ../.env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
@@ -44,6 +48,11 @@ services:
       # Unset => kb_search cannot mint an assertion and returns no chunks, by
       # design: it must never fall back to asserting an identity it can't prove.
       SERVICE_AUTH_SECRET: ${SERVICE_AUTH_SECRET:-}
+      GATEWAY_KEY: ${GATEWAY_KEY:-${KB_GATEWAY_KEY:-}}
+      # The orchestrator calls POST /api/conversations/run on a user's behalf
+      # and cannot carry their Keycloak token, so it presents a signed
+      # assertion instead. Each entry here can act as any user.
+      RUNTIME_ALLOWED_SERVICES: ${RUNTIME_ALLOWED_SERVICES:-orchestrator}
       # Optional mutual TLS to kb-backend (infra/certs/gen-certs.sh). Both cert
       # and key, or neither — half-configured raises at startup rather than
       # silently connecting without a client certificate.
@@ -292,7 +301,7 @@ services:
       # equal the aeroflow-jwks plugin's gateway_key (infra/kong/kong-setup.sh
       # reads it from this same variable). Unset => the header is trusted on its
       # own, as before, and kb-backend logs a warning on every request.
-      KB_GATEWAY_KEY: ${KB_GATEWAY_KEY:-}
+      GATEWAY_KEY: ${GATEWAY_KEY:-${KB_GATEWAY_KEY:-}}
     depends_on:
       postgres:
         condition: service_healthy
@@ -440,6 +449,11 @@ services:
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_TOPIC: audit.auth.events
+      # Data-access events (who ran which query) — same consumer, second
+      # topic, different destination table. Auth events and query events
+      # differ in volume by orders of magnitude and share almost no
+      # columns, so they are not folded into one table.
+      KAFKA_DATA_ACCESS_TOPIC: audit.data.access
       KAFKA_GROUP_ID: audit-consumer-group
       KAFKA_SASL_USERNAME: audit-consumer
       KAFKA_SASL_PASSWORD: ${AUDIT_CONSUMER_KAFKA_PASSWORD}
@@ -563,8 +577,10 @@ services:
       dockerfile: services/orchestrator/Dockerfile
     container_name: dataagent-orchestrator
     restart: unless-stopped
-    ports:
-      - "8003:8003"
+    # NOT published to the host — same reasoning as workflow-runtime above.
+    # Kong's orchestrator-route (:8000/api/orchestrate) is the only way in.
+    expose:
+      - "8003"
     env_file: ../.env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
@@ -576,6 +592,13 @@ services:
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-change-me}
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       OTEL_SERVICE_NAME: orchestrator
+      # Signs the assertion sent to workflow-runtime, and (via the shared
+      # resolver) verifies inbound Kong requests. Same value everywhere.
+      SERVICE_AUTH_SECRET: ${SERVICE_AUTH_SECRET:-}
+      GATEWAY_KEY: ${GATEWAY_KEY:-${KB_GATEWAY_KEY:-}}
+      # Nothing calls the orchestrator service-to-service, so the assertion
+      # route in is closed: only Kong-verified requests are accepted.
+      ORCHESTRATOR_ALLOWED_SERVICES: ${ORCHESTRATOR_ALLOWED_SERVICES:-}
     depends_on:
       postgres:
         condition: service_healthy

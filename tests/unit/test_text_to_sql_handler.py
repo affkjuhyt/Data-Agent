@@ -92,36 +92,13 @@ class TestSandboxConnection:
 
 
 class TestGetSchemaText:
-    async def test_cache_hit_skips_introspection_entirely(self, monkeypatch):
-        import nodes.sandbox.tool_executor.handlers.data as data
-        _stub_redis_cache(monkeypatch, get_return="orders(id int)")
-        sandbox = AsyncMock()
-        monkeypatch.setattr(data, "_sandbox_sql", sandbox)
+    """Only the SQL-dialect difference lives here now.
 
-        result = await data._get_schema_text(
-            "tenant-1", {"host": "h", "port": 5432, "database": "d", "user": "u", "password": "p"},
-        )
-
-        assert result == "orders(id int)"
-        sandbox.assert_not_awaited()
-
-    async def test_cache_miss_introspects_via_sandbox_and_caches(self, monkeypatch):
-        import nodes.sandbox.tool_executor.handlers.data as data
-        fake_redis = _stub_redis_cache(monkeypatch, get_return=None)
-        rows = [
-            {"table_name": "orders", "column_name": "id", "data_type": "integer"},
-            {"table_name": "orders", "column_name": "total", "data_type": "numeric"},
-            {"table_name": "customers", "column_name": "id", "data_type": "integer"},
-        ]
-        sandbox = AsyncMock(return_value=_ok(rows))
-        monkeypatch.setattr(data, "_sandbox_sql", sandbox)
-
-        result = await data._get_schema_text(
-            "tenant-1", {"host": "h", "port": 5432, "database": "d", "user": "u", "password": "p"},
-        )
-
-        assert result == "orders(id integer, total numeric)\ncustomers(id integer)"
-        fake_redis.cache_set_schema.assert_awaited_once_with("tenant-1", "h", 5432, "d", result)
+    Cache shape, catalog preference, relevance ranking and the prompt-size caps
+    moved to tests/unit/test_schema_context_selection.py when schema selection
+    stopped being "render everything" — they are that module's subject, not this
+    one's, and keeping duplicates in both drifts.
+    """
 
     async def test_postgres_introspection_uses_public_schema_predicate(self, monkeypatch):
         import nodes.sandbox.tool_executor.handlers.data as data
@@ -129,7 +106,7 @@ class TestGetSchemaText:
         sandbox = AsyncMock(return_value=_ok([]))
         monkeypatch.setattr(data, "_sandbox_sql", sandbox)
 
-        await data._get_schema_text("t", {"host": "h", "database": "d"})
+        await data._get_schema_text("t", {"host": "h", "database": "d"}, "q")
 
         sql = sandbox.await_args.args[0]
         assert "information_schema.columns" in sql
@@ -141,21 +118,9 @@ class TestGetSchemaText:
         sandbox = AsyncMock(return_value=_ok([]))
         monkeypatch.setattr(data, "_sandbox_sql", sandbox)
 
-        await data._get_schema_text("t", {"type": "clickhouse", "host": "h", "database": "d"})
+        await data._get_schema_text("t", {"type": "clickhouse", "host": "h", "database": "d"}, "q")
 
         assert "currentDatabase()" in sandbox.await_args.args[0]
-
-    async def test_introspection_failure_returns_empty_string_not_raise(self, monkeypatch):
-        """Degrades to an empty schema block rather than failing the turn — the
-        LLM then works from the connection note alone."""
-        import nodes.sandbox.tool_executor.handlers.data as data
-        fake_redis = _stub_redis_cache(monkeypatch, get_return=None)
-        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=_err("sandbox-executor unreachable: boom")))
-
-        result = await data._get_schema_text("tenant-1", {"host": "h", "database": "d"})
-
-        assert result == ""
-        fake_redis.cache_set_schema.assert_not_awaited()
 
 
 class TestRunOneQuery:
@@ -286,7 +251,7 @@ class TestTextToSqlHandler:
 
     async def test_multi_connection_llm_selects_subset_runs_in_parallel(self, monkeypatch):
         import nodes.sandbox.tool_executor.handlers.data as data
-        monkeypatch.setattr(data, "_get_schema_text", AsyncMock(side_effect=lambda t, c: f"schema-for-{c['database']}"))
+        monkeypatch.setattr(data, "_get_schema_text", AsyncMock(side_effect=lambda t, c, q, **kw: f"schema-for-{c['database']}"))
         monkeypatch.setattr(data.litellm, "acompletion", AsyncMock(return_value=_llm_text(json.dumps({
             "queries": [
                 {"db_name": "Sales", "sql": "SELECT 1"},
