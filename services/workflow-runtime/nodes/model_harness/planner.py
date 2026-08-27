@@ -7,6 +7,7 @@ import litellm
 from xml.sax.saxutils import quoteattr
 from pydantic import BaseModel, ValidationError  # noqa: F401
 
+from nodes.model_harness.intent import AnalysisType, capability, parse as parse_analysis_type
 from observability import get_langfuse_client
 from state import AgentState
 from nodes.sandbox.tool_executor import TOOL_DEFINITIONS
@@ -23,7 +24,12 @@ class _ToolCall(BaseModel):
     depends_on: list[int] = []
 
 class _PlannerOutput(BaseModel):
+    # question | task — drives the responder's options block. Unchanged.
     intent: str = "question"
+    # lookup | analytical | comparison | forecast | anomaly | other.
+    # Orthogonal to `intent`: "vẽ biểu đồ so sánh doanh thu 2 quý" is a task AND
+    # a comparison, and folding them into one field would force a false choice.
+    analysis_type: str = "other"
     language: str = "vi"
     tool_calls: list[_ToolCall] = []
 
@@ -159,6 +165,7 @@ async def planner_node(state: AgentState) -> dict[str, Any]:
     if parsed is not None:
         tool_calls = parsed.model_dump()["tool_calls"]
         intent = parsed.intent if parsed.intent in ("question", "task") else "question"
+        analysis_type = parse_analysis_type(parsed.analysis_type)
         language = parsed.language if parsed.language in ("vi", "en") else "vi"
     else:
         logger.warning("planner | failed to validate response, using fallback. raw=%r", raw)
@@ -166,7 +173,27 @@ async def planner_node(state: AgentState) -> dict[str, Any]:
         fallback[0] = {**fallback[0], "query": state["query"]}
         tool_calls = fallback
         intent = "question"
+        # OTHER, not LOOKUP: a failed parse means the classification is UNKNOWN,
+        # and LOOKUP would assert the question is answerable from one retrieved
+        # fact — a claim we have no basis for making.
+        analysis_type = AnalysisType.OTHER
         language = "vi"
 
-    logger.info("planner | intent=%s language=%s", intent, language)
-    return {"tool_calls": tool_calls, "intent": intent, "language": language}
+    supported = capability(analysis_type)
+    if not supported.supported:
+        # Logged at warning: a platform being asked repeatedly for something it
+        # cannot do is a product signal worth seeing, not routine noise.
+        logger.warning(
+            "planner | analysis_type=%s is not supported by this platform — "
+            "responder will be told to state the limitation", analysis_type.value,
+        )
+
+    logger.info(
+        "planner | intent=%s analysis_type=%s language=%s", intent, analysis_type.value, language,
+    )
+    return {
+        "tool_calls": tool_calls,
+        "intent": intent,
+        "analysis_type": analysis_type.value,
+        "language": language,
+    }

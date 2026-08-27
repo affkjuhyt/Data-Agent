@@ -6,6 +6,7 @@ import logging
 
 import litellm
 
+from nodes.model_harness.intent import guidance, parse as parse_analysis_type
 from observability import get_langfuse_client
 from state import AgentState
 
@@ -54,6 +55,16 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
     system_prompt = _SYSTEM_TEMPLATE.replace("{SYSTEM_PROMPT}", cfg["system_prompt"])
     if intent == "task":
         system_prompt += "\n\n" + _OPTIONS_SUFFIX
+
+    # Answer shaping per analysis type — and, for the two kinds this platform
+    # cannot actually do, an explicit instruction to say so. Without it a
+    # forecast question gets a number invented from the model's own priors,
+    # indistinguishable in the answer from one computed off real data.
+    analysis_type = parse_analysis_type(state.get("analysis_type"))
+    type_guidance = guidance(analysis_type)
+    if type_guidance:
+        system_prompt += "\n\n" + type_guidance
+
     system_prompt += "\n\n" + _LANGUAGE_RULE.replace("{LANGUAGE}", lang_label)
 
     chunk_meta: dict[int, dict] = {}

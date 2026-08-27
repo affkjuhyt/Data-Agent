@@ -323,6 +323,7 @@ async def run_conversation_stream(
         "citations": [],
         "suggestions": [],
         "intent": None,
+        "analysis_type": None,
         "language": None,
         "config": cfg,
     }
@@ -353,6 +354,7 @@ async def run_conversation_stream(
         node_traces: list[dict[str, Any]] = []
         detected_language: str | None = None
         detected_intent: str | None = None
+        detected_analysis: str | None = None
 
         # Race Judge (tự chạy trong graph, có thể khiến responder chạy lại
         # nhiều lần) + Guardrail output check trên CÙNG 1 bản text — mỗi lần
@@ -409,6 +411,7 @@ async def run_conversation_stream(
                         if isinstance(out, dict):
                             detected_language = out.get("language")
                             detected_intent   = out.get("intent")
+                            detected_analysis = out.get("analysis_type")
                     elif node == "responder":
                         out = event["data"].get("output", {})
                         text = out.get("response", "") if isinstance(out, dict) else ""
@@ -515,6 +518,10 @@ async def run_conversation_stream(
                         "agent_version_id": cfg.get("agent_version_id"),
                         "language": detected_language,
                         "intent": detected_intent,
+                        # Recorded on the message so "how often is this platform
+                        # asked to forecast?" is answerable from stored traffic
+                        # rather than needing new instrumentation later.
+                        "analysis_type": detected_analysis,
                         "responder_model": cfg.get("responder_model"),
                         **({"pending_options": responder_options} if responder_options else {}),
                         **({"pending_approval": conv_id} if conv_id and conv_id in _pending_reviews else {}),

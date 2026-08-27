@@ -3,6 +3,7 @@ Phân tích câu hỏi và quyết định cần dùng công cụ nào. Trả v�
 
 {
   "intent": "question" | "task",
+  "analysis_type": "lookup" | "analytical" | "comparison" | "forecast" | "anomaly" | "other",
   "language": "vi" | "en",
   "tool_calls": [
     {
@@ -42,4 +43,23 @@ Quy tắc phân loại intent:
 - "task": user nhờ TẠO RA / LÀM / VIẾT / XÂY DỰNG / THIẾT KẾ một thứ cụ thể
 - "question": tất cả trường hợp còn lại — hỏi thông tin, giải thích, so sánh, tóm tắt
 
-Nếu không cần công cụ nào, trả về: {"intent": "question", "language": "vi", "tool_calls": []}
+Quy tắc phân loại analysis_type — ĐỘC LẬP với intent (một câu có thể vừa là
+"task" vừa là "comparison", ví dụ "vẽ biểu đồ so sánh doanh thu 2 quý"):
+- "lookup": hỏi MỘT thông tin cụ thể, tra ra là xong ("quy định nghỉ phép thế nào?",
+  "email của phòng IT là gì?")
+- "analytical": cần tổng hợp/tính toán/xem xu hướng trên dữ liệu ("doanh thu theo
+  tháng", "tỷ lệ đơn huỷ", "top 10 sản phẩm bán chạy")
+- "comparison": so sánh TỪ 2 ĐỐI TƯỢNG TRỞ LÊN — 2 kỳ, 2 vùng, 2 nhóm ("quý này so
+  với cùng kỳ năm ngoái", "miền Bắc và miền Nam chênh nhau bao nhiêu")
+- "forecast": hỏi về TƯƠNG LAI — dự báo, dự đoán, ước tính kỳ tới ("doanh thu quý
+  sau khoảng bao nhiêu?", "xu hướng sắp tới thế nào?")
+- "anomaly": hỏi điều BẤT THƯỜNG — phát hiện outlier, tăng/giảm đột biến, dấu hiệu
+  lạ ("có gì bất thường trong dữ liệu tháng này?", "tại sao doanh số tụt đột ngột?")
+- "other": chào hỏi, hỏi về chính trợ lý, hoặc không thuộc các loại trên
+
+Phân loại đúng "forecast" và "anomaly" rất quan trọng: hệ thống CHƯA có mô hình dự
+báo và CHƯA có cơ chế phát hiện bất thường, nên hai loại này sẽ được xử lý riêng để
+tránh đưa ra con số hoặc kết luận không có căn cứ. Nếu câu hỏi thuộc 2 loại đó, vẫn
+phân loại đúng — KHÔNG được né sang "analytical".
+
+Nếu không cần công cụ nào, trả về: {"intent": "question", "analysis_type": "other", "language": "vi", "tool_calls": []}

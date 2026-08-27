@@ -25,6 +25,9 @@ class AgentState(TypedDict):
     citations: List[dict]      # set bởi responder_node — nguồn thực sự được trích dẫn trong response
     suggestions: List[str]
     intent: Optional[str]             # "question" | "task" — set by planner
+    # lookup | analytical | comparison | forecast | anomaly | other.
+    # Orthogonal to intent — see nodes/model_harness/intent.py.
+    analysis_type: Optional[str]
     language: Optional[str]           # "vi" | "en" — set by planner
     loop_iteration: int               # số lần judge đã chạy (tăng mỗi lần judge FAIL)
     judge_verdict: Optional[str]      # "PASS" | "FAIL"
