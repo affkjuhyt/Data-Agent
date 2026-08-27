@@ -1,6 +1,7 @@
 from typing import Any
 import functools
 import logging
+import os
 import time
 import unicodedata
 
@@ -18,6 +19,14 @@ logger = logging.getLogger(__name__)
 
 _MAX_CHECK_CHARS = 2000
 _HISTORY_TURNS = 6  # số lượt hội thoại gần nhất đưa vào ngữ cảnh check input
+
+# Khi lớp LLM check hỏng (timeout, model down, JSON rác) mà regex cũng không
+# bắt được gì: mặc định cho qua (ưu tiên availability) hay chặn (ưu tiên an
+# toàn). Đặt GUARDRAIL_FAIL_CLOSED=true cho tenant/triển khai coi việc lọt một
+# prompt injection tệ hơn việc từ chối một câu hỏi hợp lệ.
+_ENV_FAIL_CLOSED = os.environ.get("GUARDRAIL_FAIL_CLOSED", "false").strip().lower() in ("1", "true", "yes", "on")
+
+_DEGRADED_MESSAGE = "Hệ thống kiểm duyệt tạm thời không khả dụng, vui lòng thử lại."
 
 
 def _normalize(text: str) -> str:
@@ -64,6 +73,16 @@ def _build_input_context(query: str, messages: list[dict[str, Any]] | None) -> s
     return "\n".join(lines)
 
 
+def _fail_closed(cfg: dict[str, Any]) -> bool:
+    """cfg (từ bảng "Guardrails") thắng env; env là mặc định của deployment."""
+    value = cfg.get("guardrail_fail_closed")
+    if value is None:
+        return _ENV_FAIL_CLOSED
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
+
+
 async def run_guardrail(query: str, cfg: dict[str, Any], messages: list[dict[str, Any]] | None = None) -> tuple[bool, str]:
     """
     Trả về (triggered, reason).
@@ -71,6 +90,11 @@ async def run_guardrail(query: str, cfg: dict[str, Any], messages: list[dict[str
     messages: lịch sử hội thoại gần nhất, dùng làm ngữ cảnh cho lớp LLM check
     (lớp regex chỉ check `query` — mẫu câu jailbreak/injection nhắm vào câu
     hỏi hiện tại, không cần lịch sử).
+
+    Khi lớp LLM hỏng, KHÔNG vứt luôn kết quả regex như trước: regex là lớp
+    phòng thủ duy nhất còn lại, và một pattern đã khớp là bằng chứng độc lập
+    với việc model check có sống hay không. Chỉ khi cả hai lớp đều không nói
+    được gì mới rơi vào lựa chọn fail-open/fail-closed (xem _fail_closed).
     """
     t0 = time.monotonic()
 
@@ -82,16 +106,34 @@ async def run_guardrail(query: str, cfg: dict[str, Any], messages: list[dict[str
         logger.info("guardrail | latency=%dms triggered=True method=regex-hard", int((time.monotonic() - t0) * 1000))
         return True, regex_message
 
-    triggered, message = False, ""
+    triggered, message, method = False, "", "regex"
     if cfg.get("guardrail_llm_enabled", True):
         context = _build_input_context(query, messages)
         try:
             triggered, message = await llm_guardrail_check(context, cfg, check_type="input")
+            method = "llm"
         except GuardrailCheckError as e:
-            logger.warning("guardrail | LLM check failed, defaulting to pass (fail-open). error=%s", e)
-            triggered, message = False, ""
+            # Lớp LLM im lặng → hạ cấp về verdict của regex ở MỌI mức
+            # confidence (bình thường chỉ "high" mới tự chặn, phần còn lại
+            # nhường LLM phân xử — giờ không còn ai phân xử nữa).
+            if regex_triggered:
+                logger.warning(
+                    "guardrail | LLM check failed, falling back to regex verdict "
+                    "(pattern id=%s confidence=%s). error=%s",
+                    (regex_matched or {}).get("id"), (regex_matched or {}).get("confidence"), e,
+                )
+                triggered, message, method = True, regex_message, "regex-degraded"
+            elif _fail_closed(cfg):
+                logger.error("guardrail | LLM check failed and no regex verdict → fail-closed. error=%s", e)
+                triggered, message, method = True, _DEGRADED_MESSAGE, "fail-closed"
+            else:
+                logger.warning("guardrail | LLM check failed, no regex verdict → fail-open. error=%s", e)
+                triggered, message, method = False, "", "fail-open"
     elif regex_triggered:
         triggered, message = regex_triggered, regex_message
 
-    logger.info("guardrail | latency=%dms triggered=%s", int((time.monotonic() - t0) * 1000), triggered)
+    logger.info(
+        "guardrail | latency=%dms triggered=%s method=%s",
+        int((time.monotonic() - t0) * 1000), triggered, method,
+    )
     return triggered, message

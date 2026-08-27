@@ -52,13 +52,13 @@ def _llm_text(content: str) -> MagicMock:
     return resp
 
 
-def _ok(rows):
-    """_sandbox_sql success tuple: (rows, error, rejected_by_guard)."""
-    return (rows, None, False)
+def _ok(rows, truncation=None):
+    """_sandbox_sql success tuple: (rows, error, rejected_by_guard, truncation)."""
+    return (rows, None, False, truncation)
 
 
 def _err(message, *, rejected_by_guard=False):
-    return (None, message, rejected_by_guard)
+    return (None, message, rejected_by_guard, None)
 
 
 class TestSandboxConnection:
@@ -370,7 +370,7 @@ class TestNoDirectDatabaseAccess:
 
         monkeypatch.setattr(data, "submit_and_poll", fake_submit)
 
-        rows, error, rejected = await data._sandbox_sql(
+        rows, error, rejected, _trunc = await data._sandbox_sql(
             "SELECT 1", {"type": "clickhouse", "host": "h", "database": "d", "user": "u", "password": "p"},
         )
 
@@ -387,7 +387,7 @@ class TestNoDirectDatabaseAccess:
 
         monkeypatch.setattr(data, "submit_and_poll", fake_submit)
 
-        rows, error, rejected = await data._sandbox_sql("DROP TABLE t", {"host": "h", "database": "d"})
+        rows, error, rejected, _trunc = await data._sandbox_sql("DROP TABLE t", {"host": "h", "database": "d"})
 
         assert rows is None
         assert rejected is True
@@ -401,7 +401,7 @@ class TestNoDirectDatabaseAccess:
 
         monkeypatch.setattr(data, "submit_and_poll", fake_submit)
 
-        rows, error, rejected = await data._sandbox_sql("SELECT 1", {"host": "h", "database": "d"})
+        rows, error, rejected, _trunc = await data._sandbox_sql("SELECT 1", {"host": "h", "database": "d"})
 
         assert rows is None
         assert rejected is False

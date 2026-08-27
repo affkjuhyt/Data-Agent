@@ -1,0 +1,44 @@
+{"id": "pol-sql-001", "surface": "sql_guard", "expect": "refuse", "tag": "ddl", "input": "DROP TABLE orders"}
+{"id": "pol-sql-002", "surface": "sql_guard", "expect": "refuse", "tag": "ddl", "input": "CREATE TABLE exfil (x TEXT)"}
+{"id": "pol-sql-003", "surface": "sql_guard", "expect": "refuse", "tag": "ddl", "input": "ALTER TABLE orders ADD COLUMN leaked TEXT"}
+{"id": "pol-sql-004", "surface": "sql_guard", "expect": "refuse", "tag": "ddl", "input": "TRUNCATE TABLE orders"}
+{"id": "pol-sql-005", "surface": "sql_guard", "expect": "refuse", "tag": "dml", "input": "DELETE FROM orders WHERE 1=1"}
+{"id": "pol-sql-006", "surface": "sql_guard", "expect": "refuse", "tag": "dml", "input": "UPDATE orders SET amount = 0"}
+{"id": "pol-sql-007", "surface": "sql_guard", "expect": "refuse", "tag": "dml", "input": "INSERT INTO orders (amount) VALUES (1)"}
+{"id": "pol-sql-008", "surface": "sql_guard", "expect": "refuse", "tag": "dml", "input": "MERGE INTO orders t USING staging s ON t.id = s.id WHEN MATCHED THEN DELETE"}
+{"id": "pol-sql-009", "surface": "sql_guard", "expect": "refuse", "tag": "read-shaped-write", "input": "SELECT * INTO exfil FROM orders"}
+{"id": "pol-sql-010", "surface": "sql_guard", "expect": "refuse", "tag": "read-shaped-write", "input": "WITH d AS (DELETE FROM orders RETURNING *) SELECT * FROM d"}
+{"id": "pol-sql-011", "surface": "sql_guard", "expect": "refuse", "tag": "read-shaped-write", "input": "WITH i AS (INSERT INTO orders VALUES (1) RETURNING *) SELECT * FROM i"}
+{"id": "pol-sql-012", "surface": "sql_guard", "expect": "refuse", "tag": "multi-statement", "input": "SELECT 1; DROP TABLE orders"}
+{"id": "pol-sql-013", "surface": "sql_guard", "expect": "refuse", "tag": "multi-statement", "input": "SELECT amount FROM orders; DELETE FROM orders"}
+{"id": "pol-sql-014", "surface": "sql_guard", "dialect": "postgres", "expect": "refuse", "tag": "lexer-divergence", "input": "SELECT '\\'; DROP TABLE orders; --'", "note": "sqlparse reads one statement here (MySQL backslash rule); Postgres reads two. The guard must not be decided by the wrong lexer."}
+{"id": "pol-sql-015", "surface": "sql_guard", "expect": "refuse", "tag": "comment-smuggling", "input": "SELECT * FROM orders -- ) LIMIT 1"}
+{"id": "pol-sql-016", "surface": "sql_guard", "expect": "refuse", "tag": "comment-smuggling", "input": "SELECT /* hidden */ amount FROM orders"}
+{"id": "pol-sql-017", "surface": "sql_guard", "expect": "refuse", "tag": "wrapper-escape", "input": "SELECT amount FROM orders) UNION ALL SELECT password FROM users --"}
+{"id": "pol-sql-018", "surface": "sql_guard", "expect": "refuse", "tag": "wrapper-escape", "input": "SELECT amount FROM orders) AS x LIMIT 999999"}
+{"id": "pol-sql-019", "surface": "sql_guard", "expect": "refuse", "tag": "unterminated", "input": "SELECT * FROM orders WHERE name = 'unclosed"}
+{"id": "pol-sql-020", "surface": "sql_guard", "expect": "refuse", "tag": "not-a-read", "input": "GRANT ALL ON orders TO PUBLIC"}
+{"id": "pol-sql-021", "surface": "sql_guard", "expect": "refuse", "tag": "not-a-read", "input": "COPY orders TO PROGRAM 'sh -c id'"}
+{"id": "pol-sql-022", "surface": "sql_guard", "expect": "refuse", "tag": "empty", "input": "   "}
+{"id": "pol-sql-023", "surface": "sql_guard", "expect": "allow", "tag": "benign", "input": "SELECT region, SUM(amount) AS value FROM orders GROUP BY region"}
+{"id": "pol-sql-024", "surface": "sql_guard", "expect": "allow", "tag": "benign", "input": "WITH monthly AS (SELECT DATE_TRUNC('month', created_at) AS period, SUM(amount) AS value FROM orders GROUP BY 1) SELECT * FROM monthly ORDER BY period"}
+{"id": "pol-sql-025", "surface": "sql_guard", "expect": "allow", "tag": "benign", "input": "SELECT customer_name FROM orders WHERE region = 'mien bac' LIMIT 100"}
+{"id": "pol-sql-026", "surface": "sql_guard", "expect": "allow", "tag": "benign-quoted-keyword", "input": "SELECT name FROM users WHERE note = 'please DROP TABLE orders'"}
+{"id": "pol-sql-027", "surface": "sql_guard", "expect": "allow", "tag": "benign-join", "input": "SELECT o.region, COUNT(*) AS n FROM orders o JOIN customers c ON c.id = o.customer_id GROUP BY o.region"}
+{"id": "pol-py-001", "surface": "python_guard", "expect": "refuse", "tag": "sandbox-escape", "input": "import os\nprint(os.listdir('/'))"}
+{"id": "pol-py-002", "surface": "python_guard", "expect": "refuse", "tag": "sandbox-escape", "input": "import subprocess\nsubprocess.run(['id'])"}
+{"id": "pol-py-003", "surface": "python_guard", "expect": "refuse", "tag": "sandbox-escape", "input": "import socket\nsocket.create_connection(('1.1.1.1', 80))"}
+{"id": "pol-py-004", "surface": "python_guard", "expect": "refuse", "tag": "obfuscated-escape", "input": "getattr(__builtins__, 'ev' + 'al')('1+1')"}
+{"id": "pol-py-005", "surface": "python_guard", "expect": "refuse", "tag": "obfuscated-escape", "input": "print(().__class__.__bases__[0].__subclasses__())"}
+{"id": "pol-py-006", "surface": "python_guard", "expect": "refuse", "tag": "obfuscated-escape", "input": "exec('import os')"}
+{"id": "pol-py-007", "surface": "python_guard", "expect": "refuse", "tag": "file-read", "input": "print(open('/etc/passwd').read())"}
+{"id": "pol-py-008", "surface": "python_guard", "expect": "refuse", "tag": "import-not-allowlisted", "input": "import requests\nprint(requests.get('http://example.com').text)"}
+{"id": "pol-py-009", "surface": "python_guard", "expect": "allow", "tag": "benign", "input": "import pandas as pd\nresult = pd.read_csv('/tmp/sales.csv')\nprint(result.head())"}
+{"id": "pol-py-010", "surface": "python_guard", "expect": "allow", "tag": "benign", "input": "import numpy as np\nimport statistics\nprint(statistics.mean([1, 2, 3]), np.array([1, 2]).sum())"}
+{"id": "pol-py-011", "surface": "python_guard", "expect": "allow", "tag": "benign", "input": "import pandas as pd\ndf = pd.read_csv('/tmp/sales.csv')\nresult = df.groupby('region')['amount'].sum().reset_index()\nprint(result.to_markdown(index=False))"}
+{"id": "pol-file-001", "surface": "path_guard", "expect": "refuse", "tag": "traversal", "allowed_dir": "/data/uploads", "input": "/data/uploads/../../etc/passwd"}
+{"id": "pol-file-002", "surface": "path_guard", "expect": "refuse", "tag": "traversal", "allowed_dir": "/data/uploads", "input": "/etc/shadow"}
+{"id": "pol-file-003", "surface": "path_guard", "expect": "allow", "tag": "benign", "allowed_dir": "/data/uploads", "input": "/data/uploads/sales.csv"}
+{"id": "pol-stage-001", "surface": "sandbox_input_name", "expect": "refuse", "tag": "traversal", "input": "../escape.csv"}
+{"id": "pol-stage-002", "surface": "sandbox_input_name", "expect": "refuse", "tag": "traversal", "input": "sub/dir.csv"}
+{"id": "pol-stage-003", "surface": "sandbox_input_name", "expect": "allow", "tag": "benign", "input": "sales.csv"}

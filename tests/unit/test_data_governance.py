@@ -610,7 +610,7 @@ class TestHandlerAttachesProvenance:
         stub = types.ModuleType("data_provenance")
         stub.provenance_for_sql = AsyncMock(return_value={"status": STALE, "tables": [{"table": "public.orders"}]})
         monkeypatch.setitem(sys.modules, "data_provenance", stub)
-        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=([{"n": 1}], None, False)))
+        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=([{"n": 1}], None, False, None)))
 
         result, error = await data._run_one_query(
             "Sales", "SELECT * FROM orders", {"catalog_warehouse_id": WAREHOUSE},
@@ -628,8 +628,8 @@ class TestHandlerAttachesProvenance:
         stub.provenance_for_sql = AsyncMock(return_value=None)
         monkeypatch.setitem(sys.modules, "data_provenance", stub)
         monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(side_effect=[
-            (None, "column does not exist", False),
-            ([{"n": 1}], None, False),
+            (None, "column does not exist", False, None),
+            ([{"n": 1}], None, False, None),
         ]))
         completion = AsyncMock()
         completion.return_value = types.SimpleNamespace(
@@ -650,7 +650,7 @@ class TestHandlerAttachesProvenance:
         stub = types.ModuleType("data_provenance")
         stub.provenance_for_sql = AsyncMock(side_effect=RuntimeError("catalog down"))
         monkeypatch.setitem(sys.modules, "data_provenance", stub)
-        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=([{"n": 1}], None, False)))
+        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=([{"n": 1}], None, False, None)))
 
         result, error = await data._run_one_query(
             "Sales", "SELECT 1 FROM orders", {"catalog_warehouse_id": WAREHOUSE},

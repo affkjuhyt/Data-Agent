@@ -10,9 +10,10 @@ from libs.shared.logger import setup_logging
 
 setup_logging("flow-builder")
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from auth import get_current_user
 from db_mongo import close_mongo, init_mongo
 from db_pg import close_db, init_db
 from routers import agents, canvas, health, workflows
@@ -55,9 +56,16 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # /health stays open — Kong's upstream probe and the compose healthcheck
+    # both run before any token exists, and it returns nothing but a literal.
     app.include_router(health.router)
-    app.include_router(agents.router)
-    app.include_router(workflows.router)
-    app.include_router(canvas.router)
+
+    # Authenticated at include time rather than route by route. This service had
+    # NO authentication at all and eighteen routes, every one of them taking its
+    # tenant from a client header; a per-route dependency is one a nineteenth
+    # route can silently forget. Same shape as workflow-runtime's create_app.
+    authed = [Depends(get_current_user)]
+    for r in (agents.router, workflows.router, canvas.router):
+        app.include_router(r, dependencies=authed)
 
     return app

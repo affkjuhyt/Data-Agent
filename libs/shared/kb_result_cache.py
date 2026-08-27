@@ -42,10 +42,19 @@ def query_hash(
     entities: Optional[list[str]] = None,
     intent: Optional[str] = None,
     entity_types: Optional[dict[str, str]] = None,
+    role_id: Optional[str] = None,
 ) -> str:
     """Stable hash of everything that changes the result set. Whitespace-folded +
     lowercased query and sorted collections so trivially-different requests share
-    a key."""
+    a key.
+
+    `role_id` is part of the key because it changes WHICH DOCUMENTS the result
+    may draw on. Without it the first caller to ask a question decides the
+    answer everyone else gets: a platform admin's result, computed over
+    documents a business operator cannot open, would be served straight back to
+    that operator on a cache hit — reintroducing the exact bypass the role
+    filter removes, one layer above it.
+    """
     et = entity_types or {}
     payload = json.dumps(
         {
@@ -54,6 +63,7 @@ def query_hash(
             "e": sorted(entities or []),
             "i": (intent or "").strip().lower(),
             "t": {k: et[k] for k in sorted(et)},
+            "r": role_id or "",
         },
         ensure_ascii=False,
         sort_keys=True,

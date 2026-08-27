@@ -125,6 +125,55 @@ async def test_write_statement_is_rejected_before_touching_the_database(seeded_d
         conn.close()
 
 
+async def test_a_write_the_guard_cannot_see_is_still_refused(seeded_db):
+    """The gap between the other two layers, made executable against a real server.
+
+    `SELECT nextval(...)` is a SELECT by every measure sql_guard applies — one
+    statement, no DDL token, no INTO — and it mutates state. The container role
+    owns the sequence and is free to advance it, so no missing grant stands in
+    the way either. What refuses it is the READ ONLY transaction that
+    execute_readonly_query opens, which is the layer that has to hold for DB
+    Connector connections: those carry the tenant's own credentials, not the
+    `sandbox_reader` role.
+    """
+    import postgres_readonly as pr
+
+    conn = psycopg2.connect(seeded_db["dsn"])
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DROP SEQUENCE IF EXISTS sandbox_probe_seq")
+            cur.execute("CREATE SEQUENCE sandbox_probe_seq")
+
+        with pytest.raises(pr.PostgresQueryError) as excinfo:
+            await pr.execute_readonly_query(
+                "SELECT nextval('sandbox_probe_seq')", _connection_params(seeded_db),
+            )
+        assert "read-only transaction" in str(excinfo.value).lower()
+
+        # The sequence never moved — its first value is still there to be had.
+        with conn.cursor() as cur:
+            cur.execute("SELECT nextval('sandbox_probe_seq')")
+            assert cur.fetchone()[0] == 1
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("DROP SEQUENCE IF EXISTS sandbox_probe_seq")
+        conn.close()
+
+
+async def test_the_connection_is_read_only_outside_a_transaction_too(seeded_db):
+    """The connection is pooled and reused, so read-only has to be a property of
+    the connection and not only of the one call that opens a transaction."""
+    import postgres_readonly as pr
+
+    result = await pr.execute_readonly_query(
+        "SELECT current_setting('default_transaction_read_only') AS ro",
+        _connection_params(seeded_db),
+    )
+
+    assert result["rows"] == [{"ro": "on"}]
+
+
 async def test_connection_is_reused_across_real_queries(seeded_db):
     import postgres_readonly as pr
 

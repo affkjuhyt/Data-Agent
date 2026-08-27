@@ -5,6 +5,21 @@ on individual tables (granted outside this code, at the Snowflake role
 level) — no INSERT/UPDATE/DELETE/DDL grant exists for this role at all. The
 sql_guard SELECT-only check below is the second, cheaper layer in front of
 that.
+
+Where this backend differs from postgres_readonly / clickhouse_readonly, and it
+is worth being exact about it: those two ask the ENGINE to refuse writes (a
+``READ ONLY`` transaction / ``readonly=2``), which holds even when the
+connection's role is allowed to write. Snowflake offers no equivalent — there
+is no read-only session parameter and no read-only transaction mode; its
+TRANSACTION_DEFAULT_ISOLATION_LEVEL takes exactly one value (READ COMMITTED)
+and says nothing about writes. So on this backend the ROLE is the enforcement
+and sql_guard is the only thing in front of it.
+
+That is sound for the platform's own service account, whose grants are known
+and narrow. It is NOT sound for tenant-supplied Snowflake credentials: point
+the DB Connector node at Snowflake and read-only rests entirely on whichever
+role those credentials carry — something this service cannot inspect and must
+not assume. Snowflake connections there need a role granted SELECT only.
 """
 from typing import Any, cast
 import asyncio
@@ -14,11 +29,12 @@ import threading
 import snowflake.connector
 from snowflake.connector import DictCursor
 
+import result_limits
 from sql_guard import validate_select_only, SQLGuardError
 
 logger = logging.getLogger(__name__)
 
-MAX_ROWS = 10_000
+MAX_ROWS = result_limits.MAX_ROWS
 
 
 class SnowflakeQueryError(Exception):
@@ -67,6 +83,16 @@ def _get_connection(connection_params: dict[str, Any]) -> "snowflake.connector.S
             schema=connection_params.get("schema"),
             role=connection_params.get("role"),
             client_session_keep_alive=True,
+            session_parameters={
+                # Snowflake bills by warehouse-seconds, so an unbounded query
+                # is a cost incident as much as a latency one. The default is
+                # two days; nothing an agent asks should outlive one turn.
+                "STATEMENT_TIMEOUT_IN_SECONDS": result_limits.QUERY_TIMEOUT_S,
+                # Nothing here makes the session read-only, and no Snowflake
+                # session parameter does — see the module docstring. The role
+                # is the enforcement on this backend; adding a parameter that
+                # merely looks like one would be worse than the gap itself.
+            },
         )
         _connections[key] = conn
         return conn
@@ -87,7 +113,7 @@ async def execute_readonly_query(sql: str, connection_params: dict[str, Any]) ->
     connection_params: {account, user, password, warehouse, database, schema, role}
     """
     try:
-        validate_select_only(sql)
+        validate_select_only(sql, "snowflake")
     except SQLGuardError as e:
         raise SnowflakeQueryError(f"SQL rejected: {e}") from e
 
@@ -115,6 +141,7 @@ async def execute_readonly_query(sql: str, connection_params: dict[str, Any]) ->
     except Exception as e:
         raise SnowflakeQueryError(f"query execution failed: {e}") from e
 
-    is_truncated = len(rows) > MAX_ROWS
-    rows = rows[:MAX_ROWS]
-    return {"rows": rows, "row_count": len(rows), "is_truncated": is_truncated}
+    # DictCursor.fetchall() has already materialised the result, so this
+    # bounds what travels onward. STATEMENT_TIMEOUT_IN_SECONDS above is what
+    # bounds the query that produced it.
+    return result_limits.cap_rows(rows).as_dict()

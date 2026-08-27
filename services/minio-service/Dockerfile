@@ -7,9 +7,12 @@ RUN apk add --no-cache gcc musl-dev curl
 COPY services/minio-service/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# shared code now lives in libs/shared; mount it under the bare `shared`
-# package name this service imports (import shared.xxx).
-COPY libs/shared/ ./shared/
+# libs/ keeps its real path rather than being flattened to `shared/`:
+# libs/shared/auth.py imports libs.shared.service_identity absolutely, so the
+# flattened name cannot carry it, and this service now needs the shared
+# authentication decision.
+COPY libs/__init__.py ./libs/__init__.py
+COPY libs/shared/ ./libs/shared/
 COPY services/minio-service/ .
 
 # Drop root (alpine syntax) — read-only app surface.

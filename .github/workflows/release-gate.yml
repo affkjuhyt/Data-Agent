@@ -1,0 +1,79 @@
+# The release gate: no release ships without a measured evaluation.
+#
+# CI's `eval-gate` job runs the offline tier on every pull request — policy
+# violations and SQL accuracy, deterministic and model-free. That is necessary
+# and not sufficient: intent classification and hallucination rate are
+# properties of a model answering real questions, and they can only be measured
+# against a running system.
+#
+# So this workflow runs BOTH tiers against a deployed environment and fails the
+# release when a metric is outside model/eval/thresholds.json — including when a
+# metric is missing, because "the eval did not run" and "the eval passed" must
+# never look the same from the outside.
+name: Release gate
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment holding the deployed stack to grade"
+        required: true
+        default: staging
+        type: string
+      agent_id:
+        description: "Agent id the online tier interrogates"
+        required: false
+        type: string
+
+concurrency:
+  group: release-gate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    name: Eval · offline + online, gated
+    runs-on: ubuntu-latest
+    # The environment carries the endpoint + key secrets AND, when it has
+    # required reviewers configured, makes the gate a deliberate step rather
+    # than something that happens to a release.
+    environment: ${{ inputs.environment || 'staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install eval deps
+        # ragas + the runtime's client libs: the intent scorer calls the real
+        # planner node, and the grounding scorer judges with RAGAS faithfulness.
+        run: |
+          pip install sqlparse
+          pip install -r model/ragas/requirements.txt
+          pip install -r services/workflow-runtime/requirements.txt
+
+      - name: Run both tiers
+        # Never `|| true`: a run that could not reach the model must leave a
+        # report that says so, and the gate below turns that into a failure.
+        env:
+          LITELLM_BASE_URL: ${{ secrets.LITELLM_BASE_URL }}
+          LITELLM_API_KEY: ${{ secrets.LITELLM_API_KEY }}
+          WORKFLOW_RUNTIME_URL: ${{ secrets.WORKFLOW_RUNTIME_URL }}
+          AGENT_ID: ${{ inputs.agent_id || secrets.EVAL_AGENT_ID }}
+          EVAL_TENANT_ID: ${{ secrets.EVAL_TENANT_ID }}
+        run: python -m model.eval.run --tier all --out eval-report.json
+
+      - name: Gate the release (BLOCKING)
+        run: python -m model.eval.gate --report eval-report.json --tier offline --tier online
+
+      - name: Upload report
+        # Always: a failing report is the thing worth keeping. It is the record
+        # of what this release measured, attached to the release that measured it.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report-${{ github.ref_name }}
+          path: eval-report.json
+          retention-days: 90

@@ -9,6 +9,7 @@ from pathlib import Path
 import litellm
 
 import config
+from libs.shared import untrusted
 from observability import get_langfuse_client
 
 logger = logging.getLogger(__name__)
@@ -42,13 +43,17 @@ async def summarize(original_query: str, agent_outputs: list[str]) -> str:
     if not outputs_block:
         return "Không có kết quả từ các agents."
 
+    # An agent's answer is not platform text: it was written by a model that
+    # had retrieved documents and tool output in its own context, so a poisoned
+    # chunk one hop upstream arrives here as fluent prose the synthesiser would
+    # otherwise read as direction.
     user_message = (
         f"## Câu hỏi của người dùng\n{original_query}\n\n"
-        f"## Kết quả từ các agents\n{outputs_block}\n\n"
+        f"## Kết quả từ các agents\n{untrusted.wrap(outputs_block, tag='untrusted_results')}\n\n"
         "Hãy tổng hợp các kết quả trên và trả lời câu hỏi của người dùng."
     )
     messages_payload = [
-        {"role": "system", "content": _system()},
+        {"role": "system", "content": _system() + untrusted.RULE},
         {"role": "user", "content": user_message},
     ]
 

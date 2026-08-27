@@ -1,5 +1,19 @@
 """
-RAGAS evaluation for the Data Agent RAG pipeline.
+RAGAS evaluation for the Data Agent RAG pipeline — exploratory, NOT the gate.
+
+The gate lives in model/eval (four metrics, versioned corpus, thresholds, a
+non-zero exit). This script stays for interactive RAGAS work: a wider judge-model
+sweep, a quick look at answer relevancy, comparing two responder models. It
+reports; it does not decide.
+
+Read `--mode dataset` with that in mind: it scores the ground truth AS the
+answer, so it measures the JUDGE and the corpus, not this system. That is a
+useful calibration run (a metric that scores the reference answer poorly is
+measuring something other than correctness) and a useless quality signal.
+`--mode api` is the one that asks the live agent.
+
+test_cases.json comes from generate_cases.py, which now defaults to the
+committed corpus in model/eval/cases/grounding.jsonl and needs no network.
 
 Modes:
   --mode dataset   Use test_cases.json directly (contexts from dataset, no API call).
@@ -70,10 +84,28 @@ async def call_agent(question: str, agent_id: str) -> str:
     return "".join(full_text)
 
 
+def _load_cases() -> list[dict]:
+    """test_cases.json, or a message that says how to make one.
+
+    It is a generated artifact (gitignored). Failing with the command that
+    produces it beats a bare FileNotFoundError on a path nobody recognises.
+    """
+    if not os.path.exists(TEST_CASES_PATH):
+        raise SystemExit(
+            f"{TEST_CASES_PATH} not found — build it first:\n"
+            "    python generate_cases.py            # committed corpus, no network\n"
+            "    python generate_cases.py --source squad"
+        )
+    with open(TEST_CASES_PATH, encoding="utf-8") as f:
+        return json.load(f)
+
+
 def run_dataset_mode(limit: int | None):
     """Evaluate using pre-built test_cases.json (has contexts + ground_truth)."""
-    with open(TEST_CASES_PATH, encoding="utf-8") as f:
-        cases = json.load(f)
+    print("[note] dataset mode scores the ground truth as the answer — it "
+          "calibrates the judge, it does not grade this system. Use model/eval "
+          "for the gated metrics.")
+    cases = _load_cases()
 
     if limit:
         cases = cases[:limit]
@@ -100,8 +132,7 @@ def run_dataset_mode(limit: int | None):
 
 async def run_api_mode(agent_id: str, limit: int | None):
     """Call live agent for each question, evaluate answer quality."""
-    with open(TEST_CASES_PATH, encoding="utf-8") as f:
-        cases = json.load(f)
+    cases = _load_cases()
 
     if limit:
         cases = cases[:limit]

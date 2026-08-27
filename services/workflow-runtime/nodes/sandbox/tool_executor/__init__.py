@@ -7,7 +7,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
     "text_to_pandas": {
         "category":    "data",
-        "description": "Phân tích dữ liệu file CSV/Excel bằng Pandas. Dùng khi cần thống kê, tổng hợp từ file dữ liệu.",
+        "description": "Phân tích dữ liệu file CSV/Excel bằng Pandas trong Docker sandbox cô lập. Dùng khi cần thống kê, tổng hợp từ file dữ liệu.",
     },
     "execute_python": {
         "category":    "sandbox",
@@ -39,7 +39,7 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
     },
     "bash": {
         "category":    "shell",
-        "description": "Thực thi lệnh shell. Dùng khi cần chạy script, CLI tool, hoặc tác vụ hệ thống.",
+        "description": "Thực thi lệnh shell TRONG Docker sandbox cô lập (không network, filesystem chỉ đọc, chỉ /tmp ghi được, xóa sau mỗi lần chạy). KHÔNG truy cập được máy chủ hay dữ liệu của hệ thống. Dùng khi cần chạy CLI tool trên dữ liệu tạm.",
     },
     "web_search": {
         "category":    "langchain",

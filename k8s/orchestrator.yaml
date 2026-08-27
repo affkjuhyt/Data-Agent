@@ -1,0 +1,107 @@
+# orchestrator (Python FastAPI + LangGraph) — Deployment + Service + HPA.
+#
+# The multi-agent front door: guardrail → input refine → plan → fan out to
+# workflow-runtime agents → synthesise. It calls workflow-runtime on a user's
+# behalf with a signed service assertion (SERVICE_AUTH_SECRET must be the same
+# value here, in workflow-runtime and in kb-backend, which is why it lives in
+# one Secret rather than three inline env blocks).
+#
+# NOT exposed outside the cluster: the gateway's orchestrator-route
+# (:8000/api/orchestrate) is the only way in, and ORCHESTRATOR_ALLOWED_SERVICES
+# is empty so nothing may reach it service-to-service either.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator
+  labels: { app: orchestrator, app.kubernetes.io/part-of: dataagent }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: orchestrator }
+  template:
+    metadata:
+      labels: { app: orchestrator }
+    spec:
+      # Same reasoning as workflow-runtime: an orchestration is streamed to the
+      # user over SSE and fans out to several agents. Let it drain.
+      terminationGracePeriodSeconds: 60
+      initContainers:
+        # See migrate-job.yaml — this is the half of the ordering guarantee a
+        # Job cannot give: no pod serves traffic on a schema behind its code.
+        - name: wait-for-migrations
+          image: REGISTRY/dataagent-alembic:latest
+          command:
+            - sh
+            - -c
+            - |
+              until alembic -c alembic/alembic.ini current 2>/dev/null | grep -q '(head)'; do
+                echo "waiting for alembic to reach head..."
+                sleep 5
+              done
+              echo "schema at head"
+          envFrom:
+            - secretRef: { name: dataagent-secrets }   # DATABASE_URL
+          resources:
+            requests: { cpu: "50m", memory: "128Mi" }
+            limits:   { cpu: "250m", memory: "256Mi" }
+      containers:
+        - name: orchestrator
+          image: REGISTRY/orchestrator:latest   # built from services/orchestrator/Dockerfile
+          ports:
+            - containerPort: 8003
+          envFrom:
+            - configMapRef: { name: dataagent-config }
+            # DATABASE_URL, SERVICE_AUTH_SECRET, GATEWAY_KEY, LITELLM_API_KEY,
+            # LANGFUSE_PUBLIC_KEY/SECRET_KEY.
+            - secretRef: { name: dataagent-secrets }
+          env:
+            - { name: OTEL_SERVICE_NAME, value: "orchestrator" }
+            # Guardrail policy when BOTH check layers go silent — the LLM check
+            # errored AND no input pattern matched. false (default) keeps the
+            # product answering during a guardrail outage; true refuses instead.
+            # Per-tenant override lives in Guardrails.conditions.fail_closed.
+            - { name: GUARDRAIL_FAIL_CLOSED, value: "false" }
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits:   { cpu: "1",    memory: "1Gi" }
+          readinessProbe:
+            # No auth dependency on this route (routers/stream.py) — it is a
+            # bare liveness answer, not an orchestration.
+            httpGet: { path: /api/orchestrate/health, port: 8003 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/orchestrate/health, port: 8003 }
+            initialDelaySeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orchestrator
+  labels: { app: orchestrator }
+spec:
+  selector: { app: orchestrator }
+  ports:
+    - { port: 8003, targetPort: 8003 }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: orchestrator
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: orchestrator
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 65 }
+  behavior:
+    scaleDown:
+      # Matches workflow-runtime: mostly-idle CPU during a long fan-out is not
+      # spare capacity, it is a turn waiting on downstream agents.
+      stabilizationWindowSeconds: 300

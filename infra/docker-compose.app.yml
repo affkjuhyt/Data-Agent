@@ -245,8 +245,12 @@ services:
       dockerfile: services/flow-builder/Dockerfile
     container_name: dataagent-flow-builder
     restart: unless-stopped
-    ports:
-      - "8002:8002"
+    # NOT published to the host — same reasoning as orchestrator and
+    # workflow-runtime. These routes are agent and workflow CRUD: reaching
+    # them directly meant editing and publishing any tenant's agents.
+    # Kong's flow-builder-route (:8000) is the only way in.
+    expose:
+      - "8002"
     env_file: ../.env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
@@ -356,8 +360,10 @@ services:
       dockerfile: services/minio-service/Dockerfile
     container_name: dataagent-minio-service
     restart: unless-stopped
-    ports:
-      - "8400:8400"
+    # NOT published to the host. Object read/write and per-tenant audit
+    # archives were reachable unauthenticated on 8400.
+    expose:
+      - "8400"
     environment:
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
@@ -617,6 +623,37 @@ services:
         condition: service_started
       workflow-runtime:
         condition: service_started
+
+  # Evaluation + release gate (model/eval). Never starts with the stack — it is
+  # a one-shot job:
+  #
+  #   docker compose -f infra/docker-compose.app.yml --profile eval run --rm eval
+  #
+  # Runs both tiers and exits non-zero when a metric is outside the thresholds
+  # in model/eval/thresholds.json, so a pipeline can use it as a gate rather
+  # than as a report nobody reads. The offline tier alone needs none of this
+  # (CI runs it with sqlparse and no container); this image exists for the
+  # online tier, which needs a live model behind LiteLLM and the agent it is
+  # grading.
+  eval:
+    profiles: ["eval"]
+    build:
+      context: ..
+      dockerfile: model/eval/Dockerfile
+    container_name: dataagent-eval
+    env_file: ../.env
+    environment:
+      LITELLM_BASE_URL: http://litellm:4000
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-sk-dev}
+      WORKFLOW_RUNTIME_URL: http://workflow-runtime:8001
+      # The agent the online tier interrogates. Empty means the online tier
+      # refuses to run rather than grading whatever happens to answer.
+      AGENT_ID: ${EVAL_AGENT_ID:-}
+      EVAL_TENANT_ID: ${EVAL_TENANT_ID:-dev-tenant}
+    volumes:
+      # Reports land on the host so a failing run leaves evidence behind
+      # instead of disappearing with the container.
+      - ../.eval-reports:/reports
 
   frontend:
     profiles: [authoring]

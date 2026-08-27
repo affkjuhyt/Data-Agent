@@ -57,6 +57,11 @@ async def fetch_guardrail_config(tenant_id: str | None = None) -> dict[str, Any]
                 "guardrail_model":          row.guardrail_model or "openai/guardrail",
                 "guardrail_max_tokens":     cond.get("max_tokens", 64),
                 "guardrail_timeout":        cond.get("timeout", 15),
+                "guardrail_num_retries":    cond.get("num_retries", 1),
+                # Chặn hay cho qua khi CẢ hai lớp check đều không kết luận
+                # được (LLM lỗi + regex không khớp). Không set → theo env
+                # GUARDRAIL_FAIL_CLOSED của deployment.
+                "guardrail_fail_closed":    cond.get("fail_closed"),
             }
         else:
             _guardrail_cfg = {}

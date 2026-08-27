@@ -1,9 +1,11 @@
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
-from config import DEV_TENANT_ID
+from auth import get_current_user
+from libs.shared.auth import require_tenant
+
 from db_mongo import save_canvas
 from db_pg import (
     create_agent,
@@ -26,9 +28,9 @@ router = APIRouter()
 @router.post("/api/agents", status_code=201)
 async def api_create_agent(
     body: CreateAgentRequest,
-    x_tenant_id: str = Header(default=None),
+    caller: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
-    tenant_id = x_tenant_id or DEV_TENANT_ID
+    tenant_id = require_tenant(caller)
     ensure_db_available()
     try:
         return await create_agent(body.name, body.description or "", tenant_id)
@@ -38,16 +40,16 @@ async def api_create_agent(
 
 
 @router.get("/api/agents")
-async def api_list_agents(x_tenant_id: str = Header(default=None)) -> list[dict[str, Any]]:
-    tenant_id = x_tenant_id or DEV_TENANT_ID
+async def api_list_agents(caller: dict[str, Any] = Depends(get_current_user)) -> list[dict[str, Any]]:
+    tenant_id = require_tenant(caller)
     ensure_db_available()
     rows = await list_agents(tenant_id)
     return [serialize(row) for row in rows]
 
 
 @router.get("/api/agents/{agent_id}")
-async def api_get_agent(agent_id: str, x_tenant_id: str = Header(default=None)) -> dict[str, Any]:
-    tenant_id = x_tenant_id or DEV_TENANT_ID
+async def api_get_agent(agent_id: str, caller: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+    tenant_id = require_tenant(caller)
     ensure_db_available()
     agent = await get_agent(agent_id, tenant_id=tenant_id)
     if not agent:
@@ -57,8 +59,8 @@ async def api_get_agent(agent_id: str, x_tenant_id: str = Header(default=None)) 
 
 
 @router.delete("/api/agents/{agent_id}", status_code=204)
-async def api_delete_agent(agent_id: str, x_tenant_id: str = Header(default=None)) -> None:
-    tenant_id = x_tenant_id or DEV_TENANT_ID
+async def api_delete_agent(agent_id: str, caller: dict[str, Any] = Depends(get_current_user)) -> None:
+    tenant_id = require_tenant(caller)
     ensure_db_available()
     try:
         version_ids = await delete_agent(agent_id, tenant_id=tenant_id)
@@ -72,8 +74,8 @@ async def api_delete_agent(agent_id: str, x_tenant_id: str = Header(default=None
 
 
 @router.patch("/api/agents/{agent_id}")
-async def api_update_agent(agent_id: str, body: UpdateDraftRequest, x_tenant_id: str = Header(default=None)) -> dict[str, Any]:
-    tenant_id = x_tenant_id or DEV_TENANT_ID
+async def api_update_agent(agent_id: str, body: UpdateDraftRequest, caller: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+    tenant_id = require_tenant(caller)
     ensure_db_available()
     try:
         return await update_agent_draft(agent_id, body.model_dump(exclude_none=True), tenant_id=tenant_id)
@@ -83,8 +85,8 @@ async def api_update_agent(agent_id: str, body: UpdateDraftRequest, x_tenant_id:
 
 
 @router.post("/api/agents/{agent_id}/publish")
-async def api_publish_agent(agent_id: str, body: PublishRequest, x_tenant_id: str = Header(default=None)) -> dict[str, Any]:
-    tenant_id = x_tenant_id or DEV_TENANT_ID
+async def api_publish_agent(agent_id: str, body: PublishRequest, caller: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+    tenant_id = require_tenant(caller)
     ensure_db_available()
     try:
         return await publish_agent(agent_id, body.workflow_id, body.kb_connection_id, tenant_id=tenant_id)
@@ -96,8 +98,8 @@ async def api_publish_agent(agent_id: str, body: PublishRequest, x_tenant_id: st
 
 
 @router.post("/api/agents/{agent_id}/unpublish")
-async def api_unpublish_agent(agent_id: str, x_tenant_id: str = Header(default=None)) -> dict[str, Any]:
-    tenant_id = x_tenant_id or DEV_TENANT_ID
+async def api_unpublish_agent(agent_id: str, caller: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
+    tenant_id = require_tenant(caller)
     ensure_db_available()
     try:
         return await unpublish_agent(agent_id, tenant_id=tenant_id)

@@ -1,9 +1,11 @@
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
-from config import DEV_TENANT_ID
+from auth import get_current_user
+from libs.shared.auth import require_tenant
+
 from db_mongo import save_canvas
 from db_pg import (
     create_draft_version,
@@ -66,9 +68,9 @@ async def api_create_draft_version(workflow_id: str) -> dict[str, Any]:
 
 
 @router.delete("/api/workflow-versions/{version_id}", status_code=204)
-async def api_delete_workflow_version(version_id: str, x_tenant_id: str = Header(default=None)) -> None:
+async def api_delete_workflow_version(version_id: str, caller: dict[str, Any] = Depends(get_current_user)) -> None:
     ensure_db_available()
-    tenant_id = x_tenant_id or DEV_TENANT_ID
+    tenant_id = require_tenant(caller)
     try:
         await delete_workflow_version(version_id, tenant_id=tenant_id)
     except ValueError as e:
@@ -79,9 +81,9 @@ async def api_delete_workflow_version(version_id: str, x_tenant_id: str = Header
 
 
 @router.delete("/api/workflows/{workflow_id}", status_code=204)
-async def api_delete_workflow(workflow_id: str, x_tenant_id: str = Header(default=None)) -> None:
+async def api_delete_workflow(workflow_id: str, caller: dict[str, Any] = Depends(get_current_user)) -> None:
     ensure_db_available()
-    tenant_id = x_tenant_id or DEV_TENANT_ID
+    tenant_id = require_tenant(caller)
     try:
         version_ids = await delete_workflow(workflow_id, tenant_id=tenant_id)
         for version_id in version_ids:

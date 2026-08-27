@@ -402,8 +402,13 @@ async def _tenant_session(factory: Any, tenant_id: str) -> Any:
                 pass
 
 
+# Latched so a warning that applies to every call in the process is emitted once.
+_WARNED_SCOPED_WITHOUT_RLS = False
+
+
 class PostgresClient:
-    __slots__ = ("_engine", "_session_factory", "_connection_wait", "_healthy", "_connected", "_timeout", "_url",)
+    __slots__ = ("_engine", "_session_factory", "_connection_wait", "_healthy", "_connected",
+                 "_timeout", "_url", "_bypasses_rls",)
 
     def __init__(self) -> None:
         self._engine: AsyncEngine | None = None
@@ -413,6 +418,9 @@ class PostgresClient:
         self._healthy: bool = False
         self._connected: bool = False
         self._url: str | None = None
+        # None until measured at open(). True means every policy on every
+        # tenant-scoped table is inert for this connection.
+        self._bypasses_rls: bool | None = None
 
     async def open(self, retry: RetryConfig = RetryConfig()) -> AsyncSession:
         if self._url is None:
@@ -424,6 +432,7 @@ class PostgresClient:
                 self._session_factory = async_sessionmaker(self._engine, expire_on_commit=False)
                 async with self._engine.connect() as conn:
                     await conn.execute(text("SELECT 1"))
+                    await self._measure_rls_exposure(conn)
                 self._connected = True
                 self._healthy = True
                 log.info("Postgres connection established")
@@ -437,6 +446,54 @@ class PostgresClient:
                 self._session_factory = None
             await asyncio.sleep(self._connection_wait)
         raise ConnectionError(f"Could not connect to Postgres after {retry.count} attempts")
+
+    async def _measure_rls_exposure(self, conn: Any) -> None:
+        """Record whether this connection's role is exempt from RLS.
+
+        A superuser, or any role with BYPASSRLS, ignores every policy —
+        including FORCEd ones. So `alembic/versions/a1b2c3d4e5f6` can enable
+        RLS, the tenant_isolation policy can be perfectly written, and
+        `get_client(tenant_id=...)` can set `app.tenant_id` correctly, and the
+        database will still return every tenant's rows. Nothing in the stack
+        said so, and the contract test asserts the policy against `app_user`,
+        a role no service connects as.
+
+        Measured once at open() rather than per query: it is a property of the
+        role, and one extra round-trip on a connection that already does a
+        SELECT 1 is free.
+        """
+        try:
+            result = await conn.execute(text(
+                "SELECT current_user, rolsuper OR rolbypassrls AS exempt "
+                "FROM pg_roles WHERE rolname = current_user"
+            ))
+            row = result.first()
+        except Exception as e:
+            # Never fail a connection over diagnostics.
+            log.debug(f"Could not determine RLS exposure: {e}")
+            self._bypasses_rls = None
+            return
+
+        if row is None:
+            self._bypasses_rls = None
+            return
+
+        self._bypasses_rls = bool(row.exempt)
+        if self._bypasses_rls:
+            log.warning(
+                "Postgres role %r is a superuser or has BYPASSRLS — row-level security "
+                "is INERT for this connection. Tenant isolation here rests entirely on "
+                "explicit WHERE clauses; get_client(tenant_id=...) will set app.tenant_id "
+                "but no policy will read it. Point this service at the app_user role "
+                "(APP_DATABASE_URL / infra/sql/grant-app-user.sql) to make RLS effective.",
+                row.current_user,
+            )
+        else:
+            log.info("Postgres role %r is subject to row-level security", row.current_user)
+
+    def bypasses_rls(self) -> bool | None:
+        """True / False / None when it could not be determined."""
+        return self._bypasses_rls
 
     async def close(self) -> None:
         if self._engine:
@@ -474,11 +531,43 @@ class PostgresClient:
         return self._connected
 
     def get_client(self, tenant_id: str | None = None) -> Any:
+        """A session, optionally scoped to one tenant.
+
+        `tenant_id` sets `app.tenant_id`, which the tenant_isolation policy
+        reads. That only isolates anything if the connection's role is subject
+        to RLS — see _measure_rls_exposure. When it is not, this call is the
+        MORE dangerous of the two forms, because it reads as scoped at every
+        call site while enforcing nothing; the unscoped form at least looks like
+        what it is.
+
+        Refusing outright is not an option here: every service but
+        workflow-runtime currently connects as a superuser, so raising would
+        take the platform down rather than isolate it. It says so instead, once
+        per process, and STRICT_TENANT_ISOLATION=1 turns that into a refusal for
+        deployments that have completed the move to app_user.
+        """
         if self._session_factory is None:
             raise RuntimeError("PostgresClient is not open — call open() first")
         if tenant_id is None:
             return self._session_factory()
+        if self._bypasses_rls:
+            self._warn_scoped_but_unenforced()
         return _tenant_session(self._session_factory, tenant_id)
+
+    def _warn_scoped_but_unenforced(self) -> None:
+        global _WARNED_SCOPED_WITHOUT_RLS
+        if os.environ.get("STRICT_TENANT_ISOLATION", "").strip() in ("1", "true", "yes"):
+            raise RuntimeError(
+                "STRICT_TENANT_ISOLATION is set but this connection's role bypasses RLS — "
+                "a tenant-scoped session cannot be enforced. Point the service at app_user."
+            )
+        if not _WARNED_SCOPED_WITHOUT_RLS:
+            _WARNED_SCOPED_WITHOUT_RLS = True
+            log.warning(
+                "get_client(tenant_id=...) was called on a connection whose role bypasses "
+                "RLS. app.tenant_id is being set and no policy will read it — this session "
+                "is NOT isolated. Every such call site reads as scoped and is not."
+            )
 
     async def _check_health(self, config: HealthCheckLoopConfig) -> None:
         # _check_health only runs from health_check_loop after a successful open().

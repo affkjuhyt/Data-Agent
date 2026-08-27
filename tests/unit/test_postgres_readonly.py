@@ -38,12 +38,44 @@ def _params(**overrides) -> dict:
     return base
 
 
-def _fake_connection(records=None):
-    """An AsyncMock standing in for an asyncpg.Connection."""
+class _FakeTransaction:
+    """asyncpg's Transaction — an async context manager, which a bare MagicMock
+    is not. execute_readonly_query opens one (READ ONLY) around every query."""
+
+    async def __aenter__(self) -> "_FakeTransaction":
+        return self
+
+    async def __aexit__(self, *exc: object) -> bool:
+        return False
+
+
+def _fake_connection(records=None, fetch_error=None):
+    """A stand-in for an asyncpg.Connection on the streaming read-only path.
+
+    Two things beyond a bare mock, because the code under test needs both:
+    `transaction(readonly=True)` must work as an async context manager, and
+    `cursor(sql)` must be awaitable and hand back batches — the query no longer
+    goes through conn.fetch().
+    """
     conn = MagicMock()
     conn.is_closed.return_value = False
-    conn.fetch = AsyncMock(return_value=records or [])
     conn.close = AsyncMock()
+    conn.transaction = MagicMock(return_value=_FakeTransaction())
+
+    batches = [list(records or [])]
+
+    async def _fetch(n):
+        if fetch_error is not None:
+            raise fetch_error
+        return batches.pop(0) if batches else []
+
+    cursor = MagicMock()
+    cursor.fetch = AsyncMock(side_effect=_fetch)
+
+    async def _open_cursor(sql, *args, **kwargs):
+        return cursor
+
+    conn.cursor = MagicMock(side_effect=_open_cursor)
     return conn
 
 
@@ -97,8 +129,7 @@ async def test_closed_cached_connection_is_replaced(monkeypatch):
 async def test_query_failure_drops_connection_from_pool_and_reraises(monkeypatch):
     import postgres_readonly as pr
 
-    broken = _fake_connection()
-    broken.fetch = AsyncMock(side_effect=RuntimeError("connection reset"))
+    broken = _fake_connection(fetch_error=RuntimeError("connection reset"))
     healthy = _fake_connection()
     connect_spy = AsyncMock(side_effect=[broken, healthy])
     monkeypatch.setattr(pr.asyncpg, "connect", connect_spy)
@@ -125,7 +156,7 @@ async def test_wrapped_query_puts_inner_sql_on_its_own_line(monkeypatch):
 
     await pr.execute_readonly_query("SELECT a FROM t", _params())
 
-    executed_sql = conn.fetch.call_args[0][0]
+    executed_sql = conn.cursor.call_args[0][0]
     lines = executed_sql.splitlines()
     assert "LIMIT" in lines[-1]
     assert lines[-1].strip().startswith(")")
@@ -156,8 +187,6 @@ async def test_rows_are_converted_from_records_to_plain_dicts(monkeypatch):
 
     result = await pr.execute_readonly_query("SELECT a, b FROM t", _params())
 
-    assert result == {
-        "rows": [{"a": 1, "b": "x"}, {"a": 2, "b": "y"}],
-        "row_count": 2,
-        "is_truncated": False,
-    }
+    assert result["rows"] == [{"a": 1, "b": "x"}, {"a": 2, "b": "y"}]
+    assert result["row_count"] == 2
+    assert result["is_truncated"] is False

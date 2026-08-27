@@ -173,7 +173,7 @@ class TestAuditNeverFailsTheTurn:
         audit.set_sink(lambda *a, **k: (_ for _ in ()).throw(RuntimeError("kafka down")))
         _submit(monkeypatch, data, {"success": True, "rows": [{"n": 1}], "is_truncated": False})
 
-        rows, error, _rejected = await data._sandbox_sql("SELECT 1", CONN, audit_ctx=CTX)
+        rows, error, _rejected, _trunc = await data._sandbox_sql("SELECT 1", CONN, audit_ctx=CTX)
 
         assert rows == [{"n": 1}]
         assert error is None
@@ -185,7 +185,7 @@ class TestAuditNeverFailsTheTurn:
         sent = _capture()
         _submit(monkeypatch, data, {"success": True, "rows": [], "is_truncated": False})
 
-        _rows, error, _ = await data._sandbox_sql("SELECT 1", CONN)
+        _rows, error, _, _ = await data._sandbox_sql("SELECT 1", CONN)
 
         assert error is None
         assert sent == []

@@ -27,20 +27,41 @@ verifies exactly one process and near-idle memory remain before the
 container is allowed back into the pool. Any dirty verify, cleanup error,
 or timeout retires the container immediately (see pool.py) instead of
 reusing it.
+
+Two things beyond `python3 -c` run through the same path, because "the same
+path" is the whole value of it:
+
+  * **a shell command** (run_shell_sandboxed) — workflow-runtime's `bash` tool
+    ran model-authored commands with subprocess.run(shell=True) inside
+    workflow-runtime's OWN process until now, next to every tenant's database
+    credentials. It runs here instead.
+  * **input files** (the `files` argument) — the container has no view of any
+    other service's filesystem, which is the point, so a tool that analyses an
+    uploaded CSV has to hand over the bytes rather than a path.
 """
 import logging
 import os
+import socket
 import threading
+import time
 from collections.abc import Callable
 from typing import Any
 
 import docker
 
+from input_names import validate_input_name
 from pool import CircuitBreaker, CircuitBreakerOpenError, ContainerPool, memory_drifted, memory_usage_bytes
 
 logger = logging.getLogger(__name__)
 
 SANDBOX_IMAGE = "sandbox-runner:latest"
+# Where `files` are staged. The container's tmpfs — the one writable path in a
+# --read-only container, and the one _KILL_AND_CLEAN_SCRIPT wipes after every
+# exec, so a staged file cannot outlive the request that staged it.
+SANDBOX_INPUT_DIR = "/tmp"
+# One staged file is a `cat` into a tmpfs; anything slower than this is a stuck
+# exec, not a slow write.
+_STAGING_TIMEOUT_S = 10.0
 DEFAULT_TIMEOUT_S = int(os.environ.get("SANDBOX_TIMEOUT_S", "10"))
 DEFAULT_MEMORY_MB = int(os.environ.get("SANDBOX_MEMORY_MB", "256"))
 DEFAULT_CPUS = float(os.environ.get("SANDBOX_CPUS", "0.5"))
@@ -255,12 +276,131 @@ def _cleanup(pc: Any, pool: ContainerPool) -> tuple[bool, str]:
         return False, f"cleanup verify raised unexpectedly: {e}"
 
 
+def _wait_for_exec(api: Any, exec_id: str, timeout_s: float = _STAGING_TIMEOUT_S) -> None:
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if not api.exec_inspect(exec_id).get("Running"):
+            return
+        time.sleep(0.02)
+    raise SandboxRunError("timed out staging input files into the sandbox")
+
+
+def _stage_files(pc: Any, files: dict[str, bytes]) -> None:
+    """Write inputs into SANDBOX_INPUT_DIR before the exec.
+
+    Through an exec's STDIN rather than the archive API, which is the part worth
+    knowing: docker refuses put_archive on any container created with
+    --read-only — "container rootfs is marked read-only" — even when the target
+    path is a writable tmpfs mount, because the daemon checks the flag before it
+    resolves the path. The tmpfs is perfectly writable from inside (mode 1777,
+    and the image's unprivileged user can write it), so the bytes go in the way
+    any process in there would write them, and --read-only stays on.
+
+    Left mode 0444: the code about to run is agent-authored and has no reason to
+    be able to rewrite the input it was handed. Names must be single path
+    segments — the request model validated it, this asserts it again through the
+    same function (input_names), because here is where the name becomes the
+    redirect target.
+    """
+    api = pc.container.client.api
+    for name, content in files.items():
+        try:
+            validate_input_name(name)
+        except ValueError as e:
+            raise SandboxRunError(str(e)) from e
+
+        # The path reaches sh as $1, never as part of the command text, so
+        # nothing in it can be read as shell syntax.
+        exec_id = api.exec_create(
+            pc.container.id,
+            ["sh", "-c", 'cat > "$1" && chmod 444 "$1"', "sh", f"{SANDBOX_INPUT_DIR}/{name}"],
+            stdin=True, stdout=True, stderr=True,
+        )["Id"]
+        sock = api.exec_start(exec_id, socket=True, demux=False)
+        try:
+            # docker-py hands back the raw socket on some transports and a
+            # wrapper holding it on others (npipe on Windows vs unix socket).
+            stream = getattr(sock, "_sock", None) or sock
+            if hasattr(stream, "sendall"):
+                stream.sendall(content)
+            else:
+                stream.write(content)
+            # EOF is what ends `cat`. Without half-closing, the exec never
+            # returns and the wait below would time out on every staged file.
+            try:
+                stream.shutdown(socket.SHUT_WR)
+            except OSError:
+                stream.close()
+            _wait_for_exec(api, exec_id)
+        finally:
+            try:
+                sock.close()
+            except Exception:
+                pass
+
+        exit_code = api.exec_inspect(exec_id).get("ExitCode")
+        if exit_code != 0:
+            # Most likely the tmpfs size limit: /tmp is 64m and the request cap
+            # (SANDBOX_MAX_INPUT_BYTES) is what keeps callers under it.
+            raise SandboxRunError(f"staging {name!r} into the sandbox failed (exit {exit_code})")
+
+
 def run_python_sandboxed(
     code: str,
     timeout_s: int = DEFAULT_TIMEOUT_S,
     memory_mb: int = DEFAULT_MEMORY_MB,
     cpus: float = DEFAULT_CPUS,
     on_output: Callable[[str, str], None] | None = None,
+    files: dict[str, bytes] | None = None,
+) -> dict[str, Any]:
+    """Run agent-authored Python in a pool container.
+
+    `files` (name -> bytes) is staged into SANDBOX_INPUT_DIR first, so a tool
+    whose subject is a file on ANOTHER service's disk can still run here.
+    """
+    return _run_sandboxed(
+        ["python3", "-u", "-c", code],
+        timeout_s=timeout_s, memory_mb=memory_mb, cpus=cpus, on_output=on_output, files=files,
+    )
+
+
+def run_shell_sandboxed(
+    command: str,
+    timeout_s: int = DEFAULT_TIMEOUT_S,
+    memory_mb: int = DEFAULT_MEMORY_MB,
+    cpus: float = DEFAULT_CPUS,
+    on_output: Callable[[str, str], None] | None = None,
+    workdir: str | None = None,
+) -> dict[str, Any]:
+    """Run a shell command in a pool container — same container, same limits,
+    same kill-and-wipe as run_python_sandboxed.
+
+    Exists so workflow-runtime's `bash` tool has somewhere to run that is not
+    workflow-runtime's own process, where it ran until now via
+    subprocess.run(shell=True).
+
+    There is no AST validation in front of this and none is possible: a shell
+    command has no structure to inspect the way Python source does. The
+    containment IS the container — no network, read-only root filesystem, tmpfs
+    /tmp, pids/memory/cpu caps, everything killed and wiped afterwards. That is
+    the same boundary execute_python actually rests on; security_visitor's pass
+    over Python is a second layer in front of it, not the boundary itself.
+    """
+    return _run_sandboxed(
+        ["sh", "-c", command],
+        timeout_s=timeout_s, memory_mb=memory_mb, cpus=cpus, on_output=on_output, workdir=workdir,
+    )
+
+
+def _run_sandboxed(
+    argv: list[str],
+    *,
+    timeout_s: int = DEFAULT_TIMEOUT_S,
+    memory_mb: int = DEFAULT_MEMORY_MB,
+    cpus: float = DEFAULT_CPUS,
+    on_output: Callable[[str, str], None] | None = None,
+    files: dict[str, bytes] | None = None,
+    workdir: str | None = None,
 ) -> dict[str, Any]:
     """Returns {"stdout": str, "stderr": str, "exit_code": int, "timed_out": bool}.
 
@@ -297,6 +437,16 @@ def run_python_sandboxed(
     # explicitly handled below) would leak pc in pool._busy until the
     # janitor's stuck-exec sweep rescues it minutes later.
     try:
+        if files:
+            try:
+                _stage_files(pc, files)
+            except Exception as e:
+                # Set BEFORE the raise so the finally below retires this
+                # container rather than returning it to the pool with a
+                # half-written tar in its /tmp.
+                retire_reason = f"input staging failed: {e}"
+                raise SandboxRunError(f"could not stage input files into the sandbox: {e}") from e
+
         def _do_exec() -> None:
             try:
                 # Low-level exec_create/exec_start(stream=True) instead of
@@ -312,8 +462,11 @@ def run_python_sandboxed(
                 # unbuffered: a chunk per print(), each with the real gap
                 # between them).
                 api = pc.container.client.api
+                # workdir only when asked for: passing None would be sent as a
+                # literal empty WorkingDir and docker rejects that.
+                exec_kwargs = {"workdir": workdir} if workdir else {}
                 exec_id = api.exec_create(
-                    pc.container.id, ["python3", "-u", "-c", code], stdout=True, stderr=True,
+                    pc.container.id, argv, stdout=True, stderr=True, **exec_kwargs,
                 )["Id"]
                 stdout_parts: list[bytes] = []
                 stderr_parts: list[bytes] = []

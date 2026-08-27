@@ -57,6 +57,11 @@ async def llm_guardrail_check(
             max_tokens=cfg.get("guardrail_max_tokens", 64),
             response_format={"type": "json_object"},
             timeout=cfg.get("guardrail_timeout", 15),
+            # Một blip mạng không nên hạ cấp cả lớp check — call sites coi
+            # GuardrailCheckError là "lớp này im lặng" và phải xử lý theo
+            # chính sách fail-open/fail-closed của mình, đắt hơn nhiều so
+            # với một lần thử lại.
+            num_retries=cfg.get("guardrail_num_retries", 1),
         )
         output = response.choices[0].message.content or ""
         result = json.loads(output or "{}")

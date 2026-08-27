@@ -46,11 +46,24 @@ EVENT_TYPE = "data.access"
 ACTION_SQL_QUERY = "sql_query"
 ACTION_SCHEMA_INTROSPECT = "schema_introspect"
 ACTION_KB_RETRIEVE = "kb_retrieve"
+# Agent-authored Python, run in the sandbox against whatever the turn put
+# there. Defined with the others from the start and never emitted — the SQL
+# path was wired and the rest of the tool executor was not, so "who read
+# what" was answerable for queries and silent for everything else.
 ACTION_CODE_EXEC = "code_exec"
+ACTION_SHELL_EXEC = "shell_exec"
+# A file under a tenant's allowed_dir is tenant data. Reading one is an
+# access; writing one is that plus a change nothing else records.
+ACTION_FILE_READ = "file_read"
+ACTION_FILE_WRITE = "file_write"
 
 DECISION_ALLOW = "allow"
 DECISION_DENY = "deny"
 DECISION_ERROR = "error"
+
+# How much of a command or path is kept verbatim. Enough to recognise what
+# ran, short enough that the audit table cannot become a copy of the data.
+MAX_DETAIL_CHARS = 512
 
 
 # ── redaction ──────────────────────────────────────────────────────────────
@@ -205,6 +218,56 @@ def record_sql_access(
         statement_redacted=redact_sql(sql),
         statement_sha256=statement_hash(sql),
         metric_ref=metric_ref,
+        row_count=row_count,
+        latency_ms=latency_ms,
+        reason=reason,
+        session_id=session_id,
+        agent_id=agent_id,
+    ))
+
+
+def record_tool_access(
+    *,
+    tenant_id: str,
+    user_id: str,
+    action: str,
+    user_roles: list[str] | None = None,
+    auth_source: str = "",
+    target: str = "",
+    target_objects: list[str] | None = None,
+    detail: str = "",
+    decision: str = DECISION_ALLOW,
+    row_count: int | None = None,
+    latency_ms: int | None = None,
+    reason: str = "",
+    session_id: str = "",
+    agent_id: str = "",
+) -> None:
+    """Record one non-SQL access: a file read or write, code, a shell command.
+
+    `detail` is the thing that was run or the path that was touched. It is
+    truncated and hashed exactly like SQL is, and for the same reason: a command
+    or a file path routinely contains the data the audit exists to protect (a
+    grep pattern is a search term; a path is a customer name), and an audit
+    table that stores them in full becomes the largest unprotected copy of them
+    in the platform. The hash is of the ORIGINAL, so repeat access still
+    correlates and "prove which command ran" is still answerable.
+
+    Deliberately NOT redact_sql: that rewrites SQL literals, and applying it to
+    a shell command would mangle the command while pretending to have masked it.
+    Truncation is honest about being partial.
+    """
+    emit(DataAccessEvent(
+        tenant_id=tenant_id,
+        user_id=user_id or "anonymous",
+        user_roles=list(user_roles or []),
+        auth_source=auth_source,
+        action=action,
+        decision=decision,
+        target=target,
+        target_objects=list(target_objects or []),
+        statement_redacted=(detail or "")[:MAX_DETAIL_CHARS],
+        statement_sha256=statement_hash(detail),
         row_count=row_count,
         latency_ms=latency_ms,
         reason=reason,

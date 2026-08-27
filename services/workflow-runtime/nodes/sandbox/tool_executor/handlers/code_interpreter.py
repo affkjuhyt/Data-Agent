@@ -21,11 +21,14 @@ transport underneath changed.
 """
 from typing import Any
 import logging
+import time
 import uuid
 
 import httpx
 
+from libs.shared import audit
 from nodes.sandbox.tool_executor._sandbox_http import POLL_OVERHEAD_S, submit_and_poll
+from nodes.sandbox.tool_executor._utils import audit_ctx
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +39,18 @@ async def _execute_python_handler(call: dict[str, Any], cfg: dict[str, Any]) -> 
     code = call.get("arguments", {}).get("code") or call.get("query", "")
     if not code:
         return None, {"tool_name": "execute_python", "error": "no code provided"}
+
+    # Recorded at submission rather than on success. Agent-authored code runs
+    # against whatever the turn put in the sandbox — usually the rows a previous
+    # query returned — so it is an access in its own right, and one that a
+    # crashed or timed-out run does not undo. ACTION_CODE_EXEC existed for this
+    # from the beginning and had no emitter.
+    audit.record_tool_access(
+        action=audit.ACTION_CODE_EXEC,
+        target="execute_python",
+        detail=code,
+        **audit_ctx(cfg),
+    )
 
     tool_cfg = cfg.get("tool_config", {}).get("execute_python", {})
     timeout_s = tool_cfg.get("timeout_s", 10)
@@ -90,22 +105,56 @@ async def _execute_sql_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tup
     if not connection.get("account"):
         return None, {"tool_name": "execute_sql", "error": "Snowflake connection not configured"}
 
+    # The SECOND agent-callable SQL path, registered in node.py alongside
+    # text_to_sql and emitting nothing. The other one was wired when the data
+    # access trail was built; this one was missed, so "who queried what" stayed
+    # literally unanswerable for every query that came through here.
+    #
+    # record_sql_access rather than record_tool_access: it redacts the literals,
+    # hashes the original and extracts the table names, and a SQL statement
+    # recorded any other way is a WHERE clause sitting in the audit table.
+    ctx = audit_ctx(cfg)
+    target = str(connection.get("database") or connection.get("account") or "snowflake")
+    started = time.monotonic()
+
+    def _record(decision: str, row_count: int | None, reason: str) -> None:
+        audit.record_sql_access(
+            sql=sql,
+            target=target,
+            decision=decision,
+            row_count=row_count,
+            latency_ms=int((time.monotonic() - started) * 1000),
+            reason=reason,
+            **ctx,
+        )
+
     try:
         async with httpx.AsyncClient(timeout=10) as http:
             result = await submit_and_poll(
                 http, "/execute/sql", {"sql": sql, "connection": connection}, overall_timeout_s=60 + _POLL_OVERHEAD_S
             )
     except Exception as e:
+        _record(audit.DECISION_ERROR, None, f"sandbox-executor unreachable: {e}")
         return None, {"tool_name": "execute_sql", "error": f"sandbox-executor unreachable: {e}"}
 
     if result.get("_http_status") == 503:
+        _record(audit.DECISION_ERROR, None, "sandbox-executor overloaded")
         return None, {
             "tool_name": "execute_sql",
             "error": f"sandbox-executor is overloaded, try again shortly: {result.get('error', 'rejected')}",
         }
 
     if not result.get("success"):
-        return None, {"tool_name": "execute_sql", "error": result.get("error", "query failed")}
+        # A guard rejection is a policy event, not a fault — the same
+        # distinction the text_to_sql path records, so a count of "how often
+        # does the agent try to write?" covers both SQL surfaces.
+        rejected = bool(result.get("rejected_by_guard"))
+        error_text = str(result.get("error", "query failed"))
+        _record(audit.DECISION_DENY if rejected else audit.DECISION_ERROR, None, error_text)
+        return None, {"tool_name": "execute_sql", "error": error_text}
+
+    _record(audit.DECISION_ALLOW, result.get("row_count"),
+            "truncated" if result.get("is_truncated") else "")
 
     import json as _json
     return {

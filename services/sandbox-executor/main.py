@@ -18,6 +18,7 @@ chốt mô hình đồng bộ").
 from typing import Any
 from collections.abc import AsyncIterator
 import asyncio
+import base64
 import datetime
 import functools
 import json
@@ -33,10 +34,12 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 import minio_store
+from input_names import validate_input_name
 from security_visitor import validate_python_code, SecurityError
 from sql_guard import validate_select_only, SQLGuardError
 from docker_runner import (
     run_python_sandboxed,
+    run_shell_sandboxed,
     ExecutionTimeoutError,
     SandboxRunError,
     SandboxCircuitOpenError,
@@ -61,6 +64,11 @@ _PYTHON_QUEUE_WORKERS = int(os.environ.get("SANDBOX_PYTHON_QUEUE_WORKERS", os.en
 _SQL_QUEUE_WORKERS = int(os.environ.get("SANDBOX_SQL_QUEUE_WORKERS", "5"))
 _JOB_TTL_S = float(os.environ.get("SANDBOX_JOB_TTL_S", "600"))
 _QUEUE_MAXSIZE = int(os.environ.get("SANDBOX_QUEUE_MAXSIZE", "200"))
+# Total size of the input files one /execute/python request may stage into the
+# container. The sandbox's whole memory budget is SANDBOX_MEMORY_MB (256 by
+# default) and the bytes travel base64'd inside one JSON request, so this is a
+# transport and memory bound, not a policy one.
+_MAX_INPUT_BYTES = int(os.environ.get("SANDBOX_MAX_INPUT_BYTES", str(8 * 1024 * 1024)))
 _SSE_HEARTBEAT_S = float(os.environ.get("SANDBOX_SSE_HEARTBEAT_S", "15"))
 
 python_queue: JobQueue | None = None
@@ -78,7 +86,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await asyncio.to_thread(minio_store.ensure_bucket)
 
     python_queue = JobQueue(
-        _run_execute_python,
+        _run_sandbox_job,
         num_workers=_PYTHON_QUEUE_WORKERS,
         rejection_exc=SandboxCircuitOpenError,
         job_ttl_s=_JOB_TTL_S,
@@ -108,6 +116,58 @@ class ExecutePythonRequest(BaseModel):
     timeout_s: int = _DEFAULT_TIMEOUT_S
     memory_mb: int = _DEFAULT_MEMORY_MB
     cpus: float = _DEFAULT_CPUS
+    # {bare filename: base64 content}, staged into the container's /tmp before
+    # the code runs. The sandbox cannot see the caller's filesystem — that is
+    # the isolation, not an oversight — so a tool whose subject is a file (
+    # workflow-runtime's text_to_pandas) sends the bytes with the code.
+    files: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("files")
+    @classmethod
+    def _validate_files(cls, value: dict[str, str]) -> dict[str, str]:
+        """Names must be single path segments and the total must fit the cap.
+
+        Decoded here purely to validate — a 422 at submit time says "this
+        request is malformed", which is true and actionable, where the same
+        failure discovered inside the worker would come back as a mysterious
+        job error. _run_execute_python decodes again for real; base64 of a few
+        MiB is not worth threading decoded bytes through the request model to
+        avoid.
+        """
+        total = 0
+        for name, encoded in value.items():
+            # Same function docker_runner calls at staging time — one rule, so
+            # the 422 here and the refusal there can never disagree.
+            validate_input_name(name)
+            try:
+                total += len(base64.b64decode(encoded, validate=True))
+            except Exception as e:
+                raise ValueError(f"input file {name!r} is not valid base64: {e}") from e
+        if total > _MAX_INPUT_BYTES:
+            raise ValueError(
+                f"input files total {total} bytes, over the {_MAX_INPUT_BYTES}-byte limit "
+                "(SANDBOX_MAX_INPUT_BYTES)"
+            )
+        return value
+
+
+class ExecuteShellRequest(BaseModel):
+    """A shell command to run IN THE SANDBOX.
+
+    There is no allowlist and no parsing of `command`, deliberately: a shell
+    command cannot be validated the way Python source can, so the container is
+    the control. It is the same container /execute/python uses, with the same
+    network/filesystem/resource limits and the same wipe afterwards, which is
+    why this endpoint is not a new hole — it is where workflow-runtime's `bash`
+    tool stopped being one.
+    """
+
+    command: str
+    timeout_s: int = _DEFAULT_TIMEOUT_S
+    # A directory INSIDE the container. The tool's `cwd` config used to name a
+    # path on workflow-runtime's own filesystem, which is exactly what it no
+    # longer has access to.
+    workdir: str | None = None
 
 
 class SnowflakeConnectionParams(BaseModel):
@@ -228,6 +288,52 @@ class ExecuteSQLRequest(BaseModel):
 # -- job executors (run inside JobQueue's worker loop, not on the request
 #    path) -----------------------------------------------------------------
 
+async def _run_sandbox_job(payload: dict[str, Any]) -> dict[str, Any]:
+    """python_queue's executor. Python and shell share one queue because they
+    share one resource — a container from the pool — so two queues would let
+    their worker counts add up past the pool size and turn a full pool into
+    acquire timeouts instead of honest backpressure."""
+    if payload.get("kind") == "shell":
+        return await _run_execute_shell(payload)
+    return await _run_execute_python(payload)
+
+
+async def _run_execute_shell(payload: dict[str, Any]) -> dict[str, Any]:
+    command = payload["command"]
+    job_id = payload["job_id"]
+
+    # Audit copy of the submitted command, same lifecycle as execute_python's
+    # copy of the submitted code (docs/1.md mục h): uploaded before dispatch,
+    # always removed once the request ends.
+    minio_key = f"shell/{job_id}.sh"
+    await asyncio.to_thread(minio_store.put_code, minio_key, command)
+    assert python_queue is not None
+    try:
+        result = await asyncio.to_thread(
+            run_shell_sandboxed, command, payload["timeout_s"],
+            on_output=lambda stream, text: python_queue.append_output(job_id, stream, text),
+            workdir=payload.get("workdir"),
+        )
+    except ExecutionTimeoutError as e:
+        return {"success": False, "error": str(e), "timed_out": True}
+    except SandboxRunError as e:
+        logger.error("execute_shell | sandbox run failed: %s", e)
+        return {"success": False, "error": str(e)}
+    # SandboxCircuitOpenError propagates, exactly as in _run_execute_python.
+    finally:
+        await asyncio.to_thread(minio_store.delete_code, minio_key)
+
+    stdout, truncated = truncate_output(result["stdout"], DEFAULT_MAX_OUTPUT_CHARS)
+    return {
+        "success": result["exit_code"] == 0,
+        "stdout": stdout,
+        "stderr": result["stderr"],
+        "exit_code": result["exit_code"],
+        "timed_out": False,
+        "is_truncated": truncated,
+    }
+
+
 async def _run_execute_python(payload: dict[str, Any]) -> dict[str, Any]:
     code = payload["code"]
     job_id = payload["job_id"]
@@ -254,6 +360,10 @@ async def _run_execute_python(payload: dict[str, Any]) -> dict[str, Any]:
         result = await asyncio.to_thread(
             run_python_sandboxed, code, payload["timeout_s"], payload["memory_mb"], payload["cpus"],
             on_output=lambda stream, text: python_queue.append_output(job_id, stream, text),
+            files={
+                name: base64.b64decode(encoded)
+                for name, encoded in (payload.get("files") or {}).items()
+            },
         )
     except ExecutionTimeoutError as e:
         return {"success": False, "error": str(e), "timed_out": True}
@@ -292,7 +402,11 @@ async def _run_execute_sql(payload: dict[str, Any]) -> dict[str, Any]:
     # rejection is a policy event, not a transient fault, so re-prompting the
     # model for it just burns tokens and blurs the audit signal.
     try:
-        validate_select_only(sql)
+        # The backend name IS the dialect (sql_scan.DIALECTS uses the same
+        # spellings). Passing it matters: the engines disagree about whether a
+        # backslash escapes a quote inside a string literal, and therefore about
+        # where a statement ends — see sql_scan's module docstring.
+        validate_select_only(sql, backend)
     except SQLGuardError as e:
         logger.warning("execute_sql | rejected by sql_guard (backend=%s): %s", backend, e)
         return {"success": False, "error": f"SQL rejected: {e}", "rejected_by_guard": True}
@@ -316,6 +430,12 @@ async def _run_execute_sql(payload: dict[str, Any]) -> dict[str, Any]:
         "rows": result["rows"],
         "row_count": result["row_count"],
         "is_truncated": result["is_truncated"],
+        # WHY it was cut, not just that it was. "the first 10,000 rows" and
+        # "as much as fitted in 8MB" support different answers, and a caller
+        # that cannot tell them apart cannot explain either to a user.
+        "truncation_reason": result.get("truncation_reason", ""),
+        "cells_truncated": result.get("cells_truncated", 0),
+        "result_bytes": result.get("result_bytes", 0),
         "backend": backend,
     }
 
@@ -386,7 +506,13 @@ async def get_status() -> dict[str, Any]:
     return {
         "pool": get_pool().stats(),
         "jobs": {
-            "python": [_job_summary(j, "python") for j in python_queue.list_jobs()],
+            # Kind read back from each job's payload, not from which list it is
+            # in: python and shell jobs share python_queue, and `kind` is what
+            # tells a client which /execute/{kind}/ endpoint a job_id belongs to.
+            "python": [
+                _job_summary(j, str(python_queue.payload_of(j.id).get("kind") or "python"))
+                for j in python_queue.list_jobs()
+            ],
             "sql": [_job_summary(j, "sql") for j in sql_queue.list_jobs()],
         },
     }
@@ -484,8 +610,30 @@ async def _sse_events(queue: JobQueue, job_id: str) -> AsyncIterator[str]:
 async def execute_python(req: ExecutePythonRequest) -> JSONResponse:
     assert python_queue is not None  # set in lifespan() before requests are served
     return _submit(python_queue, {
+        "kind": "python",
         "code": req.code, "timeout_s": req.timeout_s, "memory_mb": req.memory_mb, "cpus": req.cpus,
+        "files": req.files,
     })
+
+
+@app.post("/execute/shell")
+async def execute_shell(req: ExecuteShellRequest) -> JSONResponse:
+    assert python_queue is not None  # set in lifespan() before requests are served
+    return _submit(python_queue, {
+        "kind": "shell", "command": req.command, "timeout_s": req.timeout_s, "workdir": req.workdir,
+    })
+
+
+@app.get("/execute/shell/{job_id}")
+async def get_execute_shell(job_id: str) -> JSONResponse:
+    assert python_queue is not None  # set in lifespan() before requests are served
+    return _job_status_response(python_queue, job_id)
+
+
+@app.get("/execute/shell/{job_id}/stream")
+async def stream_execute_shell(job_id: str) -> StreamingResponse:
+    assert python_queue is not None  # set in lifespan() before requests are served
+    return StreamingResponse(_sse_events(python_queue, job_id), media_type="text/event-stream")
 
 
 @app.get("/execute/python/{job_id}")

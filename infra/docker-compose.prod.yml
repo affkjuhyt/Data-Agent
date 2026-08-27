@@ -83,11 +83,22 @@ services:
           ts=$$(date +%Y%m%d_%H%M%S)
           dump=/backups/dumps/dump_$${ts}.sql.gz
           echo "[backup] $$(date -Iseconds) writing $${dump}"
-          if pg_dump --format=plain --no-owner --no-privileges | gzip > "$${dump}.tmp"; then
+          # `|| true` on purpose: a pipeline reports the exit status of gzip,
+          # never of pg_dump, so this line cannot tell you whether the dump
+          # worked — and under `set -e` a real gzip failure (disk full) would
+          # kill the loop for good, silently ending all future backups.
+          # (No apostrophes in these comments: the whole command is a
+          # single-quoted sh -c argument, and one would close it.)
+          pg_dump --format=plain --no-owner --no-privileges | gzip > "$${dump}.tmp" || true
+          # So verify the artifact instead of trusting an exit code: it must
+          # decompress, and it must carry the completion marker that pg_dump
+          # writes last. A dump cut short stays byte-for-byte plausible right
+          # up until the day you restore it.
+          if gzip -t "$${dump}.tmp" 2>/dev/null && gunzip -c "$${dump}.tmp" | tail -5 | grep -q "PostgreSQL database dump complete"; then
             mv "$${dump}.tmp" "$${dump}"
             echo "[backup] OK size=$$(stat -c%s "$${dump}") bytes"
           else
-            echo "[backup] FAILED — leaving previous dumps in place"
+            echo "[backup] FAILED — dump incomplete, leaving previous dumps in place"
             rm -f "$${dump}.tmp"
           fi
           find /backups/dumps -name "dump_*.sql.gz" -mtime +$${BACKUP_RETENTION_DAYS} -delete

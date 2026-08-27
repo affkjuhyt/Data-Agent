@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 import config
 from auth import get_current_user
+from libs.shared.auth import require_tenant
 from agent_catalog import fetch_guardrail_config
 from graph import get_graph
 from nodes.guardrail import run_guardrail
@@ -60,7 +61,14 @@ async def stream_orchestration(
     # this came from Kong (gateway key) or is a signed assertion. The old
     # `headers.get(...) or DEV_TENANT_ID` fallback meant an unauthenticated
     # caller silently became the dev tenant.
-    tenant_id = caller["tenant_id"] or config.DEV_TENANT_ID
+    #
+    # The fallback is gone entirely now, not just moved behind authentication.
+    # A verified caller can still arrive without a tenant — a Keycloak token
+    # missing the claim, an assertion signed for a process rather than a tenant
+    # — and `or DEV_TENANT_ID` pointed exactly those requests at a real tenant's
+    # data. 403 makes a misconfigured token visible instead of quietly serving
+    # tenant 0000...0001.
+    tenant_id = require_tenant(caller)
     # hex32 (không dấu gạch ngang) — format trace_id chuẩn OTEL, dùng chung
     # làm LangGraph thread_id VÀ Langfuse trace_id (xem observability.py).
     session_id = (req.session_id or uuid.uuid4().hex).replace("-", "")

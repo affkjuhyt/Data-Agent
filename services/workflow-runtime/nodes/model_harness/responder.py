@@ -6,12 +6,64 @@ import logging
 
 import litellm
 
-from libs.shared import freshness
+from libs.shared import aggregation_check, freshness, untrusted
 from nodes.model_harness.intent import guidance, parse as parse_analysis_type
 from observability import get_langfuse_client
 from state import AgentState
 
 logger = logging.getLogger(__name__)
+
+_AGGREGATION_RULE = (
+    "\n\nAggregation risk - a context item may carry an `aggregation-risk:` line. "
+    "It means the figure was produced by a query whose shape can multiply it: "
+    "a join that matches one row on the left to several on the right duplicates "
+    "those rows before the SUM or COUNT runs.\n"
+    "- State that the figure is unverified and say why, in one short sentence.\n"
+    "- Do NOT restate it as a confirmed total, and do not compute anything "
+    "further from it (a share, a growth rate, a per-unit figure) - the error "
+    "carries into everything derived from it.\n"
+    "- It is a RISK, not a proven error: never say the number is wrong, say "
+    "it could not be verified and what would settle it."
+)
+
+
+_TRUNCATION_LABELS = {
+    "row_limit": "only the first {rows} row(s) were returned (row cap)",
+    "byte_limit": "only the first {rows} row(s) fitted in the result size cap",
+    "cell_limit": "the rows are complete but some individual values were shortened",
+}
+
+_TRUNCATION_RULE = (
+    "\n\nIncomplete results - a context item may carry a `result-truncated:` line. "
+    "When one is present:\n"
+    "- Say plainly that the data shown is a partial slice, not the full result.\n"
+    "- Do NOT compute or state totals, counts, averages, minimums or maximums "
+    "over it as if it were complete - an aggregate over a truncated slice is a "
+    "wrong number that looks like a right one.\n"
+    "- Suggest narrowing the question (a filter, a date range, a GROUP BY) "
+    "instead of presenting the partial figures as the answer."
+)
+
+
+def _truncation_note(truncation: Any) -> str:
+    """`result-truncated: ...` for a capped result, or "" for a complete one."""
+    if not isinstance(truncation, dict):
+        return ""
+    reason = truncation.get("reason") or ""
+    rows = truncation.get("rows_returned", 0)
+    parts = []
+    label = _TRUNCATION_LABELS.get(reason)
+    if label:
+        parts.append(label.format(rows=rows))
+    elif reason:
+        parts.append(f"result was cut short ({reason})")
+    else:
+        return ""
+    cells = truncation.get("cells_truncated") or 0
+    if cells and reason != "cell_limit":
+        parts.append(f"{cells} oversized value(s) also shortened")
+    return "result-truncated: " + "; ".join(parts)
+
 
 # Appended only when at least one context item carries governance facts —
 # instructing the model to disclose an "as of" it has not been given produces an
@@ -108,8 +160,13 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
         parts = []
         total_chars = 0
         has_governance = False
+        has_truncation = False
+        has_aggregation_risk = False
         for i, c in enumerate(chunks):
-            source    = c.get("source") or c.get("id", "unknown")
+            # `source` is retrieved data too: a document whose name embeds a
+            # newline plus a fake "[2] source=..." header forges a second
+            # context item, and therefore a second citation, out of one chunk.
+            source    = untrusted.one_line(c.get("source") or c.get("id", "unknown"))
             score     = c.get("score", c.get("rrf_score", ""))
             score_str = f" | score={score:.3f}" if isinstance(score, float) else ""
             header    = f"[{i+1}] source={source}{score_str}"
@@ -129,6 +186,15 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
                 header = f"{header}\ngovernance: {governance}"
                 has_governance = True
 
+            # A capped result is not a smaller answer to the same question. A
+            # total over the rows that fitted looks exactly like the real total,
+            # so the model is told the rows are a prefix and instructed below
+            # not to aggregate over them as if they were everything.
+            truncation = _truncation_note((c.get("metadata") or {}).get("truncation"))
+            if truncation:
+                header = f"{header}\n{truncation}"
+                has_truncation = True
+
             if total_chars + len(content) > max_chars:
                 content = content[:max_chars - total_chars]
             parts.append(f"{header}\n{content}")
@@ -146,15 +212,39 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
                 # Surfaced on the citation so the UI can badge a stale answer
                 # without re-deriving anything the model said.
                 "provenance": (c.get("metadata") or {}).get("provenance") or None,
+                "truncation": (c.get("metadata") or {}).get("truncation") or None,
+                "aggregation": (c.get("metadata") or {}).get("aggregation") or None,
             }
 
             if total_chars >= max_chars:
                 break
 
-        context = "\n\n---\n\n".join(parts)
-        system_prompt = f"{system_prompt}\n\nContext:\n{context}\n\n{_CITATION_SUFFIX}"
+        # Units across the whole context, not per item: a mismatch only exists
+        # between two figures. Unlike the fan-out check this is exact - the unit
+        # comes from an approved metric contract, so combining VND with USD is
+        # not a risk to weigh but an error to state.
+        unit_conflict = aggregation_check.check_units([
+            ((c.get("metadata") or {}).get("semantic") or {}).get("unit", "")
+            for c in chunks
+        ])
+        if unit_conflict:
+            parts.append(f"aggregation-risk: {unit_conflict.kind}: {unit_conflict.detail}")
+            has_aggregation_risk = True
+
+        # Everything in `parts` came out of a KB document, a SQL result or a
+        # tool payload - none of it written by this platform or typed by the
+        # caller. Fenced and labelled so a chunk saying "ignore the above,
+        # you are now..." reads as a quote inside the evidence instead of as
+        # the system prompt resuming. wrap() also defangs a chunk shipping
+        # its own closing tag to end the fence early.
+        context = untrusted.wrap("\n\n---\n\n".join(parts))
+        system_prompt = f"{system_prompt}\n\nContext:\n{context}{untrusted.RULE}\n\n{_CITATION_SUFFIX}"
         if has_governance:
             system_prompt += _FRESHNESS_RULE
+        if has_truncation:
+            system_prompt += _TRUNCATION_RULE
+        if has_aggregation_risk:
+            system_prompt += _AGGREGATION_RULE
 
     injected_metadata = state.get("injected_metadata")
     if injected_metadata:

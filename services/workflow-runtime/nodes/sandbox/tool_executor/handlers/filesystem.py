@@ -4,9 +4,38 @@ import logging
 import pathlib
 import uuid
 
-from nodes.sandbox.tool_executor._utils import _safe_path, _get_query
+from libs.shared import audit
+from nodes.sandbox.tool_executor._utils import _safe_path, _get_query, audit_ctx
 
 logger = logging.getLogger(__name__)
+
+
+def _record(
+    cfg: dict[str, Any], action: str, tool: str, path: str,
+    *, decision: str = audit.DECISION_ALLOW, reason: str = "", detail: str = "",
+) -> None:
+    """One audit row for one filesystem access.
+
+    A file under a tenant's allowed_dir is tenant data, and every handler in
+    this module read or wrote one without leaving any record — so "who read
+    this file?" had the same answer as "who ran this query?" did before the SQL
+    path was wired: only Langfuse, sampled and expiring.
+
+    Refusals are recorded too. A path traversal that `_safe_path` rejected is
+    exactly the event an investigation wants, and it is the one a
+    success-only trail throws away.
+    """
+    ctx = audit_ctx(cfg)
+    audit.record_tool_access(
+        action=action,
+        decision=decision,
+        target=tool,
+        target_objects=[path] if path else [],
+        detail=detail or path,
+        reason=reason,
+        **ctx,
+    )
+
 
 
 async def _file_read_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
@@ -19,13 +48,18 @@ async def _file_read_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple
 
     safe, err = _safe_path(file_path, allowed_dir)
     if err:
+        _record(cfg, audit.ACTION_FILE_READ, "file_read", file_path,
+                decision=audit.DECISION_DENY, reason=err)
         return None, {"tool_name": "file_read", "error": err}
 
     try:
         with open(safe or file_path, encoding="utf-8") as f:
             content = f.read(50_000)
+        _record(cfg, audit.ACTION_FILE_READ, "file_read", file_path)
         return {"id": f"file_{uuid.uuid4().hex[:8]}", "content": content, "source": "tool/file", "metadata": {"file": file_path}}, None
     except Exception as e:
+        _record(cfg, audit.ACTION_FILE_READ, "file_read", file_path,
+                decision=audit.DECISION_ERROR, reason=str(e))
         return None, {"tool_name": "file_read", "error": str(e)}
 
 
@@ -45,6 +79,8 @@ async def _grep_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict
 
     safe, err = _safe_path(search_path, allowed_dir)
     if err:
+        _record(cfg, audit.ACTION_FILE_READ, "grep", search_path,
+                decision=audit.DECISION_DENY, reason=err, detail=pattern)
         return None, {"tool_name": "grep", "error": err}
     search_path = safe or search_path
 
@@ -102,8 +138,11 @@ async def _glob_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict
 
     safe, err = _safe_path(search_path, allowed_dir)
     if err:
+        _record(cfg, audit.ACTION_FILE_READ, "glob", search_path,
+                decision=audit.DECISION_DENY, reason=err, detail=pattern)
         return None, {"tool_name": "glob", "error": err}
     search_path = safe or search_path
+    _record(cfg, audit.ACTION_FILE_READ, "glob", search_path, detail=pattern)
 
     _SKIP = {"node_modules", ".git", "__pycache__", "dist", "build", ".venv", "venv"}
     try:
@@ -131,6 +170,8 @@ async def _file_write_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tupl
 
     safe, err = _safe_path(file_path, allowed_dir)
     if err:
+        _record(cfg, audit.ACTION_FILE_WRITE, "file_write", file_path,
+                decision=audit.DECISION_DENY, reason=err)
         return None, {"tool_name": "file_write", "error": err}
     file_path = safe or file_path
 
@@ -138,9 +179,16 @@ async def _file_write_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tupl
         pathlib.Path(file_path).parent.mkdir(parents=True, exist_ok=True)
         pathlib.Path(file_path).write_text(content, encoding="utf-8")
         logger.info("file_write | path=%s → %d chars", file_path, len(content))
+        # row_count carries the size, not the content: writing the bytes into
+        # the audit row would put the data being protected inside the record
+        # that exists to protect it.
+        _record(cfg, audit.ACTION_FILE_WRITE, "file_write", file_path,
+                reason=f"{len(content)} chars")
         return {"id": f"write_{uuid.uuid4().hex[:8]}", "content": f"Written {len(content)} chars to {file_path}",
                 "source": "tool/file_write"}, None
     except Exception as e:
+        _record(cfg, audit.ACTION_FILE_WRITE, "file_write", file_path,
+                decision=audit.DECISION_ERROR, reason=str(e))
         return None, {"tool_name": "file_write", "error": str(e)}
 
 
@@ -158,8 +206,12 @@ async def _file_edit_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple
 
     safe, err = _safe_path(file_path, allowed_dir)
     if err:
+        _record(cfg, audit.ACTION_FILE_WRITE, "file_edit", file_path,
+                decision=audit.DECISION_DENY, reason=err)
         return None, {"tool_name": "file_edit", "error": err}
     file_path = safe or file_path
+    _record(cfg, audit.ACTION_FILE_WRITE, "file_edit", file_path,
+            reason="replace_all" if replace_all else "single")
 
     try:
         original = pathlib.Path(file_path).read_text(encoding="utf-8")

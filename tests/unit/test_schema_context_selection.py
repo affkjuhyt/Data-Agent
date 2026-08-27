@@ -80,8 +80,8 @@ def _two_phase(monkeypatch, data, table_names, column_specs):
     """Stub both introspection phases and return the mock, so a test can assert
     on which tables phase 2 was actually asked for."""
     sandbox = AsyncMock(side_effect=[
-        (_table_rows(*table_names), None, False),
-        (_rows(*column_specs), None, False),
+        (_table_rows(*table_names), None, False, None),
+        (_rows(*column_specs), None, False, None),
     ])
     monkeypatch.setattr(data, "_sandbox_sql", sandbox)
     return sandbox
@@ -244,7 +244,7 @@ class TestCatalogIsPreferred:
         data = _data()
         catalog = _stub_catalog(monkeypatch, [{"table_name": "T", "text_description": "d"}])
         _stub_redis(monkeypatch, get_return=None)
-        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=(_rows(("orders", "id", "int")), None, False)))
+        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=(_rows(("orders", "id", "int")), None, False, None)))
 
         text = await data._get_schema_text(TENANT, {"host": "h", "database": "d"}, "q")
 
@@ -255,7 +255,7 @@ class TestCatalogIsPreferred:
         data = _data()
         _stub_catalog(monkeypatch, [])
         _stub_redis(monkeypatch, get_return=None)
-        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=(_rows(("orders", "id", "int")), None, False)))
+        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=(_rows(("orders", "id", "int")), None, False, None)))
 
         text = await data._get_schema_text(
             TENANT, {"host": "h", "database": "d", "catalog_warehouse_id": "wh-1"}, "q",
@@ -270,7 +270,7 @@ class TestCatalogIsPreferred:
         mod.format_catalog_context = lambda t: ""
         monkeypatch.setitem(sys.modules, "schema_catalog", mod)
         _stub_redis(monkeypatch, get_return=None)
-        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=(_rows(("orders", "id", "int")), None, False)))
+        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=(_rows(("orders", "id", "int")), None, False, None)))
 
         text = await data._get_schema_text(
             TENANT, {"host": "h", "database": "d", "catalog_warehouse_id": "wh-1"}, "q",
@@ -365,7 +365,7 @@ class TestTwoPhaseIntrospection:
         """The list is cached; the columns for this question are not."""
         data = _data()
         _stub_redis(monkeypatch, get_return=json.dumps({"tables": ["orders", "employees"]}))
-        sandbox = AsyncMock(return_value=(_rows(("orders", "id", "int")), None, False))
+        sandbox = AsyncMock(return_value=(_rows(("orders", "id", "int")), None, False, None))
         monkeypatch.setattr(data, "_sandbox_sql", sandbox)
 
         rendered = await data._get_schema_text(TENANT, {"host": "h", "database": "d"}, "orders")
@@ -398,7 +398,7 @@ class TestTwoPhaseIntrospection:
         data = _data()
         _stub_redis(monkeypatch, get_return=None)
         monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(
-            return_value=(None, "sandbox-executor unreachable", False),
+            return_value=(None, "sandbox-executor unreachable", False, None),
         ))
 
         assert await data._get_schema_text(TENANT, {"host": "h", "database": "d"}, "q") == ""
@@ -409,8 +409,8 @@ class TestTwoPhaseIntrospection:
         data = _data()
         _stub_redis(monkeypatch, get_return=None)
         monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(side_effect=[
-            (_table_rows("orders"), None, False),
-            (None, "timeout", False),
+            (_table_rows("orders"), None, False, None),
+            (None, "timeout", False, None),
         ]))
 
         assert await data._get_schema_text(TENANT, {"host": "h", "database": "d"}, "orders") == ""

@@ -50,6 +50,11 @@ def _load_main(monkeypatch, backend: str = "snowflake"):
     stub_module(
         "docker_runner",
         run_python_sandboxed=MagicMock(),
+        # /execute/shell's executor — workflow-runtime's bash tool runs here now
+        # instead of subprocess.run(shell=True) in its own process. The stub has
+        # to carry every name main.py imports, or the import fails before any
+        # test in this file runs.
+        run_shell_sandboxed=MagicMock(),
         ExecutionTimeoutError=type("ExecutionTimeoutError", (Exception,), {}),
         SandboxRunError=type("SandboxRunError", (Exception,), {}),
         SandboxCircuitOpenError=type("SandboxCircuitOpenError", (Exception,), {}),

@@ -6,6 +6,7 @@ import time
 
 import litellm
 
+from libs.shared import untrusted
 from observability import get_langfuse_client
 from state import AgentState
 
@@ -49,7 +50,10 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
         content = c.get("content", "")
         if content:
             context_lines.append(f"[{i}] {content[:400]}")
-    context_text = "\n".join(context_lines) or "(không có context)"
+    # Same content the responder answered from, so the same fence: a chunk
+    # that talks the judge into PASS is a cheaper attack than one that talks
+    # the responder into leaking, and it clears the way for the next.
+    context_text = untrusted.wrap("\n".join(context_lines)) if context_lines else "(không có context)"
 
     tool_err_text = json.dumps(tool_errs, ensure_ascii=False) if tool_errs else "(không có lỗi)"
 
@@ -62,7 +66,7 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
 
     model = cfg.get("judge_model", "openai/judge")
     messages_payload = [
-        {"role": "system", "content": _SYSTEM},
+        {"role": "system", "content": _SYSTEM + untrusted.RULE},
         {"role": "user",   "content": user_msg},
     ]
     try:

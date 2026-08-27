@@ -1,0 +1,135 @@
+# Postgres logical backup — the k8s port of the `postgres-backup` sidecar in
+# infra/docker-compose.prod.yml.
+#
+# Compose runs a shell loop in a long-lived container. On k8s that job belongs
+# to a CronJob: the schedule is declarative, a missed run is visible as a failed
+# Job instead of a line in a container log nobody tails, and a hung dump does
+# not silently stop all future backups (concurrencyPolicy below).
+#
+# ── What this covers, and what it does not ───────────────────────────────────
+# Covers: a periodic logical dump (pg_dump), retained for BACKUP_RETENTION_DAYS.
+# That is the <6h RPO line in docs/disaster-recovery.md.
+#
+# Does NOT cover WAL archiving — and this is the honest difference between the
+# compose story and the k8s one. In compose, Postgres runs in the stack and gets
+# `archive_command` set on its own command line. Here, Postgres is out of scope
+# for this directory (managed service, or its own StatefulSet), so continuous
+# archiving is configured wherever it actually runs:
+#
+#   * Managed (RDS / Cloud SQL / Azure): use the provider's PITR. It is strictly
+#     better than anything in this file — keep this CronJob anyway, as a logical
+#     export that survives the provider account itself.
+#   * Self-hosted StatefulSet: set archive_mode=on and point archive_command at
+#     object storage (not at this PVC — see the RWX note on the volume below).
+#     The prod compose overlay has the flag values to copy.
+#
+# Without one of those, recovery is "restore the last dump", i.e. up to
+# BACKUP_INTERVAL_HOURS of committed writes are gone. Say that out loud in the
+# runbook rather than discovering it during an incident.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-backups
+  labels: { app.kubernetes.io/part-of: dataagent }
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 20Gi
+  # storageClassName: <your class>   # omit to use the cluster default
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  labels: { app: postgres-backup, app.kubernetes.io/part-of: dataagent }
+spec:
+  # Every 6h — same cadence as BACKUP_INTERVAL_HOURS=6 in compose. Change both
+  # together, or the DR doc's RPO figure stops being true.
+  schedule: "0 */6 * * *"
+  # A dump that overruns its window must not be joined by the next one: two
+  # concurrent pg_dumps double the load on the primary and race on the same
+  # filename prefix. Skip instead, and let the miss show up as a gap.
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: pg-dump
+              image: postgres:16-alpine
+              env:
+                # Point these at wherever Postgres actually runs. PGPASSWORD is
+                # the only secret of the four.
+                - { name: PGHOST, value: "postgres" }
+                - { name: PGPORT, value: "5432" }
+                - { name: PGUSER, value: "admin" }
+                - { name: PGDATABASE, value: "dataagent" }
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef: { name: dataagent-secrets, key: PGPASSWORD }
+                - { name: BACKUP_RETENTION_DAYS, value: "7" }
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+                  mkdir -p /backups/dumps
+                  # Backticks, not $(...): kubelet expands $(NAME) against the
+                  # container's env before the shell ever sees it.
+                  ts=`date +%Y%m%d_%H%M%S`
+                  dump="/backups/dumps/dump_${ts}.sql.gz"
+                  echo "[backup] `date -Iseconds` writing ${dump}"
+
+                  # Written to .tmp and renamed only after it verifies, so a
+                  # pod evicted mid-dump cannot leave a truncated file that
+                  # looks exactly like a good one.
+                  pg_dump --format=plain --no-owner --no-privileges | gzip > "${dump}.tmp"
+
+                  # A pipeline's exit status is the LAST command's, so a
+                  # pg_dump that dies mid-stream still leaves gzip exiting 0 —
+                  # `set -e` never sees it. (The compose sidecar this is ported
+                  # from had the same hole.) Verify the artifact instead of
+                  # trusting the exit code: the archive must decompress, and it
+                  # must end with pg_dump's own completion marker. A dump that
+                  # is silently short is the failure you discover during a
+                  # restore, which is the worst possible moment to discover it.
+                  gzip -t "${dump}.tmp"
+                  if ! gunzip -c "${dump}.tmp" | tail -5 | grep -q "PostgreSQL database dump complete"; then
+                    echo "[backup] FAILED — dump is incomplete, keeping previous dumps" >&2
+                    rm -f "${dump}.tmp"
+                    exit 1
+                  fi
+
+                  mv "${dump}.tmp" "${dump}"
+                  size=`stat -c%s "${dump}"`
+                  echo "[backup] OK size=${size} bytes"
+
+                  find /backups/dumps -name "dump_*.sql.gz" -mtime +"${BACKUP_RETENTION_DAYS}" -delete
+                  # Only when Postgres archives WAL onto this same volume, which
+                  # needs an RWX volume shared with the database pod. Skipped
+                  # otherwise — the directory simply is not there. `if`, not
+                  # `[ -d ] && find`: the && form's status under `set -e` is
+                  # shell-dependent enough not to want it in a backup job.
+                  if [ -d /backups/wal ]; then
+                    find /backups/wal -type f -mtime +"${BACKUP_RETENTION_DAYS}" -delete
+                  fi
+                  echo "[backup] retention=${BACKUP_RETENTION_DAYS}d applied"
+              volumeMounts:
+                - { name: backups, mountPath: /backups }
+              resources:
+                requests: { cpu: "100m", memory: "128Mi" }
+                limits:   { cpu: "1",    memory: "512Mi" }
+          volumes:
+            # A PVC in the same cluster is one failure domain: it survives a
+            # dropped table, not a lost cluster. For real DR, add a step that
+            # ships /backups/dumps to object storage in another account/region —
+            # the platform already runs MinIO, and `mc mirror` is one more
+            # container in this pod.
+            - name: backups
+              persistentVolumeClaim: { claimName: postgres-backups }

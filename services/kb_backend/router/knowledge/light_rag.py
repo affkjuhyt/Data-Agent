@@ -17,6 +17,23 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/pipeline/light-rag", tags=["LightRAG"])
 
 
+def _require_role_id(ctx: dict[str, Any]) -> str:
+    """The caller's document tier, or 403.
+
+    Empty means the pipeline would run with no role scope — which, before this
+    change, was every request. Refusing is the difference between a retrieval
+    that is scoped and one that merely usually is: `require_perm` above cannot
+    cover it, because "may retrieve" and "may retrieve THIS" are different
+    questions and only the second one depends on the tier.
+    """
+    role_id = ctx.get("role_id") or ""
+    if not role_id:
+        log.warning("retrieve | caller %r has no document tier — refusing", ctx.get("user_id"))
+        raise HTTPException(status_code=403, detail="No document role associated with this identity")
+    return role_id
+
+
+
 @router.post("/retrieve", response_model=RetrieveResponse)
 async def retrieve(
         body: RetrieveRequest,
@@ -25,6 +42,12 @@ async def retrieve(
 ) -> RetrieveResponse:
     tenant_id = body.tenant_id or ctx["tenant_id"] or "default"
     knowledge_base = body.knowledge_base or None
+    # The caller's document tier, from the verified identity — never from the
+    # request body. `require_perm` above answers "may this caller retrieve at
+    # all"; this answers "from which documents", which is the question the
+    # role hierarchy in operations/access.py exists to settle and which this
+    # endpoint did not previously ask.
+    role_id = _require_role_id(ctx)
 
     cache: ResultCache = request.app.state.result_cache
     qhash = query_hash(
@@ -33,6 +56,7 @@ async def retrieve(
         body.entities or None,
         body.intent or None,
         body.entity_types or None,
+        role_id,
     )
     cached = await cache.get(tenant_id, knowledge_base, qhash)
     if cached is not None:
@@ -53,6 +77,7 @@ async def retrieve(
             entities=body.entities or None,
             intent=body.intent or None,
             entity_types=body.entity_types or None,
+            role_id=role_id,
         )
         if result.get("results"):
             await cache.set(tenant_id, knowledge_base, qhash, result)
@@ -70,6 +95,9 @@ async def retrieve_stream(
 ) -> StreamingResponse:
     tenant_id = body.tenant_id or ctx["tenant_id"] or "default"
     knowledge_base = body.knowledge_base or None
+    # Same scope as /retrieve. The streaming variant runs the same pipeline, so
+    # leaving it unscoped would leave the whole bypass open through one route.
+    role_id = _require_role_id(ctx)
     log.info("POST /retrieve/stream | query=%r tenant=%s kb=%s", body.query[:80], tenant_id, knowledge_base)
 
     async def generate() -> AsyncGenerator[str, None]:
@@ -86,6 +114,7 @@ async def retrieve_stream(
                     entities=body.entities or None,
                     intent=body.intent or None,
                     entity_types=body.entity_types or None,
+                    role_id=role_id,
             ):
                 yield f"data: {json.dumps(event)}\n\n"
         except Exception as exc:

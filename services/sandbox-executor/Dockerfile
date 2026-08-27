@@ -7,5 +7,9 @@ FROM python:3.11.9-slim
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY main.py security_visitor.py docker_runner.py pool.py job_queue.py minio_store.py sql_guard.py output.py snowflake_readonly.py postgres_readonly.py ./
+# Every module, not a file list. The list version silently went stale twice:
+# clickhouse_readonly.py was added as a third SQL backend and never copied, so
+# the image kept building and failed only on the first ClickHouse query.
+# __pycache__ is excluded by the repo .dockerignore.
+COPY *.py ./
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8500"]

@@ -185,6 +185,31 @@ def make_get_current_user(
 get_current_user = make_get_current_user("ALLOWED_ASSERTING_SERVICES")
 
 
+def require_tenant(caller: dict[str, Any]) -> str:
+    """The caller's tenant, or 403. Never a default.
+
+    Authentication proves WHO is calling; it does not by itself say which
+    tenant's data they may touch. A verified caller can still arrive without a
+    tenant — a Keycloak token missing the claim, a service assertion signed for
+    a process rather than a tenant — and every call site that met that case
+    reached for `or DEV_TENANT_ID`, which silently pointed the request at a real
+    tenant's data. That is the same cross-tenant read the gateway was added to
+    stop, just reached by a caller who did authenticate.
+
+    Failing closed makes a misconfigured token a visible 403 instead of a quiet
+    read of tenant 0000...0001.
+    """
+    tenant_id = (caller or {}).get("tenant_id") or ""
+    if not tenant_id:
+        logger.warning(
+            "auth | caller user=%r source=%r has no tenant — refusing rather than "
+            "falling back to a default tenant",
+            (caller or {}).get("user_id"), (caller or {}).get("auth_source"),
+        )
+        raise HTTPException(status_code=403, detail="No tenant associated with this identity")
+    return str(tenant_id)
+
+
 def require_role(*roles: str) -> Callable[..., dict[str, Any]]:
     def _dep(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
         if not any(r in user["roles"] for r in roles):

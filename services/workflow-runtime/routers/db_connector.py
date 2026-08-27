@@ -35,6 +35,11 @@ async def test_connection(body: TestConnectionRequest, x_tenant_id: str = Header
             host=body.host, port=body.port, user=body.user,
             password=password or "", database=body.database,
             timeout=5,
+            # The same posture the query path opens with (sandbox-executor's
+            # postgres_readonly). A connection this endpoint calls healthy but
+            # that path cannot open would be a green tick followed by a failure
+            # in the middle of a conversation.
+            server_settings={"default_transaction_read_only": "on"},
         )
         await conn.close()
         return {"success": True}

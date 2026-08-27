@@ -1,0 +1,96 @@
+{
+  "_comment": [
+    "Metric contracts the SQL cases are written against. Fixtures, not production config —",
+    "a tenant's real registry lives in Postgres (services/workflow-runtime/semantic_layer.py).",
+    "They are shaped like real ones on purpose: two revenue metrics that differ only by refunds,",
+    "a COUNT vs COUNT_DISTINCT pair, and an always-on status filter, because those are the three",
+    "confusions the semantic layer exists to end and therefore the three worth measuring."
+  ],
+  "retail": {
+    "metrics": [
+      {
+        "key": "revenue",
+        "version": 3,
+        "name": "Doanh thu",
+        "aggregation": "sum",
+        "source_table": "orders",
+        "expression": "amount",
+        "time_column": "created_at",
+        "default_grain": "none",
+        "unit": "VND",
+        "dimensions": [
+          {"key": "region", "column": "region", "label": "Miền"},
+          {"key": "channel", "column": "sales_channel", "label": "Kênh bán"}
+        ],
+        "default_filters": [{"column": "status", "op": "eq", "value": "paid"}],
+        "status": "approved",
+        "owner": "finance"
+      },
+      {
+        "key": "net_revenue",
+        "version": 2,
+        "name": "Doanh thu thuần",
+        "aggregation": "sum",
+        "source_table": "orders",
+        "expression": "net_amount",
+        "time_column": "created_at",
+        "default_grain": "none",
+        "unit": "VND",
+        "dimensions": [{"key": "region", "column": "region", "label": "Miền"}],
+        "default_filters": [{"column": "status", "op": "eq", "value": "paid"}],
+        "status": "approved",
+        "owner": "finance"
+      },
+      {
+        "key": "order_count",
+        "version": 1,
+        "name": "Số đơn hàng",
+        "aggregation": "count",
+        "source_table": "orders",
+        "expression": "id",
+        "time_column": "created_at",
+        "default_grain": "none",
+        "unit": "đơn",
+        "dimensions": [{"key": "region", "column": "region"}],
+        "default_filters": [],
+        "status": "approved"
+      },
+      {
+        "key": "customer_count",
+        "version": 1,
+        "name": "Số khách hàng",
+        "aggregation": "count_distinct",
+        "source_table": "orders",
+        "expression": "customer_id",
+        "time_column": "created_at",
+        "default_grain": "none",
+        "unit": "khách",
+        "dimensions": [{"key": "region", "column": "region"}],
+        "default_filters": [],
+        "status": "approved"
+      },
+      {
+        "key": "gmv_legacy",
+        "version": 1,
+        "name": "GMV cũ",
+        "aggregation": "sum",
+        "source_table": "orders_legacy",
+        "expression": "gmv",
+        "time_column": "created_at",
+        "default_grain": "none",
+        "unit": "VND",
+        "dimensions": [],
+        "default_filters": [],
+        "status": "deprecated",
+        "owner": "finance"
+      }
+    ],
+    "synonyms": {
+      "revenue": ["doanh thu", "revenue"],
+      "net_revenue": ["doanh thu thuần", "net revenue"],
+      "order_count": ["số đơn hàng", "số đơn", "order count"],
+      "customer_count": ["số khách hàng", "số khách", "customer count"],
+      "gmv_legacy": ["gmv cũ", "gmv legacy"]
+    }
+  }
+}

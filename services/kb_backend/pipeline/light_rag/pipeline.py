@@ -33,6 +33,7 @@ from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm i
     KBTextTableORM,
 )
 
+from services.kb_backend.operations.access import visible_role_ids
 from services.kb_backend.pipeline.light_rag import config as cfg
 
 log = logging.getLogger(__name__)
@@ -622,7 +623,24 @@ async def _fetch_chunks_postgres(
         block_ids: list[str],
         tenant_id: str,
         knowledge_base: str | None = None,
+        role_id: str | None = None,
 ) -> dict[str, dict[str, Any]]:
+    """Chunk text for the retrieved block ids, scoped to what the caller may see.
+
+    `role_id` applies the same document-level hierarchy that
+    operations/access.py enforces on the document APIs
+    (PLATFORM_ADMIN > AI_ENGINEER > EXECUTIVE > BUSINESS_OPERATOR). Retrieval
+    used to skip it entirely: the hierarchy existed, the document listing
+    honoured it, and this path — the one every agent answer is built from —
+    joined KBData without ever looking at role_id. A business operator's
+    question could return chunks from a document only a platform admin was
+    allowed to open.
+
+    This is the right choke point because BOTH retrieval paths pass through it:
+    a fresh search and a semantic-cache hit (_cache_hit_results) both resolve
+    block ids to text here, so a cache entry written for a privileged caller is
+    re-filtered for whoever reads it rather than replayed wholesale.
+    """
     if not block_ids:
         return {}
     rows: dict[str, dict[str, Any]] = {}
@@ -647,6 +665,30 @@ async def _fetch_chunks_postgres(
             .where(KBDataORM.tenant_id == _uuid.UUID(tenant_id))
             .where(KBDataORM.is_deleted.is_(False))
         )
+        if role_id:
+            # Same visibility rule as access.document_role_filter, expressed
+            # against the ORM rather than the WhereFilter model the document
+            # APIs use. Imported from there so the two cannot drift: a change to
+            # the hierarchy has to move both paths at once.
+            #
+            # visible_role_ids returns the role unchanged when it is not one of
+            # the four ranked ids — which for an unmapped role is a NAME, not a
+            # UUID. Converting that would raise inside the try below and be
+            # swallowed into "fetch failed", which happens to fail closed but
+            # reads like a pipeline fault. Made explicit instead: an id that
+            # cannot name a document tier sees no documents.
+            visible: list[_uuid.UUID] = []
+            for rid in visible_role_ids(role_id):
+                try:
+                    visible.append(_uuid.UUID(rid))
+                except (ValueError, AttributeError, TypeError):
+                    log.warning(
+                        "_fetch_chunks_postgres | role_id %r is not a known document tier — "
+                        "no documents are visible to it", rid,
+                    )
+            if not visible:
+                return {}
+            stmt = stmt.where(KBDataORM.role_id.in_(visible))
         if knowledge_base:
             try:
                 stmt = stmt.where(KBDataORM.knowledge_base_id == _uuid.UUID(knowledge_base))
@@ -702,11 +744,26 @@ def _build_result_list(
         final: list[dict[str, Any]],
         pg_rows: dict[str, dict[str, Any]],
         pg_tables: dict[str, list[dict[str, Any]]],
+        role_filtered: bool = False,
 ) -> list[dict[str, Any]]:
+    """Assemble the response, dropping anything the caller may not see.
+
+    `role_filtered` says the Postgres fetch above applied a role scope, which
+    makes a MISSING row meaningful rather than incidental: the block belongs to
+    a document above the caller's tier. Those hits are dropped here.
+
+    Without that, filtering the fetch alone would have leaked anyway — the
+    content line below falls back to the Qdrant payload's `summary` when there
+    is no Postgres row, and that summary is derived from the very document the
+    filter just refused. A vector index is not access-controlled storage; only
+    the relational join knows who may read what.
+    """
     enriched = []
     for hit in final:
         bid = str((hit.get("payload") or {}).get("block_id") or "")
         pg = pg_rows.get(bid) or {}
+        if role_filtered and not pg:
+            continue
         enriched.append({
             "chunk_rank": hit.get("rerank_rank", 0),
             "chunk_score": _clamp01(hit.get("rerank_score", hit.get("rrf_score", 0.0))),
@@ -728,12 +785,12 @@ class LightRAGPipeline:
     @staticmethod
     async def _cache_hit_results(
             postgres: PostgresClient, hit: dict[str, Any], tenant_id: str,
-            knowledge_base: str | None,
+            knowledge_base: str | None, role_id: str | None = None,
     ) -> tuple[list[dict[str, Any]], int]:
         block_refs = hit.get("block_refs") or []
         block_ids = [r["block_id"] for r in block_refs if r.get("block_id")]
         pg_rows, pg_tables = await asyncio.gather(
-            _fetch_chunks_postgres(postgres, block_ids, tenant_id, knowledge_base),
+            _fetch_chunks_postgres(postgres, block_ids, tenant_id, knowledge_base, role_id),
             _fetch_tables_postgres(postgres, block_ids),
         )
         cached_final = [
@@ -741,7 +798,9 @@ class LightRAGPipeline:
              "rerank_rank": i, "rerank_score": r.get("score", 0.0)}
             for i, r in enumerate(block_refs, start=1) if r.get("block_id")
         ]
-        return _build_result_list(cached_final, pg_rows, pg_tables), len(pg_rows)
+        return _build_result_list(
+            cached_final, pg_rows, pg_tables, role_filtered=bool(role_id),
+        ), len(pg_rows)
 
     @staticmethod
     def _derive_query_entities(canonical: dict[str, Any]) -> list[str]:
@@ -820,6 +879,7 @@ class LightRAGPipeline:
             entities: list[str] | None = None,
             intent: str | None = None,
             entity_types: dict[str, str] | None = None,
+            role_id: str | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         timings: dict[str, float] = {}
         _t0 = time.perf_counter()
@@ -853,7 +913,7 @@ class LightRAGPipeline:
             if hit:
                 _t = time.perf_counter()
                 results, hydrated = await self._cache_hit_results(
-                    postgres, hit, tenant_id, knowledge_base)
+                    postgres, hit, tenant_id, knowledge_base, role_id)
                 timings["hydrate_ms"] = _ms(_t)
                 yield {"step": "cache_hit", "block_count": hydrated,
                        "ms": timings["hydrate_ms"]}
@@ -1023,10 +1083,10 @@ class LightRAGPipeline:
             ]
             _t = time.perf_counter()
             pg_rows, pg_tables = await asyncio.gather(
-                _fetch_chunks_postgres(postgres, block_ids, tenant_id, knowledge_base),
+                _fetch_chunks_postgres(postgres, block_ids, tenant_id, knowledge_base, role_id),
                 _fetch_tables_postgres(postgres, block_ids),
             )
-            results = _build_result_list(final, pg_rows, pg_tables)
+            results = _build_result_list(final, pg_rows, pg_tables, role_filtered=bool(role_id))
             timings["hydrate_ms"] = _ms(_t)
             yield {"step": "hydrate", "block_count": len(pg_rows), "ms": timings["hydrate_ms"]}
 

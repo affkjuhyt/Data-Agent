@@ -161,6 +161,13 @@ class JobQueue:
     def get(self, job_id: str) -> Job | None:
         return self._jobs.get(job_id)
 
+    def payload_of(self, job_id: str) -> dict[str, Any]:
+        """The submitted payload, for callers that need to know WHAT a job is
+        rather than how it is doing — main.py's /status labels each job with its
+        kind, and python and shell jobs share one queue (one container pool, one
+        concurrency budget). Empty once the job has been swept."""
+        return self._payloads.get(job_id, {})
+
     def list_jobs(self) -> list[Job]:
         """Snapshot for an ops dashboard (docs/1.md mục h — "vận hành nhìn
         thấy job đang chạy gì") — most-recently-created first. Same

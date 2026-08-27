@@ -95,6 +95,38 @@ jobs:
           name: python-coverage
           path: coverage.xml
 
+  eval-gate:
+    name: Eval · offline gate (policy + SQL)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install eval deps
+        # The offline tier is pure Python over the REAL guards (sql_guard,
+        # security_visitor, the tool-executor path check) and the REAL metric
+        # compiler. sqlparse is the only third-party import on that path — no
+        # model, no warehouse, no stack — which is what lets it gate every pull
+        # request instead of being a nightly nobody reads.
+        run: pip install sqlparse
+      - name: Run offline evaluation
+        run: python -m model.eval.run --tier offline --out eval-report.json
+      - name: Gate on thresholds (BLOCKING)
+        # Fails the build when policy_violation_rate or false_refusal_rate rises
+        # above 0, or sql_accuracy drops below 1.0 — all three are deterministic,
+        # so any movement is a regression rather than noise. It also fails when a
+        # metric is MISSING, because an eval that silently did not run must not
+        # read as a pass.
+        run: python -m model.eval.gate --report eval-report.json --tier offline
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report-offline
+          path: eval-report.json
+
   frontend-lint:
     name: Frontend · eslint + tsc
     runs-on: ubuntu-latest

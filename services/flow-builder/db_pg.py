@@ -542,3 +542,40 @@ async def publish_agent(agent_id: str, workflow_id: str, kb_connection_id: str |
                 "agent_version_id": str(new_av.id),
                 "workflow_version_id": str(wv.id),
             }
+
+
+async def workflow_version_belongs_to(workflow_version_id: str, tenant_id: str) -> bool:
+    """Does this workflow version belong to `tenant_id`?
+
+    The canvas lives in Mongo, keyed by workflow_version_id alone, and Mongo has
+    no row-level security to fall back on the way Postgres does. So the
+    ownership question has to be asked here, against the relational side that
+    does know the answer: version -> workflow -> agent -> tenant.
+
+    Without this, authenticating the canvas routes would only have narrowed
+    "anyone on the host" to "any authenticated user" — every tenant's canvas
+    would still be readable and writable by every other tenant's users, given a
+    version id.
+    """
+    try:
+        version_uuid = UUID(workflow_version_id)
+        tenant_uuid = UUID(tenant_id)
+    except (ValueError, AttributeError, TypeError):
+        # A malformed id cannot own anything. Refusing beats letting a bad
+        # cast raise into a 500 that reads like a server fault.
+        return False
+
+    async with client.get_client(tenant_id=tenant_id) as session:
+        result = await session.execute(
+            select(AgentsORM.tenant_id)
+            .select_from(WorkflowVersionsORM)
+            .join(WorkflowsORM, WorkflowsORM.id == WorkflowVersionsORM.workflow_id)
+            .join(AgentsORM, AgentsORM.id == WorkflowsORM.agent_id)
+            .where(WorkflowVersionsORM.id == version_uuid)
+        )
+        owner = result.scalar_one_or_none()
+
+    # A version that does not exist and one owned by another tenant both return
+    # False, and the caller turns both into the same 404. Distinguishing them
+    # would confirm the existence of another tenant's workflow ids.
+    return owner is not None and owner == tenant_uuid

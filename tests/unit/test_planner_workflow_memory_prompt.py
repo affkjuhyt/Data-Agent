@@ -1,6 +1,6 @@
 """Verifies planner_node actually builds the `<past_successful_runs>` block
 (doc §3.7/§IV) from `state["workflow_memory_context"]` and sends it to the
-model. `litellm.completion` is monkeypatched to a canned response — no real
+model. `litellm.acompletion` is monkeypatched to a canned response — no real
 LLM call happens — so this tests OUR prompt-construction code, not whether
 a model reacts well to it (that needs a real model and is out of scope
 here, see docs/STM_LTM_Memory_Implementation.md).
@@ -37,16 +37,17 @@ def _canned_completion(content: dict):
 
 
 @pytest.mark.unit
-def test_planner_injects_past_successful_runs_block(monkeypatch):
+async def test_planner_injects_past_successful_runs_block(monkeypatch):
     import nodes.model_harness.planner as planner_mod  # same import path graph.py uses
 
     captured = {}
 
-    def fake_completion(**kwargs):
+    async def fake_completion(**kwargs):
         captured["messages"] = kwargs["messages"]
         return _canned_completion({"intent": "task", "language": "vi", "tool_calls": []})
 
-    monkeypatch.setattr(planner_mod.litellm, "completion", fake_completion)
+    monkeypatch.setattr(planner_mod.litellm, "acompletion", fake_completion)
+    monkeypatch.setattr(planner_mod, "get_langfuse_client", lambda: None)
 
     state = {
         "query": "doanh thu quý 1 theo khu vực",
@@ -59,7 +60,7 @@ def test_planner_injects_past_successful_runs_block(monkeypatch):
         "judge_reason": "",
     }
 
-    result = planner_mod.planner_node(state)
+    result = await planner_mod.planner_node(state)
 
     system_msg = captured["messages"][0]["content"]
     assert "<past_successful_runs>" in system_msg
@@ -69,16 +70,17 @@ def test_planner_injects_past_successful_runs_block(monkeypatch):
 
 
 @pytest.mark.unit
-def test_planner_omits_block_when_no_workflow_memory_context(monkeypatch):
+async def test_planner_omits_block_when_no_workflow_memory_context(monkeypatch):
     import nodes.model_harness.planner as planner_mod
 
     captured = {}
 
-    def fake_completion(**kwargs):
+    async def fake_completion(**kwargs):
         captured["messages"] = kwargs["messages"]
         return _canned_completion({"intent": "question", "language": "vi", "tool_calls": []})
 
-    monkeypatch.setattr(planner_mod.litellm, "completion", fake_completion)
+    monkeypatch.setattr(planner_mod.litellm, "acompletion", fake_completion)
+    monkeypatch.setattr(planner_mod, "get_langfuse_client", lambda: None)
 
     state = {
         "query": "doanh thu quý 1 theo khu vực",
@@ -89,13 +91,13 @@ def test_planner_omits_block_when_no_workflow_memory_context(monkeypatch):
         "judge_reason": "",
     }
 
-    planner_mod.planner_node(state)
+    await planner_mod.planner_node(state)
 
     assert "<past_successful_runs>" not in captured["messages"][0]["content"]
 
 
 @pytest.mark.unit
-def test_planner_escapes_quotes_in_workflow_memory_context(monkeypatch):
+async def test_planner_escapes_quotes_in_workflow_memory_context(monkeypatch):
     """task_description/param_snapshot are untrusted retrieved data — a
     double quote inside them must not break out of the XML attribute and
     corrupt the <past_successful_runs> block sent to the model."""
@@ -103,11 +105,12 @@ def test_planner_escapes_quotes_in_workflow_memory_context(monkeypatch):
 
     captured = {}
 
-    def fake_completion(**kwargs):
+    async def fake_completion(**kwargs):
         captured["messages"] = kwargs["messages"]
         return _canned_completion({"intent": "task", "language": "vi", "tool_calls": []})
 
-    monkeypatch.setattr(planner_mod.litellm, "completion", fake_completion)
+    monkeypatch.setattr(planner_mod.litellm, "acompletion", fake_completion)
+    monkeypatch.setattr(planner_mod, "get_langfuse_client", lambda: None)
 
     state = {
         "query": "test",
@@ -120,7 +123,7 @@ def test_planner_escapes_quotes_in_workflow_memory_context(monkeypatch):
         "judge_reason": "",
     }
 
-    planner_mod.planner_node(state)
+    await planner_mod.planner_node(state)
 
     system_msg = captured["messages"][0]["content"]
     block_start = system_msg.index("<past_successful_runs>")

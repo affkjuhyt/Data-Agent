@@ -103,7 +103,7 @@ class TestResolvedQuestionSkipsTheModel:
         model to decide, so neither the schema prompt nor the SQL prompt runs."""
         data = _data()
         _stub_semantic(monkeypatch, _real_match())
-        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=([{"value": 42}], None, False)))
+        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=([{"value": 42}], None, False, None)))
         completion = AsyncMock()
         monkeypatch.setattr(data.litellm, "acompletion", completion)
         schema = AsyncMock()
@@ -119,7 +119,7 @@ class TestResolvedQuestionSkipsTheModel:
     async def test_the_executed_sql_is_the_compiled_contract(self, monkeypatch):
         data = _data()
         _stub_semantic(monkeypatch, _real_match())
-        sandbox = AsyncMock(return_value=([{"value": 1}], None, False))
+        sandbox = AsyncMock(return_value=([{"value": 1}], None, False, None))
         monkeypatch.setattr(data, "_sandbox_sql", sandbox)
 
         await data._text_to_sql_handler({"query": "doanh thu thuần"}, _cfg())
@@ -134,7 +134,7 @@ class TestResolvedQuestionSkipsTheModel:
         SQL that actually ran the way a model-written explanation can."""
         data = _data()
         _stub_semantic(monkeypatch, _real_match())
-        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=([{"value": 1}], None, False)))
+        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=([{"value": 1}], None, False, None)))
 
         results, _ = await data._text_to_sql_handler({"query": "doanh thu thuần"}, _cfg())
 
@@ -151,7 +151,7 @@ class TestResolvedQuestionSkipsTheModel:
         same query would hide it."""
         data = _data()
         _stub_semantic(monkeypatch, _real_match())
-        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=(None, 'column "amount" does not exist', False)))
+        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=(None, 'column "amount" does not exist', False, None)))
         completion = AsyncMock()
         monkeypatch.setattr(data.litellm, "acompletion", completion)
 

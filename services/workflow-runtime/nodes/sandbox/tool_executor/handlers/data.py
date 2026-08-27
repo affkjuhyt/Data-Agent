@@ -1,7 +1,9 @@
 from typing import Any, cast
 import asyncio
+import base64
 import json
 import logging
+import pathlib
 import re
 import time
 import uuid
@@ -9,9 +11,14 @@ import uuid
 import httpx
 import litellm
 
-from libs.shared import audit
+from libs.shared import aggregation_check, audit
 from nodes.sandbox.tool_executor._sandbox_http import POLL_OVERHEAD_S, submit_and_poll
-from nodes.sandbox.tool_executor._utils import _safe_path, _strip_code_block, _get_query
+from nodes.sandbox.tool_executor._utils import (
+    _get_query,
+    _safe_path,
+    _strip_code_block,
+    audit_ctx,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -93,21 +100,9 @@ def _sandbox_connection(conn_cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 def _audit_ctx(cfg: dict[str, Any]) -> dict[str, Any]:
-    """Caller identity for the audit record, taken from the verified config.
-
-    Kept as a plain dict threaded through the query path rather than read from
-    a contextvar: the SQL functions are the only place that knows the target and
-    the row count, and an audit record assembled anywhere else would be missing
-    half of what an investigation needs.
-    """
-    return {
-        "tenant_id": cfg.get("tenant_id", "") or "",
-        "user_id": cfg.get("user_ref", "") or "anonymous",
-        "user_roles": list(cfg.get("user_roles") or []),
-        "auth_source": cfg.get("auth_source", "") or "",
-        "session_id": cfg.get("session_id", "") or "",
-        "agent_id": str(cfg.get("agent_id", "") or ""),
-    }
+    """Kept as a thin alias: this module had the only copy, and the other
+    handlers now need the identical shape."""
+    return audit_ctx(cfg)
 
 
 async def _sandbox_sql(
@@ -119,8 +114,16 @@ async def _sandbox_sql(
     target: str = "",
     action: str = audit.ACTION_SQL_QUERY,
     metric_ref: str = "",
-) -> tuple[list[dict[str, Any]] | None, str | None, bool]:
-    """Run one SQL through sandbox-executor. Returns (rows, error, rejected_by_guard).
+) -> tuple[list[dict[str, Any]] | None, str | None, bool, dict[str, Any] | None]:
+    """Run one SQL through sandbox-executor.
+
+    Returns (rows, error, rejected_by_guard, truncation).
+
+    `truncation` is None when the whole result came back, and otherwise says
+    what was cut and why. It is returned rather than only logged because a
+    capped result is not a smaller answer to the same question — a SUM over
+    the first 8MB of rows is a different number, and one that looks exactly
+    like the right one.
 
     This is the ONLY way this module reaches a database. It used to open an
     asyncpg connection here and hand the LLM's SQL straight to conn.fetch() —
@@ -167,7 +170,7 @@ async def _sandbox_sql(
 
     if result.get("_http_status") == 503:
         _record(audit.DECISION_ERROR, None, "sandbox-executor overloaded")
-        return None, f"sandbox-executor is overloaded, try again shortly: {result.get('error', 'rejected')}", False
+        return None, f"sandbox-executor is overloaded, try again shortly: {result.get('error', 'rejected')}", False, None
 
     if not result.get("success"):
         rejected = bool(result.get("rejected_by_guard"))
@@ -177,13 +180,32 @@ async def _sandbox_sql(
         # makes "how often does the agent try to write?" a question the trail
         # can answer.
         _record(audit.DECISION_DENY if rejected else audit.DECISION_ERROR, None, error_text)
-        return None, error_text, rejected
+        return None, error_text, rejected, None
 
     rows: list[dict[str, Any]] = result.get("rows", [])
+
+    truncation: dict[str, Any] | None = None
     if result.get("is_truncated"):
-        logger.warning("text_to_sql | result truncated at sandbox-executor row cap")
-    _record(audit.DECISION_ALLOW, len(rows), "truncated at row cap" if result.get("is_truncated") else "")
-    return rows, None, False
+        truncation = {
+            "reason": result.get("truncation_reason", "") or "row_limit",
+            "rows_returned": len(rows),
+            "result_bytes": result.get("result_bytes", 0),
+        }
+        logger.warning(
+            "text_to_sql | result truncated (%s) at %d row(s)", truncation["reason"], len(rows),
+        )
+    # Cells are capped independently of the result: a result can be complete in
+    # rows while individual values were shortened, and an answer quoting a
+    # shortened value should not present it as the whole thing.
+    if result.get("cells_truncated"):
+        truncation = {**(truncation or {"reason": "cell_limit", "rows_returned": len(rows)}),
+                      "cells_truncated": result["cells_truncated"]}
+
+    _record(
+        audit.DECISION_ALLOW, len(rows),
+        f"truncated: {truncation['reason']}" if truncation else "",
+    )
+    return rows, None, False, truncation
 
 
 # How much schema may reach the SQL-generation prompt. Introspection used to
@@ -396,7 +418,7 @@ async def _list_tables(
         logger.info("text_to_sql | discarding stale cached schema shape for db=%s", database)
 
     db_type = (conn_cfg.get("type") or "postgres").lower()
-    rows, error, _ = await _sandbox_sql(
+    rows, error, _, _ = await _sandbox_sql(
         _TABLES_SQL.get(db_type, _TABLES_SQL["postgres"]), conn_cfg, timeout_s=_SCHEMA_TIMEOUT_S,
         # Its own audit action: reading information_schema discloses the shape of
         # the tenant's warehouse, but it is not a business query and mixing the
@@ -443,7 +465,7 @@ async def _fetch_columns(
 
     db_type = (conn_cfg.get("type") or "postgres").lower()
     template = _COLUMNS_SQL.get(db_type, _COLUMNS_SQL["postgres"])
-    rows, error, _ = await _sandbox_sql(
+    rows, error, _, _ = await _sandbox_sql(
         template.format(tables=in_list), conn_cfg, timeout_s=_SCHEMA_TIMEOUT_S,
         audit_ctx=audit_ctx, target=target, action=audit.ACTION_SCHEMA_INTROSPECT,
     )
@@ -534,7 +556,7 @@ async def _run_one_query(
         # Inside the retry loop on purpose: each attempt is its own access,
         # and a trail that only showed the last one would hide that the
         # agent ran three different statements to answer one question.
-        rows, error, rejected_by_guard = await _sandbox_sql(
+        rows, error, rejected_by_guard, truncation = await _sandbox_sql(
             current_sql, conn_cfg, audit_ctx=audit_ctx, target=name,
         )
 
@@ -548,6 +570,12 @@ async def _run_one_query(
                 "metadata": {
                     "sql": current_sql, "row_count": len(data), "db_name": name,
                     "db_type": db_type, "executed_via": "sandbox-executor",
+                    "truncation": truncation,
+                    # Model-written SQL over joins is where a fan-out silently
+                    # multiplies a total. Analysed from the statement that ran,
+                    # not the one first generated — a self-corrected retry can
+                    # add the join that causes it.
+                    "aggregation": aggregation_check.analyse(current_sql).to_dict(),
                     # How old the data behind these rows is. Read from the
                     # statement that actually ran, not the one first generated —
                     # a self-corrected retry can end up querying other tables.
@@ -620,7 +648,7 @@ async def _semantic_result(
     if match is None:
         return None
 
-    rows, error, rejected_by_guard = await _sandbox_sql(
+    rows, error, rejected_by_guard, truncation = await _sandbox_sql(
         match.compiled.sql, conn_cfg, audit_ctx=audit_ctx, target=name,
         # The contract that produced this SQL, so the trail can show WHY a
         # statement had the shape it did.
@@ -650,6 +678,12 @@ async def _semantic_result(
             "sql": match.compiled.sql, "row_count": len(data), "db_name": name,
             "db_type": (conn_cfg.get("type") or "postgres").lower(),
             "executed_via": "sandbox-executor",
+            "truncation": truncation,
+            # A compiled metric aggregates one source_table with no joins, so
+            # nothing can duplicate its rows. This is the concrete advantage of
+            # the contract over model-written SQL, and the answer can state it
+            # rather than the reader inferring it.
+            "aggregation": aggregation_check.analyse(match.compiled.sql).to_dict(),
             # Provenance from the contract, not from the model — this is what
             # lets the answer state which definition produced the number.
             "generated_by": "semantic_layer",
@@ -769,7 +803,53 @@ async def _text_to_sql_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tup
     return results, errors
 
 
+# ── text_to_pandas ─────────────────────────────────────────────────────────
+#
+# The file has to travel, not the path: the sandbox cannot see this service's
+# filesystem, which is the isolation working rather than a gap in it. Bounded
+# here as well as at sandbox-executor (SANDBOX_MAX_INPUT_BYTES) — the bytes go
+# base64-encoded inside one JSON request, and 8 MiB is already far past what a
+# pandas answer needs.
+_MAX_PANDAS_INPUT_BYTES = 8 * 1024 * 1024
+# Where sandbox-executor stages it: the container's tmpfs, wiped after the exec.
+_SANDBOX_INPUT_DIR = "/tmp"
+_PANDAS_TIMEOUT_S = 30
+
+# Appended to the model's code so the answer comes back as STDOUT — the only
+# channel across the boundary. The in-process version read `result` out of the
+# exec namespace; there is no shared namespace over HTTP, so the rendering that
+# used to happen here happens in the sandbox instead. Written to pass
+# security_visitor's AST check: no open/eval/getattr, and pandas is on its
+# import allowlist.
+_PANDAS_RENDER_EPILOGUE = """
+
+import pandas as pd
+
+if 'result' not in dir():
+    print('__PANDAS_TOOL_NO_RESULT__')
+elif isinstance(result, pd.DataFrame):
+    if len(result) > 50:
+        print(result.head(50).to_markdown(index=False))
+        print('... (' + str(len(result)) + ' rows)')
+    else:
+        print(result.to_markdown(index=False))
+else:
+    print(result)
+"""
+_NO_RESULT_SENTINEL = "__PANDAS_TOOL_NO_RESULT__"
+
+
 async def _text_to_pandas_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """Phân tích file CSV/Excel bằng pandas — code do LLM sinh, chạy TRONG
+    SANDBOX chứ không phải trong tiến trình này.
+
+    Trước đây: exec(compile(code, ...)) ngay tại workflow-runtime. Code do model
+    viết chạy cùng tiến trình đang giữ credential DB của mọi tenant, key LiteLLM
+    và event loop phục vụ mọi hội thoại — trong khi sandbox (AST validation +
+    container read-only, không network, giới hạn tài nguyên) đã sẵn có cho
+    execute_python. Giờ đi cùng đường đó: file được đọc ở đây (đường dẫn đã
+    qua _safe_path) rồi gửi kèm code sang sandbox.
+    """
     tool_cfg     = cfg.get("tool_config", {}).get("text_to_pandas", {})
     default_file = tool_cfg.get("default_file_path", "")
     allowed_dir  = tool_cfg.get("allowed_dir", "")
@@ -778,20 +858,60 @@ async def _text_to_pandas_handler(call: dict[str, Any], cfg: dict[str, Any]) -> 
     if not file_path:
         return None, {"tool_name": "text_to_pandas", "error": "no file_path provided or configured"}
 
-    _, err = _safe_path(file_path, allowed_dir)
+    resolved, err = _safe_path(file_path, allowed_dir)
     if err:
+        audit.record_tool_access(
+            action=audit.ACTION_FILE_READ, target="text_to_pandas",
+            target_objects=[file_path], detail=file_path,
+            decision=audit.DECISION_DENY, reason=err, **_audit_ctx(cfg),
+        )
         return None, {"tool_name": "text_to_pandas", "error": err}
+
+    # A tenant's CSV read into a dataframe is as much a data access as a SELECT
+    # against the same rows, and this handler sits in the module where the SQL
+    # trail was built — it was simply not one of the paths wired.
+    audit.record_tool_access(
+        action=audit.ACTION_FILE_READ, target="text_to_pandas",
+        target_objects=[file_path], detail=file_path, **_audit_ctx(cfg),
+    )
 
     query = _get_query(call)
     if not query:
         return None, {"tool_name": "text_to_pandas", "error": "no query provided"}
 
+    # Read before generating the code: a missing or oversized file is worth
+    # finding out about before spending an LLM call on it.
     try:
-        resp = litellm.completion(
+        raw = await asyncio.to_thread(pathlib.Path(resolved).read_bytes)
+    except Exception as e:
+        return None, {"tool_name": "text_to_pandas", "error": f"could not read file: {e}"}
+    if len(raw) > _MAX_PANDAS_INPUT_BYTES:
+        return None, {
+            "tool_name": "text_to_pandas",
+            "error": f"file is {len(raw)} bytes, over the {_MAX_PANDAS_INPUT_BYTES}-byte sandbox input limit",
+        }
+
+    sandbox_name = pathlib.Path(resolved).name or "input.csv"
+    sandbox_path = f"{_SANDBOX_INPUT_DIR}/{sandbox_name}"
+
+    try:
+        # acompletion, not completion: this runs on the event loop serving every
+        # other conversation, and the synchronous call blocked all of them for
+        # the duration of the generation.
+        resp = await litellm.acompletion(
             model=cfg.get("planner_model", "planner"), api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
             messages=[{"role": "user", "content": (
-                f"Viết Python pandas để trả lời: {query}\nFile: '{file_path}'\n"
-                "Yêu cầu: import pandas as pd, đọc file, lưu kết quả vào biến 'result'.\nChỉ trả code Python thuần."
+                f"Viết Python pandas để trả lời: {query}\n"
+                f"File dữ liệu đã có sẵn trong sandbox tại: '{sandbox_path}'\n"
+                "Yêu cầu: import pandas as pd, đọc file theo đúng đường dẫn trên, "
+                "lưu kết quả vào biến 'result'.\n"
+                # Spelled out because the sandbox enforces exactly this list
+                # (services/sandbox-executor/security_visitor.py) and rejects the
+                # whole submission otherwise — a model that does not know the
+                # rule fails the call instead of writing something unsafe.
+                "Chỉ được import: pandas, numpy, plotly, matplotlib, json, math, datetime, statistics.\n"
+                "KHÔNG dùng open(), os, sys, subprocess, eval, exec, getattr.\n"
+                "Chỉ trả code Python thuần."
             )}],
             temperature=0, max_tokens=512, timeout=15,
         )
@@ -799,17 +919,48 @@ async def _text_to_pandas_handler(call: dict[str, Any], cfg: dict[str, Any]) -> 
     except Exception as e:
         return None, {"tool_name": "text_to_pandas", "error": f"code generation failed: {e}"}
 
+    timeout_s = int(tool_cfg.get("timeout_s", _PANDAS_TIMEOUT_S))
     try:
-        import pandas as pd  # noqa: PLC0415, F401
-        ns: dict[str, Any] = {}
-        exec(compile(code, "<pandas_tool>", "exec"), ns)  # noqa: S102
-        result = ns.get("result")
-        if result is None:
-            return None, {"tool_name": "text_to_pandas", "error": "code did not set 'result'", "code": code}
-        if isinstance(result, pd.DataFrame):
-            content = (result.head(50).to_markdown(index=False) + f"\n... ({len(result)} rows)") if len(result) > 50 else result.to_markdown(index=False)
-        else:
-            content = str(result)
-        return {"id": f"pandas_{uuid.uuid4().hex[:8]}", "content": content, "source": "tool/pandas", "metadata": {"file": file_path}}, None
+        async with httpx.AsyncClient(timeout=30) as http:
+            result = await submit_and_poll(
+                http, "/execute/python",
+                {
+                    "code": code + _PANDAS_RENDER_EPILOGUE,
+                    "timeout_s": timeout_s,
+                    "files": {sandbox_name: base64.b64encode(raw).decode("ascii")},
+                },
+                overall_timeout_s=timeout_s + POLL_OVERHEAD_S,
+            )
     except Exception as e:
-        return None, {"tool_name": "text_to_pandas", "error": f"execution failed: {e}", "code": code}
+        return None, {"tool_name": "text_to_pandas", "error": f"sandbox-executor unreachable: {e}", "code": code}
+
+    if result.get("_http_status") == 503:
+        return None, {
+            "tool_name": "text_to_pandas",
+            "error": f"sandbox-executor is overloaded, try again shortly: {result.get('error', 'rejected')}",
+            "code": code,
+        }
+
+    if not result.get("success"):
+        # An AST rejection arrives here too ("security validation failed"): the
+        # model wrote something outside the sandbox's allowlist. Returned as-is
+        # rather than retried — that is a policy answer, not a flaky one.
+        return None, {
+            "tool_name": "text_to_pandas",
+            "error": result.get("error", "execution failed"),
+            "stderr": result.get("stderr", ""),
+            "code": code,
+        }
+
+    content = (result.get("stdout") or "").strip()
+    if _NO_RESULT_SENTINEL in content:
+        return None, {"tool_name": "text_to_pandas", "error": "code did not set 'result'", "code": code}
+    if result.get("is_truncated"):
+        content += "\n[output truncated]"
+
+    return {
+        "id": f"pandas_{uuid.uuid4().hex[:8]}",
+        "content": content or "(no output)",
+        "source": "tool/pandas",
+        "metadata": {"file": file_path, "executed_via": "sandbox-executor", "code": code},
+    }, None

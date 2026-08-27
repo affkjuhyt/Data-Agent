@@ -23,9 +23,9 @@ from redis_cache import (
 )
 from transcript_compression import compress_tool_results
 from graph import build_graph
+from libs.shared.auth import require_tenant
 from memory_middleware import (
     _DEV_AGENT_ID,
-    _DEV_TENANT_ID,
     apply_memory_policy,
     retrieve_episodic_past,
     retrieve_memories,
@@ -209,8 +209,14 @@ async def run_conversation_stream(
     # Kong-gated user or the orchestrator's signed assertion. Reading these
     # from raw headers (as this did) meant anything reaching port 8001 chose
     # its own tenant, user and roles.
+    #
+    # No dev-tenant fallback: a verified caller can still arrive without a
+    # tenant (a token missing the claim, an assertion signed for a process), and
+    # defaulting those to _DEV_TENANT_ID ran the agent — its tools, its queries,
+    # its writes — against a real tenant's data on behalf of someone who was
+    # never scoped to it. 403 instead.
     caller = caller or {}
-    tenant_id = caller.get("tenant_id") or _DEV_TENANT_ID
+    tenant_id = require_tenant(caller)
     cfg = await load_agent_config(req.agent_id, tenant_id=tenant_id)
     if cfg is None:
         async def _err() -> AsyncIterator[str]:

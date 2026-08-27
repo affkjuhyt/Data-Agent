@@ -88,3 +88,11 @@ infra/.*-up.log
 # Model
 services/model-service/models/models--intfloat--multilingual-e5-small
 .gitnexus
+
+# Evaluation artifacts. The CORPUS is versioned (model/eval/cases/*.jsonl); these
+# are derived from it per run — a committed report goes stale the moment the code
+# it graded changes, and a stale one is worse than none.
+eval-report.json
+.eval-reports/
+model/ragas/test_cases.json
+model/ragas/results.csv
