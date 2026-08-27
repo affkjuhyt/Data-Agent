@@ -65,6 +65,21 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
     if type_guidance:
         system_prompt += "\n\n" + type_guidance
 
+    # A deterministic rule found a structural gap (no period on a time-bound
+    # metric, a metric name covering two different formulas). Nothing was
+    # executed, so there is no evidence to answer from — ask, and say why.
+    clarifications = state.get("clarifications") or []
+    if clarifications:
+        asks = "\n".join(f"- {c.get('text', '')}" for c in clarifications)
+        options = [o for c in clarifications for o in (c.get("options") or [])]
+        system_prompt += (
+            "\n\nChưa thể trả lời vì thiếu thông tin. HÃY HỎI LẠI đúng những ý sau, "
+            "ngắn gọn, bằng ngôn ngữ của người dùng. TUYỆT ĐỐI không đoán và không "
+            f"đưa ra bất kỳ con số nào:\n{asks}"
+        )
+        if options:
+            system_prompt += "\nGợi ý lựa chọn: " + ", ".join(options)
+
     system_prompt += "\n\n" + _LANGUAGE_RULE.replace("{LANGUAGE}", lang_label)
 
     chunk_meta: dict[int, dict] = {}

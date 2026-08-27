@@ -88,6 +88,73 @@ class MetricResolver:
         return None
 
 
+    def candidates(self, question: str) -> list[Resolution]:
+        """Every metric this question could plausibly mean, best match first.
+
+        `resolve` returns only the winner, which is right for execution and
+        wrong for detecting ambiguity: when the registry holds both "doanh thu"
+        and "doanh thu thuần", a question saying only "doanh thu" has one winner
+        and two readings. Callers use this to ask which was meant BEFORE running
+        arithmetic that differs by exactly the refunds.
+        """
+        haystack = normalize(question)
+        if not haystack:
+            return []
+
+        found: list[Resolution] = []
+        seen: set[str] = set()
+        for term in self._terms:
+            if not _contains_phrase(haystack, term):
+                continue
+            key = self._catalog.synonyms[term]
+            if key in seen:
+                continue
+            definition = self._catalog.definitions.get(key)
+            if definition is None or definition.status is MetricStatus.DEPRECATED:
+                continue
+            seen.add(key)
+            found.append(Resolution(definition=definition, matched_term=term, matched_length=len(term)))
+        return found
+
+
+    def more_specific_than(self, matched_term: str) -> list[MetricDefinition]:
+        """Metrics reachable by a phrase that EXTENDS `matched_term`.
+
+        This is the shape underspecification actually takes. A user typing
+        "doanh thu" matches the gross metric outright — `candidates` finds one
+        winner and sees no ambiguity — while the registry also holds "doanh thu
+        thuần", which the user may equally have meant. The containment runs the
+        other way round: the registered term extends what was typed, not the
+        reverse, so detecting it needs its own lookup rather than a second read
+        of the match list.
+
+        Returns definitions, deduplicated, excluding the metric already matched.
+        """
+        needle = normalize(matched_term)
+        if not needle:
+            return []
+
+        prefix = f"{needle} "
+        suffix = f" {needle}"
+        infix = f" {needle} "
+        matched_key = self._catalog.synonyms.get(needle)
+
+        found: dict[str, MetricDefinition] = {}
+        for term, key in self._catalog.synonyms.items():
+            if key == matched_key or key in found or term == needle:
+                continue
+            # A genuine extension, on word boundaries: "doanh thu thuần" extends
+            # "doanh thu"; "doanh thu" does not extend itself, and "thu" must
+            # not match inside an unrelated word.
+            if not (term.startswith(prefix) or term.endswith(suffix) or infix in term):
+                continue
+            definition = self._catalog.definitions.get(key)
+            if definition is None or definition.status is MetricStatus.DEPRECATED:
+                continue
+            found[key] = definition
+        return list(found.values())
+
+
 def _contains_phrase(haystack: str, needle: str) -> bool:
     """Whole-word phrase containment.
 

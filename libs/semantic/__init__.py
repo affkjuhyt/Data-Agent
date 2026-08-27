@@ -32,6 +32,8 @@ from libs.semantic.models import (
     TimeGrain,
     UnsupportedRequest,
 )
+from libs.semantic import ambiguity
+from libs.semantic.ambiguity import Question, Reason
 from libs.semantic.resolver import MetricResolver, Resolution, build_catalog, normalize
 from libs.semantic.slots import (
     COMPARE_PREVIOUS_PERIOD,
@@ -61,11 +63,14 @@ __all__ = [
     "MetricNotFound",
     "MetricResolver",
     "MetricStatus",
+    "Question",
+    "Reason",
     "Resolution",
     "SlotFilter",
     "SemanticError",
     "TimeGrain",
     "UnsupportedRequest",
+    "ambiguity",
     "build_catalog",
     "compile_metric",
     "merge",

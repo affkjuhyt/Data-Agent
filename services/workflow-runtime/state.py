@@ -34,6 +34,12 @@ class AgentState(TypedDict):
     # Slots resolved by the PREVIOUS turn of this conversation. Loaded by
     # conversation_runner; the planner merges into it. Absent on turn one.
     previous_slots: Optional[dict[str, Any]]
+    # Deterministic underspecification questions raised THIS turn
+    # (libs/semantic/ambiguity.py). Non-empty => nothing was executed.
+    clarifications: Optional[list[dict[str, Any]]]
+    # True when the PREVIOUS turn asked one. Suppresses re-asking, so a
+    # question the rules cannot fully resolve does not loop forever.
+    previous_clarification: Optional[bool]
     language: Optional[str]           # "vi" | "en" — set by planner
     loop_iteration: int               # số lần judge đã chạy (tăng mỗi lần judge FAIL)
     judge_verdict: Optional[str]      # "PASS" | "FAIL"

@@ -205,14 +205,50 @@ async def planner_node(state: AgentState) -> dict[str, Any]:
     previous_slots = AnalyticalSlots.from_dict(state.get("previous_slots"))
     slots = merge_slots(previous_slots, incoming_slots)
 
+    # Deterministic underspecification check, AFTER the merge — a follow-up
+    # inherits the period, so asking for one before merging would interrupt
+    # every refinement of an already-scoped question.
+    #
+    # Skipped once the user has answered: `previous_clarification` marks the
+    # turn that asked. Without it a question the rules cannot fully resolve
+    # would loop, asking the same thing forever.
+    clarifications: list[dict[str, Any]] = []
+    if not state.get("previous_clarification"):
+        try:
+            from semantic_layer import check_underspecified
+
+            clarifications = await check_underspecified(
+                cfg.get("tenant_id", "") or "", state["query"], analysis_type.value, slots,
+            )
+        except Exception as e:
+            # Never block a turn on the checker itself — a question that could
+            # have been clarified is a smaller failure than one that cannot be
+            # asked at all.
+            logger.warning("planner | underspecification check unavailable: %s", e)
+
     logger.info(
         "planner | intent=%s analysis_type=%s metric=%s filters=%d language=%s",
         intent, analysis_type.value, slots.metric or "-", len(slots.filters), language,
     )
+    if clarifications:
+        # Ask instead of running. tool_calls are dropped on purpose: executing a
+        # query whose scope is the thing in question produces a confident number
+        # for a question nobody asked.
+        logger.info("planner | asking %d clarification(s) before executing", len(clarifications))
+        return {
+            "tool_calls": [],
+            "intent": intent,
+            "analysis_type": analysis_type.value,
+            "slots": slots.to_dict(),
+            "clarifications": clarifications,
+            "language": language,
+        }
+
     return {
         "tool_calls": tool_calls,
         "intent": intent,
         "analysis_type": analysis_type.value,
         "slots": slots.to_dict(),
+        "clarifications": [],
         "language": language,
     }

@@ -24,6 +24,7 @@ from typing import Any
 
 from libs.semantic import (
     Aggregation,
+    ambiguity,
     AnalyticalSlots,
     InvalidMetricDefinition,
     MetricDefinition,
@@ -294,3 +295,51 @@ async def match_question(
         "semantic | question resolved to %s via %r", resolution.definition.ref, resolution.matched_term,
     )
     return SemanticMatch(resolution.definition, compiled, resolution.matched_term)
+
+
+async def check_underspecified(
+    tenant_id: str, question: str, analysis_type: str, slots: AnalyticalSlots,
+) -> list[dict[str, Any]]:
+    """Structural gaps worth asking about BEFORE running anything.
+
+    Deterministic complement to the orchestrator's LLM clarification step, which
+    catches vague phrasing and misses the two cases that read as perfectly clear
+    while silently producing the wrong number: no time range on a time-bound
+    metric, and a metric name that covers two different formulas.
+
+    Returns [] whenever nothing structural is missing, the registry is
+    unreachable, or no metric resolved — an unrecognised question is the general
+    path's business, not something to interrupt over.
+    """
+    if not tenant_id or not question:
+        return []
+
+    try:
+        resolver = await get_resolver(tenant_id)
+        resolution = None
+        if slots.metric:
+            resolution = resolver.resolve(slots.metric)
+        if resolution is None:
+            resolution = resolver.resolve(question)
+        if resolution is None:
+            return []
+
+        alternatives = tuple(resolver.more_specific_than(resolution.matched_term))
+        questions = ambiguity.check(
+            analysis_type=analysis_type,
+            slots=slots,
+            definition=resolution.definition,
+            metric_alternatives=alternatives,
+        )
+    except Exception as e:
+        # A registry hiccup must not turn into a clarification prompt — that
+        # would ask the user to resolve an outage they cannot see.
+        logger.warning("semantic | underspecification check failed tenant=%s: %s", tenant_id, e)
+        return []
+
+    if questions:
+        logger.info(
+            "semantic | %d clarification(s) for %s: %s",
+            len(questions), resolution.definition.ref, [q.reason.value for q in questions],
+        )
+    return [q.to_dict() for q in questions]

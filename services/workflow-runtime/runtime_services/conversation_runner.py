@@ -186,6 +186,22 @@ def invalidate_graph_version(workflow_version_id: str) -> int:
     return removed
 
 
+def _slots_with_marker(
+    slots: dict[str, Any], clarifications: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Stamp "a clarification is outstanding" onto the slots.
+
+    Rides along with the slots rather than living in its own key so the Redis
+    cache and the durable message metadata carry it identically — otherwise a
+    cold cache would fall back to the DB copy, miss the marker, and ask the same
+    question a second time right after the user answered it.
+
+    AnalyticalSlots.from_dict ignores keys it does not know, so this is inert
+    everywhere except the one place that reads it.
+    """
+    return {**slots, "_asked_clarification": bool(clarifications)}
+
+
 async def run_conversation_stream(
     req: RunRequest, request: Request, caller: dict[str, Any] | None = None,
 ) -> StreamingResponse | JSONResponse:
@@ -341,6 +357,11 @@ async def run_conversation_stream(
         "analysis_type": None,
         "slots": None,
         "previous_slots": previous_slots,
+        "clarifications": None,
+        # Set when the PREVIOUS turn asked a clarification. This turn is the
+        # user answering it, so the rules must not fire again — otherwise a
+        # question they cannot fully resolve asks the same thing forever.
+        "previous_clarification": bool((previous_slots or {}).get("_asked_clarification")),
         "language": None,
         "config": cfg,
     }
@@ -373,6 +394,7 @@ async def run_conversation_stream(
         detected_intent: str | None = None
         detected_analysis: str | None = None
         detected_slots: dict[str, Any] | None = None
+        detected_clarify: list[dict[str, Any]] = []
 
         # Race Judge (tự chạy trong graph, có thể khiến responder chạy lại
         # nhiều lần) + Guardrail output check trên CÙNG 1 bản text — mỗi lần
@@ -431,6 +453,7 @@ async def run_conversation_stream(
                             detected_intent   = out.get("intent")
                             detected_analysis = out.get("analysis_type")
                             detected_slots    = out.get("slots")
+                            detected_clarify  = out.get("clarifications") or []
                     elif node == "responder":
                         out = event["data"].get("output", {})
                         text = out.get("response", "") if isinstance(out, dict) else ""
@@ -543,7 +566,11 @@ async def run_conversation_stream(
                         "analysis_type": detected_analysis,
                         # Persisted on the message so the next turn can
                         # inherit them even if Redis has gone cold.
-                        "slots": detected_slots,
+                        "slots": (
+                            _slots_with_marker(detected_slots, detected_clarify)
+                            if detected_slots else None
+                        ),
+                        **({"clarifications": detected_clarify} if detected_clarify else {}),
                         "responder_model": cfg.get("responder_model"),
                         **({"pending_options": responder_options} if responder_options else {}),
                         **({"pending_approval": conv_id} if conv_id and conv_id in _pending_reviews else {}),
@@ -558,7 +585,12 @@ async def run_conversation_stream(
                     # Fast path for the next turn's refinement. The same slots
                     # went into the message metadata above, which is what makes
                     # this a cache rather than the source of truth.
-                    await cache_set_slots(conv_id, detected_slots)
+                    #
+                    # The clarification marker rides along with the slots rather
+                    # than in its own key: the next turn reads exactly one thing
+                    # to reconstruct context, so the two can never disagree about
+                    # whether a question is currently outstanding.
+                    await cache_set_slots(conv_id, _slots_with_marker(detected_slots, detected_clarify))
                 if assistant_msg_id:
                     if node_traces:
                         for idx, nt in enumerate(node_traces):
