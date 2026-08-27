@@ -536,6 +536,30 @@ class SchemaCatalogORM(Base):
     # BigInteger — Snowflake tables routinely exceed Integer's ~2.1B row cap.
     row_count: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     last_altered: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # ── Governance: lineage / owner / freshness / classification ──────────
+    # Three timestamps live on this row and they are NOT interchangeable:
+    #   last_altered        — when the table's DDL last changed
+    #   last_crawled_at     — when this metadata was last read
+    #   data_as_of          — how recent the DATA is (MAX of freshness_column)
+    # Only the third can support an "as of" in an answer. The first two were
+    # all this table had, which is why an answer built off a pipeline that
+    # broke days ago read exactly like one built off this morning's load.
+    #
+    # `owner`, `classification` and `upstream` are declared by an operator in
+    # the warehouse config and copied here by the crawler; they are never
+    # inferred from the data. `data_as_of` is the only one measured.
+    # Semantics and the FRESH/STALE/UNKNOWN rule live in libs/shared/freshness.py.
+    owner: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    classification: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    upstream: Mapped[Optional[list[str]]] = mapped_column(JSONB, nullable=True)
+    freshness_column: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    data_as_of: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    freshness_checked_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Nullable on purpose: NULL means "nobody has said how old is too old", and
+    # freshness.status() reports UNKNOWN for it rather than defaulting to fresh.
+    freshness_sla_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
     text_description: Mapped[str] = mapped_column(Text, nullable=False)
     join_hints: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
     schema_hash: Mapped[str] = mapped_column(String(32), nullable=False)

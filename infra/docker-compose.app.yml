@@ -508,7 +508,10 @@ services:
   schema-crawler-worker:
     profiles: [runtime]
     build:
-      context: ../services/schema-crawler-worker
+      # Repo root: the worker now shares libs/shared/freshness.py (the
+      # governance vocabulary) with workflow-runtime.
+      context: ..
+      dockerfile: services/schema-crawler-worker/Dockerfile
     container_name: dataagent-schema-crawler-worker
     restart: unless-stopped
     environment:
@@ -529,9 +532,17 @@ services:
       EMBEDDING_DIM: ${EMBEDDING_DIM:-1024}
       CRAWL_INTERVAL_SECONDS: "86400"
       # Gap (see docs/Sandbox_SchemaCrawler_Implementation.md §7): KBWarehouseConfig
-      # never persists a Snowflake password. Single shared crawler-account password
-      # until a secrets-store (OpenBao) integration exists for per-tenant credentials.
+      # never persists a warehouse password. Shared crawler-account passwords
+      # until a secrets-store (OpenBao) integration exists for per-tenant
+      # credentials — one per engine, since a Snowflake account is not a Postgres
+      # account and falling back across them would send the wrong credential to
+      # the wrong host.
+      #
+      # Per-warehouse override for any engine: WAREHOUSE_PASSWORD__<warehouse_id>
+      # with hyphens replaced by underscores (env names cannot contain "-").
       SNOWFLAKE_CRAWLER_PASSWORD: ${SNOWFLAKE_CRAWLER_PASSWORD:-}
+      POSTGRES_CRAWLER_PASSWORD: ${POSTGRES_CRAWLER_PASSWORD:-}
+      CLICKHOUSE_CRAWLER_PASSWORD: ${CLICKHOUSE_CRAWLER_PASSWORD:-}
     depends_on:
       kafka:
         condition: service_healthy

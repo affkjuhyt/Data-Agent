@@ -71,6 +71,22 @@ def _rows(*specs):
     return [{"table_name": t, "column_name": c, "data_type": d} for t, c, d in specs]
 
 
+def _table_rows(*names):
+    """Phase-1 result: one row per table name."""
+    return [{"table_name": n} for n in names]
+
+
+def _two_phase(monkeypatch, data, table_names, column_specs):
+    """Stub both introspection phases and return the mock, so a test can assert
+    on which tables phase 2 was actually asked for."""
+    sandbox = AsyncMock(side_effect=[
+        (_table_rows(*table_names), None, False),
+        (_rows(*column_specs), None, False),
+    ])
+    monkeypatch.setattr(data, "_sandbox_sql", sandbox)
+    return sandbox
+
+
 class TestRanking:
     def test_table_named_in_the_question_comes_first(self):
         data = _data()
@@ -263,49 +279,187 @@ class TestCatalogIsPreferred:
         assert "orders(id int)" in text
 
 
-class TestIntrospectionCache:
-    async def test_raw_tables_are_cached_not_the_rendered_text(self, monkeypatch):
-        """Rendering is query-dependent now — caching the rendered string would
-        pin one question's table selection for every later question."""
+class TestTwoPhaseIntrospection:
+    """Columns used to be fetched for EVERY table in one statement, which hits
+    sandbox-executor's MAX_ROWS=10_000 cap at roughly 500 tables. The result came
+    back as an alphabetical prefix with `is_truncated` set, and `_sandbox_sql`
+    logs that flag without returning it — so on a large warehouse the tail simply
+    vanished and the agent concluded those tables did not exist.
+
+    Ranking on names first and fetching columns only for the survivors makes the
+    fetch bounded by construction instead."""
+
+    async def test_only_the_table_list_is_cached(self, monkeypatch):
+        """The list changes at DDL speed. Columns are not cached: which tables
+        are asked about varies per question, so a per-subset cache either
+        fragments or drifts back toward holding the whole schema."""
         data = _data()
         redis = _stub_redis(monkeypatch, get_return=None)
-        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(
-            return_value=(_rows(("orders", "id", "int"), ("orders", "total", "numeric")), None, False),
-        ))
+        _two_phase(monkeypatch, data, ["orders", "employees"], [("orders", "id", "int")])
 
-        await data._introspect_tables(TENANT, {"host": "h", "port": 5432, "database": "d"})
+        await data._get_schema_text(TENANT, {"host": "h", "port": 5432, "database": "d"}, "orders")
 
         cached = redis.cache_set_schema.await_args.args[4]
-        assert json.loads(cached) == {"orders": ["id int", "total numeric"]}
+        assert json.loads(cached) == {"tables": ["orders", "employees"]}
 
-    async def test_same_cached_schema_serves_different_questions_differently(self, monkeypatch):
-        data = _data()
-        tables = {"orders": ["id int"], "employees": ["id int"]}
-        _stub_redis(monkeypatch, get_return=json.dumps(tables))
-        sandbox = AsyncMock()
-        monkeypatch.setattr(data, "_sandbox_sql", sandbox)
-
-        a = await data._get_schema_text(TENANT, {"host": "h", "database": "d"}, "orders total")
-        b = await data._get_schema_text(TENANT, {"host": "h", "database": "d"}, "employees headcount")
-
-        assert a.splitlines()[0].startswith("orders")
-        assert b.splitlines()[0].startswith("employees")
-        sandbox.assert_not_awaited()
-
-    async def test_unparseable_cached_value_is_discarded_not_fatal(self, monkeypatch):
-        """v1 cache entries hold prose, not JSON. An upgrade must re-introspect,
-        not crash the turn."""
-        data = _data()
-        _stub_redis(monkeypatch, get_return="orders(id int)")
-        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=(_rows(("orders", "id", "int")), None, False)))
-
-        tables = await data._introspect_tables(TENANT, {"host": "h", "port": 5432, "database": "d"})
-
-        assert tables == {"orders": ["id int"]}
-
-    async def test_introspection_failure_degrades_to_empty_not_an_exception(self, monkeypatch):
+    async def test_column_fetch_is_capped_regardless_of_warehouse_size(self, monkeypatch):
+        """The actual defect: the wire payload used to scale with the warehouse."""
         data = _data()
         _stub_redis(monkeypatch, get_return=None)
-        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=(None, "sandbox-executor unreachable", False)))
+        sandbox = _two_phase(
+            monkeypatch, data,
+            [f"table_{i:04d}" for i in range(900)],
+            [("table_0001", "id", "int")],
+        )
+
+        await data._get_schema_text(TENANT, {"host": "h", "database": "d"}, "table_0001")
+
+        columns_sql = sandbox.await_args_list[1].args[0]
+        # Count the table literals specifically — the statement also carries the
+        # quoted schema name, which is not a table.
+        assert columns_sql.count("'table_") == data._COLUMN_FETCH_TABLES
+
+    async def test_phase_two_asks_only_for_relevant_tables(self, monkeypatch):
+        data = _data()
+        _stub_redis(monkeypatch, get_return=None)
+        sandbox = _two_phase(
+            monkeypatch, data,
+            ["orders", "employees", "audit_log"],
+            [("orders", "id", "int")],
+        )
+
+        await data._get_schema_text(TENANT, {"host": "h", "database": "d"}, "orders revenue")
+
+        columns_sql = sandbox.await_args_list[1].args[0]
+        assert "'orders'" in columns_sql
+
+    async def test_phase_one_lists_tables_not_columns(self, monkeypatch):
+        """A names-only query is one row per table, which puts the row cap out of
+        reach for any realistic warehouse."""
+        data = _data()
+        _stub_redis(monkeypatch, get_return=None)
+        sandbox = _two_phase(monkeypatch, data, ["orders"], [("orders", "id", "int")])
+
+        await data._get_schema_text(TENANT, {"host": "h", "database": "d"}, "orders")
+
+        tables_sql = sandbox.await_args_list[0].args[0]
+        assert "information_schema.tables" in tables_sql
+        assert "information_schema.columns" not in tables_sql
+
+    async def test_disclosure_quotes_the_real_warehouse_size(self, monkeypatch):
+        """Saying "3 more not shown" on a 900-table warehouse understates the gap
+        badly enough to change how the model answers."""
+        data = _data()
+        _stub_redis(monkeypatch, get_return=None)
+        _two_phase(
+            monkeypatch, data,
+            [f"t{i}" for i in range(900)],
+            [("t1", "id", "int")],
+        )
+
+        rendered = await data._get_schema_text(TENANT, {"host": "h", "database": "d"}, "t1")
+
+        assert "899 more table(s)" in rendered
+
+    async def test_a_cached_list_still_fetches_columns(self, monkeypatch):
+        """The list is cached; the columns for this question are not."""
+        data = _data()
+        _stub_redis(monkeypatch, get_return=json.dumps({"tables": ["orders", "employees"]}))
+        sandbox = AsyncMock(return_value=(_rows(("orders", "id", "int")), None, False))
+        monkeypatch.setattr(data, "_sandbox_sql", sandbox)
+
+        rendered = await data._get_schema_text(TENANT, {"host": "h", "database": "d"}, "orders")
+
+        assert sandbox.await_count == 1
+        assert "information_schema.columns" in sandbox.await_args.args[0]
+        assert "orders(id int)" in rendered
+
+    async def test_a_stale_cache_shape_is_discarded_not_fatal(self, monkeypatch):
+        """Entries written by the previous whole-schema shape must be re-fetched,
+        not misread as a table list."""
+        data = _data()
+        _stub_redis(monkeypatch, get_return=json.dumps({"orders": ["id int"]}))
+        _two_phase(monkeypatch, data, ["orders"], [("orders", "id", "int")])
+
+        rendered = await data._get_schema_text(TENANT, {"host": "h", "database": "d"}, "orders")
+
+        assert "orders(id int)" in rendered
+
+    async def test_unparseable_cache_is_discarded_not_fatal(self, monkeypatch):
+        data = _data()
+        _stub_redis(monkeypatch, get_return="orders(id int)")
+        _two_phase(monkeypatch, data, ["orders"], [("orders", "id", "int")])
+
+        rendered = await data._get_schema_text(TENANT, {"host": "h", "database": "d"}, "orders")
+
+        assert "orders(id int)" in rendered
+
+    async def test_table_listing_failure_degrades_to_empty(self, monkeypatch):
+        data = _data()
+        _stub_redis(monkeypatch, get_return=None)
+        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(
+            return_value=(None, "sandbox-executor unreachable", False),
+        ))
 
         assert await data._get_schema_text(TENANT, {"host": "h", "database": "d"}, "q") == ""
+
+    async def test_column_fetch_failure_degrades_to_empty(self, monkeypatch):
+        """Phase 1 succeeding and phase 2 failing must not render a table list
+        with no columns — that reads as "these tables have no columns"."""
+        data = _data()
+        _stub_redis(monkeypatch, get_return=None)
+        monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(side_effect=[
+            (_table_rows("orders"), None, False),
+            (None, "timeout", False),
+        ]))
+
+        assert await data._get_schema_text(TENANT, {"host": "h", "database": "d"}, "orders") == ""
+
+
+class TestTableNameQuoting:
+    """Phase 2 interpolates names into an IN list. They come from the database's
+    own catalog rather than the question, but this is the one place in the module
+    where a value reaches a statement without passing through the metric
+    compiler, so it does not get an exception."""
+
+    def test_plain_identifiers_are_quoted(self):
+        data = _data()
+
+        assert data._quote_table_names(["orders", "line_items"]) == "'orders', 'line_items'"
+
+    def test_names_that_are_not_identifiers_are_dropped(self):
+        data = _data()
+
+        out = data._quote_table_names(["orders", "weird-name", "has space", "drop';--"])
+
+        assert out == "'orders'"
+
+    def test_an_all_dropped_list_yields_nothing_rather_than_empty_in(self):
+        """`IN ()` is a syntax error; returning "" lets the caller skip the
+        query entirely."""
+        data = _data()
+
+        assert data._quote_table_names(["weird-name"]) == ""
+
+
+class TestNameOnlyRanking:
+    def test_a_named_table_comes_first(self):
+        data = _data()
+
+        ranked = data._rank_table_names(["audit_log", "orders", "employees"], "doanh thu orders")
+
+        assert ranked[0] == "orders"
+
+    def test_an_unrelated_question_preserves_order(self):
+        """No signal must mean stable output, not an arbitrary reshuffle — the
+        candidate set feeding phase 2 would otherwise vary between identical
+        turns."""
+        data = _data()
+        names = ["alpha", "beta", "gamma"]
+
+        assert data._rank_table_names(names, "zzz qqq") == names
+
+    def test_empty_query_preserves_order(self):
+        data = _data()
+
+        assert data._rank_table_names(["a", "b"], "") == ["a", "b"]

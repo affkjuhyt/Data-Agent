@@ -125,7 +125,12 @@ def worker(migrated_db, qdrant_container, monkeypatch):
         import main as worker_mod
         importlib.reload(worker_mod)
 
-        monkeypatch.setattr(worker_mod, "discover_and_describe", lambda conn_params, table_names: dict(_FAKE_METADATA))
+        # Discovery is dispatched per engine now (metadata.py), so the patch
+        # target moved off main. Signature gains `engine` as its first arg.
+        monkeypatch.setattr(
+            worker_mod.metadata_dispatch, "discover_and_describe",
+            lambda engine, conn_params, table_names: dict(_FAKE_METADATA),
+        )
         monkeypatch.setattr(worker_mod, "describe_table", lambda table_name, columns, row_count: {
             "keywords": ["OHLCV", "stock price"], "categories": {"ticker": "mã cổ phiếu"},
             "use_cases": ["tính % return"], "join_hints": ["dim_company.ticker"],

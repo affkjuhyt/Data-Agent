@@ -28,16 +28,48 @@ _SCHEMA_TIMEOUT_S = 20
 # information_schema is spelled the same either side, only the "current
 # database" predicate differs. Both are plain SELECTs, so both pass sql_guard
 # on the way through sandbox-executor like any agent-written query.
+# Phase 1: table NAMES only — one row per table, so a warehouse with hundreds of
+# tables costs hundreds of rows rather than tens of thousands.
+_TABLES_SQL = {
+    "postgres": (
+        "SELECT table_name FROM information_schema.tables "
+        "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name"
+    ),
+    "clickhouse": (
+        "SELECT table_name FROM information_schema.tables "
+        "WHERE table_schema = currentDatabase() ORDER BY table_name"
+    ),
+}
+
+# Phase 2: columns for the handful of tables the question is actually about.
+# `{tables}` is filled from the phase-1 result — the database's own catalog,
+# never the question — and each name is re-validated as an identifier first.
 _COLUMNS_SQL = {
     "postgres": (
         "SELECT table_name, column_name, data_type FROM information_schema.columns "
-        "WHERE table_schema = 'public' ORDER BY table_name, ordinal_position"
+        "WHERE table_schema = 'public' AND table_name IN ({tables}) "
+        "ORDER BY table_name, ordinal_position"
     ),
     "clickhouse": (
         "SELECT table_name, column_name, data_type FROM information_schema.columns "
-        "WHERE table_schema = currentDatabase() ORDER BY table_name, ordinal_position"
+        "WHERE table_schema = currentDatabase() AND table_name IN ({tables}) "
+        "ORDER BY table_name, ordinal_position"
     ),
 }
+
+# How many tables get their columns fetched. Wider than _MAX_SCHEMA_TABLES so
+# column-level ranking still has candidates to choose between, but a fixed
+# ceiling either way — the wire payload no longer scales with warehouse size.
+_COLUMN_FETCH_TABLES = 40
+
+# information_schema.tables rows are cheap, but a warehouse past this many
+# tables would approach sandbox-executor's own MAX_ROWS cap and lose the tail
+# silently. Detected and logged rather than trusted.
+_TABLE_LIST_CEILING = 5000
+
+# Table names are interpolated into the phase-2 IN list, so they are validated
+# rather than trusted — even coming from the catalog.
+_TABLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _sandbox_connection(conn_cfg: dict[str, Any]) -> dict[str, Any]:
@@ -179,15 +211,34 @@ def _tokens(text: str) -> set[str]:
     return set(_WORD_RE.findall((text or "").lower()))
 
 
-def _rank_tables(tables: dict[str, list[str]], query: str) -> list[str]:
-    """Order table names by lexical overlap with the question.
+def _rank_table_names(names: list[str], query: str) -> list[str]:
+    """Order table names by lexical overlap with the question — names only.
 
-    Deliberately lexical, not embedded: this runs on the introspection FALLBACK
-    path, which exists precisely because the embedded catalog has nothing for
-    this connection — adding an embedding round-trip here would put the slow,
-    failure-prone dependency on the degraded path. Ties and total misses keep
-    their original (alphabetical, information_schema-ordered) position, so with
-    an unrelated question the result is stable rather than arbitrary.
+    Phase 1 has nothing but names to go on, which is the whole point: deciding
+    which tables matter BEFORE fetching their columns is what keeps the fetch
+    bounded. Column evidence still refines the order later, in `_rank_tables`,
+    once the candidates' columns are actually in hand.
+
+    Deliberately lexical, not embedded: this is the FALLBACK path, reached
+    precisely because the embedded catalog has nothing for this connection —
+    putting a slow, failure-prone embedding round-trip on the degraded path is
+    the wrong place for it. Ties and total misses keep their original
+    (alphabetical) position, so an unrelated question gives a stable result
+    rather than an arbitrary one.
+    """
+    q = _tokens(query)
+    if not q:
+        return list(names)
+    order = {name: i for i, name in enumerate(names)}
+    return sorted(names, key=lambda n: (-len(_tokens(n) & q), order[n]))
+
+
+def _rank_tables(tables: dict[str, list[str]], query: str) -> list[str]:
+    """Re-rank fetched candidates, now that their columns are known.
+
+    Same lexical scoring as `_rank_table_names`, plus column evidence — which is
+    what finds `orders` from "revenue" when the matching column is
+    `revenue_amount` and the table name says nothing.
     """
     q = _tokens(query)
     if not q:
@@ -195,8 +246,7 @@ def _rank_tables(tables: dict[str, list[str]], query: str) -> list[str]:
 
     def score(name: str) -> int:
         overlap = len(_tokens(name) & q)
-        # A column hit is weaker evidence than a table-name hit, but it is what
-        # finds `orders` from "revenue" when the column is `revenue_amount`.
+        # A column hit is weaker evidence than a table-name hit.
         column_overlap = sum(1 for col in tables[name] if _tokens(col) & q)
         return overlap * 10 + min(column_overlap, 5)
 
@@ -224,8 +274,17 @@ def _render_table(name: str, columns: list[str], query: str) -> str:
     return f"{name}({', '.join(shown)}{suffix})"
 
 
-def _render_tables(tables: dict[str, list[str]], query: str) -> str:
-    """Render at most _MAX_SCHEMA_TABLES tables, within _MAX_SCHEMA_CHARS."""
+def _render_tables(
+    tables: dict[str, list[str]], query: str, total_tables: int | None = None,
+) -> str:
+    """Render at most _MAX_SCHEMA_TABLES tables, within _MAX_SCHEMA_CHARS.
+
+    `total_tables` is how many tables the database actually has, which is larger
+    than `tables` whenever phase 1 narrowed the candidate set. The disclosure
+    below has to quote the real figure: telling the model "3 more not shown" on
+    a 900-table warehouse understates the gap badly enough to change how it
+    answers.
+    """
     ordered = _rank_tables(tables, query)[:_MAX_SCHEMA_TABLES]
     lines: list[str] = []
     total = 0
@@ -239,7 +298,7 @@ def _render_tables(tables: dict[str, list[str]], query: str) -> str:
         lines.append(line)
         total += len(line)
 
-    omitted = (len(tables) - len(lines))
+    omitted = (total_tables if total_tables is not None else len(tables)) - len(lines)
     if omitted > 0:
         # Tell the model the view is partial. Without this it cannot distinguish
         # "that table does not exist" from "that table was not shown", and will
@@ -284,17 +343,41 @@ async def _catalog_schema_text(tenant_id: str, conn_cfg: dict[str, Any], query: 
     return format_catalog_context(hits)
 
 
-async def _introspect_tables(
+def _quote_table_names(names: list[str]) -> str:
+    """Quoted, comma-joined literals for the phase-2 IN list.
+
+    Names come from phase 1 — the database's own catalog, never from the
+    question — but they are still validated before interpolation. A table whose
+    name is not a plain identifier is skipped rather than quoted around: this is
+    the only place in this module where a value reaches a statement without
+    passing through the metric compiler, so it does not get an exception.
+    """
+    Q, ESC = chr(39), chr(39) * 2
+    safe = [n for n in names if _TABLE_NAME_RE.match(n)]
+    dropped = len(names) - len(safe)
+    if dropped:
+        logger.warning(
+            "text_to_sql | %d table name(s) are not plain identifiers and were skipped "
+            "during column introspection", dropped,
+        )
+    return ", ".join(Q + n.replace(Q, ESC) + Q for n in safe)
+
+
+async def _list_tables(
     tenant_id: str, conn_cfg: dict[str, Any],
     *, audit_ctx: dict[str, Any] | None = None, target: str = "",
-) -> dict[str, list[str]]:
-    """{table_name: ["col type", ...]} from information_schema, Redis-cached.
+) -> list[str]:
+    """Table names for this database, Redis-cached.
 
-    Cached RAW rather than pre-rendered: which tables reach the prompt now
-    depends on the question, so caching the rendered text would pin one query's
-    selection for every later query against the same database. Keyed by
-    (tenant, host, port, database) — deliberately NOT the user-chosen connection
-    name or the credentials, neither of which changes the tables.
+    Phase 1 of a two-phase introspection. Fetching every column of every table
+    in one statement — what this used to do — hits sandbox-executor's
+    MAX_ROWS=10_000 cap at roughly 500 tables and comes back as an alphabetical
+    prefix with `is_truncated` set. `_sandbox_sql` logs that but does not return
+    it, so the tail simply vanished: the agent concluded those tables did not
+    exist and nothing in the answer said otherwise. Names alone are one row per
+    table, which puts that ceiling out of reach for any realistic warehouse.
+
+    Cached because the table list changes at DDL speed, not per question.
     """
     from redis_cache import cache_get_schema, cache_set_schema
 
@@ -303,29 +386,74 @@ async def _introspect_tables(
     cached = await cache_get_schema(tenant_id, host, port, database)
     if cached is not None:
         try:
-            return cast(dict[str, list[str]], json.loads(cached))
+            parsed = json.loads(cached)
+            if isinstance(parsed, dict) and isinstance(parsed.get("tables"), list):
+                return cast(list[str], parsed["tables"])
         except (json.JSONDecodeError, TypeError):
-            logger.warning("text_to_sql | discarding unparseable cached schema for db=%s", database)
+            pass
+        # An entry written by the previous whole-schema shape, or anything
+        # unparseable. Re-fetch rather than guess at it.
+        logger.info("text_to_sql | discarding stale cached schema shape for db=%s", database)
 
     db_type = (conn_cfg.get("type") or "postgres").lower()
     rows, error, _ = await _sandbox_sql(
-        _COLUMNS_SQL.get(db_type, _COLUMNS_SQL["postgres"]), conn_cfg, timeout_s=_SCHEMA_TIMEOUT_S,
-        # Recorded under its own action: reading information_schema is a real
-        # access (it discloses the shape of the tenant's warehouse) but it is
-        # not a business query, and mixing the two would drown the trail.
+        _TABLES_SQL.get(db_type, _TABLES_SQL["postgres"]), conn_cfg, timeout_s=_SCHEMA_TIMEOUT_S,
+        # Its own audit action: reading information_schema discloses the shape of
+        # the tenant's warehouse, but it is not a business query and mixing the
+        # two would drown the trail.
         audit_ctx=audit_ctx, target=target, action=audit.ACTION_SCHEMA_INTROSPECT,
     )
     if error is not None:
-        # Introspection failure degrades to an empty schema block (the LLM then
-        # works from the connection note alone) rather than failing the turn.
-        logger.warning("text_to_sql | schema introspection failed type=%s host=%s db=%s: %s", db_type, host, database, error)
+        # Degrades to an empty schema block (the LLM then works from the
+        # connection note alone) rather than failing the turn.
+        logger.warning(
+            "text_to_sql | table listing failed type=%s host=%s db=%s: %s",
+            db_type, host, database, error,
+        )
+        return []
+
+    names = [str(r["table_name"]) for r in (rows or []) if r.get("table_name")]
+    if len(names) >= _TABLE_LIST_CEILING:
+        logger.warning(
+            "text_to_sql | db=%s returned %d tables — at or beyond the listing ceiling, "
+            "the schema view may be incomplete", database, len(names),
+        )
+
+    await cache_set_schema(tenant_id, host, port, database, json.dumps({"tables": names}))
+    return names
+
+
+async def _fetch_columns(
+    conn_cfg: dict[str, Any], table_names: list[str],
+    *, audit_ctx: dict[str, Any] | None = None, target: str = "",
+) -> dict[str, list[str]]:
+    """{table: ["col type", ...]} for a BOUNDED set of tables.
+
+    Phase 2. Deliberately not cached: which tables are asked about varies per
+    question, and caching per-subset either fragments the cache or drifts back
+    toward holding the whole schema — the thing this change exists to stop. The
+    cost is one small query per turn against an already-narrow candidate list.
+    """
+    if not table_names:
+        return {}
+
+    in_list = _quote_table_names(table_names)
+    if not in_list:
+        return {}
+
+    db_type = (conn_cfg.get("type") or "postgres").lower()
+    template = _COLUMNS_SQL.get(db_type, _COLUMNS_SQL["postgres"])
+    rows, error, _ = await _sandbox_sql(
+        template.format(tables=in_list), conn_cfg, timeout_s=_SCHEMA_TIMEOUT_S,
+        audit_ctx=audit_ctx, target=target, action=audit.ACTION_SCHEMA_INTROSPECT,
+    )
+    if error is not None:
+        logger.warning("text_to_sql | column introspection failed: %s", error)
         return {}
 
     tables: dict[str, list[str]] = {}
     for r in rows or []:
-        tables.setdefault(r["table_name"], []).append(f"{r['column_name']} {r['data_type']}")
-
-    await cache_set_schema(tenant_id, host, port, database, json.dumps(tables))
+        tables.setdefault(str(r["table_name"]), []).append(f"{r['column_name']} {r['data_type']}")
     return tables
 
 
@@ -343,10 +471,46 @@ async def _get_schema_text(
     if catalog_text:
         return catalog_text
 
-    tables = await _introspect_tables(tenant_id, conn_cfg, audit_ctx=audit_ctx, target=target)
+    # Rank on NAMES first, then fetch columns only for the survivors. Ranking
+    # after fetching — the previous order — required pulling the whole schema in
+    # order to decide which fraction of it mattered.
+    names = await _list_tables(tenant_id, conn_cfg, audit_ctx=audit_ctx, target=target)
+    if not names:
+        return ""
+
+    candidates = _rank_table_names(names, query)[:_COLUMN_FETCH_TABLES]
+    tables = await _fetch_columns(conn_cfg, candidates, audit_ctx=audit_ctx, target=target)
     if not tables:
         return ""
-    return _render_tables(tables, query)
+
+    # Total table count, not just the fetched candidates, so the "N more not
+    # shown" disclosure reflects the real warehouse rather than the slice pulled.
+    return _render_tables(tables, query, total_tables=len(names))
+
+
+async def _provenance(
+    conn_cfg: dict[str, Any], sql: str, *, audit_ctx: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Governance facts for the tables this statement read, or None.
+
+    Attached to the result so the answer can state how old the data is. Every
+    failure path returns None: the query has already succeeded by the time this
+    runs, and an unavailable catalog must cost the disclosure, not the answer.
+
+    tenant_id comes from `audit_ctx` rather than a new parameter — it is the
+    verified caller identity this module already threads through the query path,
+    and a second copy could disagree with it.
+    """
+    tenant_id = (audit_ctx or {}).get("tenant_id", "") or ""
+    if not tenant_id:
+        return None
+    try:
+        from data_provenance import provenance_for_sql
+
+        return await provenance_for_sql(tenant_id, conn_cfg, sql)
+    except Exception as e:
+        logger.warning("text_to_sql | provenance lookup failed: %s", e)
+        return None
 
 
 async def _run_one_query(
@@ -384,6 +548,10 @@ async def _run_one_query(
                 "metadata": {
                     "sql": current_sql, "row_count": len(data), "db_name": name,
                     "db_type": db_type, "executed_via": "sandbox-executor",
+                    # How old the data behind these rows is. Read from the
+                    # statement that actually ran, not the one first generated —
+                    # a self-corrected retry can end up querying other tables.
+                    "provenance": await _provenance(conn_cfg, current_sql, audit_ctx=audit_ctx),
                 },
             }, None
 
@@ -486,6 +654,12 @@ async def _semantic_result(
             # lets the answer state which definition produced the number.
             "generated_by": "semantic_layer",
             "semantic": match.provenance,
+            # Two different questions, deliberately two different keys:
+            # `semantic` says how the number was DEFINED, `provenance` says how
+            # current the data behind it is. An approved contract compiled
+            # against a table that stopped loading last week is still exactly
+            # wrong, and only this field can say so.
+            "provenance": await _provenance(conn_cfg, match.compiled.sql, audit_ctx=audit_ctx),
         },
     }, None
 

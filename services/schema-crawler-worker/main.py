@@ -29,7 +29,8 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 
 from schema_hash import schema_hash
-from snowflake_metadata import discover_and_describe
+import governance
+import metadata as metadata_dispatch
 from llm_describe import describe_table, render_text_description
 from embed import embed
 
@@ -129,46 +130,41 @@ def ensure_qdrant_collection(qdrant: QdrantClient) -> None:
 
 # ─── Tenant warehouse registry (KBWarehouse / KBWarehouseConfig) ───────────
 
-def get_active_snowflake_warehouses(cur: Any) -> list[dict[str, Any]]:
-    """Reads the existing per-tenant warehouse-connection registry — see
+def get_active_warehouses(cur: Any) -> list[dict[str, Any]]:
+    """Every registered warehouse this worker can crawl, tagged with its engine.
+
+    Reads the existing per-tenant warehouse-connection registry — see
     services/kb_backend/router/knowledge/warehouse_connect.py — instead of
-    inventing a parallel one for this worker."""
+    inventing a parallel one for this worker.
+
+    The filter used to be `w.service = 'Snowflake'`, which is why the Schema
+    Catalog described one set of databases while the DB Connector node queried
+    another. `service` is a free string from the connect UI, so the supported
+    set is matched after normalisation rather than in SQL; an unrecognised
+    value is skipped with a warning, because crawling a warehouse with the
+    wrong driver puts confident nonsense in the catalog.
+    """
     cur.execute(
-        """SELECT w.warehouse_id, w.tenant_id, c.config
+        """SELECT w.warehouse_id, w.tenant_id, w.service, c.config
            FROM "KBWarehouse" w
            JOIN "KBWarehouseConfig" c ON c.warehouse_id = w.warehouse_id
-           WHERE w.service = 'Snowflake' AND w.is_deleted = false
+           WHERE w.is_deleted = false
              AND c.is_active = true AND c.is_deleted = false"""
     )
     cols = [d.name for d in cur.description]
-    return [dict(zip(cols, row)) for row in cur.fetchall()]
+    rows = [dict(zip(cols, row)) for row in cur.fetchall()]
 
-
-def connection_params(config: dict[str, Any], warehouse_id: str) -> dict[str, Any] | None:
-    """KBWarehouseConfig.config["connection"] never persists a password (see
-    select_warehouse_tables() in warehouse_connect.py) — this platform has
-    no secret-store integration for warehouse credentials yet (gap, see
-    implementation doc §7). SNOWFLAKE_CRAWLER_PASSWORD is a stand-in: a
-    single shared crawler-account password, or per-warehouse via
-    SNOWFLAKE_PASSWORD__<warehouse_id>."""
-    conn = (config or {}).get("connection") or {}
-    if not conn.get("account"):
-        return None
-    # Env var names can't contain "-", but warehouse_id is typically a UUID.
-    env_warehouse_id = warehouse_id.replace("-", "_")
-    password = os.environ.get(f"SNOWFLAKE_PASSWORD__{env_warehouse_id}") or os.environ.get("SNOWFLAKE_CRAWLER_PASSWORD")
-    if not password:
-        log.warning("connection_params | no password configured for warehouse=%s, skipping", warehouse_id)
-        return None
-    return {
-        "account": conn["account"],
-        "user": conn.get("username", ""),
-        "password": password,
-        "warehouse": conn.get("warehouse"),
-        "database": conn.get("database"),
-        "schema": conn.get("schema"),
-        "role": conn.get("role"),
-    }
+    supported: list[dict[str, Any]] = []
+    for row in rows:
+        engine = metadata_dispatch.normalize_engine(row.get("service"))
+        if engine is None:
+            log.warning(
+                "get_active_warehouses | warehouse=%s has unsupported service=%r, skipping",
+                row.get("warehouse_id"), row.get("service"),
+            )
+            continue
+        supported.append({**row, "engine": engine})
+    return supported
 
 
 def selected_table_names(config: dict[str, Any]) -> list[str] | None:
@@ -187,15 +183,94 @@ def _point_id(tenant_id: str, warehouse_id: str, schema_name: str, table_name: s
     return str(uuid.uuid5(uuid.NAMESPACE_OID, f"{tenant_id}|{warehouse_id}|{schema_name}|{table_name}"))
 
 
-def process_table(cur: Any, qdrant: QdrantClient, tenant_id: str, warehouse_id: str, meta: dict[str, Any]) -> bool:
+def _iso(value: Any) -> str | None:
+    """Timestamps go into the Qdrant payload as ISO strings — the payload is
+    JSON, and a datetime is not."""
+    return value.isoformat() if isinstance(value, datetime) else None
+
+
+def _governance_payload(policy: dict[str, Any], watermark: Any, checked_at: Any) -> dict[str, Any]:
+    """The governance half of a Qdrant payload.
+
+    Carried in the payload rather than left in Postgres alone because
+    retrieve_schema_catalog() returns payloads straight to the SQL-generation
+    prompt (doc §2.5) — a table whose data stops at last Tuesday is something
+    the model should see while choosing a date filter, not only something the
+    answer discloses afterwards.
+    """
+    return {
+        "owner": policy.get("owner") or "",
+        "classification": policy.get("classification") or "",
+        "upstream": policy.get("upstream") or [],
+        "freshness_column": policy.get("freshness_column") or "",
+        "data_as_of": _iso(watermark),
+        "freshness_checked_at": _iso(checked_at) if watermark is not None else None,
+        "freshness_sla_seconds": policy.get("freshness_sla_seconds"),
+    }
+
+
+def resolve_freshness_column(declared: str, columns: list[dict[str, Any]], table_name: str) -> str:
+    """The warehouse's own spelling of the operator's declared freshness column.
+
+    Matched case-insensitively against the columns just discovered, and returned
+    in the spelling the warehouse reports: Snowflake upper-cases what an
+    operator wrote as `created_at`, and Postgres does not.
+
+    A declared column that does not exist returns "" and logs. Catching it here
+    costs one dictionary lookup; not catching it means a failing MAX() query
+    against that table on every crawl, forever, with the table silently reported
+    as freshness-unknown either way.
+    """
+    if not declared:
+        return ""
+    by_lower = {str(c.get("name", "")).lower(): str(c.get("name", "")) for c in columns}
+    actual = by_lower.get(declared.strip().lower())
+    if not actual:
+        log.warning(
+            "process_table | declared freshness_column=%r does not exist on %s — "
+            "freshness will stay unknown for this table", declared, table_name,
+        )
+        return ""
+    return actual
+
+
+def _governance_values(policy: dict[str, Any], watermark: Any, checked_at: Any) -> tuple[Any, ...]:
+    """Row values for the seven governance columns, in a fixed order shared by
+    both write paths below."""
+    return (
+        policy.get("owner") or None,
+        policy.get("classification") or None,
+        json.dumps(policy.get("upstream") or []),
+        policy.get("freshness_column") or None,
+        watermark,
+        # Only stamped when a watermark was actually attempted and returned;
+        # a checked_at without a value would read as "measured, and it's null".
+        checked_at if watermark is not None else None,
+        policy.get("freshness_sla_seconds"),
+    )
+
+
+def process_table(
+    cur: Any, qdrant: QdrantClient, tenant_id: str, warehouse_id: str, meta: dict[str, Any],
+    policy: dict[str, Any] | None = None, watermark: Any = None, checked_at: Any = None,
+) -> bool:
     """Returns True if the table was (re)described+embedded, False if
-    skipped because its schema hasn't changed since the last crawl."""
+    skipped because its schema hasn't changed since the last crawl.
+
+    Governance fields are written on BOTH paths. The schema-unchanged path is
+    the normal one — a table's DDL is stable for months — and freshness moves
+    every time the pipeline runs, so writing the watermark only when the schema
+    changed would leave `data_as_of` frozen at whenever the table was last
+    altered. That is the exact failure this field exists to prevent.
+    """
     schema_name = meta["schema_name"]
     table_name = meta["table_name"]
     new_hash = schema_hash(meta["columns"])
+    policy = policy or {}
+    gov = _governance_values(policy, watermark, checked_at)
 
     cur.execute(
-        """SELECT id, schema_hash FROM "SchemaCatalog"
+        """SELECT id, schema_hash, qdrant_point_id FROM "SchemaCatalog"
            WHERE tenant_id=%s AND warehouse_id=%s AND schema_name=%s AND table_name=%s""",
         (tenant_id, warehouse_id, schema_name, table_name),
     )
@@ -203,9 +278,25 @@ def process_table(cur: Any, qdrant: QdrantClient, tenant_id: str, warehouse_id: 
 
     if existing and existing[1] == new_hash:
         cur.execute(
-            """UPDATE "SchemaCatalog" SET last_crawled_at = now() WHERE id = %s""",
-            (existing[0],),
+            """UPDATE "SchemaCatalog"
+               SET last_crawled_at = now(),
+                   owner = %s, classification = %s, upstream = %s, freshness_column = %s,
+                   data_as_of = %s, freshness_checked_at = %s, freshness_sla_seconds = %s
+               WHERE id = %s""",
+            (*gov, existing[0]),
         )
+        # Payload-only update — no re-embedding, because nothing the vector is
+        # built from has changed. Keeps the catalog the agent reads in step with
+        # the row the answer's provenance is read from.
+        if existing[2]:
+            try:
+                qdrant.set_payload(
+                    QDRANT_COLLECTION,
+                    payload=_governance_payload(policy, watermark, checked_at),
+                    points=[existing[2]],
+                )
+            except Exception:
+                log.warning("process_table | qdrant payload refresh failed for %s.%s", schema_name, table_name)
         return False
 
     description = describe_table(table_name, meta["columns"], meta.get("row_count"))
@@ -216,17 +307,26 @@ def process_table(cur: Any, qdrant: QdrantClient, tenant_id: str, warehouse_id: 
     cur.execute(
         """INSERT INTO "SchemaCatalog"
              (id, tenant_id, warehouse_id, schema_name, table_name, columns, row_count,
-              last_altered, text_description, join_hints, schema_hash, qdrant_point_id, last_crawled_at)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+              last_altered, text_description, join_hints, schema_hash, qdrant_point_id,
+              owner, classification, upstream, freshness_column,
+              data_as_of, freshness_checked_at, freshness_sla_seconds, last_crawled_at)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
            ON CONFLICT (tenant_id, warehouse_id, schema_name, table_name)
            DO UPDATE SET columns = EXCLUDED.columns, row_count = EXCLUDED.row_count,
                          last_altered = EXCLUDED.last_altered, text_description = EXCLUDED.text_description,
                          join_hints = EXCLUDED.join_hints, schema_hash = EXCLUDED.schema_hash,
-                         qdrant_point_id = EXCLUDED.qdrant_point_id, last_crawled_at = now()""",
+                         qdrant_point_id = EXCLUDED.qdrant_point_id,
+                         owner = EXCLUDED.owner, classification = EXCLUDED.classification,
+                         upstream = EXCLUDED.upstream, freshness_column = EXCLUDED.freshness_column,
+                         data_as_of = EXCLUDED.data_as_of,
+                         freshness_checked_at = EXCLUDED.freshness_checked_at,
+                         freshness_sla_seconds = EXCLUDED.freshness_sla_seconds,
+                         last_crawled_at = now()""",
         (
             str(uuid.uuid4()), tenant_id, warehouse_id, schema_name, table_name,
             json.dumps(meta["columns"]), meta.get("row_count"), meta.get("last_altered"),
             text_description, json.dumps(description["join_hints"]), new_hash, point_id,
+            *gov,
         ),
     )
 
@@ -242,6 +342,7 @@ def process_table(cur: Any, qdrant: QdrantClient, tenant_id: str, warehouse_id: 
             "columns": [c["name"] for c in meta["columns"]],
             "row_count": meta.get("row_count"),
             "join_hints": description["join_hints"],
+            **_governance_payload(policy, watermark, checked_at),
         },
     )])
     log.info("process_table | crawled tenant=%s table=%s.%s (changed)", tenant_id, schema_name, table_name)
@@ -286,7 +387,8 @@ def _cleanup_missing_tables(
 
 def crawl_warehouse(
     conn: Any, qdrant: QdrantClient, tenant_id: str, warehouse_id: str, conn_params: dict[str, Any],
-    table_names: list[str] | None, full_crawl: bool = False,
+    table_names: list[str] | None, full_crawl: bool = False, engine: str = metadata_dispatch.SNOWFLAKE,
+    config: dict[str, Any] | None = None,
 ) -> None:
     """Commits once per table (not once for the whole warehouse) — keeps the
     window where a Postgres rollback could leave an already-written Qdrant
@@ -312,12 +414,26 @@ def crawl_warehouse(
     docstring below promises. 1.5x leaves half an interval of slack, which
     dwarfs realistic jitter (seconds/minutes vs. a half day by default)."""
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=1.5 * CRAWL_INTERVAL_SECONDS)
-    metadata = discover_and_describe(conn_params, table_names)
+    metadata = metadata_dispatch.discover_and_describe(engine, conn_params, table_names)
     changed = 0
     for table_name, meta in metadata.items():
         try:
+            # Declared governance (owner / classification / lineage / SLA) and
+            # the measured watermark are gathered per table, before the write,
+            # so a failure to read either leaves the row's other facts intact.
+            policy = governance.table_policy(config or {}, meta["schema_name"], table_name)
+            policy["freshness_column"] = resolve_freshness_column(
+                policy.get("freshness_column", ""), meta["columns"], table_name,
+            )
+            watermark, checked_at = None, None
+            if policy["freshness_column"]:
+                watermark = metadata_dispatch.table_watermark(
+                    engine, conn_params, meta["schema_name"], table_name, policy["freshness_column"],
+                )
+                checked_at = datetime.now(timezone.utc)
+
             with conn.cursor() as cur:
-                if process_table(cur, qdrant, tenant_id, warehouse_id, meta):
+                if process_table(cur, qdrant, tenant_id, warehouse_id, meta, policy, watermark, checked_at):
                     changed += 1
             conn.commit()
         except Exception:
@@ -368,9 +484,12 @@ def crawl_all(conn: Any, qdrant: QdrantClient, pending_ddl: "dict[tuple[Any, ...
     otherwise take long enough to starve the DDL-trigger path of its main
     selling point (fast turnaround) for the whole duration of one cron pass."""
     with conn.cursor() as cur:
-        warehouses = get_active_snowflake_warehouses(cur)
+        warehouses = get_active_warehouses(cur)
         last_crawled = _last_crawled_by_warehouse(cur)
-    log.info("crawl_all | %d active Snowflake warehouse(s) registered", len(warehouses))
+    log.info(
+        "crawl_all | %d active warehouse(s) registered across %s",
+        len(warehouses), sorted({w["engine"] for w in warehouses}) or "-",
+    )
 
     for w in warehouses:
         tenant_id, warehouse_id = str(w["tenant_id"]), str(w["warehouse_id"])
@@ -378,12 +497,16 @@ def crawl_all(conn: Any, qdrant: QdrantClient, pending_ddl: "dict[tuple[Any, ...
         if not _is_due(last_crawled.get((tenant_id, warehouse_id))):
             continue
 
-        conn_params = connection_params(w["config"], warehouse_id)
+        engine = w["engine"]
+        conn_params = metadata_dispatch.connection_params(engine, w["config"], warehouse_id)
         if not conn_params:
             continue
         table_names = selected_table_names(w["config"])
         try:
-            crawl_warehouse(conn, qdrant, tenant_id, warehouse_id, conn_params, table_names, full_crawl=True)
+            crawl_warehouse(
+                conn, qdrant, tenant_id, warehouse_id, conn_params, table_names,
+                full_crawl=True, engine=engine, config=w["config"],
+            )
         except Exception:
             log.exception("crawl_all | warehouse=%s failed, rolling back", w["warehouse_id"])
             conn.rollback()
@@ -406,7 +529,7 @@ def handle_ddl_event(conn: Any, qdrant: QdrantClient, event: dict[str, Any]) -> 
 
     with conn.cursor() as cur:
         cur.execute(
-            """SELECT w.tenant_id, c.config FROM "KBWarehouse" w
+            """SELECT w.tenant_id, c.config, w.service FROM "KBWarehouse" w
                JOIN "KBWarehouseConfig" c ON c.warehouse_id = w.warehouse_id
                WHERE w.warehouse_id = %s AND w.is_deleted = false
                  AND c.is_active = true AND c.is_deleted = false""",
@@ -425,11 +548,19 @@ def handle_ddl_event(conn: Any, qdrant: QdrantClient, event: dict[str, Any]) -> 
         )
         return
 
-    conn_params = connection_params(row[1], warehouse_id)
+    engine = metadata_dispatch.normalize_engine(row[2])
+    if engine is None:
+        log.warning(
+            "handle_ddl_event | warehouse=%s has unsupported service=%r, skipping",
+            warehouse_id, row[2],
+        )
+        return
+
+    conn_params = metadata_dispatch.connection_params(engine, row[1], warehouse_id)
     if not conn_params:
         return
 
-    crawl_warehouse(conn, qdrant, tenant_id, warehouse_id, conn_params, [table_name])
+    crawl_warehouse(conn, qdrant, tenant_id, warehouse_id, conn_params, [table_name], engine=engine, config=row[1])
 
 
 def _valid_ddl_event(event: Any) -> bool:

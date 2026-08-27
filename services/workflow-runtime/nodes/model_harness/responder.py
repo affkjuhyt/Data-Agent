@@ -6,11 +6,28 @@ import logging
 
 import litellm
 
+from libs.shared import freshness
 from nodes.model_harness.intent import guidance, parse as parse_analysis_type
 from observability import get_langfuse_client
 from state import AgentState
 
 logger = logging.getLogger(__name__)
+
+# Appended only when at least one context item carries governance facts —
+# instructing the model to disclose an "as of" it has not been given produces an
+# invented date, which is worse than the silence this replaces.
+_FRESHNESS_RULE = (
+    "\n\nData freshness — the context items above may carry a `governance:` line "
+    "stating how old the underlying data is. When one is present:\n"
+    "- State the 'as of' time alongside the figures, in the user's language.\n"
+    "- If it says STALE, warn clearly that the data is past its agreed refresh "
+    "window and the figures may not reflect the current state.\n"
+    "- If it says UNKNOWN or UNVERIFIED, say the freshness could not be "
+    "confirmed. Do not present unverified data as current.\n"
+    "- Never invent, round or extrapolate an 'as of' time that is not stated "
+    "there, and never describe data as up-to-date on the basis of the question "
+    "having just been asked."
+)
 
 _LITELLM_BASE = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
 _LITELLM_KEY  = os.environ.get("LITELLM_API_KEY",  "sk-dev")
@@ -90,12 +107,28 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
 
         parts = []
         total_chars = 0
+        has_governance = False
         for i, c in enumerate(chunks):
             source    = c.get("source") or c.get("id", "unknown")
             score     = c.get("score", c.get("rrf_score", ""))
             score_str = f" | score={score:.3f}" if isinstance(score, float) else ""
             header    = f"[{i+1}] source={source}{score_str}"
             content   = c["content"]
+
+            # Freshness/owner/classification/lineage for the tables behind this
+            # item, attached where the query ran (handlers/data.py). Rendered on
+            # its own line above the rows rather than mixed into them: the
+            # content is JSON the model parses as data, and a provenance key
+            # inside it would read as another column of the result.
+            #
+            # Deliberately NOT counted against max_chars — it is one short line,
+            # and letting an accurate "as of" be the thing trimmed away by a
+            # long result set defeats the point.
+            governance = freshness.describe((c.get("metadata") or {}).get("provenance"))
+            if governance:
+                header = f"{header}\ngovernance: {governance}"
+                has_governance = True
+
             if total_chars + len(content) > max_chars:
                 content = content[:max_chars - total_chars]
             parts.append(f"{header}\n{content}")
@@ -110,6 +143,9 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
                 "snippet": content[:200],
                 "url":     c.get("url") or None,
                 "doc_id":  c.get("doc_id") or None if ctype == "kb" else None,
+                # Surfaced on the citation so the UI can badge a stale answer
+                # without re-deriving anything the model said.
+                "provenance": (c.get("metadata") or {}).get("provenance") or None,
             }
 
             if total_chars >= max_chars:
@@ -117,6 +153,8 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
 
         context = "\n\n---\n\n".join(parts)
         system_prompt = f"{system_prompt}\n\nContext:\n{context}\n\n{_CITATION_SUFFIX}"
+        if has_governance:
+            system_prompt += _FRESHNESS_RULE
 
     injected_metadata = state.get("injected_metadata")
     if injected_metadata:

@@ -108,8 +108,10 @@ class TestGetSchemaText:
 
         await data._get_schema_text("t", {"host": "h", "database": "d"}, "q")
 
-        sql = sandbox.await_args.args[0]
-        assert "information_schema.columns" in sql
+        # Phase 1 (table listing) is the first call; the dialect difference
+        # lives in its predicate.
+        sql = sandbox.await_args_list[0].args[0]
+        assert "information_schema.tables" in sql
         assert "table_schema = 'public'" in sql
 
     async def test_clickhouse_introspection_uses_currentdatabase_predicate(self, monkeypatch):
@@ -120,7 +122,7 @@ class TestGetSchemaText:
 
         await data._get_schema_text("t", {"type": "clickhouse", "host": "h", "database": "d"}, "q")
 
-        assert "currentDatabase()" in sandbox.await_args.args[0]
+        assert "currentDatabase()" in sandbox.await_args_list[0].args[0]
 
 
 class TestRunOneQuery:

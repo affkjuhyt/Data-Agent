@@ -106,6 +106,29 @@ async def retrieve_schema_catalog(
         return []
 
 
+def _governance_comment(t: dict[str, Any]) -> str:
+    """`-- Data as of ... | owner=... | classification=...` for one table, or "".
+
+    Shown to the SQL-generating model, not only to the answering one: a table
+    whose data stops on the 20th changes which date range a sensible query asks
+    for, and the model cannot infer that from the DDL. Written as a SQL comment
+    so it costs nothing if the model ignores it.
+    """
+    bits = []
+    if t.get("data_as_of"):
+        bits.append(f"Data as of {t['data_as_of']}")
+    if t.get("freshness_column"):
+        bits.append(f"business date column: {t['freshness_column']}")
+    if t.get("owner"):
+        bits.append(f"owner={t['owner']}")
+    if t.get("classification"):
+        bits.append(f"classification={t['classification']}")
+    upstream = t.get("upstream") or []
+    if upstream:
+        bits.append(f"upstream: {', '.join(str(u) for u in upstream)}")
+    return f"\n-- {' | '.join(bits)}" if bits else ""
+
+
 def format_catalog_context(tables: List[dict[str, Any]]) -> str:
     """Renders Schema Catalog payloads as abbreviated DDL + business
     description for the SQL-generation prompt — same shape of output as
@@ -118,7 +141,7 @@ def format_catalog_context(tables: List[dict[str, Any]]) -> str:
         join_hints = t.get("join_hints") or []
         hint_line = f"\n-- Join hints: {', '.join(join_hints)}" if join_hints else ""
         blocks.append(
-            f"-- {t.get('text_description', '')}{hint_line}\n"
+            f"-- {t.get('text_description', '')}{hint_line}{_governance_comment(t)}\n"
             f"TABLE {t.get('schema_name', '')}.{t.get('table_name', '')} (\n{col_lines}\n)"
         )
     return "\n\n".join(blocks)

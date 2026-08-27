@@ -139,3 +139,27 @@ def discover_and_describe(connection_params: dict[str, Any], selected_tables: li
         # connection forever.
         _drop_connection(connection_params, conn)
         raise
+
+
+def max_timestamp(
+    connection_params: dict[str, Any], schema: str, table: str, column: str,
+) -> Any:
+    """MAX(column) for one table — the data freshness watermark.
+
+    Identifiers are left UNQUOTED here, unlike the other engines. Snowflake
+    folds an unquoted identifier to upper case and stores it that way, so
+    INFORMATION_SCHEMA reports `CREATED_AT` for a column an operator wrote as
+    `created_at`; quoting would make the lookup case-sensitive and fail on the
+    spelling a human actually typed. The caller validates both names as plain
+    identifiers (identifiers.safe_identifier) before they get here.
+    """
+    conn = _get_connection(connection_params)
+    try:
+        cursor = conn.cursor()
+        target = f"{schema}.{table}" if schema else table
+        cursor.execute(f"SELECT MAX({column}) FROM {target}")
+        row = cursor.fetchone()
+        return row[0] if row else None
+    except Exception:
+        _drop_connection(connection_params, conn)
+        raise

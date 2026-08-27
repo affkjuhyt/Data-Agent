@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
 
 from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import SchemaCatalogORM
+from libs.shared.freshness import TableGovernance
 from routers.catalog import _resolve_tenant
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,17 @@ def _serialize(row: SchemaCatalogORM) -> dict[str, Any]:
         "join_hints": row.join_hints,
         "schema_hash": row.schema_hash,
         "last_crawled_at": row.last_crawled_at.isoformat(),
+        # Governance. `freshness_status` is computed rather than stored so the
+        # operator console and the answer disclosure cannot disagree — both call
+        # the same rule in libs/shared/freshness.py.
+        "owner": row.owner,
+        "classification": row.classification,
+        "upstream": row.upstream or [],
+        "freshness_column": row.freshness_column,
+        "data_as_of": row.data_as_of.isoformat() if row.data_as_of else None,
+        "freshness_checked_at": row.freshness_checked_at.isoformat() if row.freshness_checked_at else None,
+        "freshness_sla_seconds": row.freshness_sla_seconds,
+        "freshness_status": TableGovernance.from_row(row).status(),
     }
 
 
