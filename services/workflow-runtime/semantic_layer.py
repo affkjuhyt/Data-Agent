@@ -24,6 +24,7 @@ from typing import Any
 
 from libs.semantic import (
     Aggregation,
+    AnalyticalSlots,
     InvalidMetricDefinition,
     MetricDefinition,
     MetricDimension,
@@ -36,6 +37,7 @@ from libs.semantic import (
     definition_summary,
 )
 from libs.semantic.compiler import CompiledMetric
+from libs.semantic.models import UnsupportedRequest
 
 logger = logging.getLogger(__name__)
 
@@ -194,6 +196,35 @@ class SemanticMatch:
         }
 
 
+def slots_to_compiler_args(
+    definition: MetricDefinition, slots: AnalyticalSlots,
+) -> tuple[list[str], TimeGrain | None, tuple[str, str] | None, list[MetricFilter]]:
+    """Bind resolved slots to this metric's contract.
+
+    The dimension keys a follow-up names ("miền") are business names; the
+    contract maps them to physical columns. A key the contract does not define
+    raises rather than being dropped — silently ignoring "chỉ lấy miền Bắc"
+    would return the whole country under a question that asked for one region,
+    which is a wrong answer wearing the shape of a right one.
+    """
+    dimensions = [d for d in slots.dimensions if d]
+
+    filters: list[MetricFilter] = []
+    for slot_filter in slots.filters:
+        # Raises UnsupportedRequest for an unknown key — caller falls back.
+        dimension = definition.dimension(slot_filter.dimension)
+        filters.append(slot_filter.to_metric_filter(dimension.column))
+
+    grain = None
+    if slots.grain:
+        try:
+            grain = TimeGrain(slots.grain)
+        except ValueError:
+            grain = None
+
+    return dimensions, grain, slots.time_range, filters
+
+
 async def match_question(
     tenant_id: str,
     question: str,
@@ -202,6 +233,7 @@ async def match_question(
     dimensions: list[str] | None = None,
     grain: TimeGrain | None = None,
     time_range: tuple[str, str] | None = None,
+    slots: AnalyticalSlots | None = None,
 ) -> SemanticMatch | None:
     """Resolve + compile, or None when the registry cannot answer exactly.
 
@@ -215,15 +247,39 @@ async def match_question(
         return None
 
     resolver = await get_resolver(tenant_id)
-    resolution = resolver.resolve(question)
+    # Slots carry the metric the planner resolved across turns, so a follow-up
+    # that never repeats the word ("chỉ lấy miền Bắc") still reaches the right
+    # contract. Falling back to the raw question keeps turn one working.
+    resolution = None
+    if slots is not None and slots.metric:
+        resolution = resolver.resolve(slots.metric)
+    if resolution is None:
+        resolution = resolver.resolve(question)
     if resolution is None:
         return None
+
+    extra_filters: list[MetricFilter] = []
+    if slots is not None:
+        try:
+            dimensions, grain, time_range, extra_filters = slots_to_compiler_args(
+                resolution.definition, slots,
+            )
+        except UnsupportedRequest as e:
+            # A named dimension the contract does not define. Falling back is
+            # right — but silently applying the rest and dropping that filter
+            # would answer a different question than the one asked.
+            logger.info(
+                "semantic | metric %s cannot serve these slots (%s) — falling back",
+                resolution.definition.ref, e,
+            )
+            return None
 
     try:
         compiled = compile_metric(
             resolution.definition,
             dialect=dialect,
             dimensions=dimensions,
+            extra_filters=extra_filters,
             grain=grain,
             time_range=time_range,
         )

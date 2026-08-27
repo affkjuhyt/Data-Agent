@@ -37,7 +37,11 @@ async def test_maps_successful_results(monkeypatch):
     result = await mod.db_connector_node(state)
 
     assert result == {"db_results": [{"id": "sql_1", "content": "[]"}], "db_error": None}
-    fake_handler.assert_called_once_with({"query": "doanh thu tháng 2"}, {})
+    # cfg is the agent config with this turn's slots overlaid — the handler
+    # needs them to compile a follow-up as "previous request + one filter".
+    call_args, call_cfg = fake_handler.call_args.args
+    assert call_args == {"query": "doanh thu tháng 2"}
+    assert call_cfg["slots"] is None
 
 
 async def test_maps_error_when_handler_returns_none(monkeypatch):
@@ -63,7 +67,9 @@ async def test_uses_db_query_tool_call_query_over_raw_state_query(monkeypatch):
     }
     await mod.db_connector_node(state)
 
-    fake_handler.assert_called_once_with({"query": "refined query from planner"}, {})
+    call_args, call_cfg = fake_handler.call_args.args
+    assert call_args == {"query": "refined query from planner"}
+    assert call_cfg["slots"] is None
 
 
 async def test_partial_success_still_reports_first_error(monkeypatch):
@@ -82,3 +88,21 @@ async def test_partial_success_still_reports_first_error(monkeypatch):
 
     assert result["db_results"] == [{"id": "sql_1", "metadata": {"db_name": "Sales"}}]
     assert result["db_error"] == "connection refused"
+
+
+async def test_slots_from_state_reach_the_handler(monkeypatch):
+    """Slots are per-turn state, not agent config, so they are overlaid at this
+    node boundary. If that stops happening, every follow-up silently loses the
+    previous turn's filters while all other tests keep passing."""
+    import nodes.sandbox.db_connector as mod
+    fake_handler = AsyncMock(return_value=([], []))
+    monkeypatch.setattr(mod, "_text_to_sql_handler", fake_handler)
+
+    slots = {"metric": "revenue_net", "filters": [{"dimension": "miền", "op": "eq", "values": ["Bắc"]}]}
+    state = {"query": "chỉ lấy miền Bắc", "tool_calls": [], "config": {"tenant_id": "t"}, "slots": slots}
+
+    await mod.db_connector_node(state)
+
+    _, call_cfg = fake_handler.call_args.args
+    assert call_cfg["slots"] == slots
+    assert call_cfg["tenant_id"] == "t"

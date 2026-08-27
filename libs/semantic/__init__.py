@@ -33,9 +33,23 @@ from libs.semantic.models import (
     UnsupportedRequest,
 )
 from libs.semantic.resolver import MetricResolver, Resolution, build_catalog, normalize
+from libs.semantic.slots import (
+    COMPARE_PREVIOUS_PERIOD,
+    COMPARE_SAME_PERIOD_LAST_YEAR,
+    COMPARISONS,
+    RELATIVE_PERIODS,
+    AnalyticalSlots,
+    SlotFilter,
+    merge,
+)
 
 __all__ = [
+    "COMPARE_PREVIOUS_PERIOD",
+    "COMPARE_SAME_PERIOD_LAST_YEAR",
+    "COMPARISONS",
     "DEFAULT_LIMIT",
+    "RELATIVE_PERIODS",
+    "AnalyticalSlots",
     "Aggregation",
     "CompiledMetric",
     "FilterOp",
@@ -48,11 +62,13 @@ __all__ = [
     "MetricResolver",
     "MetricStatus",
     "Resolution",
+    "SlotFilter",
     "SemanticError",
     "TimeGrain",
     "UnsupportedRequest",
     "build_catalog",
     "compile_metric",
+    "merge",
     "definition_summary",
     "normalize",
 ]

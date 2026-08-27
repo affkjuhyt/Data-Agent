@@ -28,6 +28,12 @@ class AgentState(TypedDict):
     # lookup | analytical | comparison | forecast | anomaly | other.
     # Orthogonal to intent — see nodes/model_harness/intent.py.
     analysis_type: Optional[str]
+    # Structured request for THIS turn, after merging the follow-up delta
+    # into the previous turn (libs/semantic/slots.py).
+    slots: Optional[dict[str, Any]]
+    # Slots resolved by the PREVIOUS turn of this conversation. Loaded by
+    # conversation_runner; the planner merges into it. Absent on turn one.
+    previous_slots: Optional[dict[str, Any]]
     language: Optional[str]           # "vi" | "en" — set by planner
     loop_iteration: int               # số lần judge đã chạy (tăng mỗi lần judge FAIL)
     judge_verdict: Optional[str]      # "PASS" | "FAIL"

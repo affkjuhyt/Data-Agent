@@ -7,6 +7,7 @@ import litellm
 from xml.sax.saxutils import quoteattr
 from pydantic import BaseModel, ValidationError  # noqa: F401
 
+from libs.semantic import AnalyticalSlots, merge as merge_slots
 from nodes.model_harness.intent import AnalysisType, capability, parse as parse_analysis_type
 from observability import get_langfuse_client
 from state import AgentState
@@ -30,6 +31,11 @@ class _PlannerOutput(BaseModel):
     # Orthogonal to `intent`: "vẽ biểu đồ so sánh doanh thu 2 quý" is a task AND
     # a comparison, and folding them into one field would force a false choice.
     analysis_type: str = "other"
+    # Structured shape of the request: metric, dimensions, filters, period.
+    # A follow-up sends only the DELTA ("chỉ lấy miền Bắc" -> one filter);
+    # merging it with the previous turn is what makes the refinement
+    # deterministic instead of a re-interpretation of the transcript.
+    slots: dict[str, Any] = {}
     language: str = "vi"
     tool_calls: list[_ToolCall] = []
 
@@ -166,6 +172,7 @@ async def planner_node(state: AgentState) -> dict[str, Any]:
         tool_calls = parsed.model_dump()["tool_calls"]
         intent = parsed.intent if parsed.intent in ("question", "task") else "question"
         analysis_type = parse_analysis_type(parsed.analysis_type)
+        incoming_slots = AnalyticalSlots.from_dict(parsed.slots)
         language = parsed.language if parsed.language in ("vi", "en") else "vi"
     else:
         logger.warning("planner | failed to validate response, using fallback. raw=%r", raw)
@@ -177,6 +184,10 @@ async def planner_node(state: AgentState) -> dict[str, Any]:
         # and LOOKUP would assert the question is answerable from one retrieved
         # fact — a claim we have no basis for making.
         analysis_type = AnalysisType.OTHER
+        # Empty, NOT the previous turn's slots: a failed parse means we do
+        # not know what was asked, and silently re-running the last query
+        # under a new question is worse than not answering it.
+        incoming_slots = AnalyticalSlots()
         language = "vi"
 
     supported = capability(analysis_type)
@@ -188,12 +199,20 @@ async def planner_node(state: AgentState) -> dict[str, Any]:
             "responder will be told to state the limitation", analysis_type.value,
         )
 
+    # Merge against the previous turn. Rules live in libs/semantic/slots.py:
+    # filters replace by dimension, absent fields are inherited, a different
+    # metric starts fresh.
+    previous_slots = AnalyticalSlots.from_dict(state.get("previous_slots"))
+    slots = merge_slots(previous_slots, incoming_slots)
+
     logger.info(
-        "planner | intent=%s analysis_type=%s language=%s", intent, analysis_type.value, language,
+        "planner | intent=%s analysis_type=%s metric=%s filters=%d language=%s",
+        intent, analysis_type.value, slots.metric or "-", len(slots.filters), language,
     )
     return {
         "tool_calls": tool_calls,
         "intent": intent,
         "analysis_type": analysis_type.value,
+        "slots": slots.to_dict(),
         "language": language,
     }

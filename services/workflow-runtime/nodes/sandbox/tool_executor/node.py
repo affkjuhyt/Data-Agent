@@ -60,6 +60,10 @@ async def _run_timed(handler: Any, call: dict[str, Any], cfg: dict[str, Any]) ->
 
 async def tool_executor_node(state: AgentState) -> dict[str, Any]:
     cfg     = state["config"]
+    # Slots are per-TURN state, not per-agent config, so they are overlaid
+    # here rather than stored in cfg. The handler needs them to compile a
+    # follow-up ("chỉ lấy miền Bắc") as the previous request plus a filter.
+    cfg     = {**cfg, "slots": state.get("slots")}
     allowed = set(cfg.get("allowed_tools", []))
     if not allowed:
         return {"tool_results": [], "tool_errors": [], "_tool_traces": []}

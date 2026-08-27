@@ -418,7 +418,7 @@ async def _run_one_query(
 
 async def _semantic_result(
     name: str, conn_cfg: dict[str, Any], tenant_id: str, query: str,
-    *, audit_ctx: dict[str, Any] | None = None,
+    *, audit_ctx: dict[str, Any] | None = None, slots: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None] | None:
     """Answer from the Semantic Layer, or None to let the LLM path handle it.
 
@@ -434,8 +434,14 @@ async def _semantic_result(
     try:
         from semantic_layer import match_question
 
+        from libs.semantic import AnalyticalSlots
+
         match = await match_question(
             tenant_id, query, dialect=(conn_cfg.get("type") or "postgres").lower(),
+            # The structured request, already merged with the previous turn.
+            # This is what makes "chỉ lấy miền Bắc" compile to the earlier query
+            # plus one filter, instead of whatever the model rewrites this time.
+            slots=AnalyticalSlots.from_dict(slots) if slots else None,
         )
     except Exception as e:
         # The registry is an optimisation, never a dependency — any failure
@@ -514,7 +520,8 @@ async def _text_to_sql_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tup
     if len(db_connections) == 1 and tenant_id:
         only_name = next(iter(db_connections))
         semantic = await _semantic_result(
-            only_name, db_connections[only_name], tenant_id, query, audit_ctx=audit_ctx,
+            only_name, db_connections[only_name], tenant_id, query,
+            audit_ctx=audit_ctx, slots=cfg.get("slots"),
         )
         if semantic is not None:
             result, error = semantic

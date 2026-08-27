@@ -190,6 +190,42 @@ async def get_messages(conversation_id: str, tenant_id: str = _DEV_TENANT_ID, li
         return []
 
 
+async def get_last_slots(conversation_id: str, tenant_id: str = _DEV_TENANT_ID) -> Optional[dict[str, Any]]:
+    """Analytical slots from the most recent assistant message of this thread.
+
+    Durable fallback behind the Redis cache: a follow-up arriving after a cache
+    eviction or a replica restart must still inherit the previous turn's filters,
+    or "chỉ lấy miền Bắc" silently becomes a whole-country query — a wrong answer
+    that looks exactly like a right one.
+
+    Deliberately NOT folded into get_messages(): that result is fed to the model
+    as chat history, and widening its shape to carry machine state would put
+    slot JSON in the prompt.
+    """
+    if not client.is_connected() or not conversation_id:
+        return None
+    try:
+        async with client.get_client(tenant_id=tenant_id) as session:
+            result = await session.execute(
+                select(MessagesORM.msg_metadata)
+                .where(
+                    MessagesORM.conversation_id == UUID(conversation_id),
+                    MessagesORM.role == "assistant",
+                )
+                .order_by(MessagesORM.created_at.desc())
+                .limit(1)
+            )
+            row = result.fetchone()
+    except Exception as e:
+        logger.warning("get_last_slots failed conv_id=%s: %s", conversation_id, e)
+        return None
+
+    if not row:
+        return None
+    slots = (row.msg_metadata or {}).get("slots")
+    return slots if isinstance(slots, dict) else None
+
+
 async def get_messages_ui(conversation_id: str, tenant_id: str = _DEV_TENANT_ID, limit: int = 50) -> list[dict[str, Any]]:
     """Load messages với metadata cho UI restoration."""
     if not client.is_connected():

@@ -111,3 +111,32 @@ async def cache_set_schema(tenant_id: str, host: str, port: int, database: str, 
         await _client.set(_schema_key(tenant_id, host, port, database), schema_text, ex=_SCHEMA_TTL)
     except Exception as e:
         logger.warning("redis | cache_set_schema failed db=%s: %s", database, e)
+
+
+# ── analytical slots (follow-up refinement) ────────────────────────────────
+# Keyed by conversation, not by user or agent: a refinement like "chỉ lấy miền
+# Bắc" only makes sense against the thread it was said in. Same TTL as the
+# conversation cache — a thread nobody has touched in that long is not one
+# anybody is refining.
+def _slots_key(conversation_id: str) -> str:
+    return f"analytical_slots:{conversation_id}"
+
+
+async def cache_get_slots(conversation_id: str) -> Optional[dict[str, Any]]:
+    if not _client or not conversation_id:
+        return None
+    try:
+        raw = await _client.get(_slots_key(conversation_id))
+        return cast(Optional[dict[str, Any]], json.loads(raw)) if raw else None
+    except Exception as e:
+        logger.warning("redis | cache_get_slots failed conv=%s: %s", conversation_id, e)
+        return None
+
+
+async def cache_set_slots(conversation_id: str, slots: dict[str, Any]) -> None:
+    if not _client or not conversation_id:
+        return
+    try:
+        await _client.set(_slots_key(conversation_id), json.dumps(slots, ensure_ascii=False), ex=_TTL)
+    except Exception as e:
+        logger.warning("redis | cache_set_slots failed conv=%s: %s", conversation_id, e)

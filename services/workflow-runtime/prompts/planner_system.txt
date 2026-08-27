@@ -4,6 +4,16 @@ Phân tích câu hỏi và quyết định cần dùng công cụ nào. Trả v�
 {
   "intent": "question" | "task",
   "analysis_type": "lookup" | "analytical" | "comparison" | "forecast" | "anomaly" | "other",
+  "slots": {
+    "metric": "<tên chỉ số nếu nhận ra, ví dụ: doanh thu thuần>",
+    "dimensions": ["<chiều phân tích, ví dụ: miền, tháng>"],
+    "filters": [{"dimension": "<tên chiều>", "op": "eq"|"in"|"neq"|"not_in", "values": ["<giá trị>"]}],
+    "remove_filters": ["<tên chiều cần BỎ lọc>"],
+    "time_range": ["<YYYY-MM-DD bắt đầu>", "<YYYY-MM-DD kết thúc, KHÔNG bao gồm>"],
+    "relative_period": "today"|"yesterday"|"this_week"|"last_week"|"this_month"|"last_month"|"this_quarter"|"last_quarter"|"this_year"|"last_year",
+    "grain": "day"|"week"|"month"|"quarter"|"year",
+    "compare_to": "previous_period"|"same_period_last_year"
+  },
   "language": "vi" | "en",
   "tool_calls": [
     {
@@ -61,5 +71,25 @@ Phân loại đúng "forecast" và "anomaly" rất quan trọng: hệ thống CH
 báo và CHƯA có cơ chế phát hiện bất thường, nên hai loại này sẽ được xử lý riêng để
 tránh đưa ra con số hoặc kết luận không có căn cứ. Nếu câu hỏi thuộc 2 loại đó, vẫn
 phân loại đúng — KHÔNG được né sang "analytical".
+
+Quy tắc điền "slots" — QUAN TRỌNG cho câu hỏi nối tiếp:
+- CHỈ điền những trường mà LƯỢT NÀY thực sự nói tới. Trường không được nhắc thì BỎ
+  TRỐNG — hệ thống tự kế thừa từ lượt trước. Điền lại giá trị cũ là thừa; điền SAI
+  giá trị cũ sẽ ghi đè và làm sai câu trả lời.
+- Ví dụ hội thoại:
+  · Lượt 1 "doanh thu thuần tháng 6 theo miền"
+    → slots: {"metric":"doanh thu thuần","dimensions":["miền"],"time_range":["2026-06-01","2026-07-01"]}
+  · Lượt 2 "chỉ lấy miền Bắc"
+    → slots: {"filters":[{"dimension":"miền","op":"eq","values":["Bắc"]}]}
+      (KHÔNG điền lại metric/time_range — chúng được kế thừa tự động)
+  · Lượt 3 "bỏ lọc miền"
+    → slots: {"remove_filters":["miền"]}
+  · Lượt 4 "còn tháng 7 thì sao"
+    → slots: {"time_range":["2026-07-01","2026-08-01"]}
+- Nếu user hỏi sang MỘT CHỈ SỐ KHÁC ("còn số khách hàng thì sao?") thì PHẢI điền
+  "metric" mới — hệ thống sẽ hiểu đây là câu hỏi mới và không kế thừa bộ lọc cũ.
+- "time_range" dùng khoảng NỬA MỞ [bắt đầu, kết thúc): tháng 6 là
+  ["2026-06-01","2026-07-01"]. Nếu không biết ngày cụ thể, dùng "relative_period".
+- Nếu câu hỏi không phải dạng phân tích dữ liệu, để "slots": {}
 
 Nếu không cần công cụ nào, trả về: {"intent": "question", "analysis_type": "other", "language": "vi", "tool_calls": []}

@@ -13,8 +13,14 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from langgraph.checkpoint.memory import MemorySaver
 
 from config_loader import load_agent_config
-from db import create_conversation, get_messages, save_message, save_trace, validate_agent_tenant
-from redis_cache import cache_get_messages, cache_append_messages, cache_set_messages
+from db import create_conversation, get_last_slots, get_messages, save_message, save_trace, validate_agent_tenant
+from redis_cache import (
+    cache_append_messages,
+    cache_get_messages,
+    cache_get_slots,
+    cache_set_messages,
+    cache_set_slots,
+)
 from transcript_compression import compress_tool_results
 from graph import build_graph
 from memory_middleware import (
@@ -278,7 +284,16 @@ async def run_conversation_stream(
             )
 
     # Load history: Redis → DB → client fallback
+    # No previous turn on a fresh thread; the planner treats None as "start
+    # from what this question says" rather than inheriting anything.
+    previous_slots: dict[str, Any] | None = None
     if req.conversation_id:
+        # Previous turn's analytical slots — Redis first, DB as the durable
+        # fallback. Without this a follow-up ("chỉ lấy miền Bắc") arriving
+        # after a cache eviction silently widens back to the whole country.
+        previous_slots = await cache_get_slots(req.conversation_id)
+        if previous_slots is None:
+            previous_slots = await get_last_slots(req.conversation_id, tenant_id=tenant_id)
         history = await cache_get_messages(req.conversation_id)
         if history is None:
             history = await get_messages(req.conversation_id, tenant_id=tenant_id)
@@ -324,6 +339,8 @@ async def run_conversation_stream(
         "suggestions": [],
         "intent": None,
         "analysis_type": None,
+        "slots": None,
+        "previous_slots": previous_slots,
         "language": None,
         "config": cfg,
     }
@@ -355,6 +372,7 @@ async def run_conversation_stream(
         detected_language: str | None = None
         detected_intent: str | None = None
         detected_analysis: str | None = None
+        detected_slots: dict[str, Any] | None = None
 
         # Race Judge (tự chạy trong graph, có thể khiến responder chạy lại
         # nhiều lần) + Guardrail output check trên CÙNG 1 bản text — mỗi lần
@@ -412,6 +430,7 @@ async def run_conversation_stream(
                             detected_language = out.get("language")
                             detected_intent   = out.get("intent")
                             detected_analysis = out.get("analysis_type")
+                            detected_slots    = out.get("slots")
                     elif node == "responder":
                         out = event["data"].get("output", {})
                         text = out.get("response", "") if isinstance(out, dict) else ""
@@ -522,6 +541,9 @@ async def run_conversation_stream(
                         # asked to forecast?" is answerable from stored traffic
                         # rather than needing new instrumentation later.
                         "analysis_type": detected_analysis,
+                        # Persisted on the message so the next turn can
+                        # inherit them even if Redis has gone cold.
+                        "slots": detected_slots,
                         "responder_model": cfg.get("responder_model"),
                         **({"pending_options": responder_options} if responder_options else {}),
                         **({"pending_approval": conv_id} if conv_id and conv_id in _pending_reviews else {}),
@@ -532,6 +554,11 @@ async def run_conversation_stream(
                     {"role": "user",      "content": req.query},
                     {"role": "assistant", "content": assistant_text},
                 ])
+                if detected_slots:
+                    # Fast path for the next turn's refinement. The same slots
+                    # went into the message metadata above, which is what makes
+                    # this a cache rather than the source of truth.
+                    await cache_set_slots(conv_id, detected_slots)
                 if assistant_msg_id:
                     if node_traces:
                         for idx, nt in enumerate(node_traces):
