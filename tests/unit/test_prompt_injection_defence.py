@@ -37,7 +37,7 @@ from libs.shared import untrusted
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _RUNTIME_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
-_ORCH_GUARDRAIL = REPO_ROOT / "backend" / "services" / "orchestrator" / "nodes" / "guardrail.py"
+_ORCH_GUARDRAIL = REPO_ROOT / "backend" / "services" / "workflow-runtime" / "orchestrator" / "nodes" / "guardrail.py"
 
 pytestmark = pytest.mark.unit
 
@@ -72,10 +72,12 @@ def _litellm(monkeypatch):
 
 
 @pytest.fixture
-def guardrail():
-    """orchestrator/nodes/guardrail.py loaded by path: `nodes` is a package
-    name both the orchestrator and workflow-runtime define at their own top
-    level, and whichever reached sys.path first would win."""
+def guardrail(runtime_path):
+    """workflow-runtime/orchestrator/nodes/guardrail.py loaded by path: `nodes`
+    is a package name both the orchestrator package and workflow-runtime define
+    at their own top level, and whichever reached sys.path first would win.
+    `runtime_path` puts workflow-runtime on sys.path for the module's own
+    imports (`orchestrator.*` / `observability`)."""
     spec = importlib.util.spec_from_file_location("orch_guardrail_under_test", _ORCH_GUARDRAIL)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

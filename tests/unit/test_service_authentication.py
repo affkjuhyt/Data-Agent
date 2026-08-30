@@ -108,7 +108,7 @@ class TestNothingUnauthenticatedIsPublished:
             "dependency or stop publishing the port"
         )
 
-    @pytest.mark.parametrize("service", ["flow-builder", "minio-service", "orchestrator", "workflow-runtime"])
+    @pytest.mark.parametrize("service", ["flow-builder", "minio-service", "workflow-runtime"])
     def test_the_agent_tier_is_not_published_to_the_host(self, service):
         """Kong is the only way in. The service-side dependency is what makes
         reaching the port useless; the closed port is the outer layer, and it is
@@ -134,7 +134,7 @@ class TestNoTenantComesFromAClientHeader:
                 hits.append(" or ".join(sorted(names)))
         return hits
 
-    @pytest.mark.parametrize("service", ["flow-builder", "orchestrator", "workflow-runtime", "minio-service"])
+    @pytest.mark.parametrize("service", ["flow-builder", "workflow-runtime", "minio-service"])
     def test_no_router_falls_back_to_the_dev_tenant(self, service):
         directory = _service_dir(service)
         assert directory is not None
@@ -221,7 +221,7 @@ class TestFailClosedOnAMissingTenant:
     def test_the_orchestrator_stream_uses_it(self):
         import ast
 
-        source = (SERVICES / "orchestrator" / "routers" / "stream.py").read_text(encoding="utf-8")
+        source = (SERVICES / "workflow-runtime" / "orchestrator" / "routers" / "stream.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         called = {
             node.func.id for node in ast.walk(tree)
@@ -301,13 +301,13 @@ class TestGatewayConfigMatchesTheClosedPorts:
         """Closing a port without a route in front of it does not harden the
         service, it removes it."""
         setup = (REPO_ROOT / "deploy" / "docker" / "kong" / "kong-setup.sh").read_text(encoding="utf-8")
-        for service in ("flow-builder", "workflow-runtime", "orchestrator", "minio-service"):
+        for service in ("flow-builder", "workflow-runtime", "minio-service"):
             assert f"$KONG_ADMIN/services/{service}" in setup, f"{service} has no Kong service"
 
     def test_kong_defines_each_service_exactly_once(self):
         """Two PUTs of the same service is not an error at runtime — the second
         silently wins — so a duplicate would hide whichever config lost."""
         setup = (REPO_ROOT / "deploy" / "docker" / "kong" / "kong-setup.sh").read_text(encoding="utf-8")
-        for service in ("flow-builder", "minio-service", "orchestrator", "workflow-runtime"):
+        for service in ("flow-builder", "minio-service", "workflow-runtime"):
             creates = setup.count(f'-X PUT "$KONG_ADMIN/services/{service}"')
             assert creates == 1, f"{service} is created {creates} times in kong-setup.sh"

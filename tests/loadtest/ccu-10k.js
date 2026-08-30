@@ -1,7 +1,8 @@
 // 10,000-CCU load test — k6. Models 10k concurrent USERS with think-time
 // (Little's Law: 10k users × 1 req / 15 s ≈ 670 req/s — see docs/KB-SCALE-10K.md §0),
-// NOT 10k simultaneous requests. Drives retrieval + CRUD through the kb-gateway
-// (so metrics land in Grafana) with the LLM bypassed (front-layer entities).
+// NOT 10k simultaneous requests. Drives retrieval + CRUD through Kong (kb-backend
+// behind it; kb-gateway removed 30-08-2026 — Kong rate-limiting plugin replaces it)
+// with the LLM bypassed (front-layer entities).
 //
 // A tunable share of queries are UNIQUE (exercise the embed path / cache miss);
 // the rest repeat a hot set (hit the result + embed caches) — the realistic
@@ -12,7 +13,7 @@
 //   VUS=10000 DURATION=3m THINK=15 UNIQUE_PCT=20 k6 run tests/loadtest/ccu-10k.js
 // Watch it live in Grafana: http://localhost:3000 → "KB — High CCU".
 //
-// Env: BASE_URL (default gateway :8010), VUS, DURATION (hold), THINK (s),
+// Env: BASE_URL (default Kong :8000), VUS, DURATION (hold), THINK (s),
 //      UNIQUE_PCT (0-100), TENANT, KB.
 
 import http from 'k6/http';
@@ -20,7 +21,7 @@ import { check, sleep } from 'k6';
 import { Rate, Trend } from 'k6/metrics';
 import { randomIntBetween } from 'https://jslib.k6.io/k6-utils/1.2.0/index.js';
 
-const BASE   = __ENV.BASE_URL || 'http://localhost:8010';   // kb-gateway
+const BASE   = __ENV.BASE_URL || 'http://localhost:8000';   // Kong → kb-backend
 const TENANT = __ENV.TENANT   || 'a0000000-0000-0000-0000-000000000001';
 const KB     = __ENV.KB       || '00000000-0000-0003-0000-000000000001';
 const VUS    = parseInt(__ENV.VUS || '10000');

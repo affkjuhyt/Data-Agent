@@ -4,11 +4,6 @@ global:
   evaluation_interval: 5s
 
 scrape_configs:
-  # Edge gateway — the CCU signals: RPS, status, latency histogram, rejections.
-  - job_name: kb-gateway
-    static_configs:
-      - targets: ["kb-gateway:8000"]
-
   # Embed tier — cache hit-rate, batch efficiency, detected device.
   - job_name: model-service
     static_configs:

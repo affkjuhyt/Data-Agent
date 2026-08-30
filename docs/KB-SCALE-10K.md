@@ -4,6 +4,11 @@ How to make the Knowledge-Base **retrieval** tier sustain 10,000 concurrent
 users. This is the problem statement + the sizing math + the concrete changes to
 implement. Grounded in measured per-request costs (this stack, 2026-07).
 
+> **Note (30-08-2026):** `kb-gateway` and `kb-compute` were removed — rate limiting is now
+> Kong's `rate-limiting` plugin on `kb-backend` (`deploy/docker/kong/kong-setup.sh` §10) and
+> RRF fusion runs in-process in `kb_backend` (`rrf_merge`). References below to those
+> services are historical measurements, kept as-is.
+
 ---
 
 ## 0. First, turn "10,000 CCU" into numbers (do this before anything)
@@ -101,7 +106,6 @@ Target: **2,000 RPS peak**, retrieval:CRUD ≈ 60:40, 80 % cache hit.
 
 | Tier | Throughput / instance | Replicas @ 2k RPS | Type | Notes |
 |---|---|---|---|---|
-| **Edge — kb-gateway (Go)** | 20k+ conns/instance | **2–3** | stateless + HPA | already scaffolded; Go = cheap concurrency |
 | **Kong** | ~10k RPS/node | **2** | stateless | JWT/JWKS verify; keep |
 | **kb-backend (Py async)** | ~300–500 RPS/replica (I/O-bound) | **6–8** | stateless + HPA | 2 vCPU / 512 MB each |
 | **model-service (embed/rerank)** | GPU ~800/s batched · CPU ~1.7/s | **2 GPU** (or heavy cache) | stateless + HPA | **the sizing crux**; dynamic batching ON |
@@ -110,7 +114,6 @@ Target: **2,000 RPS peak**, retrieval:CRUD ≈ 60:40, 80 % cache hit.
 | **Neo4j** | reads scale w/ replicas | **1 leader + 1–2 read replicas** | stateful | or make graph-expand optional (§2) |
 | **Redis** | 100k+ ops/s | **1 primary + 1 replica** | stateful | query + embedding cache |
 | **Kafka** | — | **3 brokers** | stateful | ingestion only, not user CCU |
-| **kb-compute (Go)** | ~50k RPS (RRF is µs) | **2** | stateless | RRF/BM25/dedup off Python |
 | **kb-ingestion-worker (Py)** | N docs/min | **scale by backlog** | queue consumer | async; not user CCU |
 
 **Connection math (the classic 10k-CCU killer):** never let 10k users translate
@@ -123,8 +126,8 @@ likewise pooled per replica.
 ## 4. Architecture changes to implement (checklist)
 
 **Already done in this repo:**
-- [x] `kb-gateway` (Go) — high-CCU edge/BFF (scaffold).
-- [x] `kb-compute` (Go) — RRF/BM25/dedup kernels off the Python hot path (scaffold).
+- [x] ~~`kb-gateway` / `kb-compute` (Go)~~ — removed 30-08-2026; Kong rate-limiting on
+  kb-backend + in-process RRF replace them.
 - [x] Kafka-decoupled ingestion; query cache; stateless kb-backend.
 
 **To build (in priority order):**
@@ -191,7 +194,7 @@ likewise pooled per replica.
 - Qdrant/Postgres/Neo4j/Kafka/Redis as StatefulSets or managed services
   (managed Postgres + managed Redis strongly recommended — offload the hard
   stateful ops).
-- Ingress → Kong (authN) → kb-gateway (Go BFF) → kb-backend (Py) → data plane.
+- Ingress → Kong (authN + rate-limiting) → kb-backend (Py) → data plane.
 
 ---
 
@@ -289,7 +292,7 @@ than one core. Set `UVICORN_WORKERS` = CPU cores per replica; the DB path benefi
 most (crud p95 6× better) because it was serialized on the single process's GIL.
 Next DB lever if pushed further: the PgBouncer pooler in `docker-compose.scale.yml`.
 
-### LLM tier — generation benchmark (`scripts/benchmark_llm.py`, ollama qwen2.5:3b)
+### LLM tier — generation benchmark (`model/llama-server/benchmark_llm.py`, ollama qwen2.5:3b)
 
 Measured on host (Metal), streamed OpenAI-compatible `/v1/chat/completions`:
 

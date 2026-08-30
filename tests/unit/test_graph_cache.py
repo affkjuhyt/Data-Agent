@@ -10,6 +10,8 @@ load, so we stub those to import just the cache class in a unit context.
 """
 from __future__ import annotations
 
+import warnings
+
 import pytest
 
 from ._loader import SERVICES, load_module_from_path
@@ -17,42 +19,55 @@ from ._loader import SERVICES, load_module_from_path
 pytestmark = pytest.mark.unit
 
 _runtime_dir = SERVICES / "workflow-runtime"
-cr = load_module_from_path(
-    "conversation_runner",
-    _runtime_dir / "runtime_services" / "conversation_runner.py",
-    extra_syspath=[_runtime_dir, _runtime_dir / "runtime_services"],
-    stubs={
-        # graph.build_graph() is called at import for the default graph.
-        "graph": {"build_graph": lambda *a, **k: object()},
-        "config_loader": {"load_agent_config": lambda *a, **k: {}},
-        "db": {
-            "create_conversation": lambda *a, **k: None,
-            "get_messages": lambda *a, **k: None,
-            "save_message": lambda *a, **k: None,
-            "save_trace": lambda *a, **k: None,
-            "validate_agent_tenant": lambda *a, **k: True,
+# `libs.shared.guardrail_check` pulls in litellm, whose own pydantic models emit
+# a "Valid config keys have changed in V2" UserWarning at import; under the
+# repo's `filterwarnings = error` that would abort collection. Upstream noise,
+# not ours — scope the ignore to this one import so nothing leaks to other tests.
+with warnings.catch_warnings():
+    warnings.filterwarnings("ignore", message="Valid config keys have changed in V2", category=UserWarning)
+    cr = load_module_from_path(
+        "conversation_runner",
+        _runtime_dir / "runtime_services" / "conversation_runner.py",
+        extra_syspath=[_runtime_dir, _runtime_dir / "runtime_services"],
+        stubs={
+            # graph.build_graph() is called at import for the default graph.
+            "graph": {"build_graph": lambda *a, **k: object()},
+            "config_loader": {"load_agent_config": lambda *a, **k: {}},
+            "db": {
+                "create_conversation": lambda *a, **k: None,
+                "get_last_slots": lambda *a, **k: None,
+                "get_messages": lambda *a, **k: None,
+                "save_message": lambda *a, **k: None,
+                "save_trace": lambda *a, **k: None,
+                "validate_agent_tenant": lambda *a, **k: True,
+            },
+            "memory_middleware": {
+                "_DEV_AGENT_ID": "dev-agent",
+                "_DEV_TENANT_ID": "dev-tenant",
+                "apply_memory_policy": lambda *a, **k: None,
+                "retrieve_episodic_past": lambda *a, **k: [],
+                "retrieve_memories": lambda *a, **k: [],
+                "retrieve_pending_reminders": lambda *a, **k: [],
+            },
+            "observability": {
+                "flush_langfuse": lambda *a, **k: None,
+                "get_langchain_callback_handler": lambda *a, **k: None,
+                "get_langfuse_handler": lambda *a, **k: None,
+            },
+            "schemas": {"RunRequest": object},
         },
-        "memory_middleware": {
-            "_DEV_AGENT_ID": "dev-agent",
-            "_DEV_TENANT_ID": "dev-tenant",
-            "apply_memory_policy": lambda *a, **k: None,
-            "retrieve_memories": lambda *a, **k: [],
-        },
-        "observability": {"get_langfuse_handler": lambda *a, **k: None},
-        "schemas": {"RunRequest": object},
-    },
-)
+    )
 
-LRU = cr._LRUCache
+LRU = cr._GraphCache
 
 
 @pytest.fixture(autouse=True)
 def _reset_runtime_cache():
     """Each test starts with an empty module-level cache + locks."""
-    cr._graph_cache._data.clear()
+    cr._graph_cache.clear()
     cr._build_locks.clear()
     yield
-    cr._graph_cache._data.clear()
+    cr._graph_cache.clear()
     cr._build_locks.clear()
 
 
@@ -156,7 +171,7 @@ class TestBuildLockDedup:
         import asyncio
 
         calls = []
-        monkeypatch.setattr(cr, "build_graph", lambda nodes: calls.append(1) or object())
+        monkeypatch.setattr(cr, "build_graph", lambda *a, **k: calls.append(1) or object())
 
         results = await asyncio.gather(
             cr._get_or_build_graph("agent:v1", []),
@@ -170,7 +185,7 @@ class TestBuildLockDedup:
         import asyncio
 
         calls = []
-        monkeypatch.setattr(cr, "build_graph", lambda nodes: calls.append(1) or object())
+        monkeypatch.setattr(cr, "build_graph", lambda *a, **k: calls.append(1) or object())
         await asyncio.gather(
             cr._get_or_build_graph("agent:v1", []),
             cr._get_or_build_graph("agent:v2", []),

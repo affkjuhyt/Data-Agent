@@ -1,7 +1,7 @@
-# Shared, NON-SECRET wiring for the runtime tier (orchestrator, workflow-runtime,
+# Shared, NON-SECRET wiring for the runtime tier (workflow-runtime incl. orchestrator,
 # sandbox-executor, the migration Job and the backup CronJob).
 #
-# Why a ConfigMap when the KB-tier files (kb-backend/kb-gateway/model-service)
+# Why a ConfigMap when the KB-tier files (kb-backend/model-service)
 # inline their env: three services must agree on the SAME endpoints, and a value
 # that has to match in three places is a value that eventually doesn't. Anything
 # secret — connection URLs with a password in them, signing keys, API keys —
@@ -43,10 +43,7 @@ data:
   WORKFLOW_RUNTIME_URL: "http://workflow-runtime:8001"
   SANDBOX_EXECUTOR_URL: "http://sandbox-executor:8500"
 
-  # The orchestrator calls POST /api/conversations/run on a user's behalf and
-  # cannot carry their Keycloak token, so it presents a signed assertion
-  # instead. Every entry here can act as any user — keep it to one name.
-  RUNTIME_ALLOWED_SERVICES: "orchestrator"
-  # Nothing calls the orchestrator service-to-service, so its assertion route is
-  # closed: only gateway-verified requests get in. Empty on purpose.
-  ORCHESTRATOR_ALLOWED_SERVICES: ""
+  # Services allowed to present a signed assertion (each can act as any user).
+  # Empty on purpose: the orchestrator runs inside workflow-runtime and calls
+  # the runtime in-process, so only gateway-verified requests get in.
+  RUNTIME_ALLOWED_SERVICES: ""

@@ -48,7 +48,7 @@ production release. Operational procedures are in [`RUNBOOK.md`](./RUNBOOK.md).
   mTLS alone would let any CA-signed client assert any identity, and the assertion alone is
   only as strong as the network.
 - **Data-access audit trail.** Every query an agent runs emits a `data.access`
-  event (`backend/libs/shared/audit.py`) onto the existing Kafka pipeline; `audit-consumer`
+  event (`backend/libs/shared/audit.py`) onto the existing Kafka pipeline; the `platform-workers` audit worker
   writes it to `DataAccessLog` — who, which roles, which connection, which tables,
   row count, latency, and the allow/deny/error outcome. Previously the audit
   covered **authentication events only**, so "who read this data" had no answer and
@@ -95,7 +95,7 @@ release-hardening pass:
 
 | Runs as non-root (`USER app`) | Intentionally root — documented |
 |---|---|
-| kb-backend, kb-ingestion-worker, workflow-runtime, flow-builder, orchestrator, auth-api, model-service, minio-service, release-worker, audit-bridge, audit-consumer, memory-consumer, jwks-refresher, schema-crawler-worker | **sandbox-executor** — spawns sandbox containers via the mounted Docker socket; a non-root user would need the host docker group (root-equivalent). Proper fix: rootless Docker / gVisor. |
+| kb-backend, kb-ingestion-worker, workflow-runtime, flow-builder, orchestrator, auth-api, model-service, minio-service, release-worker, platform-workers (memory / schema-crawler / audit) | **sandbox-executor** — spawns sandbox containers via the mounted Docker socket; a non-root user would need the host docker group (root-equivalent). Proper fix: rootless Docker / gVisor. |
 
 `deploy/docker/Dockerfile`, `deploy/docker/Dockerfile.frontend` (both **LEGACY**, not in the supported
 entrypoint set) and `deploy/docker/Dockerfile.dev` (dev-only) are out of scope for the prod
@@ -157,7 +157,7 @@ with an existing baseline to burn down. Ratchet plan:
   | `backend/services/{orchestrator,kb_backend,workflow-runtime}` | **0** ✅ | enforced — the 3 largest (~670 fixed) |
   | `backend/services/{auth-api,flow-builder,model-service,minio-service}` | **0** ✅ | enforced |
   | `backend/services/{release-worker,sandbox-executor,kb-ingestion-worker}` | **0** ✅ | enforced |
-  | `backend/services/{schema-crawler-worker,memory-consumer,audit-bridge,audit-consumer,jwks-refresher}` | **0** ✅ | enforced |
+  | `backend/services/platform-workers` (ex schema-crawler-worker, memory-consumer, audit-bridge, audit-consumer) | **0** ✅ | enforced |
 
   Two services (`auth-api`, `release-worker`) had a dynamic `__all__ = [n for n in
   globals() ...]` that defeated mypy's `import *` resolution in their routers; both were

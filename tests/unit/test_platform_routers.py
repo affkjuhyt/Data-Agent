@@ -30,14 +30,35 @@ TENANT = "00000000-0000-0000-0000-0000000000aa"
 CALLER = {"user_id": "u1", "user_name": "u1@example.com", "roles": ["tenant-admin"], "tenant_id": TENANT}
 
 
+# Top-level module names this service shares with other services (auth-api and
+# kb_backend also have `routers`, `auth`, `db`, `config`…). Tests of those
+# services leave their copies in sys.modules; importing ours would then silently
+# resolve to theirs ("cannot import name 'billing' from 'routers'").
+_SHARED_TOPLEVEL = ("routers", "auth", "db", "config", "schemas", "runtime_services", "node_registry", "nodes")
+
+
+def _evict_foreign_modules() -> None:
+    for name in list(sys.modules):
+        if name.split(".")[0] not in _SHARED_TOPLEVEL:
+            continue
+        file = getattr(sys.modules[name], "__file__", None) or ""
+        if file and not file.startswith(_SVC_DIR):
+            del sys.modules[name]
+
+
 @pytest.fixture(autouse=True)
 def _sys_path():
-    added = [p for p in (_SVC_DIR,) if p not in sys.path]
-    sys.path[:0] = added
+    # This service dir must be FIRST: other tests leave sibling service dirs
+    # (auth-api, kb_backend…) on sys.path, and a later entry would lose the
+    # `routers` / `db` / `auth` lookup to them.
+    was_present = _SVC_DIR in sys.path
+    if was_present:
+        sys.path.remove(_SVC_DIR)
+    sys.path.insert(0, _SVC_DIR)
+    _evict_foreign_modules()
     yield
-    for p in added:
-        if p in sys.path:
-            sys.path.remove(p)
+    if not was_present and _SVC_DIR in sys.path:
+        sys.path.remove(_SVC_DIR)
 
 
 def _queries():
@@ -329,24 +350,30 @@ class TestServiceProbes:
 
     def test_http_probe_reports_unknown_without_env(self, monkeypatch):
         import runtime_services.service_probes as sp
-        monkeypatch.delenv("ORCHESTRATOR_URL", raising=False)
-        res = asyncio.run(sp._timed("orchestrator", sp._PROBES["orchestrator"]))
-        assert res["status"] == "unknown" and "ORCHESTRATOR_URL" in res["detail"]
+        monkeypatch.delenv("KB_BACKEND_URL", raising=False)
+        res = asyncio.run(sp._timed("kb-backend", sp._PROBES["kb-backend"]))
+        assert res["status"] == "unknown" and "KB_BACKEND_URL" in res["detail"]
+
+    def test_orchestrator_is_not_probed(self):
+        """The orchestrator runs inside this process (orchestrator/ package) —
+        an HTTP probe of it would only ever report on ourselves."""
+        import runtime_services.service_probes as sp
+        assert "orchestrator" not in sp._PROBES
 
     def test_real_probes_against_nothing_do_not_raise(self, monkeypatch):
         """With no DB/Redis/Mongo/Kafka open and no URLs set, every probe still answers."""
         import runtime_services.service_probes as sp
         for var in ("REDIS_URL", "REDIS_HOST", "KAFKA_BOOTSTRAP_SERVERS", "LITELLM_BASE_URL",
-                    "SANDBOX_EXECUTOR_URL", "ORCHESTRATOR_URL", "KB_BACKEND_URL"):
+                    "SANDBOX_EXECUTOR_URL", "KB_BACKEND_URL"):
             monkeypatch.delenv(var, raising=False)
         monkeypatch.setattr(sp, "PROBE_TIMEOUT_S", 0.5)
         items = asyncio.run(sp.probe_all())
         assert {i["name"] for i in items} == {
-            "postgres", "redis", "mongo", "kafka", "litellm", "sandbox-executor", "orchestrator", "kb-backend",
+            "postgres", "redis", "mongo", "kafka", "litellm", "sandbox-executor", "kb-backend",
         }
         assert all(i["status"] in ("ok", "degraded", "down", "unknown") for i in items)
-        assert {i["name"]: i["status"] for i in items if i["name"] in ("litellm", "orchestrator", "kb-backend")} == {
-            "litellm": "unknown", "orchestrator": "unknown", "kb-backend": "unknown",
+        assert {i["name"]: i["status"] for i in items if i["name"] in ("litellm", "kb-backend")} == {
+            "litellm": "unknown", "kb-backend": "unknown",
         }
 
 
@@ -367,7 +394,7 @@ class TestLiteLLMProxy:
         monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-master")
         calls: list[str] = []
 
-        async def failing_get(path, *, params=None, timeout):
+        async def failing_get(path, *, params=None, timeout_s):
             calls.append(path)
             raise RuntimeError("Database not connected")
 
@@ -388,7 +415,7 @@ class TestLiteLLMProxy:
             {"model": "claude", "spend": 1.0, "total_tokens": 10, "startTime": f"{(today - dt.timedelta(days=1)).isoformat()}T02:00:00"},
         ]
 
-        async def fake_get(path, *, params=None, timeout):
+        async def fake_get(path, *, params=None, timeout_s):
             assert path == "/spend/logs" and set(params) == {"start_date", "end_date"}
             return rows
 
@@ -411,7 +438,7 @@ class TestLiteLLMProxy:
     def test_models_row_mapping(self, monkeypatch):
         import runtime_services.litellm_proxy as lp
 
-        async def fake_get(path, *, params=None, timeout):
+        async def fake_get(path, *, params=None, timeout_s):
             return {"data": [{
                 "model_name": "responder",
                 "litellm_params": {"model": "anthropic/claude-sonnet-4-5"},
@@ -431,7 +458,7 @@ class TestLiteLLMProxy:
         lp.reset_health_cache()
         calls = []
 
-        async def fake_get(path, *, params=None, timeout):
+        async def fake_get(path, *, params=None, timeout_s):
             calls.append(path)
             return {
                 "healthy_endpoints": [{"model": "openai/gpt-4o"}],

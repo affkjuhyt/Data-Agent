@@ -1,9 +1,10 @@
 """Tests workflow_memory._embed()'s actual HTTP call/response-parsing path —
 previously this was always monkeypatched away in other tests, so the real
-httpx request/response handling was never exercised. Uses `respx` to
-intercept the request at the transport layer: no real socket, no real LLM
-server, no API key — just asserts our code builds the right request and
-parses the right response shape.
+httpx request/response handling was never exercised. `_embed` now delegates
+to `libs.shared.embeddings.aembed_one`, which still speaks httpx underneath,
+so `respx` intercepts the request at the transport layer: no real socket, no
+real LLM server, no API key — just asserts our code builds the right request,
+parses the right response shape, and degrades to ``None`` on any failure.
 """
 from __future__ import annotations
 

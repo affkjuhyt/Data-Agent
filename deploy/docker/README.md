@@ -34,9 +34,9 @@ profile and therefore always start (the core auth + system-of-record):
 # Run from the repository root
 docker compose -f deploy/docker/docker-compose.yml --profile authoring up -d   # design flows: + flow-builder, frontend, mongo, redis
 docker compose -f deploy/docker/docker-compose.yml --profile kb        up -d   # Knowledge Base: + kb-backend, ingestion, model-service, litellm + qdrant/neo4j/minio/kafka/mongo
-docker compose -f deploy/docker/docker-compose.yml --profile iam       up -d   # auth/governance: + auth-api, audit-bridge, audit-consumer, openbao, kafka
+docker compose -f deploy/docker/docker-compose.yml --profile iam       up -d   # auth/governance: + auth-api, platform-workers-audit, openbao, kafka
 docker compose -f deploy/docker/docker-compose.yml --profile release   up -d   # release: + release-worker, minio-service + minio/mongo/kafka/redis
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.app.yml --profile runtime up -d  # agent runtime (full): + workflow-runtime, orchestrator, kb-backend, sandbox-executor, memory-consumer, schema-crawler-worker
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.app.yml --profile runtime up -d  # agent runtime (full): + workflow-runtime (incl. orchestrator at /api/orchestrate), kb-backend, sandbox-executor, platform-workers-memory, platform-workers-schema-crawler
 
 # Combine profiles freely
 docker compose -f deploy/docker/docker-compose.yml --profile kb --profile authoring up -d          # KB + its UI
@@ -48,16 +48,18 @@ docker compose -f deploy/docker/docker-compose.yml --profile runtime --profile o
 |---|---|---|
 | `authoring` | flow-builder, frontend | mongo, redis |
 | `kb` | kb-backend, kb-ingestion-worker, model-service, litellm, minio-service | qdrant, neo4j, minio, kafka, mongo, redis |
-| `runtime` | workflow-runtime, orchestrator, kb-backend, model-service, litellm | mongo, redis, qdrant, neo4j, kafka, openbao |
-| `iam` | auth-api, audit-bridge, audit-consumer | kafka, openbao |
+| `runtime` | workflow-runtime (incl. orchestrator), kb-backend, model-service, litellm | mongo, redis, qdrant, neo4j, kafka, openbao |
+| `iam` | auth-api, platform-workers-audit | kafka, openbao |
 | `release` | release-worker, minio-service | minio, mongo, kafka, redis |
 | `observability` | langfuse (+ worker, minio-init) | elasticsearch, jaeger, clickhouse, minio, redis |
 | `testdb` | — | clickhouse (throwaway DB target for `db_connector`) |
 | `models` | ollama | — (local GPU model backend; dev usually points litellm at a host llama-server instead) |
-| `legacy-jwt` | jwks-refresher | — (**only** if Kong runs the built-in `jwt` plugin instead of `aeroflow-jwks` — check `curl :8001/plugins`) |
+
+> JWT verification (Keycloak JWKS fetch + RS256 verify) is done by the custom Kong `aeroflow-jwks`
+> plugin (`kong/plugins/aeroflow-jwks/`); there is no separate JWKS-refresher service.
 
 > **Note — the full `runtime` lives across two files.** `sandbox-executor` (+ `sandbox-dockerd`),
-> `memory-consumer`, and `schema-crawler-worker` are defined in
+> `platform-workers-memory`, and `platform-workers-schema-crawler` are defined in
 > [`docker-compose.app.yml`](./docker-compose.app.yml), which carries the same profiles. So the
 > **complete** agent runtime (with the sandbox) is `-f docker-compose.yml -f docker-compose.app.yml
 > --profile runtime`; the base file alone gives a runtime without the sandbox/memory/schema workers.
@@ -323,7 +325,7 @@ stray `otp` credential on the user and reset the password to `H3lios@Admin01!`
 ```
 deploy/docker/
   docker-compose.yml                # base: every service, gated by profiles (project name pinned: infra)
-  docker-compose.app.yml            # application tier (runtime, orchestrator, workers, frontend)
+  docker-compose.app.yml            # application tier (runtime incl. orchestrator, workers, frontend)
   docker-compose.local.yml          # + migrate/seed for a dev machine
   docker-compose.e2e-dev.yml        # reuse built images + bind-mount source (tests/e2e, Ansible local)
   docker-compose.agent-test.yml     # LiteLLM -> host ollama
@@ -349,3 +351,16 @@ deploy/docker/
 Service images are built from `backend/services/<name>/Dockerfile` (build context = repo root); the
 frontend dev image from `frontend/Dockerfile.dev`. Naming rule: lowercase, kebab-case, one
 `docker-compose.<purpose>.yml` per overlay.
+
+## Đọc nhanh message Kafka (debug)
+
+Không cần script riêng — image Kafka có sẵn console consumer. Dùng cùng file
+SASL props mà `kafka/kafka-setup.sh` tạo (hoặc tự tạo theo mẫu đó):
+
+```bash
+docker exec dataagent-kafka bash -c '
+printf "security.protocol=SASL_PLAINTEXT\nsasl.mechanism=PLAIN\nsasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username=\"admin\" password=\"$KAFKA_ADMIN_PASSWORD\";\n" > /tmp/debug.props
+/opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server kafka:9094 --consumer.config /tmp/debug.props \
+  --topic release.pipeline.triggered --from-beginning --max-messages 3
+rm -f /tmp/debug.props'
+```

@@ -19,13 +19,12 @@ deploy/      docker/ (Compose stacks + Kong/Kafka/Keycloak/OpenBao/LiteLLM/SQL c
 tests/       unit/ · integration/ · e2e/ (real-stack runner + Playwright) · loadtest/ (k6)
 docs/        RUNBOOK · SECURITY · AGENT-E2E · KB-SCALE-10K · M3-CAPACITY
 model/       LLM eval harness, RAGAS, ollama packaging
-scripts/     developer tools only (agent_eval, benchmark_llm, model download/start)
 ```
 
 | Path | Contents |
 |---|---|
 | [`frontend/src/`](./frontend/src) | React 19 + TypeScript + Vite frontend (Knowledge Base UI + Ask). `frontend/src/lib/apiClient.ts` is the FastAPI client (bearer-only — Kong injects identity). Root `package.json` is an npm workspace that forwards `npm run dev/test/typecheck` here |
-| [`backend/services/`](./backend/services) | Backend microservices: `kb_backend`, `kb-ingestion-worker`, `auth-api`, `flow-builder`, `workflow-runtime`, `orchestrator`, `model-service`, `minio-service`, `sandbox-executor`, `schema-crawler-worker`, `release-worker`, `audit-bridge`, `audit-consumer`, `memory-consumer`, `jwks-refresher`. Each owns its `Dockerfile` (build context = repo root) |
+| [`backend/services/`](./backend/services) | Backend microservices: `kb_backend`, `kb-ingestion-worker`, `auth-api`, `flow-builder`, `workflow-runtime` (which also hosts the multi-agent orchestrator at `/api/orchestrate`), `model-service`, `minio-service`, `sandbox-executor`, `release-worker`, `platform-workers` (one image; `WORKER=memory\|schema-crawler\|audit` — ex memory-consumer, schema-crawler-worker, audit-bridge + audit-consumer). Each owns its `Dockerfile` (build context = repo root) |
 | [`backend/libs/`](./backend/libs) | Shared cross-service layer: `libs/basemodel` (domain models/ORM), `libs/database_connector` (infra clients), `libs/shared` (logger, auth, observability), `libs/semantic` (metric contracts). Innermost architecture layer |
 | [`backend/alembic/`](./backend/alembic) | Database migrations (`alembic -c backend/alembic/alembic.ini upgrade head`) |
 | [`deploy/docker/`](./deploy/docker) | Docker Compose stacks (base + overlays) and every service config (`kong`, `kafka`, `keycloak`, `openbao`, `litellm`, `sql`, `certs`…). Compose project name is pinned to `infra` |
@@ -293,7 +292,6 @@ Then fill in the required values in `.env`, especially:
 - `GEMINI_API_KEY`
 - `LANGFUSE_NEXTAUTH_SECRET`, `LANGFUSE_SALT`
 - `KAFKA_ADMIN_PASSWORD`
-- `AUDIT_BRIDGE_KAFKA_PASSWORD`
 - `AUDIT_CONSUMER_KAFKA_PASSWORD`
 - `RELEASE_WORKER_KAFKA_PASSWORD`
 
@@ -396,7 +394,7 @@ The base stack includes these service groups:
 - **Security and gateway:** Keycloak, Kong, OpenBao
 - **Messaging:** Kafka
 - **Observability and AI tooling:** LiteLLM, Langfuse, Jaeger, Elasticsearch
-- **Application services:** workflow-runtime, flow-builder, kb-backend, kb-ingestion-worker, model-service, auth-api, minio-service, release-worker, audit-bridge, audit-consumer, jwks-refresher
+- **Application services:** workflow-runtime, flow-builder, kb-backend, kb-ingestion-worker, model-service, auth-api, minio-service, release-worker, platform-workers (memory / schema-crawler / audit) (JWKS/JWT verification is handled at the edge by the Kong `aeroflow-jwks` plugin, not a service)
 - **Frontend:** Vite server on `5173`
 
 ---

@@ -19,16 +19,14 @@ from unittest.mock import MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "schema-crawler-worker")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "platform-workers")
 
 
 @pytest.fixture(autouse=True)
 def _sys_path():
     added = [p for p in (_SVC_DIR,) if p not in sys.path]
     sys.path[:0] = added
-    sys.modules.pop("main", None)
     yield
-    sys.modules.pop("main", None)
     for p in added:
         if p in sys.path:
             sys.path.remove(p)
@@ -43,7 +41,7 @@ def _poll_result(*events: dict) -> dict:
 
 @pytest.mark.unit
 def test_poll_with_no_records_does_not_commit_or_touch_pending():
-    import main as worker
+    from workers.schema_crawler import worker
 
     consumer = MagicMock()
     consumer.poll.return_value = {}
@@ -57,7 +55,7 @@ def test_poll_with_no_records_does_not_commit_or_touch_pending():
 
 @pytest.mark.unit
 def test_poll_queues_event_with_due_time_and_commits():
-    import main as worker
+    from workers.schema_crawler import worker
 
     consumer = MagicMock()
     event = {"tenant_id": "t1", "warehouse_id": "w1", "table_name": "fact_stock_price"}
@@ -80,7 +78,7 @@ def test_duplicate_event_for_same_table_overwrites_due_instead_of_queuing_twice(
     """This overwrite IS the debounce — a second DDL event for the same
     table within the window pushes the deadline out, it doesn't create a
     second pending trigger."""
-    import main as worker
+    from workers.schema_crawler import worker
 
     consumer = MagicMock()
     event = {"tenant_id": "t1", "warehouse_id": "w1", "table_name": "fact_stock_price"}
@@ -100,7 +98,7 @@ def test_duplicate_event_for_same_table_overwrites_due_instead_of_queuing_twice(
 
 @pytest.mark.unit
 def test_different_tables_queue_independently():
-    import main as worker
+    from workers.schema_crawler import worker
 
     consumer = MagicMock()
     e1 = {"tenant_id": "t1", "warehouse_id": "w1", "table_name": "fact_stock_price"}
@@ -115,7 +113,7 @@ def test_different_tables_queue_independently():
 
 @pytest.mark.unit
 def test_malformed_records_without_table_name_are_ignored():
-    import main as worker
+    from workers.schema_crawler import worker
 
     consumer = MagicMock()
     consumer.poll.return_value = _poll_result({"tenant_id": "t1"}, "not-a-dict", {})
@@ -133,7 +131,7 @@ def test_malformed_records_without_table_name_are_ignored():
 
 @pytest.mark.unit
 def test_not_yet_due_event_is_left_pending(monkeypatch):
-    import main as worker
+    from workers.schema_crawler import worker
 
     conn, qdrant = MagicMock(), MagicMock()
     handle_spy = MagicMock()
@@ -150,7 +148,7 @@ def test_not_yet_due_event_is_left_pending(monkeypatch):
 
 @pytest.mark.unit
 def test_due_event_is_processed_and_removed(monkeypatch):
-    import main as worker
+    from workers.schema_crawler import worker
 
     conn, qdrant = MagicMock(), MagicMock()
     handle_spy = MagicMock()
@@ -168,7 +166,7 @@ def test_due_event_is_processed_and_removed(monkeypatch):
 
 @pytest.mark.unit
 def test_only_due_entries_are_processed_others_stay_pending(monkeypatch):
-    import main as worker
+    from workers.schema_crawler import worker
 
     conn, qdrant = MagicMock(), MagicMock()
     monkeypatch.setattr(worker, "handle_ddl_event", MagicMock())
@@ -190,7 +188,7 @@ def test_only_due_entries_are_processed_others_stay_pending(monkeypatch):
 def test_handler_exception_rolls_back_and_is_not_reported_as_processed(monkeypatch):
     """Doesn't crash the worker loop (matches handle_ddl_event's caller in
     main(), and crawl_all()'s per-warehouse try/except convention)."""
-    import main as worker
+    from workers.schema_crawler import worker
 
     conn, qdrant = MagicMock(), MagicMock()
     monkeypatch.setattr(worker, "handle_ddl_event", MagicMock(side_effect=RuntimeError("boom")))

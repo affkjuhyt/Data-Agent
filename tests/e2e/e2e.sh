@@ -29,7 +29,7 @@ COMPOSE=(docker compose -p "$E2E_PROJECT" --env-file .env --profile runtime -f d
 E2E_MODE=${E2E_MODE:-dev}
 if [ "$E2E_MODE" = "dev" ]; then COMPOSE+=(-f deploy/docker/docker-compose.e2e-dev.yml); fi
 SERVICES=(postgres redis mongo kafka minio openbao litellm keycloak kong-migration kong
-          migrate seed sandbox-executor workflow-runtime orchestrator memory-consumer)
+          migrate seed sandbox-executor workflow-runtime platform-workers-memory)
 
 TENANT=a0000000-0000-0000-0000-000000000001
 export E2E_AGENT_ID=${E2E_AGENT_ID:-0000000e-2e00-4000-8000-000000000001}
@@ -160,7 +160,7 @@ up() {
   wait_for "keycloak"  180 curl -sf "$E2E_KEYCLOAK/realms/aeroflow/.well-known/openid-configuration"
   wait_for "litellm"   120 curl -sf http://localhost:4000/health/liveliness
   wait_for "openbao"   60  curl -s "$OPENBAO/v1/sys/health"
-  for c in dataagent-workflow-runtime dataagent-orchestrator dataagent-sandbox-executor; do
+  for c in dataagent-workflow-runtime dataagent-sandbox-executor; do
     wait_for "$c running" 60 sh -c "docker inspect -f '{{.State.Status}}' $c | grep -q running"
   done
   # migrate/seed are one-shot: make sure they exited 0

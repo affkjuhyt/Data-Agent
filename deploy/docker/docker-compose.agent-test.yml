@@ -5,7 +5,7 @@
 #
 #   docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.app.yml \
 #     -f deploy/docker/docker-compose.agent-test.yml up -d \
-#     litellm openbao orchestrator workflow-runtime sandbox-executor memory-consumer
+#     litellm openbao workflow-runtime sandbox-executor platform-workers-memory
 services:
   litellm:
     volumes:
@@ -24,21 +24,18 @@ services:
       # credentials" via fetchApiKeyAndAddToRedis).
       REDIS_CONNECTION_STRING: redis://redis:6379
 
-  # The orchestrator/runtime default REDIS_URL to localhost — point them at the
-  # redis container so session/cache ops work (they reconnect-loop otherwise).
+  # The runtime defaults REDIS_URL to localhost — point it at the redis
+  # container so session/cache ops work (it reconnect-loops otherwise).
   # OTEL_SDK_DISABLED stops the per-request span export to jaeger:4317 (which isn't
   # running) — it was spamming "export timeout" and adding request overhead.
-  orchestrator:
-    environment:
-      REDIS_URL: redis://redis:6379
-      OTEL_SDK_DISABLED: "false"
-      # Small cap on this single-GPU box so admission control is easy to see;
-      # size to the LLM tier's real parallelism in prod (default 8).
-      ORCHESTRATOR_MAX_CONCURRENT_TURNS: "2"
   workflow-runtime:
     environment:
       REDIS_URL: redis://redis:6379
       OTEL_SDK_DISABLED: "false"
+      # Orchestrator (/api/orchestrate) runs inside workflow-runtime. Small cap
+      # on this single-GPU box so admission control is easy to see; size to
+      # the LLM tier's real parallelism in prod (default 8).
+      ORCHESTRATOR_MAX_CONCURRENT_TURNS: "2"
 
 # auth-api references kong-admin-net (defined only in docker-compose.security.yml).
 # Declare it external here so bringing auth-api up with this overlay resolves it to

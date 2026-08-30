@@ -4,8 +4,9 @@ import json
 import logging
 import re
 import time
-from collections import OrderedDict
 from collections.abc import AsyncIterator
+
+from cachetools import LRUCache
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -71,30 +72,23 @@ def _chunk_words(text: str) -> list[str]:
     return [w if i == 0 else " " + w for i, w in enumerate(words)]
 
 
-class _LRUCache:
-    """Tiny bounded LRU for compiled graphs.
+class _GraphCache(LRUCache[str, Any]):
+    """Bounded LRU for compiled graphs (``cachetools.LRUCache`` + suffix eviction).
 
     Keyed by (agent_id, workflow_version_id) so a newly published flow version
     gets a fresh key and the graph is rebuilt automatically — no restart, no
     manual invalidation. Bounded so stale version entries can't accumulate
     forever (the previous plain dict never evicted anything).
+
+    ``get`` (inherited) returns ``None`` on a miss and refreshes recency on a
+    hit — it routes through ``__getitem__``. Single event loop, no locks.
     """
 
     def __init__(self, maxsize: int = 64) -> None:
-        self._maxsize = maxsize
-        self._data: "OrderedDict[str, Any]" = OrderedDict()
-
-    def get(self, key: str) -> Any:
-        if key not in self._data:
-            return None
-        self._data.move_to_end(key)
-        return self._data[key]
+        super().__init__(maxsize=maxsize)
 
     def set(self, key: str, value: Any) -> None:
-        self._data[key] = value
-        self._data.move_to_end(key)
-        while len(self._data) > self._maxsize:
-            self._data.popitem(last=False)
+        self[key] = value
 
     def invalidate_suffix(self, suffix: str) -> int:
         """Drop every entry whose key ends with `suffix`. Returns count removed.
@@ -102,14 +96,14 @@ class _LRUCache:
         Cache keys are `"{agent_id}:{workflow_version_id}"`, so passing
         `":{wv_id}"` evicts that version across all agents that reference it.
         """
-        victims = [k for k in self._data if k.endswith(suffix)]
+        victims = [k for k in self if k.endswith(suffix)]
         for k in victims:
-            del self._data[k]
+            del self[k]
         return len(victims)
 
 
 _GRAPH_CACHE_MAXSIZE = 64
-_graph_cache = _LRUCache(maxsize=_GRAPH_CACHE_MAXSIZE)
+_graph_cache = _GraphCache(maxsize=_GRAPH_CACHE_MAXSIZE)
 # Per-key build locks dedup concurrent first-time builds of the same graph: two
 # requests racing on a new (agent, version) compile it once, not twice.
 _build_locks: dict[str, asyncio.Lock] = {}

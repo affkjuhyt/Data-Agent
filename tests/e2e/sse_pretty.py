@@ -1,4 +1,4 @@
-"""Pretty-print an orchestrator SSE stream (stdin) — used by e2e.sh smoke."""
+"""Pretty-print an /api/orchestrate SSE stream (stdin) — used by e2e.sh smoke."""
 import json
 import sys
 

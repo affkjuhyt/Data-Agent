@@ -49,10 +49,15 @@ services:
       # design: it must never fall back to asserting an identity it can't prove.
       SERVICE_AUTH_SECRET: ${SERVICE_AUTH_SECRET:-}
       GATEWAY_KEY: ${GATEWAY_KEY:-${KB_GATEWAY_KEY:-}}
-      # The orchestrator calls POST /api/conversations/run on a user's behalf
-      # and cannot carry their Keycloak token, so it presents a signed
-      # assertion instead. Each entry here can act as any user.
-      RUNTIME_ALLOWED_SERVICES: ${RUNTIME_ALLOWED_SERVICES:-orchestrator}
+      # Services allowed to present a signed assertion (act as any user).
+      # Empty: the orchestrator runs inside this container now and calls the
+      # runtime in-process, so nothing needs the assertion path today.
+      RUNTIME_ALLOWED_SERVICES: ${RUNTIME_ALLOWED_SERVICES:-}
+      # Orchestrator (multi-agent /api/orchestrate, same process): planner /
+      # summary / judge model aliases and ToT parameters keep their defaults
+      # (backend/services/workflow-runtime/orchestrator/config.py); override
+      # ORCHESTRATOR_* / DPTS_* / AGENT_CALL_TIMEOUT here if needed.
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-sk-dev}
       # Optional mutual TLS to kb-backend (deploy/docker/certs/gen-certs.sh). Both cert
       # and key, or neither — half-configured raises at startup rather than
       # silently connecting without a client certificate.
@@ -415,50 +420,31 @@ services:
       mongo:
         condition: service_healthy
 
-  audit-bridge:
+  # ── platform-workers: one image (backend/services/platform-workers), three
+  # containers selected by WORKER=. Separate Kafka principals / consumer
+  # groups / restart policies keep crash and resource isolation per worker.
+  platform-workers-audit:
     profiles: [iam]
     build:
       context: ../..
-      dockerfile: backend/services/audit-bridge/Dockerfile
-    container_name: dataagent-audit-bridge
+      dockerfile: backend/services/platform-workers/Dockerfile
+    image: dataagent-platform-workers
+    container_name: dataagent-platform-workers-audit
     restart: unless-stopped
     environment:
+      WORKER: audit
+      # Keycloak auth events: polled by the in-process bridge thread and
+      # written straight into audit_logs (no Kafka hop any more).
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: aeroflow
       KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
-      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      KAFKA_TOPIC: audit.auth.events
-      KAFKA_SASL_USERNAME: audit-bridge
-      KAFKA_SASL_PASSWORD: ${AUDIT_BRIDGE_KAFKA_PASSWORD}
-      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
-      KAFKA_SASL_MECHANISM: PLAIN
       POLL_INTERVAL_SECONDS: "10"
       STATE_FILE: /data/last_event_time.txt
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
-      OTEL_SERVICE_NAME: audit-bridge
-    volumes:
-      - audit_bridge_data:/data
-    depends_on:
-      kafka:
-        condition: service_healthy
-      keycloak-lb:
-        condition: service_healthy
-
-  audit-consumer:
-    profiles: [iam]
-    build:
-      context: ../..
-      dockerfile: backend/services/audit-consumer/Dockerfile
-    container_name: dataagent-audit-consumer
-    restart: unless-stopped
-    environment:
+      # Data-access events (who ran which query) — Kafka -> "DataAccessLog".
+      # Auth events and query events differ in volume by orders of magnitude
+      # and share almost no columns, so they are not folded into one table.
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      KAFKA_TOPIC: audit.auth.events
-      # Data-access events (who ran which query) — same consumer, second
-      # topic, different destination table. Auth events and query events
-      # differ in volume by orders of magnitude and share almost no
-      # columns, so they are not folded into one table.
       KAFKA_DATA_ACCESS_TOPIC: audit.data.access
       KAFKA_GROUP_ID: audit-consumer-group
       KAFKA_SASL_USERNAME: audit-consumer
@@ -471,20 +457,27 @@ services:
       DB_USER: ${POSTGRES_USER:-admin}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
-      OTEL_SERVICE_NAME: audit-consumer
+      OTEL_SERVICE_NAME: platform-workers-audit
+    volumes:
+      - audit_bridge_data:/data
     depends_on:
       kafka:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      keycloak-lb:
+        condition: service_healthy
 
-  memory-consumer:
+  platform-workers-memory:
     profiles: [runtime]
     build:
-      context: ../../backend/services/memory-consumer
-    container_name: dataagent-memory-consumer
+      context: ../..
+      dockerfile: backend/services/platform-workers/Dockerfile
+    image: dataagent-platform-workers
+    container_name: dataagent-platform-workers-memory
     restart: unless-stopped
     environment:
+      WORKER: memory
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_TOPIC: memory.extraction.requested
       KAFKA_DLQ_TOPIC: memory.extraction.dlq
@@ -511,16 +504,16 @@ services:
       litellm:
         condition: service_started
 
-  schema-crawler-worker:
+  platform-workers-schema-crawler:
     profiles: [runtime]
     build:
-      # Repo root: the worker now shares backend/libs/shared/freshness.py (the
-      # governance vocabulary) with workflow-runtime.
       context: ../..
-      dockerfile: backend/services/schema-crawler-worker/Dockerfile
-    container_name: dataagent-schema-crawler-worker
+      dockerfile: backend/services/platform-workers/Dockerfile
+    image: dataagent-platform-workers
+    container_name: dataagent-platform-workers-schema-crawler
     restart: unless-stopped
     environment:
+      WORKER: schema-crawler
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       KAFKA_DDL_TOPIC: ddl.changes
       KAFKA_GROUP_ID: schema-crawler-worker-group
@@ -559,70 +552,8 @@ services:
       litellm:
         condition: service_started
 
-  jwks-refresher:
-    profiles: [legacy-jwt]
-    build:
-      context: ../..
-      dockerfile: backend/services/jwks-refresher/Dockerfile
-    container_name: dataagent-jwks-refresher
-    restart: unless-stopped
-    environment:
-      KEYCLOAK_URL: http://keycloak:8080
-      KEYCLOAK_REALM: aeroflow
-      # `kong-admin` alias, not hostname/IP — see auth-api KONG_ADMIN_URL comment above.
-      KONG_ADMIN_URL: http://kong-admin:8001
-      KONG_CONSUMER: keycloak-users
-      REFRESH_INTERVAL_SECONDS: "300"
-      JWKS_STATE_FILE: /data/last_kid.txt
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
-      OTEL_SERVICE_NAME: jwks-refresher
-    networks:
-      - default
-      - kong-admin-net
-    volumes:
-      - jwks_refresher_data:/data
-    depends_on:
-      keycloak-lb:
-        condition: service_healthy
-      kong:
-        condition: service_healthy
-
-  orchestrator:
-    profiles: [runtime]
-    build:
-      context: ../..
-      dockerfile: backend/services/orchestrator/Dockerfile
-    container_name: dataagent-orchestrator
-    restart: unless-stopped
-    # NOT published to the host — same reasoning as workflow-runtime above.
-    # Kong's orchestrator-route (:8000/api/orchestrate) is the only way in.
-    expose:
-      - "8003"
-    env_file: ../../.env
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
-      LITELLM_BASE_URL: http://litellm:4000
-      LITELLM_API_KEY: ${LITELLM_API_KEY:-sk-dev}
-      WORKFLOW_RUNTIME_URL: http://workflow-runtime:8001
-      LANGFUSE_HOST: http://langfuse:3000
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-change-me}
-      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-change-me}
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
-      OTEL_SERVICE_NAME: orchestrator
-      # Signs the assertion sent to workflow-runtime, and (via the shared
-      # resolver) verifies inbound Kong requests. Same value everywhere.
-      SERVICE_AUTH_SECRET: ${SERVICE_AUTH_SECRET:-}
-      GATEWAY_KEY: ${GATEWAY_KEY:-${KB_GATEWAY_KEY:-}}
-      # Nothing calls the orchestrator service-to-service, so the assertion
-      # route in is closed: only Kong-verified requests are accepted.
-      ORCHESTRATOR_ALLOWED_SERVICES: ${ORCHESTRATOR_ALLOWED_SERVICES:-}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      litellm:
-        condition: service_started
-      workflow-runtime:
-        condition: service_started
+  # (The `orchestrator` service used to be here. It now runs inside
+  # workflow-runtime — /api/orchestrate is served by that container.)
 
   # Evaluation + release gate (model/eval). Never starts with the stack — it is
   # a one-shot job:

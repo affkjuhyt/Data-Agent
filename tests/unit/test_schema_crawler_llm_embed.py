@@ -12,7 +12,7 @@ import pytest
 import respx
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "schema-crawler-worker")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "platform-workers")
 
 
 @pytest.fixture(autouse=True)
@@ -28,7 +28,7 @@ def _sys_path():
 @pytest.mark.unit
 @respx.mock
 def test_embed_parses_successful_response():
-    import embed as embed_mod
+    from workers.schema_crawler import embed as embed_mod
 
     respx.post(f"{embed_mod.LITELLM_BASE}/v1/embeddings").mock(
         return_value=httpx.Response(200, json={"data": [{"embedding": [0.1, 0.2]}]})
@@ -42,7 +42,7 @@ def test_embed_parses_successful_response():
 @pytest.mark.unit
 @respx.mock
 def test_describe_table_parses_json_response():
-    import llm_describe
+    from workers.schema_crawler import llm_describe
 
     respx.post(f"{llm_describe.LITELLM_BASE}/v1/chat/completions").mock(
         return_value=httpx.Response(200, json={"choices": [{"message": {"content": (
@@ -68,7 +68,7 @@ def test_describe_table_parses_json_response():
 @pytest.mark.unit
 @respx.mock
 def test_describe_table_handles_non_json_response_gracefully():
-    import llm_describe
+    from workers.schema_crawler import llm_describe
 
     respx.post(f"{llm_describe.LITELLM_BASE}/v1/chat/completions").mock(
         return_value=httpx.Response(200, json={"choices": [{"message": {"content": "not json"}}]}),
@@ -81,7 +81,7 @@ def test_describe_table_handles_non_json_response_gracefully():
 
 @pytest.mark.unit
 def test_render_text_description_includes_all_sections():
-    from llm_describe import render_text_description
+    from workers.schema_crawler.llm_describe import render_text_description
 
     description = {
         "keywords": ["OHLCV", "stock price"],
@@ -101,7 +101,7 @@ def test_render_text_description_includes_all_sections():
 
 @pytest.mark.unit
 def test_render_text_description_omits_empty_sections():
-    from llm_describe import render_text_description
+    from workers.schema_crawler.llm_describe import render_text_description
 
     text = render_text_description("t", {"keywords": [], "categories": {}, "use_cases": [], "join_hints": []})
 

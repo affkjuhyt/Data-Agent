@@ -15,7 +15,6 @@ volumes:
   mongo_data:
   es_data:
   audit_bridge_data:
-  jwks_refresher_data:
   openbao_data:
   sandbox_dockerd_data:
   qdrant_data:
@@ -234,7 +233,7 @@ services:
       # INTERNAL://:9094 is a PLAINTEXT listener for in-cluster clients that don't
       # speak SASL (kb-backend, kb-ingestion-worker). Principal = ANONYMOUS, which
       # is a super-user (KAFKA_SUPER_USERS) so it bypasses ACLs. SASL stays on :9092
-      # for audit-bridge/audit-consumer/release-worker.
+      # for the platform-workers containers/release-worker.
       KAFKA_LISTENERS: SASL_PLAINTEXT://:9092,CONTROLLER://:9093,INTERNAL://:9094
       KAFKA_ADVERTISED_LISTENERS: SASL_PLAINTEXT://kafka:9092,INTERNAL://kafka:9094
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: SASL_PLAINTEXT:SASL_PLAINTEXT,CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT
@@ -390,7 +389,7 @@ services:
       redis:
         condition: service_started
 
-  # Langfuse v3 — SDK Python v3 (OTEL-based, dùng trong backend/services/orchestrator,
+  # Langfuse v3 — SDK Python v3 (OTEL-based, dùng trong backend/services/workflow-runtime/orchestrator,
   # backend/services/workflow-runtime) yêu cầu self-hosted server ≥ 3.125.0, KHÔNG
   # tương thích server v2. v3 tách write-path (Clickhouse cho trace/observation,
   # MinIO cho blob lớn, Redis cho queue) khỏi Postgres (chỉ còn giữ org/user/

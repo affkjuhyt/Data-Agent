@@ -2,7 +2,7 @@
 
 The data-access trail was built for the SQL path: `_sandbox_sql` records every
 query, `kb_search` records every retrieval, the Kafka sink is installed at
-startup and audit-consumer writes `DataAccessLog`. That half works.
+startup and the platform-workers audit worker writes `DataAccessLog`. That half works.
 
 What it did not cover was everything else the tool executor can do on a
 tenant's data:
@@ -343,7 +343,7 @@ class TestTheConsumerAcceptsTheNewActions:
     def test_the_consumer_does_not_allowlist_actions(self):
         """It inserts what it is given, so a new action needs no consumer
         change — which is what makes wiring a handler a one-file job."""
-        source = (REPO_ROOT / "backend" / "services" / "audit-consumer" / "data_access.py").read_text(encoding="utf-8")
+        source = (REPO_ROOT / "backend" / "services" / "platform-workers" / "workers" / "audit" / "data_access.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         required = next(
             (n.value for n in ast.walk(tree)

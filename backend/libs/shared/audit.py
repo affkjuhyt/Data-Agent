@@ -1,7 +1,7 @@
 """Data-access audit — who read what, when, and what came back.
 
-The audit pipeline before this covered *logins only*: audit-bridge polls
-Keycloak auth events into Kafka and audit-consumer writes them to `audit_logs`.
+The audit pipeline before this covered *logins only*: the platform-workers audit
+bridge polls Keycloak auth events and writes them to `audit_logs`.
 Nothing recorded that a user ran a query, which table it touched, or how many
 rows it returned. After an incident there was no answer to "who read this data",
 and the SQL existed only inside Langfuse traces — an observability store with

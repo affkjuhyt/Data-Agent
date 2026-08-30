@@ -15,6 +15,7 @@ Three things are pinned here:
 """
 from __future__ import annotations
 
+import importlib.util
 import inspect
 import json
 import pathlib
@@ -25,7 +26,7 @@ import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _RUNTIME_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
-_ORCH_DIR = str(REPO_ROOT / "backend" / "services" / "orchestrator")
+_ORCH_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime" / "orchestrator")
 
 pytestmark = pytest.mark.unit
 
@@ -170,37 +171,21 @@ class TestOrchestratorForwardsEvidenceAndOptions:
     it does not forward does not exist as far as the UI is concerned."""
 
     @pytest.fixture
-    def orch_path(self, monkeypatch):
-        # The orchestrator's identity headers mint a signed service assertion;
-        # without a secret the stream refuses to open (fail closed, by design).
-        monkeypatch.setenv("SERVICE_AUTH_SECRET", "test-secret")
-        added = [p for p in (_ORCH_DIR,) if p not in sys.path]
-        sys.path[:0] = added
-        # Both services have top-level modules named `schemas`, `config`, `graph`…
-        # A workflow-runtime test that ran earlier in this process leaves ITS
-        # copies cached; `import config` from agent_client would get the wrong
-        # one. Evict runtime-owned modules first (they re-import on demand).
-        for name, mod in list(sys.modules.items()):
-            if (getattr(mod, "__file__", None) or "").startswith(_RUNTIME_DIR):
-                sys.modules.pop(name, None)
-        # Both services have top-level modules named `schemas`, `config`, ...
-        # Anything loaded FROM the orchestrator directory must not stay cached
-        # in sys.modules, or the next workflow-runtime test imports the wrong
-        # one. Shared modules (libs.*) are left alone — other tests hold
-        # references to their classes and env-dependent state.
-        before = set(sys.modules)
-        yield
-        for name in set(sys.modules) - before:
-            mod = sys.modules.get(name)
-            file = getattr(mod, "__file__", None) or ""
-            if file.startswith(_ORCH_DIR):
-                sys.modules.pop(name, None)
-        for p in added:
-            if p in sys.path:
-                sys.path.remove(p)
+    def agent_client(self, runtime_path):
+        """orchestrator/executor/agent_client.py loaded by path — with
+        workflow-runtime on sys.path (`runtime_path`) for its
+        `orchestrator.config` import, but without executing the
+        `orchestrator.executor` package __init__, which pulls in the planner,
+        litellm and langfuse for nothing this test needs."""
+        spec = importlib.util.spec_from_file_location(
+            "orch_agent_client_under_test", pathlib.Path(_ORCH_DIR) / "executor" / "agent_client.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
 
-    async def test_agent_client_yields_options_and_evidence(self, orch_path, monkeypatch):
-        import executor.agent_client as ac
+    async def test_agent_client_yields_options_and_evidence(self, agent_client, monkeypatch):
+        ac = agent_client
 
         frames = [
             'data: "Doanh thu"',
@@ -210,18 +195,19 @@ class TestOrchestratorForwardsEvidenceAndOptions:
             "data: [DONE]",
         ]
 
-        async def _lines():
+        # What run_conversation_stream returns: a StreamingResponse whose body
+        # iterator yields SSE chunks (here one frame per chunk, as the runtime
+        # emits them).
+        async def _body():
             for f in frames:
-                yield f
+                yield f + "\n\n"
 
         resp = MagicMock()
+        resp.status_code = 200
         resp.headers = {"X-Conversation-Id": "conv-1"}
-        resp.aiter_lines = _lines
-        cm = MagicMock()
-        cm.__aexit__ = AsyncMock(return_value=None)
+        resp.body_iterator = _body()
 
-        monkeypatch.setattr(ac, "get_shared_client", lambda: MagicMock())
-        monkeypatch.setattr(ac, "_open_agent_stream", AsyncMock(return_value=(cm, resp)))
+        monkeypatch.setattr(ac, "_run_agent", AsyncMock(return_value=resp))
 
         events = [e async for e in ac.call_agent_stream("agent-1", "doanh thu", tenant_id="t1")]
 
@@ -233,13 +219,13 @@ class TestOrchestratorForwardsEvidenceAndOptions:
         assert not any(e[0] == "suggestions" for e in events)
 
     def test_single_agent_node_and_sse_route_pass_them_through(self):
-        graph_src = (REPO_ROOT / "backend" / "services" / "orchestrator" / "graph.py").read_text(encoding="utf-8")
-        stream_src = (REPO_ROOT / "backend" / "services" / "orchestrator" / "routers" / "stream.py").read_text(encoding="utf-8")
+        graph_src = (pathlib.Path(_ORCH_DIR) / "graph.py").read_text(encoding="utf-8")
+        stream_src = (pathlib.Path(_ORCH_DIR) / "routers" / "stream.py").read_text(encoding="utf-8")
         for name in ("options", "evidence"):
             assert f'adispatch_custom_event("{name}", data)' in graph_src
             assert f'"__{name}": event["data"]' in stream_src
 
-    def test_docstring_declares_the_new_events(self, orch_path):
-        import executor.agent_client as ac
+    def test_docstring_declares_the_new_events(self, agent_client):
+        ac = agent_client
         doc = inspect.getdoc(ac.call_agent_stream) or ""
         assert '("options"' in doc and '("evidence"' in doc

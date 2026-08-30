@@ -1,4 +1,4 @@
-"""Pure-mock test for the importance gate added to memory-consumer's
+"""Pure-mock test for the importance gate in the memory worker's
 process_insight() (doc §II Bước 2 / §VI — "only insights worth remembering
 get stored"). No Docker, no DB, no LLM — cur/qdrant are MagicMocks; we only
 assert whether process_insight() dispatches to a write path at all.
@@ -12,19 +12,15 @@ from unittest.mock import MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "memory-consumer")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "platform-workers")
 
 
 @pytest.fixture(autouse=True)
 def _sys_path():
-    """schema-crawler-worker also has a main.py — without evicting the
-    cached module, whichever test file imports "main" first in the session
-    wins sys.modules['main'] for every test after it, regardless of sys.path."""
+    """platform-workers on sys.path so `workers.memory` resolves."""
     added = [p for p in (_SVC_DIR,) if p not in sys.path]
     sys.path[:0] = added
-    sys.modules.pop("main", None)
     yield
-    sys.modules.pop("main", None)
     for p in added:
         if p in sys.path:
             sys.path.remove(p)
@@ -32,7 +28,7 @@ def _sys_path():
 
 @pytest.mark.unit
 def test_low_importance_add_is_skipped(monkeypatch):
-    import main as mc_main
+    from workers.memory import worker as mc_main
 
     cur, qdrant = MagicMock(), MagicMock()
     insight = {"memory_type": "semantic", "action": "add", "importance_score": 0.2,
@@ -45,7 +41,7 @@ def test_low_importance_add_is_skipped(monkeypatch):
 
 @pytest.mark.unit
 def test_high_importance_add_is_not_skipped(monkeypatch):
-    import main as mc_main
+    from workers.memory import worker as mc_main
 
     cur, qdrant = MagicMock(), MagicMock()
     monkeypatch.setattr(mc_main, "process_semantic_insight", MagicMock())
@@ -62,7 +58,7 @@ def test_low_importance_delete_bypasses_the_gate():
     """DELETE is a direct command, not an insight being judged for
     storage-worthiness — must not be silently dropped just because the LLM
     assigned it a low importance_score."""
-    import main as mc_main
+    from workers.memory import worker as mc_main
 
     cur, qdrant = MagicMock(), MagicMock()
     qdrant.search.return_value = []
@@ -80,7 +76,7 @@ def test_missing_importance_score_defaults_to_neutral_and_is_not_gated():
     """No importance_score at all (LLM omitted it) should default to 0.5 —
     at the threshold, not below it — same default used elsewhere in this
     module for the actual stored importance column."""
-    import main as mc_main
+    from workers.memory import worker as mc_main
 
     assert mc_main.MIN_IMPORTANCE_TO_STORE == 0.5
 

@@ -15,19 +15,16 @@ from unittest.mock import MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "schema-crawler-worker")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "platform-workers")
 
 
 @pytest.fixture(autouse=True)
 def _sys_path():
-    """memory-consumer also has a main.py — without evicting the cached
-    module, whichever test file imports "main" first in the session wins
-    sys.modules['main'] for every test after it, regardless of sys.path."""
+    """platform-workers on sys.path so `workers.schema_crawler` (and the
+    `libs.shared` it imports, via the backend/ pythonpath) resolve."""
     added = [p for p in (_SVC_DIR,) if p not in sys.path]
     sys.path[:0] = added
-    sys.modules.pop("main", None)
     yield
-    sys.modules.pop("main", None)
     for p in added:
         if p in sys.path:
             sys.path.remove(p)
@@ -44,9 +41,9 @@ _META = {
 
 @pytest.mark.unit
 def test_unchanged_schema_skips_describe_and_embed(monkeypatch):
-    import main as worker
+    from workers.schema_crawler import worker
 
-    from schema_hash import schema_hash
+    from workers.schema_crawler.schema_hash import schema_hash
     unchanged_hash = schema_hash(_META["columns"])
 
     cur = MagicMock()
@@ -71,7 +68,7 @@ def test_unchanged_schema_skips_describe_and_embed(monkeypatch):
 
 @pytest.mark.unit
 def test_changed_schema_runs_full_describe_embed_upsert(monkeypatch):
-    import main as worker
+    from workers.schema_crawler import worker
 
     cur = MagicMock()
     cur.fetchone.return_value = (str(uuid.uuid4()), "stale-hash-does-not-match")
@@ -96,7 +93,7 @@ def test_changed_schema_runs_full_describe_embed_upsert(monkeypatch):
 
 @pytest.mark.unit
 def test_new_table_with_no_existing_row_runs_full_pipeline(monkeypatch):
-    import main as worker
+    from workers.schema_crawler import worker
 
     cur = MagicMock()
     cur.fetchone.return_value = None  # no SchemaCatalog row yet
@@ -115,7 +112,7 @@ def test_new_table_with_no_existing_row_runs_full_pipeline(monkeypatch):
 
 @pytest.mark.unit
 def test_point_id_is_deterministic_across_recrawls():
-    import main as worker
+    from workers.schema_crawler import worker
 
     a = worker._point_id("t1", "w1", "ANALYTICS", "fact_stock_price")
     b = worker._point_id("t1", "w1", "ANALYTICS", "fact_stock_price")

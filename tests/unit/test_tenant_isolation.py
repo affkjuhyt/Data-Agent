@@ -80,7 +80,7 @@ _UNSCOPED_BUDGET = {
     "flow-builder": 8,
     "workflow-runtime": 5,
     "sandbox-executor": 1,
-    "schema-crawler-worker": 1,
+    "platform-workers": 1,
 }
 
 

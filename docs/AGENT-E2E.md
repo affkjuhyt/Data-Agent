@@ -22,7 +22,7 @@ docker exec -i dataagent-mongo mongosh --quiet < tests/e2e/seed-flow.js
 #    kb-backend — it collides with the kb-e2e stack on :8050.
 docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.app.yml \
   -f deploy/docker/docker-compose.agent-test.yml up -d --build \
-  litellm orchestrator workflow-runtime memory-consumer
+  litellm orchestrator workflow-runtime platform-workers-memory
 
 # (optional, only for SQL/code tools) sandbox-executor needs its runner image:
 #   docker build -t sandbox-runner:latest backend/services/sandbox-executor/sandbox_runner/
@@ -158,7 +158,7 @@ Production stability fixes (the real ask):
 
 ## 6. Evaluation + product readiness
 
-`scripts/agent_eval.py` runs a 10-case labelled query set (factual, summary,
+`tests/e2e/agent_eval.py` runs a 10-case labelled query set (factual, summary,
 comparison, list, short, greeting, out-of-domain, ambiguous, prompt-injection,
 data-query) and scores each turn on speed + behavioural quality.
 

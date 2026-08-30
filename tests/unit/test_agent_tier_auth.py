@@ -1,17 +1,20 @@
-"""Authentication on the agent tier — orchestrator and workflow-runtime.
+"""Authentication on the agent tier — workflow-runtime and the orchestrator
+package inside it.
 
-Both services previously had NO authentication of any kind: the orchestrator
+The agent tier previously had NO authentication of any kind: the orchestrator
 read the tenant from a raw header and fell back to DEV_TENANT_ID, workflow-
 runtime did the same, and both were published on host ports. Kong already had
-routes and the aeroflow-jwks plugin for each (deploy/docker/kong/kong-setup.sh) — the
+routes and the aeroflow-jwks plugin (deploy/docker/kong/kong-setup.sh) — the
 services just never checked that a request had been through it.
 
-These tests pin the shared trust decision they now use, the orchestrator's
-service-to-service leg to workflow-runtime, and the fact that the ports are no
-longer published.
+These tests pin the shared trust decision, the identity the orchestrator hands
+workflow-runtime for each in-process agent turn (it used to be a signed HMAC
+assertion over HTTP; now it is the same caller dict, built directly), and the
+fact that the ports are no longer published.
 """
 from __future__ import annotations
 
+import importlib.util
 import pathlib
 import sys
 
@@ -51,16 +54,23 @@ def _assertion(roles, *, service="orchestrator", user="u1", secret=SECRET):
     )
 
 
-def _agent_client():
-    """Import the orchestrator module under its own sys.path entry."""
-    svc = str(REPO_ROOT / "backend" / "services" / "orchestrator")
-    sys.path.insert(0, svc)
+def _caller_for():
+    """The orchestrator's in-process caller builder. agent_client.py is loaded
+    by path (with workflow-runtime on sys.path for its `orchestrator.config`
+    import) so the test does not drag in `orchestrator.executor`'s package
+    __init__ — and with it the planner, litellm and langfuse."""
+    svc = REPO_ROOT / "backend" / "services" / "workflow-runtime"
+    sys.path.insert(0, str(svc))
     try:
-        from executor.agent_client import _identity_headers
-        return _identity_headers
+        spec = importlib.util.spec_from_file_location(
+            "orch_agent_client_under_test", svc / "orchestrator" / "executor" / "agent_client.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module._caller_for
     finally:
-        if svc in sys.path:
-            sys.path.remove(svc)
+        if str(svc) in sys.path:
+            sys.path.remove(str(svc))
 
 
 class TestSharedTrustDecision:
@@ -102,9 +112,10 @@ class TestSharedTrustDecision:
             _resolve(x_service_assertion=_assertion(["platform-admin"], service="some-worker"))
         assert exc.value.status_code == 401
 
-    def test_orchestrator_accepts_no_asserting_services_by_default(self):
-        """Nothing calls the orchestrator service-to-service, so that route in is
-        shut: an empty allowlist rejects even a correctly signed token."""
+    def test_an_empty_allowlist_rejects_a_signed_assertion(self):
+        """workflow-runtime accepts no asserting services by default now (the
+        orchestrator calls it in-process): an empty allowlist rejects even a
+        correctly signed token."""
         with pytest.raises(HTTPException) as exc:
             _resolve(x_service_assertion=_assertion(["platform-admin"]), accepted=())
         assert exc.value.status_code == 401
@@ -149,26 +160,49 @@ class TestAllowlistParsing:
 
 
 class TestOrchestratorToRuntimeLeg:
+    """The orchestrator runs inside workflow-runtime and calls
+    run_conversation_stream(req, request, caller) directly. `caller` must be
+    the same dict the auth dependency would have produced, so the runtime's
+    tenant/role checks see exactly the real user."""
+
     def test_orchestrator_asserts_the_real_caller_roles(self):
-        headers = _agent_client()("user-42", TENANT, ["business-operator"])
-        caller = _resolve(x_service_assertion=headers["X-Service-Assertion"])
+        caller = _caller_for()("user-42", TENANT, ["business-operator"])
 
-        assert caller.user_id == "user-42"
-        assert caller.roles == ["business-operator"]
+        assert caller["user_id"] == "user-42"
+        assert caller["tenant_id"] == TENANT
+        assert caller["roles"] == ["business-operator"]
+        assert caller["auth_source"] == "service:orchestrator"
 
-    def test_orchestrator_sends_no_forgeable_identity_headers(self):
-        headers = _agent_client()("user-42", TENANT, ["viewer"])
+    def test_caller_has_exactly_the_shape_the_auth_dependency_produces(self):
+        """Nothing extra (no headers, no secrets) and nothing missing — the
+        runtime reads these keys and must not have to special-case the
+        orchestrator."""
+        caller = _caller_for()("user-42", TENANT, ["viewer"])
+        via_gateway = _resolve(
+            x_kong_verified="true", x_gateway_key=GATEWAY_KEY,
+            x_tenant_id=TENANT, x_user_roles="viewer", x_user_id="user-42",
+        )
+        expected = {"user_id", "user_name", "roles", "tenant_id", "auth_source"}
 
-        assert set(headers) == {"X-Service-Assertion"}
+        assert set(caller) == expected
+        assert {k: caller[k] for k in ("user_id", "roles", "tenant_id")} == {
+            "user_id": via_gateway.user_id, "roles": via_gateway.roles, "tenant_id": via_gateway.tenant_id,
+        }
 
     def test_empty_roles_travel_as_empty(self):
         """The orchestrator must not invent roles when the caller has none —
         workflow-runtime then hands an empty list to kb_search, which fails
         closed. Substituting a default here would reopen the escalation."""
-        headers = _agent_client()("user-42", TENANT, [])
-        caller = _resolve(x_service_assertion=headers["X-Service-Assertion"])
+        caller = _caller_for()("user-42", TENANT, [])
 
-        assert caller.roles == []
+        assert caller["roles"] == []
+
+    def test_roles_are_copied_not_shared(self):
+        roles = ["viewer"]
+        caller = _caller_for()("user-42", TENANT, roles)
+        roles.append("platform-admin")
+
+        assert caller["roles"] == ["viewer"]
 
 
 class TestPortsAreClosed:
@@ -180,8 +214,8 @@ class TestPortsAreClosed:
 
         for mapping in ('"8001:8001"', '"8003:8003"'):
             assert mapping not in compose, (
-                f"{mapping} is published again — orchestrator and workflow-runtime must be "
-                "reachable only through Kong"
+                f"{mapping} is published again — workflow-runtime (and the orchestrator "
+                "inside it) must be reachable only through Kong"
             )
 
     def test_vite_dev_proxy_does_not_forge_an_identity(self):

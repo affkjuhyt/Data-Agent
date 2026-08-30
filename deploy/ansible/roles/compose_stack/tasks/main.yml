@@ -109,11 +109,10 @@
   delay: 1
   changed_when: false
 
-- name: orchestrator / sandbox-executor are running
+- name: sandbox-executor is running
   ansible.builtin.command: docker inspect -f '{% raw %}{{.State.Status}}{% endraw %}' {{ item }}
   register: svc_state
   failed_when: svc_state.stdout != 'running'
   changed_when: false
   loop:
-    - dataagent-orchestrator
     - dataagent-sandbox-executor

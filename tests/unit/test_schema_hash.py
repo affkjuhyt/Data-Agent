@@ -9,7 +9,7 @@ import sys
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "schema-crawler-worker")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "platform-workers")
 
 
 @pytest.fixture(autouse=True)
@@ -24,14 +24,14 @@ def _sys_path():
 
 @pytest.mark.unit
 def test_same_columns_same_hash():
-    from schema_hash import schema_hash
+    from workers.schema_crawler.schema_hash import schema_hash
     cols = [{"name": "a", "type": "VARCHAR"}, {"name": "b", "type": "NUMBER"}]
     assert schema_hash(cols) == schema_hash(cols)
 
 
 @pytest.mark.unit
 def test_column_order_does_not_affect_hash():
-    from schema_hash import schema_hash
+    from workers.schema_crawler.schema_hash import schema_hash
     a = [{"name": "a", "type": "VARCHAR"}, {"name": "b", "type": "NUMBER"}]
     b = [{"name": "b", "type": "NUMBER"}, {"name": "a", "type": "VARCHAR"}]
     assert schema_hash(a) == schema_hash(b)
@@ -39,7 +39,7 @@ def test_column_order_does_not_affect_hash():
 
 @pytest.mark.unit
 def test_added_column_changes_hash():
-    from schema_hash import schema_hash
+    from workers.schema_crawler.schema_hash import schema_hash
     before = [{"name": "a", "type": "VARCHAR"}]
     after = [{"name": "a", "type": "VARCHAR"}, {"name": "b", "type": "NUMBER"}]
     assert schema_hash(before) != schema_hash(after)
@@ -47,7 +47,7 @@ def test_added_column_changes_hash():
 
 @pytest.mark.unit
 def test_type_change_changes_hash():
-    from schema_hash import schema_hash
+    from workers.schema_crawler.schema_hash import schema_hash
     before = [{"name": "a", "type": "VARCHAR"}]
     after = [{"name": "a", "type": "NUMBER"}]
     assert schema_hash(before) != schema_hash(after)
@@ -55,7 +55,7 @@ def test_type_change_changes_hash():
 
 @pytest.mark.unit
 def test_extra_keys_like_comment_do_not_affect_hash():
-    from schema_hash import schema_hash
+    from workers.schema_crawler.schema_hash import schema_hash
     a = [{"name": "a", "type": "VARCHAR", "comment": "x"}]
     b = [{"name": "a", "type": "VARCHAR", "comment": "different comment"}]
     assert schema_hash(a) == schema_hash(b)

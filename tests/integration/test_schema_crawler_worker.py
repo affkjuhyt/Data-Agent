@@ -23,7 +23,7 @@ pytestmark = pytest.mark.integration
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 ALEMBIC_INI = REPO_ROOT / "backend" / "alembic" / "alembic.ini"
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "schema-crawler-worker")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "platform-workers")
 
 
 def _async_dsn(libpq_dsn: str) -> str:
@@ -109,8 +109,8 @@ _FAKE_METADATA = {
 
 @pytest.fixture
 def worker(migrated_db, qdrant_container, monkeypatch):
-    """Imports backend/services/schema-crawler-worker/main.py the way the container
-    does (top-level import, service dir on sys.path), pointed at the
+    """Imports platform-workers/workers/schema_crawler/worker.py the way the
+    container does (service dir on sys.path), pointed at the
     migrated test DB + test Qdrant, with Snowflake discovery and the LLM
     describe/embed calls stubbed."""
     monkeypatch.setenv("EMBEDDING_DIM", "4")
@@ -120,9 +120,8 @@ def worker(migrated_db, qdrant_container, monkeypatch):
 
     added = [p for p in (_SVC_DIR,) if p not in sys.path]
     sys.path[:0] = added
-    sys.modules.pop("main", None)
     try:
-        import main as worker_mod
+        from workers.schema_crawler import worker as worker_mod
         importlib.reload(worker_mod)
 
         # Discovery is dispatched per engine now (metadata.py), so the patch
@@ -152,7 +151,6 @@ def worker(migrated_db, qdrant_container, monkeypatch):
 
         conn.close()
     finally:
-        sys.modules.pop("main", None)
         for p in added:
             if p in sys.path:
                 sys.path.remove(p)

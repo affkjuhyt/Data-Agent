@@ -6,7 +6,8 @@ litellm==1.59.9
 python-dotenv>=1.0
 httpx==0.27.2
 tenacity>=8.2
-# Langfuse v3 — OTEL-based (xem backend/services/orchestrator/requirements.txt để biết lý do).
+cachetools>=5  # orchestrator/agent_catalog.py guardrail-config TTL cache
+# Langfuse v3 — OTEL-based, thay cho v2 (callback + StatefulSpanClient nội bộ không ổn định).
 langfuse>=3.0,<4.0
 langchain>=0.3,<1.0
 langchain-core>=0.3,<1.0

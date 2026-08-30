@@ -59,21 +59,11 @@ run_kafka "/opt/kafka/bin/kafka-topics.sh \
   --config cleanup.policy=compact" \
   && echo "  → topic: __consumer_offsets (50 partitions, compact)"
 
-run_kafka "/opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server $BOOTSTRAP \
-  --command-config /tmp/admin.props \
-  --create --if-not-exists \
-  --topic audit.auth.events \
-  --partitions 3 \
-  --replication-factor 1 \
-  --config retention.ms=2592000000 \
-  --config cleanup.policy=delete" \
-  && echo "  → topic: audit.auth.events (3 partitions, 30d retention)"
-
-# Data-access audit: who ran which query. One event per query rather than per
-# login, so more partitions; retention deliberately LONGER than auth events,
-# because this is the record an investigation reads back and 30 days is shorter
-# than most incidents take to surface.
+# Data-access audit: who ran which query. One event per query, so several
+# partitions; 90d retention because this is the record an investigation reads
+# back and 30 days is shorter than most incidents take to surface. (Keycloak
+# auth events no longer transit Kafka — the platform-workers audit bridge
+# writes them straight into audit_logs.)
 run_kafka "/opt/kafka/bin/kafka-topics.sh   --bootstrap-server $BOOTSTRAP   --command-config /tmp/admin.props   --create --if-not-exists   --topic audit.data.access   --partitions 6   --replication-factor 1   --config retention.ms=7776000000   --config cleanup.policy=delete"   && echo "  → topic: audit.data.access (6 partitions, 90d retention)"
 
 run_kafka "/opt/kafka/bin/kafka-topics.sh \
@@ -128,7 +118,7 @@ run_kafka "/opt/kafka/bin/kafka-topics.sh \
 # sandbox_schema_docs.docx §2.8 — DDL-change events that trigger a targeted
 # re-crawl instead of waiting for the next cron tick. Producer side (a
 # Snowflake Stream → Kafka bridge) is external infra, out of this repo's
-# scope — schema-crawler-worker only ever consumes this topic.
+# scope — the platform-workers schema-crawler only ever consumes this topic.
 run_kafka "/opt/kafka/bin/kafka-topics.sh \
   --bootstrap-server $BOOTSTRAP \
   --command-config /tmp/admin.props \
@@ -143,28 +133,6 @@ run_kafka "/opt/kafka/bin/kafka-topics.sh \
 # ── 2. Enable ACLs (authorizer must be configured) ─────────────────────
 echo ""
 echo "🛡️  Applying ACLs..."
-
-# audit-bridge: WRITE only to audit.auth.events
-run_kafka "/opt/kafka/bin/kafka-acls.sh \
-  --bootstrap-server $BOOTSTRAP \
-  --command-config /tmp/admin.props \
-  --add \
-  --allow-principal User:audit-bridge \
-  --operation Write \
-  --operation Describe \
-  --topic audit.auth.events" \
-  && echo "  → audit-bridge: Write + Describe on audit.auth.events"
-
-# audit-consumer: READ from audit.auth.events + consumer group access
-run_kafka "/opt/kafka/bin/kafka-acls.sh \
-  --bootstrap-server $BOOTSTRAP \
-  --command-config /tmp/admin.props \
-  --add \
-  --allow-principal User:audit-consumer \
-  --operation Read \
-  --operation Describe \
-  --topic audit.auth.events" \
-  && echo "  → audit-consumer: Read + Describe on audit.auth.events"
 
 # workflow-runtime PRODUCES data-access events. Without this ACL the send is
 # rejected and every audit record is lost with only a client-side warning —
@@ -306,11 +274,10 @@ echo ""
 echo "✅ Kafka ACL setup complete."
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  audit-bridge      → WRITE  audit.auth.events"
-echo "  audit-consumer    → READ   audit.auth.events (group: audit-consumer-group)"
+echo "  audit-consumer    → READ   audit.data.access (group: audit-consumer-group)  [platform-workers-audit]"
 echo "  release-worker    → WRITE+READ+CREATE release.* topics"
 echo "  workflow-runtime  → WRITE  memory.extraction.requested"
-echo "  memory-consumer   → READ   memory.extraction.requested (group: memory-consumer-group), WRITE memory.extraction.dlq"
-echo "  schema-crawler-worker → READ ddl.changes (group: schema-crawler-worker-group)"
+echo "  memory-consumer   → READ   memory.extraction.requested (group: memory-consumer-group), WRITE memory.extraction.dlq  [platform-workers-memory]"
+echo "  schema-crawler-worker → READ ddl.changes (group: schema-crawler-worker-group)  [platform-workers-schema-crawler]"
 echo "  admin             → ALL    (inter-broker + management)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

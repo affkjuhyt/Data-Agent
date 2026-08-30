@@ -13,7 +13,6 @@ KafkaServer {
     username="admin"
     password="REPLACE_WITH_KAFKA_ADMIN_PASSWORD"
     user_admin="REPLACE_WITH_KAFKA_ADMIN_PASSWORD"
-    user_audit-bridge="REPLACE_WITH_AUDIT_BRIDGE_PASSWORD"
     user_audit-consumer="REPLACE_WITH_AUDIT_CONSUMER_PASSWORD"
     user_ci-service="REPLACE_WITH_CI_SERVICE_PASSWORD"
     user_release-worker="REPLACE_WITH_RELEASE_WORKER_PASSWORD"

@@ -1,7 +1,7 @@
 # E2E — một lượt hỏi thật, từ trình duyệt tới kho dữ liệu
 
 Bộ chạy này dựng **đúng chuỗi sản phẩm**: Keycloak → Kong (JWT, tiêm danh tính)
-→ orchestrator → workflow-runtime → semantic layer → sandbox-executor (SQL chỉ-đọc)
+→ workflow-runtime (orchestrator, in-process) → semantic layer → sandbox-executor (SQL chỉ-đọc)
 → kho demo, với LLM là **ollama trên máy** qua litellm. Không mock ở bất kỳ tầng nào.
 
 ```bash

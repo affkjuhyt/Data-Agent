@@ -98,16 +98,16 @@ _E0 = _vec_at_sim(1.0)   # reference vector — "Note A"
 _E1 = [0.0, 1.0, 0.0, 0.0]  # orthogonal — sim(_E0, _E1) = 0, "completely different fact"
 
 
-# ─── 1. Catch-all fact_key collision fix (memory-consumer) ────────────────
+# ─── 1. Catch-all fact_key collision fix (memory worker) ────────────────
 
 @pytest.fixture
 def mc_env(migrated_db, qdrant_container, monkeypatch):
-    svc_dir = str(REPO_ROOT / "backend" / "services" / "memory-consumer")
+    svc_dir = str(REPO_ROOT / "backend" / "services" / "platform-workers")
     added = [p for p in (svc_dir,) if p not in sys.path]
     sys.path[:0] = added
     try:
         import importlib
-        import main as mc_main
+        from workers.memory import worker as mc_main
         importlib.reload(mc_main)
 
         monkeypatch.setattr(mc_main, "EMBEDDING_DIM", 4)

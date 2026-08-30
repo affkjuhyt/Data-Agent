@@ -46,8 +46,6 @@ RRF_TOP_N = int(os.getenv("RRF_TOP_N", "10"))
 RERANK_TOP_N = int(os.getenv("RERANK_TOP_N", "5"))
 
 RRF_K = int(os.getenv("RRF_K", "60"))
-KB_COMPUTE_URL = os.getenv("KB_COMPUTE_URL", "").rstrip("/")
-RRF_REMOTE_TIMEOUT_S = float(os.getenv("RRF_REMOTE_TIMEOUT_S", "2.0"))
 GRAPH_SEED_MARGIN = int(os.getenv("GRAPH_SEED_MARGIN", "3"))
 MAX_PREFERRED_TYPES = int(os.getenv("MAX_PREFERRED_TYPES", "2"))
 MAX_TYPED_GROUPS = int(os.getenv("MAX_TYPED_GROUPS", "3"))

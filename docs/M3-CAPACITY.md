@@ -4,6 +4,11 @@ How to run the full Knowledge-Base stack on a MacBook (M3 Pro, 11 cores, 18 GB)
 for high-concurrent-user (CCU) development without swapping / lagging the machine,
 and the language split (Go vs Python) that keeps the CCU-hot paths fast.
 
+> **Note (30-08-2026):** `kb-gateway` and `kb-compute` were removed — rate limiting is now
+> Kong's `rate-limiting` plugin on `kb-backend` (`deploy/docker/kong/kong-setup.sh` §10) and
+> RRF fusion runs in-process in `kb_backend` (`rrf_merge`). References below to those
+> services are historical measurements, kept as-is.
+
 ---
 
 ## 1. Machine baseline
@@ -120,8 +125,7 @@ backend/services/
   kb-backend/         # Python — keep (business/CRUD/ORM); thin routing may move to the Go BFF
   kb-ingestion-worker/# Python — LLM steps only (prompt build + parse); CPU steps call kb-compute
   model-service/      # Python — embed/rerank/LLM  (unchanged)
-  kb-gateway/         # NEW · Go — edge/BFF/fan-out/SSE  (CCU front door)
-  kb-compute/         # NEW · Go — RRF/BM25/dedup/graph-build kernels (gRPC)
+  (kb-gateway/ and kb-compute/ — removed 30-08-2026, see note at top)
 backend/libs/
   proto/              # .proto contracts for the Go↔Python seams
 ```

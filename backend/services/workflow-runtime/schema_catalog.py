@@ -11,11 +11,12 @@ straight into the SQL-generation prompt without a second DB round-trip.
 """
 import logging
 import os
-from typing import Any, List, Optional, cast
+from typing import Any, List, Optional
 
-import httpx
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams, Filter, FieldCondition, MatchValue
+
+from libs.shared.embeddings import aembed_one
 
 logger = logging.getLogger(__name__)
 
@@ -54,14 +55,7 @@ async def close_schema_catalog_qdrant() -> None:
 
 async def _embed(text: str) -> Optional[list[Any]]:
     try:
-        async with httpx.AsyncClient(timeout=30) as http:
-            resp = await http.post(
-                f"{_LITELLM_BASE}/v1/embeddings",
-                headers={"Authorization": f"Bearer {_LITELLM_KEY}"},
-                json={"model": "embedder", "input": text},
-            )
-            resp.raise_for_status()
-            return cast(list[Any], resp.json()["data"][0]["embedding"])
+        return await aembed_one(text, base_url=_LITELLM_BASE, api_key=_LITELLM_KEY)
     except Exception as e:
         logger.warning("schema_catalog | embed failed: %s", e)
         return None

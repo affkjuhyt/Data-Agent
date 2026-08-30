@@ -6,13 +6,13 @@ from datetime import datetime, timezone
 from typing import Any, List, Optional, cast
 from uuid import UUID, uuid4
 
-import httpx
 from croniter import croniter
 from sqlalchemy import select, func, update
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams, Filter, FieldCondition, MatchValue
 
 from libs.database_connector.postgres_connector import client
+from libs.shared.embeddings import aembed_one
 from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
     AgentMemoriesORM, MemoryPolicyORM, EpisodicMemoryORM, FutureMemoryORM,
 )
@@ -67,14 +67,7 @@ async def close_qdrant() -> None:
 
 async def _embed(text: str) -> Optional[list[Any]]:
     try:
-        async with httpx.AsyncClient(timeout=30) as client_:
-            resp = await client_.post(
-                f"{_LITELLM_BASE}/v1/embeddings",
-                headers={"Authorization": f"Bearer {_LITELLM_KEY}"},
-                json={"model": "embedder", "input": text},
-            )
-            resp.raise_for_status()
-            return cast(list[Any], resp.json()["data"][0]["embedding"])
+        return await aembed_one(text, base_url=_LITELLM_BASE, api_key=_LITELLM_KEY)
     except Exception as e:
         logger.warning("embed failed — falling back to full-text search: %s", e)
         return None

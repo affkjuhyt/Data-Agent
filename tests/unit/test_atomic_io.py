@@ -1,6 +1,6 @@
 """Unit tests for shared.atomic_io — crash-safe state-file writes.
 
-Used by jwks-refresher and audit-bridge to persist poll cursors / last-seen
+Used by the platform-workers audit bridge to persist poll cursors / last-seen
 key ids. The whole point is that a write never leaves a truncated file, so the
 tests assert the result is all-or-nothing and that no temp files leak.
 """

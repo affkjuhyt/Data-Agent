@@ -7,7 +7,8 @@ address is not configured in this process is "unknown" rather than guessed.
 
 Postgres / Redis / Mongo / Kafka reuse the connections workflow-runtime already
 holds (db.client, redis_cache._client, mongo_client, kafka_producer._producer),
-so what is reported is what the runtime itself can reach.
+so what is reported is what the runtime itself can reach. The orchestrator is
+not probed: it runs inside this process (orchestrator/ package).
 """
 from __future__ import annotations
 
@@ -28,7 +29,6 @@ _KINDS = {
     "kafka": "queue",
     "litellm": "llm",
     "sandbox-executor": "service",
-    "orchestrator": "service",
     "kb-backend": "service",
 }
 
@@ -148,7 +148,6 @@ _PROBES: dict[str, Callable[[], Awaitable[str]]] = {
     "kafka": _probe_kafka,
     "litellm": _http_probe("LITELLM_BASE_URL", "/health/liveliness"),
     "sandbox-executor": _http_probe("SANDBOX_EXECUTOR_URL", "/health"),
-    "orchestrator": _http_probe("ORCHESTRATOR_URL", "/health"),
     "kb-backend": _http_probe("KB_BACKEND_URL", "/health"),
 }
 

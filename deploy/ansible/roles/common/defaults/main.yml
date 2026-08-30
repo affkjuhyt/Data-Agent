@@ -8,7 +8,7 @@ compose_project: "dataagent-{{ env_name }}"
 compose_dir: "{{ project_dir }}/deploy/docker"
 compose_base_files:
   - docker-compose.yml                    # infra: postgres, redis, mongo, kafka, minio, openbao, keycloak, kong, litellm…
-  - docker-compose.app.yml                # services: orchestrator, workflow-runtime, sandbox-executor, memory-consumer…
+  - docker-compose.app.yml                # services: workflow-runtime (incl. orchestrator), sandbox-executor, platform-workers-*…
   - docker-compose.local.yml              # alembic migrate + tenant seed (one-shot jobs)
 compose_extra_files: []
 compose_files: "{{ compose_base_files + compose_extra_files }}"
@@ -30,8 +30,7 @@ compose_services:
   - seed
   - sandbox-executor
   - workflow-runtime
-  - orchestrator
-  - memory-consumer
+  - platform-workers-memory
 compose_build: policy                     # never | policy | always
 # Services carry `profiles: [runtime]`; `docker compose config/ps/images` hide
 # them unless the profile is active (explicit `up <service>` does not need it).

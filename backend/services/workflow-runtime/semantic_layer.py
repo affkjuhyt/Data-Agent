@@ -19,8 +19,9 @@ layer only claims the questions it can answer exactly.
 from __future__ import annotations
 
 import logging
-import time
 from typing import Any
+
+from cachetools import TTLCache
 
 from libs.semantic import (
     Aggregation,
@@ -46,7 +47,7 @@ logger = logging.getLogger(__name__)
 # short TTL is plenty and keeps a newly approved version reaching every replica
 # without a restart or a pub/sub channel.
 _CACHE_TTL_S = 300
-_cache: dict[str, tuple[float, MetricResolver]] = {}
+_cache: TTLCache[str, MetricResolver] = TTLCache(maxsize=256, ttl=_CACHE_TTL_S)
 
 
 def _row_to_definition(row: Any) -> MetricDefinition:
@@ -144,9 +145,8 @@ async def _load_resolver(tenant_id: str) -> MetricResolver:
 
 async def get_resolver(tenant_id: str) -> MetricResolver:
     cached = _cache.get(tenant_id)
-    now = time.monotonic()
-    if cached and now - cached[0] < _CACHE_TTL_S:
-        return cached[1]
+    if cached is not None:
+        return cached
     try:
         resolver = await _load_resolver(tenant_id)
     except Exception as e:
@@ -154,7 +154,7 @@ async def get_resolver(tenant_id: str) -> MetricResolver:
         # existing LLM path — not fail the turn.
         logger.warning("semantic | registry load failed tenant=%s: %s", tenant_id, e)
         return MetricResolver(build_catalog([], {}))
-    _cache[tenant_id] = (now, resolver)
+    _cache[tenant_id] = resolver
     return resolver
 
 

@@ -1,4 +1,4 @@
-"""Multi-engine schema discovery (backend/services/schema-crawler-worker).
+"""Multi-engine schema discovery (backend/services/platform-workers/workers/schema_crawler).
 
 The crawler was hardcoded to Snowflake — `WHERE w.service = 'Snowflake'`, one
 metadata module, one credential env var — while the DB Connector node, which
@@ -22,7 +22,7 @@ from unittest.mock import MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "schema-crawler-worker")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "platform-workers")
 
 pytestmark = pytest.mark.unit
 
@@ -42,7 +42,7 @@ def _sys_path():
 
 
 def _metadata():
-    import metadata
+    from workers.schema_crawler import metadata
     return metadata
 
 
@@ -190,7 +190,7 @@ class TestPostgresDiscovery:
         conn = MagicMock()
         conn.cursor.return_value = cursor
 
-        import postgres_metadata
+        from workers.schema_crawler import postgres_metadata
         monkeypatch.setattr(postgres_metadata, "_connect", lambda params: conn)
         return postgres_metadata.discover_and_describe(
             {"host": "h", "database": "d", "user": "u", "password": "p"},
@@ -257,7 +257,7 @@ class TestClickHouseDiscovery:
             MagicMock(result_rows=table_rows),
             MagicMock(result_rows=column_rows),
         ]
-        import clickhouse_metadata
+        from workers.schema_crawler import clickhouse_metadata
         monkeypatch.setattr(clickhouse_metadata, "_client", lambda params: client)
         return clickhouse_metadata.discover_and_describe({"host": "h", "database": "analytics"})
 
@@ -286,7 +286,7 @@ class TestClickHouseDiscovery:
 
     def test_missing_driver_raises_a_clear_error(self, monkeypatch):
         """Lazy import, so a build without it still crawls the other engines."""
-        import clickhouse_metadata
+        from workers.schema_crawler import clickhouse_metadata
 
         monkeypatch.setitem(sys.modules, "clickhouse_connect", None)
         with pytest.raises((RuntimeError, TypeError, AttributeError)):
@@ -299,11 +299,12 @@ class TestDispatch:
         calls = []
 
         for name in ("snowflake_metadata", "postgres_metadata", "clickhouse_metadata"):
-            mod = types.ModuleType(name)
+            qualified = f"workers.schema_crawler.{name}"
+            mod = types.ModuleType(qualified)
             mod.discover_and_describe = (
                 lambda params, tables, _n=name: calls.append(_n) or {}
             )
-            monkeypatch.setitem(sys.modules, name, mod)
+            monkeypatch.setitem(sys.modules, qualified, mod)
 
         for engine in metadata.SUPPORTED_ENGINES:
             metadata.discover_and_describe(engine, {}, None)
@@ -321,19 +322,19 @@ class TestWarehouseDiscovery:
     single line that kept the catalog and the agent looking at different
     databases.
 
-    Asserted against main.py's source rather than by importing it: the module
+    Asserted against worker.py's source rather than by importing it: the module
     pulls Kafka, Qdrant and psycopg2 at import time, and stubbing all three to
     check a WHERE clause makes the test about the stubs. The filtering semantics
     on top of the query are covered by TestEngineNormalisation.
     """
 
     def _source(self) -> str:
-        return (pathlib.Path(_SVC_DIR) / "main.py").read_text(encoding="utf-8")
+        return (pathlib.Path(_SVC_DIR) / "workers" / "schema_crawler" / "worker.py").read_text(encoding="utf-8")
 
     def _sql_literals(self) -> list[str]:
         """Executable string constants only, docstrings excluded.
 
-        main.py's own docstring quotes the old `w.service = 'Snowflake'` filter
+        worker.py's own docstring quotes the old `w.service = 'Snowflake'` filter
         while explaining why it is gone, so a raw text scan would trip on the
         explanation instead of on real SQL.
         """

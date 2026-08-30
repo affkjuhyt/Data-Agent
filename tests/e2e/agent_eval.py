@@ -11,8 +11,8 @@ Answer *content* quality can't be judged mechanically (and on a tiny local model
 is not representative) — this measures behavioural quality: does the pipeline
 complete, return a non-empty answer, route/guard correctly, and not error.
 
-  python3 scripts/agent_eval.py                 # sequential eval
-  CONC=3 python3 scripts/agent_eval.py          # also run a concurrency sweep
+  python3 tests/e2e/agent_eval.py               # sequential eval
+  CONC=3 python3 tests/e2e/agent_eval.py        # also run a concurrency sweep
 """
 import json
 import os
@@ -20,7 +20,7 @@ import time
 import urllib.request
 import concurrent.futures as cf
 
-BASE   = os.environ.get("BASE_URL", "http://localhost:8003")
+BASE   = os.environ.get("BASE_URL", "http://localhost:8001")
 AGENT  = os.environ.get("AGENT_ID", "00000000-0000-0000-0000-000000000030")
 TENANT = os.environ.get("TENANT", "a0000000-0000-0000-0000-000000000001")
 HEADERS = {

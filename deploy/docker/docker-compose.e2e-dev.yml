@@ -22,7 +22,8 @@ services:
       # behind sql_guard). Building sandbox-runner:latest is only needed for
       # /execute/python — `docker build -t sandbox-runner:latest backend/services/sandbox-executor/sandbox_runner/`.
       SANDBOX_POOL_SIZE: "0"
-  memory-consumer:  { image: infra-memory-consumer }
+  # platform-workers-* carry an explicit `image:` in docker-compose.app.yml, so
+  # the dev stack reuses the same tag without an override here.
 
   workflow-runtime:
     image: infra-workflow-runtime
@@ -33,15 +34,6 @@ services:
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
       OTEL_SDK_DISABLED: "true"      # no jaeger in this stack — stop the export retry spam
-
-  orchestrator:
-    image: infra-orchestrator
-    volumes:
-      - ../../backend/services/orchestrator:/app
-      - ../../backend/libs:/app/libs:ro
-    environment:
-      PYTHONDONTWRITEBYTECODE: "1"
-      OTEL_SDK_DISABLED: "true"
 
   # docker-compose.local.yml pins postgres:16 (Debian) for psql; the alpine tag
   # is what the stack's own postgres runs and is already present locally.

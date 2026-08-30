@@ -19,15 +19,15 @@ import math
 import os
 import logging
 from datetime import datetime, timezone
-from typing import Any, List, Optional, cast
+from typing import Any, List, Optional
 from uuid import UUID, uuid4
 
-import httpx
 from sqlalchemy import select
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
 
 from libs.database_connector.postgres_connector import client
+from libs.shared.embeddings import aembed_one
 from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
     WorkflowMemoryORM, SchemaMemoryORM,
 )
@@ -72,14 +72,7 @@ async def close_workflow_qdrant() -> None:
 
 async def _embed(text: str) -> Optional[list[Any]]:
     try:
-        async with httpx.AsyncClient(timeout=30) as http:
-            resp = await http.post(
-                f"{_LITELLM_BASE}/v1/embeddings",
-                headers={"Authorization": f"Bearer {_LITELLM_KEY}"},
-                json={"model": "embedder", "input": text},
-            )
-            resp.raise_for_status()
-            return cast(list[Any], resp.json()["data"][0]["embedding"])
+        return await aembed_one(text, base_url=_LITELLM_BASE, api_key=_LITELLM_KEY)
     except Exception as e:
         logger.warning("workflow_memory | embed failed, point will be PG-only: %s", e)
         return None

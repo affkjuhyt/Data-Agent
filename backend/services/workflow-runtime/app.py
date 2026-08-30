@@ -3,6 +3,7 @@ from dotenv import find_dotenv, load_dotenv
 load_dotenv(find_dotenv())
 
 import litellm
+
 # Tắt LiteLLM's built-in Langfuse integration — tracing đi qua LangChain's
 # CallbackHandler (responder) + observability.observe() decorator (planner,
 # judge — gọi litellm trực tiếp, xem nodes/model_harness/planner.py, judge.py).
@@ -13,6 +14,7 @@ litellm.success_callback = [cb for cb in litellm.success_callback if cb != "lang
 litellm.failure_callback = [cb for cb in litellm.failure_callback if cb != "langfuse"]
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -20,26 +22,44 @@ from libs.shared import audit
 from libs.shared.logger import setup_logging
 
 setup_logging("workflow-runtime")
+logger = logging.getLogger(__name__)
 
-from fastapi import Depends, FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-
+from auth import get_current_user
 from config import CORS_ORIGINS, REDIS_URL
 from db import close_db, init_db
+from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from kafka_producer import close_kafka_producer, init_kafka_producer, produce_event
 from memory_middleware import close_qdrant, init_qdrant
-from workflow_memory import close_workflow_qdrant, init_workflow_qdrant
-from schema_catalog import close_schema_catalog_qdrant, init_schema_catalog_qdrant
-from redis_cache import init_redis, close_redis
 from mongo_client import close_mongo, init_mongo
-from auth import get_current_user
+from orchestrator.routers import reviews as orch_reviews
+from orchestrator.routers import stream as orch_stream
+from orchestrator.routers import traces as orch_traces
+from redis_cache import close_redis, init_redis
 from routers import (
-    billing, catalog, conversations, db_connector, health, llm, platform, reviews,
-    sandbox_ops, schema_catalog as schema_catalog_router, schema_memory, traces,
+    billing,
+    catalog,
+    conversations,
+    db_connector,
+    health,
+    llm,
+    platform,
+    reviews,
+    sandbox_ops,
+    schema_memory,
+    traces,
+)
+from routers import (
+    schema_catalog as schema_catalog_router,
 )
 from runtime_services.conversation_runner import invalidate_graph_version
+from schema_catalog import close_schema_catalog_qdrant, init_schema_catalog_qdrant
+from workflow_memory import close_workflow_qdrant, init_workflow_qdrant
+
+from libs.basemodel.services_databaseconnector.shared_model import RetryConfig
 from libs.database_connector.mongo_connector import client as mongo_client
 from libs.database_connector.postgres_connector import client as pg_client
+from libs.database_connector.redis_connector import RedisClient
 from libs.shared.cache_invalidation import run_graph_invalidation_listener
 from libs.shared.observability import setup_observability
 
@@ -58,6 +78,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # drops events until a sink is installed here.
     audit.set_sink(produce_event)
 
+    # Orchestrator planning-state checkpoint cache (orchestrator/session_cache.py
+    # reads request.app.state.redis). Separate from redis_cache.py's raw client
+    # on purpose: session_cache needs RedisClient's is_healthy()/health loop.
+    orch_redis = RedisClient()
+    orch_redis.set_url(REDIS_URL)
+    try:
+        await orch_redis.open(RetryConfig(count=1))
+        logger.info("orchestrator Redis connected")
+    except Exception as e:  # noqa: BLE001 — health loop retries; the cache is optional
+        logger.warning("orchestrator Redis unavailable at startup, health loop will retry: %s", e)
+    app.state.redis = orch_redis
+
     def _invalidate_graph_version(workflow_version_id: str) -> None:
         # invalidate_graph_version() returns the evicted-entry count for logging
         # at its own call sites; the listener callback contract is fire-and-forget
@@ -67,6 +99,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     tasks = [
         asyncio.create_task(pg_client.health_check_loop()),
         asyncio.create_task(mongo_client.health_check_loop()),
+        asyncio.create_task(orch_redis.health_check_loop()),
         # Evict locally-cached graphs when another replica/flow-builder signals a
         # republished version. No-op if REDIS_URL is unset.
         asyncio.create_task(
@@ -89,6 +122,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await close_schema_catalog_qdrant()
     await close_db()
     await close_redis()
+    await orch_redis.close()
     audit.set_sink(None)
     await close_kafka_producer()
 
@@ -108,6 +142,7 @@ def create_app() -> FastAPI:
     # /health stays open — Kong's upstream probe and the compose healthcheck
     # both run before any token exists, and it returns nothing but a literal.
     app.include_router(health.router)
+    app.include_router(orch_stream.health_router)
 
     # Every other router is authenticated at include time rather than route by
     # route: this service had NO authentication at all, and a per-route
@@ -128,6 +163,11 @@ def create_app() -> FastAPI:
         db_connector.router,
         platform.router,
         billing.router,
+        # Orchestrator (multi-agent front door, /api/orchestrate/*) — same
+        # process since the merge; its agent calls are in-process too.
+        orch_stream.router,
+        orch_reviews.router,
+        orch_traces.router,
     ):
         app.include_router(r, dependencies=authed)
 

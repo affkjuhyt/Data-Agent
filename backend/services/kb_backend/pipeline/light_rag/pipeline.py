@@ -11,7 +11,6 @@ import time
 import unicodedata
 import uuid as _uuid
 
-import httpx
 
 from neo4j import AsyncDriver
 from qdrant_client import models as qmodels
@@ -549,45 +548,8 @@ def rrf_merge(ranked_lists: list[list[dict[str, Any]]], top_n: int) -> list[dict
     return merged
 
 
-_rrf_client: httpx.AsyncClient | None = None
-
-
-def _get_rrf_client() -> httpx.AsyncClient:
-    global _rrf_client
-    if _rrf_client is None:
-        _rrf_client = httpx.AsyncClient(timeout=cfg.RRF_REMOTE_TIMEOUT_S)
-    return _rrf_client
-
-
 async def rrf_fuse(ranked_lists: list[list[dict[str, Any]]], top_n: int) -> list[dict[str, Any]]:
-    if not cfg.KB_COMPUTE_URL:
-        return rrf_merge(ranked_lists, top_n)
-    try:
-        id_lists = [
-            [{"point_id": pid} for h in lst if (pid := h.get("point_id"))]
-            for lst in ranked_lists
-        ]
-        resp = await _get_rrf_client().post(
-            f"{cfg.KB_COMPUTE_URL}/rrf-fuse",
-            json={"lists": id_lists, "top_n": top_n, "k": cfg.RRF_K},
-        )
-        resp.raise_for_status()
-        fused = resp.json()["hits"]
-        meta: dict[str, dict[str, Any]] = {}
-        for result_list in ranked_lists:
-            for hit in result_list:
-                pid = hit.get("point_id")
-                if pid:
-                    meta.setdefault(pid, hit)
-        merged = [
-            {**meta[h["point_id"]], "rrf_score": h["rrf_score"], "rrf_rank": h["rrf_rank"]}
-            for h in fused
-        ]
-        log.info("rrf | via kb-compute → %d hits", len(merged))
-        return merged
-    except Exception as exc:
-        log.warning("rrf | kb-compute failed (%s) — in-process fallback", exc)
-        return rrf_merge(ranked_lists, top_n)
+    return rrf_merge(ranked_lists, top_n)
 
 
 async def rerank(

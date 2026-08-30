@@ -47,11 +47,11 @@ def _headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {key}"} if key else {}
 
 
-async def _get(path: str, *, params: dict[str, Any] | None = None, timeout: float) -> Any:
+async def _get(path: str, *, params: dict[str, Any] | None = None, timeout_s: float) -> Any:
     base = _base_url()
     if not base:
         raise RuntimeError("LITELLM_BASE_URL not set")
-    async with httpx.AsyncClient(timeout=timeout) as http:
+    async with httpx.AsyncClient(timeout=timeout_s) as http:
         resp = await http.get(f"{base}{path}", params=params, headers=_headers())
     resp.raise_for_status()
     return resp.json()
@@ -86,7 +86,7 @@ def _model_row(entry: dict[str, Any]) -> dict[str, Any]:
 
 async def list_models() -> dict[str, Any]:
     try:
-        payload = await _get("/model/info", timeout=_MODELS_TIMEOUT_S)
+        payload = await _get("/model/info", timeout_s=_MODELS_TIMEOUT_S)
     except Exception as e:  # noqa: BLE001 — availability is the answer, not an error
         logger.warning("litellm /model/info unavailable: %s", _error_text(e))
         return {"items": [], "available": False, "error": _error_text(e)}
@@ -128,7 +128,7 @@ async def models_health(*, force: bool = False) -> dict[str, Any]:
         if cached is not None and not force and time.monotonic() - _health_cache["at"] < _HEALTH_CACHE_TTL_S:
             return cached
         try:
-            payload = await _get("/health", timeout=_HEALTH_TIMEOUT_S)
+            payload = await _get("/health", timeout_s=_HEALTH_TIMEOUT_S)
             result = {"items": _health_items(payload if isinstance(payload, dict) else {}), "available": True}
         except Exception as e:  # noqa: BLE001
             logger.warning("litellm /health unavailable: %s", _error_text(e))
@@ -233,7 +233,7 @@ async def spend(days: int = 30) -> dict[str, Any]:
     # Per-request logs carry model + tokens — the richest source when LiteLLM
     # has a database attached (spend logging is DB-backed).
     try:
-        rows = await _get("/spend/logs", params=params, timeout=_SPEND_TIMEOUT_S)
+        rows = await _get("/spend/logs", params=params, timeout_s=_SPEND_TIMEOUT_S)
         if isinstance(rows, list):
             agg = aggregate_spend_logs(rows, start, end)
             return {
@@ -246,7 +246,7 @@ async def spend(days: int = 30) -> dict[str, Any]:
 
     # Daily report is available even where per-request logs are not exposed.
     try:
-        rows = await _get("/global/spend/report", params=params, timeout=_SPEND_TIMEOUT_S)
+        rows = await _get("/global/spend/report", params=params, timeout_s=_SPEND_TIMEOUT_S)
         if isinstance(rows, list):
             agg = aggregate_spend_report(rows, start, end)
             return {

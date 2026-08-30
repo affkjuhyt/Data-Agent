@@ -228,7 +228,7 @@ async def get_messages_with_traces(
                         "status": t.status,
                         "latency_ms": t.latency_ms,
                     })
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 — same contract as db.get_messages_ui: a read error is an empty thread, not a 500
         logger.warning("get_messages_with_traces failed conv_id=%s: %s", conversation_id, e)
         return []
 

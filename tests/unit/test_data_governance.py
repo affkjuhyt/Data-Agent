@@ -44,7 +44,7 @@ from libs.shared.freshness import (
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _RUNTIME_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
-_CRAWLER_DIR = str(REPO_ROOT / "backend" / "services" / "schema-crawler-worker")
+_CRAWLER_DIR = str(REPO_ROOT / "backend" / "services" / "platform-workers")
 
 pytestmark = pytest.mark.unit
 
@@ -85,7 +85,7 @@ def _stub_missing(monkeypatch, *specs: tuple[str, dict]) -> None:
 
 # Bare module names that several services each define at their own top level.
 # Whichever service's directory reached sys.path first wins and stays cached, so
-# a full-suite run can leave `observability` pointing at the orchestrator's copy
+# a full-suite run can leave `observability` pointing at another service's copy
 # while this file wants workflow-runtime's. Dropped from the cache (monkeypatch
 # restores them afterwards) so the import below resolves against the path this
 # fixture just prepended.
@@ -355,7 +355,7 @@ class TestDescribe:
 
 class TestTablePolicy:
     def _policy(self, config, schema="public", table="orders"):
-        import governance
+        from workers.schema_crawler import governance
         return governance.table_policy(config, schema, table)
 
     def test_defaults_apply_and_the_table_entry_overrides_them(self, crawler_path):
@@ -421,24 +421,24 @@ class TestTablePolicy:
 class TestCrawlerWrites:
     def test_freshness_column_resolves_to_the_warehouses_own_spelling(self, crawler_path):
         """Snowflake upper-cases what an operator wrote as `created_at`."""
-        import main
+        from workers.schema_crawler import worker as main
         columns = [{"name": "ID"}, {"name": "CREATED_AT"}]
         assert main.resolve_freshness_column("created_at", columns, "ORDERS") == "CREATED_AT"
 
     def test_a_declared_column_that_does_not_exist_is_caught_before_the_query(self, crawler_path):
         """Otherwise it is a failing MAX() against that table on every crawl,
         forever, with the table reported freshness-unknown either way."""
-        import main
+        from workers.schema_crawler import worker as main
         assert main.resolve_freshness_column("updated_at", [{"name": "id"}], "orders") == ""
 
     def test_no_declared_column_means_no_watermark_query(self, crawler_path):
-        import main
+        from workers.schema_crawler import worker as main
         assert main.resolve_freshness_column("", [{"name": "created_at"}], "orders") == ""
 
     def test_checked_at_is_only_stamped_when_a_watermark_was_obtained(self, crawler_path):
         """A checked_at with no value would read as 'measured, and it is null'
         rather than 'the measurement failed'."""
-        import main
+        from workers.schema_crawler import worker as main
         payload = main._governance_payload({"owner": "finance"}, None, NOW)
         assert payload["data_as_of"] is None
         assert payload["freshness_checked_at"] is None
@@ -452,7 +452,7 @@ class TestCrawlerWrites:
         while its data reloads nightly, so the schema-unchanged path is the
         normal one — writing the watermark only on the changed path would freeze
         `data_as_of` at whenever the table was last altered."""
-        import main
+        from workers.schema_crawler import worker as main
 
         meta = {"schema_name": "public", "table_name": "orders",
                 "columns": [{"name": "id", "type": "int"}], "row_count": 10}
@@ -477,7 +477,7 @@ class TestCrawlerWrites:
         assert qdrant.set_payload.call_args.kwargs["payload"]["data_as_of"] == NOW.isoformat()
 
     def test_a_qdrant_payload_refresh_failure_does_not_fail_the_crawl(self, crawler_path):
-        import main
+        from workers.schema_crawler import worker as main
         meta = {"schema_name": "public", "table_name": "orders",
                 "columns": [{"name": "id", "type": "int"}], "row_count": 10}
         cur = MagicMock()
@@ -492,7 +492,7 @@ class TestCrawlerWrites:
 
 class TestWatermark:
     def test_an_identifier_that_is_not_a_bare_name_is_refused(self, crawler_path):
-        from identifiers import UnsafeIdentifier, safe_identifier
+        from workers.schema_crawler.identifiers import UnsafeIdentifier, safe_identifier
         for bad in ["orders; DROP TABLE t", "public.orders", "1_orders", "", "or ders", 'o"rders']:
             with pytest.raises(UnsafeIdentifier):
                 safe_identifier(bad)
@@ -500,7 +500,7 @@ class TestWatermark:
 
     def test_a_rejected_identifier_returns_none_and_runs_no_query(self, crawler_path):
         """Freshness stays unknown; the crawl of everything else continues."""
-        import metadata
+        from workers.schema_crawler import metadata
         assert metadata.table_watermark("postgres", {}, "public", "orders; DROP", "created_at") is None
         assert metadata.table_watermark("postgres", {}, "public", "orders", "created_at; --") is None
 
@@ -508,20 +508,20 @@ class TestWatermark:
         """A watermark the crawler could not read must leave the table UNKNOWN.
         Returning now() would produce an 'as of' describing the crawl instead of
         the data."""
-        import metadata
+        from workers.schema_crawler import metadata
 
-        stub = types.ModuleType("postgres_metadata")
+        stub = types.ModuleType("workers.schema_crawler.postgres_metadata")
         stub.max_timestamp = MagicMock(side_effect=RuntimeError("permission denied"))
-        monkeypatch.setitem(sys.modules, "postgres_metadata", stub)
+        monkeypatch.setitem(sys.modules, "workers.schema_crawler.postgres_metadata", stub)
 
         assert metadata.table_watermark("postgres", {}, "public", "orders", "created_at") is None
 
     def test_an_unsupported_engine_returns_none(self, crawler_path):
-        import metadata
+        from workers.schema_crawler import metadata
         assert metadata.table_watermark("db2", {}, "public", "orders", "created_at") is None
 
     def test_quoting_is_engine_appropriate(self, crawler_path):
-        from identifiers import backtick_identifier, quote_identifier
+        from workers.schema_crawler.identifiers import backtick_identifier, quote_identifier
         assert quote_identifier("orders") == '"orders"'
         assert backtick_identifier("orders") == "`orders`"
 
@@ -529,7 +529,7 @@ class TestWatermark:
         """Qualifying with an empty schema produces `""."orders"` — a syntax
         error that would turn every watermark on such a warehouse into UNKNOWN
         while looking like a permissions problem in the log."""
-        import postgres_metadata
+        from workers.schema_crawler import postgres_metadata
 
         cursor = MagicMock()
         cursor.fetchone.return_value = (NOW,)

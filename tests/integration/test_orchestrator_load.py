@@ -1,15 +1,16 @@
 """Load test for POST /api/orchestrate/stream.
 
-Sweeps concurrency levels against a running orchestrator and reports
+Sweeps concurrency levels against a running workflow-runtime (which serves
+/api/orchestrate) and reports
 latency / error-rate per level, so we can find where the system stops
 scaling (LLM backend, connection pool, or the process itself).
 
-As a pytest e2e test (skipped unless LIVE_STACK=1 + orchestrator is up):
+As a pytest e2e test (skipped unless LIVE_STACK=1 + workflow-runtime is up):
     LIVE_STACK=1 pytest tests/integration/test_orchestrator_load.py -m e2e -s
 
 As a standalone CLI for ad-hoc sweeps:
     python3 tests/integration/test_orchestrator_load.py --levels 1,5,10,20,40
-    python3 tests/integration/test_orchestrator_load.py --host 127.0.0.1 --port 8003 --csv results.csv
+    python3 tests/integration/test_orchestrator_load.py --host 127.0.0.1 --port 8001 --csv results.csv
 """
 from __future__ import annotations
 
@@ -27,7 +28,7 @@ import httpx
 import pytest
 
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 8003
+DEFAULT_PORT = 8001
 DEFAULT_QUERY = "Explain what machine learning is in 5 sentences."
 DEFAULT_LEVELS = [1, 5, 10, 20]
 
@@ -150,9 +151,9 @@ async def sweep(base_url: str, query: str, levels: list, timeout: float,
 # ─── pytest e2e entrypoint ──────────────────────────────────────────────────
 @pytest.mark.e2e
 def test_orchestrator_handles_baseline_concurrency():
-    """Sanity check: orchestrator survives a small concurrency burst.
+    """Sanity check: the orchestrator (inside workflow-runtime) survives a small concurrency burst.
 
-    Skipped unless LIVE_STACK=1 and the orchestrator is reachable — this is
+    Skipped unless LIVE_STACK=1 and workflow-runtime is reachable — this is
     a smoke assertion, not the full sweep. Run the file directly (see module
     docstring) for the full concurrency-vs-latency report used to size
     scheduling/priority work.
@@ -160,9 +161,9 @@ def test_orchestrator_handles_baseline_concurrency():
     if os.environ.get("LIVE_STACK") != "1":
         pytest.skip(
             "Live stack not requested — set LIVE_STACK=1 and start the "
-            "orchestrator (backend/services/orchestrator) before running."
+            "workflow-runtime (backend/services/workflow-runtime, serves /api/orchestrate) before running."
         )
-    base_url = os.environ.get("ORCHESTRATOR_URL", f"http://{DEFAULT_HOST}:{DEFAULT_PORT}")
+    base_url = os.environ.get("WORKFLOW_RUNTIME_URL", f"http://{DEFAULT_HOST}:{DEFAULT_PORT}")
     rows = asyncio.run(sweep(base_url, DEFAULT_QUERY, [1, 5], timeout=120.0))
     for row in rows:
         assert row["errors"] == 0, f"level={row['level']} had errors: {row['error_types']}"

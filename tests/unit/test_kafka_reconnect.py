@@ -17,16 +17,14 @@ from unittest.mock import MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "schema-crawler-worker")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "platform-workers")
 
 
 @pytest.fixture(autouse=True)
 def _sys_path():
     added = [p for p in (_SVC_DIR,) if p not in sys.path]
     sys.path[:0] = added
-    sys.modules.pop("main", None)
     yield
-    sys.modules.pop("main", None)
     for p in added:
         if p in sys.path:
             sys.path.remove(p)
@@ -34,7 +32,7 @@ def _sys_path():
 
 @pytest.mark.unit
 def test_existing_consumer_is_left_untouched():
-    import main as worker
+    from workers.schema_crawler import worker
 
     consumer = MagicMock()
     result_consumer, result_attempt = worker.maybe_reconnect_kafka(consumer, now=1000.0, last_attempt=0.0)
@@ -45,7 +43,7 @@ def test_existing_consumer_is_left_untouched():
 
 @pytest.mark.unit
 def test_no_consumer_but_interval_not_elapsed_does_not_retry(monkeypatch):
-    import main as worker
+    from workers.schema_crawler import worker
 
     spy = MagicMock(return_value=MagicMock())
     monkeypatch.setattr(worker, "try_kafka_consumer", spy)
@@ -61,7 +59,7 @@ def test_no_consumer_but_interval_not_elapsed_does_not_retry(monkeypatch):
 
 @pytest.mark.unit
 def test_no_consumer_and_interval_elapsed_retries_and_recovers(monkeypatch):
-    import main as worker
+    from workers.schema_crawler import worker
 
     recovered = MagicMock()
     spy = MagicMock(return_value=recovered)
@@ -77,7 +75,7 @@ def test_no_consumer_and_interval_elapsed_retries_and_recovers(monkeypatch):
 
 @pytest.mark.unit
 def test_retry_still_failing_keeps_consumer_none_but_stamps_attempt(monkeypatch):
-    import main as worker
+    from workers.schema_crawler import worker
 
     spy = MagicMock(return_value=None)
     monkeypatch.setattr(worker, "try_kafka_consumer", spy)

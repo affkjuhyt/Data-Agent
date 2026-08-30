@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # ─── Kong Admin API Setup ──────────────────────────────────────────────
-# Uses Kong built-in JWT plugin (community edition)
-# JWT verification: fetch RSA public key from Keycloak JWKS, register in Kong
+# JWT verification is done by the custom `aeroflow-jwks` plugin
+# (deploy/docker/kong/plugins/aeroflow-jwks), which fetches and caches the
+# Keycloak JWKS itself — no public-key registration in Kong is needed.
 #
 # Run after stack is healthy. Since Kong's admin API is locked to the
 # kong-admin-net (see docs/auth-runbook.md "Kong admin hardening"), this
@@ -94,95 +95,18 @@ else
   set_password "executive-viewer" "Exec@View001!"
 fi
 
-# ── 1. Fetch RSA public key from Keycloak JWKS ─────────────────────────
-echo "🔑 Fetching JWKS from Keycloak..."
-JWKS_URL="$KC_BASE/realms/$REALM/protocol/openid-connect/certs"
-
-# Detect Python (host) or fall back to a temporary Docker container
+# ── 1. Python runner (used for JSON-encoding TLS cert material below) ──
+# JWKS fetching / key verification is done by the aeroflow-jwks plugin (§4);
+# nothing here talks to Keycloak's certs endpoint.
 PYTHON=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || echo "")
 if [ -z "$PYTHON" ] || ! "$PYTHON" -c "import sys; assert sys.version_info >= (3,6)" 2>/dev/null; then
   echo "  → Python not found on host; using docker python:3-alpine"
   # Find the compose network (prefixed with project name, e.g. data-agentt_aeroflow-net)
   DOCKER_NET=$(docker network ls --filter name=aeroflow-net --format '{{.Name}}' | head -1)
   PY_RUN="docker run --rm -i --network ${DOCKER_NET} python:3-alpine python3"
-  JWKS_HOST="http://keycloak-lb:8080"   # HAProxy LB fronting keycloak-node1 + node2
 else
   PY_RUN="$PYTHON"
-  JWKS_HOST="$KC_BASE"
 fi
-
-# Generate PEM from JWKS — fetched directly inside the container if needed
-PEM_KEY=$($PY_RUN -c "
-import base64, json, sys
-try:
-    import urllib.request
-    with urllib.request.urlopen('${JWKS_HOST}/realms/${REALM}/protocol/openid-connect/certs') as r:
-        data = json.load(r)
-except Exception:
-    data = json.load(sys.stdin)
-
-rsa_keys = [k for k in data['keys'] if k['kty'] == 'RSA']
-sig_keys  = [k for k in rsa_keys if k.get('use') == 'sig']
-rsa_key   = sig_keys[-1] if sig_keys else rsa_keys[-1]
-
-print('kid=' + rsa_key['kid'], file=sys.stderr)
-
-def b64url_to_int(s):
-    s += '=' * (-len(s) % 4)
-    return int.from_bytes(base64.urlsafe_b64decode(s), 'big')
-
-n = b64url_to_int(rsa_key['n'])
-e = b64url_to_int(rsa_key['e'])
-
-def enc_len(l):
-    return bytes([l]) if l < 128 else bytes([0x81, l]) if l < 256 else bytes([0x82, l >> 8, l & 0xFF])
-
-def enc_int(n):
-    b = n.to_bytes((n.bit_length() + 7) // 8, 'big')
-    if b[0] & 0x80: b = b'\x00' + b
-    return b'\x02' + enc_len(len(b)) + b
-
-rsa_pub   = b'\x30' + enc_len(len(enc_int(n) + enc_int(e))) + enc_int(n) + enc_int(e)
-oid       = b'\x30\x0d\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x01\x01\x05\x00'
-bitstring = b'\x03' + enc_len(len(rsa_pub) + 1) + b'\x00' + rsa_pub
-spki      = b'\x30' + enc_len(len(oid) + len(bitstring)) + oid + bitstring
-
-b64 = base64.b64encode(spki).decode()
-pem = '-----BEGIN PUBLIC KEY-----\n' + '\n'.join(b64[i:i+64] for i in range(0, len(b64), 64)) + '\n-----END PUBLIC KEY-----'
-print(pem)
-" 2>&1 | grep -v "^kid=" || true)
-
-# Re-run cleanly to get just the PEM (stderr filtered above may mix output)
-PEM_KEY=$($PY_RUN -c "
-import base64, json, sys
-try:
-    import urllib.request
-    with urllib.request.urlopen('${JWKS_HOST}/realms/${REALM}/protocol/openid-connect/certs') as r:
-        data = json.load(r)
-except Exception:
-    data = json.load(sys.stdin)
-rsa_keys = [k for k in data['keys'] if k['kty'] == 'RSA']
-sig_keys  = [k for k in rsa_keys if k.get('use') == 'sig']
-rsa_key   = sig_keys[-1] if sig_keys else rsa_keys[-1]
-def b64url_to_int(s):
-    s += '=' * (-len(s) % 4); return int.from_bytes(base64.urlsafe_b64decode(s), 'big')
-n = b64url_to_int(rsa_key['n']); e = b64url_to_int(rsa_key['e'])
-def enc_len(l): return bytes([l]) if l<128 else bytes([0x81,l]) if l<256 else bytes([0x82,l>>8,l&0xFF])
-def enc_int(n):
-    b=n.to_bytes((n.bit_length()+7)//8,'big'); b=(b'\x00'+b if b[0]&0x80 else b)
-    return b'\x02'+enc_len(len(b))+b
-rsa=b'\x30'+enc_len(len(enc_int(n)+enc_int(e)))+enc_int(n)+enc_int(e)
-oid=b'\x30\x0d\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x01\x01\x05\x00'
-bs=b'\x03'+enc_len(len(rsa)+1)+b'\x00'+rsa; spki=b'\x30'+enc_len(len(oid)+len(bs))+oid+bs
-b64=base64.b64encode(spki).decode()
-print('-----BEGIN PUBLIC KEY-----\n'+'\n'.join(b64[i:i+64]for i in range(0,len(b64),64))+'\n-----END PUBLIC KEY-----')
-")
-
-if [ -z "$PEM_KEY" ]; then
-  echo "❌ Could not build PEM from Keycloak JWKS"
-  exit 1
-fi
-echo "  → Public key extracted (${#PEM_KEY} chars)"
 
 # Helper: extract first occurrence of a string field from JSON (no jq/Python needed)
 json_field() { grep -o "\"$1\":\"[^\"]*\"" | head -1 | sed 's/.*":"//;s/"$//'; }
@@ -228,7 +152,7 @@ curl -sf -X PUT "$KONG_ADMIN/services/workflow-runtime/routes/runtime-route" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "runtime-route",
-    "paths": ["/api/conversations", "/api/traces", "/api/nodes", "/api/llm-providers", "/api/kb-connections", "/api/system-prompts", "/api/catalog", "/api/sandbox", "/api/runtime-config", "/api/db-connector", "/api/reviews", "/api/platform", "/api/billing"],
+    "paths": ["/api/conversations", "/api/traces", "/api/nodes", "/api/llm-providers", "/api/kb-connections", "/api/system-prompts", "/api/catalog", "/api/sandbox", "/api/runtime-config", "/api/db-connector", "/api/reviews", "/api/platform", "/api/billing", "/api/orchestrate"],
     "strip_path": false,
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
@@ -300,26 +224,8 @@ curl -sf -X PUT "$KONG_ADMIN/services/release-worker/routes/release-route" \
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
 
-# ── 3d. Create orchestrator service + route ────────────────────────────
-echo "📡 Creating orchestrator service..."
-curl -sf -X PUT "$KONG_ADMIN/services/orchestrator" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "orchestrator",
-    "url": "http://orchestrator:8003",
-    "connect_timeout": 5000,
-    "read_timeout": 300000
-  }' | json_field name | xargs -I{} echo "  → service: {}"
-
-echo "🛣️  Creating orchestrator route..."
-curl -sf -X PUT "$KONG_ADMIN/services/orchestrator/routes/orchestrator-route" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "orchestrator-route",
-    "paths": ["/api/orchestrate"],
-    "strip_path": false,
-    "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
-  }' | json_field name | xargs -I{} echo "  → route: {}"
+# (3d used to create an `orchestrator` service + route here. The orchestrator
+# now lives inside workflow-runtime — /api/orchestrate is on runtime-route above.)
 
 # ── 3d-2. Create minio-service service + route ─────────────────────────
 # Object storage and the per-tenant audit archives. Unlike flow-builder, this
@@ -480,11 +386,6 @@ else
     "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"auth-api\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
     "aeroflow-jwks"
 
-  # ── 4d-pre. aeroflow-jwks on orchestrator ──────────────────────────────
-  echo "🔐 Enabling aeroflow-jwks plugin on orchestrator (aud=aeroflow-backend)..."
-  upsert_plugin "$KONG_ADMIN/services/orchestrator/plugins" \
-    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"aeroflow-backend\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
-    "aeroflow-jwks"
 fi
 
 # ── 4d. aeroflow-jwks on kb-backend ────────────────────────────────────
@@ -559,6 +460,12 @@ upsert_plugin "$KONG_ADMIN/services/workflow-runtime/plugins" \
 
 echo "⏱️  Enabling rate-limiting on flow-builder..."
 upsert_plugin "$KONG_ADMIN/services/flow-builder/plugins" \
+  '{"name":"rate-limiting","config":{"minute":300,"policy":"local"}}' \
+  "rate-limiting"
+
+# kb-gateway (Go edge) removed 30-08-2026 — this plugin is what it existed for.
+echo "⏱️  Enabling rate-limiting on kb-backend..."
+upsert_plugin "$KONG_ADMIN/services/kb-backend/plugins" \
   '{"name":"rate-limiting","config":{"minute":300,"policy":"local"}}' \
   "rate-limiting"
 
@@ -664,7 +571,7 @@ if [ "${ENABLE_ADMIN_KEY_AUTH:-0}" = "1" ]; then
   : > "$KEYS_FILE"
   chmod 600 "$KEYS_FILE"
 
-  for consumer in auth-api release-worker jwks-refresher; do
+  for consumer in auth-api release-worker; do
     # Create consumer if not exists (PUT is idempotent)
     curl -sf -X PUT "$KONG_ADMIN/consumers/$consumer-admin" \
       -H "Content-Type: application/json" \

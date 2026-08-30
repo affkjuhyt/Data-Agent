@@ -53,12 +53,10 @@ jobs:
         run: |
           for target in \
             backend/libs/basemodel backend/libs/database_connector backend/libs/shared \
-            backend/services/orchestrator backend/services/kb_backend backend/services/workflow-runtime \
+            backend/services/kb_backend backend/services/workflow-runtime \
             backend/services/auth-api backend/services/flow-builder backend/services/model-service \
             backend/services/minio-service backend/services/release-worker backend/services/sandbox-executor \
-            backend/services/kb-ingestion-worker backend/services/schema-crawler-worker \
-            backend/services/memory-consumer backend/services/audit-bridge backend/services/audit-consumer \
-            backend/services/jwks-refresher; do
+            backend/services/kb-ingestion-worker backend/services/platform-workers; do
             echo "== mypy strict: $target =="
             mypy --disallow-untyped-defs --disallow-any-generics \
                  --ignore-missing-imports --follow-imports=silent "$target"
@@ -171,7 +169,6 @@ jobs:
           OPENAI_API_KEY=ci-placeholder
           GEMINI_API_KEY=ci-placeholder
           KAFKA_ADMIN_PASSWORD=ci-placeholder
-          AUDIT_BRIDGE_KAFKA_PASSWORD=ci-placeholder
           AUDIT_CONSUMER_KAFKA_PASSWORD=ci-placeholder
           RELEASE_WORKER_KAFKA_PASSWORD=ci-placeholder
           EOF

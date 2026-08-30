@@ -9,11 +9,9 @@ be managed services or their own StatefulSets — **not here**. Point
 | --- | --- | --- |
 | `config.yaml` | Shared non-secret wiring for the runtime tier | — |
 | **Runtime tier** | | |
-| `orchestrator.yaml` | Multi-agent front door (`/api/orchestrate`) | CPU 65%, 2→6 |
-| `workflow-runtime.yaml` | Agent execution (plan → retrieve → respond → judge) | CPU 65%, 2→8 |
+| `workflow-runtime.yaml` | Agent execution (plan → retrieve → respond → judge) and the multi-agent orchestrator (`/api/orchestrate`, same process) | CPU 65%, 2→8 |
 | `sandbox-executor.yaml` | User-code execution ⚠ node prerequisites | fixed, pool-sized |
 | **KB tier** | | |
-| `kb-gateway.yaml` | Go edge/BFF (DDoS + per-tenant limits) | CPU 60%, 2→10 |
 | `kb-backend.yaml` | Python retrieval/CRUD | CPU 60%, 3→12 |
 | `model-service.yaml` | embed/rerank/LLM-proxy | CPU 70%, 2→8 |
 | **Operations** | | |
@@ -51,7 +49,7 @@ kubectl create secret generic dataagent-secrets \
 kubectl create secret generic kb-backend-secrets --from-literal=PG_PW=...
 ```
 
-`SERVICE_AUTH_SECRET` must be **the same value** in orchestrator,
+`SERVICE_AUTH_SECRET` must be **the same value** in
 workflow-runtime and kb-backend: it signs the identity assertion each service
 presents to the next. A mismatch does not fail loudly — `kb_search` simply
 returns no chunks, by design, because it must never assert an identity it cannot
@@ -86,8 +84,8 @@ kubectl wait --for=condition=complete job/dataagent-migrate --timeout=10m
 kubectl apply -f deploy/k8s/
 ```
 
-You do not have to hold the rollout by hand: `orchestrator` and
-`workflow-runtime` each run a `wait-for-migrations` initContainer that blocks
+You do not have to hold the rollout by hand: `workflow-runtime` runs a
+`wait-for-migrations` initContainer that blocks
 until the database itself reports the schema at head. That covers what the Job
 cannot — a pod rescheduled mid-upgrade, or a scale-up during a migration.
 `tests/unit/test_k8s_manifests.py` keeps that gate from being dropped when
@@ -118,14 +116,14 @@ until you explicitly unsuspend. The full procedure is in its header.
 
 ## What is not here yet
 
-The manifests cover the request path — gateway → orchestrator →
-workflow-runtime → sandbox/KB. Not yet ported from `deploy/docker/docker-compose.app.yml`:
-`auth-api`, `flow-builder`, `minio-service`, `release-worker`, `audit-bridge`,
-`audit-consumer`, `memory-consumer`, `schema-crawler-worker`, `jwks-refresher`,
+The manifests cover the request path — gateway → workflow-runtime
+(orchestrator included) → sandbox/KB. Not yet ported from `deploy/docker/docker-compose.app.yml`:
+`auth-api`, `flow-builder`, `minio-service`, `release-worker`,
+`platform-workers` (one image; `WORKER=memory|schema-crawler|audit`),
 the frontend, and the Kong/Keycloak edge. A cluster running only what is in this
 directory serves agent traffic but has no authoring UI and no audit pipeline.
 
-Ingress is also not here: `orchestrator` and `workflow-runtime` are ClusterIP on
+Ingress is also not here: `workflow-runtime` is ClusterIP on
 purpose (compose keeps their ports off the host for the same reason — the
 gateway is the only way in). Wiring an Ingress/Gateway straight at them would
 bypass the Kong routes that carry authentication.
