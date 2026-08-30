@@ -35,4 +35,4 @@ RUN addgroup --system app && adduser --system --ingroup app --home /home/app app
     && chown -R app:app /home/app
 USER app
 
-CMD ["python", "services/kb-ingestion-worker/main.py"]
+CMD ["python", "services/kb-ingestion-worker/app.py"]

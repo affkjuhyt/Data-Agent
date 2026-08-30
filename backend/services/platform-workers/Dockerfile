@@ -15,5 +15,5 @@ COPY backend/services/platform-workers/ ./
 RUN addgroup --system app && adduser --system --ingroup app app \
     && mkdir -p /data && chown app:app /data
 USER app
-# WORKER=memory|schema-crawler|audit picks the loop (see main.py).
-CMD ["python", "-u", "main.py"]
+# WORKER=memory|schema-crawler|audit picks the loop via the worker app module.
+CMD ["python", "-u", "app.py"]

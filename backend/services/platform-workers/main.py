@@ -10,24 +10,16 @@ group and restart policy, so a crash in one worker cannot take the others down.
 from __future__ import annotations
 
 import importlib
-import os
 import sys
 
-WORKERS: dict[str, str] = {
-    "memory": "workers.memory",
-    "schema-crawler": "workers.schema_crawler",
-    "audit": "workers.audit",
-}
+from app import WORKERS, resolve_worker_module, unknown_worker_message, worker_name_from_env
 
 
 def main() -> int:
-    name = os.environ.get("WORKER", "").strip()
-    module_name = WORKERS.get(name)
+    name = worker_name_from_env()
+    module_name = resolve_worker_module(name)
     if module_name is None:
-        print(
-            f"platform-workers: WORKER={name!r} is not one of {sorted(WORKERS)}",
-            file=sys.stderr,
-        )
+        print(unknown_worker_message(name), file=sys.stderr)
         return 2
     importlib.import_module(module_name).run()
     return 0
