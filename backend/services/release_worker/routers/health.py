@@ -2,8 +2,8 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from release_core import *
-from schemas import *
+from services.release_worker.release_core import *
+from services.release_worker.schemas import *
 
 router = APIRouter()
 

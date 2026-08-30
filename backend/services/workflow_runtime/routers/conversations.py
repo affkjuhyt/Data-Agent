@@ -1,10 +1,10 @@
 from typing import Any
 
-from auth import get_current_user
+from services.workflow_runtime.auth import get_current_user
 from fastapi import APIRouter, Depends, Query, Request
-from runtime_services import platform_queries
-from runtime_services.conversation_runner import run_conversation_stream
-from schemas import RunRequest
+from services.workflow_runtime.runtime_services import platform_queries
+from services.workflow_runtime.runtime_services.conversation_runner import run_conversation_stream
+from services.workflow_runtime.schemas import RunRequest
 
 router = APIRouter()
 

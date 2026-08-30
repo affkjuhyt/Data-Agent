@@ -1,9 +1,9 @@
 from typing import Any
 
-from auth import get_current_user
+from services.workflow_runtime.auth import get_current_user
 from fastapi import APIRouter, Depends, Query
-from runtime_services import platform_queries
-from runtime_services.langfuse_proxy import get_trace_observations
+from services.workflow_runtime.runtime_services import platform_queries
+from services.workflow_runtime.runtime_services.langfuse_proxy import get_trace_observations
 
 router = APIRouter()
 

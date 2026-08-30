@@ -13,28 +13,28 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from langgraph.checkpoint.memory import MemorySaver
 
-from config_loader import load_agent_config
-from db import create_conversation, get_last_slots, get_messages, save_message, save_trace, validate_agent_tenant
-from redis_cache import (
+from services.workflow_runtime.config_loader import load_agent_config
+from services.workflow_runtime.db import create_conversation, get_last_slots, get_messages, save_message, save_trace, validate_agent_tenant
+from services.workflow_runtime.redis_cache import (
     cache_append_messages,
     cache_get_messages,
     cache_get_slots,
     cache_set_messages,
     cache_set_slots,
 )
-from transcript_compression import compress_tool_results
-from graph import build_graph
+from services.workflow_runtime.transcript_compression import compress_tool_results
+from services.workflow_runtime.graph import build_graph
 from libs.shared.auth import require_tenant
-from memory_middleware import (
+from services.workflow_runtime.memory_middleware import (
     _DEV_AGENT_ID,
     apply_memory_policy,
     retrieve_episodic_past,
     retrieve_memories,
     retrieve_pending_reminders,
 )
-from workflow_memory import record_workflow_outcome, retrieve_workflow_memory
-from observability import get_langchain_callback_handler, flush_langfuse
-from schemas import RunRequest
+from services.workflow_runtime.observability import flush_langfuse, get_langchain_callback_handler
+from services.workflow_runtime.schemas import RunRequest
+from services.workflow_runtime.workflow_memory import record_workflow_outcome, retrieve_workflow_memory
 from libs.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
 
 logger = logging.getLogger(__name__)

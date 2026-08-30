@@ -10,8 +10,8 @@ from libs.shared.service_identity import (
     get_secret,
     mint_service_assertion,
 )
-from mtls import kb_backend_ssl_context
-from state import AgentState
+from services.workflow_runtime.mtls import kb_backend_ssl_context
+from services.workflow_runtime.state import AgentState
 
 logger = logging.getLogger(__name__)
 

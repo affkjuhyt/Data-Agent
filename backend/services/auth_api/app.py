@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from auth_core import startup as run_startup_tasks
-from routers import api_keys, approvals, compliance, governance, health, ip_allowlist, secrets
-from shared.observability import setup_observability
+from libs.shared.observability import setup_observability
+from services.auth_api.auth_core import startup as run_startup_tasks
+from services.auth_api.routers import api_keys, approvals, compliance, governance, health, ip_allowlist, secrets
 
 
 def create_app() -> FastAPI:

@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from runtime_services.sandbox_proxy import get_sandbox_job, get_sandbox_status, stream_sandbox_job
+from services.workflow_runtime.runtime_services.sandbox_proxy import get_sandbox_job, get_sandbox_status, stream_sandbox_job
 
 router = APIRouter()
 

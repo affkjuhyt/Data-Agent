@@ -11,21 +11,21 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import StateGraph, START, END
 
-from orchestrator import config
-from orchestrator.agent_catalog import fetch_published_agents
-from orchestrator.executor import execute_plan
+from services.workflow_runtime.observability import get_langfuse_client
+from services.workflow_runtime.orchestrator import config
+from services.workflow_runtime.orchestrator.agent_catalog import fetch_published_agents
+from services.workflow_runtime.orchestrator.executor import execute_plan
 from langchain_core.callbacks.manager import adispatch_custom_event
 
-from orchestrator.executor.agent_client import call_agent_stream, extract_guardrail_cfg
-from orchestrator.nodes.input_refine import input_refine_node
-from orchestrator.nodes.suggestion import run_suggestion
-from observability import get_langfuse_client
-from orchestrator.planner import create_plan, report_node_failure
-from orchestrator.schemas import TargetResult, TaskResult
+from services.workflow_runtime.orchestrator.executor.agent_client import call_agent_stream, extract_guardrail_cfg
+from services.workflow_runtime.orchestrator.nodes.input_refine import input_refine_node
+from services.workflow_runtime.orchestrator.nodes.suggestion import run_suggestion
+from services.workflow_runtime.orchestrator.planner import create_plan, report_node_failure
+from services.workflow_runtime.orchestrator.schemas import TargetResult, TaskResult
 from libs.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
-from orchestrator.session_cache import clear_cached_plan, load_cached_plan, save_cached_plan
-from orchestrator.state import OrchestratorState
-from orchestrator.summary import summarize, synthesis_judge_check
+from services.workflow_runtime.orchestrator.session_cache import clear_cached_plan, load_cached_plan, save_cached_plan
+from services.workflow_runtime.orchestrator.state import OrchestratorState
+from services.workflow_runtime.orchestrator.summary import summarize, synthesis_judge_check
 
 logger = logging.getLogger(__name__)
 

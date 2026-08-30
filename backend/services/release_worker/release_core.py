@@ -28,8 +28,8 @@ import structlog
 import ipaddress
 
 from fastapi import FastAPI, HTTPException, Header, Depends, Request, Response
-from shared.auth import get_current_user
-from shared.observability import setup_observability, get_tracer
+from libs.shared.auth import get_current_user
+from libs.shared.observability import get_tracer, setup_observability
 from kafka import KafkaConsumer, KafkaProducer
 
 # ── Observability: JSON logs + OTel tracing (OTLP→Jaeger) via shared module ──
@@ -889,4 +889,3 @@ __all__ = [
     "_consumer_supervisor",
     "run_server",
 ]
-

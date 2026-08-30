@@ -1,5 +1,5 @@
 from typing import Any
-from state import AgentState
+from services.workflow_runtime.state import AgentState
 
 
 async def metadata_injector_node(state: AgentState) -> dict[str, Any]:

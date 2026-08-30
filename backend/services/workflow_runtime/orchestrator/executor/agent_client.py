@@ -23,7 +23,7 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
-from orchestrator import config
+from services.workflow_runtime.orchestrator import config
 
 logger = logging.getLogger(__name__)
 

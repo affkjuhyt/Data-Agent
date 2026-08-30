@@ -11,8 +11,8 @@ from langchain_core.callbacks.manager import adispatch_custom_event
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import interrupt
 
-from observability import get_langfuse_client
-from orchestrator.state import OrchestratorState
+from services.workflow_runtime.observability import get_langfuse_client
+from services.workflow_runtime.orchestrator.state import OrchestratorState
 
 logger = logging.getLogger(__name__)
 

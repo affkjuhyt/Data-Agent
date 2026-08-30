@@ -7,9 +7,9 @@ import time
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 
-from observability import get_langfuse_client
-from orchestrator.planner.dpts.plan import Plan, Target
-from orchestrator.schemas import TargetResult, TaskResult
+from services.workflow_runtime.observability import get_langfuse_client
+from services.workflow_runtime.orchestrator.planner.dpts.plan import Plan, Target
+from services.workflow_runtime.orchestrator.schemas import TargetResult, TaskResult
 from .task_queue import TaskNode, build_rounds, collect_context
 from .agent_client import call_agent
 

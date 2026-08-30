@@ -26,8 +26,8 @@ import psycopg2.extras
 from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel
 
-from auth_core import get_db
-from shared.auth import get_current_user
+from libs.shared.auth import get_current_user
+from services.auth_api.auth_core import get_db
 
 router = APIRouter()
 

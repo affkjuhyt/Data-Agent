@@ -5,7 +5,7 @@ import pathlib
 import uuid
 
 from libs.shared import audit
-from nodes.sandbox.tool_executor._utils import _safe_path, _get_query, audit_ctx
+from services.workflow_runtime.nodes.sandbox.tool_executor._utils import _get_query, _safe_path, audit_ctx
 
 logger = logging.getLogger(__name__)
 

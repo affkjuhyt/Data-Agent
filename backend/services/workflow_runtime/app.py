@@ -24,19 +24,19 @@ from libs.shared.logger import setup_logging
 setup_logging("workflow_runtime")
 logger = logging.getLogger(__name__)
 
-from auth import get_current_user
-from config import CORS_ORIGINS, REDIS_URL
-from db import close_db, init_db
+from services.workflow_runtime.auth import get_current_user
+from services.workflow_runtime.config import CORS_ORIGINS, REDIS_URL
+from services.workflow_runtime.db import close_db, init_db
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from kafka_producer import close_kafka_producer, init_kafka_producer, produce_event
-from memory_middleware import close_qdrant, init_qdrant
-from mongo_client import close_mongo, init_mongo
-from orchestrator.routers import reviews as orch_reviews
-from orchestrator.routers import stream as orch_stream
-from orchestrator.routers import traces as orch_traces
-from redis_cache import close_redis, init_redis
-from routers import (
+from services.workflow_runtime.kafka_producer import close_kafka_producer, init_kafka_producer, produce_event
+from services.workflow_runtime.memory_middleware import close_qdrant, init_qdrant
+from services.workflow_runtime.mongo_client import close_mongo, init_mongo
+from services.workflow_runtime.orchestrator.routers import reviews as orch_reviews
+from services.workflow_runtime.orchestrator.routers import stream as orch_stream
+from services.workflow_runtime.orchestrator.routers import traces as orch_traces
+from services.workflow_runtime.redis_cache import close_redis, init_redis
+from services.workflow_runtime.routers import (
     billing,
     catalog,
     conversations,
@@ -50,12 +50,10 @@ from routers import (
     storage,
     traces,
 )
-from routers import (
-    schema_catalog as schema_catalog_router,
-)
-from runtime_services.conversation_runner import invalidate_graph_version
-from schema_catalog import close_schema_catalog_qdrant, init_schema_catalog_qdrant
-from workflow_memory import close_workflow_qdrant, init_workflow_qdrant
+from services.workflow_runtime.routers import schema_catalog as schema_catalog_router
+from services.workflow_runtime.runtime_services.conversation_runner import invalidate_graph_version
+from services.workflow_runtime.schema_catalog import close_schema_catalog_qdrant, init_schema_catalog_qdrant
+from services.workflow_runtime.workflow_memory import close_workflow_qdrant, init_workflow_qdrant
 
 from libs.basemodel.services_databaseconnector.shared_model import RetryConfig
 from libs.database_connector.mongo_connector import client as mongo_client

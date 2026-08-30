@@ -25,7 +25,7 @@ import psycopg2.extras
 from psycopg2 import pool as pg_pool
 import structlog
 from fastapi import Depends, Header, HTTPException, Path, Query
-from shared.auth import get_current_user, require_role
+from libs.shared.auth import get_current_user, require_role
 
 structlog.configure(processors=[structlog.processors.JSONRenderer()])
 log = structlog.get_logger()
@@ -540,4 +540,3 @@ __all__ = [
     "_get_gov_setting",
     "_fmt_secret",
 ]
-

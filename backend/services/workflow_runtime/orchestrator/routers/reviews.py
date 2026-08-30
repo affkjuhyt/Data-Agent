@@ -7,9 +7,9 @@ from contextlib import nullcontext
 from fastapi import APIRouter, HTTPException
 from langgraph.types import Command
 
-from orchestrator.graph import get_graph
-from observability import get_langchain_callback_handler, get_langfuse_client
-from orchestrator.schemas import ClarificationResume, OrchestrateResponse
+from services.workflow_runtime.observability import get_langchain_callback_handler, get_langfuse_client
+from services.workflow_runtime.orchestrator.graph import get_graph
+from services.workflow_runtime.orchestrator.schemas import ClarificationResume, OrchestrateResponse
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

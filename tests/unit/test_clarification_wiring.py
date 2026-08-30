@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import pathlib
 import sys
+import types
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -24,9 +25,14 @@ pytestmark = pytest.mark.unit
 
 
 @pytest.fixture(autouse=True)
-def _sys_path():
+def _sys_path(monkeypatch):
     added = [p for p in (_SVC_DIR,) if p not in sys.path]
     sys.path[:0] = added
+    fake_litellm = types.ModuleType("litellm")
+    fake_litellm.acompletion = AsyncMock()
+    fake_litellm.success_callback = []
+    fake_litellm.failure_callback = []
+    monkeypatch.setitem(sys.modules, "litellm", fake_litellm)
     yield
     for p in added:
         if p in sys.path:

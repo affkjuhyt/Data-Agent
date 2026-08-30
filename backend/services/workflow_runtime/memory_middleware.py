@@ -16,7 +16,7 @@ from libs.shared.embeddings import aembed_one
 from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
     AgentMemoriesORM, MemoryPolicyORM, EpisodicMemoryORM, FutureMemoryORM,
 )
-from kafka_producer import produce_event
+from services.workflow_runtime.kafka_producer import produce_event
 
 logger = logging.getLogger(__name__)
 

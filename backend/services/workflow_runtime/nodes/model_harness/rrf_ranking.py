@@ -1,6 +1,6 @@
 from typing import Any
 import logging
-from state import AgentState
+from services.workflow_runtime.state import AgentState
 
 logger = logging.getLogger(__name__)
 

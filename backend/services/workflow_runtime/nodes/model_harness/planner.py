@@ -10,10 +10,10 @@ from pydantic import BaseModel, ValidationError  # noqa: F401
 
 from libs.semantic import AnalyticalSlots, merge as merge_slots
 from libs.shared import untrusted
-from nodes.model_harness.intent import AnalysisType, capability, parse as parse_analysis_type
-from observability import get_langfuse_client
-from state import AgentState
-from nodes.sandbox.tool_executor import TOOL_DEFINITIONS
+from services.workflow_runtime.nodes.model_harness.intent import AnalysisType, capability, parse as parse_analysis_type
+from services.workflow_runtime.nodes.sandbox.tool_executor import TOOL_DEFINITIONS
+from services.workflow_runtime.observability import get_langfuse_client
+from services.workflow_runtime.state import AgentState
 
 
 class _ToolCall(BaseModel):

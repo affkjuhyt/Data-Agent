@@ -4,8 +4,8 @@ from typing import Any, Optional
 from fastapi import APIRouter, Request
 from sqlalchemy import text
 
-from config import RRF_K
-from node_registry import NODE_REGISTRY
+from services.workflow_runtime.config import RRF_K
+from services.workflow_runtime.node_registry import NODE_REGISTRY
 
 router = APIRouter()
 

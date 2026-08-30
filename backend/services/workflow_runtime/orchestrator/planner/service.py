@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 import logging
 
-from orchestrator import config
+from services.workflow_runtime.orchestrator import config
 from .dpts import LLM, MockLLM, Plan, PlanningProcess, StaticMemoryEstimator
 
 logger = logging.getLogger(__name__)

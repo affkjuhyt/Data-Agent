@@ -1,9 +1,9 @@
 from typing import Any
 from fastapi import APIRouter
 
-from auth_core import *
-from schemas import *
-from shared.db_context import get_tenant_db
+from libs.shared.db_context import get_tenant_db
+from services.auth_api.auth_core import *
+from services.auth_api.schemas import *
 
 router = APIRouter()
 

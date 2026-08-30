@@ -8,17 +8,17 @@ from collections.abc import AsyncIterator
 from contextlib import nullcontext
 from typing import Any
 
-from auth import get_current_user
+from services.workflow_runtime.auth import get_current_user
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
-from observability import get_langchain_callback_handler, get_langfuse_client
+from services.workflow_runtime.observability import get_langchain_callback_handler, get_langfuse_client
 
 from libs.shared.auth import require_tenant
-from orchestrator import config
-from orchestrator.agent_catalog import fetch_guardrail_config
-from orchestrator.graph import get_graph
-from orchestrator.nodes.guardrail import run_guardrail
-from orchestrator.schemas import OrchestrateRequest
+from services.workflow_runtime.orchestrator import config
+from services.workflow_runtime.orchestrator.agent_catalog import fetch_guardrail_config
+from services.workflow_runtime.orchestrator.graph import get_graph
+from services.workflow_runtime.orchestrator.nodes.guardrail import run_guardrail
+from services.workflow_runtime.orchestrator.schemas import OrchestrateRequest
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

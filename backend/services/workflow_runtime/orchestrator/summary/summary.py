@@ -8,9 +8,9 @@ from pathlib import Path
 
 import litellm
 
-from orchestrator import config
+from services.workflow_runtime.orchestrator import config
 from libs.shared import untrusted
-from observability import get_langfuse_client
+from services.workflow_runtime.observability import get_langfuse_client
 
 logger = logging.getLogger(__name__)
 

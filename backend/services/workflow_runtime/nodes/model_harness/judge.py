@@ -7,8 +7,8 @@ import time
 import litellm
 
 from libs.shared import untrusted
-from observability import get_langfuse_client
-from state import AgentState
+from services.workflow_runtime.observability import get_langfuse_client
+from services.workflow_runtime.state import AgentState
 
 logger = logging.getLogger(__name__)
 

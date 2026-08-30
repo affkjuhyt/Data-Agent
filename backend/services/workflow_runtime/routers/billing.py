@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Query
-from runtime_services import litellm_proxy
+from services.workflow_runtime.runtime_services import litellm_proxy
 
 router = APIRouter()
 

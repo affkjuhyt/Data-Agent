@@ -5,7 +5,7 @@ import os
 
 import litellm
 
-from observability import get_langfuse_client
+from services.workflow_runtime.observability import get_langfuse_client
 
 logger = logging.getLogger(__name__)
 

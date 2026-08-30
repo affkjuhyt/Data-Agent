@@ -16,7 +16,7 @@ from sqlalchemy import select
 
 from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import SchemaCatalogORM
 from libs.shared.freshness import TableGovernance
-from routers.catalog import _resolve_tenant
+from services.workflow_runtime.routers.catalog import _resolve_tenant
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

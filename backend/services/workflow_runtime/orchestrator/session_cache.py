@@ -4,8 +4,8 @@ from typing import Any, Iterable
 import json
 import logging
 
-from orchestrator.planner import restore_plan
-from orchestrator.planner.dpts import Plan, PlanningProcess
+from services.workflow_runtime.orchestrator.planner import restore_plan
+from services.workflow_runtime.orchestrator.planner.dpts import Plan, PlanningProcess
 
 logger = logging.getLogger(__name__)
 

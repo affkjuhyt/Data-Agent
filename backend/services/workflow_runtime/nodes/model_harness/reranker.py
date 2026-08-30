@@ -3,7 +3,7 @@ import logging
 import os
 import httpx
 
-from state import AgentState
+from services.workflow_runtime.state import AgentState
 
 logger = logging.getLogger(__name__)
 

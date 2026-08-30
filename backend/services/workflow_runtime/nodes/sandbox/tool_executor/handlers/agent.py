@@ -2,7 +2,7 @@ from typing import Any
 import logging
 import uuid
 
-from nodes.sandbox.tool_executor._utils import _get_query
+from services.workflow_runtime.nodes.sandbox.tool_executor._utils import _get_query
 
 logger = logging.getLogger(__name__)
 

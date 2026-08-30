@@ -10,9 +10,9 @@ and read at ingestion time by the KB worker to gate PII redaction — so togglin
 from typing import Any
 from fastapi import APIRouter
 
-from auth_core import *
-from schemas import *
-from shared.pii_detector import PII_TYPES, scan as pii_scan
+from libs.shared.pii_detector import PII_TYPES, scan as pii_scan
+from services.auth_api.auth_core import *
+from services.auth_api.schemas import *
 
 router = APIRouter()
 

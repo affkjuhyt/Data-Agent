@@ -4,7 +4,7 @@ import logging
 
 from langgraph.types import interrupt
 
-from state import AgentState
+from services.workflow_runtime.state import AgentState
 
 logger = logging.getLogger(__name__)
 

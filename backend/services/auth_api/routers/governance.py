@@ -1,8 +1,8 @@
 from typing import Any
 from fastapi import APIRouter
 
-from auth_core import *
-from schemas import *
+from services.auth_api.auth_core import *
+from services.auth_api.schemas import *
 
 router = APIRouter()
 

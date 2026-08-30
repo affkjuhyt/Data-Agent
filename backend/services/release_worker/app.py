@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 
-from release_core import enforce_internal_origin
-from routers import admin, drift, health, pipelines
-from shared.observability import instrument_fastapi
+from libs.shared.observability import instrument_fastapi
+from services.release_worker.release_core import enforce_internal_origin
+from services.release_worker.routers import admin, drift, health, pipelines
 
 
 def create_app() -> FastAPI:

@@ -27,8 +27,8 @@ import uuid
 import httpx
 
 from libs.shared import audit
-from nodes.sandbox.tool_executor._sandbox_http import POLL_OVERHEAD_S, submit_and_poll
-from nodes.sandbox.tool_executor._utils import audit_ctx
+from services.workflow_runtime.nodes.sandbox.tool_executor._sandbox_http import POLL_OVERHEAD_S, submit_and_poll
+from services.workflow_runtime.nodes.sandbox.tool_executor._utils import audit_ctx
 
 logger = logging.getLogger(__name__)
 

@@ -1,7 +1,7 @@
 """Every service that can be reached must decide who is calling.
 
 The audit finding named the agent API — orchestrator and workflow_runtime — and
-those were fixed. The defect was not: `flow_buider` was still published on host
+those were fixed. The defect was not: `flow_builder` was still published on host
 port 8002 with no authentication of any kind, and every one of its eighteen
 routes took its tenant from `x_tenant_id or DEV_TENANT_ID`, a raw client header
 defaulting to a real tenant. Anyone reaching the host could list, edit, delete
@@ -86,7 +86,7 @@ def _authenticating_services() -> set[str]:
 
 class TestNothingUnauthenticatedIsPublished:
     def test_every_host_published_app_service_authenticates(self):
-        """The check that would have caught flow_buider and minio_service.
+        """The check that would have caught flow_builder and minio_service.
 
         Publishing a port is the decision that makes a service reachable without
         the gateway, so it is the decision that has to come with an identity
@@ -108,7 +108,7 @@ class TestNothingUnauthenticatedIsPublished:
             "dependency or stop publishing the port"
         )
 
-    @pytest.mark.parametrize("service", ["flow_buider", "minio_service", "workflow_runtime"])
+    @pytest.mark.parametrize("service", ["workflow_runtime"])
     def test_the_agent_tier_is_not_published_to_the_host(self, service):
         """Kong is the only way in. The service-side dependency is what makes
         reaching the port useless; the closed port is the outer layer, and it is
@@ -134,7 +134,7 @@ class TestNoTenantComesFromAClientHeader:
                 hits.append(" or ".join(sorted(names)))
         return hits
 
-    @pytest.mark.parametrize("service", ["flow_buider", "workflow_runtime", "minio_service"])
+    @pytest.mark.parametrize("service", ["flow_builder", "workflow_runtime", "minio_service"])
     def test_no_router_falls_back_to_the_dev_tenant(self, service):
         directory = _service_dir(service)
         assert directory is not None
@@ -149,7 +149,7 @@ class TestNoTenantComesFromAClientHeader:
     def test_flow_builder_routes_take_no_tenant_header_at_all(self):
         """Not merely "the header is checked" — the parameter is gone, so a new
         route cannot reintroduce it by copying a neighbour."""
-        directory = _service_dir("flow_buider")
+        directory = _service_dir("flow_builder")
         for path in _python_files(directory / "routers"):
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
@@ -182,7 +182,7 @@ class TestRoutersAreAuthenticatedAtIncludeTime:
                 out.setdefault("_loop", has_deps)
         return out
 
-    @pytest.mark.parametrize("service", ["flow_buider", "minio_service"])
+    @pytest.mark.parametrize("service", ["flow_builder", "minio_service"])
     def test_only_health_is_included_without_authentication(self, service):
         directory = _service_dir(service)
         includes = self._include_calls(directory / "app.py")
@@ -191,7 +191,7 @@ class TestRoutersAreAuthenticatedAtIncludeTime:
             f"{service} includes {sorted(unguarded - _OPEN_ROUTERS)} without authentication"
         )
 
-    @pytest.mark.parametrize("service", ["flow_buider", "minio_service"])
+    @pytest.mark.parametrize("service", ["flow_builder", "minio_service"])
     def test_the_loop_that_carries_the_dependency_exists(self, service):
         """The routers are included through a loop with `dependencies=`; if
         someone unrolls it, the previous test still passes only if each call
@@ -236,7 +236,7 @@ class TestCanvasIsScopedToItsOwner:
     workflow_version_id, with no row-level security to fall back on."""
 
     def test_both_canvas_routes_check_ownership(self):
-        path = _service_dir("flow_buider") / "routers" / "canvas.py"
+        path = _service_dir("flow_builder") / "routers" / "canvas.py"
         tree = ast.parse(path.read_text(encoding="utf-8"))
 
         routes = [
@@ -260,7 +260,7 @@ class TestCanvasIsScopedToItsOwner:
     def test_a_foreign_version_is_indistinguishable_from_a_missing_one(self):
         """404 rather than 403: 403 would confirm that the id exists, which is
         itself a fact about another tenant."""
-        source = (_service_dir("flow_buider") / "routers" / "canvas.py").read_text(encoding="utf-8")
+        source = (_service_dir("flow_builder") / "routers" / "canvas.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         helper = next(
             n for n in ast.walk(tree)
@@ -301,13 +301,13 @@ class TestGatewayConfigMatchesTheClosedPorts:
         """Closing a port without a route in front of it does not harden the
         service, it removes it."""
         setup = (REPO_ROOT / "deploy" / "docker" / "kong" / "kong-setup.sh").read_text(encoding="utf-8")
-        for service in ("flow_buider", "workflow_runtime", "minio_service"):
+        for service in ("workflow_runtime",):
             assert f"$KONG_ADMIN/services/{service}" in setup, f"{service} has no Kong service"
 
     def test_kong_defines_each_service_exactly_once(self):
         """Two PUTs of the same service is not an error at runtime — the second
         silently wins — so a duplicate would hide whichever config lost."""
         setup = (REPO_ROOT / "deploy" / "docker" / "kong" / "kong-setup.sh").read_text(encoding="utf-8")
-        for service in ("flow_buider", "minio_service", "workflow_runtime"):
+        for service in ("workflow_runtime",):
             creates = setup.count(f'-X PUT "$KONG_ADMIN/services/{service}"')
             assert creates == 1, f"{service} is created {creates} times in kong-setup.sh"

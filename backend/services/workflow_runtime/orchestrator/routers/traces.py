@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
-from runtime_services.langfuse_proxy import get_trace_observations
+from services.workflow_runtime.runtime_services.langfuse_proxy import get_trace_observations
 
 router = APIRouter()
 
