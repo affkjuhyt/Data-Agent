@@ -32,11 +32,12 @@ const PALETTE_GROUPS = [
     { label: 'Phân tích', module: 'ops', sub: 'ANALYTICS' },
   ]},
   { category: 'Cài đặt', items: [
-    { label: 'Team & Access', module: 'settings', sub: 'TEAM' },
-    { label: 'AI Providers',  module: 'settings', sub: 'PROVIDERS' },
-    { label: 'Secrets',       module: 'settings', sub: 'SECRETS' },
-    { label: 'Billing',       module: 'settings', sub: 'BILLING' },
-    { label: 'Audit Log',     module: 'settings', sub: 'AUDIT' },
+    { label: 'Users & Permissions',   module: 'settings', sub: 'IAM' },
+    { label: 'Auth & SSO',            module: 'settings', sub: 'AUTH' },
+    { label: 'Secrets Vault',         module: 'settings', sub: 'SECRETS' },
+    { label: 'Security & Compliance', module: 'settings', sub: 'SECURITY' },
+    { label: 'AI Providers & Models', module: 'settings', sub: 'AI_PROVIDERS' },
+    { label: 'Billing & Quotas',      module: 'settings', sub: 'BILLING' },
   ]},
 ];
 
@@ -239,8 +240,9 @@ const SecondaryNav = () => {
 
       <div className="flex-1 overflow-y-auto custom-scrollbar py-2 px-2">
         <div className="space-y-0.5">
-          {subItems.map((item: SubNavItem & { action?: boolean }) => {
+          {subItems.map((item: SubNavItem & { action?: boolean }, idx) => {
             const isActive = item.id === activeSubId;
+            const groupStart = item.group && item.group !== subItems[idx - 1]?.group;
             const handleClick = () => {
               if (item.action) {
                 setPendingAction(item.id as any);
@@ -249,17 +251,23 @@ const SecondaryNav = () => {
               }
             };
             return (
-              <button
-                key={item.id}
-                onClick={handleClick}
-                aria-current={isActive ? 'page' : undefined}
-                className={cn('subnav-item', isActive && !item.action && 'active')}
-              >
-                <item.icon className="subnav-icon w-3.5 h-3.5" />
-                <span className="flex-1 truncate">{item.label}</span>
-                {item.badge != null && <span className="subnav-badge">{item.badge}</span>}
-                {item.comingSoon && <span className="subnav-comingsoon">Soon</span>}
-              </button>
+              <React.Fragment key={item.id}>
+                {groupStart && (
+                  <div className={cn('px-3 pb-1 text-[10px] font-bold text-[#5F5F5F] uppercase tracking-widest', idx > 0 && 'pt-3')}>
+                    {item.group}
+                  </div>
+                )}
+                <button
+                  onClick={handleClick}
+                  aria-current={isActive ? 'page' : undefined}
+                  className={cn('subnav-item', isActive && !item.action && 'active')}
+                >
+                  <item.icon className="subnav-icon w-3.5 h-3.5" />
+                  <span className="flex-1 truncate">{item.label}</span>
+                  {item.badge != null && <span className="subnav-badge">{item.badge}</span>}
+                  {item.comingSoon && <span className="subnav-comingsoon">Soon</span>}
+                </button>
+              </React.Fragment>
             );
           })}
         </div>
@@ -484,16 +492,22 @@ const MobileDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
                 <div>
                   <div className="px-2 py-1 text-[10px] font-bold text-[#5F5F5F] uppercase tracking-widest">In this module</div>
                   <div className="space-y-0.5">
-                    {subItems.map(item => (
-                      <button
-                        key={item.id}
-                        onClick={() => { setSubTab(activeModule, item.id); onClose(); }}
-                        className={cn('subnav-item', item.id === activeSubId && 'active')}
-                      >
-                        <item.icon className="subnav-icon w-3.5 h-3.5" />
-                        <span className="flex-1 truncate">{item.label}</span>
-                        {item.badge != null && <span className="subnav-badge">{item.badge}</span>}
-                      </button>
+                    {subItems.map((item, idx) => (
+                      <React.Fragment key={item.id}>
+                        {item.group && item.group !== subItems[idx - 1]?.group && (
+                          <div className={cn('px-3 pb-1 text-[10px] font-bold text-[#5F5F5F] uppercase tracking-widest', idx > 0 && 'pt-3')}>
+                            {item.group}
+                          </div>
+                        )}
+                        <button
+                          onClick={() => { setSubTab(activeModule, item.id); onClose(); }}
+                          className={cn('subnav-item', item.id === activeSubId && 'active')}
+                        >
+                          <item.icon className="subnav-icon w-3.5 h-3.5" />
+                          <span className="flex-1 truncate">{item.label}</span>
+                          {item.badge != null && <span className="subnav-badge">{item.badge}</span>}
+                        </button>
+                      </React.Fragment>
                     ))}
                   </div>
                 </div>

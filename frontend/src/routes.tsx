@@ -60,11 +60,19 @@ export const ROUTE_MAP: Record<string, Record<string, RouteEntry>> = {
     ANALYTICS:     { render: () => <ExecutiveDashboard /> },
   },
 
+  // One entry per Settings section; the module's secondary nav is its only nav.
   settings: {
-    TEAM:      { render: () => <SettingsView initialSection="IAM" /> },
-    PROVIDERS: { render: () => <SettingsView initialSection="AI_PROVIDERS" /> },
-    SECRETS:   { render: () => <SettingsView initialSection="SECRETS" /> },
-    BILLING:   { render: () => <SettingsView initialSection="BILLING" /> },
-    AUDIT:     { render: () => <SettingsView initialSection="SECURITY" /> },
+    OVERVIEW:       { render: () => <SettingsView section="OVERVIEW" /> },
+    ORGANIZATION:   { render: () => <SettingsView section="ORGANIZATION" /> },
+    IAM:            { render: () => <SettingsView section="IAM" /> },
+    AUTH:           { render: () => <SettingsView section="AUTH" /> },
+    SECRETS:        { render: () => <SettingsView section="SECRETS" /> },
+    SECURITY:       { render: () => <SettingsView section="SECURITY" /> },
+    AI_PROVIDERS:   { render: () => <SettingsView section="AI_PROVIDERS" /> },
+    INFRASTRUCTURE: { render: () => <SettingsView section="INFRASTRUCTURE" /> },
+    STORAGE:        { render: () => <SettingsView section="STORAGE" /> },
+    BILLING:        { render: () => <SettingsView section="BILLING" /> },
+    API:            { render: () => <SettingsView section="API" /> },
+    ADVANCED:       { render: () => <SettingsView section="ADVANCED" /> },
   },
 };

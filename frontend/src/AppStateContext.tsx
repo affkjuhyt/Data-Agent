@@ -50,7 +50,7 @@ const REDIRECT_MAP: Record<string, { module: string; sub: string; subs?: Record<
   'ai-runtime':          { module: 'build',    sub: 'AGENTS' },
   'operations-center':   { module: 'ops',      sub: 'TRACES' },
   'release-management':  { module: 'build',    sub: 'VERSIONS' },
-  'governance':          { module: 'settings', sub: 'AUDIT' },
+  'governance':          { module: 'settings', sub: 'SECURITY' },
   'national-ops':        { module: 'ops',      sub: 'ANALYTICS' },
   // previous 5-module IA
   'test':                { module: 'build',    sub: 'PLAYGROUND', subs: { PLAYGROUND: 'PLAYGROUND' } },
@@ -60,6 +60,12 @@ const REDIRECT_MAP: Record<string, { module: string; sub: string; subs?: Record<
 // "#build/KNOWLEDGE" (old) → the knowledge module
 const BUILD_SUB_REDIRECTS: Record<string, { module: string; sub?: string }> = {
   KNOWLEDGE: { module: 'knowledge' },
+};
+// Settings sub-tabs before the nested sidebar was folded into the module nav.
+const SETTINGS_SUB_REDIRECTS: Record<string, string> = {
+  TEAM: 'IAM',
+  PROVIDERS: 'AI_PROVIDERS',
+  AUDIT: 'SECURITY',
 };
 
 /** Where a user lands with no hash: business users ask, engineers build. */
@@ -73,6 +79,7 @@ export const resolveRoute = (module: string, sub?: string): { module: string; su
     return { module: r.module, sub: mapped || r.sub || undefined };
   }
   if (module === 'build' && sub && BUILD_SUB_REDIRECTS[sub]) return BUILD_SUB_REDIRECTS[sub];
+  if (module === 'settings' && sub && SETTINGS_SUB_REDIRECTS[sub]) return { module, sub: SETTINGS_SUB_REDIRECTS[sub] };
   return { module, sub };
 };
 
