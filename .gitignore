@@ -99,3 +99,10 @@ model/ragas/results.csv
 scripts/ui-demo-shots/
 scripts/e2e/out/
 scripts/e2e/out/
+
+# ansible: real inventories/secrets stay local
+deploy/ansible/inventories/*/.secrets/
+deploy/ansible/inventories/prod/hosts.yml
+deploy/ansible/inventories/prod/group_vars/all.yml
+deploy/ansible/inventories/prod/group_vars/all/vault.yml
+.ansible-secrets/

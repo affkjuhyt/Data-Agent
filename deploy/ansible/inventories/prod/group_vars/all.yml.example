@@ -1,0 +1,15 @@
+---
+# copy to all.yml; secrets go to group_vars/all/vault.yml (ansible-vault encrypt)
+compose_project: dataagent
+compose_extra_files:
+  - docker-compose.prod.yml               # WAL archive, backup sidecar, TLS OpenBao
+compose_build: policy                     # build when the image is missing; "always" for a release
+llm_backend: litellm_config               # infra/litellm/config.yaml → your hosted LLM
+keycloak_disable_mfa: false
+openbao_allow_reset: false                # never destroy a production vault automatically
+seed_demo: false
+set_vite_api_url: false
+kong_admin_published: false
+run_smoke: true
+kong_public_url: https://dataagent.example.vn
+keycloak_url: https://sso.example.vn

@@ -4,7 +4,6 @@ import keycloak from './keycloak';
 const API = '/api/auth';
 
 export const PII_TYPES = ['EMAIL', 'PHONE', 'CCCD', 'CMND', 'CREDIT_CARD', 'IP'] as const;
-export type PiiType = (typeof PII_TYPES)[number];
 
 export interface ComplianceSettings {
   pii_masking: boolean;
@@ -19,7 +18,7 @@ export interface ComplianceSettings {
   updated_by: string;
 }
 
-export interface CompliancePolicy {
+interface CompliancePolicy {
   id: string;
   name: string;
   module: string;
@@ -27,7 +26,7 @@ export interface CompliancePolicy {
   severity: string;
 }
 
-export interface ComplianceScore {
+interface ComplianceScore {
   score: number;
   breakdown: Array<{ label: string; val: number }>;
   policies: CompliancePolicy[];

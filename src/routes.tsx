@@ -12,14 +12,14 @@ import { TraceExplorer } from './components/agent-builder/agents/AgentTraces';
 import { ExecutiveDashboard } from './components/ExecutiveDashboard';
 import WorkflowEngine from './components/agent-builder/workflow/Overview';
 
-export interface ComingSoonInfo {
+interface ComingSoonInfo {
   title: string;
   description: string;
   icon?: any;
   plannedFeatures?: string[];
 }
 
-export type RouteEntry =
+type RouteEntry =
   | { render: () => React.ReactNode }
   | { comingSoon: ComingSoonInfo };
 

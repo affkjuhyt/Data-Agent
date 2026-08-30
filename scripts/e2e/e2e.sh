@@ -22,7 +22,7 @@ cd "$ROOT"
 # "infra") keeps its Postgres/Keycloak/KB data untouched; E2E always starts from
 # a fresh database so migrations + seed are reproducible.
 E2E_PROJECT=${E2E_PROJECT:-dataagent-e2e}
-COMPOSE=(docker compose -p "$E2E_PROJECT" -f infra/docker-compose.yml -f infra/docker-compose.app.yml
+COMPOSE=(docker compose -p "$E2E_PROJECT" --profile runtime -f infra/docker-compose.yml -f infra/docker-compose.app.yml
          -f infra/docker-compose.agent-test.yml -f infra/docker-compose.local.yml)
 # dev (default): existing images + bind-mounted source, build only what is
 # missing. build: rebuild every image (slow — full pip install per service).
@@ -120,11 +120,12 @@ ensure_images() {  # dev mode: build only services whose image is not present
   missing=$("${COMPOSE[@]}" config --format json 2>/dev/null | py '
 import sys, json, subprocess
 cfg = json.load(sys.stdin); proj = cfg.get("name", "infra")
+wanted = set(sys.argv[1].split(","))
 for name, svc in cfg["services"].items():
-    if "build" not in svc: continue
+    if name not in wanted or "build" not in svc: continue
     image = svc.get("image") or f"{proj}-{name}"
     if subprocess.run(["docker","image","inspect",image],capture_output=True).returncode != 0:
-        print(name)')
+        print(name)' "$(IFS=,; echo "${SERVICES[*]}")")
   if [ -n "$missing" ]; then
     warn "building missing images: $(echo $missing | tr '\n' ' ')"
     # shellcheck disable=SC2086

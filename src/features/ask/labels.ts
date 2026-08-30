@@ -6,7 +6,7 @@
  * to the raw value so a new backend key is still visible, never blank.
  */
 
-export const OPTION_LABELS: Record<string, string> = {
+const OPTION_LABELS: Record<string, string> = {
   this_month: 'Tháng này',
   last_month: 'Tháng trước',
   this_quarter: 'Quý này',
@@ -21,7 +21,7 @@ export const OPTION_LABELS: Record<string, string> = {
   same_period_last_year: 'Cùng kỳ năm ngoái',
 };
 
-export const REASON_LABELS: Record<string, string> = {
+const REASON_LABELS: Record<string, string> = {
   missing_time_range: 'Thiếu khoảng thời gian',
   ambiguous_metric: 'Chỉ số nhập nhằng',
   comparison_without_baseline: 'Thiếu mốc so sánh',

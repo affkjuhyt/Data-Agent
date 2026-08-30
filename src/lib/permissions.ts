@@ -1,7 +1,7 @@
 import { useAppState } from '../AppStateContext';
 import type { Role } from '../types';
 
-export type Permission =
+type Permission =
   | 'delete_data'             // delete doc / chunk / version / table
   | 'edit_conflict'           // submit conflict resolution
   | 'process_layer'           // promote Bronze → Silver → Gold

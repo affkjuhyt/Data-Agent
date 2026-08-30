@@ -2,12 +2,12 @@ from typing import Any, cast
 import logging
 import uuid
 from fastapi import HTTPException
-from sqlalchemy import select as sa_select, func as sa_func
+from sqlalchemy import select as sa_select
 from libs.basemodel.services_databaseconnector.postgres_model import (
     ReadJoinRequest, WhereFilter, OrderBy, OrderDirection, KBDataDelete, FilterOperator,
 )
 from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
-    KBLifecycleHistoryORM, KBDataORM, KBTextBlockORM,
+    KBLifecycleHistoryORM, KBDataORM,
 )
 from services.kb_backend.pipeline.ingestion import config as ing_cfg
 from services.kb_backend.schemas import DocResponse, to_string

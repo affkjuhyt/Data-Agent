@@ -16,6 +16,23 @@ from collections.abc import Iterator
 
 import pytest
 
+# Several services call `load_dotenv(find_dotenv())` at import time. Under pytest
+# that would pull the developer's ./.env or infra/.env (GATEWAY_KEY, secrets, DB
+# URLs) into every test and make results depend on the machine. Neutralise it
+# before any service module is imported; tests set what they need via
+# monkeypatch.setenv.
+try:
+    import dotenv
+    import dotenv.main
+
+    def _no_dotenv(*_args, **_kwargs) -> bool:
+        return False
+
+    dotenv.load_dotenv = _no_dotenv  # type: ignore[assignment]
+    dotenv.main.load_dotenv = _no_dotenv  # type: ignore[assignment]
+except ImportError:  # pragma: no cover - python-dotenv is optional for pure-unit runs
+    pass
+
 
 # ─── Marker enforcement ────────────────────────────────────────────────────
 # Every test must declare `unit` or `integration`. Fails the suite otherwise.

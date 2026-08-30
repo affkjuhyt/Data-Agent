@@ -1,0 +1,13 @@
+---
+# A changed secret must reach every service that reads it. Compose recreates
+# only the containers whose config hash changed, so this is cheap when nothing did.
+- name: recreate app services
+  community.docker.docker_compose_v2:
+    project_src: "{{ compose_dir }}"
+    project_name: "{{ compose_project }}"
+    files: "{{ compose_files }}"
+    services: "{{ compose_services }}"
+    build: never
+    state: present
+  # only meaningful once the stack exists — first run creates it in compose_stack anyway
+  when: "'stack' in ansible_run_tags or 'all' in ansible_run_tags"

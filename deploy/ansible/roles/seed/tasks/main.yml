@@ -1,0 +1,32 @@
+---
+# Demo content for a local / demo stack: the e2e-sql-agent, two approved
+# revenue contracts with Vietnamese synonyms, the secrets_vault row for the
+# warehouse password, an 8-month fact table in sandbox_dev, and the agent's
+# canvas in Mongo. Never on production (seed_demo=false).
+- name: Demo seed
+  when: (seed_demo | bool)
+  block:
+    - name: Postgres — agent, metric contracts, secret row, demo warehouse
+      ansible.builtin.shell: >
+        docker exec -i dataagent-postgres psql -U admin -d dataagent -v ON_ERROR_STOP=1 -q
+        < {{ project_dir }}/scripts/e2e/seed.sql
+      changed_when: true
+
+    - name: Mongo — agent canvas (planner → db_connector → … → judge)
+      ansible.builtin.shell: >
+        docker exec -i dataagent-mongo mongosh --quiet dataagent
+        < {{ project_dir }}/scripts/e2e/seed-flow.js
+      changed_when: true
+
+    # graph + metric caches live in the runtime process
+    - name: Restart workflow-runtime so the seed is visible
+      ansible.builtin.command: docker restart dataagent-workflow-runtime
+      changed_when: true
+
+    - name: workflow-runtime is healthy
+      ansible.builtin.command: docker inspect -f '{% raw %}{{.State.Health.Status}}{% endraw %}' dataagent-workflow-runtime
+      register: runtime_health
+      until: runtime_health.stdout == 'healthy'
+      retries: "{{ wait_runtime }}"
+      delay: 1
+      changed_when: false

@@ -16,9 +16,9 @@ Three classes of drift are caught here:
     at head. Compose gets that from `depends_on: service_completed_successfully`;
     here it is an initContainer, and an initContainer is easy to forget when
     copying a manifest for a new service.
-  * **A destructive job in the directory apply.** `kubectl apply -f k8s/` is the
+  * **A destructive job in the directory apply.** `kubectl apply -f deploy/k8s/` is the
     documented routine. Anything that drops a database must therefore not be in
-    `k8s/*.yaml` — the restore template lives in `k8s/dr/` for exactly that
+    `deploy/k8s/*.yaml` — the restore template lives in `deploy/k8s/dr/` for exactly that
     reason, and this test is what keeps it there.
 """
 from __future__ import annotations
@@ -34,7 +34,7 @@ import yaml
 pytestmark = pytest.mark.unit
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-K8S_DIR = REPO_ROOT / "k8s"
+K8S_DIR = REPO_ROOT / "deploy" / "k8s"
 DR_DIR = K8S_DIR / "dr"
 
 # Deployments that reach Postgres through the ORM, and so must not serve traffic
@@ -304,14 +304,14 @@ class TestBackupsAreVerifiedNotAssumed:
 
 class TestNothingDestructiveInTheRoutineApply:
     def test_no_top_level_manifest_drops_a_database(self):
-        """`kubectl apply -f k8s/` is the documented routine and it is not
+        """`kubectl apply -f deploy/k8s/` is the documented routine and it is not
         recursive, which is the whole reason the restore template lives in
-        k8s/dr/. Keep it there."""
+        deploy/k8s/dr/. Keep it there."""
         for path in sorted(K8S_DIR.glob("*.yaml")):
             body = path.read_text(encoding="utf-8").upper()
             assert "DROP DATABASE" not in body, (
-                f"{path.name} would be applied by `kubectl apply -f k8s/`. "
-                f"Destructive jobs belong in k8s/dr/."
+                f"{path.name} would be applied by `kubectl apply -f deploy/k8s/`. "
+                f"Destructive jobs belong in deploy/k8s/dr/."
             )
 
     def test_the_restore_job_ships_suspended(self):

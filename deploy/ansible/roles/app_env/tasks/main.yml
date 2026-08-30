@@ -1,0 +1,26 @@
+---
+# The one .env every compose service reads. Only the keys the platform's
+# fail-closed chain needs are managed here; everything else stays as the
+# operator set it.
+- name: Gateway / service-auth / Kafka secrets in .env
+  ansible.builtin.lineinfile:
+    path: "{{ project_dir }}/.env"
+    regexp: "^{{ item.key }}="
+    line: "{{ item.key }}={{ item.value }}"
+    create: true
+    mode: "0600"
+  loop:
+    - { key: GATEWAY_KEY, value: "{{ gateway_key }}" }
+    - { key: SERVICE_AUTH_SECRET, value: "{{ service_auth_secret }}" }
+    - { key: KAFKA_ADMIN_PASSWORD, value: "{{ kafka_admin_password }}" }
+  loop_control:
+    label: "{{ item.key }}"
+  no_log: true
+  notify: recreate app services
+
+- name: Frontend dev server talks to Kong (VITE_API_URL)
+  ansible.builtin.lineinfile:
+    path: "{{ project_dir }}/.env"
+    regexp: "^VITE_API_URL="
+    line: "VITE_API_URL={{ kong_public_url }}"
+  when: (set_vite_api_url | bool)

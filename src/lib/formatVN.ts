@@ -23,7 +23,7 @@ const DASH = '—';
 /** ISO-8601 weekday index for Monday (getDay() === 1). */
 export const WEEK_STARTS_ON = 1;
 
-export type Numeric = number | string | bigint | null | undefined;
+type Numeric = number | string | bigint | null | undefined;
 
 interface NumberOptions {
   /** Maximum fraction digits (default: 0 for integers, 2 otherwise). */
@@ -110,7 +110,7 @@ export function formatPercent(ratio: Numeric, maxFractionDigits = 1): string {
   return `${formatNumber(n * 100, { maxFractionDigits })}%`;
 }
 
-export type DateInput = Date | string | number | null | undefined;
+type DateInput = Date | string | number | null | undefined;
 
 export function toDate(value: DateInput): Date | null {
   if (value === null || value === undefined || value === '') return null;

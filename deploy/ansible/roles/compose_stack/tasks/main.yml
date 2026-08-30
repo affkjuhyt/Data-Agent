@@ -1,0 +1,121 @@
+---
+- name: Compose command line for shell steps
+  ansible.builtin.set_fact:
+    compose_cmd: "docker compose -p {{ compose_project }}{% for p in compose_profiles %} --profile {{ p }}{% endfor %}{% for f in compose_files %} -f {{ compose_dir }}/{{ f }}{% endfor %}"
+
+# container_name is fixed per service, so a stack from another compose project
+# (e.g. the day-to-day "infra" project) must be stopped first. Their volumes
+# are untouched.
+- name: dataagent-* containers owned by another compose project
+  ansible.builtin.command: >
+    docker ps -a --filter name=dataagent-
+    --format '{% raw %}{{.ID}} {{.Label "com.docker.compose.project"}}{% endraw %}'
+  register: other_containers
+  changed_when: false
+
+- name: Remove them (volumes are kept)
+  ansible.builtin.command: "docker rm -f {{ item.split(' ')[0] }}"
+  loop: "{{ other_containers.stdout_lines | select('search', ' ') | list }}"
+  when: (item.split(' ')[1] | default('')) not in ['', compose_project]
+  changed_when: true
+
+- name: Build only what is missing (build=never)
+  when: compose_build == 'never'
+  block:
+    - name: Rendered compose config
+      ansible.builtin.command: "{{ compose_cmd }} config --format json"
+      register: compose_config
+      changed_when: false
+
+    - name: Helper script on the target
+      ansible.builtin.copy:
+        src: service_images.py
+        dest: /tmp/dataagent-service-images.py
+        mode: "0644"
+
+    - name: Services whose image is absent
+      ansible.builtin.command: python3 /tmp/dataagent-service-images.py {{ compose_services | join(',') }} --missing
+      args:
+        stdin: "{{ compose_config.stdout }}"
+      register: missing_images
+      changed_when: false
+
+    - name: Build missing images
+      ansible.builtin.command: "{{ compose_cmd }} build {{ missing_images.stdout_lines | join(' ') }}"
+      when: missing_images.stdout_lines | length > 0
+      changed_when: true
+
+- name: Stack is up ({{ compose_services | length }} services, build={{ compose_build }})
+  community.docker.docker_compose_v2:
+    project_src: "{{ compose_dir }}"
+    project_name: "{{ compose_project }}"
+    files: "{{ compose_files }}"
+    profiles: "{{ compose_profiles }}"
+    services: "{{ compose_services }}"
+    build: "{{ compose_build }}"
+    state: present
+
+- name: Postgres accepts connections
+  ansible.builtin.command: docker exec dataagent-postgres pg_isready -U admin
+  register: pg_ready
+  until: pg_ready.rc == 0
+  retries: "{{ wait_postgres }}"
+  delay: 1
+  changed_when: false
+
+# Keycloak (KC_DB_SCHEMA=keycloak) and Kong do not create their schemas; the
+# compose init script only runs on a fresh volume. State it explicitly.
+- name: keycloak / kong schemas exist
+  ansible.builtin.command: >
+    docker exec dataagent-postgres psql -U admin -d dataagent -qc
+    "CREATE SCHEMA IF NOT EXISTS keycloak; CREATE SCHEMA IF NOT EXISTS kong;"
+  changed_when: false
+
+- name: Kong admin API
+  ansible.builtin.uri:
+    url: "{{ kong_admin_url }}/status"
+  register: kong_status
+  until: kong_status.status == 200
+  retries: "{{ wait_kong }}"
+  delay: 1
+
+- name: Keycloak realm is served
+  ansible.builtin.uri:
+    url: "{{ keycloak_url }}/realms/{{ keycloak_realm }}/.well-known/openid-configuration"
+  register: kc_ready
+  until: kc_ready.status == 200
+  retries: "{{ (wait_keycloak / 2) | int }}"
+  delay: 2
+
+- name: LiteLLM proxy
+  ansible.builtin.uri:
+    url: "{{ litellm_url }}/health/liveliness"
+  register: litellm_ready
+  until: litellm_ready.status == 200
+  retries: 60
+  delay: 2
+
+- name: One-shot jobs (migrate, seed) exited 0
+  ansible.builtin.command: "{{ compose_cmd }} ps -a --format '{% raw %}{{.Service}} {{.ExitCode}}{% endraw %}'"
+  register: oneshots
+  changed_when: false
+  failed_when: >
+    (('migrate' in compose_services) and ('migrate 0' not in oneshots.stdout)) or
+    (('seed' in compose_services) and ('seed 0' not in oneshots.stdout))
+
+- name: workflow-runtime is healthy
+  ansible.builtin.command: docker inspect -f '{% raw %}{{.State.Health.Status}}{% endraw %}' dataagent-workflow-runtime
+  register: runtime_health
+  until: runtime_health.stdout == 'healthy'
+  retries: "{{ wait_runtime }}"
+  delay: 1
+  changed_when: false
+
+- name: orchestrator / sandbox-executor are running
+  ansible.builtin.command: docker inspect -f '{% raw %}{{.State.Status}}{% endraw %}' {{ item }}
+  register: svc_state
+  failed_when: svc_state.stdout != 'running'
+  changed_when: false
+  loop:
+    - dataagent-orchestrator
+    - dataagent-sandbox-executor

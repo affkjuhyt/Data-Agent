@@ -49,7 +49,7 @@ export interface MetricProvenance {
 }
 
 /** libs/shared/freshness.TableGovernance.to_dict() */
-export interface TableGovernance {
+interface TableGovernance {
   table: string;
   owner?: string | null;
   classification?: string | null;

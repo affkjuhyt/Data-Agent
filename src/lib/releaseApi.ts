@@ -23,7 +23,7 @@ export interface PipelineRaw {
   completed_at: string | null;
 }
 
-export interface HistoryRaw {
+interface HistoryRaw {
   pipeline_id: string;
   package_id: string | null;
   environment: string;
@@ -33,7 +33,7 @@ export interface HistoryRaw {
   duration_ms: number | null;
 }
 
-export interface RollbackTargetRaw {
+interface RollbackTargetRaw {
   pipeline_id: string;
   name: string;
   current_version: string;
@@ -41,7 +41,7 @@ export interface RollbackTargetRaw {
   environment: string;
 }
 
-export interface PipelineStepRaw {
+interface PipelineStepRaw {
   step_name: string;
   status: string;
   started_at: string | null;
@@ -145,7 +145,7 @@ const STATUS_MAP: Record<string, string> = {
 
 /* ─── Mappers ────────────────────────────────────────────────────────── */
 
-export function mapPipeline(p: PipelineRaw): DeploymentUI {
+function mapPipeline(p: PipelineRaw): DeploymentUI {
   const startedMs   = new Date(p.created_at).getTime();
   const completedMs = p.completed_at ? new Date(p.completed_at).getTime() : null;
   const durationMs  = completedMs ? completedMs - startedMs : null;
@@ -171,7 +171,7 @@ export function mapPipeline(p: PipelineRaw): DeploymentUI {
   };
 }
 
-export function mapHistory(h: HistoryRaw, pipelines: PipelineRaw[]): HistoryUI {
+function mapHistory(h: HistoryRaw, pipelines: PipelineRaw[]): HistoryUI {
   const pipe = pipelines.find(p => p.id === h.pipeline_id);
   const name = pipe?.pipeline_name ?? h.pipeline_id;
   const version = pipe?.package_version ?? h.package_id ?? '--';
@@ -189,7 +189,7 @@ export function mapHistory(h: HistoryRaw, pipelines: PipelineRaw[]): HistoryUI {
   };
 }
 
-export function mapRollbackTarget(r: RollbackTargetRaw): RollbackTargetUI {
+function mapRollbackTarget(r: RollbackTargetRaw): RollbackTargetUI {
   return {
     id:       r.pipeline_id,
     name:     r.name,

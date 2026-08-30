@@ -10,7 +10,7 @@ import type { AgentOption, OrchestrateResponse } from './types';
 const authHeaders = (): Record<string, string> =>
   keycloak?.token ? { Authorization: `Bearer ${keycloak.token}` } : {};
 
-export interface OrchestratePayload {
+interface OrchestratePayload {
   query: string;
   agent_id?: string;
   user_id: string;

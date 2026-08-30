@@ -83,7 +83,6 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
                 return None
 
             llm_config       = dict(row.llm_config or {})
-            retrieval_config = dict(row.retrieval_config or {})
             wv_id            = str(row.workflow_version_id) if row.workflow_version_id else None
 
             # 2. KB connections

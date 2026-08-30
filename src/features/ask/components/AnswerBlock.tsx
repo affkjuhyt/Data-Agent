@@ -17,7 +17,7 @@ import { EvidenceStrip, CopyButton } from './EvidenceStrip';
 import { hasEvidence, primaryRun } from './evidenceSummary';
 import { MarkdownContent } from './MarkdownContent';
 
-export interface AnswerBlockProps {
+interface AnswerBlockProps {
   msg: AskMessage;
   /** the user question this answers — used for the export file name */
   question?: string;
@@ -31,7 +31,7 @@ export interface AnswerBlockProps {
   showTimestamp?: boolean;
 }
 
-export function TypingDots() {
+function TypingDots() {
   return (
     <span data-testid="typing" style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 0' }}>
       {[0, 1, 2].map(i => (

@@ -9,7 +9,7 @@ import { CITATION_COLORS, useAnswerTheme } from './AnswerTheme';
 
 const INLINE_RE = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\)|\[\d+\])/g;
 
-export function InlineText({ text, citations }: { text: string; citations?: Citation[] }) {
+function InlineText({ text, citations }: { text: string; citations?: Citation[] }) {
   const mode = useAnswerTheme();
   const colors = CITATION_COLORS[mode];
   return (

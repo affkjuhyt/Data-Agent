@@ -4,7 +4,7 @@ import { PagedResponse } from '../types';
 
 const PAGE_SIZE = 50;
 
-export interface CursorPagination<T> {
+interface CursorPagination<T> {
   items: T[];
   page: number;
   total: number;

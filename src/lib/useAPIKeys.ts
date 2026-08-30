@@ -3,7 +3,7 @@ import keycloak from './keycloak';
 
 const API = '/api/auth';
 
-export interface APIKey {
+interface APIKey {
   id: string;
   name: string;
   key_prefix: string;

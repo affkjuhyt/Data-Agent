@@ -3,16 +3,11 @@ import {
   Bot,
   Activity,
   Settings,
-  Stethoscope,
   FlaskConical,
   ClipboardCheck,
-  TrainFront,
-  Building2,
-  Lock,
   BarChart3,
   History,
   Cpu,
-  LayoutGrid,
   Users,
   Package,
   GitBranch,
@@ -78,14 +73,6 @@ export const MODULE_SUB_ITEMS: Record<string, SubNavItem[]> = {
     { id: 'AUDIT',     label: 'Audit Log',     icon: ScrollText },
   ],
 };
-
-export const INDUSTRIES = [
-  { id: 'GENERAL',    label: 'Cross-Industry',     icon: LayoutGrid },
-  { id: 'GOVERNMENT', label: 'Gov & Public',       icon: Building2 },
-  { id: 'BANKING',    label: 'Financial Services', icon: Lock },
-  { id: 'RAILWAY',    label: 'Railway & Metro',    icon: TrainFront },
-  { id: 'HEALTHCARE', label: 'Medical & Health',   icon: Stethoscope },
-];
 
 export const ROLES = [
   { id: 'PLATFORM_ADMIN', label: 'Platform Admin' },

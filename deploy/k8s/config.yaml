@@ -1,0 +1,52 @@
+# Shared, NON-SECRET wiring for the runtime tier (orchestrator, workflow-runtime,
+# sandbox-executor, the migration Job and the backup CronJob).
+#
+# Why a ConfigMap when the KB-tier files (kb-backend/kb-gateway/model-service)
+# inline their env: three services must agree on the SAME endpoints, and a value
+# that has to match in three places is a value that eventually doesn't. Anything
+# secret — connection URLs with a password in them, signing keys, API keys —
+# lives in the `dataagent-secrets` Secret instead, which is deliberately NOT
+# committed here (see deploy/k8s/README.md "Secrets" for the create command).
+#
+# Per-service values (OTEL_SERVICE_NAME, KAFKA_SASL_USERNAME) are set inline in
+# each Deployment: `env` overrides `envFrom`, so the inline entry wins.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dataagent-config
+  labels: { app.kubernetes.io/part-of: dataagent }
+data:
+  # ── Stateful stores ────────────────────────────────────────────────────────
+  # Assumed managed services or their own StatefulSets — this directory does not
+  # create them (same scoping as the KB tier). Point these at whatever runs them;
+  # the hostnames below match the compose service names so an in-cluster
+  # like-for-like port of infra/docker-compose.app.yml works unchanged.
+  MONGODB_URL: "mongodb://mongo:27017/dataagent"
+  REDIS_URL: "redis://redis:6379"
+  QDRANT_URL: "http://qdrant:6333"
+  MINIO_ENDPOINT: "http://minio:9000"
+  OPENBAO_ADDR: "http://openbao:8200"
+
+  # ── Model gateway + tracing ────────────────────────────────────────────────
+  LITELLM_BASE_URL: "http://litellm:4000"
+  LANGFUSE_HOST: "http://langfuse:3000"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+
+  # ── Kafka (audit + memory pipelines) ───────────────────────────────────────
+  # SASL username is per-service (set inline); the password is in the Secret.
+  KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  KAFKA_SECURITY_PROTOCOL: "SASL_PLAINTEXT"
+  KAFKA_SASL_MECHANISM: "PLAIN"
+
+  # ── Service-to-service URLs ────────────────────────────────────────────────
+  # ClusterIP Services created by the manifests in this directory.
+  WORKFLOW_RUNTIME_URL: "http://workflow-runtime:8001"
+  SANDBOX_EXECUTOR_URL: "http://sandbox-executor:8500"
+
+  # The orchestrator calls POST /api/conversations/run on a user's behalf and
+  # cannot carry their Keycloak token, so it presents a signed assertion
+  # instead. Every entry here can act as any user — keep it to one name.
+  RUNTIME_ALLOWED_SERVICES: "orchestrator"
+  # Nothing calls the orchestrator service-to-service, so its assertion route is
+  # closed: only gateway-verified requests get in. Empty on purpose.
+  ORCHESTRATOR_ALLOWED_SERVICES: ""

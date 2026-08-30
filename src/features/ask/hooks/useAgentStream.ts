@@ -9,7 +9,7 @@ import { openOrchestrateStream, resumeClarification } from '../api';
 import { readSseStream, type SseEvent } from '../sse';
 import type { AskMessage, Clarification } from '../types';
 
-export interface UseAgentStreamOptions {
+interface UseAgentStreamOptions {
   userId: string;
   /** undefined / null → orchestrator picks agents (multi-agent) */
   agentId?: string | null;

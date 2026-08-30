@@ -10,7 +10,7 @@ import type { Evidence, EvidenceRun } from '../types';
 
 export type Tone = 'ok' | 'warn' | 'bad' | 'neutral';
 
-export interface Chip {
+interface Chip {
   key: string;
   label: string;
   tone: Tone;

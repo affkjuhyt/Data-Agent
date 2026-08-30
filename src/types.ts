@@ -20,20 +20,6 @@ export interface PagedResponse<T> {
 export type KnowledgeLayer = Tier;
 export type { DocStatus };
 
-export type ConnectorStatus = 'HEALTHY' | 'SYNCING' | 'ERROR' | 'PAUSED';
-export type ConnectorType = 'DOCUMENT' | 'ENTERPRISE' | 'COMMUNICATION' | 'DATABASE' | 'WEB' | 'MEDIA';
-
-export interface KBConnector {
-  id: string;
-  name: string;
-  type: ConnectorType;
-  status: ConnectorStatus;
-  lastSync: string;
-  volume: string;
-  health: number; // 0-100
-  category: string;
-}
-
 export interface TenantContext {
   organization: string;
   workspace: string;
@@ -76,16 +62,6 @@ export interface KnowledgeDocument {
   };
   score?: number;
   conflicts?: boolean;
-}
-
-export interface IngestionJob {
-  id: string;
-  name: string;
-  startTime: string;
-  progress: number;
-  status: 'RUNNING' | 'COMPLETED' | 'FAILED' | 'QUEUED';
-  type: 'EMBEDDING' | 'OCR' | 'GRAPH_SYNC' | 'CONNECTOR_SYNC';
-  priority: 'HIGH' | 'NORMAL' | 'LOW';
 }
 
 export interface NavItem {

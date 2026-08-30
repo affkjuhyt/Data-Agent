@@ -1,0 +1,96 @@
+---
+# Defaults for every environment — ROLE DEFAULTS on purpose (lowest precedence),
+# so inventories/<env>/group_vars/all.yml overrides them. A playbook-level
+# group_vars/ would silently WIN over the inventory (it did, once).
+# Secrets: inventories/<env>/group_vars/all/vault.yml.
+
+compose_project: "dataagent-{{ env_name }}"
+compose_dir: "{{ project_dir }}/infra"
+compose_base_files:
+  - docker-compose.yml                    # infra: postgres, redis, mongo, kafka, minio, openbao, keycloak, kong, litellm…
+  - docker-compose.app.yml                # services: orchestrator, workflow-runtime, sandbox-executor, memory-consumer…
+  - docker-compose.local.yml              # alembic migrate + tenant seed (one-shot jobs)
+compose_extra_files: []
+compose_files: "{{ compose_base_files + compose_extra_files }}"
+# The agent tier only — not the KB tier (infra/docker-compose.kb_e2e.yml).
+compose_services:
+  - postgres
+  - redis
+  - mongo
+  - kafka
+  - minio
+  - openbao
+  - litellm
+  - keycloak
+  - kong-migration
+  - kong
+  - migrate
+  - seed
+  - sandbox-executor
+  - workflow-runtime
+  - orchestrator
+  - memory-consumer
+compose_build: policy                     # never | policy | always
+# Services carry `profiles: [runtime]`; `docker compose config/ps/images` hide
+# them unless the profile is active (explicit `up <service>` does not need it).
+compose_profiles: [runtime]
+
+# ── offline bundle (role: bundle, --tags bundle) ────────────────────────────
+bundle_dir: "{{ project_dir }}/dist/bundle"
+bundle_image_filter: ".*"                 # regex on image names — narrow for a dry run
+bundle_gzip_level: 1                      # images are already compressed layers; 1 is fast and fine
+bundle_reuse_images: true                 # skip docker save when images-<project>-<version>.tar.gz already exists
+bundle_include_ollama: "{{ llm_backend == 'host_ollama' }}"
+bundle_code_paths:                        # what a host needs at runtime — NOT the source tree (it is in the images)
+  - infra
+  - deploy/ansible
+  - scripts/e2e/seed.sql
+  - scripts/e2e/seed-flow.js
+  - .env.example
+  - README.md
+  - RUNBOOK.md
+  - SECURITY.md
+
+# Endpoints as seen from the host running the playbook tasks (the target).
+kong_public_url: http://localhost:8000
+kong_admin_url: http://localhost:8900
+keycloak_url: http://localhost:8080
+keycloak_public_url: "{{ keycloak_url }}"     # issuer in tokens (what browsers/tests use)
+keycloak_network_url: http://keycloak:8080    # what Kong uses inside the compose network
+keycloak_realm: aeroflow
+keycloak_admin_user: admin
+keycloak_admin_password: "{{ vault_keycloak_admin_password | default('admin') }}"
+keycloak_disable_mfa: false
+litellm_url: http://localhost:4000
+openbao_url: http://localhost:8300
+openbao_allow_reset: false
+openbao_rotate_approle: false             # true → mint a new AppRole secret-id even if .env has one
+
+llm_backend: litellm_config               # host_ollama | litellm_config
+ollama_url: http://localhost:11434
+ollama_model: qwen2.5:3b                  # must match infra/litellm/config.agent-local.yaml
+
+tenant_id: a0000000-0000-0000-0000-000000000001
+seed_demo: false
+demo_db_secret_key: e2e_dw_password
+demo_db_secret_value: sandbox_reader_dev_pw    # infra/sql/create-extra-dbs.sql
+demo_agent_id: 0000000e-2e00-4000-8000-000000000001
+
+set_vite_api_url: false
+kong_admin_published: true                # prod inventory sets false -> verify asserts port 8001 is NOT published
+run_smoke: false
+smoke_user: helios-engineer
+smoke_password: "{{ vault_smoke_password | default('H3lios@Eng001!') }}"
+
+# Secrets: from vault when defined, else generated once and persisted (0600)
+# next to the inventory on the controller, so re-runs are idempotent.
+secrets_dir: "{{ inventory_dir }}/.secrets"
+gateway_key: "{{ vault_gateway_key | default(lookup('password', secrets_dir ~ '/gateway_key length=48 chars=hexdigits')) }}"
+service_auth_secret: "{{ vault_service_auth_secret | default(lookup('password', secrets_dir ~ '/service_auth_secret length=64 chars=hexdigits')) }}"
+kafka_admin_password: "{{ vault_kafka_admin_password | default(lookup('password', secrets_dir ~ '/kafka_admin_password length=32 chars=ascii_letters,digits')) }}"
+
+# Timeouts (seconds) for readiness waits
+wait_postgres: 90
+wait_keycloak: 240
+wait_kong: 120
+wait_runtime: 120

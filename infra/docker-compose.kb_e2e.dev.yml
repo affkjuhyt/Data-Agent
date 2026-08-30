@@ -14,7 +14,7 @@
 #     --env-file infra/.env.kb-testing \
 #     up -d --build <services...>
 #
-# Or use the helper:   pwsh infra/kb_e2e.dev.ps1
+# Bring-up: docker compose -f infra/docker-compose.yml -f infra/docker-compose.kb_e2e.dev.yml up -d --build
 #
 # Specify only KB services on the up command to avoid starting the full platform
 # (workflow-runtime, flow-builder, auth-api, frontend, etc.):
@@ -42,7 +42,7 @@ services:
   # init scripts run in lexicographic order; 05 runs after the base file's 04.
   postgres:
     volumes:
-      - ./postgres/seed.sql:/docker-entrypoint-initdb.d/05-kb-seed.sql:ro
+      - ./sql/kb-seed.sql:/docker-entrypoint-initdb.d/05-kb-seed.sql:ro
 
   keycloak:
     healthcheck:

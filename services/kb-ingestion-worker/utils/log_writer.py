@@ -3,7 +3,6 @@
 progress/log entries to MongoDB kb_ingestion_logs and mirrors to the console logger."""
 from __future__ import annotations
 
-from typing import Any
 import datetime
 import logging
 

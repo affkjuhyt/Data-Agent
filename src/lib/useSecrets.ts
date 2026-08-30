@@ -17,13 +17,13 @@ export interface Secret {
   created_at: string;
 }
 
-export interface GovernanceConfig {
+interface GovernanceConfig {
   vault_auto_rotation: boolean;
   vault_panic_mode: boolean;
   vault_pii_access_log: boolean;
 }
 
-export interface AuditEntry {
+interface AuditEntry {
   id: string;
   event: string;
   key_name: string;
@@ -34,14 +34,14 @@ export interface AuditEntry {
   time: string | null;
 }
 
-export interface HsmStatus {
+interface HsmStatus {
   transit_keys: Array<{ name: string; type: string; latest_version: number; min_version: number }>;
   key_count: number;
   openbao_sealed: boolean;
   mount: string;
 }
 
-export interface PiiLogEntry {
+interface PiiLogEntry {
   id: string;
   key_name: string;
   key_type: string;

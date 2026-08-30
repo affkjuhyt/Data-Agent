@@ -1,0 +1,115 @@
+# Postgres restore — a template you edit and run deliberately, never something
+# that runs by itself.
+#
+# It lives in deploy/k8s/dr/ for one reason: `kubectl apply -f deploy/k8s/` is not recursive,
+# so a routine directory apply cannot pick this up. Do not move it up a level.
+#
+# It ships with `suspend: true`. Applying it creates a Job that does nothing;
+# the restore only starts when you explicitly unsuspend it. That is the second
+# safety catch — this manifest DROPS AND RECREATES the target database.
+#
+# ── Procedure ────────────────────────────────────────────────────────────────
+#   1. Stop writers. Otherwise you are restoring under live traffic and the
+#      result is neither the backup nor the current state:
+#        kubectl scale deploy/orchestrator deploy/workflow-runtime --replicas=0
+#
+#   2. Pick a dump:
+#        kubectl run -it --rm dump-ls --image=postgres:16-alpine --restart=Never \
+#          --overrides='{"spec":{"containers":[{"name":"dump-ls","image":"postgres:16-alpine",
+#          "command":["ls","-lt","/backups/dumps"],"volumeMounts":[{"name":"b","mountPath":"/backups"}]}],
+#          "volumes":[{"name":"b","persistentVolumeClaim":{"claimName":"postgres-backups"}}]}}'
+#
+#   3. Set DUMP_FILE below to that filename.
+#
+#   4. Apply and release the catch:
+#        kubectl apply -f deploy/k8s/dr/postgres-restore-job.yaml
+#        kubectl patch job/postgres-restore -p '{"spec":{"suspend":false}}'
+#        kubectl logs -f job/postgres-restore
+#
+#   5. Bring the schema to head — the dump is from whenever it was taken, and
+#      the deployed code may be newer:
+#        kubectl delete job dataagent-migrate --ignore-not-found
+#        kubectl apply -f deploy/k8s/migrate-job.yaml
+#        kubectl wait --for=condition=complete job/dataagent-migrate --timeout=10m
+#
+#   6. Scale the writers back up. The wait-for-migrations initContainer will
+#      hold them until step 5 has actually landed.
+#
+# ── Point-in-time recovery ───────────────────────────────────────────────────
+# NOT this Job. PITR means restoring a base backup and replaying WAL to a target
+# timestamp, and it belongs to whatever runs Postgres — the managed provider's
+# console/CLI, or a pgBackRest/Barman restore against the StatefulSet. The same
+# call as in docs/disaster-recovery.md: too many foot-guns for a one-shot
+# manifest, and a half-scripted PITR is worse than a documented manual one.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postgres-restore
+  labels: { app: postgres-restore, app.kubernetes.io/part-of: dataagent }
+spec:
+  suspend: true          # ← the safety catch. Patch to false to run.
+  backoffLimit: 0        # a half-applied restore is not something to retry blind
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels: { app: postgres-restore }
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: pg-restore
+          image: postgres:16-alpine
+          env:
+            - { name: PGHOST, value: "postgres" }
+            - { name: PGPORT, value: "5432" }
+            - { name: PGUSER, value: "admin" }
+            # Connect to `postgres`, not to the database being replaced: you
+            # cannot drop a database you are connected to.
+            - { name: PGDATABASE, value: "postgres" }
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef: { name: dataagent-secrets, key: PGPASSWORD }
+            - { name: TARGET_DB, value: "dataagent" }
+            # ── EDIT ME ──────────────────────────────────────────────────────
+            - { name: DUMP_FILE, value: "dump_YYYYmmdd_HHMMSS.sql.gz" }
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              path="/backups/dumps/${DUMP_FILE}"
+              if [ ! -f "${path}" ]; then
+                echo "[restore] ${path} not found — set DUMP_FILE to a real dump" >&2
+                ls -lt /backups/dumps >&2
+                exit 1
+              fi
+
+              # Verify the dump BEFORE dropping anything. Checking afterwards
+              # would mean discovering a truncated archive with the database
+              # already gone — the one state worse than the one you are
+              # recovering from. Same two checks the backup job applies before
+              # it accepts a dump, repeated here because the file has sat on a
+              # volume since then.
+              echo "[restore] verifying ${path}"
+              gzip -t "${path}"
+              if ! gunzip -c "${path}" | tail -5 | grep -q "PostgreSQL database dump complete"; then
+                echo "[restore] ABORTED — ${path} does not end with a completion marker;" >&2
+                echo "[restore] it is truncated. ${TARGET_DB} has NOT been touched." >&2
+                exit 1
+              fi
+
+              echo "[restore] `date -Iseconds` restoring ${path} into ${TARGET_DB}"
+              # FORCE terminates other sessions. Step 1 of the procedure should
+              # have stopped them; this makes a forgotten pod fail the restore
+              # loudly rather than leaving it half-applied.
+              psql -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ${TARGET_DB} WITH (FORCE)"
+              psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${TARGET_DB}"
+              gunzip -c "${path}" | psql -v ON_ERROR_STOP=1 -d "${TARGET_DB}"
+              echo "[restore] done — now run deploy/k8s/migrate-job.yaml before scaling writers up"
+          volumeMounts:
+            - { name: backups, mountPath: /backups, readOnly: true }
+          resources:
+            requests: { cpu: "250m", memory: "256Mi" }
+            limits:   { cpu: "2",    memory: "1Gi" }
+      volumes:
+        - name: backups
+          persistentVolumeClaim: { claimName: postgres-backups, readOnly: true }

@@ -1,0 +1,28 @@
+---
+# Data Agent — one playbook, every environment.
+#
+#   ansible-playbook site.yml                                  # local (default inventory)
+#   ansible-playbook -i inventories/prod site.yml --ask-vault-pass
+#   ansible-playbook site.yml --tags stack,gateway             # just those steps
+#   ansible-playbook site.yml --tags verify                    # health + one real turn (run_smoke)
+#
+# Order matters and each role is idempotent: run it twice, the second run
+# reports no changes. The roles are the same steps scripts/e2e/e2e.sh does by
+# hand, expressed as state ("this schema exists", "this AppRole exists") rather
+# than as commands.
+- name: Deploy the Data Agent stack
+  hosts: all
+  gather_facts: true
+
+  roles:
+    - { role: common,        tags: [always] }   # defaults only
+    - { role: code,          tags: [code] }
+    - { role: preflight,     tags: [preflight] }
+    - { role: app_env,       tags: [env] }
+    - { role: compose_stack, tags: [stack] }
+    - { role: gateway,       tags: [gateway, kong, keycloak] }
+    - { role: kafka_topics,  tags: [kafka] }
+    - { role: openbao,       tags: [openbao, vault] }
+    - { role: seed,          tags: [seed] }
+    - { role: verify,        tags: [verify] }
+    - { role: bundle,        tags: [bundle, never] }   # offline package — only when asked

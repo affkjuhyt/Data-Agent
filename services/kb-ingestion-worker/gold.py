@@ -10,7 +10,7 @@ import uuid
 from collections import Counter
 from dataclasses import dataclass
 import logging
-from typing import Any, Awaitable, Callable, NamedTuple
+from typing import Any, NamedTuple
 
 from qdrant_client import models as qmodels
 from qdrant_client.async_qdrant_client import AsyncQdrantClient

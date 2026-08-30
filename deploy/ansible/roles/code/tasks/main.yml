@@ -1,0 +1,54 @@
+---
+# Get the code onto the target. A local checkout is already there.
+- name: Code on a remote host
+  when: ansible_connection != 'local' and (code_source | default('none')) != 'none'
+  block:
+    - name: Clone / fast-forward the repository
+      ansible.builtin.git:
+        repo: "{{ repo_url }}"
+        dest: "{{ project_dir }}"
+        version: "{{ repo_version | default('main') }}"
+        force: false
+      when: code_source == 'git'
+
+    - name: Rsync this checkout to the host
+      ansible.posix.synchronize:
+        src: "{{ playbook_dir }}/../../"
+        dest: "{{ project_dir }}"
+        delete: false
+        rsync_opts:
+          - "--exclude=node_modules"
+          - "--exclude=.git"
+          - "--exclude=dist"
+          - "--exclude=.ansible-secrets"
+          - "--exclude=scripts/e2e/out"
+      when: code_source == 'rsync'
+
+# Air-gapped install: the bundle built by `--tags bundle` (images.tar.gz +
+# code.tar.gz) is on the controller; push it and load it — no registry needed.
+- name: Code + images from an offline bundle
+  when: (code_source | default('none')) == 'bundle'
+  block:
+    - name: Bundle directory on the target
+      ansible.builtin.file:
+        path: "{{ project_dir }}/.bundle"
+        state: directory
+        mode: "0755"
+
+    - name: Ship the bundle
+      ansible.builtin.copy:
+        src: "{{ bundle_path }}/{{ item }}"
+        dest: "{{ project_dir }}/.bundle/{{ item }}"
+        mode: "0644"
+      loop: [images.tar.gz, code.tar.gz, SHA256SUMS, manifest.json]
+
+    - name: Unpack code + config
+      ansible.builtin.unarchive:
+        src: "{{ project_dir }}/.bundle/code.tar.gz"
+        dest: "{{ project_dir }}"
+        remote_src: true
+
+    - name: Load images
+      ansible.builtin.command: docker load -i {{ project_dir }}/.bundle/images.tar.gz
+      register: docker_load
+      changed_when: "'Loaded image' in docker_load.stdout"

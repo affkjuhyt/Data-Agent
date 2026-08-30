@@ -895,5 +895,3 @@ export const ConflictWorkspace = () => {
     </div>
   );
 };
-
-export default ConflictWorkspace;

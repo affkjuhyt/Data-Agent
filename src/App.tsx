@@ -3,6 +3,7 @@ import { AppStateProvider, useAppState } from './AppStateContext';
 import { AppLayout } from './components/Layout';
 import { Placeholder } from './components/shared/Placeholder';
 import IngestionProgressOverlay from './components/shared/IngestionProgressOverlay';
+import { ForbiddenToast } from './components/shared/ForbiddenToast';
 import { ROUTE_MAP, SINGLE_SCREEN } from './routes';
 import { MODULE_SUB_ITEMS } from './constants';
 
@@ -40,6 +41,8 @@ function AppContent() {
       </AppLayout>
       {/* Progress overlay - always available, visible when ingestions active */}
       <IngestionProgressOverlay />
+      {/* 403 from apiClient → toast (listens to window 'app:forbidden') */}
+      <ForbiddenToast />
     </>
   );
 }

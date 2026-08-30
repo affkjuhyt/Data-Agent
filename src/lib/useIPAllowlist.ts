@@ -3,7 +3,7 @@ import keycloak from './keycloak';
 
 const API = '/api/auth';
 
-export interface IPRule {
+interface IPRule {
   id: string;
   cidr: string;
   label: string;

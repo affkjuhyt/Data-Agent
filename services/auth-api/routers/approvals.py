@@ -23,11 +23,11 @@ from datetime import datetime, timezone
 
 import psycopg2
 import psycopg2.extras
-from fastapi import APIRouter, Depends, Header, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel
 
 from auth_core import get_db
-from shared.auth import get_current_user, require_role
+from shared.auth import get_current_user
 
 router = APIRouter()
 

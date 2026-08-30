@@ -987,5 +987,3 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
     </div>
   );
 };
-
-export default AgentDetailPage;

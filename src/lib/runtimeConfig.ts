@@ -12,7 +12,7 @@ import { useEffect, useState } from 'react';
 
 import { apiGet } from './apiClient';
 
-export interface LlmProvider {
+interface LlmProvider {
   id: string;
   name: string;
   model_id: string;
@@ -20,7 +20,7 @@ export interface LlmProvider {
   is_default: boolean;
 }
 
-export interface RuntimeConfig {
+interface RuntimeConfig {
   rrf_k: number;
 }
 
@@ -30,7 +30,7 @@ export interface RuntimeConfig {
 let _providersPromise: Promise<LlmProvider[]> | null = null;
 let _configPromise: Promise<RuntimeConfig> | null = null;
 
-export function fetchLlmProviders(): Promise<LlmProvider[]> {
+function fetchLlmProviders(): Promise<LlmProvider[]> {
   if (!_providersPromise) {
     _providersPromise = apiGet<LlmProvider[]>('/api/llm-providers')
       .catch(err => {
@@ -41,7 +41,7 @@ export function fetchLlmProviders(): Promise<LlmProvider[]> {
   return _providersPromise;
 }
 
-export function fetchRuntimeConfig(): Promise<RuntimeConfig> {
+function fetchRuntimeConfig(): Promise<RuntimeConfig> {
   if (!_configPromise) {
     _configPromise = apiGet<RuntimeConfig>('/api/runtime-config')
       .catch(err => {
@@ -52,7 +52,7 @@ export function fetchRuntimeConfig(): Promise<RuntimeConfig> {
   return _configPromise;
 }
 
-export interface RuntimeMeta {
+interface RuntimeMeta {
   /** model_id → display name, e.g. { planner: 'Claude Haiku', responder: 'Claude Sonnet' }. */
   models: Record<string, string>;
   rrfK: number | null;

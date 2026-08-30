@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { Boxes, Plus, Trash2, Loader2, AlertCircle, X } from 'lucide-react';
 import { apiGet, apiMutate } from '../../../lib/apiClient';
 
-export interface KnowledgeBase {
+interface KnowledgeBase {
   id: string;
   name: string;
   description: string;

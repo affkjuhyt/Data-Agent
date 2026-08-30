@@ -87,11 +87,9 @@ def get_llm_providers(type: Optional[str] = None) -> list[dict[str, Any]]:
 
 @router.get("/api/kb-connections")
 def get_kb_connections(request: Request) -> list[Any]:
-    tenant_id = request.headers.get("X-Tenant-ID", "tenant-dev")
     return []
 
 
 @router.get("/api/system-prompts")
 def get_system_prompts(request: Request) -> list[dict[str, Any]]:
-    tenant_id = request.headers.get("X-Tenant-ID", "tenant-dev")
     return [prompt for prompt in SYSTEM_PROMPTS if prompt["tenant_id"] == tenant_id]

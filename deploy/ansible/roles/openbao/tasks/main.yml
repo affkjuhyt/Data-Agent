@@ -1,0 +1,244 @@
+---
+# OpenBao: the only place a warehouse password lives. State expressed here:
+# initialised + unsealed, KV v2 at secret/, a read-only AppRole for
+# workflow-runtime whose credentials are in .env, and (local) the demo
+# warehouse password the seeded agent resolves through secrets_vault.
+- name: Keys/root token file for this stack
+  ansible.builtin.set_fact:
+    openbao_keys_file: "{{ project_dir }}/.ansible-secrets/openbao-keys-{{ compose_project }}.json"
+    openbao_health_codes: [200, 429, 472, 473, 501, 503]
+
+- name: Secrets directory on the target
+  ansible.builtin.file:
+    path: "{{ project_dir }}/.ansible-secrets"
+    state: directory
+    mode: "0700"
+
+# The named volume is created root-owned while the server runs as `openbao`
+# (uid 100) → "failed to persist keyring: permission denied" on init.
+- name: Data directory owned by the openbao user
+  ansible.builtin.command: docker exec -u 0 dataagent-openbao chown -R openbao:openbao /openbao/data
+  changed_when: false
+
+- name: OpenBao health
+  ansible.builtin.uri:
+    url: "{{ openbao_url }}/v1/sys/health"
+    status_code: "{{ openbao_health_codes }}"
+    return_content: true
+  register: bao
+  until: bao.status is defined
+  retries: 30
+  delay: 2
+
+- name: Existing keys file
+  ansible.builtin.stat:
+    path: "{{ openbao_keys_file }}"
+  register: bao_keys_stat
+
+- name: Initialised but the keys are not ours
+  when: bao.json.initialized and not bao_keys_stat.stat.exists
+  block:
+    - name: Refuse to touch a vault we cannot unseal
+      ansible.builtin.fail:
+        msg: >-
+          OpenBao is initialised but {{ openbao_keys_file }} is missing. Restore the keys file,
+          or set openbao_allow_reset=true (non-production only) to recreate the vault volume.
+      when: not (openbao_allow_reset | bool)
+
+    - name: Recreate the vault volume ({{ compose_project }} only)
+      ansible.builtin.shell: >
+        {{ compose_cmd }} rm -sf openbao &&
+        docker volume rm {{ compose_project }}_openbao_data &&
+        {{ compose_cmd }} up -d --no-build openbao
+      changed_when: true
+
+    - name: OpenBao is back
+      ansible.builtin.uri:
+        url: "{{ openbao_url }}/v1/sys/health"
+        status_code: "{{ openbao_health_codes }}"
+        return_content: true
+      register: bao_reset
+      until: bao_reset.status is defined and not bao_reset.json.initialized
+      retries: 30
+      delay: 2
+
+    - name: Data directory owned by the openbao user (again)
+      ansible.builtin.command: docker exec -u 0 dataagent-openbao chown -R openbao:openbao /openbao/data
+      changed_when: false
+
+# Re-read after the (possibly skipped) reset block — a skipped task must not
+# leave `bao` pointing at a skip result.
+- name: OpenBao health (current)
+  ansible.builtin.uri:
+    url: "{{ openbao_url }}/v1/sys/health"
+    status_code: "{{ openbao_health_codes }}"
+    return_content: true
+  register: bao
+
+- name: Initialise (1 share / threshold 1)
+  ansible.builtin.uri:
+    url: "{{ openbao_url }}/v1/sys/init"
+    method: POST
+    body_format: json
+    body: { secret_shares: 1, secret_threshold: 1 }
+  register: bao_init
+  when: not bao.json.initialized
+  no_log: true
+
+- name: Persist keys + root token (0600, git-ignored)
+  ansible.builtin.copy:
+    content: "{{ bao_init.json | to_nice_json }}"
+    dest: "{{ openbao_keys_file }}"
+    mode: "0600"
+  when: bao_init is not skipped
+  no_log: true
+
+- name: Load keys
+  ansible.builtin.slurp:
+    src: "{{ openbao_keys_file }}"
+  register: bao_keys_raw
+  no_log: true
+
+- name: Parse keys
+  ansible.builtin.set_fact:
+    bao_keys: "{{ bao_keys_raw.content | b64decode | from_json }}"
+  no_log: true
+
+- name: Seal status
+  ansible.builtin.uri:
+    url: "{{ openbao_url }}/v1/sys/health"
+    status_code: "{{ openbao_health_codes }}"
+    return_content: true
+  register: bao
+
+- name: Unseal
+  ansible.builtin.uri:
+    url: "{{ openbao_url }}/v1/sys/unseal"
+    method: POST
+    body_format: json
+    body: { key: "{{ bao_keys.keys_base64[0] }}" }
+  when: bao.json.sealed
+  changed_when: true
+  no_log: true
+
+- name: Root-token header
+  ansible.builtin.set_fact:
+    bao_hdr: { X-Vault-Token: "{{ bao_keys.root_token }}" }
+  no_log: true
+
+- name: Secret engines
+  ansible.builtin.uri:
+    url: "{{ openbao_url }}/v1/sys/mounts"
+    headers: "{{ bao_hdr }}"
+    return_content: true
+  register: bao_mounts
+  no_log: true
+
+- name: KV v2 at secret/
+  ansible.builtin.uri:
+    url: "{{ openbao_url }}/v1/sys/mounts/secret"
+    method: POST
+    headers: "{{ bao_hdr }}"
+    body_format: json
+    body: { type: kv, options: { version: "2" } }
+    status_code: [200, 204]
+  when: "'secret/' not in bao_mounts.json"
+  changed_when: true
+  no_log: true
+
+- name: Read-only policy on tenant secrets
+  ansible.builtin.uri:
+    url: "{{ openbao_url }}/v1/sys/policies/acl/workflow-runtime-read-policy"
+    method: POST
+    headers: "{{ bao_hdr }}"
+    body_format: json
+    body: { policy: 'path "secret/data/tenants/*" { capabilities = ["read"] }' }
+    status_code: [200, 204]
+  changed_when: false
+  no_log: true
+
+- name: Auth methods
+  ansible.builtin.uri:
+    url: "{{ openbao_url }}/v1/sys/auth"
+    headers: "{{ bao_hdr }}"
+    return_content: true
+  register: bao_auth
+  no_log: true
+
+- name: AppRole auth enabled
+  ansible.builtin.uri:
+    url: "{{ openbao_url }}/v1/sys/auth/approle"
+    method: POST
+    headers: "{{ bao_hdr }}"
+    body_format: json
+    body: { type: approle }
+    status_code: [200, 204]
+  when: "'approle/' not in bao_auth.json"
+  changed_when: true
+  no_log: true
+
+- name: AppRole workflow-runtime
+  ansible.builtin.uri:
+    url: "{{ openbao_url }}/v1/auth/approle/role/workflow-runtime"
+    method: POST
+    headers: "{{ bao_hdr }}"
+    body_format: json
+    body: { token_policies: workflow-runtime-read-policy, token_ttl: 1h, token_max_ttl: 4h }
+    status_code: [200, 204]
+  changed_when: false
+  no_log: true
+
+- name: .env already carries an AppRole secret-id?
+  ansible.builtin.shell: grep -Eq '^OPENBAO_SECRET_ID=.+' {{ project_dir }}/.env
+  register: env_has_secret_id
+  failed_when: false
+  changed_when: false
+
+- name: Mint AppRole credentials into .env
+  when: env_has_secret_id.rc != 0 or (openbao_rotate_approle | bool)
+  block:
+    - name: role-id
+      ansible.builtin.uri:
+        url: "{{ openbao_url }}/v1/auth/approle/role/workflow-runtime/role-id"
+        headers: "{{ bao_hdr }}"
+        return_content: true
+      register: bao_role_id
+      no_log: true
+
+    - name: secret-id
+      ansible.builtin.uri:
+        url: "{{ openbao_url }}/v1/auth/approle/role/workflow-runtime/secret-id"
+        method: POST
+        headers: "{{ bao_hdr }}"
+        return_content: true
+      register: bao_secret_id
+      changed_when: true
+      no_log: true
+
+    - name: OPENBAO_ROLE_ID / OPENBAO_SECRET_ID in .env
+      ansible.builtin.lineinfile:
+        path: "{{ project_dir }}/.env"
+        regexp: "^{{ item.key }}="
+        line: "{{ item.key }}={{ item.value }}"
+      loop:
+        - { key: OPENBAO_ROLE_ID, value: "{{ bao_role_id.json.data.role_id }}" }
+        - { key: OPENBAO_SECRET_ID, value: "{{ bao_secret_id.json.data.secret_id }}" }
+      loop_control:
+        label: "{{ item.key }}"
+      no_log: true
+      notify: recreate runtime
+
+- name: Demo warehouse password (secrets_vault → this path)
+  ansible.builtin.uri:
+    url: "{{ openbao_url }}/v1/secret/data/tenants/{{ tenant_id }}/{{ demo_db_secret_key }}"
+    method: POST
+    headers: "{{ bao_hdr }}"
+    body_format: json
+    body: { data: { value: "{{ demo_db_secret_value }}", note: "seeded demo sandbox_reader" } }
+    status_code: [200, 204]
+  when: (seed_demo | bool)
+  changed_when: false
+  no_log: true
+
+- name: Apply pending runtime recreation now (before seeding)
+  ansible.builtin.meta: flush_handlers

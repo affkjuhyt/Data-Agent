@@ -9,7 +9,6 @@ from typing import Any, Awaitable, Callable
 from urllib.parse import urlparse
 
 from aiokafka import AIOKafkaProducer, AIOKafkaConsumer, TopicPartition
-from aiokafka.errors import KafkaConnectionError
 
 from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
 from libs.shared.logger import create_logger

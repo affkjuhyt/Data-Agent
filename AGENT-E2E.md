@@ -13,8 +13,10 @@ at it with a wildcard model in `infra/docker-compose.agent-test.yml` +
 `infra/litellm/config.agent-local.yaml`.
 
 ```bash
-# 1. seed a published dev agent (Agents table is empty on a fresh DB)
-docker exec -i dataagent-postgres psql -U admin -d dataagent < scripts/seed_dev_agent.sql
+# 1. seed a published demo agent (Agents table is empty on a fresh DB) — same seed the
+#    E2E runner and the Ansible `seed` role use (agent `e2e-sql-agent`, metrics, fact_sales):
+docker exec -i dataagent-postgres psql -U admin -d dataagent < scripts/e2e/seed.sql
+docker exec -i dataagent-mongo mongosh --quiet < scripts/e2e/seed-flow.js
 
 # 2. bring up the agent tier (base + app + local-LLM overlay). NOT app.yml's
 #    kb-backend — it collides with the kb_e2e stack on :8050.
@@ -164,7 +166,7 @@ Two real defects were found and fixed during evaluation (both made every answer
 **empty** while the turn still `[DONE]`d in ~4.6 s):
 
 1. **`runtime_writer` role lacked SELECT** on the agent-config tables → "permission
-   denied" in workflow-runtime. Fixed by GRANT (in `seed_dev_agent.sql`).
+   denied" in workflow-runtime. Fixed by GRANT (in `scripts/e2e/seed.sql`).
 2. **`LLMProviders.model_id` had no provider prefix** ("responder") → the
    workflow-runtime responder calls the litellm *SDK* directly, which raised "LLM
    Provider NOT provided". Fixed to `openai/responder` so the SDK routes to the

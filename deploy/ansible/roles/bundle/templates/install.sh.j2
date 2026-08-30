@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Data Agent offline installer — {{ bundle_version }} ({{ bundle_built_at }})
+#
+# Host needs: Docker Engine + Compose v2, python3, curl. Nothing else is
+# downloaded. Run as the user that will operate the stack.
+#
+#   ./install.sh [--dir /opt/data-agent] [--no-ansible]
+set -euo pipefail
+HERE=$(cd "$(dirname "$0")" && pwd)
+TARGET=/opt/data-agent
+RUN_ANSIBLE=1
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dir) TARGET=$2; shift 2 ;;
+    --no-ansible) RUN_ANSIBLE=0; shift ;;
+    *) echo "unknown option $1"; exit 1 ;;
+  esac
+done
+
+echo "▶ verifying checksums"
+if command -v sha256sum >/dev/null 2>&1; then SUM="sha256sum -c"; else SUM="shasum -a 256 -c"; fi   # Linux | macOS
+(cd "$HERE" && $SUM SHA256SUMS --quiet) && echo "✔ all files intact"
+
+echo "▶ loading images ({{ bundle_images | length }})"
+docker load -i "$HERE/images.tar.gz"
+
+if [ -d "$HERE/ollama" ]; then
+  MODELS=${OLLAMA_MODELS:-$HOME/.ollama/models}
+  echo "▶ restoring ollama model(s) into $MODELS"
+  mkdir -p "$MODELS"
+  cp -Rn "$HERE/ollama/." "$MODELS/"
+  echo "  (start ollama afterwards: ollama serve)"
+fi
+
+echo "▶ unpacking code + config into $TARGET"
+mkdir -p "$TARGET"
+tar -xzf "$HERE/code.tar.gz" -C "$TARGET"
+[ -f "$TARGET/.env" ] || cp "$TARGET/.env.example" "$TARGET/.env"
+
+if [ "$RUN_ANSIBLE" = 1 ] && command -v ansible-playbook >/dev/null 2>&1; then
+  echo "▶ ansible-playbook (local inventory, images already present → no build)"
+  cd "$TARGET/deploy/ansible"
+  ansible-playbook -i inventories/local site.yml -e compose_build=never -e code_source=none
+else
+  cat <<EOF
+✔ files in place. Next, on this host:
+   cd $TARGET/deploy/ansible
+   ansible-playbook -i inventories/local site.yml -e compose_build=never
+(or drive it from your controller: -i inventories/prod with project_dir=$TARGET)
+EOF
+fi

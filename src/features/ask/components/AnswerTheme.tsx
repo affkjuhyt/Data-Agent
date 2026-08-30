@@ -8,7 +8,7 @@
  */
 import React, { createContext, useContext } from 'react';
 
-export type AnswerThemeMode = 'light' | 'dark';
+type AnswerThemeMode = 'light' | 'dark';
 
 const Ctx = createContext<AnswerThemeMode>('light');
 

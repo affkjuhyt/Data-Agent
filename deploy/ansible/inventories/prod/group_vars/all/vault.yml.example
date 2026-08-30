@@ -1,0 +1,7 @@
+---
+# ansible-vault encrypt vault.yml   (after filling in)
+vault_gateway_key: "CHANGE-ME-48-hex"
+vault_service_auth_secret: "CHANGE-ME-64-hex"
+vault_kafka_admin_password: "CHANGE-ME"
+vault_keycloak_admin_password: "CHANGE-ME"
+vault_smoke_password: "CHANGE-ME"

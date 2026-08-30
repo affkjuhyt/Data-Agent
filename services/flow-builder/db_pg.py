@@ -1,4 +1,3 @@
-import json
 import os
 import logging
 from contextlib import asynccontextmanager
@@ -12,9 +11,6 @@ from sqlalchemy.orm import selectinload
 from libs.database_connector.postgres_connector import client
 from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
     AgentsORM, WorkflowsORM, WorkflowVersionsORM, AgentVersionsORM, AgentKBORM,
-)
-from libs.basemodel.services_databaseconnector.postgres_model import (
-    AgentsDelete, AgentVersionsDelete, WorkflowVersionsDelete,
 )
 
 logger = logging.getLogger(__name__)

@@ -2,8 +2,6 @@ import React from 'react';
 import { cn } from '../../lib/utils';
 import { ArrowUpRight, ArrowDownRight } from 'lucide-react';
 
-export type MetricType = 'PERFORMANCE' | 'VOLUME' | 'EFFICIENCY' | 'COST' | 'HEALTH';
-
 interface MetricCardProps {
   label: string;
   value: string | number;
@@ -29,7 +27,7 @@ const trendStyles = {
   NEUTRAL: { text: 'text-[#5F5F5F]', icon: null as any },
 };
 
-export const MetricCard = ({
+const MetricCard = ({
   label, value, trend, trendType = 'NEUTRAL', icon: Icon, color = 'brand', description,
 }: MetricCardProps) => {
   const ic    = iconStyles[color];

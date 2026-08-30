@@ -1,0 +1,17 @@
+---
+# Production / staging: copy to hosts.yml (git-ignored) and fill in.
+# One "appliance" host runs the whole compose stack (Phần IV·A of the plan);
+# the k8s form (Phần IV·B) is a Helm chart, not this playbook.
+all:
+  hosts:
+    dataagent-prod-01:
+      ansible_host: 10.0.0.21
+      ansible_user: deploy
+      ansible_become: true
+  vars:
+    env_name: prod
+    project_dir: /opt/data-agent
+    # how the code gets onto the host: "git" (repo_url + repo_version) or "rsync" (from this checkout)
+    code_source: git
+    repo_url: git@github.com:your-org/Data-Agent.git
+    repo_version: main

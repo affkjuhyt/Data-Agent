@@ -41,7 +41,6 @@ import {
 export type AgentStatus = 'ACTIVE' | 'IDLE' | 'BUSY' | 'FAILED' | 'UNHEALTHY' | 'QUEUED' | 'WAITING_APPROVAL';
 export type AgentType = 'RAG' | 'GRAPHRAG' | 'TOOL_USE' | 'WORKFLOW' | 'COORDINATOR' | 'HITL' | 'API' | 'DOC_PROC';
 export type Environment = 'DEV' | 'UAT' | 'PROD';
-export type Severity = 'CRITICAL' | 'HIGH' | 'NORMAL' | 'LOW';
 
 export interface Agent {
   id: string;

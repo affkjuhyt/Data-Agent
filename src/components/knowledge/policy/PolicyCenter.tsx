@@ -673,5 +673,3 @@ export const PolicyCenter = () => {
     </div>
   );
 };
-
-export default PolicyCenter;

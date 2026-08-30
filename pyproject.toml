@@ -16,7 +16,7 @@ test = [
     "httpx>=0.27",
     "requests>=2.31",
     # Ships the generated OpenAPI models the API server validates against —
-    # tests/unit/test_k8s_manifests.py checks k8s/*.yaml field names offline
+    # tests/unit/test_k8s_manifests.py checks deploy/k8s/*.yaml field names offline
     # (no cluster, so kubectl cannot). Skipped when absent.
     "kubernetes>=31.0",
 ]

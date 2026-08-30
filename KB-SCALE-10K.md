@@ -165,7 +165,7 @@ likewise pooled per replica.
 6. [x] **Per-tenant rate limiting** at kb-gateway (Go token-bucket per
    `X-Tenant-Id`, `KB_GATEWAY_RATE_RPS`; 429 + `Retry-After`). Verified: one tenant
    throttled while another is unaffected.
-7. [x] **HPA** — `k8s/` manifests: Deployment + Service + HorizontalPodAutoscaler
+7. [x] **HPA** — `deploy/k8s/` manifests: Deployment + Service + HorizontalPodAutoscaler
    for kb-gateway (2→10), kb-backend (3→12), model-service (2→8), CPU-target with a
    custom-RPS-metric note. **model-service auto-detects its device** (`device.py`:
    CUDA > Apple MPS > CPU, surfaced at `GET /capabilities`) so the same image runs
@@ -250,7 +250,7 @@ upstream failures are counted instead of dropped, and gateway RAM 128 MB → 512
 **10,000 CCU at ~99.99 % success, retrieve p95 445 ms** — the laptop was never the
 ceiling; a two-line stdlib default was. Remaining minor tail (crud p95 ~2 s, max
 ~11 s) comes from the single kb-backend replica + CPU cold-embed; both are removed
-in prod by the `k8s/` HPA (N backend replicas) and a GPU embed node. Optional
+in prod by the `deploy/k8s/` HPA (N backend replicas) and a GPU embed node. Optional
 graceful shedding (`KB_GATEWAY_*` envs > 0) converts any residual overload into
 clean `429/503` instead of latency.
 

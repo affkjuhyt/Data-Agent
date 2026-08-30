@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from langgraph.types import Command
 
-from runtime_services.conversation_runner import _pending_reviews, _graph_cache, _checkpointer
+from runtime_services.conversation_runner import _pending_reviews, _graph_cache
 from db import save_message
 
 router = APIRouter()

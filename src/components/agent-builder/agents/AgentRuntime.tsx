@@ -15,7 +15,7 @@ import { Bot, Terminal, Sliders, Activity, Zap, Plus, Settings } from 'lucide-re
 import { cn } from '../../../lib/utils';
 import { apiMutate } from '../../../lib/apiClient';
 
-export type RegistryView = 'OVERVIEW' | 'CLI' | 'CONFIG' | 'TRACES' | 'RUNS';
+type RegistryView = 'OVERVIEW' | 'CLI' | 'CONFIG' | 'TRACES' | 'RUNS';
 
 interface AgentRuntimeProps {
   view?: RegistryView;

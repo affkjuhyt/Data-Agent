@@ -9,7 +9,7 @@ import { formatCell, formatNumber, isNumericColumn, toNumber } from '../../../li
 import { TRUNCATION_LABELS } from '../labels';
 import type { Truncation } from '../types';
 
-export interface DataGridProps {
+interface DataGridProps {
   columns: string[];
   rows: Record<string, unknown>[];
   /** total rows the query returned (may exceed rows.length when the preview is capped) */

@@ -5,7 +5,7 @@ import { X, Info, History, Shield, Maximize2, Minimize2, GripVertical } from 'lu
 import { cn } from '../../lib/utils';
 
 /* ─── Drawer size system ──────────────────────────────────────────── */
-export type DrawerSizeKey =
+type DrawerSizeKey =
   | 'compact' | 'standard' | 'wide' | 'xwide' | 'workspace'
   /* legacy aliases */
   | 'sm' | 'md' | 'lg' | 'xl' | 'full';

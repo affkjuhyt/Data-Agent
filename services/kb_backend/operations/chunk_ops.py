@@ -2,7 +2,7 @@ from typing import Any
 import logging
 import uuid
 from fastapi import HTTPException
-from sqlalchemy import select as sa_select, update as sa_update
+from sqlalchemy import update as sa_update
 
 from libs.basemodel.services_databaseconnector.postgres_model import (
     ReadJoinRequest, SelectInLoadRequest, WhereFilter, OrderBy, OrderDirection,

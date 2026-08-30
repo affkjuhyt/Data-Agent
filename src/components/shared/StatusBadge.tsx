@@ -2,7 +2,7 @@ import React from 'react';
 import { cn } from '../../lib/utils';
 import { CheckCircle2, AlertCircle, XCircle, Clock } from 'lucide-react';
 
-export type StatusType =
+type StatusType =
   | 'HEALTHY' | 'WARNING' | 'CRITICAL' | 'STABLE' | 'PROCESSING'
   | 'PENDING' | 'ACTIVE' | 'INACTIVE' | string;
 

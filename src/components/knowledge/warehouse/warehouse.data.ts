@@ -37,25 +37,6 @@ export const DATABRICKS_FIELDS: FieldDef[] = [
   { key: 'schema',      label: 'Schema',          placeholder: 'feature_store',                  required: false },
 ];
 
-export const MOCK_TABLES: Record<WarehouseType, Omit<TableRow, 'selected' | 'description'>[]> = {
-  snowflake: [
-    { name: 'ORDERS',           schema: 'PUBLIC',  rowCount: '142,000'    },
-    { name: 'PRODUCTS',         schema: 'PUBLIC',  rowCount: '8,500'      },
-    { name: 'CUSTOMERS',        schema: 'PUBLIC',  rowCount: '45,000'     },
-    { name: 'INVENTORY',        schema: 'PUBLIC',  rowCount: '23,100'     },
-    { name: 'TRANSACTIONS',     schema: 'FINANCE', rowCount: '890,000'    },
-    { name: 'EMPLOYEE_RECORDS', schema: 'HR',      rowCount: '1,200'      },
-  ],
-  databricks: [
-    { name: 'user_embeddings', schema: 'feature_store', rowCount: '900,000'    },
-    { name: 'item_features',   schema: 'feature_store', rowCount: '25,000'     },
-    { name: 'training_logs',   schema: 'ml_ops',        rowCount: '45,600'     },
-    { name: 'model_registry',  schema: 'ml_ops',        rowCount: '340'        },
-    { name: 'raw_events',      schema: 'bronze',        rowCount: '12,400,000' },
-    { name: 'silver_events',   schema: 'silver',        rowCount: '8,900,000'  },
-  ],
-};
-
 export const STEP_LABELS: Record<WizardStep, string> = {
   1: 'Warehouse Type',
   2: 'Credentials',

@@ -13,10 +13,10 @@ try:
 except ImportError:
     _NUMPY = False
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 
 from libs.database_connector.postgres_connector import client
-from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import AgentsORM, MessagesORM, ConversationsORM
+from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import AgentsORM, MessagesORM
 from libs.basemodel.services_databaseconnector.postgres_orm.auth_release_orm import MembersORM
 from libs.basemodel.services_databaseconnector.postgres_model import (
     ConversationsInsert, MessagesInsert, AgentTracesInsert,

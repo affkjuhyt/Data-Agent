@@ -138,7 +138,7 @@ def save_last_ts(ts: int) -> None:
 def poll_events(token: str, since_ms: int) -> list[Any]:
     # dateFrom narrows the server-side query so we don't fetch events we'll filter out anyway.
     # Keycloak expects a date string; subtract 1 minute to avoid dropping events at boundary.
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timezone
     date_from = datetime.fromtimestamp(
         max(0, since_ms / 1000 - 60), tz=timezone.utc
     ).strftime("%Y-%m-%dT%H:%M:%S.000Z")

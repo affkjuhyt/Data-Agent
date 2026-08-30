@@ -179,5 +179,3 @@ export const TrashCenter: React.FC = () => {
     </div>
   );
 };
-
-export default TrashCenter;

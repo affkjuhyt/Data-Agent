@@ -1,6 +1,3 @@
-import React from 'react';
-import { Database, FileText, Video, Globe, ServerCog } from 'lucide-react';
-
 /* ─── Tab types ────────────────────────────────────────────────────── */
 export type GraphHubTab = 'DATABASE' | 'QDRANT' | 'NEO4J';
 export type DBSubType = 'All' | 'Document' | 'Media' | 'Web' | 'Warehouse';
@@ -25,14 +22,6 @@ export const getSubType = (type: string): DBSubType => {
   if (type.startsWith('Warehouse/')) return 'Warehouse';
   return 'Document';
 };
-
-export const DB_SUBTYPES: { id: DBSubType; label: string; icon: React.ElementType }[] = [
-  { id: 'All',       label: 'All',       icon: Database  },
-  { id: 'Document',  label: 'Document',  icon: FileText  },
-  { id: 'Media',     label: 'Media',     icon: Video     },
-  { id: 'Web',       label: 'Web',       icon: Globe     },
-  { id: 'Warehouse', label: 'Warehouse', icon: ServerCog },
-];
 
 /* ─── Warehouse types ────────────────────────────────────────────── */
 export interface WTableEntry {
@@ -145,13 +134,12 @@ export interface QdrantPoint {
 /* ─── Neo4j graph types ──────────────────────────────────────────── */
 export interface GraphNode { id: string; name: string; description?: string; type?: string | null; }
 export interface GraphEdge { from: string; to: string; description?: string; score?: number; }
-export interface LayoutNode { id: string; x: number; y: number; r: number; label: string; core: boolean; }
 export interface Neo4jSchema { entities: string[]; connections: Record<string, string[]>; }
 
 /* ─── Node colouring by type ─────────────────────────────────────── */
 /* Fixed colours for the known entity labels; anything else gets a stable
  * colour hashed from its name so every distinct type still reads differently. */
-export const NODE_TYPE_COLORS: Record<string, string> = {
+const NODE_TYPE_COLORS: Record<string, string> = {
   Person:        '#F2C14E',
   Organization:  '#5BA8F5',
   Location:      '#5BD6A0',
@@ -173,55 +161,9 @@ export const nodeColor = (type?: string | null): string => {
   return _FALLBACK_PALETTE[h % _FALLBACK_PALETTE.length];
 };
 
-export function computeGraphLayout(
-  nodes: GraphNode[],
-  edges: GraphEdge[],
-): {
-  layoutNodes: LayoutNode[];
-  layoutEdges: Array<[number, number, number, number]>;
-  layoutRelLabels: Array<[number, number, string]>;
-} {
-  if (!nodes.length) return { layoutNodes: [], layoutEdges: [], layoutRelLabels: [] };
-
-  const cx = 450, cy = 280, radius = 190;
-  const layoutNodes: LayoutNode[] = nodes.map((n, i) => {
-    if (i === 0) return { id: n.id, x: cx, y: cy, r: 18, label: n.name, core: true };
-    const angle = (2 * Math.PI * (i - 1)) / Math.max(nodes.length - 1, 1) - Math.PI / 2;
-    return {
-      id: n.id,
-      x: Math.round(cx + radius * Math.cos(angle)),
-      y: Math.round(cy + radius * Math.sin(angle)),
-      r: 12,
-      label: n.name,
-      core: false,
-    };
-  });
-
-  const posMap = new Map(layoutNodes.map(n => [n.id, { x: n.x, y: n.y }]));
-  const layoutEdges: Array<[number, number, number, number]> = [];
-  const layoutRelLabels: Array<[number, number, string]> = [];
-
-  for (const e of edges) {
-    const from = posMap.get(e.from);
-    const to   = posMap.get(e.to);
-    if (!from || !to) continue;
-    layoutEdges.push([from.x, from.y, to.x, to.y]);
-    const label = e.description?.match(/\[(\w+)\]/)?.[1] ?? '';
-    if (label) layoutRelLabels.push([
-      Math.round((from.x + to.x) / 2),
-      Math.round((from.y + to.y) / 2),
-      label,
-    ]);
-  }
-
-  return { layoutNodes, layoutEdges, layoutRelLabels };
-}
-
 /* ─── Neo4j query builder ────────────────────────────────────────── */
 export interface QueryStep { id: string; relationship: string; nodeType: string; }
 
-export const AVAILABLE_NODES = ['Person','Organization','Location','Policy','Contract','Regulation','Product','Department','Event','Agreement'];
-export const AVAILABLE_RELS  = ['WORKS_FOR','GOVERNED_BY','LOCATED_IN','PART_OF','REFERENCES','COMPLIES_WITH','CAUSES','RELATED_TO','SUPERSEDES','AUTHORIZED_BY'];
 
 /**
  * `startNode` / step targets are node LABELS (entity types), not names, and the
@@ -252,50 +194,6 @@ export const buildCypher = (startNode: string, steps: QueryStep[], max = 200): s
   });
   return `MATCH ${pattern}\nWHERE ${tenantPreds.join(' AND ')}\nRETURN ${vars.join(', ')}\nLIMIT ${max}`;
 };
-
-/**
- * Local fallback for the graph canvas when the backend can't run Cypher
- * (e.g. Neo4j offline). Returns the subgraph reachable from the node(s) matching
- * `startName`, expanding up to `hops` relationship steps in either direction, so
- * "Run" always produces a meaningful, connected result instead of a no-op.
- */
-export function traverseSubgraph(
-  nodes: GraphNode[],
-  edges: GraphEdge[],
-  startName: string,
-  hops: number,
-): { nodes: GraphNode[]; edges: GraphEdge[] } {
-  const want = startName.trim().toLowerCase();
-  if (!want || nodes.length === 0) return { nodes: [], edges: [] };
-
-  const exact = nodes.filter(n => (n.name ?? '').toLowerCase() === want);
-  const seeds = exact.length ? exact : nodes.filter(n => (n.name ?? '').toLowerCase().includes(want));
-  if (!seeds.length) return { nodes: [], edges: [] };
-
-  const adj = new Map<string, GraphEdge[]>();
-  for (const e of edges) {
-    (adj.get(e.from) ?? adj.set(e.from, []).get(e.from)!).push(e);
-    (adj.get(e.to) ?? adj.set(e.to, []).get(e.to)!).push(e);
-  }
-
-  const keep = new Set(seeds.map(n => n.id));
-  let frontier = [...keep];
-  for (let d = 0; d < Math.max(hops, 1); d++) {
-    const next: string[] = [];
-    for (const id of frontier) {
-      for (const e of adj.get(id) ?? []) {
-        const other = e.from === id ? e.to : e.from;
-        if (!keep.has(other)) { keep.add(other); next.push(other); }
-      }
-    }
-    frontier = next;
-  }
-
-  return {
-    nodes: nodes.filter(n => keep.has(n.id)),
-    edges: edges.filter(e => keep.has(e.from) && keep.has(e.to)),
-  };
-}
 
 /**
  * Offline fallback for the query builder: the builder's start node is an entity
@@ -336,5 +234,3 @@ export function subgraphByType(
     edges: edges.filter(e => keep.has(e.from) && keep.has(e.to)),
   };
 }
-
-export const PAGE_SIZE = 20;

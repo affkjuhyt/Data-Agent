@@ -27,7 +27,7 @@ interface IngestionProgressOverlayProps {
   onIngestionComplete?: (dataId: string) => void;
 }
 
-export const IngestionProgressOverlay: React.FC<IngestionProgressOverlayProps> = ({
+const IngestionProgressOverlay: React.FC<IngestionProgressOverlayProps> = ({
   onIngestionStart,
   onIngestionComplete,
 }) => {

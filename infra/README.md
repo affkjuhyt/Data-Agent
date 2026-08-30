@@ -13,7 +13,7 @@ The frontend has no mock server and no auth bypass: `kb-backend` is **fail-close
 
 | Stack | File / helper | What it is | When to use |
 |---|---|---|---|
-| **kb_e2e** | [`docker-compose.yml`](./docker-compose.yml) + [`docker-compose.kb_e2e.yml`](./docker-compose.kb_e2e.yml) + [`kb_e2e.ps1`](./kb_e2e.ps1) | **Overlay** on the main platform compose. Shares the same `dataagent` DB, Kafka internal listener (`kafka:9094`), and network as the full platform. Adds dev-friendly memory limits on Neo4j and KB tuning knobs. | **The standard way to bring up the stack** — day-to-day local dev, KB + ingestion + auth chain, pre-merge validation. |
+| **kb_e2e** | [`docker-compose.yml`](./docker-compose.yml) + [`docker-compose.kb_e2e.yml`](./docker-compose.kb_e2e.yml) (hai file `-f`, xem Step 3) | **Overlay** on the main platform compose. Shares the same `dataagent` DB, Kafka internal listener (`kafka:9094`), and network as the full platform. Adds dev-friendly memory limits on Neo4j and KB tuning knobs. | **The standard way to bring up the stack** — day-to-day local dev, KB + ingestion + auth chain, pre-merge validation. |
 | **Full platform** | [`docker-compose.yml`](./docker-compose.yml) + an override | The whole Data Agent OS — every service group (storage, security, messaging, observability, all app services). | Running the entire platform, not just KB. |
 | **Test fixture** | [`docker-compose.test.yml`](./docker-compose.test.yml) | Isolated PostgreSQL only. | Connector / ORM tests. |
 
@@ -119,10 +119,7 @@ Copy-Item infra/kafka/kafka-broker-jaas.config.example infra/kafka/kafka-broker-
 ### Step 3 — start the stack
 
 ```powershell
-# Helper (recommended) — starts only KB-relevant services:
-pwsh infra/kb_e2e.ps1
-
-# Or manually:
+# Two-file overlay (KB-relevant services only):
 docker compose `
   -f infra/docker-compose.yml `
   -f infra/docker-compose.kb_e2e.yml `
@@ -180,11 +177,11 @@ All users share tenant `a0000000-0000-0000-0000-000000000001` (the seeded dev te
 
 | Action | Command |
 |---|---|
-| Stop, keep data | `pwsh infra/kb_e2e.ps1 down` |
-| Stop, **wipe** data | `pwsh infra/kb_e2e.ps1 down -v` |
-| Tail logs | `pwsh infra/kb_e2e.ps1 logs -f` |
-| Service status | `pwsh infra/kb_e2e.ps1 ps` |
-| Rebuild one service | `pwsh infra/kb_e2e.ps1 up -d --build --no-deps kb-backend` |
+| Stop, keep data | `docker compose -f infra/docker-compose.yml -f infra/docker-compose.kb_e2e.yml down` |
+| Stop, **wipe** data | `docker compose -f infra/docker-compose.yml -f infra/docker-compose.kb_e2e.yml down -v` |
+| Tail logs | `docker compose -f infra/docker-compose.yml -f infra/docker-compose.kb_e2e.yml logs -f` |
+| Service status | `docker compose -f infra/docker-compose.yml -f infra/docker-compose.kb_e2e.yml ps` |
+| Rebuild one service | `docker compose -f infra/docker-compose.yml -f infra/docker-compose.kb_e2e.yml up -d --build --no-deps kb-backend` |
 
 > **Fresh volume note:** `docker-entrypoint-initdb.d` scripts run only on a new Postgres
 > volume. `docker-compose.yml` mounts `init.sql` (KB tables); the overlay adds `seed.sql`
@@ -268,7 +265,7 @@ $env:REMOTE_EMBED_URL = "https://<embed-tunnel>.trycloudflare.com"
 $env:REMOTE_API_KEY   = "kb-emb-xxxx"
 $env:REMOTE_LLM_URL   = "https://<vllm-tunnel>.trycloudflare.com"
 $env:REMOTE_LLM_KEY   = "kb-IT-xxxx"
-pwsh infra/kb_e2e.ps1 up -d --no-deps model-service
+docker compose -f infra/docker-compose.yml -f infra/docker-compose.kb_e2e.yml up -d --no-deps model-service
 ```
 
 To revert to local CPU, clear those vars and recreate `model-service`. The Colab GPU
@@ -330,7 +327,6 @@ infra/
   docker-compose.yml                     # main platform base (all services)
   docker-compose.kb_e2e.yml              # KB overlay (extends docker-compose.yml)
   docker-compose.test.yml                # isolated Postgres test fixture
-  kb_e2e.ps1                             # helper: two-file overlay bring-up
   .env.kb-testing.example                # copy → .env.kb-testing, fill in tunnels
   Dockerfile.kb                          # kb-backend image
   Dockerfile.dev                         # dev-only containerised frontend
@@ -338,10 +334,9 @@ infra/
   kb-ingestion-worker/                   # bronze→silver→gold ingestion worker
   kong/          kong-setup.sh           # Kong custom plugin + route setup script
   keycloak/      realm-export.json       # Keycloak realm definition
-  Postgres/      init.sql  seed.sql      # KB schema + dev seed data
   Neo4j/                                 # Neo4j custom image (APOC plugins)
   kafka/         kafka-broker-jaas.config.example
   openbao/       haproxy/  litellm/
-  sql/           create-extra-dbs.sql  init.sql  release-init.sql
+  sql/           create-extra-dbs.sql  init.sql  release-init.sql  kb-seed.sql
   Qdrant/        COLLECTIONS.md          # Qdrant collection schema reference
 ```

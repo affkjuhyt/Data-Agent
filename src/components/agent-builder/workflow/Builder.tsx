@@ -47,7 +47,7 @@ type FlowNodeType =
   | 'send_notification' | 'loop' | 'judge' | 'metadata_injector' | 'db_connector'
   | 'visualization';
 
-export interface FlowNodeData extends Record<string, unknown> {
+interface FlowNodeData extends Record<string, unknown> {
   nodeType: FlowNodeType;
   label: string;
   locked?: boolean;
@@ -1415,7 +1415,7 @@ interface WorkflowVersion {
   published_at: string | null;
 }
 
-export interface BuilderProps {
+interface BuilderProps {
   onClose: () => void;
   workflow: Workflow | null;
   template?: TemplateId;

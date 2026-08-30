@@ -1,0 +1,51 @@
+---
+# Kong is the fail-closed edge: routes, the JWKS/JWT plugin that injects the
+# verified identity + X-Gateway-Key, CORS, and the dev users' passwords in
+# Keycloak. infra/kong/kong-setup.sh is the source of truth for that shape
+# (every call in it is a PUT/upsert), so run it rather than re-describe it.
+- name: Kong routes, JWT plugin, CORS, Keycloak dev passwords
+  ansible.builtin.command: bash infra/kong/kong-setup.sh
+  args:
+    chdir: "{{ project_dir }}"
+  environment:
+    KONG_ADMIN_URL: "{{ kong_admin_url }}"
+    KEYCLOAK_URL: "{{ keycloak_url }}"
+    KEYCLOAK_PUBLIC_URL: "{{ keycloak_public_url }}"
+    KEYCLOAK_NETWORK_URL: "{{ keycloak_network_url }}"
+    GATEWAY_KEY: "{{ gateway_key }}"
+  register: kong_setup
+  changed_when: "'created' in kong_setup.stdout"
+  no_log: true
+
+- name: Keycloak browser flow without MFA (local only)
+  when: (keycloak_disable_mfa | bool)
+  block:
+    - name: Keycloak admin token
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/realms/master/protocol/openid-connect/token"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          grant_type: password
+          client_id: admin-cli
+          username: "{{ keycloak_admin_user }}"
+          password: "{{ keycloak_admin_password }}"
+      register: kc_admin
+      no_log: true
+
+    - name: Current realm settings
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ keycloak_realm }}"
+        headers: { Authorization: "Bearer {{ kc_admin.json.access_token }}" }
+      register: realm
+
+    - name: browserFlow = browser (password, OTP only when enrolled)
+      ansible.builtin.uri:
+        url: "{{ keycloak_url }}/admin/realms/{{ keycloak_realm }}"
+        method: PUT
+        headers: { Authorization: "Bearer {{ kc_admin.json.access_token }}" }
+        body_format: json
+        body: { browserFlow: browser }
+        status_code: [204]
+      when: realm.json.browserFlow != 'browser'
+      changed_when: true
