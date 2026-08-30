@@ -1,162 +1,275 @@
-import React from 'react';
-import { 
-  ShieldCheck, 
-  Zap, 
-  Cpu, 
-  Key, 
-  Database, 
-  AlertCircle, 
-  CheckCircle2, 
-  TrendingUp,
-  Globe,
-  Lock,
-  ArrowRight
+/**
+ * Settings → Overview ("Platform Pulse").
+ *
+ * Every number on this page comes from a live endpoint:
+ *   compliance score   useCompliance()           GET /api/auth/compliance/score
+ *   providers          useLlmProviders()         GET /api/llm-providers (+ /health)
+ *   secrets            useSecrets()              GET /api/auth/secrets
+ *   tenants            usePlatformTenants()      GET /api/auth/me/tenants
+ *   conversations/err  usePlatformMetrics(7)     GET /api/platform/metrics
+ *   critical alerts    usePlatformServices()     GET /api/platform/services (down/degraded)
+ *                      + secrets past rotation_due_at + compliance score < 70
+ */
+import React, { useMemo } from 'react';
+import {
+  ShieldCheck, Cpu, Key, Building2, MessagesSquare, AlertTriangle, ArrowRight, RefreshCw,
 } from 'lucide-react';
-import { motion } from 'motion/react';
-
-const STATUS_CARDS = [
-  { id: 'sec', label: 'Security Score', value: '94/100', status: 'HEALTHY', icon: ShieldCheck, color: 'brand' },
-  { id: 'prov', label: 'AI Providers', value: '8 Active', status: 'STABLE', icon: Cpu, color: 'emerald' },
-  { id: 'env', label: 'Environments', value: '4 Active', status: 'DIVERGED', icon: Globe, color: 'amber' },
-  { id: 'secr', label: 'Secrets', value: '42 Total', status: 'EXPIRED_2', icon: Key, color: 'red' },
-];
-
 import { OperationalHeader } from '../shared/OperationalHeader';
 import { StatusBadge } from '../shared/StatusBadge';
-import { StandardMetricsGrid } from '../shared/ObservabilityPanel';
+import { Badge, Button, Card, EmptyState, ErrorState, LoadingState, StatTile, toneFor } from '../ui';
+import { useCompliance } from '../../lib/useCompliance';
+import { useSecrets } from '../../lib/useSecrets';
+import { useLlmProviders } from '../../lib/useLlmProviders';
+import { usePlatformMetrics, usePlatformServices, usePlatformTenants } from '../../lib/usePlatformData';
+import type { SettingsSection } from './Overview';
+
+const COMPLIANCE_ALERT_THRESHOLD = 70;
+
+const goTo = (section: SettingsSection) => { window.location.hash = `#settings/${section}`; };
+
+const pct = (v: number | null | undefined) =>
+  v === null || v === undefined || Number.isNaN(v) ? '—' : `${(v * 100).toFixed(2)}%`;
+
+interface Alert { id: string; level: 'bad' | 'warn'; code: string; text: string; section: SettingsSection }
 
 export const OverviewSection = () => {
-  const mainMetrics = [
-    { label: 'Security Score', value: '94/100', trend: 'OPTIMAL', trendType: 'NEUTRAL' as const, icon: ShieldCheck, color: 'brand' as const },
-    { label: 'Active Providers', value: '8 Nodes', trend: 'STABLE', trendType: 'NEUTRAL' as const, icon: Cpu, color: 'emerald' as const },
-    { label: 'Env Sync State', value: 'DIVERGED', trend: '3 NODES', trendType: 'DOWN' as const, icon: Globe, color: 'amber' as const },
-    { label: 'Secret Health', value: '42 Total', trend: '2 EXPIRED', trendType: 'DOWN' as const, icon: Key, color: 'red' as const },
-  ];
+  const compliance = useCompliance();
+  const secrets = useSecrets();
+  const llm = useLlmProviders();
+  const tenants = usePlatformTenants();
+  const metrics = usePlatformMetrics(7);
+  const services = usePlatformServices();
+
+  const score = compliance.score?.score ?? null;
+  const activeSecrets = secrets.secrets.filter(s => s.is_active);
+  const now = Date.now();
+  const overdueSecrets = activeSecrets.filter(s => s.rotation_due_at && new Date(s.rotation_due_at).getTime() < now);
+
+  const alerts = useMemo<Alert[]>(() => {
+    const out: Alert[] = [];
+    for (const svc of services.data?.items ?? []) {
+      if (svc.status === 'down' || svc.status === 'degraded') {
+        out.push({
+          id: `svc-${svc.name}`,
+          level: svc.status === 'down' ? 'bad' : 'warn',
+          code: `SERVICE_${svc.status.toUpperCase()}`,
+          text: `${svc.name}${svc.detail ? ` — ${svc.detail}` : ''}`,
+          section: 'INFRASTRUCTURE',
+        });
+      }
+    }
+    for (const s of overdueSecrets) {
+      out.push({
+        id: `secret-${s.id}`,
+        level: 'warn',
+        code: 'SECRET_ROTATION_OVERDUE',
+        text: `${s.key_name} quá hạn xoay vòng từ ${new Date(s.rotation_due_at as string).toLocaleDateString('vi-VN')}`,
+        section: 'SECRETS',
+      });
+    }
+    if (score !== null && score < COMPLIANCE_ALERT_THRESHOLD) {
+      out.push({
+        id: 'compliance',
+        level: 'warn',
+        code: 'COMPLIANCE_SCORE_LOW',
+        text: `Điểm tuân thủ ${score}/100 dưới ngưỡng ${COMPLIANCE_ALERT_THRESHOLD}`,
+        section: 'SECURITY',
+      });
+    }
+    for (const h of llm.health) {
+      if (h.status === 'down') {
+        out.push({ id: `llm-${h.model_name}`, level: 'bad', code: 'LLM_DOWN', text: `${h.model_name}${h.error ? ` — ${h.error}` : ''}`, section: 'AI_PROVIDERS' });
+      }
+    }
+    return out;
+  }, [services.data, overdueSecrets, score, llm.health]);
+
+  const reloadAll = () => {
+    compliance.reload();
+    secrets.refetch();
+    llm.reload();
+    tenants.reload();
+    metrics.reload();
+    services.reload();
+  };
+
+  const overall = alerts.some(a => a.level === 'bad') ? 'CRITICAL' : alerts.length > 0 ? 'WARNING' : 'STABLE';
 
   return (
-    <div className="space-y-12">
-      <OperationalHeader 
+    <div className="space-y-8">
+      <OperationalHeader
         title="Platform Pulse"
-        subtitle="Operational Health & Configuration Sovereignty"
-        breadcrumbs={[{ label: 'Settings' }, { label: 'Pulse' }]}
-        status={<StatusBadge status="STABLE" size="lg" />}
-        actions={
-          <button className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white px-5 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-lg shadow-brand-500/20 active:scale-95">
-            <TrendingUp className="w-4 h-4" />
-            ANALYZE DRIFT
-          </button>
-        }
+        subtitle="Trạng thái vận hành tổng hợp từ các dịch vụ thật của nền tảng"
+        breadcrumbs={[{ label: 'Settings' }, { label: 'Overview' }]}
+        status={<StatusBadge status={overall} size="lg" />}
+        actions={<Button variant="secondary" icon={RefreshCw} onClick={reloadAll}>Tải lại</Button>}
       />
 
-      <StandardMetricsGrid metrics={mainMetrics} />
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <StatTile
+          label="Compliance score"
+          value={score === null ? '—' : `${score}/100`}
+          hint={compliance.error ? 'lỗi' : undefined}
+          icon={ShieldCheck}
+          tone={score === null ? 'neutral' : score >= COMPLIANCE_ALERT_THRESHOLD ? 'ok' : 'warn'}
+          loading={compliance.loading}
+        />
+        <StatTile
+          label="LLM providers"
+          value={llm.providers.length}
+          hint={llm.healthAvailable ? `${llm.health.filter(h => h.status === 'ok').length} ok` : undefined}
+          icon={Cpu}
+          tone={llm.health.some(h => h.status === 'down') ? 'bad' : 'info'}
+          loading={llm.loading}
+        />
+        <StatTile
+          label="Secrets đang hoạt động"
+          value={activeSecrets.length}
+          hint={overdueSecrets.length ? `${overdueSecrets.length} quá hạn` : undefined}
+          icon={Key}
+          tone={overdueSecrets.length ? 'warn' : 'neutral'}
+          loading={secrets.loading}
+        />
+        <StatTile
+          label="Tenants"
+          value={tenants.data?.length ?? 0}
+          icon={Building2}
+          loading={tenants.loading}
+        />
+        <StatTile
+          label="Hội thoại 24h"
+          value={metrics.data?.conversations.last_24h ?? '—'}
+          hint={metrics.data ? `err ${pct(metrics.data.error_rate)}` : undefined}
+          icon={MessagesSquare}
+          tone={metrics.data && metrics.data.error_rate > 0.05 ? 'warn' : 'neutral'}
+          loading={metrics.loading}
+        />
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-8">
-          <div className="p-8 bg-white/[0.02] border border-white/5 rounded-[40px]">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-xl font-bold text-white tracking-tight">Active Workspaces & Projects</h3>
-              <button className="text-xs font-bold text-brand-400 hover:text-brand-300">View Hierarchy</button>
-            </div>
-            
-            <div className="space-y-4">
-              {[
-                { name: 'Global Finance', projects: 12, envs: ['PROD', 'STAGING', 'DEV'], health: 98 },
-                { name: 'Smart City Nexus', projects: 8, envs: ['PROD', 'SIT'], health: 85 },
-                { name: 'National Health OS', projects: 24, envs: ['PROD', 'UA'], health: 100 },
-              ].map((ws) => (
-                <div key={ws.name} className="flex items-center justify-between p-4 bg-white/5 hover:bg-white/[0.08] border border-white/5 rounded-2xl transition-all group">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-slate-500 group-hover:text-brand-400 transition-colors shadow-inner">
-                      <Database className="w-5 h-5" />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-6">
+          <Card
+            title="Tenants"
+            subtitle="GET /api/auth/me/tenants"
+            actions={<Button size="sm" variant="ghost" icon={ArrowRight} onClick={() => goTo('ORGANIZATION')}>Organization</Button>}
+            padding="none"
+          >
+            {tenants.loading ? <LoadingState /> : tenants.error ? (
+              <div className="p-4"><ErrorState message={tenants.error} onRetry={tenants.reload} /></div>
+            ) : (tenants.data?.length ?? 0) === 0 ? (
+              <EmptyState icon={Building2} title="Chưa có tenant" description="Chưa có tenant nào đang hoạt động trong hệ thống." />
+            ) : (
+              <ul className="divide-y" style={{ borderColor: 'var(--border-soft)' }}>
+                {tenants.data!.map(t => (
+                  <li key={t.id} className="flex items-center justify-between px-5 py-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-bold text-[#111111] truncate">{t.name}</div>
+                      <div className="text-[11px] font-mono text-[#5F5F5F]">{t.slug}</div>
                     </div>
-                    <div>
-                      <div className="text-white font-bold text-sm tracking-tight">{ws.name}</div>
-                      <div className="text-[10px] text-slate-500 uppercase font-black tracking-widest">{ws.projects} Active Projects</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-8">
-                    <div className="flex gap-1.5">
-                      {ws.envs.map(env => (
-                        <span key={env} className="text-[9px] font-black text-slate-600 bg-white/5 px-1.5 py-0.5 rounded border border-white/10">{env}</span>
-                      ))}
-                    </div>
-                    <div className="text-right">
-                       <div className={`text-xs font-bold ${ws.health === 100 ? 'text-emerald-400' : 'text-amber-400'}`}>{ws.health}%</div>
-                       <div className="text-[9px] text-slate-600 uppercase font-black tracking-widest">Health</div>
-                    </div>
-                    <ArrowRight className="w-4 h-4 text-slate-700 opacity-0 group-hover:opacity-100 transition-all" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+                    <span className="text-[10px] font-mono text-[#5F5F5F]">{t.id}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
 
-          <div className="grid grid-cols-2 gap-8">
-            <div className="p-8 bg-white/[0.02] border border-white/5 rounded-[40px]">
-              <h3 className="text-lg font-bold text-white mb-6">Compliance Score</h3>
-              <div className="relative w-32 h-32 mx-auto">
-                <svg className="w-full h-full -rotate-90">
-                   <circle cx="64" cy="64" r="60" fill="none" stroke="currentColor" strokeWidth="8" className="text-white/5" />
-                   <circle cx="64" cy="64" r="60" fill="none" stroke="currentColor" strokeWidth="8" className="text-brand-500" strokeDasharray="376.8" strokeDashoffset="40" />
-                </svg>
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                   <span className="text-2xl font-bold text-white">88%</span>
-                   <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">SOC2/GDPR</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card title="Compliance score" subtitle="GET /api/auth/compliance/score">
+              {compliance.loading ? <LoadingState /> : compliance.error ? (
+                <ErrorState message={compliance.error} onRetry={compliance.reload} />
+              ) : !compliance.score ? (
+                <EmptyState title="Chưa có dữ liệu tuân thủ" />
+              ) : (
+                <div>
+                  <div className="flex items-end gap-2 mb-4">
+                    <span className="text-4xl font-bold text-[#111111] font-display leading-none">{compliance.score.score}</span>
+                    <span className="text-sm text-[#5F5F5F] font-bold mb-0.5">/ 100</span>
+                  </div>
+                  <div className="space-y-2">
+                    {compliance.score.breakdown.map(b => (
+                      <div key={b.label}>
+                        <div className="flex justify-between text-[10px] font-bold text-[#3F3F3F] uppercase tracking-wide mb-1">
+                          <span>{b.label}</span><span>{b.val}%</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-[#F4E8C3] overflow-hidden">
+                          <div className="h-full bg-[#B88719] rounded-full" style={{ width: `${Math.min(100, Math.max(0, b.val))}%` }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <Button size="sm" variant="ghost" className="mt-4" icon={ArrowRight} onClick={() => goTo('SECURITY')}>Security &amp; Compliance</Button>
                 </div>
-              </div>
-              <p className="text-[10px] text-slate-500 text-center mt-6 leading-relaxed italic">
-                3 high-risk policies detected in Staging environment.
-              </p>
-            </div>
-            <div className="p-8 bg-white/[0.02] border border-white/5 rounded-[40px]">
-               <h3 className="text-lg font-bold text-white mb-6">AI Provider Health</h3>
-               <div className="space-y-4">
-                 {[
-                   { name: 'Azure OpenAI', status: 'HEALTHY' },
-                   { name: 'Anthropic', status: 'DEGRADED' },
-                   { name: 'Gemini Pro', status: 'HEALTHY' },
-                 ].map(prov => (
-                   <div key={prov.name} className="flex items-center justify-between">
-                     <span className="text-xs font-medium text-slate-300">{prov.name}</span>
-                     <div className={`w-2 h-2 rounded-full ${prov.status === 'HEALTHY' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'}`} />
-                   </div>
-                 ))}
-               </div>
-               <button className="w-full mt-10 py-3 bg-white/5 hover:bg-brand-500 text-slate-300 hover:text-white border border-white/10 hover:border-transparent rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all">
-                  Provider Center
-               </button>
-            </div>
+              )}
+            </Card>
+
+            <Card title="AI provider health" subtitle="GET /api/llm-providers/health">
+              {llm.loading ? <LoadingState /> : llm.errors.health ? (
+                <ErrorState message={llm.errors.health} onRetry={llm.reload} />
+              ) : !llm.healthAvailable || llm.health.length === 0 ? (
+                <EmptyState icon={Cpu} title="Chưa có health check" description="Runtime chưa cấu hình nguồn health cho LLM." />
+              ) : (
+                <ul className="space-y-2">
+                  {llm.health.map(h => (
+                    <li key={h.model_name} className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-semibold text-[#111111] truncate">{h.model_name}</span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {h.latency_ms !== null && <span className="text-[10px] font-mono text-[#5F5F5F]">{Math.round(h.latency_ms)} ms</span>}
+                        <Badge tone={toneFor(h.status)}>{h.status}</Badge>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <Button size="sm" variant="ghost" className="mt-4" icon={ArrowRight} onClick={() => goTo('AI_PROVIDERS')}>Provider center</Button>
+            </Card>
           </div>
         </div>
 
-        <div className="space-y-8">
-           <div className="p-8 bg-gradient-to-br from-brand-500/10 to-transparent border border-brand-500/20 rounded-[40px]">
-             <Zap className="w-8 h-8 text-brand-400 mb-6" />
-             <h3 className="text-xl font-bold text-white mb-2 leading-tight">Runtime Optimization Available</h3>
-             <p className="text-sm text-slate-400 leading-relaxed mb-8 italic">
-               Detected 12 idle workers in US-EAST region. Estimated savings: $422/mo.
-             </p>
-             <button className="w-full py-4 bg-brand-500 hover:bg-brand-400 text-white rounded-2xl font-bold shadow-lg shadow-brand-500/20 transition-all">
-               Optimize Now
-             </button>
-           </div>
+        <div className="space-y-6">
+          <Card title="Cảnh báo" subtitle="Dịch vụ down/degraded · secrets quá hạn · compliance thấp">
+            {services.loading && secrets.loading ? <LoadingState /> : alerts.length === 0 ? (
+              <EmptyState icon={ShieldCheck} title="Không có cảnh báo" description={services.error ? `Không kiểm tra được dịch vụ: ${services.error}` : 'Tất cả nguồn đang trong ngưỡng.'} />
+            ) : (
+              <ul className="space-y-2">
+                {alerts.map(a => (
+                  <li key={a.id}>
+                    <button
+                      type="button"
+                      onClick={() => goTo(a.section)}
+                      className={`w-full text-left p-3 rounded-xl border transition-colors ${a.level === 'bad' ? 'border-[#9F1D1D] bg-[#FAD7D7] hover:bg-[#F6C9C9]' : 'border-[#B88719] bg-[#FFF1BF] hover:bg-[#FBE7A6]'}`}
+                    >
+                      <div className={`flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide mb-1 ${a.level === 'bad' ? 'text-[#7A1010]' : 'text-[#5C3900]'}`}>
+                        <AlertTriangle className="w-3 h-3" /> {a.code}
+                      </div>
+                      <p className="text-xs text-[#111111]">{a.text}</p>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
 
-           <div className="p-8 bg-white/[0.02] border border-white/5 rounded-[40px]">
-              <div className="flex items-center gap-2 mb-6">
-                <AlertCircle className="w-5 h-5 text-red-400" />
-                <h3 className="text-lg font-bold text-white italic">Critical Alerts</h3>
-              </div>
-              <div className="space-y-4">
-                <div className="p-4 bg-red-400/5 border border-red-400/20 rounded-2xl">
-                   <div className="text-[10px] font-black text-red-400 uppercase tracking-widest mb-1">SECRET_EXPIRATION</div>
-                   <p className="text-xs text-slate-300 font-medium">Azure-Prod-Key expires in 2 days.</p>
-                </div>
-                <div className="p-4 bg-amber-400/5 border border-amber-400/20 rounded-2xl">
-                   <div className="text-[10px] font-black text-amber-400 uppercase tracking-widest mb-1">QUOTA_LIMIT</div>
-                   <p className="text-xs text-slate-300 font-medium">Workspace 'Health-OS' at 92% token quota.</p>
-                </div>
-              </div>
-           </div>
+          <Card title="Nền tảng 7 ngày" subtitle="GET /api/platform/metrics?days=7">
+            {metrics.loading ? <LoadingState /> : metrics.error ? (
+              <ErrorState message={metrics.error} onRetry={metrics.reload} />
+            ) : !metrics.data ? <EmptyState title="Chưa có số liệu" /> : (
+              <dl className="grid grid-cols-2 gap-3 text-xs">
+                {[
+                  ['Agents', `${metrics.data.agents.published}/${metrics.data.agents.total} published`],
+                  ['Hội thoại', `${metrics.data.conversations.total} (${metrics.data.conversations.active} active)`],
+                  ['Messages 24h', metrics.data.messages.last_24h],
+                  ['Tokens 24h', metrics.data.tokens.last_24h.toLocaleString('vi-VN')],
+                  ['Latency avg/p95', `${Math.round(metrics.data.latency_ms.avg)} / ${Math.round(metrics.data.latency_ms.p95)} ms`],
+                  ['Error rate', pct(metrics.data.error_rate)],
+                ].map(([k, v]) => (
+                  <div key={String(k)} className="p-2.5 rounded-lg border border-[#BFA66A] bg-[#FFF9E8]">
+                    <dt className="text-[10px] font-bold text-[#5F5F5F] uppercase tracking-wide">{k}</dt>
+                    <dd className="text-sm font-bold text-[#111111] mt-0.5">{v}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+          </Card>
         </div>
       </div>
     </div>

@@ -1,216 +1,100 @@
-﻿import React, { useState } from 'react';
-import { 
-  History as HistoryIcon, 
-  Search, 
-  Filter, 
-  Play, 
-  RefreshCw, 
-  ChevronRight, 
-  Bot, 
-  Cpu, 
-  Zap, 
-  CheckCircle2, 
-  XCircle, 
-  Clock, 
-  BarChart3, 
-  Database, 
-  Wrench, 
-  GitPullRequest, 
-  Layers, 
-  ShieldCheck, 
-  AlertCircle, 
-  ExternalLink,
-  MoreVertical,
-  Activity,
-  User,
-  MoreHorizontal
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import { cn } from '../../../lib/utils';
-import { MOCK_RUNS } from '../../../constants/agentMock';
-import { AgentRun, AgentStatus } from '../../../types/agent';
+/**
+ * Run Registry — a "run" is one recorded conversation with an agent.
+ *
+ *   GET /api/conversations?limit&offset&status&agent_id&q
+ *   GET /api/catalog/agents (agent filter)
+ *
+ * Click a row to open the read-only transcript drawer shared with Conversations.
+ */
+import React, { useState } from 'react';
+import { Search, RefreshCw, Inbox } from 'lucide-react';
+import { Pagination } from '../../shared/Pagination';
+import {
+  Badge, toneFor, Button, EmptyState, ErrorState, LoadingState, Input, Select, SectionTitle, Table, type Column,
+} from '../../ui';
+import { useConversations, useCatalogAgents, shortId, type ConversationItem } from '../../../lib/platformApi';
+import { formatDateTime, formatNumber } from '../../../lib/formatVN';
+import { ConversationDrawer, conversationDuration } from '../Conversations';
+
+const PAGE_SIZE = 20;
 
 export const RunRegistry = () => {
-  const [selectedRun, setSelectedRun] = useState<AgentRun | null>(null);
+  const [searchDraft, setSearchDraft] = useState('');
+  const [q, setQ] = useState('');
+  const [agentId, setAgentId] = useState('');
+  const [status, setStatus] = useState('');
+  const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState<ConversationItem | null>(null);
 
-  const getStatusColor = (status: AgentStatus) => {
-    switch (status) {
-      case 'ACTIVE': return 'bg-green-500/10 text-green-400 border-green-500/20';
-      case 'BUSY': return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
-      case 'FAILED': return 'bg-red-500/10 text-red-500 border-red-500/20';
-      case 'WAITING_APPROVAL': return 'bg-purple-500/10 text-purple-400 border-purple-500/20';
-      default: return 'bg-white/5 text-slate-500 border-white/10';
-    }
-  };
+  const agents = useCatalogAgents();
+  const { data, loading, error, refetch } = useConversations({
+    limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE, q, agent_id: agentId, status,
+  });
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  const columns: Column<ConversationItem>[] = [
+    { header: 'Run ID', cell: c => <span className="font-mono text-[11px] text-[#8A5A00] font-semibold">{shortId(c.id)}</span> },
+    { header: 'Agent', cell: c => c.agent_name ?? <span className="text-[#5F5F5F]">—</span> },
+    { header: 'Người dùng', cell: c => <span className="text-[#3F3F3F]">{c.user_ref ?? '—'}</span> },
+    { header: 'Bắt đầu', cell: c => <span className="text-[#3F3F3F]">{formatDateTime(c.started_at)}</span> },
+    { header: 'Thời lượng', cell: c => <span className="text-[#3F3F3F]">{conversationDuration(c)}</span> },
+    { header: 'Tin nhắn', align: 'right', cell: c => formatNumber(c.message_count) },
+    { header: 'Tokens', align: 'right', cell: c => c.tokens == null ? '—' : formatNumber(c.tokens) },
+    { header: 'Trạng thái', cell: c => <Badge tone={toneFor(c.status)}>{c.status}</Badge> },
+  ];
 
   return (
-    <div className="space-y-12 animate-in fade-in slide-in-from-bottom-8 duration-700 h-full flex flex-col">
-      <div className="flex justify-between items-end mb-4">
-        <div>
-          <div className="flex items-center gap-2 text-brand-400 text-xs font-black font-mono tracking-widest uppercase mb-3 text-glow-blue">
-            <Activity className="w-4 h-4" />
-            Runtime Execution Operations
-          </div>
-          <h1 className="text-5xl font-display font-medium tracking-tight text-white mb-2 italic">Global Run Registry</h1>
-          <p className="text-slate-500 text-lg">Monitor live executions, handle manual approvals, and replay mission traces.</p>
+    <div className="space-y-5">
+      <SectionTitle
+        title="Runs"
+        subtitle="Mỗi run là một hội thoại đã được runtime ghi lại. Bấm vào một dòng để xem transcript và tool calls."
+        actions={<Button size="sm" variant="ghost" icon={RefreshCw} onClick={() => void refetch()} loading={loading && !!data}>Làm mới</Button>}
+      />
+
+      <form className="flex items-center gap-3 flex-wrap" onSubmit={e => { e.preventDefault(); setPage(1); setQ(searchDraft.trim()); }}>
+        <div className="relative">
+          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5F5F5F]" />
+          <Input value={searchDraft} onChange={e => setSearchDraft(e.target.value)} placeholder="Tìm theo ID, người dùng…" className="pl-9 w-64" aria-label="Tìm run" />
         </div>
-        <div className="flex gap-4">
-           <button className="px-5 py-2.5 bg-white/5 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-300 hover:text-white transition-all flex items-center gap-2">
-             <RefreshCw className="w-4 h-4" /> Hard Refresh
-           </button>
-           <button className="px-5 py-2.5 bg-brand-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-brand-600 transition-all shadow-2xl shadow-brand-500/20 flex items-center gap-2">
-             <GitPullRequest className="w-4 h-4" /> Human Approvals
-             <span className="w-5 h-5 bg-white/20 rounded-full flex items-center justify-center text-[10px]">3</span>
-           </button>
-        </div>
+        <Select value={agentId} onChange={e => { setAgentId(e.target.value); setPage(1); }} aria-label="Lọc theo agent" className="w-56">
+          <option value="">Tất cả agent</option>
+          {(agents.data ?? []).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </Select>
+        <Select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }} aria-label="Lọc theo trạng thái" className="w-40">
+          <option value="">Mọi trạng thái</option>
+          <option value="active">Đang chạy</option>
+          <option value="ended">Đã kết thúc</option>
+        </Select>
+        <Button type="submit" size="sm" icon={Search}>Tìm</Button>
+        <span className="text-xs text-[#5F5F5F] ml-auto">{formatNumber(total)} runs</span>
+      </form>
+
+      <div className="content-card content-card--static overflow-hidden">
+        {loading && !data && <LoadingState label="Đang tải runs…" />}
+        {error && <div className="p-4"><ErrorState message={error} onRetry={() => void refetch()} /></div>}
+        {!error && data && (
+          <Table<ConversationItem>
+            rows={items}
+            columns={columns}
+            rowKey={c => c.id}
+            onRowClick={setSelected}
+            empty={
+              <EmptyState
+                icon={Inbox}
+                title="Chưa có run nào"
+                description={q || agentId || status ? 'Không có run nào khớp bộ lọc.' : 'Chạy agent trong Playground hoặc qua API để thấy run ở đây.'}
+              />
+            }
+          />
+        )}
       </div>
 
-      <div className="glass-panel overflow-hidden rounded-[2.5rem] border-white/5 bg-white/[0.01]">
-         <div className="px-10 py-6 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
-            <div className="flex items-center gap-6">
-               <div className="relative group">
-                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                 <input 
-                   type="text" 
-                   placeholder="Query runs by ID, agent, or tenant..." 
-                   className="bg-black/20 border border-white/5 rounded-2xl pl-12 pr-6 py-2.5 text-xs w-80 focus:outline-none focus:border-brand-500/50 transition-all font-mono"
-                 />
-               </div>
-               <div className="flex gap-2">
-                  <button className="px-4 py-2 bg-white/5 rounded-xl text-[10px] font-bold text-slate-400">All Runs</button>
-                  <button className="px-4 py-2 bg-white/5 rounded-xl text-[10px] font-bold text-red-500">Failed Only</button>
-                  <button className="px-4 py-2 bg-purple-500/10 rounded-xl text-[10px] font-bold text-purple-400">Wait Approval</button>
-               </div>
-            </div>
-            <div className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
-               Displaying Last 1,000 Executions Across Global Compute
-            </div>
-         </div>
-         <table className="w-full text-left">
-            <thead>
-               <tr className="text-[10px] font-black text-slate-500 uppercase tracking-widest border-b border-white/5">
-                  <th className="px-10 py-5">Execution Identity</th>
-                  <th className="px-6 py-5">Trigger</th>
-                  <th className="px-6 py-5">Started At</th>
-                  <th className="px-6 py-5">Duration</th>
-                  <th className="px-6 py-5">Compute Accrual</th>
-                  <th className="px-6 py-5">Status</th>
-                  <th className="px-10 py-5 text-right">Actions</th>
-               </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-               {MOCK_RUNS.map(run => (
-                 <tr 
-                   key={run.id} 
-                   className="group hover:bg-white/[0.02] transition-colors cursor-pointer"
-                   onClick={() => setSelectedRun(run)}
-                 >
-                    <td className="px-10 py-6">
-                       <div className="flex items-center gap-4">
-                          <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center border", getStatusColor(run.status))}>
-                             <Activity className="w-4 h-4" />
-                          </div>
-                          <div>
-                             <div className="font-bold text-white mb-0.5">{run.agentName}</div>
-                             <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono italic">
-                                <span>{run.id}</span>
-                                <span className="opacity-30">â€¢</span>
-                                <span>{run.tenant}</span>
-                             </div>
-                          </div>
-                       </div>
-                    </td>
-                    <td className="px-6 py-6 font-mono text-xs">
-                       <div className="flex items-center gap-2">
-                          <div className="w-2 h-2 rounded-full bg-brand-500/40" />
-                          <span className="text-slate-300 font-black">{run.trigger}</span>
-                       </div>
-                    </td>
-                    <td className="px-6 py-6">
-                       <div className="text-xs font-bold text-slate-400">{run.startedAt}</div>
-                    </td>
-                    <td className="px-6 py-6">
-                       <div className="flex items-center gap-2">
-                          <Clock className="w-3.5 h-3.5 text-slate-700" />
-                          <span className="text-sm font-display font-medium text-slate-300 tracking-tight">{run.duration}</span>
-                       </div>
-                    </td>
-                    <td className="px-6 py-6">
-                       <div className="space-y-1">
-                          <div className="text-sm font-bold text-white">${run.cost.toFixed(3)}</div>
-                          <div className="flex gap-2">
-                             <div className="text-[9px] font-black uppercase text-brand-400">{run.toolCalls} Tools</div>
-                             <div className="text-[9px] font-black uppercase text-purple-400">{run.retrievalCalls} KBs</div>
-                          </div>
-                       </div>
-                    </td>
-                    <td className="px-6 py-6">
-                       <div className={cn(
-                          "px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border inline-flex items-center gap-2",
-                          getStatusColor(run.status)
-                       )}>
-                          {run.status === 'ACTIVE' && <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />}
-                          {run.status}
-                       </div>
-                    </td>
-                    <td className="px-10 py-6 text-right">
-                       <button className="p-2 hover:bg-white/10 rounded-xl transition-all">
-                          <MoreHorizontal className="w-5 h-5 text-slate-500" />
-                       </button>
-                    </td>
-                 </tr>
-               ))}
-            </tbody>
-         </table>
-      </div>
+      <Pagination page={page} totalPages={totalPages} hasNext={page < totalPages} onJump={setPage} className="justify-end" />
 
-      <div className="grid grid-cols-3 gap-8">
-         <div className="glass-panel p-8 rounded-[2rem] border-white/5 bg-white/[0.01]">
-            <h4 className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-6">Execution Failure Root Causes</h4>
-            <div className="space-y-6">
-               {[
-                 { id: 'kb-timeout', cause: 'KB Connectivity Timeout', count: 12, trend: '+4%' },
-                 { id: 'tool-auth', cause: 'Tool Auth Failure', count: 8, trend: '-2%' },
-                 { id: 'hallucination', cause: 'Hallucination Exceeded Guardrail', count: 5, trend: '0%' },
-                 { id: 'model-tokens', cause: 'Model Input Tokens Exceeded', count: 3, trend: '+1%' },
-               ].map((c) => (
-                  <div key={c.id} className="flex justify-between items-center group cursor-pointer">
-                     <span className="text-xs font-bold text-slate-400 group-hover:text-red-500 transition-colors">{c.cause}</span>
-                     <div className="flex items-center gap-4">
-                        <span className="text-sm font-mono font-bold text-white">{c.count}</span>
-                        <span className={cn("text-[10px] font-mono", c.trend.startsWith('+') ? "text-red-500" : "text-green-500")}>{c.trend}</span>
-                     </div>
-                  </div>
-               ))}
-            </div>
-         </div>
-         <div className="glass-panel p-8 rounded-[2rem] border-white/5 bg-white/[0.01]">
-            <h4 className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-6">Avg Compute Duration (7d)</h4>
-            <div className="h-32 flex items-end gap-2">
-               {[40, 65, 30, 80, 50, 90, 45].map((h, i) => (
-                  <div 
-                    key={`bar-${i}`} 
-                    className="flex-1 bg-brand-500/20 hover:bg-brand-500/40 rounded-t-lg transition-all cursor-pointer relative group" 
-                    style={{ height: `${h}%` }}
-                  >
-                     <div className="absolute top-[-25px] left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 bg-white text-black text-[10px] px-2 py-0.5 rounded font-black transition-all">
-                        {h}s
-                     </div>
-                  </div>
-               ))}
-            </div>
-         </div>
-         <div className="glass-panel p-8 rounded-[2rem] border-brand-500/10 bg-brand-500/5 relative overflow-hidden group border-dashed">
-            <div className="absolute top-0 right-0 p-8 rotate-12 opacity-10 group-hover:rotate-0 transition-transform duration-700">
-               <Zap className="w-24 h-24 text-brand-400" />
-            </div>
-            <h4 className="text-xl font-display font-medium mb-4 italic">Predictive Scaling Ops</h4>
-            <p className="text-slate-500 text-sm leading-relaxed mb-6">
-               AI Infrastructure is anticipating a 14% spike in Railway Incident Agent usage over the next 4 hours based on historical weather patterns.
-            </p>
-            <button className="px-6 py-2.5 bg-brand-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-brand-600 transition-all">Increase Warm Pool</button>
-         </div>
-      </div>
+      <ConversationDrawer conversation={selected} onClose={() => setSelected(null)} />
     </div>
   );
 };
+

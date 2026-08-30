@@ -1,222 +1,128 @@
-import React from 'react';
-import { 
-  Code, 
-  Key, 
-  Terminal, 
-  Webhook, 
-  Cpu, 
-  Layers, 
-  Activity, 
-  History,
-  Copy,
-  Plus,
-  ArrowRight,
-  ExternalLink,
-  ShieldCheck,
-  RefreshCw,
-  FileCode
-} from 'lucide-react';
+/**
+ * Settings → API & Developers.
+ *
+ *   api keys  <APIKeysPanel />   (Settings/Auth/APIKeysPanel — real useAPIKeys)
+ *   webhooks  usePlatformSetting('webhooks')  [{id, url, events[], enabled, secret_ref}]
+ *
+ * Webhook *delivery* is not wired server-side; this page only persists the
+ * registrations. No SDK block: there is no published SDK to link to.
+ */
+import React, { useState } from 'react';
+import { Webhook, Plus, Trash2, Pencil, Check, X, RefreshCw } from 'lucide-react';
 import { OperationalHeader } from '../shared/OperationalHeader';
 import { StatusBadge } from '../shared/StatusBadge';
-import { cn } from '../../lib/utils';
+import { Badge, Button, Card, EmptyState, ErrorState, Field, Input, LoadingState } from '../ui';
+import { APIKeysPanel } from './Auth/APIKeysPanel';
+import { usePlatformSetting, newSettingId } from '../../lib/usePlatformSettings';
 
-export const APISection = () => {
+export interface WebhookReg { id: string; url: string; events: string[]; enabled: boolean; secret_ref: string }
+
+/** Event names emitted by the platform (documentation of the contract, not data). */
+const EVENT_OPTIONS = ['conversation.created', 'conversation.completed', 'agent.published', 'document.ingested', 'review.requested', 'secret.rotated'];
+const EMPTY_HOOK: Omit<WebhookReg, 'id'> = { url: '', events: [], enabled: true, secret_ref: '' };
+
+export const APISection = () => (
+  <div className="space-y-8 pb-10">
+    <OperationalHeader
+      title="API & Developers"
+      subtitle="API keys cho truy cập lập trình và đăng ký webhook."
+      breadcrumbs={[{ label: 'Settings' }, { label: 'Platform' }, { label: 'API' }]}
+      status={<StatusBadge status="ACTIVE" size="lg" />}
+    />
+
+    <Card padding="sm" className="bg-[#111111] border-[#111111]">
+      {/* APIKeysPanel is styled for a dark surface (Auth section) — keep it on one. */}
+      <div className="p-3"><APIKeysPanel /></div>
+    </Card>
+
+    <Webhooks />
+  </div>
+);
+
+const Webhooks = () => {
+  const setting = usePlatformSetting<WebhookReg[]>('webhooks', []);
+  const hooks = Array.isArray(setting.value) ? setting.value : [];
+  const [editing, setEditing] = useState<WebhookReg | null>(null);
+  const [draft, setDraft] = useState<Omit<WebhookReg, 'id'>>(EMPTY_HOOK);
+  const [showForm, setShowForm] = useState(false);
+
+  const startAdd = () => { setEditing(null); setDraft(EMPTY_HOOK); setShowForm(true); };
+  const startEdit = (h: WebhookReg) => { setEditing(h); setDraft({ url: h.url, events: h.events, enabled: h.enabled, secret_ref: h.secret_ref }); setShowForm(true); };
+  const cancel = () => { setShowForm(false); setEditing(null); };
+  const toggleEvent = (ev: string) => setDraft(d => ({ ...d, events: d.events.includes(ev) ? d.events.filter(x => x !== ev) : [...d.events, ev] }));
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!draft.url.trim()) return;
+    const next = editing ? hooks.map(h => (h.id === editing.id ? { ...editing, ...draft } : h)) : [...hooks, { id: newSettingId('wh'), ...draft }];
+    await setting.save(next).then(cancel).catch(() => {});
+  };
+  const toggle = (h: WebhookReg) => setting.save(hooks.map(x => (x.id === h.id ? { ...x, enabled: !x.enabled } : x))).catch(() => {});
+  const remove = (h: WebhookReg) => {
+    if (!window.confirm(`Xoá webhook ${h.url}?`)) return;
+    setting.save(hooks.filter(x => x.id !== h.id)).catch(() => {});
+  };
+
   return (
-    <div className="space-y-10 lg:space-y-12 pb-20 no-scrollbar">
-      <OperationalHeader 
-        title="API & Developers"
-        subtitle="Manage platform API keys, webhooks, and enterprise SDK distribution."
-        breadcrumbs={[{ label: 'Settings' }, { label: 'Platform' }, { label: 'API' }]}
-        status={<StatusBadge status="ACTIVE" size="lg" />}
-        actions={
-          <div className="flex flex-col sm:flex-row gap-3">
-             <button className="flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 text-white px-5 py-2.5 rounded-2xl text-xs font-bold border border-white/5 transition-all">
-                <FileCode className="w-4 h-4" />
-                API DOCS
-             </button>
-             <button className="flex items-center justify-center gap-2 bg-brand-500 hover:bg-brand-600 text-white px-5 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-lg shadow-brand-500/20 active:scale-95">
-               <Plus className="w-4 h-4" />
-               CREATE API KEY
-             </button>
+    <Card
+      title="Webhooks"
+      subtitle={<>Lưu tại <code className="font-mono">platform/settings/webhooks</code>. Việc gửi sự kiện chưa được wire ở server — đây là đăng ký cấu hình.</>}
+      actions={
+        <div className="flex gap-2">
+          <Button size="sm" icon={RefreshCw} onClick={setting.reload} loading={setting.loading}>Tải lại</Button>
+          <Button size="sm" variant="primary" icon={Plus} onClick={startAdd} disabled={setting.loading}>Thêm webhook</Button>
+        </div>
+      }
+    >
+      {setting.error && <div className="mb-4"><ErrorState message={setting.error} onRetry={setting.reload} /></div>}
+      {showForm && (
+        <form onSubmit={submit} className="mb-5 p-4 rounded-xl border border-[#BFA66A] bg-[#FFF9E8] grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Field label="URL"><Input type="url" value={draft.url} onChange={e => setDraft({ ...draft, url: e.target.value })} placeholder="https://…/hooks" required /></Field>
+          <Field label="Secret ref" hint="Tham chiếu secret trong Secrets Vault (không dán secret thô)."><Input value={draft.secret_ref} onChange={e => setDraft({ ...draft, secret_ref: e.target.value })} placeholder="vault/kv/webhooks/…" className="font-mono" /></Field>
+          <div className="md:col-span-2">
+            <span className="block text-[11px] font-bold text-[#3F3F3F] uppercase tracking-wide mb-1.5">Sự kiện</span>
+            <div className="flex flex-wrap gap-2">
+              {EVENT_OPTIONS.map(ev => {
+                const on = draft.events.includes(ev);
+                return (
+                  <button key={ev} type="button" onClick={() => toggleEvent(ev)} className={`px-2.5 py-1 rounded-full text-[11px] font-mono border transition-colors ${on ? 'bg-[#F4E8C3] border-[#8A5A00] text-[#111111]' : 'bg-white border-[#BFA66A] text-[#3F3F3F] hover:border-[#8A5A00]'}`} aria-pressed={on}>{ev}</button>
+                );
+              })}
+            </div>
           </div>
-        }
-      />
-
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-        <div className="xl:col-span-2 space-y-8 lg:space-y-10">
-          {/* Active API Keys */}
-          <section className="glass-panel p-6 lg:p-10 rounded-[2.5rem] lg:rounded-[3rem] border-white/5 bg-white/[0.01]">
-             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-10">
-                <div className="flex items-center gap-3">
-                   <div className="p-2.5 bg-brand-500/10 rounded-2xl border border-brand-500/20 text-brand-400">
-                     <Key className="w-6 h-6" />
-                   </div>
-                   <div>
-                     <h3 className="text-xl lg:text-2xl font-bold text-white tracking-tight italic">Platform Access Tokens</h3>
-                     <p className="text-[10px] lg:text-xs text-slate-500 uppercase font-black tracking-widest mt-1">Enterprise Developer Keys</p>
-                   </div>
-                </div>
-                <div className="flex bg-white/5 border border-white/10 p-1.5 rounded-2xl">
-                   <button className="px-4 py-2 bg-brand-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Platform</button>
-                   <button className="px-4 py-2 text-slate-500 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Personal</button>
-                </div>
-             </div>
-
-             <div className="space-y-4">
-                {[
-                   { name: 'FIN-INGESTION-WORKER', type: 'FULL_ACCESS', created: 'Oct 12, 2025', lastUsed: '4m ago', status: 'ACTIVE', prefix: 'na_pk_f9...' },
-                   { name: 'KNOWLEDGE-BRIDGE-STAGING', type: 'READ_ONLY', created: 'Nov 02, 2025', lastUsed: '24h ago', status: 'ACTIVE', prefix: 'na_pk_a2...' },
-                   { name: 'EXTERNAL-CRM-SYNC', type: 'ADMIN_PLATFORM', created: 'Dec 08, 2025', lastUsed: '32m ago', status: 'REVOKED', prefix: 'na_pk_e4...' },
-                ].map((key, i) => (
-                   <div key={key.name} className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between p-6 bg-white/[0.03] border border-white/5 rounded-[2rem] hover:bg-white/[0.06] transition-all group gap-6 lg:gap-0">
-                      <div className="flex items-center gap-5">
-                         <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-white/10 flex items-center justify-center text-slate-500 group-hover:text-brand-400 transition-colors shadow-inner">
-                            <Terminal className="w-6 h-6" />
-                         </div>
-                         <div>
-                            <h4 className="text-base lg:text-lg font-bold text-white tracking-tight italic">{key.name}</h4>
-                            <div className="flex flex-wrap items-center gap-3 mt-1">
-                               <span className="text-[10px] font-mono text-slate-500 tracking-tighter">{key.prefix}</span>
-                               <div className="w-1 h-1 rounded-full bg-slate-800" />
-                               <span className="text-[10px] font-black text-brand-500/80 uppercase tracking-widest">{key.type}</span>
-                            </div>
-                         </div>
-                      </div>
-                      
-                      <div className="flex items-center gap-8 justify-between lg:justify-end border-t lg:border-t-0 border-white/5 pt-4 lg:pt-0">
-                         <div className="text-right">
-                            <div className="text-xs font-bold text-white tracking-tighter">{key.lastUsed}</div>
-                            <div className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Last Activity</div>
-                         </div>
-                         <div className="flex gap-2">
-                           <button className="p-3 bg-white/5 border border-white/10 rounded-xl text-slate-600 hover:text-white transition-all">
-                              <Copy className="w-4 h-4" />
-                           </button>
-                           <button className="p-3 bg-white/5 border border-white/10 rounded-xl text-slate-600 hover:text-red-500 transition-all">
-                              <RefreshCw className="w-4 h-4" />
-                           </button>
-                         </div>
-                      </div>
-                   </div>
-                ))}
-             </div>
-          </section>
-
-          {/* Webhooks & Event Streams */}
-          <section className="glass-panel p-8 lg:p-10 rounded-[2.5rem] lg:rounded-[3rem] border-white/5 bg-white/[0.01]">
-             <div className="flex items-center justify-between mb-10">
-                <div className="flex items-center gap-3">
-                   <div className="p-2.5 bg-brand-500/10 rounded-2xl border border-brand-500/20 text-brand-400">
-                     <Webhook className="w-6 h-6" />
-                   </div>
-                   <div>
-                     <h3 className="text-xl lg:text-2xl font-bold text-white tracking-tight italic">Neural Event Streams</h3>
-                     <p className="text-[10px] lg:text-xs text-slate-500 uppercase font-black tracking-widest mt-1">Platform-wide Webhook Control</p>
-                   </div>
-                </div>
-                <button className="px-4 py-2 border border-brand-500/50 text-brand-400 hover:bg-brand-500 hover:text-white rounded-xl text-[9px] font-black uppercase tracking-widest transition-all">New Segment</button>
-             </div>
-
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {[
-                   { url: 'https://hooks.slack.com/services/...', events: ['KB_UPDATE', 'AUDIT_ALERT'], status: 'HEALTHY', latency: '42ms' },
-                   { url: 'https://api.internal-ops.io/hooks', events: ['WORKFLOW_INIT', 'DEPLOY_INIT'], status: 'DEGRADED', latency: '240ms' },
-                ].map(hook => (
-                   <div key={hook.url} className="p-6 bg-white/[0.02] border border-white/5 rounded-3xl hover:border-brand-500/30 transition-all group">
-                      <div className="flex justify-between items-start mb-6">
-                         <div className="text-[10px] font-mono text-slate-500 group-hover:text-brand-400 truncate max-w-[70%]">{hook.url}</div>
-                         <StatusBadge status={hook.status as any} size="sm" />
-                      </div>
-                      <div className="flex flex-wrap gap-2 mb-6">
-                         {hook.events.map(ev => (
-                            <span key={ev} className="text-[8px] font-black text-slate-600 bg-white/5 px-1.5 py-0.5 rounded border border-white/10 uppercase tracking-widest">{ev}</span>
-                         ))}
-                      </div>
-                      <div className="pt-4 border-t border-white/5 flex items-center justify-between">
-                         <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Mean Latency: {hook.latency}</div>
-                         <button className="text-[9px] font-black text-brand-400 uppercase tracking-widest hover:underline">Config Hook</button>
-                      </div>
-                   </div>
-                ))}
-             </div>
-          </section>
-        </div>
-
-        <div className="space-y-8 lg:space-y-10">
-           {/* API Pulse Overview */}
-           <section className="glass-panel p-6 lg:p-10 rounded-[2.5rem] lg:rounded-[3rem] border-white/5 bg-[#02040d]">
-              <h3 className="text-lg lg:text-xl font-bold text-white tracking-tight italic mb-8 flex items-center gap-3">
-                 <Activity className="w-5 h-5 text-emerald-400" />
-                 Developer Pulse
-              </h3>
-              
-              <div className="space-y-8">
-                 <div className="grid grid-cols-2 gap-4">
-                    <div className="p-5 bg-white/5 border border-white/5 rounded-3xl text-center">
-                       <Cpu className="w-6 h-6 text-brand-400 mx-auto mb-3" />
-                       <div className="text-xl font-bold text-white tracking-tighter">8.4m</div>
-                       <div className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Reqs / 24h</div>
-                    </div>
-                    <div className="p-5 bg-white/5 border border-white/5 rounded-3xl text-center">
-                       <Layers className="w-6 h-6 text-emerald-400 mx-auto mb-3" />
-                       <div className="text-xl font-bold text-white tracking-tighter">1.2ms</div>
-                       <div className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Avg Response</div>
-                    </div>
-                 </div>
-
-                 <div className="space-y-6">
-                    <div>
-                       <div className="flex justify-between text-[10px] font-black mb-2 uppercase tracking-widest text-slate-600">
-                          <span>Successful Reqs</span>
-                          <span className="text-emerald-400">99.98%</span>
-                       </div>
-                       <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-                          <div className="h-full bg-emerald-500 w-[99.98%] rounded-full shadow-[0_0_10px_rgba(16,185,129,0.3)]" />
-                       </div>
-                    </div>
-                 </div>
-
-                 <div className="p-6 bg-brand-500/5 border border-brand-500/20 rounded-3xl">
-                    <div className="flex items-center gap-3 mb-3 text-brand-400">
-                       <ShieldCheck className="w-4 h-4" />
-                       <span className="text-[10px] font-black uppercase tracking-widest tracking-widest">Schema Strict Mode</span>
-                    </div>
-                    <p className="text-[11px] text-brand-500/70 italic leading-relaxed">Neural Schema Validation active for 100% of ingress transit.</p>
-                 </div>
+          <label className="flex items-center gap-2 text-xs font-semibold text-[#3F3F3F]">
+            <input type="checkbox" checked={draft.enabled} onChange={e => setDraft({ ...draft, enabled: e.target.checked })} /> Bật
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" size="sm" icon={X} onClick={cancel}>Huỷ</Button>
+            <Button type="submit" variant="primary" size="sm" icon={Check} loading={setting.saving}>{editing ? 'Lưu' : 'Thêm'}</Button>
+          </div>
+        </form>
+      )}
+      {setting.loading ? <LoadingState /> : hooks.length === 0 ? (
+        <EmptyState icon={Webhook} title="Chưa có webhook" description="Đăng ký URL nhận sự kiện của nền tảng." />
+      ) : (
+        <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {hooks.map(h => (
+            <li key={h.id} className="p-4 rounded-xl border border-[#BFA66A] bg-white">
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <span className="text-[12px] font-mono text-[#111111] break-all">{h.url}</span>
+                <Badge tone={h.enabled ? 'healthy' : 'draft'}>{h.enabled ? 'enabled' : 'disabled'}</Badge>
               </div>
-           </section>
-
-           {/* SDK & Resources */}
-           <section className="glass-panel p-6 lg:p-10 rounded-[2.5rem] lg:rounded-[3rem] border-white/5 bg-white/[0.01]">
-              <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.3em] mb-8 lg:mb-10 flex items-center gap-3">
-                <Code className="w-4 h-4 text-slate-600" />
-                Enterprise SDK Distribution
-              </h3>
-              
-              <div className="space-y-4">
-                 {[
-                    { language: 'TypeScript / Node.js', vsn: 'v4.1.0' },
-                    { language: 'Python (Neural Engine)', vsn: 'v2.8.4' },
-                    { language: 'Java / Go Runtime', vsn: 'v1.12.0' },
-                 ].map(sdk => (
-                    <div key={sdk.language} className="flex items-center justify-between p-4 bg-white/5 border border-white/5 rounded-[1.5rem] hover:bg-white/[0.08] transition-all cursor-pointer group">
-                       <div>
-                          <span className="text-[10px] font-bold text-slate-300 block mb-1 uppercase italic tracking-tighter">{sdk.language}</span>
-                          <span className="text-[9px] font-mono text-slate-600">{sdk.vsn} Distributed</span>
-                       </div>
-                       <button className="p-2 text-slate-600 group-hover:text-brand-400"><ArrowRight size={14} /></button>
-                    </div>
-                 ))}
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {h.events.length === 0 ? <span className="text-[11px] text-[#5F5F5F]">Không có sự kiện</span> : h.events.map(ev => <span key={ev} className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-[#BFA66A] bg-[#FFF9E8] text-[#3F3F3F]">{ev}</span>)}
               </div>
-
-              <div className="mt-8 flex justify-center pt-8 border-t border-white/5">
-                <button className="text-[9px] font-black text-brand-400 uppercase tracking-widest hover:underline flex items-center gap-2">
-                   Open Developer Hub <ExternalLink size={12} />
-                </button>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-[#5F5F5F] font-mono truncate">{h.secret_ref || 'no secret ref'}</span>
+                <div className="flex gap-1 shrink-0">
+                  <Button size="sm" variant="ghost" onClick={() => toggle(h)} disabled={setting.saving}>{h.enabled ? 'Tắt' : 'Bật'}</Button>
+                  <Button size="sm" variant="ghost" icon={Pencil} onClick={() => startEdit(h)} aria-label="Sửa" />
+                  <Button size="sm" variant="danger" icon={Trash2} onClick={() => remove(h)} aria-label="Xoá" />
+                </div>
               </div>
-           </section>
-        </div>
-      </div>
-    </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 };

@@ -20,6 +20,11 @@
   --color-brand-950: #211803;
 
   --radius-xl:  1rem;
+  /* Borders — raised for contrast on the cream ground (#FCFBF7). Do not use
+   * lighter hexes (#E8DFC8, #EDE6D6, #F0E8D4…) for structural borders. */
+  --border-soft:   #BFA66A;
+  --border:        #A8945E;
+  --border-strong: #8A5A00;
   --radius-2xl: 1.5rem;
 }
 
@@ -251,6 +256,58 @@
   border-color: #777777;
   cursor: not-allowed;
 }
+
+/* Ghost: bordered, low-emphasis (toolbar / inline actions). Danger: destructive. */
+.btn-ghost {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 12px; background: transparent;
+  border: 1.5px solid var(--border-soft); border-radius: 10px;
+  font-size: 12px; font-weight: 700; color: #3F3F3F; cursor: pointer;
+  transition: all 0.12s; letter-spacing: 0.02em;
+}
+.btn-ghost:hover { background: #FFF9E8; border-color: var(--border-strong); color: #111111; }
+.btn-ghost:disabled { color: #8A8A7A; border-color: #D6C79F; cursor: not-allowed; background: transparent; }
+.btn-danger {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 16px; background: #FAD7D7;
+  border: 1.5px solid #9F1D1D; border-radius: 10px;
+  font-size: 12px; font-weight: 700; color: #7A1010; cursor: pointer;
+  text-transform: uppercase; letter-spacing: 0.04em; transition: all 0.12s;
+}
+.btn-danger:hover { background: #9F1D1D; color: #FFFFFF; }
+.btn-danger:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-sm { padding: 6px 10px !important; font-size: 11px !important; border-radius: 8px !important; }
+
+/* Inputs: one style, visible border, clear focus ring.
+ * Lives in the components layer so size utilities (w-*, pl-*, h-*, text-*) still win. */
+@layer components {
+  .ui-input {
+    width: 100%; background: #FFFFFF; color: #111111;
+    border: 1.5px solid var(--border-soft); border-radius: 10px;
+    padding: 8px 12px; font-size: 13px; line-height: 1.4; outline: none;
+    transition: border-color 0.12s, box-shadow 0.12s;
+  }
+  .ui-input::placeholder { color: #8A8A7A; }
+  .ui-input:hover { border-color: var(--border); }
+  .ui-input:focus { border-color: var(--border-strong); box-shadow: 0 0 0 3px rgba(184,135,25,0.18); }
+  .ui-input:disabled { background: #F4F4F4; color: #5F5F5F; cursor: not-allowed; }
+}
+
+/* Empty / loading states */
+.ui-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+  padding: 40px 20px; border: 1.5px dashed var(--border-soft); border-radius: 14px; background: #FFFDF6;
+}
+
+/* Table */
+.ui-table { width: 100%; font-size: 12px; border-collapse: collapse; }
+.ui-table th {
+  text-align: left; padding: 10px 14px; font-size: 10px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.08em; color: #3F3F3F; background: #FFF9E8; border-bottom: 1.5px solid var(--border-soft);
+}
+.ui-table td { padding: 10px 14px; color: #111111; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
+.ui-table tbody tr:last-child td { border-bottom: none; }
+.ui-table tbody tr:hover td { background: #FFF9E8; }
 
 /* Solid gold/brown - high contrast on white */
 .btn-gold {
@@ -562,6 +619,8 @@
   background: #FFFDF6;
   box-shadow: 0 4px 16px rgba(184,135,25,0.10);
 }
+/* Static cards (stat tiles, form panels) must not "lift" on hover — hover is for clickable cards. */
+.content-card--static:hover { border-color: #BFA66A; background: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
 .section-card {
   background: #FFFFFF;
   border: 1.5px solid #BFA66A;
@@ -960,7 +1019,7 @@
   --ab-muted: #5F5F5F;
   --ab-bg: #FFFFFF;
   --ab-bg-2: #FCFBF7;
-  --ab-border: #D6C79F;
+  --ab-border: #BFA66A;
   --ab-accent: #8A5A00;
   --ab-accent-bg: #FFF9E8;
   --ab-code-bg: #F7F4EA;

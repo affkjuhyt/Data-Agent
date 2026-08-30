@@ -157,27 +157,27 @@ export const WarehouseWizard = ({ onCancel, onComplete }: WarehouseWizardProps) 
     : false;
 
   return (
-    <div className="bg-white border border-[#BFA66A]/20 rounded-3xl overflow-hidden shadow-sm">
+    <div className="content-card content-card--static overflow-hidden">
 
       {/* Step indicator */}
-      <div className="bg-[#FFFDF8] border-b border-[#BFA66A]/20 px-8 py-5 flex items-center gap-2">
+      <div className="bg-[#FFFDF8] border-b border-[#BFA66A] px-8 py-5 flex items-center gap-2">
         {([1, 2, 3, 4] as WizardStep[]).map((s, idx) => (
           <React.Fragment key={s}>
             <div className={cn(
               'flex items-center gap-2 text-[10px] font-black uppercase tracking-widest',
-              s < step ? 'text-green-700' : s === step ? 'text-[#8A5A00]' : 'text-slate-400'
+              s < step ? 'text-green-700' : s === step ? 'text-[#8A5A00]' : 'text-[#5F5F5F]'
             )}>
               <span className={cn(
                 'w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black border',
                 s < step ? 'bg-green-600 border-green-600 text-white' :
                 s === step ? 'bg-[#B88719] border-[#B88719] text-white' :
-                'bg-white border-slate-200 text-slate-400'
+                'bg-white border-[#BFA66A] text-[#5F5F5F]'
               )}>
                 {s < step ? <Check className="w-2.5 h-2.5" /> : s}
               </span>
               <span className="hidden sm:inline">{STEP_LABELS[s]}</span>
             </div>
-            {idx < 3 && <ChevronRight className="w-3 h-3 text-slate-300 shrink-0" />}
+            {idx < 3 && <ChevronRight className="w-3 h-3 text-[#5F5F5F] shrink-0" />}
           </React.Fragment>
         ))}
       </div>
@@ -190,7 +190,7 @@ export const WarehouseWizard = ({ onCancel, onComplete }: WarehouseWizardProps) 
           <div className="flex-1 flex flex-col gap-6">
             <div>
               <h3 className="text-base font-black text-[#111111]">Choose Warehouse Type</h3>
-              <p className="text-xs text-slate-500 mt-1">Select the data warehouse you want to connect to the knowledge pipeline.</p>
+              <p className="text-xs text-[#5F5F5F] mt-1">Select the data warehouse you want to connect to the knowledge pipeline.</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 max-w-xl">
               <WarehouseTypeCard type="snowflake" selected={warehouseType === 'snowflake'}
@@ -208,21 +208,21 @@ export const WarehouseWizard = ({ onCancel, onComplete }: WarehouseWizardProps) 
               <h3 className="text-base font-black text-[#111111]">
                 {warehouseType === 'snowflake' ? 'Snowflake' : 'Databricks'} Connection Details
               </h3>
-              <p className="text-xs text-slate-500 mt-1">These credentials are stored encrypted and used only for data sync.</p>
+              <p className="text-xs text-[#5F5F5F] mt-1">These credentials are stored encrypted and used only for data sync.</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
               {fieldDefs.map(f => (
                 <div key={f.key} className={f.key === 'name' ? 'sm:col-span-2' : ''}>
-                  <label className="text-[10px] font-black text-[#5A4209]/70 uppercase tracking-widest block mb-1.5">
+                  <label className="text-[10px] font-black text-[#5A4209] uppercase tracking-widest block mb-1.5">
                     {f.label} {f.required && <span className="text-red-500">*</span>}
-                    {f.secret && <Lock className="w-2.5 h-2.5 inline ml-1 text-slate-400" />}
+                    {f.secret && <Lock className="w-2.5 h-2.5 inline ml-1 text-[#5F5F5F]" />}
                   </label>
                   <input
                     type={f.secret ? 'password' : 'text'}
                     placeholder={f.placeholder}
                     value={fields[f.key] ?? ''}
                     onChange={e => setFields(prev => ({ ...prev, [f.key]: e.target.value }))}
-                    className="w-full bg-white border border-[#BFA66A]/35 text-[#111111] placeholder:text-slate-300 rounded-xl px-3.5 py-2.5 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#B88719] focus:border-[#B88719] transition-all"
+                    className="ui-input w-full px-3.5 py-2.5 text-xs font-mono"
                   />
                 </div>
               ))}
@@ -247,7 +247,7 @@ export const WarehouseWizard = ({ onCancel, onComplete }: WarehouseWizardProps) 
           <div className="flex-1 flex flex-col gap-5">
             <div>
               <h3 className="text-base font-black text-[#111111]">Select Tables to Sync</h3>
-              <p className="text-xs text-slate-500 mt-1">Choose the tables to include in the knowledge pipeline. Add a description so agents understand the data.</p>
+              <p className="text-xs text-[#5F5F5F] mt-1">Choose the tables to include in the knowledge pipeline. Add a description so agents understand the data.</p>
             </div>
 
             {discoveringTables ? (
@@ -256,8 +256,8 @@ export const WarehouseWizard = ({ onCancel, onComplete }: WarehouseWizardProps) 
                 <p className="text-xs font-mono font-bold">Discovering tables from {warehouseType === 'snowflake' ? fields.account : fields.host}...</p>
               </div>
             ) : tables.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center gap-3 text-slate-400 py-12">
-                <Table2 className="w-8 h-8 text-slate-300" />
+              <div className="flex-1 flex flex-col items-center justify-center gap-3 text-[#5F5F5F] py-12">
+                <Table2 className="w-8 h-8 text-[#5F5F5F]" />
                 <p className="text-xs font-mono font-bold">No tables discovered</p>
                 <p className="text-[10px] font-mono text-center max-w-xs">The connection succeeded but no tables were found. Add tables manually using the field below.</p>
               </div>
@@ -266,20 +266,20 @@ export const WarehouseWizard = ({ onCancel, onComplete }: WarehouseWizardProps) 
                 {tables.map(t => (
                   <div key={t.name} className={cn(
                     'border rounded-2xl p-4 transition-all',
-                    t.selected ? 'border-[#B88719] bg-[#FFF9E8]' : 'border-[#BFA66A]/25 bg-white hover:border-[#BFA66A]/50'
+                    t.selected ? 'border-[#B88719] bg-[#FFF9E8]' : 'border-[#BFA66A] bg-white hover:border-[#BFA66A]'
                   )}>
                     <div className="flex items-start gap-3">
                       <button onClick={() => toggleTable(t.name)} className={cn(
                         'w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all cursor-pointer',
-                        t.selected ? 'bg-[#B88719] border-[#B88719]' : 'border-[#BFA66A]/40 bg-white hover:border-[#B88719]'
+                        t.selected ? 'bg-[#B88719] border-[#B88719]' : 'border-[#BFA66A] bg-white hover:border-[#B88719]'
                       )}>
                         {t.selected && <Check className="w-3 h-3 text-white" />}
                       </button>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs font-mono font-black text-[#111111]">{t.name}</span>
-                          <span className="text-[9px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{t.schema}</span>
-                          <span className="text-[9px] font-mono text-slate-400">{t.rowCount} rows</span>
+                          <span className="text-[9px] font-mono text-[#5F5F5F] bg-[#FFF9E8] px-1.5 py-0.5 rounded">{t.schema}</span>
+                          <span className="text-[9px] font-mono text-[#5F5F5F]">{t.rowCount} rows</span>
                         </div>
                         {t.selected && (
                           <input
@@ -287,7 +287,7 @@ export const WarehouseWizard = ({ onCancel, onComplete }: WarehouseWizardProps) 
                             placeholder="Describe this table for the AI agents..."
                             value={t.description}
                             onChange={e => setDescription(t.name, e.target.value)}
-                            className="mt-2 w-full bg-white border border-[#BFA66A]/30 rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#B88719] focus:border-[#B88719] placeholder:text-slate-300 transition-all"
+                            className="ui-input mt-2 w-full px-3 py-2 text-xs font-mono"
                           />
                         )}
                       </div>
@@ -303,10 +303,10 @@ export const WarehouseWizard = ({ onCancel, onComplete }: WarehouseWizardProps) 
                     value={customTableInput}
                     onChange={e => setCustomTableInput(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && addCustomTable()}
-                    className="flex-1 bg-white border border-[#BFA66A]/25 text-[#111111] placeholder:text-slate-300 rounded-xl px-3.5 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#B88719] focus:border-[#B88719] transition-all"
+                    className="ui-input flex-1 px-3.5 py-2 text-xs font-mono"
                   />
                   <button onClick={addCustomTable}
-                    className="px-3 py-2 bg-[#FFF9E8] border border-[#BFA66A]/30 text-[#8A5A00] rounded-xl text-xs font-bold hover:bg-[#B88719] hover:text-white transition-all cursor-pointer">
+                    className="px-3 py-2 bg-[#FFF9E8] border border-[#BFA66A] text-[#8A5A00] rounded-xl text-xs font-bold hover:bg-[#B88719] hover:text-white transition-all cursor-pointer">
                     <Plus className="w-4 h-4" />
                   </button>
                 </div>
@@ -326,12 +326,12 @@ export const WarehouseWizard = ({ onCancel, onComplete }: WarehouseWizardProps) 
           <div className="flex-1 flex flex-col gap-6">
             <div>
               <h3 className="text-base font-black text-[#111111]">Review Connection</h3>
-              <p className="text-xs text-slate-500 mt-1">Confirm the configuration before creating the warehouse connection.</p>
+              <p className="text-xs text-[#5F5F5F] mt-1">Confirm the configuration before creating the warehouse connection.</p>
             </div>
 
             <div className="max-w-xl space-y-4">
               {/* Connection summary */}
-              <div className="bg-[#FFFDF8] border border-[#BFA66A]/25 rounded-2xl p-5">
+              <div className="bg-[#FFFDF8] border border-[#BFA66A] rounded-2xl p-5">
                 <div className="flex items-center gap-3 mb-4">
                   <div className={cn(
                     'w-10 h-10 rounded-xl flex items-center justify-center border',
@@ -343,7 +343,7 @@ export const WarehouseWizard = ({ onCancel, onComplete }: WarehouseWizardProps) 
                   </div>
                   <div>
                     <p className="text-sm font-black text-[#111111]">{fields.name || 'Unnamed Connection'}</p>
-                    <p className="text-[10px] font-mono text-slate-500 uppercase tracking-wide">{warehouseType}</p>
+                    <p className="text-[10px] font-mono text-[#5F5F5F] uppercase tracking-wide">{warehouseType}</p>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-[11px] font-mono">
@@ -351,7 +351,7 @@ export const WarehouseWizard = ({ onCancel, onComplete }: WarehouseWizardProps) 
                     .filter(([k]) => k !== 'name' && k !== 'password' && k !== 'accessToken')
                     .map(([k, v]) => (
                       <div key={k}>
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">{k}</span>
+                        <span className="text-[9px] font-black text-[#5F5F5F] uppercase tracking-wider block">{k}</span>
                         <span className="text-[#111111] font-bold truncate block">{v || '—'}</span>
                       </div>
                     ))}
@@ -359,13 +359,13 @@ export const WarehouseWizard = ({ onCancel, onComplete }: WarehouseWizardProps) 
               </div>
 
               {/* Selected tables summary */}
-              <div className="bg-[#FFFDF8] border border-[#BFA66A]/25 rounded-2xl p-5">
+              <div className="bg-[#FFFDF8] border border-[#BFA66A] rounded-2xl p-5">
                 <h4 className="text-[10px] font-black text-[#5A4209] uppercase tracking-widest mb-3 flex items-center gap-2">
                   <Table2 className="w-3.5 h-3.5 text-[#B88719]" />
                   {selectedTables.length} Tables Selected
                 </h4>
                 {selectedTables.length === 0 ? (
-                  <p className="text-xs text-slate-400 font-mono">No tables selected — you can add them later via the Configs tab.</p>
+                  <p className="text-xs text-[#5F5F5F] font-mono">No tables selected — you can add them later via the Configs tab.</p>
                 ) : (
                   <div className="space-y-2">
                     {selectedTables.map(t => (
@@ -373,8 +373,8 @@ export const WarehouseWizard = ({ onCancel, onComplete }: WarehouseWizardProps) 
                         <CheckCircle2 className="w-3.5 h-3.5 text-green-600 mt-0.5 shrink-0" />
                         <div>
                           <span className="font-bold text-[#111111]">{t.name}</span>
-                          <span className="text-slate-400 ml-1.5">{t.schema}</span>
-                          {t.description && <p className="text-[10px] text-slate-500 mt-0.5">{t.description}</p>}
+                          <span className="text-[#5F5F5F] ml-1.5">{t.schema}</span>
+                          {t.description && <p className="text-[10px] text-[#5F5F5F] mt-0.5">{t.description}</p>}
                         </div>
                       </div>
                     ))}
@@ -387,10 +387,10 @@ export const WarehouseWizard = ({ onCancel, onComplete }: WarehouseWizardProps) 
       </div>
 
       {/* Footer navigation */}
-      <div className="bg-[#FFFDF8]/60 border-t border-[#BFA66A]/15 px-8 py-5 flex items-center justify-between">
+      <div className="bg-[#FFFDF8]/60 border-t border-[#BFA66A] px-8 py-5 flex items-center justify-between">
         <button
           onClick={() => step === 1 ? onCancel() : setStep(prev => (prev - 1) as WizardStep)}
-          className="flex items-center gap-1.5 px-4 py-2 bg-white border border-[#BFA66A]/30 text-[#8A5A00] rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-[#FFF9E8] transition-all cursor-pointer"
+          className="btn-secondary btn-sm"
         >
           {step === 1 ? <><X className="w-3.5 h-3.5" />Cancel</> : <><ChevronLeft className="w-3.5 h-3.5" />Back</>}
         </button>
@@ -406,7 +406,7 @@ export const WarehouseWizard = ({ onCancel, onComplete }: WarehouseWizardProps) 
             className={cn(
               'flex items-center gap-1.5 px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer',
               ((step === 1 && !warehouseType) || (step === 2 && (!canAdvanceStep2 || testingConnection)) || (step === 3 && (discoveringTables || selectedTables.length === 0)))
-                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                ? 'bg-[#FFF9E8] text-[#5F5F5F] cursor-not-allowed'
                 : 'bg-[#B88719] text-white hover:bg-[#8A5A00] shadow-md'
             )}
           >
@@ -447,7 +447,7 @@ function WarehouseTypeCard({ type, selected, onSelect }: {
         'relative p-6 rounded-2xl border-2 text-left transition-all cursor-pointer group',
         selected
           ? isSnow ? 'border-blue-400 bg-blue-50 shadow-md' : 'border-red-400 bg-red-50 shadow-md'
-          : 'border-[#BFA66A]/25 bg-white hover:border-[#BFA66A]/50 hover:bg-[#FFFDF8]'
+          : 'border-[#BFA66A] bg-white hover:border-[#BFA66A] hover:bg-[#FFFDF8]'
       )}
     >
       {selected && (
@@ -462,7 +462,7 @@ function WarehouseTypeCard({ type, selected, onSelect }: {
         {isSnow ? <Database className="w-6 h-6 text-blue-500" /> : <Zap className="w-6 h-6 text-red-500" />}
       </div>
       <p className="text-sm font-black text-[#111111] capitalize">{type}</p>
-      <p className="text-[11px] text-slate-500 mt-1 font-mono">
+      <p className="text-[11px] text-[#5F5F5F] mt-1 font-mono">
         {isSnow ? 'Cloud data warehouse with SQL interface' : 'Lakehouse platform with Delta tables'}
       </p>
     </button>

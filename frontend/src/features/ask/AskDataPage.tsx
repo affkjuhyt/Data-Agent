@@ -185,14 +185,14 @@ export default function AskDataPage() {
               <button type="button" onClick={() => setScope('auto')} className={cn('subnav-item', scope === 'auto' && 'active')}>
                 <Brain className="subnav-icon w-3.5 h-3.5" /><span className="flex-1 truncate">Tự động</span>
               </button>
-              {agentsLoading && <div className="text-[11px] text-[#777777] px-3 py-1">Đang tải agent…</div>}
+              {agentsLoading && <div className="text-[11px] text-[#5F5F5F] px-3 py-1">Đang tải agent…</div>}
               {agents.map(a => (
                 <button key={a.id} type="button" onClick={() => setScope(a.id)} className={cn('subnav-item', scope === a.id && 'active')} title={a.description}>
                   <Bot className="subnav-icon w-3.5 h-3.5" /><span className="flex-1 truncate">{a.label}</span>
                 </button>
               ))}
               {!agentsLoading && agents.length === 0 && (
-                <div className="text-[11px] text-[#777777] px-3 py-1 leading-relaxed">Chưa tải được danh sách agent — câu hỏi sẽ được điều phối tự động.</div>
+                <div className="text-[11px] text-[#5F5F5F] px-3 py-1 leading-relaxed">Chưa tải được danh sách agent — câu hỏi sẽ được điều phối tự động.</div>
               )}
             </div>
           </section>
@@ -200,7 +200,7 @@ export default function AskDataPage() {
           <section className="content-card" style={{ padding: 12 }}>
             <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#5F5F5F] mb-2"><Bookmark size={11} /> Câu hỏi đã lưu</div>
             {saved.length === 0 ? (
-              <div className="text-[11px] text-[#777777] leading-relaxed">Bấm “Lưu câu hỏi” dưới một câu trả lời để ghim lại đây.</div>
+              <div className="text-[11px] text-[#5F5F5F] leading-relaxed">Bấm “Lưu câu hỏi” dưới một câu trả lời để ghim lại đây.</div>
             ) : (
               <ul className="space-y-1 m-0 p-0 list-none">
                 {saved.map(s => (
@@ -208,7 +208,7 @@ export default function AskDataPage() {
                     <button type="button" onClick={() => ask(s.q)} disabled={sending} className="flex-1 text-left text-[12px] text-[#2A2A2A] hover:text-[#8A5A00] leading-snug" title="Hỏi lại">
                       {s.q}
                     </button>
-                    <button type="button" onClick={() => removeSaved(s.q)} aria-label="Bỏ lưu" className="opacity-0 group-hover:opacity-100 text-[#777777] hover:text-[#A83A32] shrink-0 mt-0.5"><Trash2 size={11} /></button>
+                    <button type="button" onClick={() => removeSaved(s.q)} aria-label="Bỏ lưu" className="opacity-0 group-hover:opacity-100 text-[#5F5F5F] hover:text-[#A83A32] shrink-0 mt-0.5"><Trash2 size={11} /></button>
                   </li>
                 ))}
               </ul>
@@ -218,14 +218,14 @@ export default function AskDataPage() {
           <section className="content-card" style={{ padding: 12 }}>
             <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#5F5F5F] mb-2"><History size={11} /> Lịch sử</div>
             {history.length === 0 ? (
-              <div className="text-[11px] text-[#777777]">Chưa có câu hỏi nào.</div>
+              <div className="text-[11px] text-[#5F5F5F]">Chưa có câu hỏi nào.</div>
             ) : (
               <ul className="space-y-1.5 m-0 p-0 list-none">
                 {history.slice(0, 12).map(h => (
                   <li key={h.q}>
                     <button type="button" onClick={() => setInput(h.q)} className="w-full text-left" title="Đưa vào ô nhập">
                       <div className="text-[12px] text-[#2A2A2A] hover:text-[#8A5A00] leading-snug truncate">{h.q}</div>
-                      <div className="text-[10px] text-[#777777]">{formatRelative(h.at)}</div>
+                      <div className="text-[10px] text-[#5F5F5F]">{formatRelative(h.at)}</div>
                     </button>
                   </li>
                 ))}
@@ -236,7 +236,7 @@ export default function AskDataPage() {
 
         {/* middle: conversation */}
         <section className="content-card" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
-          <div className="flex items-center gap-2 px-4 py-2 border-b border-[#D6C79F] text-[11px] text-[#5F5F5F] shrink-0">
+          <div className="flex items-center gap-2 px-4 py-2 border-b border-[#BFA66A] text-[11px] text-[#5F5F5F] shrink-0">
             {scope === 'auto' ? <Brain size={12} className="text-[#B88719]" /> : <Bot size={12} className="text-[#B88719]" />}
             <span className="truncate">{scopeLabel}</span>
             {sending && (
@@ -304,7 +304,7 @@ export default function AskDataPage() {
             <div ref={bottomRef} />
           </div>
 
-          <div className="shrink-0 px-3 pb-3 pt-2 border-t border-[#D6C79F] bg-[#FCFBF7]">
+          <div className="shrink-0 px-3 pb-3 pt-2 border-t border-[#BFA66A] bg-[#FCFBF7]">
             <div className="flex items-end gap-2 bg-white border border-[#BFA66A] rounded-xl px-3 py-2 focus-within:border-[#8A5A00]">
               <textarea
                 ref={textareaRef}
@@ -315,7 +315,7 @@ export default function AskDataPage() {
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); } }}
                 placeholder={sending ? 'Đang trả lời…' : 'Hỏi về dữ liệu của bạn… (Enter để gửi, Shift+Enter xuống dòng)'}
                 aria-label="Câu hỏi"
-                className="flex-1 bg-transparent text-[13px] text-[#111111] placeholder:text-[#777777] outline-none resize-none leading-relaxed"
+                className="flex-1 bg-transparent text-[13px] text-[#111111] placeholder:text-[#8A8A7A] outline-none resize-none leading-relaxed"
                 style={{ maxHeight: 140 }}
               />
               {micAvailable && (
@@ -356,10 +356,10 @@ export default function AskDataPage() {
               className="hidden lg:flex content-card"
               style={{ flexDirection: 'column', flexShrink: 0, padding: 0, overflow: 'hidden' }}
             >
-              <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#D6C79F] shrink-0">
+              <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#BFA66A] shrink-0">
                 <ShieldCheck size={13} className="text-[#B88719]" />
                 <span className="text-[12px] font-semibold text-[#111111]">Con số này ở đâu ra</span>
-                <ChevronRight size={12} className="text-[#777777] ml-auto" />
+                <ChevronRight size={12} className="text-[#5F5F5F] ml-auto" />
               </div>
               <div style={{ flex: 1, overflowY: 'auto', padding: 14, width: 340 }}>
                 <EvidencePanel message={selected} />

@@ -1,220 +1,168 @@
+/**
+ * Executive dashboard — platform pulse for business users.
+ *
+ *   GET /api/platform/metrics?days=7  → agents, conversations, messages, tokens, latency, error rate, series
+ *   GET /api/platform/services        → service health (issues = anything not ok)
+ */
 import React from 'react';
 import {
-  TrendingUp,
-  Activity,
-  ShieldCheck,
-  Database,
-  Calendar,
-  ChevronRight,
-  ArrowRight,
-  Zap,
-  Globe,
-  Plus,
-  Sparkles,
-  Bot,
-  Layers,
-  Clock,
+  Activity, Bot, MessageSquare, Layers, Zap, Clock, AlertTriangle, Server, ArrowRight, RefreshCw, CheckCircle2, Inbox,
 } from 'lucide-react';
-import { motion } from 'motion/react';
-import { cn } from '../lib/utils';
-import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
-} from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { OperationalHeader } from './shared/OperationalHeader';
-import { StatusBadge } from './shared/StatusBadge';
-import { StandardMetricsGrid } from './shared/ObservabilityPanel';
+import { useAppState } from '../AppStateContext';
+import { usePlatformMetrics, usePlatformServices, type ServiceHealth, type PlatformMetrics } from '../lib/platformApi';
+import { Badge, toneFor, Button, Card, EmptyState, ErrorState, LoadingState, StatTile } from './ui';
+import { formatCompact, formatDate, formatDuration, formatNumber, formatPercent } from '../lib/formatVN';
 
-const DATA = [
-  { name: 'Mon', value: 400, cost: 240 },
-  { name: 'Tue', value: 700, cost: 380 },
-  { name: 'Wed', value: 600, cost: 310 },
-  { name: 'Thu', value: 900, cost: 520 },
-  { name: 'Fri', value: 1100, cost: 680 },
-  { name: 'Sat', value: 1000, cost: 590 },
-  { name: 'Sun', value: 1200, cost: 720 },
-];
+interface Issue { id: string; severity: 'HIGH' | 'MEDIUM' | 'LOW'; label: string; detail: string }
 
-const TOP_ISSUES = [
-  { label: 'Ingestion pipeline failed in EU-WEST-1', risk: 'HIGH', impact: '24 bots' },
-  { label: 'Unresolved knowledge conflict in Compliance', risk: 'MEDIUM', impact: '4 users' },
-  { label: 'Embedding cost spike detected', risk: 'LOW', impact: 'Finance alert' },
-];
+/** Issues are derived, never literal: unhealthy services + a non-zero error rate. */
+export const deriveIssues = (services: ServiceHealth[], metrics: PlatformMetrics | null): Issue[] => {
+  const issues: Issue[] = services
+    .filter(s => s.status !== 'ok')
+    .map(s => ({
+      id: `svc-${s.name}`,
+      severity: s.status === 'down' ? 'HIGH' : s.status === 'degraded' ? 'MEDIUM' : 'LOW',
+      label: `${s.name} (${s.kind}) đang ${s.status}`,
+      detail: s.detail ?? 'Không có chi tiết',
+    }));
+  if (metrics?.error_rate && metrics.error_rate > 0) {
+    issues.push({
+      id: 'error-rate',
+      severity: metrics.error_rate >= 0.1 ? 'HIGH' : metrics.error_rate >= 0.02 ? 'MEDIUM' : 'LOW',
+      label: `Tỷ lệ tool call lỗi ${formatPercent(metrics.error_rate)}`,
+      detail: `${formatNumber(metrics.series.reduce((s, p) => s + p.errors, 0))} lỗi trong ${metrics.series.length} ngày`,
+    });
+  }
+  const order = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+  return issues.sort((a, b) => order[a.severity] - order[b.severity]);
+};
 
-const AI_RUNTIME_METRICS = [
-  { label: 'Active Agents',  value: '482',    trend: '+5',      trendUp: true,  icon: Bot      },
-  { label: 'Workflow Runs',  value: '1.2M',   trend: '+18%',    trendUp: true,  icon: Layers   },
-  { label: 'Avg Latency',    value: '1.4s',   trend: '−120ms',  trendUp: false, icon: Clock    },
-  { label: 'Success Rate',   value: '99.98%', trend: 'OPTIMAL', trendUp: true,  icon: Activity },
-];
+const SEVERITY_DOT: Record<Issue['severity'], string> = { HIGH: 'bg-[#9F1D1D]', MEDIUM: 'bg-[#B88719]', LOW: 'bg-[#8A8A7A]' };
 
 export const ExecutiveDashboard = () => {
-  const mainMetrics = [
-    { label: 'Knowledge Freshness', value: '98.2%', trend: '+0.5%', trendType: 'UP' as const, icon: Database, color: 'brand' as const },
-    { label: 'Mean Hallucination Risk', value: '0.14%', trend: '-0.02%', trendType: 'DOWN' as const, icon: ShieldCheck, color: 'emerald' as const },
-    { label: 'Calculated Cost Savings', value: '$3.4M', trend: '+$420k', trendType: 'UP' as const, icon: TrendingUp, color: 'blue' as const },
-    { label: 'Platform Availability', value: '99.999%', trend: 'OPTIMAL', trendType: 'NEUTRAL' as const, icon: Activity, color: 'amber' as const },
-  ];
+  const { navigate } = useAppState();
+  const metrics = usePlatformMetrics(7);
+  const services = usePlatformServices();
+  const m = metrics.data;
+  const svc = services.data?.items ?? [];
+  const healthy = svc.filter(s => s.status === 'ok').length;
+  const issues = deriveIssues(svc, m);
+  const series = (m?.series ?? []).map(p => ({ ...p, label: formatDate(p.date) }));
+  const loading = metrics.loading && !m;
+
+  const overall = services.loading && svc.length === 0
+    ? 'checking'
+    : svc.some(s => s.status === 'down') ? 'down' : svc.some(s => s.status !== 'ok') ? 'degraded' : 'ok';
 
   return (
-    <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <OperationalHeader 
-        title="Executive Pulse"
-        subtitle="Operational Intelligence & Human-AI Lifecycle Overview"
-        breadcrumbs={[{ label: 'Executive' }, { label: 'Pulse' }]}
-        status={<StatusBadge status="STABLE" size="lg" />}
+    <div className="space-y-6">
+      <OperationalHeader
+        title="Tổng quan vận hành"
+        subtitle="Số liệu 7 ngày gần nhất từ runtime và sức khoẻ các service."
+        breadcrumbs={[{ label: 'Vận hành' }, { label: 'Tổng quan' }]}
+        status={<Badge tone={toneFor(overall)}>{overall === 'checking' ? 'đang kiểm tra' : overall}</Badge>}
         actions={
-          <div className="flex gap-3">
-             <button className="btn-secondary">
-                <Calendar className="w-4 h-4" />
-                LAST 30 DAYS
-              </button>
-              <button className="btn-primary">
-                DOWNLOAD REPORT
-              </button>
-          </div>
+          <Button variant="secondary" icon={RefreshCw} onClick={() => { void metrics.refetch(); void services.refetch(); }} loading={metrics.loading && !!m}>
+            Làm mới
+          </Button>
         }
       />
 
-      <StandardMetricsGrid metrics={mainMetrics} />
+      {metrics.error && <ErrorState message={metrics.error} onRetry={() => void metrics.refetch()} />}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Operational Chart */}
-        <div className="lg:col-span-2 p-7 bg-white border border-[#ECE7DA] rounded-3xl">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h3 className="text-lg font-semibold text-[#171717] tracking-tight font-display">Processing Throughput</h3>
-              <p className="text-xs text-[#8B8B8B] mt-0.5">Semantic ingestion vs token generation across fabric</p>
-            </div>
-            <div className="flex gap-2">
-               <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#FAF1D0] rounded-full border border-[#D9B86C]/30 text-[9px] font-semibold text-[#7C6230]">
-                 <div className="w-1.5 h-1.5 rounded-full bg-[#D9B86C] animate-pulse" />
-                 INGESTION
-               </div>
-               <div className="flex items-center gap-1.5 px-2.5 py-1 bg-[#EFF4FB] rounded-full border border-[#A8C0E4]/40 text-[9px] font-semibold text-[#2D5A9C]">
-                 <div className="w-1.5 h-1.5 rounded-full bg-[#6B9CD4] animate-pulse" />
-                 GENERATION
-               </div>
-            </div>
-          </div>
-
-          <div className="h-[360px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={DATA}>
-                <defs>
-                  <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#D9B86C" stopOpacity={0.25}/>
-                    <stop offset="95%" stopColor="#D9B86C" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%"  stopColor="#6B9CD4" stopOpacity={0.2}/>
-                    <stop offset="95%" stopColor="#6B9CD4" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#F0EBE0" vertical={false} />
-                <XAxis
-                  dataKey="name"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fill: '#8B8B8B', fontSize: 11 }}
-                  dy={10}
-                />
-                <YAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fill: '#8B8B8B', fontSize: 11 }}
-                />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #ECE7DA', borderRadius: '12px', boxShadow: '0 4px 16px rgba(0,0,0,0.08)', color: '#171717' }}
-                  itemStyle={{ fontSize: '11px', fontWeight: '600', color: '#4A4A4A' }}
-                  labelStyle={{ color: '#171717', fontWeight: '700' }}
-                />
-                <Area type="monotone" dataKey="value" stroke="#D9B86C" strokeWidth={2.5} fillOpacity={1} fill="url(#colorValue)" />
-                <Area type="monotone" dataKey="cost"  stroke="#6B9CD4" strokeWidth={2.5} fillOpacity={1} fill="url(#colorCost)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Risks + AI Insights */}
-        <div className="space-y-5">
-          <div className="p-6 bg-white border border-[#ECE7DA] rounded-3xl">
-            <h3 className="text-base font-semibold text-[#171717] tracking-tight font-display mb-5">Active Risks</h3>
-            <div className="space-y-4">
-              {TOP_ISSUES.map((issue, i) => (
-                <div key={issue.label} className="group cursor-pointer">
-                  <div className="flex items-start justify-between mb-1.5">
-                    <div className="flex items-center gap-2">
-                      <span className={cn(
-                        'w-2 h-2 rounded-full shrink-0',
-                        issue.risk === 'HIGH'   ? 'bg-[#C0504A]' :
-                        issue.risk === 'MEDIUM' ? 'bg-[#D9A040]' : 'bg-[#B0A99A]'
-                      )} />
-                      <span className="text-[9px] font-semibold uppercase tracking-widest text-[#8B8B8B]">
-                        {issue.risk} RISK
-                      </span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-[#D4CBBA] group-hover:text-[#D9B86C] transition-colors" />
-                  </div>
-                  <p className="text-[13px] font-medium text-[#232323] group-hover:text-[#171717] transition-colors leading-snug">{issue.label}</p>
-                  <p className="text-[10px] text-[#8B8B8B] mt-1">Impact: {issue.impact}</p>
-                  {i < TOP_ISSUES.length - 1 && <div className="h-px bg-[#F0EBE0] mt-4" />}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* AI Insight block */}
-          <div className="p-5 bg-gradient-to-br from-[#FAF1D0] to-[#FEFCF4] border border-[#E2C57E]/60 rounded-3xl relative overflow-hidden">
-            <div className="flex items-center gap-2 mb-3">
-              <Sparkles className="w-4 h-4 text-[#C4A35A]" />
-              <span className="text-[10px] font-semibold text-[#7C6230] uppercase tracking-wide">AI Copilot Insight</span>
-            </div>
-            <p className="text-[13px] text-[#4A4A4A] leading-relaxed">
-              System efficiency has improved 14% since last model promotion. EU-WEST latency spike correlates with the new embedding release.
-            </p>
-            <button className="mt-4 flex items-center gap-1.5 text-[10px] font-semibold text-[#A07830] hover:text-[#7C6230] transition-colors uppercase tracking-wide">
-              Read Full Analysis <ArrowRight className="w-3 h-3" />
-            </button>
-          </div>
-        </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatTile label="Agent" value={m ? formatNumber(m.agents.total) : '—'} hint={m ? `${formatNumber(m.agents.published)} published` : undefined} icon={Bot} loading={loading} />
+        <StatTile label="Hội thoại" value={m ? formatNumber(m.conversations.total) : '—'} hint={m ? `+${formatNumber(m.conversations.last_24h)} / 24h` : undefined} icon={MessageSquare} loading={loading} />
+        <StatTile label="Tin nhắn" value={m ? formatNumber(m.messages.total) : '—'} hint={m ? `+${formatNumber(m.messages.last_24h)} / 24h` : undefined} icon={Layers} loading={loading} />
+        <StatTile label="Tokens" value={m ? formatCompact(m.tokens.total) : '—'} hint={m ? `+${formatCompact(m.tokens.last_24h)} / 24h` : undefined} icon={Zap} loading={loading} />
+        <StatTile label="Độ trễ TB" value={m?.latency_ms.avg == null ? '—' : formatDuration(m.latency_ms.avg)} hint={m?.latency_ms.p95 != null ? `p95 ${formatDuration(m.latency_ms.p95)}` : undefined} icon={Clock} loading={loading} />
+        <StatTile label="Tỷ lệ lỗi" value={m?.error_rate == null ? '—' : formatPercent(m.error_rate)} tone={m?.error_rate ? 'bad' : 'ok'} icon={AlertTriangle} loading={loading} />
+        <StatTile label="Service khoẻ" value={services.data ? `${healthy}/${svc.length}` : '—'} tone={svc.length && healthy === svc.length ? 'ok' : svc.length ? 'warn' : 'neutral'} icon={Server} loading={services.loading && !services.data} />
+        <StatTile label="Hội thoại đang mở" value={m ? formatNumber(m.conversations.active) : '—'} icon={Activity} loading={loading} />
       </div>
 
-      {/* AI Runtime snapshot */}
-      <div className="p-6 bg-white border border-[#ECE7DA] rounded-3xl">
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 bg-[#F3E2A7] rounded-xl border border-[#BFA66A]/50">
-              <Activity className="w-4 h-4 text-[#7C5A0E]" />
-            </div>
-            <div>
-              <h3 className="text-base font-semibold text-[#171717] font-display">AI Runtime</h3>
-              <p className="text-[11px] text-[#8B8B8B]">Live agent & workflow health</p>
-            </div>
-          </div>
-          <button
-            className="flex items-center gap-1.5 text-[11px] font-semibold text-[#8A5A00] hover:text-[#5A3A00] transition-colors"
-          >
-            View full runtime <ArrowRight className="w-3.5 h-3.5" />
-          </button>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <Card title="Khối lượng theo ngày" subtitle="Hội thoại và tin nhắn, 7 ngày">
+            {loading && <LoadingState />}
+            {m && series.length === 0 && <EmptyState icon={Inbox} title="Chưa có dữ liệu" description="Chưa có hội thoại nào trong 7 ngày qua." />}
+            {series.length > 0 && (
+              <div className="h-[320px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={series}>
+                    <defs>
+                      <linearGradient id="execConv" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#B88719" stopOpacity={0.25} />
+                        <stop offset="95%" stopColor="#B88719" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="execMsg" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#0E5F63" stopOpacity={0.2} />
+                        <stop offset="95%" stopColor="#0E5F63" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#BFA66A" vertical={false} />
+                    <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fill: '#5F5F5F', fontSize: 11 }} dy={10} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: '#5F5F5F', fontSize: 11 }} />
+                    <Tooltip contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #A8945E', borderRadius: '12px', color: '#111111' }} />
+                    <Legend wrapperStyle={{ fontSize: 11 }} />
+                    <Area type="monotone" dataKey="conversations" name="Hội thoại" stroke="#B88719" strokeWidth={2.5} fill="url(#execConv)" />
+                    <Area type="monotone" dataKey="messages" name="Tin nhắn" stroke="#0E5F63" strokeWidth={2.5} fill="url(#execMsg)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </Card>
         </div>
 
+        <Card title="Sự cố đang mở" subtitle="Service không ok và tỷ lệ lỗi > 0">
+          {services.loading && svc.length === 0 && <LoadingState label="Đang kiểm tra service…" />}
+          {services.error && <ErrorState message={services.error} onRetry={() => void services.refetch()} />}
+          {!services.loading && !services.error && issues.length === 0 && (
+            <EmptyState icon={CheckCircle2} title="Không có sự cố" description="Mọi service đều ok và không ghi nhận tool call lỗi." />
+          )}
+          {issues.length > 0 && (
+            <ul className="divide-y divide-[#BFA66A]">
+              {issues.map(issue => (
+                <li key={issue.id} className="py-3 first:pt-0 last:pb-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${SEVERITY_DOT[issue.severity]}`} />
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#5F5F5F]">{issue.severity}</span>
+                  </div>
+                  <p className="text-[13px] font-semibold text-[#111111] leading-snug">{issue.label}</p>
+                  <p className="text-[11px] text-[#3F3F3F] mt-0.5">{issue.detail}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+
+      <Card
+        title="AI Runtime"
+        subtitle="Agent, hội thoại và độ trễ hiện tại"
+        actions={<Button size="sm" variant="ghost" icon={ArrowRight} onClick={() => navigate('build', 'AGENTS')}>Xem runtime</Button>}
+      >
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {AI_RUNTIME_METRICS.map(m => (
-            <div key={m.label} className="flex items-center gap-3 p-3.5 bg-[#FAFAF5] border border-[#ECE7DA] rounded-2xl">
-              <div className="p-2 bg-[#F3E2A7]/60 rounded-lg border border-[#BFA66A]/30 shrink-0">
-                <m.icon className="w-4 h-4 text-[#B88719]" />
+          {[
+            { label: 'Agent published', value: m ? `${formatNumber(m.agents.published)} / ${formatNumber(m.agents.total)}` : '—', icon: Bot },
+            { label: 'Hội thoại 24h', value: m ? formatNumber(m.conversations.last_24h) : '—', icon: MessageSquare },
+            { label: 'Độ trễ TB', value: m?.latency_ms.avg == null ? '—' : formatDuration(m.latency_ms.avg), icon: Clock },
+            { label: 'Tỷ lệ thành công', value: m?.error_rate == null ? '—' : formatPercent(1 - m.error_rate), icon: Activity },
+          ].map(x => (
+            <div key={x.label} className="flex items-center gap-3 p-3.5 bg-[#FFFDF6] border border-[#BFA66A] rounded-2xl">
+              <div className="p-2 bg-[#F4E8C3] rounded-lg border border-[#BFA66A] shrink-0">
+                <x.icon className="w-4 h-4 text-[#8A5A00]" />
               </div>
               <div className="min-w-0">
-                <div className="text-xl font-bold font-display text-[#111111] leading-tight">{m.value}</div>
-                <div className="text-[10px] text-[#8B8B8B] font-medium truncate">{m.label}</div>
+                <div className="text-xl font-bold font-display text-[#111111] leading-tight">{x.value}</div>
+                <div className="text-[10px] text-[#5F5F5F] font-medium truncate">{x.label}</div>
               </div>
-              <span className={cn('ml-auto text-[10px] font-semibold shrink-0', m.trendUp ? 'text-emerald-600' : 'text-sky-600')}>
-                {m.trend}
-              </span>
             </div>
           ))}
         </div>
-      </div>
+      </Card>
     </div>
   );
 };

@@ -18,7 +18,7 @@ interface Props {
 
 const TIER_STYLE: Record<string, string> = {
   bronze: 'bg-[#92620A]/40 text-[#D9B86C]',
-  silver: 'bg-slate-700/50 text-slate-300',
+  silver: 'bg-slate-700/50 text-[#5F5F5F]',
   gold:   'bg-[#B88719]/40 text-[#FFD97A]',
 };
 
@@ -39,9 +39,9 @@ export function PromotionProgressOverlay({ queue, onDismiss }: Props) {
 
       {/* ── Expanded panel ── */}
       {open && (
-        <div className="w-80 bg-[#13110E] border border-[#BFA66A]/40 rounded-2xl shadow-2xl overflow-hidden">
+        <div className="w-80 bg-[#13110E] border border-[#BFA66A] rounded-2xl shadow-2xl overflow-hidden">
 
-          <div className="flex items-center justify-between px-4 py-3 border-b border-[#BFA66A]/20">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-[#BFA66A]">
             <div className="flex items-center gap-2">
               <Activity className="w-3.5 h-3.5 text-[#B88719]" />
               <span className="text-[11px] font-black text-[#D9B86C] uppercase tracking-wider">
@@ -50,7 +50,7 @@ export function PromotionProgressOverlay({ queue, onDismiss }: Props) {
             </div>
             <button
               onClick={() => setOpen(false)}
-              className="text-[10px] font-bold text-slate-400 hover:text-white uppercase tracking-wide transition-colors cursor-pointer"
+              className="btn-ghost btn-sm"
             >
               Hide
             </button>
@@ -60,7 +60,7 @@ export function PromotionProgressOverlay({ queue, onDismiss }: Props) {
             {queue.map((entry) => (
               <div
                 key={entry.data_id}
-                className="bg-white/[0.04] border border-white/5 rounded-xl p-3"
+                className="bg-white/[0.04] border border-white/15 rounded-xl p-3"
               >
                 {/* Name + tier arrow */}
                 <div className="flex items-center justify-between mb-2 gap-2">
@@ -69,7 +69,7 @@ export function PromotionProgressOverlay({ queue, onDismiss }: Props) {
                     <span className={cn('text-[9px] font-mono font-black px-1.5 py-0.5 rounded uppercase', TIER_STYLE[entry.from_tier])}>
                       {entry.from_tier}
                     </span>
-                    <ChevronRight className="w-3 h-3 text-slate-600" />
+                    <ChevronRight className="w-3 h-3 text-[#3F3F3F]" />
                     <span className={cn('text-[9px] font-mono font-black px-1.5 py-0.5 rounded uppercase', TIER_STYLE[entry.to_tier])}>
                       {entry.to_tier}
                     </span>
@@ -91,7 +91,7 @@ export function PromotionProgressOverlay({ queue, onDismiss }: Props) {
 
                 {/* Status line + % */}
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-mono text-slate-400">
+                  <span className="text-[10px] font-mono text-[#5F5F5F]">
                     {entry.status === 'done'       ? 'Complete' :
                      entry.status === 'failed'     ? 'Failed' :
                      entry.status === 'processing' ? 'Processing pipeline…' :
@@ -111,7 +111,7 @@ export function PromotionProgressOverlay({ queue, onDismiss }: Props) {
                     {(entry.status === 'done' || entry.status === 'failed') && (
                       <button
                         onClick={() => onDismiss(entry.data_id)}
-                        className="ml-0.5 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer"
+                        className="ml-0.5 text-[#5F5F5F] hover:text-[#5F5F5F] transition-colors cursor-pointer"
                       >
                         <X className="w-3 h-3" />
                       </button>
@@ -127,7 +127,7 @@ export function PromotionProgressOverlay({ queue, onDismiss }: Props) {
       {/* ── Floating trigger button ── */}
       <button
         onClick={() => setOpen((s) => !s)}
-        className="relative w-11 h-11 rounded-full bg-[#1E1B15] border border-[#BFA66A]/50 shadow-lg flex items-center justify-center hover:border-[#BFA66A] transition-all cursor-pointer"
+        className="relative w-11 h-11 rounded-full bg-[#1E1B15] border border-[#BFA66A] shadow-lg flex items-center justify-center hover:border-[#BFA66A] transition-all cursor-pointer"
         title="Pipeline activity"
       >
         <Activity

@@ -21,9 +21,10 @@ export type KnowledgeLayer = Tier;
 export type { DocStatus };
 
 export interface TenantContext {
-  organization: string;
-  workspace: string;
-  project: string;
+  /** Selected tenant from GET /api/auth/me/tenants; null id when the user has none. */
+  tenantId: string | null;
+  tenantName: string | null;
+  slug: string | null;
   environment: Environment;
 }
 

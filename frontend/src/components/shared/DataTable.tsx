@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { cn } from '../../lib/utils';
-import { Search, Filter, MoreVertical, ChevronDown, Download, Settings2 } from 'lucide-react';
+import { Search, Filter, ChevronRight, Download } from 'lucide-react';
+import { EmptyState } from '../ui';
 
 interface Column<T> {
   header: string;
@@ -18,125 +19,181 @@ interface DataTableProps<T> {
   showSearch?: boolean;
 }
 
-export function DataTable<T extends { id: string | number }>({ 
-  data, 
-  columns, 
-  title, 
-  subtitle, 
+/** Plain-text projection of a rendered cell — used for search + CSV export. */
+function nodeText(node: React.ReactNode): string {
+  if (node === null || node === undefined || typeof node === 'boolean') return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(nodeText).join(' ');
+  if (React.isValidElement<{ children?: React.ReactNode }>(node)) return nodeText(node.props.children);
+  return '';
+}
+
+function renderCell<T>(item: T, col: Column<T>): React.ReactNode {
+  return typeof col.accessor === 'function' ? col.accessor(item) : (item[col.accessor] as React.ReactNode);
+}
+
+function csvEscape(value: string): string {
+  return /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+export function DataTable<T extends { id: string | number }>({
+  data,
+  columns,
+  title,
+  subtitle,
   onRowClick,
   actions,
   showSearch = true
 }: DataTableProps<T>) {
+  const [query, setQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const rows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return data;
+    return data.filter(item => columns.some(col => nodeText(renderCell(item, col)).toLowerCase().includes(q)));
+  }, [data, columns, query]);
+
+  const exportCsv = () => {
+    const header = columns.map(c => csvEscape(c.header)).join(',');
+    const body = rows.map(item => columns.map(c => csvEscape(nodeText(renderCell(item, c)))).join(','));
+    const blob = new Blob(['﻿' + [header, ...body].join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(title || 'table').replace(/[^\w.-]+/g, '_').toLowerCase()}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const empty = (
+    <EmptyState
+      icon={Search}
+      title={query ? 'Không có kết quả khớp' : 'Không có dữ liệu'}
+      description={query ? `Không có dòng nào khớp với "${query}".` : undefined}
+      action={query ? <button type="button" className="btn-ghost btn-sm" onClick={() => setQuery('')}>Xoá bộ lọc</button> : undefined}
+    />
+  );
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {(title || showSearch || actions) && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            {title && <h3 className="text-xl font-bold text-white tracking-tight">{title}</h3>}
-            {subtitle && <p className="text-xs text-slate-500 uppercase font-black tracking-widest mt-1 italic">{subtitle}</p>}
+            {title && <h3 className="text-xl font-bold text-[#111111] tracking-tight font-display">{title}</h3>}
+            {subtitle && <p className="text-[11px] text-[#5F5F5F] uppercase font-bold tracking-widest mt-1">{subtitle}</p>}
           </div>
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
             {showSearch && (
               <div className="relative group flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-brand-400 transition-colors" />
-                <input 
-                  type="text" 
-                  placeholder="Filter resources..." 
-                  className="w-full bg-white/5 border border-white/10 rounded-xl py-2.5 pl-10 pr-4 text-xs focus:outline-none focus:ring-1 focus:ring-brand-500/50 transition-all font-medium h-10"
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#5F5F5F] group-focus-within:text-[#8A5A00] transition-colors" />
+                <input
+                  ref={searchRef}
+                  type="text"
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  placeholder="Lọc dữ liệu…"
+                  aria-label="Lọc dữ liệu"
+                  className="ui-input w-full py-2.5 pl-10 pr-4 text-xs h-10"
                 />
               </div>
             )}
             <div className="flex items-center gap-2">
               {actions}
-              <div className="flex bg-white/5 border border-white/5 rounded-xl p-1 shrink-0">
-                <button className="p-2 hover:bg-white/5 rounded-lg text-slate-500 hover:text-white transition-all"><Filter className="w-4 h-4" /></button>
-                <button className="hidden sm:block p-2 hover:bg-white/5 rounded-lg text-slate-500 hover:text-white transition-all"><Settings2 className="w-4 h-4" /></button>
-                <button className="p-2 hover:bg-white/5 rounded-lg text-slate-500 hover:text-white transition-all"><Download className="w-4 h-4" /></button>
+              <div className="flex items-center gap-1 shrink-0">
+                {showSearch && (
+                  <button
+                    type="button"
+                    onClick={() => searchRef.current?.focus()}
+                    title="Lọc dữ liệu"
+                    aria-label="Lọc dữ liệu"
+                    className="btn-ghost btn-sm"
+                  >
+                    <Filter className="w-4 h-4" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={exportCsv}
+                  disabled={rows.length === 0}
+                  title="Tải CSV"
+                  aria-label="Tải CSV"
+                  className="btn-ghost btn-sm"
+                >
+                  <Download className="w-4 h-4" />
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Desktop Table View */}
-      <div className="hidden lg:block overflow-hidden rounded-[32px] border border-white/5 bg-white/[0.01] shadow-2xl shadow-black/40">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="border-b border-white/5 text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] bg-white/[0.02]">
-              {columns.map((col, i) => (
-                <th key={i} className={cn("px-8 py-5", col.className)}>
-                  <div className="flex items-center gap-2">
-                    {col.header}
-                    <ChevronDown className="w-3 h-3 opacity-30" />
-                  </div>
-                </th>
-              ))}
-              <th className="px-8 py-5 text-right w-16"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-white/5">
-            {data.map((item) => (
-              <tr 
-                key={item.id} 
-                onClick={() => onRowClick?.(item)}
-                className={cn(
-                  "group transition-all",
-                  onRowClick ? "cursor-pointer hover:bg-white/[0.04]" : "hover:bg-white/[0.02]"
-                )}
-              >
-                {columns.map((col, i) => (
-                  <td key={i} className={cn("px-8 py-6", col.className)}>
-                    {typeof col.accessor === 'function' 
-                      ? col.accessor(item) 
-                      : (item[col.accessor] as React.ReactNode)}
-                  </td>
-                ))}
-                <td className="px-8 py-6 text-right">
-                   <button className="p-2 hover:bg-white/10 rounded-lg text-slate-600 group-hover:text-slate-300 transition-all">
-                      <MoreVertical className="w-4 h-4" />
-                   </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Mobile Card View */}
-      <div className="lg:hidden space-y-4">
-        {data.map((item) => (
-          <div 
-            key={item.id}
-            onClick={() => onRowClick?.(item)}
-            className="p-6 bg-white/[0.02] border border-white/5 rounded-[32px] space-y-4 active:scale-95 transition-all shadow-xl"
-          >
-            <div className="flex items-center justify-between">
-              <div className="font-bold text-white text-lg">
-                {/* Find the first column as title if it's a string, or use id */}
-                {typeof columns[0].accessor === 'function' 
-                  ? columns[0].accessor(item) 
-                  : (item[columns[0].accessor] as React.ReactNode)}
-              </div>
-              <button className="p-2 text-slate-600">
-                <MoreVertical className="w-4 h-4" />
-              </button>
-            </div>
-            
-            <div className="grid grid-cols-1 gap-4">
-              {columns.slice(1).map((col, i) => (
-                <div key={i} className="space-y-1">
-                  <div className="text-[9px] font-black text-slate-600 uppercase tracking-widest">{col.header}</div>
-                  <div className="text-sm font-medium text-slate-300">
-                    {typeof col.accessor === 'function' 
-                      ? col.accessor(item) 
-                      : (item[col.accessor] as React.ReactNode)}
-                  </div>
-                </div>
-              ))}
+      {rows.length === 0 ? empty : (
+        <>
+          {/* Desktop table */}
+          <div className="content-card content-card--static hidden lg:block overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="ui-table">
+                <thead>
+                  <tr>
+                    {columns.map((col, i) => (
+                      <th key={i} className={col.className}>{col.header}</th>
+                    ))}
+                    {onRowClick && <th className="w-10" aria-hidden="true" />}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((item) => (
+                    <tr
+                      key={item.id}
+                      onClick={onRowClick ? () => onRowClick(item) : undefined}
+                      className={cn(onRowClick && 'cursor-pointer')}
+                    >
+                      {columns.map((col, i) => (
+                        <td key={i} className={col.className}>{renderCell(item, col)}</td>
+                      ))}
+                      {onRowClick && (
+                        <td className="text-right">
+                          <ChevronRight className="w-4 h-4 text-[#5F5F5F] inline-block" aria-hidden="true" />
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
-        ))}
-      </div>
+
+          {/* Mobile cards */}
+          <div className="lg:hidden space-y-3">
+            {rows.map((item) => (
+              <div
+                key={item.id}
+                onClick={onRowClick ? () => onRowClick(item) : undefined}
+                role={onRowClick ? 'button' : undefined}
+                tabIndex={onRowClick ? 0 : undefined}
+                onKeyDown={onRowClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onRowClick(item); } } : undefined}
+                className={cn('content-card p-4 space-y-3', onRowClick ? 'cursor-pointer' : 'content-card--static')}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="font-bold text-[#111111] text-base min-w-0">{renderCell(item, columns[0])}</div>
+                  {onRowClick && <ChevronRight className="w-4 h-4 text-[#5F5F5F] shrink-0" aria-hidden="true" />}
+                </div>
+                <div className="grid grid-cols-1 gap-3">
+                  {columns.slice(1).map((col, i) => (
+                    <div key={i} className="space-y-0.5">
+                      <div className="text-[10px] font-bold text-[#5F5F5F] uppercase tracking-widest">{col.header}</div>
+                      <div className="text-sm text-[#111111]">{renderCell(item, col)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

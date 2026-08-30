@@ -72,32 +72,32 @@ interface AgentOption {
 
 function spanType(node: string): { label: string; color: string; bg: string } {
   if (node.startsWith('[target]'))
-    return { label: 'TARGET',     color: '#C084FC', bg: 'rgba(192,132,252,0.14)' };
+    return { label: 'TARGET',     color: '#6B4FBB', bg: '#EFEAFB' };
   if (node.startsWith('[task]'))
-    return { label: 'TASK',       color: '#67E8F9', bg: 'rgba(103,232,249,0.12)' };
+    return { label: 'TASK',       color: '#2F6FB3', bg: '#E3F0FB' };
   if (node.startsWith('[agent]'))
-    return { label: 'AGENT',      color: '#A78BFA', bg: 'rgba(167,139,250,0.18)' };
+    return { label: 'AGENT',      color: '#6B4FBB', bg: '#EFEAFB' };
   if (node === 'single-agent')
-    return { label: 'AGENT',      color: '#A78BFA', bg: 'rgba(167,139,250,0.12)' };
+    return { label: 'AGENT',      color: '#6B4FBB', bg: '#EFEAFB' };
   if (node === 'router')
-    return { label: 'ROUTING',    color: '#F0B429', bg: 'rgba(240,180,41,0.18)' };
+    return { label: 'ROUTING',    color: '#B88719', bg: '#F4E8C3' };
   if (node.includes('guardrail'))
-    return { label: 'GUARD',      color: '#F8A4A4', bg: 'rgba(248,164,164,0.14)' };
+    return { label: 'GUARD',      color: '#C62828', bg: '#FDECEC' };
   if (node === 'orchestrator-synthesizer')
-    return { label: 'SYNTH',      color: '#86EFAC', bg: 'rgba(134,239,172,0.12)' };
+    return { label: 'SYNTH',      color: '#1D6F4C', bg: '#E8F5E9' };
   if (node.includes('planner') || node.includes('responder') || node.includes('suggestion') || node.includes('input_refine') || node.includes('input-refine') || node.includes('summary'))
-    return { label: 'GENERATION', color: '#EBD07C', bg: 'rgba(235,208,124,0.14)' };
+    return { label: 'GENERATION', color: '#B88719', bg: '#F4E8C3' };
   if (node.includes('kb_search'))
-    return { label: 'RETRIEVAL',  color: '#93C5FD', bg: 'rgba(147,197,253,0.12)' };
+    return { label: 'RETRIEVAL',  color: '#2F6FB3', bg: '#E3F0FB' };
   if (node.includes('mcp') || node.includes('tool_executor') || node.startsWith('tool/'))
-    return { label: 'TOOL',       color: '#86EFAC', bg: 'rgba(134,239,172,0.12)' };
+    return { label: 'TOOL',       color: '#1D6F4C', bg: '#E8F5E9' };
   if (node.includes('rrf') || node.includes('reranker'))
-    return { label: 'RANK',       color: '#F3E2A7', bg: 'rgba(243,226,167,0.10)' };
+    return { label: 'RANK',       color: '#B88719', bg: '#F4E8C3' };
   if (node.includes('judge'))
-    return { label: 'EVAL',       color: '#C084FC', bg: 'rgba(192,132,252,0.14)' };
+    return { label: 'EVAL',       color: '#6B4FBB', bg: '#EFEAFB' };
   if (node.includes('human_approval'))
-    return { label: 'APPROVAL',   color: '#7DD3FC', bg: 'rgba(125,211,252,0.14)' };
-  return   { label: 'NODE',       color: '#BFA66A', bg: 'rgba(191,166,106,0.12)' };
+    return { label: 'APPROVAL',   color: '#2F6FB3', bg: '#E3F0FB' };
+  return   { label: 'NODE',       color: '#BFA66A', bg: '#F4E8C3' };
 }
 
 /* ─── Helpers ────────────────────────────────────────────────── */
@@ -327,7 +327,7 @@ function routeMessage(text: string, agents: AgentOption[]): { name: string; conf
   const top = scored[0];
   const conf = top && top.score > 0
     ? Math.min(0.98, 0.5 + top.score * 0.48)
-    : 0.28 + Math.random() * 0.15;
+    : 0;
   return { name: top?.a.label ?? 'Fallback', conf };
 }
 
@@ -346,12 +346,12 @@ function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs, inden
   const displayNode = step.node.replace(/^\[(target|task|agent)\]\s*/, '');
   const isOrchNode = step.node.startsWith('[target]') || step.node.startsWith('[task]');
   return (
-    <div style={{ display: 'flex', alignItems: 'stretch', paddingLeft: indent ? 20 : 0, borderLeft: indent ? '2px solid rgba(103,232,249,0.2)' : 'none', marginLeft: indent ? 12 : 0 }}>
+    <div style={{ display: 'flex', alignItems: 'stretch', paddingLeft: indent ? 20 : 0, borderLeft: indent ? '2px solid #C7DDF3' : 'none', marginLeft: indent ? 12 : 0 }}>
       <div style={{ flexShrink: 0, width: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {expandable && (
           <button
             onClick={e => { e.stopPropagation(); onExpand?.(); }}
-            style={{ width: 18, height: '100%', background: 'transparent', border: 'none', cursor: 'pointer', color: 'rgba(103,232,249,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
+            style={{ width: 18, height: '100%', background: 'transparent', border: 'none', cursor: 'pointer', color: '#2F6FB3', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}
             title="Xem trace agent"
           >
             {expandLoading
@@ -367,12 +367,12 @@ function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs, inden
         flex: 1, display: 'grid',
         gridTemplateColumns: '176px 1fr 52px',
         alignItems: 'center', gap: 8, padding: '5px 12px',
-        background: selected ? 'rgba(235,208,124,0.10)' : 'transparent',
+        background: selected ? '#FBF6E6' : 'transparent',
         border: 'none',
         borderLeft: selected ? '2px solid #EBD07C' : '2px solid transparent',
         textAlign: 'left', cursor: 'pointer',
       }}
-      onMouseEnter={e => { if (!selected) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.035)'; }}
+      onMouseEnter={e => { if (!selected) (e.currentTarget as HTMLElement).style.background = '#F8F5EC'; }}
       onMouseLeave={e => { if (!selected) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
@@ -380,7 +380,7 @@ function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs, inden
           {t.label}
         </span>
         {!isOrchNode && (
-          <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.88)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: '#111111', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {displayNode}
           </span>
         )}
@@ -389,30 +389,30 @@ function WaterfallRow({ step, index, selected, onSelect, startMs, totalMs, inden
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{
             fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, letterSpacing: '0.06em',
-            background: step.verdict === 'PASS' ? 'rgba(52,211,153,0.18)' : 'rgba(248,113,113,0.18)',
-            color: step.verdict === 'PASS' ? '#34D399' : '#F87171',
+            background: step.verdict === 'PASS' ? '#E8F5E9' : '#F5B5B5',
+            color: step.verdict === 'PASS' ? '#1D6F4C' : '#C62828',
           }}>
             {step.verdict}
           </span>
           {step.errorType && (
-            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.38)', fontFamily: 'var(--font-mono)' }}>
+            <span style={{ fontSize: 9, color: '#777777', fontFamily: 'var(--font-mono)' }}>
               {step.errorType}
             </span>
           )}
         </div>
       ) : (
         <div style={{ position: 'relative', height: 14 }}>
-          <div style={{ position: 'absolute', top: 5, left: 0, right: 0, height: 4, background: 'rgba(255,255,255,0.04)', borderRadius: 2 }} />
+          <div style={{ position: 'absolute', top: 5, left: 0, right: 0, height: 4, background: '#F8F5EC', borderRadius: 2 }} />
           <div style={{
             position: 'absolute', top: 4,
             left: leftPct + '%', width: widthPct + '%',
             height: 6, borderRadius: 2,
-            background: isErr ? '#F8A4A4' : t.color,
-            boxShadow: '0 0 0 1px rgba(255,255,255,0.08)',
+            background: isErr ? '#C62828' : t.color,
+            boxShadow: '0 0 0 1px #F3EEDF',
           }} />
         </div>
       )}
-      <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.45)', textAlign: 'right' }}>
+      <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: '#5F5F5F', textAlign: 'right' }}>
         {step.latencyMs}ms
       </span>
     </button>
@@ -426,9 +426,9 @@ function JsonView({ value }: { value: string | object }) {
   const txt = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
   return (
     <pre style={{
-      background: '#0A0A0A', border: '1px solid rgba(255,255,255,0.06)',
+      background: '#FFFFFF', border: '1px solid #F3EEDF',
       borderRadius: 6, padding: '10px 12px', fontSize: 11,
-      fontFamily: 'var(--font-mono)', color: 'rgba(229,231,235,0.78)',
+      fontFamily: 'var(--font-mono)', color: '#2A2A2A',
       margin: 0, whiteSpace: 'pre-wrap', overflowX: 'auto', lineHeight: 1.55,
     }}>
       {txt}
@@ -556,43 +556,43 @@ function TracePanel({ steps, traceLoading, traceId, rawObservations }: {
   const sel = allRows.find(r => r.step.id === selectedId)?.step ?? allRows[0]?.step;
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#0B0B0E', minWidth: 0 }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#FFFFFF', minWidth: 0 }}>
 
       {/* ── Trace header ── */}
-      <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
+      <div style={{ padding: '10px 14px 8px', borderBottom: '1px solid #F3EEDF', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-          <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: 'rgba(235,208,124,0.18)', color: '#EBD07C', letterSpacing: '0.06em' }}>
+          <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: '#F4E8C3', color: '#B88719', letterSpacing: '0.06em' }}>
             TRACE
           </span>
-          <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.8)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+          <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: '#111111', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
             chat.completion
           </span>
           {traceId && (
             <button
               onClick={() => navigator.clipboard.writeText(traceId)}
-              style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.45)', borderRadius: 5, padding: '2px 6px', fontSize: 9.5, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}
+              style={{ background: 'transparent', border: '1px solid #D6C79F', color: '#5F5F5F', borderRadius: 5, padding: '2px 6px', fontSize: 9.5, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3 }}
             >
               <Copy size={8} /> ID
             </button>
           )}
         </div>
         {traceId && (
-          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontFamily: 'var(--font-mono)' }}>
-            <span style={{ color: 'rgba(255,255,255,0.25)' }}>id </span>{traceId.slice(0, 20)}…
+          <div style={{ fontSize: 10, color: '#777777', fontFamily: 'var(--font-mono)' }}>
+            <span style={{ color: '#777777' }}>id </span>{traceId.slice(0, 20)}…
           </div>
         )}
       </div>
 
       {/* ── KPI strip ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', borderBottom: '1px solid #F3EEDF', flexShrink: 0 }}>
         {[
-          { k: 'latency', v: (headerTotalMs / 1000).toFixed(2) + 's', c: '#F5F5F5' },
-          { k: 'tokens',  v: totalTok.toLocaleString(),          c: '#EBD07C' },
-          { k: 'cost',    v: '$' + totalCost.toFixed(4),         c: '#C5DD83' },
-          { k: 'spans',   v: String(steps.length),               c: '#F3E2A7' },
+          { k: 'latency', v: (headerTotalMs / 1000).toFixed(2) + 's', c: '#111111' },
+          { k: 'tokens',  v: totalTok.toLocaleString(),          c: '#B88719' },
+          { k: 'cost',    v: '$' + totalCost.toFixed(4),         c: '#5A7A1E' },
+          { k: 'spans',   v: String(steps.length),               c: '#B88719' },
         ].map(({ k, v, c }, i) => (
-          <div key={k} style={{ padding: '7px 10px', borderRight: i < 3 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}>
-            <div style={{ fontSize: 8.5, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.3)', marginBottom: 2 }}>{k}</div>
+          <div key={k} style={{ padding: '7px 10px', borderRight: i < 3 ? '1px solid #F8F5EC' : 'none' }}>
+            <div style={{ fontSize: 8.5, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#777777', marginBottom: 2 }}>{k}</div>
             <div style={{ fontSize: 12, fontWeight: 600, color: c, fontFamily: 'var(--font-mono)' }}>{v}</div>
           </div>
         ))}
@@ -605,10 +605,10 @@ function TracePanel({ steps, traceLoading, traceId, rawObservations }: {
         <div style={{ height: splitPct + '%', display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
           {/* label */}
           <div style={{ padding: '8px 12px 4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-            <span style={{ fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.38)', fontWeight: 600 }}>
+            <span style={{ fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#777777', fontWeight: 600 }}>
               Observations
             </span>
-            <span style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.28)', fontFamily: 'var(--font-mono)' }}>
+            <span style={{ fontSize: 9.5, color: '#777777', fontFamily: 'var(--font-mono)' }}>
               {traceLoading ? 'streaming…' : steps.length + ' spans · ' + headerTotalMs + 'ms'}
             </span>
           </div>
@@ -617,11 +617,11 @@ function TracePanel({ steps, traceLoading, traceId, rawObservations }: {
             {traceLoading ? (
               <div style={{ padding: '4px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
                 {[0, 1, 2, 3].map(i => (
-                  <div key={i} className="pulse-soft" style={{ height: 22, borderRadius: 4, background: 'rgba(255,255,255,0.04)', opacity: 1 - i * 0.18 }} />
+                  <div key={i} className="pulse-soft" style={{ height: 22, borderRadius: 4, background: '#F8F5EC', opacity: 1 - i * 0.18 }} />
                 ))}
               </div>
             ) : allRows.length === 0 ? (
-              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', textAlign: 'center', padding: '20px 12px' }}>
+              <p style={{ fontSize: 11, color: '#777777', textAlign: 'center', padding: '20px 12px' }}>
                 Send a message to capture a trace
               </p>
             ) : allRows.map(({ step: s, indent }, i) => (
@@ -630,12 +630,12 @@ function TracePanel({ steps, traceLoading, traceId, rawObservations }: {
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: 6,
                     padding: '4px 12px 2px',
-                    color: 'rgba(192,132,252,0.7)', fontSize: 9,
+                    color: '#6B4FBB', fontSize: 9,
                     fontFamily: 'var(--font-mono)', letterSpacing: '0.08em',
                   }}>
-                    <div style={{ flex: 1, height: 1, background: 'rgba(192,132,252,0.25)' }} />
+                    <div style={{ flex: 1, height: 1, background: '#C9BCF0' }} />
                     <span>{s.isConcurrentBranch ? `song song #${s.iteration}` : `retry #${s.iteration}`}</span>
-                    <div style={{ flex: 1, height: 1, background: 'rgba(192,132,252,0.25)' }} />
+                    <div style={{ flex: 1, height: 1, background: '#C9BCF0' }} />
                   </div>
                 )}
                 <WaterfallRow
@@ -666,15 +666,15 @@ function TracePanel({ steps, traceLoading, traceId, rawObservations }: {
           style={{
             flexShrink: 0, height: 10, cursor: 'row-resize',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(255,255,255,0.02)',
-            borderTop: '1px solid rgba(255,255,255,0.07)',
-            borderBottom: '1px solid rgba(255,255,255,0.07)',
+            background: '#F8F5EC',
+            borderTop: '1px solid #F3EEDF',
+            borderBottom: '1px solid #F3EEDF',
             userSelect: 'none',
           }}
-          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(235,208,124,0.07)'; }}
-          onMouseLeave={e => { if (!isDragging.current) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.02)'; }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#FBF6E6'; }}
+          onMouseLeave={e => { if (!isDragging.current) (e.currentTarget as HTMLElement).style.background = '#F8F5EC'; }}
         >
-          <GripHorizontal size={12} style={{ color: 'rgba(255,255,255,0.2)', pointerEvents: 'none' }} />
+          <GripHorizontal size={12} style={{ color: '#AAAAAA', pointerEvents: 'none' }} />
         </div>
 
         {/* Span Detail section */}
@@ -684,24 +684,24 @@ function TracePanel({ steps, traceLoading, traceId, rawObservations }: {
               {/* span header */}
               <div style={{ padding: '7px 14px 5px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flexShrink: 0 }}>
                 {(() => { const t = spanType(sel.node); return <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 5px', borderRadius: 3, background: t.bg, color: t.color }}>{t.label}</span>; })()}
-                <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.88)', fontWeight: 500 }}>{sel.node.replace(/^\[(target|task)\]\s*/, '')}</span>
-                <span style={{ marginLeft: 'auto', fontSize: 9.5, color: 'rgba(255,255,255,0.32)', fontFamily: 'var(--font-mono)' }}>
+                <span style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: '#111111', fontWeight: 500 }}>{sel.node.replace(/^\[(target|task)\]\s*/, '')}</span>
+                <span style={{ marginLeft: 'auto', fontSize: 9.5, color: '#777777', fontFamily: 'var(--font-mono)' }}>
                   +{sel.startMs}ms → +{sel.startMs + sel.latencyMs}ms
                 </span>
               </div>
               {/* span meta row */}
-              <div style={{ padding: '0 14px 5px', display: 'flex', alignItems: 'center', gap: 12, fontSize: 10, color: 'rgba(255,255,255,0.4)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+              <div style={{ padding: '0 14px 5px', display: 'flex', alignItems: 'center', gap: 12, fontSize: 10, color: '#5F5F5F', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Clock size={9} />{sel.latencyMs}ms</span>
                 {sel.tokens > 0 && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Zap size={9} />{sel.tokens} tok</span>}
-                <span style={{ color: sel.status === 'success' ? '#C5DD83' : '#F8A4A4' }}>● {sel.status}</span>
+                <span style={{ color: sel.status === 'success' ? '#5A7A1E' : '#C62828' }}>● {sel.status}</span>
               </div>
               {/* tabs */}
-              <div style={{ display: 'flex', padding: '0 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
+              <div style={{ display: 'flex', padding: '0 14px', borderBottom: '1px solid #F3EEDF', flexShrink: 0 }}>
                 {(['input', 'output', 'metadata'] as const).map(k => (
                   <button key={k} onClick={() => setTab(k)} style={{
                     background: 'transparent', border: 'none',
                     padding: '6px 10px', fontSize: 11, fontWeight: 500,
-                    color: tab === k ? '#F5F5F5' : 'rgba(255,255,255,0.38)',
+                    color: tab === k ? '#111111' : '#777777',
                     borderBottom: tab === k ? '2px solid #EBD07C' : '2px solid transparent',
                     marginBottom: -1, cursor: 'pointer', textTransform: 'capitalize',
                   }}>{k}</button>
@@ -716,7 +716,7 @@ function TracePanel({ steps, traceLoading, traceId, rawObservations }: {
             </>
           ) : (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)' }}>Select a span to inspect</p>
+              <p style={{ fontSize: 11, color: '#AAAAAA' }}>Select a span to inspect</p>
             </div>
           )}
         </div>
@@ -740,26 +740,28 @@ function ChatBubble({ msg, busy, onSuggestion, onAnswerClarification }: {
       <div style={{
         width: 28, height: 28, borderRadius: '50%', flexShrink: 0, marginTop: 2,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: isUser ? 'rgba(235,208,124,0.22)' : 'rgba(255,255,255,0.1)',
+        background: isUser ? '#F4E8C3' : '#D6C79F',
       }}>
-        {isUser ? <User size={13} style={{ color: '#EBD07C' }} /> : <Bot size={13} style={{ color: 'rgba(255,255,255,0.6)' }} />}
+        {isUser ? <User size={13} style={{ color: '#B88719' }} /> : <Bot size={13} style={{ color: '#3F3F3F' }} />}
       </div>
       <div style={{ maxWidth: isUser ? '78%' : '92%', minWidth: 0, flex: isUser ? undefined : 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
         <div style={{
           borderRadius: 12, padding: '10px 14px', fontSize: 13, lineHeight: 1.55,
-          background: isUser ? 'rgba(235,208,124,0.18)' : 'rgba(255,255,255,0.07)',
-          color: isUser ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.78)',
+          background: isUser ? '#F4E8C3' : '#F3EEDF',
+          color: isUser ? '#111111' : '#111111',
           borderTopRightRadius: isUser ? 4 : 12,
           borderTopLeftRadius:  isUser ? 12 : 4,
         }}>
           {msg.routed && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-              <Route size={11} style={{ color: '#F0B429' }} />
-              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>Router →</span>
-              <span style={{ fontSize: 10, fontWeight: 700, color: '#F0B429' }}>{msg.routed.name}</span>
-              <span style={{ marginLeft: 'auto', fontSize: 9.5, fontFamily: 'var(--font-mono)', color: 'rgba(255,255,255,0.38)' }}>
-                conf {(msg.routed.conf * 100).toFixed(0)}%
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid #D6C79F' }}>
+              <Route size={11} style={{ color: '#B88719' }} />
+              <span style={{ fontSize: 10, color: '#5F5F5F' }}>Router →</span>
+              <span style={{ fontSize: 10, fontWeight: 700, color: '#B88719' }}>{msg.routed.name}</span>
+              {msg.routed.conf > 0 && (
+                <span style={{ marginLeft: 'auto', fontSize: 9.5, fontFamily: 'var(--font-mono)', color: '#777777' }}>
+                  conf {(msg.routed.conf * 100).toFixed(0)}%
+                </span>
+              )}
             </div>
           )}
           {isUser
@@ -777,7 +779,7 @@ function ChatBubble({ msg, busy, onSuggestion, onAnswerClarification }: {
               />
             )
           }
-          <p style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.25)', marginTop: 6 }}>{msg.timestamp}</p>
+          <p style={{ fontSize: 9.5, color: '#777777', marginTop: 6 }}>{msg.timestamp}</p>
         </div>
       </div>
     </div>
@@ -1066,28 +1068,27 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
   const sendBtnActive = canSend;
 
   return (
-    <AnswerTheme mode="dark">
-    <div style={{
+    <AnswerTheme mode="light">
+    {/* Same shell as the Ask page: one content-card filling the module area, chat + trace inside. */}
+    <div className="content-card" style={{
       display: 'flex', flexDirection: 'column',
-      height: embedded ? 'calc(100vh - 320px)' : 'calc(100vh - 200px)',
-      minHeight: 520,
-      borderRadius: 14, border: '1px solid rgba(255,255,255,0.1)',
-      overflow: 'hidden', background: '#0D0D0D',
+      height: embedded ? 'calc(100vh - 320px)' : 'calc(100vh - 56px - 4rem)',
+      minHeight: 560, padding: 0, overflow: 'hidden',
     }}>
 
       {/* ── Header ── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', borderBottom: '1px solid rgba(255,255,255,0.1)', flexShrink: 0, gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px', borderBottom: '1px solid #D6C79F', flexShrink: 0, gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <MessageSquare size={15} style={{ color: '#EBD07C' }} />
-            <span style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.8)' }}>Playground</span>
+            <MessageSquare size={15} style={{ color: '#B88719' }} />
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#111111' }}>Playground</span>
           </div>
-          <div style={{ display: 'flex', gap: 2, padding: 3, background: 'rgba(255,255,255,0.06)', borderRadius: 9, border: '1px solid rgba(255,255,255,0.1)' }}>
+          <div style={{ display: 'flex', gap: 2, padding: 3, background: '#F3EEDF', borderRadius: 9, border: '1px solid #D6C79F' }}>
             {([['unified', 'Unified Chat'], ['single', 'Single Agent']] as const).map(([id, label]) => (
               <button key={id} onClick={() => { setMode(id); setMessages([]); setTraceSteps([]); setRawObservations([]); }} style={{
                 padding: '5px 11px', borderRadius: 7, fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer',
-                background: mode === id ? 'rgba(235,208,124,0.18)' : 'transparent',
-                color: mode === id ? '#EBD07C' : 'rgba(255,255,255,0.4)',
+                background: mode === id ? '#F4E8C3' : 'transparent',
+                color: mode === id ? '#B88719' : '#5F5F5F',
               }}>{label}</button>
             ))}
           </div>
@@ -1102,9 +1103,9 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                 disabled={agentsLoading}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8,
-                  background: selectedAgent ? 'rgba(235,208,124,0.10)' : 'rgba(255,255,255,0.06)',
-                  border: '1px solid ' + (selectedAgent ? 'rgba(235,208,124,0.35)' : 'rgba(255,255,255,0.1)'),
-                  color: selectedAgent ? '#EBD07C' : 'rgba(255,255,255,0.35)',
+                  background: selectedAgent ? '#FBF6E6' : '#F3EEDF',
+                  border: '1px solid ' + (selectedAgent ? '#B88719' : '#D6C79F'),
+                  color: selectedAgent ? '#B88719' : '#777777',
                   fontSize: 11.5, borderRadius: 9,
                   padding: '6px 10px', minWidth: 196, cursor: 'pointer',
                 }}
@@ -1112,27 +1113,27 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                 <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {agentsLoading ? 'Loading…' : (selectedAgentObj?.label ?? 'Select an agent…')}
                 </span>
-                <ChevronDown size={12} style={{ color: selectedAgent ? '#EBD07C' : 'rgba(255,255,255,0.3)', transform: selectorOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }} />
+                <ChevronDown size={12} style={{ color: selectedAgent ? '#B88719' : '#777777', transform: selectorOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }} />
               </button>
               <AnimatePresence>
                 {selectorOpen && (
                   <motion.div
                     initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
                     transition={{ duration: 0.12 }}
-                    style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, width: 240, background: '#1C1C1C', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.4)', zIndex: 50, padding: '6px 0' }}
+                    style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, width: 240, background: '#FFFFFF', border: '1px solid #BFA66A', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 50, padding: '6px 0' }}
                   >
-                    <div style={{ padding: '5px 12px 2px', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.3)' }}>Agents</div>
-                    {agents.length === 0 && <p style={{ padding: '8px 12px', fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>No agents found</p>}
+                    <div style={{ padding: '5px 12px 2px', fontSize: 9.5, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#777777' }}>Agents</div>
+                    {agents.length === 0 && <p style={{ padding: '8px 12px', fontSize: 12, color: '#777777' }}>No agents found</p>}
                     {agents.map(a => (
                       <button key={a.id}
                         onClick={() => { setSelectedAgent(a.id); setSelectorOpen(false); setConversationId(null); setMessages([]); setPendingOptions(null); }}
                         style={{
                           width: '100%', textAlign: 'left', padding: '8px 12px', fontSize: 11.5,
-                          background: selectedAgent === a.id ? 'rgba(235,208,124,0.15)' : 'transparent',
-                          color: selectedAgent === a.id ? '#EBD07C' : 'rgba(255,255,255,0.6)',
+                          background: selectedAgent === a.id ? '#F4E8C3' : 'transparent',
+                          color: selectedAgent === a.id ? '#B88719' : '#3F3F3F',
                           border: 'none', cursor: 'pointer',
                         }}
-                        onMouseEnter={e => { if (selectedAgent !== a.id) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'; }}
+                        onMouseEnter={e => { if (selectedAgent !== a.id) (e.currentTarget as HTMLElement).style.background = '#F3EEDF'; }}
                         onMouseLeave={e => { if (selectedAgent !== a.id) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
                       >{a.label}</button>
                     ))}
@@ -1142,9 +1143,9 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
             </div>
           )}
           {mode === 'unified' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'rgba(192,132,252,0.12)', border: '1px solid rgba(192,132,252,0.4)', borderRadius: 9, padding: '6px 11px' }}>
-              <Brain size={13} style={{ color: '#C084FC' }} />
-              <span style={{ fontSize: 11, fontWeight: 600, color: '#C084FC' }}>Multi-agent orchestrator</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, background: '#EFEAFB', border: '1px solid #C9BCF0', borderRadius: 9, padding: '6px 11px' }}>
+              <Brain size={13} style={{ color: '#6B4FBB' }} />
+              <span style={{ fontSize: 11, fontWeight: 600, color: '#6B4FBB' }}>Multi-agent orchestrator</span>
             </div>
           )}
           <button
@@ -1152,9 +1153,9 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
             style={{
               display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5,
               padding: '6px 11px', borderRadius: 9, cursor: 'pointer',
-              border: '1px solid ' + (debugOn ? 'rgba(235,208,124,0.5)' : 'rgba(255,255,255,0.1)'),
-              background: debugOn ? 'rgba(235,208,124,0.15)' : 'rgba(255,255,255,0.04)',
-              color: debugOn ? '#EBD07C' : 'rgba(255,255,255,0.4)',
+              border: '1px solid ' + (debugOn ? '#B88719' : '#D6C79F'),
+              background: debugOn ? '#F4E8C3' : '#F8F5EC',
+              color: debugOn ? '#B88719' : '#5F5F5F',
             }}
           >
             <Bug size={12} /> Debug {debugOn ? 'ON' : 'OFF'}
@@ -1169,16 +1170,16 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
         <motion.div
           animate={{ width: debugOn ? '55%' : '100%' }}
           transition={{ duration: 0.25, ease: 'easeInOut' }}
-          style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden', borderRight: debugOn ? '1px solid rgba(255,255,255,0.1)' : 'none' }}
+          style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden', borderRight: debugOn ? '1px solid #D6C79F' : 'none' }}
         >
           {/* Context badge */}
-          <div style={{ padding: '7px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>
+          <div style={{ padding: '7px 14px', borderBottom: '1px solid #F3EEDF', flexShrink: 0 }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#5F5F5F' }}>
               {mode === 'unified'
-                ? <><Brain size={11} style={{ color: '#C084FC' }} /><span style={{ color: 'rgba(192,132,252,0.7)' }}>Orchestrator — ToT planner assigns agents automatically</span></>
+                ? <><Brain size={11} style={{ color: '#6B4FBB' }} /><span style={{ color: '#6B4FBB' }}>Orchestrator — ToT planner assigns agents automatically</span></>
                 : selectedAgentObj
                   ? <><Bot size={11} />{selectedAgentObj.label}</>
-                  : <><Bot size={11} style={{ opacity: 0.4 }} /><span style={{ color: 'rgba(255,255,255,0.25)' }}>No agent selected</span></>
+                  : <><Bot size={11} style={{ opacity: 0.4 }} /><span style={{ color: '#777777' }}>No agent selected</span></>
               }
             </span>
           </div>
@@ -1188,8 +1189,8 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
             {/* Empty state when no agent selected */}
             {mode === 'single' && !selectedAgent && messages.length === 0 && (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, opacity: 0.5 }}>
-                <Bot size={28} style={{ color: 'rgba(255,255,255,0.2)' }} />
-                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', textAlign: 'center', margin: 0 }}>
+                <Bot size={28} style={{ color: '#AAAAAA' }} />
+                <p style={{ fontSize: 12, color: '#777777', textAlign: 'center', margin: 0 }}>
                   Select an agent from the dropdown<br />to start a conversation
                 </p>
               </div>
@@ -1199,12 +1200,12 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                 if (msg.content === '' && msg.role === 'assistant' && msg.status !== 'error' && !msg.clarification && !msg.evidence) {
                   return (
                     <motion.div key={msg.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} style={{ display: 'flex', gap: 10 }}>
-                      <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Bot size={13} style={{ color: 'rgba(255,255,255,0.6)' }} />
+                      <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#D6C79F', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Bot size={13} style={{ color: '#3F3F3F' }} />
                       </div>
-                      <div style={{ background: 'rgba(255,255,255,0.07)', borderRadius: 12, borderTopLeftRadius: 4, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <div style={{ background: '#F3EEDF', borderRadius: 12, borderTopLeftRadius: 4, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 5 }}>
                         {[0, 1, 2].map(i => (
-                          <span key={i} className="pulse-soft" style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(255,255,255,0.3)', display: 'inline-block', animationDelay: i * 0.18 + 's' }} />
+                          <span key={i} className="pulse-soft" style={{ width: 6, height: 6, borderRadius: '50%', background: '#777777', display: 'inline-block', animationDelay: i * 0.18 + 's' }} />
                         ))}
                       </div>
                     </motion.div>
@@ -1226,8 +1227,8 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                 {chips.map((s, i) => (
                   <button key={i} onClick={() => handleSend(s)} style={{
                     fontSize: 11, padding: '5px 11px', borderRadius: 9999,
-                    background: 'rgba(235,208,124,0.10)', border: '1px solid rgba(235,208,124,0.3)',
-                    color: '#EBD07C', cursor: 'pointer',
+                    background: '#FBF6E6', border: '1px solid #B88719',
+                    color: '#B88719', cursor: 'pointer',
                   }}>
                     <Sparkles size={9} style={{ verticalAlign: '-1px', marginRight: 4 }} />{s}
                   </button>
@@ -1240,18 +1241,18 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
           <AnimatePresence>
             {pendingOptions && (
               <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
-                style={{ margin: '0 12px 8px', background: '#1a1a1a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, overflow: 'hidden' }}>
-                <p style={{ padding: '10px 14px 6px', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.3)', margin: 0 }}>
+                style={{ margin: '0 12px 8px', background: '#FAF7EC', border: '1px solid #D6C79F', borderRadius: 12, overflow: 'hidden' }}>
+                <p style={{ padding: '10px 14px 6px', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#777777', margin: 0 }}>
                   Chọn hướng tiếp cận
                 </p>
                 <div style={{ padding: '0 8px 8px', display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {pendingOptions.map((opt, i) => (
                     <button key={i} onClick={() => { setPendingOptions(null); handleSend(opt); }}
-                      style={{ width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 8, border: '1px solid rgba(235,208,124,0.2)', background: 'rgba(235,208,124,0.07)', color: '#EBD07C', fontSize: 13, cursor: 'pointer' }}>
+                      style={{ width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 8, border: '1px solid #F4E8C3', background: '#FBF6E6', color: '#B88719', fontSize: 13, cursor: 'pointer' }}>
                       {opt}
                     </button>
                   ))}
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '6px 8px', marginTop: 2 }}>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', background: '#F8F5EC', border: '1px solid #D6C79F', borderRadius: 8, padding: '6px 8px', marginTop: 2 }}>
                     <textarea
                       value={customOptionInput}
                       onChange={e => setCustomOptionInput(e.target.value)}
@@ -1263,12 +1264,12 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                       }}
                       placeholder="Tự nhập câu trả lời..."
                       rows={1}
-                      style={{ flex: 1, background: 'transparent', fontSize: 13, color: 'rgba(255,255,255,0.65)', resize: 'none', outline: 'none', border: 'none', lineHeight: 1.5, fontFamily: 'inherit', fontStyle: 'italic' }}
+                      style={{ flex: 1, background: 'transparent', fontSize: 13, color: '#3F3F3F', resize: 'none', outline: 'none', border: 'none', lineHeight: 1.5, fontFamily: 'inherit', fontStyle: 'italic' }}
                     />
                     <button
                       onClick={() => { if (customOptionInput.trim()) { setCustomOptionInput(''); handleSend(customOptionInput.trim()); } }}
                       disabled={!customOptionInput.trim() || sending}
-                      style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 7, background: customOptionInput.trim() ? '#B88719' : 'rgba(184,135,25,0.2)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: customOptionInput.trim() ? 'pointer' : 'default', color: '#fff' }}
+                      style={{ flexShrink: 0, width: 26, height: 26, borderRadius: 7, background: customOptionInput.trim() ? '#B88719' : '#F4E8C3', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: customOptionInput.trim() ? 'pointer' : 'default', color: '#fff' }}
                     >
                       <Send size={11} />
                     </button>
@@ -1282,10 +1283,10 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
           <AnimatePresence>
             {pendingApproval && (
               <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
-                style={{ margin: '0 12px 8px', background: '#1a1a1a', border: '1px solid rgba(217,184,108,0.35)', borderRadius: 12, overflow: 'hidden' }}>
+                style={{ margin: '0 12px 8px', background: '#FAF7EC', border: '1px solid #D9B86C', borderRadius: 12, overflow: 'hidden' }}>
                 <div style={{ padding: '10px 14px 6px', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#D9B86C', flexShrink: 0 }} />
-                  <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#D9B86C', fontWeight: 700 }}>
+                  <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#B88719', fontWeight: 700 }}>
                     Cần phê duyệt
                   </span>
                 </div>
@@ -1296,7 +1297,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                     </div>
                   )}
                   {pendingApproval.payload?.description && (
-                    <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5, fontFamily: 'var(--font-mono)', background: 'rgba(255,255,255,0.04)', borderRadius: 6, padding: '7px 10px' }}>
+                    <div style={{ fontSize: 11.5, color: '#3F3F3F', lineHeight: 1.5, fontFamily: 'var(--font-mono)', background: '#F8F5EC', borderRadius: 6, padding: '7px 10px' }}>
                       {pendingApproval.payload.description}
                     </div>
                   )}
@@ -1305,19 +1306,19 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                     onChange={e => setApprovalNote(e.target.value)}
                     placeholder="Ghi chú (tuỳ chọn)..."
                     rows={1}
-                    style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6, padding: '6px 9px', fontSize: 11.5, color: 'rgba(255,255,255,0.65)', fontFamily: 'inherit', resize: 'none', outline: 'none' }}
+                    style={{ background: '#F8F5EC', border: '1px solid #F3EEDF', borderRadius: 6, padding: '6px 9px', fontSize: 11.5, color: '#3F3F3F', fontFamily: 'inherit', resize: 'none', outline: 'none' }}
                   />
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button
                       disabled={approvalLoading}
                       onClick={() => handleApproval(false)}
-                      style={{ flex: 1, padding: '7px 0', borderRadius: 7, border: '1px solid rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.1)', color: '#F87171', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: approvalLoading ? 0.5 : 1 }}>
+                      style={{ flex: 1, padding: '7px 0', borderRadius: 7, border: '1px solid #F5B5B5', background: '#FDECEC', color: '#C62828', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: approvalLoading ? 0.5 : 1 }}>
                       Từ chối
                     </button>
                     <button
                       disabled={approvalLoading}
                       onClick={() => handleApproval(true)}
-                      style={{ flex: 1, padding: '7px 0', borderRadius: 7, border: '1px solid rgba(52,211,153,0.35)', background: 'rgba(52,211,153,0.12)', color: '#34D399', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: approvalLoading ? 0.5 : 1 }}>
+                      style={{ flex: 1, padding: '7px 0', borderRadius: 7, border: '1px solid #A5D6A7', background: '#E8F5E9', color: '#1D6F4C', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: approvalLoading ? 0.5 : 1 }}>
                       {approvalLoading ? 'Đang xử lý...' : 'Phê duyệt ✓'}
                     </button>
                   </div>
@@ -1330,14 +1331,14 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
           {!pendingOptions && !pendingApproval && <div style={{ padding: '8px 12px 14px', flexShrink: 0 }}>
             {/* hint when no agent selected */}
             {mode === 'single' && !selectedAgent && (
-              <p style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.25)', textAlign: 'center', margin: '0 0 6px', fontStyle: 'italic' }}>
+              <p style={{ fontSize: 10.5, color: '#777777', textAlign: 'center', margin: '0 0 6px', fontStyle: 'italic' }}>
                 Choose an agent above to enable sending
               </p>
             )}
             <div style={{
               display: 'flex', gap: 8, alignItems: 'center',
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid ' + (mode === 'single' && !selectedAgent ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.1)'),
+              background: '#F8F5EC',
+              border: '1px solid ' + (mode === 'single' && !selectedAgent ? '#F3EEDF' : '#D6C79F'),
               borderRadius: 12, padding: '8px 10px',
               opacity: mode === 'single' && !selectedAgent ? 0.6 : 1,
             }}>
@@ -1357,14 +1358,14 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                         : 'Ask the agent anything… (Enter to send)'
                 }
                 rows={1}
-                style={{ flex: 1, background: 'transparent', fontSize: 13, color: 'rgba(255,255,255,0.8)', resize: 'none', outline: 'none', border: 'none', lineHeight: 1.55, fontFamily: 'inherit', maxHeight: 120, overflowY: 'auto', cursor: traceLoading ? 'not-allowed' : 'text' }}
+                style={{ flex: 1, background: 'transparent', fontSize: 13, color: '#111111', resize: 'none', outline: 'none', border: 'none', lineHeight: 1.55, fontFamily: 'inherit', maxHeight: 120, overflowY: 'auto', cursor: traceLoading ? 'not-allowed' : 'text' }}
               />
               <button
                 onClick={() => handleSend()}
                 disabled={!sendBtnActive}
                 style={{
                   flexShrink: 0, width: 32, height: 32, borderRadius: 9,
-                  background: sendBtnActive ? '#B88719' : 'rgba(184,135,25,0.25)',
+                  background: sendBtnActive ? '#B88719' : '#F4E8C3',
                   border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
                   cursor: sendBtnActive ? 'pointer' : 'not-allowed', color: '#fff',
                 }}

@@ -228,7 +228,7 @@ curl -sf -X PUT "$KONG_ADMIN/services/workflow-runtime/routes/runtime-route" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "runtime-route",
-    "paths": ["/api/conversations", "/api/traces", "/api/nodes", "/api/llm-providers", "/api/kb-connections", "/api/system-prompts", "/api/catalog", "/api/sandbox", "/api/runtime-config", "/api/db-connector", "/api/reviews"],
+    "paths": ["/api/conversations", "/api/traces", "/api/nodes", "/api/llm-providers", "/api/kb-connections", "/api/system-prompts", "/api/catalog", "/api/sandbox", "/api/runtime-config", "/api/db-connector", "/api/reviews", "/api/platform", "/api/billing"],
     "strip_path": false,
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
@@ -720,7 +720,7 @@ echo "  Admin :  internal only (kong-admin-net 172.30.0.10:8001)"
 echo ""
 echo "  JWT:    RS256, issuer=$ISSUER"
 echo "  Routes: /api/agents|workflows|workflow-versions  -> flow-builder:8002"
-echo "          /api/conversations|traces|nodes|catalog  -> workflow-runtime:8001"
+echo "          /api/conversations|traces|nodes|catalog|platform|billing -> workflow-runtime:8001"
 echo "  CORS:   localhost:3000, localhost:5173"
 MTLS_STATUS="NOT configured (run deploy/docker/certs/gen-certs.sh first)"
 [ -f "$CERT_FILE" ] && MTLS_STATUS="Configured (Kong presents client cert)"

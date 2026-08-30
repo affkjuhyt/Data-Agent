@@ -9,9 +9,6 @@ import {
   FileText,
   Zap,
   ChevronRight,
-  Search,
-  Download,
-  Maximize2,
   Clock,
   Lock,
   Globe,
@@ -399,43 +396,43 @@ export const AssetDetailWorkspace = ({
          {showFileMetadata && (
             <motion.div
               style={{ width: 320 }}
-              className="border-r border-[#BFA66A]/30 p-8 overflow-y-auto custom-scrollbar flex flex-col gap-8 bg-[#FFFDF8] shrink-0"
+              className="border-r border-[#BFA66A] p-8 overflow-y-auto custom-scrollbar flex flex-col gap-8 bg-[#FFFDF8] shrink-0"
             >
                <section className="space-y-6">
-                  <h4 className="text-[10px] font-black text-[#8A5A00] uppercase tracking-widest border-b border-[#BFA66A]/20 pb-2 flex items-center gap-1.5 font-display">
+                  <h4 className="text-[10px] font-black text-[#8A5A00] uppercase tracking-widest border-b border-[#BFA66A] pb-2 flex items-center gap-1.5 font-display">
                      <Bookmark className="w-3.5 h-3.5 text-[#B88719]" />
                      Display Metadata
                   </h4>
 
                   <div className="space-y-4">
                      <div className="flex flex-col">
-                        <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Name</span>
-                        <span className="text-xs text-[#111111] font-mono break-all bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">{document.name}</span>
+                        <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest mb-1.5">Name</span>
+                        <span className="text-xs text-[#111111] font-mono break-all bg-white border border-[#BFA66A] px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">{document.name}</span>
                      </div>
 
                      <div className="flex flex-col">
-                        <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Extension</span>
-                        <span className="text-xs text-[#111111] font-mono bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)] uppercase">{extension}</span>
+                        <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest mb-1.5">Extension</span>
+                        <span className="text-xs text-[#111111] font-mono bg-white border border-[#BFA66A] px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)] uppercase">{extension}</span>
                      </div>
 
                      <div className="flex flex-col">
-                        <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Language</span>
-                        <span className="text-xs text-[#8A5A00] font-semibold bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">{language}</span>
+                        <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest mb-1.5">Language</span>
+                        <span className="text-xs text-[#8A5A00] font-semibold bg-white border border-[#BFA66A] px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">{language}</span>
                      </div>
 
                      <div className="flex flex-col">
-                        <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Source Type</span>
-                        <span className="text-xs text-amber-900 font-semibold bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">{sourceType}</span>
+                        <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest mb-1.5">Source Type</span>
+                        <span className="text-xs text-amber-900 font-semibold bg-white border border-[#BFA66A] px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">{sourceType}</span>
                      </div>
 
                      <div className="flex flex-col">
-                        <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Added On</span>
-                        <span className="text-xs text-slate-600 font-mono bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">{document.added_on}</span>
+                        <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest mb-1.5">Added On</span>
+                        <span className="text-xs text-[#3F3F3F] font-mono bg-white border border-[#BFA66A] px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">{document.added_on}</span>
                      </div>
 
                      <div className="flex flex-col">
-                        <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Added By</span>
-                        <div className="text-xs text-[#111111] font-medium bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)] flex items-center gap-2">
+                        <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest mb-1.5">Added By</span>
+                        <div className="content-card content-card--static text-xs text-[#111111] font-medium px-3 py-2 flex items-center gap-2">
                           <span className="w-5 h-5 rounded-full bg-[#B88719]/10 text-[#8A5A00] flex items-center justify-center text-[9px] font-black uppercase">{(document.metadata?.author ?? document.added_by ?? '')[0]}</span>
                           {(document.metadata?.author ?? document.added_by ?? '')}
                         </div>
@@ -444,7 +441,7 @@ export const AssetDetailWorkspace = ({
                </section>
 
                <section className="space-y-4">
-                 <h4 className="text-[10px] font-black text-[#8A5A00] uppercase tracking-widest border-b border-[#BFA66A]/20 pb-2 flex items-center gap-1.5 font-display">
+                 <h4 className="text-[10px] font-black text-[#8A5A00] uppercase tracking-widest border-b border-[#BFA66A] pb-2 flex items-center gap-1.5 font-display">
                     <Sparkles className="w-3.5 h-3.5 text-[#B88719]" />
                     Properties
                  </h4>
@@ -452,14 +449,14 @@ export const AssetDetailWorkspace = ({
                    {(extension.toLowerCase() === 'pdf' || extension.toLowerCase() === 'docx' || sourceType.toLowerCase() === 'markdown') && (
                      <>
                        <div className="flex flex-col">
-                          <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Original Author</span>
-                          <span className="text-xs text-[#111111] font-mono bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                          <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest mb-1.5">Original Author</span>
+                          <span className="text-xs text-[#111111] font-mono bg-white border border-[#BFA66A] px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                              {document.metadata.author || 'Anonymous'}
                           </span>
                        </div>
                        <div className="flex flex-col">
-                          <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Published Date</span>
-                          <span className="text-xs text-slate-600 font-mono bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                          <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest mb-1.5">Published Date</span>
+                          <span className="text-xs text-[#3F3F3F] font-mono bg-white border border-[#BFA66A] px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                              {document.metadata.published_date || '2026-01-10'}
                           </span>
                        </div>
@@ -468,8 +465,8 @@ export const AssetDetailWorkspace = ({
 
                    {(sourceType.toLowerCase().includes('web') || document.metadata.url) && (
                      <div className="flex flex-col">
-                        <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Target Endpoint URL</span>
-                        <span className="text-xs text-[#B88719] font-mono underline break-all bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                        <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest mb-1.5">Target Endpoint URL</span>
+                        <span className="text-xs text-[#B88719] font-mono underline break-all bg-white border border-[#BFA66A] px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                            {document.metadata.url || 'https://docs.aeroflow.ai/index'}
                         </span>
                      </div>
@@ -478,20 +475,20 @@ export const AssetDetailWorkspace = ({
                    {(sourceType.toLowerCase().includes('image') || extension.toLowerCase() === 'png' || extension.toLowerCase() === 'jpg') && (
                      <div className="space-y-4">
                        <div className="flex flex-col">
-                          <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Resolution</span>
-                          <span className="text-xs text-[#111111] font-mono bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                          <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest mb-1.5">Resolution</span>
+                          <span className="text-xs text-[#111111] font-mono bg-white border border-[#BFA66A] px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                              {document.metadata.width || '1920px'} x {document.metadata.height || '1080px'}
                           </span>
                        </div>
                        <div className="flex flex-col">
-                          <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Color Space</span>
-                          <span className="text-xs text-slate-600 font-mono bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                          <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest mb-1.5">Color Space</span>
+                          <span className="text-xs text-[#3F3F3F] font-mono bg-white border border-[#BFA66A] px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                              {document.metadata.color_space || 'sRGB (Display P3)'}
                           </span>
                        </div>
                        <div className="flex flex-col">
-                          <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">File Size</span>
-                          <span className="text-xs text-slate-600 font-mono bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                          <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest mb-1.5">File Size</span>
+                          <span className="text-xs text-[#3F3F3F] font-mono bg-white border border-[#BFA66A] px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                              {document.metadata.file_size || '3.4 MB'}
                           </span>
                        </div>
@@ -501,20 +498,20 @@ export const AssetDetailWorkspace = ({
                    {(sourceType.toLowerCase().includes('video') || extension.toLowerCase() === 'mp4') && (
                      <div className="space-y-4">
                        <div className="flex flex-col">
-                          <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Aspect Resolution</span>
-                          <span className="text-xs text-[#111111] font-mono bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                          <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest mb-1.5">Aspect Resolution</span>
+                          <span className="text-xs text-[#111111] font-mono bg-white border border-[#BFA66A] px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                              {document.metadata.width || '3840px'} x {document.metadata.height || '2160p (4K)'}
                           </span>
                        </div>
                        <div className="flex flex-col">
-                          <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Extraction Frames</span>
-                          <span className="text-xs text-slate-600 font-mono bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                          <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest mb-1.5">Extraction Frames</span>
+                          <span className="text-xs text-[#3F3F3F] font-mono bg-white border border-[#BFA66A] px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                              {document.metadata.total_frame || '24,800 frames'}
                           </span>
                        </div>
                        <div className="flex flex-col">
-                          <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Storage Allocation</span>
-                          <span className="text-xs text-slate-600 font-mono bg-white border border-[#BFA66A]/20 px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                          <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest mb-1.5">Storage Allocation</span>
+                          <span className="text-xs text-[#3F3F3F] font-mono bg-white border border-[#BFA66A] px-3 py-2 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                              {document.metadata.file_size || '52.4 MB'}
                           </span>
                        </div>
@@ -524,10 +521,10 @@ export const AssetDetailWorkspace = ({
                    {/* Document-level intents (content-purpose labels, set at Gold). */}
                    {(document.metadata.intents?.length ?? 0) > 0 && (
                      <div className="flex flex-col">
-                        <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-1.5">Document Intents</span>
+                        <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest mb-1.5">Document Intents</span>
                         <div className="flex flex-wrap gap-1.5">
                            {document.metadata.intents!.map((it, i) => (
-                              <span key={`${it}-${i}`} className="text-[10px] font-mono text-[#8A5A00] bg-white border border-[#BFA66A]/25 px-2.5 py-1 rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+                              <span key={`${it}-${i}`} className="text-[10px] font-mono text-[#8A5A00] bg-white border border-[#BFA66A] px-2.5 py-1 rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
                                  {it}
                               </span>
                            ))}
@@ -537,10 +534,10 @@ export const AssetDetailWorkspace = ({
                  </div>
                </section>
 
-               <section className="space-y-4 pt-6 border-t border-[#BFA66A]/20">
+               <section className="space-y-4 pt-6 border-t border-[#BFA66A]">
                   {document.current_tier === 'bronze' ? (
                     <div className="flex flex-col">
-                       <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                       <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest mb-2 flex items-center gap-1.5">
                          <Lock className="w-3.5 h-3.5 text-[#B88719]" />
                          Access Role
                        </span>
@@ -552,28 +549,28 @@ export const AssetDetailWorkspace = ({
                                 metadata: { access_role: e.target.value }
                               });
                             }}
-                            className="w-full bg-white border border-[#BFA66A]/40 hover:border-[#B88719]/60 rounded-xl px-3.5 py-2.5 text-xs text-[#111111] focus:outline-none focus:ring-1 focus:ring-[#B88719] appearance-none font-mono cursor-pointer shadow-xs"
+                            className="ui-input w-full px-3.5 py-2.5 text-xs appearance-none font-mono cursor-pointer"
                           >
                              <option value="all">all</option>
                              <option value="admin">admin</option>
                              <option value="kb_editor">kb_editor</option>
                              <option value="user">user</option>
                           </select>
-                          <span className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-500 text-[9px]">▼</span>
+                          <span className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-[#5F5F5F] text-[9px]">▼</span>
                        </div>
-                       <span className="text-[9px] text-slate-500 mt-1.5 leading-normal">Assign granular access clearances only during Raw Bronze phase.</span>
+                       <span className="text-[9px] text-[#5F5F5F] mt-1.5 leading-normal">Assign granular access clearances only during Raw Bronze phase.</span>
                     </div>
                   ) : (
                     <div className="flex flex-col">
-                       <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-                         <Lock className="w-3.5 h-3.5 text-slate-400" />
+                       <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                         <Lock className="w-3.5 h-3.5 text-[#5F5F5F]" />
                          Access Role (LOCKED)
                        </span>
-                       <div className="w-full bg-[#FCFBF7] border border-[#BFA66A]/20 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-500 flex items-center justify-between">
+                       <div className="w-full bg-[#FCFBF7] border border-[#BFA66A] rounded-xl px-3.5 py-2.5 text-xs font-mono text-[#5F5F5F] flex items-center justify-between">
                           <span>{currentAccessRole}</span>
-                          <span className="text-[8px] bg-slate-500/10 text-slate-500 border border-slate-500/20 rounded px-1.5 font-bold">READONLY</span>
+                          <span className="text-[8px] bg-[#F4E8C3] text-[#5F5F5F] border border-[#8A5A00] rounded px-1.5 font-bold">READONLY</span>
                        </div>
-                       <span className="text-[9px] text-slate-500 mt-1.5 leading-normal">Retriever permissions of vectorized stages must remain strictly immutable.</span>
+                       <span className="text-[9px] text-[#5F5F5F] mt-1.5 leading-normal">Retriever permissions of vectorized stages must remain strictly immutable.</span>
                     </div>
                   )}
                </section>
@@ -590,38 +587,33 @@ export const AssetDetailWorkspace = ({
                       key="preview"
                       initial={false}
                       animate={false}
-                      className="h-full border border-[#BFA66A]/30 rounded-[2rem] bg-white overflow-hidden flex flex-col shadow-sm"
+                      className="content-card content-card--static h-full overflow-hidden flex flex-col"
                     >
-                       <div className="h-12 bg-[#FFFDF8] border-b border-[#BFA66A]/20 flex items-center justify-between px-6 shrink-0">
-                          <div className="flex items-center gap-2 text-[10px] font-black text-[#5A4209]/70 tracking-wider">
+                       <div className="h-12 bg-[#FFFDF8] border-b border-[#BFA66A] flex items-center justify-between px-6 shrink-0">
+                          <div className="flex items-center gap-2 text-[10px] font-black text-[#5A4209] tracking-wider">
                              <span>{document.name}</span>
-                             <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                             <ChevronRight className="w-3.5 h-3.5 text-[#5F5F5F]" />
                              <span>PREVIEW MODE</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                             <button className="p-1.5 hover:bg-slate-100 rounded-lg"><Search className="w-4 h-4 text-slate-500" /></button>
-                             <button className="p-1.5 hover:bg-slate-100 rounded-lg"><Download className="w-4 h-4 text-slate-500" /></button>
-                             <button className="p-1.5 hover:bg-slate-100 rounded-lg"><Maximize2 className="w-4 h-4 text-slate-500" /></button>
                           </div>
                        </div>
                        <div className="flex-1 p-10 overflow-y-auto custom-scrollbar flex justify-center bg-[#FCFBF7]/50">
                           {document.current_tier === 'bronze' ? (
-                             <div className="max-w-2xl w-full bg-[#FFFFFF] rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.03)] p-12 text-slate-800 font-serif leading-relaxed min-h-[500px] border border-[#BFA66A]/30">
-                                <h1 className="text-2xl font-bold mb-8 border-b pb-4 border-slate-100 text-[#111111]">{document.name}</h1>
+                             <div className="max-w-2xl w-full bg-[#FFFFFF] rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.03)] p-12 text-[#111111] font-serif leading-relaxed min-h-[500px] border border-[#BFA66A]">
+                                <h1 className="text-2xl font-bold mb-8 border-b pb-4 border-[#BFA66A] text-[#111111]">{document.name}</h1>
                                 <p className="mb-6 text-sm text-[#2A2A2A]">This structural pipeline resource serves as the direct source of truth for regional data ingestion. Raw strings and properties are cataloged on local, low-latency cold-storage sectors prior to chunking and token vectorizations.</p>
                                 <div className="h-40 bg-[#FFFDF8] rounded-2xl border border-dashed border-[#BFA66A] flex flex-col items-center justify-center text-[#8A5A00] p-6 mb-8 text-center shadow-xs">
                                    <Database className="w-6 h-6 text-[#B88719] mb-2.5 animate-pulse" />
                                    <span className="text-xs font-mono font-black uppercase tracking-widest">[BRONZE STAGE RAW INPUT REPOSITORY]</span>
-                                   <span className="text-[10px] text-slate-600 mt-1.5">Raw stream parsed with 100% security clearance protocols matched</span>
+                                   <span className="text-[10px] text-[#3F3F3F] mt-1.5">Raw stream parsed with 100% security clearance protocols matched</span>
                                 </div>
                                 <p className="mb-6 text-sm text-[#2A2A2A]">Future promotions to the Silver layer will automatically segment raw blocks into discrete semantic chunks, stripping metadata noise and scrubbing properties for candidate PII leaks.</p>
                              </div>
                           ) : document.current_tier === 'silver' ? (
                              <div className="max-w-2xl w-full space-y-6">
-                                <div className="p-5 bg-[#FFF9E8] border border-[#BFA66A]/45 rounded-2xl text-[10px] font-black text-[#8A5A00] uppercase tracking-widest flex items-center justify-center gap-3 shadow-xs">
+                                <div className="p-5 bg-[#FFF9E8] border border-[#BFA66A] rounded-2xl text-[10px] font-black text-[#8A5A00] uppercase tracking-widest flex items-center justify-center gap-3 shadow-xs">
                                    <Zap className="w-4 h-4 text-[#B88719]" /> AI-Assisted Normalization Active
                                 </div>
-                                <div className="font-mono text-[11px] text-[#2A2A2A] p-8 bg-white rounded-3xl border border-[#BFA66A]/30 leading-relaxed shadow-sm">
+                                <div className="content-card content-card--static font-mono text-[11px] text-[#2A2A2A] p-8 leading-relaxed">
                                    <span className="text-[#8A5A00] font-bold"># Normalized Segment: {document.name}</span><br/><br/>
                                    <span className="text-[#5D4037] font-semibold">## Extraction Metrics</span><br/>
                                    - Ingestion Status: Normalization verified.<br/>
@@ -640,7 +632,7 @@ export const AssetDetailWorkspace = ({
                                 </div>
                                 <div>
                                    <h3 className="text-base font-bold text-[#111111] mb-2">Vectorized Gold Retrieval Node</h3>
-                                   <p className="text-xs text-slate-600 leading-relaxed">This physical knowledge asset resides securely in the Active production GOLD layer. Fully index-ready for prompt semantic retrieval pipelines.</p>
+                                   <p className="text-xs text-[#3F3F3F] leading-relaxed">This physical knowledge asset resides securely in the Active production GOLD layer. Fully index-ready for prompt semantic retrieval pipelines.</p>
                                 </div>
                              </div>
                           )}
@@ -656,21 +648,21 @@ export const AssetDetailWorkspace = ({
                       animate={false}
                       className="h-full flex gap-6 overflow-hidden"
                     >
-                       <div className="w-80 border border-[#BFA66A]/30 rounded-3xl flex flex-col bg-white overflow-hidden shrink-0 shadow-xs">
-                          <div className="p-5 border-b border-[#BFA66A]/20 flex justify-between items-center bg-[#FFFDF8]">
+                       <div className="content-card content-card--static w-80 flex flex-col overflow-hidden shrink-0">
+                          <div className="p-5 border-b border-[#BFA66A] flex justify-between items-center bg-[#FFFDF8]">
                              <h4 className="text-[10px] font-black text-[#5A4209] uppercase tracking-widest flex items-center gap-2">
                                 <Layers3 className="w-4 h-4 text-[#B88719]" />
                                 List of Chunks
                              </h4>
-                             <span className="text-[10px] font-mono text-[#8A5A00] font-bold bg-[#FFF9E8] px-2 py-0.5 rounded border border-[#BFA66A]/30">{chunks.length} Chunks</span>
+                             <span className="text-[10px] font-mono text-[#8A5A00] font-bold bg-[#FFF9E8] px-2 py-0.5 rounded border border-[#BFA66A]">{chunks.length} Chunks</span>
                           </div>
                           <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar bg-[#FCFBF7]/30">
                              {chunksLoading ? (
                                <div className="flex items-center justify-center py-12">
-                                 <span className="w-5 h-5 rounded-full border-2 border-[#BFA66A]/40 border-t-[#B88719] animate-spin" />
+                                 <span className="w-5 h-5 rounded-full border-2 border-[#BFA66A] border-t-[#B88719] animate-spin" />
                                </div>
                              ) : chunks.length === 0 ? (
-                               <div className="text-center py-12 text-xs text-slate-400 font-mono">No chunks yet.<br/>{chunkPolls < CHUNK_POLL_MAX ? 'The ingestion worker may still be processing — auto-refreshing…' : 'None were produced for this document.'}</div>
+                               <div className="text-center py-12 text-xs text-[#5F5F5F] font-mono">No chunks yet.<br/>{chunkPolls < CHUNK_POLL_MAX ? 'The ingestion worker may still be processing — auto-refreshing…' : 'None were produced for this document.'}</div>
                              ) : chunks.map((chunk) => (
                                 <div
                                   key={chunk.id}
@@ -679,30 +671,30 @@ export const AssetDetailWorkspace = ({
                                     "p-4 border rounded-xl transition-all cursor-pointer group text-left",
                                     chunk.id === selectedChunk?.id
                                       ? "border-[#B88719] bg-[#FFF9E8] shadow-xs"
-                                      : "border-[#BFA66A]/20 bg-white hover:border-[#BFA66A]/40 hover:bg-[#FFFDF8]"
+                                      : "border-[#BFA66A] bg-white hover:border-[#BFA66A] hover:bg-[#FFFDF8]"
                                   )}
                                 >
                                    <div className="flex justify-between items-center mb-1.5 text-[10px] font-mono">
-                                      <span className={chunk.id === selectedChunk?.id ? "text-[#8A5A00] font-black" : "text-slate-500"}>
+                                      <span className={chunk.id === selectedChunk?.id ? "text-[#8A5A00] font-black" : "text-[#5F5F5F]"}>
                                         {chunk.id}
                                       </span>
-                                      <span className="text-[9px] text-[#5A4209]/60 font-semibold">LENGTH: {chunk.text.length}</span>
+                                      <span className="text-[9px] text-[#5A4209] font-semibold">LENGTH: {chunk.text.length}</span>
                                    </div>
                                    <div className="text-xs text-[#111111] font-bold truncate group-hover:text-[#B88719] transition-colors uppercase tracking-tight">{chunk.title}</div>
-                                   <p className="text-[11px] text-slate-600 truncate mt-1.5">{chunk.text}</p>
+                                   <p className="text-[11px] text-[#3F3F3F] truncate mt-1.5">{chunk.text}</p>
                                 </div>
                              ))}
                           </div>
                           {(chunksPage > 1 || chunksHasNext) && (
-                            <div className="flex items-center justify-between px-3 py-2 border-t border-[#BFA66A]/15 bg-[#FFFDF8]">
-                              <span className="text-[10px] font-mono text-slate-400">Pg {chunksPage}</span>
+                            <div className="flex items-center justify-between px-3 py-2 border-t border-[#BFA66A] bg-[#FFFDF8]">
+                              <span className="text-[10px] font-mono text-[#5F5F5F]">Pg {chunksPage}</span>
                               <div className="flex gap-1">
                                 <button disabled={chunksPage === 1} onClick={() => setChunksPage(p => Math.max(1, p - 1))}
-                                  className={cn("px-2 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", chunksPage === 1 && "opacity-40 cursor-not-allowed")}>
+                                  className={cn("px-2 py-1 rounded text-[10px] font-bold border border-[#BFA66A] bg-white text-[#8A5A00]", chunksPage === 1 && "opacity-40 cursor-not-allowed")}>
                                   ‹
                                 </button>
                                 <button disabled={!chunksHasNext} onClick={() => setChunksPage(p => p + 1)}
-                                  className={cn("px-2 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", !chunksHasNext && "opacity-40 cursor-not-allowed")}>
+                                  className={cn("px-2 py-1 rounded text-[10px] font-bold border border-[#BFA66A] bg-white text-[#8A5A00]", !chunksHasNext && "opacity-40 cursor-not-allowed")}>
                                   ›
                                 </button>
                               </div>
@@ -710,25 +702,25 @@ export const AssetDetailWorkspace = ({
                           )}
                        </div>
 
-                       <div className="flex-1 border border-[#BFA66A]/30 rounded-3xl p-6 bg-white flex flex-col overflow-hidden shadow-xs">
+                       <div className="content-card content-card--static flex-1 p-6 flex flex-col overflow-hidden">
                           {selectedChunk ? (
                             <>
-                              <div className="p-4 border-b border-[#BFA66A]/20 flex justify-between items-center bg-[#FFFDF8] rounded-2xl shrink-0">
+                              <div className="p-4 border-b border-[#BFA66A] flex justify-between items-center bg-[#FFFDF8] rounded-2xl shrink-0">
                                  <div>
                                     <span className="text-[11px] font-mono text-[#8A5A00] font-bold uppercase">{selectedChunk.id}</span>
                                     <h4 className="text-sm font-bold text-[#111111] mt-0.5">{selectedChunk.title}</h4>
                                  </div>
-                                 <span className="text-[9px] font-black uppercase text-[#8A5A00] bg-[#FFF9E8] border border-[#BFA66A]/30 px-3 py-1 rounded-lg">SILVER NORMALIZED</span>
+                                 <span className="text-[9px] font-black uppercase text-[#8A5A00] bg-[#FFF9E8] border border-[#BFA66A] px-3 py-1 rounded-lg">SILVER NORMALIZED</span>
                               </div>
-                              <div className="flex-1 p-6 overflow-y-auto custom-scrollbar mt-4 bg-[#FCFBF7]/30 rounded-2xl border border-dashed border-[#BFA66A]/20">
-                                 <div className="p-6 bg-white border border-[#BFA66A]/20 rounded-xl shadow-xs">
-                                    <span className="text-[9px] font-black text-[#5A4209]/70 uppercase tracking-widest block mb-4 border-b border-[#BFA66A]/10 pb-2">RAW PARSED STRING</span>
-                                    <p className="text-slate-700 text-xs leading-relaxed font-mono whitespace-pre-wrap">{selectedChunk.text}</p>
+                              <div className="flex-1 p-6 overflow-y-auto custom-scrollbar mt-4 bg-[#FCFBF7]/30 rounded-2xl border border-dashed border-[#BFA66A]">
+                                 <div className="content-card content-card--static p-6">
+                                    <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest block mb-4 border-b border-[#BFA66A] pb-2">RAW PARSED STRING</span>
+                                    <p className="text-[#2A2A2A] text-xs leading-relaxed font-mono whitespace-pre-wrap">{selectedChunk.text}</p>
                                  </div>
                               </div>
                             </>
                           ) : (
-                            <div className="flex-1 flex items-center justify-center text-slate-400 text-xs font-mono">Select a chunk to inspect</div>
+                            <div className="flex-1 flex items-center justify-center text-[#5F5F5F] text-xs font-mono">Select a chunk to inspect</div>
                           )}
                        </div>
                     </motion.div>
@@ -742,21 +734,21 @@ export const AssetDetailWorkspace = ({
                       animate={false}
                       className="h-full flex gap-6 overflow-hidden"
                     >
-                       <div className="w-80 border border-[#BFA66A]/30 rounded-3xl flex flex-col bg-white overflow-hidden shrink-0 shadow-xs">
-                          <div className="p-5 border-b border-[#BFA66A]/20 flex justify-between items-center bg-[#FFFDF8]">
+                       <div className="content-card content-card--static w-80 flex flex-col overflow-hidden shrink-0">
+                          <div className="p-5 border-b border-[#BFA66A] flex justify-between items-center bg-[#FFFDF8]">
                              <h4 className="text-[10px] font-black text-[#5A4209] uppercase tracking-widest flex items-center gap-1.5">
                                 <Layers3 className="w-4 h-4 text-[#B88719]" />
                                 Active Chunks
                              </h4>
-                             <span className="text-[10px] font-mono text-[#8A5A00] font-black bg-[#FFF9E8] border border-[#BFA66A]/30 px-2 py-0.5 rounded">{chunks.length} Chunks</span>
+                             <span className="text-[10px] font-mono text-[#8A5A00] font-black bg-[#FFF9E8] border border-[#BFA66A] px-2 py-0.5 rounded">{chunks.length} Chunks</span>
                           </div>
                           <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar bg-[#FCFBF7]/30">
                              {chunksLoading ? (
                                <div className="flex items-center justify-center py-12">
-                                 <span className="w-5 h-5 rounded-full border-2 border-[#BFA66A]/40 border-t-[#B88719] animate-spin" />
+                                 <span className="w-5 h-5 rounded-full border-2 border-[#BFA66A] border-t-[#B88719] animate-spin" />
                                </div>
                              ) : chunks.length === 0 ? (
-                               <div className="text-center py-12 text-xs text-slate-400 font-mono">No chunks yet.<br/>{chunkPolls < CHUNK_POLL_MAX ? 'The ingestion worker may still be processing — auto-refreshing…' : 'None were produced for this document.'}</div>
+                               <div className="text-center py-12 text-xs text-[#5F5F5F] font-mono">No chunks yet.<br/>{chunkPolls < CHUNK_POLL_MAX ? 'The ingestion worker may still be processing — auto-refreshing…' : 'None were produced for this document.'}</div>
                              ) : chunks.map((chunk) => (
                                 <div
                                   key={chunk.id}
@@ -765,29 +757,29 @@ export const AssetDetailWorkspace = ({
                                     "p-4 border rounded-xl transition-all cursor-pointer group text-left",
                                     chunk.id === selectedChunk?.id
                                       ? "border-[#B88719] bg-[#FFF9E8] shadow-xs"
-                                      : "border-[#BFA66A]/20 bg-white hover:border-[#BFA66A]/40 hover:bg-[#FFFDF8]"
+                                      : "border-[#BFA66A] bg-white hover:border-[#BFA66A] hover:bg-[#FFFDF8]"
                                   )}
                                 >
                                    <div className="flex justify-between items-center mb-1 text-[10px] font-mono">
-                                      <span className={chunk.id === selectedChunk?.id ? "text-[#8A5A00] font-black animate-pulse" : "text-slate-500"}>
+                                      <span className={chunk.id === selectedChunk?.id ? "text-[#8A5A00] font-black animate-pulse" : "text-[#5F5F5F]"}>
                                         {chunk.id}
                                       </span>
                                    </div>
                                    <div className="text-xs text-[#111111] font-bold truncate group-hover:text-[#B88719] transition-colors uppercase tracking-tight">{chunk.title}</div>
-                                   <p className="text-[10px] text-slate-600 truncate mt-1">{chunk.text}</p>
+                                   <p className="text-[10px] text-[#3F3F3F] truncate mt-1">{chunk.text}</p>
                                 </div>
                              ))}
                           </div>
                           {(chunksPage > 1 || chunksHasNext) && (
-                            <div className="flex items-center justify-between px-3 py-2 border-t border-[#BFA66A]/15 bg-[#FFFDF8]">
-                              <span className="text-[10px] font-mono text-slate-400">Pg {chunksPage}</span>
+                            <div className="flex items-center justify-between px-3 py-2 border-t border-[#BFA66A] bg-[#FFFDF8]">
+                              <span className="text-[10px] font-mono text-[#5F5F5F]">Pg {chunksPage}</span>
                               <div className="flex gap-1">
                                 <button disabled={chunksPage === 1} onClick={() => setChunksPage(p => Math.max(1, p - 1))}
-                                  className={cn("px-2 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", chunksPage === 1 && "opacity-40 cursor-not-allowed")}>
+                                  className={cn("px-2 py-1 rounded text-[10px] font-bold border border-[#BFA66A] bg-white text-[#8A5A00]", chunksPage === 1 && "opacity-40 cursor-not-allowed")}>
                                   ‹
                                 </button>
                                 <button disabled={!chunksHasNext} onClick={() => setChunksPage(p => p + 1)}
-                                  className={cn("px-2 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", !chunksHasNext && "opacity-40 cursor-not-allowed")}>
+                                  className={cn("px-2 py-1 rounded text-[10px] font-bold border border-[#BFA66A] bg-white text-[#8A5A00]", !chunksHasNext && "opacity-40 cursor-not-allowed")}>
                                   ›
                                 </button>
                               </div>
@@ -795,12 +787,12 @@ export const AssetDetailWorkspace = ({
                           )}
                        </div>
 
-                       <div className="flex-1 border border-[#BFA66A]/30 rounded-3xl p-6 bg-white flex flex-col overflow-hidden shadow-xs">
+                       <div className="content-card content-card--static flex-1 p-6 flex flex-col overflow-hidden">
                           {!selectedChunk || !selectedVersion ? (
-                            <div className="flex-1 flex items-center justify-center text-slate-400 text-xs font-mono">Select a chunk to inspect</div>
+                            <div className="flex-1 flex items-center justify-center text-[#5F5F5F] text-xs font-mono">Select a chunk to inspect</div>
                           ) : (
                             <>
-                              <div className="pb-4 border-b border-[#BFA66A]/20 shrink-0 flex justify-between items-center">
+                              <div className="pb-4 border-b border-[#BFA66A] shrink-0 flex justify-between items-center">
                                  <div>
                                     <span className="text-[10px] font-mono text-[#8A5A00] font-black">{selectedChunk.id} · Semantic Node</span>
                                     <h3 className="text-base font-bold text-[#111111] font-display">{selectedChunk.title}</h3>
@@ -821,7 +813,7 @@ export const AssetDetailWorkspace = ({
                                         className={cn(
                                           "px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer",
                                           activatingSave
-                                            ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+                                            ? "bg-[#FFF9E8] text-[#5F5F5F] cursor-not-allowed"
                                             : "bg-[#B88719] text-white hover:bg-[#8A5A00] shadow-md"
                                         )}
                                       >
@@ -832,17 +824,17 @@ export const AssetDetailWorkspace = ({
                                         )}
                                       </button>
                                     )}
-                                    <span className="text-[9px] font-black uppercase text-[#B88719] bg-[#FFF9E9] border border-[#BFA66A]/30 px-2.5 py-1 rounded-lg">Multi-Version Gold Layer</span>
+                                    <span className="text-[9px] font-black uppercase text-[#B88719] bg-[#FFF9E9] border border-[#BFA66A] px-2.5 py-1 rounded-lg">Multi-Version Gold Layer</span>
                                  </div>
                               </div>
 
-                              <div className="py-4 border-b border-slate-100 flex flex-col gap-2 shrink-0 bg-[#FFFDF8]/40 px-3 rounded-2xl mt-4">
+                              <div className="py-4 border-b border-[#BFA66A] flex flex-col gap-2 shrink-0 bg-[#FFFDF8]/40 px-3 rounded-2xl mt-4">
                                  <div className="flex justify-between items-center mb-1">
-                                    <span className="text-[9px] font-black text-[#5A4209]/60 uppercase tracking-widest flex items-center gap-1.5">
+                                    <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest flex items-center gap-1.5">
                                        <Clock className="w-3 h-3 text-[#B88719]" />
                                        Select Active Revision Node
                                     </span>
-                                    <span className="text-[8px] font-mono text-slate-400 font-black tracking-widest uppercase sm:block hidden">Swipe for more →</span>
+                                    <span className="text-[8px] font-mono text-[#5F5F5F] font-black tracking-widest uppercase sm:block hidden">Swipe for more →</span>
                                  </div>
                                  <div className="flex gap-3 overflow-x-auto pb-1.5 custom-scrollbar flex-nowrap">
                                     {selectedChunk.versions.map((ver) => (
@@ -853,14 +845,14 @@ export const AssetDetailWorkspace = ({
                                            "px-4 py-2.5 rounded-xl border transition-all cursor-pointer text-left flex items-center gap-3 shrink-0 min-w-[130px] shadow-2xs group",
                                            ver.version_number === selectedVersion.version_number
                                              ? "border-[#B88719] bg-[#FFF9E8] text-[#111111]"
-                                             : "border-[#BFA66A]/25 bg-white text-slate-700 hover:border-[#BFA66A]/50 hover:bg-[#FCFBF7]"
+                                             : "border-[#BFA66A] bg-white text-[#2A2A2A] hover:border-[#BFA66A] hover:bg-[#FCFBF7]"
                                          )}
                                        >
                                           <div className={cn(
                                              "w-6 h-6 rounded-lg flex items-center justify-center border",
                                              ver.version_number === selectedVersion.version_number
-                                               ? "bg-[#B88719]/10 border-[#B88719]/20 text-[#8A5A00]"
-                                               : "bg-slate-50 border-slate-200 text-slate-400 group-hover:bg-[#FFF9E8]/30"
+                                               ? "bg-[#B88719]/10 border-[#B88719] text-[#8A5A00]"
+                                               : "bg-[#FFF9E8] border-[#BFA66A] text-[#5F5F5F] group-hover:bg-[#FFF9E8]/30"
                                           )}>
                                              <Clock className="w-3.5 h-3.5" />
                                           </div>
@@ -868,7 +860,7 @@ export const AssetDetailWorkspace = ({
                                              <div className="text-xs font-mono font-black">{ver.version_number}</div>
                                              <span className={cn(
                                                "text-[8px] font-black uppercase px-1 rounded-sm tracking-wide mt-0.5 inline-block",
-                                               ver.status === 'Active' ? "text-green-800 bg-green-500/10" : "text-slate-500 bg-slate-100"
+                                               ver.status === 'Active' ? "text-green-800 bg-green-500/10" : "text-[#5F5F5F] bg-[#FFF9E8]"
                                              )}>
                                                 {ver.status}
                                              </span>
@@ -879,47 +871,47 @@ export const AssetDetailWorkspace = ({
                               </div>
 
                               <div className="flex-1 overflow-y-auto p-2 space-y-6 custom-scrollbar mt-4">
-                                 <div className="bg-[#FFFDF8]/70 border border-[#BFA66A]/30 p-5 rounded-2xl shadow-2xs">
-                                    <h4 className="text-[9px] font-black text-[#5A4209]/80 uppercase tracking-widest flex items-center gap-1.5 border-b border-[#BFA66A]/20 pb-2.5 mb-4">
+                                 <div className="bg-[#FFFDF8]/70 border border-[#BFA66A] p-5 rounded-2xl shadow-2xs">
+                                    <h4 className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest flex items-center gap-1.5 border-b border-[#BFA66A] pb-2.5 mb-4">
                                        <Tag className="w-3.5 h-3.5 text-[#B88719]" />
                                        Revision Parameters Matrix
                                     </h4>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                                        <div className="flex flex-col">
-                                          <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-0.5">Version Name</span>
+                                          <span className="text-[9px] text-[#5F5F5F] font-bold uppercase tracking-wider mb-0.5">Version Name</span>
                                           <span className="text-xs text-[#111111] font-mono font-black">{selectedVersion.version_number}</span>
                                        </div>
 
                                        <div className="flex flex-col">
-                                          <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-0.5">Time Registered</span>
-                                          <span className="text-xs text-slate-600 font-mono italic">{selectedVersion.create_at}</span>
+                                          <span className="text-[9px] text-[#5F5F5F] font-bold uppercase tracking-wider mb-0.5">Time Registered</span>
+                                          <span className="text-xs text-[#3F3F3F] font-mono italic">{selectedVersion.create_at}</span>
                                        </div>
 
                                        <div className="flex flex-col">
-                                          <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-0.5">Retriever Status</span>
+                                          <span className="text-[9px] text-[#5F5F5F] font-bold uppercase tracking-wider mb-0.5">Retriever Status</span>
                                           <div className="flex items-center gap-1.5 mt-0.5">
                                              <span className={cn("w-1.5 h-1.5 rounded-full", selectedVersion.status === 'Active' ? "bg-green-600" : "bg-slate-400")} />
                                              <span className={cn(
                                                "text-xs font-mono font-black",
-                                               selectedVersion.status === 'Active' ? "text-green-700" : "text-slate-500"
+                                               selectedVersion.status === 'Active' ? "text-green-700" : "text-[#5F5F5F]"
                                              )}>{selectedVersion.status === 'Active' ? 'ACTIVE RETRIEVER' : 'STAGED RECORD'}</span>
                                           </div>
                                        </div>
 
                                        <div className="flex flex-col">
-                                          <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-0.5">Embedding Model Configuration</span>
-                                          <span className="text-xs text-slate-600 font-mono truncate">{selectedVersion.embedding_models}</span>
+                                          <span className="text-[9px] text-[#5F5F5F] font-bold uppercase tracking-wider mb-0.5">Embedding Model Configuration</span>
+                                          <span className="text-xs text-[#3F3F3F] font-mono truncate">{selectedVersion.embedding_models}</span>
                                        </div>
 
                                        <div className="flex flex-col md:col-span-2 lg:col-span-3">
-                                          <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mb-2 flex justify-between items-center">
+                                          <span className="text-[9px] text-[#5F5F5F] font-bold uppercase tracking-wider mb-2 flex justify-between items-center">
                                              <span>Identified Entities Map</span>
-                                             <span className="text-[8px] font-mono text-slate-400 tracking-wider normal-case">(scroll horizontally)</span>
+                                             <span className="text-[8px] font-mono text-[#5F5F5F] tracking-wider normal-case">(scroll horizontally)</span>
                                           </span>
                                           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin flex-nowrap max-w-full">
                                              {selectedVersion.entities.map((ent, idx) => (
-                                               <span key={`${ent}-${idx}`} className="bg-white border border-[#BFA66A]/25 text-[#5A4209] text-[11px] font-mono px-3 py-1.5 rounded-xl shadow-2xs shrink-0 flex items-center hover:bg-[#FFF9E8]/40 transition-colors">
+                                               <span key={`${ent}-${idx}`} className="bg-white border border-[#BFA66A] text-[#5A4209] text-[11px] font-mono px-3 py-1.5 rounded-xl shadow-2xs shrink-0 flex items-center hover:bg-[#FFF9E8]/40 transition-colors">
                                                  {ent}
                                                </span>
                                              ))}
@@ -929,8 +921,8 @@ export const AssetDetailWorkspace = ({
                                     </div>
                                  </div>
 
-                                 <div className="p-6 bg-white border border-[#BFA66A]/30 rounded-2xl shadow-xs">
-                                    <span className="text-[9px] font-black text-[#5A4209]/70 uppercase tracking-widest block mb-3 border-b border-dashed border-[#BFA66A]/20 pb-1.5">
+                                 <div className="content-card content-card--static p-6">
+                                    <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest block mb-3 border-b border-dashed border-[#BFA66A] pb-1.5">
                                        Version Text Data
                                     </span>
                                     <p className="text-[#2A2A2A] text-xs leading-relaxed font-mono whitespace-pre-wrap">{selectedVersion.text}</p>
@@ -951,23 +943,23 @@ export const AssetDetailWorkspace = ({
                       className="h-full flex gap-6 overflow-hidden"
                     >
                       {/* Left: table list */}
-                      <div className="w-80 border border-[#BFA66A]/30 rounded-3xl flex flex-col bg-white overflow-hidden shrink-0 shadow-xs">
-                        <div className="p-5 border-b border-[#BFA66A]/20 flex justify-between items-center bg-[#FFFDF8]">
+                      <div className="content-card content-card--static w-80 flex flex-col overflow-hidden shrink-0">
+                        <div className="p-5 border-b border-[#BFA66A] flex justify-between items-center bg-[#FFFDF8]">
                           <h4 className="text-[10px] font-black text-[#5A4209] uppercase tracking-widest flex items-center gap-2">
                             <Table2 className="w-4 h-4 text-[#B88719]" />
                             List of Tables
                           </h4>
-                          <span className="text-[10px] font-mono text-[#8A5A00] font-bold bg-[#FFF9E8] px-2 py-0.5 rounded border border-[#BFA66A]/30">
+                          <span className="text-[10px] font-mono text-[#8A5A00] font-bold bg-[#FFF9E8] px-2 py-0.5 rounded border border-[#BFA66A]">
                             {tables.length} Tables
                           </span>
                         </div>
                         <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar bg-[#FCFBF7]/30">
                           {tablesLoading ? (
                             <div className="flex items-center justify-center py-12">
-                              <span className="w-5 h-5 rounded-full border-2 border-[#BFA66A]/40 border-t-[#B88719] animate-spin" />
+                              <span className="w-5 h-5 rounded-full border-2 border-[#BFA66A] border-t-[#B88719] animate-spin" />
                             </div>
                           ) : tables.length === 0 ? (
-                            <div className="text-center py-12 text-xs text-slate-400 font-mono">No tables available.</div>
+                            <div className="text-center py-12 text-xs text-[#5F5F5F] font-mono">No tables available.</div>
                           ) : tables.map((table) => (
                             <div
                               key={table.id}
@@ -976,30 +968,30 @@ export const AssetDetailWorkspace = ({
                                 "p-4 border rounded-xl transition-all cursor-pointer group text-left",
                                 table.id === selectedTable?.id
                                   ? "border-[#B88719] bg-[#FFF9E8] shadow-xs"
-                                  : "border-[#BFA66A]/20 bg-white hover:border-[#BFA66A]/40 hover:bg-[#FFFDF8]"
+                                  : "border-[#BFA66A] bg-white hover:border-[#BFA66A] hover:bg-[#FFFDF8]"
                               )}
                             >
                               <div className="flex justify-between items-center mb-1.5 text-[10px] font-mono">
-                                <span className={table.id === selectedTable?.id ? "text-[#8A5A00] font-black" : "text-slate-500"}>
+                                <span className={table.id === selectedTable?.id ? "text-[#8A5A00] font-black" : "text-[#5F5F5F]"}>
                                   {table.id}
                                 </span>
-                                <span className="text-[9px] text-[#5A4209]/60 font-semibold">{table.columns.length} cols · {table.rows.length} rows</span>
+                                <span className="text-[9px] text-[#5A4209] font-semibold">{table.columns.length} cols · {table.rows.length} rows</span>
                               </div>
                               <div className="text-xs text-[#111111] font-bold truncate group-hover:text-[#B88719] transition-colors font-mono">{table.name}</div>
-                              <p className="text-[11px] text-slate-500 truncate mt-1">{table.description}</p>
+                              <p className="text-[11px] text-[#5F5F5F] truncate mt-1">{table.description}</p>
                             </div>
                           ))}
                         </div>
                         {(tablesPage > 1 || tablesHasNext) && (
-                          <div className="flex items-center justify-between px-3 py-2 border-t border-[#BFA66A]/15 bg-[#FFFDF8]">
-                            <span className="text-[10px] font-mono text-slate-400">Pg {tablesPage}</span>
+                          <div className="flex items-center justify-between px-3 py-2 border-t border-[#BFA66A] bg-[#FFFDF8]">
+                            <span className="text-[10px] font-mono text-[#5F5F5F]">Pg {tablesPage}</span>
                             <div className="flex gap-1">
                               <button disabled={tablesPage === 1} onClick={() => setTablesPage(p => Math.max(1, p - 1))}
-                                className={cn("px-2 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", tablesPage === 1 && "opacity-40 cursor-not-allowed")}>
+                                className={cn("px-2 py-1 rounded text-[10px] font-bold border border-[#BFA66A] bg-white text-[#8A5A00]", tablesPage === 1 && "opacity-40 cursor-not-allowed")}>
                                 ‹
                               </button>
                               <button disabled={!tablesHasNext} onClick={() => setTablesPage(p => p + 1)}
-                                className={cn("px-2 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", !tablesHasNext && "opacity-40 cursor-not-allowed")}>
+                                className={cn("px-2 py-1 rounded text-[10px] font-bold border border-[#BFA66A] bg-white text-[#8A5A00]", !tablesHasNext && "opacity-40 cursor-not-allowed")}>
                                 ›
                               </button>
                             </div>
@@ -1008,17 +1000,17 @@ export const AssetDetailWorkspace = ({
                       </div>
 
                       {/* Right: selected table detail */}
-                      <div className="flex-1 border border-[#BFA66A]/30 rounded-3xl bg-white flex flex-col overflow-hidden shadow-xs">
+                      <div className="content-card content-card--static flex-1 flex flex-col overflow-hidden">
                         {!selectedTable ? (
-                          <div className="flex-1 flex items-center justify-center text-slate-400 text-xs font-mono">Select a table to inspect</div>
+                          <div className="flex-1 flex items-center justify-center text-[#5F5F5F] text-xs font-mono">Select a table to inspect</div>
                         ) : (
                           <>
                             {/* Table header */}
-                            <div className="p-5 border-b border-[#BFA66A]/20 bg-[#FFFDF8] shrink-0 flex justify-between items-start">
+                            <div className="p-5 border-b border-[#BFA66A] bg-[#FFFDF8] shrink-0 flex justify-between items-start">
                               <div>
                                 <span className="text-[10px] font-mono text-[#8A5A00] font-black uppercase">{selectedTable.id}</span>
                                 <h3 className="text-sm font-bold text-[#111111] font-mono">{selectedTable.name}</h3>
-                                <p className="text-[11px] text-slate-500 mt-0.5">{selectedTable.description}</p>
+                                <p className="text-[11px] text-[#5F5F5F] mt-0.5">{selectedTable.description}</p>
                               </div>
                               <div className="flex items-center gap-2 shrink-0">
                                 {cellSaveStatus === 'saved' && (
@@ -1029,24 +1021,24 @@ export const AssetDetailWorkspace = ({
                                 {cellSaveStatus === 'error' && (
                                   <span className="text-[10px] font-bold text-red-600">Save failed</span>
                                 )}
-                                <span className="text-[9px] font-black uppercase text-[#B88719] bg-[#FFF9E9] border border-[#BFA66A]/30 px-2.5 py-1 rounded-lg">
+                                <span className="text-[9px] font-black uppercase text-[#B88719] bg-[#FFF9E9] border border-[#BFA66A] px-2.5 py-1 rounded-lg">
                                   {document.current_tier} EXTRACTED TABLE
                                 </span>
                               </div>
                             </div>
 
                             {/* Column schema */}
-                            <div className="p-4 border-b border-[#BFA66A]/15 bg-[#FFFDF8]/60 shrink-0">
-                              <span className="text-[9px] font-black text-[#5A4209]/70 uppercase tracking-widest block mb-3">Column Schema</span>
+                            <div className="p-4 border-b border-[#BFA66A] bg-[#FFFDF8]/60 shrink-0">
+                              <span className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest block mb-3">Column Schema</span>
                               <div className="flex gap-2 overflow-x-auto pb-1 flex-nowrap custom-scrollbar">
                                 {selectedTable.columns.map((col) => (
-                                  <div key={col.name} className="shrink-0 bg-white border border-[#BFA66A]/25 rounded-xl px-3 py-2 min-w-[120px]">
+                                  <div key={col.name} className="content-card content-card--static shrink-0 px-3 py-2 min-w-[120px]">
                                     <div className="text-xs font-mono font-black text-[#111111]">{col.name}</div>
                                     <div className="text-[9px] font-mono text-[#8A5A00] mt-0.5">{col.type}</div>
                                     <div className={cn(
                                       "text-[8px] font-bold uppercase mt-1 inline-block px-1.5 py-0.5 rounded",
                                       col.nullable
-                                        ? "bg-slate-100 text-slate-500"
+                                        ? "bg-[#FFF9E8] text-[#5F5F5F]"
                                         : "bg-amber-500/10 text-amber-700"
                                     )}>
                                       {col.nullable ? 'nullable' : 'required'}
@@ -1060,21 +1052,21 @@ export const AssetDetailWorkspace = ({
                             <div className="flex-1 overflow-auto custom-scrollbar">
                               <table className="w-full text-left border-collapse min-w-max">
                                 <thead className="sticky top-0 z-10">
-                                  <tr className="bg-[#FFFDF8] border-b border-[#BFA66A]/20">
-                                    <th className="px-4 py-3 text-[9px] font-black text-[#5A4209]/70 uppercase tracking-widest w-12 text-center">#</th>
+                                  <tr className="bg-[#FFFDF8] border-b border-[#BFA66A]">
+                                    <th className="px-4 py-3 text-[9px] font-black text-[#5A4209] uppercase tracking-widest w-12 text-center">#</th>
                                     {selectedTable.columns.map((col) => (
-                                      <th key={col.name} className="px-4 py-3 text-[9px] font-black text-[#5A4209]/70 uppercase tracking-widest whitespace-nowrap">
+                                      <th key={col.name} className="px-4 py-3 text-[9px] font-black text-[#5A4209] uppercase tracking-widest whitespace-nowrap">
                                         {col.name}
-                                        <span className="ml-1.5 text-[8px] font-mono text-slate-400 normal-case font-normal">{col.type}</span>
+                                        <span className="ml-1.5 text-[8px] font-mono text-[#5F5F5F] normal-case font-normal">{col.type}</span>
                                       </th>
                                     ))}
-                                    {!tablesReadOnly && <th className="px-4 py-3 text-[9px] font-black text-[#5A4209]/70 uppercase tracking-widest w-16 text-center">Edit</th>}
+                                    {!tablesReadOnly && <th className="px-4 py-3 text-[9px] font-black text-[#5A4209] uppercase tracking-widest w-16 text-center">Edit</th>}
                                   </tr>
                                 </thead>
-                                <tbody className="divide-y divide-[#BFA66A]/10">
+                                <tbody className="divide-y divide-[#BFA66A]">
                                   {selectedTable.rows.map((row, rowIdx) => (
                                     <tr key={rowIdx} className="hover:bg-[#FFF9E8]/30 transition-colors group">
-                                      <td className="px-4 py-3 text-[10px] font-mono text-slate-400 text-center">{rowIdx + 1}</td>
+                                      <td className="px-4 py-3 text-[10px] font-mono text-[#5F5F5F] text-center">{rowIdx + 1}</td>
                                       {selectedTable.columns.map((col) => {
                                         const isEditing = editingCell?.rowIndex === rowIdx && editingCell?.column === col.name;
                                         const cellVal = row[col.name];
@@ -1090,7 +1082,7 @@ export const AssetDetailWorkspace = ({
                                                     if (e.key === 'Enter') handleCellSave();
                                                     if (e.key === 'Escape') handleCellCancel();
                                                   }}
-                                                  className="flex-1 min-w-[80px] bg-white border border-[#B88719] rounded-lg px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#B88719]"
+                                                  className="ui-input flex-1 min-w-[80px] px-2 py-1 text-xs font-mono"
                                                 />
                                                 <button
                                                   onClick={handleCellSave}
@@ -1105,7 +1097,7 @@ export const AssetDetailWorkspace = ({
                                                 </button>
                                                 <button
                                                   onClick={handleCellCancel}
-                                                  className="p-1 bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200 transition-colors cursor-pointer"
+                                                  className="p-1 bg-[#FFF9E8] text-[#5F5F5F] rounded-lg hover:bg-[#F4E8C3] transition-colors cursor-pointer"
                                                   title="Cancel"
                                                 >
                                                   <X className="w-3 h-3" />
@@ -1121,7 +1113,7 @@ export const AssetDetailWorkspace = ({
                                                 title={tablesReadOnly ? undefined : "Click to edit"}
                                               >
                                                 {cellVal === null || cellVal === undefined ? (
-                                                  <span className="text-slate-300 italic text-[10px]">null</span>
+                                                  <span className="text-[#5F5F5F] italic text-[10px]">null</span>
                                                 ) : String(cellVal)}
                                               </span>
                                             )}
@@ -1135,7 +1127,7 @@ export const AssetDetailWorkspace = ({
                                               const firstCol = selectedTable.columns[0];
                                               if (firstCol) handleCellEdit(rowIdx, firstCol.name, row[firstCol.name]);
                                             }}
-                                            className="opacity-0 group-hover:opacity-100 p-1 bg-[#FFF9E8] border border-[#BFA66A]/30 text-[#8A5A00] rounded-lg hover:bg-[#B88719] hover:text-white transition-all cursor-pointer"
+                                            className="opacity-0 group-hover:opacity-100 p-1 bg-[#FFF9E8] border border-[#BFA66A] text-[#8A5A00] rounded-lg hover:bg-[#B88719] hover:text-white transition-all cursor-pointer"
                                             title="Edit row"
                                           >
                                             <Pencil className="w-3 h-3" />
@@ -1147,15 +1139,15 @@ export const AssetDetailWorkspace = ({
                                 </tbody>
                               </table>
                               {selectedTable.rows.length === 0 && (
-                                <div className="text-center py-12 text-xs text-slate-400 font-mono">No rows in this table.</div>
+                                <div className="text-center py-12 text-xs text-[#5F5F5F] font-mono">No rows in this table.</div>
                               )}
                             </div>
 
-                            <div className="px-5 py-3 border-t border-[#BFA66A]/15 bg-[#FFFDF8]/60 shrink-0 flex items-center justify-between">
-                              <span className="text-[10px] font-mono text-slate-500">
+                            <div className="px-5 py-3 border-t border-[#BFA66A] bg-[#FFFDF8]/60 shrink-0 flex items-center justify-between">
+                              <span className="text-[10px] font-mono text-[#5F5F5F]">
                                 {selectedTable.rows.length} row{selectedTable.rows.length !== 1 ? 's' : ''} · {selectedTable.columns.length} column{selectedTable.columns.length !== 1 ? 's' : ''}
                               </span>
-                              {!tablesReadOnly && <span className="text-[9px] font-mono text-slate-400 italic">Click any cell to edit · Enter to save · Esc to cancel</span>}
+                              {!tablesReadOnly && <span className="text-[9px] font-mono text-[#5F5F5F] italic">Click any cell to edit · Enter to save · Esc to cancel</span>}
                             </div>
                           </>
                         )}
@@ -1185,7 +1177,7 @@ export const AssetDetailWorkspace = ({
                           </div>
                           <div>
                             <p className="text-sm font-black text-[#111111]">{document.name}</p>
-                            <p className="text-[11px] font-mono text-slate-500 uppercase mt-0.5">{document.metadata?.warehouse_type}</p>
+                            <p className="text-[11px] font-mono text-[#5F5F5F] uppercase mt-0.5">{document.metadata?.warehouse_type}</p>
                             <span className={cn(
                               'text-[9px] font-black uppercase px-2 py-0.5 rounded border mt-1 inline-block',
                               document.status === 'PUBLISHED'
@@ -1194,7 +1186,7 @@ export const AssetDetailWorkspace = ({
                             )}>{document.status}</span>
                           </div>
                         </div>
-                        <p className="text-xs text-slate-500 font-mono text-center leading-relaxed">
+                        <p className="text-xs text-[#5F5F5F] font-mono text-center leading-relaxed">
                           Open the <span className="font-black text-[#8A5A00]">Configs</span> tab to view connection details, manage table selections, and activate config versions.
                         </p>
                       </div>
@@ -1207,43 +1199,43 @@ export const AssetDetailWorkspace = ({
                       className="h-full flex gap-6 overflow-hidden"
                     >
                       {/* Left: config version list */}
-                      <div className="w-72 border border-[#BFA66A]/30 rounded-3xl flex flex-col bg-white overflow-hidden shrink-0 shadow-xs">
-                        <div className="p-5 border-b border-[#BFA66A]/20 flex justify-between items-center bg-[#FFFDF8]">
+                      <div className="content-card content-card--static w-72 flex flex-col overflow-hidden shrink-0">
+                        <div className="p-5 border-b border-[#BFA66A] flex justify-between items-center bg-[#FFFDF8]">
                           <h4 className="text-[10px] font-black text-[#5A4209] uppercase tracking-widest flex items-center gap-2">
                             <Settings className="w-4 h-4 text-[#B88719]" />
                             Config Versions
                           </h4>
-                          <span className="text-[10px] font-mono text-[#8A5A00] font-bold bg-[#FFF9E8] px-2 py-0.5 rounded border border-[#BFA66A]/30">{configs.length}</span>
+                          <span className="text-[10px] font-mono text-[#8A5A00] font-bold bg-[#FFF9E8] px-2 py-0.5 rounded border border-[#BFA66A]">{configs.length}</span>
                         </div>
                         <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar bg-[#FCFBF7]/30">
                           {configsLoading ? (
                             <div className="flex items-center justify-center py-12">
-                              <span className="w-5 h-5 rounded-full border-2 border-[#BFA66A]/40 border-t-[#B88719] animate-spin" />
+                              <span className="w-5 h-5 rounded-full border-2 border-[#BFA66A] border-t-[#B88719] animate-spin" />
                             </div>
                           ) : configs.length === 0 ? (
-                            <div className="text-center py-12 text-xs text-slate-400 font-mono">No configs yet.</div>
+                            <div className="text-center py-12 text-xs text-[#5F5F5F] font-mono">No configs yet.</div>
                           ) : configs.map(cfg => (
                             <div key={cfg.id} onClick={() => { setSelectedConfig(cfg); setShowNewConfigFlow(false); }}
                               className={cn(
                                 'p-4 border rounded-xl transition-all cursor-pointer group text-left',
                                 cfg.id === selectedConfig?.id
                                   ? 'border-[#B88719] bg-[#FFF9E8] shadow-xs'
-                                  : 'border-[#BFA66A]/20 bg-white hover:border-[#BFA66A]/40 hover:bg-[#FFFDF8]'
+                                  : 'border-[#BFA66A] bg-white hover:border-[#BFA66A] hover:bg-[#FFFDF8]'
                               )}
                             >
                               <div className="flex justify-between items-center mb-1 text-[10px] font-mono">
-                                <span className={cn('font-black', cfg.id === selectedConfig?.id ? 'text-[#8A5A00]' : 'text-slate-500')}>{cfg.version_number}</span>
+                                <span className={cn('font-black', cfg.id === selectedConfig?.id ? 'text-[#8A5A00]' : 'text-[#5F5F5F]')}>{cfg.version_number}</span>
                                 <span className={cn('text-[9px] font-black uppercase px-1.5 py-0.5 rounded',
-                                  cfg.status === 'Active' ? 'bg-green-500/10 text-green-700' : 'bg-slate-100 text-slate-500'
+                                  cfg.status === 'Active' ? 'bg-green-500/10 text-green-700' : 'bg-[#FFF9E8] text-[#5F5F5F]'
                                 )}>{cfg.status}</span>
                               </div>
-                              <div className="text-[11px] text-slate-600 font-mono">{cfg.created_at.slice(0, 10)}</div>
-                              <div className="text-[10px] text-slate-400 mt-1">{cfg.tables.length} table{cfg.tables.length !== 1 ? 's' : ''} selected</div>
+                              <div className="text-[11px] text-[#3F3F3F] font-mono">{cfg.created_at.slice(0, 10)}</div>
+                              <div className="text-[10px] text-[#5F5F5F] mt-1">{cfg.tables.length} table{cfg.tables.length !== 1 ? 's' : ''} selected</div>
                             </div>
                           ))}
                         </div>
                         {!readOnly && (
-                          <div className="p-3 border-t border-[#BFA66A]/15 bg-[#FFFDF8]/60">
+                          <div className="p-3 border-t border-[#BFA66A] bg-[#FFFDF8]/60">
                             <button
                               onClick={startNewConfigFlow}
                               className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 bg-[#B88719] text-white rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-[#8A5A00] transition-all cursor-pointer shadow-sm"
@@ -1256,17 +1248,17 @@ export const AssetDetailWorkspace = ({
                       </div>
 
                       {/* Right: config detail or new config flow */}
-                      <div className="flex-1 border border-[#BFA66A]/30 rounded-3xl bg-white flex flex-col overflow-hidden shadow-xs">
+                      <div className="content-card content-card--static flex-1 flex flex-col overflow-hidden">
                         {showNewConfigFlow ? (
                           /* ── New config: table selection ── */
                           <>
-                            <div className="p-5 border-b border-[#BFA66A]/20 bg-[#FFFDF8] shrink-0 flex justify-between items-center">
+                            <div className="p-5 border-b border-[#BFA66A] bg-[#FFFDF8] shrink-0 flex justify-between items-center">
                               <div>
                                 <h3 className="text-sm font-bold text-[#111111]">New Config Version</h3>
-                                <p className="text-[11px] text-slate-500 mt-0.5">Select tables to include in this configuration</p>
+                                <p className="text-[11px] text-[#5F5F5F] mt-0.5">Select tables to include in this configuration</p>
                               </div>
                               <button onClick={() => { setShowNewConfigFlow(false); setNewConfigTables([]); }}
-                                className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400 hover:text-slate-600 transition-colors cursor-pointer">
+                                className="p-1.5 hover:bg-[#FFF9E8] rounded-xl text-[#5F5F5F] hover:text-[#3F3F3F] transition-colors cursor-pointer">
                                 <X className="w-4 h-4" />
                               </button>
                             </div>
@@ -1281,13 +1273,13 @@ export const AssetDetailWorkspace = ({
                                   {newConfigTables.map(t => (
                                     <div key={t.name} className={cn(
                                       'border rounded-2xl p-4 transition-all',
-                                      t.selected ? 'border-[#B88719] bg-[#FFF9E8]' : 'border-[#BFA66A]/20 bg-white hover:border-[#BFA66A]/40'
+                                      t.selected ? 'border-[#B88719] bg-[#FFF9E8]' : 'border-[#BFA66A] bg-white hover:border-[#BFA66A]'
                                     )}>
                                       <div className="flex items-start gap-3">
                                         <button onClick={() => toggleNewConfigTable(t.name)}
                                           className={cn(
                                             'w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all cursor-pointer',
-                                            t.selected ? 'bg-[#B88719] border-[#B88719]' : 'border-[#BFA66A]/40 bg-white hover:border-[#B88719]'
+                                            t.selected ? 'bg-[#B88719] border-[#B88719]' : 'border-[#BFA66A] bg-white hover:border-[#B88719]'
                                           )}
                                         >
                                           {t.selected && <CheckCircle2 className="w-3 h-3 text-white" />}
@@ -1295,14 +1287,14 @@ export const AssetDetailWorkspace = ({
                                         <div className="flex-1">
                                           <div className="flex items-center gap-2 flex-wrap">
                                             <span className="text-xs font-mono font-black text-[#111111]">{t.name}</span>
-                                            <span className="text-[9px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{t.schema}</span>
-                                            {t.rowCount && <span className="text-[9px] font-mono text-slate-400">{t.rowCount} rows</span>}
+                                            <span className="text-[9px] font-mono text-[#5F5F5F] bg-[#FFF9E8] px-1.5 py-0.5 rounded">{t.schema}</span>
+                                            {t.rowCount && <span className="text-[9px] font-mono text-[#5F5F5F]">{t.rowCount} rows</span>}
                                           </div>
                                           {t.selected && (
                                             <input type="text" placeholder="Describe this table for AI agents..."
                                               value={t.description}
                                               onChange={e => setNewConfigTableDesc(t.name, e.target.value)}
-                                              className="mt-2 w-full bg-white border border-[#BFA66A]/30 rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#B88719] placeholder:text-slate-300 transition-all"
+                                              className="ui-input mt-2 w-full px-3 py-2 text-xs font-mono"
                                             />
                                           )}
                                         </div>
@@ -1312,11 +1304,11 @@ export const AssetDetailWorkspace = ({
                                 </div>
                               )}
                             </div>
-                            <div className="p-4 border-t border-[#BFA66A]/15 bg-[#FFFDF8]/60 shrink-0 flex items-center justify-between">
+                            <div className="p-4 border-t border-[#BFA66A] bg-[#FFFDF8]/60 shrink-0 flex items-center justify-between">
                               {newConfigSaveStatus === 'error' && <span className="text-[10px] font-bold text-red-600">Save failed</span>}
                               <div className="ml-auto flex gap-2">
                                 <button onClick={() => { setShowNewConfigFlow(false); setNewConfigTables([]); }}
-                                  className="px-4 py-2 bg-white border border-[#BFA66A]/30 text-[#8A5A00] rounded-xl text-[10px] font-black uppercase tracking-wider hover:bg-[#FFF9E8] transition-all cursor-pointer">
+                                  className="btn-secondary btn-sm">
                                   Cancel
                                 </button>
                                 <button
@@ -1326,7 +1318,7 @@ export const AssetDetailWorkspace = ({
                                     'flex items-center gap-1.5 px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer',
                                     newConfigTables.filter(t => t.selected).length > 0 && !savingNewConfig
                                       ? 'bg-[#B88719] text-white hover:bg-[#8A5A00] shadow-md'
-                                      : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                      : 'bg-[#FFF9E8] text-[#5F5F5F] cursor-not-allowed'
                                   )}
                                 >
                                   {savingNewConfig
@@ -1337,15 +1329,15 @@ export const AssetDetailWorkspace = ({
                             </div>
                           </>
                         ) : !selectedConfig ? (
-                          <div className="flex-1 flex items-center justify-center text-slate-400 text-xs font-mono">Select a config version to inspect</div>
+                          <div className="flex-1 flex items-center justify-center text-[#5F5F5F] text-xs font-mono">Select a config version to inspect</div>
                         ) : (
                           /* ── Selected config detail ── */
                           <>
-                            <div className="p-5 border-b border-[#BFA66A]/20 bg-[#FFFDF8] shrink-0 flex justify-between items-start">
+                            <div className="p-5 border-b border-[#BFA66A] bg-[#FFFDF8] shrink-0 flex justify-between items-start">
                               <div>
                                 <span className="text-[10px] font-mono text-[#8A5A00] font-black">{selectedConfig.version_number}</span>
                                 <h3 className="text-sm font-bold text-[#111111] font-mono mt-0.5">Warehouse Config</h3>
-                                <p className="text-[11px] text-slate-500">{selectedConfig.created_at}</p>
+                                <p className="text-[11px] text-[#5F5F5F]">{selectedConfig.created_at}</p>
                               </div>
                               <div className="flex items-center gap-2 shrink-0">
                                 {configActivateStatus === 'saved' && (
@@ -1360,7 +1352,7 @@ export const AssetDetailWorkspace = ({
                                   <button onClick={handleActivateConfig} disabled={activatingConfig}
                                     className={cn(
                                       'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer',
-                                      activatingConfig ? 'bg-slate-100 text-slate-400' : 'bg-[#B88719] text-white hover:bg-[#8A5A00] shadow-md'
+                                      activatingConfig ? 'bg-[#E5E0D2] text-[#5F5F5F]' : 'bg-[#B88719] text-white hover:bg-[#8A5A00] shadow-md'
                                     )}
                                   >
                                     {activatingConfig
@@ -1372,7 +1364,7 @@ export const AssetDetailWorkspace = ({
                                   'text-[9px] font-black uppercase px-2.5 py-1 rounded-lg border',
                                   selectedConfig.status === 'Active'
                                     ? 'bg-green-500/10 border-green-500/20 text-green-700'
-                                    : 'bg-slate-100 border-slate-200 text-slate-500'
+                                    : 'bg-[#FFF9E8] border-[#BFA66A] text-[#5F5F5F]'
                                 )}>{selectedConfig.status}</span>
                               </div>
                             </div>
@@ -1380,15 +1372,15 @@ export const AssetDetailWorkspace = ({
                             <div className="flex-1 overflow-y-auto p-5 custom-scrollbar space-y-5">
                               {/* Connection summary */}
                               {Object.keys(selectedConfig.connection).length > 0 && (
-                                <div className="bg-[#FFFDF8] border border-[#BFA66A]/20 rounded-2xl p-5">
-                                  <h4 className="text-[9px] font-black text-[#5A4209]/70 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                                <div className="bg-[#FFFDF8] border border-[#BFA66A] rounded-2xl p-5">
+                                  <h4 className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest mb-3 flex items-center gap-1.5">
                                     <Lock className="w-3 h-3 text-[#B88719]" />
                                     Connection Parameters
                                   </h4>
                                   <div className="grid grid-cols-2 gap-3">
                                     {Object.entries(selectedConfig.connection).map(([k, v]) => (
                                       <div key={k}>
-                                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">{k}</span>
+                                        <span className="text-[9px] font-black text-[#5F5F5F] uppercase tracking-wider block">{k}</span>
                                         <span className="text-xs font-mono text-[#111111] break-all">{v}</span>
                                       </div>
                                     ))}
@@ -1397,29 +1389,29 @@ export const AssetDetailWorkspace = ({
                               )}
 
                               {/* Table list */}
-                              <div className="bg-[#FFFDF8] border border-[#BFA66A]/20 rounded-2xl p-5">
-                                <h4 className="text-[9px] font-black text-[#5A4209]/70 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                              <div className="bg-[#FFFDF8] border border-[#BFA66A] rounded-2xl p-5">
+                                <h4 className="text-[9px] font-black text-[#5A4209] uppercase tracking-widest mb-3 flex items-center gap-1.5">
                                   <Table2 className="w-3 h-3 text-[#B88719]" />
                                   Selected Tables ({selectedConfig.tables.length})
                                 </h4>
                                 <div className="space-y-3">
                                   {selectedConfig.tables.map(t => (
-                                    <div key={t.name} className="flex items-start gap-2.5 p-3 bg-white border border-[#BFA66A]/15 rounded-xl">
+                                    <div key={t.name} className="content-card content-card--static flex items-start gap-2.5 p-3">
                                       <CheckCircle2 className="w-3.5 h-3.5 text-green-600 mt-0.5 shrink-0" />
                                       <div className="min-w-0">
                                         <div className="flex items-center gap-2 flex-wrap">
                                           <span className="text-xs font-mono font-black text-[#111111]">{t.name}</span>
-                                          <span className="text-[9px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{t.schema}</span>
-                                          {t.rowCount && <span className="text-[9px] font-mono text-slate-400">{t.rowCount} rows</span>}
+                                          <span className="text-[9px] font-mono text-[#5F5F5F] bg-[#FFF9E8] px-1.5 py-0.5 rounded">{t.schema}</span>
+                                          {t.rowCount && <span className="text-[9px] font-mono text-[#5F5F5F]">{t.rowCount} rows</span>}
                                         </div>
                                         {t.description && (
-                                          <p className="text-[11px] text-slate-500 mt-1 leading-normal">{t.description}</p>
+                                          <p className="text-[11px] text-[#5F5F5F] mt-1 leading-normal">{t.description}</p>
                                         )}
                                       </div>
                                     </div>
                                   ))}
                                   {selectedConfig.tables.length === 0 && (
-                                    <p className="text-xs text-slate-400 font-mono">No tables in this config.</p>
+                                    <p className="text-xs text-[#5F5F5F] font-mono">No tables in this config.</p>
                                   )}
                                 </div>
                               </div>
@@ -1437,7 +1429,7 @@ export const AssetDetailWorkspace = ({
                       if (l === 'ERROR')   return 'text-red-400 font-bold';
                       if (l === 'WARN' || l === 'WARNING') return 'text-amber-500 font-bold';
                       if (l === 'SUCCESS') return 'text-emerald-400 font-bold';
-                      if (l === 'DEBUG')   return 'text-slate-500';
+                      if (l === 'DEBUG')   return 'text-[#5F5F5F]';
                       return 'text-amber-300/80';
                     };
                     const fmtTime = (iso: string | null) => {
@@ -1447,8 +1439,8 @@ export const AssetDetailWorkspace = ({
                     };
                     const logs = logData?.logs ?? [];
                     return (
-                    <motion.div key="logs" className="h-full border border-[#BFA66A]/30 rounded-[2rem] bg-[#1E1B15] overflow-hidden flex flex-col shadow-sm">
-                       <div className="p-4 border-b border-white/5 flex justify-between items-center bg-black/20">
+                    <motion.div key="logs" className="h-full border border-[#BFA66A] rounded-[2rem] bg-[#1E1B15] overflow-hidden flex flex-col shadow-sm">
+                       <div className="p-4 border-b border-[#BFA66A] flex justify-between items-center bg-black/20">
                           <div className="flex items-center gap-3">
                              <Terminal className="w-4 h-4 text-[#D9B86C]" />
                              <h4 className="text-[10px] font-black text-[#FFFDF8] uppercase tracking-widest">
@@ -1456,22 +1448,22 @@ export const AssetDetailWorkspace = ({
                              </h4>
                           </div>
                           {logData?.status && (
-                            <span className="text-[9px] font-mono font-bold text-[#D9B86C] uppercase tracking-widest px-2 py-0.5 rounded-full border border-[#D9B86C]/30 bg-[#D9B86C]/10">
+                            <span className="text-[9px] font-mono font-bold text-[#D9B86C] uppercase tracking-widest px-2 py-0.5 rounded-full border border-[#BFA66A] bg-[#D9B86C]/10">
                               {logData.status}{logData.stage ? ` · ${logData.stage}` : ''}
                             </span>
                           )}
                        </div>
-                       <div className="flex-1 p-6 overflow-y-auto space-y-3 font-mono text-[11px] leading-relaxed custom-scrollbar text-slate-300">
+                       <div className="flex-1 p-6 overflow-y-auto space-y-3 font-mono text-[11px] leading-relaxed custom-scrollbar text-[#5F5F5F]">
                           {logsLoading ? (
                             <div className="flex items-center justify-center h-32 text-[#D9B86C]/70 text-xs">Loading logs…</div>
                           ) : logs.length === 0 ? (
-                            <div className="flex items-center justify-center h-32 text-slate-500 text-xs">No ingestion logs recorded for this document yet.</div>
+                            <div className="flex items-center justify-center h-32 text-[#5F5F5F] text-xs">No ingestion logs recorded for this document yet.</div>
                           ) : (
                             logs.map((log, idx) => (
                               <div key={`${log.timestamp}-${idx}`} className="flex gap-4 group">
-                                 <span className="text-slate-500 shrink-0">{fmtTime(log.timestamp)}</span>
+                                 <span className="text-[#5F5F5F] shrink-0">{fmtTime(log.timestamp)}</span>
                                  <span className={cn("shrink-0 font-bold", levelColor(log.level))}>[{log.level.toUpperCase()}]</span>
-                                 <span className="text-slate-300 break-words">{log.message}</span>
+                                 <span className="text-[#5F5F5F] break-words">{log.message}</span>
                               </div>
                             ))
                           )}
@@ -1482,8 +1474,8 @@ export const AssetDetailWorkspace = ({
 
                   {/* ─── TIMELINE TAB ─────────────────────────────────────────── */}
                   {activeTab === 'TIMELINE' && (
-                    <motion.div key="timeline" className="h-full border border-[#BFA66A]/30 rounded-[2rem] bg-white overflow-hidden flex flex-col shadow-sm">
-                       <div className="p-5 border-b border-[#BFA66A]/20 flex justify-between items-center bg-[#FFFDF8]">
+                    <motion.div key="timeline" className="content-card content-card--static h-full overflow-hidden flex flex-col">
+                       <div className="p-5 border-b border-[#BFA66A] flex justify-between items-center bg-[#FFFDF8]">
                           <h4 className="text-[10px] font-black text-[#5A4209] uppercase tracking-widest">
                             Pipeline Lifecycle Timeline
                           </h4>
@@ -1492,7 +1484,7 @@ export const AssetDetailWorkspace = ({
                           {historyLoading ? (
                             <div className="flex items-center justify-center h-32 text-[#8A5A00] text-xs">Loading history…</div>
                           ) : historyEntries.length === 0 ? (
-                            <div className="flex items-center justify-center h-32 text-slate-400 text-xs">No lifecycle events yet.</div>
+                            <div className="flex items-center justify-center h-32 text-[#5F5F5F] text-xs">No lifecycle events yet.</div>
                           ) : (
                             <div className="relative space-y-8">
                               <div className="absolute left-[39px] top-2 bottom-2 w-0.5 bg-[#BFA66A]/20" />
@@ -1501,8 +1493,8 @@ export const AssetDetailWorkspace = ({
                                 const tierColor = entry.to_tier === 'gold'
                                   ? 'border-[#B88719] text-[#B88719]'
                                   : entry.to_tier === 'silver'
-                                    ? 'border-slate-500 text-slate-500'
-                                    : 'border-slate-400 text-slate-400';
+                                    ? 'border-[#8A5A00] text-[#5F5F5F]'
+                                    : 'border-[#8A5A00] text-[#5F5F5F]';
                                 const meta = entry.pipeline_metadata ?? {};
                                 const ts = entry.transitioned_at
                                   ? new Date(entry.transitioned_at).toLocaleString()
@@ -1527,17 +1519,17 @@ export const AssetDetailWorkspace = ({
                                     )}>
                                       <div className="w-1.5 h-1.5 rounded-full bg-current" />
                                     </div>
-                                    <div className="p-5 bg-white border border-[#BFA66A]/20 rounded-2xl shadow-2xs max-w-xl">
+                                    <div className="content-card content-card--static p-5 shadow-2xs max-w-xl">
                                       <div className="flex items-center gap-2 flex-wrap">
                                         <span className="text-[10px] font-mono font-black text-[#8A5A00] uppercase">{entry.to_tier}</span>
-                                        <span className="text-[10px] font-mono text-slate-500">{ts}</span>
+                                        <span className="text-[10px] font-mono text-[#5F5F5F]">{ts}</span>
                                         {isFirst && (
-                                          <span className="px-1.5 bg-[#FFF9E8] border border-[#BFA66A]/30 text-[#8A5A00] text-[9px] font-black rounded uppercase">Latest</span>
+                                          <span className="px-1.5 bg-[#FFF9E8] border border-[#BFA66A] text-[#8A5A00] text-[9px] font-black rounded uppercase">Latest</span>
                                         )}
                                       </div>
                                       <div className="text-xs font-black text-[#111111] mt-1.5">{entry.notes ?? `Transitioned to ${entry.to_tier}`}</div>
                                       {entry.approved_by && (
-                                        <div className="text-[10px] text-slate-500 mt-1">
+                                        <div className="text-[10px] text-[#5F5F5F] mt-1">
                                           By: <span className="text-[#8A5A00] font-bold">{entry.approved_by}</span>
                                         </div>
                                       )}
@@ -1548,7 +1540,7 @@ export const AssetDetailWorkspace = ({
                                               "px-2 py-0.5 rounded text-[9px] font-black uppercase border",
                                               b.green ? "bg-green-50 border-green-200 text-green-700"
                                                 : b.red ? "bg-red-50 border-red-200 text-red-600"
-                                                  : "bg-slate-50 border-slate-200 text-slate-500"
+                                                  : "bg-[#FFF9E8] border-[#BFA66A] text-[#5F5F5F]"
                                             )}>
                                               {b.label}: {b.value}
                                             </span>

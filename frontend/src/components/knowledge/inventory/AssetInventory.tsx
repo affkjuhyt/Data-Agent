@@ -187,7 +187,7 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
   return (
     <div className="space-y-6 h-full">
       {/* ─── FILTERS PLACED DIRECTLY ABOVE SEARCH BAR ─── */}
-      <div className="bg-[#FFFDF8] border border-[#BFA66A]/20 p-5 rounded-2xl flex flex-col gap-4">
+      <div className="bg-[#FFFDF8] border border-[#BFA66A] p-5 rounded-2xl flex flex-col gap-4">
          <div className="flex flex-col gap-2">
             <span className="text-[10px] font-black uppercase tracking-widest text-[#8A5A00] opacity-80 font-mono">
                Data Layers Filter
@@ -205,7 +205,7 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
                          : filter === 'silver'
                            ? "bg-[#4A5568] text-white shadow-md shadow-[#4A5568]/20"
                            : "bg-[#B88719] text-white shadow-md shadow-[#B88719]/20"
-                       : "bg-white border border-[#BFA66A]/30 text-[#8A5A00] hover:bg-[#FFF9E8]/20"
+                       : "bg-white border border-[#BFA66A] text-[#8A5A00] hover:bg-[#FFF9E8]/20"
                    )}
                  >
                    {filter === 'bronze' ? 'Bronze Data Layer' : filter === 'silver' ? 'Silver Data Layer' : 'Gold Data Layer'}
@@ -230,8 +230,8 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
                      className={cn(
                        "px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
                        active
-                         ? "bg-[#1E1B15] text-[#D9B86C] border border-[#BFA66A]/40 shadow-sm"
-                         : "bg-white border border-[#BFA66A]/25 text-[#8A5A00] opacity-60 hover:opacity-100 hover:bg-[#FFF9E8]/40"
+                         ? "bg-[#1E1B15] text-[#D9B86C] border border-[#BFA66A] shadow-sm"
+                         : "bg-white border border-[#BFA66A] text-[#8A5A00] opacity-60 hover:opacity-100 hover:bg-[#FFF9E8]/40"
                      )}
                    >
                      {label}
@@ -241,7 +241,7 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
             </div>
          </div>
 
-         <div className="border-t border-[#BFA66A]/15 pt-3.5 flex items-center">
+         <div className="border-t border-[#BFA66A] pt-3.5 flex items-center">
             <div className="relative group w-full sm:w-80">
                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8A5A00] opacity-65 group-focus-within:opacity-100 transition-opacity" />
                <input 
@@ -249,7 +249,7 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
                  placeholder="Search by name, ID or author..." 
                  value={searchQuery}
                  onChange={(e) => handleSearchChange(e.target.value)}
-                 className="bg-white border border-[#BFA66A]/35 text-[#111111] placeholder:text-slate-400 rounded-2xl pl-12 pr-6 py-2.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-[#B88719] focus:border-[#B88719] transition-all font-mono" 
+                 className="ui-input pl-12 pr-6 py-2.5 text-xs w-full font-mono" 
                />
             </div>
          </div>
@@ -257,10 +257,10 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
 
       {/* ─── BATCH PROCESS ACTION BAR PLACED ABOVE TABLE ─── */}
       {activeFilter !== 'gold' && (
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 bg-white border border-[#BFA66A]/20 rounded-2xl gap-3 shadow-2xs">
+        <div className="content-card content-card--static flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 gap-3 shadow-2xs">
            <div className="flex flex-col gap-1">
               <span className="text-xs font-bold text-[#111111]">Batch Operations Configurator</span>
-              <span className="text-[10px] font-mono text-slate-500">
+              <span className="text-[10px] font-mono text-[#5F5F5F]">
                  Select multiple document rows using checkboxes to execute massive sequence migrations.
               </span>
            </div>
@@ -275,8 +275,8 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
                 className={cn(
                   "px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer",
                   selectedIds.length > 0
-                    ? "bg-[#1E1B15] text-[#FAFAFA] border border-[#BFA66A]/30 hover:bg-[#2C271E] shadow-sm transform hover:-translate-y-0.5 active:translate-y-0"
-                    : "bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed"
+                    ? "bg-[#1E1B15] text-[#FAFAFA] border border-[#BFA66A] hover:bg-[#2C271E] shadow-sm transform hover:-translate-y-0.5 active:translate-y-0"
+                    : "bg-[#FFF9E8] border border-[#BFA66A] text-[#5F5F5F] cursor-not-allowed"
                 )}
               >
                 <Layers className="w-3.5 h-3.5 text-[#D9B86C]" />
@@ -290,17 +290,17 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
       )}
 
       {/* ─── DATA TABLE ─── */}
-      <div className="border border-[#BFA66A]/20 rounded-3xl overflow-hidden bg-white shadow-[0_4px_24px_rgba(184,135,25,0.02)]">
+      <div className="content-card content-card--static overflow-hidden">
          <table className="w-full text-left border-collapse">
             <thead>
-               <tr className="bg-[#FFFDF8] text-[10px] font-black text-[#5A4209]/80 uppercase tracking-widest border-b border-[#BFA66A]/20">
+               <tr className="bg-[#FFFDF8] text-[10px] font-black text-[#5A4209] uppercase tracking-widest border-b border-[#BFA66A]">
                   {activeFilter !== 'gold' && (
                     <th className="px-6 py-5 w-12 text-center">
                        <input
                          type="checkbox"
                          checked={filteredDocs.length > 0 && filteredDocs.every(d => selectedIds.includes(d.data_id))}
                          onChange={toggleSelectAll}
-                         className="w-4 h-4 rounded border-[#BFA66A]/40 text-[#B88719] focus:ring-[#B88719] cursor-pointer"
+                         className="w-4 h-4 rounded border-[#BFA66A] text-[#B88719] focus:ring-[#B88719] cursor-pointer"
                        />
                     </th>
                   )}
@@ -311,11 +311,11 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
                   <th className="px-8 py-5 text-right font-black">action</th>
                </tr>
             </thead>
-            <tbody className="divide-y divide-[#BFA66A]/10 text-[#111111]">
+            <tbody className="divide-y divide-[#BFA66A] text-[#111111]">
                {isFetching ? (
                  <tr>
                     <td colSpan={activeFilter !== 'gold' ? 6 : 5} className="px-8 py-12 text-center bg-white">
-                      <div className="flex items-center justify-center gap-2 text-slate-400 text-xs font-mono">
+                      <div className="flex items-center justify-center gap-2 text-[#5F5F5F] text-xs font-mono">
                         <Loader2 className="w-4 h-4 animate-spin" />
                         Loading…
                       </div>
@@ -323,7 +323,7 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
                  </tr>
                ) : filteredDocs.length === 0 ? (
                  <tr>
-                    <td colSpan={activeFilter !== 'gold' ? 6 : 5} className="px-8 py-12 text-center text-slate-500 text-xs font-mono bg-white">
+                    <td colSpan={activeFilter !== 'gold' ? 6 : 5} className="px-8 py-12 text-center text-[#5F5F5F] text-xs font-mono bg-white">
                       No matching documents in {activeFilter.toUpperCase()} layer.
                     </td>
                  </tr>
@@ -351,7 +351,7 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
                               type="checkbox" 
                               checked={selectedIds.includes(doc.data_id)}
                               onChange={(e) => toggleSelect(e, doc.data_id)}
-                              className="w-4 h-4 rounded border-[#BFA66A]/40 text-[#B88719] focus:ring-[#B88719] cursor-pointer"
+                              className="w-4 h-4 rounded border-[#BFA66A] text-[#B88719] focus:ring-[#B88719] cursor-pointer"
                             />
                          </td>
                        )}
@@ -359,9 +359,9 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
                           <div className="flex items-center gap-4">
                              <div className={cn(
                                "w-10 h-10 rounded-xl flex items-center justify-center border",
-                               doc.current_tier === 'bronze' ? 'bg-[#FFF9E8] border-[#BFA66A]/30 text-[#8A5A00]' :
-                               doc.current_tier === 'silver' ? 'bg-slate-50 border-slate-200 text-slate-500' :
-                               'bg-[#FFFDF8] border-[#BFA66A]/30 text-[#B88719]'
+                               doc.current_tier === 'bronze' ? 'bg-[#FFF9E8] border-[#BFA66A] text-[#8A5A00]' :
+                               doc.current_tier === 'silver' ? 'bg-[#FFF9E8] border-[#BFA66A] text-[#5F5F5F]' :
+                               'bg-[#FFFDF8] border-[#BFA66A] text-[#B88719]'
                              )}>
                                 {doc.current_tier === 'bronze' ? <Database className="w-5 h-5" /> : 
                                  doc.current_tier === 'silver' ? <Edit2 className="w-5 h-5" /> : 
@@ -369,22 +369,22 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
                              </div>
                              <div>
                                 <div className="text-sm font-bold text-[#111111] group-hover:text-[#B88719] transition-colors uppercase tracking-tight">{doc.name}</div>
-                                <div className="text-[10px] text-slate-500 mt-0.5">Added by {doc.metadata?.author ?? doc.added_by ?? '—'}</div>
+                                <div className="text-[10px] text-[#5F5F5F] mt-0.5">Added by {doc.metadata?.author ?? doc.added_by ?? '—'}</div>
                              </div>
                           </div>
                        </td>
-                       <td className="px-6 py-6 font-mono text-xs text-slate-600">
+                       <td className="px-6 py-6 font-mono text-xs text-[#3F3F3F]">
                           {doc.metadata.doc_type || 'Document'}
                        </td>
-                       <td className="px-6 py-6 font-mono text-xs text-slate-500">{doc.added_on}</td>
-                       <td className="px-6 py-6 font-mono text-xs text-slate-600">
+                       <td className="px-6 py-6 font-mono text-xs text-[#5F5F5F]">{doc.added_on}</td>
+                       <td className="px-6 py-6 font-mono text-xs text-[#3F3F3F]">
                           {doc.metadata.language || 'English'}
                        </td>
                        <td className="px-8 py-6 flex items-center justify-end gap-2.5 text-right font-bold" onClick={(e) => e.stopPropagation()}>
 
                              <button
                                onClick={() => onSelectAsset(doc)}
-                               className="px-2.5 py-1.5 bg-[#FFF9E8] hover:bg-[#B88719] hover:text-white border border-[#BFA66A]/45 hover:border-[#B88719]/40 rounded-lg text-[#8A5A00] font-bold text-[10px] uppercase tracking-wider transition-all inline-flex items-center gap-1 hover:shadow-md cursor-pointer mr-1"
+                               className="btn-ghost btn-sm mr-1"
                                title="Inspect Asset"
                              >
                                <Eye className="w-3.5 h-3.5" />
@@ -398,7 +398,7 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
                               >Confirm</button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); setPendingDeleteId(null); }}
-                                className="p-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-500 rounded-lg transition-colors cursor-pointer"
+                                className="p-1.5 bg-white border border-[#BFA66A] hover:bg-[#FFF9E8] text-[#5F5F5F] rounded-lg transition-colors cursor-pointer"
                               ><X className="w-3 h-3" /></button>
                             </span>
                           ) : (
@@ -415,13 +415,13 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
                             </div>
                           ) : (processingId === doc.data_id || promotingIds.has(doc.data_id)) ? (
                             <span className="text-[10px] font-mono font-bold text-[#B88719] uppercase tracking-wide flex items-center justify-end gap-1.5 font-mono">
-                              <span className="w-3 h-3 rounded-full border-2 border-[#B88719]/40 border-t-[#B88719] animate-spin" />
+                              <span className="w-3 h-3 rounded-full border-2 border-[#B88719] border-t-[#B88719] animate-spin" />
                               Processing...
                             </span>
                           ) : doc.current_tier === 'bronze' ? (
                             <button
                               onClick={(e) => handleProcess(e, doc)}
-                              className="px-3 py-1.5 bg-[#FFF9E8] border border-[#BFA66A]/45 hover:bg-[#B88719] hover:text-white rounded-lg text-[10px] font-bold text-[#8A5A00] uppercase tracking-wider transition-all inline-flex items-center gap-1.5 hover:shadow-md cursor-pointer"
+                              className="btn-ghost btn-sm"
                             >
                               Process to Silver
                               <ArrowRight className="w-3 h-3" />
@@ -429,7 +429,7 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
                           ) : doc.current_tier === 'silver' ? (
                             <button
                               onClick={(e) => handleProcess(e, doc)}
-                              className="px-3 py-1.5 bg-[#FFF9E8] border border-[#BFA66A]/45 hover:bg-[#B88719] hover:text-white rounded-lg text-[10px] font-bold text-[#8A5A00] uppercase tracking-wider transition-all inline-flex items-center gap-1.5 hover:shadow-md cursor-pointer"
+                              className="btn-ghost btn-sm"
                             >
                               Process to Gold
                               <ArrowRight className="w-3 h-3" />
@@ -449,11 +449,11 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
 
          {/* Pagination Footer */}
          {(totalPages > 1 || hasNext) && (
-           <div className="flex items-center justify-between gap-4 px-8 py-4 bg-[#FFFDF8] border-t border-[#BFA66A]/15 rounded-b-3xl">
-              <span className="text-[11px] font-mono text-slate-500">
+           <div className="flex items-center justify-between gap-4 px-8 py-4 bg-[#FFFDF8] border-t border-[#BFA66A] rounded-b-3xl">
+              <span className="text-[11px] font-mono text-[#5F5F5F]">
                 Page <span className="font-bold text-[#111111]">{page}</span>
-                <span className="text-slate-400"> of {totalPages}</span>
-                {isFetching && <span className="text-slate-400"> · loading…</span>}
+                <span className="text-[#5F5F5F]"> of {totalPages}</span>
+                {isFetching && <span className="text-[#5F5F5F]"> · loading…</span>}
               </span>
               <Pagination
                 page={page}
@@ -469,15 +469,15 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
       {/* Verification Dialog Modal overlay */}
       {showVerification && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs select-none">
-          <div className="bg-[#13110E] border border-[#BFA66A]/50 rounded-[2rem] w-full max-w-lg shadow-2xl flex flex-col overflow-hidden text-white pointer-events-auto">
+          <div className="bg-[#13110E] border border-[#BFA66A] rounded-[2rem] w-full max-w-lg shadow-2xl flex flex-col overflow-hidden text-white pointer-events-auto">
             
             {/* Modal Header */}
-            <div className="p-6 border-b border-[#BFA66A]/20 flex items-center justify-between">
+            <div className="p-6 border-b border-[#BFA66A] flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <Layers className="w-5 h-5 text-[#D9B86C]" />
                 <div>
                   <h3 className="text-sm font-display font-black uppercase tracking-wider text-[#D9B86C]">Batch Pipeline Verification</h3>
-                  <p className="text-[10px] font-mono text-slate-400 mt-0.5">Please confirm items staged for {activeFilter === 'bronze' ? 'SILVER' : 'GOLD'} tier upgrade</p>
+                  <p className="text-[10px] font-mono text-[#5F5F5F] mt-0.5">Please confirm items staged for {activeFilter === 'bronze' ? 'SILVER' : 'GOLD'} tier upgrade</p>
                 </div>
               </div>
               <button 
@@ -491,7 +491,7 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
             {/* Modal Body: Active Verification List */}
             <div className="p-6 flex-1 overflow-y-auto max-h-[320px] space-y-3 custom-scrollbar">
               {selectedDocs.length === 0 ? (
-                <div className="py-12 text-center text-slate-500 text-xs font-mono flex flex-col items-center gap-2">
+                <div className="py-12 text-center text-[#5F5F5F] text-xs font-mono flex flex-col items-center gap-2">
                   <AlertCircle className="w-6 h-6 text-amber-500" />
                   <span>No documents selected. Please add items back or close table select view.</span>
                 </div>
@@ -499,7 +499,7 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
                 selectedDocs.map((doc) => (
                   <div 
                     key={doc.data_id} 
-                    className="flex items-center justify-between p-3.5 bg-white/[0.03] rounded-xl border border-white/5 hover:border-[#BFA66A]/30 transition-all gap-4"
+                    className="flex items-center justify-between p-3.5 bg-white/[0.03] rounded-xl border border-white/15 hover:border-[#BFA66A] transition-all gap-4"
                   >
                     <div className="flex items-center gap-3">
                       {/* REMOVE BUTTON ON THE LEFT */}
@@ -514,7 +514,7 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
                         <h4 className="text-xs font-bold text-slate-100 uppercase tracking-tight truncate max-w-[240px]">
                           {doc.name}
                         </h4>
-                        <span className="text-[9px] font-mono text-slate-400 uppercase tracking-widest mt-0.5 block">
+                        <span className="text-[9px] font-mono text-[#5F5F5F] uppercase tracking-widest mt-0.5 block">
                           ID: {doc.data_id}
                         </span>
                       </div>
@@ -522,7 +522,7 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
                     
                     {/* Source type label/badge on the right */}
                     <div className="shrink-0 flex items-center gap-2.5">
-                      <span className="bg-white/5 border border-white/10 text-slate-300 text-[10px] font-mono px-2.5 py-1 rounded-lg">
+                      <span className="bg-white/5 border border-white/20 text-slate-300 text-[10px] font-mono px-2.5 py-1 rounded-lg">
                         {doc.metadata.doc_type || 'Document'}
                       </span>
                     </div>
@@ -532,10 +532,10 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
             </div>
 
             {/* Modal Footer */}
-            <div className="p-6 bg-white/[0.01] border-t border-[#BFA66A]/20 flex items-center justify-between gap-3">
+            <div className="p-6 bg-white/[0.01] border-t border-[#BFA66A] flex items-center justify-between gap-3">
               <button
                 onClick={() => setShowVerification(false)}
-                className="px-4 py-2 bg-transparent hover:bg-white/5 text-slate-300 hover:text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all border border-white/10 cursor-pointer"
+                className="px-4 py-2 bg-transparent hover:bg-white/5 text-slate-300 hover:text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all border border-white/20 cursor-pointer"
               >
                 Discard
               </button>
@@ -552,7 +552,7 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
               >
                 {isBatchProcessing ? (
                   <>
-                    <span className="w-3.5 h-3.5 rounded-full border-2 border-slate-400 border-t-white animate-spin" />
+                    <span className="w-3.5 h-3.5 rounded-full border-2 border-[#8A5A00] border-t-white animate-spin" />
                     <span>Ingesting Sequence...</span>
                   </>
                 ) : (

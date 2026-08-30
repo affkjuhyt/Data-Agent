@@ -1,6 +1,6 @@
 ﻿import React, { useState, useCallback, useMemo, useRef, useContext, useEffect } from 'react';
 import {
-  Save, Play, Layout, Code as CodeIcon, CheckCircle2, Terminal,
+  Save, Layout, Code as CodeIcon, CheckCircle2,
   ArrowLeft, ChevronDown, Bot, Database, Activity, Zap, Cpu,
   Search, ShieldCheck, Wrench, Layers, Filter,
   GitBranch, Bell, RefreshCw, GripVertical, X, Copy, Trash2, Tag, Plus,
@@ -530,12 +530,12 @@ const TextInput = ({
     value={value}
     onChange={e => onChange(e.target.value)}
     placeholder={placeholder}
-    className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-slate-700"
+    className="w-full bg-white/5 border border-white/20 rounded-xl py-2 px-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-slate-700"
   />
 );
 
 const Readonly = ({ value }: { value: string }) => (
-  <div className="w-full bg-white/[0.03] border border-white/10 rounded-xl py-2 px-3 text-xs font-mono text-slate-400">
+  <div className="w-full bg-white/[0.03] border border-white/20 rounded-xl py-2 px-3 text-xs font-mono text-slate-400">
     {value}
   </div>
 );
@@ -547,7 +547,7 @@ const Sel = ({
     <select
       value={value}
       onChange={e => onChange(e.target.value)}
-      className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-xs text-white appearance-none focus:outline-none focus:ring-1 focus:ring-white/20 cursor-pointer"
+      className="w-full bg-white/5 border border-white/20 rounded-xl py-2 px-3 text-xs text-white appearance-none focus:outline-none focus:ring-1 focus:ring-white/20 cursor-pointer"
     >
       {options.map(o => <option key={o} value={o} className="bg-slate-900">{o}</option>)}
     </select>
@@ -580,7 +580,7 @@ const Slider = ({
 );
 
 const InfoNote = ({ text }: { text: string }) => (
-  <div className="p-3 rounded-xl bg-white/[0.03] border border-white/10">
+  <div className="p-3 rounded-xl bg-white/[0.03] border border-white/20">
     <p className="text-[11px] text-slate-500 italic leading-relaxed">{text}</p>
   </div>
 );
@@ -617,14 +617,14 @@ const KeyValueEditor = ({ value, onChange }: { value: string; onChange: (v: stri
             value={row.key}
             onChange={e => updateRow(i, 'key', e.target.value)}
             placeholder="key"
-            className="w-[38%] bg-white/5 border border-white/10 rounded-lg py-1.5 px-2 text-[11px] font-mono text-white focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-slate-700"
+            className="w-[38%] bg-white/5 border border-white/20 rounded-lg py-1.5 px-2 text-[11px] font-mono text-white focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-slate-700"
           />
           <input
             type="text"
             value={row.value}
             onChange={e => updateRow(i, 'value', e.target.value)}
             placeholder="value"
-            className="flex-1 bg-white/5 border border-white/10 rounded-lg py-1.5 px-2 text-[11px] font-mono text-white focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-slate-700"
+            className="flex-1 bg-white/5 border border-white/20 rounded-lg py-1.5 px-2 text-[11px] font-mono text-white focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-slate-700"
           />
           <button
             onClick={() => removeRow(i)}
@@ -792,7 +792,7 @@ const DbConnectionEditor = ({ value, onChange }: { value: string; onChange: (v: 
   return (
     <div className="space-y-3">
       {rows.map((row, i) => (
-        <div key={i} className="p-3 rounded-xl bg-white/[0.03] border border-white/10 space-y-2.5 relative">
+        <div key={i} className="p-3 rounded-xl bg-white/[0.03] border border-white/20 space-y-2.5 relative">
           <button
             onClick={() => setDeleteIdx(i)}
             title="Xoá kết nối"
@@ -848,7 +848,7 @@ const DbConnectionEditor = ({ value, onChange }: { value: string; onChange: (v: 
                     value={pendingPasswords[i] || ''}
                     onChange={e => setPendingPasswords(prev => ({ ...prev, [i]: e.target.value }))}
                     placeholder="Nhập mật khẩu"
-                    className="w-full bg-white/5 border border-white/10 rounded-lg py-1.5 pl-2 pr-8 text-[11px] text-white focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-slate-700"
+                    className="w-full bg-white/5 border border-white/20 rounded-lg py-1.5 pl-2 pr-8 text-[11px] text-white focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-slate-700"
                   />
                   <button
                     type="button"
@@ -880,7 +880,7 @@ const DbConnectionEditor = ({ value, onChange }: { value: string; onChange: (v: 
               onChange={e => updateRow(i, { note: e.target.value })}
               placeholder="VD: bảng orders là đơn hàng, không phải lệnh sản xuất"
               rows={2}
-              className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-xs text-white font-mono focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-slate-700 resize-none"
+              className="w-full bg-white/5 border border-white/20 rounded-xl py-2 px-3 text-xs text-white font-mono focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-slate-700 resize-none"
             />
           </Field>
         </div>
@@ -956,9 +956,9 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
       animate={{ x: 0, opacity: 1 }}
       exit={{ x: 320, opacity: 0 }}
       transition={{ type: 'spring', stiffness: 340, damping: 34 }}
-      className="w-80 border-l border-white/10 bg-[#111827] flex flex-col shrink-0"
+      className="w-80 border-l border-white/20 bg-[#111827] flex flex-col shrink-0"
     >
-      <div className="p-5 border-b border-white/10 flex items-center justify-between shrink-0">
+      <div className="p-5 border-b border-white/20 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
           <div style={{ background: `${cfg.color}20`, borderRadius: 8, padding: 6, display: 'flex' }}>
             <cfg.Icon size={14} color={cfg.color} />
@@ -1180,7 +1180,7 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
                 value={Number(d.maxTokens ?? 1000)}
                 onChange={e => upd('maxTokens', parseInt(e.target.value, 10))}
                 min={100} max={8000} step={100}
-                className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500/40"
+                className="w-full bg-white/5 border border-white/20 rounded-xl py-2 px-3 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500/40"
               />
             </Field>
           </>
@@ -1266,8 +1266,8 @@ const NodeLibrary = ({ usedTypes, nodes: libraryNodes = ALL_LIBRARY_NODES }: { u
   );
 
   return (
-    <div className="w-52 border-r border-white/10 bg-[#111827] flex flex-col shrink-0">
-      <div className="p-3 border-b border-white/10">
+    <div className="w-52 border-r border-white/20 bg-[#111827] flex flex-col shrink-0">
+      <div className="p-3 border-b border-white/20">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-700" />
           <input
@@ -1275,7 +1275,7 @@ const NodeLibrary = ({ usedTypes, nodes: libraryNodes = ALL_LIBRARY_NODES }: { u
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Find nodeâ€¦"
-            className="w-full bg-white/5 border border-white/10 rounded-xl py-1.5 pl-8 pr-3 text-[11px] focus:outline-none focus:ring-1 focus:ring-white/10 text-slate-400 placeholder:text-slate-700"
+            className="w-full bg-white/5 border border-white/20 rounded-xl py-1.5 pl-8 pr-3 text-[11px] focus:outline-none focus:ring-1 focus:ring-white/10 text-slate-400 placeholder:text-slate-700"
           />
         </div>
       </div>
@@ -1300,7 +1300,7 @@ const NodeLibrary = ({ usedTypes, nodes: libraryNodes = ALL_LIBRARY_NODES }: { u
                 e.dataTransfer.setData('nodeType', item.nodeType);
                 e.dataTransfer.effectAllowed = 'move';
               }}
-              className="group flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-white/5 cursor-grab active:cursor-grabbing border border-transparent hover:border-white/10 transition-all"
+              className="group flex items-center gap-2.5 px-3 py-2.5 rounded-xl hover:bg-white/5 cursor-grab active:cursor-grabbing border border-transparent hover:border-white/20 transition-all"
             >
               <GripVertical className="w-3 h-3 text-slate-700 group-hover:text-slate-500 shrink-0 transition-colors" />
               <div className="p-1.5 rounded-lg shrink-0" style={{ background: `${item.color}20` }}>
@@ -1314,7 +1314,7 @@ const NodeLibrary = ({ usedTypes, nodes: libraryNodes = ALL_LIBRARY_NODES }: { u
         )}
       </div>
 
-      <div className="p-3 border-t border-white/10">
+      <div className="p-3 border-t border-white/20">
         <p className="text-[9px] text-slate-700 leading-relaxed">
           KÃ©o node vÃ o canvas Ä‘á»ƒ thÃªm vÃ o workflow
         </p>
@@ -1829,7 +1829,7 @@ ${edges.map(e => `  - from: "${e.source}"  to: "${e.target}"`).join('\n')}`;
           </div>
         )}
         {/* â”€â”€ Toolbar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-        <div className="h-14 border-b border-white/10 bg-[#0d1117] flex items-center justify-between px-5 shrink-0">
+        <div className="h-14 border-b border-white/20 bg-[#0d1117] flex items-center justify-between px-5 shrink-0">
           <div className="flex items-center gap-4">
             <button
               onClick={requestExit}
@@ -1855,7 +1855,7 @@ ${edges.map(e => `  - from: "${e.source}"  to: "${e.target}"`).join('\n')}`;
               const active = versions.find(v => v.id === activeVersionId);
               if (!active) return null;
               return (
-                <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs text-slate-300">
+                <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white/5 border border-white/20 rounded-lg text-xs text-slate-300">
                   <GitBranch className="w-3 h-3" />
                   <span>v{active.version}</span>
                   <span className={`font-bold ${active.status === 'published' ? 'text-emerald-400' : active.status === 'draft' ? 'text-amber-400' : 'text-slate-500'}`}>
@@ -1867,7 +1867,7 @@ ${edges.map(e => `  - from: "${e.source}"  to: "${e.target}"`).join('\n')}`;
           </div>
 
           <div className="flex items-center gap-2.5">
-            <div className="flex bg-white/5 p-1 rounded-xl border border-white/10">
+            <div className="flex bg-white/5 p-1 rounded-xl border border-white/20">
               {([['VISUAL', Layout, 'Visual'], ['CODE', CodeIcon, 'YAML']] as const).map(([mode, Icon, lbl]) => (
                 <button
                   key={mode}
@@ -1882,10 +1882,6 @@ ${edges.map(e => `  - from: "${e.source}"  to: "${e.target}"`).join('\n')}`;
               ))}
             </div>
 
-            <button className="flex items-center gap-1.5 px-3.5 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-400 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all">
-              <Play className="w-3 h-3" />
-              Dry Run
-            </button>
 
             <button
               onClick={handleSave}
@@ -1995,7 +1991,7 @@ ${edges.map(e => `  - from: "${e.source}"  to: "${e.target}"`).join('\n')}`;
         </div>
 
         {/* â”€â”€ Status Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-        <div className="h-9 bg-[#111827] border-t border-white/10 px-5 flex items-center justify-between shrink-0">
+        <div className="h-9 bg-[#111827] border-t border-white/20 px-5 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-5">
             <div className="flex items-center gap-1.5">
               <CheckCircle2 className="w-3 h-3 text-emerald-500" />
@@ -2008,10 +2004,6 @@ ${edges.map(e => `  - from: "${e.source}"  to: "${e.target}"`).join('\n')}`;
               </span>
             </div>
           </div>
-          <button className="flex items-center gap-1.5 text-slate-700 hover:text-slate-400 transition-colors">
-            <Terminal className="w-3 h-3" />
-            <span className="text-[9px] font-black uppercase tracking-widest">Runtime Logs</span>
-          </button>
         </div>
 
         {/* â”€â”€ Exit Confirm â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
@@ -2056,7 +2048,7 @@ ${edges.map(e => `  - from: "${e.source}"  to: "${e.target}"`).join('\n')}`;
                 animate={{ opacity: 1, x: 0, scale: 1 }}
                 exit={{ opacity: 0, x: 20, scale: 0.92 }}
                 transition={{ duration: 0.16 }}
-                className="bg-slate-800 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-slate-300 shadow-xl"
+                className="bg-slate-800 border border-white/20 rounded-xl px-4 py-2.5 text-xs text-slate-300 shadow-xl"
               >
                 {t.msg}
               </motion.div>

@@ -1,195 +1,147 @@
-import React from 'react';
+/**
+ * Workflow Observability — platform metrics + service health.
+ *
+ *   GET /api/platform/metrics?days=N  → tiles + daily series
+ *   GET /api/platform/services        → service health list
+ */
+import React, { useState } from 'react';
+import { Activity, Clock, Zap, MessageSquare, AlertTriangle, Layers, RefreshCw, Server, Inbox } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } from 'recharts';
+import { cn } from '../../../lib/utils';
+import { usePlatformMetrics, usePlatformServices, type ServiceHealth } from '../../../lib/platformApi';
 import {
-  Activity,
-  TrendingUp,
-  TrendingDown,
-  Clock,
-  Zap,
-  CheckCircle2,
-  Layers,
-  Download,
-  Bot,
-  Database,
-  Cpu,
-  ArrowRight
-} from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+  Badge, toneFor, Button, Card, EmptyState, ErrorState, LoadingState, SectionTitle, StatTile, Table, type Column,
+} from '../../ui';
+import { formatCompact, formatDate, formatDuration, formatNumber, formatPercent } from '../../../lib/formatVN';
 
-const PERFORMANCE_DATA = [
-  { time: '09:00', success: 400, failure: 20 },
-  { time: '10:00', success: 300, failure: 10 },
-  { time: '11:00', success: 500, failure: 50 },
-  { time: '12:00', success: 280, failure: 5 },
-  { time: '13:00', success: 390, failure: 15 },
-  { time: '14:00', success: 430, failure: 10 },
+const RANGES: { days: number; label: string }[] = [
+  { days: 1, label: '24 giờ' },
+  { days: 7, label: '7 ngày' },
+  { days: 30, label: '30 ngày' },
 ];
 
-const COST_DATA = [
-  { time: 'Mon', cost: 120 },
-  { time: 'Tue', cost: 150 },
-  { time: 'Wed', cost: 420 },
-  { time: 'Thu', cost: 300 },
-  { time: 'Fri', cost: 280 },
-  { time: 'Sat', cost: 110 },
-  { time: 'Sun', cost: 95 },
-];
+const TOOLTIP_STYLE = { backgroundColor: '#FFFFFF', border: '1px solid #A8945E', borderRadius: '12px', fontSize: '12px', color: '#111111' };
 
 const WorkflowObservability = () => {
+  const [days, setDays] = useState(7);
+  const metrics = usePlatformMetrics(days);
+  const services = usePlatformServices();
+  const m = metrics.data;
+  const series = (m?.series ?? []).map(p => ({ ...p, label: formatDate(p.date) }));
+  const svc = services.data?.items ?? [];
+  const unhealthy = svc.filter(s => s.status !== 'ok').length;
+
+  const serviceColumns: Column<ServiceHealth>[] = [
+    { header: 'Service', cell: s => <span className="font-semibold text-[#111111]">{s.name}</span> },
+    { header: 'Loại', cell: s => <span className="font-mono text-[11px] text-[#3F3F3F]">{s.kind}</span> },
+    { header: 'Trạng thái', cell: s => <Badge tone={toneFor(s.status)}>{s.status}</Badge> },
+    { header: 'Độ trễ', align: 'right', cell: s => s.latency_ms == null ? '—' : formatDuration(s.latency_ms) },
+    { header: 'Chi tiết', cell: s => <span className="text-[#3F3F3F]">{s.detail ?? '—'}</span> },
+  ];
+
   return (
     <div className="space-y-5">
-      {/* Header */}
-      <div className="bg-white border border-[#ECE7DA] rounded-2xl p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-[#F3E2A7] rounded-xl border border-[#BFA66A]/50">
-              <Activity className="w-5 h-5 text-[#7C5A0E]" />
-            </div>
-            <div>
-              <h2 className="text-lg font-display font-bold text-[#111111]">Workflow Observability</h2>
-              <p className="text-xs text-[#8A8A7A] mt-0.5">Execution volume, latency, cost, and bottleneck analysis</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button className="btn-secondary">
-              <Download className="w-3.5 h-3.5" /> Export Report
-            </button>
-            <div className="flex p-1 bg-[#F8F5EE] border border-[#ECE7DA] rounded-xl gap-1">
-              <button className="px-3 py-1.5 bg-[#B88719] text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-sm">Last 24h</button>
-              <button className="px-3 py-1.5 text-[#8A8A7A] hover:text-[#111111] rounded-lg text-[10px] font-black uppercase tracking-widest transition-all">7 days</button>
-              <button className="px-3 py-1.5 text-[#8A8A7A] hover:text-[#111111] rounded-lg text-[10px] font-black uppercase tracking-widest transition-all">30 days</button>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[
-            { label: 'Avg Latency', value: '42.1s', trend: '+2.4%', up: false, icon: Clock },
-            { label: 'Token Consumption', value: '42.1M', trend: '+15.2%', up: true, icon: Layers },
-            { label: 'Infrastructure Spend', value: '$1.24k', trend: '-4.1%', up: false, icon: Zap },
-            { label: 'Success Rate', value: '99.82%', trend: '+0.1%', up: true, icon: CheckCircle2 },
-          ].map((stat) => (
-            <div key={stat.label} className="p-5 bg-[#FAFAF5] border border-[#ECE7DA] rounded-2xl hover:border-[#BFA66A] transition-all group">
-              <div className="flex items-center justify-between mb-3">
-                <div className="p-2.5 bg-[#F3E2A7] rounded-xl border border-[#BFA66A]/40 group-hover:bg-[#EDD98A] transition-all">
-                  <stat.icon className="w-4 h-4 text-[#7C5A0E]" />
-                </div>
-                <div className={`flex items-center gap-1 text-[10px] font-bold ${stat.up ? 'text-emerald-600' : 'text-red-500'}`}>
-                  {stat.up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                  {stat.trend}
-                </div>
-              </div>
-              <div className="text-2xl font-display font-bold text-[#111111] mb-0.5">{stat.value}</div>
-              <div className="text-[10px] text-[#8A8A7A] font-semibold uppercase tracking-widest">{stat.label}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Success/Failure Chart */}
-        <div className="p-6 bg-white border border-[#ECE7DA] rounded-2xl">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h3 className="text-base font-bold text-[#111111] font-display">Execution Volume</h3>
-              <p className="text-xs text-[#8A8A7A] mt-0.5">Total workflow runs vs failure rates</p>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-[#B88719]" />
-                <span className="text-[10px] font-semibold text-[#8A8A7A] uppercase tracking-widest">Success</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-red-400" />
-                <span className="text-[10px] font-semibold text-[#8A8A7A] uppercase tracking-widest">Failure</span>
-              </div>
-            </div>
-          </div>
-          <div className="h-56 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={PERFORMANCE_DATA}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#ECE7DA" vertical={false} />
-                <XAxis dataKey="time" stroke="#8A8A7A" fontSize={10} axisLine={false} tickLine={false} />
-                <YAxis stroke="#8A8A7A" fontSize={10} axisLine={false} tickLine={false} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #ECE7DA', borderRadius: '12px', fontSize: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
-                  itemStyle={{ color: '#111111', fontWeight: '600' }}
-                  labelStyle={{ color: '#5A5A5A', fontWeight: '700' }}
-                />
-                <Bar dataKey="success" fill="#B88719" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="failure" fill="#EF4444" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Cost Allocation Chart */}
-        <div className="p-6 bg-white border border-[#ECE7DA] rounded-2xl">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h3 className="text-base font-bold text-[#111111] font-display">Cost Trends</h3>
-              <p className="text-xs text-[#8A8A7A] mt-0.5">Daily infrastructure and token spend</p>
-            </div>
-            <div className="p-2 bg-[#F3E2A7] rounded-xl border border-[#BFA66A]/50">
-              <Zap className="w-4 h-4 text-[#7C5A0E]" />
-            </div>
-          </div>
-          <div className="h-56 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={COST_DATA}>
-                <defs>
-                  <linearGradient id="colorCostLight" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#B88719" stopOpacity={0.2}/>
-                    <stop offset="95%" stopColor="#B88719" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#ECE7DA" vertical={false} />
-                <XAxis dataKey="time" stroke="#8A8A7A" fontSize={10} axisLine={false} tickLine={false} />
-                <YAxis stroke="#8A8A7A" fontSize={10} axisLine={false} tickLine={false} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #ECE7DA', borderRadius: '12px', fontSize: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}
-                  itemStyle={{ color: '#111111', fontWeight: '600' }}
-                  labelStyle={{ color: '#5A5A5A', fontWeight: '700' }}
-                />
-                <Area type="monotone" dataKey="cost" stroke="#B88719" strokeWidth={2.5} fillOpacity={1} fill="url(#colorCostLight)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      </div>
-
-      {/* Bottleneck Detection Table */}
-      <div className="bg-white border border-[#ECE7DA] rounded-2xl p-6">
-        <h3 className="text-base font-bold text-[#111111] font-display mb-5">Workflow Bottleneck Analysis</h3>
-        <div className="space-y-3">
-          {[
-            { type: 'AI_AGENT', node: 'Banking_Triage_v2.4', issue: 'Context Window Overflow', impact: 'High (Latency +4s)', icon: Bot },
-            { type: 'KB_RETRIEVAL', node: 'GlobalDoc_Search', issue: 'Index Cache Misses', impact: 'Medium (+2.1s)', icon: Database },
-            { type: 'INFRA', node: 'API_Gateway_West', issue: 'Throughput Throttle', impact: 'Medium (90% Cap)', icon: Cpu },
-          ].map((issue, i) => (
-            <div key={i} className="flex items-center justify-between p-4 bg-[#FAFAF5] hover:bg-[#F8F5EE] border border-[#ECE7DA] hover:border-[#BFA66A] rounded-2xl transition-all group">
-              <div className="flex items-center gap-4">
-                <div className="p-2.5 bg-white border border-[#ECE7DA] rounded-xl group-hover:border-[#BFA66A] transition-all">
-                  <issue.icon className="w-4 h-4 text-[#8A8A7A] group-hover:text-[#B88719] transition-colors" />
-                </div>
-                <div>
-                  <div className="text-sm font-bold text-[#111111] group-hover:text-[#B88719] transition-colors">{issue.node}</div>
-                  <div className="text-[10px] text-[#8A8A7A] font-medium uppercase tracking-widest mt-0.5">{issue.issue}</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-6">
-                <div className="text-right">
-                  <div className="text-xs font-bold text-amber-600">{issue.impact}</div>
-                  <div className="text-[9px] font-semibold text-[#8A8A7A] uppercase tracking-widest">Impact Analysis</div>
-                </div>
-                <button className="p-2 hover:bg-[#F3E2A7] rounded-xl transition-all text-[#8A8A7A] hover:text-[#7C5A0E]">
-                  <ArrowRight className="w-4 h-4" />
+      <SectionTitle
+        title="Observability"
+        subtitle="Khối lượng hội thoại, tokens, độ trễ, tỷ lệ lỗi và sức khoẻ service."
+        actions={
+          <>
+            <div className="flex p-1 bg-[#F4E8C3] border border-[#BFA66A] rounded-xl gap-1">
+              {RANGES.map(r => (
+                <button
+                  key={r.days}
+                  onClick={() => setDays(r.days)}
+                  aria-pressed={days === r.days}
+                  className={cn('px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all',
+                    days === r.days ? 'bg-[#B88719] text-white shadow-sm' : 'text-[#3F3F3F] hover:text-[#111111]')}
+                >
+                  {r.label}
                 </button>
-              </div>
+              ))}
             </div>
-          ))}
-        </div>
+            <Button size="sm" variant="ghost" icon={RefreshCw} onClick={() => { void metrics.refetch(); void services.refetch(); }} loading={metrics.loading && !!m}>Làm mới</Button>
+          </>
+        }
+      />
+
+      {metrics.error && <ErrorState message={metrics.error} onRetry={() => void metrics.refetch()} />}
+
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        <StatTile label="Hội thoại 24h" value={m ? formatNumber(m.conversations.last_24h) : '—'} hint={m ? `${formatNumber(m.conversations.active)} đang mở` : undefined} icon={MessageSquare} loading={metrics.loading && !m} />
+        <StatTile label="Tin nhắn 24h" value={m ? formatNumber(m.messages.last_24h) : '—'} icon={Layers} loading={metrics.loading && !m} />
+        <StatTile label="Tokens 24h" value={m ? formatCompact(m.tokens.last_24h) : '—'} icon={Zap} loading={metrics.loading && !m} />
+        <StatTile label="Độ trễ TB" value={m?.latency_ms.avg == null ? '—' : formatDuration(m.latency_ms.avg)} icon={Clock} loading={metrics.loading && !m} />
+        <StatTile label="Độ trễ p95" value={m?.latency_ms.p95 == null ? '—' : formatDuration(m.latency_ms.p95)} icon={Activity} loading={metrics.loading && !m} />
+        <StatTile label="Tỷ lệ lỗi" value={m?.error_rate == null ? '—' : formatPercent(m.error_rate)} tone={m?.error_rate ? 'bad' : 'ok'} icon={AlertTriangle} loading={metrics.loading && !m} />
       </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <Card title="Khối lượng" subtitle="Hội thoại, tin nhắn và lỗi theo ngày">
+          {metrics.loading && !m && <LoadingState />}
+          {m && series.length === 0 && <EmptyState icon={Inbox} title="Chưa có dữ liệu" description="Chưa có hội thoại nào trong khoảng thời gian này." />}
+          {series.length > 0 && (
+            <div className="h-56 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={series}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#BFA66A" vertical={false} />
+                  <XAxis dataKey="label" stroke="#5F5F5F" fontSize={10} axisLine={false} tickLine={false} />
+                  <YAxis stroke="#5F5F5F" fontSize={10} axisLine={false} tickLine={false} />
+                  <Tooltip contentStyle={TOOLTIP_STYLE} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="conversations" name="Hội thoại" fill="#B88719" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="messages" name="Tin nhắn" fill="#0E5F63" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="errors" name="Lỗi" fill="#A83A32" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </Card>
+
+        <Card title="Độ trễ & tokens" subtitle="Độ trễ trung bình (ms) và tokens theo ngày">
+          {metrics.loading && !m && <LoadingState />}
+          {m && series.length === 0 && <EmptyState icon={Inbox} title="Chưa có dữ liệu" description="Độ trễ xuất hiện khi có tin nhắn của assistant." />}
+          {series.length > 0 && (
+            <div className="h-56 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={series}>
+                  <defs>
+                    <linearGradient id="obsLatency" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#B88719" stopOpacity={0.25} />
+                      <stop offset="95%" stopColor="#B88719" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#BFA66A" vertical={false} />
+                  <XAxis dataKey="label" stroke="#5F5F5F" fontSize={10} axisLine={false} tickLine={false} />
+                  <YAxis yAxisId="ms" stroke="#5F5F5F" fontSize={10} axisLine={false} tickLine={false} />
+                  <YAxis yAxisId="tk" orientation="right" stroke="#5F5F5F" fontSize={10} axisLine={false} tickLine={false} />
+                  <Tooltip contentStyle={TOOLTIP_STYLE} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Area yAxisId="ms" type="monotone" dataKey="avg_latency_ms" name="Độ trễ TB (ms)" stroke="#B88719" strokeWidth={2} fill="url(#obsLatency)" />
+                  <Area yAxisId="tk" type="monotone" dataKey="tokens" name="Tokens" stroke="#0E5F63" strokeWidth={2} fillOpacity={0} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      <Card
+        title="Sức khoẻ service"
+        subtitle={svc.length ? `${svc.length - unhealthy}/${svc.length} service ok` : undefined}
+        padding="none"
+        actions={<Server className="w-4 h-4 text-[#8A5A00]" />}
+      >
+        {services.loading && svc.length === 0 && <LoadingState label="Đang kiểm tra service…" />}
+        {services.error && <div className="p-3"><ErrorState message={services.error} onRetry={() => void services.refetch()} /></div>}
+        {!services.loading && !services.error && (
+          <Table<ServiceHealth>
+            rows={svc}
+            columns={serviceColumns}
+            rowKey={s => s.name}
+            empty={<EmptyState icon={Server} title="Không có service nào được báo cáo" description="Endpoint /api/platform/services chưa trả về service nào." />}
+          />
+        )}
+      </Card>
     </div>
   );
 };

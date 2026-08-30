@@ -51,7 +51,7 @@ export const Pagination = ({ page, totalPages, hasNext, canJump, onJump, classNa
 
       {slots.map((slot, i) =>
         slot === 'ellipsis' ? (
-          <span key={`e${i}`} className="px-1 text-[#8A8A7A] select-none">…</span>
+          <span key={`e${i}`} className="px-1 text-[#5F5F5F] select-none">…</span>
         ) : (
           <button
             key={slot}
@@ -65,7 +65,7 @@ export const Pagination = ({ page, totalPages, hasNext, canJump, onJump, classNa
                 ? 'bg-[#F3E2A7] border-[#8A5A00] text-[#111111] cursor-default'
                 : reachable(slot)
                   ? 'bg-white border-[#BFA66A] text-[#3F3F3F] hover:bg-[#FFF9E8] hover:border-[#8A5A00] cursor-pointer'
-                  : 'bg-white border-[#E5E0D2] text-[#B8AA91] cursor-not-allowed',
+                  : 'bg-white border-[#BFA66A] text-[#B8AA91] cursor-not-allowed',
             )}
           >
             {slot}

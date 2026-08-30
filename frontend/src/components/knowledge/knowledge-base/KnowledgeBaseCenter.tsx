@@ -88,7 +88,7 @@ export function KnowledgeBaseCenter() {
           <Plus className="w-4 h-4" /> New Knowledge Group
         </button>
       </div>
-      <p className="text-sm text-[#6b6457] mb-5">
+      <p className="text-sm text-[#5F5F5F] mb-5">
         The kind of knowledge a document belongs to. Documents are tagged with one at
         ingestion so retrieval can be scoped to a single knowledge group.
       </p>
@@ -100,32 +100,32 @@ export function KnowledgeBaseCenter() {
       )}
 
       {showCreate && (
-        <div className="mb-5 p-4 rounded-lg border border-[#E7DFcf] bg-[#FAF6ED]">
+        <div className="mb-5 p-4 rounded-lg border border-[#BFA66A] bg-[#FAF6ED]">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-semibold text-[#1E1B15]">Create Knowledge Group</h3>
-            <button onClick={() => setShowCreate(false)} className="text-[#6b6457] hover:text-[#1E1B15]">
+            <button onClick={() => setShowCreate(false)} className="text-[#5F5F5F] hover:text-[#1E1B15]">
               <X className="w-4 h-4" />
             </button>
           </div>
-          <label className="block text-xs font-medium text-[#6b6457] mb-1">Name</label>
+          <label className="block text-xs font-medium text-[#5F5F5F] mb-1">Name</label>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Finance, Legal, Engineering"
-            className="w-full mb-3 px-3 py-2 rounded-md border border-[#E7DFcf] bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#B88719]/40"
+            className="ui-input w-full mb-3 px-3 py-2 text-sm"
           />
-          <label className="block text-xs font-medium text-[#6b6457] mb-1">Description (optional)</label>
+          <label className="block text-xs font-medium text-[#5F5F5F] mb-1">Description (optional)</label>
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={2}
             placeholder="What kind of knowledge does this base hold?"
-            className="w-full mb-3 px-3 py-2 rounded-md border border-[#E7DFcf] bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#B88719]/40"
+            className="ui-input w-full mb-3 px-3 py-2 text-sm"
           />
           <div className="flex justify-end gap-2">
             <button
               onClick={() => setShowCreate(false)}
-              className="px-3 py-1.5 rounded-md text-sm text-[#6b6457] hover:bg-[#EFE8d8]"
+              className="btn-ghost btn-sm"
             >
               Cancel
             </button>
@@ -141,11 +141,11 @@ export function KnowledgeBaseCenter() {
       )}
 
       {loading ? (
-        <div className="flex items-center gap-2 text-[#6b6457] text-sm py-8 justify-center">
+        <div className="flex items-center gap-2 text-[#5F5F5F] text-sm py-8 justify-center">
           <Loader2 className="w-4 h-4 animate-spin" /> Loading…
         </div>
       ) : items.length === 0 ? (
-        <div className="text-center py-12 text-[#6b6457]">
+        <div className="text-center py-12 text-[#5F5F5F]">
           <Boxes className="w-8 h-8 mx-auto mb-2 opacity-40" />
           <p className="text-sm">No knowledge bases yet. Create one to start tagging documents.</p>
         </div>
@@ -154,16 +154,16 @@ export function KnowledgeBaseCenter() {
           {items.map((kb) => (
             <div
               key={kb.id}
-              className="flex items-center justify-between px-4 py-3 rounded-lg border border-[#E7DFcf] bg-white"
+              className="flex items-center justify-between px-4 py-3 rounded-lg border border-[#BFA66A] bg-white"
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="font-medium text-[#1E1B15]">{kb.name}</span>
                   {!kb.active && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#EFE8d8] text-[#6b6457]">inactive</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#EFE8d8] text-[#5F5F5F]">inactive</span>
                   )}
                 </div>
-                {kb.description && <p className="text-xs text-[#6b6457] truncate">{kb.description}</p>}
+                {kb.description && <p className="text-xs text-[#5F5F5F] truncate">{kb.description}</p>}
                 <p className="text-[11px] text-[#9c9484] mt-0.5">
                   {kb.added_by ? `${kb.added_by} · ` : ''}{kb.added_when}
                 </p>

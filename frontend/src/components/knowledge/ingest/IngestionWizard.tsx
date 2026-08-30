@@ -294,7 +294,7 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
       />
 
       {/* Header and Step Indicators */}
-      <div className="px-8 py-4 bg-[#FFFDF6] border-b border-[#D6C79F]">
+      <div className="px-8 py-4 bg-[#FFFDF6] border-b border-[#BFA66A]">
         {/* Progress Bar */}
         <div className="mb-4">
           <div className="w-full h-2 bg-[#E8DCC8] rounded-full overflow-hidden">
@@ -352,7 +352,7 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
               className="flex flex-col items-center justify-center h-full py-12 text-center"
             >
               <div className="relative mb-6">
-                <div className="w-14 h-14 rounded-full border-4 border-[#F3E2A7] border-t-[#B88719] animate-spin" />
+                <div className="w-14 h-14 rounded-full border-4 border-[#BFA66A] border-t-[#B88719] animate-spin" />
                 <Cpu className="w-5 h-5 text-[#B88719] absolute top-4.5 left-4.5 animate-pulse" />
               </div>
 
@@ -363,7 +363,7 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
                 {ingestionLogs.map((log, idx) => (
                   <div key={idx} className="flex gap-2 items-start text-xs py-0.5">
                     <span className="text-[#B88719] shrink-0 font-bold">&gt;</span>
-                    <span className={idx === ingestionLogs.length - 1 ? "text-[#FFFDF6] font-bold" : "text-slate-400"}>
+                    <span className={idx === ingestionLogs.length - 1 ? "text-[#FFFDF6] font-bold" : "text-[#5F5F5F]"}>
                       {log}
                     </span>
                   </div>
@@ -432,7 +432,7 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
                 
                 {/* 1. Upload Section in full vertical stack */}
                 {selectedSource !== 'web' && (
-                  <div className="flex flex-col gap-1.5 pb-4 border-b border-[#FAF6EA]">
+                  <div className="flex flex-col gap-1.5 pb-4 border-b border-[#BFA66A]">
                     <span className="text-[10px] font-black uppercase tracking-widest text-[#111111]">Source Payload *</span>
                     <span className="text-[10px] text-[#5A5A5A] mb-1">Upload a valid raw resource file from your machine</span>
                     
@@ -451,7 +451,7 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
                           <button
                             type="button"
                             onClick={handleFileUploadClick}
-                            className="text-[10px] font-black uppercase text-[#8A5A00] hover:text-[#5A4209] transition-colors border border-[#8A5A00] px-2.5 py-1 rounded-lg bg-white"
+                            className="btn-secondary btn-sm"
                           >
                             Replace
                           </button>
@@ -556,7 +556,7 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
 
                 {/* 5. Image details metadata row (Vertical Stack) */}
                 {selectedSource === 'image' && (
-                  <div className="flex flex-col gap-2 pt-2 border-t border-[#FAF6EA]">
+                  <div className="flex flex-col gap-2 pt-2 border-t border-[#BFA66A]">
                     <div className="text-[10px] font-black text-[#8A5A00] flex items-center gap-1.5">
                       <Lock className="w-3.5 h-3.5 text-[#B88719]" />
                       AUTO-EXTRACTED METADATA (SYSTEM LOCKED)
@@ -569,7 +569,7 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
                         { label: 'width', val: imageMetadata.width },
                         { label: 'color_space', val: imageMetadata.color_space }
                       ].map(item => (
-                        <div key={item.label} className="p-2 border border-[#EBE3CD] rounded-lg bg-white">
+                        <div key={item.label} className="p-2 border border-[#BFA66A] rounded-lg bg-white">
                           <span className="text-[9px] font-bold text-[#5A5A5A] uppercase tracking-wider block mb-0.5">{item.label}</span>
                           <span className="font-mono text-[11px] text-[#111111] font-semibold">{item.val}</span>
                         </div>
@@ -580,7 +580,7 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
 
                 {/* 6. Video details metadata row (Vertical Stack) */}
                 {selectedSource === 'video' && (
-                  <div className="flex flex-col gap-2 pt-2 border-t border-[#FAF6EA]">
+                  <div className="flex flex-col gap-2 pt-2 border-t border-[#BFA66A]">
                     <div className="text-[10px] font-black text-[#8A5A00] flex items-center gap-1.5">
                       <Lock className="w-3.5 h-3.5 text-[#B88719]" />
                       AUTO-EXTRACTED PARAMETERS (SYSTEM LOCKED)
@@ -593,7 +593,7 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
                         { label: 'width', val: videoMetadata.width },
                         { label: 'total_frame', val: videoMetadata.total_frame }
                       ].map(item => (
-                        <div key={item.label} className="p-2 border border-[#EBE3CD] rounded-lg bg-white">
+                        <div key={item.label} className="p-2 border border-[#BFA66A] rounded-lg bg-white">
                           <span className="text-[9px] font-bold text-[#5A5A5A] uppercase tracking-wider block mb-0.5">{item.label}</span>
                           <span className="font-mono text-[11px] text-[#111111] font-semibold">{item.val}</span>
                         </div>
@@ -611,7 +611,7 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
       {/* Error message display slot */}
       {errorMsg && !isAddingInProcess && (
         <div className="px-8 pb-3">
-          <div className="px-4 py-2.5 bg-[#FAF1F1] border border-[#C94A4A]/30 rounded-xl flex items-center gap-3 text-xs text-[#9F1D1D] font-medium leading-relaxed">
+          <div className="px-4 py-2.5 bg-[#FAF1F1] border border-[#C94A4A] rounded-xl flex items-center gap-3 text-xs text-[#9F1D1D] font-medium leading-relaxed">
             <AlertCircle className="w-4 h-4 shrink-0 text-[#9F1D1D]" />
             <span>{errorMsg}</span>
           </div>

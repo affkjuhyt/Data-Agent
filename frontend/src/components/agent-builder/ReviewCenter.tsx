@@ -55,7 +55,7 @@ function ReviewCard({ review, onResolved }: { review: PendingReview; onResolved:
             {p?.title ?? 'Chờ phê duyệt'}
           </div>
           <div className="text-[12px] text-[#3F3F3F] leading-relaxed">
-            <span className="text-[#777777] mr-1.5">Câu hỏi:</span>
+            <span className="text-[#5F5F5F] mr-1.5">Câu hỏi:</span>
             {review.query}
           </div>
         </div>
@@ -65,7 +65,7 @@ function ReviewCard({ review, onResolved }: { review: PendingReview; onResolved:
       </div>
 
       {p?.description && (
-        <div className="font-mono text-[12px] text-[#2A2A2A] leading-relaxed bg-[#FCFBF7] border border-[#D6C79F] rounded-md px-3.5 py-2.5 whitespace-pre-wrap break-words">
+        <div className="font-mono text-[12px] text-[#2A2A2A] leading-relaxed bg-[#FCFBF7] border border-[#BFA66A] rounded-md px-3.5 py-2.5 whitespace-pre-wrap break-words">
           {p.description}
         </div>
       )}
@@ -74,14 +74,14 @@ function ReviewCard({ review, onResolved }: { review: PendingReview; onResolved:
         <button
           type="button"
           onClick={() => setExpanded(v => !v)}
-          className="flex items-center gap-1 self-start text-[11px] font-mono text-[#5F5F5F] hover:text-[#111111]"
+          className="btn-ghost btn-sm self-start"
         >
           {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           {expanded ? 'Ẩn chi tiết' : 'Xem chi tiết'}
         </button>
       )}
       {expanded && p?.detail != null && (
-        <pre className="font-mono text-[10px] text-[#2A2A2A] bg-[#F7F4EA] border border-[#D6C79F] rounded-md px-3 py-2.5 m-0 whitespace-pre-wrap overflow-x-auto max-h-[200px]">
+        <pre className="font-mono text-[10px] text-[#2A2A2A] bg-[#F7F4EA] border border-[#BFA66A] rounded-md px-3 py-2.5 m-0 whitespace-pre-wrap overflow-x-auto max-h-[200px]">
           {JSON.stringify(p.detail, null, 2)}
         </pre>
       )}
@@ -92,7 +92,7 @@ function ReviewCard({ review, onResolved }: { review: PendingReview; onResolved:
           value={note}
           onChange={e => setNote(e.target.value)}
           placeholder="Lý do từ chối hoặc ghi chú cho agent…"
-          className="w-full bg-white border border-[#BFA66A] rounded-md px-2.5 py-2 text-[12px] text-[#111111] font-mono resize-y min-h-[60px] outline-none focus:border-[#8A5A00]"
+          className="ui-input w-full px-2.5 py-2 text-[12px] font-mono resize-y min-h-[60px]"
         />
       </div>
 
@@ -103,7 +103,7 @@ function ReviewCard({ review, onResolved }: { review: PendingReview; onResolved:
           type="button"
           disabled={loading}
           onClick={() => submit(false)}
-          className="flex items-center gap-1.5 px-4 py-1.5 rounded-md text-[12px] font-semibold bg-[#FEE2E2] border border-[#FCA5A5] text-[#7A1010] hover:bg-[#FAD7D7] disabled:opacity-50"
+          className="btn-danger btn-sm"
         >
           <XCircle size={13} /> Từ chối
         </button>
@@ -111,7 +111,7 @@ function ReviewCard({ review, onResolved }: { review: PendingReview; onResolved:
           type="button"
           disabled={loading}
           onClick={() => submit(true)}
-          className="flex items-center gap-1.5 px-4 py-1.5 rounded-md text-[12px] font-semibold bg-[#DCEFE3] border border-[#1D6F4C] text-[#14502F] hover:bg-[#CDE9D8] disabled:opacity-50"
+          className="btn-ghost btn-sm"
         >
           <CheckCircle size={13} /> {loading ? 'Đang xử lý…' : 'Phê duyệt'}
         </button>

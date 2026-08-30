@@ -33,7 +33,7 @@ export const ForbiddenToast = () => {
           </div>
           <button
             onClick={() => setToasts(prev => prev.filter(x => x.id !== t.id))}
-            className="shrink-0 text-slate-400 hover:text-slate-600 transition-colors"
+            className="shrink-0 text-[#5F5F5F] hover:text-[#3F3F3F] transition-colors"
           >
             <X className="w-3.5 h-3.5" />
           </button>

@@ -49,7 +49,7 @@ interface OutputLine {
 const POLL_INTERVAL_MS = 2500;
 
 const STATUS_STYLE: Record<JobSummary['status'], string> = {
-  queued:   'bg-slate-50 border-slate-200 text-slate-600',
+  queued:   'bg-[#FFF9E8] border-[#BFA66A] text-[#3F3F3F]',
   running:  'bg-blue-50 border-blue-200 text-blue-700',
   done:     'bg-emerald-50 border-emerald-200 text-emerald-700',
   rejected: 'bg-amber-50 border-amber-200 text-amber-700',
@@ -174,7 +174,7 @@ const SandboxQueuePanel: React.FC = () => {
     <div className="flex flex-1 min-h-0">
       <div className="flex-1 flex flex-col min-w-0">
         {/* Pool health strip */}
-        <div className="p-5 border-b border-[#ECE7DA] bg-white grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div className="p-5 border-b border-[#BFA66A] bg-white grid grid-cols-2 sm:grid-cols-5 gap-3">
           {statusError ? (
             <div className="col-span-5 flex items-center gap-2 text-red-600 text-xs font-bold px-2">
               <ShieldAlert className="w-4 h-4" /> {statusError} — sandbox-executor/workflow-runtime relay unreachable
@@ -183,19 +183,19 @@ const SandboxQueuePanel: React.FC = () => {
             <>
               <StatTile icon={Box} label="Pool size" value={status?.pool.size ?? '—'} />
               <StatTile icon={Cpu} label="Idle / Busy" value={status ? `${status.pool.idle} / ${status.pool.busy}` : '—'} />
-              <div className="p-3.5 bg-[#FAFAF5] border border-[#ECE7DA] rounded-xl">
-                <div className="flex items-center gap-1.5 text-[#8A8A7A] mb-2">
+              <div className="p-3.5 bg-[#FAFAF5] border border-[#BFA66A] rounded-xl">
+                <div className="flex items-center gap-1.5 text-[#5F5F5F] mb-2">
                   <Activity className="w-3.5 h-3.5 text-[#B88719]" />
                   <span className="text-[9px] font-black uppercase tracking-widest">Circuit breaker</span>
                 </div>
                 <span className={cn(
                   'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest border',
-                  status ? BREAKER_STYLE[status.pool.circuit_breaker.state] : 'bg-slate-50 border-slate-200 text-slate-500',
+                  status ? BREAKER_STYLE[status.pool.circuit_breaker.state] : 'bg-[#FFF9E8] border-[#BFA66A] text-[#5F5F5F]',
                 )}>
                   {status?.pool.circuit_breaker.state ?? '—'}
                 </span>
                 {status && !status.pool.circuit_breaker.enforce && (
-                  <div className="text-[9px] text-[#8A8A7A] mt-1 italic">log-only</div>
+                  <div className="text-[9px] text-[#5F5F5F] mt-1 italic">log-only</div>
                 )}
               </div>
               <StatTile icon={Box} label="Egress network" value={status?.pool.egress_enabled ? 'ON' : 'OFF'} />
@@ -207,13 +207,13 @@ const SandboxQueuePanel: React.FC = () => {
         {/* Job list */}
         <div className="flex-1 overflow-auto">
           {allJobs.length === 0 ? (
-            <div className="p-10 text-center text-sm text-[#8A8A7A]">
+            <div className="p-10 text-center text-sm text-[#5F5F5F]">
               {status ? 'No sandbox jobs yet.' : 'Loading…'}
             </div>
           ) : (
             <table className="w-full">
               <thead>
-                <tr className="text-[10px] font-black text-[#8A8A7A] uppercase tracking-widest border-b border-[#ECE7DA] bg-[#FAFAF5]">
+                <tr className="text-[10px] font-black text-[#5F5F5F] uppercase tracking-widest border-b border-[#BFA66A] bg-[#FAFAF5]">
                   <th className="px-6 py-3 text-left">Job</th>
                   <th className="px-4 py-3 text-left">Kind</th>
                   <th className="px-4 py-3 text-left">Status</th>
@@ -226,12 +226,12 @@ const SandboxQueuePanel: React.FC = () => {
                     key={job.job_id}
                     onClick={() => setSelectedJob(job)}
                     className={cn(
-                      'group border-b border-[#ECE7DA] hover:bg-[#FBF8F0] transition-all cursor-pointer',
+                      'group border-b border-[#BFA66A] hover:bg-[#FBF8F0] transition-all cursor-pointer',
                       selectedJob?.job_id === job.job_id ? 'bg-[#F3E2A7]/30' : 'bg-white',
                     )}
                   >
                     <td className="px-6 py-3 text-xs font-mono text-[#5A5A5A]">{job.job_id.slice(0, 12)}…</td>
-                    <td className="px-4 py-3 text-[10px] font-black text-[#8A8A7A] uppercase tracking-widest">{job.kind}</td>
+                    <td className="px-4 py-3 text-[10px] font-black text-[#5F5F5F] uppercase tracking-widest">{job.kind}</td>
                     <td className="px-4 py-3">
                       <span className={cn(
                         'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border',
@@ -254,8 +254,8 @@ const SandboxQueuePanel: React.FC = () => {
 
       {/* Detail panel */}
       {selectedJob && (
-        <div className="w-[420px] shrink-0 border-l border-[#ECE7DA] bg-white flex flex-col">
-          <div className="p-5 border-b border-[#ECE7DA] bg-[#FAFAF5] flex items-center justify-between">
+        <div className="w-[420px] shrink-0 border-l border-[#BFA66A] bg-white flex flex-col">
+          <div className="p-5 border-b border-[#BFA66A] bg-[#FAFAF5] flex items-center justify-between">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-[10px] font-black text-[#B88719] uppercase tracking-widest">{selectedJob.kind} job</span>
@@ -268,7 +268,7 @@ const SandboxQueuePanel: React.FC = () => {
             </div>
             <button
               onClick={() => setSelectedJob(null)}
-              className="p-2 hover:bg-[#F3E2A7] rounded-lg transition-all text-[#8A8A7A] hover:text-[#111111]"
+              className="p-2 hover:bg-[#F3E2A7] rounded-lg transition-all text-[#5F5F5F] hover:text-[#111111]"
             >
               <X className="w-4 h-4" />
             </button>
@@ -295,7 +295,7 @@ const SandboxQueuePanel: React.FC = () => {
                 )}
                 {typeof finalResult.stdout === 'string' && finalResult.stdout && (
                   <div>
-                    <div className="text-[10px] font-black text-[#8A8A7A] uppercase tracking-widest mb-1">stdout</div>
+                    <div className="text-[10px] font-black text-[#5F5F5F] uppercase tracking-widest mb-1">stdout</div>
                     <pre className="p-3 bg-[#111111] text-[#D9B86C] rounded-xl font-mono text-[11px] whitespace-pre-wrap break-words max-h-56 overflow-auto">
                       {finalResult.stdout as string}
                     </pre>
@@ -303,7 +303,7 @@ const SandboxQueuePanel: React.FC = () => {
                 )}
                 {typeof finalResult.stderr === 'string' && finalResult.stderr && (
                   <div>
-                    <div className="text-[10px] font-black text-[#8A8A7A] uppercase tracking-widest mb-1">stderr</div>
+                    <div className="text-[10px] font-black text-[#5F5F5F] uppercase tracking-widest mb-1">stderr</div>
                     <pre className="p-3 bg-[#111111] text-red-400 rounded-xl font-mono text-[11px] whitespace-pre-wrap break-words max-h-56 overflow-auto">
                       {finalResult.stderr as string}
                     </pre>
@@ -311,7 +311,7 @@ const SandboxQueuePanel: React.FC = () => {
                 )}
                 {Array.isArray(finalResult.rows) && (
                   <div>
-                    <div className="text-[10px] font-black text-[#8A8A7A] uppercase tracking-widest mb-1">
+                    <div className="text-[10px] font-black text-[#5F5F5F] uppercase tracking-widest mb-1">
                       rows ({(finalResult.row_count as number) ?? finalResult.rows.length})
                     </div>
                     <pre className="p-3 bg-[#111111] text-[#D9B86C] rounded-xl font-mono text-[10px] whitespace-pre-wrap break-words max-h-56 overflow-auto">
@@ -323,7 +323,7 @@ const SandboxQueuePanel: React.FC = () => {
             )}
 
             {!finalResult && liveOutput.length === 0 && (liveStatus === 'queued' || liveStatus === 'running') && (
-              <div className="text-xs text-[#8A8A7A] italic">Waiting for output…</div>
+              <div className="text-xs text-[#5F5F5F] italic">Waiting for output…</div>
             )}
           </div>
         </div>
@@ -333,8 +333,8 @@ const SandboxQueuePanel: React.FC = () => {
 };
 
 const StatTile: React.FC<{ icon: typeof Box; label: string; value: React.ReactNode }> = ({ icon: Icon, label, value }) => (
-  <div className="p-3.5 bg-[#FAFAF5] border border-[#ECE7DA] rounded-xl">
-    <div className="flex items-center gap-1.5 text-[#8A8A7A] mb-2">
+  <div className="p-3.5 bg-[#FAFAF5] border border-[#BFA66A] rounded-xl">
+    <div className="flex items-center gap-1.5 text-[#5F5F5F] mb-2">
       <Icon className="w-3.5 h-3.5 text-[#B88719]" />
       <span className="text-[9px] font-black uppercase tracking-widest">{label}</span>
     </div>

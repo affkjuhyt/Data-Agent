@@ -285,7 +285,7 @@ const ProgressItem: React.FC<{ item: IngestionProgress }> = ({ item }) => {
 
       {/* Recent Logs */}
       {item.logs.length > 0 && (
-        <div className="mt-2 pt-2 border-t border-[#D4C4A8]">
+        <div className="mt-2 pt-2 border-t border-[#BFA66A]">
           <p className="text-xs font-bold text-[#1E1B15] mb-1">Activity:</p>
           <div className="text-xs text-[#5A5A5A] space-y-0.5 max-h-12 overflow-y-auto">
             {item.logs.slice(-3).map((log, i) => (
@@ -298,7 +298,7 @@ const ProgressItem: React.FC<{ item: IngestionProgress }> = ({ item }) => {
       )}
 
       {/* Time */}
-      <div className="mt-2 text-xs text-[#999]">
+      <div className="mt-2 text-xs text-[#5F5F5F]">
         Started: {item.startTime.toLocaleTimeString()}
       </div>
     </div>

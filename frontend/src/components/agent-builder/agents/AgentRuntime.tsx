@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { AgentRegistryOverview } from './AgentOverview';
 import { NewAgentWizard, type CreatedAgent } from './AgentWizard';
@@ -11,7 +11,7 @@ import { AgentDetailView } from './AgentDetail';
 import { AgentDetailPage } from './AgentDetailPage';
 import { DetailDrawer } from '../../shared/DetailDrawer';
 import WorkflowBuilder from '../workflow/Builder';
-import { Bot, Terminal, Sliders, Activity, Zap, Plus, Settings } from 'lucide-react';
+import { Bot, Terminal, Sliders, Activity, Zap, LayoutTemplate } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { apiMutate } from '../../../lib/apiClient';
 
@@ -43,6 +43,7 @@ export const AgentRuntimeView = ({
   };
 
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [quickViewAgentId, setQuickViewAgentId] = useState<string | null>(null);
   const [showWizard, setShowWizard] = useState(false);
   const [showProvisioning, setShowProvisioning] = useState(false);
   const [builderAgent, setBuilderAgent] = useState<CreatedAgent | null>(null);
@@ -68,6 +69,7 @@ export const AgentRuntimeView = ({
   };
 
   const handleSelectAgent = (id: string) => {
+    setQuickViewAgentId(null);
     setSelectedAgentId(id);
     setView('OVERVIEW'); // stay in OVERVIEW but show detail
   };
@@ -86,7 +88,7 @@ export const AgentRuntimeView = ({
 
     switch (view) {
       case 'CLI':     return <CLIScreen />;
-      case 'CONFIG':  return <ConfigRegistry />;
+      case 'CONFIG':  return <ConfigRegistry onSelect={handleSelectAgent} onQuickView={setQuickViewAgentId} />;
       case 'TRACES':  return <TraceExplorer />;
       case 'RUNS':    return <RunRegistry />;
       case 'OVERVIEW':
@@ -126,7 +128,7 @@ export const AgentRuntimeView = ({
 
   return (
     <div className="flex flex-col relative">
-      {/* Internal view tabs â€” kept as a fallback so the component still works standalone */}
+      {/* Internal view tabs — kept as a fallback so the component still works standalone */}
       {!externalView && (
         <div className="sub-tab-bar mb-6">
           {[
@@ -167,42 +169,33 @@ export const AgentRuntimeView = ({
       <DetailDrawer
         isOpen={showProvisioning}
         onClose={handleCloseProvision}
-        title="Fleet Provisioning"
-        subtitle="Autoscale agent clusters based on demand"
-        icon={Zap}
+        title="Agent templates"
+        subtitle="Template lưu trong platform settings — tạo agent qua Wizard"
+        icon={LayoutTemplate}
         size="standard"
         persistKey="agent-provision"
       >
-        <ProvisioningView />
+        <ProvisioningView
+          onUseTemplate={t => { handleCloseProvision(); setWizardRestore({ name: t.name }); }}
+          onCreateBlank={() => { handleCloseProvision(); setShowWizard(true); }}
+        />
       </DetailDrawer>
 
       <DetailDrawer
-        isOpen={false}
-        onClose={() => setSelectedAgentId(null)}
-        title={selectedAgentId ? `Agent: ${selectedAgentId}` : 'Agent Detail'}
-        subtitle="Control Plane â€¢ Production Runtime â€¢ V2.0"
+        isOpen={!!quickViewAgentId}
+        onClose={() => setQuickViewAgentId(null)}
+        title="Agent"
+        subtitle="Xem nhanh cấu hình và runs gần đây"
         icon={Bot}
-        size="xwide"
-        persistKey="agent-detail"
-        tabs={[
-          { id: 'CONFIG',  label: 'Configuration', icon: Settings },
-          { id: 'LOGS',    label: 'Real-time Logs', icon: Terminal },
-          { id: 'METRICS', label: 'Metrics',       icon: Activity },
-          { id: 'POLICY',  label: 'Governance',    icon: Sliders },
-        ]}
-        footer={
-          <div className="flex gap-3">
-            <button className="btn-secondary">Restart Instance</button>
-            <button className="btn-primary">Synchronize Configuration</button>
-          </div>
-        }
+        size="wide"
+        persistKey="agent-quick-view"
       >
-        {selectedAgentId && (
+        {quickViewAgentId && (
           <AgentDetailView
-            agentId={selectedAgentId}
-            onBack={() => setSelectedAgentId(null)}
-            onRun={() => { setView('RUNS'); setSelectedAgentId(null); }}
-            onTrace={() => { setView('TRACES'); setSelectedAgentId(null); }}
+            key={quickViewAgentId}
+            agentId={quickViewAgentId}
+            onOpenConfig={() => handleSelectAgent(quickViewAgentId)}
+            onViewRuns={() => { setQuickViewAgentId(null); setView('RUNS'); }}
           />
         )}
       </DetailDrawer>

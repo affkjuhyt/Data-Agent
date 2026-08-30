@@ -46,18 +46,12 @@ const SECTIONS: Record<SettingsSection, () => React.ReactNode> = {
 };
 
 const SettingsView = ({ section }: { section: SettingsSection }) => {
+  // Rendered straight into the app's <main> like every other module: no nested
+  // frame, no inner scroll — the page scrolls.
   const render = SECTIONS[section];
-  return (
-    <div className="max-w-[1600px] mx-auto">
-      <div className="bg-[#050505] rounded-[2rem] lg:rounded-3xl border border-white/5 h-[calc(100vh-140px)] lg:h-[calc(100vh-160px)] overflow-hidden shadow-2xl">
-        <div className="p-6 lg:p-10 h-full overflow-y-auto no-scrollbar scroll-smooth bg-slate-950">
-          {render
-            ? render()
-            : <Placeholder title="Not available" description={`Section "${section}" is not available.`} comingSoon={false} />}
-        </div>
-      </div>
-    </div>
-  );
+  return render
+    ? <>{render()}</>
+    : <Placeholder title="Not available" description={`Section "${section}" is not available.`} comingSoon={false} />;
 };
 
 export default SettingsView;

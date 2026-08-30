@@ -288,6 +288,65 @@ const SecondaryNav = () => {
   );
 };
 
+/* ─── Tenant breadcrumb + switcher (GET /api/auth/me/tenants) ─────── */
+const TenantSwitcher = () => {
+  const { tenant, tenants, tenantsLoading, setTenant } = useAppState();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  const label = tenant.tenantName ?? (tenantsLoading ? '…' : '—');
+
+  return (
+    <div ref={ref} className="hidden sm:block relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label="Switch tenant"
+        className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-[#FFF9E8] rounded-lg border border-[#BFA66A] transition-colors"
+      >
+        <Building2 className="w-3.5 h-3.5 text-[#3F3F3F]" />
+        <span className="text-xs font-semibold text-[#111111]">{label}</span>
+        {tenant.slug && <span className="text-[10px] font-mono text-[#5F5F5F]">{tenant.slug}</span>}
+        <ChevronDown className="w-3 h-3 text-[#3F3F3F]" />
+      </button>
+      {open && (
+        <div
+          role="listbox"
+          className="absolute left-0 top-full mt-1 w-64 bg-white border border-[#BFA66A] rounded-xl shadow-xl z-30 overflow-hidden"
+        >
+          {tenants.length === 0 ? (
+            <div className="px-3 py-3 text-[12px] text-[#5F5F5F]">Tài khoản chưa thuộc tenant nào.</div>
+          ) : tenants.map(t => (
+            <button
+              key={t.id}
+              role="option"
+              aria-selected={t.id === tenant.tenantId}
+              onClick={() => { setTenant({ tenantId: t.id, tenantName: t.name, slug: t.slug }); setOpen(false); }}
+              className={cn(
+                'w-full text-left px-3 py-2 text-[12px] hover:bg-[#FFF9E8] transition-colors flex items-center justify-between gap-2',
+                t.id === tenant.tenantId ? 'bg-[#F4E8C3] text-[#111111] font-semibold' : 'text-[#3F3F3F]',
+              )}
+            >
+              <span className="truncate">{t.name}</span>
+              <span className="font-mono text-[10px] text-[#5F5F5F] shrink-0">{t.slug}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 /* ─── Minimal Top Bar ─────────────────────────────────────────────── */
 const TopBar = ({
   onMenuClick,
@@ -317,13 +376,7 @@ const TopBar = ({
           <span className="font-display font-semibold text-sm text-[#111111]">AeroFlow</span>
         </div>
 
-        <button className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-[#FFF9E8] rounded-lg border border-[#BFA66A] transition-colors">
-          <Building2 className="w-3.5 h-3.5 text-[#3F3F3F]" />
-          <span className="text-xs font-medium text-[#3F3F3F]">{tenant.organization}</span>
-          <span className="text-[#777777] text-xs">/</span>
-          <span className="text-xs font-semibold text-[#111111]">{tenant.workspace}</span>
-          <ChevronDown className="w-3 h-3 text-[#555555]" />
-        </button>
+        <TenantSwitcher />
 
         <div className="flex gap-1 overflow-x-auto no-scrollbar">
           {ENVIRONMENTS.map(env => (

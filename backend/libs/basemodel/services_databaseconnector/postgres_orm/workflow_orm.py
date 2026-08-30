@@ -637,3 +637,27 @@ class AgentTracesORM(Base):
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     message: Mapped["MessagesORM"] = relationship(back_populates="traces")
+
+
+# ─── Platform settings ────────────────────────────────────────────────────────
+
+@register("orm")
+class PlatformSettingsORM(Base):
+    """Tenant-scoped JSON key/value store for admin-UI settings.
+
+    One row per (tenant, key); the value is opaque JSON so a new settings
+    screen never needs a schema migration. Written/read only through
+    workflow-runtime GET/PUT /api/platform/settings/{key}.
+    """
+    __tablename__ = "PlatformSettings"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "key", name="uq_platform_settings_tenant_key"),
+        Index("idx_platformsettings_tenant", "tenant_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    key: Mapped[str] = mapped_column(String(100), nullable=False)
+    value: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    updated_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

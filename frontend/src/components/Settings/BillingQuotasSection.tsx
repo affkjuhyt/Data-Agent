@@ -1,170 +1,221 @@
-import React from 'react';
-import { 
-  CreditCard, 
-  TrendingUp, 
-  TrendingDown, 
-  BarChart3, 
-  DollarSign, 
-  Zap, 
-  AlertCircle,
-  Plus,
-  ArrowUpRight,
-  ArrowDownRight,
-  History,
-  MoreVertical,
-  Activity,
-  Layers,
-  ArrowRight
-} from 'lucide-react';
-import { motion } from 'motion/react';
+/**
+ * Settings → Billing & Quotas.
+ *
+ *   spend   useBillingSpend(30)            GET /api/billing/spend?days=30
+ *   quotas  usePlatformSetting('quotas')   [{id, name, limit_tokens, period}]
+ *
+ * No balance, no transactions, no top-up: the runtime only knows LLM spend.
+ */
+import React, { useState } from 'react';
+import { DollarSign, Zap, BarChart3, Layers, Plus, RefreshCw, Trash2, Pencil, Check, X, Coins } from 'lucide-react';
+import { Button, Card, EmptyState, ErrorState, Field, Input, LoadingState, SectionTitle, Select, StatTile, Table } from '../ui';
+import { useBillingSpend, type SpendByModel, type SpendPoint } from '../../lib/useBillingSpend';
+import { usePlatformSetting, newSettingId } from '../../lib/usePlatformSettings';
 
-const SPEND_DATA = [
-  { month: 'JAN', tokens: 1.2, storage: 0.4, compute: 0.8 },
-  { month: 'FEB', tokens: 2.1, storage: 0.5, compute: 1.2 },
-  { month: 'MAR', tokens: 4.8, storage: 0.8, compute: 3.1 },
-  { month: 'APR', tokens: 3.2, storage: 0.9, compute: 2.4 },
-];
+export interface Quota { id: string; name: string; limit_tokens: number; period: 'day' | 'week' | 'month' }
+const PERIODS: Quota['period'][] = ['day', 'week', 'month'];
+const EMPTY_QUOTA: Omit<Quota, 'id'> = { name: '', limit_tokens: 1_000_000, period: 'month' };
+
+const money = (v: number, currency: string) => {
+  try { return new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 2 }).format(v); }
+  catch { return `${v.toFixed(2)} ${currency}`; }
+};
+const tokens = (v: number) => v.toLocaleString('en-US');
 
 export const BillingQuotasSection = () => {
+  const [days, setDays] = useState(30);
+  const { spend, loading, error, reload } = useBillingSpend(days);
+
+  const totalTokens = spend?.series.reduce((a, p) => a + (p.tokens ?? 0), 0) ?? 0;
+  const currency = spend?.currency ?? 'USD';
+
   return (
-    <div className="space-y-12">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6">
+      <SectionTitle
+        title="Billing & Quotas"
+        subtitle="Chi phí LLM theo ngày và theo model từ runtime; hạn mức token do bạn cấu hình."
+        actions={
+          <div className="flex items-center gap-2">
+            <Select value={days} onChange={e => setDays(Number(e.target.value))} aria-label="Khoảng thời gian">
+              <option value={7}>7 ngày</option>
+              <option value={30}>30 ngày</option>
+              <option value={90}>90 ngày</option>
+            </Select>
+            <Button icon={RefreshCw} loading={loading} onClick={reload}>Tải lại</Button>
+          </div>
+        }
+      />
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatTile label={`Chi phí ${days} ngày`} value={spend?.available ? money(spend.total, currency) : '—'} icon={DollarSign} loading={loading} />
+        <StatTile label="Tokens" value={spend?.available ? tokens(totalTokens) : '—'} icon={Zap} loading={loading} />
+        <StatTile label="Models có chi phí" value={spend?.available ? spend.by_model.length : '—'} icon={Layers} loading={loading} />
+        <StatTile label="Ngày có dữ liệu" value={spend?.available ? spend.series.filter(p => p.spend > 0 || p.tokens > 0).length : '—'} icon={BarChart3} loading={loading} />
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="xl:col-span-2 space-y-6">
+          <Card title="Chi phí theo ngày" subtitle={`GET /api/billing/spend?days=${days}`}>
+            {error ? <ErrorState message={error} onRetry={reload} /> : loading ? <LoadingState /> : !spend || !spend.available ? (
+              <EmptyState icon={Coins} title="Chưa có nguồn chi phí" description={spend?.note ?? 'Runtime chưa cấu hình nguồn dữ liệu chi phí (LiteLLM spend log).'} />
+            ) : spend.series.length === 0 ? (
+              <EmptyState icon={BarChart3} title="Không có dữ liệu trong khoảng này" description={spend.note ?? undefined} />
+            ) : (
+              <SpendChart series={spend.series} currency={currency} />
+            )}
+          </Card>
+
+          <Card title="Chi phí theo model" subtitle="by_model" padding="none">
+            {loading ? <LoadingState /> : (
+              <Table<SpendByModel>
+                rows={spend?.available ? spend.by_model : []}
+                rowKey={r => r.model}
+                empty={<EmptyState icon={Layers} title="Chưa có chi phí theo model" />}
+                columns={[
+                  { header: 'Model', cell: r => <span className="font-mono font-bold">{r.model}</span> },
+                  { header: 'Tokens', align: 'right', cell: r => <span className="font-mono">{tokens(r.tokens)}</span> },
+                  { header: 'Chi phí', align: 'right', cell: r => <span className="font-mono font-bold">{money(r.spend, currency)}</span> },
+                  { header: 'Tỷ trọng', align: 'right', cell: r => <span className="font-mono">{spend && spend.total > 0 ? `${((r.spend / spend.total) * 100).toFixed(1)}%` : '—'}</span> },
+                ]}
+              />
+            )}
+          </Card>
+        </div>
+
         <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight mb-2 uppercase italic">Billing & Asset Quotas</h1>
-          <p className="text-slate-500 font-medium leading-relaxed max-w-xl">
-             Managing global AI budgets, token quotas, and cloud infrastructure costs. Multi-tenant cost attribution and automated capping.
-          </p>
+          <Quotas />
         </div>
-        <div className="p-8 bg-brand-500/10 border border-brand-500/20 rounded-[32px] flex items-center gap-8">
-           <div className="text-right">
-              <div className="text-[10px] text-slate-500 font-black uppercase tracking-widest leading-none mb-1">Current Balance</div>
-              <div className="text-2xl font-bold text-white leading-none">$12,402.50</div>
-           </div>
-           <button className="px-6 py-3 bg-brand-500 text-white rounded-2xl font-bold text-xs shadow-lg shadow-brand-500/20 ring-4 ring-brand-500/10">Top Up</button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-         {[
-           { label: 'Token Consumption', val: '4.2B', trend: '+12%', type: 'UP', icon: Zap },
-           { label: 'Avg Monthly Spend', val: '$3.8k', trend: '-2%', type: 'DOWN', icon: DollarSign },
-           { label: 'Storage Footprint', val: '1.2 PB', trend: '+5%', type: 'UP', icon: BarChart3 },
-           { label: 'Efficiency Score', val: '92%', trend: '+4%', type: 'UP', icon: TrendingUp },
-         ].map((stat, i) => (
-           <div key={i} className="p-8 bg-white/[0.02] border border-white/5 rounded-[40px] group hover:bg-white/[0.04] transition-all">
-              <div className="flex items-center justify-between mb-8">
-                <div className="p-3.5 bg-brand-500/10 rounded-2xl border border-brand-500/20 group-hover:scale-110 transition-transform">
-                  <stat.icon className="w-5 h-5 text-brand-400" />
-                </div>
-                <div className={`flex items-center gap-1 text-[10px] font-black ${stat.type === 'UP' ? 'text-red-400' : 'text-emerald-400'}`}>
-                   {stat.type === 'UP' ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                   {stat.trend}
-                </div>
-              </div>
-              <div className="text-3xl font-bold text-white mb-1 uppercase italic tracking-tighter">{stat.val}</div>
-              <div className="text-[10px] text-slate-500 font-black uppercase tracking-widest">{stat.label}</div>
-           </div>
-         ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 p-10 bg-white/[0.02] border border-white/5 rounded-[48px]">
-           <div className="flex items-center justify-between mb-12">
-              <h3 className="text-xl font-bold text-white">Resource Consumption Trends</h3>
-              <div className="flex gap-4">
-                 {['Tokens', 'Storage', 'Compute'].map(t => (
-                   <div key={t} className="flex items-center gap-2">
-                      <div className={`w-2.5 h-2.5 rounded-full ${t === 'Tokens' ? 'bg-brand-500' : t === 'Storage' ? 'bg-amber-400' : 'bg-emerald-400'}`} />
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{t}</span>
-                   </div>
-                 ))}
-              </div>
-           </div>
-           
-           <div className="h-64 flex items-end gap-12 px-4 border-b border-white/5 pb-2">
-              {SPEND_DATA.map((d, i) => (
-                <div key={i} className="flex-1 flex flex-col gap-1 items-center h-full justify-end group">
-                   <div className="w-full flex flex-col gap-1 items-center">
-                     <div className="w-full bg-brand-500 opacity-60 group-hover:opacity-100 transition-opacity rounded-t-lg" style={{ height: `${d.tokens * 20}px` }} />
-                     <div className="w-full bg-amber-400 opacity-60 group-hover:opacity-100 transition-opacity" style={{ height: `${d.storage * 20}px` }} />
-                     <div className="w-full bg-emerald-400 opacity-60 group-hover:opacity-100 transition-opacity rounded-b-lg" style={{ height: `${d.compute * 20}px` }} />
-                   </div>
-                   <span className="text-[10px] font-black text-slate-600 mt-4">{d.month}</span>
-                </div>
-              ))}
-           </div>
-        </div>
-
-        <div className="p-10 bg-[#0a0a0a] border border-white/5 rounded-[48px]">
-           <h3 className="text-xl font-bold text-white mb-10">Active Quotas</h3>
-           <div className="space-y-8">
-              {[
-                { name: 'Public-Sector-GPT4', limit: '100M', used: 82, color: 'brand' },
-                { name: 'Financial-Llama3-Local', limit: '500M', used: 45, color: 'amber' },
-                { name: 'Health-OCR-Gemini', limit: '20M', used: 12, color: 'emerald' },
-              ].map(q => (
-                <div key={q.name} className="space-y-3">
-                   <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
-                      <span className="text-white">{q.name}</span>
-                      <span className="text-slate-500">{q.used}% of {q.limit}</span>
-                   </div>
-                   <div className="h-2 bg-white/5 rounded-full overflow-hidden flex">
-                      <div className={`h-full bg-${q.color}-500 rounded-full`} style={{ width: `${q.used}%` }} />
-                   </div>
-                   <div className="flex justify-end">
-                      <button className="text-[9px] font-bold text-slate-600 hover:text-brand-400 transition-colors uppercase tracking-[0.2em]">Escalate Quota</button>
-                   </div>
-                </div>
-              ))}
-           </div>
-           
-           <div className="mt-12 p-6 bg-amber-500/5 border border-amber-500/20 rounded-3xl flex items-center gap-4">
-              <AlertCircle className="w-6 h-6 text-amber-400 flex-shrink-0" />
-              <p className="text-xs text-slate-400 leading-tight">
-                 Workspace 'Fin-Core' is nearing 90% quota. Automatic scale-down will trigger in 4 hours.
-              </p>
-           </div>
-        </div>
-      </div>
-      
-      <div className="p-10 bg-white/[0.02] border border-white/5 rounded-[48px]">
-         <div className="flex items-center justify-between mb-8">
-            <h3 className="text-xl font-bold text-white italic">Transaction Ledger</h3>
-            <button className="p-2.5 bg-white/5 hover:bg-white/10 rounded-2xl border border-white/10 text-slate-400 hover:text-white transition-all">
-               <History className="w-5 h-5" />
-            </button>
-         </div>
-         <div className="space-y-4">
-            {[
-              { id: 'TX-402', desc: 'Azure OpenAI Invoicing - US-EAST', date: 'May 14, 2026', amount: '-$412.50', status: 'PAID' },
-              { id: 'TX-401', desc: 'S3 Knowledge Storage - Enterprise Gold', date: 'May 12, 2026', amount: '-$892.00', status: 'PENDING' },
-              { id: 'TX-400', desc: 'Linh N. - Managed Top-up', date: 'May 10, 2026', amount: '+$5000.00', status: 'VERIFIED' },
-            ].map(tx => (
-              <div key={tx.id} className="group flex items-center justify-between p-6 bg-white/[0.01] hover:bg-white/[0.03] border border-white/5 rounded-3xl transition-all">
-                 <div className="flex items-center gap-6">
-                    <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-white/10 flex items-center justify-center text-slate-600 group-hover:text-brand-400 transition-colors">
-                       <CreditCard className="w-6 h-6" />
-                    </div>
-                    <div>
-                       <div className="text-white font-bold text-sm tracking-tight mb-1">{tx.desc}</div>
-                       <div className="text-[10px] text-slate-500 uppercase font-black tracking-widest">{tx.date} • {tx.id}</div>
-                    </div>
-                 </div>
-                 <div className="flex items-center gap-12">
-                     <div className={`text-lg font-mono font-bold ${tx.amount.startsWith('+') ? 'text-emerald-400' : 'text-white'}`}>
-                        {tx.amount}
-                     </div>
-                     <div className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border ${
-                        tx.status === 'PAID' || tx.status === 'VERIFIED' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
-                     }`}>
-                        {tx.status}
-                     </div>
-                     <ArrowRight className="w-5 h-5 text-slate-700 opacity-0 group-hover:opacity-100 transition-all cursor-pointer" />
-                 </div>
-              </div>
-            ))}
-         </div>
       </div>
     </div>
+  );
+};
+
+/* ─── Single-series bar chart (spend/day) — one hue, one axis, table view below ─── */
+const SpendChart = ({ series, currency }: { series: SpendPoint[]; currency: string }) => {
+  const [hover, setHover] = useState<number | null>(null);
+  const [showTable, setShowTable] = useState(false);
+  const W = 720; const H = 200; const padL = 44; const padB = 24; const padT = 8;
+  const max = Math.max(...series.map(p => p.spend), 0) || 1;
+  const n = series.length;
+  const slot = (W - padL) / n;
+  const barW = Math.max(2, Math.min(28, slot - 2));
+  const y = (v: number) => padT + (H - padT - padB) * (1 - v / max);
+  const ticks = [0, 0.5, 1].map(f => f * max);
+  const label = (d: string) => { const dt = new Date(d); return Number.isNaN(dt.getTime()) ? d : `${dt.getDate()}/${dt.getMonth() + 1}`; };
+  const every = Math.ceil(n / 8);
+
+  return (
+    <div>
+      <div className="overflow-x-auto">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[480px]" role="img" aria-label={`Chi phí LLM theo ngày, ${n} ngày`}>
+          {ticks.map(t => (
+            <g key={t}>
+              <line x1={padL} x2={W} y1={y(t)} y2={y(t)} stroke="#E4D6AE" strokeWidth={1} />
+              <text x={padL - 6} y={y(t) + 3} textAnchor="end" fontSize={10} fill="#5F5F5F">{money(t, currency)}</text>
+            </g>
+          ))}
+          {series.map((p, i) => {
+            const x = padL + i * slot + (slot - barW) / 2;
+            const h = Math.max(0, (H - padB) - y(p.spend));
+            const active = hover === i;
+            return (
+              <g key={p.date} onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)}>
+                <rect x={padL + i * slot} y={padT} width={slot} height={H - padT - padB} fill="transparent" />
+                <rect x={x} y={y(p.spend)} width={barW} height={h} rx={h > 4 ? 4 : 0} fill={active ? '#8A5A00' : '#B88719'}>
+                  <title>{`${p.date}: ${money(p.spend, currency)} · ${tokens(p.tokens)} tokens`}</title>
+                </rect>
+                {i % every === 0 && <text x={x + barW / 2} y={H - 6} textAnchor="middle" fontSize={10} fill="#5F5F5F">{label(p.date)}</text>}
+              </g>
+            );
+          })}
+          <line x1={padL} x2={W} y1={H - padB} y2={H - padB} stroke="#BFA66A" strokeWidth={1} />
+        </svg>
+      </div>
+      <div className="flex items-center justify-between mt-2">
+        <p className="text-[11px] text-[#5F5F5F] h-4">
+          {hover !== null ? `${series[hover].date} · ${money(series[hover].spend, currency)} · ${tokens(series[hover].tokens)} tokens` : 'Di chuột lên cột để xem chi tiết'}
+        </p>
+        <Button size="sm" variant="ghost" onClick={() => setShowTable(v => !v)}>{showTable ? 'Ẩn bảng' : 'Xem bảng'}</Button>
+      </div>
+      {showTable && (
+        <div className="mt-3">
+          <Table<SpendPoint>
+            rows={series}
+            rowKey={p => p.date}
+            columns={[
+              { header: 'Ngày', cell: p => <span className="font-mono">{p.date}</span> },
+              { header: 'Tokens', align: 'right', cell: p => <span className="font-mono">{tokens(p.tokens)}</span> },
+              { header: 'Chi phí', align: 'right', cell: p => <span className="font-mono">{money(p.spend, currency)}</span> },
+            ]}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* ─── Quotas (persisted) ─────────────────────────────────── */
+const Quotas = () => {
+  const setting = usePlatformSetting<Quota[]>('quotas', []);
+  const quotas = Array.isArray(setting.value) ? setting.value : [];
+  const [editing, setEditing] = useState<Quota | null>(null);
+  const [draft, setDraft] = useState<Omit<Quota, 'id'>>(EMPTY_QUOTA);
+  const [showForm, setShowForm] = useState(false);
+
+  const startAdd = () => { setEditing(null); setDraft(EMPTY_QUOTA); setShowForm(true); };
+  const startEdit = (q: Quota) => { setEditing(q); setDraft({ name: q.name, limit_tokens: q.limit_tokens, period: q.period }); setShowForm(true); };
+  const cancel = () => { setShowForm(false); setEditing(null); };
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!draft.name.trim() || draft.limit_tokens <= 0) return;
+    const next = editing ? quotas.map(q => (q.id === editing.id ? { ...editing, ...draft } : q)) : [...quotas, { id: newSettingId('quota'), ...draft }];
+    await setting.save(next).then(cancel).catch(() => {});
+  };
+  const remove = (q: Quota) => {
+    if (!window.confirm(`Xoá quota "${q.name}"?`)) return;
+    setting.save(quotas.filter(x => x.id !== q.id)).catch(() => {});
+  };
+
+  return (
+    <Card
+      title="Token quotas"
+      subtitle={<>Lưu tại <code className="font-mono">platform/settings/quotas</code>. Việc thực thi hạn mức chưa được wire ở runtime.</>}
+      actions={<Button size="sm" variant="primary" icon={Plus} onClick={startAdd} disabled={setting.loading}>Thêm</Button>}
+    >
+      {setting.error && <div className="mb-4"><ErrorState message={setting.error} onRetry={setting.reload} /></div>}
+      {showForm && (
+        <form onSubmit={submit} className="mb-4 p-4 rounded-xl border border-[#BFA66A] bg-[#FFF9E8] space-y-3">
+          <Field label="Tên"><Input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="vd. tenant-default" required /></Field>
+          <Field label="Giới hạn tokens"><Input type="number" min={1} value={draft.limit_tokens} onChange={e => setDraft({ ...draft, limit_tokens: Number(e.target.value) })} required /></Field>
+          <Field label="Chu kỳ">
+            <Select value={draft.period} onChange={e => setDraft({ ...draft, period: e.target.value as Quota['period'] })}>
+              {PERIODS.map(p => <option key={p} value={p}>{p}</option>)}
+            </Select>
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" size="sm" icon={X} onClick={cancel}>Huỷ</Button>
+            <Button type="submit" variant="primary" size="sm" icon={Check} loading={setting.saving}>{editing ? 'Lưu' : 'Thêm'}</Button>
+          </div>
+        </form>
+      )}
+      {setting.loading ? <LoadingState /> : quotas.length === 0 ? (
+        <EmptyState icon={Zap} title="Chưa có quota" description="Thêm hạn mức token theo ngày/tuần/tháng." />
+      ) : (
+        <ul className="space-y-2">
+          {quotas.map(q => (
+            <li key={q.id} className="flex items-center justify-between gap-3 p-3 rounded-xl border border-[#BFA66A] bg-white">
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-[#111111] truncate">{q.name}</div>
+                <div className="text-[11px] text-[#5F5F5F] font-mono">{tokens(q.limit_tokens)} tokens / {q.period}</div>
+              </div>
+              <div className="flex gap-1 shrink-0">
+                <Button size="sm" variant="ghost" icon={Pencil} onClick={() => startEdit(q)} aria-label="Sửa" />
+                <Button size="sm" variant="danger" icon={Trash2} onClick={() => remove(q)} aria-label="Xoá" />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 };

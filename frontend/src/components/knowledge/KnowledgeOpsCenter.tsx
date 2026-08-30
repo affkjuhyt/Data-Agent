@@ -104,7 +104,7 @@ const KnowledgeOpsCenter = () => {
       case 'FLEET':  return <FleetOverview />;
       case 'INGEST':
         return (
-          <div className="max-w-4xl mx-auto bg-white border border-[#BFA66A]/20 rounded-3xl overflow-hidden shadow-sm animate-in fade-in duration-300">
+          <div className="content-card content-card--static max-w-4xl mx-auto overflow-hidden animate-in fade-in duration-300">
             <IngestionWizard
               onCancel={() => setActiveSubTab('FLEET')}
               onComplete={() => setActiveSubTab('INVENTORY')}

@@ -39,7 +39,7 @@ function ttlLabel(rotation_due_at: string | null): string {
 }
 
 function ttlColor(rotation_due_at: string | null): string {
-  if (!rotation_due_at) return 'text-slate-500';
+  if (!rotation_due_at) return 'text-[#777]';
   const diff = new Date(rotation_due_at).getTime() - Date.now();
   if (diff < 0) return 'text-red-500';
   if (diff < 7 * 86400000) return 'text-amber-500';

@@ -146,7 +146,7 @@ export const ConflictWorkspace = () => {
     const styles: Record<SeverityType, string> = {
       high:   'bg-red-500/10 text-red-700 border-red-500/20 px-2 py-0.5 rounded text-[10px] uppercase font-bold border font-mono',
       medium: 'bg-amber-500/10 text-amber-700 border-amber-500/20 px-2 py-0.5 rounded text-[10px] uppercase font-bold border font-mono',
-      low:    'bg-slate-100 text-slate-600 border-slate-200 px-2 py-0.5 rounded text-[10px] uppercase font-bold border font-mono',
+      low:    'bg-[#FFF9E8] text-[#3F3F3F] border-[#BFA66A] px-2 py-0.5 rounded text-[10px] uppercase font-bold border font-mono',
     };
     return <span className={styles[sev]}>{sev}</span>;
   };
@@ -239,7 +239,7 @@ export const ConflictWorkspace = () => {
               <button
                 type="button"
                 onClick={handleCloseDrawer}
-                className="px-3.5 py-2 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-500 uppercase tracking-wide cursor-pointer"
+                className="btn-secondary"
               >
                 Cancel
               </button>
@@ -251,7 +251,7 @@ export const ConflictWorkspace = () => {
                   "px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer",
                   selectedMethod
                     ? "bg-[#B88719] text-white shadow-md hover:bg-[#8A5A00]"
-                    : "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
+                    : "bg-[#FFF9E8] text-[#5F5F5F] border border-[#BFA66A] cursor-not-allowed"
                 )}
               >
                 <CheckCircle className="w-4 h-4" />
@@ -263,7 +263,7 @@ export const ConflictWorkspace = () => {
               <button
                 type="button"
                 onClick={handleCloseDrawer}
-                className="px-3.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 rounded-xl text-xs font-bold text-slate-500 uppercase tracking-wide cursor-pointer"
+                className="btn-secondary btn-sm"
               >
                 Close View
               </button>
@@ -281,7 +281,7 @@ export const ConflictWorkspace = () => {
           <div className="p-5 space-y-5 text-[#111111] bg-white">
 
             {/* Conflict metadata warning banner */}
-            <div className="bg-[#FFFDF8] border border-[#BFA66A]/30 p-4 rounded-xl flex gap-3 shadow-xs">
+            <div className="bg-[#FFFDF8] border border-[#BFA66A] p-4 rounded-xl flex gap-3 shadow-xs">
               <Info className="w-4 h-4 text-[#8A5A00] shrink-0 mt-0.5" />
               <div className="space-y-0.5">
                 <h4 className="text-xs font-bold text-[#2A2A2A] uppercase tracking-wide">
@@ -298,20 +298,20 @@ export const ConflictWorkspace = () => {
               <span className="text-[9px] font-bold uppercase tracking-widest text-[#8A5A00] font-mono">
                 Reconciliation Explanation
               </span>
-              <p className="text-[11px] text-slate-700 leading-normal bg-[#FAF9F5] p-3.5 rounded-xl border border-[#BFA66A]/15 italic">
+              <p className="text-[11px] text-[#2A2A2A] leading-normal bg-[#FAF9F5] p-3.5 rounded-xl border border-[#BFA66A] italic">
                 "{conflictDetail.detailed_explanation}"
               </p>
             </div>
 
             {/* Mini details table */}
             <div className="grid grid-cols-2 gap-3 text-[11px]">
-              <div className="p-2.5 bg-slate-50 border border-slate-200/50 rounded-xl">
-                <span className="text-[8px] font-mono text-slate-400 font-bold uppercase block">Storage Hub</span>
-                <span className="font-bold font-mono text-slate-700 capitalize block truncate">{conflictDetail.where_happens}</span>
+              <div className="p-2.5 bg-[#FFF9E8] border border-[#BFA66A] rounded-xl">
+                <span className="text-[8px] font-mono text-[#5F5F5F] font-bold uppercase block">Storage Hub</span>
+                <span className="font-bold font-mono text-[#2A2A2A] capitalize block truncate">{conflictDetail.where_happens}</span>
               </div>
-              <div className="p-2.5 bg-slate-50 border border-slate-200/50 rounded-xl">
-                <span className="text-[8px] font-mono text-slate-400 font-bold uppercase block">Affected Location</span>
-                <span className="font-bold font-mono text-slate-700 block truncate" title={conflictDetail.affected_location}>
+              <div className="p-2.5 bg-[#FFF9E8] border border-[#BFA66A] rounded-xl">
+                <span className="text-[8px] font-mono text-[#5F5F5F] font-bold uppercase block">Affected Location</span>
+                <span className="font-bold font-mono text-[#2A2A2A] block truncate" title={conflictDetail.affected_location}>
                   {conflictDetail.affected_location}
                 </span>
               </div>
@@ -321,17 +321,17 @@ export const ConflictWorkspace = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Snapshot A */}
               <div className="flex flex-col gap-0">
-                <div className="border border-slate-200 rounded-xl overflow-hidden flex flex-col shadow-xs bg-white">
+                <div className="content-card content-card--static overflow-hidden flex flex-col">
                   <div className="bg-[#1F1E19] px-3.5 py-2 flex items-center justify-between">
-                    <span className="text-[9px] font-mono text-slate-300 font-black tracking-wider uppercase">
+                    <span className="text-[9px] font-mono text-[#5F5F5F] font-black tracking-wider uppercase">
                       Snapshot A: Database Canonical
                     </span>
-                    <span className="text-[8px] font-bold bg-[#FAF6EA] border border-[#BFA66A]/30 px-1.5 py-0.5 rounded text-[#8A5A00]">
+                    <span className="text-[8px] font-bold bg-[#FAF6EA] border border-[#BFA66A] px-1.5 py-0.5 rounded text-[#8A5A00]">
                       Existing Key
                     </span>
                   </div>
                   <div className="p-3.5 bg-[#FAF9F5] flex-1 min-h-[120px]">
-                    <p className="text-[11px] text-slate-700 leading-relaxed whitespace-pre-wrap">
+                    <p className="text-[11px] text-[#2A2A2A] leading-relaxed whitespace-pre-wrap">
                       {(conflictDetail.existing_snapshot as Record<string, string>)?.summary || 'No summary available.'}
                     </p>
                   </div>
@@ -339,14 +339,14 @@ export const ConflictWorkspace = () => {
                 <button
                   type="button"
                   onClick={() => setExistingExpanded(v => !v)}
-                  className="mt-1.5 flex items-center gap-1 self-start px-2.5 py-1 rounded-lg text-[10px] font-bold text-[#8A5A00] bg-[#FFF9E8] border border-[#BFA66A]/30 hover:bg-[#B88719] hover:text-white transition-all cursor-pointer"
+                  className="btn-ghost btn-sm mt-1.5 self-start"
                 >
                   <ChevronDown className={cn("w-3 h-3 transition-transform", existingExpanded && "rotate-180")} />
                   {existingExpanded ? 'Hide Full Text' : 'View Full Text'}
                 </button>
                 {existingExpanded && (
-                  <div className="mt-1 border border-[#BFA66A]/20 rounded-xl bg-[#FAF9F5] p-3.5 max-h-64 overflow-y-auto">
-                    <p className="text-[11px] text-slate-700 leading-relaxed whitespace-pre-wrap font-mono">
+                  <div className="mt-1 border border-[#BFA66A] rounded-xl bg-[#FAF9F5] p-3.5 max-h-64 overflow-y-auto">
+                    <p className="text-[11px] text-[#2A2A2A] leading-relaxed whitespace-pre-wrap font-mono">
                       {conflictDetail.existing_db_content ?? 'No content available.'}
                     </p>
                   </div>
@@ -355,17 +355,17 @@ export const ConflictWorkspace = () => {
 
               {/* Snapshot B */}
               <div className="flex flex-col gap-0">
-                <div className="border border-slate-200 rounded-xl overflow-hidden flex flex-col shadow-xs bg-white">
+                <div className="content-card content-card--static overflow-hidden flex flex-col">
                   <div className="bg-[#1D1B17] px-3.5 py-2 flex items-center justify-between">
-                    <span className="text-[9px] font-mono text-slate-300 font-black tracking-wider uppercase">
+                    <span className="text-[9px] font-mono text-[#5F5F5F] font-black tracking-wider uppercase">
                       Snapshot B: Ingestion Buffer
                     </span>
-                    <span className="text-[8px] font-bold bg-[#F3E2A7] border border-[#B88719]/30 px-1.5 py-0.5 rounded text-[#111111]">
+                    <span className="text-[8px] font-bold bg-[#F3E2A7] border border-[#B88719] px-1.5 py-0.5 rounded text-[#111111]">
                       Incoming Stream
                     </span>
                   </div>
                   <div className="p-3.5 bg-[#FAF9F5] flex-1 min-h-[120px]">
-                    <p className="text-[11px] text-slate-700 leading-relaxed whitespace-pre-wrap">
+                    <p className="text-[11px] text-[#2A2A2A] leading-relaxed whitespace-pre-wrap">
                       {(conflictDetail.incoming_snapshot as Record<string, string>)?.summary || 'No summary available.'}
                     </p>
                   </div>
@@ -373,14 +373,14 @@ export const ConflictWorkspace = () => {
                 <button
                   type="button"
                   onClick={() => setIncomingExpanded(v => !v)}
-                  className="mt-1.5 flex items-center gap-1 self-start px-2.5 py-1 rounded-lg text-[10px] font-bold text-[#8A5A00] bg-[#FFF9E8] border border-[#BFA66A]/30 hover:bg-[#B88719] hover:text-white transition-all cursor-pointer"
+                  className="btn-ghost btn-sm mt-1.5 self-start"
                 >
                   <ChevronDown className={cn("w-3 h-3 transition-transform", incomingExpanded && "rotate-180")} />
                   {incomingExpanded ? 'Hide Full Text' : 'View Full Text'}
                 </button>
                 {incomingExpanded && (
-                  <div className="mt-1 border border-[#BFA66A]/20 rounded-xl bg-[#FAF9F5] p-3.5 max-h-64 overflow-y-auto">
-                    <p className="text-[11px] text-slate-700 leading-relaxed whitespace-pre-wrap font-mono">
+                  <div className="mt-1 border border-[#BFA66A] rounded-xl bg-[#FAF9F5] p-3.5 max-h-64 overflow-y-auto">
+                    <p className="text-[11px] text-[#2A2A2A] leading-relaxed whitespace-pre-wrap font-mono">
                       {(conflictDetail.incoming_snapshot as Record<string, string>)?.content || 'No content available.'}
                     </p>
                   </div>
@@ -389,13 +389,13 @@ export const ConflictWorkspace = () => {
             </div>
 
             {/* Resolution form / locked archive view */}
-            <div className="border-t border-[#BFA66A]/15 pt-4 space-y-4">
+            <div className="border-t border-[#BFA66A] pt-4 space-y-4">
               {conflictDetail.status === 'pending' ? (
                 <div className="space-y-2">
                   <label className="text-[9px] font-bold uppercase tracking-widest text-[#8A5A00] font-mono block">
                     Choose Reconciliation Action Strategy
                   </label>
-                  <p className="text-[10px] text-slate-400 italic">
+                  <p className="text-[10px] text-[#5F5F5F] italic">
                     Select one canonical strategy to reconcile these records. Unallowed options are automatically disabled.
                   </p>
 
@@ -418,15 +418,15 @@ export const ConflictWorkspace = () => {
                           className={cn(
                             "p-3 rounded-xl border text-left transition-all flex flex-col gap-1 cursor-pointer",
                             active ? "border-[#B88719] bg-[#FFFBF0] shadow-sm ring-1 ring-[#B88719]"
-                                   : "border-slate-200 bg-white hover:bg-slate-50/50",
-                            disabled && "opacity-35 cursor-not-allowed bg-slate-50 border-slate-200"
+                                   : "border-[#BFA66A] bg-white hover:bg-[#FFF9E8]/50",
+                            disabled && "opacity-35 cursor-not-allowed bg-[#FFF9E8] border-[#BFA66A]"
                           )}
                         >
                           <span className="text-xs font-bold text-[#111111] flex items-center gap-1.5">
                             <span className={cn("w-2 h-2 rounded-full", active ? "bg-amber-600 animate-pulse" : "bg-slate-300")} />
                             {label}
                           </span>
-                          <span className="text-[10px] text-slate-500 leading-normal block pl-3.5">{desc}</span>
+                          <span className="text-[10px] text-[#5F5F5F] leading-normal block pl-3.5">{desc}</span>
                         </button>
                       );
                     })}
@@ -440,26 +440,26 @@ export const ConflictWorkspace = () => {
                       value={resolutionInstruction}
                       onChange={(e) => setResolutionInstruction(e.target.value)}
                       placeholder="e.g. Please override EU values with German tax exceptions for region-locked German IPs..."
-                      className="w-full h-20 bg-white border border-slate-200 p-3 text-xs text-slate-800 rounded-xl focus:outline-none focus:ring-1 focus:ring-[#B88719] focus:border-[#B88719] transition-all font-mono leading-relaxed"
+                      className="ui-input w-full h-20 p-3 text-xs font-mono leading-relaxed"
                     />
                   </div>
                 </div>
               ) : (
-                <div className="bg-[#FAF9F5] p-4 rounded-xl border border-[#BFA66A]/25 space-y-4 text-[11px]">
+                <div className="bg-[#FAF9F5] p-4 rounded-xl border border-[#BFA66A] space-y-4 text-[11px]">
                   <div className="flex items-center gap-1.5 text-[#8A5A00] font-bold">
                     <Lock className="w-3.5 h-3.5" />
                     <span className="uppercase font-mono text-[9px] tracking-widest">Locked Archive Record</span>
                   </div>
 
                   <div className="space-y-1">
-                    <span className="text-[8px] font-mono text-slate-400 font-bold uppercase tracking-wider block">Completed AI Prompt</span>
-                    <p className="text-slate-700 italic border-l-2 border-[#BFA66A]/45 pl-2.5 leading-normal">
+                    <span className="text-[8px] font-mono text-[#5F5F5F] font-bold uppercase tracking-wider block">Completed AI Prompt</span>
+                    <p className="text-[#2A2A2A] italic border-l-2 border-[#BFA66A] pl-2.5 leading-normal">
                       {conflictDetail.resolution_instruction || 'Standard automated baseline bypass.'}
                     </p>
                   </div>
 
-                  <div className="p-3 bg-white border border-slate-100 rounded-lg space-y-1">
-                    <span className="text-[8px] font-mono text-slate-400 font-bold uppercase block">Determined Canonical Action</span>
+                  <div className="p-3 bg-white border border-[#BFA66A] rounded-lg space-y-1">
+                    <span className="text-[8px] font-mono text-[#5F5F5F] font-bold uppercase block">Determined Canonical Action</span>
                     <div className="text-xs font-bold text-[#111111] flex items-center gap-1.5">
                       <CheckCircle2 className="w-4 h-4 text-green-600" />
                       <span>{conflictDetail.selected_resolution_method ? RESOLUTION_LABELS[conflictDetail.selected_resolution_method] : ''}</span>
@@ -467,18 +467,18 @@ export const ConflictWorkspace = () => {
                   </div>
 
                   {conflictDetail.status === 'resolved' ? (
-                    <div className="pt-2 border-t border-slate-200/60 grid grid-cols-2 gap-2 text-[10px] font-mono text-slate-500">
+                    <div className="pt-2 border-t border-[#BFA66A] grid grid-cols-2 gap-2 text-[10px] font-mono text-[#5F5F5F]">
                       <div>
                         <span>RESOLVED TIME:</span>
-                        <span className="block font-bold text-slate-700 mt-0.5">{conflictDetail.resolved_at}</span>
+                        <span className="block font-bold text-[#2A2A2A] mt-0.5">{conflictDetail.resolved_at}</span>
                       </div>
                       <div>
                         <span>AUDITED BY:</span>
-                        <span className="block font-bold text-slate-700 mt-0.5">{conflictDetail.resolved_by}</span>
+                        <span className="block font-bold text-[#2A2A2A] mt-0.5">{conflictDetail.resolved_by}</span>
                       </div>
                     </div>
                   ) : (
-                    <div className="pt-2 border-t border-slate-200/60 text-purple-700 font-bold">
+                    <div className="pt-2 border-t border-[#BFA66A] text-purple-700 font-bold">
                       Awaiting batch commit run. Snapshot reconciliation scheduled for worker fleet cycle.
                     </div>
                   )}
@@ -498,7 +498,7 @@ export const ConflictWorkspace = () => {
             Integrity Conflict Workspace
           </div>
           <h1 className="text-3xl font-display font-bold tracking-tight">Conflicts Center</h1>
-          <p className="text-slate-500 text-sm mt-1 max-w-2xl">
+          <p className="text-[#5F5F5F] text-sm mt-1 max-w-2xl">
             Real-time reconciliation of content contradictions, metadata overlaps, and schema exceptions generated during pipeline ingestion.
           </p>
         </div>
@@ -510,12 +510,12 @@ export const ConflictWorkspace = () => {
           onClick={() => { setActiveTab('pending'); setPendingView('batches'); handleCloseDrawer(); }}
           className={cn(
             "bg-white border rounded-2xl p-5 flex items-center justify-between shadow-2xs cursor-pointer transition-all hover:shadow-md",
-            activeTab === 'pending' ? "border-[#BFA66A] ring-1 ring-[#BFA66A]" : "border-slate-200"
+            activeTab === 'pending' ? "border-[#BFA66A] ring-1 ring-[#BFA66A]" : "border-[#BFA66A]"
           )}
         >
           <div>
-            <span className="text-[10px] font-mono font-black text-slate-400 uppercase tracking-widest">Pending Action</span>
-            <h3 className="text-2xl font-bold font-display text-slate-800 mt-1">{pendingCount}</h3>
+            <span className="text-[10px] font-mono font-black text-[#5F5F5F] uppercase tracking-widest">Pending Action</span>
+            <h3 className="text-2xl font-bold font-display text-[#111111] mt-1">{pendingCount}</h3>
           </div>
           <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 flex items-center justify-center font-bold font-mono">P</div>
         </div>
@@ -524,12 +524,12 @@ export const ConflictWorkspace = () => {
           onClick={() => { setActiveTab('awaiting'); handleCloseDrawer(); }}
           className={cn(
             "bg-white border rounded-2xl p-5 flex items-center justify-between shadow-xs cursor-pointer transition-all hover:shadow-md",
-            activeTab === 'awaiting' ? "border-[#BFA66A] ring-1 ring-[#BFA66A]" : "border-slate-200"
+            activeTab === 'awaiting' ? "border-[#BFA66A] ring-1 ring-[#BFA66A]" : "border-[#BFA66A]"
           )}
         >
           <div>
-            <span className="text-[10px] font-mono font-black text-slate-400 uppercase tracking-widest">Awaiting AI Sync</span>
-            <h3 className="text-2xl font-bold font-display text-slate-800 mt-1">{awaitingCount}</h3>
+            <span className="text-[10px] font-mono font-black text-[#5F5F5F] uppercase tracking-widest">Awaiting AI Sync</span>
+            <h3 className="text-2xl font-bold font-display text-[#111111] mt-1">{awaitingCount}</h3>
           </div>
           <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-600 flex items-center justify-center font-bold font-mono font-sans">A</div>
         </div>
@@ -538,11 +538,11 @@ export const ConflictWorkspace = () => {
           onClick={() => { setActiveTab('resolved'); handleCloseDrawer(); }}
           className={cn(
             "bg-white border rounded-2xl p-5 flex items-center justify-between shadow-2xs cursor-pointer transition-all hover:shadow-md",
-            activeTab === 'resolved' ? "border-[#BFA66A] ring-1 ring-[#BFA66A]" : "border-slate-200"
+            activeTab === 'resolved' ? "border-[#BFA66A] ring-1 ring-[#BFA66A]" : "border-[#BFA66A]"
           )}
         >
           <div>
-            <span className="text-[10px] font-mono font-black text-slate-400 uppercase tracking-widest">Resolved Syncs</span>
+            <span className="text-[10px] font-mono font-black text-[#5F5F5F] uppercase tracking-widest">Resolved Syncs</span>
             <h3 className="text-2xl font-bold font-display text-green-700 mt-1">{resolvedCount}</h3>
           </div>
           <div className="w-10 h-10 rounded-xl bg-green-500/10 border border-green-500/20 text-green-600 flex items-center justify-center font-bold font-mono font-sans">R</div>
@@ -550,7 +550,7 @@ export const ConflictWorkspace = () => {
       </div>
 
       {/* TIER FILTER BAR & SEARCH */}
-      <div className="bg-[#FFFDF8] border border-[#BFA66A]/20 p-5 rounded-2xl flex flex-col gap-4 shadow-sm">
+      <div className="bg-[#FFFDF8] border border-[#BFA66A] p-5 rounded-2xl flex flex-col gap-4 shadow-sm">
         <div className="flex flex-col gap-2">
           <span className="text-[10px] font-black uppercase tracking-widest text-[#8A5A00] opacity-80 font-mono">
             Integrity Status Selection
@@ -574,7 +574,7 @@ export const ConflictWorkspace = () => {
                     "px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
                     tab === activeTab
                       ? "bg-[#B88719] text-white shadow-md shadow-[#B88719]/15"
-                      : "bg-white border border-[#BFA66A]/30 text-[#8A5A00] hover:bg-[#FFF9E8]/20"
+                      : "bg-white border border-[#BFA66A] text-[#8A5A00] hover:bg-[#FFF9E8]/20"
                   )}
                 >
                   {labelMap[tab]}
@@ -584,7 +584,7 @@ export const ConflictWorkspace = () => {
           </div>
         </div>
 
-        <div className="border-t border-[#BFA66A]/15 pt-3.5 flex items-center">
+        <div className="border-t border-[#BFA66A] pt-3.5 flex items-center">
           <div className="relative group w-full sm:w-80">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8A5A00] opacity-65 group-focus-within:opacity-100 transition-opacity" />
             <input
@@ -592,7 +592,7 @@ export const ConflictWorkspace = () => {
               placeholder="Filter by type or detection date..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-white border border-[#BFA66A]/35 text-[#111111] placeholder:text-slate-400 rounded-2xl pl-12 pr-6 py-2.5 text-xs w-full focus:outline-none focus:ring-1 focus:ring-[#B88719] focus:border-[#B88719] transition-all font-mono"
+              className="ui-input pl-12 pr-6 py-2.5 text-xs w-full font-mono"
             />
           </div>
         </div>
@@ -604,17 +604,17 @@ export const ConflictWorkspace = () => {
         {/* BATCHES TABLE — pending tab, batches view */}
         {activeTab === 'pending' && pendingView === 'batches' && (
           <div className="lg:col-span-12 space-y-4">
-            <div className="border border-[#C49A28]/35 rounded-3xl overflow-hidden bg-[#FDF2CE]/60 shadow-[0_4px_24px_rgba(184,135,25,0.06)]">
-              <div className="p-5.5 bg-[#F5E098]/40 border-b border-[#C49A28]/25 flex items-center justify-between">
+            <div className="border border-[#BFA66A] rounded-3xl overflow-hidden bg-[#FDF2CE]/60 shadow-[0_4px_24px_rgba(184,135,25,0.06)]">
+              <div className="p-5.5 bg-[#F5E098]/40 border-b border-[#BFA66A] flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] font-mono font-black text-[#5A4209]/80 uppercase tracking-widest block">
+                  <span className="text-[10px] font-mono font-black text-[#5A4209] uppercase tracking-widest block">
                     Ingestion Batches
                   </span>
-                  <span className="text-xs text-slate-500 font-medium">
+                  <span className="text-xs text-[#5F5F5F] font-medium">
                     Select a batch of ingested documents to explore, compare, and reconcile conflicts
                   </span>
                 </div>
-                <span className="text-[9px] font-mono font-bold uppercase py-1 px-2.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-600">
+                <span className="text-[9px] font-mono font-bold uppercase py-1 px-2.5 bg-[#FFF9E8] border border-[#BFA66A] rounded-lg text-[#3F3F3F]">
                   KB.Batches ({pendingBatches.length})
                 </span>
               </div>
@@ -622,14 +622,14 @@ export const ConflictWorkspace = () => {
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-[#EDD070]/30 text-[9px] font-black text-[#5A4209]/90 uppercase tracking-widest border-b border-[#C49A28]/25">
+                    <tr className="bg-[#EDD070]/30 text-[9px] font-black text-[#5A4209] uppercase tracking-widest border-b border-[#BFA66A]">
                       <th className="px-6 py-4">Batch Identity / Name</th>
                       <th className="px-6 py-4">Extracted Date</th>
                       <th className="px-6 py-4 text-right">Pending Conflicts</th>
                       <th className="px-6 py-4 text-right font-black">Action</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#C49A28]/15 text-[#111111]">
+                  <tbody className="divide-y divide-[#BFA66A] text-[#111111]">
                     {loading ? (
                       <tr>
                         <td colSpan={4} className="px-8 py-16 text-center">
@@ -647,11 +647,11 @@ export const ConflictWorkspace = () => {
                             <FolderOpen className="w-4 h-4 text-amber-500 shrink-0" />
                             <span>{batch.batch_name}</span>
                           </div>
-                          <div className="text-[9px] text-[#777] font-mono mt-0.5">{batch.batch_id}</div>
+                          <div className="text-[9px] text-[#5F5F5F] font-mono mt-0.5">{batch.batch_id}</div>
                         </td>
                         <td className="px-6 py-5">
-                          <div className="text-xs text-slate-600 font-mono flex items-center gap-1.5">
-                            <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                          <div className="text-xs text-[#3F3F3F] font-mono flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 text-[#5F5F5F]" />
                             <span>{batch.extracted_date}</span>
                           </div>
                         </td>
@@ -668,7 +668,7 @@ export const ConflictWorkspace = () => {
                         <td className="px-6 py-5 text-right">
                           <button
                             onClick={(e) => { e.stopPropagation(); setSelectedBatchId(batch.batch_id); setPendingView('conflicts'); }}
-                            className="px-3 py-1.5 bg-[#FFF9E8] border border-[#BFA66A]/45 hover:bg-[#B88719] hover:text-white rounded-lg text-[10px] font-bold text-[#8A5A00] uppercase tracking-wider transition-all inline-flex items-center gap-1 cursor-pointer"
+                            className="btn-ghost btn-sm"
                           >
                             <span>Explore Batch</span>
                             <ChevronRight className="w-3 h-3" />
@@ -679,15 +679,15 @@ export const ConflictWorkspace = () => {
                   </tbody>
                 </table>
                 {(pendingPage > 1 || pendingHasNext) && (
-                  <div className="flex items-center justify-between px-6 py-3 border-t border-[#BFA66A]/15 bg-[#FFFDF8]">
-                    <span className="text-[10px] font-mono text-slate-400">Page {pendingPage}</span>
+                  <div className="flex items-center justify-between px-6 py-3 border-t border-[#BFA66A] bg-[#FFFDF8]">
+                    <span className="text-[10px] font-mono text-[#5F5F5F]">Page {pendingPage}</span>
                     <div className="flex gap-1.5">
                       <button disabled={pendingPage === 1} onClick={() => setPendingPage(p => Math.max(1, p - 1))}
-                        className={cn("px-2.5 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", pendingPage === 1 && "opacity-40 cursor-not-allowed")}>
+                        className={cn("px-2.5 py-1 rounded text-[10px] font-bold border border-[#BFA66A] bg-white text-[#8A5A00]", pendingPage === 1 && "opacity-40 cursor-not-allowed")}>
                         ‹ Prev
                       </button>
                       <button disabled={!pendingHasNext} onClick={() => setPendingPage(p => p + 1)}
-                        className={cn("px-2.5 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", !pendingHasNext && "opacity-40 cursor-not-allowed")}>
+                        className={cn("px-2.5 py-1 rounded text-[10px] font-bold border border-[#BFA66A] bg-white text-[#8A5A00]", !pendingHasNext && "opacity-40 cursor-not-allowed")}>
                         Next ›
                       </button>
                     </div>
@@ -704,7 +704,7 @@ export const ConflictWorkspace = () => {
             {activeTab === 'pending' && (
               <button
                 onClick={() => { setPendingView('batches'); handleCloseDrawer(); }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-[#BFA66A]/35 hover:bg-[#FFF9E8]/20 rounded-xl text-xs font-bold text-[#8A5A00] transition-all cursor-pointer shadow-2xs"
+                className="btn-secondary btn-sm"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />
                 <span>Back to Ingestion Batches</span>
@@ -713,14 +713,14 @@ export const ConflictWorkspace = () => {
 
             {/* BATCH RESOLUTION BAR — the whole batch is submitted together */}
             {activeTab === 'pending' && selectedBatchConflicts.length > 0 && (
-              <div className="border border-[#BFA66A]/25 rounded-2xl bg-[#FFFDF8] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
+              <div className="border border-[#BFA66A] rounded-2xl bg-[#FFFDF8] p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs">
                 <div className="flex flex-col gap-1">
                   <span className="text-[10px] font-black uppercase tracking-widest text-[#8A5A00] font-mono">
                     Batch Resolution · {assignedMethods.length} / {selectedBatchConflicts.length} assigned
                   </span>
                   <span className={cn(
                     "text-[11px] font-medium",
-                    !allConflictsAssigned ? "text-slate-500" : canResolveBatch ? "text-green-700" : "text-red-600"
+                    !allConflictsAssigned ? "text-[#5F5F5F]" : canResolveBatch ? "text-green-700" : "text-red-600"
                   )}>
                     {batchValidationMessage()}
                   </span>
@@ -733,7 +733,7 @@ export const ConflictWorkspace = () => {
                     "px-5 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shrink-0",
                     canResolveBatch && !submitting
                       ? "bg-[#B88719] text-white shadow-md hover:bg-[#8A5A00]"
-                      : "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
+                      : "bg-[#FFF9E8] text-[#5F5F5F] border border-[#BFA66A] cursor-not-allowed"
                   )}
                 >
                   {submitting ? (
@@ -751,20 +751,20 @@ export const ConflictWorkspace = () => {
               </div>
             )}
 
-            <div className="border border-[#BFA66A]/20 rounded-3xl overflow-hidden bg-white shadow-[0_4px_24px_rgba(184,135,25,0.02)]">
-              <div className="p-4 bg-[#FFFDF8] border-b border-[#BFA66A]/15 flex items-center justify-between">
+            <div className="content-card content-card--static overflow-hidden">
+              <div className="p-4 bg-[#FFFDF8] border-b border-[#BFA66A] flex items-center justify-between">
                 <div>
-                  <span className="text-[10px] font-mono font-black text-[#5A4209]/80 uppercase tracking-widest block">
+                  <span className="text-[10px] font-mono font-black text-[#5A4209] uppercase tracking-widest block">
                     {activeTab === 'pending'
                       ? `${pendingBatches.find(b => b.batch_id === selectedBatchId)?.batch_name ?? 'Batch'} Conflicts`
                       : 'Reconciliation Registry'
                     }
                   </span>
-                  <span className="text-[11px] text-slate-500 font-medium">
+                  <span className="text-[11px] text-[#5F5F5F] font-medium">
                     {filteredSummaries.length} item{filteredSummaries.length !== 1 && 's'} listed
                   </span>
                 </div>
-                <span className="text-[9px] font-mono font-bold uppercase py-1 px-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-600">
+                <span className="text-[9px] font-mono font-bold uppercase py-1 px-2 bg-[#FFF9E8] border border-[#BFA66A] rounded-lg text-[#3F3F3F]">
                   KB.Conflicts
                 </span>
               </div>
@@ -772,14 +772,14 @@ export const ConflictWorkspace = () => {
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-[#FFFDF8] text-[9px] font-black text-[#5A4209]/80 uppercase tracking-widest border-b border-[#BFA66A]/20">
+                    <tr className="bg-[#FFFDF8] text-[9px] font-black text-[#5A4209] uppercase tracking-widest border-b border-[#BFA66A]">
                       <th className="px-4 py-3">Conflict Type</th>
                       <th className="px-3 py-3">Severity</th>
                       <th className="px-3 py-3">Detected</th>
                       <th className="px-4 py-3 text-right font-black">Action</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#BFA66A]/10 text-[#111111]">
+                  <tbody className="divide-y divide-[#BFA66A] text-[#111111]">
                     {loading ? (
                       <tr>
                         <td colSpan={4} className="px-8 py-16 text-center">
@@ -788,7 +788,7 @@ export const ConflictWorkspace = () => {
                       </tr>
                     ) : filteredSummaries.length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="px-8 py-16 text-center text-slate-500 text-xs font-mono bg-white">
+                        <td colSpan={4} className="px-8 py-16 text-center text-[#5F5F5F] text-xs font-mono bg-white">
                           No conflicts registered under this criteria.
                         </td>
                       </tr>
@@ -805,16 +805,16 @@ export const ConflictWorkspace = () => {
                         >
                           <td className="px-4 py-4">
                             <div className="font-sans text-xs font-bold text-[#111111] group-hover:text-[#B88719] transition-colors flex items-center gap-1.5">
-                              <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <FileText className="w-3.5 h-3.5 text-[#5F5F5F] shrink-0" />
                               <span>{CONFLICT_TYPE_LABELS[c.conflict_type]?.title ?? c.conflict_type}</span>
                             </div>
                           </td>
                           <td className="px-3 py-4">
                             {renderSeverityBadge(c.severity)}
                           </td>
-                          <td className="px-3 py-4 text-xs text-slate-500 font-mono">
+                          <td className="px-3 py-4 text-xs text-[#5F5F5F] font-mono">
                             <div className="flex items-center gap-1 text-[10px]">
-                              <Clock className="w-3 h-3 text-slate-400" />
+                              <Clock className="w-3 h-3 text-[#5F5F5F]" />
                               <span>{c.detected_at}</span>
                             </div>
                           </td>
@@ -827,7 +827,7 @@ export const ConflictWorkspace = () => {
                                     {RESOLUTION_LABELS[batchChoices[c.conflict_id].method]}
                                   </span>
                                 ) : (
-                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-slate-100 text-slate-400 border border-slate-200">
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-[#FFF9E8] text-[#5F5F5F] border border-[#BFA66A]">
                                     Unassigned
                                   </span>
                                 )
@@ -838,7 +838,7 @@ export const ConflictWorkspace = () => {
                                   "px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all inline-flex items-center gap-0.5 cursor-pointer",
                                   isActive
                                     ? "bg-[#B88719] text-white shadow-xs"
-                                    : "bg-[#FFF9E8] border border-[#BFA66A]/45 hover:bg-[#B88719] hover:text-white text-[#8A5A00]"
+                                    : "bg-[#FFF9E8] border border-[#BFA66A] hover:bg-[#B88719] hover:text-white text-[#8A5A00]"
                                 )}
                               >
                                 <span>{isActive ? 'Active' : 'Review'}</span>
@@ -854,30 +854,30 @@ export const ConflictWorkspace = () => {
                 {activeTab !== 'pending' && (
                   (activeTab === 'awaiting' ? (awaitingPage > 1 || awaitingHasNext) : (resolvedPage > 1 || resolvedHasNext))
                 ) && (
-                  <div className="flex items-center justify-between px-6 py-3 border-t border-[#BFA66A]/15 bg-[#FFFDF8]">
-                    <span className="text-[10px] font-mono text-slate-400">
+                  <div className="flex items-center justify-between px-6 py-3 border-t border-[#BFA66A] bg-[#FFFDF8]">
+                    <span className="text-[10px] font-mono text-[#5F5F5F]">
                       Page {activeTab === 'awaiting' ? awaitingPage : resolvedPage}
                     </span>
                     <div className="flex gap-1.5">
                       {activeTab === 'awaiting' ? (
                         <>
                           <button disabled={awaitingPage === 1} onClick={() => setAwaitingPage(p => Math.max(1, p - 1))}
-                            className={cn("px-2.5 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", awaitingPage === 1 && "opacity-40 cursor-not-allowed")}>
+                            className={cn("px-2.5 py-1 rounded text-[10px] font-bold border border-[#BFA66A] bg-white text-[#8A5A00]", awaitingPage === 1 && "opacity-40 cursor-not-allowed")}>
                             ‹ Prev
                           </button>
                           <button disabled={!awaitingHasNext} onClick={() => setAwaitingPage(p => p + 1)}
-                            className={cn("px-2.5 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", !awaitingHasNext && "opacity-40 cursor-not-allowed")}>
+                            className={cn("px-2.5 py-1 rounded text-[10px] font-bold border border-[#BFA66A] bg-white text-[#8A5A00]", !awaitingHasNext && "opacity-40 cursor-not-allowed")}>
                             Next ›
                           </button>
                         </>
                       ) : (
                         <>
                           <button disabled={resolvedPage === 1} onClick={() => setResolvedPage(p => Math.max(1, p - 1))}
-                            className={cn("px-2.5 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", resolvedPage === 1 && "opacity-40 cursor-not-allowed")}>
+                            className={cn("px-2.5 py-1 rounded text-[10px] font-bold border border-[#BFA66A] bg-white text-[#8A5A00]", resolvedPage === 1 && "opacity-40 cursor-not-allowed")}>
                             ‹ Prev
                           </button>
                           <button disabled={!resolvedHasNext} onClick={() => setResolvedPage(p => p + 1)}
-                            className={cn("px-2.5 py-1 rounded text-[10px] font-bold border border-[#BFA66A]/20 bg-white text-[#8A5A00]", !resolvedHasNext && "opacity-40 cursor-not-allowed")}>
+                            className={cn("px-2.5 py-1 rounded text-[10px] font-bold border border-[#BFA66A] bg-white text-[#8A5A00]", !resolvedHasNext && "opacity-40 cursor-not-allowed")}>
                             Next ›
                           </button>
                         </>

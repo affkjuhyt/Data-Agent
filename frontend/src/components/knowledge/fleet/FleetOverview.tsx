@@ -13,9 +13,9 @@ interface StatCardProps {
 }
 
 const StatCard = ({ icon: Icon, label, value, sub, accent, loading }: StatCardProps) => (
-  <div className="bg-white border border-[#BFA66A]/20 rounded-3xl p-6 flex flex-col gap-4">
+  <div className="content-card content-card--static p-6 flex flex-col gap-4">
     <div className="flex items-center justify-between">
-      <span className="text-[10px] font-black uppercase tracking-widest text-[#6B6B6B]">{label}</span>
+      <span className="text-[10px] font-black uppercase tracking-widest text-[#5F5F5F]">{label}</span>
       <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${accent}`}>
         <Icon className="w-4 h-4" />
       </div>
@@ -25,7 +25,7 @@ const StatCard = ({ icon: Icon, label, value, sub, accent, loading }: StatCardPr
     ) : (
       <div>
         <div className="text-3xl font-bold text-[#2A2A2A] tracking-tight">{value}</div>
-        <div className="text-[10px] text-[#6B6B6B] mt-1 font-medium">{sub}</div>
+        <div className="text-[10px] text-[#5F5F5F] mt-1 font-medium">{sub}</div>
       </div>
     )}
   </div>
@@ -48,7 +48,7 @@ export const FleetOverview = () => {
 
       {/* ── Knowledge Content ── */}
       <div>
-        <p className="text-[10px] font-black uppercase tracking-widest text-[#6B6B6B] mb-4">
+        <p className="text-[10px] font-black uppercase tracking-widest text-[#5F5F5F] mb-4">
           Gold Layer · Knowledge Content
         </p>
         <div className="grid grid-cols-4 gap-5">
@@ -89,7 +89,7 @@ export const FleetOverview = () => {
 
       {/* ── Infrastructure & Conflicts ── */}
       <div>
-        <p className="text-[10px] font-black uppercase tracking-widest text-[#6B6B6B] mb-4">
+        <p className="text-[10px] font-black uppercase tracking-widest text-[#5F5F5F] mb-4">
           Infrastructure & Conflicts
         </p>
         <div className="grid grid-cols-4 gap-5">

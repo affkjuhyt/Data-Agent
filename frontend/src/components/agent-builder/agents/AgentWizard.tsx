@@ -95,13 +95,13 @@ export const NewAgentWizard: React.FC<WizardProps> = ({ onCancel, onComplete, in
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: 16, scale: 0.97 }}
         transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-        className="relative w-full max-w-lg bg-white border border-[#ECE7DA] rounded-2xl shadow-2xl flex flex-col"
+        className="content-card content-card--static relative w-full max-w-lg flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-[#ECE7DA]">
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-[#BFA66A]">
           <div>
-            <p className="text-[9px] font-black text-[#8A8A7A] uppercase tracking-widest mb-0.5">
+            <p className="text-[9px] font-black text-[#5F5F5F] uppercase tracking-widest mb-0.5">
               {step === 1 ? 'Bước 1 / 2' : 'Bước 2 / 2'}
             </p>
             <h2 className="text-sm font-bold text-[#111111]">
@@ -110,7 +110,7 @@ export const NewAgentWizard: React.FC<WizardProps> = ({ onCancel, onComplete, in
           </div>
           <button
             onClick={onCancel}
-            className="w-7 h-7 flex items-center justify-center rounded-lg text-[#8A8A7A] hover:bg-[#F3E2A7] transition-all"
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-[#5F5F5F] hover:bg-[#F3E2A7] transition-all"
           >
             <X className="w-4 h-4" />
           </button>
@@ -129,7 +129,7 @@ export const NewAgentWizard: React.FC<WizardProps> = ({ onCancel, onComplete, in
                 className="space-y-4"
               >
                 <div>
-                  <label className="text-[9px] font-black text-[#8A8A7A] uppercase tracking-widest block mb-1.5">
+                  <label className="text-[9px] font-black text-[#5F5F5F] uppercase tracking-widest block mb-1.5">
                     Tên agent <span className="text-red-500">*</span>
                   </label>
                   <input
@@ -139,11 +139,11 @@ export const NewAgentWizard: React.FC<WizardProps> = ({ onCancel, onComplete, in
                     onChange={e => setName(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter' && name.trim()) setStep(2); }}
                     placeholder="VD: Chatbot tra cứu phạt nguội"
-                    className="w-full bg-[#FAFAF5] border border-[#ECE7DA] rounded-xl px-4 py-2.5 text-sm text-[#111111] placeholder:text-[#AFAFAF] focus:outline-none focus:border-[#BFA66A] transition-colors"
+                    className="ui-input w-full px-4 py-2.5 text-sm"
                   />
                 </div>
                 <div>
-                  <label className="text-[9px] font-black text-[#8A8A7A] uppercase tracking-widest block mb-1.5">
+                  <label className="text-[9px] font-black text-[#5F5F5F] uppercase tracking-widest block mb-1.5">
                     Mô tả
                   </label>
                   <textarea
@@ -151,7 +151,7 @@ export const NewAgentWizard: React.FC<WizardProps> = ({ onCancel, onComplete, in
                     onChange={e => setDescription(e.target.value)}
                     placeholder="Mục đích của agent này..."
                     rows={3}
-                    className="w-full bg-[#FAFAF5] border border-[#ECE7DA] rounded-xl px-4 py-2.5 text-sm text-[#111111] placeholder:text-[#AFAFAF] focus:outline-none focus:border-[#BFA66A] transition-colors resize-none"
+                    className="ui-input w-full px-4 py-2.5 text-sm resize-none"
                   />
                 </div>
               </motion.div>
@@ -171,14 +171,14 @@ export const NewAgentWizard: React.FC<WizardProps> = ({ onCancel, onComplete, in
                     className={`text-left p-4 rounded-xl border transition-all ${
                       selected === t.id
                         ? 'border-[#BFA66A] bg-[#FFF9E8]'
-                        : 'border-[#ECE7DA] bg-[#FAFAF5] hover:bg-[#FFF9E8]'
+                        : 'border-[#BFA66A] bg-[#FAFAF5] hover:bg-[#FFF9E8]'
                     }`}
                   >
-                    <div className={`mb-2 ${selected === t.id ? 'text-[#B88719]' : 'text-[#8A8A7A]'}`}>
+                    <div className={`mb-2 ${selected === t.id ? 'text-[#B88719]' : 'text-[#5F5F5F]'}`}>
                       <t.Icon className="w-5 h-5" />
                     </div>
                     <div className="text-xs font-bold text-[#111111] mb-1">{t.label}</div>
-                    <div className="text-[10px] text-[#8A8A7A] leading-relaxed">{t.desc}</div>
+                    <div className="text-[10px] text-[#5F5F5F] leading-relaxed">{t.desc}</div>
                   </button>
                 ))}
               </motion.div>
@@ -196,7 +196,7 @@ export const NewAgentWizard: React.FC<WizardProps> = ({ onCancel, onComplete, in
         <div className="px-6 pb-6 flex items-center justify-between">
           <button
             onClick={() => step === 1 ? onCancel() : setStep(1)}
-            className="text-xs font-semibold text-[#8A8A7A] hover:text-[#111111] transition-colors px-3 py-2"
+            className="btn-ghost"
           >
             {step === 1 ? 'Huỷ' : '← Quay lại'}
           </button>

@@ -1,386 +1,244 @@
-﻿import React, { useState } from 'react';
-import {
-  Search,
-  Filter,
-  Play,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
-  History,
-  ChevronDown,
-  ArrowRight,
-  Activity,
-  X,
-  Cpu,
-  Database,
-  Bot,
-  ShieldCheck,
-  Zap,
-  Terminal,
-  Layers,
-  Code
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import { ExecutionStatus, WorkflowExecution } from '../../../types/workflow';
+/**
+ * Execution Center — recorded executions (conversations) + the live sandbox queue.
+ *
+ *   GET /api/conversations?limit&offset&q&agent_id      (history)
+ *   GET /api/conversations/{id}/messages                (trace panel: tool calls per message)
+ *   GET /api/catalog/agents                             (agent filter)
+ *   SandboxQueuePanel → GET /api/sandbox/status          (queue tab)
+ */
+import React, { useState } from 'react';
+import { Search, History, X, Inbox, Wrench, Clock, MessageSquare, Zap, Activity } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import SandboxQueuePanel from './SandboxQueuePanel';
+import { Pagination } from '../../shared/Pagination';
+import {
+  Badge, toneFor, Button, EmptyState, ErrorState, LoadingState, Input, Select, Table, type Column,
+} from '../../ui';
+import {
+  useConversations, useConversationMessages, useCatalogAgents, shortId,
+  type ConversationItem, type MessageTrace,
+} from '../../../lib/platformApi';
+import { formatDateTime, formatDuration, formatNumber, formatTime } from '../../../lib/formatVN';
+import { asJson, conversationDuration } from '../Conversations';
 
-const MOCK_EXECUTIONS: WorkflowExecution[] = [
-  {
-    id: 'exec-8921',
-    workflowId: 'wf-1',
-    workflowName: 'Multi-Agent Banking Support',
-    trigger: 'WEBHOOK',
-    tenant: 'Global-Finance',
-    environment: 'PROD',
-    status: ExecutionStatus.COMPLETED,
-    startedAt: '12m ago',
-    duration: '45s',
-    cost: 0.12,
-  },
-  {
-    id: 'exec-8920',
-    workflowId: 'wf-3',
-    workflowName: 'Gov-Compliance Review',
-    trigger: 'UI',
-    tenant: 'Gov-Tech-Hanoi',
-    environment: 'DEV',
-    status: ExecutionStatus.WAITING_APPROVAL,
-    startedAt: '45m ago',
-    duration: '3h 12m',
-    cost: 0.05,
-    waitingReason: 'Legal Director Signature Required'
-  },
-  {
-    id: 'exec-8919',
-    workflowId: 'wf-2',
-    workflowName: 'GraphRAG Intelligence Sync',
-    trigger: 'SCHEDULE',
-    tenant: 'Smart-City-Nexus',
-    environment: 'STAGING',
-    status: ExecutionStatus.RUNNING,
-    startedAt: 'Just now',
-    duration: '1m 12s',
-    cost: 0.85,
-    currentNodeId: 'node-sync-graph'
-  },
-  {
-    id: 'exec-8918',
-    workflowId: 'wf-1',
-    workflowName: 'Multi-Agent Banking Support',
-    trigger: 'WEBHOOK',
-    tenant: 'Global-Finance',
-    environment: 'PROD',
-    status: ExecutionStatus.FAILED,
-    startedAt: '2h ago',
-    duration: '12s',
-    cost: 0.02,
-    waitingReason: 'Gateway Timeout (504)'
-  }
-];
-
-const STATUS_STYLE: Record<string, string> = {
-  [ExecutionStatus.COMPLETED]:        'bg-emerald-50 border-emerald-200 text-emerald-700',
-  [ExecutionStatus.RUNNING]:          'bg-blue-50 border-blue-200 text-blue-700',
-  [ExecutionStatus.FAILED]:           'bg-red-50 border-red-200 text-red-700',
-  [ExecutionStatus.WAITING_APPROVAL]: 'bg-amber-50 border-amber-200 text-amber-700',
-};
-
-const STATUS_DOT: Record<string, string> = {
-  [ExecutionStatus.COMPLETED]:        'bg-emerald-500',
-  [ExecutionStatus.RUNNING]:          'bg-blue-500 animate-pulse',
-  [ExecutionStatus.FAILED]:           'bg-red-500',
-  [ExecutionStatus.WAITING_APPROVAL]: 'bg-amber-500',
-};
+const PAGE_SIZE = 20;
 
 interface ExecutionCenterProps {
   initialSearch?: string;
 }
 
-type CenterTab = 'HISTORY' | 'QUEUE' | 'SCHEDULES';
+type CenterTab = 'HISTORY' | 'QUEUE';
 
+/* ─── Trace panel for one execution ─────────────────────── */
+function TraceStep({ trace, at }: { trace: MessageTrace; at: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <li className="relative pl-8">
+      <span className={cn(
+        'absolute left-1.5 top-3 w-3 h-3 rounded-full border-2 bg-white',
+        toneFor(trace.status) === 'failed' ? 'border-[#9F1D1D]' : 'border-[#6B8E23]',
+      )} />
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="w-full text-left p-3 bg-[#FFFDF6] border border-[#BFA66A] rounded-xl hover:bg-[#FFF9E8] transition-colors"
+      >
+        <div className="flex items-center gap-2 flex-wrap">
+          <Wrench className="w-3.5 h-3.5 text-[#8A5A00]" />
+          <span className="font-mono text-[12px] font-semibold text-[#111111]">{trace.tool_name || `trace #${trace.trace_index}`}</span>
+          <Badge tone={toneFor(trace.status)}>{trace.status}</Badge>
+          <span className="ml-auto text-[10px] text-[#5F5F5F]">
+            {formatTime(at, true)}{trace.latency_ms != null && ` · ${formatDuration(trace.latency_ms)}`}
+          </span>
+        </div>
+        {open && (
+          <div className="mt-2 grid grid-cols-1 gap-2">
+            <pre className="text-[10px] font-mono whitespace-pre-wrap bg-white border border-[#BFA66A] rounded-lg p-2 max-h-40 overflow-auto text-[#111111]">{asJson(trace.input)}</pre>
+            <pre className="text-[10px] font-mono whitespace-pre-wrap bg-white border border-[#BFA66A] rounded-lg p-2 max-h-40 overflow-auto text-[#111111]">{asJson(trace.output)}</pre>
+          </div>
+        )}
+      </button>
+    </li>
+  );
+}
+
+function ExecutionTrace({ execution, onClose }: { execution: ConversationItem; onClose: () => void }) {
+  const { data, loading, error, refetch } = useConversationMessages(execution.id);
+  const messages = data?.messages ?? [];
+  const steps = messages.flatMap(m => (m.traces ?? []).map(t => ({ trace: t, at: m.created_at, messageId: m.id })));
+  const tokens = messages.reduce((s, m) => s + (m.tokens_used ?? 0), 0);
+
+  return (
+    <div className="flex flex-col h-full bg-white">
+      <div className="p-4 border-b border-[#BFA66A] bg-[#FFF9E8] flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[10px] font-bold text-[#8A5A00] uppercase tracking-widest">Execution</div>
+          <h3 className="text-sm font-bold text-[#111111] font-mono truncate">{execution.id}</h3>
+          <p className="text-[11px] text-[#3F3F3F]">{execution.agent_name ?? 'Agent không xác định'} · {execution.user_ref ?? '—'}</p>
+        </div>
+        <Button size="sm" variant="ghost" icon={X} onClick={onClose} aria-label="Đóng" />
+      </div>
+
+      <div className="flex-1 overflow-auto p-4 space-y-4">
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { label: 'Thời lượng', value: conversationDuration(execution), icon: Clock },
+            { label: 'Tin nhắn', value: formatNumber(execution.message_count), icon: MessageSquare },
+            { label: 'Tokens', value: formatNumber(execution.tokens ?? tokens), icon: Zap },
+            { label: 'Độ trễ TB', value: execution.avg_latency_ms == null ? '—' : formatDuration(execution.avg_latency_ms), icon: Activity },
+          ].map(s => (
+            <div key={s.label} className="p-3 bg-[#FFFDF6] border border-[#BFA66A] rounded-xl">
+              <div className="flex items-center gap-1.5 text-[#5F5F5F] mb-1">
+                <s.icon className="w-3.5 h-3.5 text-[#8A5A00]" />
+                <span className="text-[9px] font-bold uppercase tracking-widest">{s.label}</span>
+              </div>
+              <div className="text-sm font-bold text-[#111111]">{s.value}</div>
+            </div>
+          ))}
+        </div>
+
+        {loading && !data && <LoadingState label="Đang tải trace…" />}
+        {error && <ErrorState message={error} onRetry={() => void refetch()} />}
+        {data && steps.length === 0 && (
+          <EmptyState icon={Inbox} title="Không có tool call" description={`${formatNumber(messages.length)} tin nhắn, không có trace nào được ghi.`} />
+        )}
+        {steps.length > 0 && (
+          <ol className="relative space-y-2">
+            <span className="absolute left-[11px] top-3 bottom-3 w-px bg-[#BFA66A]" />
+            {steps.map(s => <TraceStep key={`${s.messageId}-${s.trace.trace_index}`} trace={s.trace} at={s.at} />)}
+          </ol>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Main ────────────────────────────────────────────────── */
 const ExecutionCenter = ({ initialSearch }: ExecutionCenterProps = {}) => {
   const [tab, setTab] = useState<CenterTab>('HISTORY');
-  const [selectedExecution, setSelectedExecution] = useState<WorkflowExecution | null>(null);
-  const [search, setSearch] = useState(initialSearch ?? '');
+  const [selected, setSelected] = useState<ConversationItem | null>(null);
+  const [searchDraft, setSearchDraft] = useState(initialSearch ?? '');
+  const [q, setQ] = useState(initialSearch ?? '');
+  const [agentId, setAgentId] = useState('');
+  const [channel, setChannel] = useState('');
+  const [page, setPage] = useState(1);
 
-  const displayedExecutions = MOCK_EXECUTIONS.filter(e =>
-    !search.trim()
-      ? true
-      : e.workflowName.toLowerCase().includes(search.toLowerCase()) || e.id.includes(search)
-  );
+  const agents = useCatalogAgents();
+  const { data, loading, error, refetch } = useConversations({ limit: PAGE_SIZE, offset: (page - 1) * PAGE_SIZE, q, agent_id: agentId });
+  const items = data?.items ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const channels = Array.from(new Set(items.map(c => c.channel).filter((c): c is string => !!c)));
+  const visible = channel ? items.filter(c => c.channel === channel) : items;
 
-  const renderTrace = () => {
-    if (!selectedExecution) return null;
-
-    return (
-      <motion.div
-        initial={{ opacity: 0, x: 20 }}
-        animate={{ opacity: 1, x: 0 }}
-        className="flex flex-col h-full bg-white border-l border-[#ECE7DA]"
-      >
-        <div className="p-5 border-b border-[#ECE7DA] bg-[#FAFAF5] flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-[10px] font-black text-[#B88719] uppercase tracking-widest">TRACE ID</span>
-              <span className="text-xs font-mono text-[#5A5A5A]">#{selectedExecution.id}</span>
-            </div>
-            <h3 className="text-base font-bold text-[#111111]">{selectedExecution.workflowName}</h3>
-          </div>
-          <div className="flex items-center gap-2">
-            <button className="flex items-center gap-1.5 px-3 py-1.5 bg-[#F3E2A7] hover:bg-[#EDD98A] border border-[#BFA66A]/50 text-[#7C5A0E] rounded-lg text-xs font-bold transition-all">
-              <Play className="w-3.5 h-3.5" /> Replay
-            </button>
-            <button className="flex items-center gap-1.5 px-3 py-1.5 bg-[#F8F5EE] hover:bg-[#F3E2A7] border border-[#ECE7DA] text-[#5A5A5A] rounded-lg text-xs font-bold transition-all">
-              <Code className="w-3.5 h-3.5" /> JSON Trace
-            </button>
-            <button
-              onClick={() => setSelectedExecution(null)}
-              className="p-2 hover:bg-[#F3E2A7] rounded-lg transition-all text-[#8A8A7A] hover:text-[#111111]"
-              title="Close"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+  const columns: Column<ConversationItem>[] = [
+    {
+      header: 'Execution / Agent',
+      cell: c => (
+        <div>
+          <div className="font-mono text-[11px] text-[#8A5A00] font-semibold">{shortId(c.id, 12)}</div>
+          <div className="text-[12px] text-[#111111]">{c.agent_name ?? '—'}</div>
         </div>
-
-        <div className="flex-1 overflow-auto p-6 space-y-6">
-          {/* Trace Statistics */}
-          <div className="grid grid-cols-2 gap-3">
-            {[
-              { label: 'Total Duration', value: selectedExecution.duration, icon: Clock },
-              { label: 'Infrastructure Cost', value: `$${selectedExecution.cost}`, icon: Zap },
-              { label: 'Tokens Processed', value: '1,242k', icon: Layers },
-              { label: 'Worker Affinity', value: 'US-EAST-1A', icon: Cpu },
-            ].map((stat) => (
-              <div key={stat.label} className="p-3.5 bg-[#FAFAF5] border border-[#ECE7DA] rounded-xl">
-                <div className="flex items-center gap-1.5 text-[#8A8A7A] mb-2">
-                  <stat.icon className="w-3.5 h-3.5 text-[#B88719]" />
-                  <span className="text-[9px] font-black uppercase tracking-widest">{stat.label}</span>
-                </div>
-                <div className="text-base font-bold text-[#111111]">{stat.value}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Trace Steps Tree */}
-          <div className="space-y-3 relative">
-            <div className="absolute left-[23px] top-6 bottom-6 w-px bg-[#ECE7DA]" />
-
-            {[
-              { title: 'Workflow Triggered', type: 'SYSTEM', status: 'SUCCESS', icon: Zap, time: 'T+0s' },
-              { title: 'Metadata Extraction', type: 'KNOWLEDGE', status: 'SUCCESS', icon: Database, time: 'T+12s', logs: 'Extracted 12 PII fields, masked 4.' },
-              { title: 'Agent Reasoning Stage', type: 'AI', status: 'SUCCESS', icon: Bot, time: 'T+24s', tokens: 420 },
-              { title: 'Human Approval Request', type: 'HUMAN', status: selectedExecution.status === ExecutionStatus.WAITING_APPROVAL ? 'PENDING' : 'SUCCESS', icon: ShieldCheck, time: 'T+32s' },
-              { title: 'External Tool Call', type: 'TOOL', status: 'IDLE', icon: Activity, time: '--' },
-            ].map((step, i) => (
-              <div key={i} className="group relative pl-14">
-                <div className={cn(
-                  'absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full border-2 bg-white flex items-center justify-center z-10',
-                  step.status === 'SUCCESS' ? 'border-emerald-400' :
-                  step.status === 'PENDING' ? 'border-amber-400' : 'border-[#ECE7DA]'
-                )}>
-                  <div className={cn(
-                    'w-1.5 h-1.5 rounded-full',
-                    step.status === 'SUCCESS' ? 'bg-emerald-500' :
-                    step.status === 'PENDING' ? 'bg-amber-500 animate-pulse' : 'bg-[#D0CCBE]'
-                  )} />
-                </div>
-
-                <div className="p-3.5 bg-[#FAFAF5] hover:bg-[#F3E2A7]/30 border border-[#ECE7DA] hover:border-[#BFA66A] rounded-xl transition-all flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-white border border-[#ECE7DA] rounded-lg group-hover:border-[#BFA66A] transition-all">
-                      <step.icon className="w-4 h-4 text-[#8A8A7A] group-hover:text-[#B88719] transition-colors" />
-                    </div>
-                    <div>
-                      <div className="text-[#111111] font-bold text-sm">{step.title}</div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[9px] font-black text-[#8A8A7A] uppercase tracking-widest">{step.type}</span>
-                        {step.time !== '--' && <span className="text-[9px] text-[#B88719] font-mono italic">{step.time}</span>}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {step.tokens && (
-                      <div className="text-[9px] px-1.5 py-0.5 bg-[#F3E2A7] text-[#7C5A0E] border border-[#BFA66A]/40 rounded font-mono">
-                        {step.tokens} TOKENS
-                      </div>
-                    )}
-                    <button className="p-1.5 hover:bg-[#F3E2A7] rounded-lg text-[#8A8A7A] transition-all">
-                      <ChevronDown className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {step.logs && (
-                  <div className="mt-2 ml-4 p-3 bg-[#F8F5EE] rounded-lg text-[10px] font-mono text-[#5A5A5A] italic border-l-2 border-[#BFA66A]/40">
-                    LOGGER OUT: {step.logs}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </motion.div>
-    );
-  };
+      ),
+    },
+    { header: 'Kênh / Người dùng', cell: c => <div><div className="font-mono text-[11px] text-[#3F3F3F]">{c.channel ?? '—'}</div><div className="text-[11px] text-[#5F5F5F]">{c.user_ref ?? '—'}</div></div> },
+    { header: 'Trạng thái', cell: c => <Badge tone={toneFor(c.status)}>{c.status}</Badge> },
+    { header: 'Thời lượng', cell: c => <span className="text-[#3F3F3F]">{conversationDuration(c)}</span> },
+    { header: 'Tin nhắn', align: 'right', cell: c => formatNumber(c.message_count) },
+    { header: 'Bắt đầu', align: 'right', cell: c => <span className="text-[#3F3F3F]">{formatDateTime(c.started_at)}</span> },
+  ];
 
   const headerCopy: Record<CenterTab, { title: string; subtitle: string }> = {
-    HISTORY:   { title: 'Recent Executions', subtitle: 'Live execution history and trace viewer' },
-    QUEUE:     { title: 'Sandbox Queue', subtitle: 'Live container pool health and execute_python/execute_sql jobs (docs/1.md mục h)' },
-    SCHEDULES: { title: 'Schedules', subtitle: 'Recurring workflow triggers' },
+    HISTORY: { title: 'Executions', subtitle: 'Hội thoại đã ghi lại và tool calls của từng lần chạy' },
+    QUEUE:   { title: 'Sandbox Queue', subtitle: 'Pool container và các job execute_python / execute_sql đang chạy' },
   };
 
   return (
-    <div className={cn('flex bg-[#FAFAF5] overflow-hidden rounded-2xl border border-[#ECE7DA]', (selectedExecution || tab !== 'HISTORY') ? 'h-[680px]' : '')}>
-      <div className={`flex-1 flex flex-col transition-all duration-500 min-w-0`}>
-        {/* Header */}
-        <div className="p-6 border-b border-[#ECE7DA] bg-white">
-          <div className={cn('flex items-center justify-between', tab === 'HISTORY' ? 'mb-5' : '')}>
+    <div className={cn('flex bg-[#FFFDF6] overflow-hidden rounded-2xl border border-[#BFA66A]', (selected || tab !== 'HISTORY') ? 'h-[680px]' : '')}>
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className="p-5 border-b border-[#BFA66A] bg-white">
+          <div className={cn('flex items-center justify-between gap-3', tab === 'HISTORY' && 'mb-4')}>
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-[#F3E2A7] rounded-xl border border-[#BFA66A]/50">
-                <History className="w-5 h-5 text-[#7C5A0E]" />
+              <div className="p-2 bg-[#F4E8C3] rounded-xl border border-[#BFA66A]">
+                <History className="w-5 h-5 text-[#8A5A00]" />
               </div>
               <div>
                 <h2 className="text-lg font-display font-bold text-[#111111]">{headerCopy[tab].title}</h2>
-                <p className="text-xs text-[#8A8A7A] mt-0.5">{headerCopy[tab].subtitle}</p>
+                <p className="text-xs text-[#5F5F5F] mt-0.5">{headerCopy[tab].subtitle}</p>
               </div>
             </div>
-            <div className="flex items-center gap-1 p-1 bg-[#F8F5EE] rounded-xl border border-[#ECE7DA]">
-              {(['HISTORY', 'QUEUE', 'SCHEDULES'] as CenterTab[]).map((t) => (
+            <div className="flex items-center gap-1 p-1 bg-[#F4E8C3] rounded-xl border border-[#BFA66A]">
+              {(['HISTORY', 'QUEUE'] as CenterTab[]).map(t => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
                   className={cn(
                     'px-4 py-1.5 rounded-lg text-xs font-bold transition-all',
-                    tab === t ? 'bg-[#B88719] text-white shadow-sm' : 'text-[#8A8A7A] hover:text-[#111111]',
+                    tab === t ? 'bg-[#B88719] text-white shadow-sm' : 'text-[#3F3F3F] hover:text-[#111111]',
                   )}
                 >
-                  {t === 'HISTORY' ? 'History' : t === 'QUEUE' ? 'Queue' : 'Schedules'}
+                  {t === 'HISTORY' ? 'History' : 'Queue'}
                 </button>
               ))}
             </div>
           </div>
 
           {tab === 'HISTORY' && (
-            <div className="flex items-center gap-3">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8A8A7A]" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder="Search executions by trace ID, workflow name, or environment..."
-                  className="w-full bg-[#FAFAF5] border border-[#ECE7DA] rounded-xl py-2 pl-10 pr-4 text-sm text-[#111111] placeholder-[#8A8A7A] focus:outline-none focus:border-[#BFA66A]"
-                />
+            <form className="flex items-center gap-2 flex-wrap" onSubmit={e => { e.preventDefault(); setPage(1); setQ(searchDraft.trim()); }}>
+              <div className="relative flex-1 min-w-56">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#5F5F5F]" />
+                <Input value={searchDraft} onChange={e => setSearchDraft(e.target.value)} placeholder="Tìm theo ID, người dùng…" className="pl-9" aria-label="Tìm execution" />
               </div>
-              <button className="p-2.5 bg-[#F8F5EE] hover:bg-[#F3E2A7] border border-[#ECE7DA] rounded-xl transition-colors text-[#5A5A5A]">
-                <Filter className="w-4 h-4" />
-              </button>
-            </div>
+              <Select value={agentId} onChange={e => { setAgentId(e.target.value); setPage(1); }} aria-label="Lọc theo agent" className="w-52">
+                <option value="">Tất cả agent</option>
+                {(agents.data ?? []).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </Select>
+              <Select value={channel} onChange={e => setChannel(e.target.value)} aria-label="Lọc theo kênh" className="w-40">
+                <option value="">Mọi kênh</option>
+                {channels.map(c => <option key={c} value={c}>{c}</option>)}
+              </Select>
+              <Button type="submit" size="sm" icon={Search}>Tìm</Button>
+            </form>
           )}
         </div>
 
         {tab === 'QUEUE' && <SandboxQueuePanel />}
 
-        {tab === 'SCHEDULES' && (
-          <div className="flex-1 flex items-center justify-center text-sm text-[#8A8A7A]">
-            Scheduled triggers are not part of this view yet.
-          </div>
-        )}
-
         {tab === 'HISTORY' && (
-        <>
-        {/* Table */}
-        <div className="flex-1 overflow-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="text-[10px] font-black text-[#8A8A7A] uppercase tracking-widest border-b border-[#ECE7DA] bg-[#FAFAF5]">
-                <th className="px-6 py-3 text-left">Execution ID / Workflow</th>
-                <th className="px-6 py-3 text-left">Trigger / Env</th>
-                <th className="px-6 py-3 text-left">Status</th>
-                <th className="px-6 py-3 text-left">Metrics</th>
-                <th className="px-6 py-3 text-right">Activity</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayedExecutions.map((exec) => (
-                <tr
-                  key={exec.id}
-                  onClick={() => setSelectedExecution(exec)}
-                  className={cn(
-                    'group border-b border-[#ECE7DA] hover:bg-[#FBF8F0] transition-all cursor-pointer',
-                    selectedExecution?.id === exec.id ? 'bg-[#F3E2A7]/30 border-[#BFA66A]/40' : 'bg-white'
-                  )}
-                >
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-[#F8F5EE] border border-[#ECE7DA] group-hover:border-[#BFA66A] flex items-center justify-center text-[#8A8A7A] group-hover:text-[#B88719] transition-all">
-                        <Terminal className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="text-sm font-bold text-[#111111] leading-none mb-1">#{exec.id}</div>
-                        <div className="text-xs text-[#5A5A5A]">{exec.workflowName}</div>
-                      </div>
+          <>
+            <div className="flex-1 overflow-auto bg-white">
+              {loading && !data && <LoadingState label="Đang tải executions…" />}
+              {error && <div className="p-4"><ErrorState message={error} onRetry={() => void refetch()} /></div>}
+              {!error && data && (
+                <Table<ConversationItem>
+                  rows={visible}
+                  columns={columns}
+                  rowKey={c => c.id}
+                  onRowClick={setSelected}
+                  empty={
+                    <div className="p-4">
+                      <EmptyState
+                        icon={Inbox}
+                        title="Chưa có execution"
+                        description={q || agentId || channel ? 'Không có execution nào khớp bộ lọc.' : 'Mỗi hội thoại với agent là một execution — chạy thử trong Playground để thấy ở đây.'}
+                      />
                     </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-[10px] font-black text-[#8A8A7A] uppercase tracking-widest">{exec.trigger}</span>
-                      <span className="text-[10px] text-[#B88719] font-bold">{exec.tenant} / {exec.environment}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className={cn(
-                      'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border',
-                      STATUS_STYLE[exec.status]
-                    )}>
-                      <div className={cn('w-1 h-1 rounded-full', STATUS_DOT[exec.status])} />
-                      {exec.status.replace('_', ' ')}
-                    </div>
-                    {exec.waitingReason && (
-                      <div className="text-[9px] text-[#8A8A7A] mt-1 italic">Wait: {exec.waitingReason}</div>
-                    )}
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-4">
-                      <div>
-                        <div className="text-xs font-bold text-[#111111]">{exec.duration}</div>
-                        <div className="text-[9px] text-[#8A8A7A] uppercase font-black tracking-widest">Duration</div>
-                      </div>
-                      <div className="w-px h-6 bg-[#ECE7DA]" />
-                      <div>
-                        <div className="text-xs font-bold text-[#111111]">${exec.cost}</div>
-                        <div className="text-[9px] text-[#8A8A7A] uppercase font-black tracking-widest">Cost</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex items-center justify-end gap-2 text-[#8A8A7A]">
-                      <div className="text-xs font-medium text-[#5A5A5A] italic mr-2">{exec.startedAt}</div>
-                      <button className="p-1.5 hover:bg-[#F3E2A7] rounded-lg transition-all text-[#8A8A7A] hover:text-[#7C5A0E]">
-                        <ArrowRight className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        </>
+                  }
+                />
+              )}
+            </div>
+            <div className="px-4 py-2.5 border-t border-[#BFA66A] bg-white flex items-center justify-between">
+              <span className="text-xs text-[#5F5F5F]">{formatNumber(total)} executions</span>
+              <Pagination page={page} totalPages={totalPages} hasNext={page < totalPages} onJump={setPage} />
+            </div>
+          </>
         )}
       </div>
 
-      {tab === 'HISTORY' && (
-        <AnimatePresence>
-          {selectedExecution && (
-            <div className="w-[420px] shrink-0 border-l border-[#ECE7DA]">
-              {renderTrace()}
-            </div>
-          )}
-        </AnimatePresence>
+      {tab === 'HISTORY' && selected && (
+        <div className="w-[420px] shrink-0 border-l border-[#BFA66A]">
+          <ExecutionTrace key={selected.id} execution={selected} onClose={() => setSelected(null)} />
+        </div>
       )}
     </div>
   );

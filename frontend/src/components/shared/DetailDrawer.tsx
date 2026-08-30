@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Info, History, Shield, Maximize2, Minimize2, GripVertical } from 'lucide-react';
+import { X, Info, Maximize2, Minimize2, GripVertical } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 /* ─── Drawer size system ──────────────────────────────────────────── */
@@ -244,26 +244,12 @@ export const DetailDrawer = ({
               {children}
             </div>
 
-            {/* ── Pale Yellow Footer ── */}
-            <div className="drawer-footer px-6 py-3.5 flex items-center justify-between shrink-0 gap-3 flex-wrap">
-              <div className="flex gap-2 flex-wrap">
-                {footer ?? (
-                  <>
-                    <button className="btn-secondary">
-                      <History className="w-3.5 h-3.5" /> History
-                    </button>
-                    <button className="btn-secondary">
-                      <Shield className="w-3.5 h-3.5" /> Audit
-                    </button>
-                  </>
-                )}
+            {/* ── Pale Yellow Footer — only when the caller provides one ── */}
+            {footer && (
+              <div className="drawer-footer px-6 py-3.5 flex items-center justify-between shrink-0 gap-3 flex-wrap">
+                <div className="flex gap-2 flex-wrap">{footer}</div>
               </div>
-              {!footer && (
-                <span className="text-[10px] text-[#5A5A5A] font-mono whitespace-nowrap">
-                  TRACE: {Math.random().toString(36).substring(7).toUpperCase()}
-                </span>
-              )}
-            </div>
+            )}
           </motion.div>
         </>
       )}

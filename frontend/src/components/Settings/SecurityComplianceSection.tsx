@@ -26,7 +26,7 @@ const Toggle = ({ on, disabled, onClick }: { on: boolean; disabled?: boolean; on
   <button
     onClick={onClick}
     disabled={disabled}
-    className={`relative w-12 h-6 rounded-full transition-all disabled:opacity-40 ${on ? 'bg-brand-500' : 'bg-white/10'}`}
+    className={`relative w-12 h-6 rounded-full transition-all disabled:opacity-40 ${on ? 'bg-brand-500' : 'bg-[#F4E8C3]'}`}
     aria-pressed={on}
   >
     <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${on ? 'translate-x-6' : ''}`} />
@@ -85,16 +85,16 @@ export const SecurityComplianceSection = () => {
     <div className="space-y-12">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight mb-2">Security &amp; Compliance Center</h1>
-          <p className="text-slate-500 font-medium leading-relaxed max-w-xl">
+          <h1 className="text-3xl font-bold text-[#111111] tracking-tight mb-2">Security &amp; Compliance Center</h1>
+          <p className="text-[#777] font-medium leading-relaxed max-w-xl">
             Zero-trust access, data residency, retention, and PII masking. These controls are enforced —
             enabling PII masking redacts personal data at ingestion before it is embedded or stored.
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {saving && <Loader2 className="w-4 h-4 text-brand-400 animate-spin" />}
+          {saving && <Loader2 className="w-4 h-4 text-[#B88719] animate-spin" />}
           {settings?.updated_at && (
-            <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">
+            <span className="text-[10px] font-black text-[#888888] uppercase tracking-widest">
               Saved {new Date(settings.updated_at).toLocaleString()}
             </span>
           )}
@@ -102,23 +102,23 @@ export const SecurityComplianceSection = () => {
       </div>
 
       {error && (
-        <div className="flex items-center gap-3 p-4 bg-red-400/10 border border-red-400/20 rounded-2xl text-red-300 text-sm">
+        <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-2xl text-red-500 text-sm">
           <AlertCircle className="w-4 h-4" /> {error}
         </div>
       )}
 
       {loading || !settings || !score ? (
-        <div className="flex items-center gap-3 text-slate-500 py-20 justify-center">
+        <div className="flex items-center gap-3 text-[#777] py-20 justify-center">
           <Loader2 className="w-5 h-5 animate-spin" /> Loading compliance posture…
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-8">
             {/* Governance policies — each wired to a real, persisted toggle */}
-            <div className="p-8 bg-white/[0.02] border border-white/5 rounded-[40px]">
+            <div className="p-8 bg-white border border-[#E8DFC8] rounded-[40px]">
               <div className="flex items-center justify-between mb-8">
-                <h3 className="text-xl font-bold text-white tracking-tight">Enterprise Governance Policies</h3>
-                <Settings2 className="w-4 h-4 text-slate-500" />
+                <h3 className="text-xl font-bold text-[#111111] tracking-tight">Enterprise Governance Policies</h3>
+                <Settings2 className="w-4 h-4 text-[#777]" />
               </div>
 
               <div className="space-y-4">
@@ -126,25 +126,25 @@ export const SecurityComplianceSection = () => {
                   const key = POLICY_TOGGLE[policy.id];
                   const on = key ? Boolean(settings[key]) : false;
                   return (
-                    <div key={policy.id} className="flex items-center justify-between p-6 bg-white/5 border border-white/5 rounded-3xl">
+                    <div key={policy.id} className="flex items-center justify-between p-6 bg-[#FDFAF2] border border-[#E8DFC8] rounded-3xl">
                       <div className="flex items-center gap-6">
-                        <div className={`p-4 rounded-2xl bg-slate-900 border border-white/10 ${on ? 'text-emerald-400' : 'text-slate-500'}`}>
+                        <div className={`p-4 rounded-2xl bg-[#F4F4F4] border border-[#D6C79F] ${on ? 'text-emerald-600' : 'text-[#777]'}`}>
                           {on ? <ShieldCheck className="w-5 h-5" /> : <ShieldAlert className="w-5 h-5" />}
                         </div>
                         <div>
-                          <div className="text-white font-bold text-sm tracking-tight mb-1">{policy.name}</div>
+                          <div className="text-[#111111] font-bold text-sm tracking-tight mb-1">{policy.name}</div>
                           <div className="flex items-center gap-3">
-                            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{policy.module}</span>
+                            <span className="text-[9px] font-black text-[#777] uppercase tracking-widest">{policy.module}</span>
                             <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
-                              policy.severity === 'CRITICAL' ? 'bg-red-400/10 border-red-400/20 text-red-400' :
-                              policy.severity === 'HIGH' ? 'bg-amber-400/10 border-amber-400/20 text-amber-400' :
-                              'bg-blue-400/10 border-blue-400/20 text-blue-400'
+                              policy.severity === 'CRITICAL' ? 'bg-red-50 border-red-200 text-red-600' :
+                              policy.severity === 'HIGH' ? 'bg-amber-50 border-amber-200 text-amber-600' :
+                              'bg-blue-50 border-blue-200 text-blue-600'
                             }`}>{policy.severity}</div>
                           </div>
                         </div>
                       </div>
                       <div className="flex items-center gap-6">
-                        <div className={`text-xs font-bold ${on ? 'text-emerald-400' : 'text-slate-500'}`}>{policy.status}</div>
+                        <div className={`text-xs font-bold ${on ? 'text-emerald-600' : 'text-[#777]'}`}>{policy.status}</div>
                         {key && <Toggle on={on} disabled={saving} onClick={() => toggle(key)} />}
                       </div>
                     </div>
@@ -153,8 +153,8 @@ export const SecurityComplianceSection = () => {
               </div>
 
               {/* PII categories to redact — only meaningful when masking is on */}
-              <div className={`mt-6 p-6 bg-white/[0.02] border border-white/5 rounded-3xl ${settings.pii_masking ? '' : 'opacity-50'}`}>
-                <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">PII categories redacted at ingestion</div>
+              <div className={`mt-6 p-6 bg-white border border-[#E8DFC8] rounded-3xl ${settings.pii_masking ? '' : 'opacity-50'}`}>
+                <div className="text-[10px] font-black text-[#777] uppercase tracking-widest mb-4">PII categories redacted at ingestion</div>
                 <div className="flex flex-wrap gap-2">
                   {PII_TYPES.map(t => {
                     const active = settings.pii_types.includes(t);
@@ -164,7 +164,7 @@ export const SecurityComplianceSection = () => {
                         disabled={!settings.pii_masking || saving}
                         onClick={() => togglePiiType(t)}
                         className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all disabled:cursor-not-allowed ${
-                          active ? 'bg-brand-500/20 border-brand-400/30 text-brand-300' : 'bg-white/5 border-white/10 text-slate-500'
+                          active ? 'bg-[#F4E8C3] border-[#BFA66A] text-[#B88719]' : 'bg-[#FDFAF2] border-[#D6C79F] text-[#777]'
                         }`}
                       >{t}</button>
                     );
@@ -173,23 +173,23 @@ export const SecurityComplianceSection = () => {
               </div>
 
               {/* Apply the current masking policy to already-ingested documents */}
-              <div className="mt-4 flex items-center justify-between gap-4 p-6 bg-white/[0.02] border border-white/5 rounded-3xl">
+              <div className="mt-4 flex items-center justify-between gap-4 p-6 bg-white border border-[#E8DFC8] rounded-3xl">
                 <div>
-                  <div className="text-white font-bold text-sm">Reprocess existing documents</div>
-                  <div className="text-[11px] text-slate-500 mt-1">
+                  <div className="text-[#111111] font-bold text-sm">Reprocess existing documents</div>
+                  <div className="text-[11px] text-[#777] mt-1">
                     Re-runs the Gold pipeline on already-ingested content so the current masking policy is applied retroactively.
                   </div>
                   {reprocessResult && (
-                    <div className="text-[11px] mt-2 text-emerald-400">
+                    <div className="text-[11px] mt-2 text-emerald-600">
                       Re-queued {reprocessResult.enqueued}/{reprocessResult.total} document(s)
-                      {reprocessResult.failed > 0 && <span className="text-amber-400"> · {reprocessResult.failed} failed</span>}
+                      {reprocessResult.failed > 0 && <span className="text-amber-600"> · {reprocessResult.failed} failed</span>}
                     </div>
                   )}
                 </div>
                 <button
                   onClick={runReprocess}
                   disabled={reprocessing}
-                  className="shrink-0 px-5 py-3 bg-white/5 hover:bg-white/10 disabled:opacity-40 border border-white/10 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2"
+                  className="shrink-0 px-5 py-3 bg-[#FDFAF2] hover:bg-[#F4E8C3] disabled:opacity-40 border border-[#D6C79F] text-[#111111] rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all flex items-center gap-2"
                 >
                   {reprocessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
                   Reprocess
@@ -198,39 +198,39 @@ export const SecurityComplianceSection = () => {
             </div>
 
             {/* Data residency + retention — editable and persisted */}
-            <div className="p-8 bg-[#0a0a0a] border border-white/5 rounded-[40px] relative overflow-hidden">
+            <div className="p-8 bg-white border border-[#E8DFC8] rounded-[40px] relative overflow-hidden">
               <div className="absolute top-0 right-0 p-8">
-                <Globe className="w-24 h-24 text-brand-500/5 rotate-12" />
+                <Globe className="w-24 h-24 text-[#D9B86C] rotate-12" />
               </div>
-              <h3 className="text-xl font-bold text-white mb-8">Data Residency &amp; Retention</h3>
+              <h3 className="text-xl font-bold text-[#111111] mb-8">Data Residency &amp; Retention</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative">
                 <div>
-                  <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-2 block">Residency Region</label>
+                  <label className="text-[9px] font-black text-[#888888] uppercase tracking-widest mb-2 block">Residency Region</label>
                   <select
                     value={settings.residency_region}
                     onChange={e => updateSettings({ residency_region: e.target.value }).catch(() => {})}
-                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-sm"
+                    className="w-full bg-[#FDFAF2] border border-[#D6C79F] rounded-2xl px-4 py-3 text-[#111111] text-sm"
                   >
                     {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-2 block">Standards</label>
+                  <label className="text-[9px] font-black text-[#888888] uppercase tracking-widest mb-2 block">Standards</label>
                   <input
                     defaultValue={settings.residency_standards}
                     onBlur={e => { if (e.target.value !== settings.residency_standards) updateSettings({ residency_standards: e.target.value }).catch(() => {}); }}
-                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-sm"
+                    className="w-full bg-[#FDFAF2] border border-[#D6C79F] rounded-2xl px-4 py-3 text-[#111111] text-sm"
                     placeholder="GDPR, SOC2…"
                   />
                 </div>
                 <div>
-                  <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest mb-2 block">Retention (days)</label>
+                  <label className="text-[9px] font-black text-[#888888] uppercase tracking-widest mb-2 block">Retention (days)</label>
                   <input
                     type="number"
                     min={0}
                     defaultValue={settings.retention_days}
                     onBlur={e => { const v = Number(e.target.value); if (v >= 0 && v !== settings.retention_days) updateSettings({ retention_days: v }).catch(() => {}); }}
-                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-sm"
+                    className="w-full bg-[#FDFAF2] border border-[#D6C79F] rounded-2xl px-4 py-3 text-[#111111] text-sm"
                   />
                 </div>
               </div>
@@ -239,27 +239,27 @@ export const SecurityComplianceSection = () => {
 
           <div className="space-y-8">
             {/* Compliance score — computed from the real controls above */}
-            <div className="p-8 bg-white/[0.02] border border-white/5 rounded-[40px]">
+            <div className="p-8 bg-white border border-[#E8DFC8] rounded-[40px]">
               <div className="flex items-center justify-between mb-8">
-                <h3 className="text-lg font-bold text-white">Compliance Score</h3>
-                <TrendingUp className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-lg font-bold text-[#111111]">Compliance Score</h3>
+                <TrendingUp className="w-5 h-5 text-emerald-600" />
               </div>
               <div className="flex items-end gap-3 mb-8">
                 <motion.span
                   key={score.score}
                   initial={{ opacity: 0.3 }}
                   animate={{ opacity: 1 }}
-                  className="text-5xl font-bold text-white leading-none"
+                  className="text-5xl font-bold text-[#111111] leading-none"
                 >{score.score}</motion.span>
-                <span className="text-slate-500 font-bold mb-1">/ 100</span>
+                <span className="text-[#777] font-bold mb-1">/ 100</span>
               </div>
               <div className="space-y-4">
                 {score.breakdown.map(m => (
                   <div key={m.label} className="space-y-1.5">
-                    <div className="flex justify-between text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                    <div className="flex justify-between text-[10px] font-black text-[#888888] uppercase tracking-widest">
                       <span>{m.label}</span><span>{m.val}%</span>
                     </div>
-                    <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                    <div className="h-1 bg-[#FDFAF2] rounded-full overflow-hidden">
                       <div className="h-full bg-brand-500 rounded-full transition-all" style={{ width: `${Math.min(m.val, 100)}%` }} />
                     </div>
                   </div>
@@ -268,17 +268,17 @@ export const SecurityComplianceSection = () => {
             </div>
 
             {/* PII scan tool — live preview of what masking would redact */}
-            <div className="p-8 bg-slate-900 border border-white/5 rounded-[40px]">
+            <div className="p-8 bg-[#F4F4F4] border border-[#E8DFC8] rounded-[40px]">
               <div className="flex items-center gap-3 mb-6">
-                <ScanLine className="w-5 h-5 text-brand-400" />
-                <h3 className="text-lg font-bold text-white">PII Scanner</h3>
+                <ScanLine className="w-5 h-5 text-[#B88719]" />
+                <h3 className="text-lg font-bold text-[#111111]">PII Scanner</h3>
               </div>
               <textarea
                 value={scanText}
                 onChange={e => setScanText(e.target.value)}
                 rows={4}
                 placeholder="Paste text to detect PII (email, phone, CCCD/CMND, card…)"
-                className="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-sm resize-none"
+                className="w-full bg-[#FDFAF2] border border-[#D6C79F] rounded-2xl px-4 py-3 text-[#111111] text-sm resize-none"
               />
               <button
                 onClick={runScan}
@@ -288,21 +288,21 @@ export const SecurityComplianceSection = () => {
                 {scanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanLine className="w-4 h-4" />}
                 Scan for PII
               </button>
-              {scanErr && <div className="mt-3 text-xs text-red-400">{scanErr}</div>}
+              {scanErr && <div className="mt-3 text-xs text-red-600">{scanErr}</div>}
               {scanResult && (
                 <div className="mt-5 space-y-3">
                   <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-widest">
-                    <span className="text-slate-500">Detected</span>
-                    <span className={scanResult.total ? 'text-amber-400' : 'text-emerald-400'}>{scanResult.total} item(s)</span>
+                    <span className="text-[#777]">Detected</span>
+                    <span className={scanResult.total ? 'text-amber-600' : 'text-emerald-600'}>{scanResult.total} item(s)</span>
                   </div>
                   {Object.entries(scanResult.counts).length > 0 && (
                     <div className="flex flex-wrap gap-2">
                       {Object.entries(scanResult.counts).map(([t, n]) => (
-                        <span key={t} className="px-2 py-0.5 rounded-full bg-amber-400/10 border border-amber-400/20 text-amber-400 text-[10px] font-bold">{t}: {n}</span>
+                        <span key={t} className="px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-600 text-[10px] font-bold">{t}: {n}</span>
                       ))}
                     </div>
                   )}
-                  <div className="p-4 bg-black/40 border border-white/5 rounded-2xl text-[11px] text-slate-400 font-mono whitespace-pre-wrap break-words">
+                  <div className="p-4 bg-black/40 border border-[#E8DFC8] rounded-2xl text-[11px] text-[#5A5A5A] font-mono whitespace-pre-wrap break-words">
                     {scanResult.preview || '(empty)'}
                   </div>
                 </div>

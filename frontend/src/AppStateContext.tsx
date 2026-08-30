@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { Role, Industry, TenantContext, User, Environment, KnowledgeDocument, PagedResponse } from './types';
 import { apiGet } from './lib/apiClient';
 import { useAuth } from './lib/AuthProvider';
+import { pickTenant, type Tenant } from './lib/platformApi';
 
 interface AppStateContextType {
   role: Role;
@@ -10,6 +11,9 @@ interface AppStateContextType {
   setIndustry: (industry: Industry) => void;
   tenant: TenantContext;
   setTenant: (tenant: Partial<TenantContext>) => void;
+  /** Tenants the signed-in user belongs to (GET /api/auth/me/tenants). */
+  tenants: Tenant[];
+  tenantsLoading: boolean;
   user: User;
   isExpertMode: boolean;
   setIsExpertMode: (val: boolean) => void;
@@ -99,16 +103,38 @@ const writeHash = (module: string, sub?: string) => {
   }
 };
 
+/* ─── Tenant persistence ───────────────────────────────────────────── */
+const TENANT_KEY = 'app:tenantId';
+const ENV_KEY = 'app:environment';
+const ENV_VALUES: Environment[] = ['DEV', 'UAT', 'STAGING', 'PROD'];
+
+const readStorage = (key: string): string | null => {
+  try { return typeof window !== 'undefined' ? window.localStorage.getItem(key) : null; } catch { return null; }
+};
+const writeStorage = (key: string, value: string | null) => {
+  try {
+    if (typeof window === 'undefined') return;
+    if (value === null) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, value);
+  } catch { /* storage unavailable — selection is session-only */ }
+};
+
+/** Environment pill choice survives reloads; defaults to PROD. */
+export const initialEnvironment = (stored: string | null): Environment =>
+  ENV_VALUES.includes(stored as Environment) ? (stored as Environment) : 'PROD';
+
 export const AppStateProvider = ({ children }: { children: ReactNode }) => {
   const [role, setRole] = useState<Role>('AI_ENGINEER');
   const [industry, setIndustry] = useState<Industry>('GENERAL');
   const [isExpertMode, setIsExpertMode] = useState(false);
-  const [tenant, setTenantState] = useState<TenantContext>({
-    organization: 'Global Corp',
-    workspace: 'Engineering Alpha',
-    project: 'Nexus-7',
-    environment: 'PROD',
-  });
+  const [tenant, setTenantState] = useState<TenantContext>(() => ({
+    tenantId: null,
+    tenantName: null,
+    slug: null,
+    environment: initialEnvironment(readStorage(ENV_KEY)),
+  }));
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [tenantsLoading, setTenantsLoading] = useState(false);
 
   const { user: authUser } = useAuth();
   const user: User = {
@@ -123,6 +149,30 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
       return 'AI_ENGINEER';
     })() as Role,
   };
+
+  /* Tenants — loaded once the user is authenticated */
+  const authUserId = authUser?.id ?? null;
+  useEffect(() => {
+    if (!authUserId) return;
+    let cancelled = false;
+    setTenantsLoading(true);
+    apiGet<Tenant[]>('/api/auth/me/tenants')
+      .then(list => {
+        if (cancelled) return;
+        const safe = Array.isArray(list) ? list : [];
+        setTenants(safe);
+        const chosen = pickTenant(safe, readStorage(TENANT_KEY));
+        setTenantState(prev => ({
+          ...prev,
+          tenantId: chosen?.id ?? null,
+          tenantName: chosen?.name ?? null,
+          slug: chosen?.slug ?? null,
+        }));
+      })
+      .catch(() => { if (!cancelled) setTenants([]); })
+      .finally(() => { if (!cancelled) setTenantsLoading(false); });
+    return () => { cancelled = true; };
+  }, [authUserId]);
 
   /* Routing state — initialized from URL hash, else by role */
   const initial = parseHash(landingFor(user.role));
@@ -171,9 +221,11 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
 
-  const setTenant = (newTenant: Partial<TenantContext>) => {
+  const setTenant = useCallback((newTenant: Partial<TenantContext>) => {
+    if (newTenant.tenantId !== undefined) writeStorage(TENANT_KEY, newTenant.tenantId);
+    if (newTenant.environment !== undefined) writeStorage(ENV_KEY, newTenant.environment);
     setTenantState(prev => ({ ...prev, ...newTenant }));
-  };
+  }, []);
 
   /* Documents */
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
@@ -218,6 +270,8 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
         setIndustry,
         tenant,
         setTenant,
+        tenants,
+        tenantsLoading,
         user,
         isExpertMode,
         setIsExpertMode,

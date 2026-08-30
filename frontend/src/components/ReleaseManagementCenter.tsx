@@ -33,8 +33,8 @@ const DEPLOY_STATUS: Record<string, { label: string; color: string; bg: string }
   PROMOTING:        { label: 'Promoting',   color: 'text-amber-700',   bg: 'bg-amber-50 border-amber-200'      },
   BUILDING:         { label: 'Building',    color: 'text-blue-700',    bg: 'bg-blue-50 border-blue-200'        },
   WAITING_APPROVAL: { label: 'Approval',    color: 'text-purple-700',  bg: 'bg-purple-50 border-purple-200'    },
-  ROLLED_BACK:      { label: 'Rolled Back', color: 'text-slate-600',   bg: 'bg-slate-50 border-slate-200'      },
-  QUEUED:           { label: 'Queued',      color: 'text-slate-600',   bg: 'bg-slate-50 border-slate-200'      },
+  ROLLED_BACK:      { label: 'Rolled Back', color: 'text-[#3F3F3F]',   bg: 'bg-[#FFF9E8] border-[#BFA66A]'      },
+  QUEUED:           { label: 'Queued',      color: 'text-[#3F3F3F]',   bg: 'bg-[#FFF9E8] border-[#BFA66A]'      },
 };
 
 /* ─── Feature 4: trigger_type badge map ─────────────────────────────── */
@@ -50,9 +50,9 @@ const STEP_STATUS: Record<string, { color: string; bg: string; border: string }>
   FAILED:      { color: 'text-red-700',     bg: 'bg-red-50',     border: 'border-red-200'     },
   RUNNING:     { color: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-200'   },
   IN_PROGRESS: { color: 'text-amber-700',   bg: 'bg-amber-50',   border: 'border-amber-200'   },
-  SKIPPED:     { color: 'text-slate-500',   bg: 'bg-slate-50',   border: 'border-slate-200'   },
+  SKIPPED:     { color: 'text-[#5F5F5F]',   bg: 'bg-[#FFF9E8]',   border: 'border-[#BFA66A]'   },
 };
-const STEP_STATUS_DEFAULT = { color: 'text-slate-500', bg: 'bg-slate-50', border: 'border-slate-200' };
+const STEP_STATUS_DEFAULT = { color: 'text-[#5F5F5F]', bg: 'bg-[#FFF9E8]', border: 'border-[#BFA66A]' };
 
 /* ─── Feature 3: filter constants ───────────────────────────────────── */
 const DEPLOYMENTS_ENVS    = ['ALL', 'DEV', 'STAGING', 'UAT', 'PROD'] as const;
@@ -260,7 +260,7 @@ const ReleaseManagementCenter = () => {
 
   if (loading && deployments.length === 0) {
     return (
-      <div className="flex items-center justify-center h-64 gap-3 text-[#777]">
+      <div className="flex items-center justify-center h-64 gap-3 text-[#5F5F5F]">
         <Loader2 className="w-5 h-5 animate-spin text-[#B88719]" />
         <span className="text-sm font-mono">Loading release data…</span>
       </div>
@@ -282,14 +282,14 @@ const ReleaseManagementCenter = () => {
         </div>
         <div className="flex items-center gap-3 mt-1">
           {lastRefreshed && (
-            <span className="text-[9px] font-mono text-[#999]">
+            <span className="text-[9px] font-mono text-[#5F5F5F]">
               refreshed {lastRefreshed.toLocaleTimeString()}
             </span>
           )}
           <button
             onClick={reload}
             disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-1.5 border border-[#BFA66A] rounded-lg text-[10px] font-bold uppercase text-[#5A5A5A] hover:border-[#8A5A00] hover:text-[#8A5A00] transition-all disabled:opacity-40"
+            className="btn-ghost btn-sm"
           >
             <RefreshCw className={cn('w-3 h-3', loading && 'animate-spin')} />
             Refresh
@@ -354,13 +354,13 @@ const ReleaseManagementCenter = () => {
           <div className="glass-panel rounded-2xl overflow-hidden">
 
             {/* Panel header with Trigger button */}
-            <div className="px-5 py-4 bg-[#FDFAF2] border-b border-[#E8DFC8] flex items-center justify-between">
+            <div className="px-5 py-4 bg-[#FDFAF2] border-b border-[#BFA66A] flex items-center justify-between">
               <h3 className="text-sm font-bold text-[#111111] flex items-center gap-2">
                 <Activity className="w-4 h-4 text-[#B88719]" />
                 Active & Recent Deployments
               </h3>
               <div className="flex items-center gap-3">
-                <span className="text-[10px] font-mono text-[#777]">
+                <span className="text-[10px] font-mono text-[#5F5F5F]">
                   {loading ? 'loading…' : `${filteredDeployments.filter(d => ['BUILDING','VALIDATING','PROMOTING','WAITING_APPROVAL'].includes(d.status)).length} active · ${filteredDeployments.length} shown`}
                 </span>
                 <button
@@ -380,7 +380,7 @@ const ReleaseManagementCenter = () => {
 
             {/* Feature 1: Collapsible trigger form */}
             {showTriggerForm && (
-              <div className="border-b border-[#E8DFC8] px-5 py-4 bg-[#FDFAF2] space-y-3">
+              <div className="border-b border-[#BFA66A] px-5 py-4 bg-[#FDFAF2] space-y-3">
                 {triggerError && (
                   <div className="p-2 bg-red-50 border border-red-200 rounded-lg text-[10px] text-red-700 font-mono flex items-center gap-1.5">
                     <AlertTriangle className="w-3 h-3 shrink-0" />
@@ -389,7 +389,7 @@ const ReleaseManagementCenter = () => {
                 )}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <label className="block text-[9px] font-bold text-[#777] uppercase tracking-widest mb-1">
+                    <label className="block text-[9px] font-bold text-[#5F5F5F] uppercase tracking-widest mb-1">
                       Package Version <span className="text-red-500">*</span>
                     </label>
                     <input
@@ -397,11 +397,11 @@ const ReleaseManagementCenter = () => {
                       placeholder="e.g. v2.4.1"
                       value={triggerFormData.packageVersion}
                       onChange={e => setTriggerFormData(p => ({ ...p, packageVersion: e.target.value }))}
-                      className="w-full bg-white border border-[#BFA66A] px-3 py-1.5 rounded-lg text-[11px] font-mono focus:outline-none focus:border-[#8A5A00] transition-colors"
+                      className="ui-input w-full px-3 py-1.5 text-[11px] font-mono"
                     />
                   </div>
                   <div>
-                    <label className="block text-[9px] font-bold text-[#777] uppercase tracking-widest mb-1">
+                    <label className="block text-[9px] font-bold text-[#5F5F5F] uppercase tracking-widest mb-1">
                       Pipeline Name
                     </label>
                     <input
@@ -409,11 +409,11 @@ const ReleaseManagementCenter = () => {
                       placeholder="optional"
                       value={triggerFormData.pipelineName}
                       onChange={e => setTriggerFormData(p => ({ ...p, pipelineName: e.target.value }))}
-                      className="w-full bg-white border border-[#BFA66A] px-3 py-1.5 rounded-lg text-[11px] font-mono focus:outline-none focus:border-[#8A5A00] transition-colors"
+                      className="ui-input w-full px-3 py-1.5 text-[11px] font-mono"
                     />
                   </div>
                   <div>
-                    <label className="block text-[9px] font-bold text-[#777] uppercase tracking-widest mb-1">
+                    <label className="block text-[9px] font-bold text-[#5F5F5F] uppercase tracking-widest mb-1">
                       Branch
                     </label>
                     <input
@@ -421,12 +421,12 @@ const ReleaseManagementCenter = () => {
                       placeholder="optional"
                       value={triggerFormData.branch}
                       onChange={e => setTriggerFormData(p => ({ ...p, branch: e.target.value }))}
-                      className="w-full bg-white border border-[#BFA66A] px-3 py-1.5 rounded-lg text-[11px] font-mono focus:outline-none focus:border-[#8A5A00] transition-colors"
+                      className="ui-input w-full px-3 py-1.5 text-[11px] font-mono"
                     />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-[9px] font-bold text-[#777] uppercase tracking-widest mb-1.5">
+                  <label className="block text-[9px] font-bold text-[#5F5F5F] uppercase tracking-widest mb-1.5">
                     Target Environments <span className="text-red-500">*</span>
                   </label>
                   <div className="flex flex-wrap gap-2">
@@ -477,7 +477,7 @@ const ReleaseManagementCenter = () => {
             )}
 
             {/* Feature 3: Filter chips */}
-            <div className="px-5 py-2.5 bg-white border-b border-[#E8DFC8] flex flex-wrap gap-x-4 gap-y-2 items-center">
+            <div className="px-5 py-2.5 bg-white border-b border-[#BFA66A] flex flex-wrap gap-x-4 gap-y-2 items-center">
               <div className="flex gap-1.5 flex-wrap">
                 {DEPLOYMENTS_ENVS.map(env => (
                   <button
@@ -494,7 +494,7 @@ const ReleaseManagementCenter = () => {
                   </button>
                 ))}
               </div>
-              <div className="w-px h-4 bg-[#E8DFC8] hidden sm:block" />
+              <div className="w-px h-4 bg-[#BFA66A] hidden sm:block" />
               <div className="flex gap-1.5 flex-wrap">
                 {DEPLOYMENTS_STATUSES.map(s => (
                   <button
@@ -514,7 +514,7 @@ const ReleaseManagementCenter = () => {
             </div>
 
             {filteredDeployments.length === 0 && !loading ? (
-              <div className="p-10 text-center text-[#777] text-sm font-mono">
+              <div className="p-10 text-center text-[#5F5F5F] text-sm font-mono">
                 {envFilter !== 'ALL' || statusFilter !== 'ALL'
                   ? 'No deployments match current filters'
                   : 'No deployments found'}
@@ -523,7 +523,7 @@ const ReleaseManagementCenter = () => {
               <>
                 {/* Desktop */}
                 <table className="hidden lg:table w-full text-left">
-                  <thead className="bg-[#FDFAF2] border-b border-[#E8DFC8] text-[10px] font-bold text-[#777] uppercase tracking-[0.1em]">
+                  <thead className="bg-[#FDFAF2] border-b border-[#BFA66A] text-[10px] font-bold text-[#5F5F5F] uppercase tracking-[0.1em]">
                     <tr>
                       <th className="px-5 py-3">Package</th>
                       <th className="px-4 py-3">Env</th>
@@ -535,7 +535,7 @@ const ReleaseManagementCenter = () => {
                       <th className="px-4 py-3"></th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#F0E8D4]">
+                  <tbody className="divide-y divide-[#BFA66A]">
                     {filteredDeployments.map(dep => {
                       const sc = DEPLOY_STATUS[dep.status] ?? DEPLOY_STATUS['QUEUED'];
                       const isExpanded = expandedRow === dep.id;
@@ -557,7 +557,7 @@ const ReleaseManagementCenter = () => {
                                   {tt.label}
                                 </div>
                               </div>
-                              <div className="text-[9px] font-mono text-[#777] mt-0.5">{dep.id} · {dep.version}</div>
+                              <div className="text-[9px] font-mono text-[#5F5F5F] mt-0.5">{dep.id} · {dep.version}</div>
                             </td>
                             <td className="px-4 py-3.5">
                               <span className="px-2 py-0.5 bg-[#F4E8C3] border border-[#BFA66A] rounded text-[9px] font-bold text-[#5A5A5A]">
@@ -565,8 +565,8 @@ const ReleaseManagementCenter = () => {
                               </span>
                             </td>
                             <td className="px-4 py-3.5 text-[11px] font-mono text-[#5A5A5A]">{dep.owner}</td>
-                            <td className="px-4 py-3.5 text-[10px] font-mono text-[#777]">{dep.startedAt}</td>
-                            <td className="px-4 py-3.5 text-[10px] font-mono text-[#777]">{dep.duration}</td>
+                            <td className="px-4 py-3.5 text-[10px] font-mono text-[#5F5F5F]">{dep.startedAt}</td>
+                            <td className="px-4 py-3.5 text-[10px] font-mono text-[#5F5F5F]">{dep.duration}</td>
                             <td className="px-4 py-3.5 text-center">
                               <span className={cn('text-xs font-bold', dep.riskScore > 50 ? 'text-red-600' : dep.riskScore > 25 ? 'text-amber-600' : 'text-emerald-600')}>
                                 {dep.riskScore}
@@ -582,8 +582,8 @@ const ReleaseManagementCenter = () => {
                             </td>
                             <td className="px-4 py-3.5">
                               {isExpanded
-                                ? <ChevronUp className="w-3.5 h-3.5 text-[#999]" />
-                                : <ChevronDown className="w-3.5 h-3.5 text-[#999]" />}
+                                ? <ChevronUp className="w-3.5 h-3.5 text-[#5F5F5F]" />
+                                : <ChevronDown className="w-3.5 h-3.5 text-[#5F5F5F]" />}
                             </td>
                           </tr>
 
@@ -622,7 +622,7 @@ const ReleaseManagementCenter = () => {
                                       </button>
                                       <button
                                         onClick={e => { e.stopPropagation(); handleApprove(dep, 'REJECTED'); }}
-                                        className="px-3 py-1 bg-red-50 border border-red-200 text-red-700 rounded-lg text-[10px] font-bold uppercase hover:bg-red-100 transition-colors"
+                                        className="btn-danger btn-sm"
                                       >
                                         ✗ Reject
                                       </button>
@@ -632,14 +632,14 @@ const ReleaseManagementCenter = () => {
 
                                 {/* Feature 2: Pipeline Steps */}
                                 <div>
-                                  <div className="text-[9px] font-black text-[#777] uppercase tracking-widest mb-2">
+                                  <div className="text-[9px] font-black text-[#5F5F5F] uppercase tracking-widest mb-2">
                                     Pipeline Steps
                                   </div>
                                   {(() => {
                                     const steps = pipelineSteps[dep.id];
                                     if (steps === undefined || steps === 'loading') {
                                       return (
-                                        <div className="flex items-center gap-1.5 text-[10px] font-mono text-[#777]">
+                                        <div className="flex items-center gap-1.5 text-[10px] font-mono text-[#5F5F5F]">
                                           <Loader2 className="w-3 h-3 animate-spin text-[#B88719]" />
                                           Loading steps…
                                         </div>
@@ -655,7 +655,7 @@ const ReleaseManagementCenter = () => {
                                     }
                                     if (steps.length === 0) {
                                       return (
-                                        <div className="text-[10px] font-mono text-[#777]">
+                                        <div className="text-[10px] font-mono text-[#5F5F5F]">
                                           No step data available.
                                         </div>
                                       );
@@ -678,7 +678,7 @@ const ReleaseManagementCenter = () => {
                                                 : <CheckCircle2 className={cn('w-3 h-3 shrink-0', ss.color)} />}
                                               <span className={cn('font-bold', ss.color)}>{step.stepName}</span>
                                               <span className={cn('ml-auto text-[9px]', ss.color)}>{step.status}</span>
-                                              <span className="text-[#999] text-[9px]">{step.duration}</span>
+                                              <span className="text-[#5F5F5F] text-[9px]">{step.duration}</span>
                                               {step.error && (
                                                 <span
                                                   className="text-red-600 text-[9px] truncate max-w-[200px]"
@@ -705,7 +705,7 @@ const ReleaseManagementCenter = () => {
                 </table>
 
                 {/* Mobile */}
-                <div className="lg:hidden divide-y divide-[#F0E8D4]">
+                <div className="lg:hidden divide-y divide-[#BFA66A]">
                   {filteredDeployments.map(dep => {
                     const sc = DEPLOY_STATUS[dep.status] ?? DEPLOY_STATUS['QUEUED'];
                     const tt = TRIGGER_TYPE[dep.triggerType] ?? { label: dep.triggerType, icon: Activity };
@@ -722,13 +722,13 @@ const ReleaseManagementCenter = () => {
                                 {tt.label}
                               </div>
                             </div>
-                            <div className="text-[9px] font-mono text-[#777]">{dep.id} · {dep.version}</div>
+                            <div className="text-[9px] font-mono text-[#5F5F5F]">{dep.id} · {dep.version}</div>
                           </div>
                           <div className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full border', sc.bg, sc.color)}>
                             {sc.label}
                           </div>
                         </div>
-                        <div className="flex gap-3 text-[10px] font-mono text-[#777]">
+                        <div className="flex gap-3 text-[10px] font-mono text-[#5F5F5F]">
                           <span>{dep.env}</span>
                           <span>{dep.owner}</span>
                           <span>{dep.startedAt}</span>
@@ -750,27 +750,27 @@ const ReleaseManagementCenter = () => {
           <div className="space-y-4">
             <div className="flex justify-end">
               <div className="relative">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#777]" />
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#5F5F5F]" />
                 <input
                   type="text"
                   placeholder="Search releases…"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  className="bg-white border border-[#BFA66A] pl-8 pr-4 py-1.5 rounded-lg text-[11px] w-52 focus:outline-none focus:border-[#8A5A00] font-mono transition-colors"
+                  className="ui-input pl-8 pr-4 py-1.5 text-[11px] w-52 font-mono"
                 />
               </div>
             </div>
 
             <div className="glass-panel rounded-2xl overflow-hidden">
               {filteredHistory.length === 0 && !loading ? (
-                <div className="p-10 text-center text-[#777] text-sm font-mono">
+                <div className="p-10 text-center text-[#5F5F5F] text-sm font-mono">
                   {search ? `No releases matching "${search}"` : 'No release history yet'}
                 </div>
               ) : (
                 <>
                   {/* Desktop */}
                   <table className="hidden lg:table w-full text-left">
-                    <thead className="bg-[#FDFAF2] border-b border-[#E8DFC8] text-[10px] font-bold text-[#777] uppercase tracking-[0.1em]">
+                    <thead className="bg-[#FDFAF2] border-b border-[#BFA66A] text-[10px] font-bold text-[#5F5F5F] uppercase tracking-[0.1em]">
                       <tr>
                         <th className="px-5 py-3">Release</th>
                         <th className="px-4 py-3">Env</th>
@@ -780,7 +780,7 @@ const ReleaseManagementCenter = () => {
                         <th className="px-4 py-3">Status</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-[#F0E8D4]">
+                    <tbody className="divide-y divide-[#BFA66A]">
                       {filteredHistory.map((r, idx) => {
                         const sc   = HISTORY_STATUS[r.status] ?? HISTORY_STATUS['SUCCESS'];
                         const Icon = sc.icon;
@@ -788,7 +788,7 @@ const ReleaseManagementCenter = () => {
                           <tr key={`${r.id}-${idx}`} className="hover:bg-[#FFF9E8] transition-colors">
                             <td className="px-5 py-3.5">
                               <div className="text-xs font-bold text-[#111111] uppercase">{r.name}</div>
-                              <div className="text-[9px] font-mono text-[#777] mt-0.5">{r.id}</div>
+                              <div className="text-[9px] font-mono text-[#5F5F5F] mt-0.5">{r.id}</div>
                             </td>
                             <td className="px-4 py-3.5">
                               <span className="px-2 py-0.5 bg-[#F4E8C3] border border-[#BFA66A] rounded text-[9px] font-bold text-[#5A5A5A]">
@@ -796,8 +796,8 @@ const ReleaseManagementCenter = () => {
                               </span>
                             </td>
                             <td className="px-4 py-3.5 text-[11px] font-mono text-[#5A5A5A]">{r.by}</td>
-                            <td className="px-4 py-3.5 text-[10px] font-mono text-[#777]">{r.at}</td>
-                            <td className="px-4 py-3.5 text-[10px] font-mono text-[#777]">{r.duration}</td>
+                            <td className="px-4 py-3.5 text-[10px] font-mono text-[#5F5F5F]">{r.at}</td>
+                            <td className="px-4 py-3.5 text-[10px] font-mono text-[#5F5F5F]">{r.duration}</td>
                             <td className="px-4 py-3.5">
                               <div className={cn('inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full border', sc.bg, sc.color)}>
                                 <Icon className="w-3 h-3" />
@@ -811,7 +811,7 @@ const ReleaseManagementCenter = () => {
                   </table>
 
                   {/* Mobile */}
-                  <div className="lg:hidden divide-y divide-[#F0E8D4]">
+                  <div className="lg:hidden divide-y divide-[#BFA66A]">
                     {filteredHistory.map((r, idx) => {
                       const sc = HISTORY_STATUS[r.status] ?? HISTORY_STATUS['SUCCESS'];
                       return (
@@ -819,13 +819,13 @@ const ReleaseManagementCenter = () => {
                           <div className="flex justify-between items-start">
                             <div>
                               <div className="text-xs font-bold text-[#111111]">{r.name}</div>
-                              <div className="text-[9px] font-mono text-[#777]">{r.id}</div>
+                              <div className="text-[9px] font-mono text-[#5F5F5F]">{r.id}</div>
                             </div>
                             <div className={cn('text-[9px] font-bold px-1.5 py-0.5 rounded-full border', sc.bg, sc.color)}>
                               {r.status}
                             </div>
                           </div>
-                          <div className="flex gap-3 text-[10px] font-mono text-[#777]">
+                          <div className="flex gap-3 text-[10px] font-mono text-[#5F5F5F]">
                             <span>{r.env}</span>
                             <span>{r.by}</span>
                             <span>{r.at}</span>
@@ -858,7 +858,7 @@ const ReleaseManagementCenter = () => {
 
             {/* Rollback targets */}
             {rollbackTargets.length === 0 && !loading ? (
-              <div className="glass-panel p-10 rounded-2xl text-center text-[#777] text-sm font-mono">
+              <div className="glass-panel p-10 rounded-2xl text-center text-[#5F5F5F] text-sm font-mono">
                 No rollback candidates — need at least 2 successful deployments per pipeline
               </div>
             ) : (
@@ -869,7 +869,7 @@ const ReleaseManagementCenter = () => {
                       <div className="text-sm font-bold text-[#111111] uppercase">{target.name}</div>
                       <div className="flex items-center gap-2 mt-1.5 text-[10px] font-mono">
                         <span className="text-[#B88719] font-bold">{target.current}</span>
-                        <span className="text-[#777]">→ revert to</span>
+                        <span className="text-[#5F5F5F]">→ revert to</span>
                         <span className="text-[#5A5A5A]">{target.previous}</span>
                       </div>
                     </div>
@@ -887,7 +887,7 @@ const ReleaseManagementCenter = () => {
                         </button>
                         <button
                           onClick={() => setConfirmId(null)}
-                          className="px-4 py-2 rounded-xl text-[11px] font-bold uppercase tracking-wide bg-white border border-[#BFA66A] text-[#5A5A5A] hover:bg-[#FFF9E8] transition-all"
+                          className="btn-secondary btn-sm"
                         >
                           Cancel
                         </button>
@@ -895,7 +895,7 @@ const ReleaseManagementCenter = () => {
                     ) : (
                       <button
                         onClick={() => setConfirmId(target.id)}
-                        className="px-4 py-2 rounded-xl text-[11px] font-bold uppercase tracking-wide bg-white border border-[#BFA66A] text-[#5A5A5A] hover:border-amber-400 hover:text-amber-700 hover:bg-amber-50 transition-all shrink-0"
+                        className="btn-secondary btn-sm shrink-0"
                       >
                         Rollback
                       </button>
@@ -907,7 +907,7 @@ const ReleaseManagementCenter = () => {
 
             {/* Rollback procedure */}
             <div className="glass-panel p-5 rounded-2xl">
-              <h4 className="text-[10px] font-black text-[#777] uppercase tracking-widest mb-4">
+              <h4 className="text-[10px] font-black text-[#5F5F5F] uppercase tracking-widest mb-4">
                 Rollback Procedure
               </h4>
               <div className="space-y-2">
@@ -918,12 +918,12 @@ const ReleaseManagementCenter = () => {
                 ].map(s => (
                   <div
                     key={s.step}
-                    className="flex items-center gap-4 px-4 py-3 bg-[#FDFAF2] border border-[#E8DFC8] rounded-xl"
+                    className="flex items-center gap-4 px-4 py-3 bg-[#FDFAF2] border border-[#BFA66A] rounded-xl"
                   >
                     <span className="text-[10px] font-black text-[#B88719] font-mono w-6 shrink-0">{s.step}</span>
                     <div>
                       <div className="text-[11px] font-bold text-[#111111]">{s.label}</div>
-                      <div className="text-[9px] text-[#777] mt-0.5">{s.sub}</div>
+                      <div className="text-[9px] text-[#5F5F5F] mt-0.5">{s.sub}</div>
                     </div>
                   </div>
                 ))}
