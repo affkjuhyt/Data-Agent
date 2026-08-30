@@ -22,7 +22,7 @@ cd "$ROOT"
 # "infra") keeps its Postgres/Keycloak/KB data untouched; E2E always starts from
 # a fresh database so migrations + seed are reproducible.
 E2E_PROJECT=${E2E_PROJECT:-dataagent-e2e}
-COMPOSE=(docker compose -p "$E2E_PROJECT" --profile runtime -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.app.yml
+COMPOSE=(docker compose -p "$E2E_PROJECT" --env-file .env --profile runtime -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.app.yml
          -f deploy/docker/docker-compose.agent-test.yml -f deploy/docker/docker-compose.local.yml)
 # dev (default): existing images + bind-mounted source, build only what is
 # missing. build: rebuild every image (slow — full pip install per service).

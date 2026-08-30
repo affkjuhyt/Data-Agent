@@ -247,7 +247,10 @@ npm run test          # vitest run
 
 ## Full Stack — Docker
 
-The Docker stack lives under [`deploy/docker/`](./deploy/docker). The **base file is the single source
+The Docker stack lives under [`deploy/docker/`](./deploy/docker). Compose interpolates `${…}` from the
+`.env` in its *project directory*, and the real file is the repo-root `.env` — so either run with
+`--env-file .env` from the repo root (what `tests/e2e/e2e.sh` and the Ansible playbook do) or keep the
+`deploy/docker/.env -> ../../.env` symlink the `preflight` role creates. The **base file is the single source
 of truth** — every service lives there, tagged with a **profile** (`kb`, `runtime`,
 `observability`, `iam`, `release`, `models`, …). Pick the layer you need with
 `--profile`, not a separate `-f` file:

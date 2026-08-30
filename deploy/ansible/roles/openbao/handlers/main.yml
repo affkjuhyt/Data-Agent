@@ -2,6 +2,7 @@
 - name: recreate workflow-runtime container
   community.docker.docker_compose_v2:
     project_src: "{{ compose_dir }}"
+    env_files: ["{{ project_dir }}/.env"]   # compose-time interpolation reads the repo-root .env
     project_name: "{{ compose_project }}"
     files: "{{ compose_files }}"
     services: [workflow-runtime]

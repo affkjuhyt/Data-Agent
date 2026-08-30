@@ -1,5 +1,5 @@
 # OpenBao production config — TLS enabled.
-# Pair with docker-compose.prod.yml, which mounts ../infra/certs at /openbao/certs
+# Pair with docker-compose.prod.yml, which mounts ./certs at /openbao/certs
 # and runs `server -config=/openbao/config/config.prod.hcl`.
 #
 # Generate the cert/key first (self-signed for staging, real CA for prod):

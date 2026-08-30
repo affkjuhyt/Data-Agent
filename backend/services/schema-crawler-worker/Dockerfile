@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # (audit-consumer's convention): the tests import `libs.shared.freshness` from
 # the repo root, and matching that here means one import statement works in both.
 COPY backend/libs/__init__.py ./libs/__init__.py
-COPY backend/libs/shared/__init__.py libs/shared/freshness.py ./libs/shared/
+COPY backend/libs/shared/__init__.py backend/libs/shared/freshness.py ./libs/shared/
 # Whole directory, not a file list. The list version silently went stale the
 # moment this worker gained a second metadata engine — the image kept building
 # and then failed at `import metadata`. __pycache__ and *.pyc are excluded by

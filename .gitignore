@@ -106,3 +106,4 @@ deploy/ansible/inventories/prod/hosts.yml
 deploy/ansible/inventories/prod/group_vars/all.yml
 deploy/ansible/inventories/prod/group_vars/all/vault.yml
 .ansible-secrets/
+deploy/docker/keycloak/spi/target/

@@ -9,13 +9,13 @@
     - name: Postgres — agent, metric contracts, secret row, demo warehouse
       ansible.builtin.shell: >
         docker exec -i dataagent-postgres psql -U admin -d dataagent -v ON_ERROR_STOP=1 -q
-        < {{ project_dir }}/scripts/e2e/seed.sql
+        < {{ project_dir }}/tests/e2e/seed.sql
       changed_when: true
 
     - name: Mongo — agent canvas (planner → db_connector → … → judge)
       ansible.builtin.shell: >
         docker exec -i dataagent-mongo mongosh --quiet dataagent
-        < {{ project_dir }}/scripts/e2e/seed-flow.js
+        < {{ project_dir }}/tests/e2e/seed-flow.js
       changed_when: true
 
     # graph + metric caches live in the runtime process

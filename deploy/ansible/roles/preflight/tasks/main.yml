@@ -22,6 +22,13 @@
     mode: "0600"
   when: not dotenv.stat.exists
 
+- name: deploy/docker/.env -> ../../.env (compose run by hand from deploy/docker sees the same file)
+  ansible.builtin.file:
+    src: ../../.env
+    dest: "{{ compose_dir }}/.env"
+    state: link
+    force: true
+
 - name: Host ollama (LLM tier for local/appliance)
   when: llm_backend == 'host_ollama'
   block:

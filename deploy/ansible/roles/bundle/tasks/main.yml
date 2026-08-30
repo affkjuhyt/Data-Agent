@@ -10,7 +10,7 @@
 #   ansible-playbook site.yml --tags bundle -e bundle_image_filter='^postgres'   # quick dry run
 - name: Compose command line
   ansible.builtin.set_fact:
-    compose_cmd: "docker compose -p {{ compose_project }}{% for p in compose_profiles %} --profile {{ p }}{% endfor %}{% for f in compose_files %} -f {{ compose_dir }}/{{ f }}{% endfor %}"
+    compose_cmd: "docker compose -p {{ compose_project }} --env-file {{ project_dir }}/.env{% for p in compose_profiles %} --profile {{ p }}{% endfor %}{% for f in compose_files %} -f {{ compose_dir }}/{{ f }}{% endfor %}"
 
 - name: Version from git
   ansible.builtin.command: git -C {{ project_dir }} describe --tags --always --dirty
