@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactDOM from 'react-dom';
-import { WorkflowStatus, WorkflowType, Workflow } from '../../../types/workflow';
+import { Workflow } from '../../../types/workflow';
 import WorkflowBuilder, { type TemplateId } from './Builder';
 import ExecutionCenter from './ExecutionCenter';
 import SchedulingCenter from './SchedulingCenter';
@@ -50,61 +50,6 @@ interface ApiWorkflow {
   published_version_id: string | null;
 }
 
-// â”€â”€â”€ Mock Data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-const MOCK_WORKFLOWS: Workflow[] = [
-  {
-    id: 'wf-1',
-    name: 'Multi-Agent Banking Support',
-    type: WorkflowType.MULTI_AGENT,
-    tenant: 'Global-Finance',
-    project: 'Retail-Banking-AI',
-    version: 'v2.4.0',
-    status: WorkflowStatus.PUBLISHED,
-    lastDeployment: '2h ago',
-    lastExecution: '5m ago',
-    successRate: 98.2,
-    avgDuration: '42s',
-    owner: 'Linh Nguyen',
-    tags: ['Customer Support', 'Critical', 'Secure'],
-    nodes: [],
-    edges: [],
-  },
-  {
-    id: 'wf-2',
-    name: 'GraphRAG Intelligence Sync',
-    type: WorkflowType.KB_PIPELINE,
-    tenant: 'Smart-City-Nexus',
-    project: 'Public-Safety',
-    version: 'v1.1.2',
-    status: WorkflowStatus.PUBLISHED,
-    lastDeployment: '1d ago',
-    lastExecution: '12h ago',
-    successRate: 99.5,
-    avgDuration: '12m',
-    owner: 'Sarah Chen',
-    tags: ['Knowledge', 'GraphRAG', 'Sync'],
-    nodes: [],
-    edges: [],
-  },
-  {
-    id: 'wf-3',
-    name: 'Gov-Compliance Review',
-    type: WorkflowType.HUMAN_APPROVAL,
-    tenant: 'Gov-Tech-Hanoi',
-    project: 'Digital-Identity',
-    version: 'v3.0.1-rc',
-    status: WorkflowStatus.DORMANT,
-    lastDeployment: '5d ago',
-    lastExecution: '2d ago',
-    successRate: 100,
-    avgDuration: '4h',
-    owner: 'Dr. Pham',
-    tags: ['Legal', 'Human-in-the-loop', 'Privacy'],
-    nodes: [],
-    edges: [],
-  },
-];
 
 // â”€â”€â”€ Template Definitions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -264,11 +209,10 @@ const WorkflowEngine = () => {
   const [toast, setToast] = useState<string | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState({ top: 0, right: 0 });
-  const [cloneTarget, setCloneTarget] = useState<Workflow | null>(null);
-  const [cloneModalName, setCloneModalName] = useState('');
 
   // ── Real API state ──────────────────────────────────────────────────────────
   const [apiAgents, setApiAgents] = useState<ApiAgent[]>([]);
+  const [registrySearch, setRegistrySearch] = useState('');
   const [builderAgentId, setBuilderAgentId] = useState<string | undefined>();
   const [builderWorkflowVersionId, setBuilderWorkflowVersionId] = useState<string | undefined>();
   const [builderWorkflowId, setBuilderWorkflowId] = useState<string | undefined>();
@@ -344,6 +288,17 @@ const WorkflowEngine = () => {
     }
   };
 
+  const handleDeleteAgent = async (agent: ApiAgent) => {
+    if (!window.confirm(`Xoá agent "${agent.name}" cùng toàn bộ workflow?`)) return;
+    try {
+      await apiMutate('DELETE', `/api/agents/${agent.id}`);
+      setApiAgents(prev => prev.filter(a => a.id !== agent.id));
+      setToast(`Đã xoá "${agent.name}"`);
+    } catch {
+      setToast('Xoá thất bại');
+    }
+  };
+
   const handleMenuOpen = useCallback((e: React.MouseEvent<HTMLButtonElement>, id: string) => {
     const rect = e.currentTarget.getBoundingClientRect();
     setMenuPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
@@ -363,18 +318,7 @@ const WorkflowEngine = () => {
     return () => clearTimeout(t);
   }, [toast]);
 
-  useEffect(() => {
-    if (!cloneTarget) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setCloneTarget(null); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [cloneTarget]);
 
-  const handleRunWorkflow = (wf: Workflow) => {
-    setFilterWorkflowName(wf.name);
-    setToast(`âœ“ "${wf.name}" triggered`);
-    setActiveTab('EXECUTIONS');
-  };
 
   const handleNewWorkflow = () => { setCreateName(''); setShowCreateModal(true); };
 
@@ -385,11 +329,6 @@ const WorkflowEngine = () => {
     setActiveTab('BUILDER');
   };
 
-  const handleEditWorkflow = (wf: Workflow) => {
-    setSelectedWorkflow(wf);
-    setBuilderSource('REGISTRY');
-    setActiveTab('BUILDER');
-  };
 
   const handleBuilderClose = () => {
     setSelectedWorkflow(null);
@@ -405,6 +344,10 @@ const WorkflowEngine = () => {
     { id: 'SCHEDULING',    label: 'Scheduling',    Icon: Clock    },
     { id: 'OBSERVABILITY', label: 'Observability', Icon: Activity },
   ] as const;
+
+  const registryQuery = registrySearch.trim().toLowerCase();
+  const visibleAgents = apiAgents.filter(a =>
+    !registryQuery || `${a.name} ${a.description ?? ''}`.toLowerCase().includes(registryQuery));
 
   const renderRegistry = () => (
     <div className="flex flex-col relative">
@@ -422,14 +365,14 @@ const WorkflowEngine = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-[#BFA66A]/15">
-            {apiAgents.length === 0 && (
+            {visibleAgents.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-5 py-10 text-center text-sm text-[#8A8A7A]">
-                  Chưa có agent nào. Bấm "+ New Agent" để tạo.
+                <td colSpan={5} className="px-5 py-10 text-center text-sm text-[#5F5F5F]">
+                  {registrySearch.trim() ? 'Không có agent nào khớp.' : 'Chưa có agent nào. Bấm "+ New Workflow" để tạo.'}
                 </td>
               </tr>
             )}
-            {apiAgents.map((agent) => (
+            {visibleAgents.map((agent) => (
               <motion.tr
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -510,7 +453,7 @@ const WorkflowEngine = () => {
               </button>
               <div className="h-px bg-[#ECE7DA] mx-3" />
               <button
-                onClick={() => setOpenMenuId(null)}
+                onClick={() => { setOpenMenuId(null); void handleDeleteAgent(agent); }}
                 className="w-full flex items-center gap-2.5 px-4 py-2.5 text-[11px] font-semibold text-red-600 hover:bg-red-50 transition-colors"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Delete
@@ -609,16 +552,12 @@ const WorkflowEngine = () => {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8A8A7A]" />
               <input
                 type="text"
-                placeholder="Search workflows by name, tenant, or tags..."
-                className="w-full bg-[#FAFAF5] border border-[#ECE7DA] rounded-xl py-2 pl-10 pr-4 text-sm text-[#111111] placeholder-[#8A8A7A] focus:outline-none focus:border-[#BFA66A]"
+                value={registrySearch}
+                onChange={e => setRegistrySearch(e.target.value)}
+                placeholder="Tìm agent theo tên hoặc mô tả…"
+                aria-label="Tìm agent"
+                className="w-full bg-[#FAFAF5] border border-[#BFA66A] rounded-xl py-2 pl-10 pr-4 text-sm text-[#111111] placeholder-[#8A8A7A] focus:outline-none focus:border-[#8A5A00]"
               />
-            </div>
-            <button className="btn-secondary text-[10px]">
-              <Filter className="w-4 h-4" /> Filters
-            </button>
-            <div className="flex bg-[#F4E8C3] p-1 rounded-xl border border-[#BFA66A]">
-              <button className="p-1.5 bg-[#111111] text-white rounded-lg"><LayoutGrid className="w-4 h-4" /></button>
-              <button className="p-1.5 text-[#5A5A5A] hover:text-[#111111] transition-colors"><List className="w-4 h-4" /></button>
             </div>
           </div>
         )}
@@ -635,100 +574,6 @@ const WorkflowEngine = () => {
       </motion.div>
 
       {/* Create Agent Modal */}
-      <AnimatePresence>
-        {showCreateModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/30 backdrop-blur-sm"
-            onClick={() => setShowCreateModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white border border-[#ECE7DA] rounded-2xl shadow-2xl p-6 w-[420px]"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-base font-bold text-[#111111]">Tạo Agent mới</h3>
-                <button onClick={() => setShowCreateModal(false)} className="p-1.5 hover:bg-[#F3E2A7] rounded-lg transition-colors text-[#8A8A7A]">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <input
-                autoFocus
-                type="text"
-                value={createName}
-                onChange={(e) => setCreateName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleCreateAgent(); }}
-                placeholder="Tên agent..."
-                className="w-full bg-[#FAFAF5] border border-[#ECE7DA] rounded-xl py-2.5 px-4 text-sm text-[#111111] focus:outline-none focus:border-[#BFA66A] mb-5"
-              />
-              <div className="flex justify-end gap-2">
-                <button onClick={() => setShowCreateModal(false)} className="btn-secondary">Huỷ</button>
-                <button
-                  onClick={handleCreateAgent}
-                  disabled={!createName.trim() || creating}
-                  className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {creating ? 'Đang tạo…' : 'Tạo & Mở Builder'}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Clone Workflow Modal */}
-      <AnimatePresence>
-        {cloneTarget && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/30 backdrop-blur-sm"
-          >
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-              className="bg-white border border-[#ECE7DA] rounded-2xl shadow-2xl p-6 w-[420px]"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-base font-bold text-[#111111]">Clone Workflow</h3>
-                <button onClick={() => setCloneTarget(null)} className="p-1.5 hover:bg-[#F3E2A7] rounded-lg transition-colors text-[#8A8A7A]">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <p className="text-xs text-[#8A8A7A] mb-4">Nháº­p tÃªn cho workflow má»›i Ä‘Æ°á»£c clone tá»« <span className="font-semibold text-[#2A2A2A]">{cloneTarget.name}</span></p>
-              <input
-                autoFocus
-                type="text"
-                value={cloneModalName}
-                onChange={(e) => setCloneModalName(e.target.value)}
-                className="w-full bg-[#FAFAF5] border border-[#ECE7DA] rounded-xl py-2.5 px-4 text-sm text-[#111111] focus:outline-none focus:border-[#BFA66A] mb-5"
-              />
-              <div className="flex justify-end gap-2">
-                <button onClick={() => setCloneTarget(null)} className="btn-secondary">Cancel</button>
-                <button
-                  onClick={() => {
-                    setToast(`âœ“ Workflow "${cloneModalName}" cloned successfully`);
-                    setCloneTarget(null);
-                  }}
-                  disabled={!cloneModalName.trim()}
-                  className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <Copy className="w-4 h-4" /> Clone
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 };
