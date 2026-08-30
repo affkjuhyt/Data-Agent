@@ -96,3 +96,6 @@ eval-report.json
 .eval-reports/
 model/ragas/test_cases.json
 model/ragas/results.csv
+scripts/ui-demo-shots/
+scripts/e2e/out/
+scripts/e2e/out/

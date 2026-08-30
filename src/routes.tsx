@@ -1,10 +1,11 @@
 import React from 'react';
-import { Route, Wrench, ClipboardCheck, FlaskConical, PlugZap, Webhook } from 'lucide-react';
 
+import AskDataPage from './features/ask/AskDataPage';
 import KnowledgeOpsCenter from './components/knowledge/KnowledgeOpsCenter';
 import AgentPlayground from './components/agent-builder/AgentPlayground';
 import Conversations from './components/agent-builder/Conversations';
 import ReleaseManagementCenter from './components/ReleaseManagementCenter';
+import ReviewCenter from './components/agent-builder/ReviewCenter';
 import SettingsView from './components/Settings/Overview';
 import { AgentRuntimeView } from './components/agent-builder/agents/AgentRuntime';
 import { TraceExplorer } from './components/agent-builder/agents/AgentTraces';
@@ -22,78 +23,40 @@ export type RouteEntry =
   | { render: () => React.ReactNode }
   | { comingSoon: ComingSoonInfo };
 
+/** Sub-tab key for modules that have a single screen and no secondary nav. */
+export const SINGLE_SCREEN = '_';
+
 /**
  * module → subTab → screen.
- * Mirrors the AeroFlow reference IA (my_doc/aeroflow/shell.jsx + app.jsx):
- * the left nav drives module + sub-item, and each sub-item resolves to a
- * focused leaf view here. Items with no screen yet render a Coming Soon placeholder.
+ *
+ * The IA starts with what a business user needs to DO (ask the data), then
+ * knowledge, then the builder console, then operations. A module whose only
+ * entry is `SINGLE_SCREEN` renders full-width with no secondary nav.
+ *
+ * Nothing here is a placeholder: every entry is a real screen. Areas without
+ * a screen yet (router, tools, evals, experiments, endpoints, webhooks) are
+ * simply absent from the nav until one exists.
  */
 export const ROUTE_MAP: Record<string, Record<string, RouteEntry>> = {
+  ask: {
+    [SINGLE_SCREEN]: { render: () => <AskDataPage /> },
+  },
+
+  knowledge: {
+    [SINGLE_SCREEN]: { render: () => <KnowledgeOpsCenter /> },
+  },
+
   build: {
-    AGENTS:    { render: () => <AgentRuntimeView /> },
-    KNOWLEDGE: { render: () => <KnowledgeOpsCenter /> },
-    WORKFLOWS: { render: () => <WorkflowEngine /> },
-    ROUTER: {
-      comingSoon: {
-        title: 'Router',
-        icon: Route,
-        description: 'Define how incoming messages are classified and routed to the right agent.',
-        plannedFeatures: ['Intent classification rules', 'Per-agent routing weights', 'Fallback & escalation paths'],
-      },
-    },
-    TOOLS: {
-      comingSoon: {
-        title: 'Tools',
-        icon: Wrench,
-        description: 'Register and manage the tools and function calls your agents can invoke.',
-        plannedFeatures: ['Tool registry & schemas', 'Auth & rate limits', 'Sandboxed execution'],
-      },
-    },
-  },
-
-  test: {
+    AGENTS:     { render: () => <AgentRuntimeView /> },
+    WORKFLOWS:  { render: () => <WorkflowEngine /> },
+    VERSIONS:   { render: () => <ReleaseManagementCenter /> },
     PLAYGROUND: { render: () => <AgentPlayground /> },
-    EVALS: {
-      comingSoon: {
-        title: 'Evals',
-        icon: ClipboardCheck,
-        description: 'Build evaluation suites and grade agent responses against expected outcomes.',
-        plannedFeatures: ['Test-case datasets', 'Automated grading', 'Regression tracking'],
-      },
-    },
   },
 
-  release: {
-    VERSIONS: { render: () => <ReleaseManagementCenter /> },
-    EXPERIMENTS: {
-      comingSoon: {
-        title: 'Experiments',
-        icon: FlaskConical,
-        description: 'Run A/B experiments across agent versions and compare live performance.',
-        plannedFeatures: ['Traffic splitting', 'Metric comparison', 'Auto-promote winners'],
-      },
-    },
-    ENDPOINT: {
-      comingSoon: {
-        title: 'Chat Endpoint',
-        icon: PlugZap,
-        description: 'Expose your released agents over a managed chat API endpoint.',
-        plannedFeatures: ['API keys & quotas', 'Streaming responses', 'Usage analytics'],
-      },
-    },
-    WEBHOOKS: {
-      comingSoon: {
-        title: 'Webhooks',
-        icon: Webhook,
-        description: 'Subscribe external systems to events from your agents and pipelines.',
-        plannedFeatures: ['Event subscriptions', 'Delivery retries', 'Signing secrets'],
-      },
-    },
-  },
-
-  monitor: {
+  ops: {
     CONVERSATIONS: { render: () => <Conversations /> },
     TRACES:        { render: () => <TraceExplorer /> },
+    REVIEWS:       { render: () => <ReviewCenter /> },
     ANALYTICS:     { render: () => <ExecutiveDashboard /> },
   },
 

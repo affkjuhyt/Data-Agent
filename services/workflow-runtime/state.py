@@ -23,6 +23,10 @@ class AgentState(TypedDict):
     reranked_chunks: List[dict[str, Any]]
     response: str
     citations: List[dict]      # set bởi responder_node — nguồn thực sự được trích dẫn trong response
+    # set bởi responder_node — {"runs": [SQL đã chạy + metric + provenance +
+    # rows preview], "clarifications": [...], "warnings": [...]}. Sinh tất định
+    # từ metadata của tool result, không do model khai — đi ra SSE qua `__evidence`.
+    evidence: dict[str, Any] | None
     suggestions: List[str]
     intent: Optional[str]             # "question" | "task" — set by planner
     # lookup | analytical | comparison | forecast | anomaly | other.

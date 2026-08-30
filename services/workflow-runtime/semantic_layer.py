@@ -197,6 +197,20 @@ class SemanticMatch:
         }
 
 
+# "theo <đơn vị thời gian>" as the planner phrases it, → the contract's time
+# grain. Keys are compared case-folded; a contract that defines a dimension
+# with one of these keys wins (see slots_to_compiler_args).
+_TIME_DIMENSION_WORDS: dict[str, str] = {
+    "ngày": "day", "day": "day", "date": "day",
+    "tuần": "week", "week": "week",
+    "tháng": "month", "month": "month",
+    "quý": "quarter", "quarter": "quarter",
+    "năm": "year", "year": "year",
+}
+# Generic time words carry no unit — the contract's default grain applies.
+_TIME_GENERIC_WORDS = frozenset({"thời gian", "time", "kỳ", "period", "theo thời gian"})
+
+
 def slots_to_compiler_args(
     definition: MetricDefinition, slots: AnalyticalSlots,
 ) -> tuple[list[str], TimeGrain | None, tuple[str, str] | None, list[MetricFilter]]:
@@ -208,7 +222,29 @@ def slots_to_compiler_args(
     would return the whole country under a question that asked for one region,
     which is a wrong answer wearing the shape of a right one.
     """
-    dimensions = [d for d in slots.dimensions if d]
+    # "theo tháng" is a time bucket, not a business dimension. The planner
+    # lists it under `dimensions` like any other "theo X"; without this the
+    # contract rejected the request ("no dimension 'tháng'") and the question
+    # fell back to model-written SQL — for the one thing the contract does
+    # deterministically. A contract that really defines a dimension with that
+    # key keeps it; only otherwise-unknown time words become the grain.
+    known = {dim.key for dim in definition.dimensions}
+    dimensions: list[str] = []
+    inferred_grain: TimeGrain | None = None
+    for d in slots.dimensions:
+        if not d:
+            continue
+        key = d.strip().lower()
+        if key in known:
+            dimensions.append(d)
+            continue
+        unit = _TIME_DIMENSION_WORDS.get(key)
+        if unit is not None:
+            inferred_grain = inferred_grain or TimeGrain(unit)
+            continue
+        if key in _TIME_GENERIC_WORDS:
+            continue  # "theo thời gian" → the contract's default grain
+        dimensions.append(d)
 
     filters: list[MetricFilter] = []
     for slot_filter in slots.filters:
@@ -222,6 +258,8 @@ def slots_to_compiler_args(
             grain = TimeGrain(slots.grain)
         except ValueError:
             grain = None
+    if grain is None:
+        grain = inferred_grain
 
     return dimensions, grain, slots.time_range, filters
 

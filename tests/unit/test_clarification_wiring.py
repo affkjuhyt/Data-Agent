@@ -189,3 +189,95 @@ class TestResponderAsksInstead:
         assert 'state.get("clarifications")' in source
         assert "HỎI LẠI" in source
         assert "không đoán" in source
+
+
+class TestAskingSkipsRetrieval:
+    """Graph-level: a clarification must reach the responder WITHOUT any
+    retrieval node running. The node-level tests above prove tool_calls are
+    dropped; this pins that the graph does not then pick a retrieval node by
+    fallback — which is exactly what happened on a planner→db_connector canvas
+    in the live E2E (asked the question AND ran the query)."""
+
+    def test_route_after_planner_goes_to_responder_when_asking(self):
+        import graph
+
+        route = graph._make_route_after_planner(frozenset({"db_connector", "kb_search"}), "responder")
+        asking = {"clarifications": CLARIFICATION, "tool_calls": []}
+        assert route(asking) == ["responder"]
+
+        # no clarification → normal routing, including the no-tool_calls fallback
+        assert route({"clarifications": [], "tool_calls": [{"type": "db_query"}]}) == ["db_connector"]
+        assert set(route({"clarifications": [], "tool_calls": []})) <= {"db_connector", "kb_search"}
+
+    def test_without_a_responder_the_old_fallback_is_kept(self):
+        import graph
+
+        route = graph._make_route_after_planner(frozenset({"kb_search"}), None)
+        assert route({"clarifications": CLARIFICATION, "tool_calls": []}) == ["kb_search"]
+
+    def test_judge_does_not_loop_a_clarification(self):
+        import graph
+
+        route = graph._make_route_after_judge(frozenset({"planner", "responder"}))
+        assert route({"clarifications": CLARIFICATION, "judge_verdict": "FAIL", "judge_error_type": "PLANNING_ERROR"}) == "end"
+        assert route({"clarifications": [], "judge_verdict": "FAIL", "judge_error_type": "PLANNING_ERROR"}) == "planner"
+
+    def test_db_connector_canvas_compiles_with_the_ask_edge(self):
+        """The E2E canvas: planner → db_connector → rrf → reranker → responder → judge."""
+        import graph
+
+        nodes = [{"id": n, "data": {"nodeType": n}} for n in
+                 ("planner", "db_connector", "rrf_ranking", "reranker", "responder", "judge")]
+        edges = [{"source": s, "target": t} for s, t in
+                 (("planner", "db_connector"), ("db_connector", "rrf_ranking"), ("rrf_ranking", "reranker"),
+                  ("reranker", "responder"), ("responder", "judge"))]
+        compiled = graph.build_graph(nodes, edges)
+        assert compiled is not None
+
+
+class TestPlannerKeepsSlotsWhenConfidenceIsMissing:
+    def test_tool_call_without_confidence_still_validates(self):
+        import nodes.model_harness.planner as planner
+
+        raw = (
+            '{"intent":"task","analysis_type":"analytical",'
+            '"slots":{"metric":"doanh thu thuần","dimensions":["vùng"],"time_range":["2026-08-01","2026-09-01"]},'
+            '"language":"vi","tool_calls":[{"type":"db_query","query":"doanh thu thuần theo vùng"}]}'
+        )
+        parsed = planner._PlannerOutput.model_validate_json(raw)
+        assert parsed.slots["metric"] == "doanh thu thuần"
+        assert parsed.tool_calls[0].confidence == 0.5
+
+
+class TestPlannerKnowsTheDate:
+    """Relative periods need an anchor. Without today's date in the prompt the
+    model guessed 2023 for "tháng này" in 2026 and the contract query matched
+    nothing (live E2E)."""
+
+    def test_date_line_has_today_and_the_month_start(self):
+        from datetime import datetime
+
+        import nodes.model_harness.planner as planner
+
+        line = planner._date_context(datetime(2026, 8, 30, 23, 30))
+        assert "30/08/2026" in line and "2026-08-30" in line
+        assert "Chủ Nhật" in line
+        assert '["2026-08-01"' in line
+        assert "relative_period" in line
+
+    def test_prompt_includes_the_date_line(self, monkeypatch):
+        import nodes.model_harness.planner as planner
+
+        captured = {}
+
+        async def fake(**kw):
+            captured["system"] = kw["messages"][0]["content"]
+            return _llm(_PLAN)
+
+        monkeypatch.setattr(planner.litellm, "acompletion", fake)
+        _stub_check(monkeypatch, [])
+        import asyncio
+        asyncio.get_event_loop().run_until_complete(
+            planner.planner_node({"query": "doanh thu tháng này", "config": {"tenant_id": "t-1"}})
+        )
+        assert "Hôm nay là" in captured["system"]

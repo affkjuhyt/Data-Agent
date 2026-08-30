@@ -1,4 +1,5 @@
 from typing import Any
+import json
 import os
 import re
 import time
@@ -94,6 +95,63 @@ _LANGUAGE_LABELS = {"vi": "Vietnamese", "en": "English"}
 
 _CITATION_MARKER_RE = re.compile(r"\[(\d+)\]")
 
+# Rows shipped to the UI per SQL run inside the `__evidence` frame. The full
+# result already went to the model (capped by result_limits in the sandbox);
+# this is the preview a person scrolls, not a second export path.
+_EVIDENCE_MAX_ROWS = 100
+
+
+def _evidence_run(chunk: dict[str, Any]) -> dict[str, Any] | None:
+    """One SQL execution the answer was built from, in the shape the UI shows.
+
+    Everything here comes from the tool result's metadata written where the
+    query ran (handlers/data.py) — which statement, how many rows, which metric
+    contract compiled it, how fresh the tables are, whether the shape can
+    multiply a total. Nothing is restated by the model: the point of an
+    evidence strip is that it cannot drift from what actually executed.
+    """
+    md = chunk.get("metadata") or {}
+    sql = md.get("sql")
+    if not isinstance(sql, str) or not sql.strip():
+        return None
+
+    content = chunk.get("content")
+    parsed: Any = None
+    if isinstance(content, str):
+        try:
+            parsed = json.loads(content)
+        except (json.JSONDecodeError, ValueError):
+            parsed = None
+    elif isinstance(content, list):
+        parsed = content
+    rows = [r for r in parsed if isinstance(r, dict)] if isinstance(parsed, list) else []
+
+    columns: list[str] = []
+    for row in rows:
+        for key in row:
+            if key not in columns:
+                columns.append(key)
+
+    return {
+        "id": chunk.get("id"),
+        "kind": "sql",
+        "db_name": md.get("db_name"),
+        "db_type": md.get("db_type"),
+        "sql": sql,
+        "row_count": md.get("row_count", len(rows)),
+        # "semantic_layer" when an approved metric contract compiled the SQL,
+        # "llm" when the model wrote it — the single most important fact for
+        # "why should I trust this number".
+        "generated_by": md.get("generated_by") or "llm",
+        "metric": md.get("semantic"),
+        "provenance": md.get("provenance"),
+        "truncation": md.get("truncation"),
+        "aggregation": md.get("aggregation"),
+        "columns": columns,
+        "rows": rows[:_EVIDENCE_MAX_ROWS],
+        "rows_capped": len(rows) > _EVIDENCE_MAX_ROWS,
+    }
+
 
 def _citation_type(chunk: dict) -> str:
     """kb | mcp | db | web | tool — dùng để FE tô màu badge theo loại nguồn.
@@ -150,6 +208,16 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
             system_prompt += "\nGợi ý lựa chọn: " + ", ".join(options)
 
     system_prompt += "\n\n" + _LANGUAGE_RULE.replace("{LANGUAGE}", lang_label)
+
+    # Deterministic "why trust this" payload for the UI — built alongside the
+    # prompt from the same chunks, so what the strip shows is exactly what the
+    # model was given. `clarifications` rides along so a client can render the
+    # structured question (with its options) instead of only the prose.
+    evidence: dict[str, Any] = {
+        "runs": [],
+        "clarifications": clarifications,
+        "warnings": [],
+    }
 
     chunk_meta: dict[int, dict] = {}
     if state.get("reranked_chunks"):
@@ -216,6 +284,11 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
                 "aggregation": (c.get("metadata") or {}).get("aggregation") or None,
             }
 
+            run = _evidence_run(c)
+            if run:
+                run["citation_index"] = i + 1
+                evidence["runs"].append(run)
+
             if total_chars >= max_chars:
                 break
 
@@ -230,6 +303,7 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
         if unit_conflict:
             parts.append(f"aggregation-risk: {unit_conflict.kind}: {unit_conflict.detail}")
             has_aggregation_risk = True
+            evidence["warnings"].append(unit_conflict.to_dict())
 
         # Everything in `parts` came out of a KB document, a SQL result or a
         # tool payload - none of it written by this platform or typed by the
@@ -301,4 +375,4 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
             seen.add(n)
             citations.append(chunk_meta[n])
 
-    return {"response": full_text, "citations": citations}
+    return {"response": full_text, "citations": citations, "evidence": evidence}

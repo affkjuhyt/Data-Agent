@@ -204,6 +204,8 @@ async def call_agent_stream(
       ("pending_review", dict) — tool approval interrupt
       ("chart", dict)          — chart_spec từ Visualization node (workflow-runtime)
       ("citations", list[dict]) — nguồn đã được responder trích dẫn (workflow-runtime)
+      ("options", list[str])   — lựa chọn trả lời khi agent hỏi lại (responder <OPTIONS>)
+      ("evidence", dict)       — SQL đã chạy, metric contract, provenance, rows preview
     """
     if not agent_id:
         raise ValueError("agent_id is empty")
@@ -246,6 +248,12 @@ async def call_agent_stream(
                     yield ("chart", parsed["__chart"])
                 elif "__citations" in parsed:
                     yield ("citations", parsed["__citations"])
-                # bỏ qua __options và các event khác
+                elif "__options" in parsed:
+                    # Clarification choices. Dropping these (as before) left the
+                    # user with a question and no way to answer it in one click.
+                    yield ("options", parsed["__options"])
+                elif "__evidence" in parsed:
+                    yield ("evidence", parsed["__evidence"])
+                # các event khác bỏ qua
     finally:
         await cm.__aexit__(None, None, None)

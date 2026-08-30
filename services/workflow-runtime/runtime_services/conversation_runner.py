@@ -408,6 +408,8 @@ async def run_conversation_stream(
         # nếu Judge yêu cầu sinh lại), bắn task check mới cho bản hiện tại.
         last_responder_text = ""
         last_responder_citations: list[dict[str, Any]] = []
+        last_responder_evidence: dict[str, Any] | None = None
+        pending_evidence: dict[str, Any] | None = None
         guardrail_task: asyncio.Task[Any] | None = None
 
         lg_config = {"callbacks": callbacks, "configurable": {"thread_id": conv_id}}
@@ -465,6 +467,7 @@ async def run_conversation_stream(
                         text = out.get("response", "") if isinstance(out, dict) else ""
                         last_responder_text = text
                         last_responder_citations = out.get("citations", []) if isinstance(out, dict) else []
+                        last_responder_evidence = out.get("evidence") if isinstance(out, dict) else None
                         # Bản trước (nếu có) sắp lỗi thời — Judge vừa cho responder
                         # chạy lại, huỷ kết quả check dở dang của bản cũ.
                         if guardrail_task and not guardrail_task.done():
@@ -520,6 +523,9 @@ async def run_conversation_stream(
                 else:
                     clean_text, responder_options = _strip_think_and_options(last_responder_text)
                     pending_citations = last_responder_citations or None
+                    # Only for an answer that is actually delivered — a refused
+                    # turn must not leak the rows the guardrail just blocked.
+                    pending_evidence = last_responder_evidence or None
                     # Ghép câu nhắc "có chart" KHÔNG qua LLM — Responder chạy song song với
                     # Visualization nên tự nó không biết chart có vẽ được hay không lúc sinh
                     # văn bản; đây là điểm DUY NHẤT đã biết chắc cả 2 nhánh đều xong.
@@ -531,6 +537,14 @@ async def run_conversation_stream(
                     for chunk in _chunk_words(clean_text):
                         yield f"data: {json.dumps(chunk)}\n\n"
                         await asyncio.sleep(_FAKE_STREAM_WORD_DELAY)
+
+            # Evidence BEFORE options/suggestions: a client that stops reading at
+            # the first "what next" frame still has the "why trust this" one.
+            # Sent even when empty: "nothing ran" is a statement the UI shows
+            # ("không đọc từ kho dữ liệu"), and its absence would be
+            # indistinguishable from a broken wire.
+            if pending_evidence is not None:
+                yield f"data: {json.dumps({'__evidence': pending_evidence}, ensure_ascii=False, default=str)}\n\n"
 
             if responder_options:
                 yield f"data: {json.dumps({'__options': responder_options})}\n\n"

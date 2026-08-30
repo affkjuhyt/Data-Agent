@@ -16,7 +16,9 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "e2e": "bash scripts/e2e/e2e.sh",
+    "e2e:ui": "node scripts/e2e/ui.e2e.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.14",

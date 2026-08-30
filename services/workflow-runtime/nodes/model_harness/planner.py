@@ -1,4 +1,5 @@
 from typing import Any
+from datetime import datetime
 import os
 import re
 import time
@@ -18,8 +19,13 @@ from nodes.sandbox.tool_executor import TOOL_DEFINITIONS
 class _ToolCall(BaseModel):
     type: str
     query: str
-    reason: str
-    confidence: float
+    # Defaults, not required: a model that omits `confidence` used to fail the
+    # WHOLE plan validation, and the fallback threw away the slots it had
+    # correctly extracted (metric, dimensions, period) — so the deterministic
+    # clarification never fired and the SQL lost its GROUP BY. Seen with a 3B
+    # model on the live E2E; a plan is worth keeping for its slots alone.
+    reason: str = ""
+    confidence: float = 0.5
     tool_name: str | None = None
     arguments: dict[str, Any] = {}
     parallel: bool = True
@@ -41,6 +47,31 @@ class _PlannerOutput(BaseModel):
     tool_calls: list[_ToolCall] = []
 
 logger = logging.getLogger(__name__)
+
+# Business calendar of the deployment, not the container's UTC clock: "tháng
+# này" on the evening of the 31st must still be this month in Vietnam.
+_BUSINESS_TZ = os.environ.get("BUSINESS_TIMEZONE", "Asia/Ho_Chi_Minh")
+_WEEKDAYS_VI = ("Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy", "Chủ Nhật")
+
+
+def _date_context(now: "datetime | None" = None) -> str:
+    """One line telling the model today's date, so relative periods resolve
+    against the real calendar. Half-open ranges follow the prompt's rule."""
+    if now is None:
+        try:
+            from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+            now = datetime.now(ZoneInfo(_BUSINESS_TZ))
+        except (ZoneInfoNotFoundError, ImportError):  # unknown zone → still a date, not nothing
+            now = datetime.now()
+    month_start = now.replace(day=1)
+    return (
+        f"\n\nHôm nay là {_WEEKDAYS_VI[now.weekday()]}, ngày {now:%d/%m/%Y} ({now:%Y-%m-%d}). "
+        f"Khi người dùng nói \"tháng này\", \"quý này\", \"năm nay\"… hãy ưu tiên điền "
+        f"\"relative_period\"; nếu điền \"time_range\" tuyệt đối thì phải tính từ ngày hôm nay "
+        f"(ví dụ tháng này = [\"{month_start:%Y-%m-%d}\", <ngày đầu tháng sau>)). "
+        f"Không bao giờ đoán năm khác năm hiện tại cho các mốc tương đối."
+    )
+
 
 _LITELLM_BASE = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
 _LITELLM_KEY = os.environ.get("LITELLM_API_KEY", "sk-dev")
@@ -74,7 +105,10 @@ async def planner_node(state: AgentState) -> dict[str, Any]:
     t0 = time.monotonic()
     cfg = state.get("config", {})
 
-    system = _SYSTEM
+    # The planner turns "tháng này" / "quý trước" into dates. A model that is
+    # not told what day it is can only guess the year — and it did (2023, on a
+    # 2026 question — the compiled contract then matched nothing). One line.
+    system = _SYSTEM + _date_context()
 
     # Inject built-in tool definitions so Planner knows what tools are available
     allowed_tools = cfg.get("allowed_tools", [])

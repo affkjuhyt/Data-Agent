@@ -1,6 +1,13 @@
-import React, { useEffect, useState, useCallback } from 'react';
+/**
+ * Human approval queue — the HITL screen. Fully wired to
+ * GET /api/reviews/pending and POST /api/reviews/{id}/resume; until the IA
+ * change it was not reachable from any route. Cream theme, like the rest of
+ * the product (it was drawn dark-on-dark for a panel that never shipped).
+ */
+import { useEffect, useState, useCallback } from 'react';
 import { Eye, Clock, CheckCircle, XCircle, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react';
 import { apiGet, apiMutate } from '../../lib/apiClient';
+import { formatDuration } from '../../lib/formatVN';
 
 interface PendingReview {
   conv_id:      string;
@@ -15,23 +22,21 @@ interface PendingReview {
   } | null;
 }
 
-function fmtWait(secs: number) {
-  if (secs < 60)   return `${secs}s`;
-  if (secs < 3600) return `${Math.floor(secs / 60)}m ${secs % 60}s`;
-  return `${Math.floor(secs / 3600)}h`;
-}
-
 /* ─── Review Detail Card ──────────────────────────────────────────── */
 function ReviewCard({ review, onResolved }: { review: PendingReview; onResolved: () => void }) {
   const [note, setNote]         = useState('');
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState<string | null>(null);
 
   const submit = async (approved: boolean) => {
     setLoading(true);
+    setError(null);
     try {
       await apiMutate('POST', `/api/reviews/${review.conv_id}/resume`, { approved, note });
       onResolved();
+    } catch (e) {
+      setError((e as Error).message || 'Không gửi được quyết định.');
     } finally {
       setLoading(false);
     }
@@ -40,133 +45,94 @@ function ReviewCard({ review, onResolved }: { review: PendingReview; onResolved:
   const p = review.payload;
 
   return (
-    <div style={{
-      background: '#111', border: '1px solid rgba(255,255,255,0.1)',
-      borderRadius: 10, padding: 20, display: 'flex', flexDirection: 'column', gap: 16,
-    }}>
-      {/* Header */}
+    <div className="content-card" style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', marginBottom: 4, fontFamily: 'var(--font-mono)' }}>
-            {review.agent_id} · {fmtWait(review.waiting_secs)} ago
+          <div className="font-mono text-[10px] text-[#5F5F5F] mb-1">
+            {review.agent_id} · chờ {formatDuration(review.waiting_secs * 1000)}
           </div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: '#fff', marginBottom: 6 }}>
+          <div className="text-[13px] font-semibold text-[#111111] mb-1.5">
             {p?.title ?? 'Chờ phê duyệt'}
           </div>
-          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', lineHeight: 1.5 }}>
-            <span style={{ color: 'rgba(255,255,255,0.35)', marginRight: 6 }}>Query:</span>
+          <div className="text-[12px] text-[#3F3F3F] leading-relaxed">
+            <span className="text-[#777777] mr-1.5">Câu hỏi:</span>
             {review.query}
           </div>
         </div>
-        <div style={{
-          fontSize: 9, fontWeight: 700, padding: '3px 8px', borderRadius: 4,
-          background: 'rgba(217,184,108,0.15)', color: '#D9B86C', whiteSpace: 'nowrap', flexShrink: 0,
-        }}>
-          PENDING
-        </div>
+        <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-[#F3E2A7] text-[#5C3900] border border-[#B88719] whitespace-nowrap shrink-0">
+          ĐANG CHỜ
+        </span>
       </div>
 
-      {/* Description */}
       {p?.description && (
-        <div style={{
-          background: 'rgba(255,255,255,0.04)', borderRadius: 6,
-          padding: '10px 14px', fontSize: 12, color: 'rgba(255,255,255,0.75)',
-          lineHeight: 1.6, fontFamily: 'var(--font-mono)',
-          whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-        }}>
+        <div className="font-mono text-[12px] text-[#2A2A2A] leading-relaxed bg-[#FCFBF7] border border-[#D6C79F] rounded-md px-3.5 py-2.5 whitespace-pre-wrap break-words">
           {p.description}
         </div>
       )}
 
-      {/* Detail expand */}
-      {p?.detail && (
+      {p?.detail != null && (
         <button
+          type="button"
           onClick={() => setExpanded(v => !v)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 4,
-            background: 'none', border: 'none', cursor: 'pointer',
-            color: 'rgba(255,255,255,0.4)', fontSize: 11,
-            fontFamily: 'var(--font-mono)', padding: 0, alignSelf: 'flex-start',
-          }}
+          className="flex items-center gap-1 self-start text-[11px] font-mono text-[#5F5F5F] hover:text-[#111111]"
         >
           {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
           {expanded ? 'Ẩn chi tiết' : 'Xem chi tiết'}
         </button>
       )}
-      {expanded && p?.detail && (
-        <pre style={{
-          background: '#0A0A0A', border: '1px solid rgba(255,255,255,0.06)',
-          borderRadius: 6, padding: '10px 12px', fontSize: 10,
-          fontFamily: 'var(--font-mono)', color: 'rgba(229,231,235,0.7)',
-          margin: 0, whiteSpace: 'pre-wrap', overflowX: 'auto', maxHeight: 200,
-        }}>
+      {expanded && p?.detail != null && (
+        <pre className="font-mono text-[10px] text-[#2A2A2A] bg-[#F7F4EA] border border-[#D6C79F] rounded-md px-3 py-2.5 m-0 whitespace-pre-wrap overflow-x-auto max-h-[200px]">
           {JSON.stringify(p.detail, null, 2)}
         </pre>
       )}
 
-      {/* Note */}
       <div>
-        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginBottom: 6 }}>
-          Ghi chú (tuỳ chọn, gửi khi reject)
-        </div>
+        <div className="text-[10px] text-[#5F5F5F] mb-1.5">Ghi chú (tuỳ chọn, gửi kèm khi từ chối)</div>
         <textarea
           value={note}
           onChange={e => setNote(e.target.value)}
-          placeholder="Lý do từ chối hoặc ghi chú cho agent..."
-          style={{
-            width: '100%', background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6,
-            padding: '8px 10px', fontSize: 12, color: '#fff',
-            fontFamily: 'var(--font-mono)', resize: 'vertical',
-            minHeight: 60, outline: 'none', boxSizing: 'border-box',
-          }}
+          placeholder="Lý do từ chối hoặc ghi chú cho agent…"
+          className="w-full bg-white border border-[#BFA66A] rounded-md px-2.5 py-2 text-[12px] text-[#111111] font-mono resize-y min-h-[60px] outline-none focus:border-[#8A5A00]"
         />
       </div>
 
-      {/* Actions */}
+      {error && <div className="text-[11px] text-[#A83A32]">{error}</div>}
+
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
         <button
+          type="button"
           disabled={loading}
           onClick={() => submit(false)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '7px 16px', borderRadius: 6,
-            background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.3)',
-            color: '#F87171', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-            opacity: loading ? 0.5 : 1,
-          }}
+          className="flex items-center gap-1.5 px-4 py-1.5 rounded-md text-[12px] font-semibold bg-[#FEE2E2] border border-[#FCA5A5] text-[#7A1010] hover:bg-[#FAD7D7] disabled:opacity-50"
         >
           <XCircle size={13} /> Từ chối
         </button>
         <button
+          type="button"
           disabled={loading}
           onClick={() => submit(true)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '7px 16px', borderRadius: 6,
-            background: 'rgba(52,211,153,0.12)', border: '1px solid rgba(52,211,153,0.3)',
-            color: '#34D399', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-            opacity: loading ? 0.5 : 1,
-          }}
+          className="flex items-center gap-1.5 px-4 py-1.5 rounded-md text-[12px] font-semibold bg-[#DCEFE3] border border-[#1D6F4C] text-[#14502F] hover:bg-[#CDE9D8] disabled:opacity-50"
         >
-          <CheckCircle size={13} /> Phê duyệt
+          <CheckCircle size={13} /> {loading ? 'Đang xử lý…' : 'Phê duyệt'}
         </button>
       </div>
     </div>
   );
 }
 
-/* ─── ReviewCenter ────────────────────────────────────────────────── */
+/* ─── Review Center ───────────────────────────────────────────────── */
 export default function ReviewCenter() {
   const [reviews, setReviews] = useState<PendingReview[]>([]);
   const [loading, setLoading] = useState(true);
+  const [offline, setOffline] = useState(false);
 
   const fetch_ = useCallback(async () => {
     try {
-      const data = await apiGet<any[]>('/api/reviews/pending');
+      const data = await apiGet<PendingReview[]>('/api/reviews/pending');
       setReviews(data);
+      setOffline(false);
     } catch {
-      /* ignore */
+      setOffline(true);
     } finally {
       setLoading(false);
     }
@@ -181,55 +147,36 @@ export default function ReviewCenter() {
   }, [fetch_]);
 
   return (
-    <div style={{ padding: '24px 28px', maxWidth: 760 }}>
-      {/* Header */}
+    <div style={{ maxWidth: 760 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            color: '#B88719', fontSize: 10, fontWeight: 700,
-            fontFamily: 'var(--font-mono)', letterSpacing: '0.14em',
-            textTransform: 'uppercase', marginBottom: 6,
-          }}>
-            <Eye size={13} /> Build / Reviews
+          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#B88719] font-mono mb-1.5">
+            <Eye size={13} /> Vận hành / Chờ duyệt
           </div>
-          <h2 style={{ fontSize: 20, fontWeight: 700, fontFamily: 'var(--font-display)', margin: 0 }}>
-            Human Approval Queue
-          </h2>
-          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>
-            Các workflow đang chờ người duyệt trước khi tiếp tục
+          <h2 className="font-display text-xl font-bold text-[#111111] m-0">Hàng đợi phê duyệt</h2>
+          <p className="text-[12px] text-[#5F5F5F] mt-1 m-0">
+            Các luồng agent đang dừng chờ người có thẩm quyền duyệt trước khi tiếp tục
           </p>
         </div>
         <button
+          type="button"
           onClick={() => { setLoading(true); fetch_(); }}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: 6, padding: '6px 12px', color: 'rgba(255,255,255,0.6)',
-            fontSize: 11, cursor: 'pointer',
-          }}
+          className="btn-secondary"
         >
-          <RefreshCw size={11} /> Refresh
+          <RefreshCw size={12} /> Làm mới
         </button>
       </div>
 
-      {/* Content */}
       {loading ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {[0, 1, 2].map(i => (
-            <div key={i} className="pulse-soft" style={{
-              height: 120, borderRadius: 10,
-              background: 'rgba(255,255,255,0.04)', opacity: 1 - i * 0.2,
-            }} />
+            <div key={i} className="pulse-soft" style={{ height: 120, borderRadius: 12, background: '#F4E8C3', opacity: 1 - i * 0.2 }} />
           ))}
         </div>
       ) : reviews.length === 0 ? (
-        <div style={{
-          textAlign: 'center', padding: '60px 20px',
-          color: 'rgba(255,255,255,0.3)', fontSize: 13,
-        }}>
-          <Clock size={28} style={{ marginBottom: 12, opacity: 0.3 }} />
-          <div>Không có yêu cầu nào đang chờ duyệt</div>
+        <div className="content-card text-center py-14 px-5 text-[#5F5F5F] text-[13px]">
+          <Clock size={28} className="mx-auto mb-3 text-[#BFA66A]" />
+          <div>{offline ? 'Không kết nối được workflow-runtime — thử lại sau.' : 'Không có yêu cầu nào đang chờ duyệt'}</div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -237,9 +184,7 @@ export default function ReviewCenter() {
             <ReviewCard
               key={r.conv_id}
               review={r}
-              onResolved={() => {
-                setReviews(prev => prev.filter(x => x.conv_id !== r.conv_id));
-              }}
+              onResolved={() => setReviews(prev => prev.filter(x => x.conv_id !== r.conv_id))}
             />
           ))}
         </div>

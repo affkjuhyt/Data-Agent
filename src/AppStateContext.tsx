@@ -39,24 +39,48 @@ interface AppStateContextType {
 const AppStateContext = createContext<AppStateContextType | undefined>(undefined);
 
 /* ─── URL hash helpers ─────────────────────────────────────────────── */
-/* Old module IDs → new 5-module IA. Applied in parseHash + navigate so
- * existing links/bookmarks keep working and the URL stays canonical. */
-const REDIRECT_MAP: Record<string, { module: string; sub: string }> = {
-  'dashboard':           { module: 'monitor', sub: 'ANALYTICS' },
-  'knowledge-ops':       { module: 'build',   sub: 'KNOWLEDGE' },
-  'ai-runtime':          { module: 'build',   sub: 'AGENTS' },
-  'operations-center':   { module: 'monitor', sub: 'TRACES' },
-  'release-management':  { module: 'release', sub: 'VERSIONS' },
+/* Old module IDs → current IA. Applied in parseHash + navigate so existing
+ * links/bookmarks keep working and the URL stays canonical. The 2026-08 IA
+ * change (Build/Test/Release/Monitor → Hỏi dữ liệu/Tri thức/Xây dựng/Vận hành)
+ * is expressed here too, with a sub-tab map so "#monitor/TRACES" still lands
+ * on the traces screen rather than the module's first item. */
+const REDIRECT_MAP: Record<string, { module: string; sub: string; subs?: Record<string, string> }> = {
+  'dashboard':           { module: 'ops',      sub: 'ANALYTICS' },
+  'knowledge-ops':       { module: 'knowledge', sub: '' },
+  'ai-runtime':          { module: 'build',    sub: 'AGENTS' },
+  'operations-center':   { module: 'ops',      sub: 'TRACES' },
+  'release-management':  { module: 'build',    sub: 'VERSIONS' },
   'governance':          { module: 'settings', sub: 'AUDIT' },
-  'national-ops':        { module: 'monitor', sub: 'ANALYTICS' },
+  'national-ops':        { module: 'ops',      sub: 'ANALYTICS' },
+  // previous 5-module IA
+  'test':                { module: 'build',    sub: 'PLAYGROUND', subs: { PLAYGROUND: 'PLAYGROUND' } },
+  'release':             { module: 'build',    sub: 'VERSIONS',   subs: { VERSIONS: 'VERSIONS' } },
+  'monitor':             { module: 'ops',      sub: 'CONVERSATIONS', subs: { CONVERSATIONS: 'CONVERSATIONS', TRACES: 'TRACES', ANALYTICS: 'ANALYTICS' } },
+};
+// "#build/KNOWLEDGE" (old) → the knowledge module
+const BUILD_SUB_REDIRECTS: Record<string, { module: string; sub?: string }> = {
+  KNOWLEDGE: { module: 'knowledge' },
 };
 
-const parseHash = (): { module: string; sub?: string } => {
+/** Where a user lands with no hash: business users ask, engineers build. */
+export const landingFor = (role: Role): { module: string; sub?: string } =>
+  role === 'AI_ENGINEER' || role === 'PLATFORM_ADMIN' ? { module: 'build', sub: 'AGENTS' } : { module: 'ask' };
+
+export const resolveRoute = (module: string, sub?: string): { module: string; sub?: string } => {
+  const r = REDIRECT_MAP[module];
+  if (r) {
+    const mapped = sub && r.subs?.[sub];
+    return { module: r.module, sub: mapped || r.sub || undefined };
+  }
+  if (module === 'build' && sub && BUILD_SUB_REDIRECTS[sub]) return BUILD_SUB_REDIRECTS[sub];
+  return { module, sub };
+};
+
+const parseHash = (fallback: { module: string; sub?: string }): { module: string; sub?: string } => {
   const raw = (typeof window !== 'undefined' ? window.location.hash : '').replace(/^#\/?/, '');
-  if (!raw) return { module: 'build', sub: 'AGENTS' };
+  if (!raw) return fallback;
   const [module, sub] = raw.split('/');
-  if (REDIRECT_MAP[module]) return REDIRECT_MAP[module];
-  return { module: module || 'build', sub: sub || undefined };
+  return resolveRoute(module || fallback.module, sub || undefined);
 };
 
 const writeHash = (module: string, sub?: string) => {
@@ -93,8 +117,8 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
     })() as Role,
   };
 
-  /* Routing state — initialized from URL hash */
-  const initial = parseHash();
+  /* Routing state — initialized from URL hash, else by role */
+  const initial = parseHash(landingFor(user.role));
   const [activeModule, _setActiveModule] = useState<string>(initial.module);
   const [subTab, _setSubTabState] = useState<Record<string, string>>(
     initial.sub ? { [initial.module]: initial.sub } : {},
@@ -115,11 +139,9 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
 
   const navigate = useCallback((moduleId: string, subId?: string) => {
     /* Honor redirect map if a caller still uses an old module id */
-    if (REDIRECT_MAP[moduleId]) {
-      const r = REDIRECT_MAP[moduleId];
-      moduleId = r.module;
-      subId = subId ?? r.sub;
-    }
+    const resolved = resolveRoute(moduleId, subId);
+    moduleId = resolved.module;
+    subId = resolved.sub;
     _setActiveModule(moduleId);
     if (subId) {
       _setSubTabState(prev => ({ ...prev, [moduleId]: subId }));
@@ -134,7 +156,7 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
   /* Listen for back/forward navigation */
   useEffect(() => {
     const onHashChange = () => {
-      const { module, sub } = parseHash();
+      const { module, sub } = parseHash(landingFor(user.role));
       _setActiveModule(module);
       if (sub) _setSubTabState(prev => ({ ...prev, [module]: sub }));
     };

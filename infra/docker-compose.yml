@@ -33,7 +33,11 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./sql/create-extra-dbs.sql:/docker-entrypoint-initdb.d/01-create-dbs.sql:ro
-      - ./postgres/init.sql:/docker-entrypoint-initdb.d/02-kb-tables.sql:ro
+      # (removed) ./postgres/init.sql → 02-kb-tables.sql: the file is not in the
+      # repo, so Docker bind-mounted an empty DIRECTORY, psql failed with "Is a
+      # directory" and the entrypoint stopped before 03-app-schema.sql — on
+      # every fresh volume the `keycloak` schema was never created and Keycloak
+      # crash-looped. KB tables live in the kb_e2e stack's own postgres.
       - ./sql/init.sql:/docker-entrypoint-initdb.d/03-app-schema.sql:ro
       - ./sql/release-init.sql:/docker-entrypoint-initdb.d/04-release-schema.sql:ro
     ports:
@@ -341,13 +345,20 @@ services:
     restart: unless-stopped
     ports:
       - "8300:8200"
-    command: server -config=/openbao/config/config.hcl
+    # The image entrypoint runs `bao server -config=/openbao/config` (the whole
+    # directory) for a bare `server` command. Passing our own -config on top
+    # loaded config.hcl twice, and mounting the directory also pulled in
+    # config.prod.hcl — two listeners on :8200 → "address already in use" and a
+    # restart loop. Mount exactly one config file; helper scripts live in
+    # /openbao/scripts (docker exec dataagent-openbao sh /openbao/scripts/openbao-init.sh).
+    command: server
     cap_add: [IPC_LOCK]
     environment:
       BAO_SKIP_DROP_ROOT: "true"
     volumes:
       - openbao_data:/openbao/data
-      - ./openbao:/openbao/config:ro
+      - ./openbao/config.hcl:/openbao/config/config.hcl:ro
+      - ./openbao:/openbao/scripts:ro
 
   # Litellm
   litellm:

@@ -17,10 +17,17 @@ def _safe_path(path: str, allowed_dir: str) -> tuple[str, str | None]:
 
 
 def _strip_code_block(text: str) -> str:
+    """Model output → bare SQL: drop a ``` fence and any trailing semicolons.
+
+    The sandbox runs the statement as `SELECT * FROM (<sql>) … LIMIT n`; a
+    trailing ";" inside that subquery is a syntax error, and every retry the
+    model made kept the semicolon — three failed attempts on a correct query
+    (live E2E). Semicolons are for the terminal, not for a subquery.
+    """
     if text.startswith("```"):
         lines = text.split("\n")
-        return "\n".join(l for l in lines if not l.startswith("```")).strip()
-    return text.strip()
+        text = "\n".join(line for line in lines if not line.startswith("```"))
+    return text.strip().rstrip(";").rstrip()
 
 
 def _get_query(call: dict[str, Any]) -> str:

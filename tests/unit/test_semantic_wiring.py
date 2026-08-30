@@ -289,3 +289,43 @@ class TestContractLoading:
 
         assert loads == ["tenant-a", "tenant-b"]
         semantic_layer.invalidate()
+
+
+class TestTimeWordsBecomeTheGrain:
+    """"doanh thu thuần tháng này theo vùng" — the planner files "tháng" under
+    dimensions. It is a time bucket, not a dimension the contract must define;
+    treating it as unknown pushed a contract question onto the LLM SQL path."""
+
+    def _args(self, slots_dict):
+        import semantic_layer
+
+        from libs.semantic import AnalyticalSlots
+        return semantic_layer.slots_to_compiler_args(REVENUE_NET, AnalyticalSlots.from_dict(slots_dict))
+
+    def test_thang_becomes_month_grain_and_leaves_dimensions(self):
+        dims, grain, _, _ = self._args({"metric": "doanh thu thuần", "dimensions": ["tháng"]})
+        assert dims == []
+        assert grain is TimeGrain.MONTH
+
+    def test_mixed_dimensions_keep_the_business_one(self):
+        dims, grain, _, _ = self._args({"dimensions": ["vùng", "Quý"]})
+        assert dims == ["vùng"]
+        assert grain is TimeGrain.QUARTER
+
+    def test_generic_time_word_falls_back_to_the_default_grain(self):
+        dims, grain, _, _ = self._args({"dimensions": ["thời gian"]})
+        assert dims == [] and grain is None  # None → compile_metric uses definition.default_grain
+
+    def test_explicit_grain_wins_over_an_inferred_one(self):
+        _, grain, _, _ = self._args({"dimensions": ["tháng"], "grain": "year"})
+        assert grain is TimeGrain.YEAR
+
+    def test_a_contract_dimension_named_like_a_time_word_is_kept(self):
+        import dataclasses
+
+        import semantic_layer
+
+        from libs.semantic import AnalyticalSlots, MetricDimension
+        contract = dataclasses.replace(REVENUE_NET, dimensions=(MetricDimension(key="tháng", column="fiscal_month"),))
+        dims, grain, _, _ = semantic_layer.slots_to_compiler_args(contract, AnalyticalSlots.from_dict({"dimensions": ["tháng"]}))
+        assert dims == ["tháng"] and grain is None

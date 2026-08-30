@@ -1,21 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
   MessageSquare, Send, Bug, ChevronDown,
-  Clock, Zap, Bot, User, Layers, Search,
-  Brain, FileOutput, AlertCircle,
+  Clock, Zap, Bot, User,
+  Brain,
   Route, Sparkles, Copy, GripHorizontal,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import {
-  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area,
-  ScatterChart, Scatter, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
-  RadialBarChart, RadialBar, ComposedChart,
-  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-} from 'recharts';
-import { cn } from '../../lib/utils';
 import { API_URL } from '../../lib/config';
 import { apiGet, apiMutate } from '../../lib/apiClient';
 import keycloak from '../../lib/keycloak';
+import { formatTime } from '../../lib/formatVN';
+import { AnswerBlock } from '../../features/ask/components/AnswerBlock';
+import { AnswerTheme } from '../../features/ask/components/AnswerTheme';
+import { resumeClarification } from '../../features/ask/api';
+import { parseSseData } from '../../features/ask/sse';
+import type { ChartSpec, Citation, Clarification, Evidence } from '../../features/ask/types';
 
 /* ─── Types ─────────────────────────────────────────────────── */
 
@@ -42,25 +41,6 @@ interface TraceStep {
   isAgentGroupHeader?: boolean; // true = dòng tổng của 1 agent trong multi-agent timeline
 }
 
-interface ChartSpec {
-  chart_type: 'bar' | 'line' | 'area' | 'pie' | 'scatter' | 'radar' | 'radialBar' | 'composed';
-  title: string;
-  x_key: string;
-  y_keys: string[];
-  data: Record<string, unknown>[];
-  series?: Array<{ key: string; type: 'bar' | 'line' | 'area' }>;  // chỉ dùng khi chart_type === 'composed'
-}
-
-interface Citation {
-  index: number;
-  source: string;
-  type: 'kb' | 'mcp' | 'db' | 'web' | 'tool';
-  score?: number | null;
-  snippet: string;
-  url?: string | null;
-  doc_id?: string | null;
-}
-
 interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -70,6 +50,9 @@ interface Message {
   routed?: { name: string; conf: number } | null;
   chartSpecs?: ChartSpec[];
   citations?: Citation[];
+  evidence?: Evidence;
+  clarification?: Clarification;
+  status?: 'streaming' | 'done' | 'error';
 }
 
 interface PendingApproval {
@@ -743,265 +726,14 @@ function TracePanel({ steps, traceLoading, traceId, rawObservations }: {
   );
 }
 
-/* ─── Markdown renderer ──────────────────────────────────────── */
-
-const _CITATION_COLORS: Record<Citation['type'], string> = {
-  kb: '#93C5FD', web: '#86EFAC', mcp: '#C084FC', tool: '#86EFAC', db: '#93C5FD',
-};
-
-function renderInline(text: string, citations?: Citation[]): React.ReactNode[] {
-  return text.split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\)|\[\d+\])/g).map((part, i) => {
-    if (part.startsWith('**') && part.endsWith('**'))
-      return <strong key={i} style={{ fontWeight: 600, color: '#fff' }}>{part.slice(2, -2)}</strong>;
-    if (part.startsWith('`') && part.endsWith('`'))
-      return <code key={i} style={{ fontFamily: 'var(--font-mono)', fontSize: '0.85em', background: 'rgba(255,255,255,0.1)', padding: '1px 5px', borderRadius: 4, color: '#EBD07C' }}>{part.slice(1, -1)}</code>;
-    const cite = part.match(/^\[(\d+)\]$/);
-    if (cite && citations) {
-      const c = citations.find(x => x.index === Number(cite[1]));
-      if (c) {
-        const color = _CITATION_COLORS[c.type] ?? '#93C5FD';
-        const scoreStr = typeof c.score === 'number' ? ` · score ${c.score.toFixed(2)}` : '';
-        return (
-          <sup key={i} title={`${c.source}${scoreStr}\n${c.snippet}`} style={{
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            minWidth: 15, height: 15, padding: '0 4px', marginLeft: 1,
-            borderRadius: 4, fontSize: 9.5, fontWeight: 700,
-            fontFamily: 'var(--font-mono)', verticalAlign: 2,
-            background: `${color}29`, color,
-          }}>
-            {cite[1]}
-          </sup>
-        );
-      }
-    }
-    const link = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-    if (link)
-      return <a key={i} href={link[2]} target="_blank" rel="noopener noreferrer" style={{ color: '#93C5FD', textDecoration: 'underline' }}>{link[1]}</a>;
-    return <span key={i}>{part}</span>;
-  });
-}
-
-function MarkdownContent({ text, citations }: { text: string; citations?: Citation[] }) {
-  const lines = text.split('\n');
-  const nodes: React.ReactNode[] = [];
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    // Fenced code block
-    if (line.startsWith('```')) {
-      const codeLines: string[] = [];
-      i++;
-      while (i < lines.length && !lines[i].startsWith('```')) { codeLines.push(lines[i]); i++; }
-      i++;
-      nodes.push(
-        <pre key={`cb${i}`} style={{ background: '#0A0A0A', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, padding: '10px 14px', margin: '8px 0 4px', fontSize: 12, fontFamily: 'var(--font-mono)', color: 'rgba(229,231,235,0.85)', overflowX: 'auto', lineHeight: 1.6, whiteSpace: 'pre' }}>
-          {codeLines.join('\n')}
-        </pre>
-      );
-      continue;
-    }
-    // Headers
-    const hm = line.match(/^(#{1,4})\s+(.+)/);
-    if (hm) {
-      const lvl = hm[1].length;
-      const sz = ['18px', '16px', '14px', '13px'][lvl - 1] ?? '13px';
-      nodes.push(<p key={`h${i}`} style={{ fontSize: sz, fontWeight: 700, color: '#fff', margin: lvl <= 2 ? '12px 0 4px' : '8px 0 2px' }}>{renderInline(hm[2], citations)}</p>);
-      i++; continue;
-    }
-    // Unordered list
-    if (/^[-*]\s/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^[-*]\s/.test(lines[i])) { items.push(lines[i].replace(/^[-*]\s/, '')); i++; }
-      nodes.push(
-        <ul key={`ul${i}`} style={{ margin: '4px 0', paddingLeft: 18 }}>
-          {items.map((item, j) => <li key={j} style={{ margin: '2px 0', fontSize: 13, color: 'rgba(255,255,255,0.78)' }}>{renderInline(item, citations)}</li>)}
-        </ul>
-      );
-      continue;
-    }
-    // Numbered list
-    if (/^\d+\.\s/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^\d+\.\s/.test(lines[i])) { items.push(lines[i].replace(/^\d+\.\s/, '')); i++; }
-      nodes.push(
-        <ol key={`ol${i}`} style={{ margin: '4px 0', paddingLeft: 20 }}>
-          {items.map((item, j) => <li key={j} style={{ margin: '2px 0', fontSize: 13, color: 'rgba(255,255,255,0.78)' }}>{renderInline(item, citations)}</li>)}
-        </ol>
-      );
-      continue;
-    }
-    // Blank line
-    if (!line.trim()) { i++; continue; }
-    // Paragraph
-    nodes.push(<p key={`p${i}`} style={{ margin: '3px 0', fontSize: 13, lineHeight: 1.55 }}>{renderInline(line, citations)}</p>);
-    i++;
-  }
-  return <>{nodes}</>;
-}
-
-/* ─── Chart renderer ─────────────────────────────────────────── */
-
-const _CHART_COLORS = ['#EBD07C', '#93C5FD', '#86EFAC', '#F8A4A4', '#C084FC', '#7DD3FC'];
-
-function ChartRenderer({ spec }: { spec: ChartSpec }) {
-  const tooltipStyle = {
-    background: '#1A1A1A',
-    border: '1px solid rgba(255,255,255,0.12)',
-    borderRadius: 8,
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.85)',
-  };
-
-  return (
-    <div style={{ marginTop: 8, padding: '10px 14px 4px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10 }}>
-      {spec.title && (
-        <p style={{ fontSize: 11.5, fontWeight: 700, color: 'rgba(255,255,255,0.7)', margin: '0 0 8px' }}>{spec.title}</p>
-      )}
-      <div style={{ width: '100%', height: 220 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          {spec.chart_type === 'line' ? (
-            <LineChart data={spec.data}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
-              <XAxis dataKey={spec.x_key} stroke="rgba(255,255,255,0.4)" fontSize={10} axisLine={false} tickLine={false} />
-              <YAxis stroke="rgba(255,255,255,0.4)" fontSize={10} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={tooltipStyle} />
-              {spec.y_keys.map((k, i) => (
-                <Line key={k} type="monotone" dataKey={k} stroke={_CHART_COLORS[i % _CHART_COLORS.length]} strokeWidth={2} dot={false} />
-              ))}
-            </LineChart>
-          ) : spec.chart_type === 'area' ? (
-            <AreaChart data={spec.data}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
-              <XAxis dataKey={spec.x_key} stroke="rgba(255,255,255,0.4)" fontSize={10} axisLine={false} tickLine={false} />
-              <YAxis stroke="rgba(255,255,255,0.4)" fontSize={10} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={tooltipStyle} />
-              {spec.y_keys.map((k, i) => (
-                <Area key={k} type="monotone" dataKey={k} stroke={_CHART_COLORS[i % _CHART_COLORS.length]} fill={_CHART_COLORS[i % _CHART_COLORS.length]} fillOpacity={0.2} />
-              ))}
-            </AreaChart>
-          ) : spec.chart_type === 'pie' ? (
-            <PieChart>
-              <Tooltip contentStyle={tooltipStyle} />
-              <Pie data={spec.data} dataKey={spec.y_keys[0]} nameKey={spec.x_key} outerRadius={80}>
-                {spec.data.map((_, i) => <Cell key={i} fill={_CHART_COLORS[i % _CHART_COLORS.length]} />)}
-              </Pie>
-            </PieChart>
-          ) : spec.chart_type === 'scatter' ? (
-            <ScatterChart>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
-              <XAxis dataKey={spec.x_key} type="number" stroke="rgba(255,255,255,0.4)" fontSize={10} axisLine={false} tickLine={false} />
-              <YAxis dataKey={spec.y_keys[0]} type="number" stroke="rgba(255,255,255,0.4)" fontSize={10} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={tooltipStyle} cursor={{ strokeDasharray: '3 3' }} />
-              <Scatter data={spec.data} fill={_CHART_COLORS[0]} />
-            </ScatterChart>
-          ) : spec.chart_type === 'radar' ? (
-            <RadarChart data={spec.data}>
-              <PolarGrid stroke="rgba(255,255,255,0.12)" />
-              <PolarAngleAxis dataKey={spec.x_key} stroke="rgba(255,255,255,0.4)" fontSize={10} />
-              <PolarRadiusAxis stroke="rgba(255,255,255,0.2)" fontSize={9} />
-              <Tooltip contentStyle={tooltipStyle} />
-              {spec.y_keys.map((k, i) => (
-                <Radar key={k} dataKey={k} stroke={_CHART_COLORS[i % _CHART_COLORS.length]} fill={_CHART_COLORS[i % _CHART_COLORS.length]} fillOpacity={0.25} />
-              ))}
-            </RadarChart>
-          ) : spec.chart_type === 'radialBar' ? (
-            <RadialBarChart data={spec.data} innerRadius="20%" outerRadius="90%">
-              <Tooltip contentStyle={tooltipStyle} />
-              <RadialBar dataKey={spec.y_keys[0]} background>
-                {spec.data.map((_, i) => <Cell key={i} fill={_CHART_COLORS[i % _CHART_COLORS.length]} />)}
-              </RadialBar>
-              <Legend iconSize={8} wrapperStyle={{ fontSize: 10, color: 'rgba(255,255,255,0.6)' }} />
-            </RadialBarChart>
-          ) : spec.chart_type === 'composed' && spec.series ? (
-            <ComposedChart data={spec.data}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
-              <XAxis dataKey={spec.x_key} stroke="rgba(255,255,255,0.4)" fontSize={10} axisLine={false} tickLine={false} />
-              <YAxis stroke="rgba(255,255,255,0.4)" fontSize={10} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={tooltipStyle} />
-              {spec.series.map((s, i) => {
-                const color = _CHART_COLORS[i % _CHART_COLORS.length];
-                if (s.type === 'line') return <Line key={s.key} type="monotone" dataKey={s.key} stroke={color} strokeWidth={2} dot={false} />;
-                if (s.type === 'area') return <Area key={s.key} type="monotone" dataKey={s.key} stroke={color} fill={color} fillOpacity={0.2} />;
-                return <Bar key={s.key} dataKey={s.key} fill={color} radius={[4, 4, 0, 0]} />;
-              })}
-            </ComposedChart>
-          ) : (
-            <BarChart data={spec.data}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" vertical={false} />
-              <XAxis dataKey={spec.x_key} stroke="rgba(255,255,255,0.4)" fontSize={10} axisLine={false} tickLine={false} />
-              <YAxis stroke="rgba(255,255,255,0.4)" fontSize={10} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={tooltipStyle} />
-              {spec.y_keys.map((k, i) => (
-                <Bar key={k} dataKey={k} fill={_CHART_COLORS[i % _CHART_COLORS.length]} radius={[4, 4, 0, 0]} />
-              ))}
-            </BarChart>
-          )}
-        </ResponsiveContainer>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Citation panel ─────────────────────────────────────────── */
-
-const _CITATION_TAGS: Record<Citation['type'], string> = {
-  kb: 'KB', web: 'Web', mcp: 'MCP', tool: 'Tool', db: 'DB',
-};
-
-function CitationPanel({ citations }: { citations: Citation[] }) {
-  return (
-    <div style={{ marginTop: 8, padding: '10px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10 }}>
-      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.02em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.45)', marginBottom: 8 }}>
-        📎 Nguồn tham khảo
-      </div>
-      {citations.map((c, i) => {
-        const color = _CITATION_COLORS[c.type] ?? '#93C5FD';
-        const href = c.url || (c.type === 'kb' && c.doc_id ? `/api/knowledge/documents/${c.doc_id}/file` : null);
-        return (
-          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', padding: '6px 0', borderTop: i === 0 ? 'none' : '1px solid rgba(255,255,255,0.08)' }}>
-            <div style={{
-              flexShrink: 0, width: 16, height: 16, borderRadius: 4, marginTop: 1,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 9.5, fontWeight: 700, fontFamily: 'var(--font-mono)',
-              background: `${color}29`, color,
-            }}>
-              {c.index}
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
-                {href ? (
-                  <a href={href} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, fontWeight: 600, color, textDecoration: 'none' }}>
-                    {c.source}
-                  </a>
-                ) : (
-                  <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>{c.source}</span>
-                )}
-                <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.45)', letterSpacing: '0.03em' }}>
-                  {_CITATION_TAGS[c.type] ?? c.type}
-                </span>
-                {typeof c.score === 'number' && (
-                  <span style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.25)', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>
-                    {c.score.toFixed(2)}
-                  </span>
-                )}
-              </div>
-              <div style={{
-                fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 2, lineHeight: 1.5,
-                overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-              }}>
-                {c.snippet}
-              </div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 /* ─── ChatBubble ─────────────────────────────────────────────── */
 
-function ChatBubble({ msg }: { msg: Message }) {
+function ChatBubble({ msg, busy, onSuggestion, onAnswerClarification }: {
+  msg: Message;
+  busy?: boolean;
+  onSuggestion: (text: string) => void;
+  onAnswerClarification: (msgId: string, answer: string) => void;
+}) {
   const isUser = msg.role === 'user';
   return (
     <div style={{ display: 'flex', gap: 10, flexDirection: isUser ? 'row-reverse' : 'row' }}>
@@ -1012,7 +744,7 @@ function ChatBubble({ msg }: { msg: Message }) {
       }}>
         {isUser ? <User size={13} style={{ color: '#EBD07C' }} /> : <Bot size={13} style={{ color: 'rgba(255,255,255,0.6)' }} />}
       </div>
-      <div style={{ maxWidth: '78%', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ maxWidth: isUser ? '78%' : '92%', minWidth: 0, flex: isUser ? undefined : 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
         <div style={{
           borderRadius: 12, padding: '10px 14px', fontSize: 13, lineHeight: 1.55,
           background: isUser ? 'rgba(235,208,124,0.18)' : 'rgba(255,255,255,0.07)',
@@ -1032,10 +764,19 @@ function ChatBubble({ msg }: { msg: Message }) {
           )}
           {isUser
             ? <p style={{ margin: 0 }}>{msg.content}</p>
-            : <MarkdownContent text={msg.content} citations={msg.citations} />
+            : (
+              // Shared answer block: text, clarification card, data table,
+              // charts, "why trust this" strip, sources. Suggestion chips stay
+              // in the Playground's own row below the thread.
+              <AnswerBlock
+                msg={{ ...msg, timestamp: new Date().toISOString(), suggestions: undefined }}
+                busy={busy}
+                onSuggestion={onSuggestion}
+                onAnswerClarification={answer => onAnswerClarification(msg.id, answer)}
+                showTimestamp={false}
+              />
+            )
           }
-          {!isUser && msg.chartSpecs?.map((spec, i) => <ChartRenderer key={i} spec={spec} />)}
-          {!isUser && msg.citations && msg.citations.length > 0 && <CitationPanel citations={msg.citations} />}
           <p style={{ fontSize: 9.5, color: 'rgba(255,255,255,0.25)', marginTop: 6 }}>{msg.timestamp}</p>
         </div>
       </div>
@@ -1119,7 +860,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
 
   /* ── Send — unified handler cho cả single agent và multi-agent ── */
   const handleSendStream = async (text: string) => {
-    const now = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    const now = formatTime(new Date());
     const userMsgId = Date.now().toString();
     const placeholderId = (Date.now() + 1).toString();
     setMessages(prev => [...prev, { id: userMsgId, role: 'user', content: text, timestamp: now }]);
@@ -1127,7 +868,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setSending(true);
     setTraceLoading(true);
-    setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', content: '', timestamp: now }]);
+    setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', content: '', timestamp: now, status: 'streaming' }]);
 
     try {
       const res = await fetch(`${API_URL}/api/orchestrate/stream`, {
@@ -1152,45 +893,65 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
         const chunk = decoder.decode(value);
         for (const line of chunk.split('\n')) {
           if (!line.startsWith('data: ')) continue;
-          const data = line.slice(6);
-          if (data === '[DONE]') continue;
-          if (data.startsWith('[ERROR]')) {
-            const errMsg = data.slice(7).trim() || 'Đã xảy ra lỗi, vui lòng thử lại.';
-            setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: errMsg } : m));
-            break;
-          }
-          try {
-            const parsed = JSON.parse(data);
-            if (parsed?.__suggestions) {
-              setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, suggestions: parsed.__suggestions } : m));
-            } else if (parsed?.__session_id) {
+          const ev = parseSseData(line.slice(6));
+          const patch = (fn: (m: Message) => Message) =>
+            setMessages(prev => prev.map(m => m.id === placeholderId ? fn(m) : m));
+          switch (ev.type) {
+            case 'done':
+              break;
+            case 'error':
+              patch(m => ({ ...m, content: ev.message, status: 'error' }));
+              break;
+            case 'token':
+              fullText += ev.text;
+              patch(m => ({ ...m, content: fullText }));
+              break;
+            case 'suggestions':
+              patch(m => ({ ...m, suggestions: ev.suggestions }));
+              break;
+            case 'session':
               // session_id = trace_id — biết ngay từ đầu, dùng để fetch 1 trace
               // duy nhất (bao gồm cả outer node lẫn agent con) sau khi stream xong.
-              sessionId = parsed.__session_id;
+              sessionId = ev.sessionId;
               setConversationId(sessionId ?? null);
-            } else if (parsed?.__clarification) {
-              setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: '' } : m));
-            } else if (parsed?.__pending_review) {
-              setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: '' } : m));
-              setPendingApproval({
-                convId:        parsed.__pending_review.conv_id ?? parsed.__pending_review,
-                placeholderId,
-                payload:       parsed.__pending_review.payload ?? null,
-              });
-            } else if (parsed?.__chart) {
-              setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, chartSpecs: parsed.__chart } : m));
-            } else if (parsed?.__citations) {
-              setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, citations: parsed.__citations } : m));
-            } else if (typeof parsed === 'string') {
-              fullText += parsed;
-              setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: fullText } : m));
-            }
-          } catch {
-            fullText += data;
-            setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: fullText } : m));
+              break;
+            case 'clarification':
+              // Orchestrator graph is interrupted: render the question with the
+              // answer wired to /api/orchestrate/resume (was: blank the message).
+              patch(m => ({
+                ...m,
+                clarification: { kind: 'resume', sessionId: ev.sessionId || sessionId || '', questions: ev.questions.map(text => ({ text })) },
+              }));
+              break;
+            case 'options':
+              // Responder <OPTIONS> — was received and dropped before.
+              setPendingOptions(ev.options);
+              break;
+            case 'evidence':
+              patch(m => ({
+                ...m,
+                evidence: ev.evidence,
+                clarification: m.clarification ?? (ev.evidence.clarifications.length
+                  ? { kind: 'followup', questions: ev.evidence.clarifications }
+                  : undefined),
+              }));
+              break;
+            case 'pending_review':
+              patch(m => ({ ...m, content: '' }));
+              setPendingApproval({ convId: ev.convId, placeholderId, payload: (ev.payload as PendingApproval['payload']) ?? null });
+              break;
+            case 'chart':
+              patch(m => ({ ...m, chartSpecs: ev.specs }));
+              break;
+            case 'citations':
+              patch(m => ({ ...m, citations: ev.citations }));
+              break;
+            default:
+              break;
           }
         }
       }
+      setMessages(prev => prev.map(m => m.id === placeholderId && m.status === 'streaming' ? { ...m, status: 'done' } : m));
 
       // Stream xong → fetch trace theo session_id (= trace_id). Langfuse v3 ghi
       // dữ liệu BẤT ĐỒNG BỘ (Redis queue → Clickhouse worker), nên lần fetch
@@ -1252,6 +1013,41 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     }
   };
 
+  /* Answer a clarification card: resume the interrupted orchestration, or
+     send the choice as the next turn (deterministic runtime questions). */
+  const handleClarificationAnswer = async (msgId: string, answer: string) => {
+    const target = messages.find(m => m.id === msgId);
+    const clar = target?.clarification;
+    if (!clar || sending) return;
+    if (clar.kind === 'followup') {
+      setMessages(prev => prev.map(m => m.id === msgId ? { ...m, clarification: undefined } : m));
+      handleSend(answer);
+      return;
+    }
+    setSending(true);
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, clarification: undefined } : m));
+    const echoId = Date.now().toString();
+    const answerId = (Date.now() + 1).toString();
+    const now = formatTime(new Date());
+    setMessages(prev => [...prev,
+      { id: echoId, role: 'user', content: answer, timestamp: now, status: 'done' },
+      { id: answerId, role: 'assistant', content: '', timestamp: now, status: 'streaming' },
+    ]);
+    try {
+      const res = await resumeClarification(clar.sessionId, answer);
+      setMessages(prev => prev.map(m => m.id === answerId ? {
+        ...m,
+        content: res.response || (res.success ? '' : 'Không thể xử lý yêu cầu này.'),
+        suggestions: res.suggestions ?? [],
+        status: res.success ? 'done' : 'error',
+      } : m));
+    } catch (err) {
+      setMessages(prev => prev.map(m => m.id === answerId ? { ...m, status: 'error', content: `Lỗi khi tiếp tục: ${(err as Error).message}` } : m));
+    } finally {
+      setSending(false);
+    }
+  };
+
   const handleSend = (override?: string) => {
     const text = (override ?? input).trim();
     if (!text || sending || traceLoading) return;
@@ -1270,6 +1066,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
   const sendBtnActive = canSend;
 
   return (
+    <AnswerTheme mode="dark">
     <div style={{
       display: 'flex', flexDirection: 'column',
       height: embedded ? 'calc(100vh - 320px)' : 'calc(100vh - 200px)',
@@ -1399,7 +1196,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
             )}
             <AnimatePresence initial={false}>
               {messages.map(msg => {
-                if (msg.content === '' && msg.role === 'assistant') {
+                if (msg.content === '' && msg.role === 'assistant' && msg.status !== 'error' && !msg.clarification && !msg.evidence) {
                   return (
                     <motion.div key={msg.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} style={{ display: 'flex', gap: 10 }}>
                       <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1413,7 +1210,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                     </motion.div>
                   );
                 }
-                return <ChatBubble key={msg.id} msg={msg} />;
+                return <ChatBubble key={msg.id} msg={msg} busy={sending} onSuggestion={handleSend} onAnswerClarification={handleClarificationAnswer} />;
               })}
             </AnimatePresence>
             <div ref={bottomRef} />
@@ -1596,5 +1393,6 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
 
       </div>
     </div>
+    </AnswerTheme>
   );
 }

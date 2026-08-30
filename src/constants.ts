@@ -5,15 +5,12 @@ import {
   Settings,
   Stethoscope,
   FlaskConical,
-  Route,
-  Wrench,
   ClipboardCheck,
   TrainFront,
   Building2,
   Lock,
   BarChart3,
   History,
-  Rocket,
   Cpu,
   LayoutGrid,
   Users,
@@ -24,8 +21,6 @@ import {
   MessageSquare,
   MessageCircle,
   ScrollText,
-  PlugZap,
-  Webhook,
   Workflow,
 } from 'lucide-react';
 import { Role, NavItem } from './types';
@@ -33,11 +28,14 @@ import { Role, NavItem } from './types';
 const ALL_ROLES: Role[] = ['EXECUTIVE', 'PLATFORM_ADMIN', 'AI_ENGINEER'];
 
 export const NAV_ITEMS: NavItem[] = [
-  { id: 'build',    label: 'Build',    icon: Package,      roles: ALL_ROLES },
-  { id: 'test',     label: 'Test',     icon: FlaskConical, roles: ALL_ROLES },
-  { id: 'release',  label: 'Release',  icon: Rocket,       roles: ALL_ROLES },
-  { id: 'monitor',  label: 'Monitor',  icon: Activity,     roles: ALL_ROLES },
-  { id: 'settings', label: 'Settings', icon: Settings,     roles: ALL_ROLES },
+  // Order = what a person needs first. Business users land on "Hỏi dữ liệu";
+  // engineers on "Xây dựng" (see AppStateContext landing). Vietnamese labels
+  // for end-user modules; the builder console keeps English sub-items.
+  { id: 'ask',       label: 'Hỏi dữ liệu', icon: MessageSquare, roles: ALL_ROLES },
+  { id: 'knowledge', label: 'Tri thức',    icon: Database,      roles: ALL_ROLES },
+  { id: 'build',     label: 'Xây dựng',    icon: Package,       roles: ALL_ROLES },
+  { id: 'ops',       label: 'Vận hành',    icon: Activity,      roles: ALL_ROLES },
+  { id: 'settings',  label: 'Cài đặt',     icon: Settings,      roles: ALL_ROLES },
 ];
 
 export interface SubNavItem {
@@ -52,32 +50,24 @@ export interface SubNavItem {
 /* Contextual sub-nav items shown in the secondary panel per module.
  * IDs MUST match the sub-tab IDs used inside each center component
  * so secondary-nav clicks correctly drive the in-module state.
+ *
+ * Modules absent here (ask, knowledge) are single-screen: no secondary nav,
+ * the screen gets the full width. No `comingSoon` entries on purpose — a nav
+ * full of empty items is what a demo remembers.
  */
 export const MODULE_SUB_ITEMS: Record<string, SubNavItem[]> = {
   'build': [
-    { id: 'AGENTS',    label: 'Agents',    icon: Bot },
-    { id: 'ROUTER',    label: 'Router',    icon: Route,    comingSoon: true },
-    { id: 'KNOWLEDGE', label: 'Knowledge', icon: Database },
-    { id: 'WORKFLOWS', label: 'Workflows', icon: Workflow },
-    { id: 'TOOLS',     label: 'Tools',     icon: Wrench,   comingSoon: true },
+    { id: 'AGENTS',     label: 'Agents',     icon: Bot },
+    { id: 'WORKFLOWS',  label: 'Workflows',  icon: Workflow },
+    { id: 'VERSIONS',   label: 'Versions',   icon: GitBranch },
+    { id: 'PLAYGROUND', label: 'Thử nghiệm', icon: FlaskConical },
   ],
 
-  'test': [
-    { id: 'PLAYGROUND', label: 'Playground', icon: MessageSquare },
-    { id: 'EVALS',      label: 'Evals',      icon: ClipboardCheck, comingSoon: true },
-  ],
-
-  'release': [
-    { id: 'VERSIONS',    label: 'Versions',      icon: GitBranch },
-    { id: 'EXPERIMENTS', label: 'Experiments',   icon: FlaskConical, comingSoon: true },
-    { id: 'ENDPOINT',    label: 'Chat Endpoint', icon: PlugZap,      comingSoon: true },
-    { id: 'WEBHOOKS',    label: 'Webhooks',      icon: Webhook,      comingSoon: true },
-  ],
-
-  'monitor': [
-    { id: 'CONVERSATIONS', label: 'Conversations', icon: MessageCircle },
-    { id: 'TRACES',        label: 'Traces',        icon: History },
-    { id: 'ANALYTICS',     label: 'Analytics',     icon: BarChart3 },
+  'ops': [
+    { id: 'CONVERSATIONS', label: 'Hội thoại', icon: MessageCircle },
+    { id: 'TRACES',        label: 'Trace',     icon: History },
+    { id: 'REVIEWS',       label: 'Chờ duyệt', icon: ClipboardCheck },
+    { id: 'ANALYTICS',     label: 'Phân tích', icon: BarChart3 },
   ],
 
   'settings': [

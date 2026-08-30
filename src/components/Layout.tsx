@@ -12,33 +12,26 @@ import { Role, Environment } from '../types';
 
 /* ─── Command Palette ─────────────────────────────────────────────── */
 const PALETTE_GROUPS = [
-  { category: 'Modules', items: [
-    { label: 'Build',    module: 'build' },
-    { label: 'Test',     module: 'test' },
-    { label: 'Release',  module: 'release' },
-    { label: 'Monitor',  module: 'monitor' },
-    { label: 'Settings', module: 'settings' },
+  { category: 'Phân hệ', items: [
+    { label: 'Hỏi dữ liệu', module: 'ask' },
+    { label: 'Tri thức',    module: 'knowledge' },
+    { label: 'Xây dựng',    module: 'build' },
+    { label: 'Vận hành',    module: 'ops' },
+    { label: 'Cài đặt',     module: 'settings' },
   ]},
-  { category: 'Build', items: [
-    { label: 'Agents',    module: 'build', sub: 'AGENTS' },
-    { label: 'Router',    module: 'build', sub: 'ROUTER' },
-    { label: 'Knowledge', module: 'build', sub: 'KNOWLEDGE' },
-    { label: 'Tools',     module: 'build', sub: 'TOOLS' },
+  { category: 'Xây dựng', items: [
+    { label: 'Agents',     module: 'build', sub: 'AGENTS' },
+    { label: 'Workflows',  module: 'build', sub: 'WORKFLOWS' },
+    { label: 'Versions',   module: 'build', sub: 'VERSIONS' },
+    { label: 'Thử nghiệm (Playground)', module: 'build', sub: 'PLAYGROUND' },
   ]},
-  { category: 'Test', items: [
-    { label: 'Playground', module: 'test', sub: 'PLAYGROUND' },
-    { label: 'Evals',      module: 'test', sub: 'EVALS' },
+  { category: 'Vận hành', items: [
+    { label: 'Hội thoại', module: 'ops', sub: 'CONVERSATIONS' },
+    { label: 'Trace',     module: 'ops', sub: 'TRACES' },
+    { label: 'Chờ duyệt', module: 'ops', sub: 'REVIEWS' },
+    { label: 'Phân tích', module: 'ops', sub: 'ANALYTICS' },
   ]},
-  { category: 'Release', items: [
-    { label: 'Versions',      module: 'release', sub: 'VERSIONS' },
-    { label: 'Chat Endpoint', module: 'release', sub: 'ENDPOINT' },
-  ]},
-  { category: 'Monitor', items: [
-    { label: 'Conversations', module: 'monitor', sub: 'CONVERSATIONS' },
-    { label: 'Traces',        module: 'monitor', sub: 'TRACES' },
-    { label: 'Analytics',     module: 'monitor', sub: 'ANALYTICS' },
-  ]},
-  { category: 'Settings', items: [
+  { category: 'Cài đặt', items: [
     { label: 'Team & Access', module: 'settings', sub: 'TEAM' },
     { label: 'AI Providers',  module: 'settings', sub: 'PROVIDERS' },
     { label: 'Secrets',       module: 'settings', sub: 'SECRETS' },
@@ -95,7 +88,7 @@ const CommandPalette = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
                   value={query}
                   onChange={e => setQuery(e.target.value)}
                   type="text"
-                  placeholder="Search modules, agents, traces, workflows, knowledge..."
+                  placeholder="Tìm phân hệ, agent, trace, workflow, tri thức…"
                   className="flex-1 bg-transparent text-[14px] text-[#111111] placeholder:text-[#777777] outline-none"
                 />
                 {query && (
@@ -108,7 +101,7 @@ const CommandPalette = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
 
               <div className="max-h-[380px] overflow-y-auto py-2">
                 {filtered.length === 0 ? (
-                  <div className="py-10 text-center text-sm text-[#5F5F5F]">No results for "{query}"</div>
+                  <div className="py-10 text-center text-sm text-[#5F5F5F]">Không có kết quả cho "{query}"</div>
                 ) : (
                   filtered.map(group => (
                     <div key={group.category} className="mb-1">
@@ -211,13 +204,10 @@ const LeftRail = () => {
 };
 
 /* ─── Contextual hint text per module ────────────────────────────── */
-const CONTEXT_HINTS: Record<string, string> = {
-  'build':    '6 agents · router accuracy 92%',
-  'test':     'Last eval run 4m ago · 23 cases',
-  'release':  'PROD on v4.2.1 · 1 pending',
-  'monitor':  '1,284 conversations today · p95 1.4s',
-  'settings': 'Last updated 2 hours ago',
-};
+// Deliberately empty: the previous hints were hard-coded figures
+// ("6 agents · router accuracy 92%") that no backend produced. A hint returns
+// per module once there is a real number to show.
+const CONTEXT_HINTS: Record<string, string> = {};
 
 /* ─── Secondary Contextual Nav ────────────────────────────────────── */
 const SecondaryNav = () => {

@@ -153,7 +153,13 @@ services:
   # We add the certs mount and switch the config file.
   openbao:
     restart: always
-    command: server -config=/openbao/config/config.prod.hcl
+    # Base mounts only config.hcl into /openbao/config; add the prod file and
+    # let the entrypoint load the directory (see openbao in docker-compose.yml).
+    command: server
+    volumes:
+      - openbao_data:/openbao/data
+      - ./openbao/config.prod.hcl:/openbao/config/config.prod.hcl:ro
+      - ./openbao:/openbao/scripts:ro
     environment:
       BAO_ADDR: https://127.0.0.1:8200
     volumes:

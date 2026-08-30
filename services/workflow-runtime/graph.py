@@ -48,9 +48,20 @@ _DEFAULT_FLOW_EDGES: list[dict[str, Any]] = [
 ]
 
 
-def _make_route_after_planner(retrieval_nodes: frozenset[str]) -> Callable[[AgentState], list[str]]:
-    """Closure giới hạn destinations trong các node thực sự có trong graph."""
+def _make_route_after_planner(
+    retrieval_nodes: frozenset[str], ask_target: str | None = None,
+) -> Callable[[AgentState], list[str]]:
+    """Closure giới hạn destinations trong các node thực sự có trong graph.
+
+    `ask_target` (responder) is where a turn goes when the planner raised a
+    clarification: nothing must execute. Without it the "no tool_calls"
+    fallback below picked the first retrieval node — and a canvas whose first
+    retrieval node is db_connector ran a query on the very metric the question
+    was ambiguous about, then shipped the number as evidence next to the
+    question. Found by the live E2E, invisible to the node-level unit tests."""
     def route_after_planner(state: AgentState) -> list[str]:
+        if state.get("clarifications") and ask_target:
+            return [ask_target]
         tool_calls = state.get("tool_calls", [])
         types = {tc.get("type") for tc in tool_calls}
         destinations = []
@@ -182,6 +193,10 @@ def _make_route_after_judge(available: frozenset[str]) -> Callable[[AgentState],
     loại đó rồi, judge_node (Pha 2, sau responder) giờ chỉ còn PLANNING_ERROR/
     DATA_QUALITY/GROUNDING_ERROR."""
     def route_after_judge(state: AgentState) -> str:
+        # Asking IS the answer for this turn: re-planning would only ask again
+        # (or, worse, stop asking and guess). Nothing to grade, nothing to retry.
+        if state.get("clarifications"):
+            return "end"
         if state.get("judge_verdict") != "FAIL":
             return "end"
         error_type = state.get("judge_error_type", "")
@@ -263,12 +278,16 @@ def _build_dynamic_graph(flow_nodes: list[dict[str, Any]], flow_edges: list[dict
     retrieval_nodes = {tgt for src, tgt in type_edges if src == "planner" and tgt in ("kb_search", "mcp", "tool_executor", "db_connector")}
     non_retrieval_planner_targets = {tgt for src, tgt in type_edges if src == "planner" and tgt not in ("kb_search", "mcp")}
 
-    _route_planner = _make_route_after_planner(frozenset(retrieval_nodes))
+    # A clarification skips retrieval and goes straight to the responder, which
+    # renders the question (see _make_route_after_planner).
+    ask_target = "responder" if "responder" in node_types else None
+    planner_targets = list(retrieval_nodes) + ([ask_target] if ask_target else [])
+    _route_planner = _make_route_after_planner(frozenset(retrieval_nodes), ask_target)
 
     if len(retrieval_nodes) > 1:
         # Nhiều retrieval node → cần join để sync parallel branches
         builder.add_node("join_retrieval", join_retrieval_node)
-        builder.add_conditional_edges("planner", _route_planner, list(retrieval_nodes))
+        builder.add_conditional_edges("planner", _route_planner, planner_targets)
         for rn in retrieval_nodes:
             builder.add_edge(rn, "join_retrieval")
         # join_retrieval → Judge Pha 1 (check rẻ, không LLM) → node tiếp theo
@@ -284,7 +303,7 @@ def _build_dynamic_graph(flow_nodes: list[dict[str, Any]], flow_edges: list[dict
             )
     elif len(retrieval_nodes) == 1:
         # 1 retrieval node → dùng conditional để planner quyết định runtime
-        builder.add_conditional_edges("planner", _route_planner, list(retrieval_nodes))
+        builder.add_conditional_edges("planner", _route_planner, planner_targets)
         single_rn = next(iter(retrieval_nodes))
         after_retrieval = list({tgt for src, tgt in type_edges if src == single_rn})
         if after_retrieval:

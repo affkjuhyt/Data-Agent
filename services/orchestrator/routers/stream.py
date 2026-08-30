@@ -160,6 +160,10 @@ async def stream_orchestration(
                             yield _sse({"__chart": event["data"]})
                         elif name == "citations":
                             yield _sse({"__citations": event["data"]})
+                        elif name == "options":
+                            yield _sse({"__options": event["data"]})
+                        elif name == "evidence":
+                            yield _sse({"__evidence": event["data"]})
 
             except Exception as e:
                 logger.error("stream | graph error: %s", e)

@@ -3,7 +3,7 @@ import { AppStateProvider, useAppState } from './AppStateContext';
 import { AppLayout } from './components/Layout';
 import { Placeholder } from './components/shared/Placeholder';
 import IngestionProgressOverlay from './components/shared/IngestionProgressOverlay';
-import { ROUTE_MAP } from './routes';
+import { ROUTE_MAP, SINGLE_SCREEN } from './routes';
 import { MODULE_SUB_ITEMS } from './constants';
 
 function AppContent() {
@@ -14,8 +14,10 @@ function AppContent() {
 
   const renderView = () => {
     const subItems = MODULE_SUB_ITEMS[activeModule] ?? [];
-    const activeSub = subTab[activeModule] ?? subItems[0]?.id;
-    const entry = activeSub ? ROUTE_MAP[activeModule]?.[activeSub] : undefined;
+    const routes = ROUTE_MAP[activeModule] ?? {};
+    // Modules with a single screen have no secondary nav and route to `_`.
+    const activeSub = subItems.length > 0 ? (subTab[activeModule] ?? subItems[0]?.id) : SINGLE_SCREEN;
+    const entry = activeSub ? (routes[activeSub] ?? routes[SINGLE_SCREEN]) : undefined;
 
     if (!entry) {
       return (

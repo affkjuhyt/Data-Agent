@@ -1,0 +1,60 @@
+/**
+ * Client-side CSV export of an answer's data table.
+ *
+ * UTF-8 BOM so Excel on Windows opens Vietnamese text correctly; CRLF line
+ * ends; every field quoted. Values are exported RAW (not formatVN'd) so the
+ * numbers stay numbers in the spreadsheet.
+ *
+ * A proper .xlsx with a "Nguồn" sheet (metric, SQL, run time) is the backend
+ * export item of the roadmap — it should be generated in the sandbox and
+ * served from MinIO. This is the honest interim: the rows, plus the SQL on
+ * the clipboard one click away.
+ */
+
+const BOM = '﻿';
+
+function csvField(value: unknown): string {
+  if (value === null || value === undefined) return '""';
+  let s: string;
+  if (typeof value === 'object') {
+    try { s = JSON.stringify(value); } catch { s = String(value); }
+  } else {
+    s = String(value);
+  }
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
+export function toCsv(columns: string[], rows: Record<string, unknown>[]): string {
+  const lines = [columns.map(csvField).join(',')];
+  for (const row of rows) lines.push(columns.map(c => csvField(row[c])).join(','));
+  return BOM + lines.join('\r\n') + '\r\n';
+}
+
+/** Safe file name from a question: "doanh thu thuần tháng 6" → "doanh-thu-thuan-thang-6.csv". */
+export function csvFileName(question: string, when: Date = new Date()): string {
+  const slug = question
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48) || 'ket-qua';
+  const stamp = `${when.getFullYear()}${String(when.getMonth() + 1).padStart(2, '0')}${String(when.getDate()).padStart(2, '0')}`;
+  return `${slug}-${stamp}.csv`;
+}
+
+/** Trigger a browser download. No-op where Blob URLs are unavailable (tests). */
+export function downloadCsv(fileName: string, csv: string): boolean {
+  if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function' || typeof document === 'undefined') return false;
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+  return true;
+}
