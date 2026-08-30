@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "services" / "memory-consumer")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "memory-consumer")
 
 
 @pytest.fixture(autouse=True)

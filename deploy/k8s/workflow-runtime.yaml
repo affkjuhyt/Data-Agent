@@ -40,7 +40,7 @@ spec:
             - sh
             - -c
             - |
-              until alembic -c alembic/alembic.ini current 2>/dev/null | grep -q '(head)'; do
+              until alembic -c backend/alembic/alembic.ini current 2>/dev/null | grep -q '(head)'; do
                 echo "waiting for alembic to reach head..."
                 sleep 5
               done
@@ -52,7 +52,7 @@ spec:
             limits:   { cpu: "250m", memory: "256Mi" }
       containers:
         - name: workflow-runtime
-          image: REGISTRY/workflow-runtime:latest   # built from services/workflow-runtime/Dockerfile
+          image: REGISTRY/workflow-runtime:latest   # built from backend/services/workflow-runtime/Dockerfile
           ports:
             - containerPort: 8001
           envFrom:
@@ -85,7 +85,7 @@ spec:
         # optional: true — the Secret does not have to exist. mTLS is opt-in
         # (MTLS_CLIENT_CERT/_KEY/_CA_CERT unset = plain TLS to kb-backend), and a
         # missing Secret must not wedge the whole tier in ContainerCreating.
-        # When you do use it, create it from infra/certs/gen-certs.sh output and
+        # When you do use it, create it from deploy/docker/certs/gen-certs.sh output and
         # set the three MTLS_* vars in dataagent-secrets to /certs/<file>.
         - name: mtls-certs
           secret:

@@ -1,4 +1,4 @@
-"""Unit tests for services/shared/guardrail_check.py — hàm dùng chung cho cả
+"""Unit tests for backend/services/shared/guardrail_check.py — hàm dùng chung cho cả
 orchestrator (input + multi-agent synthesis output) và workflow-runtime
 (single-agent output). Mock litellm.acompletion — không gọi LLM thật.
 """

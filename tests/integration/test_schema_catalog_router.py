@@ -19,7 +19,7 @@ import pytest
 pytestmark = pytest.mark.integration
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-ALEMBIC_INI = REPO_ROOT / "alembic" / "alembic.ini"
+ALEMBIC_INI = REPO_ROOT / "backend" / "alembic" / "alembic.ini"
 
 
 def _async_dsn(libpq_dsn: str) -> str:
@@ -88,7 +88,7 @@ def _seed_tenant_warehouse_and_catalog_row(dsn: str) -> tuple[str, str, str]:
 
 @pytest.fixture
 def schema_catalog_client(migrated_db):
-    svc_dir = str(REPO_ROOT / "services" / "workflow-runtime")
+    svc_dir = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
     added = [p for p in (svc_dir,) if p not in sys.path]
     sys.path[:0] = added
     try:

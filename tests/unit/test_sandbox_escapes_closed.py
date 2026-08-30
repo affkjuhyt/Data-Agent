@@ -33,8 +33,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "services" / "workflow-runtime")
-_TOOL_EXECUTOR = REPO_ROOT / "services" / "workflow-runtime" / "nodes" / "sandbox" / "tool_executor"
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
+_TOOL_EXECUTOR = REPO_ROOT / "backend" / "services" / "workflow-runtime" / "nodes" / "sandbox" / "tool_executor"
 
 pytestmark = pytest.mark.unit
 

@@ -6,7 +6,7 @@ This is the **local** alternative to the Colab/cloudflared tunnels in
 
 ## What `model-service` sees
 
-`model-service` (infra/model-service) treats this **exactly like a cloudflare/Colab
+`model-service` (deploy/docker/model-service) treats this **exactly like a cloudflare/Colab
 tunnel**. Its LLM gateway (`remote.py`) does:
 
 ```

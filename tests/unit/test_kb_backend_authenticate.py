@@ -1,4 +1,4 @@
-"""kb-backend request authentication (services/kb_backend/dependencies/auth.py).
+"""kb-backend request authentication (backend/services/kb_backend/dependencies/auth.py).
 
 Two authenticated routes in, and nothing else: a signed service assertion, or
 Kong proven by the shared gateway key. The property under test throughout is

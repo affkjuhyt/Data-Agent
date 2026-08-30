@@ -1,7 +1,7 @@
 """E2E — one real agent turn through Kong, orchestrator, workflow-runtime,
 sandbox-executor and the semantic layer, judged on the wire it produces.
 
-    scripts/e2e/e2e.sh all              # brings the stack up, seeds, runs this
+    tests/e2e/e2e.sh all              # brings the stack up, seeds, runs this
     LIVE_STACK=1 pytest -m e2e tests/integration/test_agent_answer_e2e.py -v -s
 
 Two kinds of assertion, on purpose:
@@ -18,7 +18,7 @@ Two kinds of assertion, on purpose:
   the signal visible without making the suite flaky; run strict against a
   production-grade model.
 
-Every turn's frames are written to scripts/e2e/out/*.json for inspection.
+Every turn's frames are written to tests/e2e/out/*.json for inspection.
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ import pytest
 pytestmark = pytest.mark.e2e
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-OUT = REPO_ROOT / "scripts" / "e2e" / "out"
+OUT = REPO_ROOT / "tests" / "e2e" / "out"
 STRICT = os.environ.get("E2E_STRICT") == "1"
 AGENT_ID = os.environ.get("E2E_AGENT_ID", "0000000e-2e00-4000-8000-000000000001")
 TURN_TIMEOUT = float(os.environ.get("E2E_TURN_TIMEOUT", "240"))

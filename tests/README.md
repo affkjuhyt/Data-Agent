@@ -2,7 +2,7 @@
 
 Foundation set up Jun 2026. The goal of this directory is to make it cheap to
 write the **next** test — the first 10 tests are placeholders so the harness
-is exercised; the next 100 should land here, not in `infra/scripts/`.
+is exercised; the next 100 should land here, not in `deploy/docker/scripts/`.
 
 ## Layout
 
@@ -18,7 +18,7 @@ tests/
 └── README.md
 ```
 
-Frontend tests live next to source in `src/**/__tests__/` or `src/**/*.test.tsx`
+Frontend tests live next to source in `frontend/src/**/__tests__/` or `frontend/src/**/*.test.tsx`
 and are run by [vitest.config.ts](../vitest.config.ts).
 
 ## Markers (enforced)
@@ -55,7 +55,7 @@ in-process, so you also need that service's runtime deps installed:
 
 ```powershell
 # auth-api smoke tests need hvac, psycopg2-binary, bcrypt, structlog, ...
-pip install -r services/auth-api/requirements.txt
+pip install -r backend/services/auth-api/requirements.txt
 ```
 
 CI does this in the `python-test` job; expand the install list as more
@@ -67,7 +67,7 @@ service really uses and slow installs for unit-only runs.
 
 ```powershell
 docker compose -f docker/docker-compose.yml -f docker/docker-compose.local.yml up -d --build
-bash infra/kong/kong-setup.sh
+bash deploy/docker/kong/kong-setup.sh
 $env:LIVE_STACK = "1"
 pytest -m e2e tests/integration -v
 ```
@@ -87,7 +87,7 @@ Coverage thresholds in `vitest.config.ts` and `pyproject.toml` are currently
 **0**. This is deliberate — failing day-one CI on a 60% target would block
 every PR. The intended ratchet:
 
-| Date        | Python `services/` | Python `basemodel/` | Frontend `src/` |
+| Date        | Python `backend/services/` | Python `basemodel/` | Frontend `frontend/src/` |
 | ----------- | ------------------ | ------------------- | --------------- |
 | Day 0 (now) | 0%                 | 0%                  | 0%              |
 | +30d        | 20%                | 30%                 | 15%             |
@@ -168,11 +168,11 @@ The pattern, when cloning for a new service (workflow-runtime, kb-backend, ...):
    fixture clean.
 
 7. **Add service runtime deps to CI**. Update `.github/workflows/ci.yml`
-   `python-test` job to `pip install -r services/<your-service>/requirements.txt`.
+   `python-test` job to `pip install -r backend/services/<your-service>/requirements.txt`.
 
 ## Row-Level Security (RLS) — the rollout pattern
 
-`alembic/versions/a1b2c3d4e5f6_enable_tenant_rls.py` enables `FORCE ROW
+`backend/alembic/versions/a1b2c3d4e5f6_enable_tenant_rls.py` enables `FORCE ROW
 LEVEL SECURITY` on every public table with a `tenant_id` column and
 installs a `tenant_isolation` policy filtering by
 `current_setting('app.tenant_id')`.
@@ -188,7 +188,7 @@ After the migration, services have two ways to query the DB:
 
 ### How to wire a route — the auth-api PoC
 
-[services/auth-api/routers/api_keys.py](../services/auth-api/routers/api_keys.py)
+[backend/services/auth-api/routers/api_keys.py](../services/auth-api/routers/api_keys.py)
 shows the pattern as a sibling route:
 
 ```python
@@ -263,7 +263,7 @@ properties of the migration. Don't delete tests when refactoring policies
 
 ## Promoting a script to a test
 
-The previous `infra/scripts/test_tenant_isolation.py` was a standalone runner.
+The previous `deploy/docker/scripts/test_tenant_isolation.py` was a standalone runner.
 It's now [tests/integration/test_tenant_isolation.py](integration/test_tenant_isolation.py),
 split into one pytest case per scenario so CI shows failures individually.
 

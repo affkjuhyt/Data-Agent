@@ -34,7 +34,7 @@ spec:
             - sh
             - -c
             - |
-              until alembic -c alembic/alembic.ini current 2>/dev/null | grep -q '(head)'; do
+              until alembic -c backend/alembic/alembic.ini current 2>/dev/null | grep -q '(head)'; do
                 echo "waiting for alembic to reach head..."
                 sleep 5
               done
@@ -46,7 +46,7 @@ spec:
             limits:   { cpu: "250m", memory: "256Mi" }
       containers:
         - name: orchestrator
-          image: REGISTRY/orchestrator:latest   # built from services/orchestrator/Dockerfile
+          image: REGISTRY/orchestrator:latest   # built from backend/services/orchestrator/Dockerfile
           ports:
             - containerPort: 8003
           envFrom:

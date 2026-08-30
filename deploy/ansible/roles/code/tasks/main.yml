@@ -21,7 +21,7 @@
           - "--exclude=.git"
           - "--exclude=dist"
           - "--exclude=.ansible-secrets"
-          - "--exclude=scripts/e2e/out"
+          - "--exclude=tests/e2e/out"
       when: code_source == 'rsync'
 
 # Air-gapped install: the bundle built by `--tags bundle` (images.tar.gz +

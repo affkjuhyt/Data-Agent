@@ -58,7 +58,7 @@
           - "'[ERROR]' not in smoke.stdout"
         fail_msg: "agent turn did not complete cleanly — see docker logs dataagent-workflow-runtime"
 
-- name: Kong admin API is not published on the host (replaces infra/scripts/verify_kong_admin_locked.sh)
+- name: Kong admin API is not published on the host (replaces deploy/docker/scripts/verify_kong_admin_locked.sh)
   when: not (kong_admin_published | bool)
   block:
     - name: Published ports of the kong container

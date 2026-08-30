@@ -1,6 +1,6 @@
 """Data-access audit wiring — that events are actually emitted from the query path.
 
-libs/shared/audit.py is covered on its own. What matters here is that
+backend/libs/shared/audit.py is covered on its own. What matters here is that
 `_sandbox_sql` — the single choke point every agent query passes through — emits
 on EVERY exit path, that a denied query is recorded as loudly as a successful
 one, and that a broken audit sink still cannot fail the turn.
@@ -16,7 +16,7 @@ import pytest
 from libs.shared import audit
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "services" / "workflow-runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
 
 pytestmark = pytest.mark.unit
 

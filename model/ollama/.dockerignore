@@ -16,7 +16,7 @@ __pycache__/
 logs/
 *.log
 
-# Litellm config lives in infra/litellm — exclude the local copy
+# Litellm config lives in deploy/docker/litellm — exclude the local copy
 litellm_config.yaml/
 
 # Editor / VCS

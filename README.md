@@ -5,19 +5,33 @@ workflow runtime, flow builder, knowledge-base backend, auth/gateway services, s
 and observability tooling.
 
 The active focus of this repository is the **Knowledge Operations Center** frontend under
-[`src/components/knowledge/`](./src/components/knowledge), backed by the `kb-backend` service and
+[`frontend/src/components/knowledge/`](./frontend/src/components/knowledge), backed by the `kb-backend` service and
 the `kb-ingestion-worker`.
 
 ## Repository Layout
 
+One top-level folder per concern — a team edits its own tree without touching the others:
+
+```
+backend/     Python import root: services/ (16 FastAPI/worker services), libs/ (shared layer), alembic/ (migrations)
+frontend/    React 19 + Vite app (npm workspace): src/, index.html, vite/vitest/tsconfig, Dockerfile.dev
+deploy/      docker/ (Compose stacks + Kong/Kafka/Keycloak/OpenBao/LiteLLM/SQL configs) · ansible/ (one playbook, local → prod) · k8s/
+tests/       unit/ · integration/ · e2e/ (real-stack runner + Playwright) · loadtest/ (k6)
+docs/        RUNBOOK · SECURITY · AGENT-E2E · KB-SCALE-10K · M3-CAPACITY
+model/       LLM eval harness, RAGAS, ollama packaging
+scripts/     developer tools only (agent_eval, benchmark_llm, model download/start)
+```
+
 | Path | Contents |
 |---|---|
-| [`src/`](./src) | React 19 + TypeScript + Vite frontend (Knowledge Base UI). `src/lib/apiClient.ts` is the FastAPI client (bearer-only — Kong injects identity) |
-| [`services/`](./services) | Backend microservices: `kb_backend`, `kb-ingestion-worker`, `auth-api`, `flow-builder`, `workflow-runtime`, `orchestrator`, `model-service`, `minio-service`, `sandbox-executor`, `schema-crawler-worker`, `release-worker`, `audit-bridge`, `audit-consumer`, `memory-consumer`, `jwks-refresher` |
-| [`libs/`](./libs) | Shared cross-service layer: `libs/basemodel` (domain models/ORM), `libs/database_connector` (infra clients), `libs/shared` (logger, auth, observability). Innermost architecture layer — enforced by `.importlinter` |
-| [`infra/`](./infra) | Docker Compose stack + service infra (`Postgres`, `Neo4j`, `Qdrant`, `MinIO`, `kafka`, `kong`, `keycloak`, observability) |
-| [`alembic/`](./alembic) | Database migrations |
-| [`RUNBOOK.md`](./RUNBOOK.md) · [`SECURITY.md`](./SECURITY.md) | Deploy/operate runbook · security posture & release hardening |
+| [`frontend/src/`](./frontend/src) | React 19 + TypeScript + Vite frontend (Knowledge Base UI + Ask). `frontend/src/lib/apiClient.ts` is the FastAPI client (bearer-only — Kong injects identity). Root `package.json` is an npm workspace that forwards `npm run dev/test/typecheck` here |
+| [`backend/services/`](./backend/services) | Backend microservices: `kb_backend`, `kb-ingestion-worker`, `auth-api`, `flow-builder`, `workflow-runtime`, `orchestrator`, `model-service`, `minio-service`, `sandbox-executor`, `schema-crawler-worker`, `release-worker`, `audit-bridge`, `audit-consumer`, `memory-consumer`, `jwks-refresher`. Each owns its `Dockerfile` (build context = repo root) |
+| [`backend/libs/`](./backend/libs) | Shared cross-service layer: `libs/basemodel` (domain models/ORM), `libs/database_connector` (infra clients), `libs/shared` (logger, auth, observability), `libs/semantic` (metric contracts). Innermost architecture layer |
+| [`backend/alembic/`](./backend/alembic) | Database migrations (`alembic -c backend/alembic/alembic.ini upgrade head`) |
+| [`deploy/docker/`](./deploy/docker) | Docker Compose stacks (base + overlays) and every service config (`kong`, `kafka`, `keycloak`, `openbao`, `litellm`, `sql`, `certs`…). Compose project name is pinned to `infra` |
+| [`deploy/ansible/`](./deploy/ansible) · [`deploy/k8s/`](./deploy/k8s) | Ansible playbook (local appliance → on-prem server, offline bundle) · raw Kubernetes manifests |
+| [`tests/`](./tests) | `pytest` unit/integration (`pythonpath = [".", "backend"]`), `tests/e2e/e2e.sh` full-stack runner + Playwright UI test, `tests/loadtest` k6 |
+| [`docs/RUNBOOK.md`](./docs/RUNBOOK.md) · [`docs/SECURITY.md`](./docs/SECURITY.md) | Deploy/operate runbook · security posture & release hardening |
 
 ---
 
@@ -30,9 +44,9 @@ front of `kb-backend`. Pick the stack that matches your task:
 
 | Stack | File / helper | What it is | When to use |
 |---|---|---|---|
-| **kb_e2e** | `infra/docker-compose.kb_e2e.yml` | KB data plane + ingestion worker + Keycloak + DB-less Kong; richer LLM options (vLLM / local `llama`) and multilingual models | **The standard way to bring up the stack** — local dev with the Vite UI (`npm run dev`) and the ingestion/RAG pipeline |
-| **Full aggregate** | `infra/docker-compose.yml` (+ `local`/`dev` override) | Every service group (storage, security, messaging, observability, all app services) | Running the whole platform, not just KB |
-| **Test fixture** | `infra/docker-compose.test.yml` | Isolated PostgreSQL only | Connector / Alembic tests |
+| **kb_e2e** | `deploy/docker/docker-compose.kb_e2e.yml` | KB data plane + ingestion worker + Keycloak + DB-less Kong; richer LLM options (vLLM / local `llama`) and multilingual models | **The standard way to bring up the stack** — local dev with the Vite UI (`npm run dev`) and the ingestion/RAG pipeline |
+| **Full aggregate** | `deploy/docker/docker-compose.yml` (+ `local`/`dev` override) | Every service group (storage, security, messaging, observability, all app services) | Running the whole platform, not just KB |
+| **Test fixture** | `deploy/docker/docker-compose.test.yml` | Isolated PostgreSQL only | Connector / Alembic tests |
 
 > `kb-backend` is also published on `:8050` — but hitting it directly bypasses Kong, so it returns
 > `401` by design (handy to confirm fail-closed behaviour).
@@ -47,7 +61,7 @@ End-to-end local development with the Vite dev server, the ingestion pipeline, a
 
 ```powershell
 npm install                                                       # frontend deps
-Copy-Item infra/.env.kb-testing.example infra/.env.kb-testing     # gitignored env (see Local-only files)
+Copy-Item deploy/docker/.env.kb-testing.example deploy/docker/.env.kb-testing     # gitignored env (see Local-only files)
 ```
 
 ### 2. Start the stack (Docker)
@@ -58,17 +72,17 @@ tables (incl. a dedicated `keycloak` DB), Qdrant collections, and the Kong route
 created automatically on first start.
 
 ```powershell
-docker compose -f infra/docker-compose.kb_e2e.yml --env-file infra/.env.kb-testing up -d --build
+docker compose -f deploy/docker/docker-compose.kb_e2e.yml --env-file deploy/docker/.env.kb-testing up -d --build
 ```
 
 > First start is slower: `model-service` downloads its embed/rerank weights into
-> `infra/model-service/models/` (~2.3 GB, persisted for next time) — see
+> `deploy/docker/model-service/models/` (~2.3 GB, persisted for next time) — see
 > [Local-only files](#local-only-files-not-baked-into-images-or-git).
 
 ### 3. Verify the stack is healthy
 
 ```powershell
-docker compose -f infra/docker-compose.kb_e2e.yml ps     # every service "healthy"
+docker compose -f deploy/docker/docker-compose.kb_e2e.yml ps     # every service "healthy"
 curl http://localhost:8050/health                               # -> {"status":"ok"} (direct; bypasses Kong)
 ```
 
@@ -90,8 +104,8 @@ Open http://localhost:3000, log in as **`helios-admin` / `H3lios@Admin01!`**, an
 ### Shutdown
 
 ```powershell
-docker compose -f infra/docker-compose.kb_e2e.yml down       # stop, keep data (volumes)
-docker compose -f infra/docker-compose.kb_e2e.yml down -v    # also wipe DB volumes
+docker compose -f deploy/docker/docker-compose.kb_e2e.yml down       # stop, keep data (volumes)
+docker compose -f deploy/docker/docker-compose.kb_e2e.yml down -v    # also wipe DB volumes
 ```
 
 ---
@@ -193,7 +207,7 @@ For a progress UI, call `/retrieve/stream`: it returns `text/event-stream` with 
 
 ## Frontend Development
 
-The Knowledge Base UI is a Vite dev server. Its data layer (`src/lib/apiClient.ts`) is a thin fetch
+The Knowledge Base UI is a Vite dev server. Its data layer (`frontend/src/lib/apiClient.ts`) is a thin fetch
 wrapper around the **real KB FastAPI backend** reached **through Kong** — there is no standalone mock
 server and no demo-auth bypass: the app always authenticates against Keycloak and sends a bearer token
 (Kong injects the authoritative identity). Bring up a stack with Keycloak + Kong first
@@ -233,29 +247,29 @@ npm run test          # vitest run
 
 ## Full Stack — Docker
 
-The Docker stack lives under [`infra/`](./infra). The **base file is the single source
+The Docker stack lives under [`deploy/docker/`](./deploy/docker). The **base file is the single source
 of truth** — every service lives there, tagged with a **profile** (`kb`, `runtime`,
 `observability`, `iam`, `release`, `models`, …). Pick the layer you need with
 `--profile`, not a separate `-f` file:
 
 ```bash
-docker compose -f infra/docker-compose.yml --profile kb up -d               # KB data plane
-docker compose -f infra/docker-compose.yml --profile observability up -d    # Jaeger + ES + Kibana + Filebeat + Langfuse
+docker compose -f deploy/docker/docker-compose.yml --profile kb up -d               # KB data plane
+docker compose -f deploy/docker/docker-compose.yml --profile observability up -d    # Jaeger + ES + Kibana + Filebeat + Langfuse
 ```
 
 > The old per-concern split files (`storage` / `messaging` / `observability`) were
 > folded into the base file's profiles — see git history if you need the diff.
 
-Compose files (all under [`infra/`](./infra)):
+Compose files (all under [`deploy/docker/`](./deploy/docker)):
 
-- [`docker-compose.yml`](./infra/docker-compose.yml): **base / source of truth** — every service, gated by profiles
-- [`docker-compose.app.yml`](./infra/docker-compose.app.yml): application + frontend tier (also profile-gated)
-- [`docker-compose.security.yml`](./infra/docker-compose.security.yml): overlay — HA Keycloak (2 nodes + HAProxy) and hardened Kong admin
-- [`docker-compose.prod.yml`](./infra/docker-compose.prod.yml): production hardening overlay — required secrets, TLS, WAL archiving + `postgres-backup` sidecar, `redis.conf`
-- [`docker-compose.local.yml`](./infra/docker-compose.local.yml): local developer override (adds `migrate` + `seed`)
-- [`docker-compose.dev.yml`](./infra/docker-compose.dev.yml): shared dev server override (adds `migrate` + `seed`)
-- [`docker-compose.test.yml`](./infra/docker-compose.test.yml): test-only PostgreSQL fixture
-- [`docker-compose.kb_e2e.yml`](./infra/docker-compose.kb_e2e.yml): isolated KB-UI integration stack — data plane + ingestion worker + Keycloak + DB-less Kong
+- [`docker-compose.yml`](./deploy/docker/docker-compose.yml): **base / source of truth** — every service, gated by profiles
+- [`docker-compose.app.yml`](./deploy/docker/docker-compose.app.yml): application + frontend tier (also profile-gated)
+- [`docker-compose.security.yml`](./deploy/docker/docker-compose.security.yml): overlay — HA Keycloak (2 nodes + HAProxy) and hardened Kong admin
+- [`docker-compose.prod.yml`](./deploy/docker/docker-compose.prod.yml): production hardening overlay — required secrets, TLS, WAL archiving + `postgres-backup` sidecar, `redis.conf`
+- [`docker-compose.local.yml`](./deploy/docker/docker-compose.local.yml): local developer override (adds `migrate` + `seed`)
+- [`docker-compose.dev.yml`](./deploy/docker/docker-compose.dev.yml): shared dev server override (adds `migrate` + `seed`)
+- [`docker-compose.test.yml`](./deploy/docker/docker-compose.test.yml): test-only PostgreSQL fixture
+- [`docker-compose.kb_e2e.yml`](./deploy/docker/docker-compose.kb_e2e.yml): isolated KB-UI integration stack — data plane + ingestion worker + Keycloak + DB-less Kong
 
 ### Prerequisites
 
@@ -283,8 +297,8 @@ Then fill in the required values in `.env`, especially:
 
 ### Local-only files (not baked into images or git)
 
-The kb-backend image ([`infra/Dockerfile.kb`](./infra/Dockerfile.kb)) bakes in **only application code**
-— `basemodel/` and `services/`. It contains no secrets, datasets, model weights, or DB seed data;
+The kb-backend image ([`deploy/docker/Dockerfile.kb`](./deploy/docker/Dockerfile.kb)) bakes in **only application code**
+— `basemodel/` and `backend/services/`. It contains no secrets, datasets, model weights, or DB seed data;
 those are supplied at runtime via environment variables, host bind-mounts, and Docker volumes.
 
 A few of those inputs are **gitignored**, so a fresh clone will not have them and must recreate them
@@ -292,22 +306,22 @@ before bringing the KB-UI testing stack up:
 
 | Local-only file | Used by | What to do |
 |---|---|---|
-| `infra/.env.kb-testing` | kb_e2e compose interpolation — MinIO credentials (the example defaults work as-is). The LLM / embed / rerank backend is configured separately on `model-service` via its `REMOTE_*_URL` env — see [Switching the model backend](./infra/README.md#switching-the-model-backend-local-cpu--colab-gpu). | `Copy-Item infra/.env.kb-testing.example infra/.env.kb-testing` |
+| `deploy/docker/.env.kb-testing` | kb_e2e compose interpolation — MinIO credentials (the example defaults work as-is). The LLM / embed / rerank backend is configured separately on `model-service` via its `REMOTE_*_URL` env — see [Switching the model backend](./deploy/docker/README.md#switching-the-model-backend-local-cpu--colab-gpu). | `Copy-Item deploy/docker/.env.kb-testing.example deploy/docker/.env.kb-testing` |
 | `model/ollama/weights/model.gguf` (~5.7 GB) | the optional GPU `llama` service (mounted `../model/ollama/weights:/models`) | Download a GGUF model into that path. **Only** needed if you run the local `llama` service — by default the worker and LightRAG reach the LLM through the `model-service` `/generate` gateway (point its `REMOTE_LLM_URL` at the backend), and do not require it. |
 
 Auto-managed (downloads itself — no manual file placement):
 
-- **`infra/model-service/models/`** — where the embedding + reranker weights are saved. They are
+- **`deploy/docker/model-service/models/`** — where the embedding + reranker weights are saved. They are
   **not** baked into the model-service image; on the **first** `model-service` start they download
   here (~2.3 GB for the configured `EMBED_MODEL` + `RERANK_MODEL`) and persist across recreates, so
   later starts are instant. This keeps the image ~2.5 GB smaller. Consequences:
   - the first bring-up needs network and the model-service healthcheck has a 300 s `start_period`
     (kb-backend waits for it), so first start is slower — this is expected, not an error;
   - to pre-seed offline (skip the first-run download), populate the folder from another machine's
-    `infra/model-service/models/`, or run:
-    `docker compose -f infra/docker-compose.kb_e2e.yml run --rm model-service python -c "import models, config as c; models.load(c.EMBED_MODEL, c.RERANK_MODEL)"`
+    `deploy/docker/model-service/models/`, or run:
+    `docker compose -f deploy/docker/docker-compose.kb_e2e.yml run --rm model-service python -c "import models, config as c; models.load(c.EMBED_MODEL, c.RERANK_MODEL)"`
 - DB content lives in Docker **named volumes** (persist across image rebuilds) and is seeded by the
-  tracked [`infra/sql/kb-seed.sql`](./infra/sql/kb-seed.sql) (KB seed, mounted by `docker-compose.kb_e2e.dev.yml`).
+  tracked [`deploy/docker/sql/kb-seed.sql`](./deploy/docker/sql/kb-seed.sql) (KB seed, mounted by `docker-compose.kb_e2e.dev.yml`).
 
 ### KB-UI testing stack
 
@@ -316,13 +330,13 @@ backend against the UI. Full walkthrough — including the frontend env and logi
 [Running the KB-UI — kb_e2e](#running-the-kb-ui--kb_e2e-full-local-dev) above:
 
 ```powershell
-docker compose -f infra/docker-compose.kb_e2e.yml --env-file infra/.env.kb-testing up -d --build
+docker compose -f deploy/docker/docker-compose.kb_e2e.yml --env-file deploy/docker/.env.kb-testing up -d --build
 curl http://localhost:8050/health   # -> {"status":"ok"} (direct probe; app traffic goes via Kong :8000)
 ```
 
 Switch the model-service backend (LOCAL CPU vs. remote Colab GPU) by setting the
 `REMOTE_*_URL` env on `model-service` and recreating that one container — no image
-rebuild required. See [Switching the model backend](./infra/README.md#switching-the-model-backend-local-cpu--colab-gpu).
+rebuild required. See [Switching the model backend](./deploy/docker/README.md#switching-the-model-backend-local-cpu--colab-gpu).
 
 ### Official Docker Commands
 
@@ -333,33 +347,33 @@ Run all commands from the repository root.
 Start or refresh the full local stack:
 
 ```powershell
-docker compose -f infra/docker-compose.yml -f infra/docker-compose.local.yml up -d --build
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml up -d --build
 ```
 
 Stop the local stack and keep data:
 
 ```powershell
-docker compose -f infra/docker-compose.yml -f infra/docker-compose.local.yml down
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml down
 ```
 
 Stop the local stack and remove volumes:
 
 ```powershell
-docker compose -f infra/docker-compose.yml -f infra/docker-compose.local.yml down -v
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml down -v
 ```
 
 #### Shared dev server
 
 ```powershell
-docker compose -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up -d --build
-docker compose -f infra/docker-compose.yml -f infra/docker-compose.dev.yml down
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.dev.yml up -d --build
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.dev.yml down
 ```
 
 #### Compose validation
 
 ```powershell
-docker compose -f infra/docker-compose.yml -f infra/docker-compose.local.yml config
-docker compose -f infra/docker-compose.yml -f infra/docker-compose.dev.yml config
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml config
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.dev.yml config
 ```
 
 #### Test fixture
@@ -367,8 +381,8 @@ docker compose -f infra/docker-compose.yml -f infra/docker-compose.dev.yml confi
 Start the isolated PostgreSQL fixture used by connector and Alembic tests:
 
 ```powershell
-docker compose -f infra/docker-compose.test.yml up -d
-docker compose -f infra/docker-compose.test.yml down -v
+docker compose -f deploy/docker/docker-compose.test.yml up -d
+docker compose -f deploy/docker/docker-compose.test.yml down -v
 ```
 
 ### Runtime Shape
@@ -450,7 +464,7 @@ docker compose \
 
 ```bash
 docker exec -i dataagent-postgres psql -U admin -d dataagent \
-  < infra/sql/grant-runtime-writer.sql
+  < deploy/docker/sql/grant-runtime-writer.sql
 ```
 
 ---
@@ -492,8 +506,8 @@ The local and shared-dev overrides both add `migrate` and `seed` jobs.
 
 Separate intent-specific Docker paths also exist:
 
-- Test-only: [`infra/docker-compose.test.yml`](./infra/docker-compose.test.yml)
-- KB-UI integration: [`infra/docker-compose.kb_e2e.yml`](./infra/docker-compose.kb_e2e.yml)
+- Test-only: [`deploy/docker/docker-compose.test.yml`](./deploy/docker/docker-compose.test.yml)
+- KB-UI integration: [`deploy/docker/docker-compose.kb_e2e.yml`](./deploy/docker/docker-compose.kb_e2e.yml)
 - Standalone model experiment: [`model/ollama/docker/docker-compose.yml`](./model/ollama/docker/docker-compose.yml)
 
 ### Common URLs (Docker stack)

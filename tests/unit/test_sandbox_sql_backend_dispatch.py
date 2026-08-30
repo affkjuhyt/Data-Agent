@@ -1,4 +1,4 @@
-"""Per-request SQL backend dispatch in services/sandbox-executor/main.py.
+"""Per-request SQL backend dispatch in backend/services/sandbox-executor/main.py.
 
 /execute/sql used to pin `connection` to ONE shape chosen at import time by
 SANDBOX_SQL_BACKEND, so it could serve Snowflake or Postgres but never both.
@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = REPO_ROOT / "services" / "sandbox-executor"
+_SVC_DIR = REPO_ROOT / "backend" / "services" / "sandbox-executor"
 
 pytestmark = pytest.mark.unit
 
@@ -35,7 +35,7 @@ pytest.importorskip("sqlparse", reason="sqlparse not installed in this environme
 
 
 def _load_main(monkeypatch, backend: str = "snowflake"):
-    """Import services/sandbox-executor/main.py fresh, with its Docker/MinIO
+    """Import backend/services/sandbox-executor/main.py fresh, with its Docker/MinIO
     dependencies stubbed and SANDBOX_SQL_BACKEND set."""
     from tests.unit._loader import load_module_from_path, stub_module
 

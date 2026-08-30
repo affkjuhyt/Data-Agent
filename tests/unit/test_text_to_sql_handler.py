@@ -1,4 +1,4 @@
-"""_text_to_sql_handler (services/workflow-runtime/nodes/sandbox/tool_executor/handlers/data.py)
+"""_text_to_sql_handler (backend/services/workflow-runtime/nodes/sandbox/tool_executor/handlers/data.py)
 — DB Connector's core logic: schema introspection (cached through Redis), 1 LLM
 call that both picks relevant DB(s) and writes SQL (or a simpler direct-SQL
 prompt when there's only 1 connection), and parallel execution across DBs via
@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "services" / "workflow-runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
 
 pytestmark = pytest.mark.unit
 

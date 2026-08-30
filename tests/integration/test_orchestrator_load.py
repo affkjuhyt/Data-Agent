@@ -43,7 +43,7 @@ async def run_one(client: httpx.AsyncClient, base_url: str, query: str, timeout:
         "session_id": None,
     }
     # LiteLLM proxy caches completions by (model, messages) in Redis
-    # (infra/litellm/config.yaml: cache: true). Appending a unique nonce to
+    # (deploy/docker/litellm/config.yaml: cache: true). Appending a unique nonce to
     # every request's query keeps identical-looking load-test traffic from
     # collapsing into cache hits, which would report fake near-instant
     # latencies instead of real pipeline latency under load.
@@ -160,7 +160,7 @@ def test_orchestrator_handles_baseline_concurrency():
     if os.environ.get("LIVE_STACK") != "1":
         pytest.skip(
             "Live stack not requested — set LIVE_STACK=1 and start the "
-            "orchestrator (services/orchestrator) before running."
+            "orchestrator (backend/services/orchestrator) before running."
         )
     base_url = os.environ.get("ORCHESTRATOR_URL", f"http://{DEFAULT_HOST}:{DEFAULT_PORT}")
     rows = asyncio.run(sweep(base_url, DEFAULT_QUERY, [1, 5], timeout=120.0))

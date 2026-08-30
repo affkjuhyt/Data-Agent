@@ -1,4 +1,4 @@
-"""/execute/shell and /execute/python's input staging (services/sandbox-executor).
+"""/execute/shell and /execute/python's input staging (backend/services/sandbox-executor).
 
 Both exist for the same reason: two workflow-runtime tools ran model-authored
 work inside workflow-runtime's own process — `bash` via
@@ -19,7 +19,7 @@ from unittest.mock import MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = REPO_ROOT / "services" / "sandbox-executor"
+_SVC_DIR = REPO_ROOT / "backend" / "services" / "sandbox-executor"
 
 pytestmark = pytest.mark.unit
 

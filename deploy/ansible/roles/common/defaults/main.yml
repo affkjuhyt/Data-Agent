@@ -5,14 +5,14 @@
 # Secrets: inventories/<env>/group_vars/all/vault.yml.
 
 compose_project: "dataagent-{{ env_name }}"
-compose_dir: "{{ project_dir }}/infra"
+compose_dir: "{{ project_dir }}/deploy/docker"
 compose_base_files:
   - docker-compose.yml                    # infra: postgres, redis, mongo, kafka, minio, openbao, keycloak, kong, litellm…
   - docker-compose.app.yml                # services: orchestrator, workflow-runtime, sandbox-executor, memory-consumer…
   - docker-compose.local.yml              # alembic migrate + tenant seed (one-shot jobs)
 compose_extra_files: []
 compose_files: "{{ compose_base_files + compose_extra_files }}"
-# The agent tier only — not the KB tier (infra/docker-compose.kb_e2e.yml).
+# The agent tier only — not the KB tier (deploy/docker/docker-compose.kb_e2e.yml).
 compose_services:
   - postgres
   - redis
@@ -42,14 +42,14 @@ bundle_gzip_level: 1                      # images are already compressed layers
 bundle_reuse_images: true                 # skip docker save when images-<project>-<version>.tar.gz already exists
 bundle_include_ollama: "{{ llm_backend == 'host_ollama' }}"
 bundle_code_paths:                        # what a host needs at runtime — NOT the source tree (it is in the images)
-  - infra
+  - deploy/docker
   - deploy/ansible
-  - scripts/e2e/seed.sql
-  - scripts/e2e/seed-flow.js
+  - tests/e2e/seed.sql
+  - tests/e2e/seed-flow.js
   - .env.example
   - README.md
-  - RUNBOOK.md
-  - SECURITY.md
+  - docs/RUNBOOK.md
+  - docs/SECURITY.md
 
 # Endpoints as seen from the host running the playbook tasks (the target).
 kong_public_url: http://localhost:8000
@@ -68,12 +68,12 @@ openbao_rotate_approle: false             # true → mint a new AppRole secret-i
 
 llm_backend: litellm_config               # host_ollama | litellm_config
 ollama_url: http://localhost:11434
-ollama_model: qwen2.5:3b                  # must match infra/litellm/config.agent-local.yaml
+ollama_model: qwen2.5:3b                  # must match deploy/docker/litellm/config.agent-local.yaml
 
 tenant_id: a0000000-0000-0000-0000-000000000001
 seed_demo: false
 demo_db_secret_key: e2e_dw_password
-demo_db_secret_value: sandbox_reader_dev_pw    # infra/sql/create-extra-dbs.sql
+demo_db_secret_value: sandbox_reader_dev_pw    # deploy/docker/sql/create-extra-dbs.sql
 demo_agent_id: 0000000e-2e00-4000-8000-000000000001
 
 set_vite_api_url: false

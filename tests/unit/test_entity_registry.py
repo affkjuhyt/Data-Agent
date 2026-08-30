@@ -1,5 +1,5 @@
 """Pure-function unit tests for the ingestion entity registry
-(services/kb-ingestion-worker/utils/entity_registry.py).
+(backend/services/kb-ingestion-worker/utils/entity_registry.py).
 
 Covers the deterministic, infra-free core of entity resolution: Vietnamese-aware
 canonicalization, the specific-type merge guard, raw-entity cleaning, and the

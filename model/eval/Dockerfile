@@ -14,7 +14,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY model/ragas/requirements.txt ./ragas-requirements.txt
-COPY services/workflow-runtime/requirements.txt ./runtime-requirements.txt
+COPY backend/services/workflow-runtime/requirements.txt ./runtime-requirements.txt
 # ragas + judge model client, then the runtime's own deps (litellm, pydantic)
 # so the intent scorer can call the planner node itself.
 RUN pip install --no-cache-dir -r ragas-requirements.txt \
@@ -22,9 +22,9 @@ RUN pip install --no-cache-dir -r ragas-requirements.txt \
     && pip install --no-cache-dir sqlparse
 
 COPY model ./model
-COPY libs ./libs
-COPY services/sandbox-executor ./services/sandbox-executor
-COPY services/workflow-runtime ./services/workflow-runtime
+COPY backend/libs ./libs
+COPY backend/services/sandbox-executor ./services/sandbox-executor
+COPY backend/services/workflow-runtime ./services/workflow-runtime
 
 # Runs everything and gates on the result: a report with no verdict is a
 # dashboard, and this container exists to answer yes or no.

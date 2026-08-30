@@ -1,7 +1,7 @@
 """sys.path entries for the service modules the scorers evaluate.
 
-Several services live in hyphenated directories (`services/sandbox-executor`,
-`services/workflow-runtime`) which are not importable package names, and they
+Several services live in hyphenated directories (`backend/services/sandbox-executor`,
+`backend/services/workflow-runtime`) which are not importable package names, and they
 use bare imports that assume their own directory is on sys.path. Same problem
 tests/unit/_loader.py solves for the test suite; kept separate because the eval
 harness ships in the ragas image, where the test package is not present.
@@ -17,8 +17,8 @@ from pathlib import Path
 from types import ModuleType
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SANDBOX_EXECUTOR = REPO_ROOT / "services" / "sandbox-executor"
-WORKFLOW_RUNTIME = REPO_ROOT / "services" / "workflow-runtime"
+SANDBOX_EXECUTOR = REPO_ROOT / "backend" / "services" / "sandbox-executor"
+WORKFLOW_RUNTIME = REPO_ROOT / "backend" / "services" / "workflow-runtime"
 
 
 def ensure(*directories: Path) -> None:

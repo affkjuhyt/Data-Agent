@@ -1,6 +1,6 @@
 """Row-Level Security enforcement for KB child tables that lack a tenant_id column.
 
-Pins the contract of alembic/versions/f1a2b3c4d5e6_rls_kb_child_tables.py: a child
+Pins the contract of backend/alembic/versions/f1a2b3c4d5e6_rls_kb_child_tables.py: a child
 table (KBTextBlock, keyed to KBData via owner_id) must isolate tenants through the
 FK chain, so `app_user` cannot read or write another tenant's rows even when it
 queries the child table DIRECTLY (the gap the migration closes). The real policy
@@ -22,7 +22,7 @@ pytestmark = pytest.mark.integration
 psycopg2 = pytest.importorskip("psycopg2")
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_MIGRATION = REPO_ROOT / "alembic" / "versions" / "f1a2b3c4d5e6_rls_kb_child_tables.py"
+_MIGRATION = REPO_ROOT / "backend" / "alembic" / "versions" / "f1a2b3c4d5e6_rls_kb_child_tables.py"
 
 TENANT_1 = "11111111-1111-1111-1111-111111111111"
 TENANT_2 = "22222222-2222-2222-2222-222222222222"

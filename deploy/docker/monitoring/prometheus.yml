@@ -1,0 +1,24 @@
+# Prometheus scrape config for the KB CCU dashboard (docs/KB-SCALE-10K.md #8).
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  # Edge gateway — the CCU signals: RPS, status, latency histogram, rejections.
+  - job_name: kb-gateway
+    static_configs:
+      - targets: ["kb-gateway:8000"]
+
+  # Embed tier — cache hit-rate, batch efficiency, detected device.
+  - job_name: model-service
+    static_configs:
+      - targets: ["model-service:8001"]
+
+  # LLM tier — TTFT, tok/s, concurrent behaviour (probed via llm-exporter).
+  - job_name: llm-exporter
+    static_configs:
+      - targets: ["llm-exporter:9200"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

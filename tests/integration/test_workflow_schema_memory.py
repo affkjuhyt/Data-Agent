@@ -7,7 +7,7 @@ Covers:
      downgrade/re-upgrade. Same asyncpg-subprocess pattern as
      test_alembic_migrations.py, because that's the driver production
      actually runs migrations through.
-  2. services/workflow-runtime/workflow_memory.py — record/retrieve against
+  2. backend/services/workflow-runtime/workflow_memory.py — record/retrieve against
      a real Postgres + Qdrant testcontainer.
   3. routers/schema_memory.py — the Admin CRUD endpoints, via a bare FastAPI
      TestClient (no app.py lifespan — that needs Mongo/Redis/Kafka/Qdrant
@@ -41,7 +41,7 @@ import pytest
 pytestmark = pytest.mark.integration
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-ALEMBIC_INI = REPO_ROOT / "alembic" / "alembic.ini"
+ALEMBIC_INI = REPO_ROOT / "backend" / "alembic" / "alembic.ini"
 
 
 def _async_dsn(libpq_dsn: str) -> str:
@@ -190,7 +190,7 @@ async def wm(migrated_db, qdrant_container, monkeypatch):
     monkeypatch.setenv("EMBEDDING_DIM", "8")
     monkeypatch.setenv("QDRANT_URL", qdrant_container["url"])
 
-    svc_dir = str(REPO_ROOT / "services" / "workflow-runtime")
+    svc_dir = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
     added = [p for p in (svc_dir, str(REPO_ROOT)) if p not in sys.path]
     sys.path[:0] = added
     try:
@@ -335,7 +335,7 @@ def schema_memory_client(migrated_db):
     """Bare FastAPI app with only schema_memory.router mounted — no app.py
     lifespan (that needs Mongo/Redis/Kafka/Qdrant up, none of which this
     router touches)."""
-    svc_dir = str(REPO_ROOT / "services" / "workflow-runtime")
+    svc_dir = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
     added = [p for p in (svc_dir, str(REPO_ROOT)) if p not in sys.path]
     sys.path[:0] = added
     try:
@@ -449,7 +449,7 @@ def test_schema_memory_router_delete_unknown_id_returns_404(schema_memory_client
 
 @pytest.fixture
 async def text_to_sql_env(migrated_db, monkeypatch):
-    svc_dir = str(REPO_ROOT / "services" / "workflow-runtime")
+    svc_dir = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
     added = [p for p in (svc_dir, str(REPO_ROOT)) if p not in sys.path]
     sys.path[:0] = added
     try:
@@ -584,7 +584,7 @@ async def test_text_to_sql_fails_after_3_attempts_all_invalid(text_to_sql_env, m
 async def test_text_to_sql_falls_back_to_static_schema_hint_when_no_schema_memory_rows(monkeypatch, migrated_db):
     """Different tenant, no Schema Memory rows registered — must fall back
     to the canvas's static schema_hint instead of sending an empty Schema: block."""
-    svc_dir = str(REPO_ROOT / "services" / "workflow-runtime")
+    svc_dir = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
     added = [p for p in (svc_dir, str(REPO_ROOT)) if p not in sys.path]
     sys.path[:0] = added
     try:

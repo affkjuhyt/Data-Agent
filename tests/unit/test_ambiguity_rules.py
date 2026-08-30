@@ -1,4 +1,4 @@
-"""Deterministic underspecification rules (libs/semantic/ambiguity.py).
+"""Deterministic underspecification rules (backend/libs/semantic/ambiguity.py).
 
 Clarification was entirely LLM-decided, which catches vague phrasing and misses
 the two cases that read as perfectly clear while producing the wrong number:

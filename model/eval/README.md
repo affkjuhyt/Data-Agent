@@ -50,7 +50,7 @@ python -m model.eval.run  --tier all --out eval-report.json
 python -m model.eval.gate --report eval-report.json --tier offline --tier online
 
 # or in the stack's own network
-docker compose -f infra/docker-compose.app.yml --profile eval run --rm eval
+docker compose -f deploy/docker/docker-compose.app.yml --profile eval run --rm eval
 ```
 
 `run.py` always exits 0 when the run completed — judging is `gate.py`'s job.

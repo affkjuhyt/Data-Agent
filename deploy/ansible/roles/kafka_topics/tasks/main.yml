@@ -2,8 +2,8 @@
 # Topics + per-principal ACLs. Without audit.data.access the runtime's audit
 # producer waits 60 s for topic metadata on every query. The script is
 # --if-not-exists / --add throughout, i.e. idempotent.
-- name: Kafka topics and ACLs (infra/kafka/kafka-setup.sh)
-  ansible.builtin.command: bash infra/kafka/kafka-setup.sh
+- name: Kafka topics and ACLs (deploy/docker/kafka/kafka-setup.sh)
+  ansible.builtin.command: bash deploy/docker/kafka/kafka-setup.sh
   args:
     chdir: "{{ project_dir }}"
   environment:

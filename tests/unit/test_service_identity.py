@@ -1,4 +1,4 @@
-"""Signed service-to-service identity assertions (libs/shared/service_identity.py).
+"""Signed service-to-service identity assertions (backend/libs/shared/service_identity.py).
 
 These pin the primitive that replaced kb_search's forged admin headers. The
 security properties worth regression-testing are the ones whose absence would

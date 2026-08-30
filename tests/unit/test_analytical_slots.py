@@ -1,4 +1,4 @@
-"""Analytical slots and the follow-up merge (libs/semantic/slots.py).
+"""Analytical slots and the follow-up merge (backend/libs/semantic/slots.py).
 
 The case that drove this: "chỉ lấy miền Bắc" is not a new question, it is the
 previous one plus a filter. With only a chat transcript to work from, answering

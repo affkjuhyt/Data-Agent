@@ -18,7 +18,7 @@ import pytest
 pytestmark = pytest.mark.integration
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-ALEMBIC_INI = REPO_ROOT / "alembic" / "alembic.ini"
+ALEMBIC_INI = REPO_ROOT / "backend" / "alembic" / "alembic.ini"
 
 
 def _async_dsn(libpq_dsn: str) -> str:

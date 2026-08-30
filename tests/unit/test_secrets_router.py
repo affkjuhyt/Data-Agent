@@ -1,5 +1,5 @@
 """Unit tests for the role/key_type authorization logic in
-services/auth-api/routers/secrets.py — specifically the change that lets
+backend/services/auth-api/routers/secrets.py — specifically the change that lets
 tenant-admin self-service DB_CONNECTOR_PASSWORD secrets for their OWN tenant,
 without gaining any access to other key_types (SIGNING_KEY/ENCRYPTION_KEY/
 HMAC_KEY/BEARER_TOKEN/MCP_TOKEN/KB_API_KEY/WAREHOUSE_PASSWORD stay
@@ -14,7 +14,7 @@ from ._loader import SERVICES, load_module_from_path
 pytestmark = pytest.mark.unit
 
 # auth-api lives in a hyphenated dir; secrets.py does `from auth_core import *`
-# (needs services/auth-api on sys.path) which itself does
+# (needs backend/services/auth-api on sys.path) which itself does
 # `from shared.auth import ...` (needs services/ on sys.path).
 secrets_router = load_module_from_path(
     "secrets_router",

@@ -1,4 +1,4 @@
-"""Data-access audit (libs/shared/audit.py) — who read what.
+"""Data-access audit (backend/libs/shared/audit.py) — who read what.
 
 The gap this closes: the audit pipeline covered logins only, so after an
 incident there was no answer to "who read this data, when, and what came back".

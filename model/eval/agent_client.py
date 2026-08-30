@@ -13,7 +13,7 @@ first one:
   * **`ask_live_agent`** — the whole pipeline over SSE, for cases with no
     contexts of their own. End to end, including retrieval.
 
-Both reuse what ships: the prompt template from services/workflow-runtime/
+Both reuse what ships: the prompt template from backend/services/workflow-runtime/
 prompts, and the real planner for the analysis type, so the guidance a forecast
 question gets here is the guidance it gets in production. An eval that wrote its
 own prompt would measure a system nobody runs.

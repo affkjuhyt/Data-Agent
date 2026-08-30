@@ -24,7 +24,7 @@ import pytest
 pytestmark = pytest.mark.integration
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "services" / "sandbox-executor")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "sandbox-executor")
 
 
 def _docker_and_image_available() -> bool:
@@ -55,7 +55,7 @@ def _sys_path():
 @pytest.fixture
 def seeded_db(postgres_container) -> dict[str, str]:
     """Fresh `sample_orders` table per test (mirrors the seed data
-    infra/sql/create-extra-dbs.sql plants for the docker-compose `postgres`
+    deploy/docker/sql/create-extra-dbs.sql plants for the docker-compose `postgres`
     service), against the ephemeral testcontainer instead of that shared
     service — no docker-compose stack needs to be up for this test."""
     conn = psycopg2.connect(postgres_container["dsn"])

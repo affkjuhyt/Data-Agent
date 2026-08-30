@@ -1,5 +1,5 @@
 # Postgres logical backup — the k8s port of the `postgres-backup` sidecar in
-# infra/docker-compose.prod.yml.
+# deploy/docker/docker-compose.prod.yml.
 #
 # Compose runs a shell loop in a long-lived container. On k8s that job belongs
 # to a CronJob: the schedule is declarative, a missed run is visible as a failed

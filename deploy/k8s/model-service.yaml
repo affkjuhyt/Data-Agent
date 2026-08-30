@@ -1,6 +1,6 @@
 # model-service (embed/rerank/LLM-proxy) — Deployment + Service + HPA.
 #
-# The image auto-detects its device (services/model-service/device.py: CUDA > MPS
+# The image auto-detects its device (backend/services/model-service/device.py: CUDA > MPS
 # > CPU) and reports it at GET /capabilities — so the SAME image runs CPU-only
 # (this cluster, no GPU) or on a GPU node pool without changes. The manifest only
 # decides SCHEDULING. Default below is CPU (portable); flip on the GPU block for a

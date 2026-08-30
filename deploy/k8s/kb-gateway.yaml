@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: kb-gateway
-          image: REGISTRY/kb-gateway:latest   # built from services/kb-gateway/Dockerfile
+          image: REGISTRY/kb-gateway:latest   # built from backend/services/kb-gateway/Dockerfile
           ports:
             - containerPort: 8000
           env:

@@ -34,7 +34,7 @@ import sys
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-KB = REPO_ROOT / "services" / "kb_backend"
+KB = REPO_ROOT / "backend" / "services" / "kb_backend"
 
 pytestmark = pytest.mark.unit
 
@@ -267,7 +267,7 @@ class TestTheAgentStillSendsARealIdentity:
     to asserting an identity of its own."""
 
     def _kb_search_source(self) -> str:
-        return (REPO_ROOT / "services" / "workflow-runtime" / "nodes" / "sandbox"
+        return (REPO_ROOT / "backend" / "services" / "workflow-runtime" / "nodes" / "sandbox"
                 / "kb_search.py").read_text(encoding="utf-8")
 
     def test_no_hardcoded_role_set_survives_in_code(self):

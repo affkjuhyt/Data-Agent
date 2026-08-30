@@ -1,10 +1,10 @@
 ---
 # Kong is the fail-closed edge: routes, the JWKS/JWT plugin that injects the
 # verified identity + X-Gateway-Key, CORS, and the dev users' passwords in
-# Keycloak. infra/kong/kong-setup.sh is the source of truth for that shape
+# Keycloak. deploy/docker/kong/kong-setup.sh is the source of truth for that shape
 # (every call in it is a PUT/upsert), so run it rather than re-describe it.
 - name: Kong routes, JWT plugin, CORS, Keycloak dev passwords
-  ansible.builtin.command: bash infra/kong/kong-setup.sh
+  ansible.builtin.command: bash deploy/docker/kong/kong-setup.sh
   args:
     chdir: "{{ project_dir }}"
   environment:

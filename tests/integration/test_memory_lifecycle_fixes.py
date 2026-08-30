@@ -30,7 +30,7 @@ import pytest
 pytestmark = pytest.mark.integration
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-ALEMBIC_INI = REPO_ROOT / "alembic" / "alembic.ini"
+ALEMBIC_INI = REPO_ROOT / "backend" / "alembic" / "alembic.ini"
 
 
 def _async_dsn(libpq_dsn: str) -> str:
@@ -102,7 +102,7 @@ _E1 = [0.0, 1.0, 0.0, 0.0]  # orthogonal — sim(_E0, _E1) = 0, "completely diff
 
 @pytest.fixture
 def mc_env(migrated_db, qdrant_container, monkeypatch):
-    svc_dir = str(REPO_ROOT / "services" / "memory-consumer")
+    svc_dir = str(REPO_ROOT / "backend" / "services" / "memory-consumer")
     added = [p for p in (svc_dir,) if p not in sys.path]
     sys.path[:0] = added
     try:
@@ -267,7 +267,7 @@ def test_controlled_vocab_fact_key_keeps_single_slot_behavior(mc_env, monkeypatc
 
 @pytest.fixture
 async def mm_env(migrated_db):
-    svc_dir = str(REPO_ROOT / "services" / "workflow-runtime")
+    svc_dir = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
     added = [p for p in (svc_dir, str(REPO_ROOT)) if p not in sys.path]
     sys.path[:0] = added
     try:
@@ -378,7 +378,7 @@ async def test_bad_cron_expression_does_not_crash_and_still_marks_executed(mm_en
 
 @pytest.fixture
 async def wm_rbac_env(migrated_db):
-    svc_dir = str(REPO_ROOT / "services" / "workflow-runtime")
+    svc_dir = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
     added = [p for p in (svc_dir, str(REPO_ROOT)) if p not in sys.path]
     sys.path[:0] = added
     try:

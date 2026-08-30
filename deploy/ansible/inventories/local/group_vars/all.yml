@@ -1,6 +1,6 @@
 ---
 # Local developer stack — same playbook as production, different knobs.
-compose_project: dataagent-e2e            # reuse the volumes scripts/e2e created
+compose_project: dataagent-e2e            # reuse the volumes tests/e2e created
 compose_extra_files:
   - docker-compose.agent-test.yml         # litellm → host ollama, OTEL off
   - docker-compose.e2e-dev.yml            # existing images + bind-mounted source

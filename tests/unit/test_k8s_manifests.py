@@ -259,7 +259,7 @@ class TestInlineScriptsAreValidShell:
         """Same check for the sidecar these jobs were ported from. `$$` is
         compose's escape for a literal `$`, so render that before parsing."""
         compose = yaml.safe_load(
-            (REPO_ROOT / "infra" / "docker-compose.prod.yml").read_text(encoding="utf-8")
+            (REPO_ROOT / "deploy" / "docker" / "docker-compose.prod.yml").read_text(encoding="utf-8")
         )
         command = compose["services"]["postgres-backup"]["command"]
         f = tmp_path / "sidecar.sh"

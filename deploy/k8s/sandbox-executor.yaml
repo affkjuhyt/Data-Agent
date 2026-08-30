@@ -27,7 +27,7 @@
 #     below sets vfs explicitly rather than letting it fail and guess.
 #   * `kernel.apparmor_restrict_unprivileged_userns=0`. Where that sysctl is 1
 #     (Ubuntu 23.10+ default) rootless DinD cannot start at all — the same wall
-#     documented on `sandbox-dockerd` in infra/docker-compose.app.yml.
+#     documented on `sandbox-dockerd` in deploy/docker/docker-compose.app.yml.
 #
 # UNVERIFIED against a live cluster: this repo has no cluster to test it on.
 # Treat it as the starting point it is, not as a known-good manifest — validate
@@ -85,7 +85,7 @@ spec:
         # separate image store: the runner image the node already has is
         # invisible to the daemon above, so it has to be put there. Pulled and
         # re-tagged rather than built — a build needs the context, and CI has
-        # already built this image from services/sandbox-executor/sandbox_runner.
+        # already built this image from backend/services/sandbox-executor/sandbox_runner.
         - name: load-sandbox-runner
           image: docker:27-cli
           env:
@@ -103,7 +103,7 @@ spec:
             limits:   { cpu: "500m", memory: "256Mi" }
       containers:
         - name: sandbox-executor
-          image: REGISTRY/sandbox-executor:latest   # built from services/sandbox-executor/Dockerfile
+          image: REGISTRY/sandbox-executor:latest   # built from backend/services/sandbox-executor/Dockerfile
           ports:
             - containerPort: 8500
           envFrom:

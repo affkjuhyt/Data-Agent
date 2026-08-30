@@ -1,5 +1,5 @@
 """Pure-function unit tests for the LightRAG retrieval pipeline
-(services/kb_backend/pipeline/light_rag/pipeline.py).
+(backend/services/kb_backend/pipeline/light_rag/pipeline.py).
 
 These functions carry the trickiest logic in the subsystem (Vietnamese-aware
 canonicalization, RRF fusion, entity ranking, question-shape typing) yet had

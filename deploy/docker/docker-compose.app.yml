@@ -1,0 +1,679 @@
+services:
+  workflow-runtime:
+    profiles: [runtime]
+    build:
+      context: ../..
+      dockerfile: backend/services/workflow-runtime/Dockerfile
+    container_name: dataagent-workflow-runtime
+    restart: unless-stopped
+    # NOT published to the host. Kong fronts these paths (runtime-route in
+    # deploy/docker/kong/kong-setup.sh) and the service now rejects anything that did not
+    # arrive with a gateway key or a signed service assertion — but the port stays
+    # closed as the outer layer. Reach it via Kong on :8000.
+    expose:
+      - "8001"
+    env_file: ../../.env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
+      RUNTIME_DB_URL: postgresql+asyncpg://runtime_writer:${RUNTIME_DB_PASSWORD:-runtime_dev_pw}@postgres:5432/${POSTGRES_DB:-dataagent}
+      MONGODB_URL: mongodb://mongo:27017/dataagent
+      REDIS_URL: redis://redis:6379
+      LITELLM_BASE_URL: http://litellm:4000
+      LANGFUSE_HOST: http://langfuse:3000
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-change-me}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-change-me}
+      QDRANT_URL: http://qdrant:6333
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_SASL_USERNAME: workflow-runtime
+      KAFKA_SASL_PASSWORD: ${WORKFLOW_RUNTIME_KAFKA_PASSWORD}
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      OTEL_SERVICE_NAME: workflow-runtime
+      # Code Interpreter Sandbox (sandbox_schema_docs.docx §I) — internal-only,
+      # never exposed to the host; sandbox-executor is the sole holder of the
+      # Docker socket / Snowflake read-only credentials (hub-and-spoke isolation).
+      SANDBOX_EXECUTOR_URL: http://sandbox-executor:8500
+      # warehouse_secrets.py — resolves a canvas node's snowflakeSecretId
+      # against OpenBao via a read-only AppRole (deploy/docker/openbao/openbao-approle-setup.sh),
+      # NOT auth-api's root token (doc §8.9/§9). Empty until that script has
+      # been run once and the printed values copied in — resolution then
+      # just no-ops (logs a warning, password stays unresolved) instead of
+      # crashing config load.
+      OPENBAO_ADDR: http://openbao:8200
+      OPENBAO_ROLE_ID: ${OPENBAO_ROLE_ID:-}
+      OPENBAO_SECRET_ID: ${OPENBAO_SECRET_ID:-}
+      # Signs the identity assertion kb_search sends to kb-backend
+      # (backend/libs/shared/service_identity.py). Must equal kb-backend's value.
+      # Unset => kb_search cannot mint an assertion and returns no chunks, by
+      # design: it must never fall back to asserting an identity it can't prove.
+      SERVICE_AUTH_SECRET: ${SERVICE_AUTH_SECRET:-}
+      GATEWAY_KEY: ${GATEWAY_KEY:-${KB_GATEWAY_KEY:-}}
+      # The orchestrator calls POST /api/conversations/run on a user's behalf
+      # and cannot carry their Keycloak token, so it presents a signed
+      # assertion instead. Each entry here can act as any user.
+      RUNTIME_ALLOWED_SERVICES: ${RUNTIME_ALLOWED_SERVICES:-orchestrator}
+      # Optional mutual TLS to kb-backend (deploy/docker/certs/gen-certs.sh). Both cert
+      # and key, or neither — half-configured raises at startup rather than
+      # silently connecting without a client certificate.
+      MTLS_CLIENT_CERT: ${MTLS_CLIENT_CERT:-}
+      MTLS_CLIENT_KEY: ${MTLS_CLIENT_KEY:-}
+      MTLS_CA_CERT: ${MTLS_CA_CERT:-}
+    volumes:
+      # Read-only: this service presents a client certificate, it never issues one.
+      - ./certs:/certs:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_started
+      redis:
+        condition: service_started
+      litellm:
+        condition: service_started
+      kafka:
+        condition: service_healthy
+      sandbox-executor:
+        condition: service_started
+      openbao:
+        condition: service_started
+
+  sandbox-executor:
+    profiles: [runtime]
+    build:
+      context: ../../backend/services/sandbox-executor
+    container_name: dataagent-sandbox-executor
+    restart: unless-stopped
+    # No `ports:` — only reachable from other containers on the compose
+    # network (workflow-runtime calls it via SANDBOX_EXECUTOR_URL above).
+    expose:
+      - "8500"
+    environment:
+      SANDBOX_TIMEOUT_S: "10"
+      SANDBOX_MEMORY_MB: "256"
+      SANDBOX_CPUS: "0.5"
+      # mục g — pool size 8 (vs default 3) compensates for runsc's measured
+      # ~2.5x exec latency, but only applies once SANDBOX_RUNTIME=runsc is
+      # actually enabled below. Left at the ${..:-3} default until then.
+      SANDBOX_POOL_SIZE: ${SANDBOX_POOL_SIZE:-3}
+      # DEFAULT engine for an /execute/sql request that doesn't name its own
+      # `connection.type` — no longer a global mode. Each request may now
+      # select postgres | snowflake | clickhouse, which is what lets the DB
+      # Connector node's per-tenant connections run here (behind sql_guard +
+      # the read-only role) instead of workflow-runtime opening its own
+      # unguarded asyncpg connection.
+      #
+      # Default "snowflake" is production behavior, unchanged: the execute_sql
+      # tool posts a bare Snowflake connection and still resolves to it. Set to
+      # "postgres" for local dev/CI without a real Snowflake account — an
+      # untyped `connection` then takes {host, port, user, password, dbname}
+      # instead, e.g. the `sandbox_reader` role against the `sandbox_dev`
+      # database on the shared `postgres` service
+      # (deploy/docker/sql/create-extra-dbs.sql; only auto-created on a fresh
+      # postgres_data volume).
+      SANDBOX_SQL_BACKEND: ${SANDBOX_SQL_BACKEND:-snowflake}
+      # docs/1.md Kế hoạch 1 mục i — job queue worker counts; python
+      # defaults to SANDBOX_POOL_SIZE below (one worker per warm
+      # container) if left unset.
+      SANDBOX_SQL_QUEUE_WORKERS: "5"
+      # mục e — circuit breaker sliding window. Window/threshold/cooldown
+      # below are still placeholder values, not a tuned baseline — docs/1.md
+      # mục e recommends log-only until tuned against real traffic, but
+      # SANDBOX_BREAKER_ENFORCE was explicitly turned on ahead of that by
+      # operator decision (2026-07-09). Watch breaker OPEN/HALF_OPEN log
+      # lines for false-positive rejects and retune the three values below
+      # if legitimate traffic gets 503'd during load spikes.
+      SANDBOX_BREAKER_ENFORCE: "true"
+      SANDBOX_BREAKER_WINDOW_S: "60"
+      SANDBOX_BREAKER_THRESHOLD: "5"
+      SANDBOX_BREAKER_COOLDOWN_S: "30"
+      # mục g — gVisor (`runsc`). Left empty (= host default `runc`) on this
+      # host: rootless DinD (sandbox-dockerd below) fails to start here
+      # (kernel.apparmor_restrict_unprivileged_userns=1), and runsc has only
+      # been verified against that sidecar's daemon, not the host's own
+      # docker.sock this falls back to. Set SANDBOX_RUNTIME=runsc to opt in
+      # once sandbox-dockerd is usable again (see its comment below).
+      SANDBOX_RUNTIME: ${SANDBOX_RUNTIME:-}
+      # mục h — audit copy of submitted code, uploaded before dispatch and
+      # deleted once the request ends either way. Same MinIO instance
+      # already used for the knowledge-base bucket, just a new bucket.
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: sandbox-executor
+      # SANDBOX_DOCKER_HOST intentionally left unset here (docker_runner.py
+      # falls back to docker.from_env(), i.e. the socket mounted below) — the
+      # rootless DinD sidecar (sandbox-dockerd below) can't start on this host
+      # (doc §8.7/§9 tradeoff notes). Point this at tcp://sandbox-dockerd:2375
+      # and swap the volumes mount below for a depends_on once it's usable.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  # Rootless Docker-in-Docker sidecar — the only thing in the platform that
+  # still holds a real Docker engine, isolated from the host's own daemon.
+  # sandbox-executor talks to it over the internal compose network
+  # (SANDBOX_DOCKER_HOST above) instead of mounting /var/run/docker.sock, so
+  # a compromised sandbox-executor can no longer reach host root through the
+  # socket — at worst it reaches root inside *this* container's rootless
+  # user namespace (see docs/Sandbox_SchemaCrawler_Implementation.md §8.7
+  # for the residual risk this does NOT close).
+  sandbox-dockerd:
+    # DISABLED by default (not part of "runtime") — this host blocks rootless
+    # DinD via kernel.apparmor_restrict_unprivileged_userns=1 (rootlesskit
+    # fails with "fork/exec /proc/self/exe: operation not permitted").
+    # sandbox-executor falls back to mounting the host's own docker.sock
+    # instead. To re-enable: fix that sysctl, then start with `--profile dind`
+    # and switch sandbox-executor's SANDBOX_DOCKER_HOST/volumes back below.
+    profiles: ["dind"]
+    image: ${SANDBOX_DOCKERD_IMAGE:-docker:27-dind-rootless}
+    container_name: dataagent-sandbox-dockerd
+    restart: unless-stopped
+    privileged: false
+    # No `ports:`/`expose:` to the host — only sandbox-executor (same
+    # compose network) can reach it. DOCKER_TLS_CERTDIR="" makes the
+    # official dind entrypoint listen on plaintext tcp://0.0.0.0:2375
+    # instead of generating TLS certs — acceptable here for the same reason
+    # OpenBao runs with tls_disable=1 (deploy/docker/openbao/config.hcl): trust
+    # boundary is "reachable only from this internal docker network", not
+    # the wire itself.
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+      # The CLI's own default (unix:///var/run/docker.sock) doesn't exist in
+      # rootless mode (real socket is /run/user/1000/docker.sock) — without
+      # this, the healthcheck below ("docker info") fails even though the
+      # daemon is actually up (confirmed against a real daemon: "Cannot
+      # connect to the Docker daemon at unix:///var/run/docker.sock").
+      DOCKER_HOST: tcp://localhost:2375
+    # /dev/fuse — lets rootless dockerd use fuse-overlayfs (fast layer
+    # sharing) instead of falling back to the much slower vfs storage
+    # driver, which matters here since sandbox-runner containers are
+    # spun up fresh per job. /dev/net/tun — rootlesskit's slirp4netns
+    # networking needs to create a tap interface; without it the daemon
+    # never comes up at all (confirmed against a real daemon: "executing
+    # [ip tuntap add name tap0 mode tap]: exit status 1" without this
+    # device). seccomp/apparmor unconfined is the standard, documented
+    # requirement for any Docker-in-Docker setup (rootless or not) — the
+    # outer container's default profiles block syscalls (unshare, mount,
+    # ...) the inner dockerd needs even unprivileged.
+    devices:
+      - /dev/fuse
+      - /dev/net/tun
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+    volumes:
+      # Persists the inner image store (incl. sandbox-runner:latest loaded
+      # by sandbox-image-loader below) across restarts — without this every
+      # restart would need a rebuild before the first job could run.
+      - sandbox_dockerd_data:/home/rootless/.local/share/docker
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # One-off: builds sandbox-runner:latest *inside* sandbox-dockerd's own
+  # image store. Separate Docker engine = separate image store — the host's
+  # `docker build` (old deploy step 1) no longer puts the image anywhere
+  # sandbox-executor's new client can see it. Run after sandbox-dockerd is
+  # healthy, idempotent (re-run any time sandbox_runner/Dockerfile changes):
+  #
+  #   docker compose -f deploy/docker/docker-compose.app.yml --profile setup run --rm sandbox-image-loader
+  sandbox-image-loader:
+    image: ${SANDBOX_DOCKERD_CLI_IMAGE:-docker:27-cli}
+    profiles: ["setup"]
+    environment:
+      DOCKER_HOST: tcp://sandbox-dockerd:2375
+    volumes:
+      - ../../backend/services/sandbox-executor/sandbox_runner:/build:ro
+    depends_on:
+      sandbox-dockerd:
+        condition: service_healthy
+    command: ["build", "-t", "sandbox-runner:latest", "/build"]
+
+  flow-builder:
+    profiles: [authoring]
+    build:
+      context: ../..
+      dockerfile: backend/services/flow-builder/Dockerfile
+    container_name: dataagent-flow-builder
+    restart: unless-stopped
+    # NOT published to the host — same reasoning as orchestrator and
+    # workflow-runtime. These routes are agent and workflow CRUD: reaching
+    # them directly meant editing and publishing any tenant's agents.
+    # Kong's flow-builder-route (:8000) is the only way in.
+    expose:
+      - "8002"
+    env_file: ../../.env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
+      MONGODB_URL: mongodb://mongo:27017/dataagent
+      # Broadcasts graph-cache invalidation to workflow-runtime on (re)publish.
+      REDIS_URL: redis://redis:6379
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: flow-builder
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_started
+      redis:
+        condition: service_started
+
+  kb-backend:
+    profiles: [kb, runtime]
+    build:
+      context: ../..
+      # Real Dockerfile lives at deploy/docker/Dockerfile.kb (the code dir is backend/services/kb_backend
+      # with an underscore — there is no backend/services/kb-backend/Dockerfile).
+      dockerfile: deploy/docker/Dockerfile.kb
+    container_name: dataagent-kb-backend
+    restart: unless-stopped
+    # NOT published to the host. Network isolation is no longer the only thing
+    # standing between a caller and someone else's data — X-Kong-Verified now
+    # needs KB_GATEWAY_KEY to be believed, and service callers must present a
+    # signed assertion — but it remains the outer layer and should stay.
+    # Kong reaches it in-network; dev stacks re-publish it on loopback only.
+    expose:
+      - "8000"
+    environment:
+      POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/${POSTGRES_DB:-dataagent}
+      QDRANT_URL: http://qdrant:6333
+      NEO4J_URI: bolt://neo4j:7687
+      MODEL_SERVICE_URL: http://model-service:8001
+      # MinIO Dockerfile default password is wrong — pin the real root creds.
+      MINIO_URL: http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-minio_secret}@minio:9000
+      MINIO_BUCKET: knowledge-base
+      # Plaintext Kafka listener (kb-backend has no SASL support).
+      KAFKA_URL: kafka:9094
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: kb-backend
+      # Verifies the assertion workflow-runtime signs. Same value both sides.
+      # Unset => every service assertion is rejected (401) rather than trusted.
+      SERVICE_AUTH_SECRET: ${SERVICE_AUTH_SECRET:-}
+      # Services permitted to assert an end user's identity here. Each entry can
+      # act as any user, so keep it minimal.
+      KB_ALLOWED_SERVICES: ${KB_ALLOWED_SERVICES:-workflow-runtime}
+      # Proof that an X-Kong-Verified request really came through Kong; must
+      # equal the aeroflow-jwks plugin's gateway_key (deploy/docker/kong/kong-setup.sh
+      # reads it from this same variable). Unset => the header is trusted on its
+      # own, as before, and kb-backend logs a warning on every request.
+      GATEWAY_KEY: ${GATEWAY_KEY:-${KB_GATEWAY_KEY:-}}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      neo4j:
+        condition: service_healthy
+      model-service:
+        condition: service_healthy
+
+  auth-api:
+    profiles: [iam]
+    build:
+      context: ../..
+      dockerfile: backend/services/auth-api/Dockerfile
+    container_name: dataagent-auth-api
+    restart: unless-stopped
+    ports:
+      - "8200:8200"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
+      # Reach Kong's Admin API via the `kong-admin` alias on kong-admin-net.
+      # This is a network-scoped alias that resolves to Kong's admin-net IP —
+      # the plain "kong" hostname can resolve to the default-net IP, where
+      # admin is NOT listening. See docs/auth-runbook.md "Kong admin hardening".
+      KONG_ADMIN_URL: http://kong-admin:8001
+      OPENBAO_ADDR: http://openbao:8200
+      # Keycloak Admin API — used by approvals router to check federated identities
+      KC_URL: http://keycloak-lb:8080
+      KC_REALM: ${VITE_KEYCLOAK_REALM:-aeroflow}
+      KC_ADMIN_USER: ${KEYCLOAK_ADMIN:-admin}
+      KC_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: auth-api
+    networks:
+      # auth-api needs both: default for proxy traffic + admin-net to manage
+      # Kong routes/plugins from auth_core._sync_kong().
+      - default
+      - kong-admin-net
+    volumes:
+      - openbao_data:/openbao/data:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      openbao:
+        condition: service_started
+
+  minio-service:
+    profiles: [kb, release]
+    build:
+      context: ../..
+      dockerfile: backend/services/minio-service/Dockerfile
+    container_name: dataagent-minio-service
+    restart: unless-stopped
+    # NOT published to the host. Object read/write and per-tenant audit
+    # archives were reachable unauthenticated on 8400.
+    expose:
+      - "8400"
+    environment:
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: minio-service
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  release-worker:
+    profiles: [release]
+    build:
+      context: ../..
+      dockerfile: backend/services/release-worker/Dockerfile
+    container_name: dataagent-release-worker
+    restart: unless-stopped
+    ports:
+      - "8100:8100"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
+      KAFKA_BOOTSTRAP: kafka:9092
+      KAFKA_USERNAME: release-worker
+      KAFKA_PASSWORD: ${RELEASE_WORKER_KAFKA_PASSWORD}
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      CELERY_BROKER: redis://redis:6379/0
+      # `kong-admin` alias, not hostname/IP — see auth-api KONG_ADMIN_URL comment above.
+      KONG_ADMIN_URL: http://kong-admin:8001
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
+      MONGO_URI: mongodb://mongo:27017
+      MONGO_DB: dataagent
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: release-worker
+    networks:
+      - default
+      - kong-admin-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+
+  audit-bridge:
+    profiles: [iam]
+    build:
+      context: ../..
+      dockerfile: backend/services/audit-bridge/Dockerfile
+    container_name: dataagent-audit-bridge
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: aeroflow
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: audit.auth.events
+      KAFKA_SASL_USERNAME: audit-bridge
+      KAFKA_SASL_PASSWORD: ${AUDIT_BRIDGE_KAFKA_PASSWORD}
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      POLL_INTERVAL_SECONDS: "10"
+      STATE_FILE: /data/last_event_time.txt
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: audit-bridge
+    volumes:
+      - audit_bridge_data:/data
+    depends_on:
+      kafka:
+        condition: service_healthy
+      keycloak-lb:
+        condition: service_healthy
+
+  audit-consumer:
+    profiles: [iam]
+    build:
+      context: ../..
+      dockerfile: backend/services/audit-consumer/Dockerfile
+    container_name: dataagent-audit-consumer
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: audit.auth.events
+      # Data-access events (who ran which query) — same consumer, second
+      # topic, different destination table. Auth events and query events
+      # differ in volume by orders of magnitude and share almost no
+      # columns, so they are not folded into one table.
+      KAFKA_DATA_ACCESS_TOPIC: audit.data.access
+      KAFKA_GROUP_ID: audit-consumer-group
+      KAFKA_SASL_USERNAME: audit-consumer
+      KAFKA_SASL_PASSWORD: ${AUDIT_CONSUMER_KAFKA_PASSWORD}
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-dataagent}
+      DB_USER: ${POSTGRES_USER:-admin}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: audit-consumer
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  memory-consumer:
+    profiles: [runtime]
+    build:
+      context: ../../backend/services/memory-consumer
+    container_name: dataagent-memory-consumer
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_TOPIC: memory.extraction.requested
+      KAFKA_DLQ_TOPIC: memory.extraction.dlq
+      KAFKA_GROUP_ID: memory-consumer-group
+      KAFKA_SASL_USERNAME: memory-consumer
+      KAFKA_SASL_PASSWORD: ${MEMORY_CONSUMER_KAFKA_PASSWORD}
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-dataagent}
+      DB_USER: ${POSTGRES_USER:-admin}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      QDRANT_URL: http://qdrant:6333
+      LITELLM_BASE_URL: http://litellm:4000
+      EMBEDDING_DIM: "1024"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      litellm:
+        condition: service_started
+
+  schema-crawler-worker:
+    profiles: [runtime]
+    build:
+      # Repo root: the worker now shares backend/libs/shared/freshness.py (the
+      # governance vocabulary) with workflow-runtime.
+      context: ../..
+      dockerfile: backend/services/schema-crawler-worker/Dockerfile
+    container_name: dataagent-schema-crawler-worker
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      KAFKA_DDL_TOPIC: ddl.changes
+      KAFKA_GROUP_ID: schema-crawler-worker-group
+      KAFKA_SASL_USERNAME: schema-crawler-worker
+      KAFKA_SASL_PASSWORD: ${SCHEMA_CRAWLER_WORKER_KAFKA_PASSWORD}
+      KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_SASL_MECHANISM: PLAIN
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:-dataagent}
+      DB_USER: ${POSTGRES_USER:-admin}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      QDRANT_URL: http://qdrant:6333
+      LITELLM_BASE_URL: http://litellm:4000
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-1024}
+      CRAWL_INTERVAL_SECONDS: "86400"
+      # Gap (see docs/Sandbox_SchemaCrawler_Implementation.md §7): KBWarehouseConfig
+      # never persists a warehouse password. Shared crawler-account passwords
+      # until a secrets-store (OpenBao) integration exists for per-tenant
+      # credentials — one per engine, since a Snowflake account is not a Postgres
+      # account and falling back across them would send the wrong credential to
+      # the wrong host.
+      #
+      # Per-warehouse override for any engine: WAREHOUSE_PASSWORD__<warehouse_id>
+      # with hyphens replaced by underscores (env names cannot contain "-").
+      SNOWFLAKE_CRAWLER_PASSWORD: ${SNOWFLAKE_CRAWLER_PASSWORD:-}
+      POSTGRES_CRAWLER_PASSWORD: ${POSTGRES_CRAWLER_PASSWORD:-}
+      CLICKHOUSE_CRAWLER_PASSWORD: ${CLICKHOUSE_CRAWLER_PASSWORD:-}
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      litellm:
+        condition: service_started
+
+  jwks-refresher:
+    profiles: [legacy-jwt]
+    build:
+      context: ../..
+      dockerfile: backend/services/jwks-refresher/Dockerfile
+    container_name: dataagent-jwks-refresher
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: aeroflow
+      # `kong-admin` alias, not hostname/IP — see auth-api KONG_ADMIN_URL comment above.
+      KONG_ADMIN_URL: http://kong-admin:8001
+      KONG_CONSUMER: keycloak-users
+      REFRESH_INTERVAL_SECONDS: "300"
+      JWKS_STATE_FILE: /data/last_kid.txt
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: jwks-refresher
+    networks:
+      - default
+      - kong-admin-net
+    volumes:
+      - jwks_refresher_data:/data
+    depends_on:
+      keycloak-lb:
+        condition: service_healthy
+      kong:
+        condition: service_healthy
+
+  orchestrator:
+    profiles: [runtime]
+    build:
+      context: ../..
+      dockerfile: backend/services/orchestrator/Dockerfile
+    container_name: dataagent-orchestrator
+    restart: unless-stopped
+    # NOT published to the host — same reasoning as workflow-runtime above.
+    # Kong's orchestrator-route (:8000/api/orchestrate) is the only way in.
+    expose:
+      - "8003"
+    env_file: ../../.env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
+      LITELLM_BASE_URL: http://litellm:4000
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-sk-dev}
+      WORKFLOW_RUNTIME_URL: http://workflow-runtime:8001
+      LANGFUSE_HOST: http://langfuse:3000
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-change-me}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-change-me}
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
+      OTEL_SERVICE_NAME: orchestrator
+      # Signs the assertion sent to workflow-runtime, and (via the shared
+      # resolver) verifies inbound Kong requests. Same value everywhere.
+      SERVICE_AUTH_SECRET: ${SERVICE_AUTH_SECRET:-}
+      GATEWAY_KEY: ${GATEWAY_KEY:-${KB_GATEWAY_KEY:-}}
+      # Nothing calls the orchestrator service-to-service, so the assertion
+      # route in is closed: only Kong-verified requests are accepted.
+      ORCHESTRATOR_ALLOWED_SERVICES: ${ORCHESTRATOR_ALLOWED_SERVICES:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      litellm:
+        condition: service_started
+      workflow-runtime:
+        condition: service_started
+
+  # Evaluation + release gate (model/eval). Never starts with the stack — it is
+  # a one-shot job:
+  #
+  #   docker compose -f deploy/docker/docker-compose.app.yml --profile eval run --rm eval
+  #
+  # Runs both tiers and exits non-zero when a metric is outside the thresholds
+  # in model/eval/thresholds.json, so a pipeline can use it as a gate rather
+  # than as a report nobody reads. The offline tier alone needs none of this
+  # (CI runs it with sqlparse and no container); this image exists for the
+  # online tier, which needs a live model behind LiteLLM and the agent it is
+  # grading.
+  eval:
+    profiles: ["eval"]
+    build:
+      context: ../..
+      dockerfile: model/eval/Dockerfile
+    container_name: dataagent-eval
+    env_file: ../../.env
+    environment:
+      LITELLM_BASE_URL: http://litellm:4000
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-sk-dev}
+      WORKFLOW_RUNTIME_URL: http://workflow-runtime:8001
+      # The agent the online tier interrogates. Empty means the online tier
+      # refuses to run rather than grading whatever happens to answer.
+      AGENT_ID: ${EVAL_AGENT_ID:-}
+      EVAL_TENANT_ID: ${EVAL_TENANT_ID:-dev-tenant}
+    volumes:
+      # Reports land on the host so a failing run leaves evidence behind
+      # instead of disappearing with the container.
+      - ../../.eval-reports:/reports
+
+  frontend:
+    profiles: [authoring]
+    build:
+      context: ../../frontend
+      dockerfile: Dockerfile.dev
+    container_name: dataagent-frontend
+    restart: unless-stopped
+    volumes:
+      - ../../frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:3000"
+    environment:
+      VITE_KEYCLOAK_URL: http://localhost:8080
+      VITE_KEYCLOAK_REALM: aeroflow
+      VITE_KEYCLOAK_CLIENT: aeroflow-frontend
+      VITE_API_BASE_URL: http://localhost:8000
+    depends_on:
+      keycloak-lb:
+        condition: service_healthy
+      kong:
+        condition: service_healthy

@@ -38,7 +38,7 @@ from typing import ClassVar
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-RUNTIME = REPO_ROOT / "services" / "workflow-runtime"
+RUNTIME = REPO_ROOT / "backend" / "services" / "workflow-runtime"
 HANDLERS = RUNTIME / "nodes" / "sandbox" / "tool_executor" / "handlers"
 
 pytestmark = pytest.mark.unit
@@ -343,7 +343,7 @@ class TestTheConsumerAcceptsTheNewActions:
     def test_the_consumer_does_not_allowlist_actions(self):
         """It inserts what it is given, so a new action needs no consumer
         change — which is what makes wiring a handler a one-file job."""
-        source = (REPO_ROOT / "services" / "audit-consumer" / "data_access.py").read_text(encoding="utf-8")
+        source = (REPO_ROOT / "backend" / "services" / "audit-consumer" / "data_access.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         required = next(
             (n.value for n in ast.walk(tree)

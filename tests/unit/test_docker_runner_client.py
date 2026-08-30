@@ -1,6 +1,6 @@
 """_get_client() (sandbox_schema_docs.docx §1.4, PR review fix §8.7) — should
 prefer the rootless Docker-in-Docker sidecar (SANDBOX_DOCKER_HOST, set in
-infra/docker-compose.app.yml's sandbox-executor service) over the host's own
+deploy/docker/docker-compose.app.yml's sandbox-executor service) over the host's own
 /var/run/docker.sock, so a compromised sandbox-executor no longer reaches
 host root through the socket. docker.from_env()/docker.DockerClient are
 mocked — no real Docker daemon needed for this branching logic.
@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "services" / "sandbox-executor")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "sandbox-executor")
 
 
 @pytest.fixture(autouse=True)

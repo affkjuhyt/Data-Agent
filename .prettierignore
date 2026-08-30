@@ -7,4 +7,4 @@ archive
 *.min.css
 package-lock.json
 public
-src/components/ui
+frontend/src/components/ui

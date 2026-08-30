@@ -1,4 +1,4 @@
-"""Semantic Layer (libs/semantic) — resolution and SQL compilation.
+"""Semantic Layer (backend/libs/semantic) — resolution and SQL compilation.
 
 The audit's charge was that business meaning lived only in prompts, so "the
 system cannot distinguish gross revenue from net, row count from distinct-entity

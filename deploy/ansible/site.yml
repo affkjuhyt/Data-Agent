@@ -7,7 +7,7 @@
 #   ansible-playbook site.yml --tags verify                    # health + one real turn (run_smoke)
 #
 # Order matters and each role is idempotent: run it twice, the second run
-# reports no changes. The roles are the same steps scripts/e2e/e2e.sh does by
+# reports no changes. The roles are the same steps tests/e2e/e2e.sh does by
 # hand, expressed as state ("this schema exists", "this AppRole exists") rather
 # than as commands.
 - name: Deploy the Data Agent stack

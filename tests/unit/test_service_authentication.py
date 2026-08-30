@@ -26,8 +26,8 @@ import pytest
 import yaml
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-COMPOSE = REPO_ROOT / "infra" / "docker-compose.app.yml"
-SERVICES = REPO_ROOT / "services"
+COMPOSE = REPO_ROOT / "deploy" / "docker" / "docker-compose.app.yml"
+SERVICES = REPO_ROOT / "backend" / "services"
 
 pytestmark = pytest.mark.unit
 
@@ -300,14 +300,14 @@ class TestGatewayConfigMatchesTheClosedPorts:
     def test_every_unpublished_app_service_has_a_kong_route(self):
         """Closing a port without a route in front of it does not harden the
         service, it removes it."""
-        setup = (REPO_ROOT / "infra" / "kong" / "kong-setup.sh").read_text(encoding="utf-8")
+        setup = (REPO_ROOT / "deploy" / "docker" / "kong" / "kong-setup.sh").read_text(encoding="utf-8")
         for service in ("flow-builder", "workflow-runtime", "orchestrator", "minio-service"):
             assert f"$KONG_ADMIN/services/{service}" in setup, f"{service} has no Kong service"
 
     def test_kong_defines_each_service_exactly_once(self):
         """Two PUTs of the same service is not an error at runtime — the second
         silently wins — so a duplicate would hide whichever config lost."""
-        setup = (REPO_ROOT / "infra" / "kong" / "kong-setup.sh").read_text(encoding="utf-8")
+        setup = (REPO_ROOT / "deploy" / "docker" / "kong" / "kong-setup.sh").read_text(encoding="utf-8")
         for service in ("flow-builder", "minio-service", "orchestrator", "workflow-runtime"):
             creates = setup.count(f'-X PUT "$KONG_ADMIN/services/{service}"')
             assert creates == 1, f"{service} is created {creates} times in kong-setup.sh"

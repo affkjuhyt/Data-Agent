@@ -101,7 +101,7 @@ backfill, drop in the next.
 ## Backup and restore
 
 `postgres-backup.yaml` is the k8s port of the `postgres-backup` sidecar in
-`infra/docker-compose.prod.yml` — pg_dump every 6h onto a PVC, pruned at 7 days.
+`deploy/docker/docker-compose.prod.yml` — pg_dump every 6h onto a PVC, pruned at 7 days.
 
 What it does **not** port is WAL archiving, and that difference is the whole RPO
 story. In compose, Postgres is in the stack and gets `archive_command` on its own
@@ -119,7 +119,7 @@ until you explicitly unsuspend. The full procedure is in its header.
 ## What is not here yet
 
 The manifests cover the request path — gateway → orchestrator →
-workflow-runtime → sandbox/KB. Not yet ported from `infra/docker-compose.app.yml`:
+workflow-runtime → sandbox/KB. Not yet ported from `deploy/docker/docker-compose.app.yml`:
 `auth-api`, `flow-builder`, `minio-service`, `release-worker`, `audit-bridge`,
 `audit-consumer`, `memory-consumer`, `schema-crawler-worker`, `jwks-refresher`,
 the frontend, and the Kong/Keycloak edge. A cluster running only what is in this

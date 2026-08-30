@@ -1,6 +1,6 @@
 """Multi-tenant isolation regression suite.
 
-Promoted from infra/scripts/test_tenant_isolation.py. Each top-level group is
+Promoted from deploy/docker/scripts/test_tenant_isolation.py. Each top-level group is
 now an individual test so failures are visible per case in CI rather than
 folded into one boolean.
 

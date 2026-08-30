@@ -27,13 +27,13 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 def _auth_api_sys_path() -> Iterator[None]:
     """Mirror the auth-api Dockerfile WORKDIR layout for in-process tests.
 
-    Dockerfile copies `services/auth-api/*` into /app and `services/shared/`
+    Dockerfile copies `backend/services/auth-api/*` into /app and `backend/services/shared/`
     into /app/shared. So `auth_core` is a top-level module and `shared.auth`
     is a package import. Re-create that layout via sys.path here.
     """
     added = [
-        str(REPO_ROOT / "services" / "auth-api"),
-        str(REPO_ROOT / "services"),
+        str(REPO_ROOT / "backend" / "services" / "auth-api"),
+        str(REPO_ROOT / "backend" / "services"),
     ]
     for p in added:
         if p not in sys.path:
@@ -45,7 +45,7 @@ def _auth_api_sys_path() -> Iterator[None]:
 
 
 # ─── Minimal schema — just what the smoke tests exercise ───────────────────
-# Source of truth for prod is alembic/versions/b8c9d0e1f2a3_auth_api_secrets_vault_schema.py
+# Source of truth for prod is backend/alembic/versions/b8c9d0e1f2a3_auth_api_secrets_vault_schema.py
 # (NOT ff9ae8dcd7f7_initial_schema.py's "SecretsVault"/PascalCase tables —
 # those are dead code unrelated to this feature; see b8c9d0e1f2a3's docstring
 # for how that drift was found). We intentionally inline a subset here so
@@ -126,7 +126,7 @@ INSERT INTO platform_settings (key, value) VALUES
 ON CONFLICT (key) DO NOTHING;
 """
 
-# Mirror of alembic/versions/a1b2c3d4e5f6_enable_tenant_rls.py for the test
+# Mirror of backend/alembic/versions/a1b2c3d4e5f6_enable_tenant_rls.py for the test
 # container. Test DB doesn't run the full migration chain (slow + drift), so
 # we hand-roll the same setup here. When the migration changes, update this
 # fixture in lockstep.

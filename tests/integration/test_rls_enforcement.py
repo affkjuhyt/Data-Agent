@@ -1,6 +1,6 @@
 """Row-Level Security enforcement tests.
 
-These pin the contract of `alembic/versions/a1b2c3d4e5f6_enable_tenant_rls.py`:
+These pin the contract of `backend/alembic/versions/a1b2c3d4e5f6_enable_tenant_rls.py`:
 
   * `app_user` cannot see another tenant's rows even via a WHERE-less SELECT.
   * `app_user` cannot insert/update a row with a tenant_id it isn't scoped to.

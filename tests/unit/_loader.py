@@ -1,7 +1,7 @@
 """Helpers to import service modules into unit tests.
 
-Several services live in hyphenated directories (``services/auth-api``,
-``services/jwks-refresher``, ``services/workflow-runtime``) which are NOT valid
+Several services live in hyphenated directories (``backend/services/auth-api``,
+``backend/services/jwks-refresher``, ``backend/services/workflow-runtime``) which are NOT valid
 Python package names, and some use bare imports (``from shared.auth import ...``,
 ``import llm_client``) that assume the service's own directory is on ``sys.path``.
 
@@ -19,7 +19,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SERVICES = REPO_ROOT / "services"
+SERVICES = REPO_ROOT / "backend" / "services"
 
 
 def stub_module(name: str, **attrs: object) -> types.ModuleType:

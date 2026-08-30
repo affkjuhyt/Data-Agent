@@ -27,8 +27,8 @@ import uvicorn
 pytestmark = pytest.mark.integration
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SANDBOX_DIR = str(REPO_ROOT / "services" / "sandbox-executor")
-_RUNTIME_DIR = str(REPO_ROOT / "services" / "workflow-runtime")
+_SANDBOX_DIR = str(REPO_ROOT / "backend" / "services" / "sandbox-executor")
+_RUNTIME_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
 _PORT = 8599
 
 

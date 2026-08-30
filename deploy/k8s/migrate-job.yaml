@@ -1,5 +1,5 @@
 # Alembic schema migration — the k8s equivalent of the `migrate` service in
-# infra/docker-compose.local.yml / .dev.yml.
+# deploy/docker/docker-compose.local.yml / .dev.yml.
 #
 # Compose gets ordering for free: `depends_on: {migrate: service_completed_
 # successfully}` holds the app containers until the migration exits 0. A
@@ -42,7 +42,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: alembic
-          image: REGISTRY/dataagent-alembic:latest   # built from alembic/Dockerfile
+          image: REGISTRY/dataagent-alembic:latest   # built from backend/alembic/Dockerfile
           # `upgrade head`, singular: the revision graph has exactly one head
           # (f1r2e3s4h5n6 as of writing — the merge revision c75156d1bd53 joined
           # the last fork). `heads` would silently paper over a new fork; this

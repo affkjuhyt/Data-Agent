@@ -1,6 +1,6 @@
 """Is row-level security actually doing anything?
 
-`alembic/versions/a1b2c3d4e5f6` enables and FORCEs RLS on every tenant-scoped
+`backend/alembic/versions/a1b2c3d4e5f6` enables and FORCEs RLS on every tenant-scoped
 table, the tenant_isolation policy is correct, and
 `get_client(tenant_id=...)` sets `app.tenant_id` correctly. None of that
 isolates anything unless the connecting role is subject to RLS — and a Postgres
@@ -10,7 +10,7 @@ holding BYPASSRLS.
 
 Every service except workflow-runtime connects as `${POSTGRES_USER:-admin}`.
 workflow-runtime connects as `runtime_writer`, which
-`infra/sql/grant-runtime-writer.sql` explicitly sets NOBYPASSRLS — so it is the
+`deploy/docker/sql/grant-runtime-writer.sql` explicitly sets NOBYPASSRLS — so it is the
 one service where the policies do anything at all today.
 
 `tests/integration/test_rls_enforcement.py` proves the policy works, and proves
@@ -36,7 +36,7 @@ import pathlib
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-INFRA = REPO_ROOT / "infra"
+INFRA = REPO_ROOT / "deploy" / "docker"
 
 pytestmark = pytest.mark.unit
 
@@ -47,7 +47,7 @@ def _get_client_calls() -> tuple[collections.Counter, collections.Counter, dict]
     unscoped: collections.Counter = collections.Counter()
     sites: dict[str, list[str]] = collections.defaultdict(list)
 
-    roots = [REPO_ROOT / "services", REPO_ROOT / "libs"]
+    roots = [REPO_ROOT / "backend" / "services", REPO_ROOT / "backend" / "libs"]
     for root in roots:
         for path in root.rglob("*.py"):
             if "__pycache__" in path.parts:
@@ -61,7 +61,7 @@ def _get_client_calls() -> tuple[collections.Counter, collections.Counter, dict]
                     continue
                 if node.func.attr != "get_client":
                     continue
-                service = path.relative_to(REPO_ROOT).parts[1]
+                service = path.relative_to(REPO_ROOT).parts[2]   # backend/<services|libs>/<name>
                 if any(k.arg == "tenant_id" for k in node.keywords) or node.args:
                     scoped[service] += 1
                 else:
@@ -161,7 +161,7 @@ class TestTheScopedFormAdmitsWhenItCannotEnforce:
 
     def test_the_exposure_check_runs_at_connect_time(self):
         """Once per connection, not per query — it is a property of the role."""
-        source = (REPO_ROOT / "libs" / "database_connector" / "postgres_connector.py").read_text(encoding="utf-8")
+        source = (REPO_ROOT / "backend" / "libs" / "database_connector" / "postgres_connector.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         open_fn = next(
             n for n in ast.walk(tree)
@@ -176,7 +176,7 @@ class TestTheScopedFormAdmitsWhenItCannotEnforce:
     def test_it_asks_for_both_superuser_and_bypassrls(self):
         """rolsuper alone is not enough: BYPASSRLS is a separate attribute and
         the migration's own documented rollback grants exactly that."""
-        source = (REPO_ROOT / "libs" / "database_connector" / "postgres_connector.py").read_text(encoding="utf-8")
+        source = (REPO_ROOT / "backend" / "libs" / "database_connector" / "postgres_connector.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         fn = next(
             n for n in ast.walk(tree)

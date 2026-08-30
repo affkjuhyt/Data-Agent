@@ -1,4 +1,4 @@
-"""Analysis-type taxonomy (services/workflow-runtime/nodes/model_harness/intent.py).
+"""Analysis-type taxonomy (backend/services/workflow-runtime/nodes/model_harness/intent.py).
 
 The planner classified everything as `question` or `task`, which only ever drove
 whether the responder appended an options block. It could not tell a one-fact
@@ -19,7 +19,7 @@ import sys
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "services" / "workflow-runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
 
 pytestmark = pytest.mark.unit
 
@@ -172,7 +172,7 @@ class TestPlannerContract:
         drift between prompt and enum would show up as everything classifying
         as `other`."""
         intent = _intent()
-        prompt = (REPO_ROOT / "services" / "workflow-runtime" / "prompts" / "planner_system.txt").read_text(
+        prompt = (REPO_ROOT / "backend" / "services" / "workflow-runtime" / "prompts" / "planner_system.txt").read_text(
             encoding="utf-8"
         )
 

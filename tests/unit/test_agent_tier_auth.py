@@ -3,7 +3,7 @@
 Both services previously had NO authentication of any kind: the orchestrator
 read the tenant from a raw header and fell back to DEV_TENANT_ID, workflow-
 runtime did the same, and both were published on host ports. Kong already had
-routes and the aeroflow-jwks plugin for each (infra/kong/kong-setup.sh) — the
+routes and the aeroflow-jwks plugin for each (deploy/docker/kong/kong-setup.sh) — the
 services just never checked that a request had been through it.
 
 These tests pin the shared trust decision they now use, the orchestrator's
@@ -53,7 +53,7 @@ def _assertion(roles, *, service="orchestrator", user="u1", secret=SECRET):
 
 def _agent_client():
     """Import the orchestrator module under its own sys.path entry."""
-    svc = str(REPO_ROOT / "services" / "orchestrator")
+    svc = str(REPO_ROOT / "backend" / "services" / "orchestrator")
     sys.path.insert(0, svc)
     try:
         from executor.agent_client import _identity_headers
@@ -176,7 +176,7 @@ class TestPortsAreClosed:
     keep a direct path open for anything that later regressed."""
 
     def test_compose_does_not_publish_the_agent_tier(self):
-        compose = (REPO_ROOT / "infra" / "docker-compose.app.yml").read_text(encoding="utf-8")
+        compose = (REPO_ROOT / "deploy" / "docker" / "docker-compose.app.yml").read_text(encoding="utf-8")
 
         for mapping in ('"8001:8001"', '"8003:8003"'):
             assert mapping not in compose, (
@@ -187,7 +187,7 @@ class TestPortsAreClosed:
     def test_vite_dev_proxy_does_not_forge_an_identity(self):
         """The dev server used to be a second gateway, injecting a hardcoded
         admin identity straight to those ports."""
-        vite = (REPO_ROOT / "vite.config.ts").read_text(encoding="utf-8")
+        vite = (REPO_ROOT / "frontend" / "vite.config.ts").read_text(encoding="utf-8")
 
         assert "X-User-Roles" not in vite
         assert "X-Tenant-Id" not in vite

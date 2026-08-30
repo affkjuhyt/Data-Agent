@@ -1,5 +1,5 @@
 """Which schema reaches the SQL-generation prompt
-(services/workflow-runtime/nodes/sandbox/tool_executor/handlers/data.py).
+(backend/services/workflow-runtime/nodes/sandbox/tool_executor/handlers/data.py).
 
 Two defects are pinned here:
 
@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "services" / "workflow-runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
 
 pytestmark = pytest.mark.unit
 

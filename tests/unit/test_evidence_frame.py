@@ -24,8 +24,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_RUNTIME_DIR = str(REPO_ROOT / "services" / "workflow-runtime")
-_ORCH_DIR = str(REPO_ROOT / "services" / "orchestrator")
+_RUNTIME_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
+_ORCH_DIR = str(REPO_ROOT / "backend" / "services" / "orchestrator")
 
 pytestmark = pytest.mark.unit
 
@@ -155,7 +155,7 @@ class TestResponderReturnsEvidence:
 
 class TestRuntimeStreamEmitsEvidence:
     def test_conversation_runner_emits_evidence_only_on_a_delivered_answer(self):
-        src = (REPO_ROOT / "services" / "workflow-runtime" / "runtime_services" / "conversation_runner.py").read_text(encoding="utf-8")
+        src = (REPO_ROOT / "backend" / "services" / "workflow-runtime" / "runtime_services" / "conversation_runner.py").read_text(encoding="utf-8")
         assert "'__evidence'" in src
         # captured from the responder node output ...
         assert 'out.get("evidence")' in src
@@ -233,8 +233,8 @@ class TestOrchestratorForwardsEvidenceAndOptions:
         assert not any(e[0] == "suggestions" for e in events)
 
     def test_single_agent_node_and_sse_route_pass_them_through(self):
-        graph_src = (REPO_ROOT / "services" / "orchestrator" / "graph.py").read_text(encoding="utf-8")
-        stream_src = (REPO_ROOT / "services" / "orchestrator" / "routers" / "stream.py").read_text(encoding="utf-8")
+        graph_src = (REPO_ROOT / "backend" / "services" / "orchestrator" / "graph.py").read_text(encoding="utf-8")
+        stream_src = (REPO_ROOT / "backend" / "services" / "orchestrator" / "routers" / "stream.py").read_text(encoding="utf-8")
         for name in ("options", "evidence"):
             assert f'adispatch_custom_event("{name}", data)' in graph_src
             assert f'"__{name}": event["data"]' in stream_src

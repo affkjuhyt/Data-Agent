@@ -26,7 +26,7 @@ uv tool install ansible-core --python 3.12 --with ansible --with docker   # ho�
 | Bí mật | ✅ ansible-vault, không có secret trong repo | ✅ (SealedSecrets/ESO) | ⚠ |
 
 Makefile chỉ gọi lệnh shell theo thứ tự — không có inventory, không có trạng thái mong muốn, không có vault,
-không chạy được từ xa; những gì `scripts/e2e/e2e.sh` phải tự làm (chờ, kiểm tra, idempotent) là việc Ansible
+không chạy được từ xa; những gì `tests/e2e/e2e.sh` phải tự làm (chờ, kiểm tra, idempotent) là việc Ansible
 làm sẵn. **Argo CD là bước sau, không phải thay thế**: khi khách có cụm k8s (Phần IV·B của kế hoạch — Helm
 umbrella chart, Kong ingress, sandbox node pool), Helm chart + Argo CD quản lý *workload*, còn Ansible vẫn
 dựng phần *nền* (node, registry offline, OpenBao, bootstrap Argo). Với appliance một máy (POC, chi nhánh,
@@ -44,10 +44,10 @@ deploy/ansible/
 │   ├── preflight/               # docker, compose v2, .env từ .env.example, ollama + model
 │   ├── app_env/                 # GATEWAY_KEY, SERVICE_AUTH_SECRET, KAFKA_ADMIN_PASSWORD, VITE_API_URL
 │   ├── compose_stack/           # docker compose up (chỉ build image thiếu), chờ postgres/kong/keycloak/litellm, schema keycloak|kong
-│   ├── gateway/                 # infra/kong/kong-setup.sh (route, JWT, CORS, mật khẩu user dev); Keycloak MFA off (local)
-│   ├── kafka_topics/            # infra/kafka/kafka-setup.sh (topic + ACL)
+│   ├── gateway/                 # deploy/docker/kong/kong-setup.sh (route, JWT, CORS, mật khẩu user dev); Keycloak MFA off (local)
+│   ├── kafka_topics/            # deploy/docker/kafka/kafka-setup.sh (topic + ACL)
 │   ├── openbao/                 # init/unseal (key lưu 0600 trên host), KV v2, policy, AppRole → .env, secret kho demo
-│   ├── seed/                    # scripts/e2e/seed.sql + seed-flow.js (chỉ khi seed_demo)
+│   ├── seed/                    # tests/e2e/seed.sql + seed-flow.js (chỉ khi seed_demo)
 │   └── verify/                  # 401 khi không token, token Keycloak, /api/catalog + /api/reviews qua Kong, (run_smoke) một lượt thật
 └── inventories/
     ├── local/                   # hosts.yml (connection local) + group_vars/all.yml (project dataagent-e2e, build never, overlay dev, seed demo)
@@ -63,7 +63,7 @@ Bí mật: nếu `vault_*` không được định nghĩa, role `common` sinh gi
 ## Prod khác local ở đâu (toàn bộ nằm trong `inventories/prod/group_vars/all.yml`)
 
 * `compose_extra_files: [docker-compose.prod.yml]` — WAL archive, backup sidecar, TLS; không bind-mount source.
-* `compose_build: policy|always`, `llm_backend: litellm_config` (LLM hosted / GPU pool, `infra/litellm/config.yaml`).
+* `compose_build: policy|always`, `llm_backend: litellm_config` (LLM hosted / GPU pool, `deploy/docker/litellm/config.yaml`).
 * `keycloak_disable_mfa: false`, `seed_demo: false`, `openbao_allow_reset: false`, `run_smoke: true`.
 * `kong_public_url` / `keycloak_url` là địa chỉ công bố (issuer trong token phải khớp).
 
@@ -83,22 +83,23 @@ Trên host mạng đóng (chỉ cần Docker + python3): `./install.sh --dir /op
 chép model, giải nén, chạy playbook local. Hoặc từ máy điều khiển: inventory prod với `code_source: bundle`,
 `bundle_path: dist/bundle/<tên>` — role `code` đẩy gói và `docker load` qua SSH.
 
-## Thư mục `deploy/` · `infra/` · `scripts/` — ai giữ gì
+## Bố cục repo (từ 30-08-2026) — ai giữ gì
 
 ```
+backend/            services/ · libs/ · alembic/      (import root Python; image build context = repo root)
+frontend/           src/ · vite/vitest/tsconfig · Dockerfile.dev   (npm workspace, root package.json chỉ forward)
 deploy/
-├── ansible/        # appliance / server: playbook này
-└── k8s/            # manifest thô cho cụm k8s (trước đây ở ./k8s); Đợt 3 thay bằng helm/
-infra/              # CHỈ compose + config runtime (kong, kafka, keycloak, openbao, litellm, sql/…) — đi theo gói cài
-scripts/            # CHỈ dev/test: e2e/, loadtest/, agent_eval.py, benchmark_llm.py, model helpers, ui-demo.mjs
+├── docker/         compose + config runtime (kong, kafka, keycloak, openbao, litellm, sql…) — đi theo gói cài; project name pin = infra
+├── ansible/        playbook này
+└── k8s/            manifest thô cho cụm k8s; Đợt 3 thay bằng helm/
+tests/              unit/ · integration/ · e2e/ (e2e.sh, Playwright, seed) · loadtest/ (k6)
+docs/  model/  scripts/ (chỉ công cụ dev)
 ```
 
-Đã dọn (30-08-2026): `infra/scripts/` (bootstrap ≈ role `preflight`+`app_env`; reset trỏ đường dẫn chết; kiểm Kong admin
-→ task trong role `verify`, bật bằng `kong_admin_published: false`), toàn bộ `.ps1` (Windows chạy playbook trong WSL),
-`infra/postgres/` (Dockerfile/init không được compose nào dùng; seed KB chuyển thành `infra/sql/kb-seed.sql`),
-`scripts/seed_dev_agent.sql` (thay bằng `scripts/e2e/seed.sql` + `seed-flow.js`). Các overlay `kb-lite`/`kb_e2e.dev`/
-`monitoring`/`test` giữ nguyên — `kb_e2e.dev` không gộp bằng profile được vì nó **đè** volume/healthcheck của `postgres`/`keycloak`,
-profile chỉ bật/tắt service chứ không đè thuộc tính.
+Playbook tham chiếu: `compose_dir = deploy/docker`, seed = `tests/e2e/seed.sql` + `seed-flow.js`, bundle đóng gói
+`deploy/docker` + `deploy/ansible` + seed + `docs/RUNBOOK.md`/`docs/SECURITY.md`. Đã dọn cùng đợt: `infra/scripts/` (kiểm Kong admin
+→ task trong role `verify`, bật bằng `kong_admin_published: false`), toàn bộ `.ps1`, `infra/postgres/` (seed KB → `deploy/docker/sql/kb-seed.sql`),
+`scripts/seed_dev_agent.sql`. Overlay `kb_e2e.dev` giờ tự đủ trên base (`--profile runtime`, có `build:` riêng cho model-service/kb-backend/worker).
 
 **Ansible có "đưa k8s vào" được không?** Được, nhưng là **playbook khác** (`deploy/ansible/k8s.yml`, collection
 `kubernetes.core`: `helm`/`k8s` module) vì đích khác hẳn: appliance = Docker Compose trên một máy, k8s = cụm có sẵn

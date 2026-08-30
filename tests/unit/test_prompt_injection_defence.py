@@ -36,8 +36,8 @@ import pytest
 from libs.shared import untrusted
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_RUNTIME_DIR = str(REPO_ROOT / "services" / "workflow-runtime")
-_ORCH_GUARDRAIL = REPO_ROOT / "services" / "orchestrator" / "nodes" / "guardrail.py"
+_RUNTIME_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
+_ORCH_GUARDRAIL = REPO_ROOT / "backend" / "services" / "orchestrator" / "nodes" / "guardrail.py"
 
 pytestmark = pytest.mark.unit
 

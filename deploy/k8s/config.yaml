@@ -20,7 +20,7 @@ data:
   # Assumed managed services or their own StatefulSets — this directory does not
   # create them (same scoping as the KB tier). Point these at whatever runs them;
   # the hostnames below match the compose service names so an in-cluster
-  # like-for-like port of infra/docker-compose.app.yml works unchanged.
+  # like-for-like port of deploy/docker/docker-compose.app.yml works unchanged.
   MONGODB_URL: "mongodb://mongo:27017/dataagent"
   REDIS_URL: "redis://redis:6379"
   QDRANT_URL: "http://qdrant:6333"

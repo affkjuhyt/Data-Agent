@@ -28,8 +28,9 @@ dev = [
     "vulture>=2.14",        # dead-code detection (SRS §7.2)
 ]
 
+# Python import root is backend/ — `import libs…`, `import services…` resolve there.
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["backend"]
 exclude = ["tests*", "archive*", "node_modules*", "dist*"]
 
 # ─── Pytest ────────────────────────────────────────────────────────────────
@@ -37,7 +38,7 @@ exclude = ["tests*", "archive*", "node_modules*", "dist*"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
-pythonpath = ["."]
+pythonpath = [".", "backend"]   # "." for tests.*, backend for libs.* / services.*
 testpaths = ["tests"]
 addopts = [
     "-ra",
@@ -79,7 +80,7 @@ filterwarnings = [
 # ─── Coverage ──────────────────────────────────────────────────────────────
 [tool.coverage.run]
 branch = true
-source = ["app", "services", "libs", "model"]
+source = ["backend/services", "backend/libs", "model"]
 omit = [
     "*/tests/*",
     "*/__pycache__/*",
@@ -114,7 +115,7 @@ exclude_lines = [
 # fixtures, ORM attrs) may still flag — vet before deleting and add real
 # whitelist entries to .vulture_whitelist.py. Run: `vulture`.
 [tool.vulture]
-paths = ["services", "libs", ".vulture_whitelist.py"]
+paths = ["backend/services", "backend/libs", "backend/.vulture_whitelist.py"]
 min_confidence = 80
 exclude = [
     "*/migrations/*",
@@ -129,9 +130,10 @@ exclude = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+src = [".", "backend"]   # libs/ and services/ are first-party for isort — they live under backend/
 extend-exclude = [
     "archive",
-    "alembic/versions",
+    "backend/alembic/versions",
     "node_modules",
     "dist",
     ".venv",
@@ -158,7 +160,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "BLE001"]   # asserts + broad except OK in tests
-"alembic/**" = ["E", "F", "I"]    # alembic-generated
+"backend/alembic/**" = ["E", "F", "I"]    # alembic-generated
 
 [tool.ruff.format]
 quote-style = "double"
@@ -176,7 +178,7 @@ no_implicit_optional = true
 check_untyped_defs = true
 ignore_missing_imports = true
 exclude = [
-    "alembic/versions/",
+    "backend/alembic/versions/",
     "node_modules/",
     "dist/",
     "build/",
@@ -186,10 +188,10 @@ exclude = [
 # `disallow_untyped_defs` + `disallow_any_generics` and are kept green (0 errors)
 # — enforced BLOCKING by the CI "Strict typecheck · core libs" step, not just
 # reported. Expand this list as each service is cleaned up (see the burn-down in
-# SECURITY.md / RUNBOOK.md: database_connector, kb_backend, orchestrator next).
+# docs/SECURITY.md / docs/RUNBOOK.md: database_connector, kb_backend, orchestrator next).
 #
 # NOTE: these globs only match real importable packages. Hyphenated service dirs
-# (`services/auth-api`, …) are NOT importable as `services.auth-api.*`, so such a
+# (`backend/services/auth-api`, …) are NOT importable as `services.auth-api.*`, so such a
 # glob is a no-op ("unused section"); enforce those by invoking mypy on the dir
 # directly in CI instead.
 [[tool.mypy.overrides]]

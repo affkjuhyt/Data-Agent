@@ -1,5 +1,5 @@
 """Caller identity on the kb_search -> kb-backend call
-(services/workflow-runtime/nodes/sandbox/kb_search.py).
+(backend/services/workflow-runtime/nodes/sandbox/kb_search.py).
 
 This node used to send `X-Kong-Verified: true` plus a fixed
 `platform-admin,tenant-admin,kb-admin,engineer` role set on every agent
@@ -15,7 +15,7 @@ import sys
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "services" / "workflow-runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
 
 pytestmark = pytest.mark.unit
 

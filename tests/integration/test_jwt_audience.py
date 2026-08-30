@@ -4,9 +4,9 @@ Verifies the audience-validation slice of P1 #7:
 
   * Keycloak issues tokens with `aeroflow-backend`, `auth-api`,
     `release-worker` in the `aud` claim (driven by audience mappers
-    installed via infra/keycloak/setup-audience-mappers.sh).
+    installed via deploy/docker/keycloak/setup-audience-mappers.sh).
   * Kong's aeroflow-jwks plugin rejects a token if its `aud` doesn't
-    match the per-route audience config (set by infra/kong/kong-setup.sh).
+    match the per-route audience config (set by deploy/docker/kong/kong-setup.sh).
 
 This test does NOT cover the grace_period behavior on JWKS rotation —
 that needs Keycloak admin API to actually rotate keys + carefully timed

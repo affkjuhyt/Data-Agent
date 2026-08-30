@@ -9,7 +9,7 @@ the local stack through a **Cloudflare quick tunnel**.
 | File | Purpose |
 |---|---|
 | `vllm_qwen_colab.ipynb` | Upload to Colab, Run all — installs vLLM, serves Qwen, opens the tunnel |
-| `schemas.py` | JSON Schemas equivalent to the GBNF grammars in `services/kb-ingestion-worker/llama_client.py` |
+| `schemas.py` | JSON Schemas equivalent to the GBNF grammars in `backend/services/kb-ingestion-worker/llama_client.py` |
 | `test_endpoint.py` | Smoke test against the tunnel URL (stdlib only) |
 
 ## Quickstart
@@ -52,7 +52,7 @@ Two things the llama.cpp path needed that vanish here:
 
 ## Wiring the worker (not done yet)
 
-`services/kb-ingestion-worker/llama_client.py` speaks the Ollama-shaped API
+`backend/services/kb-ingestion-worker/llama_client.py` speaks the Ollama-shaped API
 (`/api/generate`, `/api/chat` + GBNF) and is untouched. To use this backend the worker
 needs a sibling client that calls `/v1/chat/completions` with `response_format` from
 `schemas.py`, selected via env (e.g. `LLM_BACKEND=vllm`, `VLLM_BASE_URL=<tunnel>`,

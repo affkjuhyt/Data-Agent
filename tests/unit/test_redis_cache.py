@@ -1,4 +1,4 @@
-"""cache_get_schema/cache_set_schema (services/workflow-runtime/redis_cache.py)
+"""cache_get_schema/cache_set_schema (backend/services/workflow-runtime/redis_cache.py)
 — DB Connector's information_schema introspection cache. Key is deliberately
 (tenant_id, host, port, database), NOT the user-chosen connection name or
 user/password (see plan: 2 differently-named connections to the same physical
@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "services" / "workflow-runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
 
 pytestmark = pytest.mark.unit
 

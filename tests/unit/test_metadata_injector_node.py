@@ -1,5 +1,5 @@
 """Unit tests for metadata_injector_node
-(services/workflow-runtime/nodes/context/metadata_injector.py).
+(backend/services/workflow-runtime/nodes/context/metadata_injector.py).
 
 The node's only job is copying the already-parsed `injected_metadata` dict
 from state["config"] (parsed by config_loader._extract_node_config, see
@@ -14,7 +14,7 @@ import sys
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "services" / "workflow-runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
 
 pytestmark = pytest.mark.unit
 

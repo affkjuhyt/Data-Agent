@@ -34,9 +34,9 @@ jobs:
           cache: pip
       - run: pip install mypy
       - name: Typecheck · whole tree (report)
-        run: mypy --install-types --non-interactive services libs app || true
+        run: mypy --install-types --non-interactive backend/services backend/libs || true
         # ^ `|| true` while strict surface is small — drop once mypy passes clean.
-        #   (basemodel moved under libs/ in the libs-layer refactor.)
+        #   (basemodel moved under backend/libs/ in the libs-layer refactor.)
       - name: Strict typecheck · core libs + services (BLOCKING)
         # These surfaces are kept strict-clean (disallow_untyped_defs +
         # disallow_any_generics). This FAILS the build on any new untyped def or
@@ -52,13 +52,13 @@ jobs:
         # first surface that regresses.
         run: |
           for target in \
-            libs/basemodel libs/database_connector libs/shared \
-            services/orchestrator services/kb_backend services/workflow-runtime \
-            services/auth-api services/flow-builder services/model-service \
-            services/minio-service services/release-worker services/sandbox-executor \
-            services/kb-ingestion-worker services/schema-crawler-worker \
-            services/memory-consumer services/audit-bridge services/audit-consumer \
-            services/jwks-refresher; do
+            backend/libs/basemodel backend/libs/database_connector backend/libs/shared \
+            backend/services/orchestrator backend/services/kb_backend backend/services/workflow-runtime \
+            backend/services/auth-api backend/services/flow-builder backend/services/model-service \
+            backend/services/minio-service backend/services/release-worker backend/services/sandbox-executor \
+            backend/services/kb-ingestion-worker backend/services/schema-crawler-worker \
+            backend/services/memory-consumer backend/services/audit-bridge backend/services/audit-consumer \
+            backend/services/jwks-refresher; do
             echo "== mypy strict: $target =="
             mypy --disallow-untyped-defs --disallow-any-generics \
                  --ignore-missing-imports --follow-imports=silent "$target"
@@ -84,7 +84,7 @@ jobs:
         # multiple commands into a prepared statement" that psycopg2 hides.
         run: |
           pip install -e ".[test]"
-          pip install -r services/auth-api/requirements.txt
+          pip install -r backend/services/auth-api/requirements.txt
           pip install alembic sqlalchemy[asyncio] asyncpg pydantic
       - name: Run pytest
         run: pytest -m "unit or integration" --cov --cov-report=xml --cov-report=term -n auto
@@ -176,9 +176,9 @@ jobs:
           RELEASE_WORKER_KAFKA_PASSWORD=ci-placeholder
           EOF
       - name: Validate local stack
-        run: docker compose -f infra/docker-compose.yml -f infra/docker-compose.local.yml config > /dev/null
+        run: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml config > /dev/null
       - name: Validate dev stack
-        run: docker compose -f infra/docker-compose.yml -f infra/docker-compose.dev.yml config > /dev/null
+        run: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.dev.yml config > /dev/null
 
   e2e-tenant-isolation:
     name: E2E · tenant isolation (live stack)
@@ -195,7 +195,7 @@ jobs:
       - name: Bring up stack
         run: |
           cp .env.example .env
-          docker compose -f infra/docker-compose.yml -f infra/docker-compose.local.yml up -d --build
+          docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml up -d --build
       - name: Wait for stack
         run: |
           for i in {1..60}; do
@@ -204,14 +204,14 @@ jobs:
             break || sleep 5
           done
       - name: Seed stack
-        run: bash infra/kong/kong-setup.sh
+        run: bash deploy/docker/kong/kong-setup.sh
       - name: Run e2e suite
         env:
           LIVE_STACK: "1"
         run: pytest -m e2e tests/integration -v
       - name: Tear down
         if: always()
-        run: docker compose -f infra/docker-compose.yml -f infra/docker-compose.local.yml down -v
+        run: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml down -v
 
   quality-gates:
     # Phase 0 guardrails for the SRS (architecture + dead code + strict types).

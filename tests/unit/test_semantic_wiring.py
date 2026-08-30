@@ -1,4 +1,4 @@
-"""Semantic Layer wiring — services/workflow-runtime.
+"""Semantic Layer wiring — backend/services/workflow-runtime.
 
 The pure logic is covered in test_semantic_layer.py. What matters here is that
 it is actually REACHED, and that it yields correctly when it cannot answer:
@@ -35,7 +35,7 @@ from libs.semantic import (
 )
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "services" / "workflow-runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
 
 pytestmark = pytest.mark.unit
 
