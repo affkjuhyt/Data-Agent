@@ -147,7 +147,7 @@ export default function ReviewCenter() {
   }, [fetch_]);
 
   return (
-    <div style={{ maxWidth: 760 }}>
+    <div style={{ maxWidth: "100%" }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
           <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#B88719] font-mono mb-1.5">

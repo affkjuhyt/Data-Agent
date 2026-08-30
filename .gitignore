@@ -67,7 +67,7 @@ model/ollama/weights/*.gguf
 # the ingestion worker. Large binaries.
 model/docling-model/weights/
 # model-service embed/rerank weights — downloaded at runtime into this mounted volume
-deploy/docker/model-service/models/
+backend/services/model-service/models/
 
 # UI design files — reference only, không commit
 Data_Agent_UI/
@@ -83,8 +83,6 @@ deploy/docker/kafka/kafka-broker-jaas.config
 .kong-bringup.log
 deploy/docker/.*-up.log
 
-# Model
-backend/services/model-service/models/models--intfloat--multilingual-e5-small
 .gitnexus
 
 # Evaluation artifacts. The CORPUS is versioned (model/eval/cases/*.jsonl); these
@@ -95,7 +93,6 @@ eval-report.json
 model/ragas/test_cases.json
 model/ragas/results.csv
 frontend/scripts/ui-demo-shots/
-tests/e2e/out/
 tests/e2e/out/
 
 # ansible: real inventories/secrets stay local

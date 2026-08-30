@@ -8,10 +8,6 @@
 #
 #   ansible-playbook site.yml --tags bundle
 #   ansible-playbook site.yml --tags bundle -e bundle_image_filter='^postgres'   # quick dry run
-- name: Compose command line
-  ansible.builtin.set_fact:
-    compose_cmd: "docker compose -p {{ compose_project }} --env-file {{ project_dir }}/.env{% for p in compose_profiles %} --profile {{ p }}{% endfor %}{% for f in compose_files %} -f {{ compose_dir }}/{{ f }}{% endfor %}"
-
 - name: Version from git
   ansible.builtin.command: git -C {{ project_dir }} describe --tags --always --dirty
   register: git_describe
@@ -29,7 +25,11 @@
     bundle_version: "{{ bundle_version_override | default(git_describe.stdout | default('dev', true), true) }}"
     bundle_git_commit: "{{ git_commit.stdout | default('unknown', true) }}"
     bundle_built_at: "{{ ansible_date_time.iso8601 }}"
-    bundle_stage: "{{ bundle_dir }}/{{ compose_project }}-{{ bundle_version_override | default(git_describe.stdout | default('dev', true), true) }}"
+
+- name: Bundle paths
+  ansible.builtin.set_fact:
+    bundle_stage: "{{ bundle_dir }}/{{ compose_project }}-{{ bundle_version }}"
+    images_cache_path: "{{ bundle_dir }}/images-{{ compose_project }}-{{ bundle_version }}.tar.gz"
 
 - name: Fresh staging directory
   ansible.builtin.file:
@@ -67,13 +67,13 @@
 
 - name: Previous images.tar.gz for this version (bundle_reuse_images)
   ansible.builtin.stat:
-    path: "{{ bundle_dir }}/images-{{ compose_project }}-{{ bundle_version }}.tar.gz"
+    path: "{{ images_cache_path }}"
   register: images_cache
 
 - name: docker save → images.tar.gz ({{ bundle_images | length }} images — takes a while)
   ansible.builtin.shell: >
     set -o pipefail;
-    docker save {{ bundle_images | join(' ') }} | gzip -{{ bundle_gzip_level }} > {{ images_cache.stat.path }}
+    docker save {{ bundle_images | join(' ') }} | gzip -{{ bundle_gzip_level }} > {{ images_cache_path }}
   args:
     executable: /bin/bash
   when: not (images_cache.stat.exists and (bundle_reuse_images | bool))
@@ -81,15 +81,19 @@
 
 - name: images.tar.gz into the stage (hard link — no second copy)
   ansible.builtin.file:
-    src: "{{ images_cache.stat.path }}"
+    src: "{{ images_cache_path }}"
     dest: "{{ bundle_stage }}/images.tar.gz"
     state: hard
 
+# Every .env* file is a secret EXCEPT the *.example templates (install.sh copies
+# .env.example to .env) — tar has no "exclude, but not…", so the list is computed.
 - name: code.tar.gz — compose, configs, playbook, seed, docs (no source tree)
   ansible.builtin.shell: >
     set -o pipefail;
-    tar -C {{ project_dir }} -czf {{ bundle_stage }}/code.tar.gz
-    --exclude='*.ps1' --exclude='.env' --exclude='.env.*' --exclude='.secrets' --exclude='*.key' --exclude='*.pem'
+    cd {{ project_dir }} &&
+    tar -czf {{ bundle_stage }}/code.tar.gz
+    $(find {{ bundle_code_paths | join(' ') }} -name '.env*' ! -name '*.example' -exec printf -- "--exclude=%s " {} +)
+    --exclude='*.ps1' --exclude='.secrets' --exclude='*.key' --exclude='*.pem'
     --exclude='kafka-broker-jaas.config' --exclude='.root-token' --exclude='.init-keys*'
     --exclude='deploy/ansible/inventories/prod/hosts.yml' --exclude='deploy/ansible/inventories/prod/group_vars/all.yml'
     --exclude='deploy/ansible/inventories/prod/group_vars/all/vault.yml'

@@ -229,6 +229,8 @@ jobs:
       - run: pip install import-linter vulture
       - name: Architecture contracts (import-linter · BLOCKING)
         run: lint-imports
+        env:
+          PYTHONPATH: backend   # .importlinter root_packages (libs, services) live under backend/
       - name: Dead code · Python (vulture · report)
         run: vulture || true
       - uses: actions/setup-node@v4

@@ -3,9 +3,13 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 import { defineConfig, loadEnv } from "vite";
 
+// VITE_* is documented in the repo-root .env.example; the workspace runs vite from frontend/.
+const ENV_DIR = path.resolve(__dirname, "..");
+
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, ".", "");
+  const env = loadEnv(mode, ENV_DIR, "");
   return {
+    envDir: ENV_DIR,
     plugins: [react(), tailwindcss()],
     define: {
       "process.env.GEMINI_API_KEY": JSON.stringify(env.GEMINI_API_KEY),

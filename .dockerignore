@@ -26,5 +26,5 @@ data_agent.egg-info
 model/ollama/weights
 # Downloaded model weights (HF cache, ~2.4 GB) — not needed by any image build and
 # its snapshot symlinks make BuildKit reject the context ("invalid file request").
-deploy/docker/model-service/models
+backend/services/model-service/models
 model-service/models

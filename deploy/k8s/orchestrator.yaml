@@ -34,7 +34,7 @@ spec:
             - sh
             - -c
             - |
-              until alembic -c backend/alembic/alembic.ini current 2>/dev/null | grep -q '(head)'; do
+              until alembic -c alembic/alembic.ini current 2>/dev/null | grep -q '(head)'; do
                 echo "waiting for alembic to reach head..."
                 sleep 5
               done

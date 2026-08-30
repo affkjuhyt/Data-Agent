@@ -1,8 +1,5 @@
 ---
-- name: Compose command line for shell steps
-  ansible.builtin.set_fact:
-    compose_cmd: "docker compose -p {{ compose_project }} --env-file {{ project_dir }}/.env{% for p in compose_profiles %} --profile {{ p }}{% endfor %}{% for f in compose_files %} -f {{ compose_dir }}/{{ f }}{% endfor %}"
-
+# compose_cmd (the `docker compose -p … -f …` line) comes from roles/common/defaults.
 # container_name is fixed per service, so a stack from another compose project
 # (e.g. the day-to-day "infra" project) must be stopped first. Their volumes
 # are untouched.

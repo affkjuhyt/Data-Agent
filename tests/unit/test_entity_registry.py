@@ -8,10 +8,11 @@ knowledge graph from fragmenting into near-duplicate nodes.
 """
 from __future__ import annotations
 
-import pathlib
 import sys
 
 import pytest
+
+from ._loader import SERVICES
 
 pytestmark = pytest.mark.unit
 
@@ -19,7 +20,7 @@ pytestmark = pytest.mark.unit
 pytest.importorskip("sqlalchemy")
 pytest.importorskip("qdrant_client")
 
-_WORKER_DIR = str(pathlib.Path(__file__).resolve().parents[2] / "services" / "kb-ingestion-worker")
+_WORKER_DIR = str(SERVICES / "kb-ingestion-worker")
 
 
 @pytest.fixture(scope="module", autouse=True)

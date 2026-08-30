@@ -38,14 +38,14 @@ tar -xzf "$HERE/code.tar.gz" -C "$TARGET"
 [ -f "$TARGET/.env" ] || cp "$TARGET/.env.example" "$TARGET/.env"
 
 if [ "$RUN_ANSIBLE" = 1 ] && command -v ansible-playbook >/dev/null 2>&1; then
-  echo "▶ ansible-playbook (local inventory, images already present → no build)"
+  echo "▶ ansible-playbook (appliance inventory, images already present → no build)"
   cd "$TARGET/deploy/ansible"
-  ansible-playbook -i inventories/local site.yml -e compose_build=never -e code_source=none
+  ansible-playbook -i inventories/appliance site.yml -e llm_backend={{ llm_backend }}
 else
   cat <<EOF
 ✔ files in place. Next, on this host:
    cd $TARGET/deploy/ansible
-   ansible-playbook -i inventories/local site.yml -e compose_build=never
+   ansible-playbook -i inventories/appliance site.yml -e llm_backend={{ llm_backend }}
 (or drive it from your controller: -i inventories/prod with project_dir=$TARGET)
 EOF
 fi

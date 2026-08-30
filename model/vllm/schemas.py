@@ -1,7 +1,7 @@
 """JSON Schemas for vLLM structured outputs.
 
 Functional equivalents of the GBNF grammars in
-deploy/docker/kb-ingestion-worker/llama_client.py (ENTITY_INTENT_GBNF / RELATIONSHIP_GBNF).
+backend/services/kb-ingestion-worker/llama_client.py (ENTITY_INTENT_GBNF / RELATIONSHIP_GBNF).
 
 With llama.cpp the JSON shape was enforced by a hand-written GBNF grammar; with
 vLLM the same token-masking enforcement (xgrammar) is driven by a standard JSON

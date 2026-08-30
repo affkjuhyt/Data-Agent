@@ -21,10 +21,12 @@ RUN pip install --no-cache-dir -r ragas-requirements.txt \
     && pip install --no-cache-dir -r runtime-requirements.txt \
     && pip install --no-cache-dir sqlparse
 
+# Same layout as the checkout (backend/…) so model/eval/_paths.py resolves
+# the service trees identically in CI and in this image.
 COPY model ./model
-COPY backend/libs ./libs
-COPY backend/services/sandbox-executor ./services/sandbox-executor
-COPY backend/services/workflow-runtime ./services/workflow-runtime
+COPY backend/libs ./backend/libs
+COPY backend/services/sandbox-executor ./backend/services/sandbox-executor
+COPY backend/services/workflow-runtime ./backend/services/workflow-runtime
 
 # Runs everything and gates on the result: a report with no verdict is a
 # dashboard, and this container exists to answer yes or no.

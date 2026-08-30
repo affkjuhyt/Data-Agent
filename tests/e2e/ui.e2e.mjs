@@ -46,7 +46,7 @@ let vite = null;
 if (!(await isUp(APP))) {
   console.log(`▶ starting vite at ${APP} with VITE_API_URL=${KONG}`);
   vite = spawn('npx', ['vite', '--port=3000', '--host=0.0.0.0', '--strictPort'], {
-    cwd: ROOT, env: { ...process.env, VITE_API_URL: KONG }, stdio: 'ignore',
+    cwd: resolve(ROOT, 'frontend'), env: { ...process.env, VITE_API_URL: KONG }, stdio: 'ignore',
   });
   for (let i = 0; i < 60 && !(await isUp(APP)); i++) await new Promise(r => setTimeout(r, 1000));
   if (!(await isUp(APP))) { console.error('vite did not come up'); process.exit(2); }

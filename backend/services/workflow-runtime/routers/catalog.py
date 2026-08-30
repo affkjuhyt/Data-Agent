@@ -92,4 +92,5 @@ def get_kb_connections(request: Request) -> list[Any]:
 
 @router.get("/api/system-prompts")
 def get_system_prompts(request: Request) -> list[dict[str, Any]]:
+    tenant_id = _resolve_tenant(request.headers.get("X-Tenant-ID"))
     return [prompt for prompt in SYSTEM_PROMPTS if prompt["tenant_id"] == tenant_id]

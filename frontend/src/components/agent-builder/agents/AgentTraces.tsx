@@ -52,11 +52,11 @@ export const TraceExplorer = () => {
             <HistoryIcon className="w-4 h-4" />
             Execution Observability / Traces
           </div>
-          <h1 className="text-5xl font-display font-medium tracking-tight text-white mb-2 italic">Neural Debugger</h1>
+          <h1 className="text-5xl font-display font-medium tracking-tight text-black mb-2 italic">Neural Debugger</h1>
           <p className="text-slate-500 text-lg">Inspect reasoning chains, tool calls, and retrieval performance.</p>
         </div>
         <div className="flex gap-4">
-           <button className="px-5 py-2.5 bg-white/5 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-300 hover:text-white transition-all flex items-center gap-2">
+           <button className="px-5 py-2.5 bg-white/5 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-700 hover:text-slate-400 transition-all flex items-center gap-2">
              <BarChart3 className="w-4 h-4" /> Usage Dashboard
            </button>
            <button className="px-5 py-2.5 bg-brand-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-brand-600 transition-all shadow-2xl shadow-brand-500/20 flex items-center gap-2">
@@ -74,10 +74,10 @@ export const TraceExplorer = () => {
                   <input 
                     type="text" 
                     placeholder="Search by Trace ID, query or agent..." 
-                    className="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-6 py-3 text-xs focus:outline-none focus:border-brand-500/50 transition-all font-mono"
+                    className="w-full bg-white/5 border border-brand-500 rounded-2xl pl-12 pr-6 py-3 text-xs focus:outline-none focus:border-brand-500/50 transition-all font-mono"
                   />
                </div>
-               <button className="px-4 py-3 bg-white/5 border border-white/10 rounded-2xl text-[10px] font-black uppercase text-slate-500 hover:text-white transition-all"><Filter className="w-4 h-4" /></button>
+               <button className="px-4 py-3 bg-white/5 border border-brand-500 rounded-2xl text-[10px] font-black uppercase text-slate-500 hover:text-white transition-all"><Filter className="w-4 h-4" /></button>
             </div>
 
             {MOCK_TRACES.map(trace => (

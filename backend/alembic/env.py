@@ -1,7 +1,13 @@
 import asyncio
 import logging
 import os
+import sys
 from logging.config import fileConfig
+from pathlib import Path
+
+# `libs.*` lives next to this directory (backend/libs, or /app/libs in the migrate
+# image) — make env.py importable regardless of the caller's cwd/PYTHONPATH.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine

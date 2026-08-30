@@ -180,7 +180,7 @@ setup_kong() {
 }
 
 setup_openbao() {
-  log "openbao: init/unseal, KV v2 'secret', read-only AppRole, e2e DB password"
+  log "openbao: init/unseal, KV v2 'secret', transit, read-only AppRole, e2e DB password"
   # Init/unseal over the API from the host. Keys go to $OUT/openbao-keys.json
   # (this stack's own volume; the file is git-ignored). A vault that is
   # initialised but whose keys we do not have cannot be unsealed — recreate it.
@@ -212,6 +212,11 @@ setup_openbao() {
   if ! curl -sf "${H[@]}" "$OPENBAO/v1/sys/mounts" | grep -q '"secret/"'; then
     curl -sf "${H[@]}" -X POST -d '{"type":"kv","options":{"version":"2"}}' "$OPENBAO/v1/sys/mounts/secret" >/dev/null
     ok "mounted kv-v2 at secret/"
+  fi
+  # Transit at transit/ — auth-api's key rotation/signing (auth_core._TRANSIT_MOUNT)
+  if ! curl -sf "${H[@]}" "$OPENBAO/v1/sys/mounts" | grep -q '"transit/"'; then
+    curl -sf "${H[@]}" -X POST -d '{"type":"transit"}' "$OPENBAO/v1/sys/mounts/transit" >/dev/null
+    ok "mounted transit at transit/"
   fi
   # policy + approle (same shape as deploy/docker/openbao/openbao-approle-setup.sh)
   curl -sf "${H[@]}" -X POST -d '{"policy":"path \"secret/data/tenants/*\" { capabilities = [\"read\"] }"}' \

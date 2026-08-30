@@ -53,7 +53,7 @@ services:
       PGUSER: ${POSTGRES_USER:-admin}
       PGDATABASE: ${POSTGRES_DB:-dataagent}
     volumes:
-      - ./postgres/seed.sql:/seed.sql:ro
+      - ./sql/kb-seed.sql:/seed.sql:ro
     entrypoint:
       - /bin/sh
       - -c

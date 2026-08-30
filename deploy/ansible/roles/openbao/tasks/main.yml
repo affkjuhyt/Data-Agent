@@ -1,6 +1,6 @@
 ---
 # OpenBao: the only place a warehouse password lives. State expressed here:
-# initialised + unsealed, KV v2 at secret/, a read-only AppRole for
+# initialised + unsealed, KV v2 at secret/, Transit at transit/, a read-only AppRole for
 # workflow-runtime whose credentials are in .env, and (local) the demo
 # warehouse password the seeded agent resolves through secrets_vault.
 - name: Keys/root token file for this stack
@@ -143,6 +143,19 @@
     body: { type: kv, options: { version: "2" } }
     status_code: [200, 204]
   when: "'secret/' not in bao_mounts.json"
+  changed_when: true
+  no_log: true
+
+# auth-api rotates/signs with the Transit engine at transit/ (auth_core._TRANSIT_MOUNT).
+- name: Transit at transit/
+  ansible.builtin.uri:
+    url: "{{ openbao_url }}/v1/sys/mounts/transit"
+    method: POST
+    headers: "{{ bao_hdr }}"
+    body_format: json
+    body: { type: transit }
+    status_code: [200, 204]
+  when: "'transit/' not in bao_mounts.json"
   changed_when: true
   no_log: true
 
