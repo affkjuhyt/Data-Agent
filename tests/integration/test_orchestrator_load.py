@@ -1,11 +1,11 @@
 """Load test for POST /api/orchestrate/stream.
 
-Sweeps concurrency levels against a running workflow-runtime (which serves
+Sweeps concurrency levels against a running workflow_runtime (which serves
 /api/orchestrate) and reports
 latency / error-rate per level, so we can find where the system stops
 scaling (LLM backend, connection pool, or the process itself).
 
-As a pytest e2e test (skipped unless LIVE_STACK=1 + workflow-runtime is up):
+As a pytest e2e test (skipped unless LIVE_STACK=1 + workflow_runtime is up):
     LIVE_STACK=1 pytest tests/integration/test_orchestrator_load.py -m e2e -s
 
 As a standalone CLI for ad-hoc sweeps:
@@ -151,9 +151,9 @@ async def sweep(base_url: str, query: str, levels: list, timeout: float,
 # ─── pytest e2e entrypoint ──────────────────────────────────────────────────
 @pytest.mark.e2e
 def test_orchestrator_handles_baseline_concurrency():
-    """Sanity check: the orchestrator (inside workflow-runtime) survives a small concurrency burst.
+    """Sanity check: the orchestrator (inside workflow_runtime) survives a small concurrency burst.
 
-    Skipped unless LIVE_STACK=1 and workflow-runtime is reachable — this is
+    Skipped unless LIVE_STACK=1 and workflow_runtime is reachable — this is
     a smoke assertion, not the full sweep. Run the file directly (see module
     docstring) for the full concurrency-vs-latency report used to size
     scheduling/priority work.
@@ -161,7 +161,7 @@ def test_orchestrator_handles_baseline_concurrency():
     if os.environ.get("LIVE_STACK") != "1":
         pytest.skip(
             "Live stack not requested — set LIVE_STACK=1 and start the "
-            "workflow-runtime (backend/services/workflow-runtime, serves /api/orchestrate) before running."
+            "workflow_runtime (backend/services/workflow_runtime, serves /api/orchestrate) before running."
         )
     base_url = os.environ.get("WORKFLOW_RUNTIME_URL", f"http://{DEFAULT_HOST}:{DEFAULT_PORT}")
     rows = asyncio.run(sweep(base_url, DEFAULT_QUERY, [1, 5], timeout=120.0))

@@ -52,7 +52,7 @@ jobs:
         run: |
           pip install sqlparse
           pip install -r model/ragas/requirements.txt
-          pip install -r backend/services/workflow-runtime/requirements.txt
+          pip install -r backend/services/workflow_runtime/requirements.txt
 
       - name: Run both tiers
         # Never `|| true`: a run that could not reach the model must leave a

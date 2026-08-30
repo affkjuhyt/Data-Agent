@@ -2,7 +2,7 @@
 
 One HTTP shape — ``POST {base_url}/v1/embeddings`` with ``{"model", "input"}`` —
 used to be copied into memory-consumer, schema-crawler-worker and three
-workflow-runtime modules. Each copy drifted in small ways (timeouts, error
+workflow_runtime modules. Each copy drifted in small ways (timeouts, error
 handling), and each one had to be found when the endpoint or model name moved.
 This module is the single copy; callers pass the connection details in rather
 than reading env, so a worker's settings object and a FastAPI app's config can

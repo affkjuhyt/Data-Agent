@@ -1,7 +1,7 @@
 /**
  * Settings → Storage & Retention.
  *
- *   buckets      usePlatformBuckets()            GET /api/storage/buckets (workflow-runtime)
+ *   buckets      usePlatformBuckets()            GET /api/storage/buckets (workflow_runtime)
  *   objects      usePlatformBucketObjects(b)     GET /api/storage/buckets/{b}/objects
  *   collections  usePlatformVectorCollections()  GET /api/knowledge/qdrant/collections
  *   retention    usePlatformSetting('retention_policies')  [{id, scope, days, action}]

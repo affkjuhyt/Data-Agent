@@ -81,7 +81,7 @@ export const usePlatformRoles = () => useApiResource<{ roles: string[] }>('/api/
 export const usePlatformRuntimeConfig = () =>
   useApiResource<Record<string, unknown>>('/api/runtime-config');
 
-/* ─── /api/storage/buckets (workflow-runtime) ─────────────── */
+/* ─── /api/storage/buckets (workflow_runtime) ─────────────── */
 export const usePlatformBuckets = () =>
   useApiResource<{ buckets: string[] }>('/api/storage/buckets');
 
@@ -111,7 +111,7 @@ export interface VectorCollection {
 export const usePlatformVectorCollections = () =>
   useApiResource<VectorCollection[]>('/api/knowledge/qdrant/collections');
 
-/* ─── /api/sandbox/status (workflow-runtime relay) ────────── */
+/* ─── /api/sandbox/status (workflow_runtime relay) ────────── */
 export interface SandboxJobSummary {
   job_id: string;
   kind: 'python' | 'sql';
@@ -132,7 +132,7 @@ export interface SandboxStatus {
   jobs: { python: SandboxJobSummary[]; sql: SandboxJobSummary[] };
 }
 
-/** Mirrors SandboxQueuePanel: workflow-runtime relay, same base URL. */
+/** Mirrors SandboxQueuePanel: workflow_runtime relay, same base URL. */
 export const usePlatformSandboxStatus = (): ApiResource<SandboxStatus> => {
   const [data, setData] = useState<SandboxStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -146,7 +146,7 @@ export const usePlatformSandboxStatus = (): ApiResource<SandboxStatus> => {
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       setData(await res.json());
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'sandbox-executor unreachable');
+      setError(e instanceof Error ? e.message : 'sandbox_executor unreachable');
     } finally {
       setLoading(false);
     }

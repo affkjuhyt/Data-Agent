@@ -1,13 +1,13 @@
 """Cross-replica graph-cache invalidation over Redis pub/sub.
 
-Phase 1 keys the workflow-runtime graph cache by (agent_id, workflow_version_id),
+Phase 1 keys the workflow_runtime graph cache by (agent_id, workflow_version_id),
 so *publishing a new version* already rebuilds the graph everywhere — the new id
 yields a new cache key on every replica. The gap this module closes is the
 *same-version* edit (republish): the id doesn't change, so each replica keeps
 serving its stale compiled graph until restart.
 
-flow-builder calls `publish_graph_invalidation(...)` after a republish; every
-workflow-runtime replica runs `run_graph_invalidation_listener(...)` and evicts
+flow_buider calls `publish_graph_invalidation(...)` after a republish; every
+workflow_runtime replica runs `run_graph_invalidation_listener(...)` and evicts
 the matching cache entry. Both sides are best-effort: Redis being down must never
 break a publish or a request — it only means invalidation falls back to the
 version-keyed behavior (correct on the next version bump).
@@ -21,7 +21,7 @@ from collections.abc import Awaitable, Callable
 log = logging.getLogger(__name__)
 
 # Channel carrying a single workflow_version_id per message.
-GRAPH_INVALIDATE_CHANNEL = "workflow-runtime:graph-invalidate"
+GRAPH_INVALIDATE_CHANNEL = "workflow_runtime:graph-invalidate"
 
 
 async def publish_graph_invalidation(redis_url: str, workflow_version_id: str) -> bool:

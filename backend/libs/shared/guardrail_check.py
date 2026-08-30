@@ -1,5 +1,5 @@
 """Shared LLM-based guardrail check — used by both orchestrator (input +
-multi-agent synthesis output) and workflow-runtime (single-agent output).
+multi-agent synthesis output) and workflow_runtime (single-agent output).
 
 Pure LLM-calling primitive: does not swallow errors (raises GuardrailCheckError
 instead) so each call site can decide its own fail-open/fail-closed policy —

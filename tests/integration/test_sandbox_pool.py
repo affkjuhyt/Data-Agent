@@ -6,7 +6,7 @@ container. Drives a real ContainerPool (size 1, built directly rather
 than via docker_runner's shared env-configured singleton, so acquire/
 release behavior is deterministic) against the real Docker daemon and the
 `sandbox-runner:latest` image; skipped otherwise (same gate as the other
-sandbox-executor integration tests).
+sandbox_executor integration tests).
 
 This exercises `_cleanup()`/`ContainerPool` directly rather than going
 through main.py's `/execute/python` HTTP endpoint, so it can plant a
@@ -27,7 +27,7 @@ import pytest
 pytestmark = pytest.mark.integration
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "sandbox-executor")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "sandbox_executor")
 _IMAGE = "sandbox-runner:latest"
 
 
@@ -202,8 +202,8 @@ def test_a_traversing_input_name_is_refused(one_container_pool):
 
 
 def test_shell_commands_run_in_the_pool_container(one_container_pool, monkeypatch):
-    """workflow-runtime's `bash` tool used to be subprocess.run(shell=True) in
-    workflow-runtime's own process. This is where it runs now."""
+    """workflow_runtime's `bash` tool used to be subprocess.run(shell=True) in
+    workflow_runtime's own process. This is where it runs now."""
     pool, dr = one_container_pool
     monkeypatch.setattr(dr, "get_pool", lambda: pool)
 

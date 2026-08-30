@@ -118,14 +118,14 @@ function _isInfraSpan(o: any): boolean {
 
 // "LangGraph" là tên mặc định của CallbackHandler cho MỌI graph invocation —
 // dùng chung ở CẢ orchestrator (bọc guardrail/input_refine/single_agent/...)
-// LẪN workflow-runtime (bọc planner/judge/tool_executor/... của 1 agent run).
-// Chỉ span của workflow-runtime mới cần ẩn con (chờ user expand single-agent/
+// LẪN workflow_runtime (bọc planner/judge/tool_executor/... của 1 agent run).
+// Chỉ span của workflow_runtime mới cần ẩn con (chờ user expand single-agent/
 // [task]) — span của orchestrator là gốc thật, con của nó luôn phải hiện
 // ngay. Phân biệt qua service.name trong resourceAttributes (OTEL), KHÔNG
 // thể phân biệt bằng tên vì cả 2 đều tên "LangGraph".
 function _isAgentInternalWrapper(o: any): boolean {
   return o?.name === 'LangGraph' &&
-    o?.metadata?.resourceAttributes?.['service.name'] === 'workflow-runtime';
+    o?.metadata?.resourceAttributes?.['service.name'] === 'workflow_runtime';
 }
 
 function trimInput(name: string, raw: any): string {
@@ -172,7 +172,7 @@ function trimInput(name: string, raw: any): string {
 
 function mapObservations(obs: any[], traceId?: string): TraceStep[] {
   // Build parent lookup (full object, không chỉ tên) — cần cả metadata để
-  // phân biệt "LangGraph" của orchestrator vs của workflow-runtime.
+  // phân biệt "LangGraph" của orchestrator vs của workflow_runtime.
   const byId = new Map<string, any>(obs.map(o => [o.id as string, o]));
   const infraById = new Map<string, boolean>(obs.map(o => [o.id as string, _isInfraSpan(o)]));
 
@@ -191,7 +191,7 @@ function mapObservations(obs: any[], traceId?: string): TraceStep[] {
       if (_isInfraSpan(o)) return false;
       if (_shouldSkip(o.name) || _HIDE_SPAN.has(o.name)) return false;
       // level=DEBUG: node có ý nghĩa quan sát thấp trên happy path (vd
-      // judge_phase1 khi PASS — backend/services/workflow-runtime/graph.py hạ level
+      // judge_phase1 khi PASS — backend/services/workflow_runtime/graph.py hạ level
       // xuống DEBUG lúc không bounce). Ẩn khỏi trace mặc định, đúng ý nghĩa
       // chuẩn của field "level" — không cần bật riêng cho từng tên node.
       if (o.level === 'DEBUG') return false;
@@ -214,7 +214,7 @@ function mapObservations(obs: any[], traceId?: string): TraceStep[] {
       const parentName = parentObs?.name as string | undefined;
       // Parent not in this observation set (external root) → include only SPANs
       if (!parentId || parentName === undefined) return o.type === 'SPAN';
-      // Parent là "LangGraph" của workflow-runtime (wrapper nội bộ 1 agent run)
+      // Parent là "LangGraph" của workflow_runtime (wrapper nội bộ 1 agent run)
       // → ẩn con, chờ user expand single-agent/[task]. "LangGraph" của
       // orchestrator (wrapper gốc, bọc guardrail/input_refine/...) → LUÔN
       // hiện con, không quan tâm isOuterTrace (đây chính là các bước top-level

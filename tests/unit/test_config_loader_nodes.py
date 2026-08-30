@@ -1,4 +1,4 @@
-"""Unit tests for workflow-runtime config_loader pure helpers.
+"""Unit tests for workflow_runtime config_loader pure helpers.
 
 `_extract_node_config` translates the visual flow canvas (per-node settings)
 into the flat runtime config the graph reads. Getting this wrong means a user's
@@ -17,12 +17,12 @@ from ._loader import SERVICES, load_module_from_path
 
 pytestmark = pytest.mark.unit
 
-# workflow-runtime is a hyphenated dir; config_loader only imports dotenv +
+# workflow_runtime is a hyphenated dir; config_loader only imports dotenv +
 # sqlalchemy at module scope (its DB/Mongo imports are lazy, inside functions).
 config_loader = load_module_from_path(
     "config_loader",
-    SERVICES / "workflow-runtime" / "config_loader.py",
-    extra_syspath=[SERVICES / "workflow-runtime"],
+    SERVICES / "workflow_runtime" / "config_loader.py",
+    extra_syspath=[SERVICES / "workflow_runtime"],
 )
 
 

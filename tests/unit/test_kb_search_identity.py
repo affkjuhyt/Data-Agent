@@ -1,5 +1,5 @@
 """Caller identity on the kb_search -> kb-backend call
-(backend/services/workflow-runtime/nodes/sandbox/kb_search.py).
+(backend/services/workflow_runtime/nodes/sandbox/kb_search.py).
 
 This node used to send `X-Kong-Verified: true` plus a fixed
 `platform-admin,tenant-admin,kb-admin,engineer` role set on every agent
@@ -15,7 +15,7 @@ import sys
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
 pytestmark = pytest.mark.unit
 
@@ -52,7 +52,7 @@ class TestIdentityHeaders:
 
         headers = kb_search._identity_headers(cfg, TENANT)
         payload = verify_service_assertion(
-            headers["X-Service-Assertion"], secret=SECRET, allowed_services=["workflow-runtime"],
+            headers["X-Service-Assertion"], secret=SECRET, allowed_services=["workflow_runtime"],
         )
 
         assert payload["roles"] == ["business-operator"]
@@ -83,7 +83,7 @@ class TestIdentityHeaders:
             {"user_roles": ["executive-viewer", "business-operator"], "user_ref": "u1"}, TENANT,
         )
         payload = verify_service_assertion(
-            headers["X-Service-Assertion"], secret=SECRET, allowed_services=["workflow-runtime"],
+            headers["X-Service-Assertion"], secret=SECRET, allowed_services=["workflow_runtime"],
         )
 
         assert payload["roles"] == ["executive-viewer", "business-operator"]

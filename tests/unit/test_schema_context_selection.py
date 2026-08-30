@@ -1,5 +1,5 @@
 """Which schema reaches the SQL-generation prompt
-(backend/services/workflow-runtime/nodes/sandbox/tool_executor/handlers/data.py).
+(backend/services/workflow_runtime/nodes/sandbox/tool_executor/handlers/data.py).
 
 Two defects are pinned here:
 
@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
 pytestmark = pytest.mark.unit
 
@@ -281,7 +281,7 @@ class TestCatalogIsPreferred:
 
 class TestTwoPhaseIntrospection:
     """Columns used to be fetched for EVERY table in one statement, which hits
-    sandbox-executor's MAX_ROWS=10_000 cap at roughly 500 tables. The result came
+    sandbox_executor's MAX_ROWS=10_000 cap at roughly 500 tables. The result came
     back as an alphabetical prefix with `is_truncated` set, and `_sandbox_sql`
     logs that flag without returning it — so on a large warehouse the tail simply
     vanished and the agent concluded those tables did not exist.
@@ -398,7 +398,7 @@ class TestTwoPhaseIntrospection:
         data = _data()
         _stub_redis(monkeypatch, get_return=None)
         monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(
-            return_value=(None, "sandbox-executor unreachable", False, None),
+            return_value=(None, "sandbox_executor unreachable", False, None),
         ))
 
         assert await data._get_schema_text(TENANT, {"host": "h", "database": "d"}, "q") == ""

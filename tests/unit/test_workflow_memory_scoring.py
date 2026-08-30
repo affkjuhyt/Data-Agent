@@ -1,4 +1,4 @@
-"""Pure-function tests for backend/services/workflow-runtime/workflow_memory.py —
+"""Pure-function tests for backend/services/workflow_runtime/workflow_memory.py —
 no Docker, no network, no LLM. Covers the recency*duration scoring formula
 (doc §3.7/§IV) and the Schema Memory -> DDL rendering, both of which are
 plain Python with no I/O.
@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
 
 @pytest.fixture(autouse=True)

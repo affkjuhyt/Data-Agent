@@ -1,4 +1,4 @@
-"""Nothing a model writes runs inside workflow-runtime's own process.
+"""Nothing a model writes runs inside workflow_runtime's own process.
 
 Two tools used to break that, both a long way inside the boundary the platform
 describes:
@@ -11,7 +11,7 @@ describes:
     the same process. `tool_config.bash.enabled` gated it; a config flag is not
     a boundary.
 
-Both now go to sandbox-executor, which runs them in the hardened pool container
+Both now go to sandbox_executor, which runs them in the hardened pool container
 (no network, read-only rootfs, tmpfs /tmp, pids/memory/cpu caps, killed and
 wiped afterwards) that execute_python already used.
 
@@ -33,8 +33,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
-_TOOL_EXECUTOR = REPO_ROOT / "backend" / "services" / "workflow-runtime" / "nodes" / "sandbox" / "tool_executor"
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
+_TOOL_EXECUTOR = REPO_ROOT / "backend" / "services" / "workflow_runtime" / "nodes" / "sandbox" / "tool_executor"
 
 pytestmark = pytest.mark.unit
 
@@ -87,8 +87,8 @@ def test_no_tool_handler_evaluates_code_in_process(path: pathlib.Path):
         if isinstance(node, ast.Call) and _called_name(node) in ("exec", "eval")
     ]
     assert not offenders, (
-        f"{offenders} runs model-authored code in workflow-runtime's process. "
-        "It belongs in sandbox-executor (/execute/python)."
+        f"{offenders} runs model-authored code in workflow_runtime's process. "
+        "It belongs in sandbox_executor (/execute/python)."
     )
 
 
@@ -106,8 +106,8 @@ def test_no_tool_handler_spawns_a_shell(path: pathlib.Path):
         if kw.arg == "shell" and isinstance(kw.value, ast.Constant) and kw.value.value is True
     ]
     assert not offenders, (
-        f"{offenders} runs a shell in workflow-runtime's process. "
-        "It belongs in sandbox-executor (/execute/shell)."
+        f"{offenders} runs a shell in workflow_runtime's process. "
+        "It belongs in sandbox_executor (/execute/shell)."
     )
 
 
@@ -151,11 +151,11 @@ async def test_bash_command_goes_to_the_sandbox_shell_endpoint(monkeypatch):
     assert seen["path"] == "/execute/shell"
     assert seen["body"]["command"] == "echo hi"
     assert result["content"].startswith("hi")
-    assert result["metadata"]["executed_via"] == "sandbox-executor"
+    assert result["metadata"]["executed_via"] == "sandbox_executor"
 
 
 async def test_bash_cwd_becomes_a_directory_inside_the_sandbox(monkeypatch):
-    """`cwd` used to name a path on workflow-runtime's filesystem. It is sent as
+    """`cwd` used to name a path on workflow_runtime's filesystem. It is sent as
     the container's workdir now — the same word, a different machine."""
     import nodes.sandbox.tool_executor.handlers.shell as shell
 
@@ -216,7 +216,7 @@ async def test_bash_stays_gated_by_the_enabled_flag(monkeypatch):
 
     assert result is None
     assert "not enabled" in error["error"]
-    assert seen == {}, "a disabled tool must not reach sandbox-executor either"
+    assert seen == {}, "a disabled tool must not reach sandbox_executor either"
 
 
 # ── text_to_pandas ─────────────────────────────────────────────────────────
@@ -255,7 +255,7 @@ async def test_pandas_sends_the_file_and_the_code_to_the_sandbox(monkeypatch, tm
     assert seen["path"] == "/execute/python"
     assert base64.b64decode(seen["body"]["files"]["sales.csv"]) == csv.read_bytes()
     assert seen["body"]["code"].endswith(data._PANDAS_RENDER_EPILOGUE)
-    assert result["metadata"]["executed_via"] == "sandbox-executor"
+    assert result["metadata"]["executed_via"] == "sandbox_executor"
 
 
 async def test_pandas_tells_the_model_the_in_sandbox_path(monkeypatch, tmp_path):

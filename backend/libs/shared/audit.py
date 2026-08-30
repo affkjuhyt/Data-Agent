@@ -162,7 +162,7 @@ _sink: Sink | None = None
 def set_sink(sink: Sink | None) -> None:
     """Install the transport (topic, key, value) -> None.
 
-    workflow-runtime wires this to its existing Kafka producer at startup. Left
+    workflow_runtime wires this to its existing Kafka producer at startup. Left
     unset — in a test, or a service with no broker — `emit` logs and drops,
     which keeps this module usable everywhere without a Kafka dependency.
     """
@@ -290,7 +290,7 @@ def extract_tables(sql: str) -> list[str]:
     seen: dict[str, None] = {}
     for match in _TABLE_RE.finditer(sql):
         name = match.group(1).lower()
-        # sandbox-executor wraps every statement as `SELECT * FROM (...) AS
+        # sandbox_executor wraps every statement as `SELECT * FROM (...) AS
         # _sandboxed_query`; that alias is ours, not the tenant's data.
         if name == "_sandboxed_query":
             continue

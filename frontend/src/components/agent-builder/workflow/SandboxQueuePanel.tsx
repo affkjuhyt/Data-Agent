@@ -3,8 +3,8 @@
  * trạng thái/stdout-stderr của lần exec đang chạy ra một kênh quan sát
  * được (dashboard/UI)... hữu ích để vận hành nhìn thấy job đang chạy gì").
  *
- * Talks to workflow-runtime's relay endpoints (routers/sandbox_ops.py),
- * never to sandbox-executor directly — it's internal-only, no port
+ * Talks to workflow_runtime's relay endpoints (routers/sandbox_ops.py),
+ * never to sandbox_executor directly — it's internal-only, no port
  * exposed to the host/Kong (doc §1.2 hub-and-spoke isolation).
  *
  *   GET  /api/sandbox/status              -> pool health + recent jobs (polled)
@@ -97,7 +97,7 @@ const SandboxQueuePanel: React.FC = () => {
       setStatus(data);
       setStatusError(null);
     } catch (e) {
-      setStatusError(e instanceof Error ? e.message : 'sandbox-executor unreachable');
+      setStatusError(e instanceof Error ? e.message : 'sandbox_executor unreachable');
     }
   }, []);
 
@@ -177,7 +177,7 @@ const SandboxQueuePanel: React.FC = () => {
         <div className="p-5 border-b border-[#BFA66A] bg-white grid grid-cols-2 sm:grid-cols-5 gap-3">
           {statusError ? (
             <div className="col-span-5 flex items-center gap-2 text-red-600 text-xs font-bold px-2">
-              <ShieldAlert className="w-4 h-4" /> {statusError} — sandbox-executor/workflow-runtime relay unreachable
+              <ShieldAlert className="w-4 h-4" /> {statusError} — sandbox_executor/workflow_runtime relay unreachable
             </div>
           ) : (
             <>

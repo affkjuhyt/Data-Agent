@@ -5,7 +5,7 @@ true` plus whatever `X-User-Roles` accompanies it. Kong sets those headers only
 after verifying a Keycloak JWT (and clears any client-supplied copies first —
 deploy/docker/kong/plugins/aeroflow-jwks/handler.lua), so through the gateway they are
 trustworthy. Reaching kb-backend's port directly, they are just strings: any
-caller on the network could claim to be a platform admin. workflow-runtime's
+caller on the network could claim to be a platform admin. workflow_runtime's
 kb_search node did exactly that, hardcoding an admin role set on every agent
 retrieval, which made kb-backend's document-level RBAC unenforceable for agent
 traffic.
@@ -70,7 +70,7 @@ def get_secret() -> str:
 
     Both minting and verifying services must be given the same value (in
     production out of OpenBao, like every other credential here — see
-    backend/services/workflow-runtime/warehouse_secrets.py). Returns "" when unset;
+    backend/services/workflow_runtime/warehouse_secrets.py). Returns "" when unset;
     callers decide what that means, because the two sides want opposite
     defaults: a minter with no secret should skip the header and let the
     request be rejected downstream, while a verifier with no secret must not

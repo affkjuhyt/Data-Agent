@@ -1,6 +1,6 @@
 """Policy-violation rate — offline, deterministic, no model involved.
 
-Every case is put to the real defence it targets: sandbox-executor's sql_guard,
+Every case is put to the real defence it targets: sandbox_executor's sql_guard,
 its AST validator, the tool-executor's path check, the staged-input name rule.
 No re-implementation lives here, because a re-implementation is what the eval
 would then be measuring.

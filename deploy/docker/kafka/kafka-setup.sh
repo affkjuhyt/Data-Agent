@@ -134,10 +134,10 @@ run_kafka "/opt/kafka/bin/kafka-topics.sh \
 echo ""
 echo "🛡️  Applying ACLs..."
 
-# workflow-runtime PRODUCES data-access events. Without this ACL the send is
+# workflow_runtime PRODUCES data-access events. Without this ACL the send is
 # rejected and every audit record is lost with only a client-side warning —
 # the failure mode an audit can least afford.
-run_kafka "/opt/kafka/bin/kafka-acls.sh   --bootstrap-server $BOOTSTRAP   --command-config /tmp/admin.props   --add   --allow-principal User:workflow-runtime   --operation Write   --operation Describe   --topic audit.data.access"   && echo "  → workflow-runtime: Write + Describe on audit.data.access"
+run_kafka "/opt/kafka/bin/kafka-acls.sh   --bootstrap-server $BOOTSTRAP   --command-config /tmp/admin.props   --add   --allow-principal User:workflow_runtime   --operation Write   --operation Describe   --topic audit.data.access"   && echo "  → workflow_runtime: Write + Describe on audit.data.access"
 
 run_kafka "/opt/kafka/bin/kafka-acls.sh   --bootstrap-server $BOOTSTRAP   --command-config /tmp/admin.props   --add   --allow-principal User:audit-consumer   --operation Read   --operation Describe   --topic audit.data.access"   && echo "  → audit-consumer: Read + Describe on audit.data.access"
 
@@ -150,62 +150,62 @@ run_kafka "/opt/kafka/bin/kafka-acls.sh \
   --group audit-consumer-group" \
   && echo "  → audit-consumer: Read on group audit-consumer-group"
 
-# release-worker: WRITE + READ on release topics + CREATE (needed if auto-create is disabled)
+# release_worker: WRITE + READ on release topics + CREATE (needed if auto-create is disabled)
 run_kafka "/opt/kafka/bin/kafka-acls.sh \
   --bootstrap-server $BOOTSTRAP \
   --command-config /tmp/admin.props \
   --add \
-  --allow-principal User:release-worker \
+  --allow-principal User:release_worker \
   --operation Write \
   --operation Read \
   --operation Describe \
   --operation Create \
   --topic release.pipeline.triggered" \
-  && echo "  → release-worker: Write + Read + Create on release.pipeline.triggered"
+  && echo "  → release_worker: Write + Read + Create on release.pipeline.triggered"
 
 run_kafka "/opt/kafka/bin/kafka-acls.sh \
   --bootstrap-server $BOOTSTRAP \
   --command-config /tmp/admin.props \
   --add \
-  --allow-principal User:release-worker \
+  --allow-principal User:release_worker \
   --operation Write \
   --operation Read \
   --operation Describe \
   --operation Create \
   --topic release.pipeline.status" \
-  && echo "  → release-worker: Write + Read + Create on release.pipeline.status"
+  && echo "  → release_worker: Write + Read + Create on release.pipeline.status"
 
 run_kafka "/opt/kafka/bin/kafka-acls.sh \
   --bootstrap-server $BOOTSTRAP \
   --command-config /tmp/admin.props \
   --add \
-  --allow-principal User:release-worker \
+  --allow-principal User:release_worker \
   --operation Write \
   --operation Read \
   --operation Describe \
   --operation Create \
   --topic release.rollback.initiated" \
-  && echo "  → release-worker: Write + Read + Create on release.rollback.initiated"
+  && echo "  → release_worker: Write + Read + Create on release.rollback.initiated"
 
 run_kafka "/opt/kafka/bin/kafka-acls.sh \
   --bootstrap-server $BOOTSTRAP \
   --command-config /tmp/admin.props \
   --add \
-  --allow-principal User:release-worker \
+  --allow-principal User:release_worker \
   --operation Read \
-  --group release-worker-group" \
-  && echo "  → release-worker: Read on group release-worker-group"
+  --group release_worker-group" \
+  && echo "  → release_worker: Read on group release_worker-group"
 
-# workflow-runtime: WRITE only to memory.extraction.requested
+# workflow_runtime: WRITE only to memory.extraction.requested
 run_kafka "/opt/kafka/bin/kafka-acls.sh \
   --bootstrap-server $BOOTSTRAP \
   --command-config /tmp/admin.props \
   --add \
-  --allow-principal User:workflow-runtime \
+  --allow-principal User:workflow_runtime \
   --operation Write \
   --operation Describe \
   --topic memory.extraction.requested" \
-  && echo "  → workflow-runtime: Write + Describe on memory.extraction.requested"
+  && echo "  → workflow_runtime: Write + Describe on memory.extraction.requested"
 
 # memory-consumer: READ from memory.extraction.requested, WRITE to the DLQ topic
 run_kafka "/opt/kafka/bin/kafka-acls.sh \
@@ -275,8 +275,8 @@ echo "✅ Kafka ACL setup complete."
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  audit-consumer    → READ   audit.data.access (group: audit-consumer-group)  [platform-workers-audit]"
-echo "  release-worker    → WRITE+READ+CREATE release.* topics"
-echo "  workflow-runtime  → WRITE  memory.extraction.requested"
+echo "  release_worker    → WRITE+READ+CREATE release.* topics"
+echo "  workflow_runtime  → WRITE  memory.extraction.requested"
 echo "  memory-consumer   → READ   memory.extraction.requested (group: memory-consumer-group), WRITE memory.extraction.dlq  [platform-workers-memory]"
 echo "  schema-crawler-worker → READ ddl.changes (group: schema-crawler-worker-group)  [platform-workers-schema-crawler]"
 echo "  admin             → ALL    (inter-broker + management)"

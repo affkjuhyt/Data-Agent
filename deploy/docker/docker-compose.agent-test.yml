@@ -5,7 +5,7 @@
 #
 #   docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.app.yml \
 #     -f deploy/docker/docker-compose.agent-test.yml up -d \
-#     litellm openbao workflow-runtime sandbox-executor platform-workers-memory
+#     litellm openbao workflow_runtime sandbox_executor platform-workers-memory
 services:
   litellm:
     volumes:
@@ -28,17 +28,17 @@ services:
   # container so session/cache ops work (it reconnect-loops otherwise).
   # OTEL_SDK_DISABLED stops the per-request span export to jaeger:4317 (which isn't
   # running) — it was spamming "export timeout" and adding request overhead.
-  workflow-runtime:
+  workflow_runtime:
     environment:
       REDIS_URL: redis://redis:6379
       OTEL_SDK_DISABLED: "false"
-      # Orchestrator (/api/orchestrate) runs inside workflow-runtime. Small cap
+      # Orchestrator (/api/orchestrate) runs inside workflow_runtime. Small cap
       # on this single-GPU box so admission control is easy to see; size to
       # the LLM tier's real parallelism in prod (default 8).
       ORCHESTRATOR_MAX_CONCURRENT_TURNS: "2"
 
-# auth-api references kong-admin-net (defined only in docker-compose.security.yml).
-# Declare it external here so bringing auth-api up with this overlay resolves it to
+# auth_api references kong-admin-net (defined only in docker-compose.security.yml).
+# Declare it external here so bringing auth_api up with this overlay resolves it to
 # the pre-created network (docker network create --internal --subnet 172.30.0.0/24
 # kong-admin-net) instead of failing with "network is ambiguous".
 networks:

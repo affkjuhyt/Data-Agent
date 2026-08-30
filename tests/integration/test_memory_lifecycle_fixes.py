@@ -102,7 +102,7 @@ _E1 = [0.0, 1.0, 0.0, 0.0]  # orthogonal — sim(_E0, _E1) = 0, "completely diff
 
 @pytest.fixture
 def mc_env(migrated_db, qdrant_container, monkeypatch):
-    svc_dir = str(REPO_ROOT / "backend" / "services" / "platform-workers")
+    svc_dir = str(REPO_ROOT / "backend" / "services" / "platform_workers")
     added = [p for p in (svc_dir,) if p not in sys.path]
     sys.path[:0] = added
     try:
@@ -267,7 +267,7 @@ def test_controlled_vocab_fact_key_keeps_single_slot_behavior(mc_env, monkeypatc
 
 @pytest.fixture
 async def mm_env(migrated_db):
-    svc_dir = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
+    svc_dir = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
     added = [p for p in (svc_dir, str(REPO_ROOT)) if p not in sys.path]
     sys.path[:0] = added
     try:
@@ -378,7 +378,7 @@ async def test_bad_cron_expression_does_not_crash_and_still_marks_executed(mm_en
 
 @pytest.fixture
 async def wm_rbac_env(migrated_db):
-    svc_dir = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
+    svc_dir = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
     added = [p for p in (svc_dir, str(REPO_ROOT)) if p not in sys.path]
     sys.path[:0] = added
     try:

@@ -1,5 +1,5 @@
 # KB CCU observability (docs/KB-SCALE-10K.md #8).
-# Attaches to the shared network so Prometheus can scrape model-service + llm-exporter.
+# Attaches to the shared network so Prometheus can scrape model_service + llm_exporter.
 # kb-gateway/kb-compute removed 30-08-2026 — rate limiting is now Kong's rate-limiting
 # plugin on kb-backend, RRF runs in-process.
 #
@@ -17,12 +17,12 @@ networks:
 
 services:
   # Probes the host LLM (ollama) and exposes generation perf as /metrics.
-  llm-exporter:
+  llm_exporter:
     build:
       context: ../..
-      dockerfile: backend/services/llm-exporter/Dockerfile
-    image: llm-exporter:latest
-    container_name: llm-exporter
+      dockerfile: backend/services/llm_exporter/Dockerfile
+    image: llm_exporter:latest
+    container_name: llm_exporter
     restart: unless-stopped
     environment:
       LLM_BASE_URL: "${LLM_BASE_URL:-http://host.docker.internal:11434}"

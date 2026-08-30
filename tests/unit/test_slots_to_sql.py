@@ -32,7 +32,7 @@ from libs.semantic import (
 )
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
 pytestmark = pytest.mark.unit
 
@@ -224,7 +224,7 @@ class TestPlannerContract:
         """The model cannot emit a delta it was never shown. A prompt that
         stopped documenting this would make every follow-up re-state everything
         — and re-stating it wrongly is exactly the failure mode."""
-        prompt = (REPO_ROOT / "backend" / "services" / "workflow-runtime" / "prompts" / "planner_system.txt").read_text(
+        prompt = (REPO_ROOT / "backend" / "services" / "workflow_runtime" / "prompts" / "planner_system.txt").read_text(
             encoding="utf-8"
         )
 

@@ -95,7 +95,7 @@ const AiConfigTab = () => {
 
       <Card
         title="Runtime config (read-only)"
-        subtitle="GET /api/runtime-config — giá trị workflow-runtime đang dùng"
+        subtitle="GET /api/runtime-config — giá trị workflow_runtime đang dùng"
         actions={<Button size="sm" icon={RefreshCw} loading={runtime.loading} onClick={runtime.reload}>Tải lại</Button>}
       >
         {runtime.error ? <ErrorState message={runtime.error} onRetry={runtime.reload} /> : runtime.loading ? <LoadingState /> : runtimeEntries.length === 0 ? (

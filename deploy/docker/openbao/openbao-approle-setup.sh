@@ -1,10 +1,10 @@
 #!/bin/sh
-# One-shot: read-only AppRole for workflow-runtime to resolve warehouse
-# (Snowflake) secrets from OpenBao (backend/services/workflow-runtime/warehouse_secrets.py)
-# — deliberately narrower than auth-api's access: read-only on
+# One-shot: read-only AppRole for workflow_runtime to resolve warehouse
+# (Snowflake) secrets from OpenBao (backend/services/workflow_runtime/warehouse_secrets.py)
+# — deliberately narrower than auth_api's access: read-only on
 # secret/data/tenants/*, no create/update/delete/list, and authenticated via
-# AppRole instead of the root token auth-api reads from the shared
-# openbao_data volume. A compromised workflow-runtime can therefore only
+# AppRole instead of the root token auth_api reads from the shared
+# openbao_data volume. A compromised workflow_runtime can therefore only
 # read secrets it's pointed at, never mint/rotate/delete any.
 #
 # Idempotent: safe to re-run. role_id/secret_id are persisted to the data
@@ -15,21 +15,21 @@
 # Run from inside the openbao container (config dir is mounted there):
 #   docker exec dataagent-openbao sh /openbao/config/openbao-approle-setup.sh
 # Then copy the printed OPENBAO_ROLE_ID/OPENBAO_SECRET_ID into .env and
-# restart workflow-runtime.
+# restart workflow_runtime.
 set -eu
 
 VAULT_ADDR="${VAULT_ADDR:-http://openbao:8200}"
 DATA_DIR="/openbao/data"
 TOKEN_FILE="$DATA_DIR/.root-token"
-CREDS_FILE="$DATA_DIR/.workflow-runtime-approle.env"
+CREDS_FILE="$DATA_DIR/.workflow_runtime-approle.env"
 
 if [ -z "${VAULT_TOKEN:-}" ] && [ -f "$TOKEN_FILE" ]; then
   VAULT_TOKEN=$(cat "$TOKEN_FILE")
 fi
 VAULT_TOKEN="${VAULT_TOKEN:-aeroflow-dev-token}"
 
-POLICY_NAME="workflow-runtime-read-policy"
-ROLE_NAME="workflow-runtime"
+POLICY_NAME="workflow_runtime-read-policy"
+ROLE_NAME="workflow_runtime"
 
 echo "⏳ Waiting for OpenBao at $VAULT_ADDR ..."
 for i in $(seq 1 30); do
@@ -88,5 +88,5 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "✅ AppRole setup complete"
 echo "   Copy the OPENBAO_ROLE_ID/OPENBAO_SECRET_ID lines above into .env,"
-echo "   then restart workflow-runtime."
+echo "   then restart workflow_runtime."
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

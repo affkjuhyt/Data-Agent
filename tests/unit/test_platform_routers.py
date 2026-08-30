@@ -1,4 +1,4 @@
-"""workflow-runtime platform/billing/llm/conversations/traces endpoints.
+"""workflow_runtime platform/billing/llm/conversations/traces endpoints.
 
 These back the admin dashboards that previously rendered sample data. Nothing
 here touches Postgres or LiteLLM: the DB client and outbound HTTP are stubbed,
@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
 pytestmark = pytest.mark.unit
 
@@ -30,7 +30,7 @@ TENANT = "00000000-0000-0000-0000-0000000000aa"
 CALLER = {"user_id": "u1", "user_name": "u1@example.com", "roles": ["tenant-admin"], "tenant_id": TENANT}
 
 
-# Top-level module names this service shares with other services (auth-api and
+# Top-level module names this service shares with other services (auth_api and
 # kb_backend also have `routers`, `auth`, `db`, `config`…). Tests of those
 # services leave their copies in sys.modules; importing ours would then silently
 # resolve to theirs ("cannot import name 'billing' from 'routers'").
@@ -49,7 +49,7 @@ def _evict_foreign_modules() -> None:
 @pytest.fixture(autouse=True)
 def _sys_path():
     # This service dir must be FIRST: other tests leave sibling service dirs
-    # (auth-api, kb_backend…) on sys.path, and a later entry would lose the
+    # (auth_api, kb_backend…) on sys.path, and a later entry would lose the
     # `routers` / `db` / `auth` lookup to them.
     was_present = _SVC_DIR in sys.path
     if was_present:
@@ -369,7 +369,7 @@ class TestServiceProbes:
         monkeypatch.setattr(sp, "PROBE_TIMEOUT_S", 0.5)
         items = asyncio.run(sp.probe_all())
         assert {i["name"] for i in items} == {
-            "postgres", "redis", "mongo", "kafka", "litellm", "sandbox-executor", "kb-backend",
+            "postgres", "redis", "mongo", "kafka", "litellm", "sandbox_executor", "kb-backend",
         }
         assert all(i["status"] in ("ok", "degraded", "down", "unknown") for i in items)
         assert {i["name"]: i["status"] for i in items if i["name"] in ("litellm", "kb-backend")} == {

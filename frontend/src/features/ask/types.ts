@@ -1,7 +1,7 @@
 /**
  * Wire types for one answer from the orchestrator SSE stream
- * (backend/services/workflow-runtime/orchestrator/routers/stream.py) and the frames the
- * workflow-runtime forwards through it (runtime_services/conversation_runner.py).
+ * (backend/services/workflow_runtime/orchestrator/routers/stream.py) and the frames the
+ * workflow_runtime forwards through it (runtime_services/conversation_runner.py).
  *
  * Nothing here is invented client-side: every field maps to something the
  * backend already writes into state — the point of the Ask screen is to show

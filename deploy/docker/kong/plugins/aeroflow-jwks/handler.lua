@@ -166,7 +166,7 @@ function AeroflowJwks:access(conf)
   -- that reached the upstream directly. Cleared here for the same reason as
   -- the identity headers, and re-set below only after the JWT verifies.
   kong.service.request.clear_header("X-Gateway-Key")
-  -- A service asserting an end user's identity (workflow-runtime ->
+  -- A service asserting an end user's identity (workflow_runtime ->
   -- kb-backend) is a backend-only path; a browser must never be able to
   -- present one through the gateway.
   kong.service.request.clear_header("X-Service-Assertion")

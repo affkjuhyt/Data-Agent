@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Adds Audience protocol mappers to the `aeroflow-frontend` Keycloak client
-# so tokens it issues contain `aeroflow-backend`, `auth-api`, and
-# `release-worker` in the `aud` claim.
+# so tokens it issues contain `aeroflow-backend`, `auth_api`, and
+# `release_worker` in the `aud` claim.
 #
 # Without these mappers, Keycloak issues tokens with `aud=["aeroflow-frontend"]`
 # only. The Kong `aeroflow-jwks` plugin (configured by kong-setup.sh) rejects
@@ -25,7 +25,7 @@ ADMIN_PASS="${KEYCLOAK_ADMIN_PASSWORD:-admin}"
 
 # Audiences to inject — must match the `audience` config of aeroflow-jwks
 # plugin in kong-setup.sh.
-AUDIENCES=(aeroflow-backend auth-api release-worker)
+AUDIENCES=(aeroflow-backend auth_api release_worker)
 
 # Client whose tokens get the audience extension.
 TARGET_CLIENT="aeroflow-frontend"

@@ -898,45 +898,45 @@
           }
         },
         {
-          "name": "workflow-runtime-audience",
+          "name": "workflow_runtime-audience",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
           "consentRequired": false,
           "config": {
-            "included.custom.audience": "workflow-runtime",
+            "included.custom.audience": "workflow_runtime",
             "id.token.claim": "false",
             "access.token.claim": "true"
           }
         },
         {
-          "name": "flow-builder-audience",
+          "name": "flow_buider-audience",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
           "consentRequired": false,
           "config": {
-            "included.custom.audience": "flow-builder",
+            "included.custom.audience": "flow_buider",
             "id.token.claim": "false",
             "access.token.claim": "true"
           }
         },
         {
-          "name": "release-worker-audience",
+          "name": "release_worker-audience",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
           "consentRequired": false,
           "config": {
-            "included.custom.audience": "release-worker",
+            "included.custom.audience": "release_worker",
             "id.token.claim": "false",
             "access.token.claim": "true"
           }
         },
         {
-          "name": "auth-api-audience",
+          "name": "auth_api-audience",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
           "consentRequired": false,
           "config": {
-            "included.custom.audience": "auth-api",
+            "included.custom.audience": "auth_api",
             "id.token.claim": "false",
             "access.token.claim": "true"
           }

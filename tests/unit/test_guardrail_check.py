@@ -1,5 +1,5 @@
 """Unit tests for backend/services/shared/guardrail_check.py — hàm dùng chung cho cả
-orchestrator (input + multi-agent synthesis output) và workflow-runtime
+orchestrator (input + multi-agent synthesis output) và workflow_runtime
 (single-agent output). Mock litellm.acompletion — không gọi LLM thật.
 """
 from __future__ import annotations

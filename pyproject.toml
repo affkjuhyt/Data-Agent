@@ -191,7 +191,7 @@ exclude = [
 # docs/SECURITY.md / docs/RUNBOOK.md: database_connector, kb_backend, orchestrator next).
 #
 # NOTE: these globs only match real importable packages. Hyphenated service dirs
-# (`backend/services/auth-api`, …) are NOT importable as `services.auth-api.*`, so such a
+# (`backend/services/auth_api`, …) are NOT importable as `services.auth_api.*`, so such a
 # glob is a no-op ("unused section"); enforce those by invoking mypy on the dir
 # directly in CI instead.
 [[tool.mypy.overrides]]

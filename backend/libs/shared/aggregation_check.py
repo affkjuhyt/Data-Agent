@@ -32,7 +32,7 @@ Two shapes are provably safe and are never flagged:
     Layer compiles (single source_table, no joins) — so a compiled metric is
     structurally immune to this and the answer can say so.
 
-Pure text analysis, no parser: workflow-runtime carries neither sqlparse nor
+Pure text analysis, no parser: workflow_runtime carries neither sqlparse nor
 sqlglot, and `libs` stays a leaf. The cost is that this reads SQL rather than
 understanding it, which is why every rule below is written to fail toward
 "nothing to report" when the text is beyond it.

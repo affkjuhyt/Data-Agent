@@ -1,7 +1,7 @@
 """PII detection & masking — pure, dependency-free utility.
 
 Lives in ``backend/libs/shared`` (a leaf package) so every service can reuse it:
-``auth-api`` imports it as ``shared.pii_detector`` (the service mounts
+``auth_api`` imports it as ``shared.pii_detector`` (the service mounts
 ``backend/libs/shared`` under the bare ``shared`` name), the KB ingestion worker as
 ``libs.shared.pii_detector``.
 

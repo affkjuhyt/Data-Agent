@@ -53,9 +53,9 @@ jobs:
         run: |
           for target in \
             backend/libs/basemodel backend/libs/database_connector backend/libs/shared \
-            backend/services/kb_backend backend/services/workflow-runtime \
-            backend/services/auth-api backend/services/flow-builder backend/services/model-service \
-            backend/services/release-worker backend/services/sandbox-executor \
+            backend/services/kb_backend backend/services/workflow_runtime \
+            backend/services/auth_api backend/services/flow_buider backend/services/model_service \
+            backend/services/release_worker backend/services/sandbox_executor \
             backend/services/kb-ingestion-worker backend/services/platform-workers; do
             echo "== mypy strict: $target =="
             mypy --disallow-untyped-defs --disallow-any-generics \
@@ -74,7 +74,7 @@ jobs:
       - name: Install test + service deps
         # `[test]` covers pytest/testcontainers; service requirements.txt files
         # bring the runtime deps the integration tests import in-process
-        # (hvac for auth-api, etc). Expand this list as more service tests land.
+        # (hvac for auth_api, etc). Expand this list as more service tests land.
         #
         # alembic + asyncpg are needed for tests/integration/test_alembic_migrations.py
         # which runs the migration chain through asyncpg (the same driver
@@ -82,7 +82,7 @@ jobs:
         # multiple commands into a prepared statement" that psycopg2 hides.
         run: |
           pip install -e ".[test]"
-          pip install -r backend/services/auth-api/requirements.txt
+          pip install -r backend/services/auth_api/requirements.txt
           pip install alembic sqlalchemy[asyncio] asyncpg pydantic
       - name: Run pytest
         run: pytest -m "unit or integration" --cov --cov-report=xml --cov-report=term -n auto

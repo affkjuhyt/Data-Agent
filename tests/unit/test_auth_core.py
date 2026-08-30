@@ -1,4 +1,4 @@
-"""Unit tests for auth-api business logic in auth_core.
+"""Unit tests for auth_api business logic in auth_core.
 
 Covers the pure security-relevant helpers: API-key generation (prefix/scope
 encoding, randomness), bcrypt hashing (verifiable, salted), OpenBao Transit key
@@ -14,11 +14,11 @@ from ._loader import SERVICES, load_module_from_path
 
 pytestmark = pytest.mark.unit
 
-# auth-api lives in a hyphenated dir and imports `from shared.auth import ...`,
+# auth_api lives in a hyphenated dir and imports `from shared.auth import ...`,
 # so it needs services/ on sys.path. shared.auth only pulls in fastapi.
 auth_core = load_module_from_path(
     "auth_core",
-    SERVICES / "auth-api" / "auth_core.py",
+    SERVICES / "auth_api" / "auth_core.py",
     extra_syspath=[SERVICES],
 )
 

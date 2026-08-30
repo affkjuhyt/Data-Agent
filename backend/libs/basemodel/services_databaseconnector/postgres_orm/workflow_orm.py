@@ -647,7 +647,7 @@ class PlatformSettingsORM(Base):
 
     One row per (tenant, key); the value is opaque JSON so a new settings
     screen never needs a schema migration. Written/read only through
-    workflow-runtime GET/PUT /api/platform/settings/{key}.
+    workflow_runtime GET/PUT /api/platform/settings/{key}.
     """
     __tablename__ = "PlatformSettings"
     __table_args__ = (

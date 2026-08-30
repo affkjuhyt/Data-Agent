@@ -1,5 +1,5 @@
 /**
- * Release API client — calls release-worker via Kong gateway.
+ * Release API client — calls release_worker via Kong gateway.
  * Kong injects X-User-Id / X-User-Roles from JWT → backend reads those headers.
  */
 

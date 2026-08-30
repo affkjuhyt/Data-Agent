@@ -1,4 +1,4 @@
-"""Unit tests for Judge Pha 2 GROUNDING_ERROR (backend/services/workflow-runtime/
+"""Unit tests for Judge Pha 2 GROUNDING_ERROR (backend/services/workflow_runtime/
 nodes/model_harness/judge.py) — trường hợp data đúng nhưng responder diễn
 giải sai. Reset chỉ "response" (giữ nguyên context đã tra được), route thẳng
 về responder (không qua planner) — khác PLANNING_ERROR (reset toàn bộ,
@@ -15,7 +15,7 @@ from unittest.mock import MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
 pytestmark = pytest.mark.unit
 

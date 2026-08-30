@@ -16,10 +16,10 @@ column. After this migration:
 
 ⚠️  BREAKING for services that currently connect as the table owner and do
     NOT set `app.tenant_id` before querying. Affected services:
-      - workflow-runtime
-      - flow-builder
+      - workflow_runtime
+      - flow_buider
       - kb-backend
-      - release-worker
+      - release_worker
       - audit-bridge / audit-consumer
     Each must adopt `services.shared.db_context.tenant_scoped_db()` or set
     `SET LOCAL app.tenant_id = ...` per request before its routes return.

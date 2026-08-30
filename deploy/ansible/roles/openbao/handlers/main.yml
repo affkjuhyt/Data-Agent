@@ -1,18 +1,18 @@
 ---
-- name: recreate workflow-runtime container
+- name: recreate workflow_runtime container
   community.docker.docker_compose_v2:
     project_src: "{{ compose_dir }}"
     env_files: ["{{ project_dir }}/.env"]   # compose-time interpolation reads the repo-root .env
     project_name: "{{ compose_project }}"
     files: "{{ compose_files }}"
-    services: [workflow-runtime]
+    services: [workflow_runtime]
     build: never
     recreate: always
     state: present
   listen: recreate runtime
 
-- name: wait for workflow-runtime health
-  ansible.builtin.command: docker inspect -f '{% raw %}{{.State.Health.Status}}{% endraw %}' dataagent-workflow-runtime
+- name: wait for workflow_runtime health
+  ansible.builtin.command: docker inspect -f '{% raw %}{{.State.Health.Status}}{% endraw %}' dataagent-workflow_runtime
   register: runtime_health
   until: runtime_health.stdout == 'healthy'
   retries: "{{ wait_runtime }}"

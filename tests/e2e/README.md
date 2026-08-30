@@ -1,7 +1,7 @@
 # E2E — một lượt hỏi thật, từ trình duyệt tới kho dữ liệu
 
 Bộ chạy này dựng **đúng chuỗi sản phẩm**: Keycloak → Kong (JWT, tiêm danh tính)
-→ workflow-runtime (orchestrator, in-process) → semantic layer → sandbox-executor (SQL chỉ-đọc)
+→ workflow_runtime (orchestrator, in-process) → semantic layer → sandbox_executor (SQL chỉ-đọc)
 → kho demo, với LLM là **ollama trên máy** qua litellm. Không mock ở bất kỳ tầng nào.
 
 ```bash
@@ -12,7 +12,7 @@ tests/e2e/e2e.sh all        # lần đầu ~5 phút (không build lại image �
 
 * **`E2E_MODE=dev` (mặc định)** — dùng image đã có (`infra-*`) và **bind-mount source** hiện tại vào
   `/app` (overlay `deploy/docker/docker-compose.e2e-dev.yml`); chỉ build image nào thiếu. Đổi code Python →
-  `docker restart dataagent-workflow-runtime` là đủ, không cần rebuild (pip install qua mạng chậm mất 30–40 phút).
+  `docker restart dataagent-workflow_runtime` là đủ, không cần rebuild (pip install qua mạng chậm mất 30–40 phút).
   `E2E_MODE=build` rebuild toàn bộ như CI.
 * **Project compose riêng `dataagent-e2e`** (`E2E_PROJECT`) — volume Postgres/Keycloak/OpenBao **mới** mỗi lần
   `down -v`; stack dev hằng ngày (project `infra`) giữ nguyên dữ liệu. Vì `container_name` cố định, `up` sẽ
@@ -20,7 +20,7 @@ tests/e2e/e2e.sh all        # lần đầu ~5 phút (không build lại image �
 * Keycloak của stack E2E được chuyển `browserFlow` → `browser` (realm gốc dùng "Browser MFA" bắt cài OTP,
   Playwright không thể qua). Production không đổi.
 * Sandbox chạy với `SANDBOX_POOL_SIZE=0` (đường SQL không cần container Python warm); `/execute/python`
-  cần `docker build -t sandbox-runner:latest backend/services/sandbox-executor/sandbox_runner/`.
+  cần `docker build -t sandbox-runner:latest backend/services/sandbox_executor/sandbox_runner/`.
 
 Từng bước, chạy lại được độc lập:
 
@@ -28,7 +28,7 @@ Từng bước, chạy lại được độc lập:
 |---|---|---|
 | `preflight` | docker, ollama (+ pull `qwen2.5:3b`), sinh `GATEWAY_KEY` / `SERVICE_AUTH_SECRET` vào `.env` nếu trống, giữ đúng **một** model trên GPU | ✅ |
 | `up` | `docker compose up` 16 service cần cho một lượt agent (không có KB tier); chạy alembic + seed tenant | ✅ |
-| `setup` | `deploy/docker/kong/kong-setup.sh` (route, plugin JWT, mật khẩu user dev, CORS `:3000`); OpenBao init/unseal, KV v2 `secret/`, AppRole chỉ-đọc → `.env`, ghi mật khẩu kho demo; tạo lại workflow-runtime | ✅ |
+| `setup` | `deploy/docker/kong/kong-setup.sh` (route, plugin JWT, mật khẩu user dev, CORS `:3000`); OpenBao init/unseal, KV v2 `secret/`, AppRole chỉ-đọc → `.env`, ghi mật khẩu kho demo; tạo lại workflow_runtime | ✅ |
 | `seed` | Postgres: agent `e2e-sql-agent`, 2 chỉ số đã duyệt (`doanh_thu_gop`, `doanh_thu_thuan`) + từ đồng nghĩa, hàng `secrets_vault`, bảng `fact_sales` 8 tháng trong `sandbox_dev`; Mongo: canvas planner → db_connector → rrf → reranker → responder/visualization → judge | ✅ (rebuild bảng demo) |
 | `smoke "câu hỏi"` | In từng frame SSE, tô riêng `__evidence` (SQL, metric, số dòng) | ✅ |
 | `test` | `pytest -m e2e tests/integration/test_agent_answer_e2e.py` | ✅ |
@@ -84,10 +84,10 @@ Mọi lượt được ghi ra `tests/e2e/out/turn-*.json` (toàn bộ frame) đ�
 
 * **401 ở stream** → `setup` chưa chạy sau khi đổi `GATEWAY_KEY`, hoặc token hết hạn (15 phút).
 * **`__evidence` không có `runs`, text nói "không kết nối được DB"** → OpenBao: xem
-  `logs workflow-runtime` có `could not resolve db_connector secret_id`; chạy lại `setup`
+  `logs workflow_runtime` có `could not resolve db_connector secret_id`; chạy lại `setup`
   (AppRole mới được ghi vào `.env` và runtime được tạo lại).
 * **Lượt treo > 60 s** → hai model đang nằm trên GPU; `preflight` unload model lạ, hoặc
-  `docker stop llm-exporter kb-model-service` nếu stack KB đang chạy (docs/AGENT-E2E.md §5).
+  `docker stop llm_exporter kb-model_service` nếu stack KB đang chạy (docs/AGENT-E2E.md §5).
 * **`migrate` lỗi** → `tests/e2e/e2e.sh logs migrate`; volume Postgres cũ có thể lệch head.
 * **Keycloak login form không hiện** → `.env` `VITE_KEYCLOAK_URL` phải là `http://localhost:8080`
   (issuer trong token phải khớp `KEYCLOAK_PUBLIC_URL` mà `kong-setup.sh` cấu hình).

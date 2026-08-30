@@ -78,7 +78,7 @@ def postgres_container() -> Iterator[dict[str, str]]:
         # `pg.get_connection_url()` returns the SQLAlchemy form
         # (`postgresql+psycopg2://...`) which psycopg2.connect() rejects with
         # "invalid dsn: missing '='". Build the libpq form ourselves so the
-        # same DSN works for both psycopg2 (auth-api) and SQLAlchemy callers.
+        # same DSN works for both psycopg2 (auth_api) and SQLAlchemy callers.
         info = {
             "host": host,
             "port": str(port),

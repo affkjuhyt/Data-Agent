@@ -11,7 +11,7 @@ pytestmark = pytest.mark.unit
 pytest.importorskip("fastapi", reason="fastapi not installed in this environment")
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "llm-exporter")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "llm_exporter")
 
 
 @pytest.fixture

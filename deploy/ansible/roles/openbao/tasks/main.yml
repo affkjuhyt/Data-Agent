@@ -1,7 +1,7 @@
 ---
 # OpenBao: the only place a warehouse password lives. State expressed here:
 # initialised + unsealed, KV v2 at secret/, Transit at transit/, a read-only AppRole for
-# workflow-runtime whose credentials are in .env, and (local) the demo
+# workflow_runtime whose credentials are in .env, and (local) the demo
 # warehouse password the seeded agent resolves through secrets_vault.
 - name: Keys/root token file for this stack
   ansible.builtin.set_fact:
@@ -146,7 +146,7 @@
   changed_when: true
   no_log: true
 
-# auth-api rotates/signs with the Transit engine at transit/ (auth_core._TRANSIT_MOUNT).
+# auth_api rotates/signs with the Transit engine at transit/ (auth_core._TRANSIT_MOUNT).
 - name: Transit at transit/
   ansible.builtin.uri:
     url: "{{ openbao_url }}/v1/sys/mounts/transit"
@@ -161,7 +161,7 @@
 
 - name: Read-only policy on tenant secrets
   ansible.builtin.uri:
-    url: "{{ openbao_url }}/v1/sys/policies/acl/workflow-runtime-read-policy"
+    url: "{{ openbao_url }}/v1/sys/policies/acl/workflow_runtime-read-policy"
     method: POST
     headers: "{{ bao_hdr }}"
     body_format: json
@@ -190,13 +190,13 @@
   changed_when: true
   no_log: true
 
-- name: AppRole workflow-runtime
+- name: AppRole workflow_runtime
   ansible.builtin.uri:
-    url: "{{ openbao_url }}/v1/auth/approle/role/workflow-runtime"
+    url: "{{ openbao_url }}/v1/auth/approle/role/workflow_runtime"
     method: POST
     headers: "{{ bao_hdr }}"
     body_format: json
-    body: { token_policies: workflow-runtime-read-policy, token_ttl: 1h, token_max_ttl: 4h }
+    body: { token_policies: workflow_runtime-read-policy, token_ttl: 1h, token_max_ttl: 4h }
     status_code: [200, 204]
   changed_when: false
   no_log: true
@@ -212,7 +212,7 @@
   block:
     - name: role-id
       ansible.builtin.uri:
-        url: "{{ openbao_url }}/v1/auth/approle/role/workflow-runtime/role-id"
+        url: "{{ openbao_url }}/v1/auth/approle/role/workflow_runtime/role-id"
         headers: "{{ bao_hdr }}"
         return_content: true
       register: bao_role_id
@@ -220,7 +220,7 @@
 
     - name: secret-id
       ansible.builtin.uri:
-        url: "{{ openbao_url }}/v1/auth/approle/role/workflow-runtime/secret-id"
+        url: "{{ openbao_url }}/v1/auth/approle/role/workflow_runtime/secret-id"
         method: POST
         headers: "{{ bao_hdr }}"
         return_content: true

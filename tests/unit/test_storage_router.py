@@ -1,4 +1,4 @@
-"""workflow-runtime /api/storage/* (folded in from the former minio-service).
+"""workflow_runtime /api/storage/* (folded in from the former minio_service).
 
 The only consumer is the Settings > Storage panel; what is pinned here is the
 JSON contract it reads (frontend/src/lib/usePlatformData.ts):
@@ -18,7 +18,7 @@ from typing import Any
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
 pytestmark = pytest.mark.unit
 

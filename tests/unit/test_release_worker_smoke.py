@@ -1,6 +1,6 @@
-"""Smoke tests for release-worker's release_core.
+"""Smoke tests for release_worker's release_core.
 
-release-worker lives in a hyphenated dir, reads its config from env at import
+release_worker lives in a hyphenated dir, reads its config from env at import
 time, and imports kafka / psycopg2 / shared.* at module level — so the module
 is loaded through ``_loader`` with stand-ins for those, and every stand-in is
 removed from ``sys.modules`` again afterwards so other tests see the real
@@ -25,7 +25,7 @@ pytestmark = pytest.mark.unit
 _REQUIRED_ENV = {
     "DATABASE_URL": "postgresql://u:p@localhost:5432/test",
     "KAFKA_BOOTSTRAP": "kafka:9092",
-    "KAFKA_USERNAME": "release-worker",
+    "KAFKA_USERNAME": "release_worker",
     "KAFKA_PASSWORD": "secret",
     "MINIO_ACCESS_KEY": "minio",
     "MINIO_SECRET_KEY": "minio_secret",
@@ -73,8 +73,8 @@ def release_core() -> Iterator[types.ModuleType]:
     try:
         module = load_module_from_path(
             "release_core",
-            SERVICES / "release-worker" / "release_core.py",
-            extra_syspath=[SERVICES / "release-worker"],
+            SERVICES / "release_worker" / "release_core.py",
+            extra_syspath=[SERVICES / "release_worker"],
             stubs=stubs,
         )
         yield module

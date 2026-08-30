@@ -1,5 +1,5 @@
 """Pure-function unit tests for the ingestion entity registry
-(backend/services/kb-ingestion-worker/utils/entity_registry.py).
+(backend/services/kb_ingestion_worker/utils/entity_registry.py).
 
 Covers the deterministic, infra-free core of entity resolution: Vietnamese-aware
 canonicalization, the specific-type merge guard, raw-entity cleaning, and the
@@ -20,7 +20,7 @@ pytestmark = pytest.mark.unit
 pytest.importorskip("sqlalchemy")
 pytest.importorskip("qdrant_client")
 
-_WORKER_DIR = str(SERVICES / "kb-ingestion-worker")
+_WORKER_DIR = str(SERVICES / "kb_ingestion_worker")
 
 
 @pytest.fixture(scope="module", autouse=True)

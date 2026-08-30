@@ -1,4 +1,4 @@
-"""visualization_node (backend/services/workflow-runtime/nodes/model_harness/visualization.py)
+"""visualization_node (backend/services/workflow_runtime/nodes/model_harness/visualization.py)
 — vẽ chart từ dữ liệu của node được nối cạnh vào (db_connector/mcp/kb_search/
 tool_executor), xác định qua cfg["flow_nodes"]/cfg["flow_edges"]. Mỗi NGUỒN
 (node type) nối vào → 1 chart_spec RIÊNG trong list chart_specs (không gộp
@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
 pytestmark = pytest.mark.unit
 

@@ -66,8 +66,8 @@ model/ollama/weights/*.gguf
 # Docling (HF layout/OCR) + RapidOCR weights — pre-downloaded, bind-mounted into
 # the ingestion worker. Large binaries.
 model/docling-model/weights/
-# model-service embed/rerank weights — downloaded at runtime into this mounted volume
-backend/services/model-service/models/
+# model_service embed/rerank weights — downloaded at runtime into this mounted volume
+backend/services/model_service/models/
 
 # UI design files — reference only, không commit
 Data_Agent_UI/

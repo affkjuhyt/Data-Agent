@@ -61,13 +61,13 @@ chmod 600 kong-client.key
 rm -f kong-client.csr kong-client.ext ca.srl
 echo "  → Kong client:   kong-client.crt / kong-client.key (clientAuth EKU)"
 
-# ── workflow-runtime client cert ──────────────────────────────────────
-# Second client identity under the same CA. workflow-runtime calls kb-backend
+# ── workflow_runtime client cert ──────────────────────────────────────
+# Second client identity under the same CA. workflow_runtime calls kb-backend
 # directly (kb_search -> /api/pipeline/light-rag/retrieve), not through Kong,
 # so it needs its own cert rather than sharing Kong's: distinct subjects mean
 # an upstream can tell the two callers apart, and either can be revoked
 # without disturbing the other.
-cat > workflow-runtime-client.ext <<'EOF'
+cat > workflow_runtime-client.ext <<'EOF'
 basicConstraints = CA:FALSE
 keyUsage = digitalSignature
 extendedKeyUsage = clientAuth
@@ -75,16 +75,16 @@ subjectKeyIdentifier = hash
 authorityKeyIdentifier = keyid,issuer
 EOF
 
-openssl genrsa -out workflow-runtime-client.key 2048 2>/dev/null
-openssl req -new -key workflow-runtime-client.key -out workflow-runtime-client.csr \
-  -subj "/CN=workflow-runtime/O=AeroFlow/C=VN" 2>/dev/null
-openssl x509 -req -days 825 -in workflow-runtime-client.csr \
+openssl genrsa -out workflow_runtime-client.key 2048 2>/dev/null
+openssl req -new -key workflow_runtime-client.key -out workflow_runtime-client.csr \
+  -subj "/CN=workflow_runtime/O=AeroFlow/C=VN" 2>/dev/null
+openssl x509 -req -days 825 -in workflow_runtime-client.csr \
   -CA ca.crt -CAkey ca.key -CAcreateserial \
-  -extfile workflow-runtime-client.ext \
-  -out workflow-runtime-client.crt 2>/dev/null
-chmod 600 workflow-runtime-client.key
-rm -f workflow-runtime-client.csr workflow-runtime-client.ext ca.srl
-echo "  → WF client:     workflow-runtime-client.crt / .key (clientAuth EKU)"
+  -extfile workflow_runtime-client.ext \
+  -out workflow_runtime-client.crt 2>/dev/null
+chmod 600 workflow_runtime-client.key
+rm -f workflow_runtime-client.csr workflow_runtime-client.ext ca.srl
+echo "  → WF client:     workflow_runtime-client.crt / .key (clientAuth EKU)"
 
 # ── Backend server cert (.ext enforces serverAuth + SAN) ──────────────
 # Modern TLS clients ignore CN; SAN is required for hostname verification.
@@ -111,8 +111,8 @@ echo "  → Backend server: backend.crt / backend.key (serverAuth + SAN)"
 # ── Verify chain ───────────────────────────────────────────────────────
 openssl verify -CAfile ca.crt kong-client.crt > /dev/null && \
   echo "  → Chain verified: kong-client.crt ✓"
-openssl verify -CAfile ca.crt workflow-runtime-client.crt > /dev/null && \
-  echo "  → Chain verified: workflow-runtime-client.crt ✓"
+openssl verify -CAfile ca.crt workflow_runtime-client.crt > /dev/null && \
+  echo "  → Chain verified: workflow_runtime-client.crt ✓"
 openssl verify -CAfile ca.crt backend.crt > /dev/null && \
   echo "  → Chain verified: backend.crt ✓"
 

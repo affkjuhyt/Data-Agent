@@ -88,7 +88,7 @@ def _seed_tenant_warehouse_and_catalog_row(dsn: str) -> tuple[str, str, str]:
 
 @pytest.fixture
 def schema_catalog_client(migrated_db):
-    svc_dir = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
+    svc_dir = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
     added = [p for p in (svc_dir,) if p not in sys.path]
     sys.path[:0] = added
     try:

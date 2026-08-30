@@ -6,7 +6,7 @@ import sys
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "platform-workers")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "platform_workers")
 
 pytestmark = pytest.mark.unit
 
@@ -34,9 +34,9 @@ def test_worker_name_from_env_trims_whitespace():
 def test_resolve_worker_module_returns_known_targets():
     import app
 
-    assert app.resolve_worker_module("memory") == "workers.memory"
-    assert app.resolve_worker_module("schema-crawler") == "workers.schema_crawler"
-    assert app.resolve_worker_module("audit") == "workers.audit"
+    assert app.resolve_worker_module("memory") == "services.platform_workers.workers.memory"
+    assert app.resolve_worker_module("schema-crawler") == "services.platform_workers.workers.schema_crawler"
+    assert app.resolve_worker_module("audit") == "services.platform_workers.workers.audit"
 
 
 def test_unknown_worker_message_lists_options():

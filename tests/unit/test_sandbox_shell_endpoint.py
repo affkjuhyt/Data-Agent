@@ -1,7 +1,7 @@
-"""/execute/shell and /execute/python's input staging (backend/services/sandbox-executor).
+"""/execute/shell and /execute/python's input staging (backend/services/sandbox_executor).
 
-Both exist for the same reason: two workflow-runtime tools ran model-authored
-work inside workflow-runtime's own process — `bash` via
+Both exist for the same reason: two workflow_runtime tools ran model-authored
+work inside workflow_runtime's own process — `bash` via
 subprocess.run(shell=True), `text_to_pandas` via exec() — because there was
 nowhere else for a shell command to go, and no way to get a file to the place a
 Python snippet could go. This service is that place.
@@ -19,7 +19,7 @@ from unittest.mock import MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = REPO_ROOT / "backend" / "services" / "sandbox-executor"
+_SVC_DIR = REPO_ROOT / "backend" / "services" / "sandbox_executor"
 
 pytestmark = pytest.mark.unit
 

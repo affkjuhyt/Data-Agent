@@ -2,7 +2,7 @@
  * Settings → Runtime Infrastructure.
  *
  *   services   usePlatformServices()       GET /api/platform/services
- *   sandbox    usePlatformSandboxStatus()  GET /api/sandbox/status (workflow-runtime relay)
+ *   sandbox    usePlatformSandboxStatus()  GET /api/sandbox/status (workflow_runtime relay)
  *
  * No cluster fleet, regions or toggles: nothing on this page is invented.
  */

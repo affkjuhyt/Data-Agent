@@ -1,6 +1,6 @@
 """stm_ltm_memory_architecture
 
-Implements docs/STM_LTM_Memory_Architecture.docx for the workflow-runtime
+Implements docs/STM_LTM_Memory_Architecture.docx for the workflow_runtime
 agent:
   * AgentMemories (Semantic LTM) gains domain/fact_key controlled-vocabulary
     columns + a unique constraint so writes can use ON CONFLICT DO UPDATE

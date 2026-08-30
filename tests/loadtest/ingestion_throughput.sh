@@ -3,7 +3,7 @@
 # (bronze → silver → gold). Unlike the CCU tests (retrieval, LLM bypassed), this
 # deliberately drives the LLM extraction + embedding path, so it measures the
 # ingestion tier's real capacity — which is gated by the single Kafka worker +
-# model-service /generate, NOT by HTTP (promote returns instantly; the worker does
+# model_service /generate, NOT by HTTP (promote returns instantly; the worker does
 # the work asynchronously). See docs/KB-SCALE-10K.md §6.
 #
 # Stages per doc: POST /bronze (sync) → POST /promote/{id}/silver (async, wait for

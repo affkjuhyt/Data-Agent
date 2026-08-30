@@ -18,14 +18,14 @@ committed corpus in model/eval/cases/grounding.jsonl and needs no network.
 Modes:
   --mode dataset   Use test_cases.json directly (contexts from dataset, no API call).
                    Good for testing LLM quality in isolation.
-  --mode api       Call workflow-runtime for each question, then evaluate answer quality.
+  --mode api       Call workflow_runtime for each question, then evaluate answer quality.
                    Good for end-to-end pipeline testing (no contexts available).
 
 Usage:
     # Dataset mode (full RAGAS metrics, needs test_cases.json from generate_cases.py)
     python eval.py --mode dataset
 
-    # API mode (answer quality only, calls live workflow-runtime)
+    # API mode (answer quality only, calls live workflow_runtime)
     python eval.py --mode api --agent-id <agent_id>
 """
 
@@ -59,7 +59,7 @@ def get_ragas_llm():
 
 
 async def call_agent(question: str, agent_id: str) -> str:
-    """Call workflow-runtime SSE and collect full answer text."""
+    """Call workflow_runtime SSE and collect full answer text."""
     payload = {"query": question, "agent_id": agent_id}
     headers = {"X-Tenant-ID": "dev-tenant", "Content-Type": "application/json"}
     full_text = []
@@ -137,7 +137,7 @@ async def run_api_mode(agent_id: str, limit: int | None):
     if limit:
         cases = cases[:limit]
 
-    print(f"Calling workflow-runtime for {len(cases)} questions...")
+    print(f"Calling workflow_runtime for {len(cases)} questions...")
     sem = asyncio.Semaphore(5)
 
     async def call_with_sem(i, c):

@@ -1,4 +1,4 @@
-"""db_connector_node (backend/services/workflow-runtime/nodes/sandbox/db_connector.py)
+"""db_connector_node (backend/services/workflow_runtime/nodes/sandbox/db_connector.py)
 — very thin: all real logic (schema introspection, DB selection, parallel
 SQL execution) lives in _text_to_sql_handler (see
 test_text_to_sql_handler.py). This node just extracts the query from
@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
 pytestmark = pytest.mark.unit
 

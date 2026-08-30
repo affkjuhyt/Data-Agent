@@ -1,4 +1,4 @@
-"""rrf_ranking_node (backend/services/workflow-runtime/nodes/model_harness/rrf_ranking.py)
+"""rrf_ranking_node (backend/services/workflow_runtime/nodes/model_harness/rrf_ranking.py)
 — merges kb_chunks/mcp_results/tool_results/db_results into one ranked list.
 db_results is the 4th source (added for DB Connector) — must merge exactly
 like the other 3, not require any special-casing downstream."""
@@ -10,7 +10,7 @@ import sys
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
 pytestmark = pytest.mark.unit
 

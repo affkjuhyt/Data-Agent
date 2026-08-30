@@ -112,24 +112,24 @@ fi
 json_field() { grep -o "\"$1\":\"[^\"]*\"" | head -1 | sed 's/.*":"//;s/"$//'; }
 
 # ── 2. Create upstream services ────────────────────────────────────────
-echo "📡 Creating workflow-runtime service..."
-curl -sf -X PUT "$KONG_ADMIN/services/workflow-runtime" \
+echo "📡 Creating workflow_runtime service..."
+curl -sf -X PUT "$KONG_ADMIN/services/workflow_runtime" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "workflow-runtime",
-    "host": "workflow-runtime",
+    "name": "workflow_runtime",
+    "host": "workflow_runtime",
     "port": 8001,
     "protocol": "http",
     "connect_timeout": 5000,
     "read_timeout": 60000
   }' | json_field name | xargs -I{} echo "  → service: {}"
 
-echo "📡 Creating flow-builder service..."
-curl -sf -X PUT "$KONG_ADMIN/services/flow-builder" \
+echo "📡 Creating flow_buider service..."
+curl -sf -X PUT "$KONG_ADMIN/services/flow_buider" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "flow-builder",
-    "host": "flow-builder",
+    "name": "flow_buider",
+    "host": "flow_buider",
     "port": 8002,
     "protocol": "http",
     "connect_timeout": 5000,
@@ -137,8 +137,8 @@ curl -sf -X PUT "$KONG_ADMIN/services/flow-builder" \
   }' | json_field name | xargs -I{} echo "  → service: {}"
 
 # ── 3. Create routes ───────────────────────────────────────────────────
-echo "🛣️  Creating flow-builder route (canvas + agent CRUD)..."
-curl -sf -X PUT "$KONG_ADMIN/services/flow-builder/routes/builder-route" \
+echo "🛣️  Creating flow_buider route (canvas + agent CRUD)..."
+curl -sf -X PUT "$KONG_ADMIN/services/flow_buider/routes/builder-route" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "builder-route",
@@ -147,8 +147,8 @@ curl -sf -X PUT "$KONG_ADMIN/services/flow-builder/routes/builder-route" \
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
 
-echo "🛣️  Creating workflow-runtime route (conversations + catalog + nodes)..."
-curl -sf -X PUT "$KONG_ADMIN/services/workflow-runtime/routes/runtime-route" \
+echo "🛣️  Creating workflow_runtime route (conversations + catalog + nodes)..."
+curl -sf -X PUT "$KONG_ADMIN/services/workflow_runtime/routes/runtime-route" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "runtime-route",
@@ -162,60 +162,60 @@ curl -sf -X PUT "$KONG_ADMIN/services/workflow-runtime/routes/runtime-route" \
 # add a second /api/data route here — two routes matching the same path leave
 # the CORS plugin (attached to one route) ambiguous for browser preflights.
 
-# ── 3b. Create auth-api service + route ────────────────────────────────
-echo "📡 Creating auth-api service..."
-curl -sf -X PUT "$KONG_ADMIN/services/auth-api" \
+# ── 3b. Create auth_api service + route ────────────────────────────────
+echo "📡 Creating auth_api service..."
+curl -sf -X PUT "$KONG_ADMIN/services/auth_api" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "auth-api",
-    "url": "http://auth-api:8200",
+    "name": "auth_api",
+    "url": "http://auth_api:8200",
     "connect_timeout": 5000,
     "read_timeout": 30000
   }' | json_field name | xargs -I{} echo "  → service: {}"
 
-echo "🛣️  Creating auth-api route (ip-allowlist mgmt — no IP restriction)..."
-curl -sf -X PUT "$KONG_ADMIN/services/auth-api/routes/auth-api-route" \
+echo "🛣️  Creating auth_api route (ip-allowlist mgmt — no IP restriction)..."
+curl -sf -X PUT "$KONG_ADMIN/services/auth_api/routes/auth_api-route" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "auth-api-route",
+    "name": "auth_api-route",
     "paths": ["/api/auth"],
     "strip_path": false,
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
 
-echo "🛣️  Creating auth-api-keys route (API key mgmt — IP restricted)..."
-curl -sf -X PUT "$KONG_ADMIN/services/auth-api/routes/auth-api-keys-route" \
+echo "🛣️  Creating auth_api-keys route (API key mgmt — IP restricted)..."
+curl -sf -X PUT "$KONG_ADMIN/services/auth_api/routes/auth_api-keys-route" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "auth-api-keys-route",
+    "name": "auth_api-keys-route",
     "paths": ["/api/auth/api-keys"],
     "strip_path": false,
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
 
-echo "🛣️  Creating auth-api-secrets route (Secrets Vault — IP restricted)..."
-curl -sf -X PUT "$KONG_ADMIN/services/auth-api/routes/auth-api-secrets-route" \
+echo "🛣️  Creating auth_api-secrets route (Secrets Vault — IP restricted)..."
+curl -sf -X PUT "$KONG_ADMIN/services/auth_api/routes/auth_api-secrets-route" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "auth-api-secrets-route",
+    "name": "auth_api-secrets-route",
     "paths": ["/api/auth/secrets"],
     "strip_path": false,
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
 
-# ── 3c. Create release-worker service + route ──────────────────────────
-echo "📡 Creating release-worker service..."
-curl -sf -X PUT "$KONG_ADMIN/services/release-worker" \
+# ── 3c. Create release_worker service + route ──────────────────────────
+echo "📡 Creating release_worker service..."
+curl -sf -X PUT "$KONG_ADMIN/services/release_worker" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "release-worker",
-    "url": "http://release-worker:8100",
+    "name": "release_worker",
+    "url": "http://release_worker:8100",
     "connect_timeout": 5000,
     "read_timeout": 60000
   }' | json_field name | xargs -I{} echo "  → service: {}"
 
 echo "🛣️  Creating release route..."
-curl -sf -X PUT "$KONG_ADMIN/services/release-worker/routes/release-route" \
+curl -sf -X PUT "$KONG_ADMIN/services/release_worker/routes/release-route" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "release-route",
@@ -225,7 +225,7 @@ curl -sf -X PUT "$KONG_ADMIN/services/release-worker/routes/release-route" \
   }' | json_field name | xargs -I{} echo "  → route: {}"
 
 # (3d used to create an `orchestrator` service + route here, and 3d-2 a
-# `minio-service` one. Both now live inside workflow-runtime — /api/orchestrate
+# `minio_service` one. Both now live inside workflow_runtime — /api/orchestrate
 # and /api/storage are on runtime-route above.)
 
 # ── 3e. Create kb-backend service + route ──────────────────────────────
@@ -332,26 +332,26 @@ for p in data.get('data', []):
     curl -sf -X DELETE "$KONG_ADMIN/plugins/$pid" && echo "  → removed aeroflow-jwks plugin $pid"
   done
 else
-  echo "🔐 Enabling aeroflow-jwks plugin on workflow-runtime..."
-  upsert_plugin "$KONG_ADMIN/services/workflow-runtime/plugins" \
-    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"workflow-runtime\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
+  echo "🔐 Enabling aeroflow-jwks plugin on workflow_runtime..."
+  upsert_plugin "$KONG_ADMIN/services/workflow_runtime/plugins" \
+    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"workflow_runtime\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
     "aeroflow-jwks"
 
-  echo "🔐 Enabling aeroflow-jwks plugin on flow-builder..."
-  upsert_plugin "$KONG_ADMIN/services/flow-builder/plugins" \
-    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"flow-builder\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
+  echo "🔐 Enabling aeroflow-jwks plugin on flow_buider..."
+  upsert_plugin "$KONG_ADMIN/services/flow_buider/plugins" \
+    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"flow_buider\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
     "aeroflow-jwks"
 
-  # ── 4b. aeroflow-jwks on release-worker ────────────────────────────────
-  echo "🔐 Enabling aeroflow-jwks plugin on release-worker (aud=release-worker)..."
-  upsert_plugin "$KONG_ADMIN/services/release-worker/plugins" \
-    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"release-worker\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
+  # ── 4b. aeroflow-jwks on release_worker ────────────────────────────────
+  echo "🔐 Enabling aeroflow-jwks plugin on release_worker (aud=release_worker)..."
+  upsert_plugin "$KONG_ADMIN/services/release_worker/plugins" \
+    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"release_worker\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
     "aeroflow-jwks"
 
-  # ── 4c. aeroflow-jwks on auth-api ──────────────────────────────────────
-  echo "🔐 Enabling aeroflow-jwks plugin on auth-api (aud=auth-api)..."
-  upsert_plugin "$KONG_ADMIN/services/auth-api/plugins" \
-    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"auth-api\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
+  # ── 4c. aeroflow-jwks on auth_api ──────────────────────────────────────
+  echo "🔐 Enabling aeroflow-jwks plugin on auth_api (aud=auth_api)..."
+  upsert_plugin "$KONG_ADMIN/services/auth_api/plugins" \
+    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"auth_api\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
     "aeroflow-jwks"
 
 fi
@@ -374,27 +374,27 @@ upsert_plugin "$KONG_ADMIN/routes/kb-backend-route/plugins" \
   "cors"
 
 # ── 5. IP restriction ─────────────────────────────────────────────────
-# Applied to: aeroflow-backend (data API), release-worker, auth-api-keys-route.
-# auth-api ip-allowlist routes are intentionally EXCLUDED so admin can always
+# Applied to: aeroflow-backend (data API), release_worker, auth_api-keys-route.
+# auth_api ip-allowlist routes are intentionally EXCLUDED so admin can always
 # manage the allowlist regardless of the current IP policy.
-# Default: allow_all — auth-api syncs Kong to the DB mode on startup.
+# Default: allow_all — auth_api syncs Kong to the DB mode on startup.
 # Switch to restricted via PUT /api/auth/ip-allowlist/config {"mode":"allowlist"}.
 _IP_DEFAULT='{"name":"ip-restriction","config":{"allow":["0.0.0.0/0","::/0"]}}'
 
-echo "🛡️  Enabling IP restriction on workflow-runtime..."
-upsert_plugin "$KONG_ADMIN/services/workflow-runtime/plugins" "$_IP_DEFAULT" "ip-restriction"
+echo "🛡️  Enabling IP restriction on workflow_runtime..."
+upsert_plugin "$KONG_ADMIN/services/workflow_runtime/plugins" "$_IP_DEFAULT" "ip-restriction"
 
-echo "🛡️  Enabling IP restriction on flow-builder..."
-upsert_plugin "$KONG_ADMIN/services/flow-builder/plugins" "$_IP_DEFAULT" "ip-restriction"
+echo "🛡️  Enabling IP restriction on flow_buider..."
+upsert_plugin "$KONG_ADMIN/services/flow_buider/plugins" "$_IP_DEFAULT" "ip-restriction"
 
-echo "🛡️  Enabling IP restriction on release-worker..."
-upsert_plugin "$KONG_ADMIN/services/release-worker/plugins" "$_IP_DEFAULT" "ip-restriction"
+echo "🛡️  Enabling IP restriction on release_worker..."
+upsert_plugin "$KONG_ADMIN/services/release_worker/plugins" "$_IP_DEFAULT" "ip-restriction"
 
-echo "🛡️  Enabling IP restriction on auth-api-keys-route..."
-upsert_plugin "$KONG_ADMIN/routes/auth-api-keys-route/plugins" "$_IP_DEFAULT" "ip-restriction"
+echo "🛡️  Enabling IP restriction on auth_api-keys-route..."
+upsert_plugin "$KONG_ADMIN/routes/auth_api-keys-route/plugins" "$_IP_DEFAULT" "ip-restriction"
 
-echo "🛡️  Enabling IP restriction on auth-api-secrets-route..."
-upsert_plugin "$KONG_ADMIN/routes/auth-api-secrets-route/plugins" "$_IP_DEFAULT" "ip-restriction"
+echo "🛡️  Enabling IP restriction on auth_api-secrets-route..."
+upsert_plugin "$KONG_ADMIN/routes/auth_api-secrets-route/plugins" "$_IP_DEFAULT" "ip-restriction"
 
 # Remove any leftover global ip-restriction plugin (from previous setup runs)
 echo "🧹 Removing any global ip-restriction plugin..."
@@ -421,13 +421,13 @@ upsert_plugin "$KONG_ADMIN/plugins" \
   "correlation-id" "global"
 
 # ── 10. Rate limiting ──────────────────────────────────────────────────
-echo "⏱️  Enabling rate-limiting on workflow-runtime..."
-upsert_plugin "$KONG_ADMIN/services/workflow-runtime/plugins" \
+echo "⏱️  Enabling rate-limiting on workflow_runtime..."
+upsert_plugin "$KONG_ADMIN/services/workflow_runtime/plugins" \
   '{"name":"rate-limiting","config":{"minute":300,"policy":"local"}}' \
   "rate-limiting"
 
-echo "⏱️  Enabling rate-limiting on flow-builder..."
-upsert_plugin "$KONG_ADMIN/services/flow-builder/plugins" \
+echo "⏱️  Enabling rate-limiting on flow_buider..."
+upsert_plugin "$KONG_ADMIN/services/flow_buider/plugins" \
   '{"name":"rate-limiting","config":{"minute":300,"policy":"local"}}' \
   "rate-limiting"
 
@@ -470,7 +470,7 @@ if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ] && [ -f "$CA_FILE" ]; then
     | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
 
   # Attach client cert to backend services
-  for svc in workflow-runtime flow-builder; do
+  for svc in workflow_runtime flow_buider; do
     curl -sf -X PATCH "$KONG_ADMIN/services/$svc" \
       -H "Content-Type: application/json" \
       -d "{\"client_certificate\":{\"id\":\"$CLIENT_CERT_ID\"}}" > /dev/null
@@ -539,7 +539,7 @@ if [ "${ENABLE_ADMIN_KEY_AUTH:-0}" = "1" ]; then
   : > "$KEYS_FILE"
   chmod 600 "$KEYS_FILE"
 
-  for consumer in auth-api release-worker; do
+  for consumer in auth_api release_worker; do
     # Create consumer if not exists (PUT is idempotent)
     curl -sf -X PUT "$KONG_ADMIN/consumers/$consumer-admin" \
       -H "Content-Type: application/json" \
@@ -594,8 +594,8 @@ echo "  Proxy :  http://localhost:8000"
 echo "  Admin :  internal only (kong-admin-net 172.30.0.10:8001)"
 echo ""
 echo "  JWT:    RS256, issuer=$ISSUER"
-echo "  Routes: /api/agents|workflows|workflow-versions  -> flow-builder:8002"
-echo "          /api/conversations|traces|nodes|catalog|platform|billing -> workflow-runtime:8001"
+echo "  Routes: /api/agents|workflows|workflow-versions  -> flow_buider:8002"
+echo "          /api/conversations|traces|nodes|catalog|platform|billing -> workflow_runtime:8001"
 echo "  CORS:   localhost:3000, localhost:5173"
 MTLS_STATUS="NOT configured (run deploy/docker/certs/gen-certs.sh first)"
 [ -f "$CERT_FILE" ] && MTLS_STATUS="Configured (Kong presents client cert)"

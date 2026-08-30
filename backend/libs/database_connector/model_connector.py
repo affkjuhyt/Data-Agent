@@ -26,7 +26,7 @@ class ModelServiceClient:
 
     def _create_connection(self) -> httpx.AsyncClient:
         if self._url is None:
-            raise ValueError("model-service url must be set")
+            raise ValueError("model_service url must be set")
         self._client = httpx.AsyncClient(
             base_url=self._url,
             timeout=httpx.Timeout(connect=5.0, read=60.0, write=5.0, pool=5.0),
@@ -48,15 +48,15 @@ class ModelServiceClient:
                 )
                 resp.raise_for_status()
                 self._healthy = True
-                log.info("model-service connection established")
+                log.info("model_service connection established")
                 return
             except Exception as e:
                 log.info(
-                    f"Attempt #{attempt}/{retry.count}: Failed to connect to model-service, "
+                    f"Attempt #{attempt}/{retry.count}: Failed to connect to model_service, "
                     f"retry after {self._connection_wait}s. Error: {e}"
                 )
                 await asyncio.sleep(self._connection_wait)
-        raise ConnectionError("model-service connection failed after all retries")
+        raise ConnectionError("model_service connection failed after all retries")
 
     async def close(self) -> None:
         if self._client is None:
@@ -64,7 +64,7 @@ class ModelServiceClient:
         try:
             await asyncio.wait_for(self._client.aclose(), timeout=float(self._timeout))
         except Exception as e:
-            log.info(f"model-service close error (ignored): {e}")
+            log.info(f"model_service close error (ignored): {e}")
         finally:
             self._client = None
             self._connected = False
@@ -75,10 +75,10 @@ class ModelServiceClient:
         try:
             self._create_connection()
         except Exception as e:
-            log.warning(f"model-service reconnect failed: {e}")
+            log.warning(f"model_service reconnect failed: {e}")
 
     async def health_check_loop(self, config: HealthCheckLoopConfig) -> None:
-        log.info("model-service health check loop started")
+        log.info("model_service health check loop started")
         while True:
             await asyncio.sleep(config.interval)
             try:
@@ -91,7 +91,7 @@ class ModelServiceClient:
                 self._healthy = True
             except Exception as e:
                 self._healthy = False
-                log.warning(f"model-service unhealthy: {e} — attempting reconnect")
+                log.warning(f"model_service unhealthy: {e} — attempting reconnect")
                 await self._reconnect()
 
     def is_healthy(self) -> bool:
@@ -146,8 +146,8 @@ class ModelServiceClient:
         max_tokens: int = 512,
         temperature: float = 0.1,
     ) -> str:
-        """LLM text generation via the model-service gateway. The caller provides
-        only the input (prompt/messages, optional json_schema); model-service routes
+        """LLM text generation via the model_service gateway. The caller provides
+        only the input (prompt/messages, optional json_schema); model_service routes
         to whichever LLM backend is configured (local or Colab). Returns the
         assistant content string."""
         payload: dict[str, Any] = {

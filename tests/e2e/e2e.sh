@@ -29,7 +29,7 @@ COMPOSE=(docker compose -p "$E2E_PROJECT" --env-file .env --profile runtime -f d
 E2E_MODE=${E2E_MODE:-dev}
 if [ "$E2E_MODE" = "dev" ]; then COMPOSE+=(-f deploy/docker/docker-compose.e2e-dev.yml); fi
 SERVICES=(postgres redis mongo kafka minio openbao litellm keycloak kong-migration kong
-          migrate seed sandbox-executor workflow-runtime platform-workers-memory)
+          migrate seed sandbox_executor workflow_runtime platform-workers-memory)
 
 TENANT=a0000000-0000-0000-0000-000000000001
 export E2E_AGENT_ID=${E2E_AGENT_ID:-0000000e-2e00-4000-8000-000000000001}
@@ -160,7 +160,7 @@ up() {
   wait_for "keycloak"  180 curl -sf "$E2E_KEYCLOAK/realms/aeroflow/.well-known/openid-configuration"
   wait_for "litellm"   120 curl -sf http://localhost:4000/health/liveliness
   wait_for "openbao"   60  curl -s "$OPENBAO/v1/sys/health"
-  for c in dataagent-workflow-runtime dataagent-sandbox-executor; do
+  for c in dataagent-workflow_runtime dataagent-sandbox_executor; do
     wait_for "$c running" 60 sh -c "docker inspect -f '{{.State.Status}}' $c | grep -q running"
   done
   # migrate/seed are one-shot: make sure they exited 0
@@ -213,32 +213,32 @@ setup_openbao() {
     curl -sf "${H[@]}" -X POST -d '{"type":"kv","options":{"version":"2"}}' "$OPENBAO/v1/sys/mounts/secret" >/dev/null
     ok "mounted kv-v2 at secret/"
   fi
-  # Transit at transit/ — auth-api's key rotation/signing (auth_core._TRANSIT_MOUNT)
+  # Transit at transit/ — auth_api's key rotation/signing (auth_core._TRANSIT_MOUNT)
   if ! curl -sf "${H[@]}" "$OPENBAO/v1/sys/mounts" | grep -q '"transit/"'; then
     curl -sf "${H[@]}" -X POST -d '{"type":"transit"}' "$OPENBAO/v1/sys/mounts/transit" >/dev/null
     ok "mounted transit at transit/"
   fi
   # policy + approle (same shape as deploy/docker/openbao/openbao-approle-setup.sh)
   curl -sf "${H[@]}" -X POST -d '{"policy":"path \"secret/data/tenants/*\" { capabilities = [\"read\"] }"}' \
-    "$OPENBAO/v1/sys/policies/acl/workflow-runtime-read-policy" >/dev/null
+    "$OPENBAO/v1/sys/policies/acl/workflow_runtime-read-policy" >/dev/null
   curl -sf "${H[@]}" "$OPENBAO/v1/sys/auth" | grep -q '"approle/"' \
     || curl -sf "${H[@]}" -X POST -d '{"type":"approle"}' "$OPENBAO/v1/sys/auth/approle" >/dev/null
-  curl -sf "${H[@]}" -X POST -d '{"token_policies":"workflow-runtime-read-policy","token_ttl":"1h","token_max_ttl":"4h"}' \
-    "$OPENBAO/v1/auth/approle/role/workflow-runtime" >/dev/null
+  curl -sf "${H[@]}" -X POST -d '{"token_policies":"workflow_runtime-read-policy","token_ttl":"1h","token_max_ttl":"4h"}' \
+    "$OPENBAO/v1/auth/approle/role/workflow_runtime" >/dev/null
   local role_id secret_id
-  role_id=$(curl -sf "${H[@]}" "$OPENBAO/v1/auth/approle/role/workflow-runtime/role-id" | py 'import sys,json; print(json.load(sys.stdin)["data"]["role_id"])')
-  secret_id=$(curl -sf "${H[@]}" -X POST "$OPENBAO/v1/auth/approle/role/workflow-runtime/secret-id" | py 'import sys,json; print(json.load(sys.stdin)["data"]["secret_id"])')
+  role_id=$(curl -sf "${H[@]}" "$OPENBAO/v1/auth/approle/role/workflow_runtime/role-id" | py 'import sys,json; print(json.load(sys.stdin)["data"]["role_id"])')
+  secret_id=$(curl -sf "${H[@]}" -X POST "$OPENBAO/v1/auth/approle/role/workflow_runtime/secret-id" | py 'import sys,json; print(json.load(sys.stdin)["data"]["secret_id"])')
   env_set OPENBAO_ROLE_ID "$role_id"; env_set OPENBAO_SECRET_ID "$secret_id"
-  ok "AppRole workflow-runtime → .env (OPENBAO_ROLE_ID/OPENBAO_SECRET_ID)"
+  ok "AppRole workflow_runtime → .env (OPENBAO_ROLE_ID/OPENBAO_SECRET_ID)"
 
   # the demo warehouse password, where warehouse_secrets.py will look for it
   curl -sf "${H[@]}" -X POST -d "{\"data\":{\"value\":\"$DB_SECRET_VALUE\",\"note\":\"e2e sandbox_reader\"}}" \
     "$OPENBAO/v1/secret/data/tenants/$TENANT/$DB_SECRET_KEY" >/dev/null
   ok "secret/data/tenants/$TENANT/$DB_SECRET_KEY written"
 
-  log "recreating workflow-runtime with the AppRole env"
-  "${COMPOSE[@]}" up -d --no-deps workflow-runtime >/dev/null
-  wait_for "workflow-runtime running" 60 sh -c "docker inspect -f '{{.State.Status}}' dataagent-workflow-runtime | grep -q running"
+  log "recreating workflow_runtime with the AppRole env"
+  "${COMPOSE[@]}" up -d --no-deps workflow_runtime >/dev/null
+  wait_for "workflow_runtime running" 60 sh -c "docker inspect -f '{{.State.Status}}' dataagent-workflow_runtime | grep -q running"
 }
 
 setup_kafka() {
@@ -274,8 +274,8 @@ seed() {
   log "seed: mongo (flow nodes/edges)"
   docker exec -i dataagent-mongo mongosh --quiet dataagent < tests/e2e/seed-flow.js
   # graph + metric caches live in the runtime process — restart so a re-seed is visible
-  "${COMPOSE[@]}" restart workflow-runtime >/dev/null
-  wait_for "workflow-runtime running" 60 sh -c "docker inspect -f '{{.State.Status}}' dataagent-workflow-runtime | grep -q running"
+  "${COMPOSE[@]}" restart workflow_runtime >/dev/null
+  wait_for "workflow_runtime running" 60 sh -c "docker inspect -f '{{.State.Status}}' dataagent-workflow_runtime | grep -q running"
   ok "seed done (agent $E2E_AGENT_ID)"
 }
 

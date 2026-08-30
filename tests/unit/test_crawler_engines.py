@@ -1,4 +1,4 @@
-"""Multi-engine schema discovery (backend/services/platform-workers/workers/schema_crawler).
+"""Multi-engine schema discovery (backend/services/platform_workers/workers/schema_crawler).
 
 The crawler was hardcoded to Snowflake — `WHERE w.service = 'Snowflake'`, one
 metadata module, one credential env var — while the DB Connector node, which
@@ -22,7 +22,7 @@ from unittest.mock import MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "platform-workers")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "platform_workers")
 
 pytestmark = pytest.mark.unit
 
@@ -299,7 +299,7 @@ class TestDispatch:
         calls = []
 
         for name in ("snowflake_metadata", "postgres_metadata", "clickhouse_metadata"):
-            qualified = f"workers.schema_crawler.{name}"
+            qualified = f"services.platform_workers.workers.schema_crawler.{name}"
             mod = types.ModuleType(qualified)
             mod.discover_and_describe = (
                 lambda params, tables, _n=name: calls.append(_n) or {}

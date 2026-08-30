@@ -9,7 +9,7 @@ Three things are pinned here:
 
 * the responder builds the payload deterministically from tool metadata — it
   never asks the model what it did;
-* the workflow-runtime stream emits it, and only for a delivered answer;
+* the workflow_runtime stream emits it, and only for a delivered answer;
 * the orchestrator forwards it (and `__options`, which it used to drop — the
   reason clarification choices never reached the Playground).
 """
@@ -25,8 +25,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_RUNTIME_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
-_ORCH_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime" / "orchestrator")
+_RUNTIME_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
+_ORCH_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime" / "orchestrator")
 
 pytestmark = pytest.mark.unit
 
@@ -156,7 +156,7 @@ class TestResponderReturnsEvidence:
 
 class TestRuntimeStreamEmitsEvidence:
     def test_conversation_runner_emits_evidence_only_on_a_delivered_answer(self):
-        src = (REPO_ROOT / "backend" / "services" / "workflow-runtime" / "runtime_services" / "conversation_runner.py").read_text(encoding="utf-8")
+        src = (REPO_ROOT / "backend" / "services" / "workflow_runtime" / "runtime_services" / "conversation_runner.py").read_text(encoding="utf-8")
         assert "'__evidence'" in src
         # captured from the responder node output ...
         assert 'out.get("evidence")' in src
@@ -167,13 +167,13 @@ class TestRuntimeStreamEmitsEvidence:
 
 
 class TestOrchestratorForwardsEvidenceAndOptions:
-    """The orchestrator sits between workflow-runtime and the browser. A frame
+    """The orchestrator sits between workflow_runtime and the browser. A frame
     it does not forward does not exist as far as the UI is concerned."""
 
     @pytest.fixture
     def agent_client(self, runtime_path):
         """orchestrator/executor/agent_client.py loaded by path — with
-        workflow-runtime on sys.path (`runtime_path`) for its
+        workflow_runtime on sys.path (`runtime_path`) for its
         `orchestrator.config` import, but without executing the
         `orchestrator.executor` package __init__, which pulls in the planner,
         litellm and langfuse for nothing this test needs."""

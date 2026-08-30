@@ -118,7 +118,7 @@ services:
       - "8080:8080"
     networks:
       # Network aliases so existing services using `keycloak:8080` (env var
-      # KEYCLOAK_URL in workflow-runtime, frontend, etc.) keep working. The
+      # KEYCLOAK_URL in workflow_runtime, frontend, etc.) keep working. The
       # LB transparently fronts both nodes. `aeroflow-keycloak-lb` is the
       # name kong-setup.sh and a few other scripts already expect.
       default:
@@ -217,8 +217,8 @@ services:
       start_period: 30s
 
   # One-off runner: adds Audience protocol mappers to the aeroflow-frontend
-  # Keycloak client so tokens it issues include aeroflow-backend, auth-api,
-  # and release-worker in the `aud` claim. Required for Kong's aeroflow-jwks
+  # Keycloak client so tokens it issues include aeroflow-backend, auth_api,
+  # and release_worker in the `aud` claim. Required for Kong's aeroflow-jwks
   # audience validation (set by kong-setup) to pass. Idempotent.
   #
   # Run after Keycloak is healthy:

@@ -14,21 +14,21 @@ services:
   kong-migration:   { image: infra-kong-migration }
   kong:             { image: infra-kong }
   migrate:          { image: infra-migrate }
-  sandbox-executor:
-    image: infra-sandbox-executor
+  sandbox_executor:
+    image: infra-sandbox_executor
     environment:
       OTEL_SDK_DISABLED: "true"
       # No warm Python containers: the E2E path is SQL (asyncpg in-process,
       # behind sql_guard). Building sandbox-runner:latest is only needed for
-      # /execute/python — `docker build -t sandbox-runner:latest backend/services/sandbox-executor/sandbox_runner/`.
+      # /execute/python — `docker build -t sandbox-runner:latest backend/services/sandbox_executor/sandbox_runner/`.
       SANDBOX_POOL_SIZE: "0"
   # platform-workers-* carry an explicit `image:` in docker-compose.app.yml, so
   # the dev stack reuses the same tag without an override here.
 
-  workflow-runtime:
-    image: infra-workflow-runtime
+  workflow_runtime:
+    image: infra-workflow_runtime
     volumes:
-      - ../../backend/services/workflow-runtime:/app
+      - ../../backend/services/workflow_runtime:/app
       - ../../backend/libs:/app/libs:ro
       - /app/logs                    # image has /app/logs owned by app; keep it writable
     environment:

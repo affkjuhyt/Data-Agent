@@ -1,5 +1,5 @@
 /**
- * LLM spend, from workflow-runtime behind Kong:
+ * LLM spend, from workflow_runtime behind Kong:
  *   GET /api/billing/spend?days=30 →
  *     { currency, available, total, series:[{date, spend, tokens}], by_model:[{model, spend, tokens}], note }
  * `available=false` means the runtime has no spend source configured; the

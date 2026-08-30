@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "sandbox-executor")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "sandbox_executor")
 
 
 @pytest.fixture(autouse=True)

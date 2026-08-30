@@ -12,7 +12,7 @@
 //   VUS=5 DURATION=2m THINK=5 k6 run tests/loadtest/agent-e2e.js
 //   AGENT_ID=... TENANT=... BASE_URL=http://localhost:8001 VUS=10 k6 run tests/loadtest/agent-e2e.js
 //
-// Env: BASE_URL (workflow-runtime, which serves /api/orchestrate; default :8001), VUS, DURATION, THINK (s between a
+// Env: BASE_URL (workflow_runtime, which serves /api/orchestrate; default :8001), VUS, DURATION, THINK (s between a
 //      user's turns), AGENT_ID (single-agent → predictable path), TENANT, MULTI
 //      (set 1 to OMIT agent_id → multi-agent ToT planner, much heavier).
 

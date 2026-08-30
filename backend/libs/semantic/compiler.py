@@ -9,7 +9,7 @@ can be held to.
 
 Everything interpolated is either a validated identifier (models.validate_identifier)
 or a literal escaped by type. Nothing from the question reaches the SQL as text.
-The output still goes through sandbox-executor's sql_guard and a read-only role,
+The output still goes through sandbox_executor's sql_guard and a read-only role,
 but that is the outer layer — correctness here is not delegated to it.
 """
 from __future__ import annotations
@@ -29,7 +29,7 @@ from libs.semantic.models import (
     validate_identifier,
 )
 
-# Row cap on the compiled statement itself. sandbox-executor wraps every query
+# Row cap on the compiled statement itself. sandbox_executor wraps every query
 # in its own MAX_ROWS limit too; this one keeps a careless grouping from
 # building a huge intermediate result before that wrapper ever sees it.
 DEFAULT_LIMIT = 1000

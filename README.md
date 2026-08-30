@@ -6,7 +6,7 @@ and observability tooling.
 
 The active focus of this repository is the **Knowledge Operations Center** frontend under
 [`frontend/src/components/knowledge/`](./frontend/src/components/knowledge), backed by the `kb-backend` service and
-the `kb-ingestion-worker`.
+the `kb_ingestion_worker`.
 
 ## Repository Layout
 
@@ -24,7 +24,7 @@ model/       LLM eval harness, RAGAS, ollama packaging
 | Path | Contents |
 |---|---|
 | [`frontend/src/`](./frontend/src) | React 19 + TypeScript + Vite frontend (Knowledge Base UI + Ask). `frontend/src/lib/apiClient.ts` is the FastAPI client (bearer-only — Kong injects identity). Root `package.json` is an npm workspace that forwards `npm run dev/test/typecheck` here |
-| [`backend/services/`](./backend/services) | Backend microservices: `kb_backend`, `kb-ingestion-worker`, `auth-api`, `flow-builder`, `workflow-runtime` (which also hosts the multi-agent orchestrator at `/api/orchestrate`), `model-service`, `sandbox-executor`, `release-worker`, `platform-workers` (one image; `WORKER=memory\|schema-crawler\|audit` — ex memory-consumer, schema-crawler-worker, audit-bridge + audit-consumer). Each owns its `Dockerfile` (build context = repo root) |
+| [`backend/services/`](./backend/services) | Backend microservices: `kb_backend`, `kb_ingestion_worker`, `auth_api`, `flow_buider`, `workflow_runtime` (which also hosts the multi-agent orchestrator at `/api/orchestrate`), `model_service`, `sandbox_executor`, `release_worker`, `platform_workers` (one image; `WORKER=memory\|schema-crawler\|audit` — ex memory-consumer, schema-crawler-worker, audit-bridge + audit-consumer). Each owns its `Dockerfile` (build context = repo root) |
 | [`backend/libs/`](./backend/libs) | Shared cross-service layer: `libs/basemodel` (domain models/ORM), `libs/database_connector` (infra clients), `libs/shared` (logger, auth, observability), `libs/semantic` (metric contracts). Innermost architecture layer |
 | [`backend/alembic/`](./backend/alembic) | Database migrations (`alembic -c backend/alembic/alembic.ini upgrade head`) |
 | [`deploy/docker/`](./deploy/docker) | Docker Compose stacks (base + overlays) and every service config (`kong`, `kafka`, `keycloak`, `openbao`, `litellm`, `sql`, `certs`…). Compose project name is pinned to `infra` |
@@ -65,8 +65,8 @@ Copy-Item deploy/docker/.env.kb-testing.example deploy/docker/.env.kb-testing   
 
 ### 2. Start the stack (Docker)
 
-Brings up Postgres, Qdrant, Neo4j, MongoDB, MinIO, Kafka, model-service, `kb-backend`,
-`kb-ingestion-worker`, **Keycloak** (`:8080`), and a DB-less **Kong** gateway (`:8000`). Postgres
+Brings up Postgres, Qdrant, Neo4j, MongoDB, MinIO, Kafka, model_service, `kb-backend`,
+`kb_ingestion_worker`, **Keycloak** (`:8080`), and a DB-less **Kong** gateway (`:8000`). Postgres
 tables (incl. a dedicated `keycloak` DB), Qdrant collections, and the Kong route/JWT plugin are all
 created automatically on first start.
 
@@ -74,8 +74,8 @@ created automatically on first start.
 docker compose -f deploy/docker/docker-compose.kb-e2e.yml --env-file deploy/docker/.env.kb-testing up -d --build
 ```
 
-> First start is slower: `model-service` downloads its embed/rerank weights into
-> `deploy/docker/model-service/models/` (~2.3 GB, persisted for next time) — see
+> First start is slower: `model_service` downloads its embed/rerank weights into
+> `deploy/docker/model_service/models/` (~2.3 GB, persisted for next time) — see
 > [Local-only files](#local-only-files-not-baked-into-images-or-git).
 
 ### 3. Verify the stack is healthy
@@ -306,20 +306,20 @@ before bringing the KB-UI testing stack up:
 
 | Local-only file | Used by | What to do |
 |---|---|---|
-| `deploy/docker/.env.kb-testing` | kb-e2e compose interpolation — MinIO credentials (the example defaults work as-is). The LLM / embed / rerank backend is configured separately on `model-service` via its `REMOTE_*_URL` env — see [Switching the model backend](./deploy/docker/README.md#switching-the-model-backend-local-cpu--colab-gpu). | `Copy-Item deploy/docker/.env.kb-testing.example deploy/docker/.env.kb-testing` |
-| `model/ollama/weights/model.gguf` (~5.7 GB) | the optional GPU `llama` service (mounted `../model/ollama/weights:/models`) | Download a GGUF model into that path. **Only** needed if you run the local `llama` service — by default the worker and LightRAG reach the LLM through the `model-service` `/generate` gateway (point its `REMOTE_LLM_URL` at the backend), and do not require it. |
+| `deploy/docker/.env.kb-testing` | kb-e2e compose interpolation — MinIO credentials (the example defaults work as-is). The LLM / embed / rerank backend is configured separately on `model_service` via its `REMOTE_*_URL` env — see [Switching the model backend](./deploy/docker/README.md#switching-the-model-backend-local-cpu--colab-gpu). | `Copy-Item deploy/docker/.env.kb-testing.example deploy/docker/.env.kb-testing` |
+| `model/ollama/weights/model.gguf` (~5.7 GB) | the optional GPU `llama` service (mounted `../model/ollama/weights:/models`) | Download a GGUF model into that path. **Only** needed if you run the local `llama` service — by default the worker and LightRAG reach the LLM through the `model_service` `/generate` gateway (point its `REMOTE_LLM_URL` at the backend), and do not require it. |
 
 Auto-managed (downloads itself — no manual file placement):
 
-- **`deploy/docker/model-service/models/`** — where the embedding + reranker weights are saved. They are
-  **not** baked into the model-service image; on the **first** `model-service` start they download
+- **`deploy/docker/model_service/models/`** — where the embedding + reranker weights are saved. They are
+  **not** baked into the model_service image; on the **first** `model_service` start they download
   here (~2.3 GB for the configured `EMBED_MODEL` + `RERANK_MODEL`) and persist across recreates, so
   later starts are instant. This keeps the image ~2.5 GB smaller. Consequences:
-  - the first bring-up needs network and the model-service healthcheck has a 300 s `start_period`
+  - the first bring-up needs network and the model_service healthcheck has a 300 s `start_period`
     (kb-backend waits for it), so first start is slower — this is expected, not an error;
   - to pre-seed offline (skip the first-run download), populate the folder from another machine's
-    `deploy/docker/model-service/models/`, or run:
-    `docker compose -f deploy/docker/docker-compose.kb-e2e.yml run --rm model-service python -c "import models, config as c; models.load(c.EMBED_MODEL, c.RERANK_MODEL)"`
+    `deploy/docker/model_service/models/`, or run:
+    `docker compose -f deploy/docker/docker-compose.kb-e2e.yml run --rm model_service python -c "import models, config as c; models.load(c.EMBED_MODEL, c.RERANK_MODEL)"`
 - DB content lives in Docker **named volumes** (persist across image rebuilds) and is seeded by the
   tracked [`deploy/docker/sql/kb-seed.sql`](./deploy/docker/sql/kb-seed.sql) (KB seed, mounted by `docker-compose.kb-e2e-dev.yml`).
 
@@ -334,8 +334,8 @@ docker compose -f deploy/docker/docker-compose.kb-e2e.yml --env-file deploy/dock
 curl http://localhost:8050/health   # -> {"status":"ok"} (direct probe; app traffic goes via Kong :8000)
 ```
 
-Switch the model-service backend (LOCAL CPU vs. remote Colab GPU) by setting the
-`REMOTE_*_URL` env on `model-service` and recreating that one container — no image
+Switch the model_service backend (LOCAL CPU vs. remote Colab GPU) by setting the
+`REMOTE_*_URL` env on `model_service` and recreating that one container — no image
 rebuild required. See [Switching the model backend](./deploy/docker/README.md#switching-the-model-backend-local-cpu--colab-gpu).
 
 ### Official Docker Commands
@@ -394,7 +394,7 @@ The base stack includes these service groups:
 - **Security and gateway:** Keycloak, Kong, OpenBao
 - **Messaging:** Kafka
 - **Observability and AI tooling:** LiteLLM, Langfuse, Jaeger, Elasticsearch
-- **Application services:** workflow-runtime, flow-builder, kb-backend, kb-ingestion-worker, model-service, auth-api, release-worker, platform-workers (memory / schema-crawler / audit) (JWKS/JWT verification is handled at the edge by the Kong `aeroflow-jwks` plugin, not a service)
+- **Application services:** workflow_runtime, flow_buider, kb-backend, kb_ingestion_worker, model_service, auth_api, release_worker, platform_workers (memory / schema-crawler / audit) (JWKS/JWT verification is handled at the edge by the Kong `aeroflow-jwks` plugin, not a service)
 - **Frontend:** Vite server on `5173`
 
 ---
@@ -472,8 +472,8 @@ docker exec -i dataagent-postgres psql -U admin -d dataagent \
 ### Rebuild 1 service
 
 ```bash
-dc up -d --build workflow-runtime
-dc up -d --build flow-builder
+dc up -d --build workflow_runtime
+dc up -d --build flow_buider
 dc up -d --build litellm
 ```
 
@@ -517,12 +517,12 @@ Separate intent-specific Docker paths also exist:
 | Frontend | http://localhost:5173 |
 | Kong proxy | http://localhost:8000 |
 | Kong admin | http://localhost:8900 |
-| workflow-runtime | http://localhost:8001 |
-| flow-builder | http://localhost:8002 |
+| workflow_runtime | http://localhost:8001 |
+| flow_buider | http://localhost:8002 |
 | kb-backend | http://localhost:8050 |
-| release-worker | http://localhost:8100 |
-| auth-api | http://localhost:8200 |
-| model-service | http://localhost:8600 |
+| release_worker | http://localhost:8100 |
+| auth_api | http://localhost:8200 |
+| model_service | http://localhost:8600 |
 | Keycloak | http://localhost:8080 |
 | Langfuse | http://localhost:3001 |
 | LiteLLM | http://localhost:4000 |

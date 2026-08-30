@@ -415,7 +415,7 @@ const mkLockedNode = (
 // â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // Planner/responder model names and the RRF k are no longer hardcoded here —
-// they come from workflow-runtime (GET /api/llm-providers, /api/runtime-config)
+// they come from workflow_runtime (GET /api/llm-providers, /api/runtime-config)
 // through useRuntimeConfig(), consumed in ConfigPanel.
 
 // â”€â”€â”€ Workflow â†’ React Flow transform â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -650,7 +650,7 @@ const KeyValueEditor = ({ value, onChange }: { value: string; onChange: (v: stri
 // tách riêng (KHÔNG phải 1 chuỗi dbUrl như text_to_sql cũ) + password không
 // bao giờ gõ tay lưu thẳng vào canvas — bấm "Lưu 🔒" gọi POST /api/auth/secrets
 // (key_type=DB_CONNECTOR_PASSWORD, đã có sẵn, tenant-admin dùng được cho
-// đúng tenant mình — xem backend/services/auth-api/routers/secrets.py), chỉ
+// đúng tenant mình — xem backend/services/auth_api/routers/secrets.py), chỉ
 // secret_id trả về được lưu vào JSON, password thật không bao giờ vào state
 // component sau khi lưu xong.
 type DbConnRow = {
@@ -1514,7 +1514,7 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
       .catch(() => { setCanvasLoading(false); });
   }, [activeVersionId]);
 
-  // Fetch node registry từ workflow-runtime
+  // Fetch node registry từ workflow_runtime
   useEffect(() => {
     apiGet<Record<string, { display: string; category: string; locked: boolean }>>('/api/nodes/registry')
       .then((registry) => {

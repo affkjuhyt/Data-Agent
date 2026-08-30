@@ -4,9 +4,9 @@ A CPU `llama-server` (llama.cpp) serving **Qwen3-8B** with an OpenAI-compatible 
 This is the **local** alternative to the Colab/cloudflared tunnels in
 [`../vllm`](../vllm) — same interface, no public URL, runs on the host.
 
-## What `model-service` sees
+## What `model_service` sees
 
-`model-service` (deploy/docker/model-service) treats this **exactly like a cloudflare/Colab
+`model_service` (deploy/docker/model_service) treats this **exactly like a cloudflare/Colab
 tunnel**. Its LLM gateway (`remote.py`) does:
 
 ```
@@ -20,8 +20,8 @@ server — point it at the right host:port and it works:
 | Backend | `REMOTE_LLM_URL` |
 |---|---|
 | Colab vLLM / cloudflared | `https://<tunnel>.trycloudflare.com` |
-| **This llama-server**, model-service in a container | `http://host.docker.internal:8088` |
-| This llama-server, model-service on the host | `http://localhost:8088` |
+| **This llama-server**, model_service in a container | `http://host.docker.internal:8088` |
+| This llama-server, model_service on the host | `http://localhost:8088` |
 
 The `kb-e2e` overlay already defaults `REMOTE_LLM_URL` to
 `http://host.docker.internal:8088`, so starting the server below is all that's needed.

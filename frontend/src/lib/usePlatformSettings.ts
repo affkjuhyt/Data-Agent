@@ -1,6 +1,6 @@
 /**
  * Persisted platform settings — one JSON document per key, stored by
- * workflow-runtime behind Kong:
+ * workflow_runtime behind Kong:
  *
  *   GET /api/platform/settings/{key} → { key, value | null, updated_at | null }
  *   PUT /api/platform/settings/{key} body { value } → same shape

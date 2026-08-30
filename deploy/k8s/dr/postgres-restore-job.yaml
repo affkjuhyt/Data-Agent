@@ -11,7 +11,7 @@
 # ── Procedure ────────────────────────────────────────────────────────────────
 #   1. Stop writers. Otherwise you are restoring under live traffic and the
 #      result is neither the backup nor the current state:
-#        kubectl scale deploy/workflow-runtime --replicas=0
+#        kubectl scale deploy/workflow_runtime --replicas=0
 #
 #   2. Pick a dump:
 #        kubectl run -it --rm dump-ls --image=postgres:16-alpine --restart=Never \

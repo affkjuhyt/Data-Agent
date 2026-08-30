@@ -1,4 +1,4 @@
-"""Auth-api integration fixtures.
+"""auth_api integration fixtures.
 
 Spins a postgres testcontainer once per session, applies a minimal schema
 (just the tables the routes touch — NOT full alembic), and exposes the
@@ -25,14 +25,14 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 # ─── sys.path so `import auth_core` + `from shared.auth import ...` resolve ─
 @pytest.fixture(scope="session", autouse=True)
 def _auth_api_sys_path() -> Iterator[None]:
-    """Mirror the auth-api Dockerfile WORKDIR layout for in-process tests.
+    """Mirror the auth_api Dockerfile WORKDIR layout for in-process tests.
 
-    Dockerfile copies `backend/services/auth-api/*` into /app and `backend/services/shared/`
+    Dockerfile copies `backend/services/auth_api/*` into /app and `backend/services/shared/`
     into /app/shared. So `auth_core` is a top-level module and `shared.auth`
     is a package import. Re-create that layout via sys.path here.
     """
     added = [
-        str(REPO_ROOT / "backend" / "services" / "auth-api"),
+        str(REPO_ROOT / "backend" / "services" / "auth_api"),
         str(REPO_ROOT / "backend" / "services"),
     ]
     for p in added:

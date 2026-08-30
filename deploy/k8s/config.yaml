@@ -1,7 +1,7 @@
-# Shared, NON-SECRET wiring for the runtime tier (workflow-runtime incl. orchestrator,
-# sandbox-executor, the migration Job and the backup CronJob).
+# Shared, NON-SECRET wiring for the runtime tier (workflow_runtime incl. orchestrator,
+# sandbox_executor, the migration Job and the backup CronJob).
 #
-# Why a ConfigMap when the KB-tier files (kb-backend/model-service)
+# Why a ConfigMap when the KB-tier files (kb-backend/model_service)
 # inline their env: three services must agree on the SAME endpoints, and a value
 # that has to match in three places is a value that eventually doesn't. Anything
 # secret — connection URLs with a password in them, signing keys, API keys —
@@ -40,10 +40,10 @@ data:
 
   # ── Service-to-service URLs ────────────────────────────────────────────────
   # ClusterIP Services created by the manifests in this directory.
-  WORKFLOW_RUNTIME_URL: "http://workflow-runtime:8001"
-  SANDBOX_EXECUTOR_URL: "http://sandbox-executor:8500"
+  WORKFLOW_RUNTIME_URL: "http://workflow_runtime:8001"
+  SANDBOX_EXECUTOR_URL: "http://sandbox_executor:8500"
 
   # Services allowed to present a signed assertion (each can act as any user).
-  # Empty on purpose: the orchestrator runs inside workflow-runtime and calls
+  # Empty on purpose: the orchestrator runs inside workflow_runtime and calls
   # the runtime in-process, so only gateway-verified requests get in.
   RUNTIME_ALLOWED_SERVICES: ""

@@ -1,4 +1,4 @@
-"""Per-request SQL backend dispatch in backend/services/sandbox-executor/main.py.
+"""Per-request SQL backend dispatch in backend/services/sandbox_executor/main.py.
 
 /execute/sql used to pin `connection` to ONE shape chosen at import time by
 SANDBOX_SQL_BACKEND, so it could serve Snowflake or Postgres but never both.
@@ -26,7 +26,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = REPO_ROOT / "backend" / "services" / "sandbox-executor"
+_SVC_DIR = REPO_ROOT / "backend" / "services" / "sandbox_executor"
 
 pytestmark = pytest.mark.unit
 
@@ -35,7 +35,7 @@ pytest.importorskip("sqlparse", reason="sqlparse not installed in this environme
 
 
 def _load_main(monkeypatch, backend: str = "snowflake"):
-    """Import backend/services/sandbox-executor/main.py fresh, with its Docker/MinIO
+    """Import backend/services/sandbox_executor/main.py fresh, with its Docker/MinIO
     dependencies stubbed and SANDBOX_SQL_BACKEND set."""
     from tests.unit._loader import load_module_from_path, stub_module
 
@@ -50,7 +50,7 @@ def _load_main(monkeypatch, backend: str = "snowflake"):
     stub_module(
         "docker_runner",
         run_python_sandboxed=MagicMock(),
-        # /execute/shell's executor — workflow-runtime's bash tool runs here now
+        # /execute/shell's executor — workflow_runtime's bash tool runs here now
         # instead of subprocess.run(shell=True) in its own process. The stub has
         # to carry every name main.py imports, or the import fails before any
         # test in this file runs.

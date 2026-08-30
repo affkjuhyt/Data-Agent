@@ -43,7 +43,7 @@ export const AIInfrastructureSection = () => {
     <div className="space-y-6">
       <SectionTitle
         title="AI Providers & Models"
-        subtitle="Nhà cung cấp LLM, registry model và hạ tầng embedding — đọc trực tiếp từ workflow-runtime."
+        subtitle="Nhà cung cấp LLM, registry model và hạ tầng embedding — đọc trực tiếp từ workflow_runtime."
         actions={<Button icon={RefreshCw} loading={llm.loading} onClick={llm.reload}>Tải lại</Button>}
       />
 
@@ -80,7 +80,7 @@ const ProvidersTab = ({ llm }: { llm: ReturnType<typeof useLlmProviders> }) => {
   return (
     <div className="space-y-6">
       {llm.errors.providers ? <ErrorState message={llm.errors.providers} onRetry={llm.reload} /> : llm.loading ? <LoadingState /> : llm.providers.length === 0 ? (
-        <EmptyState icon={Globe} title="Chưa có provider" description="workflow-runtime chưa đăng ký LLM provider nào (GET /api/llm-providers)." />
+        <EmptyState icon={Globe} title="Chưa có provider" description="workflow_runtime chưa đăng ký LLM provider nào (GET /api/llm-providers)." />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {llm.providers.map(p => {
@@ -232,7 +232,7 @@ const ModelRegistryTab = ({ llm }: { llm: ReturnType<typeof useLlmProviders> }) 
         <Table<LlmModel>
           rows={rows}
           rowKey={m => m.model_name}
-          empty={<EmptyState icon={Cpu} title={llm.models.length === 0 ? 'Registry trống' : 'Không có model khớp'} description={llm.models.length === 0 ? 'workflow-runtime chưa expose model nào (LiteLLM model list không khả dụng).' : undefined} />}
+          empty={<EmptyState icon={Cpu} title={llm.models.length === 0 ? 'Registry trống' : 'Không có model khớp'} description={llm.models.length === 0 ? 'workflow_runtime chưa expose model nào (LiteLLM model list không khả dụng).' : undefined} />}
           columns={[
             { header: 'Model', cell: m => <span className="font-mono font-bold">{m.model_name}</span> },
             { header: 'Provider', cell: m => m.litellm_provider },

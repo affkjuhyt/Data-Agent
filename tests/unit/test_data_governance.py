@@ -43,8 +43,8 @@ from libs.shared.freshness import (
 )
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_RUNTIME_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
-_CRAWLER_DIR = str(REPO_ROOT / "backend" / "services" / "platform-workers")
+_RUNTIME_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
+_CRAWLER_DIR = str(REPO_ROOT / "backend" / "services" / "platform_workers")
 
 pytestmark = pytest.mark.unit
 
@@ -86,7 +86,7 @@ def _stub_missing(monkeypatch, *specs: tuple[str, dict]) -> None:
 # Bare module names that several services each define at their own top level.
 # Whichever service's directory reached sys.path first wins and stays cached, so
 # a full-suite run can leave `observability` pointing at another service's copy
-# while this file wants workflow-runtime's. Dropped from the cache (monkeypatch
+# while this file wants workflow_runtime's. Dropped from the cache (monkeypatch
 # restores them afterwards) so the import below resolves against the path this
 # fixture just prepended.
 _AMBIGUOUS_MODULES = ("observability", "state", "schema_catalog", "data_provenance", "redis_cache")

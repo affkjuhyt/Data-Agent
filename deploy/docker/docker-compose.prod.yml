@@ -45,7 +45,7 @@ services:
       -c max_replication_slots=3
     # Overlay MERGES volumes with the base file — these APPEND to base's four
     # init scripts (they don't replace them). 05-grants creates the
-    # runtime_writer role that workflow-runtime's RUNTIME_DB_URL connects as.
+    # runtime_writer role that workflow_runtime's RUNTIME_DB_URL connects as.
     volumes:
       - postgres_backups:/backups
       - ./sql/grant-runtime-writer.sql:/docker-entrypoint-initdb.d/05-grants.sql:ro

@@ -1,6 +1,6 @@
 import os
 
-MODEL_SERVICE_URL = os.getenv("MODEL_SERVICE_URL", "http://model-service:8001")
+MODEL_SERVICE_URL = os.getenv("MODEL_SERVICE_URL", "http://model_service:8001")
 
 QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333")
 NEO4J_URL = os.getenv("NEO4J_URL", "bolt://neo4j:7687")

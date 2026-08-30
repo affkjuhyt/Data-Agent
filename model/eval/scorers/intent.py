@@ -33,7 +33,7 @@ from model.eval import _paths
 
 # The analysis types the platform has no implementation for. Kept in sync with
 # nodes/model_harness/intent.py's capability table by importing it below when
-# the workflow-runtime tree is importable; the literal is the fallback for a
+# the workflow_runtime tree is importable; the literal is the fallback for a
 # scorer running from the ragas image, which does not carry that service.
 UNSUPPORTED = ("forecast", "anomaly")
 

@@ -21,7 +21,7 @@ VALUES ('00000000-0000-0000-0000-0000000000a1', 'local-ollama', 'openai/responde
         'http://litellm:4000', 'openai', true, true)
 ON CONFLICT (id) DO NOTHING;
 
--- workflow-runtime connects as runtime_writer; a fresh DB gives it no SELECT.
+-- workflow_runtime connects as runtime_writer; a fresh DB gives it no SELECT.
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO runtime_writer;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO runtime_writer;
 
@@ -51,7 +51,7 @@ UPDATE "Agents" SET published_version_id = '0000000e-2e00-4000-8000-000000000002
 WHERE id = '0000000e-2e00-4000-8000-000000000001';
 
 -- ── DB connector password: metadata row here, value in OpenBao (e2e.sh setup) ─
--- workflow-runtime resolves dbConnections[].secretId → secrets_vault → OpenBao
+-- workflow_runtime resolves dbConnections[].secretId → secrets_vault → OpenBao
 -- KV at secret/data/tenants/<tenant>/<key_name>. Never plaintext in the flow.
 INSERT INTO secrets_vault(id, tenant_id, key_name, key_type, algorithm, realm,
                           openbao_path, version, is_active, created_by)

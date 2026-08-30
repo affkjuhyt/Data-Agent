@@ -2,8 +2,8 @@
 
 Verifies the audience-validation slice of P1 #7:
 
-  * Keycloak issues tokens with `aeroflow-backend`, `auth-api`,
-    `release-worker` in the `aud` claim (driven by audience mappers
+  * Keycloak issues tokens with `aeroflow-backend`, `auth_api`,
+    `release_worker` in the `aud` claim (driven by audience mappers
     installed via deploy/docker/keycloak/setup-audience-mappers.sh).
   * Kong's aeroflow-jwks plugin rejects a token if its `aud` doesn't
     match the per-route audience config (set by deploy/docker/kong/kong-setup.sh).
@@ -65,7 +65,7 @@ def test_keycloak_issues_token_with_expected_audiences(live_stack):
     # `aud` is a string when there's one value, a list when multiple. Normalize.
     aud_list = [aud] if isinstance(aud, str) else (aud or [])
 
-    expected = {"aeroflow-backend", "auth-api", "release-worker"}
+    expected = {"aeroflow-backend", "auth_api", "release_worker"}
     missing = expected - set(aud_list)
     assert not missing, (
         f"Keycloak token missing audiences {missing}. Run "
@@ -75,8 +75,8 @@ def test_keycloak_issues_token_with_expected_audiences(live_stack):
 
 # ─── Kong accepts the token on routes whose audience matches ───────────────
 def test_kong_accepts_token_on_matching_audience_route(live_stack):
-    """auth-api route has audience=auth-api in its plugin config. A token
-    that includes auth-api in its aud claim should be accepted."""
+    """auth_api route has audience=auth_api in its plugin config. A token
+    that includes auth_api in its aud claim should be accepted."""
     token = _get_token(live_stack["keycloak"])
 
     r = requests.get(
@@ -109,7 +109,7 @@ def test_kong_rejects_token_with_invalid_audience(live_stack):
     # Payload with wrong audience
     payload = base64.urlsafe_b64encode(json.dumps({
         "iss": f"{live_stack['keycloak']}/realms/aeroflow",
-        "aud": "other-service",  # NOT auth-api / aeroflow-backend / release-worker
+        "aud": "other-service",  # NOT auth_api / aeroflow-backend / release_worker
         "exp": 9999999999,
         "sub": "spoofer",
     }).encode()).rstrip(b"=")

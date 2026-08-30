@@ -3,7 +3,7 @@
  * (conversations, traces, platform metrics, service health, key-value
  * settings, tenants). Everything goes through apiClient (Kong + Bearer).
  *
- * Contract (workflow-runtime, auth-api, flow-builder):
+ * Contract (workflow_runtime, auth_api, flow_buider):
  *   GET /api/conversations?limit&offset&status&q&agent_id → { items, total }
  *   GET /api/conversations/{id}/messages                → { messages }
  *   GET /api/traces?limit&offset&status&q               → { items, total }

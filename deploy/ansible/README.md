@@ -99,7 +99,7 @@ docs/  model/  scripts/ (chỉ công cụ dev)
 Playbook tham chiếu: `compose_dir = deploy/docker`, seed = `tests/e2e/seed.sql` + `seed-flow.js`, bundle đóng gói
 `deploy/docker` + `deploy/ansible` + seed + `docs/RUNBOOK.md`/`docs/SECURITY.md`. Đã dọn cùng đợt: `infra/scripts/` (kiểm Kong admin
 → task trong role `verify`, bật bằng `kong_admin_published: false`), toàn bộ `.ps1`, `infra/postgres/` (seed KB → `deploy/docker/sql/kb-seed.sql`),
-`scripts/seed_dev_agent.sql`. Overlay `kb-e2e.dev` giờ tự đủ trên base (`--profile runtime`, có `build:` riêng cho model-service/kb-backend/worker).
+`scripts/seed_dev_agent.sql`. Overlay `kb-e2e.dev` giờ tự đủ trên base (`--profile runtime`, có `build:` riêng cho model_service/kb-backend/worker).
 
 **Ansible có "đưa k8s vào" được không?** Được, nhưng là **playbook khác** (`deploy/ansible/k8s.yml`, collection
 `kubernetes.core`: `helm`/`k8s` module) vì đích khác hẳn: appliance = Docker Compose trên một máy, k8s = cụm có sẵn

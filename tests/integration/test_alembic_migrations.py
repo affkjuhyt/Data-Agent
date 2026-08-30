@@ -17,7 +17,7 @@ Scenarios:
 
 For each scenario:
 
-  - Postgres testcontainer per session (reused with the auth-api fixture).
+  - Postgres testcontainer per session (reused with the auth_api fixture).
   - subprocess `alembic upgrade head` against the container DSN.
   - Assert exit 0 + alembic_version row matches the latest revision.
 

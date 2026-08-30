@@ -176,7 +176,7 @@ export default function ReviewCenter() {
       ) : reviews.length === 0 ? (
         <div className="content-card text-center py-14 px-5 text-[#5F5F5F] text-[13px]">
           <Clock size={28} className="mx-auto mb-3 text-[#BFA66A]" />
-          <div>{offline ? 'Không kết nối được workflow-runtime — thử lại sau.' : 'Không có yêu cầu nào đang chờ duyệt'}</div>
+          <div>{offline ? 'Không kết nối được workflow_runtime — thử lại sau.' : 'Không có yêu cầu nào đang chờ duyệt'}</div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

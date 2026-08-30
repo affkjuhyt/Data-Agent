@@ -1,6 +1,6 @@
 /**
  * LLM provider catalogue, model registry and live health — all from
- * workflow-runtime behind Kong:
+ * workflow_runtime behind Kong:
  *
  *   GET /api/llm-providers         → [{ id, name, model_id, type, is_default }]
  *   GET /api/llm-providers/models  → { items: [...], available }

@@ -5,14 +5,14 @@ GRANT ALL PRIVILEGES ON DATABASE langfuse TO admin;
 CREATE DATABASE knowledge_base;
 GRANT ALL PRIVILEGES ON DATABASE knowledge_base TO admin;
 
--- sandbox-executor SANDBOX_SQL_BACKEND=postgres: local/dev/CI stand-in for
--- Snowflake (docs/sandbox_report.md, backend/services/sandbox-executor/postgres_readonly.py)
+-- sandbox_executor SANDBOX_SQL_BACKEND=postgres: local/dev/CI stand-in for
+-- Snowflake (docs/sandbox_report.md, backend/services/sandbox_executor/postgres_readonly.py)
 -- for developers/CI without a real Snowflake account. Not used by any other
 -- service.
 CREATE DATABASE sandbox_dev;
 GRANT ALL PRIVILEGES ON DATABASE sandbox_dev TO admin;
 
--- runtime_writer: limited role for workflow-runtime service (INSERT/SELECT only)
+-- runtime_writer: limited role for workflow_runtime service (INSERT/SELECT only)
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'runtime_writer') THEN

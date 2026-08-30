@@ -23,7 +23,7 @@ pytestmark = pytest.mark.integration
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 ALEMBIC_INI = REPO_ROOT / "backend" / "alembic" / "alembic.ini"
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "platform-workers")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "platform_workers")
 
 
 def _async_dsn(libpq_dsn: str) -> str:
@@ -109,7 +109,7 @@ _FAKE_METADATA = {
 
 @pytest.fixture
 def worker(migrated_db, qdrant_container, monkeypatch):
-    """Imports platform-workers/workers/schema_crawler/worker.py the way the
+    """Imports platform_workers/workers/schema_crawler/worker.py the way the
     container does (service dir on sys.path), pointed at the
     migrated test DB + test Qdrant, with Snowflake discovery and the LLM
     describe/embed calls stubbed."""

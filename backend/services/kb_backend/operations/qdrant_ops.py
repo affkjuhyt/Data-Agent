@@ -172,7 +172,7 @@ async def semantic_search(
         if "dimension" in msg.lower():
             detail = (f"Query embedding is {len(vector)}-dim but collection "
                       f"'{collection_name}' expects a different dimension. "
-                      f"Configure the model-service embedding model to match.")
+                      f"Configure the model_service embedding model to match.")
         else:
             detail = f"Vector search failed: {msg}"
         log.error("qdrant_ops: vector search error on %s: %s", collection_name, e)

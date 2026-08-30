@@ -106,7 +106,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await _postgres.open(retry)
     if KB_LITE:
         log.warning(
-            "KB_LITE=true — skipping Qdrant/Neo4j/Mongo/MinIO/model-service/Kafka "
+            "KB_LITE=true — skipping Qdrant/Neo4j/Mongo/MinIO/model_service/Kafka "
             "connections. Auth/RBAC verification mode: only Postgres is live."
         )
     else:

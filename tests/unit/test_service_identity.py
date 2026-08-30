@@ -22,15 +22,15 @@ from libs.shared.service_identity import (
 
 pytestmark = pytest.mark.unit
 
-SECRET = "s3cret-shared-between-workflow-runtime-and-kb-backend"
+SECRET = "s3cret-shared-between-workflow_runtime-and-kb-backend"
 TENANT = "a0000000-0000-0000-0000-000000000001"
 USER = "11111111-1111-1111-1111-111111111111"
-ALLOWED = ("workflow-runtime",)
+ALLOWED = ("workflow_runtime",)
 
 
 def _mint(**overrides):
     kwargs = {
-        "service": "workflow-runtime",
+        "service": "workflow_runtime",
         "tenant_id": TENANT,
         "user_id": USER,
         "roles": ["business-operator"],
@@ -57,7 +57,7 @@ class TestRoundTrip:
     def test_valid_token_round_trips_the_identity(self):
         payload = verify_service_assertion(_mint(), secret=SECRET, allowed_services=ALLOWED)
 
-        assert payload["svc"] == "workflow-runtime"
+        assert payload["svc"] == "workflow_runtime"
         assert payload["tid"] == TENANT
         assert payload["uid"] == USER
         assert payload["roles"] == ["business-operator"]
@@ -125,7 +125,7 @@ class TestExpiry:
         turn."""
         payload = verify_service_assertion(_mint(ttl_s=-5), secret=SECRET, allowed_services=ALLOWED)
 
-        assert payload["svc"] == "workflow-runtime"
+        assert payload["svc"] == "workflow_runtime"
 
 
 class TestServiceAllowlist:

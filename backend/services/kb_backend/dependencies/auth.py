@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 # name here grants that service the power to act as any user, so it is a
 # deliberate allowlist rather than "any holder of the secret".
 _ALLOWED_SERVICES_ENV = "KB_ALLOWED_SERVICES"
-_DEFAULT_ALLOWED_SERVICES = "workflow-runtime"
+_DEFAULT_ALLOWED_SERVICES = "workflow_runtime"
 
 _UUID_RE = re.compile(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I

@@ -1,4 +1,4 @@
-"""Integration tests for backend/services/sandbox-executor/main.py — FastAPI
+"""Integration tests for backend/services/sandbox_executor/main.py — FastAPI
 TestClient driving the real app, real Docker daemon, real sandbox-runner
 container per call (no mocking of docker_runner/security_visitor/sql_guard
 — those are exercised end to end). Requires Docker and the sandbox-runner
@@ -31,7 +31,7 @@ import pytest
 pytestmark = pytest.mark.integration
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "sandbox-executor")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "sandbox_executor")
 
 
 def _docker_and_image_available() -> bool:

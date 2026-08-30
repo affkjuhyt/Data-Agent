@@ -19,7 +19,7 @@ services:
     restart: "no"
     command: psql postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/dataagent -f /seed.sql
     volumes:
-      - ../../backend/services/workflow-runtime/migrations/seed.sql:/seed.sql:ro
+      - ../../backend/services/workflow_runtime/migrations/seed.sql:/seed.sql:ro
     depends_on:
       migrate:
         condition: service_completed_successfully

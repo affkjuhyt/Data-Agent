@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
 pytestmark = pytest.mark.unit
 
@@ -127,7 +127,7 @@ class TestLoopGuard:
         cold cache re-asks a question the user just answered."""
         # conversation_runner pulls the whole service graph; CI has those deps,
         # a bare dev env may not. The function under test is pure either way.
-        pytest.importorskip("sqlalchemy", reason="workflow-runtime deps not installed")
+        pytest.importorskip("sqlalchemy", reason="workflow_runtime deps not installed")
         import runtime_services.conversation_runner as runner
 
         marked = runner._slots_with_marker({"metric": "x"}, CLARIFICATION)

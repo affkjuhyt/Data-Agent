@@ -1,4 +1,4 @@
-"""Smoke tests for the auth-api FastAPI service.
+"""Smoke tests for the auth_api FastAPI service.
 
 Scope: hit the routes through TestClient with a real Postgres container.
 OpenBao is NOT spun up — tests deliberately stop at validation/auth before

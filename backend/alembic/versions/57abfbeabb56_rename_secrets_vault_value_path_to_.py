@@ -1,7 +1,7 @@
 """rename secrets_vault value_path to openbao_path
 
 Gap fix: b8c9d0e1f2a3_auth_api_secrets_vault_schema created secrets_vault
-with a column named `value_path`, but backend/services/auth-api/routers/secrets.py
+with a column named `value_path`, but backend/services/auth_api/routers/secrets.py
 has always read/written this column as `openbao_path` (insert/rotate — see
 create_secret/rotate_secret). This mismatch meant a real INSERT into
 secrets_vault would fail with UndefinedColumn the first time the route ran

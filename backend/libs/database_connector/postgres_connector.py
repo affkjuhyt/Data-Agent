@@ -541,7 +541,7 @@ class PostgresClient:
         what it is.
 
         Refusing outright is not an option here: every service but
-        workflow-runtime currently connects as a superuser, so raising would
+        workflow_runtime currently connects as a superuser, so raising would
         take the platform down rather than isolate it. It says so instead, once
         per process, and STRICT_TENANT_ISOLATION=1 turns that into a refusal for
         deployments that have completed the move to app_user.

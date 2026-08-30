@@ -35,7 +35,7 @@ export default defineConfig(({ mode }) => {
       proxy: (() => {
         const gateway = { target: env.VITE_API_URL || "http://localhost:8000", changeOrigin: true };
         return {
-          // auth-api validates the real Bearer token itself, but it also sits
+          // auth_api validates the real Bearer token itself, but it also sits
           // behind Kong — one gateway, one identity path, no exceptions.
           "/api": gateway,
         };

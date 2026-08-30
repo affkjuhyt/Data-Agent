@@ -267,7 +267,7 @@ class TestTheAgentStillSendsARealIdentity:
     to asserting an identity of its own."""
 
     def _kb_search_source(self) -> str:
-        return (REPO_ROOT / "backend" / "services" / "workflow-runtime" / "nodes" / "sandbox"
+        return (REPO_ROOT / "backend" / "services" / "workflow_runtime" / "nodes" / "sandbox"
                 / "kb_search.py").read_text(encoding="utf-8")
 
     def test_no_hardcoded_role_set_survives_in_code(self):

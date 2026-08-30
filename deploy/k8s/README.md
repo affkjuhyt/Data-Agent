@@ -9,11 +9,11 @@ be managed services or their own StatefulSets — **not here**. Point
 | --- | --- | --- |
 | `config.yaml` | Shared non-secret wiring for the runtime tier | — |
 | **Runtime tier** | | |
-| `workflow-runtime.yaml` | Agent execution (plan → retrieve → respond → judge) and the multi-agent orchestrator (`/api/orchestrate`, same process) | CPU 65%, 2→8 |
-| `sandbox-executor.yaml` | User-code execution ⚠ node prerequisites | fixed, pool-sized |
+| `workflow_runtime.yaml` | Agent execution (plan → retrieve → respond → judge) and the multi-agent orchestrator (`/api/orchestrate`, same process) | CPU 65%, 2→8 |
+| `sandbox_executor.yaml` | User-code execution ⚠ node prerequisites | fixed, pool-sized |
 | **KB tier** | | |
 | `kb-backend.yaml` | Python retrieval/CRUD | CPU 60%, 3→12 |
-| `model-service.yaml` | embed/rerank/LLM-proxy | CPU 70%, 2→8 |
+| `model_service.yaml` | embed/rerank/LLM-proxy | CPU 70%, 2→8 |
 | **Operations** | | |
 | `migrate-job.yaml` | `alembic upgrade head`, once per deploy | — |
 | `postgres-backup.yaml` | pg_dump CronJob + retention (every 6h) | — |
@@ -50,7 +50,7 @@ kubectl create secret generic kb-backend-secrets --from-literal=PG_PW=...
 ```
 
 `SERVICE_AUTH_SECRET` must be **the same value** in
-workflow-runtime and kb-backend: it signs the identity assertion each service
+workflow_runtime and kb-backend: it signs the identity assertion each service
 presents to the next. A mismatch does not fail loudly — `kb_search` simply
 returns no chunks, by design, because it must never assert an identity it cannot
 prove.
@@ -70,7 +70,7 @@ kubectl get hpa
 
 Replace `REGISTRY/...:latest` with your images (built from each service's
 Dockerfile; the migration image is built from [`../alembic/Dockerfile`](../alembic/Dockerfile)),
-and create the `model-weights` PVC for `model-service`.
+and create the `model-weights` PVC for `model_service`.
 
 ### Upgrades
 
@@ -84,7 +84,7 @@ kubectl wait --for=condition=complete job/dataagent-migrate --timeout=10m
 kubectl apply -f deploy/k8s/
 ```
 
-You do not have to hold the rollout by hand: `workflow-runtime` runs a
+You do not have to hold the rollout by hand: `workflow_runtime` runs a
 `wait-for-migrations` initContainer that blocks
 until the database itself reports the schema at head. That covers what the Job
 cannot — a pod rescheduled mid-upgrade, or a scale-up during a migration.
@@ -116,14 +116,14 @@ until you explicitly unsuspend. The full procedure is in its header.
 
 ## What is not here yet
 
-The manifests cover the request path — gateway → workflow-runtime
+The manifests cover the request path — gateway → workflow_runtime
 (orchestrator included) → sandbox/KB. Not yet ported from `deploy/docker/docker-compose.app.yml`:
-`auth-api`, `flow-builder`, `release-worker`,
+`auth_api`, `flow_buider`, `release_worker`,
 `platform-workers` (one image; `WORKER=memory|schema-crawler|audit`),
 the frontend, and the Kong/Keycloak edge. A cluster running only what is in this
 directory serves agent traffic but has no authoring UI and no audit pipeline.
 
-Ingress is also not here: `workflow-runtime` is ClusterIP on
+Ingress is also not here: `workflow_runtime` is ClusterIP on
 purpose (compose keeps their ports off the host for the same reason — the
 gateway is the only way in). Wiring an Ingress/Gateway straight at them would
 bypass the Kong routes that carry authentication.
@@ -138,21 +138,21 @@ kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/late
 
 ## Version prerequisites
 
-* **1.29+** for `sandbox-executor` — its dockerd sidecar is a native sidecar
+* **1.29+** for `sandbox_executor` — its dockerd sidecar is a native sidecar
   (`initContainers[].restartPolicy: Always`), so it is up before the app
   container and the runner-image load.
 * **1.30+** for `securityContext.appArmorProfile` on that same sidecar. On an
   older cluster use the `container.apparmor.security.beta.kubernetes.io/dockerd`
   pod annotation instead.
 * A CNI that enforces NetworkPolicy (Calico, Cilium, …) for the
-  `sandbox-executor-ingress` policy. On one that ignores them the object applies
+  `sandbox_executor-ingress` policy. On one that ignores them the object applies
   cleanly and protects nothing.
 
 ## GPU vs CPU (this repo runs GPU-less today)
 
-`model-service` **auto-detects** its device (`device.py`: CUDA > Apple MPS > CPU)
+`model_service` **auto-detects** its device (`device.py`: CUDA > Apple MPS > CPU)
 and reports it at `GET /capabilities`. The same image runs on a CPU node (here) or
-a GPU node pool — you only change **scheduling** in `model-service.yaml` (uncomment
+a GPU node pool — you only change **scheduling** in `model_service.yaml` (uncomment
 the `nodeSelector`/`tolerations` + `nvidia.com/gpu` limit). On CPU, embed is the
 bottleneck → scale wider (higher `maxReplicas`). On GPU, 1-2 replicas + dynamic
 batching handle far more → cap lower and scale on a GPU-utilisation custom metric.

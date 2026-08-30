@@ -8,7 +8,7 @@ What it did not cover was everything else the tool executor can do on a
 tenant's data:
 
   * `execute_sql` — a SECOND agent-callable SQL handler, registered in node.py
-    beside text_to_sql, running real queries through sandbox-executor and
+    beside text_to_sql, running real queries through sandbox_executor and
     emitting nothing. For every query that came through it, "who queried what"
     was still literally unanswerable.
   * `file_read` / `grep` / `glob` / `file_write` / `file_edit` — a file under a
@@ -38,7 +38,7 @@ from typing import ClassVar
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-RUNTIME = REPO_ROOT / "backend" / "services" / "workflow-runtime"
+RUNTIME = REPO_ROOT / "backend" / "services" / "workflow_runtime"
 HANDLERS = RUNTIME / "nodes" / "sandbox" / "tool_executor" / "handlers"
 
 pytestmark = pytest.mark.unit
@@ -343,7 +343,9 @@ class TestTheConsumerAcceptsTheNewActions:
     def test_the_consumer_does_not_allowlist_actions(self):
         """It inserts what it is given, so a new action needs no consumer
         change — which is what makes wiring a handler a one-file job."""
-        source = (REPO_ROOT / "backend" / "services" / "platform-workers" / "workers" / "audit" / "data_access.py").read_text(encoding="utf-8")
+        source = (
+            REPO_ROOT / "backend" / "services" / "platform_workers" / "workers" / "audit" / "data_access.py"
+        ).read_text(encoding="utf-8")
         tree = ast.parse(source)
         required = next(
             (n.value for n in ast.walk(tree)

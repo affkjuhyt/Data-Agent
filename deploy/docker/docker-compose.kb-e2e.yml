@@ -3,7 +3,7 @@
 # This file is STANDALONE (it no longer extends docker-compose.yml). It defines
 # only the services the KB stack owns:
 #
-#     model-service, kb-backend, kb-ingestion-worker
+#     model_service, kb-backend, kb-ingestion-worker
 #     + bootstrap jobs: minio-init, kong-setup, kb-seed
 #
 # Everything else — postgres, mongo, redis, qdrant, neo4j, minio, kafka,
@@ -106,16 +106,16 @@ services:
       kb-backend: { condition: service_started }
 
   # ── KB-owned: embedding/rerank/LLM gateway ────────────────────────────────────
-  model-service:
+  model_service:
     build:
-      context: ../../backend/services/model-service
-    container_name: kb-model-service
+      context: ../../backend/services/model_service
+    container_name: kb-model_service
     restart: unless-stopped
     ports:
       - "8600:8001"
     environment:
       # Multilingual (Vietnamese corpus) — must match the weights cached in
-      # ../../backend/services/model-service/models and the dim of the Qdrant collections.
+      # ../../backend/services/model_service/models and the dim of the Qdrant collections.
       EMBED_MODEL: ${EMBED_MODEL:-intfloat/multilingual-e5-small}
       RERANK_MODEL: ${RERANK_MODEL:-cross-encoder/mmarco-mMiniLMv2-L12-H384-v1}
       REMOTE_EMBED_URL: ${REMOTE_EMBED_URL:-}
@@ -133,7 +133,7 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       # Weights download here on first start and persist across recreates.
-      - ../../backend/services/model-service/models:/app/models
+      - ../../backend/services/model_service/models:/app/models
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 30s
@@ -161,7 +161,7 @@ services:
       NEO4J_URI: bolt://neo4j:7687
       NEO4J_URL: bolt://neo4j:7687
       MONGO_URL: mongodb://mongo:27017/${POSTGRES_DB:-dataagent}
-      MODEL_SERVICE_URL: http://model-service:8001
+      MODEL_SERVICE_URL: http://model_service:8001
       MINIO_URL: http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-minio_secret}@minio:9000
       MINIO_BUCKET: knowledge-base
       # Plaintext Kafka listener (this client has no SASL support).
@@ -180,7 +180,7 @@ services:
       QUERY_ALIAS_RESOLVE: ${QUERY_ALIAS_RESOLVE:-1}
       TYPE_AWARE: ${TYPE_AWARE:-1}
     depends_on:
-      model-service: { condition: service_healthy }
+      model_service: { condition: service_healthy }
       minio-init: { condition: service_completed_successfully }
       kb-seed: { condition: service_completed_successfully }
 
@@ -188,7 +188,7 @@ services:
   kb-ingestion-worker:
     build:
       context: ../..
-      dockerfile: backend/services/kb-ingestion-worker/Dockerfile
+      dockerfile: backend/services/kb_ingestion_worker/Dockerfile
     # No container_name → horizontally scalable: `--scale kb-ingestion-worker=N`
     # spawns N consumers in group kb-ingestion. Needs the silver/gold topics to
     # have >= N partitions (see docker-compose.scale.yml). docs/KB-SCALE-10K.md §6.
@@ -201,7 +201,7 @@ services:
       KAFKA_URL: kafka:9094
       QDRANT_URL: http://qdrant:6333
       NEO4J_URI: bolt://neo4j:7687
-      MODEL_SERVICE_URL: http://model-service:8001
+      MODEL_SERVICE_URL: http://model_service:8001
       LITELLM_BASE_URL: http://litellm:4000
       LLM_MODEL: llama3
       HF_HOME: /root/.cache/huggingface
@@ -214,6 +214,6 @@ services:
     volumes:
       - docling_cache:/root/.cache/huggingface
     depends_on:
-      model-service: { condition: service_healthy }
+      model_service: { condition: service_healthy }
       minio-init: { condition: service_completed_successfully }
       kb-seed: { condition: service_completed_successfully }

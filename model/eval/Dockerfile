@@ -14,7 +14,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY model/ragas/requirements.txt ./ragas-requirements.txt
-COPY backend/services/workflow-runtime/requirements.txt ./runtime-requirements.txt
+COPY backend/services/workflow_runtime/requirements.txt ./runtime-requirements.txt
 # ragas + judge model client, then the runtime's own deps (litellm, pydantic)
 # so the intent scorer can call the planner node itself.
 RUN pip install --no-cache-dir -r ragas-requirements.txt \
@@ -25,8 +25,8 @@ RUN pip install --no-cache-dir -r ragas-requirements.txt \
 # the service trees identically in CI and in this image.
 COPY model ./model
 COPY backend/libs ./backend/libs
-COPY backend/services/sandbox-executor ./backend/services/sandbox-executor
-COPY backend/services/workflow-runtime ./backend/services/workflow-runtime
+COPY backend/services/sandbox_executor ./backend/services/sandbox_executor
+COPY backend/services/workflow_runtime ./backend/services/workflow_runtime
 
 # Runs everything and gates on the result: a report with no verdict is a
 # dashboard, and this container exists to answer yes or no.

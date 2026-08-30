@@ -11,7 +11,7 @@
 -- row-level security unconditionally, and FORCE does not change that — FORCE
 -- only subjects the table OWNER to its own policies. So the policy is correct,
 -- `get_client(tenant_id=...)` sets app.tenant_id correctly, and the database
--- still returns every tenant's rows. The one exception is workflow-runtime,
+-- still returns every tenant's rows. The one exception is workflow_runtime,
 -- which connects as runtime_writer (NOBYPASSRLS, see grant-runtime-writer.sql)
 -- and is therefore the only service where RLS does anything today.
 --

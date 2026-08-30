@@ -75,7 +75,7 @@ function RunDetail({ run, index, total }: { run: EvidenceRun; index: number; tot
       <Section icon={Database} title="Truy vấn">
         <Row k="Cơ sở dữ liệu" v={run.db_name ? `${run.db_name}${run.db_type ? ` (${run.db_type})` : ''}` : null} />
         <Row k="Số dòng" v={run.row_count !== null && run.row_count !== undefined ? formatNumber(run.row_count) : null} />
-        <Row k="Thực thi" v="sandbox-executor · READ ONLY · đã ghi nhật ký" />
+        <Row k="Thực thi" v="sandbox_executor · READ ONLY · đã ghi nhật ký" />
         <SqlBlock sql={run.sql} />
         <div style={{ marginTop: 6 }}><CopyButton text={run.sql} label="Sao chép SQL" /></div>
       </Section>

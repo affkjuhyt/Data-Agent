@@ -101,18 +101,18 @@
     (('migrate' in compose_services) and ('migrate 0' not in oneshots.stdout)) or
     (('seed' in compose_services) and ('seed 0' not in oneshots.stdout))
 
-- name: workflow-runtime is healthy
-  ansible.builtin.command: docker inspect -f '{% raw %}{{.State.Health.Status}}{% endraw %}' dataagent-workflow-runtime
+- name: workflow_runtime is healthy
+  ansible.builtin.command: docker inspect -f '{% raw %}{{.State.Health.Status}}{% endraw %}' dataagent-workflow_runtime
   register: runtime_health
   until: runtime_health.stdout == 'healthy'
   retries: "{{ wait_runtime }}"
   delay: 1
   changed_when: false
 
-- name: sandbox-executor is running
+- name: sandbox_executor is running
   ansible.builtin.command: docker inspect -f '{% raw %}{{.State.Status}}{% endraw %}' {{ item }}
   register: svc_state
   failed_when: svc_state.stdout != 'running'
   changed_when: false
   loop:
-    - dataagent-sandbox-executor
+    - dataagent-sandbox_executor

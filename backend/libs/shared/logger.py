@@ -7,7 +7,7 @@ diverged from the structured JSON the services emit via
 that PROPAGATES to the root logger, so each process formats connector logs with
 its own root config consistently:
 
-* services (kb_backend, flow-builder, workflow-runtime, …) → JSON via
+* services (kb_backend, flow_buider, workflow_runtime, …) → JSON via
   ``setup_observability()``;
 * the ingestion worker → its ``logging.basicConfig()``.
 

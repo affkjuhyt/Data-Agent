@@ -63,7 +63,7 @@ ENV POSTGRES_URL="postgresql+asyncpg://aeroflow:aeroflow_secret@postgres/aeroflo
     KAFKA_URL="kafka:9092" \
     QDRANT_URL="http://qdrant:6333" \
     NEO4J_URL="bolt://neo4j:7687" \
-    MODEL_SERVICE_URL="http://model-service:8001" \
+    MODEL_SERVICE_URL="http://model_service:8001" \
     LITELLM_BASE_URL="http://litellm:4000" \
     LLM_MODEL="llama3"
 

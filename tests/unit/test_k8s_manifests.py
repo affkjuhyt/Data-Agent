@@ -39,7 +39,7 @@ DR_DIR = K8S_DIR / "dr"
 
 # Deployments that reach Postgres through the ORM, and so must not serve traffic
 # on a schema older than their code.
-MIGRATION_GATED = {"workflow-runtime"}
+MIGRATION_GATED = {"workflow_runtime"}
 GATE_CONTAINER = "wait-for-migrations"
 
 

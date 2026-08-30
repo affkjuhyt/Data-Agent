@@ -140,7 +140,7 @@ class TestTableExtraction:
         assert audit.extract_tables("SELECT * FROM analytics.fct_sales") == ["analytics.fct_sales"]
 
     def test_the_sandbox_wrapper_alias_is_not_reported_as_a_table(self):
-        """sandbox-executor wraps every statement in `AS _sandboxed_query`;
+        """sandbox_executor wraps every statement in `AS _sandboxed_query`;
         that alias is ours, not the tenant's data."""
         tables = audit.extract_tables(
             "SELECT * FROM (\nSELECT * FROM orders\n) AS _sandboxed_query LIMIT 10001"

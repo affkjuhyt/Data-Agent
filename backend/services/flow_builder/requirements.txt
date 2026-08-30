@@ -1,0 +1,19 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+sqlalchemy[asyncio]==2.0.35
+asyncpg==0.30.0
+motor>=3.3
+pydantic==2.9.2
+python-dotenv>=1.0
+redis>=5.0  # publish graph-cache invalidation to workflow_runtime (backend/services/shared/cache_invalidation.py)
+
+# ── Observability (backend/services/shared/observability.py) ──
+structlog==24.2.0
+opentelemetry-sdk==1.24.0
+opentelemetry-exporter-otlp-proto-grpc==1.24.0
+opentelemetry-instrumentation-fastapi==0.45b0
+opentelemetry-instrumentation-httpx==0.45b0
+opentelemetry-instrumentation-requests==0.45b0
+opentelemetry-instrumentation-logging==0.45b0
+opentelemetry-instrumentation-sqlalchemy==0.45b0
+opentelemetry-instrumentation-redis==0.45b0

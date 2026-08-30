@@ -1,6 +1,6 @@
 """PlatformSettings: tenant-scoped JSON key/value store
 
-Backs GET/PUT /api/platform/settings/{key} in workflow-runtime. One row per
+Backs GET/PUT /api/platform/settings/{key} in workflow_runtime. One row per
 (tenant, key), value is opaque JSONB so admin-UI screens can persist their
 configuration without a per-screen migration.
 

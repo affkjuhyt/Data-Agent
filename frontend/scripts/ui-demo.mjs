@@ -9,7 +9,7 @@
 //  - src/lib/keycloak.ts reuses window.__kc when present, so an already-initialised fake instance is
 //    injected before the app boots (AuthProvider takes its fast path; the approval gate fails open).
 //  - every /api/** call is answered by page.route with payloads shaped exactly like the backend frames
-//    (orchestrator routers/stream.py, workflow-runtime conversation_runner.py, routers/reviews.py).
+//    (orchestrator routers/stream.py, workflow_runtime conversation_runner.py, routers/reviews.py).
 // Use it to check layout and interaction; it says nothing about the backend. For that, run the stack
 // (deploy/docker/docker-compose.kb-e2e.yml) and point VITE_API_URL at Kong.
 import { mkdirSync } from 'node:fs';

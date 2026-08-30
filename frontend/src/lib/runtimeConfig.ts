@@ -1,11 +1,11 @@
 /**
- * Runtime config the flow builder reads from workflow-runtime instead of
+ * Runtime config the flow builder reads from workflow_runtime instead of
  * hardcoding model names and pipeline constants in the component.
  *
  *   GET /api/llm-providers   → available chat models (with is_default)
  *   GET /api/runtime-config  → { rrf_k }
  *
- * These catalog endpoints are served directly by workflow-runtime (no auth),
+ * These catalog endpoints are served directly by workflow_runtime (no auth),
  * matching how Builder already fetches /api/nodes/registry.
  */
 import { useEffect, useState } from 'react';
@@ -25,7 +25,7 @@ interface RuntimeConfig {
 }
 
 // Memoize so multiple components (each ConfigPanel mount) reuse one fetch per
-// page load instead of hitting workflow-runtime every time a node is opened.
+// page load instead of hitting workflow_runtime every time a node is opened.
 // A failed fetch clears the cache so the next caller retries.
 let _providersPromise: Promise<LlmProvider[]> | null = null;
 let _configPromise: Promise<RuntimeConfig> | null = null;

@@ -27,7 +27,7 @@ import sys
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "sandbox-executor")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "sandbox_executor")
 
 pytestmark = pytest.mark.unit
 
@@ -303,7 +303,7 @@ class TestResponderDisclosesTheCut:
     """
 
     def _responder(self, monkeypatch):
-        runtime = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
+        runtime = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
         monkeypatch.syspath_prepend(runtime)
         for name in ("observability", "state"):
             module = sys.modules.get(name)

@@ -1,4 +1,4 @@
-"""Integration tests for backend/services/workflow-runtime/schema_catalog.py (the
+"""Integration tests for backend/services/workflow_runtime/schema_catalog.py (the
 agent-facing read side of the Schema Crawler Worker) and its wiring into
 _text_to_sql_handler — real Qdrant testcontainer, embedding stubbed to a
 fixed-but-distinguishable vector (same technique as
@@ -18,7 +18,7 @@ from qdrant_client.models import PointStruct
 pytestmark = pytest.mark.integration
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
 
 def _fake_vector(text: str, dim: int = 4) -> list[float]:

@@ -2,7 +2,7 @@
 
 Gap fix discovered while extending OpenBao secrets storage to Snowflake/
 warehouse credentials (PR review, see docs/Sandbox_SchemaCrawler_Implementation.md
-§9): backend/services/auth-api's live Secrets Vault feature (routers/secrets.py,
+§9): backend/services/auth_api's live Secrets Vault feature (routers/secrets.py,
 auth_core.py) has always queried lowercase, unquoted tables — api_keys,
 secrets_vault, ip_allowlists, platform_settings, key_rotations — but no
 migration in this chain ever created them. The only thing this chain DID

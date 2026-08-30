@@ -1,7 +1,7 @@
 # deploy/docker — Docker stacks & setup
 
 This directory holds every Docker Compose stack, the service Dockerfiles, and the
-infra services (`model-service`, `kb-ingestion-worker`, `kong`, `Postgres`, `Neo4j`,
+infra services (`model_service`, `kb_ingestion_worker`, `kong`, `Postgres`, `Neo4j`,
 `Qdrant`, `kafka`, `keycloak`). Run all commands from the **repository root**.
 
 The frontend has no mock server and no auth bypass: `kb-backend` is **fail-closed**
@@ -32,11 +32,11 @@ profile and therefore always start (the core auth + system-of-record):
 
 ```bash
 # Run from the repository root
-docker compose -f deploy/docker/docker-compose.yml --profile authoring up -d   # design flows: + flow-builder, frontend, mongo, redis
-docker compose -f deploy/docker/docker-compose.yml --profile kb        up -d   # Knowledge Base: + kb-backend, ingestion, model-service, litellm + qdrant/neo4j/minio/kafka/mongo
-docker compose -f deploy/docker/docker-compose.yml --profile iam       up -d   # auth/governance: + auth-api, platform-workers-audit, openbao, kafka
-docker compose -f deploy/docker/docker-compose.yml --profile release   up -d   # release: + release-worker + minio/mongo/kafka/redis
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.app.yml --profile runtime up -d  # agent runtime (full): + workflow-runtime (incl. orchestrator at /api/orchestrate), kb-backend, sandbox-executor, platform-workers-memory, platform-workers-schema-crawler
+docker compose -f deploy/docker/docker-compose.yml --profile authoring up -d   # design flows: + flow_buider, frontend, mongo, redis
+docker compose -f deploy/docker/docker-compose.yml --profile kb        up -d   # Knowledge Base: + kb-backend, ingestion, model_service, litellm + qdrant/neo4j/minio/kafka/mongo
+docker compose -f deploy/docker/docker-compose.yml --profile iam       up -d   # auth/governance: + auth_api, platform-workers-audit, openbao, kafka
+docker compose -f deploy/docker/docker-compose.yml --profile release   up -d   # release: + release_worker + minio/mongo/kafka/redis
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.app.yml --profile runtime up -d  # agent runtime (full): + workflow_runtime (incl. orchestrator at /api/orchestrate), kb-backend, sandbox_executor, platform-workers-memory, platform-workers-schema-crawler
 
 # Combine profiles freely
 docker compose -f deploy/docker/docker-compose.yml --profile kb --profile authoring up -d          # KB + its UI
@@ -46,11 +46,11 @@ docker compose -f deploy/docker/docker-compose.yml --profile runtime --profile o
 
 | Profile | Adds (app) | Adds (stores) |
 |---|---|---|
-| `authoring` | flow-builder, frontend | mongo, redis |
-| `kb` | kb-backend, kb-ingestion-worker, model-service, litellm | qdrant, neo4j, minio, kafka, mongo, redis |
-| `runtime` | workflow-runtime (incl. orchestrator + `/api/storage`), kb-backend, model-service, litellm | mongo, redis, qdrant, neo4j, kafka, openbao, minio |
-| `iam` | auth-api, platform-workers-audit | kafka, openbao |
-| `release` | release-worker | minio, mongo, kafka, redis |
+| `authoring` | flow_buider, frontend | mongo, redis |
+| `kb` | kb-backend, kb-ingestion-worker, model_service, litellm | qdrant, neo4j, minio, kafka, mongo, redis |
+| `runtime` | workflow_runtime (incl. orchestrator + `/api/storage`), kb-backend, model_service, litellm | mongo, redis, qdrant, neo4j, kafka, openbao, minio |
+| `iam` | auth_api, platform-workers-audit | kafka, openbao |
+| `release` | release_worker | minio, mongo, kafka, redis |
 | `observability` | langfuse (+ worker, minio-init) | elasticsearch, jaeger, clickhouse, minio, redis |
 | `testdb` | — | clickhouse (throwaway DB target for `db_connector`) |
 | `models` | ollama | — (local GPU model backend; dev usually points litellm at a host llama-server instead) |
@@ -58,7 +58,7 @@ docker compose -f deploy/docker/docker-compose.yml --profile runtime --profile o
 > JWT verification (Keycloak JWKS fetch + RS256 verify) is done by the custom Kong `aeroflow-jwks`
 > plugin (`kong/plugins/aeroflow-jwks/`); there is no separate JWKS-refresher service.
 
-> **Note — the full `runtime` lives across two files.** `sandbox-executor` (+ `sandbox-dockerd`),
+> **Note — the full `runtime` lives across two files.** `sandbox_executor` (+ `sandbox-dockerd`),
 > `platform-workers-memory`, and `platform-workers-schema-crawler` are defined in
 > [`docker-compose.app.yml`](./docker-compose.app.yml), which carries the same profiles. So the
 > **complete** agent runtime (with the sandbox) is `-f docker-compose.yml -f docker-compose.app.yml
@@ -76,7 +76,7 @@ runs on top of `docker-compose.yml` which provides the shared platform infrastru
 
 ```
 docker-compose.yml         →  postgres · mongo · qdrant · neo4j · minio · kafka
-                              keycloak · kong-migration · kong · model-service
+                              keycloak · kong-migration · kong · model_service
                               kb-backend · kb-ingestion-worker (base definitions)
 docker-compose.kb-e2e.yml  →  overrides / extensions:
                                 postgres      adds KB seed data (05-kb-seed.sql)
@@ -84,7 +84,7 @@ docker-compose.kb-e2e.yml  →  overrides / extensions:
                                 neo4j         reduces memory to dev-friendly 1.5 GB
                                 minio-init    creates the knowledge-base bucket
                                 kong-setup    configures routes + JWT plugin
-                                model-service adds remote GPU tunnel env vars
+                                model_service adds remote GPU tunnel env vars
                                 kb-backend    publishes :8050, adds LightRAG knobs
                                 kb-ingestion-worker  adds docling cache volume
 ```
@@ -103,7 +103,7 @@ Edit `deploy/docker/.env.kb-testing`:
   ingestion stage and LightRAG canonicalize step return 503; bronze→silver and
   retrieval still work.
 - `REMOTE_EMBED_URL` / `REMOTE_RERANK_URL` / `REMOTE_API_KEY` — remote GPU for
-  embed/rerank. When set, model-service skips the local model download entirely
+  embed/rerank. When set, model_service skips the local model download entirely
   and starts in seconds.
 - `KAFKA_ADMIN_PASSWORD` — required (no compose default). Set to `dev123` for local
   dev. Must match `deploy/docker/kafka/kafka-broker-jaas.config`.
@@ -129,7 +129,7 @@ docker compose `
   up -d --build `
   postgres mongo qdrant neo4j minio kafka keycloak `
   kong-migration kong kong-setup minio-init `
-  model-service kb-backend kb-ingestion-worker
+  model_service kb-backend kb-ingestion-worker
 ```
 
 `kong-setup` starts automatically once Kong and Keycloak are healthy (~60–90 s on
@@ -191,7 +191,7 @@ All users share tenant `a0000000-0000-0000-0000-000000000001` (the seeded dev te
 > — init is skipped. Wipe with `down -v` and bring up again to re-seed.
 
 > **First start with local models:** if `REMOTE_EMBED_URL` / `REMOTE_RERANK_URL` are not
-> set, `model-service` downloads weights into `deploy/docker/model-service/models/` (~2.3 GB,
+> set, `model_service` downloads weights into `deploy/docker/model_service/models/` (~2.3 GB,
 > persisted across restarts). Both remote URLs set → download skipped, starts in seconds.
 
 ### Port map
@@ -202,7 +202,7 @@ All users share tenant `a0000000-0000-0000-0000-000000000001` (the seeded dev te
 | `8000` | Kong proxy (all API traffic goes here) |
 | `8050` | kb-backend direct, loopback only (debug — NOT an auth boundary, see note above) |
 | `8080` | Keycloak |
-| `8600` | model-service |
+| `8600` | model_service |
 | `8900` | Kong admin API (debug only — not on host in production) |
 | `5432` | PostgreSQL |
 | `27017` | MongoDB |
@@ -232,7 +232,7 @@ docker compose -f deploy/docker/docker-compose.test.yml up -d
 
 ## Switching the model backend (local CPU ↔ remote GPU)
 
-`model-service` is the single model gateway. All callers (ingestion worker, LightRAG
+`model_service` is the single model gateway. All callers (ingestion worker, LightRAG
 pipeline) hit only its three endpoints and never know which backend is active:
 
 | Endpoint | Used for | Callers |
@@ -246,29 +246,29 @@ A **remote** backend (Colab GPU behind a cloudflared tunnel) is available when i
 `REMOTE_*_URL` env is set; otherwise the **local** CPU model serves. Switching is a
 single env change — no code, no image rebuild.
 
-| env (on `model-service`) | effect |
+| env (on `model_service`) | effect |
 |---|---|
 | `REMOTE_EMBED_URL` | set → `/embed` forwards there; empty → local CPU (`EMBED_MODEL`) |
 | `REMOTE_RERANK_URL` | set → `/rerank` forwards there; empty → local CPU reranker |
 | `REMOTE_LLM_URL` | set → `/generate` forwards to this OpenAI-compatible server; empty → 503 |
 | `REMOTE_API_KEY` / `REMOTE_LLM_KEY` | bearer keys for the remote embed/rerank and LLM servers |
 
-> When both `REMOTE_EMBED_URL` and `REMOTE_RERANK_URL` are set, model-service skips
+> When both `REMOTE_EMBED_URL` and `REMOTE_RERANK_URL` are set, model_service skips
 > downloading local weights entirely and starts in seconds. When either is unset the
 > local model loads as fallback (~2.3 GB on first start).
 
 Switch to a remote GPU tunnel without restarting the whole stack:
 
 ```powershell
-# Set new tunnel URLs in your env file, then recreate just model-service:
+# Set new tunnel URLs in your env file, then recreate just model_service:
 $env:REMOTE_EMBED_URL = "https://<embed-tunnel>.trycloudflare.com"
 $env:REMOTE_API_KEY   = "kb-emb-xxxx"
 $env:REMOTE_LLM_URL   = "https://<vllm-tunnel>.trycloudflare.com"
 $env:REMOTE_LLM_KEY   = "kb-IT-xxxx"
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e.yml up -d --no-deps model-service
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e.yml up -d --no-deps model_service
 ```
 
-To revert to local CPU, clear those vars and recreate `model-service`. The Colab GPU
+To revert to local CPU, clear those vars and recreate `model_service`. The Colab GPU
 notebooks live in `model/embedding/embed_rerank_colab.ipynb` (embed + rerank) and
 `model/vllm/vllm_qwen_colab.ipynb` (LLM) — each prints its tunnel URL + API key.
 
@@ -280,15 +280,15 @@ notebooks live in `model/embedding/embed_rerank_colab.ipynb` (embed + rerank) an
 
 ## Troubleshooting
 
-### `kb-ingestion-worker` crash-loops on start / `model-service /embed` → 500
+### `kb-ingestion-worker` crash-loops on start / `model_service /embed` → 500
 
 Worker log shows `httpx.HTTPStatusError: Server error '500' for .../embed` and the
-container restarts every ~60 s; `model-service` log shows
+container restarts every ~60 s; `model_service` log shows
 `URLError: <urlopen error [Errno -2] Name or service not known>`.
 
 **Cause:** a stale Colab tunnel. `trycloudflare.com` URLs change every time the
 notebook restarts, so the `REMOTE_*` values in `deploy/docker/.env.kb-testing` no longer
-resolve. `model-service /health` stays green (it only checks the LLM), which hides
+resolve. `model_service /health` stays green (it only checks the LLM), which hides
 the broken embed path; the worker's startup embed probe is what fails.
 
 **Fix** — put the new tunnel URLs + keys in `deploy/docker/.env.kb-testing`, then recreate
@@ -298,7 +298,7 @@ probe is bound to the old URL):
 ```powershell
 docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e.yml `
   --env-file deploy/docker/.env.kb-testing `
-  up -d --no-deps --force-recreate model-service kb-ingestion-worker
+  up -d --no-deps --force-recreate model_service kb-ingestion-worker
 ```
 
 Verify embed is live (should return vectors, not `Internal Server Error`):

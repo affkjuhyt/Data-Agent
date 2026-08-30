@@ -36,7 +36,7 @@ ON CONFLICT (id) DO NOTHING;
 
 -- ── KBModel (embedding models — FK target for Qdrant/Neo4j/TextBlockVersion) ─
 
--- model_name MUST match the names model-service registers (backends/sync.py), so its
+-- model_name MUST match the names model_service registers (backends/sync.py), so its
 -- name→UUID resolution binds THESE seed UUIDs (which the Qdrant/Neo4j rows reference)
 -- instead of inserting fresh ones. id …0001 = the 1024-dim model, …0002 = the smaller.
 INSERT INTO "KBModel" (model_id, model_name, task_type) VALUES

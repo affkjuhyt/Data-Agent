@@ -1,4 +1,4 @@
-"""Unit tests for the workflow-runtime graph cache (H5 fix).
+"""Unit tests for the workflow_runtime graph cache (H5 fix).
 
 The bug: the graph cache was keyed only by agent_id, so a published flow-version
 change never rebuilt the graph (restart required) and the dict grew unbounded.
@@ -18,7 +18,7 @@ from ._loader import SERVICES, load_module_from_path
 
 pytestmark = pytest.mark.unit
 
-_runtime_dir = SERVICES / "workflow-runtime"
+_runtime_dir = SERVICES / "workflow_runtime"
 # `libs.shared.guardrail_check` pulls in litellm, whose own pydantic models emit
 # a "Valid config keys have changed in V2" UserWarning at import; under the
 # repo's `filterwarnings = error` that would abort collection. Upstream noise,

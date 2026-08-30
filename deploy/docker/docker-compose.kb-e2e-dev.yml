@@ -18,19 +18,19 @@
 # (--profile runtime: the base file keeps postgres/minio/kong… behind that profile)
 #
 # Specify only KB services on the up command to avoid starting the full platform
-# (workflow-runtime, flow-builder, auth-api, frontend, etc.):
+# (workflow_runtime, flow_buider, auth_api, frontend, etc.):
 #
 #   ... up -d --build \
 #     postgres mongo qdrant neo4j minio kafka keycloak \
 #     kong-migration kong kong-setup minio-init \
-#     model-service kb-backend kb-ingestion-worker
+#     model_service kb-backend kb-ingestion-worker
 #
 # What this overlay adds / overrides:
 #   postgres        — adds KB seed data mount (05-kb-seed.sql)
 #   keycloak        — adds healthcheck (main compose omits it)
 #   minio-init      — creates the knowledge-base bucket (KB-specific)
 #   kong-setup      — configures Kong routes + JWT plugin for KB services
-#   model-service   — adds remote GPU tunnel env vars + KB postgres DSN
+#   model_service   — adds remote GPU tunnel env vars + KB postgres DSN
 #   kb-backend      — publishes :8050, adds LightRAG tuning knobs
 #   kb-ingestion-worker — adds docling cache volume
 
@@ -88,9 +88,9 @@ services:
       keycloak: { condition: service_healthy }
       kb-backend: { condition: service_started }
 
-  model-service:
+  model_service:
     build:
-      context: ../../backend/services/model-service
+      context: ../../backend/services/model_service
     environment:
       EMBED_MODEL: ${EMBED_MODEL:-intfloat/multilingual-e5-small}
       RERANK_MODEL: ${RERANK_MODEL:-cross-encoder/mmarco-mMiniLMv2-L12-H384-v1}
@@ -132,7 +132,7 @@ services:
   kb-ingestion-worker:
     build:
       context: ../..
-      dockerfile: backend/services/kb-ingestion-worker/Dockerfile
+      dockerfile: backend/services/kb_ingestion_worker/Dockerfile
     environment:
       MINIO_BUCKET: knowledge-base
       LLM_MODEL: llama3

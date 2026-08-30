@@ -19,7 +19,7 @@ from unittest.mock import MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "platform-workers")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "platform_workers")
 
 
 @pytest.fixture(autouse=True)
@@ -70,7 +70,7 @@ def test_poll_queues_event_with_due_time_and_commits():
     assert key in pending_ddl
     assert pending_ddl[key]["event"] == event
     assert before + worker.DDL_DEBOUNCE_SECONDS <= pending_ddl[key]["due"] <= after + worker.DDL_DEBOUNCE_SECONDS
-    consumer.commit.assert_called_once()
+    consumer.commit.assert_not_called()
 
 
 @pytest.mark.unit
@@ -122,9 +122,9 @@ def test_malformed_records_without_table_name_are_ignored():
     worker.poll_ddl_events(consumer, pending_ddl)
 
     assert pending_ddl == {}
-    # Records were non-empty (3 malformed entries) — commit still happens,
-    # since we already consumed them off the topic regardless of shape.
-    consumer.commit.assert_called_once()
+    # Offsets are committed only after pending_ddl is fully drained, so a
+    # crash between poll and crawl does not lose the event batch.
+    consumer.commit.assert_not_called()
 
 
 # ─── process_due_ddl_events ─────────────────────────────────────────────────

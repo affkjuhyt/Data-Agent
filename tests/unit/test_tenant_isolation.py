@@ -8,8 +8,8 @@ SUPERUSER is not, unconditionally. FORCE does not change that: it subjects the
 table OWNER to its own policies, and says nothing about superusers or roles
 holding BYPASSRLS.
 
-Every service except workflow-runtime connects as `${POSTGRES_USER:-admin}`.
-workflow-runtime connects as `runtime_writer`, which
+Every service except workflow_runtime connects as `${POSTGRES_USER:-admin}`.
+workflow_runtime connects as `runtime_writer`, which
 `deploy/docker/sql/grant-runtime-writer.sql` explicitly sets NOBYPASSRLS — so it is the
 one service where the policies do anything at all today.
 
@@ -75,12 +75,12 @@ def _get_client_calls() -> tuple[collections.Counter, collections.Counter, dict]
 # added to a surface that already cannot isolate.
 _UNSCOPED_BUDGET = {
     "kb_backend": 71,
-    "kb-ingestion-worker": 49,
+    "kb_ingestion_worker": 49,
     "database_connector": 18,
-    "flow-builder": 8,
-    "workflow-runtime": 5,
-    "sandbox-executor": 1,
-    "platform-workers": 1,
+    "flow_buider": 8,
+    "workflow_runtime": 5,
+    "sandbox_executor": 1,
+    "platform_workers": 1,
 }
 
 
@@ -113,7 +113,7 @@ class TestTheInventoryOnlyShrinks:
         unscoped call returns zero rows rather than everything. Its scoped
         majority is what makes that survivable."""
         scoped, unscoped, _ = _get_client_calls()
-        assert scoped["workflow-runtime"] > unscoped["workflow-runtime"] * 2
+        assert scoped["workflow_runtime"] > unscoped["workflow_runtime"] * 2
 
 
 class TestTheScopedFormAdmitsWhenItCannotEnforce:

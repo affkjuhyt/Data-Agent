@@ -1,10 +1,10 @@
-"""_text_to_sql_handler (backend/services/workflow-runtime/nodes/sandbox/tool_executor/handlers/data.py)
+"""_text_to_sql_handler (backend/services/workflow_runtime/nodes/sandbox/tool_executor/handlers/data.py)
 — DB Connector's core logic: schema introspection (cached through Redis), 1 LLM
 call that both picks relevant DB(s) and writes SQL (or a simpler direct-SQL
 prompt when there's only 1 connection), and parallel execution across DBs via
 asyncio.gather.
 
-Every database round-trip goes through sandbox-executor's /execute/sql — this
+Every database round-trip goes through sandbox_executor's /execute/sql — this
 module opens no connection of its own. The tests stub `_sandbox_sql` (the single
 seam where that HTTP call happens) rather than a database driver; a test that
 needs to stub `asyncpg` here would mean the unguarded path had come back.
@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
 pytestmark = pytest.mark.unit
 
@@ -62,7 +62,7 @@ def _err(message, *, rejected_by_guard=False):
 
 
 class TestSandboxConnection:
-    """The canvas says `database`; sandbox-executor's Postgres params model says
+    """The canvas says `database`; sandbox_executor's Postgres params model says
     `dbname`. Getting this mapping wrong is a 422 at submit time, so pin it."""
 
     def test_postgres_maps_database_to_dbname_and_defaults_port(self):
@@ -85,7 +85,7 @@ class TestSandboxConnection:
         assert data._sandbox_connection({"host": "h", "database": "d", "port": 6543})["port"] == 6543
 
     def test_missing_password_becomes_empty_string_not_none(self):
-        """sandbox-executor's params model types password as str — None is a 422."""
+        """sandbox_executor's params model types password as str — None is a 422."""
         import nodes.sandbox.tool_executor.handlers.data as data
 
         assert data._sandbox_connection({"host": "h", "database": "d", "password": None})["password"] == ""
@@ -138,7 +138,7 @@ class TestRunOneQuery:
         assert error is None
         assert result["metadata"]["db_name"] == "Sales"
         assert result["metadata"]["row_count"] == 1
-        assert result["metadata"]["executed_via"] == "sandbox-executor"
+        assert result["metadata"]["executed_via"] == "sandbox_executor"
 
     async def test_retries_and_succeeds_on_second_attempt(self, monkeypatch):
         import nodes.sandbox.tool_executor.handlers.data as data
@@ -351,13 +351,13 @@ class TestNoDirectDatabaseAccess:
         offenders = imported & drivers
         assert not offenders, (
             f"handlers/data.py imports {sorted(offenders)} — agent-authored SQL must reach the "
-            "database only through sandbox-executor's /execute/sql, where sql_guard, the "
+            "database only through sandbox_executor's /execute/sql, where sql_guard, the "
             "read-only role and the row cap apply"
         )
 
     async def test_sandbox_sql_posts_to_execute_sql_with_tagged_connection(self, monkeypatch):
         """The one place the HTTP call is made: assert the path and that the
-        backend type travels with the connection, so sandbox-executor dispatches
+        backend type travels with the connection, so sandbox_executor dispatches
         to the right engine instead of falling back to its default."""
         import nodes.sandbox.tool_executor.handlers.data as data
 

@@ -12,7 +12,7 @@ tests/
 ├── unit/                    # pure Python, no Docker, no network — fast
 │   └── test_sanity.py
 ├── integration/             # spins testcontainers OR drives live stack (e2e marker)
-│   ├── conftest.py          # per-service fixtures (auth-api app + DB schema)
+│   ├── conftest.py          # per-service fixtures (auth_api app + DB schema)
 │   ├── test_auth_api_smoke.py
 │   └── test_tenant_isolation.py
 └── README.md
@@ -54,8 +54,8 @@ cp-kafka:7.5.0 (~500 MB total, cached afterward).
 in-process, so you also need that service's runtime deps installed:
 
 ```powershell
-# auth-api smoke tests need hvac, psycopg2-binary, bcrypt, structlog, ...
-pip install -r backend/services/auth-api/requirements.txt
+# auth_api smoke tests need hvac, psycopg2-binary, bcrypt, structlog, ...
+pip install -r backend/services/auth_api/requirements.txt
 ```
 
 CI does this in the `python-test` job; expand the install list as more
@@ -125,13 +125,13 @@ The `postgres_container` fixture is session-scoped — one container per pytest
 run, not per test. If you need per-test isolation, wrap your test in a
 transaction and roll back at the end.
 
-## Service-scoped integration tests — the auth-api pattern
+## Service-scoped integration tests — the auth_api pattern
 
 `tests/integration/conftest.py` is the template for in-process integration
 testing of a FastAPI service. See [tests/integration/test_auth_api_smoke.py](integration/test_auth_api_smoke.py)
 for the seven smoke tests built on top of it.
 
-The pattern, when cloning for a new service (workflow-runtime, kb-backend, ...):
+The pattern, when cloning for a new service (workflow_runtime, kb-backend, ...):
 
 1. **Mirror the Dockerfile WORKDIR with `sys.path`**. Services use top-level
    imports like `from auth_core import *`. Re-create that layout in conftest
@@ -186,9 +186,9 @@ After the migration, services have two ways to query the DB:
    superuser bit. Reserved for migrations, backups, audit aggregation.
    Service routes MUST NOT use this path for user-facing reads.
 
-### How to wire a route — the auth-api PoC
+### How to wire a route — the auth_api PoC
 
-[backend/services/auth-api/routers/api_keys.py](../services/auth-api/routers/api_keys.py)
+[backend/services/auth_api/routers/api_keys.py](../services/auth_api/routers/api_keys.py)
 shows the pattern as a sibling route:
 
 ```python
@@ -211,8 +211,8 @@ The `get_tenant_db` dependency:
 
 ### Rollout checklist for each service
 
-When migrating a service (workflow-runtime, flow-builder, kb-backend,
-release-worker, ...):
+When migrating a service (workflow_runtime, flow_buider, kb-backend,
+release_worker, ...):
 
 1. Set `APP_DATABASE_URL` env var in its compose entry. Format:
    `postgresql://app_user:<password>@postgres:5432/<db>`. The password is

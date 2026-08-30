@@ -1,10 +1,10 @@
-"""Integration test for workflow-runtime's execute_python/execute_sql tool
+"""Integration test for workflow_runtime's execute_python/execute_sql tool
 handlers (nodes/sandbox/tool_executor/handlers/code_interpreter.py) talking
-over real HTTP to a *live* sandbox-executor instance — closes the gap that
-test_sandbox_executor_api.py only drove sandbox-executor's own FastAPI app
-directly, never the workflow-runtime side that calls it.
+over real HTTP to a *live* sandbox_executor instance — closes the gap that
+test_sandbox_executor_api.py only drove sandbox_executor's own FastAPI app
+directly, never the workflow_runtime side that calls it.
 
-sandbox-executor's own app runs in-process via uvicorn on a real localhost
+sandbox_executor's own app runs in-process via uvicorn on a real localhost
 port (no need to build/run its own Docker image for this — its code still
 uses the real Docker daemon to spawn real sandbox-runner containers
 underneath, exactly as it does in production). Requires Docker + the
@@ -27,8 +27,8 @@ import uvicorn
 pytestmark = pytest.mark.integration
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SANDBOX_DIR = str(REPO_ROOT / "backend" / "services" / "sandbox-executor")
-_RUNTIME_DIR = str(REPO_ROOT / "backend" / "services" / "workflow-runtime")
+_SANDBOX_DIR = str(REPO_ROOT / "backend" / "services" / "sandbox_executor")
+_RUNTIME_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 _PORT = 8599
 
 
@@ -51,7 +51,7 @@ pytestmark = [
 
 @pytest.fixture(scope="module")
 def live_sandbox_executor():
-    """Runs sandbox-executor's real FastAPI app on a real port in a
+    """Runs sandbox_executor's real FastAPI app on a real port in a
     background thread for the duration of this test module."""
     added = [p for p in (_SANDBOX_DIR,) if p not in sys.path]
     sys.path[:0] = added
@@ -64,7 +64,7 @@ def live_sandbox_executor():
         thread = threading.Thread(target=server.run, daemon=True)
         thread.start()
 
-        # sandbox-executor's lifespan now spins up the warm container pool
+        # sandbox_executor's lifespan now spins up the warm container pool
         # (docs/1.md Kế hoạch 1) on startup — real container creates take
         # longer than the old instant (no-op) startup did.
         for _ in range(300):
@@ -72,7 +72,7 @@ def live_sandbox_executor():
                 break
             time.sleep(0.2)
         else:
-            raise RuntimeError("sandbox-executor did not start in time")
+            raise RuntimeError("sandbox_executor did not start in time")
 
         yield f"http://127.0.0.1:{_PORT}"
 
@@ -190,7 +190,7 @@ async def test_execute_sql_handler_calls_sandbox_executor_and_surfaces_query_err
     """No real Snowflake account in this environment — connection is
     configured (so the handler proceeds past its own validation) but the
     real snowflake.connector.connect() call against a fake account fails;
-    this proves the full real HTTP round-trip to sandbox-executor and back,
+    this proves the full real HTTP round-trip to sandbox_executor and back,
     with the failure surfaced as a normal tool error, not an exception."""
     result, error = await handler_mod._execute_sql_handler(
         call={"arguments": {"sql": "SELECT 1"}},

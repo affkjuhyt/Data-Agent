@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "platform-workers")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "platform_workers")
 
 pytestmark = pytest.mark.unit
 
@@ -214,7 +214,11 @@ class TestEntrypoint:
 
         called = []
         fake = MagicMock(run=lambda: called.append("audit"))
-        monkeypatch.setattr(entry.importlib, "import_module", lambda name: fake if name == "workers.audit" else None)
+        monkeypatch.setattr(
+            entry.importlib,
+            "import_module",
+            lambda name: fake if name == "services.platform_workers.workers.audit" else None,
+        )
         monkeypatch.setenv("WORKER", "audit")
 
         assert entry.main() == 0

@@ -21,7 +21,7 @@ returns UNKNOWN, never FRESH, when there is nothing to judge on — the whole
 point is that the answer must not imply currency it cannot support.
 
 Pure: no database driver, no network, no service imports (.importlinter keeps
-`libs` a leaf). The crawler writes these fields, workflow-runtime reads them.
+`libs` a leaf). The crawler writes these fields, workflow_runtime reads them.
 """
 from __future__ import annotations
 

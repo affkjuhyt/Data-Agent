@@ -1,4 +1,4 @@
-# sandbox-executor — Deployment + Service + NetworkPolicy.
+# sandbox_executor — Deployment + Service + NetworkPolicy.
 #
 # ⚠ THE ONE MANIFEST IN THIS DIRECTORY WITH NODE-LEVEL PREREQUISITES. Everything
 # else here is ordinary stateless HTTP. This service runs *user-supplied code*,
@@ -7,7 +7,7 @@
 #
 # What it is: the hub of the hub-and-spoke isolation model. It is the only
 # component holding a container engine and the read-only warehouse credentials;
-# workflow-runtime calls it over HTTP and never executes anything itself. The
+# workflow_runtime calls it over HTTP and never executes anything itself. The
 # NetworkPolicy at the bottom is that boundary written down.
 #
 # ── Docker engine ────────────────────────────────────────────────────────────
@@ -37,17 +37,17 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sandbox-executor
-  labels: { app: sandbox-executor, app.kubernetes.io/part-of: dataagent }
+  name: sandbox_executor
+  labels: { app: sandbox_executor, app.kubernetes.io/part-of: dataagent }
 spec:
   # Not autoscaled on CPU: a warm container pool per replica is the unit of
   # capacity, and SANDBOX_POOL_SIZE is the knob. Scale replicas deliberately.
   replicas: 1
   selector:
-    matchLabels: { app: sandbox-executor }
+    matchLabels: { app: sandbox_executor }
   template:
     metadata:
-      labels: { app: sandbox-executor }
+      labels: { app: sandbox_executor }
     spec:
       terminationGracePeriodSeconds: 60   # let in-flight jobs finish
       initContainers:
@@ -85,7 +85,7 @@ spec:
         # separate image store: the runner image the node already has is
         # invisible to the daemon above, so it has to be put there. Pulled and
         # re-tagged rather than built — a build needs the context, and CI has
-        # already built this image from backend/services/sandbox-executor/sandbox_runner.
+        # already built this image from backend/services/sandbox_executor/sandbox_runner.
         - name: load-sandbox-runner
           image: docker:27-cli
           env:
@@ -102,8 +102,8 @@ spec:
             requests: { cpu: "50m", memory: "64Mi" }
             limits:   { cpu: "500m", memory: "256Mi" }
       containers:
-        - name: sandbox-executor
-          image: REGISTRY/sandbox-executor:latest   # built from backend/services/sandbox-executor/Dockerfile
+        - name: sandbox_executor
+          image: REGISTRY/sandbox_executor:latest   # built from backend/services/sandbox_executor/Dockerfile
           ports:
             - containerPort: 8500
           envFrom:
@@ -112,7 +112,7 @@ spec:
             # credentials this service is the sole holder of.
             - secretRef: { name: dataagent-secrets }
           env:
-            - { name: OTEL_SERVICE_NAME, value: "sandbox-executor" }
+            - { name: OTEL_SERVICE_NAME, value: "sandbox_executor" }
             # The sidecar, over the pod's loopback. Unset would mean
             # docker.from_env() — i.e. a node socket that should not exist here.
             - { name: SANDBOX_DOCKER_HOST, value: "tcp://localhost:2375" }
@@ -156,14 +156,14 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: sandbox-executor
-  labels: { app: sandbox-executor }
+  name: sandbox_executor
+  labels: { app: sandbox_executor }
 spec:
-  selector: { app: sandbox-executor }
+  selector: { app: sandbox_executor }
   ports:
     - { port: 8500, targetPort: 8500 }
 ---
-# The hub-and-spoke boundary, enforced rather than documented: workflow-runtime
+# The hub-and-spoke boundary, enforced rather than documented: workflow_runtime
 # is the only thing that may reach the code-execution tier. Compose gets a
 # weaker version of this for free (no published port); a flat cluster network
 # gives it away by default, so it has to be stated.
@@ -174,14 +174,14 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: sandbox-executor-ingress
+  name: sandbox_executor-ingress
 spec:
   podSelector:
-    matchLabels: { app: sandbox-executor }
+    matchLabels: { app: sandbox_executor }
   policyTypes: [Ingress]
   ingress:
     - from:
         - podSelector:
-            matchLabels: { app: workflow-runtime }
+            matchLabels: { app: workflow_runtime }
       ports:
         - { protocol: TCP, port: 8500 }

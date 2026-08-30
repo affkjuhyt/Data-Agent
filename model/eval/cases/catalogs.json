@@ -1,7 +1,7 @@
 {
   "_comment": [
     "Metric contracts the SQL cases are written against. Fixtures, not production config —",
-    "a tenant's real registry lives in Postgres (backend/services/workflow-runtime/semantic_layer.py).",
+    "a tenant's real registry lives in Postgres (backend/services/workflow_runtime/semantic_layer.py).",
     "They are shaped like real ones on purpose: two revenue metrics that differ only by refunds,",
     "a COUNT vs COUNT_DISTINCT pair, and an always-on status filter, because those are the three",
     "confusions the semantic layer exists to end and therefore the three worth measuring."

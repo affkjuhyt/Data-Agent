@@ -29,7 +29,7 @@ import types
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "sandbox-executor")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "sandbox_executor")
 _BACKENDS = ("postgres_readonly", "clickhouse_readonly", "snowflake_readonly")
 
 

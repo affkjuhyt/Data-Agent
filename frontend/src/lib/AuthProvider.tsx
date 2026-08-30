@@ -49,12 +49,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setGateSince(since);
       setGateStatus(status as ApprovalGateStatus);
     } catch (err) {
-      // The Microsoft-SSO approval API (auth-api, /api/auth/me) is optional: it is
+      // The Microsoft-SSO approval API (auth_api, /api/auth/me) is optional: it is
       // not part of the KB-only stacks (auth-lite / e2e), where Kong routes only
       // /api/data, /api/knowledge, /api/fleet. If it is unreachable, fail OPEN —
       // skip the approval gate rather than locking the whole app behind an error
-      // screen. When auth-api IS deployed and routed, the gate works as designed.
-      console.warn('Approval gate unavailable — skipping (auth-api not deployed?):', err);
+      // screen. When auth_api IS deployed and routed, the gate works as designed.
+      console.warn('Approval gate unavailable — skipping (auth_api not deployed?):', err);
       setGateStatus('active');
     }
   };

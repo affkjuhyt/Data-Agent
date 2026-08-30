@@ -1,6 +1,6 @@
-# model-service (embed/rerank/LLM-proxy) — Deployment + Service + HPA.
+# model_service (embed/rerank/LLM-proxy) — Deployment + Service + HPA.
 #
-# The image auto-detects its device (backend/services/model-service/device.py: CUDA > MPS
+# The image auto-detects its device (backend/services/model_service/device.py: CUDA > MPS
 # > CPU) and reports it at GET /capabilities — so the SAME image runs CPU-only
 # (this cluster, no GPU) or on a GPU node pool without changes. The manifest only
 # decides SCHEDULING. Default below is CPU (portable); flip on the GPU block for a
@@ -8,23 +8,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: model-service
-  labels: { app: model-service }
+  name: model_service
+  labels: { app: model_service }
 spec:
   replicas: 2
   selector:
-    matchLabels: { app: model-service }
+    matchLabels: { app: model_service }
   template:
     metadata:
-      labels: { app: model-service }
+      labels: { app: model_service }
     spec:
       # ── GPU node pool (uncomment for a GPU cluster; device.py then picks cuda) ──
       # nodeSelector: { cloud.google.com/gke-accelerator: nvidia-tesla-t4 }
       # tolerations:
       #   - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
       containers:
-        - name: model-service
-          image: REGISTRY/model-service:latest
+        - name: model_service
+          image: REGISTRY/model_service:latest
           ports:
             - containerPort: 8001
           env:
@@ -58,21 +58,21 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: model-service
+  name: model_service
 spec:
-  selector: { app: model-service }
+  selector: { app: model_service }
   ports:
     - { port: 8001, targetPort: 8001 }
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: model-service
+  name: model_service
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: model-service
+    name: model_service
   minReplicas: 2
   # CPU-only: embed is the bottleneck, so scale wider. On GPU, 1-2 replicas +
   # dynamic batching handle far more — cap lower and scale on a GPU-util metric.
