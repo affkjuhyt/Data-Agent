@@ -1,9 +1,28 @@
 from typing import Any
-from fastapi import APIRouter
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Path
 
 from libs.shared.db_context import get_tenant_db
-from services.auth_api.auth_core import *
-from services.auth_api.schemas import *
+from libs.shared.auth import require_role
+try:
+    from services.auth_api.domain.api_keys import (
+        VALID_SCOPES,
+        format_api_key,
+        generate_api_key,
+        hash_api_key,
+    )
+    from services.auth_api.infrastructure.db import get_db
+    from services.auth_api.schemas import APIKeyCreateInput
+except ModuleNotFoundError:
+    from auth_api.domain.api_keys import (
+        VALID_SCOPES,
+        format_api_key,
+        generate_api_key,
+        hash_api_key,
+    )
+    from auth_api.infrastructure.db import get_db
+    from auth_api.schemas import APIKeyCreateInput
 
 router = APIRouter()
 
@@ -20,7 +39,7 @@ def list_api_keys(
                 "SELECT id, name, key_prefix, scope, created_by, last_used_at, expires_at, revoked_at, rotated_from, created_at FROM api_keys WHERE tenant_id = %s ORDER BY created_at DESC",
                 (x_tenant_id,),
             )
-            return [_fmt_key(r) for r in cur.fetchall()]
+            return [format_api_key(r) for r in cur.fetchall()]
     finally:
         conn.close()
 
@@ -48,20 +67,20 @@ def list_api_keys_via_rls(
             "expires_at, revoked_at, rotated_from, created_at "
             "FROM api_keys ORDER BY created_at DESC"
         )
-        return [_fmt_key(r) for r in cur.fetchall()]
+        return [format_api_key(r) for r in cur.fetchall()]
 
 
 @router.post("/api/auth/api-keys", status_code=201)
 def create_api_key(
-    body: APIKeyIn,
+    body: APIKeyCreateInput,
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
     if body.scope not in VALID_SCOPES:
         raise HTTPException(status_code=422, detail=f"Invalid scope: {body.scope}")
 
-    raw_key, prefix = _gen_key(body.scope)
-    key_hash = _hash_key(raw_key)
+    raw_key, prefix = generate_api_key(body.scope)
+    key_hash = hash_api_key(raw_key)
     expires_at = None
     if body.expires_at:
         try:
@@ -78,7 +97,7 @@ def create_api_key(
             )
             row = cur.fetchone()
         conn.commit()
-        return {**_fmt_key(row), "raw_key": raw_key}
+        return {**format_api_key(row), "raw_key": raw_key}
     finally:
         conn.close()
 
@@ -101,7 +120,7 @@ def revoke_api_key(
             conn.rollback()
             raise HTTPException(status_code=404, detail="Key not found or already revoked")
         conn.commit()
-        return _fmt_key(row)
+        return format_api_key(row)
     finally:
         conn.close()
 
@@ -123,13 +142,13 @@ def rotate_api_key(
             if not old:
                 raise HTTPException(status_code=404, detail="Key not found or already revoked")
             cur.execute("UPDATE api_keys SET revoked_at = now() WHERE id = %s", (old["id"],))
-            raw_key, prefix = _gen_key(old["scope"])
+            raw_key, prefix = generate_api_key(old["scope"])
             cur.execute(
                 "INSERT INTO api_keys (tenant_id, created_by, name, key_hash, key_prefix, scope, expires_at, rotated_from) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id, name, key_prefix, scope, created_by, last_used_at, expires_at, revoked_at, rotated_from, created_at",
-                (x_tenant_id, user["user_id"], old["name"], _hash_key(raw_key), prefix, old["scope"], old["expires_at"], old["id"]),
+                (x_tenant_id, user["user_id"], old["name"], hash_api_key(raw_key), prefix, old["scope"], old["expires_at"], old["id"]),
             )
             new_row = cur.fetchone()
         conn.commit()
-        return {**_fmt_key(new_row), "raw_key": raw_key}
+        return {**format_api_key(new_row), "raw_key": raw_key}
     finally:
         conn.close()

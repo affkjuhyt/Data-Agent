@@ -1,8 +1,51 @@
 from typing import Any
-from fastapi import APIRouter
+from datetime import datetime, timedelta, timezone
 
-from services.auth_api.auth_core import *
-from services.auth_api.schemas import *
+import psycopg2
+import psycopg2.extras
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query
+
+from libs.shared.auth import get_current_user, require_role
+try:
+    from services.auth_api.domain.secrets import (
+        TENANT_MANAGEABLE_KEY_TYPES,
+        TRANSIT_ALGORITHM_MAP,
+        TRANSIT_KEY_TYPES,
+        TRANSIT_MOUNT,
+        VALID_KEY_TYPES,
+        VAULT_MOUNT,
+        build_transit_key_name,
+        build_vault_path,
+        format_secret,
+    )
+    from services.auth_api.infrastructure.config import log
+    from services.auth_api.infrastructure.db import get_db
+    from services.auth_api.infrastructure.vault import get_vault
+    from services.auth_api.schemas import SecretCreateInput
+    from services.auth_api.services.governance import (
+        enforce_vault_not_in_panic_mode,
+        get_governance_setting,
+    )
+except ModuleNotFoundError:
+    from auth_api.domain.secrets import (
+        TENANT_MANAGEABLE_KEY_TYPES,
+        TRANSIT_ALGORITHM_MAP,
+        TRANSIT_KEY_TYPES,
+        TRANSIT_MOUNT,
+        VALID_KEY_TYPES,
+        VAULT_MOUNT,
+        build_transit_key_name,
+        build_vault_path,
+        format_secret,
+    )
+    from auth_api.infrastructure.config import log
+    from auth_api.infrastructure.db import get_db
+    from auth_api.infrastructure.vault import get_vault
+    from auth_api.schemas import SecretCreateInput
+    from auth_api.services.governance import (
+        enforce_vault_not_in_panic_mode,
+        get_governance_setting,
+    )
 
 router = APIRouter()
 
@@ -23,7 +66,7 @@ def _is_tenant_admin_for(user: dict[str, Any], x_tenant_id: str) -> bool:
 def list_secrets(
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(get_current_user),
-    _panic: None = Depends(_vault_panic_check),
+    _panic: None = Depends(enforce_vault_not_in_panic_mode),
 ) -> list[dict[str, Any]]:
     is_platform_admin = _is_platform_admin(user)
     if not is_platform_admin and not _is_tenant_admin_for(user, x_tenant_id):
@@ -40,30 +83,27 @@ def list_secrets(
                     (x_tenant_id,),
                 )
             else:
-                # tenant-admin: only ever sees the key_types they're allowed to
-                # manage (TENANT_MANAGEABLE_KEY_TYPES) — SIGNING_KEY/
-                # ENCRYPTION_KEY/etc. of their own tenant stay invisible to them.
                 cur.execute(
                     "SELECT id, key_name, key_type, algorithm, realm, version, is_active, "
                     "rotation_due_at, last_rotated_at, created_by, created_at "
                     "FROM secrets_vault WHERE tenant_id = %s AND key_type = ANY(%s) ORDER BY created_at DESC",
                     (x_tenant_id, list(TENANT_MANAGEABLE_KEY_TYPES)),
                 )
-            return [_fmt_secret(r) for r in cur.fetchall()]
+            return [format_secret(r) for r in cur.fetchall()]
     finally:
         conn.close()
 
 
 @router.post("/api/auth/secrets", status_code=201)
 def create_secret(
-    body: SecretIn,
+    body: SecretCreateInput,
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(get_current_user),
-    _panic: None = Depends(_vault_panic_check),
+    _panic: None = Depends(enforce_vault_not_in_panic_mode),
 ) -> dict[str, Any]:
     if body.key_type not in VALID_KEY_TYPES:
         raise HTTPException(status_code=422, detail=f"Invalid key_type: {body.key_type}")
-    if body.key_type not in _TRANSIT_TYPES and not body.value:
+    if body.key_type not in TRANSIT_KEY_TYPES and not body.value:
         raise HTTPException(status_code=422, detail="value is required for this key type")
 
     is_platform_admin = _is_platform_admin(user)
@@ -75,23 +115,21 @@ def create_secret(
         raise HTTPException(status_code=403, detail=f"Required role: platform-admin{' or tenant-admin' if body.key_type in TENANT_MANAGEABLE_KEY_TYPES else ''}")
 
     vault = get_vault()
-    path  = _vault_path(x_tenant_id, body.key_name)
+    path = build_vault_path(x_tenant_id, body.key_name)
 
-    if body.key_type in _TRANSIT_TYPES:
-        # Key is generated inside OpenBao Transit — private key never leaves the vault
-        t_key  = _transit_key_name(x_tenant_id, body.key_name)
-        t_type = _ALGO_TO_TRANSIT.get(body.algorithm, "rsa-4096")
+    if body.key_type in TRANSIT_KEY_TYPES:
+        t_key = build_transit_key_name(x_tenant_id, body.key_name)
+        t_type = TRANSIT_ALGORITHM_MAP.get(body.algorithm, "rsa-4096")
         try:
-            vault.secrets.transit.create_key(name=t_key, key_type=t_type, exportable=False, mount_point=_TRANSIT_MOUNT)
+            vault.secrets.transit.create_key(name=t_key, key_type=t_type, exportable=False, mount_point=TRANSIT_MOUNT)
         except Exception as e:
             err = str(e)
             if "already exists" not in err.lower():
                 log.warning("transit_create_failed", error=err)
                 raise HTTPException(status_code=502, detail="Failed to create Transit key")
-        # KV v2 entry stores metadata only (no raw key value)
         try:
             vault.secrets.kv.v2.create_or_update_secret(
-                mount_point=_VAULT_MOUNT, path=path,
+                mount_point=VAULT_MOUNT, path=path,
                 secret={"transit_key": t_key, "managed": "transit", "key_type": body.key_type, "algorithm": body.algorithm},
             )
         except Exception as e:
@@ -99,16 +137,15 @@ def create_secret(
             raise HTTPException(status_code=502, detail="Failed to store secret metadata in vault")
         openbao_path = f"transit/keys/{t_key}"
     else:
-        # KV v2 — raw value stored in vault
         try:
             vault.secrets.kv.v2.create_or_update_secret(
-                mount_point=_VAULT_MOUNT, path=path,
+                mount_point=VAULT_MOUNT, path=path,
                 secret={"value": body.value, "key_type": body.key_type, "algorithm": body.algorithm},
             )
         except Exception as e:
             log.warning("openbao_write_failed", error=str(e))
             raise HTTPException(status_code=502, detail="Failed to store secret in vault")
-        openbao_path = f"{_VAULT_MOUNT}/data/{path}"
+        openbao_path = f"{VAULT_MOUNT}/data/{path}"
 
     rotation_due = datetime.now(timezone.utc) + timedelta(days=body.rotation_days)
 
@@ -126,7 +163,7 @@ def create_secret(
             )
             row = cur.fetchone()
         conn.commit()
-        return _fmt_secret(row)
+        return format_secret(row)
     except psycopg2.errors.UniqueViolation:
         conn.rollback()
         raise HTTPException(status_code=409, detail="Secret with this name already exists")
@@ -139,7 +176,7 @@ def delete_secret(
     secret_id:    str = Path(...),
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(get_current_user),
-    _panic: None = Depends(_vault_panic_check),
+    _panic: None = Depends(enforce_vault_not_in_panic_mode),
 ) -> None:
     is_platform_admin = _is_platform_admin(user)
     if not is_platform_admin and not _is_tenant_admin_for(user, x_tenant_id):
@@ -149,8 +186,6 @@ def delete_secret(
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             if not is_platform_admin:
-                # tenant-admin: only allowed to delete key_types they can
-                # manage — check BEFORE mutating, not after.
                 cur.execute(
                     "SELECT key_type FROM secrets_vault WHERE id = %s AND tenant_id = %s",
                     (secret_id, x_tenant_id),
@@ -175,17 +210,17 @@ def delete_secret(
         conn.close()
 
     vault = get_vault()
-    if row["key_type"] in _TRANSIT_TYPES:
+    if row["key_type"] in TRANSIT_KEY_TYPES:
         try:
-            t_key = _transit_key_name(x_tenant_id, row["key_name"])
-            vault.secrets.transit.delete_key(name=t_key, mount_point=_TRANSIT_MOUNT)
+            t_key = build_transit_key_name(x_tenant_id, row["key_name"])
+            vault.secrets.transit.delete_key(name=t_key, mount_point=TRANSIT_MOUNT)
         except Exception as e:
             log.warning("transit_delete_failed", error=str(e))
     else:
         try:
-            path = _vault_path(x_tenant_id, row["key_name"])
+            path = build_vault_path(x_tenant_id, row["key_name"])
             vault.secrets.kv.v2.destroy_secret_versions(
-                mount_point=_VAULT_MOUNT, path=path, versions=[row["version"]],
+                mount_point=VAULT_MOUNT, path=path, versions=[row["version"]],
             )
         except Exception as e:
             log.warning("openbao_destroy_failed", error=str(e))
@@ -197,7 +232,7 @@ def rotate_secret(
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
     body: dict[str, Any] | None = None,
-    _panic: None = Depends(_vault_panic_check),
+    _panic: None = Depends(enforce_vault_not_in_panic_mode),
 ) -> dict[str, Any]:
     new_value = (body or {}).get("value", "")
 
@@ -216,11 +251,10 @@ def rotate_secret(
             new_version = old["version"] + 1
             vault = get_vault()
 
-            if old["key_type"] in _TRANSIT_TYPES:
-                # Transit rotation: new key version generated inside vault
-                t_key = _transit_key_name(x_tenant_id, old["key_name"])
+            if old["key_type"] in TRANSIT_KEY_TYPES:
+                t_key = build_transit_key_name(x_tenant_id, old["key_name"])
                 try:
-                    vault.secrets.transit.rotate_key(name=t_key, mount_point=_TRANSIT_MOUNT)
+                    vault.secrets.transit.rotate_key(name=t_key, mount_point=TRANSIT_MOUNT)
                 except Exception as e:
                     log.warning("transit_rotate_failed", error=str(e))
                     raise HTTPException(status_code=502, detail="Failed to rotate Transit key")
@@ -228,16 +262,16 @@ def rotate_secret(
             else:
                 if not new_value:
                     raise HTTPException(status_code=422, detail="New secret value required for rotation")
-                path = _vault_path(x_tenant_id, old["key_name"])
+                path = build_vault_path(x_tenant_id, old["key_name"])
                 try:
                     vault.secrets.kv.v2.create_or_update_secret(
-                        mount_point=_VAULT_MOUNT, path=path,
+                        mount_point=VAULT_MOUNT, path=path,
                         secret={"value": new_value, "key_type": old["key_type"], "algorithm": old["algorithm"] or ""},
                     )
                 except Exception as e:
                     log.warning("openbao_rotate_failed", error=str(e))
                     raise HTTPException(status_code=502, detail="Failed to write rotated secret to vault")
-                openbao_path = f"{_VAULT_MOUNT}/data/{path}"
+                openbao_path = f"{VAULT_MOUNT}/data/{path}"
 
             rotation_due = datetime.now(timezone.utc) + timedelta(days=90)
 
@@ -259,7 +293,7 @@ def rotate_secret(
                 (new_row["id"], user["user_id"], old["version"], new_version),
             )
         conn.commit()
-        return _fmt_secret(new_row)
+        return format_secret(new_row)
     finally:
         conn.close()
 
@@ -270,7 +304,7 @@ def reveal_secret(
     access_reason: str | None = Query(None),
     x_tenant_id:   str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
-    _panic: None = Depends(_vault_panic_check),
+    _panic: None = Depends(enforce_vault_not_in_panic_mode),
 ) -> dict[str, Any]:
     conn = get_db()
     try:
@@ -284,7 +318,7 @@ def reveal_secret(
             if not row:
                 raise HTTPException(status_code=404, detail="Secret not found")
 
-            pii_log = _get_gov_setting(cur, "vault_pii_access_log")
+            pii_log = get_governance_setting(cur, "vault_pii_access_log")
 
         if pii_log:
             if not access_reason or not access_reason.strip():
@@ -304,11 +338,10 @@ def reveal_secret(
         conn.close()
 
     vault = get_vault()
-    if row["key_type"] in _TRANSIT_TYPES:
-        # Return public key (for asymmetric types) or a note (for symmetric)
-        t_key = _transit_key_name(x_tenant_id, row["key_name"])
+    if row["key_type"] in TRANSIT_KEY_TYPES:
+        t_key = build_transit_key_name(x_tenant_id, row["key_name"])
         try:
-            key_info = vault.secrets.transit.read_key(name=t_key, mount_point=_TRANSIT_MOUNT)
+            key_info = vault.secrets.transit.read_key(name=t_key, mount_point=TRANSIT_MOUNT)
             keys_data = key_info["data"]["keys"]
             latest_v  = str(key_info["data"]["latest_version"])
             pub_key   = keys_data.get(latest_v, {}).get("public_key", "")
@@ -320,8 +353,8 @@ def reveal_secret(
             raise HTTPException(status_code=502, detail="Failed to read Transit key info")
     else:
         try:
-            path = _vault_path(x_tenant_id, row["key_name"])
-            resp  = vault.secrets.kv.v2.read_secret_version(mount_point=_VAULT_MOUNT, path=path, raise_on_deleted_version=True)
+            path = build_vault_path(x_tenant_id, row["key_name"])
+            resp = vault.secrets.kv.v2.read_secret_version(mount_point=VAULT_MOUNT, path=path, raise_on_deleted_version=True)
             value = resp["data"]["data"].get("value", "")
         except Exception as e:
             log.warning("openbao_read_failed", error=str(e))

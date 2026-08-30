@@ -8,11 +8,19 @@ and read at ingestion time by the KB worker to gate PII redaction — so togglin
 """
 
 from typing import Any
-from fastapi import APIRouter
+import psycopg2.extras
+from fastapi import APIRouter, Depends, Header, HTTPException
 
+from libs.shared.auth import require_role
 from libs.shared.pii_detector import PII_TYPES, scan as pii_scan
-from services.auth_api.auth_core import *
-from services.auth_api.schemas import *
+try:
+    from services.auth_api.infrastructure.config import log
+    from services.auth_api.infrastructure.db import get_db
+    from services.auth_api.schemas import ComplianceSettingsInput, PiiScanInput
+except ModuleNotFoundError:
+    from auth_api.infrastructure.config import log
+    from auth_api.infrastructure.db import get_db
+    from auth_api.schemas import ComplianceSettingsInput, PiiScanInput
 
 router = APIRouter()
 
@@ -103,7 +111,7 @@ def get_settings(
 
 @router.put("/api/auth/compliance/settings")
 def put_settings(
-    body: ComplianceSettingsIn,
+    body: ComplianceSettingsInput,
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
@@ -175,7 +183,7 @@ def get_score(
 
 @router.post("/api/auth/compliance/pii-scan")
 def post_pii_scan(
-    body: PiiScanIn,
+    body: PiiScanInput,
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
     if not body.text or not body.text.strip():

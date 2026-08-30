@@ -1,8 +1,21 @@
 from typing import Any
-from fastapi import APIRouter
+import ipaddress
 
-from services.auth_api.auth_core import *
-from services.auth_api.schemas import *
+import psycopg2
+import psycopg2.extras
+from fastapi import APIRouter, Depends, Header, HTTPException, Path
+
+from libs.shared.auth import require_role
+try:
+    from services.auth_api.domain.ip_allowlists import format_ip_allowlist
+    from services.auth_api.infrastructure.db import get_db
+    from services.auth_api.schemas import IPAllowlistCreateInput
+    from services.auth_api.services.kong_sync import get_ip_allowlist_mode, sync_kong_ip_restrictions
+except ModuleNotFoundError:
+    from auth_api.domain.ip_allowlists import format_ip_allowlist
+    from auth_api.infrastructure.db import get_db
+    from auth_api.schemas import IPAllowlistCreateInput
+    from auth_api.services.kong_sync import get_ip_allowlist_mode, sync_kong_ip_restrictions
 
 router = APIRouter()
 
@@ -11,7 +24,7 @@ router = APIRouter()
 def get_ip_config(
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
-    return {"mode": _get_ip_mode()}
+    return {"mode": get_ip_allowlist_mode()}
 
 
 @router.put("/api/auth/ip-allowlist/config")
@@ -36,7 +49,7 @@ def set_ip_config(
     finally:
         conn.close()
 
-    _sync_kong(x_tenant_id)
+    sync_kong_ip_restrictions(x_tenant_id)
     return {"mode": mode}
 
 
@@ -57,14 +70,14 @@ def list_ip_allowlists(
                 (x_tenant_id,),
             )
             rows = cur.fetchall()
-        return [_fmt_ip(r) for r in rows]
+        return [format_ip_allowlist(r) for r in rows]
     finally:
         conn.close()
 
 
 @router.post("/api/auth/ip-allowlists", status_code=201)
 def create_ip_rule(
-    body: IPRuleIn,
+    body: IPAllowlistCreateInput,
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
@@ -88,8 +101,8 @@ def create_ip_rule(
     finally:
         conn.close()
 
-    _sync_kong(x_tenant_id)
-    return _fmt_ip(row)
+    sync_kong_ip_restrictions(x_tenant_id)
+    return format_ip_allowlist(row)
 
 
 @router.patch("/api/auth/ip-allowlists/{rule_id}/toggle")
@@ -113,8 +126,8 @@ def toggle_ip_rule(
     finally:
         conn.close()
 
-    _sync_kong(x_tenant_id)
-    return _fmt_ip(row)
+    sync_kong_ip_restrictions(x_tenant_id)
+    return format_ip_allowlist(row)
 
 
 @router.delete("/api/auth/ip-allowlists/{rule_id}", status_code=204)
@@ -134,4 +147,4 @@ def delete_ip_rule(
     finally:
         conn.close()
 
-    _sync_kong(x_tenant_id)
+    sync_kong_ip_restrictions(x_tenant_id)

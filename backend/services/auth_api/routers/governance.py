@@ -1,8 +1,31 @@
 from typing import Any
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Header, HTTPException, Path
 
-from services.auth_api.auth_core import *
-from services.auth_api.schemas import *
+import psycopg2.extras
+
+from libs.shared.auth import require_role
+try:
+    from services.auth_api.domain.secrets import TRANSIT_KEY_TYPES, TRANSIT_MOUNT, build_transit_key_name
+    from services.auth_api.infrastructure.config import log
+    from services.auth_api.infrastructure.db import get_db
+    from services.auth_api.infrastructure.vault import get_vault
+    from services.auth_api.schemas import SignPayload, VerifyPayload
+    from services.auth_api.services.governance import (
+        GOVERNANCE_KEYS,
+        enforce_vault_not_in_panic_mode,
+        get_governance_setting,
+    )
+except ModuleNotFoundError:
+    from auth_api.domain.secrets import TRANSIT_KEY_TYPES, TRANSIT_MOUNT, build_transit_key_name
+    from auth_api.infrastructure.config import log
+    from auth_api.infrastructure.db import get_db
+    from auth_api.infrastructure.vault import get_vault
+    from auth_api.schemas import SignPayload, VerifyPayload
+    from auth_api.services.governance import (
+        GOVERNANCE_KEYS,
+        enforce_vault_not_in_panic_mode,
+        get_governance_setting,
+    )
 
 router = APIRouter()
 
@@ -15,8 +38,8 @@ def get_governance(
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             result = {}
-            for key in _GOV_KEYS:
-                result[key] = _get_gov_setting(cur, key)
+            for key in GOVERNANCE_KEYS:
+                result[key] = get_governance_setting(cur, key)
         return result
     finally:
         conn.close()
@@ -30,7 +53,7 @@ def set_governance(
     conn = get_db()
     try:
         with conn.cursor() as cur:
-            for key in _GOV_KEYS:
+            for key in GOVERNANCE_KEYS:
                 if key in body:
                     val = "true" if body[key] else "false"
                     cur.execute(
@@ -40,7 +63,7 @@ def set_governance(
                     )
         conn.commit()
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            result = {key: _get_gov_setting(cur, key) for key in _GOV_KEYS}
+            result = {key: get_governance_setting(cur, key) for key in GOVERNANCE_KEYS}
         return result
     finally:
         conn.close()
@@ -93,19 +116,19 @@ def trigger_panic(
 def hsm_status(
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
-    _panic: None = Depends(_vault_panic_check),
+    _panic: None = Depends(enforce_vault_not_in_panic_mode),
 ) -> dict[str, Any]:
     vault = get_vault()
     keys_out = []
     try:
-        list_resp = vault.secrets.transit.list_keys(mount_point=_TRANSIT_MOUNT)
+        list_resp = vault.secrets.transit.list_keys(mount_point=TRANSIT_MOUNT)
         key_names = (list_resp or {}).get("data", {}).get("keys", [])
         prefix = x_tenant_id[:8] + "-"
         for name in key_names:
             if not name.startswith(prefix):
                 continue
             try:
-                info = vault.secrets.transit.read_key(name=name, mount_point=_TRANSIT_MOUNT)
+                info = vault.secrets.transit.read_key(name=name, mount_point=TRANSIT_MOUNT)
                 d = info["data"]
                 keys_out.append({
                     "name":           name,
@@ -130,16 +153,16 @@ def hsm_status(
         "transit_keys":  keys_out,
         "key_count":     len(keys_out),
         "openbao_sealed": sealed,
-        "mount":         f"{_TRANSIT_MOUNT}/",
+        "mount":         f"{TRANSIT_MOUNT}/",
     }
 
 @router.post("/api/auth/secrets/{secret_id}/sign")
 def sign_data(
     secret_id:    str = Path(...),
-    body:         SignIn | None = None,
+    body:         SignPayload | None = None,
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
-    _panic: None = Depends(_vault_panic_check),
+    _panic: None = Depends(enforce_vault_not_in_panic_mode),
 ) -> dict[str, Any]:
     if not body or not body.data:
         raise HTTPException(status_code=422, detail="data (base64) is required")
@@ -157,15 +180,15 @@ def sign_data(
 
     if not row:
         raise HTTPException(status_code=404, detail="Secret not found or inactive")
-    if row["key_type"] not in _TRANSIT_TYPES:
+    if row["key_type"] not in TRANSIT_KEY_TYPES:
         raise HTTPException(status_code=422, detail="sign is only available for Transit-managed key types")
 
-    t_key = _transit_key_name(x_tenant_id, row["key_name"])
+    t_key = build_transit_key_name(x_tenant_id, row["key_name"])
     try:
         vault = get_vault()
         resp  = vault.secrets.transit.sign_data(
             name=t_key, hash_input=body.data, hash_algorithm="sha2-256",
-            mount_point=_TRANSIT_MOUNT,
+            mount_point=TRANSIT_MOUNT,
         )
         sig = resp["data"]["signature"]
         ver = resp["data"].get("key_version", 1)
@@ -179,10 +202,10 @@ def sign_data(
 @router.post("/api/auth/secrets/{secret_id}/verify")
 def verify_data(
     secret_id:    str = Path(...),
-    body:         VerifyIn | None = None,
+    body:         VerifyPayload | None = None,
     x_tenant_id:  str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
-    _panic: None = Depends(_vault_panic_check),
+    _panic: None = Depends(enforce_vault_not_in_panic_mode),
 ) -> dict[str, Any]:
     if not body or not body.data or not body.signature:
         raise HTTPException(status_code=422, detail="data and signature are required")
@@ -200,15 +223,15 @@ def verify_data(
 
     if not row:
         raise HTTPException(status_code=404, detail="Secret not found")
-    if row["key_type"] not in _TRANSIT_TYPES:
+    if row["key_type"] not in TRANSIT_KEY_TYPES:
         raise HTTPException(status_code=422, detail="verify is only available for Transit-managed key types")
 
-    t_key = _transit_key_name(x_tenant_id, row["key_name"])
+    t_key = build_transit_key_name(x_tenant_id, row["key_name"])
     try:
         vault = get_vault()
         resp  = vault.secrets.transit.verify_signed_data(
             name=t_key, hash_input=body.data, signature=body.signature,
-            hash_algorithm="sha2-256", mount_point=_TRANSIT_MOUNT,
+            hash_algorithm="sha2-256", mount_point=TRANSIT_MOUNT,
         )
         valid = resp["data"]["valid"]
     except Exception as e:
