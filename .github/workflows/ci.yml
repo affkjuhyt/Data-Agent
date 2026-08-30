@@ -177,8 +177,8 @@ jobs:
           EOF
       - name: Validate local stack
         run: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml config > /dev/null
-      - name: Validate dev stack
-        run: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.dev.yml config > /dev/null
+      - name: Validate KB dev overlay
+        run: docker compose --profile runtime -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e-dev.yml config > /dev/null
 
   e2e-tenant-isolation:
     name: E2E · tenant isolation (live stack)

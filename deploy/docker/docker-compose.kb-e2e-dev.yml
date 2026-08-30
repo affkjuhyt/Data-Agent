@@ -1,6 +1,6 @@
-# KB E2E — SELF-CONTAINED DEV overlay (the original kb_e2e behaviour).
+# KB E2E — SELF-CONTAINED DEV overlay (the original kb-e2e behaviour).
 #
-# Unlike docker-compose.kb_e2e.yml (which is standalone and reuses shared infra
+# Unlike docker-compose.kb-e2e.yml (which is standalone and reuses shared infra
 # from another stack), THIS file is an OVERLAY on docker-compose.yml: it brings
 # up the whole KB world in ONE project, with dev-friendly resource sizing. Use it
 # when you just want a complete KB stack on your machine and nothing else is
@@ -10,11 +10,11 @@
 #
 #   docker compose --profile runtime \
 #     -f deploy/docker/docker-compose.yml \
-#     -f deploy/docker/docker-compose.kb_e2e.dev.yml \
+#     -f deploy/docker/docker-compose.kb-e2e-dev.yml \
 #     --env-file deploy/docker/.env.kb-testing \
 #     up -d --build <services...>
 #
-# Bring-up: docker compose --profile runtime -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb_e2e.dev.yml up -d --build
+# Bring-up: docker compose --profile runtime -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e-dev.yml up -d --build
 # (--profile runtime: the base file keeps postgres/minio/kong… behind that profile)
 #
 # Specify only KB services on the up command to avoid starting the full platform
@@ -108,7 +108,7 @@ services:
   kb-backend:
     build:
       context: ../..
-      dockerfile: deploy/docker/Dockerfile.kb
+      dockerfile: backend/services/kb_backend/Dockerfile
     ports:
       # Loopback only — direct callers bypass Kong and can forge identity headers.
       - "127.0.0.1:8050:8000"

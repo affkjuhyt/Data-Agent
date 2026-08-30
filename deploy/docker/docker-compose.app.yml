@@ -271,9 +271,9 @@ services:
     profiles: [kb, runtime]
     build:
       context: ../..
-      # Real Dockerfile lives at deploy/docker/Dockerfile.kb (the code dir is backend/services/kb_backend
+      # Real Dockerfile lives at backend/services/kb_backend/Dockerfile (the code dir is backend/services/kb_backend
       # with an underscore — there is no backend/services/kb-backend/Dockerfile).
-      dockerfile: deploy/docker/Dockerfile.kb
+      dockerfile: backend/services/kb_backend/Dockerfile
     container_name: dataagent-kb-backend
     restart: unless-stopped
     # NOT published to the host. Network isolation is no longer the only thing

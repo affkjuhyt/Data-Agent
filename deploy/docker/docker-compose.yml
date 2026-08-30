@@ -43,7 +43,7 @@ services:
       # repo, so Docker bind-mounted an empty DIRECTORY, psql failed with "Is a
       # directory" and the entrypoint stopped before 03-app-schema.sql — on
       # every fresh volume the `keycloak` schema was never created and Keycloak
-      # crash-looped. KB tables live in the kb_e2e stack's own postgres.
+      # crash-looped. KB tables live in the kb-e2e stack's own postgres.
       - ./sql/init.sql:/docker-entrypoint-initdb.d/03-app-schema.sql:ro
       - ./sql/release-init.sql:/docker-entrypoint-initdb.d/04-release-schema.sql:ro
     ports:
@@ -100,7 +100,7 @@ services:
   neo4j:
     profiles: [kb, runtime]
     build:
-      context: ./Neo4j
+      context: ./neo4j
     container_name: knowledge_graph_neo4j
     restart: unless-stopped
     expose:
@@ -356,7 +356,7 @@ services:
     # loaded config.hcl twice, and mounting the directory also pulled in
     # config.prod.hcl — two listeners on :8200 → "address already in use" and a
     # restart loop. Mount exactly one config file; helper scripts live in
-    # /openbao/scripts (docker exec dataagent-openbao sh /openbao/scripts/openbao-init.sh).
+    # /openbao/scripts (init/unseal/AppRole: Ansible openbao role or tests/e2e/e2e.sh setup).
     command: server
     cap_add: [IPC_LOCK]
     environment:

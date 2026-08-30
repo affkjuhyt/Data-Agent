@@ -3,10 +3,10 @@
 #
 # Build context: repo root (one level above deploy/docker/)
 #   cd <repo-root>
-#   docker build -f deploy/docker/Dockerfile.kb -t kb-backend .
+#   docker build -f backend/services/kb_backend/Dockerfile -t kb-backend .
 #
 # Or via Compose:
-#   docker compose -f deploy/docker/docker-compose.kb_e2e.yml up kb-backend
+#   docker compose -f deploy/docker/docker-compose.kb-e2e.yml up kb-backend
 
 
 # ── Stage 1: compile Python wheels ───────────────────────────────────────────
@@ -55,7 +55,7 @@ ENV PYTHONPATH=/app \
     PYTHONDONTWRITEBYTECODE=1
 
 # ── Default service URLs (override via env or docker-compose) ─────────────────
-# These match the names used in docker-compose.kb_e2e.yml
+# These match the names used in docker-compose.kb-e2e.yml
 ENV POSTGRES_URL="postgresql+asyncpg://aeroflow:aeroflow_secret@postgres/aeroflow_kb" \
     MONGO_URL="mongodb://mongo:27017/dataagent" \
     MINIO_URL="http://minio:miniominio@minio:9000" \

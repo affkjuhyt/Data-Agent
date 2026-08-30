@@ -74,8 +74,6 @@ Data_Agent_UI/
 
 # Kafka credential files — contain real passwords; use *.example templates instead
 deploy/docker/kafka/kafka-broker-jaas.config
-deploy/docker/kafka/admin_release.props
-deploy/docker/kafka/rw.props
 
 # Standalone demo/observability visualizer pages — not part of the app build
 *-visualizer.html

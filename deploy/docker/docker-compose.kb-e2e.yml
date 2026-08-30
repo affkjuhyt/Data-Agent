@@ -17,17 +17,17 @@
 # `data-agent-network` exists and postgres/neo4j/qdrant/etc. are reachable.
 #
 # Usage:
-#     pwsh deploy/docker/kb_e2e.ps1                 # bring up KB-owned services
-#     pwsh deploy/docker/kb_e2e.ps1 down            # tear down (keep volumes)
-#     pwsh deploy/docker/kb_e2e.ps1 logs -f         # stream logs
+#     pwsh deploy/docker/kb-e2e.ps1                 # bring up KB-owned services
+#     pwsh deploy/docker/kb-e2e.ps1 down            # tear down (keep volumes)
+#     pwsh deploy/docker/kb-e2e.ps1 logs -f         # stream logs
 #
 #   Or directly:
 #     docker compose \
-#       -f deploy/docker/docker-compose.kb_e2e.yml \
+#       -f deploy/docker/docker-compose.kb-e2e.yml \
 #       --env-file deploy/docker/.env.kb-testing \
 #       up -d --build
 
-name: kb_e2e
+name: kb-e2e
 
 # Attach to the network the shared infra already created. `external: true` means
 # this project never creates or owns it — it only joins.
@@ -161,7 +161,7 @@ services:
   kb-backend:
     build:
       context: ../..
-      dockerfile: deploy/docker/Dockerfile.kb
+      dockerfile: backend/services/kb_backend/Dockerfile
     container_name: kb-backend
     restart: unless-stopped
     ports:

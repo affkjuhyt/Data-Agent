@@ -1,4 +1,4 @@
-# infra — Docker stacks & setup
+# deploy/docker — Docker stacks & setup
 
 This directory holds every Docker Compose stack, the service Dockerfiles, and the
 infra services (`model-service`, `kb-ingestion-worker`, `kong`, `Postgres`, `Neo4j`,
@@ -13,7 +13,7 @@ The frontend has no mock server and no auth bypass: `kb-backend` is **fail-close
 
 | Stack | File / helper | What it is | When to use |
 |---|---|---|---|
-| **kb_e2e** | [`docker-compose.yml`](./docker-compose.yml) + [`docker-compose.kb_e2e.yml`](./docker-compose.kb_e2e.yml) (hai file `-f`, xem Step 3) | **Overlay** on the main platform compose. Shares the same `dataagent` DB, Kafka internal listener (`kafka:9094`), and network as the full platform. Adds dev-friendly memory limits on Neo4j and KB tuning knobs. | **The standard way to bring up the stack** — day-to-day local dev, KB + ingestion + auth chain, pre-merge validation. |
+| **kb-e2e** | [`docker-compose.yml`](./docker-compose.yml) + [`docker-compose.kb-e2e.yml`](./docker-compose.kb-e2e.yml) (hai file `-f`, xem Step 3) | **Overlay** on the main platform compose. Shares the same `dataagent` DB, Kafka internal listener (`kafka:9094`), and network as the full platform. Adds dev-friendly memory limits on Neo4j and KB tuning knobs. | **The standard way to bring up the stack** — day-to-day local dev, KB + ingestion + auth chain, pre-merge validation. |
 | **Full platform** | [`docker-compose.yml`](./docker-compose.yml) + an override | The whole Data Agent OS — every service group (storage, security, messaging, observability, all app services). | Running the entire platform, not just KB. |
 | **Test fixture** | [`docker-compose.test.yml`](./docker-compose.test.yml) | Isolated PostgreSQL only. | Connector / ORM tests. |
 
@@ -67,16 +67,16 @@ docker compose -f deploy/docker/docker-compose.yml --profile runtime --profile o
 
 ---
 
-## Bring up the stack — kb_e2e
+## Bring up the stack — kb-e2e
 
-`docker-compose.kb_e2e.yml` is a **compose overlay** — it is not standalone. It always
+`docker-compose.kb-e2e.yml` is a **compose overlay** — it is not standalone. It always
 runs on top of `docker-compose.yml` which provides the shared platform infrastructure.
 
 ```
 docker-compose.yml         →  postgres · mongo · qdrant · neo4j · minio · kafka
                               keycloak · kong-migration · kong · model-service
                               kb-backend · kb-ingestion-worker (base definitions)
-docker-compose.kb_e2e.yml  →  overrides / extensions:
+docker-compose.kb-e2e.yml  →  overrides / extensions:
                                 postgres      adds KB seed data (05-kb-seed.sql)
                                 keycloak      adds healthcheck
                                 neo4j         reduces memory to dev-friendly 1.5 GB
@@ -122,7 +122,7 @@ Copy-Item deploy/docker/kafka/kafka-broker-jaas.config.example deploy/docker/kaf
 # Two-file overlay (KB-relevant services only):
 docker compose `
   -f deploy/docker/docker-compose.yml `
-  -f deploy/docker/docker-compose.kb_e2e.yml `
+  -f deploy/docker/docker-compose.kb-e2e.yml `
   --env-file deploy/docker/.env.kb-testing `
   up -d --build `
   postgres mongo qdrant neo4j minio kafka keycloak `
@@ -177,11 +177,11 @@ All users share tenant `a0000000-0000-0000-0000-000000000001` (the seeded dev te
 
 | Action | Command |
 |---|---|
-| Stop, keep data | `docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb_e2e.yml down` |
-| Stop, **wipe** data | `docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb_e2e.yml down -v` |
-| Tail logs | `docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb_e2e.yml logs -f` |
-| Service status | `docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb_e2e.yml ps` |
-| Rebuild one service | `docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb_e2e.yml up -d --build --no-deps kb-backend` |
+| Stop, keep data | `docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e.yml down` |
+| Stop, **wipe** data | `docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e.yml down -v` |
+| Tail logs | `docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e.yml logs -f` |
+| Service status | `docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e.yml ps` |
+| Rebuild one service | `docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e.yml up -d --build --no-deps kb-backend` |
 
 > **Fresh volume note:** `docker-entrypoint-initdb.d` scripts run only on a new Postgres
 > volume. `docker-compose.yml` mounts `init.sql` (KB tables); the overlay adds `seed.sql`
@@ -220,8 +220,6 @@ Run from the repo root with a `.env` file (`Copy-Item .env.example .env`).
 # local dev
 docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml up -d --build
 docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml down   # -v to wipe
-# shared dev server
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.dev.yml up -d --build
 # validate config without starting
 docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml config
 # test fixture (isolated Postgres on :5433)
@@ -265,7 +263,7 @@ $env:REMOTE_EMBED_URL = "https://<embed-tunnel>.trycloudflare.com"
 $env:REMOTE_API_KEY   = "kb-emb-xxxx"
 $env:REMOTE_LLM_URL   = "https://<vllm-tunnel>.trycloudflare.com"
 $env:REMOTE_LLM_KEY   = "kb-IT-xxxx"
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb_e2e.yml up -d --no-deps model-service
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e.yml up -d --no-deps model-service
 ```
 
 To revert to local CPU, clear those vars and recreate `model-service`. The Colab GPU
@@ -296,7 +294,7 @@ the two services that read them. The worker **must** be recreated too (its start
 probe is bound to the old URL):
 
 ```powershell
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb_e2e.yml `
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e.yml `
   --env-file deploy/docker/.env.kb-testing `
   up -d --no-deps --force-recreate model-service kb-ingestion-worker
 ```
@@ -324,19 +322,30 @@ stray `otp` credential on the user and reset the password to `H3lios@Admin01!`
 
 ```
 deploy/docker/
-  docker-compose.yml                     # main platform base (all services)
-  docker-compose.kb_e2e.yml              # KB overlay (extends docker-compose.yml)
-  docker-compose.test.yml                # isolated Postgres test fixture
-  .env.kb-testing.example                # copy → .env.kb-testing, fill in tunnels
-  Dockerfile.kb                          # kb-backend image
-  Dockerfile.dev                         # dev-only containerised frontend
-  model-service/                         # model gateway (embed · rerank · generate)
-  kb-ingestion-worker/                   # bronze→silver→gold ingestion worker
-  kong/          kong-setup.sh           # Kong custom plugin + route setup script
-  keycloak/      realm-export.json       # Keycloak realm definition
-  Neo4j/                                 # Neo4j custom image (APOC plugins)
-  kafka/         kafka-broker-jaas.config.example
-  openbao/       haproxy/  litellm/
-  sql/           create-extra-dbs.sql  init.sql  release-init.sql  kb-seed.sql
-  Qdrant/        COLLECTIONS.md          # Qdrant collection schema reference
+  docker-compose.yml                # base: every service, gated by profiles (project name pinned: infra)
+  docker-compose.app.yml            # application tier (runtime, orchestrator, workers, frontend)
+  docker-compose.local.yml          # + migrate/seed for a dev machine
+  docker-compose.e2e-dev.yml        # reuse built images + bind-mount source (tests/e2e, Ansible local)
+  docker-compose.agent-test.yml     # LiteLLM -> host ollama
+  docker-compose.kb-e2e.yml         # standalone KB stack (data plane, worker, Keycloak, DB-less Kong)
+  docker-compose.kb-e2e-dev.yml     # KB world as an overlay on the base (--profile runtime)
+  docker-compose.kb-lite.yml        # small-RAM KB profile
+  docker-compose.prod.yml           # hardening: required secrets, TLS, WAL archive, backup sidecar
+  docker-compose.security.yml       # HA Keycloak (2 nodes + HAProxy) + hardened Kong admin
+  docker-compose.monitoring.yml     # Prometheus + Grafana + exporters
+  docker-compose.scale.yml          # multi-replica / Qdrant cluster
+  docker-compose.test.yml           # isolated Postgres fixture
+  .env.kb-testing.example           # copy -> .env.kb-testing for the KB stack
+  certs/         gen-certs.sh       # dev TLS material (generated files git-ignored)
+  kong/          kong-setup.sh, plugins/aeroflow-jwks/
+  keycloak/      realm-export.json, setup-audience-mappers.sh
+  kafka/         Dockerfile, kafka-setup.sh, kafka-broker-jaas.config.example
+  openbao/       config.hcl, config.prod.hcl, openbao-approle-setup.sh
+  litellm/       config.yaml (hosted), config.agent-local.yaml (ollama)
+  sql/           create-extra-dbs.sql, init.sql, release-init.sql, grant-*.sql, kb-seed.sql
+  neo4j/         Dockerfile (APOC)     redis/  haproxy/  filebeat/  monitoring/
 ```
+
+Service images are built from `backend/services/<name>/Dockerfile` (build context = repo root); the
+frontend dev image from `frontend/Dockerfile.dev`. Naming rule: lowercase, kebab-case, one
+`docker-compose.<purpose>.yml` per overlay.

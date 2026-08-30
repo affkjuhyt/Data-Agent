@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: kb-backend
-          image: REGISTRY/kb-backend:latest   # built from deploy/docker/Dockerfile.kb
+          image: REGISTRY/kb-backend:latest   # built from backend/services/kb_backend/Dockerfile
           ports:
             - containerPort: 8000
           envFrom:

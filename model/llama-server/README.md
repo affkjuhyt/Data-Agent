@@ -23,7 +23,7 @@ server — point it at the right host:port and it works:
 | **This llama-server**, model-service in a container | `http://host.docker.internal:8088` |
 | This llama-server, model-service on the host | `http://localhost:8088` |
 
-The `kb_e2e` overlay already defaults `REMOTE_LLM_URL` to
+The `kb-e2e` overlay already defaults `REMOTE_LLM_URL` to
 `http://host.docker.internal:8088`, so starting the server below is all that's needed.
 
 ## Usage
@@ -56,5 +56,5 @@ python3 model/llama-server/benchmark_llm.py
 | `LLAMA_N_PARALLEL` | `4` | concurrent slots |
 
 `--embeddings` is enabled, so `/v1/embeddings` is also available if you ever want to
-route `REMOTE_EMBED_URL` here too (kb_e2e currently keeps embeddings on the small
+route `REMOTE_EMBED_URL` here too (kb-e2e currently keeps embeddings on the small
 local model / a separate remote).

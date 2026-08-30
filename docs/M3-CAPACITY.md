@@ -46,7 +46,7 @@ docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compo
   postgres redis mongo qdrant neo4j minio kafka keycloak kong
 
 # 2. KB app services (attach to the same network)
-docker compose -f deploy/docker/docker-compose.kb_e2e.yml --env-file deploy/docker/.env.kb-testing up -d \
+docker compose -f deploy/docker/docker-compose.kb-e2e.yml --env-file deploy/docker/.env.kb-testing up -d \
   model-service kb-backend kb-ingestion-worker
 
 # 3. Native ollama with a small model, 2 parallel slots

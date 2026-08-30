@@ -19,7 +19,7 @@ docker exec -i dataagent-postgres psql -U admin -d dataagent < tests/e2e/seed.sq
 docker exec -i dataagent-mongo mongosh --quiet < tests/e2e/seed-flow.js
 
 # 2. bring up the agent tier (base + app + local-LLM overlay). NOT app.yml's
-#    kb-backend — it collides with the kb_e2e stack on :8050.
+#    kb-backend — it collides with the kb-e2e stack on :8050.
 docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.app.yml \
   -f deploy/docker/docker-compose.agent-test.yml up -d --build \
   litellm orchestrator workflow-runtime memory-consumer
@@ -46,7 +46,7 @@ TOKEN=$(curl -s -X POST http://localhost:8080/realms/aeroflow/protocol/openid-co
 Requires `GATEWAY_KEY` and `SERVICE_AUTH_SECRET` set in `.env` (same value across
 services) and `kong-setup.sh` re-run after changing `GATEWAY_KEY`.
 
-## 2. APIs (Postman: `deploy/docker/agent-e2e.postman_collection.json`)
+## 2. APIs (Postman: `docs/postman/agent-e2e.postman_collection.json`)
 
 Header on every call: `Authorization: Bearer $TOKEN`. Identity headers are
 **injected by Kong from the token** — sending your own is pointless (the plugin

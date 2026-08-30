@@ -11,7 +11,7 @@
 //  - every /api/** call is answered by page.route with payloads shaped exactly like the backend frames
 //    (orchestrator routers/stream.py, workflow-runtime conversation_runner.py, routers/reviews.py).
 // Use it to check layout and interaction; it says nothing about the backend. For that, run the stack
-// (deploy/docker/docker-compose.kb_e2e.yml) and point VITE_API_URL at Kong.
+// (deploy/docker/docker-compose.kb-e2e.yml) and point VITE_API_URL at Kong.
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

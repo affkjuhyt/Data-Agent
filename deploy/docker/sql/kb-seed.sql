@@ -1,5 +1,5 @@
 -- ╔══════════════════════════════════════════════════════════════════════════╗
--- ║  KB seed data — kb_e2e stack                                           ║
+-- ║  KB seed data — kb-e2e stack                                           ║
 -- ╚══════════════════════════════════════════════════════════════════════════╝
 --
 -- Runs after init.sql at Postgres first-init. Inserts only the structural

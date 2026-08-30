@@ -44,8 +44,8 @@ front of `kb-backend`. Pick the stack that matches your task:
 
 | Stack | File / helper | What it is | When to use |
 |---|---|---|---|
-| **kb_e2e** | `deploy/docker/docker-compose.kb_e2e.yml` | KB data plane + ingestion worker + Keycloak + DB-less Kong; richer LLM options (vLLM / local `llama`) and multilingual models | **The standard way to bring up the stack** — local dev with the Vite UI (`npm run dev`) and the ingestion/RAG pipeline |
-| **Full aggregate** | `deploy/docker/docker-compose.yml` (+ `local`/`dev` override) | Every service group (storage, security, messaging, observability, all app services) | Running the whole platform, not just KB |
+| **kb-e2e** | `deploy/docker/docker-compose.kb-e2e.yml` | KB data plane + ingestion worker + Keycloak + DB-less Kong; richer LLM options (vLLM / local `llama`) and multilingual models | **The standard way to bring up the stack** — local dev with the Vite UI (`npm run dev`) and the ingestion/RAG pipeline |
+| **Full aggregate** | `deploy/docker/docker-compose.yml` (+ `local` override) | Every service group (storage, security, messaging, observability, all app services) | Running the whole platform, not just KB |
 | **Test fixture** | `deploy/docker/docker-compose.test.yml` | Isolated PostgreSQL only | Connector / Alembic tests |
 
 > `kb-backend` is also published on `:8050` — but hitting it directly bypasses Kong, so it returns
@@ -53,7 +53,7 @@ front of `kb-backend`. Pick the stack that matches your task:
 
 ---
 
-## Running the KB-UI — kb_e2e (full local dev)
+## Running the KB-UI — kb-e2e (full local dev)
 
 End-to-end local development with the Vite dev server, the ingestion pipeline, and the auth chain.
 
@@ -72,7 +72,7 @@ tables (incl. a dedicated `keycloak` DB), Qdrant collections, and the Kong route
 created automatically on first start.
 
 ```powershell
-docker compose -f deploy/docker/docker-compose.kb_e2e.yml --env-file deploy/docker/.env.kb-testing up -d --build
+docker compose -f deploy/docker/docker-compose.kb-e2e.yml --env-file deploy/docker/.env.kb-testing up -d --build
 ```
 
 > First start is slower: `model-service` downloads its embed/rerank weights into
@@ -82,7 +82,7 @@ docker compose -f deploy/docker/docker-compose.kb_e2e.yml --env-file deploy/dock
 ### 3. Verify the stack is healthy
 
 ```powershell
-docker compose -f deploy/docker/docker-compose.kb_e2e.yml ps     # every service "healthy"
+docker compose -f deploy/docker/docker-compose.kb-e2e.yml ps     # every service "healthy"
 curl http://localhost:8050/health                               # -> {"status":"ok"} (direct; bypasses Kong)
 ```
 
@@ -104,8 +104,8 @@ Open http://localhost:3000, log in as **`helios-admin` / `H3lios@Admin01!`**, an
 ### Shutdown
 
 ```powershell
-docker compose -f deploy/docker/docker-compose.kb_e2e.yml down       # stop, keep data (volumes)
-docker compose -f deploy/docker/docker-compose.kb_e2e.yml down -v    # also wipe DB volumes
+docker compose -f deploy/docker/docker-compose.kb-e2e.yml down       # stop, keep data (volumes)
+docker compose -f deploy/docker/docker-compose.kb-e2e.yml down -v    # also wipe DB volumes
 ```
 
 ---
@@ -225,7 +225,7 @@ The dev server talks to the backend via:
 - `VITE_API_URL` — base URL for KB API calls (default `http://localhost:8000`, the **Kong** gateway —
   **not** `kb-backend` on `:8050`, which is fail-closed)
 
-The defaults already match the kb_e2e stack, so plain `npm run dev` works against it;
+The defaults already match the kb-e2e stack, so plain `npm run dev` works against it;
 override only if a service is on a different host/port.
 
 Other scripts:
@@ -270,9 +270,8 @@ Compose files (all under [`deploy/docker/`](./deploy/docker)):
 - [`docker-compose.security.yml`](./deploy/docker/docker-compose.security.yml): overlay — HA Keycloak (2 nodes + HAProxy) and hardened Kong admin
 - [`docker-compose.prod.yml`](./deploy/docker/docker-compose.prod.yml): production hardening overlay — required secrets, TLS, WAL archiving + `postgres-backup` sidecar, `redis.conf`
 - [`docker-compose.local.yml`](./deploy/docker/docker-compose.local.yml): local developer override (adds `migrate` + `seed`)
-- [`docker-compose.dev.yml`](./deploy/docker/docker-compose.dev.yml): shared dev server override (adds `migrate` + `seed`)
 - [`docker-compose.test.yml`](./deploy/docker/docker-compose.test.yml): test-only PostgreSQL fixture
-- [`docker-compose.kb_e2e.yml`](./deploy/docker/docker-compose.kb_e2e.yml): isolated KB-UI integration stack — data plane + ingestion worker + Keycloak + DB-less Kong
+- [`docker-compose.kb-e2e.yml`](./deploy/docker/docker-compose.kb-e2e.yml): isolated KB-UI integration stack — data plane + ingestion worker + Keycloak + DB-less Kong
 
 ### Prerequisites
 
@@ -300,7 +299,7 @@ Then fill in the required values in `.env`, especially:
 
 ### Local-only files (not baked into images or git)
 
-The kb-backend image ([`deploy/docker/Dockerfile.kb`](./deploy/docker/Dockerfile.kb)) bakes in **only application code**
+The kb-backend image ([`backend/services/kb_backend/Dockerfile`](./backend/services/kb_backend/Dockerfile)) bakes in **only application code**
 — `basemodel/` and `backend/services/`. It contains no secrets, datasets, model weights, or DB seed data;
 those are supplied at runtime via environment variables, host bind-mounts, and Docker volumes.
 
@@ -309,7 +308,7 @@ before bringing the KB-UI testing stack up:
 
 | Local-only file | Used by | What to do |
 |---|---|---|
-| `deploy/docker/.env.kb-testing` | kb_e2e compose interpolation — MinIO credentials (the example defaults work as-is). The LLM / embed / rerank backend is configured separately on `model-service` via its `REMOTE_*_URL` env — see [Switching the model backend](./deploy/docker/README.md#switching-the-model-backend-local-cpu--colab-gpu). | `Copy-Item deploy/docker/.env.kb-testing.example deploy/docker/.env.kb-testing` |
+| `deploy/docker/.env.kb-testing` | kb-e2e compose interpolation — MinIO credentials (the example defaults work as-is). The LLM / embed / rerank backend is configured separately on `model-service` via its `REMOTE_*_URL` env — see [Switching the model backend](./deploy/docker/README.md#switching-the-model-backend-local-cpu--colab-gpu). | `Copy-Item deploy/docker/.env.kb-testing.example deploy/docker/.env.kb-testing` |
 | `model/ollama/weights/model.gguf` (~5.7 GB) | the optional GPU `llama` service (mounted `../model/ollama/weights:/models`) | Download a GGUF model into that path. **Only** needed if you run the local `llama` service — by default the worker and LightRAG reach the LLM through the `model-service` `/generate` gateway (point its `REMOTE_LLM_URL` at the backend), and do not require it. |
 
 Auto-managed (downloads itself — no manual file placement):
@@ -322,18 +321,18 @@ Auto-managed (downloads itself — no manual file placement):
     (kb-backend waits for it), so first start is slower — this is expected, not an error;
   - to pre-seed offline (skip the first-run download), populate the folder from another machine's
     `deploy/docker/model-service/models/`, or run:
-    `docker compose -f deploy/docker/docker-compose.kb_e2e.yml run --rm model-service python -c "import models, config as c; models.load(c.EMBED_MODEL, c.RERANK_MODEL)"`
+    `docker compose -f deploy/docker/docker-compose.kb-e2e.yml run --rm model-service python -c "import models, config as c; models.load(c.EMBED_MODEL, c.RERANK_MODEL)"`
 - DB content lives in Docker **named volumes** (persist across image rebuilds) and is seeded by the
-  tracked [`deploy/docker/sql/kb-seed.sql`](./deploy/docker/sql/kb-seed.sql) (KB seed, mounted by `docker-compose.kb_e2e.dev.yml`).
+  tracked [`deploy/docker/sql/kb-seed.sql`](./deploy/docker/sql/kb-seed.sql) (KB seed, mounted by `docker-compose.kb-e2e-dev.yml`).
 
 ### KB-UI testing stack
 
 Isolated stack (KB data plane + ingestion worker + Keycloak + DB-less Kong) for exercising the KB
 backend against the UI. Full walkthrough — including the frontend env and login — is in
-[Running the KB-UI — kb_e2e](#running-the-kb-ui--kb_e2e-full-local-dev) above:
+[Running the KB-UI — kb-e2e](#running-the-kb-ui--kb-e2e-full-local-dev) above:
 
 ```powershell
-docker compose -f deploy/docker/docker-compose.kb_e2e.yml --env-file deploy/docker/.env.kb-testing up -d --build
+docker compose -f deploy/docker/docker-compose.kb-e2e.yml --env-file deploy/docker/.env.kb-testing up -d --build
 curl http://localhost:8050/health   # -> {"status":"ok"} (direct probe; app traffic goes via Kong :8000)
 ```
 
@@ -368,15 +367,15 @@ docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compo
 #### Shared dev server
 
 ```powershell
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.dev.yml up -d --build
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.dev.yml down
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml up -d --build
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml down
 ```
 
 #### Compose validation
 
 ```powershell
 docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml config
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.dev.yml config
+docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml config
 ```
 
 #### Test fixture
@@ -510,7 +509,7 @@ The local and shared-dev overrides both add `migrate` and `seed` jobs.
 Separate intent-specific Docker paths also exist:
 
 - Test-only: [`deploy/docker/docker-compose.test.yml`](./deploy/docker/docker-compose.test.yml)
-- KB-UI integration: [`deploy/docker/docker-compose.kb_e2e.yml`](./deploy/docker/docker-compose.kb_e2e.yml)
+- KB-UI integration: [`deploy/docker/docker-compose.kb-e2e.yml`](./deploy/docker/docker-compose.kb-e2e.yml)
 - Standalone model experiment: [`model/ollama/docker/docker-compose.yml`](./model/ollama/docker/docker-compose.yml)
 
 ### Common URLs (Docker stack)

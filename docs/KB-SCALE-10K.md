@@ -273,7 +273,7 @@ The **crud/Postgres path degrades faster** than retrieval (cache-hit), so the DB
 path is the latency-sensitive one, not retrieval.
 
 **Fix (found + applied):** `uvicorn --workers` is now env-tunable
-(`UVICORN_WORKERS`, default 1) in `deploy/docker/Dockerfile.kb` + `docker-compose.kb_e2e.yml`.
+(`UVICORN_WORKERS`, default 1) in `backend/services/kb_backend/Dockerfile` + `docker-compose.kb-e2e.yml`.
 Same VUS=300 sweep with **4 workers**:
 
 | VUS=300 | 1 worker | 4 workers |

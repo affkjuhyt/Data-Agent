@@ -12,7 +12,7 @@ compose_base_files:
   - docker-compose.local.yml              # alembic migrate + tenant seed (one-shot jobs)
 compose_extra_files: []
 compose_files: "{{ compose_base_files + compose_extra_files }}"
-# The agent tier only — not the KB tier (deploy/docker/docker-compose.kb_e2e.yml).
+# The agent tier only — not the KB tier (deploy/docker/docker-compose.kb-e2e.yml).
 compose_services:
   - postgres
   - redis

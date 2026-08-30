@@ -1,4 +1,0 @@
-# ⚠️  DEV debug props — copy to rw.props and fill in RELEASE_WORKER_KAFKA_PASSWORD from .env before use.
-security.protocol=SASL_PLAINTEXT
-sasl.mechanism=PLAIN
-sasl.jaas.config=org.apache.kafka.common.security.plain.PlainLoginModule required username="release-worker" password="REPLACE_WITH_RELEASE_WORKER_PASSWORD";

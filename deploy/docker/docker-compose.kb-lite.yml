@@ -9,8 +9,8 @@
 #   docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-lite.yml \
 #     --env-file .env --profile kb up -d \
 #     postgres redis mongo qdrant neo4j minio kafka keycloak kong
-# Then the KB app services (kb_e2e attaches to the same network):
-#   docker compose -f deploy/docker/docker-compose.kb_e2e.yml --env-file deploy/docker/.env.kb-testing up -d \
+# Then the KB app services (kb-e2e attaches to the same network):
+#   docker compose -f deploy/docker/docker-compose.kb-e2e.yml --env-file deploy/docker/.env.kb-testing up -d \
 #     model-service kb-backend kb-ingestion-worker
 #
 # Budget (see docs/M3-CAPACITY.md): infra ~2.2GB + KB app ~1.2GB, leaving the
