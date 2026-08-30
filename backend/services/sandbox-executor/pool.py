@@ -1,4 +1,4 @@
-"""Container Pool Manager (docs/1.md "Kế hoạch 1: Sandbox Executor —
+"""Container Pool Manager (backend/services/sandbox-executor/ops/ "Kế hoạch 1: Sandbox Executor —
 Container Pool + TTL").
 
 A fixed-size set of "warm" sandbox containers, each started once with the
@@ -37,7 +37,7 @@ import docker.types
 
 logger = logging.getLogger(__name__)
 
-# docs/1.md Kế hoạch 1 mục a: used by ContainerPool._verify_egress_isolation()
+# backend/services/sandbox-executor/ops/ Kế hoạch 1 mục a: used by ContainerPool._verify_egress_isolation()
 # as an automatic startup gate. Two DIFFERENT targets, for two different
 # failure modes:
 #   - 169.254.169.254: the doc's own canonical "must always be blocked"
@@ -74,7 +74,7 @@ IDLE_CMD = ["sleep", "infinity"]
 _SPAWN_RETRIES = 3
 _SPAWN_RETRY_DELAY_S = 1.0
 
-# docs/1.md Kế hoạch 1 mục (a)/(f): fixed labels set once at container
+# backend/services/sandbox-executor/ops/ Kế hoạch 1 mục (a)/(f): fixed labels set once at container
 # creation so the Janitor can reconcile against Docker's own view of the
 # world ("container thực sự đang chạy mang nhãn pool") instead of only
 # trusting this process's in-memory state, and so a human/tool on the host
@@ -92,7 +92,7 @@ class PoolSpawnError(Exception):
 
 
 class CircuitBreakerOpenError(Exception):
-    """Raised by acquire() when the pool's circuit breaker (docs/1.md
+    """Raised by acquire() when the pool's circuit breaker (backend/services/sandbox-executor/ops/
     Kế hoạch 1 mục e) is OPEN — the caller must reject the request
     immediately (503/backpressure) without ever touching the idle queue."""
 
@@ -142,7 +142,7 @@ class _BreakerState(enum.Enum):
 
 
 class CircuitBreaker:
-    """docs/1.md Kế hoạch 1 mục (e), "Circuit breaker ở tầng pool".
+    """backend/services/sandbox-executor/ops/ Kế hoạch 1 mục (e), "Circuit breaker ở tầng pool".
 
     Counts ONLY the abnormal retirement reasons the doc lists as (3)(4)(5)
     — verify-not-clean, cleanup error, timeout — in a sliding window,
@@ -174,7 +174,7 @@ class CircuitBreaker:
         self.cooldown_s = cooldown_s
         self.max_cooldown_s = max_cooldown_s
         self.half_open_trials = half_open_trials
-        # docs/1.md mục e: "X/Y/cooldown cần tune theo baseline vận hành
+        # backend/services/sandbox-executor/ops/ mục e: "X/Y/cooldown cần tune theo baseline vận hành
         # thực tế (nên chạy log-only một thời gian trước khi bật reject)".
         # Defaults to False on purpose — the threshold/window/cooldown
         # values above are placeholders, not a tuned baseline, and an
@@ -322,7 +322,7 @@ class ContainerPool:
         self.janitor_interval_s = janitor_interval_s
         self.stuck_exec_s = stuck_exec_s
         self.mem_drift_factor = mem_drift_factor
-        # docs/1.md Kế hoạch 1 mục (a): dedicated bridge network (never the
+        # backend/services/sandbox-executor/ops/ Kế hoạch 1 mục (a): dedicated bridge network (never the
         # default Docker/compose bridge) instead of network_disabled=True —
         # OFF by default. Nothing in this codebase's AST whitelist
         # (security_visitor.py) currently permits importing a DB driver or
@@ -334,15 +334,15 @@ class ContainerPool:
         self.egress_enabled = egress_enabled
         self.egress_network = egress_network
         self.egress_subnet = egress_subnet
-        # docs/1.md Kế hoạch 1 mục (g): gVisor (`runsc`) instead of the
+        # backend/services/sandbox-executor/ops/ Kế hoạch 1 mục (g): gVisor (`runsc`) instead of the
         # default runtime, because the pool model keeps containers alive
         # far longer than the old ephemeral-per-request model did. None
         # (the default) keeps today's runtime unchanged — operators opt in
         # via SANDBOX_RUNTIME once `runsc` is installed and registered with
-        # the Docker daemon (see docs/1.md mục g for the daemon.json step
+        # the Docker daemon (see backend/services/sandbox-executor/ops/ mục g for the daemon.json step
         # and the required syscall-compatibility test pass).
         self.runtime = runtime
-        # docs/1.md Kế hoạch 1 mục (a): stable per-pool-instance id, stamped
+        # backend/services/sandbox-executor/ops/ Kế hoạch 1 mục (a): stable per-pool-instance id, stamped
         # onto every container this pool spawns as the `dataagent.pool_id`
         # label so the Janitor can reconcile against Docker's own view
         # instead of only this process's in-memory state.
@@ -426,7 +426,7 @@ class ContainerPool:
             },
         }
 
-    # -- egress network (docs/1.md mục a) --------------------------------
+    # -- egress network (backend/services/sandbox-executor/ops/ mục a) --------------------------------
 
     def _ensure_egress_network(self) -> None:
         """Dedicated bridge network for the pool — never the default
@@ -472,7 +472,7 @@ class ContainerPool:
             self.egress_enabled = False
 
     def _verify_egress_isolation(self) -> None:
-        """docs/1.md mục a: "Trước khi rollout: test rule iptables trực
+        """backend/services/sandbox-executor/ops/ mục a: "Trước khi rollout: test rule iptables trực
         tiếp trong 1 container của pool (...chặn mọi đích khác kể cả
         169.254.169.254...)" — implemented as an automatic startup gate
         rather than a manual pre-rollout step. ops/setup_sandbox_egress_
@@ -560,7 +560,7 @@ class ContainerPool:
                     LABEL_CREATED_AT: str(int(time.time())),
                 },
             )
-            # docs/1.md mục a: dedicated bridge network instead of --network
+            # backend/services/sandbox-executor/ops/ mục a: dedicated bridge network instead of --network
             # none, ONLY when egress_enabled (default False — see __init__).
             # Re-checked on every _spawn() call (not just once at pool
             # construction) so a mid-run fallback from
@@ -622,7 +622,7 @@ class ContainerPool:
     # -- acquire/release --------------------------------------------------
     def acquire(self) -> PooledContainer:
         # Raises CircuitBreakerOpenError immediately — before ever touching
-        # the idle queue — when the breaker is OPEN (docs/1.md mục e: "TỪ
+        # the idle queue — when the breaker is OPEN (backend/services/sandbox-executor/ops/ mục e: "TỪ
         # CHỐI NGAY (503) ... KHÔNG thử acquire()"). Returns True only for
         # the bounded HALF_OPEN probe slot, which release() below must
         # report back via record_probe_result().
@@ -678,7 +678,7 @@ class ContainerPool:
         pc.use_count += 1
 
         # Only a caller-supplied reason (timeout / cleanup error / dirty
-        # verify — docs/1.md mục e conditions 3-5) counts as "abnormal" for
+        # verify — backend/services/sandbox-executor/ops/ mục e conditions 3-5) counts as "abnormal" for
         # the circuit breaker. A reason pool.py derives itself just below
         # (use-count/TTL) is ordinary churn — conditions (1)(2) — and must
         # NOT feed the breaker.
@@ -777,7 +777,7 @@ class ContainerPool:
                 break
 
     def _reconcile_labels(self) -> None:
-        """docs/1.md Kế hoạch 1 mục (a)/(f): cross-check this pool's
+        """backend/services/sandbox-executor/ops/ Kế hoạch 1 mục (a)/(f): cross-check this pool's
         internal state against Docker's own view of which containers
         actually carry this pool's labels, instead of only trusting
         in-memory tracking. Catches the case the doc calls out explicitly

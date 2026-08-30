@@ -23,5 +23,5 @@ USER app
 
 EXPOSE 8100
 
-# Chạy FastAPI + Kafka consumer
-CMD ["python", "main.py"]
+# Chạy FastAPI service qua framework entrypoint.
+CMD ["uvicorn", "app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8100"]

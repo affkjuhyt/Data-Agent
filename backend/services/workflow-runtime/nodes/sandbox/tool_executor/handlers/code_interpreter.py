@@ -10,7 +10,7 @@ handlers/data.py's text_to_sql now takes the same route (it used to open its
 own asyncpg connection and run LLM-written SQL unguarded), so the submit+poll
 transport both use lives in _sandbox_http.py rather than here.
 
-docs/1.md "Kế hoạch 1" mục i: sandbox-executor's POST /execute/python and
+backend/services/sandbox-executor/ops/ "Kế hoạch 1" mục i: sandbox-executor's POST /execute/python and
 /execute/sql no longer run the request inline — they enqueue and return
 202 + {job_id} immediately, without holding one HTTP connection open for
 the full acquire+exec/query duration. Both handlers below submit, then

@@ -1,2 +1,0 @@
--- Release management schema — managed entirely by alembic migration.
--- This file is intentionally empty; kept for reference only.

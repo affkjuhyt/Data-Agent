@@ -47,6 +47,7 @@ from routers import (
     reviews,
     sandbox_ops,
     schema_memory,
+    storage,
     traces,
 )
 from routers import (
@@ -163,6 +164,8 @@ def create_app() -> FastAPI:
         db_connector.router,
         platform.router,
         billing.router,
+        # Object-storage browsing for Settings (/api/storage, ex minio-service).
+        storage.router,
         # Orchestrator (multi-agent front door, /api/orchestrate/*) — same
         # process since the merge; its agent calls are in-process too.
         orch_stream.router,

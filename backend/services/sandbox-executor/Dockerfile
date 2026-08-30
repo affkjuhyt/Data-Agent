@@ -12,4 +12,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 # the image kept building and failed only on the first ClickHouse query.
 # __pycache__ is excluded by the repo .dockerignore.
 COPY *.py ./
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8500"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8500"]

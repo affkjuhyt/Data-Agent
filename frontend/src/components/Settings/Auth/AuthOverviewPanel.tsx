@@ -25,7 +25,7 @@ const TECH_STACK = [
   { layer: 'Admin Ops',        tech: 'python-keycloak',                                     role: 'User/role management via Admin API' },
   { layer: 'SSO/SAML',         tech: 'Keycloak Identity Broker',                            role: 'Azure AD, Okta, Google Workspace' },
   { layer: 'MFA',              tech: 'Keycloak TOTP + WebAuthn',                            role: 'Required Actions' },
-  { layer: 'Audit Log',        tech: 'Keycloak → Kafka audit.auth.events → PostgreSQL',     role: 'At-least-once delivery, append-only, partition by month' },
+  { layer: 'Audit Log',        tech: 'Keycloak Admin Events API → platform-workers (audit) → PostgreSQL', role: 'Polling bridge, idempotent on event id, append-only, partition by month' },
   { layer: 'User Store',       tech: 'Keycloak internal DB',                                role: 'Identity, credentials, sessions' },
   { layer: 'High Availability', tech: 'Keycloak cluster Active/Active + shared PostgreSQL', role: 'Load balancer + Infinispan session sync' },
   { layer: 'Secrets',          tech: 'OpenBao',                                             role: 'No raw secrets in DB — path refs only' },
@@ -125,8 +125,8 @@ export const AuthOverviewPanel = ({ onViewAudit }: { onViewAudit?: () => void } 
 
         <div className="mt-3 p-3 bg-[#FFF9E8] border border-[#BFA66A] rounded-xl">
           <p className="text-[11px] text-[#3F3F3F]">
-            Auth events flow: <strong>Keycloak Event Listener SPI</strong> → Kafka topic <code className="font-mono bg-[#F4E8C3] px-1 rounded">audit.auth.events</code> → Consumer → PostgreSQL.
-            Kafka ensures at-least-once delivery. Table <code className="font-mono bg-[#F4E8C3] px-1 rounded">audit_logs</code> — append-only, partitioned by month.
+            Auth events flow: <strong>Keycloak Admin Events API</strong> → platform-workers (<code className="font-mono bg-[#F4E8C3] px-1 rounded">audit</code> polling bridge thread) → PostgreSQL.
+            No Kafka hop — writes are idempotent on the Keycloak event id, so a re-poll never duplicates. Kafka <code className="font-mono bg-[#F4E8C3] px-1 rounded">audit.data.access</code> still carries data-access events. Table <code className="font-mono bg-[#F4E8C3] px-1 rounded">audit_logs</code> — append-only, partitioned by month.
           </p>
         </div>
       </section>

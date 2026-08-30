@@ -66,7 +66,7 @@ curl -sf http://localhost:8000/ >/dev/null && echo "kong OK"
 curl -sf http://localhost:8080/realms/aeroflow/.well-known/openid-configuration >/dev/null && echo "keycloak OK"
 
 # Per-service (adjust ports): auth-api 8200, model-service 8001, flow-builder 8002,
-# orchestrator 8003, release-worker 8100, minio-service 8400, sandbox-executor 8500
+# orchestrator 8003, release-worker 8100, sandbox-executor 8500
 curl -sf http://localhost:8200/health && echo " auth-api OK"
 ```
 

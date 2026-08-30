@@ -171,5 +171,5 @@ class ModelServiceClient:
         return cast(str, resp.json().get("content", ""))
 
 
-# module-level singleton (same pattern as the mongo/postgres/elasticsearch connectors)
+# module-level singleton (same pattern as the mongo/postgres connectors)
 client = ModelServiceClient()

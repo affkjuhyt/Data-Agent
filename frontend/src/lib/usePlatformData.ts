@@ -81,7 +81,7 @@ export const usePlatformRoles = () => useApiResource<{ roles: string[] }>('/api/
 export const usePlatformRuntimeConfig = () =>
   useApiResource<Record<string, unknown>>('/api/runtime-config');
 
-/* ─── /api/storage/buckets (minio-service) ────────────────── */
+/* ─── /api/storage/buckets (workflow-runtime) ─────────────── */
 export const usePlatformBuckets = () =>
   useApiResource<{ buckets: string[] }>('/api/storage/buckets');
 

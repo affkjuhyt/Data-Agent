@@ -95,7 +95,7 @@ release-hardening pass:
 
 | Runs as non-root (`USER app`) | Intentionally root — documented |
 |---|---|
-| kb-backend, kb-ingestion-worker, workflow-runtime, flow-builder, orchestrator, auth-api, model-service, minio-service, release-worker, platform-workers (memory / schema-crawler / audit) | **sandbox-executor** — spawns sandbox containers via the mounted Docker socket; a non-root user would need the host docker group (root-equivalent). Proper fix: rootless Docker / gVisor. |
+| kb-backend, kb-ingestion-worker, workflow-runtime, flow-builder, orchestrator, auth-api, model-service, release-worker, platform-workers (memory / schema-crawler / audit) | **sandbox-executor** — spawns sandbox containers via the mounted Docker socket; a non-root user would need the host docker group (root-equivalent). Proper fix: rootless Docker / gVisor. |
 
 `deploy/docker/Dockerfile`, `deploy/docker/Dockerfile.frontend` (both **LEGACY**, not in the supported
 entrypoint set) and `deploy/docker/Dockerfile.dev` (dev-only) are out of scope for the prod
@@ -155,7 +155,7 @@ with an existing baseline to burn down. Ratchet plan:
   | --- | --- | --- |
   | `backend/libs/{basemodel,database_connector,shared}` | **0** ✅ | enforced — innermost layers |
   | `backend/services/{orchestrator,kb_backend,workflow-runtime}` | **0** ✅ | enforced — the 3 largest (~670 fixed) |
-  | `backend/services/{auth-api,flow-builder,model-service,minio-service}` | **0** ✅ | enforced |
+  | `backend/services/{auth-api,flow-builder,model-service}` | **0** ✅ | enforced |
   | `backend/services/{release-worker,sandbox-executor,kb-ingestion-worker}` | **0** ✅ | enforced |
   | `backend/services/platform-workers` (ex schema-crawler-worker, memory-consumer, audit-bridge, audit-consumer) | **0** ✅ | enforced |
 

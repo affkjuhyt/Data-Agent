@@ -1,4 +1,4 @@
-"""Sandbox execution via a warm Container Pool + TTL (docs/1.md "Kế hoạch
+"""Sandbox execution via a warm Container Pool + TTL (backend/services/sandbox-executor/ops/ "Kế hoạch
 1: Sandbox Executor — Container Pool + TTL"), replacing the old
 containers.run()-per-request (ephemeral) model.
 
@@ -71,14 +71,14 @@ POOL_SIZE = int(os.environ.get("SANDBOX_POOL_SIZE", "3"))
 POOL_MAX_USES = int(os.environ.get("SANDBOX_POOL_MAX_USES", "50"))
 POOL_MAX_AGE_S = float(os.environ.get("SANDBOX_POOL_MAX_AGE_S", str(30 * 60)))
 POOL_ACQUIRE_TIMEOUT_S = float(os.environ.get("SANDBOX_POOL_ACQUIRE_TIMEOUT_S", "30"))
-# docs/1.md Kế hoạch 1 mục (g): unset (default) keeps today's runtime
+# backend/services/sandbox-executor/ops/ Kế hoạch 1 mục (g): unset (default) keeps today's runtime
 # unchanged. Set to "runsc" only after runsc is installed AND registered in
 # the Docker daemon's /etc/docker/daemon.json AND the ALLOWED_MODULES
 # syscall-compatibility pass (mục g) has been run — flipping this without
 # those two steps first just makes every container fail to start.
 POOL_RUNTIME = os.environ.get("SANDBOX_RUNTIME") or None
 
-# docs/1.md Kế hoạch 1 mục (a): dedicated bridge network instead of
+# backend/services/sandbox-executor/ops/ Kế hoạch 1 mục (a): dedicated bridge network instead of
 # --network none. OFF by default — see pool.py's ContainerPool.__init__
 # docstring for why. Turning this on without also running
 # ops/setup_sandbox_egress_iptables.sh on the Docker engine backing this
@@ -89,7 +89,7 @@ POOL_EGRESS_ENABLED = os.environ.get("SANDBOX_EGRESS_ENABLED", "false").strip().
 POOL_EGRESS_NETWORK = os.environ.get("SANDBOX_EGRESS_NETWORK", "sandbox-egress")
 POOL_EGRESS_SUBNET = os.environ.get("SANDBOX_EGRESS_SUBNET", "172.28.0.0/24")
 
-# docs/1.md Kế hoạch 1 mục (e), "Circuit breaker ở tầng pool" — sliding
+# backend/services/sandbox-executor/ops/ Kế hoạch 1 mục (e), "Circuit breaker ở tầng pool" — sliding
 # window over ONLY abnormal retirements (timeout/cleanup-error/dirty-verify),
 # never use-count/TTL churn. Defaults are deliberately conservative
 # placeholders, not a tuned baseline — the doc is explicit that X/Y/cooldown
@@ -151,7 +151,7 @@ class SandboxCircuitOpenError(Exception):
     """The pool's circuit breaker is OPEN — main.py must map this to an
     actual 503, not a 200 body with success=False, so callers stop
     retrying immediately instead of piling more load onto a pool that's
-    already failing (docs/1.md Kế hoạch 1 mục e)."""
+    already failing (backend/services/sandbox-executor/ops/ Kế hoạch 1 mục e)."""
 
 
 _client = None
@@ -406,7 +406,7 @@ def _run_sandboxed(
 
     `on_output(stream, text)`, if given, is called synchronously from the
     exec thread for every stdout/stderr chunk AS the container produces
-    it (docs/1.md Kế hoạch 1 mục h — "stream ... stdout-stderr của lần
+    it (backend/services/sandbox-executor/ops/ Kế hoạch 1 mục h — "stream ... stdout-stderr của lần
     exec đang chạy", not just the final result). It runs in a plain OS
     thread, not the asyncio event loop — callers wired to asyncio state
     (main.py appends to a JobQueue's in-memory list) must only do

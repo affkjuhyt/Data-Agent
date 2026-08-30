@@ -44,7 +44,6 @@ services:
       # every fresh volume the `keycloak` schema was never created and Keycloak
       # crash-looped. KB tables live in the kb-e2e stack's own postgres.
       - ./sql/init.sql:/docker-entrypoint-initdb.d/03-app-schema.sql:ro
-      - ./sql/release-init.sql:/docker-entrypoint-initdb.d/04-release-schema.sql:ro
     ports:
       - "5432:5432"
     healthcheck:

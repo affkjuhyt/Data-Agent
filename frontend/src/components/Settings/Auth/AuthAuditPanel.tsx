@@ -375,7 +375,7 @@ export const AuthAuditPanel = () => {
         <Info className="w-3.5 h-3.5 text-[#B88719] shrink-0 mt-0.5" />
         <p className="text-[11px] text-[#777] leading-relaxed">
           Events sourced live from <strong>Keycloak Admin API</strong> ({KC_URL}/admin/realms/{KC_REALM}/events).
-          Persistent copy: Keycloak SPI → Kafka <code className="font-mono bg-[#F4E8C3] px-1 rounded">audit.auth.events</code> → Consumer → PostgreSQL <code className="font-mono bg-[#F4E8C3] px-1 rounded">audit_logs</code>.
+          Persistent copy: Keycloak Admin Events API → platform-workers (<code className="font-mono bg-[#F4E8C3] px-1 rounded">audit</code> polling bridge) → PostgreSQL <code className="font-mono bg-[#F4E8C3] px-1 rounded">audit_logs</code>. No Kafka hop — Kafka <code className="font-mono bg-[#F4E8C3] px-1 rounded">audit.data.access</code> carries data-access events only.
         </p>
       </div>
     </div>

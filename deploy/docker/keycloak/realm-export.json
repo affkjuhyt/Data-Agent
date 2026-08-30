@@ -1663,8 +1663,7 @@
   "smtpServer": {},
   "eventsEnabled": true,
   "eventsListeners": [
-    "jboss-logging",
-    "aeroflow-kafka"
+    "jboss-logging"
   ],
   "enabledEventTypes": [
     "SEND_RESET_PASSWORD",

@@ -1,5 +1,6 @@
 from typing import Any
 from fastapi import APIRouter
+from psycopg2.extras import RealDictCursor
 
 from release_core import *
 from schemas import *
@@ -10,7 +11,7 @@ router = APIRouter()
 @router.post("/api/release/drift/detect")
 def api_detect_drift(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
     """
-    Trigger drift detection thủ công — không cần Celery worker.
+    Trigger drift detection thủ công — chạy inline trong request.
     Gọi inline _detect_config_drift_core(), ghi DB, produce Kafka event.
     Trả về ngay kết quả: clean hoặc drift_detected với danh sách keys bị drift.
     """
@@ -33,7 +34,7 @@ def list_drift_events(
 ) -> dict[str, Any]:
     """List drift events từ DB — hỗ trợ filter theo resolved status."""
     with get_pg_conn() as conn:
-        with conn.cursor() as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             if resolved is not None:
                 cur.execute(
                     """SELECT id, env_pair, drift_keys, severity, detected_at, resolved
@@ -49,8 +50,7 @@ def list_drift_events(
                        ORDER BY detected_at DESC LIMIT %s""",
                     (limit,)
                 )
-            cols = ["id", "env_pair", "drift_keys", "severity", "detected_at", "resolved"]
-            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+            rows = [dict(row) for row in cur.fetchall()]
             for row in rows:
                 if row.get("detected_at"):
                     row["detected_at"] = row["detected_at"].isoformat()

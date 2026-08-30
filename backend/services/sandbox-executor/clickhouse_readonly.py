@@ -17,7 +17,7 @@ puts it behind the same layers as every other SQL path:
   3. The sql_guard SELECT-only check below.
 
 ``clickhouse_connect`` is synchronous, so the query runs in a worker thread
-via ``asyncio.to_thread`` — mirroring backend/libs/database_connector/clickhouse_connector.py.
+via ``asyncio.to_thread`` — the same client the old libs/database_connector ClickHouse connector used (since removed).
 Unlike postgres_readonly.py there is no connection reuse: clickhouse_connect
 clients are HTTP-session based and cheap to create, and per-call clients keep
 one tenant's session from being handed to another.

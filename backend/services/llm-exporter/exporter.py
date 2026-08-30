@@ -8,8 +8,6 @@ A background thread periodically probes the LLM (OpenAI-compatible
 /v1/chat/completions, streaming) — one single request + one small concurrent
 batch — and records the timings as gauges. Prometheus scrapes GET /metrics.
 
-Stdlib only (no pip deps), so the image builds offline.
-
 Env:
   LLM_BASE_URL     base URL of the LLM (default http://host.docker.internal:11434)
   LLM_MODEL        model name (default qwen2.5:3b)
@@ -22,7 +20,12 @@ import os
 import threading
 import time
 import urllib.request
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+import uvicorn
+from fastapi import FastAPI, Response
+from fastapi.responses import PlainTextResponse
 
 BASE_URL    = os.getenv("LLM_BASE_URL", "http://host.docker.internal:11434").rstrip("/")
 MODEL       = os.getenv("LLM_MODEL", "qwen2.5:3b")
@@ -47,6 +50,9 @@ _state = {
     "probes_total": 0,
     "errors_total": 0,
 }
+
+_probe_started = False
+_probe_started_lock = threading.Lock()
 
 
 def stream_request(messages, max_tokens):
@@ -146,6 +152,15 @@ def probe_loop():
         time.sleep(INTERVAL)
 
 
+def start_probe_loop() -> None:
+    global _probe_started
+    with _probe_started_lock:
+        if _probe_started:
+            return
+        threading.Thread(target=probe_loop, daemon=True).start()
+        _probe_started = True
+
+
 def render_metrics():
     with _lock:
         s = dict(_state)
@@ -186,34 +201,32 @@ def render_metrics():
     return ("\n".join(lines) + "\n").encode()
 
 
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == "/health":
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.end_headers()
-            self.wfile.write(b'{"status":"ok"}')
-            return
-        if self.path != "/metrics":
-            self.send_response(404)
-            self.end_headers()
-            return
-        body = render_metrics()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/plain; version=0.0.4")
-        self.end_headers()
-        self.wfile.write(body)
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    print(
+        f"[llm-exporter] probing {BASE_URL} model={MODEL} "
+        f"every {INTERVAL}s (concurrency={CONCURRENCY})",
+        flush=True,
+    )
+    start_probe_loop()
+    yield
 
-    def log_message(self, *_):  # silence per-request logging
-        pass
+
+app = FastAPI(title="llm-exporter", version="0.1.0", lifespan=lifespan)
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/metrics")
+def metrics() -> Response:
+    return PlainTextResponse(render_metrics(), media_type="text/plain; version=0.0.4")
 
 
 def main():
-    print(f"[llm-exporter] probing {BASE_URL} model={MODEL} "
-          f"every {INTERVAL}s (concurrency={CONCURRENCY}); /metrics on :{PORT}",
-          flush=True)
-    threading.Thread(target=probe_loop, daemon=True).start()
-    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    uvicorn.run("exporter:app", host="0.0.0.0", port=PORT, log_level="info")
 
 
 if __name__ == "__main__":

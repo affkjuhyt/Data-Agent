@@ -7,7 +7,6 @@ asyncpg==0.30.0
 neo4j
 qdrant-client
 httpx==0.27.2
-litellm
 aioboto3
 botocore
 aiokafka

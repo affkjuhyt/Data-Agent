@@ -64,6 +64,11 @@ services:
       MTLS_CLIENT_CERT: ${MTLS_CLIENT_CERT:-}
       MTLS_CLIENT_KEY: ${MTLS_CLIENT_KEY:-}
       MTLS_CA_CERT: ${MTLS_CA_CERT:-}
+      # Object-storage browsing for Settings (/api/storage, routers/storage.py —
+      # ex minio-service). Same names sandbox-executor and release-worker use.
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
     volumes:
       # Read-only: this service presents a client certificate, it never issues one.
       - ./certs:/certs:ro
@@ -82,6 +87,8 @@ services:
         condition: service_started
       openbao:
         condition: service_started
+      minio:
+        condition: service_healthy
 
   sandbox-executor:
     profiles: [runtime]
@@ -117,12 +124,12 @@ services:
       # (deploy/docker/sql/create-extra-dbs.sql; only auto-created on a fresh
       # postgres_data volume).
       SANDBOX_SQL_BACKEND: ${SANDBOX_SQL_BACKEND:-snowflake}
-      # docs/1.md Kế hoạch 1 mục i — job queue worker counts; python
+      # backend/services/sandbox-executor/ops/ Kế hoạch 1 mục i — job queue worker counts; python
       # defaults to SANDBOX_POOL_SIZE below (one worker per warm
       # container) if left unset.
       SANDBOX_SQL_QUEUE_WORKERS: "5"
       # mục e — circuit breaker sliding window. Window/threshold/cooldown
-      # below are still placeholder values, not a tuned baseline — docs/1.md
+      # below are still placeholder values, not a tuned baseline — backend/services/sandbox-executor/ops/
       # mục e recommends log-only until tuned against real traffic, but
       # SANDBOX_BREAKER_ENFORCE was explicitly turned on ahead of that by
       # operator decision (2026-07-09). Watch breaker OPEN/HALF_OPEN log
@@ -358,27 +365,6 @@ services:
       openbao:
         condition: service_started
 
-  minio-service:
-    profiles: [kb, release]
-    build:
-      context: ../..
-      dockerfile: backend/services/minio-service/Dockerfile
-    container_name: dataagent-minio-service
-    restart: unless-stopped
-    # NOT published to the host. Object read/write and per-tenant audit
-    # archives were reachable unauthenticated on 8400.
-    expose:
-      - "8400"
-    environment:
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
-      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
-      OTEL_SERVICE_NAME: minio-service
-    depends_on:
-      minio:
-        condition: service_healthy
-
   release-worker:
     profiles: [release]
     build:
@@ -395,14 +381,11 @@ services:
       KAFKA_PASSWORD: ${RELEASE_WORKER_KAFKA_PASSWORD}
       KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
       KAFKA_SASL_MECHANISM: PLAIN
-      CELERY_BROKER: redis://redis:6379/0
       # `kong-admin` alias, not hostname/IP — see auth-api KONG_ADMIN_URL comment above.
       KONG_ADMIN_URL: http://kong-admin:8001
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minio}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret}
-      MONGO_URI: mongodb://mongo:27017
-      MONGO_DB: dataagent
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
       OTEL_SERVICE_NAME: release-worker
     networks:
@@ -413,11 +396,7 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
-      redis:
-        condition: service_healthy
       minio:
-        condition: service_healthy
-      mongo:
         condition: service_healthy
 
   # ── platform-workers: one image (backend/services/platform-workers), three

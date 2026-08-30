@@ -1,5 +1,6 @@
 from typing import Any
 from fastapi import APIRouter
+from psycopg2.extras import RealDictCursor
 
 from release_core import *
 from schemas import *
@@ -82,7 +83,7 @@ def trigger_rollback(
     req: RollbackRequest,
     user: dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Trigger rollback — produce Kafka event + dispatch Celery task."""
+    """Trigger rollback — produce Kafka event; the consumer thread runs it."""
     if "platform-admin" not in user["roles"]:
         raise HTTPException(status_code=403, detail="Only platform-admin can trigger rollback")
 
@@ -112,7 +113,7 @@ def list_pipelines(
 ) -> dict[str, Any]:
     """List tất cả pipelines — cho UI Deployments tab."""
     with get_pg_conn() as conn:
-        with conn.cursor() as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             if status:
                 cur.execute(
                     """SELECT id, pipeline_name, triggered_by, trigger_type, commit_sha,
@@ -132,10 +133,7 @@ def list_pipelines(
                        ORDER BY created_at DESC LIMIT %s""",
                     (limit,)
                 )
-            cols = ["id", "pipeline_name", "triggered_by", "trigger_type", "commit_sha",
-                    "branch", "package_version", "target_env", "status", "risk_score",
-                    "error_message", "created_at", "updated_at", "completed_at"]
-            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+            rows = [dict(row) for row in cur.fetchall()]
             for row in rows:
                 for k in ("created_at", "updated_at", "completed_at"):
                     if row.get(k):
@@ -150,7 +148,7 @@ def list_rollback_targets(user: dict[str, Any] = Depends(get_current_user)) -> d
     từ release_history, tính current vs previous version.
     """
     with get_pg_conn() as conn:
-        with conn.cursor() as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 """WITH history_with_name AS (
                      SELECT
@@ -181,8 +179,7 @@ def list_rollback_targets(user: dict[str, Any] = Depends(get_current_user)) -> d
                    JOIN previous_v pv ON pv.name = c.name AND pv.environment = c.environment
                    ORDER BY c.name, c.environment"""
             )
-            cols = ["pipeline_id", "name", "current_version", "previous_version", "environment"]
-            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+            rows = [dict(row) for row in cur.fetchall()]
     return {"targets": rows, "count": len(rows)}
 
 
@@ -194,7 +191,7 @@ def get_release_history(
 ) -> dict[str, Any]:
     """Query release history từ PostgreSQL."""
     with get_pg_conn() as conn:
-        with conn.cursor() as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             if environment:
                 cur.execute(
                     """SELECT pipeline_id, package_id, environment, status,
@@ -212,9 +209,7 @@ def get_release_history(
                        ORDER BY deployed_at DESC LIMIT %s""",
                     (limit,)
                 )
-            cols = ["pipeline_id", "package_id", "environment", "status",
-                    "triggered_by", "deployed_at", "duration_ms"]
-            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+            rows = [dict(row) for row in cur.fetchall()]
             # Convert datetime to ISO string
             for row in rows:
                 if row.get("deployed_at"):
@@ -226,7 +221,7 @@ def get_release_history(
 def get_pipeline(pipeline_id: str, user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
     """Xem chi tiết pipeline và các steps."""
     with get_pg_conn() as conn:
-        with conn.cursor() as cur:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 "SELECT id, triggered_by, status, created_at, updated_at, error_message FROM pipelines WHERE id=%s",
                 (pipeline_id,)
@@ -234,10 +229,7 @@ def get_pipeline(pipeline_id: str, user: dict[str, Any] = Depends(get_current_us
             row = cur.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Pipeline not found")
-            pipeline = dict(zip(
-                ["id", "triggered_by", "status", "created_at", "updated_at", "error_message"],
-                row
-            ))
+            pipeline = dict(row)
             for k in ["created_at", "updated_at"]:
                 if pipeline[k]:
                     pipeline[k] = pipeline[k].isoformat()
@@ -246,11 +238,7 @@ def get_pipeline(pipeline_id: str, user: dict[str, Any] = Depends(get_current_us
                 "SELECT step_name, status, started_at, completed_at, duration_ms, output, error FROM pipeline_steps WHERE pipeline_id=%s ORDER BY id",
                 (pipeline_id,)
             )
-            steps = [
-                dict(zip(["step_name", "status", "started_at", "completed_at",
-                          "duration_ms", "output", "error"], s))
-                for s in cur.fetchall()
-            ]
+            steps = [dict(s) for s in cur.fetchall()]
     return {"pipeline": pipeline, "steps": steps}
 
 

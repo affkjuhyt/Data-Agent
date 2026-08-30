@@ -1,4 +1,4 @@
-"""Best-effort object storage for submitted sandbox code (docs/1.md
+"""Best-effort object storage for submitted sandbox code (backend/services/sandbox-executor/ops/
 "Kế hoạch 1" mục h).
 
 Reuses the platform's existing MinIO instance instead of standing up new
@@ -102,7 +102,7 @@ def put_code(key: str, code: str) -> None:
 def delete_code(key: str) -> None:
     """Best-effort — never raises. Call via asyncio.to_thread. Always
     called from the same finally-style cleanup branch as the container's
-    own kill+wipe (docs/1.md mục c/h), regardless of success/error/timeout."""
+    own kill+wipe (backend/services/sandbox-executor/ops/ mục c/h), regardless of success/error/timeout."""
     try:
         _client().delete_object(Bucket=BUCKET, Key=key)
     except Exception as e:

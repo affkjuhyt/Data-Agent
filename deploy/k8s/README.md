@@ -118,7 +118,7 @@ until you explicitly unsuspend. The full procedure is in its header.
 
 The manifests cover the request path — gateway → workflow-runtime
 (orchestrator included) → sandbox/KB. Not yet ported from `deploy/docker/docker-compose.app.yml`:
-`auth-api`, `flow-builder`, `minio-service`, `release-worker`,
+`auth-api`, `flow-builder`, `release-worker`,
 `platform-workers` (one image; `WORKER=memory|schema-crawler|audit`),
 the frontend, and the Kong/Keycloak edge. A cluster running only what is in this
 directory serves agent traffic but has no authoring UI and no audit pipeline.

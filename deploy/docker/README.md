@@ -35,7 +35,7 @@ profile and therefore always start (the core auth + system-of-record):
 docker compose -f deploy/docker/docker-compose.yml --profile authoring up -d   # design flows: + flow-builder, frontend, mongo, redis
 docker compose -f deploy/docker/docker-compose.yml --profile kb        up -d   # Knowledge Base: + kb-backend, ingestion, model-service, litellm + qdrant/neo4j/minio/kafka/mongo
 docker compose -f deploy/docker/docker-compose.yml --profile iam       up -d   # auth/governance: + auth-api, platform-workers-audit, openbao, kafka
-docker compose -f deploy/docker/docker-compose.yml --profile release   up -d   # release: + release-worker, minio-service + minio/mongo/kafka/redis
+docker compose -f deploy/docker/docker-compose.yml --profile release   up -d   # release: + release-worker + minio/mongo/kafka/redis
 docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.app.yml --profile runtime up -d  # agent runtime (full): + workflow-runtime (incl. orchestrator at /api/orchestrate), kb-backend, sandbox-executor, platform-workers-memory, platform-workers-schema-crawler
 
 # Combine profiles freely
@@ -47,10 +47,10 @@ docker compose -f deploy/docker/docker-compose.yml --profile runtime --profile o
 | Profile | Adds (app) | Adds (stores) |
 |---|---|---|
 | `authoring` | flow-builder, frontend | mongo, redis |
-| `kb` | kb-backend, kb-ingestion-worker, model-service, litellm, minio-service | qdrant, neo4j, minio, kafka, mongo, redis |
-| `runtime` | workflow-runtime (incl. orchestrator), kb-backend, model-service, litellm | mongo, redis, qdrant, neo4j, kafka, openbao |
+| `kb` | kb-backend, kb-ingestion-worker, model-service, litellm | qdrant, neo4j, minio, kafka, mongo, redis |
+| `runtime` | workflow-runtime (incl. orchestrator + `/api/storage`), kb-backend, model-service, litellm | mongo, redis, qdrant, neo4j, kafka, openbao, minio |
 | `iam` | auth-api, platform-workers-audit | kafka, openbao |
-| `release` | release-worker, minio-service | minio, mongo, kafka, redis |
+| `release` | release-worker | minio, mongo, kafka, redis |
 | `observability` | langfuse (+ worker, minio-init) | elasticsearch, jaeger, clickhouse, minio, redis |
 | `testdb` | — | clickhouse (throwaway DB target for `db_connector`) |
 | `models` | ollama | — (local GPU model backend; dev usually points litellm at a host llama-server instead) |
@@ -344,7 +344,7 @@ deploy/docker/
   kafka/         Dockerfile, kafka-setup.sh, kafka-broker-jaas.config.example
   openbao/       config.hcl, config.prod.hcl, openbao-approle-setup.sh
   litellm/       config.yaml (hosted), config.agent-local.yaml (ollama)
-  sql/           create-extra-dbs.sql, init.sql, release-init.sql, grant-*.sql, kb-seed.sql
+  sql/           create-extra-dbs.sql, init.sql, grant-*.sql, kb-seed.sql
   neo4j/         Dockerfile (APOC)     redis/  haproxy/  filebeat/  monitoring/
 ```
 

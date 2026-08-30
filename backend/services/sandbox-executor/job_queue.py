@@ -1,5 +1,5 @@
 """In-memory job queue + store fronting /execute/python and /execute/sql
-(docs/1.md "Kế hoạch 1" mục i, "Hàng đợi (queue) trước API cho Agent gọi
+(backend/services/sandbox-executor/ops/ "Kế hoạch 1" mục i, "Hàng đợi (queue) trước API cho Agent gọi
 vào").
 
 Before this module existed, both endpoints were called directly and
@@ -67,7 +67,7 @@ class Job:
     error: str | None = None
     created_at: float = dataclasses.field(default_factory=time.monotonic)
     finished_at: float | None = None
-    # docs/1.md Kế hoạch 1 mục h: incremental (stream, text) chunks
+    # backend/services/sandbox-executor/ops/ Kế hoạch 1 mục h: incremental (stream, text) chunks
     # appended as the executor produces them — e.g. docker_runner.py's
     # on_output callback, invoked per stdout/stderr chunk while the
     # container exec is still running, not just once at the end. Appended
@@ -169,7 +169,7 @@ class JobQueue:
         return self._payloads.get(job_id, {})
 
     def list_jobs(self) -> list[Job]:
-        """Snapshot for an ops dashboard (docs/1.md mục h — "vận hành nhìn
+        """Snapshot for an ops dashboard (backend/services/sandbox-executor/ops/ mục h — "vận hành nhìn
         thấy job đang chạy gì") — most-recently-created first. Same
         no-lock reasoning as get()/wait_for_change(): everything here runs
         on the event loop thread, dict/list reads are safe without one."""

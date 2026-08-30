@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# docs/1.md "Kế hoạch 1" mục g — install gVisor (runsc) and register it as
+# backend/services/sandbox-executor/ops/ "Kế hoạch 1" mục g — install gVisor (runsc) and register it as
 # a Docker runtime, so pool.py can be pointed at it via SANDBOX_RUNTIME.
 #
 # NOT run automatically by anything in this repo, and intentionally not
@@ -17,7 +17,7 @@
 #
 # This script only installs + registers the runtime. It does NOT set
 # SANDBOX_RUNTIME=runsc for you, and you should not set it until you've
-# done both remaining steps docs/1.md mục g calls out explicitly:
+# done both remaining steps backend/services/sandbox-executor/ops/ mục g calls out explicitly:
 #   1. Syscall-compatibility pass — every ALLOWED_MODULES import
 #      (pandas/numpy/plotly/matplotlib, security_visitor.py) must work
 #      under runsc, especially their BLAS/native-extension paths.
@@ -67,7 +67,7 @@ runsc installed and registered. Restart the Docker daemon to pick it up:
   docker compose -f deploy/docker/docker-compose.app.yml restart sandbox-dockerd
 
 Before setting SANDBOX_RUNTIME=runsc on sandbox-executor, run the two
-remaining steps docs/1.md mục g requires (see this script's header):
+remaining steps backend/services/sandbox-executor/ops/ mục g requires (see this script's header):
 
   # 1) syscall-compatibility pass — every ALLOWED_MODULES import must work
   docker build -t sandbox-runner:latest backend/services/sandbox-executor/sandbox_runner/

@@ -44,7 +44,7 @@ async def submit_and_poll(
     """
     resp = await http.post(f"{SANDBOX_EXECUTOR_URL}{path}", json=body)
     if resp.status_code == 503:
-        # Queue was already full (docs/1.md mục i backpressure) — rejected
+        # Queue was already full (backend/services/sandbox-executor/ops/ mục i backpressure) — rejected
         # before a job_id was even minted, nothing to poll.
         data: dict[str, Any] = resp.json()
         data["_http_status"] = 503

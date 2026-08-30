@@ -4,7 +4,7 @@ direct access from workflow-runtime). Exposes the endpoints that
 workflow-runtime's execute_python / execute_sql tool handlers call over
 HTTP; never reachable from outside the docker-compose network.
 
-docs/1.md "Kế hoạch 1" mục i: POST /execute/python and /execute/sql no
+backend/services/sandbox-executor/ops/ "Kế hoạch 1" mục i: POST /execute/python and /execute/sql no
 longer run the request inline and hold the HTTP connection open for the
 full acquire+exec/query duration — they enqueue onto a JobQueue (see
 job_queue.py) and return 202 + {job_id} immediately. The caller polls
@@ -57,7 +57,7 @@ _DEFAULT_MEMORY_MB = int(os.environ.get("SANDBOX_MEMORY_MB", "256"))
 _DEFAULT_CPUS = float(os.environ.get("SANDBOX_CPUS", "0.5"))
 
 # Workers pull jobs at the rate the resource behind them can actually
-# serve (docs/1.md mục i) — sized to the container pool for python, and to
+# serve (backend/services/sandbox-executor/ops/ mục i) — sized to the container pool for python, and to
 # a separate, independently-tunable cap for sql (no container involved,
 # bottleneck is Snowflake connections/DDL rate instead).
 _PYTHON_QUEUE_WORKERS = int(os.environ.get("SANDBOX_PYTHON_QUEUE_WORKERS", os.environ.get("SANDBOX_POOL_SIZE", "3")))
@@ -78,7 +78,7 @@ sql_queue: JobQueue | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     global python_queue, sql_queue
-    # Spins up the warm container pool (docs/1.md Kế hoạch 1) once at
+    # Spins up the warm container pool (backend/services/sandbox-executor/ops/ Kế hoạch 1) once at
     # startup instead of paying container create+start cost per request.
     await asyncio.to_thread(get_pool)
     # Best-effort — see minio_store.py docstring; a MinIO outage must
@@ -303,7 +303,7 @@ async def _run_execute_shell(payload: dict[str, Any]) -> dict[str, Any]:
     job_id = payload["job_id"]
 
     # Audit copy of the submitted command, same lifecycle as execute_python's
-    # copy of the submitted code (docs/1.md mục h): uploaded before dispatch,
+    # copy of the submitted code (backend/services/sandbox-executor/ops/ mục h): uploaded before dispatch,
     # always removed once the request ends.
     minio_key = f"shell/{job_id}.sh"
     await asyncio.to_thread(minio_store.put_code, minio_key, command)
@@ -346,7 +346,7 @@ async def _run_execute_python(payload: dict[str, Any]) -> dict[str, Any]:
     except SyntaxError as e:
         return {"success": False, "error": f"syntax error: {e}"}
 
-    # docs/1.md mục h: audit copy of the submitted code, uploaded before
+    # backend/services/sandbox-executor/ops/ mục h: audit copy of the submitted code, uploaded before
     # dispatch and always removed once the request ends (finally below),
     # kept/kept-deleted regardless of success/error/timeout — same "always
     # runs" branch as the container's own kill+wipe (mục c).
@@ -373,7 +373,7 @@ async def _run_execute_python(payload: dict[str, Any]) -> dict[str, Any]:
     # SandboxCircuitOpenError is deliberately NOT caught here — it
     # propagates to JobQueue's worker loop, which maps it to
     # JobStatus.REJECTED; the GET endpoint below turns that into an actual
-    # 503 (docs/1.md mục e: "TỪ CHỐI NGAY (503)").
+    # 503 (backend/services/sandbox-executor/ops/ mục e: "TỪ CHỐI NGAY (503)").
     finally:
         await asyncio.to_thread(minio_store.delete_code, minio_key)
 
@@ -474,7 +474,7 @@ async def health() -> dict[str, str]:
 
 
 def _job_summary(job: Job, kind: str) -> dict[str, Any]:
-    """Lightweight view for the ops dashboard's job list (docs/1.md mục
+    """Lightweight view for the ops dashboard's job list (backend/services/sandbox-executor/ops/ mục
     h) — never the raw monotonic timestamps (time.monotonic() has no
     fixed epoch, so it means nothing to a human reading it directly),
     only ages/durations derived from them, and never `result`/
@@ -496,7 +496,7 @@ def _job_summary(job: Job, kind: str) -> dict[str, Any]:
 
 @app.get("/status")
 async def get_status() -> dict[str, Any]:
-    """Ops dashboard endpoint (docs/1.md mục h) — pool health (idle/busy/
+    """Ops dashboard endpoint (backend/services/sandbox-executor/ops/ mục h) — pool health (idle/busy/
     circuit breaker state) plus a snapshot of recent jobs in both queues.
     Not on the request path; polled periodically by a dashboard, not by
     sandbox execution itself."""
@@ -557,7 +557,7 @@ def _sse_line(event: str, payload: dict[str, Any]) -> str:
 
 
 async def _sse_events(queue: JobQueue, job_id: str) -> AsyncIterator[str]:
-    """docs/1.md mục h: "stream trạng thái/stdout-stderr của lần exec
+    """backend/services/sandbox-executor/ops/ mục h: "stream trạng thái/stdout-stderr của lần exec
     đang chạy" — status transitions (queued -> running -> done/rejected/
     error) AND stdout/stderr chunks as the container produces them, not
     only the final polled result. Real incremental output for

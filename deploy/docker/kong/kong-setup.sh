@@ -152,7 +152,7 @@ curl -sf -X PUT "$KONG_ADMIN/services/workflow-runtime/routes/runtime-route" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "runtime-route",
-    "paths": ["/api/conversations", "/api/traces", "/api/nodes", "/api/llm-providers", "/api/kb-connections", "/api/system-prompts", "/api/catalog", "/api/sandbox", "/api/runtime-config", "/api/db-connector", "/api/reviews", "/api/platform", "/api/billing", "/api/orchestrate"],
+    "paths": ["/api/conversations", "/api/traces", "/api/nodes", "/api/llm-providers", "/api/kb-connections", "/api/system-prompts", "/api/catalog", "/api/sandbox", "/api/runtime-config", "/api/db-connector", "/api/reviews", "/api/platform", "/api/billing", "/api/orchestrate", "/api/storage"],
     "strip_path": false,
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
@@ -224,36 +224,9 @@ curl -sf -X PUT "$KONG_ADMIN/services/release-worker/routes/release-route" \
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
 
-# (3d used to create an `orchestrator` service + route here. The orchestrator
-# now lives inside workflow-runtime — /api/orchestrate is on runtime-route above.)
-
-# ── 3d-2. Create minio-service service + route ─────────────────────────
-# Object storage and the per-tenant audit archives. Unlike flow-builder, this
-# one had no Kong service at all — it was reachable only by its published host
-# port 8400, with no authentication: the archive GET read any tenant's exported
-# audit log and the PUT replaced it.
-echo "📡 Creating minio-service service..."
-curl -sf -X PUT "$KONG_ADMIN/services/minio-service" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "minio-service",
-    "host": "minio-service",
-    "port": 8400,
-    "protocol": "http",
-    "connect_timeout": 5000,
-    "read_timeout": 120000
-  }' | json_field name | xargs -I{} echo "  → service: {}"
-
-echo "🛣️  Creating minio-service route (object storage + audit archives)..."
-curl -sf -X PUT "$KONG_ADMIN/services/minio-service/routes/storage-route" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "storage-route",
-    "paths": ["/api/storage"],
-    "strip_path": false,
-    "methods": ["GET","HEAD","POST","PUT","PATCH","DELETE","OPTIONS"]
-  }' | json_field name | xargs -I{} echo "  → route: {}"
-
+# (3d used to create an `orchestrator` service + route here, and 3d-2 a
+# `minio-service` one. Both now live inside workflow-runtime — /api/orchestrate
+# and /api/storage are on runtime-route above.)
 
 # ── 3e. Create kb-backend service + route ──────────────────────────────
 # kb-backend is a compose service on the shared network, so Kong reaches it by
@@ -367,11 +340,6 @@ else
   echo "🔐 Enabling aeroflow-jwks plugin on flow-builder..."
   upsert_plugin "$KONG_ADMIN/services/flow-builder/plugins" \
     "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"flow-builder\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
-    "aeroflow-jwks"
-
-  echo "🔐 Enabling aeroflow-jwks plugin on minio-service..."
-  upsert_plugin "$KONG_ADMIN/services/minio-service/plugins" \
-    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"minio-service\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
     "aeroflow-jwks"
 
   # ── 4b. aeroflow-jwks on release-worker ────────────────────────────────

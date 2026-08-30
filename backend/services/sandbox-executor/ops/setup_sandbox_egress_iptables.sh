@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# docs/1.md "Kế hoạch 1" mục a — DOCKER-USER iptables rules for the
+# backend/services/sandbox-executor/ops/ "Kế hoạch 1" mục a — DOCKER-USER iptables rules for the
 # `sandbox-egress` bridge network that pool.py creates (subnet
 # 172.28.0.0/24 by default, SANDBOX_EGRESS_SUBNET) when
 # SANDBOX_EGRESS_ENABLED=true.
@@ -42,7 +42,7 @@ MARKER="sandbox-egress"
 # Snowflake PrivateLink CIDR(s) for the warehouse(s) this pool is allowed
 # to reach — comma-separated, e.g. "10.10.20.0/28,10.10.21.0/28". Must be
 # the tenant's actual PrivateLink CIDR (each warehouse has one fixed
-# internal VPC IP, per docs/1.md mục a) — never a public Snowflake
+# internal VPC IP, per backend/services/sandbox-executor/ops/ mục a) — never a public Snowflake
 # endpoint range, never a wildcard hostname. No default: empty means
 # nothing is allowed through, i.e. still deny-all.
 SNOWFLAKE_PRIVATELINK_CIDRS="${SNOWFLAKE_PRIVATELINK_CIDRS:-}"

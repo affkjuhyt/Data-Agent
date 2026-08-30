@@ -55,7 +55,7 @@ jobs:
             backend/libs/basemodel backend/libs/database_connector backend/libs/shared \
             backend/services/kb_backend backend/services/workflow-runtime \
             backend/services/auth-api backend/services/flow-builder backend/services/model-service \
-            backend/services/minio-service backend/services/release-worker backend/services/sandbox-executor \
+            backend/services/release-worker backend/services/sandbox-executor \
             backend/services/kb-ingestion-worker backend/services/platform-workers; do
             echo "== mypy strict: $target =="
             mypy --disallow-untyped-defs --disallow-any-generics \

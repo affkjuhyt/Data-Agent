@@ -1,11 +1,11 @@
 """
 Release Worker — AeroFlow Platform
 ===================================
-FastAPI API + Celery worker xử lý pipeline steps:
+FastAPI API + Kafka consumer thread xử lý pipeline steps:
   1. Nhận trigger event từ Kafka (release.pipeline.triggered)
   2. Build artifact → push MinIO
   3. Security Scan gate (Trivy + Bandit + pip-audit)
-  4. Ghi kết quả vào MongoDB (Package manifest)
+  4. Ghi Package manifest vào PostgreSQL (release_packages)
   5. Approval flow → promote lên Staging/Production
   6. Rollback với compensating transaction pattern
 
@@ -18,13 +18,13 @@ import subprocess
 import threading
 import time
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Optional
 
 import psycopg2
 import structlog
-from celery import Celery
 import ipaddress
 
 from fastapi import FastAPI, HTTPException, Header, Depends, Request, Response
@@ -52,9 +52,6 @@ KAFKA_PASSWORD  = _require("KAFKA_PASSWORD")
 MINIO_ENDPOINT  = os.getenv("MINIO_ENDPOINT",  "http://minio:9000")
 MINIO_ACCESS_KEY = _require("MINIO_ACCESS_KEY")
 MINIO_SECRET_KEY = _require("MINIO_SECRET_KEY")
-CELERY_BROKER   = _require("CELERY_BROKER")
-MONGO_URI       = os.getenv("MONGO_URI", "mongodb://mongo:27017")
-MONGO_DB        = os.getenv("MONGO_DB",  "aeroflow")
 
 KAFKA_CONFIG = {
     "security_protocol": os.getenv("KAFKA_SECURITY_PROTOCOL", "SASL_PLAINTEXT"),
@@ -89,15 +86,22 @@ async def enforce_internal_origin(
         return Response(status_code=403, content="Forbidden: external access not permitted")
     return await call_next(request)
 
-# ── Celery ────────────────────────────────────────────────────────────
-celery_app = Celery("release-worker", broker=CELERY_BROKER)
-celery_app.conf.task_serializer = "json"
-celery_app.conf.result_serializer = "json"
-
 # ── PostgreSQL helper ─────────────────────────────────────────────────
 
-def get_pg_conn() -> Any:
-    return psycopg2.connect(PG_DSN)
+@contextmanager
+def get_pg_conn() -> Iterator[Any]:
+    """Open a connection for one unit of work and always close it.
+
+    ``with conn:`` keeps psycopg2's transaction semantics (commit on success,
+    rollback on exception) but does NOT close the connection — so every call
+    site leaked one until GC. The ``finally`` closes it deterministically.
+    """
+    conn = psycopg2.connect(PG_DSN)
+    try:
+        with conn:
+            yield conn
+    finally:
+        conn.close()
 
 
 def update_pipeline_status(pipeline_id: str, status: str, error: Optional[str] = None) -> None:
@@ -165,12 +169,12 @@ def produce_event(topic: str, event: dict[str, Any]) -> None:
         log.error("kafka.produce.failed", topic=topic, error=str(e))
 
 # ═══════════════════════════════════════════════════════════════════════
-# CELERY TASKS
+# PIPELINE TASKS
 # ═══════════════════════════════════════════════════════════════════════
 
 def _run_pipeline_impl(pipeline_event: dict[str, Any]) -> dict[str, Any]:
     """
-    Core pipeline implementation — gọi được từ cả Celery task lẫn thread trực tiếp.
+    Core pipeline implementation — chạy trong thread từ Kafka consumer.
     1. Create pipeline record
     2. Build artifact
     3. Security scan gate
@@ -305,15 +309,6 @@ def _run_pipeline_impl(pipeline_event: dict[str, Any]) -> dict[str, Any]:
                 "reason": str(exc),
             })
             return {"status": "FAILED", "error": str(exc)}
-
-
-@celery_app.task(bind=True, max_retries=3)
-def execute_pipeline(self: Any, pipeline_event: dict[str, Any]) -> dict[str, Any]:
-    """Celery task wrapper — delegates to _run_pipeline_impl."""
-    try:
-        return _run_pipeline_impl(pipeline_event)
-    except Exception as exc:
-        raise self.retry(exc=exc, countdown=30)
 
 
 def run_security_scan(pipeline_id: str, artifact_path: str) -> dict[str, Any]:
@@ -462,12 +457,6 @@ def _run_rollback_impl(rollback_event: dict[str, Any]) -> dict[str, Any]:
     return _execute_rollback_core(rollback_event)
 
 
-@celery_app.task
-def execute_rollback(rollback_event: dict[str, Any]) -> dict[str, Any]:
-    """Celery task wrapper cho rollback."""
-    return _execute_rollback_core(rollback_event)
-
-
 def _execute_rollback_core(rollback_event: dict[str, Any]) -> dict[str, Any]:
     """
     Rollback với compensating transaction pattern.
@@ -599,6 +588,8 @@ def _step1_update_release_pointer(environment: str, version: str) -> None:
     log.info("rollback.step1.done", environment=environment, version=version)
 
 
+# NOTE: kong-setup.sh never creates `aeroflow-{env}` services, so this PATCH
+# 404s and the step is skipped (logged as rollback.step2.skipped) in every env.
 def _step2_reroute_kong(environment: str, version: str) -> None:
     """Step 2: Reroute Kong upstream to rolled-back version.
     Updates the service URL so traffic is actually redirected.
@@ -670,12 +661,12 @@ def _step3_redeploy_snapshot(environment: str, version: str) -> None:
              environment=environment, version=version, snapshot_key=snapshot_key)
 
 # ═══════════════════════════════════════════════════════════════════════
-# DRIFT DETECTION TASK (Celery Beat)
+# DRIFT DETECTION
 # ═══════════════════════════════════════════════════════════════════════
 
 def _detect_config_drift_core() -> dict[str, Any]:
     """
-    Core drift detection logic — gọi được từ cả Celery beat lẫn HTTP API endpoint.
+    Core drift detection logic — gọi từ HTTP endpoint POST /api/release/drift/detect.
     So sánh production vs staging config; nếu có drift → ghi DB + produce Kafka event.
     Trả về dict với status, drift_keys, severity.
     """
@@ -734,19 +725,6 @@ def _detect_config_drift_core() -> dict[str, Any]:
             }
 
 
-@celery_app.task
-def detect_config_drift() -> Optional[dict[str, Any]]:
-    """
-    Celery beat task — wrapper quanh _detect_config_drift_core().
-    Schedule: chạy định kỳ để block promotion khi phát hiện drift.
-    """
-    try:
-        return _detect_config_drift_core()
-    except Exception as e:
-        log.error("drift.check.error", error=str(e))
-        return None
-
-
 def _get_env_config(environment: str) -> dict[str, Any]:
     with get_pg_conn() as conn:
         with conn.cursor() as cur:
@@ -764,9 +742,8 @@ def _get_env_config(environment: str) -> dict[str, Any]:
 def start_kafka_consumer() -> None:
     """
     Consumer đọc từ release.pipeline.triggered và release.rollback.initiated.
-    Chạy task trực tiếp trong thread (không dùng Celery .delay() để tránh cần
-    worker process riêng trong single-container dev setup).
-    Production: dùng execute_pipeline.delay(event) với dedicated Celery worker.
+    Mỗi event chạy trực tiếp trong một daemon thread của process này
+    (single-container setup — không có worker process riêng).
     """
     consumer = KafkaConsumer(
         "release.pipeline.triggered",
@@ -805,8 +782,8 @@ def start_kafka_consumer() -> None:
             )
             t.start()
         # Commit after the thread is started — not after it completes.
-        # This is at-most-once for the thread but prevents the consumer from
-        # stalling; the Celery path (.delay) provides the durable retry guarantee.
+        # At-most-once: a crash mid-thread loses the event (no durable retry),
+        # but the consumer never stalls on a slow pipeline.
         consumer.commit()
 
 
@@ -860,7 +837,6 @@ __all__ = [
     "Optional",
     "psycopg2",
     "structlog",
-    "Celery",
     "ipaddress",
     "FastAPI",
     "HTTPException",
@@ -883,13 +859,9 @@ __all__ = [
     "MINIO_ENDPOINT",
     "MINIO_ACCESS_KEY",
     "MINIO_SECRET_KEY",
-    "CELERY_BROKER",
-    "MONGO_URI",
-    "MONGO_DB",
     "KAFKA_CONFIG",
     "_ALLOWED_NETWORKS",
     "enforce_internal_origin",
-    "celery_app",
     "get_pg_conn",
     "update_pipeline_status",
     "record_pipeline_step",
@@ -899,7 +871,6 @@ __all__ = [
     "get_producer",
     "produce_event",
     "_run_pipeline_impl",
-    "execute_pipeline",
     "run_security_scan",
     "_run_trivy",
     "_run_bandit",
@@ -907,13 +878,11 @@ __all__ = [
     "_deploy_to_env",
     "_run_approval_deploy",
     "_run_rollback_impl",
-    "execute_rollback",
     "_execute_rollback_core",
     "_step1_update_release_pointer",
     "_step2_reroute_kong",
     "_step3_redeploy_snapshot",
     "_detect_config_drift_core",
-    "detect_config_drift",
     "_get_env_config",
     "start_kafka_consumer",
     "_safe_json",
