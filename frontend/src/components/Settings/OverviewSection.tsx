@@ -186,7 +186,7 @@ export const OverviewSection = () => {
                     <span className="text-sm text-[#5F5F5F] font-bold mb-0.5">/ 100</span>
                   </div>
                   <div className="space-y-2">
-                    {compliance.score.breakdown.map(b => (
+                    {(compliance.score.breakdown ?? []).map(b => (
                       <div key={b.label}>
                         <div className="flex justify-between text-[10px] font-bold text-[#3F3F3F] uppercase tracking-wide mb-1">
                           <span>{b.label}</span><span>{b.val}%</span>
@@ -205,11 +205,11 @@ export const OverviewSection = () => {
             <Card title="AI provider health" subtitle="GET /api/llm-providers/health">
               {llm.loading ? <LoadingState /> : llm.errors.health ? (
                 <ErrorState message={llm.errors.health} onRetry={llm.reload} />
-              ) : !llm.healthAvailable || llm.health.length === 0 ? (
+              ) : !llm.healthAvailable || (llm.health ?? []).length === 0 ? (
                 <EmptyState icon={Cpu} title="Chưa có health check" description="Runtime chưa cấu hình nguồn health cho LLM." />
               ) : (
                 <ul className="space-y-2">
-                  {llm.health.map(h => (
+                  {(llm.health ?? []).map(h => (
                     <li key={h.model_name} className="flex items-center justify-between gap-3">
                       <span className="text-xs font-semibold text-[#111111] truncate">{h.model_name}</span>
                       <div className="flex items-center gap-2 shrink-0">

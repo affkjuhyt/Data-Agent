@@ -4,7 +4,7 @@ import { useAppState } from '../AppStateContext';
 import { useAuth } from '../lib/AuthProvider';
 import { NAV_ITEMS, ROLES, ENVIRONMENTS, MODULE_SUB_ITEMS, SubNavItem } from '../constants';
 import {
-  Search, Bell, LogOut, Cpu, ChevronDown, Terminal,
+  Search, LogOut, Cpu, ChevronDown, Terminal,
   Building2, Menu, X, Sparkles, ArrowRight,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -440,11 +440,6 @@ const TopBar = ({
             </button>
           ))}
         </div>
-
-        <button aria-label="Notifications" className="relative w-9 h-9 flex items-center justify-center text-[#3F3F3F] hover:text-[#111111] hover:bg-[#F8EBC4] rounded-lg transition-colors border border-transparent hover:border-[#D6C79F]">
-          <Bell className="w-4 h-4" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#9F1D1D] border border-white rounded-full" />
-        </button>
 
         <div className="flex items-center gap-2 pl-2 border-l border-[#D6C79F]">
           <div className="hidden sm:block text-right">

@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { apiGet, apiMutate } from '../../../lib/apiClient';
+import { usePlatformMetrics, usePlatformServices } from '../../../lib/platformApi';
+import { useBillingSpend } from '../../../lib/useBillingSpend';
 
 interface ApiAgent {
   id: string;
@@ -115,12 +117,22 @@ export const AgentRegistryOverview: React.FC<OverviewProps> = ({
 
   const activeCount = apiAgents.filter(a => a.published_version_id).length;
 
+  // Real sources: GET /api/platform/metrics (7d error rate), /api/platform/services (health), /api/billing/spend (24h).
+  const metrics = usePlatformMetrics(7);
+  const services = usePlatformServices();
+  const spend = useBillingSpend(1);
+  const svcItems = services.data?.items ?? [];
+  const svcOk = svcItems.filter(s => s.status === 'ok').length;
+  const errorRate = metrics.data ? `${(metrics.data.error_rate * 100).toFixed(1)}%` : '—';
+  const health = services.loading ? '—' : svcItems.length ? `${svcOk}/${svcItems.length}` : '—';
+  const dailySpend = spend.loading ? '—' : spend.spend?.available ? `$${spend.spend.total.toFixed(2)}` : '—';
+
   const stats = [
-    { label: 'Total Agents',      value: loading ? '—' : apiAgents.length, icon: Bot,        color: '#B88719' },
-    { label: 'Active Runtimes',   value: loading ? '—' : activeCount,       icon: Activity,   color: '#10B981' },
-    { label: 'Critical Failures', value: 0,                                  icon: ShieldAlert, color: '#DC2626' },
-    { label: 'Platform Health',   value: '94%',                              icon: Zap,        color: '#D9A040' },
-    { label: 'Daily Accrual',     value: '$—',                               icon: BarChart3,  color: '#8B5CF6' },
+    { label: 'Total Agents',      value: loading ? '—' : apiAgents.length, icon: Bot,         color: '#B88719' },
+    { label: 'Active Runtimes',   value: loading ? '—' : activeCount,       icon: Activity,    color: '#10B981' },
+    { label: 'Error Rate (7d)',   value: errorRate,                          icon: ShieldAlert, color: '#DC2626' },
+    { label: 'Services OK',       value: health,                             icon: Zap,         color: '#D9A040' },
+    { label: 'Spend (24h)',       value: dailySpend,                         icon: BarChart3,   color: '#8B5CF6' },
   ];
 
   return (

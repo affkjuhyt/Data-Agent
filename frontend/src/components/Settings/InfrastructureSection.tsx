@@ -30,7 +30,7 @@ export const InfrastructureSection = () => {
   const degraded = items.filter(s => s.status === 'degraded').length;
   const overall = down ? 'CRITICAL' : degraded ? 'DEGRADED' : services.error ? 'UNKNOWN' : 'HEALTHY';
 
-  const jobs: SandboxJobSummary[] = sandbox.data ? [...sandbox.data.jobs.python, ...sandbox.data.jobs.sql] : [];
+  const jobs: SandboxJobSummary[] = [...(sandbox.data?.jobs?.python ?? []), ...(sandbox.data?.jobs?.sql ?? [])];
 
   return (
     <div className="space-y-8 pb-10">

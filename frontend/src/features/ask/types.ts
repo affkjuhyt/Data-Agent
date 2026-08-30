@@ -1,6 +1,6 @@
 /**
  * Wire types for one answer from the orchestrator SSE stream
- * (backend/services/orchestrator/routers/stream.py) and the frames the
+ * (backend/services/workflow-runtime/orchestrator/routers/stream.py) and the frames the
  * workflow-runtime forwards through it (runtime_services/conversation_runner.py).
  *
  * Nothing here is invented client-side: every field maps to something the

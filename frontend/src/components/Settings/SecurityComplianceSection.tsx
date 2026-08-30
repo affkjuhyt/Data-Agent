@@ -124,7 +124,7 @@ export const SecurityComplianceSection = () => {
               </div>
 
               <div className="space-y-4">
-                {score.policies.map((policy) => {
+                {(score.policies ?? []).map((policy) => {
                   const key = POLICY_TOGGLE[policy.id];
                   const on = key ? Boolean(settings[key]) : false;
                   return (
@@ -256,7 +256,7 @@ export const SecurityComplianceSection = () => {
                 <span className="text-[#5F5F5F] font-bold mb-1">/ 100</span>
               </div>
               <div className="space-y-4">
-                {score.breakdown.map(m => (
+                {(score.breakdown ?? []).map(m => (
                   <div key={m.label} className="space-y-1.5">
                     <div className="flex justify-between text-[10px] font-black text-[#5F5F5F] uppercase tracking-widest">
                       <span>{m.label}</span><span>{m.val}%</span>

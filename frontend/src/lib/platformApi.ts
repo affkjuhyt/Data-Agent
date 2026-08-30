@@ -220,16 +220,16 @@ export function useApi<T>(path: string | null, params?: Params): ApiState<T> {
 }
 
 /* ─── Typed hooks ────────────────────────────────────────── */
-export interface ConversationQuery {
+export type ConversationQuery = {
   limit?: number; offset?: number; status?: string; q?: string; agent_id?: string;
-}
+};
 export const useConversations = (query: ConversationQuery) =>
   useApi<ConversationsResponse>('/api/conversations', query);
 
 export const useConversationMessages = (conversationId: string | null) =>
   useApi<MessagesResponse>(conversationId ? `/api/conversations/${conversationId}/messages` : null);
 
-export interface TraceQuery { limit?: number; offset?: number; status?: string; q?: string }
+export type TraceQuery = { limit?: number; offset?: number; status?: string; q?: string };
 export const useTraces = (query: TraceQuery) => useApi<TracesResponse>('/api/traces', query);
 
 export const usePlatformMetrics = (days: number) => useApi<PlatformMetrics>('/api/platform/metrics', { days });
