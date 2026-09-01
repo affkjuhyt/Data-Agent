@@ -2,13 +2,13 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppState } from '../AppStateContext';
 import { useAuth } from '../lib/AuthProvider';
-import { NAV_ITEMS, ROLES, ENVIRONMENTS, MODULE_SUB_ITEMS, SubNavItem } from '../constants';
+import { NAV_ITEMS, MODULE_SUB_ITEMS, SubNavItem } from '../constants';
 import {
   Search, LogOut, Cpu, ChevronDown, Terminal,
   Building2, Menu, X, Sparkles, ArrowRight,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { Role, Environment } from '../types';
+import { Role } from '../types';
 
 /* ─── Command Palette ─────────────────────────────────────────────── */
 const PALETTE_GROUPS = [
@@ -355,7 +355,7 @@ const TopBar = ({
   onMenuClick: () => void;
   onSearchOpen: () => void;
 }) => {
-  const { role, setRole, tenant, setTenant, user, isExpertMode, setIsExpertMode } = useAppState();
+  const { role, user, isExpertMode, setIsExpertMode } = useAppState();
   const { logout } = useAuth();
 
   return (
@@ -377,24 +377,6 @@ const TopBar = ({
         </div>
 
         <TenantSwitcher />
-
-        <div className="flex gap-1 overflow-x-auto no-scrollbar">
-          {ENVIRONMENTS.map(env => (
-            <button
-              key={env.id}
-              onClick={() => setTenant({ environment: env.id as Environment })}
-              aria-pressed={tenant.environment === env.id}
-              className={cn(
-                'px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all border shrink-0',
-                tenant.environment === env.id
-                  ? 'bg-[#F3E2A7] border-[#B88719] text-[#111111]'
-                  : 'bg-white border-[#BFA66A] text-[#3F3F3F] hover:bg-[#FFF9E8] hover:text-[#111111]',
-              )}
-            >
-              {env.id}
-            </button>
-          ))}
-        </div>
       </div>
 
       <div className="flex items-center gap-2">
@@ -421,25 +403,6 @@ const TopBar = ({
           <Terminal className="w-3.5 h-3.5" />
           <span className="hidden xl:inline">Expert</span>
         </button>
-
-        <div className="hidden md:flex items-center gap-0.5 p-0.5 bg-[#F4E8C3] rounded-lg border border-[#BFA66A]">
-          {ROLES.map(r => (
-            <button
-              key={r.id}
-              onClick={() => setRole(r.id as Role)}
-              title={r.label}
-              aria-pressed={role === r.id}
-              className={cn(
-                'px-2 py-1 rounded-md text-[10px] font-bold transition-all',
-                role === r.id
-                  ? 'bg-white text-[#111111] shadow-sm border border-[#BFA66A]'
-                  : 'text-[#3F3F3F] hover:text-[#111111] border border-transparent',
-              )}
-            >
-              {r.id.replace('_', ' ').split(' ').map((w: string) => w[0]).join('')}
-            </button>
-          ))}
-        </div>
 
         <div className="flex items-center gap-2 pl-2 border-l border-[#D6C79F]">
           <div className="hidden sm:block text-right">

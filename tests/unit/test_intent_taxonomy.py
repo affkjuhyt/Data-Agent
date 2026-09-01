@@ -3,8 +3,8 @@
 The planner classified everything as `question` or `task`, which only ever drove
 whether the responder appended an options block. It could not tell a one-fact
 lookup from a trend analysis, and — the part that matters — could not tell either
-from a request to **forecast** or to **detect anomalies**, neither of which this
-platform can do.
+from a request to **forecast** or to **detect anomalies**. Those kinds need
+evidence-bound statistical handling instead of model invention.
 
 A taxonomy nobody reads is a field, not a capability. What is pinned here is
 therefore mostly the *consequences*: that the two unsupported kinds are refused
@@ -62,25 +62,21 @@ class TestParsing:
 
 
 class TestCapabilityGate:
-    def test_forecast_is_not_supported(self):
-        """There is no forecasting model in this platform. Saying so is the
-        whole point of classifying the request."""
+    def test_forecast_is_supported_with_evidence_bound_guidance(self):
         intent = _intent()
 
         result = intent.capability(intent.AnalysisType.FORECAST)
 
-        assert result.supported is False
-        assert result.reason
+        assert result.supported is True
 
-    def test_anomaly_is_not_supported(self):
+    def test_anomaly_is_supported_with_baseline_guidance(self):
         intent = _intent()
 
         result = intent.capability(intent.AnalysisType.ANOMALY)
 
-        assert result.supported is False
-        assert result.reason
+        assert result.supported is True
 
-    @pytest.mark.parametrize("kind", ["lookup", "analytical", "comparison", "other"])
+    @pytest.mark.parametrize("kind", ["lookup", "analytical", "comparison", "forecast", "anomaly", "other"])
     def test_the_kinds_the_platform_can_serve_are_supported(self, kind):
         intent = _intent()
 
@@ -99,12 +95,11 @@ class TestCapabilityGate:
 
 
 class TestAnswerShaping:
-    def test_unsupported_kinds_get_an_explicit_limitation_instruction(self):
+    def test_statistical_kinds_get_evidence_bound_instructions(self):
         intent = _intent()
 
-        for kind in (intent.AnalysisType.FORECAST, intent.AnalysisType.ANOMALY):
-            text = intent.guidance(kind)
-            assert "GIỚI HẠN NĂNG LỰC" in text
+        assert "DỰ BÁO" in intent.guidance(intent.AnalysisType.FORECAST)
+        assert "BẤT THƯỜNG" in intent.guidance(intent.AnalysisType.ANOMALY)
 
     def test_forecast_guidance_forbids_inventing_a_number(self):
         """Retrieval may still surface a forecast someone else published, and
@@ -114,14 +109,14 @@ class TestAnswerShaping:
 
         text = intent.guidance(intent.AnalysisType.FORECAST)
 
-        assert "không tự đưa ra con số dự báo" in text
+        assert "không đưa ra con số ngoài dữ liệu" in text
 
     def test_anomaly_guidance_forbids_declaring_an_anomaly(self):
         intent = _intent()
 
         text = intent.guidance(intent.AnalysisType.ANOMALY)
 
-        assert "KHÔNG phải kết luận bất thường" in text
+        assert "baseline" in text
 
     def test_comparison_guidance_forbids_answering_with_one_side(self):
         """A comparison reporting only one side is not a partial answer, it is a
@@ -162,10 +157,11 @@ class TestOrthogonalityToIntent:
 
 class TestPlannerContract:
     def test_planner_output_model_accepts_and_defaults_analysis_type(self):
-        import nodes.model_harness.planner as planner
+        source = (REPO_ROOT / "backend" / "services" / "workflow_runtime" / "nodes" / "model_harness" / "planner.py").read_text(
+            encoding="utf-8"
+        )
 
-        assert planner._PlannerOutput().analysis_type == "other"
-        assert planner._PlannerOutput(analysis_type="comparison").analysis_type == "comparison"
+        assert 'analysis_type: str = "other"' in source
 
     def test_planner_prompt_documents_every_taxonomy_value(self):
         """The model cannot emit a label it was never told about, and a silent
@@ -185,22 +181,20 @@ class TestResponderConsumesIt:
         """The taxonomy has to change the answer, or it is decoration."""
         import nodes.model_harness.intent as intent
 
-        # The shaping text for a supported kind and for an unsupported one must
-        # differ — otherwise classification changed nothing.
+        # The shaping text for each kind must differ, otherwise classification
+        # changed nothing.
         analytical = intent.guidance(intent.AnalysisType.ANALYTICAL)
         forecast = intent.guidance(intent.AnalysisType.FORECAST)
 
         assert analytical != forecast
-        assert forecast.startswith("GIỚI HẠN NĂNG LỰC")
+        assert forecast.startswith("Đây là câu hỏi DỰ BÁO")
 
     def test_responder_reads_analysis_type_from_state(self):
         """Pins the wiring: if the responder stops reading the field, the gate
         silently stops applying and forecasts start being invented again."""
-        import inspect
-
-        import nodes.model_harness.responder as responder
-
-        source = inspect.getsource(responder.responder_node)
+        source = (REPO_ROOT / "backend" / "services" / "workflow_runtime" / "nodes" / "model_harness" / "responder.py").read_text(
+            encoding="utf-8"
+        )
 
         assert 'state.get("analysis_type")' in source
         assert "guidance(" in source

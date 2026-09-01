@@ -15,7 +15,7 @@ function AllProviders({ children }: ProvidersProps) {
   return <>{children}</>;
 }
 
-export function renderWithProviders(
+function renderWithProviders(
   ui: ReactElement,
   options?: Omit<RenderOptions, "wrapper">,
 ) {

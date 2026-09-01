@@ -161,25 +161,11 @@ export default function AskDataPage() {
   const scopeLabel = scope === 'auto' ? 'Tự động — điều phối chọn agent' : agents.find(a => a.id === scope)?.label ?? scope;
 
   return (
-    <AnswerTheme mode="light" style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px - 4rem)', minHeight: 560 }}>
-      {/* header */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
-        <div>
-          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#B88719] font-mono mb-1">
-            <ShieldCheck size={13} /> Hỏi dữ liệu
-          </div>
-          <h2 className="font-display text-xl font-bold text-[#111111] m-0">Hỏi bằng tiếng Việt, nhận con số kèm bằng chứng</h2>
-          <p className="text-[12.5px] text-[#5F5F5F] mt-1 m-0">Mỗi con số truy được về chỉ số đã duyệt, câu SQL đã chạy, số dòng và độ tươi của dữ liệu.</p>
-        </div>
-        <button type="button" className="ab-btn" onClick={() => setPanelOpen(v => !v)} aria-pressed={panelOpen}>
-          {panelOpen ? <PanelRightClose size={12} /> : <PanelRightOpen size={12} />} {panelOpen ? 'Ẩn bằng chứng' : 'Hiện bằng chứng'}
-        </button>
-      </div>
-
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12 }}>
+    <AnswerTheme mode="light" className="ask-workspace">
+      <div className="ask-shell">
         {/* left: scope · saved · history */}
-        <aside className="hidden xl:flex" style={{ width: 236, flexShrink: 0, flexDirection: 'column', gap: 12, overflowY: 'auto' }}>
-          <section className="content-card" style={{ padding: 12 }}>
+        <aside className="ask-sidebar">
+          <section className="ask-side-section">
             <div className="text-[10px] font-bold uppercase tracking-widest text-[#5F5F5F] mb-2">Phạm vi</div>
             <div className="space-y-0.5">
               <button type="button" onClick={() => setScope('auto')} className={cn('subnav-item', scope === 'auto' && 'active')}>
@@ -197,7 +183,7 @@ export default function AskDataPage() {
             </div>
           </section>
 
-          <section className="content-card" style={{ padding: 12 }}>
+          <section className="ask-side-section">
             <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#5F5F5F] mb-2"><Bookmark size={11} /> Câu hỏi đã lưu</div>
             {saved.length === 0 ? (
               <div className="text-[11px] text-[#5F5F5F] leading-relaxed">Bấm “Lưu câu hỏi” dưới một câu trả lời để ghim lại đây.</div>
@@ -215,7 +201,7 @@ export default function AskDataPage() {
             )}
           </section>
 
-          <section className="content-card" style={{ padding: 12 }}>
+          <section className="ask-side-section">
             <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#5F5F5F] mb-2"><History size={11} /> Lịch sử</div>
             {history.length === 0 ? (
               <div className="text-[11px] text-[#5F5F5F]">Chưa có câu hỏi nào.</div>
@@ -235,25 +221,43 @@ export default function AskDataPage() {
         </aside>
 
         {/* middle: conversation */}
-        <section className="content-card" style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden' }}>
-          <div className="flex items-center gap-2 px-4 py-2 border-b border-[#BFA66A] text-[11px] text-[#5F5F5F] shrink-0">
-            {scope === 'auto' ? <Brain size={12} className="text-[#B88719]" /> : <Bot size={12} className="text-[#B88719]" />}
-            <span className="truncate">{scopeLabel}</span>
-            {sending && (
-              <button type="button" className="ab-btn ml-auto" onClick={stop}><Square size={10} /> Dừng</button>
-            )}
+        <section className="ask-chat-card">
+          <div className="ask-chat-header">
+            <div className="ask-chat-title">
+              <div className="ask-chat-icon"><ShieldCheck size={16} /></div>
+              <div className="min-w-0">
+                <h2>Hỏi dữ liệu</h2>
+                <p>{scopeLabel}</p>
+              </div>
+            </div>
+            <div className="ask-chat-actions">
+              <button type="button" className="ab-btn" onClick={() => setPanelOpen(v => !v)} aria-pressed={panelOpen}>
+                {panelOpen ? <PanelRightClose size={12} /> : <PanelRightOpen size={12} />} {panelOpen ? 'Ẩn bằng chứng' : 'Hiện bằng chứng'}
+              </button>
+              {sending && (
+                <button type="button" className="ab-btn" onClick={stop}><Square size={10} /> Dừng</button>
+              )}
+            </div>
+          </div>
+          <div className="ask-scope-row xl:hidden">
+            <button type="button" onClick={() => setScope('auto')} className={cn('ask-scope-pill', scope === 'auto' && 'active')}>
+              <Brain size={12} /> Tự động
+            </button>
+            {agents.map(a => (
+              <button key={a.id} type="button" onClick={() => setScope(a.id)} className={cn('ask-scope-pill', scope === a.id && 'active')} title={a.description}>
+                <Bot size={12} /> {a.label}
+              </button>
+            ))}
           </div>
 
-          <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="ask-scroll">
             {messages.length === 0 && (
-              <div style={{ margin: 'auto', maxWidth: 520, textAlign: 'center' }}>
-                <div className="w-12 h-12 rounded-xl bg-[#F4E8C3] border border-[#BFA66A] flex items-center justify-center mx-auto mb-3">
-                  <ShieldCheck className="w-6 h-6 text-[#B88719]" />
+              <div className="ask-empty">
+                <div className="ask-empty-icon">
+                  <ShieldCheck className="w-6 h-6" />
                 </div>
-                <h3 className="font-display text-[16px] font-bold text-[#111111] m-0">Hỏi về dữ liệu của bạn</h3>
-                <p className="text-[12.5px] text-[#5F5F5F] mt-1 mb-4 leading-relaxed">
-                  Nếu câu hỏi thiếu kỳ hoặc chỉ số nhập nhằng, hệ thống sẽ hỏi lại trước khi chạy — không đoán, không bịa số.
-                </p>
+                <h3>Bắt đầu bằng một câu hỏi rõ ràng</h3>
+                <p>Hệ thống sẽ hỏi lại khi thiếu kỳ, chỉ số hoặc phạm vi dữ liệu trước khi chạy truy vấn.</p>
                 <div className="flex flex-wrap justify-center gap-2">
                   {EXAMPLES.map(e => (
                     <button key={e} type="button" className="ab-chip-btn" onClick={() => setInput(e)}>{e}</button>
@@ -264,27 +268,18 @@ export default function AskDataPage() {
 
             <AnimatePresence initial={false}>
               {messages.map(msg => (
-                <motion.div key={msg.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} style={{ display: 'flex', gap: 10, flexDirection: msg.role === 'user' ? 'row-reverse' : 'row' }}>
-                  <div style={{
-                    width: 28, height: 28, borderRadius: '50%', flexShrink: 0, marginTop: 2,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: msg.role === 'user' ? '#F3E2A7' : '#111111',
-                  }}>
-                    {msg.role === 'user' ? <User size={13} style={{ color: '#8A5A00' }} /> : <Bot size={13} style={{ color: '#D9B86C' }} />}
+                <motion.div key={msg.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className={cn('ask-message-row', msg.role === 'user' && 'user')}>
+                  <div className={cn('ask-avatar', msg.role === 'user' ? 'user' : 'assistant')}>
+                    {msg.role === 'user' ? <User size={13} /> : <Bot size={13} />}
                   </div>
                   {msg.role === 'user' ? (
-                    <div style={{ maxWidth: '72%', borderRadius: 12, borderTopRightRadius: 4, padding: '9px 13px', fontSize: 13, lineHeight: 1.5, background: '#FFF9E8', border: '1px solid #EBD07C', color: '#111111' }}>
+                    <div className="ask-user-bubble">
                       {msg.content}
                     </div>
                   ) : (
                     <div
                       onClick={() => setSelectedId(msg.id)}
-                      style={{
-                        flex: 1, minWidth: 0, borderRadius: 12, borderTopLeftRadius: 4, padding: '10px 14px',
-                        background: '#FFFFFF', border: `1px solid ${selected?.id === msg.id && panelOpen ? '#B88719' : '#D6C79F'}`,
-                        boxShadow: selected?.id === msg.id && panelOpen ? '0 0 0 2px rgba(184,135,25,0.15)' : undefined,
-                        cursor: 'default',
-                      }}
+                      className={cn('ask-assistant-bubble', selected?.id === msg.id && panelOpen && 'selected')}
                     >
                       <AnswerBlock
                         msg={msg}
@@ -304,8 +299,8 @@ export default function AskDataPage() {
             <div ref={bottomRef} />
           </div>
 
-          <div className="shrink-0 px-3 pb-3 pt-2 border-t border-[#BFA66A] bg-[#FCFBF7]">
-            <div className="flex items-end gap-2 bg-white border border-[#BFA66A] rounded-xl px-3 py-2 focus-within:border-[#8A5A00]">
+          <div className="ask-composer-wrap">
+            <div className="ask-composer">
               <textarea
                 ref={textareaRef}
                 value={input}
@@ -313,9 +308,9 @@ export default function AskDataPage() {
                 rows={1}
                 onChange={e => { setInput(e.target.value); adjustHeight(); }}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); } }}
-                placeholder={sending ? 'Đang trả lời…' : 'Hỏi về dữ liệu của bạn… (Enter để gửi, Shift+Enter xuống dòng)'}
+                placeholder={sending ? 'Đang trả lời…' : 'Hỏi về dữ liệu của bạn…'}
                 aria-label="Câu hỏi"
-                className="flex-1 bg-transparent text-[13px] text-[#111111] placeholder:text-[#8A8A7A] outline-none resize-none leading-relaxed"
+                className="ask-input"
                 style={{ maxHeight: 140 }}
               />
               {micAvailable && (
@@ -325,10 +320,9 @@ export default function AskDataPage() {
                   aria-pressed={listening}
                   aria-label={listening ? 'Dừng ghi âm' : 'Nói câu hỏi'}
                   title={listening ? 'Dừng ghi âm' : 'Nói câu hỏi (tiếng Việt)'}
-                  className={cn('w-8 h-8 rounded-lg flex items-center justify-center border transition-colors shrink-0',
-                    listening ? 'bg-[#FAD7D7] border-[#9F1D1D] text-[#7A1010]' : 'bg-white border-[#BFA66A] text-[#3F3F3F] hover:bg-[#FFF9E8]')}
+                  className={cn('ask-icon-button', listening && 'listening')}
                 >
-                  {listening ? <MicOff size={14} /> : <Mic size={14} />}
+                  {listening ? <MicOff size={15} /> : <Mic size={15} />}
                 </button>
               )}
               <button
@@ -336,9 +330,9 @@ export default function AskDataPage() {
                 onClick={() => ask()}
                 disabled={!input.trim() || sending}
                 aria-label="Gửi câu hỏi"
-                className="w-8 h-8 rounded-lg flex items-center justify-center bg-[#111111] text-[#D9B86C] disabled:opacity-40 shrink-0"
+                className="ask-send-button"
               >
-                <Send size={14} />
+                <Send size={15} />
               </button>
             </div>
           </div>

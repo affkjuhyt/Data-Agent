@@ -14,7 +14,7 @@ import { usePlatformRuntimeConfig } from '../../lib/usePlatformData';
 
 type Tab = 'AI_CONFIG' | 'FLAGS';
 
-export interface PlatformDefaults {
+interface PlatformDefaults {
   temperature: number;
   max_context_tokens: number;
   rerank_threshold: number;
@@ -22,7 +22,7 @@ export interface PlatformDefaults {
 }
 const EMPTY_DEFAULTS: PlatformDefaults = { temperature: 0.2, max_context_tokens: 32000, rerank_threshold: 0.5, safety_gate: 'standard' };
 
-export interface FeatureFlag { key: string; description: string; enabled: boolean; rollout_pct: number }
+interface FeatureFlag { key: string; description: string; enabled: boolean; rollout_pct: number }
 const EMPTY_FLAG: FeatureFlag = { key: '', description: '', enabled: false, rollout_pct: 0 };
 
 export const AdvancedPlatformSection = () => {

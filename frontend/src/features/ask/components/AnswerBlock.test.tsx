@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { AnswerBlock } from './AnswerBlock';
 import { AnswerTheme } from './AnswerTheme';
 import { ClarificationCard } from './ClarificationCard';
@@ -132,5 +132,31 @@ describe('DataGrid', () => {
   it('flags a truncated result', () => {
     wrap(<DataGrid columns={['id']} rows={[{ id: 1 }]} truncation={{ reason: 'row_limit', rows_returned: 1 }} />);
     expect(screen.getByText(/trần số dòng/)).toBeInTheDocument();
+  });
+
+  it('loads full result pages from the backend artifact', async () => {
+    const loadRows = vi.fn().mockResolvedValue({
+      columns: ['id', 'amount'],
+      rows: [{ id: 'SO-501', amount: 501000 }],
+      total: 1200,
+      offset: 0,
+      limit: 500,
+      has_more: true,
+    });
+
+    wrap(
+      <DataGrid
+        columns={['id', 'amount']}
+        rows={[{ id: 'SO-001', amount: 1000 }]}
+        fullResult={{ totalRows: 1200, loadRows, onExportXlsx: vi.fn() }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Full result' }));
+
+    await waitFor(() => expect(loadRows).toHaveBeenCalledWith({ offset: 0, limit: 500, sort: undefined, dir: undefined }));
+    expect(screen.getByText('SO-501')).toBeInTheDocument();
+    expect(screen.getByText(/Full result 1-1 \/ 1\.200 dòng/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Excel \+ Nguồn/ })).toBeInTheDocument();
   });
 });

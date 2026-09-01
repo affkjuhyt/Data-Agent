@@ -18,7 +18,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiGet, apiMutate } from './apiClient';
 
 /* ─── Types ──────────────────────────────────────────────── */
-export interface CatalogAgent { id: string; name: string; description?: string; routing_keywords?: string[] }
+interface CatalogAgent { id: string; name: string; description?: string; routing_keywords?: string[] }
 
 export interface AgentSummary {
   id: string;
@@ -64,7 +64,7 @@ export interface ConversationItem {
   tokens: number | null;
   avg_latency_ms: number | null;
 }
-export interface ConversationsResponse { items: ConversationItem[]; total: number }
+interface ConversationsResponse { items: ConversationItem[]; total: number }
 
 export interface MessageTrace {
   trace_index: number;
@@ -84,7 +84,7 @@ export interface ConversationMessage {
   latency_ms: number | null;
   traces: MessageTrace[];
 }
-export interface MessagesResponse { messages: ConversationMessage[] }
+interface MessagesResponse { messages: ConversationMessage[] }
 
 export interface TraceItem {
   id: string;
@@ -98,7 +98,7 @@ export interface TraceItem {
   output: unknown;
   user_ref: string | null;
 }
-export interface TracesResponse { items: TraceItem[]; total: number }
+interface TracesResponse { items: TraceItem[]; total: number }
 
 export interface MetricsPoint {
   date: string;
@@ -126,9 +126,9 @@ export interface ServiceHealth {
   latency_ms: number | null;
   detail: string | null;
 }
-export interface ServicesResponse { items: ServiceHealth[] }
+interface ServicesResponse { items: ServiceHealth[] }
 
-export interface PlatformSetting<T> { key: string; value: T | null; updated_at: string | null }
+interface PlatformSetting<T> { key: string; value: T | null; updated_at: string | null }
 
 export interface Schedule {
   id: string;
@@ -137,9 +137,34 @@ export interface Schedule {
   cron: string;
   enabled: boolean;
   last_run: string | null;
+  report_kind?: 'weekly_report' | 'data_quality' | 'anomaly' | 'forecast';
+  last_status?: 'success' | 'failed' | string | null;
+  last_summary?: string | null;
+  delivery_attempts?: Array<{ kind?: string; target?: string; status?: string; detail?: string; at?: string }>;
   /* display-only extras, stored alongside the contract fields */
   agent_id?: string | null;
   workflow_name?: string | null;
+}
+
+export interface DeliveryChannel {
+  id: string;
+  kind: 'slack' | 'email';
+  target: string;
+  webhook_url?: string;
+  enabled: boolean;
+}
+
+interface RoiUseCase {
+  id: string;
+  name: string;
+  status: 'ready' | 'healthy' | 'clear' | 'detected' | 'needs_attention' | 'needs_setup' | string;
+  evidence: string;
+}
+
+interface RoiUseCaseSummary {
+  generated_at: string;
+  use_cases: RoiUseCase[];
+  latest: Record<string, unknown>;
 }
 
 export interface AgentTemplate { id: string; name: string; description: string; tags: string[] }
@@ -181,7 +206,7 @@ export const pickTenant = (tenants: Tenant[], storedId: string | null | undefine
 export const shortId = (id: string | null | undefined, n = 8): string => (id ? id.slice(0, n) : '—');
 
 /* ─── Generic GET hook ───────────────────────────────────── */
-export interface ApiState<T> {
+interface ApiState<T> {
   data: T | null;
   loading: boolean;
   error: string | null;
@@ -220,7 +245,7 @@ export function useApi<T>(path: string | null, params?: Params): ApiState<T> {
 }
 
 /* ─── Typed hooks ────────────────────────────────────────── */
-export type ConversationQuery = {
+type ConversationQuery = {
   limit?: number; offset?: number; status?: string; q?: string; agent_id?: string;
 };
 export const useConversations = (query: ConversationQuery) =>
@@ -229,7 +254,7 @@ export const useConversations = (query: ConversationQuery) =>
 export const useConversationMessages = (conversationId: string | null) =>
   useApi<MessagesResponse>(conversationId ? `/api/conversations/${conversationId}/messages` : null);
 
-export type TraceQuery = { limit?: number; offset?: number; status?: string; q?: string };
+type TraceQuery = { limit?: number; offset?: number; status?: string; q?: string };
 export const useTraces = (query: TraceQuery) => useApi<TracesResponse>('/api/traces', query);
 
 export const usePlatformMetrics = (days: number) => useApi<PlatformMetrics>('/api/platform/metrics', { days });
@@ -242,6 +267,12 @@ export const useAgents = () => useApi<AgentSummary[]>('/api/agents');
 
 export const useAgentDetail = (agentId: string | null) =>
   useApi<AgentDetail>(agentId ? `/api/agents/${agentId}` : null);
+
+export const useRoiUseCases = () => useApi<RoiUseCaseSummary>('/api/platform/roi/use-cases');
+
+export const runRoiUseCase = (kind: string) => apiMutate('POST', `/api/platform/roi/run/${kind}`);
+
+export const runDueSchedules = () => apiMutate<{ ran: unknown[]; checked: number; generated_at: string }>('POST', '/api/platform/roi/run-schedules');
 
 /** Key-value platform setting with optimistic save (PUT whole value). */
 export function usePlatformSetting<T>(key: string, fallback: T) {

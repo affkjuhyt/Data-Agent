@@ -13,8 +13,9 @@ import { Badge, Button, Card, EmptyState, ErrorState, Field, Input, LoadingState
 import { usePlatformSetting } from '../../lib/usePlatformSettings';
 import { usePlatformTenants } from '../../lib/usePlatformData';
 import { useCompliance } from '../../lib/useCompliance';
+import { useAppState } from '../../AppStateContext';
 
-export interface OrgProfile {
+interface OrgProfile {
   name: string;
   legal_name: string;
   region: string;
@@ -24,9 +25,8 @@ export interface OrgProfile {
 }
 const EMPTY_PROFILE: OrgProfile = { name: '', legal_name: '', region: '', contact_email: '', brand_color: '#B88719', logo_url: '' };
 
-const goTo = (section: string) => { window.location.hash = `#settings/${section}`; };
-
 export const OrganizationSection = () => {
+  const { navigate } = useAppState();
   const profile = usePlatformSetting<OrgProfile>('org_profile', EMPTY_PROFILE);
   const tenants = usePlatformTenants();
   const compliance = useCompliance();
@@ -37,6 +37,7 @@ export const OrganizationSection = () => {
 
   const set = (k: keyof OrgProfile, v: string) => { setForm(f => ({ ...f, [k]: v })); setDirty(true); };
   const submit = (e: React.FormEvent) => { e.preventDefault(); profile.save(form).then(() => setDirty(false)).catch(() => {}); };
+  const goTo = (section: string) => navigate('settings', section);
 
   return (
     <div className="space-y-8 pb-10">

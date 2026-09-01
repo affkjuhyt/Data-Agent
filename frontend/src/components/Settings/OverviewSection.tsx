@@ -21,11 +21,10 @@ import { useCompliance } from '../../lib/useCompliance';
 import { useSecrets } from '../../lib/useSecrets';
 import { useLlmProviders } from '../../lib/useLlmProviders';
 import { usePlatformMetrics, usePlatformServices, usePlatformTenants } from '../../lib/usePlatformData';
+import { useAppState } from '../../AppStateContext';
 import type { SettingsSection } from './Overview';
 
 const COMPLIANCE_ALERT_THRESHOLD = 70;
-
-const goTo = (section: SettingsSection) => { window.location.hash = `#settings/${section}`; };
 
 const pct = (v: number | null | undefined) =>
   v === null || v === undefined || Number.isNaN(v) ? '—' : `${(v * 100).toFixed(2)}%`;
@@ -33,6 +32,7 @@ const pct = (v: number | null | undefined) =>
 interface Alert { id: string; level: 'bad' | 'warn'; code: string; text: string; section: SettingsSection }
 
 export const OverviewSection = () => {
+  const { navigate } = useAppState();
   const compliance = useCompliance();
   const secrets = useSecrets();
   const llm = useLlmProviders();
@@ -94,6 +94,7 @@ export const OverviewSection = () => {
   };
 
   const overall = alerts.some(a => a.level === 'bad') ? 'CRITICAL' : alerts.length > 0 ? 'WARNING' : 'STABLE';
+  const goTo = (section: SettingsSection) => navigate('settings', section);
 
   return (
     <div className="space-y-8">

@@ -15,7 +15,7 @@ import { Badge, Button, Card, EmptyState, ErrorState, Field, Input, LoadingState
 import { APIKeysPanel } from './Auth/APIKeysPanel';
 import { usePlatformSetting, newSettingId } from '../../lib/usePlatformSettings';
 
-export interface WebhookReg { id: string; url: string; events: string[]; enabled: boolean; secret_ref: string }
+interface WebhookReg { id: string; url: string; events: string[]; enabled: boolean; secret_ref: string }
 
 /** Event names emitted by the platform (documentation of the contract, not data). */
 const EVENT_OPTIONS = ['conversation.created', 'conversation.completed', 'agent.published', 'document.ingested', 'review.requested', 'secret.rotated'];

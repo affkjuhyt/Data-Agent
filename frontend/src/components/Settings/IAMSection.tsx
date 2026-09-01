@@ -27,7 +27,7 @@ const PLATFORM_ROLES = [
   { kc: 'executive-viewer', label: 'Executive',      desc: 'Chỉ đọc dashboard điều hành và báo cáo tuân thủ.', icon: Eye },
 ];
 
-export interface RbacMatrix { roles: string[]; capabilities: string[]; grants: Record<string, string[]> }
+interface RbacMatrix { roles: string[]; capabilities: string[]; grants: Record<string, string[]> }
 const EMPTY_MATRIX: RbacMatrix = { roles: [], capabilities: [], grants: {} };
 
 const displayName = (u: KcUser) => [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || u.email;

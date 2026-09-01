@@ -11,13 +11,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiGet, apiMutate } from './apiClient';
 
-export interface PlatformSettingEnvelope<T> {
+interface PlatformSettingEnvelope<T> {
   key: string;
   value: T | null;
   updated_at: string | null;
 }
 
-export interface PlatformSettingResult<T> {
+interface PlatformSettingResult<T> {
   value: T;
   /** True once the server has a stored value (false = still on fallback). */
   persisted: boolean;

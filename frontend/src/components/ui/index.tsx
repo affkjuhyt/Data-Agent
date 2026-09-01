@@ -16,7 +16,7 @@ import { cn } from '../../lib/utils';
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 type ButtonSize = 'sm' | 'md';
 
-export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   icon?: LucideIcon;
@@ -48,7 +48,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 Button.displayName = 'Button';
 
 /* ─── Card ───────────────────────────────────────────────── */
-export interface CardProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'title'> {
+interface CardProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'title'> {
   title?: React.ReactNode;
   subtitle?: React.ReactNode;
   actions?: React.ReactNode;
@@ -84,7 +84,7 @@ export const SectionTitle = ({ title, subtitle, actions }: { title: React.ReactN
 );
 
 /* ─── Stat tile ──────────────────────────────────────────── */
-export type Tone = 'neutral' | 'ok' | 'warn' | 'bad' | 'info';
+type Tone = 'neutral' | 'ok' | 'warn' | 'bad' | 'info';
 const TONE_TEXT: Record<Tone, string> = {
   neutral: 'text-[#111111]', ok: 'text-[#1D6F4C]', warn: 'text-[#8A6212]', bad: 'text-[#A83A32]', info: 'text-[#0E5F63]',
 };
@@ -111,7 +111,7 @@ export const StatTile = ({ label, value, hint, icon: Icon, tone = 'neutral', loa
 );
 
 /* ─── Badge ──────────────────────────────────────────────── */
-export type BadgeTone = 'healthy' | 'warning' | 'failed' | 'running' | 'draft' | 'dark';
+type BadgeTone = 'healthy' | 'warning' | 'failed' | 'running' | 'draft' | 'dark';
 export const Badge = ({ tone = 'draft', className, children }: { tone?: BadgeTone; className?: string; children: React.ReactNode }) => (
   <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide', `badge-${tone}`, className)}>
     {children}
@@ -138,11 +138,6 @@ export const Select = React.forwardRef<HTMLSelectElement, React.SelectHTMLAttrib
   ({ className, children, ...rest }, ref) => <select ref={ref} className={cn('ui-input', className)} {...rest}>{children}</select>,
 );
 Select.displayName = 'Select';
-
-export const Textarea = React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>(
-  ({ className, ...rest }, ref) => <textarea ref={ref} className={cn('ui-input', className)} {...rest} />,
-);
-Textarea.displayName = 'Textarea';
 
 export const Field = ({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) => (
   <label className="block">
@@ -199,21 +194,3 @@ export function Table<T>({ rows, columns, rowKey, onRowClick, empty }: {
     </div>
   );
 }
-
-/* ─── Layout helpers ─────────────────────────────────────── */
-/** Flex row of filters / actions above a table or list. */
-export const Toolbar = ({ className, children, ...rest }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn('flex flex-wrap items-center gap-2', className)} {...rest}>{children}</div>
-);
-
-/** Page-level header — alias of SectionTitle so screens can use either name. */
-export const PageHeader = SectionTitle;
-
-/** Visible separator using the soft border token (never an alpha/faint line). */
-export const Divider = ({ className, vertical = false }: { className?: string; vertical?: boolean }) => (
-  <div
-    role="separator"
-    aria-orientation={vertical ? 'vertical' : 'horizontal'}
-    className={cn(vertical ? 'w-px self-stretch' : 'h-px w-full', 'bg-[#BFA66A] shrink-0', className)}
-  />
-);

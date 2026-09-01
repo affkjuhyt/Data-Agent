@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { apiGet } from './apiClient';
 import { WORKFLOW_RUNTIME_URL } from './config';
 
-export interface ApiResource<T> {
+interface ApiResource<T> {
   data: T | null;
   loading: boolean;
   error: string | null;
@@ -15,7 +15,7 @@ export interface ApiResource<T> {
 }
 
 /** Generic GET-and-hold. `enabled=false` skips the request (renders empty). */
-export function useApiResource<T>(
+function useApiResource<T>(
   path: string,
   params?: Record<string, string | number | boolean>,
   enabled = true,
@@ -45,7 +45,7 @@ export function useApiResource<T>(
 }
 
 /* ─── /api/platform/metrics ───────────────────────────────── */
-export interface PlatformMetrics {
+interface PlatformMetrics {
   agents: { total: number; published: number };
   conversations: { total: number; last_24h: number; active: number };
   messages: { total: number; last_24h: number };
@@ -71,7 +71,7 @@ export const usePlatformServices = () =>
   useApiResource<{ items: PlatformService[] }>('/api/platform/services');
 
 /* ─── /api/auth/me/tenants ────────────────────────────────── */
-export interface Tenant { id: string; name: string; slug: string }
+interface Tenant { id: string; name: string; slug: string }
 export const usePlatformTenants = () => useApiResource<Tenant[]>('/api/auth/me/tenants');
 
 /* ─── /api/auth/me/roles ──────────────────────────────────── */
@@ -85,7 +85,7 @@ export const usePlatformRuntimeConfig = () =>
 export const usePlatformBuckets = () =>
   useApiResource<{ buckets: string[] }>('/api/storage/buckets');
 
-export interface BucketObject { key: string; size: number; last_modified: string }
+interface BucketObject { key: string; size: number; last_modified: string }
 export const usePlatformBucketObjects = (bucket: string | null) =>
   useApiResource<{ bucket: string; objects: BucketObject[] }>(
     `/api/storage/buckets/${encodeURIComponent(bucket ?? '')}/objects`,
@@ -95,7 +95,7 @@ export const usePlatformBucketObjects = (bucket: string | null) =>
 
 /* ─── /api/knowledge/qdrant/collections (kb_backend) ──────── */
 /** Shape from kb_backend operations/qdrant_ops.list_collections. */
-export interface VectorCollection {
+interface VectorCollection {
   id: string;
   name: string;
   /** Points belonging to the current tenant. */
@@ -120,7 +120,7 @@ export interface SandboxJobSummary {
   duration_s: number | null;
   error: string | null;
 }
-export interface SandboxStatus {
+interface SandboxStatus {
   pool: {
     size: number;
     idle: number;

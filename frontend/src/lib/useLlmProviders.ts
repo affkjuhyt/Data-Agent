@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiGet } from './apiClient';
 
-export interface LlmProvider {
+interface LlmProvider {
   id: string;
   name: string;
   model_id: string;
@@ -27,7 +27,7 @@ export interface LlmModel {
   mode: string;
 }
 
-export interface LlmHealth {
+interface LlmHealth {
   model_name: string;
   status: 'ok' | 'down';
   latency_ms: number | null;

@@ -14,7 +14,7 @@ import { Badge, Button, Card, EmptyState, ErrorState, Field, Input, LoadingState
 import { usePlatformBucketObjects, usePlatformBuckets, usePlatformVectorCollections } from '../../lib/usePlatformData';
 import { usePlatformSetting, newSettingId } from '../../lib/usePlatformSettings';
 
-export interface RetentionPolicy { id: string; scope: string; days: number; action: 'delete' | 'archive' | 'anonymize' }
+interface RetentionPolicy { id: string; scope: string; days: number; action: 'delete' | 'archive' | 'anonymize' }
 
 const SCOPES = ['conversations', 'messages', 'audit_logs', 'documents', 'traces', 'sandbox_jobs'];
 const ACTIONS: RetentionPolicy['action'][] = ['delete', 'archive', 'anonymize'];

@@ -59,3 +59,42 @@ export async function fetchAgents(): Promise<AgentOption[]> {
   const data = await apiGet<Array<{ id: string; name: string; description: string; routing_keywords?: string[] }>>('/api/catalog/agents');
   return data.map(a => ({ id: a.id, label: a.name, description: a.description, routing_keywords: a.routing_keywords }));
 }
+
+interface ResultRowsResponse {
+  result_id: string;
+  columns: string[];
+  rows: Record<string, unknown>[];
+  total: number;
+  offset: number;
+  limit: number;
+  has_more: boolean;
+}
+
+export async function fetchResultRows(
+  resultId: string,
+  params: { offset?: number; limit?: number; sort?: string; dir?: 'asc' | 'desc' } = {},
+): Promise<ResultRowsResponse> {
+  const qs = new URLSearchParams();
+  if (params.offset !== undefined) qs.set('offset', String(params.offset));
+  if (params.limit !== undefined) qs.set('limit', String(params.limit));
+  if (params.sort) qs.set('sort', params.sort);
+  if (params.dir) qs.set('dir', params.dir);
+  const suffix = qs.toString() ? `?${qs}` : '';
+  return apiGet<ResultRowsResponse>(`/api/ask/results/${resultId}/rows${suffix}`);
+}
+
+export async function downloadResultXlsx(resultId: string, fileName?: string): Promise<boolean> {
+  const res = await fetch(`${API_URL}/api/ask/results/${resultId}/export.xlsx`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText || 'export unavailable'}`);
+  if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function' || typeof document === 'undefined') return false;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName || `ask-result-${resultId.slice(0, 8)}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+  return true;
+}

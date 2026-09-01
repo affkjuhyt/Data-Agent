@@ -106,6 +106,15 @@ export interface EvidenceRun {
   columns: string[];
   rows: Record<string, unknown>[];
   rows_capped?: boolean;
+  export?: {
+    result_id: string;
+    preview_rows: number;
+    total_rows: number;
+    full_available: boolean;
+    xlsx_available: boolean;
+    file_name?: string;
+    sheets?: string[];
+  };
   /** which [n] marker in the answer text this run backs */
   citation_index?: number;
 }

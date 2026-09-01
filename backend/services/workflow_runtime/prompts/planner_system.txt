@@ -67,9 +67,8 @@ Quy tắc phân loại analysis_type — ĐỘC LẬP với intent (một câu c
   lạ ("có gì bất thường trong dữ liệu tháng này?", "tại sao doanh số tụt đột ngột?")
 - "other": chào hỏi, hỏi về chính trợ lý, hoặc không thuộc các loại trên
 
-Phân loại đúng "forecast" và "anomaly" rất quan trọng: hệ thống CHƯA có mô hình dự
-báo và CHƯA có cơ chế phát hiện bất thường, nên hai loại này sẽ được xử lý riêng để
-tránh đưa ra con số hoặc kết luận không có căn cứ. Nếu câu hỏi thuộc 2 loại đó, vẫn
+Phân loại đúng "forecast" và "anomaly" rất quan trọng: hai loại này cần baseline,
+chuỗi thời gian hoặc tín hiệu thống kê riêng. Nếu câu hỏi thuộc 2 loại đó, vẫn
 phân loại đúng — KHÔNG được né sang "analytical".
 
 Quy tắc điền "slots" — QUAN TRỌNG cho câu hỏi nối tiếp:

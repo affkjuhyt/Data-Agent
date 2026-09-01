@@ -45,6 +45,8 @@ from services.workflow_runtime.routers import (
     llm,
     platform,
     reviews,
+    ask_exports,
+    roi_use_cases,
     sandbox_ops,
     schema_memory,
     storage,
@@ -52,6 +54,7 @@ from services.workflow_runtime.routers import (
 )
 from services.workflow_runtime.routers import schema_catalog as schema_catalog_router
 from services.workflow_runtime.runtime_services.conversation_runner import invalidate_graph_version
+from services.workflow_runtime.runtime_services.roi_use_cases import scheduler_loop
 from services.workflow_runtime.schema_catalog import close_schema_catalog_qdrant, init_schema_catalog_qdrant
 from services.workflow_runtime.workflow_memory import close_workflow_qdrant, init_workflow_qdrant
 
@@ -95,10 +98,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # (Callable[[str], None]), so the count is intentionally discarded here.
         invalidate_graph_version(workflow_version_id)
 
+    scheduler_stop = asyncio.Event()
     tasks = [
         asyncio.create_task(pg_client.health_check_loop()),
         asyncio.create_task(mongo_client.health_check_loop()),
         asyncio.create_task(orch_redis.health_check_loop()),
+        asyncio.create_task(scheduler_loop(scheduler_stop)),
         # Evict locally-cached graphs when another replica/flow_buider signals a
         # republished version. No-op if REDIS_URL is unset.
         asyncio.create_task(
@@ -108,6 +113,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     yield
 
+    scheduler_stop.set()
     for task in tasks:
         task.cancel()
         try:
@@ -162,6 +168,8 @@ def create_app() -> FastAPI:
         db_connector.router,
         platform.router,
         billing.router,
+        ask_exports.router,
+        roi_use_cases.router,
         # Object-storage browsing for Settings (/api/storage, ex minio_service).
         storage.router,
         # Orchestrator (multi-agent front door, /api/orchestrate/*) — same

@@ -5,9 +5,9 @@ those were fixed. The defect was not: `flow_builder` was still published on host
 port 8002 with no authentication of any kind, and every one of its eighteen
 routes took its tenant from `x_tenant_id or DEV_TENANT_ID`, a raw client header
 defaulting to a real tenant. Anyone reaching the host could list, edit, delete
-and publish any tenant's agents and workflows. `minio_service` was the same on
-8400, including per-tenant audit archives that an unauthenticated caller could
-read and overwrite.
+and publish any tenant's agents and workflows. The former `minio_service` had
+the same class of issue before storage browsing was folded into
+`workflow_runtime`.
 
 Fixing the two services named in a finding does not fix the class. So the checks
 here are structural and repo-wide rather than per-service: a nineteenth route, or
@@ -134,7 +134,7 @@ class TestNoTenantComesFromAClientHeader:
                 hits.append(" or ".join(sorted(names)))
         return hits
 
-    @pytest.mark.parametrize("service", ["flow_builder", "workflow_runtime", "minio_service"])
+    @pytest.mark.parametrize("service", ["flow_builder", "workflow_runtime"])
     def test_no_router_falls_back_to_the_dev_tenant(self, service):
         directory = _service_dir(service)
         assert directory is not None
@@ -182,7 +182,7 @@ class TestRoutersAreAuthenticatedAtIncludeTime:
                 out.setdefault("_loop", has_deps)
         return out
 
-    @pytest.mark.parametrize("service", ["flow_builder", "minio_service"])
+    @pytest.mark.parametrize("service", ["flow_builder"])
     def test_only_health_is_included_without_authentication(self, service):
         directory = _service_dir(service)
         includes = self._include_calls(directory / "app.py")
@@ -191,7 +191,7 @@ class TestRoutersAreAuthenticatedAtIncludeTime:
             f"{service} includes {sorted(unguarded - _OPEN_ROUTERS)} without authentication"
         )
 
-    @pytest.mark.parametrize("service", ["flow_builder", "minio_service"])
+    @pytest.mark.parametrize("service", ["flow_builder"])
     def test_the_loop_that_carries_the_dependency_exists(self, service):
         """The routers are included through a loop with `dependencies=`; if
         someone unrolls it, the previous test still passes only if each call
@@ -274,26 +274,6 @@ class TestCanvasIsScopedToItsOwner:
             for a in r.args if isinstance(a, ast.Constant)
         ]
         assert 404 in codes and 403 not in codes
-
-
-class TestAuditArchivesAreTenantScoped:
-    def test_the_path_tenant_is_authorized_against_the_caller(self):
-        """A tenant id in the PATH is a request, not a fact."""
-        path = _service_dir("minio_service") / "routers" / "audit_archive.py"
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-
-        routes = [
-            node for node in ast.walk(tree)
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and any(isinstance(d, ast.Call) for d in node.decorator_list)
-        ]
-        assert routes, "no routes found"
-        for route in routes:
-            called = {
-                n.func.id for n in ast.walk(route)
-                if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
-            }
-            assert "_authorize_tenant" in called, f"{route.name} does not scope the path tenant"
 
 
 class TestGatewayConfigMatchesTheClosedPorts:

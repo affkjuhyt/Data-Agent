@@ -1,17 +1,10 @@
 """Analysis-type taxonomy and the capability policy that acts on it.
 
 The planner classified every question as `question` or `task` and nothing else.
-That distinction only ever drove whether the responder appended an options
 block, so the system could not tell a one-fact lookup from a trend analysis,
-and — the part that matters — could not tell either of them from a request to
-**forecast** or to **find anomalies**, neither of which this platform can do.
-
-There is no forecasting model here and no anomaly detection. Asked "doanh thu
-quý sau bao nhiêu?", the old path handed the question to the responder, which
-answered from the model's own priors dressed in whatever context retrieval
-happened to return. A number arrived, it looked like the others, and nothing
-marked it as invented. Classifying the request is what makes refusing to invent
-it possible.
+and could not tell either of them from a request to forecast or find anomalies.
+Those two are now supported only as evidence-bound statistical workflows:
+projection/baseline first, narrative second, never a model-invented number.
 
 `analysis_type` is deliberately ORTHOGONAL to `intent`, not a replacement:
 "vẽ cho tôi biểu đồ so sánh doanh thu 2 quý" is a task AND a comparison. Folding
@@ -65,21 +58,12 @@ def parse(raw: object) -> AnalysisType:
 # about the platform, so it is decided here and not re-litigated per turn by the
 # thing that would most like to answer anyway.
 #
-# Flip an entry to True only when a real implementation lands — a forecasting
-# node, an anomaly detector — not when the answers merely start looking
-# plausible.
 _SUPPORTED: dict[AnalysisType, bool] = {
     AnalysisType.LOOKUP: True,
     AnalysisType.ANALYTICAL: True,
     AnalysisType.COMPARISON: True,
-    # No forecasting model exists in this platform. Retrieval can still surface
-    # a forecast someone else published in a document, and reporting THAT is
-    # legitimate — inventing one is not. The distinction is what the guidance
-    # below tells the responder to hold.
-    AnalysisType.FORECAST: False,
-    # No anomaly detection, no baselines, no statistical thresholds. Same
-    # distinction: report an anomaly the data states, do not declare one.
-    AnalysisType.ANOMALY: False,
+    AnalysisType.FORECAST: True,
+    AnalysisType.ANOMALY: True,
     AnalysisType.OTHER: True,
 }
 
@@ -126,6 +110,16 @@ _GUIDANCE: dict[AnalysisType, str] = {
         "Đây là câu hỏi SO SÁNH: phải nêu ĐẦY ĐỦ các vế được so sánh cùng mức chênh "
         "lệch. Nếu chỉ có dữ liệu của một vế, phải nói rõ là thiếu vế còn lại — "
         "KHÔNG được trình bày một vế như thể đã trả lời xong câu hỏi."
+    ),
+    AnalysisType.FORECAST: (
+        "Đây là câu hỏi DỰ BÁO: chỉ được dự báo khi có dữ liệu chuỗi thời gian hoặc "
+        "nguồn dự báo trong bằng chứng. Phải nêu rõ phương pháp/baseline, cửa sổ dữ "
+        "liệu, mức tin cậy và không đưa ra con số ngoài dữ liệu đã truy vấn."
+    ),
+    AnalysisType.ANOMALY: (
+        "Đây là câu hỏi BẤT THƯỜNG: phải so với baseline/ngưỡng/biến động lịch sử "
+        "trong dữ liệu. Nêu rõ tín hiệu, chiều biến động và điều kiện kiểm tra; "
+        "không gọi là bất thường nếu chỉ có một điểm dữ liệu không có baseline."
     ),
 }
 

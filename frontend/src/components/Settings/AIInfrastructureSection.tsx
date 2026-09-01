@@ -18,7 +18,7 @@ import { usePlatformVectorCollections } from '../../lib/usePlatformData';
 
 type Tab = 'PROVIDERS' | 'MODEL_REGISTRY' | 'EMBEDDINGS';
 
-export interface FailoverPolicy {
+interface FailoverPolicy {
   id: string;
   name: string;
   trigger: string;

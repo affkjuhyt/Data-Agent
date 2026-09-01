@@ -42,8 +42,8 @@ interface AppStateContextType {
 
 const AppStateContext = createContext<AppStateContextType | undefined>(undefined);
 
-/* ─── URL hash helpers ─────────────────────────────────────────────── */
-/* Old module IDs → current IA. Applied in parseHash + navigate so existing
+/* ─── URL route helpers ────────────────────────────────────────────── */
+/* Old module IDs → current IA. Applied in parseRoute + navigate so existing
  * links/bookmarks keep working and the URL stays canonical. The 2026-08 IA
  * change (Build/Test/Release/Monitor → Hỏi dữ liệu/Tri thức/Xây dựng/Vận hành)
  * is expressed here too, with a sub-tab map so "#monitor/TRACES" still lands
@@ -87,19 +87,23 @@ export const resolveRoute = (module: string, sub?: string): { module: string; su
   return { module, sub };
 };
 
-const parseHash = (fallback: { module: string; sub?: string }): { module: string; sub?: string } => {
-  const raw = (typeof window !== 'undefined' ? window.location.hash : '').replace(/^#\/?/, '');
+const routePath = (module: string, sub?: string) => `/${module}${sub ? `/${sub}` : ''}`;
+
+const parseRoute = (fallback: { module: string; sub?: string }): { module: string; sub?: string } => {
+  if (typeof window === 'undefined') return fallback;
+  const legacyHash = window.location.hash.replace(/^#\/?/, '');
+  const raw = legacyHash || window.location.pathname.replace(/^\/+/, '');
   if (!raw) return fallback;
   const [module, sub] = raw.split('/');
   return resolveRoute(module || fallback.module, sub || undefined);
 };
 
-const writeHash = (module: string, sub?: string) => {
+const writeRoute = (module: string, sub?: string) => {
   if (typeof window === 'undefined') return;
-  const next = sub ? `#${module}/${sub}` : `#${module}`;
-  if (window.location.hash !== next) {
+  const next = routePath(module, sub);
+  if (window.location.pathname !== next || window.location.hash) {
     // Preserve query params so Keycloak can read ?code=&state= on auth redirect
-    window.history.replaceState(null, '', window.location.search + next);
+    window.history.replaceState(null, '', `${next}${window.location.search}`);
   }
 };
 
@@ -175,7 +179,7 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
   }, [authUserId]);
 
   /* Routing state — initialized from URL hash, else by role */
-  const initial = parseHash(landingFor(user.role));
+  const initial = parseRoute(landingFor(user.role));
   const [activeModule, _setActiveModule] = useState<string>(initial.module);
   const [subTab, _setSubTabState] = useState<Record<string, string>>(
     initial.sub ? { [initial.module]: initial.sub } : {},
@@ -205,20 +209,24 @@ export const AppStateProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
-  /* Keep URL hash in sync with state */
+  /* Keep URL path in sync with state */
   useEffect(() => {
-    writeHash(activeModule, subTab[activeModule]);
+    writeRoute(activeModule, subTab[activeModule]);
   }, [activeModule, subTab]);
 
   /* Listen for back/forward navigation */
   useEffect(() => {
-    const onHashChange = () => {
-      const { module, sub } = parseHash(landingFor(user.role));
+    const onRouteChange = () => {
+      const { module, sub } = parseRoute(landingFor(user.role));
       _setActiveModule(module);
       if (sub) _setSubTabState(prev => ({ ...prev, [module]: sub }));
     };
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
+    window.addEventListener('popstate', onRouteChange);
+    window.addEventListener('hashchange', onRouteChange);
+    return () => {
+      window.removeEventListener('popstate', onRouteChange);
+      window.removeEventListener('hashchange', onRouteChange);
+    };
   }, []);
 
   const setTenant = useCallback((newTenant: Partial<TenantContext>) => {

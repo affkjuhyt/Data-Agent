@@ -18,7 +18,7 @@ import { formatCompact, formatDate, formatDuration, formatNumber, formatPercent 
 interface Issue { id: string; severity: 'HIGH' | 'MEDIUM' | 'LOW'; label: string; detail: string }
 
 /** Issues are derived, never literal: unhealthy services + a non-zero error rate. */
-export const deriveIssues = (services: ServiceHealth[], metrics: PlatformMetrics | null): Issue[] => {
+const deriveIssues = (services: ServiceHealth[], metrics: PlatformMetrics | null): Issue[] => {
   const issues: Issue[] = services
     .filter(s => s.status !== 'ok')
     .map(s => ({

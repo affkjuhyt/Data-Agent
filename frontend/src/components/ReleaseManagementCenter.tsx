@@ -8,6 +8,9 @@ import {
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../lib/AuthProvider';
+import { useAppState } from '../AppStateContext';
+import { ENVIRONMENTS, ROLES } from '../constants';
+import type { Environment, Role } from '../types';
 import {
   fetchPipelines, fetchHistory, fetchRollbackTargets,
   fetchPipelineDetail, triggerPipeline,
@@ -107,6 +110,7 @@ function useReleaseData() {
 
 const ReleaseManagementCenter = () => {
   const { user }              = useAuth();
+  const { role, setRole, tenant, setTenant } = useAppState();
   const {
     deployments, rawPipelines, history, rollbackTargets,
     loading, error, reload, lastRefreshed,
@@ -151,6 +155,7 @@ const ReleaseManagementCenter = () => {
     { id: 'HISTORY',     label: 'Release History', icon: History   },
     { id: 'ROLLBACK',    label: 'Rollback Center', icon: RotateCcw },
   ];
+  const roleAbbr = (id: string) => id.replace('_', ' ').split(' ').map(w => w[0]).join('');
 
   /* ── Derived state ── */
   const activeCount   = deployments.filter(d =>
@@ -271,7 +276,7 @@ const ReleaseManagementCenter = () => {
     <div className="space-y-6">
 
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="flex items-center gap-2 text-[#B88719] text-[10px] font-bold font-mono tracking-widest uppercase mb-2">
             <Rocket className="w-3.5 h-3.5" />
@@ -280,7 +285,42 @@ const ReleaseManagementCenter = () => {
           <h1 className="text-3xl font-display font-medium tracking-tight text-[#111111]">Release Management</h1>
           <p className="text-[#5A5A5A] mt-1 text-sm">Deployment pipeline, release history, and rollback operations.</p>
         </div>
-        <div className="flex items-center gap-3 mt-1">
+        <div className="flex flex-col items-end gap-3 mt-1">
+          <div className="release-context-panel">
+            <div>
+              <div className="release-context-label">Environment</div>
+              <div className="release-context-options">
+                {ENVIRONMENTS.map(env => (
+                  <button
+                    key={env.id}
+                    onClick={() => setTenant({ environment: env.id as Environment })}
+                    aria-pressed={tenant.environment === env.id}
+                    className={cn('release-context-chip', tenant.environment === env.id && 'active')}
+                  >
+                    {env.id}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="release-context-divider" />
+            <div>
+              <div className="release-context-label">Persona</div>
+              <div className="release-context-options">
+                {ROLES.map(r => (
+                  <button
+                    key={r.id}
+                    onClick={() => setRole(r.id as Role)}
+                    title={r.label}
+                    aria-pressed={role === r.id}
+                    className={cn('release-context-chip', role === r.id && 'active')}
+                  >
+                    {roleAbbr(r.id)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
           {lastRefreshed && (
             <span className="text-[9px] font-mono text-[#5F5F5F]">
               refreshed {lastRefreshed.toLocaleTimeString()}
@@ -294,6 +334,7 @@ const ReleaseManagementCenter = () => {
             <RefreshCw className={cn('w-3 h-3', loading && 'animate-spin')} />
             Refresh
           </button>
+          </div>
         </div>
       </div>
 

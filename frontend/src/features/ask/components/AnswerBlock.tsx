@@ -5,8 +5,10 @@
  *   → 7 actions (export, copy) → 8 follow-up chips.
  * Used by the Ask screen (light) and the Playground (dark) through AnswerTheme.
  */
+import { useCallback, useMemo } from 'react';
 import { Bookmark, Download, Sparkles } from 'lucide-react';
 import { formatTime } from '../../../lib/formatVN';
+import { downloadResultXlsx, fetchResultRows } from '../api';
 import { csvFileName, downloadCsv, toCsv } from '../exportCsv';
 import type { AskMessage } from '../types';
 import { ChartRenderer } from './ChartRenderer';
@@ -54,6 +56,21 @@ export function AnswerBlock({
     downloadCsv(csvFileName(question ?? msg.content.slice(0, 40)), toCsv(run.columns, rows));
   };
 
+  const resultId = run?.export?.result_id;
+  const exportXlsx = useCallback(async () => {
+    if (!resultId) return;
+    await downloadResultXlsx(resultId, run?.export?.file_name);
+  }, [resultId, run?.export?.file_name]);
+  const fullResult = useMemo(() => (
+    resultId && run?.export?.full_available
+      ? {
+          totalRows: run.export.total_rows,
+          loadRows: (params: { offset: number; limit: number; sort?: string; dir?: 'asc' | 'desc' }) => fetchResultRows(resultId, params),
+          onExportXlsx: run.export.xlsx_available ? exportXlsx : undefined,
+        }
+      : undefined
+  ), [exportXlsx, resultId, run?.export?.full_available, run?.export?.total_rows, run?.export?.xlsx_available]);
+
   return (
     <div data-testid="answer-block" style={{ display: 'flex', flexDirection: 'column' }}>
       {msg.content ? <MarkdownContent text={msg.content} citations={msg.citations} /> : streaming ? <TypingDots /> : null}
@@ -70,6 +87,7 @@ export function AnswerBlock({
           capped={run.rows_capped}
           truncation={run.truncation}
           onExport={exportCsv}
+          fullResult={fullResult}
         />
       )}
 

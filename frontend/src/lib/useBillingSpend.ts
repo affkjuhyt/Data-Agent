@@ -10,7 +10,7 @@ import { apiGet } from './apiClient';
 
 export interface SpendPoint { date: string; spend: number; tokens: number }
 export interface SpendByModel { model: string; spend: number; tokens: number }
-export interface BillingSpend {
+interface BillingSpend {
   currency: string;
   available: boolean;
   total: number;

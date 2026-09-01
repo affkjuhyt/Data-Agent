@@ -7,7 +7,7 @@ export enum WorkflowStatus {
   ERROR = 'ERROR'
 }
 
-export enum ExecutionStatus {
+enum ExecutionStatus {
   QUEUED = 'QUEUED',
   RUNNING = 'RUNNING',
   WAITING_APPROVAL = 'WAITING_APPROVAL',
@@ -65,7 +65,7 @@ export interface Workflow {
   edges: WorkflowEdge[];
 }
 
-export interface WorkflowExecution {
+interface WorkflowExecution {
   id: string;
   workflowId: string;
   workflowName: string;

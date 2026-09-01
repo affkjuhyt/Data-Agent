@@ -8,6 +8,7 @@ import logging
 import litellm
 
 from libs.shared import aggregation_check, freshness, untrusted
+from services.workflow_runtime.answer_exports import create_answer_export
 from services.workflow_runtime.nodes.model_harness.intent import guidance, parse as parse_analysis_type
 from services.workflow_runtime.observability import get_langfuse_client
 from services.workflow_runtime.state import AgentState
@@ -101,7 +102,7 @@ _CITATION_MARKER_RE = re.compile(r"\[(\d+)\]")
 _EVIDENCE_MAX_ROWS = 100
 
 
-def _evidence_run(chunk: dict[str, Any]) -> dict[str, Any] | None:
+def _evidence_run(chunk: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]] | None:
     """One SQL execution the answer was built from, in the shape the UI shows.
 
     Everything here comes from the tool result's metadata written where the
@@ -132,7 +133,7 @@ def _evidence_run(chunk: dict[str, Any]) -> dict[str, Any] | None:
             if key not in columns:
                 columns.append(key)
 
-    return {
+    preview = {
         "id": chunk.get("id"),
         "kind": "sql",
         "db_name": md.get("db_name"),
@@ -151,6 +152,7 @@ def _evidence_run(chunk: dict[str, Any]) -> dict[str, Any] | None:
         "rows": rows[:_EVIDENCE_MAX_ROWS],
         "rows_capped": len(rows) > _EVIDENCE_MAX_ROWS,
     }
+    return preview, rows
 
 
 def _citation_type(chunk: dict) -> str:
@@ -284,9 +286,19 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
                 "aggregation": (c.get("metadata") or {}).get("aggregation") or None,
             }
 
-            run = _evidence_run(c)
-            if run:
+            evidence_pair = _evidence_run(c)
+            if evidence_pair:
+                run, full_rows = evidence_pair
                 run["citation_index"] = i + 1
+                if full_rows:
+                    full_run = {**run, "rows": full_rows}
+                    export_meta = await create_answer_export(
+                        full_run,
+                        tenant_id=cfg.get("tenant_id", "") or "",
+                        question=state["query"],
+                    )
+                    if export_meta:
+                        run["export"] = export_meta
                 evidence["runs"].append(run)
 
             if total_chars >= max_chars:

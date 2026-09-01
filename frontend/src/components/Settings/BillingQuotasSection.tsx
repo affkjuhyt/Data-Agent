@@ -12,7 +12,7 @@ import { Button, Card, EmptyState, ErrorState, Field, Input, LoadingState, Secti
 import { useBillingSpend, type SpendByModel, type SpendPoint } from '../../lib/useBillingSpend';
 import { usePlatformSetting, newSettingId } from '../../lib/usePlatformSettings';
 
-export interface Quota { id: string; name: string; limit_tokens: number; period: 'day' | 'week' | 'month' }
+interface Quota { id: string; name: string; limit_tokens: number; period: 'day' | 'week' | 'month' }
 const PERIODS: Quota['period'][] = ['day', 'week', 'month'];
 const EMPTY_QUOTA: Omit<Quota, 'id'> = { name: '', limit_tokens: 1_000_000, period: 'month' };
 
