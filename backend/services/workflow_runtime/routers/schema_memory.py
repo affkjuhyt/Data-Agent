@@ -8,12 +8,13 @@ import logging
 from typing import Any, Optional
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import delete, select
 
 from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import SchemaMemoryORM
-from services.workflow_runtime.routers.catalog import _resolve_tenant
+from services.workflow_runtime.auth import get_current_user
+from services.workflow_runtime.runtime_services.platform_queries import resolve_tenant
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -36,8 +37,10 @@ class SchemaMemoryUpsert(BaseModel):
 
 
 @router.get("/api/schema-memory")
-async def list_schema_memory(request: Request, data_source: Optional[str] = None) -> list[dict[str, Any]]:
-    tenant_id = _resolve_tenant(request.headers.get("X-Tenant-ID"))
+async def list_schema_memory(
+    data_source: Optional[str] = None, caller: dict[str, Any] = Depends(get_current_user),
+) -> list[dict[str, Any]]:
+    tenant_id = resolve_tenant(caller)
     from libs.database_connector.postgres_connector import client
     if not client.is_connected():
         raise HTTPException(status_code=503, detail="database not connected")
@@ -66,9 +69,11 @@ async def list_schema_memory(request: Request, data_source: Optional[str] = None
 
 
 @router.put("/api/schema-memory")
-async def upsert_schema_memory(payload: SchemaMemoryUpsert, request: Request) -> dict[str, str]:
+async def upsert_schema_memory(
+    payload: SchemaMemoryUpsert, caller: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, str]:
     """Upsert by (tenant_id, data_source, table_name) — matches uq_schemamemory_table."""
-    tenant_id = _resolve_tenant(request.headers.get("X-Tenant-ID"))
+    tenant_id = resolve_tenant(caller)
     from libs.database_connector.postgres_connector import client
     if not client.is_connected():
         raise HTTPException(status_code=503, detail="database not connected")
@@ -107,8 +112,10 @@ async def upsert_schema_memory(payload: SchemaMemoryUpsert, request: Request) ->
 
 
 @router.delete("/api/schema-memory/{schema_memory_id}")
-async def delete_schema_memory(schema_memory_id: str, request: Request) -> dict[str, bool]:
-    tenant_id = _resolve_tenant(request.headers.get("X-Tenant-ID"))
+async def delete_schema_memory(
+    schema_memory_id: str, caller: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, bool]:
+    tenant_id = resolve_tenant(caller)
     from libs.database_connector.postgres_connector import client
     if not client.is_connected():
         raise HTTPException(status_code=503, detail="database not connected")

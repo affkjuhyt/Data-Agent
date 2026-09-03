@@ -80,7 +80,7 @@ async def chat_plain(
 
 async def chat_json(
     messages: list[dict[str, Any]], *, max_tokens: int = 512, temperature: float = 0.1,
-    timeout: float = _DEFAULT_TIMEOUT, grammar_gbnf: str = "", system_type: str = "",
+    timeout: float = _DEFAULT_TIMEOUT, system_type: str = "",
 ) -> str:
     payload: dict[str, Any] = {
         "messages": messages, "json_mode": True,

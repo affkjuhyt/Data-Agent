@@ -1,5 +1,5 @@
 // E2E seed — the agent's canvas (flow nodes + edges) in Mongo. Mirrors what
-// flow_buider writes when a person drags nodes; workflow_runtime reads it in
+// flow_builder writes when a person drags nodes; workflow_runtime reads it in
 // config_loader.load_agent_config → graph.build_graph.
 //
 //   docker exec -i dataagent-mongo mongosh --quiet dataagent < tests/e2e/seed-flow.js

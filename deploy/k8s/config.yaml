@@ -29,6 +29,15 @@ data:
 
   # ── Model gateway + tracing ────────────────────────────────────────────────
   LITELLM_BASE_URL: "http://litellm:4000"
+
+  # ── Remote inference (GPU server, reached over the VPN) ────────────────────
+  # All inference runs on the GPU host (TEI embed :8003 / rerank :8004, vLLM
+  # agent-fast :8002). Placeholders — point them at your GPU server; traffic
+  # goes through the VPN, these are not in-cluster Services.
+  REMOTE_EMBED_URL: "http://10.10.55.101:8003"
+  REMOTE_RERANK_URL: "http://10.10.55.101:8004"
+  REMOTE_LLM_URL: "http://10.10.55.101:8002"
+  REMOTE_LLM_MODEL: "agent-fast"
   LANGFUSE_HOST: "http://langfuse:3000"
   OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
 
@@ -40,8 +49,8 @@ data:
 
   # ── Service-to-service URLs ────────────────────────────────────────────────
   # ClusterIP Services created by the manifests in this directory.
-  WORKFLOW_RUNTIME_URL: "http://workflow_runtime:8001"
-  SANDBOX_EXECUTOR_URL: "http://sandbox_executor:8500"
+  WORKFLOW_RUNTIME_URL: "http://workflow-runtime:8001"
+  SANDBOX_EXECUTOR_URL: "http://sandbox-executor:8500"
 
   # Services allowed to present a signed assertion (each can act as any user).
   # Empty on purpose: the orchestrator runs inside workflow_runtime and calls

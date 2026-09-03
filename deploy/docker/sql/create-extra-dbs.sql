@@ -2,8 +2,6 @@ CREATE DATABASE litellm;
 GRANT ALL PRIVILEGES ON DATABASE litellm TO admin;
 CREATE DATABASE langfuse;
 GRANT ALL PRIVILEGES ON DATABASE langfuse TO admin;
-CREATE DATABASE knowledge_base;
-GRANT ALL PRIVILEGES ON DATABASE knowledge_base TO admin;
 
 -- sandbox_executor SANDBOX_SQL_BACKEND=postgres: local/dev/CI stand-in for
 -- Snowflake (docs/sandbox_report.md, backend/services/sandbox_executor/postgres_readonly.py)

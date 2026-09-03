@@ -137,8 +137,13 @@ async def score(
     }
 
 
-def ragas_faithfulness(model: str = "responder") -> Callable[[list[dict[str, Any]]], list[float]] | None:
+def ragas_faithfulness(model: str | None = None) -> Callable[[list[dict[str, Any]]], list[float]] | None:
     """A RAGAS faithfulness scorer, or None when ragas/the judge is unavailable.
+
+    The judge model is `EVAL_JUDGE_MODEL` (default: the `judge` LiteLLM alias),
+    overridable with the `model` argument. Defaulting to a dedicated judge alias
+    rather than `responder` keeps the model that wrote the answers from grading
+    them.
 
     Returning None rather than raising keeps "we could not measure this" a
     reportable state. The gate is what decides that an unmeasured required
@@ -156,9 +161,11 @@ def ragas_faithfulness(model: str = "responder") -> Callable[[list[dict[str, Any
     except ImportError:
         return None
 
+    judge_model = model or os.getenv("EVAL_JUDGE_MODEL", "judge")
+
     def _score(rows: list[dict[str, Any]]) -> list[float]:
         judge = LangchainLLMWrapper(ChatOpenAI(
-            model=model,
+            model=judge_model,
             base_url=f"{os.getenv('LITELLM_BASE_URL', 'http://localhost:4000')}/v1",
             api_key=os.getenv("LITELLM_API_KEY", "anything"),
         ))

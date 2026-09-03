@@ -10,6 +10,9 @@ networks:
 
 volumes:
   postgres_data:
+  # KRaft data (topics + ACLs). Without a named volume the broker's image VOLUME
+  # becomes anonymous and every `up`-recreate wipes topics/ACLs (bitten 04-09-2026).
+  kafka_data:
   redis_data:
   minio_data:
   mongo_data:
@@ -253,6 +256,8 @@ services:
       KAFKA_SUPER_USERS: "User:admin;User:ANONYMOUS"
       KAFKA_OPTS: "-Djava.security.auth.login.config=/opt/kafka/config/kafka-broker-jaas.config"
       KAFKA_ADMIN_PASSWORD: ${KAFKA_ADMIN_PASSWORD}
+    volumes:
+      - kafka_data:/var/lib/kafka/data
     ports:
       - "9092:9092"
     healthcheck:
@@ -532,6 +537,10 @@ services:
       REMOTE_RERANK_URL: ${REMOTE_RERANK_URL:-}
       REMOTE_LLM_URL: ${REMOTE_LLM_URL:-}
       REMOTE_LLM_MODEL: ${REMOTE_LLM_MODEL:-agent-fast}
+      # KBModel registry lives in the main dataagent DB (alembic initial schema +
+      # sql/kb-seed.sql). The code default points at a nonexistent aeroflow_kb DB,
+      # which made sync_with_retry loop forever and /embed return model_id: null.
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres:5432/${POSTGRES_DB:-dataagent}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
       interval: 30s

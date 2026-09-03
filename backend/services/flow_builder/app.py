@@ -8,7 +8,7 @@ from typing import AsyncGenerator
 
 from libs.shared.logger import setup_logging
 
-setup_logging("flow_buider")
+setup_logging("flow_builder")
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -46,8 +46,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="flow_buider", version="0.1.0", lifespan=lifespan)
-    setup_observability("flow_buider", app)
+    app = FastAPI(title="flow_builder", version="0.1.0", lifespan=lifespan)
+    setup_observability("flow_builder", app)
 
     app.add_middleware(
         CORSMiddleware,

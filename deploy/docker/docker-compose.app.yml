@@ -250,17 +250,17 @@ services:
         condition: service_healthy
     command: ["build", "-t", "sandbox-runner:latest", "/build"]
 
-  flow_buider:
+  flow_builder:
     profiles: [authoring]
     build:
       context: ../..
-      dockerfile: backend/services/flow_buider/Dockerfile
-    container_name: dataagent-flow_buider
+      dockerfile: backend/services/flow_builder/Dockerfile
+    container_name: dataagent-flow_builder
     restart: unless-stopped
     # NOT published to the host — same reasoning as orchestrator and
     # workflow_runtime. These routes are agent and workflow CRUD: reaching
     # them directly meant editing and publishing any tenant's agents.
-    # Kong's flow_buider-route (:8000) is the only way in.
+    # Kong's builder-route (:8000) is the only way in.
     expose:
       - "8002"
     env_file: ../../.env
@@ -270,7 +270,7 @@ services:
       # Broadcasts graph-cache invalidation to workflow_runtime on (re)publish.
       REDIS_URL: redis://redis:6379
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4317"
-      OTEL_SERVICE_NAME: flow_buider
+      OTEL_SERVICE_NAME: flow_builder
     depends_on:
       postgres:
         condition: service_healthy
@@ -560,6 +560,9 @@ services:
       # refuses to run rather than grading whatever happens to answer.
       AGENT_ID: ${EVAL_AGENT_ID:-}
       EVAL_TENANT_ID: ${EVAL_TENANT_ID:-dev-tenant}
+      # RAGAS judge — a LiteLLM alias; `judge` keeps the responder from
+      # grading its own answers.
+      EVAL_JUDGE_MODEL: ${EVAL_JUDGE_MODEL:-judge}
     volumes:
       # Reports land on the host so a failing run leaves evidence behind
       # instead of disappearing with the container.

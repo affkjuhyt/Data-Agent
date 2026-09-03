@@ -29,7 +29,9 @@ a gate that needs a GPU is a gate that runs nightly and blocks nothing.
 
 **online** needs a model behind LiteLLM and an agent to interrogate. It runs
 against a deployed environment and gates **releases**
-(`.github/workflows/release-gate.yml`).
+(`.github/workflows/release-gate.yml`). The RAGAS faithfulness judge defaults
+to the `judge` LiteLLM alias (override with `EVAL_JUDGE_MODEL`), so the model
+that wrote the answers is not the one grading them.
 
 Nothing here re-implements what it measures. The policy scorer imports the
 guards; the intent scorer calls the real planner node; the grounding scorer uses

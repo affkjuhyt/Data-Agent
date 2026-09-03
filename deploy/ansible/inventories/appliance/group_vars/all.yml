@@ -5,7 +5,6 @@
 compose_build: never                      # every image came from images.tar.gz
 code_source: none                         # code was unpacked by install.sh
 compose_extra_files: []
-# llm_backend is passed by install.sh (-e) from whatever the bundle was built with.
 keycloak_disable_mfa: false
 openbao_allow_reset: false                # a lost keys file is an incident, not a reset
 seed_demo: false

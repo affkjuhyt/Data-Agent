@@ -1,47 +1,41 @@
+"""Builder-facing catalogue routes: agents, node registry, models, prompts.
+
+Tenant resolution: every tenant-scoped route takes the VERIFIED caller from
+``get_current_user`` (attached per-route here and again at include time in
+app.py) and maps it through ``platform_queries.resolve_tenant`` — the same
+pattern as routers/conversations.py. The old ``_resolve_tenant`` read a raw
+``X-Tenant-ID`` header, which let any authenticated caller read another
+tenant's catalogue by typing a UUID.
+
+/api/llm-providers: backed by the LiteLLM registry (runtime_services/
+litellm_proxy.py — the same source routers/llm.py uses for the /models and
+/health sub-paths). The hardcoded "Claude Haiku/Sonnet" list is gone; Claude
+is not part of this deployment. Model aliases (planner, responder, …) come
+from the gateway's own /model/info.
+"""
 import os
 from typing import Any, Optional
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends
 from sqlalchemy import text
 
+from services.workflow_runtime.auth import get_current_user
 from services.workflow_runtime.config import RRF_K
 from services.workflow_runtime.node_registry import NODE_REGISTRY
+from services.workflow_runtime.runtime_services import litellm_proxy, platform_queries
 
 router = APIRouter()
 
-_DEV_AGENT_ID  = os.getenv("DEV_AGENT_ID",  "00000000-0000-0000-0000-000000000030")
-_DEV_TENANT_ID = os.getenv("DEV_TENANT_ID", "00000000-0000-0000-0000-000000000001")
+_DEV_AGENT_ID = os.getenv("DEV_AGENT_ID", "00000000-0000-0000-0000-000000000030")
 
-LLM_PROVIDERS = [
-    {"id": "llm-planner", "name": "Claude Haiku", "model_id": "planner", "type": "chat", "is_default": False},
-    {"id": "llm-responder", "name": "Claude Sonnet", "model_id": "responder", "type": "chat", "is_default": True},
-]
-
-SYSTEM_PROMPTS = [
-    {
-        "id": "sp-default",
-        "name": "Default",
-        "tenant_id": "tenant-dev",
-        "content": "You are a helpful assistant for GTEL platform.",
-    },
-]
-
-
-def _resolve_tenant(header: str | None) -> str:
-    """Return header if it looks like a UUID, otherwise fall back to dev tenant."""
-    if header:
-        try:
-            from uuid import UUID
-            UUID(header)
-            return header
-        except ValueError:
-            pass
-    return _DEV_TENANT_ID
+# The alias the runtime answers with — marked is_default for the builder's
+# model picker. Matches the "responder" model_name in the LiteLLM config.
+_DEFAULT_CHAT_ALIAS = os.getenv("DEFAULT_CHAT_MODEL_ALIAS", "responder")
 
 
 @router.get("/api/catalog/agents")
-async def list_agents(request: Request) -> list[dict[str, Any]]:
-    tenant_id = _resolve_tenant(request.headers.get("X-Tenant-ID"))
+async def list_agents(caller: dict[str, Any] = Depends(get_current_user)) -> list[dict[str, Any]]:
+    tenant_id = platform_queries.resolve_tenant(caller)
     try:
         from libs.database_connector.postgres_connector import client
         if not client.is_connected():
@@ -78,19 +72,62 @@ def get_runtime_config() -> dict[str, int]:
 
 
 @router.get("/api/llm-providers")
-def get_llm_providers(type: Optional[str] = None) -> list[dict[str, Any]]:
-    providers = LLM_PROVIDERS
+async def get_llm_providers(type: Optional[str] = None) -> list[dict[str, Any]]:
+    """Model aliases registered on the LiteLLM gateway, in the shape the
+    frontend expects ([{id, name, model_id, type, is_default}]). Empty when
+    the gateway is unreachable — never an invented list."""
+    registry = await litellm_proxy.list_models()
+    providers = []
+    for m in registry.get("items", []):
+        alias = m.get("model_name")
+        if not alias:
+            continue
+        mode = m.get("mode") or "chat"
+        providers.append({
+            "id": f"llm-{alias}",
+            "name": alias,
+            "model_id": alias,
+            "type": mode,
+            "is_default": alias == _DEFAULT_CHAT_ALIAS,
+        })
     if type:
         providers = [provider for provider in providers if provider["type"] == type]
     return providers
 
 
 @router.get("/api/kb-connections")
-def get_kb_connections(request: Request) -> list[Any]:
+def get_kb_connections() -> list[Any]:
     return []
 
 
 @router.get("/api/system-prompts")
-def get_system_prompts(request: Request) -> list[dict[str, Any]]:
-    tenant_id = _resolve_tenant(request.headers.get("X-Tenant-ID"))
-    return [prompt for prompt in SYSTEM_PROMPTS if prompt["tenant_id"] == tenant_id]
+async def get_system_prompts(caller: dict[str, Any] = Depends(get_current_user)) -> list[dict[str, Any]]:
+    """The tenant's SystemPrompts rows. Empty on an empty tenant or an
+    unreachable DB — the hardcoded "tenant-dev" sample prompt is gone."""
+    tenant_id = platform_queries.resolve_tenant(caller)
+    try:
+        from libs.database_connector.postgres_connector import client
+        if not client.is_connected():
+            raise RuntimeError("db not connected")
+        async with client.get_client(tenant_id=tenant_id) as session:
+            rows = (await session.execute(text("""
+                SELECT id, tenant_id, name, content, version, is_active
+                FROM "SystemPrompts"
+                WHERE tenant_id = :tenant_id
+                ORDER BY inserted_at DESC
+            """), {"tenant_id": tenant_id})).fetchall()
+        return [
+            {
+                "id": str(r.id),
+                "tenant_id": str(r.tenant_id),
+                "name": r.name,
+                "content": r.content,
+                "version": r.version,
+                "is_active": r.is_active,
+            }
+            for r in rows
+        ]
+    except Exception as e:  # noqa: BLE001 — an empty list is the answer, not an error
+        import logging
+        logging.getLogger(__name__).error("catalog/system-prompts failed: %s", e)
+        return []

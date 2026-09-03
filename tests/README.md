@@ -211,7 +211,7 @@ The `get_tenant_db` dependency:
 
 ### Rollout checklist for each service
 
-When migrating a service (workflow_runtime, flow_buider, kb-backend,
+When migrating a service (workflow_runtime, flow_builder, kb-backend,
 release_worker, ...):
 
 1. Set `APP_DATABASE_URL` env var in its compose entry. Format:

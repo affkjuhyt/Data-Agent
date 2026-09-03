@@ -7,17 +7,17 @@ diverged from the structured JSON the services emit via
 that PROPAGATES to the root logger, so each process formats connector logs with
 its own root config consistently:
 
-* services (kb_backend, flow_buider, workflow_runtime, …) → JSON via
+* services (kb_backend, flow_builder, workflow_runtime, …) → JSON via
   ``setup_observability()``;
 * the ingestion worker → its ``logging.basicConfig()``.
 
-No own handlers, no file writes. ``file_name`` is kept for call-site
-compatibility but is now ignored.
+No own handlers, no file writes. The second positional argument (the old log
+file name) is kept for call-site compatibility but is ignored.
 """
 import logging
 
 
-def create_logger(logger_name: str, file_name: str | None = None) -> logging.Logger:
+def create_logger(logger_name: str, _file_name: str | None = None) -> logging.Logger:
     log = logging.getLogger(logger_name)
     log.setLevel(logging.INFO)
     return log

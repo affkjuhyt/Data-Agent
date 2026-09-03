@@ -41,8 +41,9 @@ _DEV_TENANT_ID = os.getenv("DEV_TENANT_ID", "00000000-0000-0000-0000-00000000000
 def resolve_tenant(caller: dict[str, Any]) -> str:
     """The caller's verified tenant as a UUID string; dev tenant when it is not one.
 
-    Mirrors routers/catalog.py::_resolve_tenant — auth may hand back "" or a
-    non-UUID placeholder outside Kong, and every query below casts to uuid.
+    Auth may hand back "" or a non-UUID placeholder outside Kong, and every
+    query below casts to uuid. This is the single tenant-resolution helper for
+    the platform routers (catalog, schema_memory, schema_catalog included).
     """
     raw = caller.get("tenant_id") if caller else None
     if raw:

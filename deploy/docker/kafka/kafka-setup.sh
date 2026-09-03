@@ -20,7 +20,7 @@ if [ -f "$ENV_FILE" ]; then
   set +a
 fi
 
-KAFKA_CONTAINER="${KAFKA_CONTAINER:-aeroflow-kafka}"
+KAFKA_CONTAINER="${KAFKA_CONTAINER:-dataagent-kafka}"
 BOOTSTRAP="localhost:9092"
 
 # Admin credentials (inter-broker user, has full access)

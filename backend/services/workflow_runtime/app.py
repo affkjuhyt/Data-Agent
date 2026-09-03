@@ -104,7 +104,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         asyncio.create_task(mongo_client.health_check_loop()),
         asyncio.create_task(orch_redis.health_check_loop()),
         asyncio.create_task(scheduler_loop(scheduler_stop)),
-        # Evict locally-cached graphs when another replica/flow_buider signals a
+        # Evict locally-cached graphs when another replica/flow_builder signals a
         # republished version. No-op if REDIS_URL is unset.
         asyncio.create_task(
             run_graph_invalidation_listener(REDIS_URL, _invalidate_graph_version)

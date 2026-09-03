@@ -101,8 +101,8 @@ fi
 PYTHON=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || echo "")
 if [ -z "$PYTHON" ] || ! "$PYTHON" -c "import sys; assert sys.version_info >= (3,6)" 2>/dev/null; then
   echo "  → Python not found on host; using docker python:3-alpine"
-  # Find the compose network (prefixed with project name, e.g. data-agentt_aeroflow-net)
-  DOCKER_NET=$(docker network ls --filter name=aeroflow-net --format '{{.Name}}' | head -1)
+  # Compose network name is pinned in docker-compose.yml (data-agent-network)
+  DOCKER_NET=$(docker network ls --filter name=data-agent-network --format '{{.Name}}' | head -1)
   PY_RUN="docker run --rm -i --network ${DOCKER_NET} python:3-alpine python3"
 else
   PY_RUN="$PYTHON"
@@ -124,12 +124,12 @@ curl -sf -X PUT "$KONG_ADMIN/services/workflow_runtime" \
     "read_timeout": 60000
   }' | json_field name | xargs -I{} echo "  → service: {}"
 
-echo "📡 Creating flow_buider service..."
-curl -sf -X PUT "$KONG_ADMIN/services/flow_buider" \
+echo "📡 Creating flow_builder service..."
+curl -sf -X PUT "$KONG_ADMIN/services/flow_builder" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "flow_buider",
-    "host": "flow_buider",
+    "name": "flow_builder",
+    "host": "flow_builder",
     "port": 8002,
     "protocol": "http",
     "connect_timeout": 5000,
@@ -137,8 +137,8 @@ curl -sf -X PUT "$KONG_ADMIN/services/flow_buider" \
   }' | json_field name | xargs -I{} echo "  → service: {}"
 
 # ── 3. Create routes ───────────────────────────────────────────────────
-echo "🛣️  Creating flow_buider route (canvas + agent CRUD)..."
-curl -sf -X PUT "$KONG_ADMIN/services/flow_buider/routes/builder-route" \
+echo "🛣️  Creating flow_builder route (canvas + agent CRUD)..."
+curl -sf -X PUT "$KONG_ADMIN/services/flow_builder/routes/builder-route" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "builder-route",
@@ -152,7 +152,7 @@ curl -sf -X PUT "$KONG_ADMIN/services/workflow_runtime/routes/runtime-route" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "runtime-route",
-    "paths": ["/api/conversations", "/api/traces", "/api/nodes", "/api/llm-providers", "/api/kb-connections", "/api/system-prompts", "/api/catalog", "/api/sandbox", "/api/runtime-config", "/api/db-connector", "/api/reviews", "/api/platform", "/api/billing", "/api/orchestrate", "/api/storage"],
+    "paths": ["/api/conversations", "/api/traces", "/api/nodes", "/api/llm-providers", "/api/kb-connections", "/api/system-prompts", "/api/catalog", "/api/sandbox", "/api/runtime-config", "/api/db-connector", "/api/reviews", "/api/platform", "/api/billing", "/api/orchestrate", "/api/storage", "/api/schema-memory", "/api/schema-catalog", "/api/ask/results"],
     "strip_path": false,
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
@@ -337,8 +337,8 @@ else
     "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"workflow_runtime\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
     "aeroflow-jwks"
 
-  echo "🔐 Enabling aeroflow-jwks plugin on flow_buider..."
-  upsert_plugin "$KONG_ADMIN/services/flow_buider/plugins" \
+  echo "🔐 Enabling aeroflow-jwks plugin on flow_builder..."
+  upsert_plugin "$KONG_ADMIN/services/flow_builder/plugins" \
     "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"flow_builder\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
     "aeroflow-jwks"
 
@@ -384,8 +384,8 @@ _IP_DEFAULT='{"name":"ip-restriction","config":{"allow":["0.0.0.0/0","::/0"]}}'
 echo "🛡️  Enabling IP restriction on workflow_runtime..."
 upsert_plugin "$KONG_ADMIN/services/workflow_runtime/plugins" "$_IP_DEFAULT" "ip-restriction"
 
-echo "🛡️  Enabling IP restriction on flow_buider..."
-upsert_plugin "$KONG_ADMIN/services/flow_buider/plugins" "$_IP_DEFAULT" "ip-restriction"
+echo "🛡️  Enabling IP restriction on flow_builder..."
+upsert_plugin "$KONG_ADMIN/services/flow_builder/plugins" "$_IP_DEFAULT" "ip-restriction"
 
 echo "🛡️  Enabling IP restriction on release_worker..."
 upsert_plugin "$KONG_ADMIN/services/release_worker/plugins" "$_IP_DEFAULT" "ip-restriction"
@@ -426,8 +426,8 @@ upsert_plugin "$KONG_ADMIN/services/workflow_runtime/plugins" \
   '{"name":"rate-limiting","config":{"minute":300,"policy":"local"}}' \
   "rate-limiting"
 
-echo "⏱️  Enabling rate-limiting on flow_buider..."
-upsert_plugin "$KONG_ADMIN/services/flow_buider/plugins" \
+echo "⏱️  Enabling rate-limiting on flow_builder..."
+upsert_plugin "$KONG_ADMIN/services/flow_builder/plugins" \
   '{"name":"rate-limiting","config":{"minute":300,"policy":"local"}}' \
   "rate-limiting"
 
@@ -470,7 +470,7 @@ if [ -f "$CERT_FILE" ] && [ -f "$KEY_FILE" ] && [ -f "$CA_FILE" ]; then
     | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
 
   # Attach client cert to backend services
-  for svc in workflow_runtime flow_buider; do
+  for svc in workflow_runtime flow_builder; do
     curl -sf -X PATCH "$KONG_ADMIN/services/$svc" \
       -H "Content-Type: application/json" \
       -d "{\"client_certificate\":{\"id\":\"$CLIENT_CERT_ID\"}}" > /dev/null
@@ -594,7 +594,7 @@ echo "  Proxy :  http://localhost:8000"
 echo "  Admin :  internal only (kong-admin-net 172.30.0.10:8001)"
 echo ""
 echo "  JWT:    RS256, issuer=$ISSUER"
-echo "  Routes: /api/agents|workflows|workflow-versions  -> flow_buider:8002"
+echo "  Routes: /api/agents|workflows|workflow-versions  -> flow_builder:8002"
 echo "          /api/conversations|traces|nodes|catalog|platform|billing -> workflow_runtime:8001"
 echo "  CORS:   localhost:3000, localhost:5173"
 MTLS_STATUS="NOT configured (run deploy/docker/certs/gen-certs.sh first)"

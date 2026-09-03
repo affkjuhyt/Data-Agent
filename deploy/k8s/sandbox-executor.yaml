@@ -37,17 +37,17 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: sandbox_executor
-  labels: { app: sandbox_executor, app.kubernetes.io/part-of: dataagent }
+  name: sandbox-executor
+  labels: { app: sandbox-executor, app.kubernetes.io/part-of: dataagent }
 spec:
   # Not autoscaled on CPU: a warm container pool per replica is the unit of
   # capacity, and SANDBOX_POOL_SIZE is the knob. Scale replicas deliberately.
   replicas: 1
   selector:
-    matchLabels: { app: sandbox_executor }
+    matchLabels: { app: sandbox-executor }
   template:
     metadata:
-      labels: { app: sandbox_executor }
+      labels: { app: sandbox-executor }
     spec:
       terminationGracePeriodSeconds: 60   # let in-flight jobs finish
       initContainers:
@@ -102,7 +102,7 @@ spec:
             requests: { cpu: "50m", memory: "64Mi" }
             limits:   { cpu: "500m", memory: "256Mi" }
       containers:
-        - name: sandbox_executor
+        - name: sandbox-executor
           image: REGISTRY/sandbox_executor:latest   # built from backend/services/sandbox_executor/Dockerfile
           ports:
             - containerPort: 8500
@@ -156,10 +156,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: sandbox_executor
-  labels: { app: sandbox_executor }
+  name: sandbox-executor
+  labels: { app: sandbox-executor }
 spec:
-  selector: { app: sandbox_executor }
+  selector: { app: sandbox-executor }
   ports:
     - { port: 8500, targetPort: 8500 }
 ---
@@ -174,14 +174,14 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: sandbox_executor-ingress
+  name: sandbox-executor-ingress
 spec:
   podSelector:
-    matchLabels: { app: sandbox_executor }
+    matchLabels: { app: sandbox-executor }
   policyTypes: [Ingress]
   ingress:
     - from:
         - podSelector:
-            matchLabels: { app: workflow_runtime }
+            matchLabels: { app: workflow-runtime }
       ports:
         - { protocol: TCP, port: 8500 }

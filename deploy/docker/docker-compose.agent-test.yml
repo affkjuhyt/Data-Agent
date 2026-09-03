@@ -1,16 +1,13 @@
-# Agent E2E perf-test overlay. Points LiteLLM at the GPU server (config.agent-local.yaml) so a full agent
-# turn (planner → responder → judge → …) runs offline for measurement. Layer on
-# base + app.yml and bring up only the services one turn needs (NOT app.yml's
-# kb-backend — it collides with the kb-e2e stack on :8050):
+# Agent E2E perf-test overlay. LiteLLM already routes to the GPU server via the
+# base-mounted litellm/config.yaml, so a full agent turn (planner → responder →
+# judge → …) runs against it for measurement. Layer on base + app.yml and bring
+# up only the services one turn needs (NOT app.yml's kb-backend — it collides
+# with the kb-e2e stack on :8050):
 #
 #   docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.app.yml \
 #     -f deploy/docker/docker-compose.agent-test.yml up -d \
 #     litellm openbao workflow_runtime sandbox_executor platform-workers-memory
 services:
-  litellm:
-    volumes:
-      - ./litellm/config.agent-local.yaml:/app/config.yaml:ro
-
   # langfuse v3 headless init only runs when ORG_ID + PROJECT_ID are set (NAME alone
   # is skipped), so without these the pk-lf-dev/sk-lf-dev keys are never created and
   # every trace ingest is rejected "Invalid credentials". Set stable IDs so init

@@ -16,11 +16,11 @@ import asyncio
 import datetime as dt
 import logging
 import os
-import time
 from collections import defaultdict
 from typing import Any
 
 import httpx
+from cachetools import TTLCache
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,11 @@ _MODELS_TIMEOUT_S = 10.0
 _HEALTH_TIMEOUT_S = 30.0
 _SPEND_TIMEOUT_S = 20.0
 
-_health_cache: dict[str, Any] = {"at": 0.0, "payload": None}
+# One entry ("health") with a 60s TTL. The last result — success OR failure —
+# is served until it expires, exactly as the hand-rolled {at, payload} dict
+# did: a failed probe is not retried on every dashboard poll.
+_HEALTH_KEY = "health"
+_health_cache: TTLCache = TTLCache(maxsize=1, ttl=_HEALTH_CACHE_TTL_S)
 _health_lock = asyncio.Lock()
 
 
@@ -119,28 +123,27 @@ def _health_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 async def models_health(*, force: bool = False) -> dict[str, Any]:
-    now = time.monotonic()
-    cached = _health_cache["payload"]
-    if cached is not None and not force and now - _health_cache["at"] < _HEALTH_CACHE_TTL_S:
-        return cached
-    async with _health_lock:
-        cached = _health_cache["payload"]
-        if cached is not None and not force and time.monotonic() - _health_cache["at"] < _HEALTH_CACHE_TTL_S:
+    if not force:
+        cached = _health_cache.get(_HEALTH_KEY)
+        if cached is not None:
             return cached
+    async with _health_lock:
+        if not force:
+            cached = _health_cache.get(_HEALTH_KEY)
+            if cached is not None:
+                return cached
         try:
             payload = await _get("/health", timeout_s=_HEALTH_TIMEOUT_S)
             result = {"items": _health_items(payload if isinstance(payload, dict) else {}), "available": True}
         except Exception as e:  # noqa: BLE001
             logger.warning("litellm /health unavailable: %s", _error_text(e))
             result = {"items": [], "available": False, "error": _error_text(e)}
-        _health_cache["payload"] = result
-        _health_cache["at"] = time.monotonic()
+        _health_cache[_HEALTH_KEY] = result
         return result
 
 
 def reset_health_cache() -> None:
-    _health_cache["payload"] = None
-    _health_cache["at"] = 0.0
+    _health_cache.clear()
 
 
 # ─── Spend ────────────────────────────────────────────────────────────────────

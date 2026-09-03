@@ -50,8 +50,10 @@ TEST_CASES_PATH = os.path.join(os.path.dirname(__file__), "test_cases.json")
 
 
 def get_ragas_llm():
+    # Same judge alias as the gate (model/eval): `judge` currently maps to
+    # agent-main behind LiteLLM, and is not the model that wrote the answers.
     llm = ChatOpenAI(
-        model="responder",
+        model=os.getenv("EVAL_JUDGE_MODEL", "judge"),
         base_url=f"{LITELLM_URL}/v1",
         api_key=LITELLM_API_KEY,
     )

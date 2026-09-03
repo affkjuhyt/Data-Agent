@@ -11,12 +11,13 @@ import logging
 from typing import Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 
 from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import SchemaCatalogORM
 from libs.shared.freshness import TableGovernance
-from services.workflow_runtime.routers.catalog import _resolve_tenant
+from services.workflow_runtime.auth import get_current_user
+from services.workflow_runtime.runtime_services.platform_queries import resolve_tenant
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -51,11 +52,11 @@ def _serialize(row: SchemaCatalogORM) -> dict[str, Any]:
 
 @router.get("/api/schema-catalog")
 async def list_schema_catalog(
-    request: Request,
     warehouse_id: Optional[str] = None,
     schema_name: Optional[str] = None,
+    caller: dict[str, Any] = Depends(get_current_user),
 ) -> list[dict[str, Any]]:
-    tenant_id = _resolve_tenant(request.headers.get("X-Tenant-ID"))
+    tenant_id = resolve_tenant(caller)
     from libs.database_connector.postgres_connector import client
     if not client.is_connected():
         raise HTTPException(status_code=503, detail="database not connected")
@@ -75,8 +76,10 @@ async def list_schema_catalog(
 
 
 @router.get("/api/schema-catalog/{catalog_id}")
-async def get_schema_catalog_entry(catalog_id: str, request: Request) -> dict[str, Any]:
-    tenant_id = _resolve_tenant(request.headers.get("X-Tenant-ID"))
+async def get_schema_catalog_entry(
+    catalog_id: str, caller: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    tenant_id = resolve_tenant(caller)
     from libs.database_connector.postgres_connector import client
     if not client.is_connected():
         raise HTTPException(status_code=503, detail="database not connected")

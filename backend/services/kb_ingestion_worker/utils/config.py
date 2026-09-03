@@ -44,7 +44,7 @@ SILVER_CONCURRENCY    = int(os.getenv("SILVER_CONCURRENCY",    "1"))
 GOLD_CONCURRENCY      = int(os.getenv("GOLD_CONCURRENCY",      "6"))
 # Chunks within ONE gold doc: 1 = strictly sequential (default; exact legacy
 # behaviour + maximal cross-chunk entity dedup). > 1 overlaps the per-chunk
-# LLM+embed waits (uses OLLAMA_NUM_PARALLEL) at the cost of slightly weaker
+# LLM+embed waits (bounded by the LLM gateway's parallelism) at the cost of slightly weaker
 # same-batch dedup (registry upserts keep it correct). KB-SCALE-10K.md §6.
 GOLD_CHUNK_CONCURRENCY = int(os.getenv("GOLD_CHUNK_CONCURRENCY", "1"))
 # Conflict resolution is I/O-bound (DB reads + LLM merge + Qdrant/Neo4j writes).
@@ -156,8 +156,8 @@ ENTITY_SOFT_MATCH = os.getenv("ENTITY_SOFT_MATCH", "0") == "1"
 ENTITY_SOFT_THRESHOLD = float(os.getenv("ENTITY_SOFT_THRESHOLD", "0.72"))
 ENTITY_WORD_OVERLAP_THRESHOLD = float(os.getenv("ENTITY_WORD_OVERLAP_THRESHOLD", "0.50"))
 
-LLM_MODEL = os.getenv("LLM_MODEL", "llama3")
-VLM_MODEL = os.getenv("VLM_MODEL", "qwen2.5-vl")
+LLM_MODEL = os.getenv("LLM_MODEL", "agent-fast")
+VLM_MODEL = os.getenv("VLM_MODEL", "agent-main")
 
 # Fallback embed model UUID used by conflict_resolver when it has no collection
 # context.  The gold pipeline resolves the real UUID per-collection at task time

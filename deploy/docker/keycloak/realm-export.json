@@ -909,12 +909,12 @@
           }
         },
         {
-          "name": "flow_buider-audience",
+          "name": "flow_builder-audience",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
           "consentRequired": false,
           "config": {
-            "included.custom.audience": "flow_buider",
+            "included.custom.audience": "flow_builder",
             "id.token.claim": "false",
             "access.token.claim": "true"
           }

@@ -23,7 +23,7 @@ spec:
             - secretRef: { name: kb-backend-secrets }   # DB/urls/passwords
           env:
             - { name: POSTGRES_URL, value: "postgresql+asyncpg://admin:$(PG_PW)@pgbouncer:6432/dataagent" }
-            - { name: MODEL_SERVICE_URL, value: "http://model_service:8001" }
+            - { name: MODEL_SERVICE_URL, value: "http://model-service:8001" }
             - { name: REDIS_URL, value: "redis://redis:6379/0" }
             - { name: RESULT_CACHE_TTL, value: "900" }
             # Shed graph_expand + rerank past this budget under load.

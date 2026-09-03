@@ -165,7 +165,7 @@ async def _get_or_build_graph(
 def invalidate_graph_version(workflow_version_id: str) -> int:
     """Evict cached graphs for a workflow version (cross-replica, via pub/sub).
 
-    Called by the Redis invalidation listener when flow_buider republishes a
+    Called by the Redis invalidation listener when flow_builder republishes a
     version in place (same id, changed content). New-version publishes don't need
     this — they already get a fresh cache key. Returns the number of entries dropped.
     """

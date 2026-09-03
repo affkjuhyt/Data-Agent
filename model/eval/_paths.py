@@ -22,8 +22,14 @@ WORKFLOW_RUNTIME = REPO_ROOT / "backend" / "services" / "workflow_runtime"
 
 
 def ensure(*directories: Path) -> None:
-    """Prepend each directory to sys.path once."""
-    for directory in (REPO_ROOT, *directories):
+    """Prepend each directory to sys.path once.
+
+    `REPO_ROOT / "backend"` is always included: `libs.semantic.*` (and the other
+    backend/libs packages the scorers pull in) resolve relative to backend/,
+    which pytest puts on sys.path via pythonpath config but a bare
+    `python -m model.eval.run` does not.
+    """
+    for directory in (REPO_ROOT, REPO_ROOT / "backend", *directories):
         entry = str(directory)
         if entry not in sys.path:
             sys.path.insert(0, entry)

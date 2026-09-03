@@ -63,7 +63,7 @@ Bí mật: nếu `vault_*` không được định nghĩa, role `common` sinh gi
 ## Prod khác local ở đâu (toàn bộ nằm trong `inventories/prod/group_vars/all.yml`)
 
 * `compose_extra_files: [docker-compose.prod.yml]` — WAL archive, backup sidecar, TLS; không bind-mount source.
-* `compose_build: policy|always`, `llm_backend: litellm_config` (LLM hosted / GPU pool, `deploy/docker/litellm/config.yaml`).
+* `compose_build: policy|always` (LLM routing lives in `deploy/docker/litellm/config.yaml`).
 * `keycloak_disable_mfa: false`, `seed_demo: false`, `openbao_allow_reset: false`, `run_smoke: true`.
 * `kong_public_url` / `keycloak_url` là địa chỉ công bố (issuer trong token phải khớp).
 

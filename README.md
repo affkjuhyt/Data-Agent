@@ -24,7 +24,7 @@ model/       LLM eval harness, RAGAS
 | Path | Contents |
 |---|---|
 | [`frontend/src/`](./frontend/src) | React 19 + TypeScript + Vite frontend (Knowledge Base UI + Ask). `frontend/src/lib/apiClient.ts` is the FastAPI client (bearer-only — Kong injects identity). Root `package.json` is an npm workspace that forwards `npm run dev/test/typecheck` here |
-| [`backend/services/`](./backend/services) | Backend microservices: `kb_backend`, `kb_ingestion_worker`, `auth_api`, `flow_buider`, `workflow_runtime` (which also hosts the multi-agent orchestrator at `/api/orchestrate`), `model_service`, `sandbox_executor`, `release_worker`, `platform_workers` (one image; `WORKER=memory\|schema-crawler\|audit` — ex memory-consumer, schema-crawler-worker, audit-bridge + audit-consumer). Each owns its `Dockerfile` (build context = repo root) |
+| [`backend/services/`](./backend/services) | Backend microservices: `kb_backend`, `kb_ingestion_worker`, `auth_api`, `flow_builder`, `workflow_runtime` (which also hosts the multi-agent orchestrator at `/api/orchestrate`), `model_service`, `sandbox_executor`, `release_worker`, `platform_workers` (one image; `WORKER=memory\|schema-crawler\|audit` — ex memory-consumer, schema-crawler-worker, audit-bridge + audit-consumer). Each owns its `Dockerfile` (build context = repo root) |
 | [`backend/libs/`](./backend/libs) | Shared cross-service layer: `libs/basemodel` (domain models/ORM), `libs/database_connector` (infra clients), `libs/shared` (logger, auth, observability), `libs/semantic` (metric contracts). Innermost architecture layer |
 | [`backend/alembic/`](./backend/alembic) | Database migrations (`alembic -c backend/alembic/alembic.ini upgrade head`) |
 | [`deploy/docker/`](./deploy/docker) | Docker Compose stacks (base + overlays) and every service config (`kong`, `kafka`, `keycloak`, `openbao`, `litellm`, `sql`, `certs`…). Compose project name is pinned to `infra` |
@@ -384,7 +384,7 @@ The base stack includes these service groups:
 - **Security and gateway:** Keycloak, Kong, OpenBao
 - **Messaging:** Kafka
 - **Observability and AI tooling:** LiteLLM, Langfuse, Jaeger, Elasticsearch
-- **Application services:** workflow_runtime, flow_buider, kb-backend, kb_ingestion_worker, model_service, auth_api, release_worker, platform_workers (memory / schema-crawler / audit) (JWKS/JWT verification is handled at the edge by the Kong `aeroflow-jwks` plugin, not a service)
+- **Application services:** workflow_runtime, flow_builder, kb-backend, kb_ingestion_worker, model_service, auth_api, release_worker, platform_workers (memory / schema-crawler / audit) (JWKS/JWT verification is handled at the edge by the Kong `aeroflow-jwks` plugin, not a service)
 - **Frontend:** Vite server on `5173`
 
 ---
@@ -444,7 +444,7 @@ docker exec -i dataagent-postgres psql -U admin -d dataagent \
 
 ```bash
 dc up -d --build workflow_runtime
-dc up -d --build flow_buider
+dc up -d --build flow_builder
 dc up -d --build litellm
 ```
 
@@ -488,7 +488,7 @@ Separate intent-specific Docker paths also exist:
 | Kong proxy | http://localhost:8000 |
 | Kong admin | http://localhost:8900 |
 | workflow_runtime | http://localhost:8001 |
-| flow_buider | http://localhost:8002 |
+| flow_builder | http://localhost:8002 |
 | kb-backend | http://localhost:8050 |
 | release_worker | http://localhost:8100 |
 | auth_api | http://localhost:8200 |

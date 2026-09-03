@@ -18,7 +18,7 @@
 # (--profile runtime: the base file keeps postgres/minio/kong… behind that profile)
 #
 # Specify only KB services on the up command to avoid starting the full platform
-# (workflow_runtime, flow_buider, auth_api, frontend, etc.):
+# (workflow_runtime, flow_builder, auth_api, frontend, etc.):
 #
 #   ... up -d --build \
 #     postgres mongo qdrant neo4j minio kafka keycloak \
@@ -30,7 +30,7 @@
 #   keycloak        — adds healthcheck (main compose omits it)
 #   minio-init      — creates the knowledge-base bucket (KB-specific)
 #   kong-setup      — configures Kong routes + JWT plugin for KB services
-#   model_service   — adds remote GPU tunnel env vars + KB postgres DSN
+#   model_service   — adds remote GPU server env vars + KB postgres DSN
 #   kb-backend      — publishes :8050, adds LightRAG tuning knobs
 #   kb-ingestion-worker — adds docling cache volume
 
@@ -92,14 +92,14 @@ services:
     build:
       context: ../../backend/services/model_service
     environment:
-      EMBED_MODEL: ${EMBED_MODEL:-intfloat/multilingual-e5-small}
-      RERANK_MODEL: ${RERANK_MODEL:-cross-encoder/mmarco-mMiniLMv2-L12-H384-v1}
+      # Pure API gateway — all inference on the GPU server (TEI embed/rerank +
+      # vLLM chat). REMOTE_* unset ⇒ /embed //rerank //generate return 503.
       REMOTE_EMBED_URL: ${REMOTE_EMBED_URL:-}
       REMOTE_RERANK_URL: ${REMOTE_RERANK_URL:-}
       REMOTE_API_KEY: ${REMOTE_API_KEY:-}
       REMOTE_LLM_URL: ${REMOTE_LLM_URL:-http://10.10.55.101:8002}
       REMOTE_LLM_KEY: ${REMOTE_LLM_KEY:-}
-      REMOTE_LLM_MODEL: ${REMOTE_LLM_MODEL:-}
+      REMOTE_LLM_MODEL: ${REMOTE_LLM_MODEL:-agent-fast}
       OMP_NUM_THREADS: "2"
       POSTGRES_DSN: postgresql://${POSTGRES_USER:-admin}@postgres/${POSTGRES_DB:-dataagent}
     extra_hosts:
@@ -135,7 +135,7 @@ services:
       dockerfile: backend/services/kb_ingestion_worker/Dockerfile
     environment:
       MINIO_BUCKET: knowledge-base
-      LLM_MODEL: llama3
+      LLM_MODEL: agent-fast
       HF_HOME: /root/.cache/huggingface
     volumes:
       - docling_cache:/root/.cache/huggingface

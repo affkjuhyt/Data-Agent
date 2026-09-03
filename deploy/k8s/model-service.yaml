@@ -1,82 +1,82 @@
-# model_service (embed/rerank/LLM-proxy) — Deployment + Service + HPA.
+# model-service (embed/rerank/LLM gateway) — Deployment + Service + HPA.
 #
-# The image auto-detects its device (backend/services/model_service/device.py: CUDA > MPS
-# > CPU) and reports it at GET /capabilities — so the SAME image runs CPU-only
-# (this cluster, no GPU) or on a GPU node pool without changes. The manifest only
-# decides SCHEDULING. Default below is CPU (portable); flip on the GPU block for a
-# GPU node pool in prod (the embed bottleneck — KB-SCALE-10K §2/§3 — wants a GPU).
+# Pure gateway image: no local weights, no torch. Embedding and reranking are
+# served by TEI and the LLM by vLLM on the GPU server; this service only proxies
+# and batches. The four REMOTE_* endpoints come from the shared ConfigMap
+# (deploy/k8s/config.yaml) — they point across the VPN at the GPU host, so they
+# are cluster-specific wiring, not per-file values.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: model_service
-  labels: { app: model_service }
+  name: model-service
+  labels: { app: model-service }
 spec:
   replicas: 2
   selector:
-    matchLabels: { app: model_service }
+    matchLabels: { app: model-service }
   template:
     metadata:
-      labels: { app: model_service }
+      labels: { app: model-service }
     spec:
-      # ── GPU node pool (uncomment for a GPU cluster; device.py then picks cuda) ──
-      # nodeSelector: { cloud.google.com/gke-accelerator: nvidia-tesla-t4 }
-      # tolerations:
-      #   - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
       containers:
-        - name: model_service
+        - name: model-service
           image: REGISTRY/model_service:latest
           ports:
             - containerPort: 8001
           env:
-            - { name: EMBED_MODEL, value: "intfloat/multilingual-e5-small" }
-            - { name: RERANK_MODEL, value: "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1" }
-            # Leave EMBED_DEVICE unset → auto-detect. Force with cpu/cuda/mps if needed.
             - { name: EMBED_CACHE_ENABLED, value: "true" }
             - { name: EMBED_BATCH_ENABLED, value: "true" }
             - { name: EMBED_BATCH_MAX, value: "64" }
             - { name: EMBED_BATCH_WAIT_MS, value: "8" }
-            - { name: REMOTE_LLM_URL, value: "http://litellm:4000" }
+            # Remote inference backends — values live in the dataagent-config
+            # ConfigMap so every consumer agrees on the same GPU endpoints.
+            - name: REMOTE_EMBED_URL
+              valueFrom:
+                configMapKeyRef: { name: dataagent-config, key: REMOTE_EMBED_URL }
+            - name: REMOTE_RERANK_URL
+              valueFrom:
+                configMapKeyRef: { name: dataagent-config, key: REMOTE_RERANK_URL }
+            - name: REMOTE_LLM_URL
+              valueFrom:
+                configMapKeyRef: { name: dataagent-config, key: REMOTE_LLM_URL }
+            - name: REMOTE_LLM_MODEL
+              valueFrom:
+                configMapKeyRef: { name: dataagent-config, key: REMOTE_LLM_MODEL }
           resources:
-            requests: { cpu: "1", memory: "1Gi" }
-            limits:   { cpu: "2", memory: "2Gi" }
-            # ── GPU: uncomment on a GPU node pool ──
-            # limits: { nvidia.com/gpu: "1", memory: "4Gi" }
+            # A tiny HTTP proxy: no model in memory, CPU is only request
+            # marshalling and the embed cache.
+            requests: { cpu: "100m", memory: "128Mi" }
+            limits:   { cpu: "500m", memory: "256Mi" }
           readinessProbe:
             httpGet: { path: /health, port: 8001 }
-            initialDelaySeconds: 20      # model weights load on start
+            initialDelaySeconds: 5       # nothing to load — the app just binds
             periodSeconds: 10
           livenessProbe:
             httpGet: { path: /health, port: 8001 }
-            initialDelaySeconds: 60
-          volumeMounts:
-            - { name: hf-cache, mountPath: /app/models }
-      volumes:
-        # PVC so weights persist / are shared; a GPU pool would use an RWX volume.
-        - name: hf-cache
-          persistentVolumeClaim: { claimName: model-weights }
+            initialDelaySeconds: 15
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: model_service
+  name: model-service
 spec:
-  selector: { app: model_service }
+  selector: { app: model-service }
   ports:
     - { port: 8001, targetPort: 8001 }
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: model_service
+  name: model-service
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: model_service
+    name: model-service
   minReplicas: 2
-  # CPU-only: embed is the bottleneck, so scale wider. On GPU, 1-2 replicas +
-  # dynamic batching handle far more — cap lower and scale on a GPU-util metric.
-  maxReplicas: 8
+  # The GPU server is the real capacity; replicas here only add connection
+  # fan-in and cache locality, so the cap is low.
+  maxReplicas: 4
   metrics:
     - type: Resource
       resource:
@@ -84,6 +84,6 @@ spec:
         target: { type: Utilization, averageUtilization: 70 }
   behavior:
     scaleUp:
-      stabilizationWindowSeconds: 30    # embed load spikes fast; react quickly
+      stabilizationWindowSeconds: 30
     scaleDown:
-      stabilizationWindowSeconds: 300   # models are expensive to reload; scale down slowly
+      stabilizationWindowSeconds: 120   # stateless proxy — nothing expensive to reload

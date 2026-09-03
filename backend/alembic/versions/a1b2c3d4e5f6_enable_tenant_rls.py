@@ -17,7 +17,7 @@ column. After this migration:
 ⚠️  BREAKING for services that currently connect as the table owner and do
     NOT set `app.tenant_id` before querying. Affected services:
       - workflow_runtime
-      - flow_buider
+      - flow_builder
       - kb-backend
       - release_worker
       - audit-bridge / audit-consumer

@@ -149,13 +149,6 @@ model_list:
       api_base: os.environ/EMBEDDING_V1_BASE_URL
       api_key: not-needed
 
-# ── previous backend (Claude via host proxy :8089) — revert/fallback ─────────
-#   - model_name: responder
-#     litellm_params:
-#       model: openai/sonnet
-#       api_base: http://host.docker.internal:8089/v1
-#       api_key: not-needed
-
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
 

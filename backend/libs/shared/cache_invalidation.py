@@ -6,7 +6,7 @@ yields a new cache key on every replica. The gap this module closes is the
 *same-version* edit (republish): the id doesn't change, so each replica keeps
 serving its stale compiled graph until restart.
 
-flow_buider calls `publish_graph_invalidation(...)` after a republish; every
+flow_builder calls `publish_graph_invalidation(...)` after a republish; every
 workflow_runtime replica runs `run_graph_invalidation_listener(...)` and evicts
 the matching cache entry. Both sides are best-effort: Redis being down must never
 break a publish or a request — it only means invalidation falls back to the

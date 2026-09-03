@@ -13,7 +13,8 @@ The frontend has no mock server and no auth bypass: `kb-backend` is **fail-close
 
 | Stack | File / helper | What it is | When to use |
 |---|---|---|---|
-| **kb-e2e** | [`docker-compose.yml`](./docker-compose.yml) + [`docker-compose.kb-e2e.yml`](./docker-compose.kb-e2e.yml) (hai file `-f`, xem Step 3) | **Overlay** on the main platform compose. Shares the same `dataagent` DB, Kafka internal listener (`kafka:9094`), and network as the full platform. Adds dev-friendly memory limits on Neo4j and KB tuning knobs. | **The standard way to bring up the stack** — day-to-day local dev, KB + ingestion + auth chain, pre-merge validation. |
+| **kb-e2e-dev** | [`docker-compose.yml`](./docker-compose.yml) + [`docker-compose.kb-e2e-dev.yml`](./docker-compose.kb-e2e-dev.yml) (hai file `-f`, xem Step 3) | **Overlay** on the main platform compose. Shares the same `dataagent` DB, Kafka internal listener (`kafka:9094`), and network as the full platform. Adds KB seed data, the KB bootstrap jobs, and KB tuning knobs. | **The standard way to bring up the stack** — day-to-day local dev, KB + ingestion + auth chain, pre-merge validation. |
+| **kb-e2e (standalone attach)** | [`docker-compose.kb-e2e.yml`](./docker-compose.kb-e2e.yml) alone | **Standalone** project that defines only the KB-owned services (model_service, kb-backend, kb-ingestion-worker + bootstrap jobs) and **attaches** to shared infra another stack already brought up (external `data-agent-network`). | KB services against an already-running platform, without touching its infra. |
 | **Full platform** | [`docker-compose.yml`](./docker-compose.yml) + an override | The whole Data Agent OS — every service group (storage, security, messaging, observability, all app services). | Running the entire platform, not just KB. |
 | **Test fixture** | [`docker-compose.test.yml`](./docker-compose.test.yml) | Isolated PostgreSQL only. | Connector / ORM tests. |
 
@@ -32,7 +33,7 @@ profile and therefore always start (the core auth + system-of-record):
 
 ```bash
 # Run from the repository root
-docker compose -f deploy/docker/docker-compose.yml --profile authoring up -d   # design flows: + flow_buider, frontend, mongo, redis
+docker compose -f deploy/docker/docker-compose.yml --profile authoring up -d   # design flows: + flow_builder, frontend, mongo, redis
 docker compose -f deploy/docker/docker-compose.yml --profile kb        up -d   # Knowledge Base: + kb-backend, ingestion, model_service, litellm + qdrant/neo4j/minio/kafka/mongo
 docker compose -f deploy/docker/docker-compose.yml --profile iam       up -d   # auth/governance: + auth_api, platform-workers-audit, openbao, kafka
 docker compose -f deploy/docker/docker-compose.yml --profile release   up -d   # release: + release_worker + minio/mongo/kafka/redis
@@ -46,7 +47,7 @@ docker compose -f deploy/docker/docker-compose.yml --profile runtime --profile o
 
 | Profile | Adds (app) | Adds (stores) |
 |---|---|---|
-| `authoring` | flow_buider, frontend | mongo, redis |
+| `authoring` | flow_builder, frontend | mongo, redis |
 | `kb` | kb-backend, kb-ingestion-worker, model_service, litellm | qdrant, neo4j, minio, kafka, mongo, redis |
 | `runtime` | workflow_runtime (incl. orchestrator + `/api/storage`), kb-backend, model_service, litellm | mongo, redis, qdrant, neo4j, kafka, openbao, minio |
 | `iam` | auth_api, platform-workers-audit | kafka, openbao |
@@ -65,31 +66,46 @@ docker compose -f deploy/docker/docker-compose.yml --profile runtime --profile o
 >
 > When you enable a profile, every service tagged with it starts; a shared store (e.g. `kafka`)
 > carries **all** the profiles that use it, so it comes up under any of them.
+>
+> **Note — `authoring` and `iam` need `-f docker-compose.security.yml` too.** `frontend`
+> (authoring) depends on `keycloak-lb`, and `auth_api` (iam) joins `kong-admin-net` —
+> both are defined only in [`docker-compose.security.yml`](./docker-compose.security.yml).
+> Without that file those profiles fail to resolve the network/service.
 
 ---
 
-## Bring up the stack — kb-e2e
+## Bring up the stack — KB dev (base + kb-e2e-dev overlay)
 
-`docker-compose.kb-e2e.yml` is a **compose overlay** — it is not standalone. It always
-runs on top of `docker-compose.yml` which provides the shared platform infrastructure.
+`docker-compose.kb-e2e-dev.yml` is a **compose overlay** — it is not standalone. It
+always runs on top of `docker-compose.yml` (with `--profile runtime`), which provides
+the shared platform infrastructure.
 
 ```
-docker-compose.yml         →  postgres · mongo · qdrant · neo4j · minio · kafka
-                              keycloak · kong-migration · kong · model_service
-                              kb-backend · kb-ingestion-worker (base definitions)
-docker-compose.kb-e2e.yml  →  overrides / extensions:
-                                postgres      adds KB seed data (05-kb-seed.sql)
-                                keycloak      adds healthcheck
-                                neo4j         reduces memory to dev-friendly 1.5 GB
-                                minio-init    creates the knowledge-base bucket
-                                kong-setup    configures routes + JWT plugin
-                                model_service adds remote GPU tunnel env vars
-                                kb-backend    publishes :8050, adds LightRAG knobs
-                                kb-ingestion-worker  adds docling cache volume
+docker-compose.yml             →  postgres · mongo · qdrant · neo4j · minio · kafka
+                                  keycloak · kong-migration · kong · model_service
+                                  kb-backend · kb-ingestion-worker (base definitions)
+docker-compose.kb-e2e-dev.yml  →  overrides / extensions:
+                                    postgres      adds KB seed data (05-kb-seed.sql)
+                                    keycloak      adds healthcheck
+                                    minio-init    creates the knowledge-base bucket
+                                    kong-setup    configures routes + JWT plugin
+                                    model_service adds remote GPU server env vars
+                                    kb-backend    publishes :8050, adds LightRAG knobs
+                                    kb-ingestion-worker  adds docling cache volume
 ```
 
 All services share the same `dataagent` Postgres database and Kafka plaintext listener
 (`kafka:9094`) — identical to the full platform.
+
+> **Standalone alternative:** `docker-compose.kb-e2e.yml` (used **alone**, no `-f`
+> base file) defines only the KB-owned services and attaches them to shared infra
+> that is *already running* in another compose project (it joins the external
+> `data-agent-network` and never owns postgres/kafka/kong/etc.):
+>
+> ```powershell
+> docker compose -f deploy/docker/docker-compose.kb-e2e.yml `
+>   --env-file deploy/docker/.env.kb-testing up -d --build
+> ```
 
 ### Step 1 — create your env file (first time only)
 
@@ -101,9 +117,9 @@ Edit `deploy/docker/.env.kb-testing`:
 - `REMOTE_LLM_URL` / `REMOTE_LLM_KEY` — vLLM trên GPU server (`agent-fast`). Without it the gold
   ingestion stage and LightRAG canonicalize step return 503; bronze→silver and
   retrieval still work.
-- `REMOTE_EMBED_URL` / `REMOTE_RERANK_URL` / `REMOTE_API_KEY` — remote GPU for
-  embed/rerank. When set, model_service skips the local model download entirely
-  and starts in seconds.
+- `REMOTE_EMBED_URL` / `REMOTE_RERANK_URL` / `REMOTE_API_KEY` — GPU server TEI for
+  embed/rerank. model_service is a pure gateway (no local models); unset, `/embed`
+  and `/rerank` return 503.
 - `KAFKA_ADMIN_PASSWORD` — required (no compose default). Set to `dev123` for local
   dev. Must match `deploy/docker/kafka/kafka-broker-jaas.config`.
 
@@ -121,9 +137,9 @@ Copy-Item deploy/docker/kafka/kafka-broker-jaas.config.example deploy/docker/kaf
 
 ```powershell
 # Two-file overlay (KB-relevant services only):
-docker compose `
+docker compose --profile runtime `
   -f deploy/docker/docker-compose.yml `
-  -f deploy/docker/docker-compose.kb-e2e.yml `
+  -f deploy/docker/docker-compose.kb-e2e-dev.yml `
   --env-file deploy/docker/.env.kb-testing `
   up -d --build `
   postgres mongo qdrant neo4j minio kafka keycloak `
@@ -178,11 +194,11 @@ All users share tenant `a0000000-0000-0000-0000-000000000001` (the seeded dev te
 
 | Action | Command |
 |---|---|
-| Stop, keep data | `docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e.yml down` |
-| Stop, **wipe** data | `docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e.yml down -v` |
-| Tail logs | `docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e.yml logs -f` |
-| Service status | `docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e.yml ps` |
-| Rebuild one service | `docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e.yml up -d --build --no-deps kb-backend` |
+| Stop, keep data | `docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e-dev.yml down` |
+| Stop, **wipe** data | `docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e-dev.yml down -v` |
+| Tail logs | `docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e-dev.yml logs -f` |
+| Service status | `docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e-dev.yml ps` |
+| Rebuild one service | `docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e-dev.yml up -d --build --no-deps kb-backend` |
 
 > **Fresh volume note:** `docker-entrypoint-initdb.d` scripts run only on a new Postgres
 > volume. `docker-compose.yml` mounts `init.sql` (KB tables); the overlay adds `seed.sql`
@@ -268,12 +284,12 @@ container restarts every ~60 s; `model_service` log shows
 **Cause:** GPU server không tới được (VPN rớt / vLLM-TEI chưa chạy). Kiểm tra
 `curl http://10.10.55.101:8001/v1/models` từ host rồi recreate `model_service`.
 
-**Fix** — put the new tunnel URLs + keys in `deploy/docker/.env.kb-testing`, then recreate
+**Fix** — put the corrected URLs + keys in `deploy/docker/.env.kb-testing`, then recreate
 the two services that read them. The worker **must** be recreated too (its startup
 probe is bound to the old URL):
 
 ```powershell
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e.yml `
+docker compose --profile runtime -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e-dev.yml `
   --env-file deploy/docker/.env.kb-testing `
   up -d --no-deps --force-recreate model_service kb-ingestion-worker
 ```
@@ -305,8 +321,8 @@ deploy/docker/
   docker-compose.app.yml            # application tier (runtime incl. orchestrator, workers, frontend)
   docker-compose.local.yml          # + migrate/seed for a dev machine
   docker-compose.e2e-dev.yml        # reuse built images + bind-mount source (tests/e2e, Ansible local)
-  docker-compose.agent-test.yml     # LiteLLM -> host ollama
-  docker-compose.kb-e2e.yml         # standalone KB stack (data plane, worker, Keycloak, DB-less Kong)
+  docker-compose.agent-test.yml     # agent perf-test overlay (GPU server via litellm config.yaml)
+  docker-compose.kb-e2e.yml         # standalone: KB-owned services attach to already-running shared infra
   docker-compose.kb-e2e-dev.yml     # KB world as an overlay on the base (--profile runtime)
   docker-compose.kb-lite.yml        # small-RAM KB profile
   docker-compose.prod.yml           # hardening: required secrets, TLS, WAL archive, backup sidecar
@@ -320,7 +336,7 @@ deploy/docker/
   keycloak/      realm-export.json, setup-audience-mappers.sh
   kafka/         Dockerfile, kafka-setup.sh, kafka-broker-jaas.config.example
   openbao/       config.hcl, config.prod.hcl, openbao-approle-setup.sh
-  litellm/       config.yaml (hosted), config.agent-local.yaml (ollama)
+  litellm/       config.yaml (GPU server vLLM/TEI aliases)
   sql/           create-extra-dbs.sql, init.sql, grant-*.sql, kb-seed.sql
   neo4j/         Dockerfile (APOC)     redis/  haproxy/  filebeat/  monitoring/
 ```

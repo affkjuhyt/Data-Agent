@@ -77,7 +77,7 @@ _UNSCOPED_BUDGET = {
     "kb_backend": 71,
     "kb_ingestion_worker": 49,
     "database_connector": 18,
-    "flow_buider": 8,
+    "flow_builder": 8,
     "workflow_runtime": 5,
     "sandbox_executor": 1,
     "platform_workers": 1,

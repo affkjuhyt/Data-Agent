@@ -2,7 +2,7 @@
 # current package layout allows it. Run: `lint-imports`.
 #
 # NOTE (Phase 0): the hyphenated service dirs (backend/services/auth_api,
-# backend/services/workflow_runtime, backend/services/flow_buider, …) are NOT importable Python
+# backend/services/workflow_runtime, backend/services/flow_builder, …) are NOT importable Python
 # packages, so import-linter/grimp can only analyse the underscore-named ones
 # (basemodel, libs.shared, services.kb_backend, services.database_connector).
 # These contracts capture the rules that ARE true today and guard against

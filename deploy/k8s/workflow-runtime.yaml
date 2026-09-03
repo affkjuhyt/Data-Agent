@@ -13,15 +13,15 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: workflow_runtime
-  labels: { app: workflow_runtime, app.kubernetes.io/part-of: dataagent }
+  name: workflow-runtime
+  labels: { app: workflow-runtime, app.kubernetes.io/part-of: dataagent }
 spec:
   replicas: 2
   selector:
-    matchLabels: { app: workflow_runtime }
+    matchLabels: { app: workflow-runtime }
   template:
     metadata:
-      labels: { app: workflow_runtime }
+      labels: { app: workflow-runtime }
     spec:
       # A turn in flight is a user watching a half-written answer. 60s lets the
       # current SSE stream finish instead of cutting it off at the default 30.
@@ -51,7 +51,7 @@ spec:
             requests: { cpu: "50m", memory: "128Mi" }
             limits:   { cpu: "250m", memory: "256Mi" }
       containers:
-        - name: workflow_runtime
+        - name: workflow-runtime
           image: REGISTRY/workflow_runtime:latest   # built from backend/services/workflow_runtime/Dockerfile
           ports:
             - containerPort: 8001
@@ -95,22 +95,22 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: workflow_runtime
-  labels: { app: workflow_runtime }
+  name: workflow-runtime
+  labels: { app: workflow-runtime }
 spec:
-  selector: { app: workflow_runtime }
+  selector: { app: workflow-runtime }
   ports:
     - { port: 8001, targetPort: 8001 }
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: workflow_runtime
+  name: workflow-runtime
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: workflow_runtime
+    name: workflow-runtime
   minReplicas: 2
   maxReplicas: 8
   metrics:

@@ -9,8 +9,8 @@ A background thread periodically probes the LLM (OpenAI-compatible
 batch — and records the timings as gauges. Prometheus scrapes GET /metrics.
 
 Env:
-  LLM_BASE_URL     base URL of the LLM (default http://host.docker.internal:11434)
-  LLM_MODEL        model name (default qwen2.5:3b)
+  LLM_BASE_URL     base URL of the LLM (default http://10.10.55.101:8001)
+  LLM_MODEL        model name (default agent-main)
   PROBE_INTERVAL   seconds between probe cycles (default 30)
   PROBE_CONCURRENCY number of parallel requests in the concurrent probe (default 3)
   LISTEN_PORT      /metrics port (default 9200)
@@ -27,8 +27,8 @@ import uvicorn
 from fastapi import FastAPI, Response
 from fastapi.responses import PlainTextResponse
 
-BASE_URL    = os.getenv("LLM_BASE_URL", "http://host.docker.internal:11434").rstrip("/")
-MODEL       = os.getenv("LLM_MODEL", "qwen2.5:3b")
+BASE_URL    = os.getenv("LLM_BASE_URL", "http://10.10.55.101:8001").rstrip("/")
+MODEL       = os.getenv("LLM_MODEL", "agent-main")
 INTERVAL    = float(os.getenv("PROBE_INTERVAL", "30"))
 CONCURRENCY = int(os.getenv("PROBE_CONCURRENCY", "3"))
 PORT        = int(os.getenv("LISTEN_PORT", "9200"))

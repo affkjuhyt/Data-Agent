@@ -39,7 +39,7 @@ DR_DIR = K8S_DIR / "dr"
 
 # Deployments that reach Postgres through the ORM, and so must not serve traffic
 # on a schema older than their code.
-MIGRATION_GATED = {"workflow_runtime"}
+MIGRATION_GATED = {"workflow-runtime"}
 GATE_CONTAINER = "wait-for-migrations"
 
 
@@ -145,6 +145,42 @@ class TestManifestsMatchTheApiSchema:
             self._walk(doc, model_name, where, k8s, errors)
 
         assert not errors, "\n".join(errors)
+
+
+# ── names the API server would reject ──────────────────────────────────────
+
+# RFC 1123 label: what the API server enforces for object names, Service names
+# and container names. `metadata.name: workflow_runtime` is not a schema error
+# (it is a perfectly valid string), it is a create-time rejection — which the
+# schema walk above cannot catch, so it gets its own pure-YAML check that runs
+# even without the kubernetes package installed.
+DNS_1123 = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
+
+
+class TestNamesAreValidDns1123:
+    def _bad_names(self) -> list[str]:
+        bad: list[str] = []
+        for path, doc in TOP_LEVEL + _all_docs(DR_DIR):
+            name = doc.get("metadata", {}).get("name", "")
+            if not DNS_1123.fullmatch(name):
+                bad.append(f"{path.name}: {doc.get('kind')}/{name!r} (metadata.name)")
+            spec = doc.get("spec", {})
+            for pod in (
+                spec.get("template", {}).get("spec"),
+                spec.get("jobTemplate", {}).get("spec", {}).get("template", {}).get("spec"),
+            ):
+                if not pod:
+                    continue
+                for c in pod.get("containers", []) + pod.get("initContainers", []):
+                    if not DNS_1123.fullmatch(c.get("name", "")):
+                        bad.append(f"{path.name}: {doc.get('kind')}/{name} container {c.get('name')!r}")
+        return bad
+
+    def test_every_object_and_container_name_is_a_dns_label(self):
+        """Underscores in a name are the compose→k8s port's classic bug: valid
+        YAML, valid schema, rejected by the API server at apply time."""
+        bad = self._bad_names()
+        assert not bad, "not DNS-1123 (^[a-z0-9]([-a-z0-9]*[a-z0-9])?$):\n" + "\n".join(bad)
 
 
 # ── the migration gate ─────────────────────────────────────────────────────

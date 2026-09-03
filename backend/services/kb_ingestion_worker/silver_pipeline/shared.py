@@ -34,7 +34,9 @@ async def _llm_generate_json(system_type: str, user: str, max_tokens: int = 512)
         return {}
 
 
-async def _vlm_describe(image_bytes: bytes, content_type: str = "image/jpeg") -> str:
+async def _vlm_describe(_image_bytes: bytes, _content_type: str = "image/jpeg") -> str:
+    # Both parameters are part of the caller interface (silver_pipeline/parsing.py
+    # passes them positionally) but unused until a real VLM endpoint exists.
     raise NotImplementedError(
         "VLM describe requires USE_VLM=true and a dedicated VLM endpoint. "
         "Set USE_VLM=false to skip image/video processing."

@@ -1,11 +1,11 @@
-"""Caller authentication for flow_buider.
+"""Caller authentication for flow_builder.
 
 Thin binding over backend/libs/shared/auth, so the trust decision is the same one every
 other service makes.
 
 Why it was missing here after orchestrator and workflow_runtime were fixed: the
 audit named the *agent API* and those two services answer to that name, so the
-port survey stopped there. flow_buider was published on 8002 with no
+port survey stopped there. flow_builder was published on 8002 with no
 authentication of any kind and every route deriving its tenant from
 `x_tenant_id or DEV_TENANT_ID` — a raw client header, defaulting to a real
 tenant when absent. Anyone who could reach the host could list, edit, delete and
@@ -16,7 +16,7 @@ objects behind these routes are the agent definitions themselves, so writing
 them changes what every subsequent conversation does — which prompts run, which
 tools are granted, which databases are reached.
 
-FLOW_BUILDER_ALLOWED_SERVICES is empty by default: nothing calls flow_buider
+FLOW_BUILDER_ALLOWED_SERVICES is empty by default: nothing calls flow_builder
 service-to-service, so only the gateway route is open. Set it only if that
 changes.
 """

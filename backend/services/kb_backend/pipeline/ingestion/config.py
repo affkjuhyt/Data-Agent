@@ -2,8 +2,8 @@ import os
 
 LITELLM_BASE_URL    = os.getenv("LITELLM_BASE_URL",    "http://litellm:4000")
 MODEL_SERVICE_URL   = os.getenv("MODEL_SERVICE_URL",   "http://model_service:8001")
-LLM_MODEL = os.getenv("LLM_MODEL", "llama3")
-VLM_MODEL = os.getenv("VLM_MODEL", "qwen2.5-vl")
+LLM_MODEL = os.getenv("LLM_MODEL", "agent-fast")
+VLM_MODEL = os.getenv("VLM_MODEL", "agent-main")
 
 MINIO_BUCKET = os.getenv("MINIO_BUCKET", "knowledge-base")
 MAX_FILE_SIZE_BYTES = int(os.getenv("MAX_FILE_SIZE_MB", "200")) * 1024 * 1024

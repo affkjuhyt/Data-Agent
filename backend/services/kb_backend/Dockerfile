@@ -65,7 +65,7 @@ ENV POSTGRES_URL="postgresql+asyncpg://aeroflow:aeroflow_secret@postgres/aeroflo
     NEO4J_URL="bolt://neo4j:7687" \
     MODEL_SERVICE_URL="http://model_service:8001" \
     LITELLM_BASE_URL="http://litellm:4000" \
-    LLM_MODEL="llama3"
+    LLM_MODEL="agent-fast"
 
 # Create writable log directory before dropping root
 RUN useradd --no-create-home --uid 1001 kb \

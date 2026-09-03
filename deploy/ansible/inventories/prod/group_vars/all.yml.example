@@ -4,7 +4,6 @@ compose_project: dataagent
 compose_extra_files:
   - docker-compose.prod.yml               # WAL archive, backup sidecar, TLS OpenBao
 compose_build: policy                     # build when the image is missing; "always" for a release
-llm_backend: litellm_config               # deploy/docker/litellm/config.yaml → your hosted LLM
 keycloak_disable_mfa: false
 openbao_allow_reset: false                # never destroy a production vault automatically
 seed_demo: false
