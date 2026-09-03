@@ -9,9 +9,18 @@ model_list:
       api_base: http://host.docker.internal:11434
 
   # Embeddings (KB/schema paths) — kept explicit so they don't hit the chat model.
+  # MUST be a real embedding model, not a chat model. Pointing this at
+  # qwen2.5:3b did return vectors (ollama will embed from any model's hidden
+  # state) but at that model's hidden size, 2048 — while EMBEDDING_DIM and
+  # every Qdrant collection on the platform are 1024 (BGE-M3). Nothing failed
+  # loudly: the HTTP call succeeded and only the Qdrant upsert 400'd, so the
+  # crawler/memory workers logged a per-item error and moved on, leaving every
+  # collection permanently empty. bge-m3 here matches the production config.yaml
+  # route (openai/bge-m3 via model_service) dimension-for-dimension.
+  #   requires: ollama pull bge-m3
   - model_name: embedder
     litellm_params:
-      model: ollama/qwen2.5:3b
+      model: ollama/bge-m3
       api_base: http://host.docker.internal:11434
 
 litellm_settings:
