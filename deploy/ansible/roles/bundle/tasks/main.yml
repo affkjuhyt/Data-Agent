@@ -2,7 +2,6 @@
 # Offline install bundle — what a closed-network customer receives:
 #   images.tar.gz   every image the compose stack references (docker save)
 #   code.tar.gz     compose files + service configs + playbook + seed (no source, no node_modules)
-#   ollama/         the local LLM weights (optional; bundle_include_ollama)
 #   install.sh      load images → restore model → unpack → ansible-playbook
 #   SHA256SUMS, manifest.json
 #
@@ -112,19 +111,6 @@
   changed_when: false
   failed_when: leaked.stdout | length > 0
 
-- name: ollama model weights
-  when: bundle_include_ollama | bool
-  block:
-    - name: Export helper
-      ansible.builtin.copy:
-        src: ollama_export.py
-        dest: /tmp/dataagent-ollama-export.py
-        mode: "0644"
-
-    - name: Copy {{ ollama_model }} (manifest + blobs)
-      ansible.builtin.command: python3 /tmp/dataagent-ollama-export.py {{ ollama_model }} {{ bundle_stage }}/ollama
-      register: ollama_export
-      changed_when: true
 
 - name: install.sh
   ansible.builtin.template:
@@ -156,5 +142,4 @@
     msg:
       - "bundle:  {{ bundle_stage }}  ({{ bundle_size.stdout.split()[0] }})"
       - "images:  {{ bundle_images | length }} → images.tar.gz"
-      - "ollama:  {{ ollama_export.stdout | default('not included') }}"
       - "install: copy the directory to the host, then ./install.sh --dir /opt/data-agent"

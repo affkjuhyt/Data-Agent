@@ -16,7 +16,7 @@ networks:
     name: data-agent-network
 
 services:
-  # Probes the host LLM (ollama) and exposes generation perf as /metrics.
+  # Probes the GPU vLLM (agent-main) and exposes generation perf as /metrics.
   llm_exporter:
     build:
       context: ../..
@@ -25,8 +25,9 @@ services:
     container_name: llm_exporter
     restart: unless-stopped
     environment:
-      LLM_BASE_URL: "${LLM_BASE_URL:-http://host.docker.internal:11434}"
-      LLM_MODEL: "${LLM_MODEL:-qwen2.5:1.5b}"
+      # GPU server (04-09-2026): probe vLLM agent-main để đo TTFT/tok-s thật.
+      LLM_BASE_URL: "${LLM_BASE_URL:-http://10.10.55.101:8001}"
+      LLM_MODEL: "${LLM_MODEL:-agent-main}"
       PROBE_INTERVAL: "${LLM_PROBE_INTERVAL:-30}"
       PROBE_CONCURRENCY: "${LLM_PROBE_CONCURRENCY:-3}"
     extra_hosts:

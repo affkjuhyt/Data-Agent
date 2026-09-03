@@ -24,13 +24,6 @@ if command -v sha256sum >/dev/null 2>&1; then SUM="sha256sum -c"; else SUM="shas
 echo "▶ loading images ({{ bundle_images | length }})"
 docker load -i "$HERE/images.tar.gz"
 
-if [ -d "$HERE/ollama" ]; then
-  MODELS=${OLLAMA_MODELS:-$HOME/.ollama/models}
-  echo "▶ restoring ollama model(s) into $MODELS"
-  mkdir -p "$MODELS"
-  cp -Rn "$HERE/ollama/." "$MODELS/"
-  echo "  (start ollama afterwards: ollama serve)"
-fi
 
 echo "▶ unpacking code + config into $TARGET"
 mkdir -p "$TARGET"
@@ -40,12 +33,12 @@ tar -xzf "$HERE/code.tar.gz" -C "$TARGET"
 if [ "$RUN_ANSIBLE" = 1 ] && command -v ansible-playbook >/dev/null 2>&1; then
   echo "▶ ansible-playbook (appliance inventory, images already present → no build)"
   cd "$TARGET/deploy/ansible"
-  ansible-playbook -i inventories/appliance site.yml -e llm_backend={{ llm_backend }}
+  ansible-playbook -i inventories/appliance site.yml
 else
   cat <<EOF
 ✔ files in place. Next, on this host:
    cd $TARGET/deploy/ansible
-   ansible-playbook -i inventories/appliance site.yml -e llm_backend={{ llm_backend }}
+   ansible-playbook -i inventories/appliance site.yml
 (or drive it from your controller: -i inventories/prod with project_dir=$TARGET)
 EOF
 fi

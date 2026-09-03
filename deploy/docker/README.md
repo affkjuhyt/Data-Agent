@@ -53,7 +53,6 @@ docker compose -f deploy/docker/docker-compose.yml --profile runtime --profile o
 | `release` | release_worker | minio, mongo, kafka, redis |
 | `observability` | langfuse (+ worker, minio-init) | elasticsearch, jaeger, clickhouse, minio, redis |
 | `testdb` | — | clickhouse (throwaway DB target for `db_connector`) |
-| `models` | ollama | — (local GPU model backend; dev usually points litellm at a host llama-server instead) |
 
 > JWT verification (Keycloak JWKS fetch + RS256 verify) is done by the custom Kong `aeroflow-jwks`
 > plugin (`kong/plugins/aeroflow-jwks/`); there is no separate JWKS-refresher service.
@@ -99,7 +98,7 @@ Copy-Item deploy/docker/.env.kb-testing.example deploy/docker/.env.kb-testing
 ```
 
 Edit `deploy/docker/.env.kb-testing`:
-- `REMOTE_LLM_URL` / `REMOTE_LLM_KEY` — Colab vLLM tunnel. Without it the gold
+- `REMOTE_LLM_URL` / `REMOTE_LLM_KEY` — vLLM trên GPU server (`agent-fast`). Without it the gold
   ingestion stage and LightRAG canonicalize step return 503; bronze→silver and
   retrieval still work.
 - `REMOTE_EMBED_URL` / `REMOTE_RERANK_URL` / `REMOTE_API_KEY` — remote GPU for
@@ -190,9 +189,7 @@ All users share tenant `a0000000-0000-0000-0000-000000000001` (the seeded dev te
 > (dev tenant / roles / knowledge base). On an existing volume the data is already there
 > — init is skipped. Wipe with `down -v` and bring up again to re-seed.
 
-> **First start with local models:** if `REMOTE_EMBED_URL` / `REMOTE_RERANK_URL` are not
-> set, `model_service` downloads weights into `deploy/docker/model_service/models/` (~2.3 GB,
-> persisted across restarts). Both remote URLs set → download skipped, starts in seconds.
+> `model_service` không còn model local — mọi inference qua `REMOTE_*_URL` (GPU server).
 
 ### Port map
 
@@ -242,35 +239,17 @@ pipeline) hit only its three endpoints and never know which backend is active:
 | `POST /generate` | LLM text / JSON | LightRAG `canonicalize`, ingestion `llm_client` |
 
 For each capability the active backend is the first registered one that is `available()`.
-A **remote** backend (Colab GPU behind a cloudflared tunnel) is available when its
-`REMOTE_*_URL` env is set; otherwise the **local** CPU model serves. Switching is a
-single env change — no code, no image rebuild.
+All inference runs on the GPU server (04-09-2026): TEI (`/embed`, `/rerank` — auto-detected
+via `GET /info`) and vLLM (`/generate`, OpenAI-compatible). model_service is a pure gateway:
 
-| env (on `model_service`) | effect |
-|---|---|
-| `REMOTE_EMBED_URL` | set → `/embed` forwards there; empty → local CPU (`EMBED_MODEL`) |
-| `REMOTE_RERANK_URL` | set → `/rerank` forwards there; empty → local CPU reranker |
-| `REMOTE_LLM_URL` | set → `/generate` forwards to this OpenAI-compatible server; empty → 503 |
-| `REMOTE_API_KEY` / `REMOTE_LLM_KEY` | bearer keys for the remote embed/rerank and LLM servers |
+| env | meaning |
+| --- | --- |
+| `REMOTE_EMBED_URL` | TEI embedding endpoint (bge-m3, 1024d) — required for `/embed` |
+| `REMOTE_RERANK_URL` | TEI reranker endpoint (bge-reranker-v2-m3) — required for `/rerank` |
+| `REMOTE_LLM_URL` / `REMOTE_LLM_MODEL` | vLLM OpenAI endpoint + served model name (`agent-fast`) |
+| `REMOTE_API_KEY` / `REMOTE_LLM_KEY` | bearer keys nếu backend yêu cầu |
 
-> When both `REMOTE_EMBED_URL` and `REMOTE_RERANK_URL` are set, model_service skips
-> downloading local weights entirely and starts in seconds. When either is unset the
-> local model loads as fallback (~2.3 GB on first start).
-
-Switch to a remote GPU tunnel without restarting the whole stack:
-
-```powershell
-# Set new tunnel URLs in your env file, then recreate just model_service:
-$env:REMOTE_EMBED_URL = "https://<embed-tunnel>.trycloudflare.com"
-$env:REMOTE_API_KEY   = "kb-emb-xxxx"
-$env:REMOTE_LLM_URL   = "https://<vllm-tunnel>.trycloudflare.com"
-$env:REMOTE_LLM_KEY   = "kb-IT-xxxx"
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e.yml up -d --no-deps model_service
-```
-
-To revert to local CPU, clear those vars and recreate `model_service`. The Colab GPU
-notebooks live in `model/embedding/embed_rerank_colab.ipynb` (embed + rerank) and
-`model/vllm/vllm_qwen_colab.ipynb` (LLM) — each prints its tunnel URL + API key.
+Đổi backend = sửa `.env` + recreate `model_service`; thiếu env → endpoint tương ứng trả 503.
 
 > **⚠️ The embed dim must match the index.** Switching **LLM** or **rerank** is safe
 > any time. Switching **embed** to a different dimension requires re-embedding the whole
@@ -286,10 +265,8 @@ Worker log shows `httpx.HTTPStatusError: Server error '500' for .../embed` and t
 container restarts every ~60 s; `model_service` log shows
 `URLError: <urlopen error [Errno -2] Name or service not known>`.
 
-**Cause:** a stale Colab tunnel. `trycloudflare.com` URLs change every time the
-notebook restarts, so the `REMOTE_*` values in `deploy/docker/.env.kb-testing` no longer
-resolve. `model_service /health` stays green (it only checks the LLM), which hides
-the broken embed path; the worker's startup embed probe is what fails.
+**Cause:** GPU server không tới được (VPN rớt / vLLM-TEI chưa chạy). Kiểm tra
+`curl http://10.10.55.101:8001/v1/models` từ host rồi recreate `model_service`.
 
 **Fix** — put the new tunnel URLs + keys in `deploy/docker/.env.kb-testing`, then recreate
 the two services that read them. The worker **must** be recreated too (its startup

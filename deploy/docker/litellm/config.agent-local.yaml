@@ -1,31 +1,161 @@
-# Local agent E2E test config — routes EVERY model the agent asks for
-# (planner / responder / judge / summary / suggestion / guardrail / orchestrator-*)
-# to the host ollama, so a full agent turn can run offline for perf measurement.
-# The wildcard "*" is LiteLLM's catch-all: any unmatched model_name lands here.
+# Agent E2E overlay config — SAME aliases as config.yaml, now that the GPU
+# server replaced the host-ollama offline setup (04-09-2026). Kept as a separate
+# file because docker-compose.agent-test.yml mounts this path.
 model_list:
-  - model_name: "*"
+  # ── accuracy tier → agent-main (Qwen3-14B-AWQ) ─────────────────────────────
+  - model_name: planner
     litellm_params:
-      model: ollama/qwen2.5:3b
-      api_base: http://host.docker.internal:11434
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
+      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
 
-  # Embeddings (KB/schema paths) — kept explicit so they don't hit the chat model.
-  # MUST be a real embedding model, not a chat model. Pointing this at
-  # qwen2.5:3b did return vectors (ollama will embed from any model's hidden
-  # state) but at that model's hidden size, 2048 — while EMBEDDING_DIM and
-  # every Qdrant collection on the platform are 1024 (BGE-M3). Nothing failed
-  # loudly: the HTTP call succeeded and only the Qdrant upsert 400'd, so the
-  # crawler/memory workers logged a per-item error and moved on, leaving every
-  # collection permanently empty. bge-m3 here matches the production config.yaml
-  # route (openai/bge-m3 via model_service) dimension-for-dimension.
-  #   requires: ollama pull bge-m3
+  - model_name: responder
+    litellm_params:
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
+      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+
+  - model_name: judge
+    litellm_params:
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
+      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+
+  - model_name: text_to_sql
+    litellm_params:
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
+      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+
+  - model_name: orchestrator-planner
+    litellm_params:
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
+      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+
+  # Was missing from this file although orchestrator code defaults to it
+  # (ORCHESTRATOR_JUDGE_MODEL → openai/orchestrator-judge).
+  - model_name: orchestrator-judge
+    litellm_params:
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
+      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+
+  # ── fast tier → agent-fast (Qwen3-4B-AWQ) ──────────────────────────────────
+  - model_name: guardrail
+    litellm_params:
+      model: openai/agent-fast
+      api_base: os.environ/LLM_FAST_BASE_URL
+      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+
+  - model_name: rewriter
+    litellm_params:
+      model: openai/agent-fast
+      api_base: os.environ/LLM_FAST_BASE_URL
+      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+
+  - model_name: suggester
+    litellm_params:
+      model: openai/agent-fast
+      api_base: os.environ/LLM_FAST_BASE_URL
+      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+
+  - model_name: visualize
+    litellm_params:
+      model: openai/agent-fast
+      api_base: os.environ/LLM_FAST_BASE_URL
+      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+
+  - model_name: orchestrator-summary
+    litellm_params:
+      model: openai/agent-fast
+      api_base: os.environ/LLM_FAST_BASE_URL
+      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+
+  # Legacy aliases (old llama.cpp on the host) — kept so existing callers keep
+  # working, now served by the GPU fast tier.
+  - model_name: local-qwen
+    litellm_params:
+      model: openai/agent-fast
+      api_base: os.environ/LLM_FAST_BASE_URL
+      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+
+  - model_name: local
+    litellm_params:
+      model: openai/agent-fast
+      api_base: os.environ/LLM_FAST_BASE_URL
+      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+
+  # ── embeddings → TEI bge-m3 (OpenAI-compatible /v1) ────────────────────────
+  # Same model/vector space (1024-dim bge-m3) the stack already used via
+  # model_service, so agent_memories / workflow_memory / schema_catalog stay valid.
   - model_name: embedder
     litellm_params:
-      model: ollama/bge-m3
-      api_base: http://host.docker.internal:11434
+      model: openai/BAAI/bge-m3
+      api_base: os.environ/EMBEDDING_V1_BASE_URL
+      api_key: not-needed
+
+# ── previous backend (Claude via host proxy :8089) — revert/fallback ─────────
+#   - model_name: responder
+#     litellm_params:
+#       model: openai/sonnet
+#       api_base: http://host.docker.internal:8089/v1
+#       api_key: not-needed
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
 
 litellm_settings:
-  drop_params: true          # tolerate params ollama doesn't support
-  request_timeout: 30        # fail a stuck LLM call fast so it frees the GPU slot
-  num_retries: 0             # don't pile retries onto a contended GPU
-# No master_key → no proxy auth (local perf test only), so agent services reach it
-# without a key.
+  request_timeout: 600
+  set_verbose: false
+  json_logs: true
+  # KHÔNG bật "langfuse" ở đây — proxy này log MỖI completion call thành 1
+  # trace "litellm-acompletion" RIÊNG BIỆT, không biết gì về trace_id/OTEL
+  # context của orchestrator/workflow_runtime, nên tạo ra hàng loạt trace rời
+  # rạc thay vì nối vào đúng trace của request. Tracing giờ do app-level xử lý
+  # (backend/services/workflow_runtime và orchestrator/ bên trong — xem observability.py
+  # mỗi service: @observe() decorator + langfuse.langchain.CallbackHandler).
+  cache: true
+  cache_params:
+    type: redis
+    redis_host: os.environ/REDIS_HOST
+    redis_port: os.environ/REDIS_PORT

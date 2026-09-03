@@ -1,8 +1,0 @@
-weights/
-logs/
-__pycache__/
-*.pyc
-*.pyo
-*.log
-docker-compose.yml
-testing/

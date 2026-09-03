@@ -41,7 +41,6 @@ bundle_dir: "{{ project_dir }}/dist/bundle"
 bundle_image_filter: ".*"                 # regex on image names — narrow for a dry run
 bundle_gzip_level: 1                      # images are already compressed layers; 1 is fast and fine
 bundle_reuse_images: true                 # skip docker save when images-<project>-<version>.tar.gz already exists
-bundle_include_ollama: "{{ llm_backend == 'host_ollama' }}"
 bundle_code_paths:                        # what a host needs at runtime — NOT the source tree (it is in the images)
   - deploy/docker
   - deploy/ansible
@@ -68,9 +67,6 @@ openbao_url: http://localhost:8300
 openbao_allow_reset: false
 openbao_rotate_approle: false             # true → mint a new AppRole secret-id even if .env has one
 
-llm_backend: litellm_config               # host_ollama | litellm_config
-ollama_url: http://localhost:11434
-ollama_model: qwen2.5:3b                  # must match deploy/docker/litellm/config.agent-local.yaml
 
 tenant_id: a0000000-0000-0000-0000-000000000001
 seed_demo: false

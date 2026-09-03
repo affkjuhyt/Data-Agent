@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Data Agent — end-to-end runner: real stack, real gateway, real LLM (host ollama).
+# Data Agent — end-to-end runner: real stack, real gateway, real LLM (GPU server vLLM).
 #
 #   tests/e2e/e2e.sh all            # preflight → up → setup → seed → test → ui
 #   tests/e2e/e2e.sh up             # bring the agent tier up (idempotent)
@@ -11,7 +11,7 @@
 #   tests/e2e/e2e.sh status | logs [svc…] | token | down [-v]
 #
 # Layers: deploy/docker/docker-compose.yml (infra) + .app.yml (services) + .agent-test.yml
-# (litellm → host ollama, OTEL off) + .local.yml (alembic migrate + tenant seed).
+# (litellm → GPU server, OTEL off) + .local.yml (alembic migrate + tenant seed).
 # Only the services one agent turn needs are started — not the KB tier.
 set -euo pipefail
 
@@ -39,8 +39,7 @@ export E2E_KONG=${E2E_KONG:-http://localhost:8000}
 export E2E_KEYCLOAK=${E2E_KEYCLOAK:-http://localhost:8080}
 KONG_ADMIN=${KONG_ADMIN:-http://localhost:8900}
 OPENBAO=${OPENBAO:-http://localhost:8300}
-OLLAMA=${OLLAMA:-http://localhost:11434}
-OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:3b}     # what deploy/docker/litellm/config.agent-local.yaml routes to
+GPU_LLM=${GPU_LLM:-http://10.10.55.101:8002}   # vLLM agent-fast — what deploy/docker/litellm/config.agent-local.yaml routes to
 DB_SECRET_KEY=e2e_dw_password
 DB_SECRET_VALUE=sandbox_reader_dev_pw         # deploy/docker/sql/create-extra-dbs.sql
 OUT=tests/e2e/out
@@ -94,24 +93,13 @@ preflight() {
   ensure_env SERVICE_AUTH_SECRET "$(openssl rand -hex 32)"
   ensure_env KAFKA_ADMIN_PASSWORD "admin-dev-pw"
 
-  # LLM tier: host ollama with the model litellm is pinned to.
-  if ! curl -sf "$OLLAMA/api/tags" >/dev/null; then
-    warn "ollama not reachable at $OLLAMA — starting 'ollama serve' in the background"
-    (nohup ollama serve > "$OUT/ollama.log" 2>&1 &)
-    wait_for "ollama" 30 curl -sf "$OLLAMA/api/tags"
+  # LLM tier: GPU server (vLLM) — phải tới được qua VPN trước khi chạy stack.
+  if ! curl -sf -m 5 "$GPU_LLM/v1/models" >/dev/null; then
+    die "GPU LLM not reachable at $GPU_LLM — check VPN + vLLM on the GPU server"
   fi
-  if ! curl -sf "$OLLAMA/api/tags" | grep -q "\"$OLLAMA_MODEL\""; then
-    log "pulling $OLLAMA_MODEL"; ollama pull "$OLLAMA_MODEL"
-  fi
-  ok "ollama has $OLLAMA_MODEL"
-  # One resident model only — a second one on the same GPU swap-thrashes every
-  # LLM call (docs/AGENT-E2E.md §5). Unload anything else that is loaded.
-  curl -sf "$OLLAMA/api/ps" | py '
-import sys,json,urllib.request
-for m in json.load(sys.stdin).get("models",[]):
-    if m["name"] != sys.argv[1]:
-        urllib.request.urlopen(urllib.request.Request("'"$OLLAMA"'/api/generate", data=json.dumps({"model":m["name"],"keep_alive":0}).encode(), headers={"Content-Type":"application/json"}))
-        print("unloaded", m["name"])' "$OLLAMA_MODEL" || true
+  ok "GPU LLM reachable at $GPU_LLM"
+  # (The old single-resident-model juggling — docs/AGENT-E2E.md §5 — is gone:
+  # the GPU server keeps agent-main/agent-fast resident permanently.)
   ok "preflight done"
 }
 
@@ -304,7 +292,7 @@ test_ui() {
 
 status() {
   "${COMPOSE[@]}" ps
-  echo; for u in "$KONG_ADMIN/status" "$E2E_KEYCLOAK/realms/aeroflow" "http://localhost:4000/health/liveliness" "$OPENBAO/v1/sys/health" "$OLLAMA/api/tags"; do
+  echo; for u in "$KONG_ADMIN/status" "$E2E_KEYCLOAK/realms/aeroflow" "http://localhost:4000/health/liveliness" "$OPENBAO/v1/sys/health" "$GPU_LLM/v1/models"; do
     printf '%-60s %s\n' "$u" "$(curl -s -o /dev/null -w '%{http_code}' "$u")"
   done
 }

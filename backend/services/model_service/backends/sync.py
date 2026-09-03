@@ -9,7 +9,6 @@ import uuid as _uuid
 import asyncpg
 
 import config as cfg
-import model_store
 
 from . import callers as C
 from .registry import Capability, ModelEntry, Registry
@@ -31,6 +30,17 @@ def _endpoints(url_env: str, key_env: str) -> list[tuple[str, str | None]]:
     return pairs
 
 
+def _probe_tei(url: str, api_key: str | None) -> str | None:
+    """TEI (text-embeddings-inference) answers GET /info with {"model_id": ...}.
+    Returns the model_id when the endpoint is TEI, None otherwise — the legacy
+    remote shim (Colab-era /embed {"texts"} shape) has no /info route."""
+    try:
+        info = C._get(url, "/info", api_key, timeout=5)
+        return cast("str | None", info.get("model_id"))
+    except Exception:  # noqa: BLE001 — any failure just means "not TEI"
+        return None
+
+
 def _discover_name(url: str, api_key: str | None, prefer: str = "id") -> str | None:
     try:
         model = C._get(url, "/v1/models", api_key, timeout=5)["data"][0]
@@ -41,50 +51,43 @@ def _discover_name(url: str, api_key: str | None, prefer: str = "id") -> str | N
 
 
 def register_embedding_models(registry: Registry) -> None:
-    """In-process e5-small (default until a remote is added) + one model per remote /embed URL."""
-    registry.register(ModelEntry(
-        name="intfloat/multilingual-e5-small",
-        capability=Capability.EMBED,
-        caller=C.MultilingualE5SmallCaller(model_store.load_embed("intfloat/multilingual-e5-small")),
-    ))
+    """One model per remote TEI /embed URL — no in-process fallback since the
+    platform moved to the GPU server (REMOTE_EMBED_URL is required for /embed)."""
     for i, (url, key) in enumerate(_endpoints("REMOTE_EMBED_URL", "REMOTE_API_KEY")):
-        name = _discover_name(url, key) or f"remote-embed-{i}"
+        tei_model = _probe_tei(url, key)
+        if not tei_model:
+            log.error("Registry: %s does not answer GET /info — not a TEI endpoint, skipping", url)
+            continue
         registry.register(ModelEntry(
-            name=name,
+            name=tei_model,
             capability=Capability.EMBED,
-            caller=C.VietnameseEmbedCaller(url, key),
+            caller=C.TeiEmbedCaller(url, key),
         ), default=(i == 0))
+    if not registry.has(Capability.EMBED):
+        log.error("Registry: no embedding backend — set REMOTE_EMBED_URL to a TEI endpoint; "
+                  "/embed will return 503 until then")
 
 
 def register_rerank_models(registry: Registry) -> None:
-    """In-process cross-encoder (default) + one model per remote /rerank URL."""
-    import config as _cfg
-    try:
-        registry.register(ModelEntry(
-            name=_cfg.RERANK_MODEL,
-            capability=Capability.RERANK,
-            caller=C.LocalRerankCaller(model_store.load_rerank(_cfg.RERANK_MODEL)),
-        ), default=True)
-    except Exception as exc:
-        log.warning("register_rerank | local cross-encoder %s failed to load: %s",
-                    _cfg.RERANK_MODEL, exc)
+    """One model per remote TEI /rerank URL — no in-process cross-encoder any more."""
     for i, (url, key) in enumerate(_endpoints("REMOTE_RERANK_URL", "REMOTE_API_KEY")):
-        name = _discover_name(url, key, prefer="rerank") or f"remote-rerank-{i}"
+        tei_model = _probe_tei(url, key)
+        if not tei_model:
+            log.error("Registry: %s does not answer GET /info — not a TEI endpoint, skipping", url)
+            continue
         registry.register(ModelEntry(
-            name=name,
+            name=tei_model,
             capability=Capability.RERANK,
-            caller=C.VietnameseRerankCaller(url, key),
+            caller=C.TeiRerankCaller(url, key),
         ), default=(i == 0))
+    if not registry.has(Capability.RERANK):
+        log.error("Registry: no rerank backend — set REMOTE_RERANK_URL to a TEI endpoint; "
+                  "/rerank will return 503 until then")
 
 
 def register_chat_models(registry: Registry) -> None:
-    """Local llama-server (default until a remote is added) + one model per remote LLM URL.
-    All are OpenAI /v1/chat/completions; looked up by name."""
-    registry.register(ModelEntry(
-        name="llama-server-qwen3",
-        capability=Capability.CHAT,
-        caller=C.LlamaServerChatCaller(),
-    ))
+    """One model per remote OpenAI-compatible LLM URL (vLLM on the GPU server);
+    looked up by name. No local llama-server fallback any more."""
     for i, (url, key) in enumerate(_endpoints("REMOTE_LLM_URL", "REMOTE_LLM_KEY")):
         # Pin the model when REMOTE_LLM_MODEL is set (a multi-model server like
         # ollama otherwise resolves to /v1/models[0] non-deterministically).

@@ -8,7 +8,6 @@ import uvicorn
 from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.responses import PlainTextResponse
 import config as cfg
-import model_store
 from backends import registry, bootstrap, sync_with_retry, chat_status, Capability
 from backends.base import (
     EmbedRequest, EmbedResponse,
@@ -77,11 +76,13 @@ def capabilities_endpoint() -> dict[str, Any]:
     """What compute this server has and is using (CUDA GPU / Apple MPS / CPU),
     plus the loaded models + embed cache/batch config. Lets a client/ops probe
     the backend instead of assuming a GPU."""
-    from device import capabilities
-
-    caps = capabilities()
-    caps["embed_model"] = cfg.EMBED_MODEL
-    caps["rerank_model"] = cfg.RERANK_MODEL
+    embed_default = registry.default(Capability.EMBED)
+    rerank_default = registry.default(Capability.RERANK)
+    caps: dict[str, Any] = {
+        "device": "remote-api",  # all inference runs on the GPU server (vLLM + TEI)
+        "embed_model": embed_default.name if embed_default else None,
+        "rerank_model": rerank_default.name if rerank_default else None,
+    }
     caps["embed_service"] = _embed_service.stats()
     return caps
 
@@ -90,8 +91,6 @@ def capabilities_endpoint() -> dict[str, Any]:
 def metrics_endpoint() -> PlainTextResponse:
     """Prometheus metrics — embed cache hit-rate + dynamic-batch efficiency +
     the detected compute device (KB-SCALE-10K.md #8)."""
-    from device import detect_device
-
     s = _embed_service.stats()
     cache = s.get("cache", {})
     batch = s.get("batcher", {})
@@ -111,7 +110,7 @@ def metrics_endpoint() -> PlainTextResponse:
         "# TYPE kb_embed_avg_batch gauge",
         f"kb_embed_avg_batch {batch.get('avg_batch', 0.0)}",
         "# TYPE kb_model_device gauge",
-        f'kb_model_device{{device="{detect_device()}"}} 1',
+        'kb_model_device{device="remote-api"} 1',
     ]
 
     # LLM gateway (canonicalize) — the wired model's real usage + latency.
@@ -164,15 +163,20 @@ async def embed_stats() -> dict[str, Any]:
     return _embed_service.stats()
 
 @router.post("/v1/embeddings", response_model=OAIEmbedResponse)
-def openai_embeddings(req: OAIEmbedRequest) -> OAIEmbedResponse:
+async def openai_embeddings(req: OAIEmbedRequest) -> OAIEmbedResponse:
+    """OpenAI-compatible shape over the same remote default embedder (goes
+    through the shared cache/batcher like /embed)."""
     texts = [req.input] if isinstance(req.input, str) else req.input
+    entry = registry.default(Capability.EMBED)
+    if entry is None:
+        raise HTTPException(503, "no embedding backend (set REMOTE_EMBED_URL)")
     try:
-        vectors = model_store.load_embed(cfg.BGE_M3_MODEL).encode(texts, normalize_embeddings=True)
+        vectors = await _embed_service.embed(entry.name, texts)
     except Exception as exc:
-        raise HTTPException(500, str(exc))
+        raise HTTPException(502, str(exc))
     total_tokens = sum(len(t.split()) for t in texts)
     return OAIEmbedResponse(
-        data=[OAIEmbedObject(index=i, embedding=v.tolist()) for i, v in enumerate(vectors)],
+        data=[OAIEmbedObject(index=i, embedding=v) for i, v in enumerate(vectors)],
         model=req.model,
         usage={"prompt_tokens": total_tokens, "total_tokens": total_tokens},
     )
@@ -228,9 +232,8 @@ def _probe_llm_backend() -> None:
     status = chat_status(registry)
     if not status["configured"]:
         log.warning(
-            "LLM gateway DISABLED: no chat model registered (no REMOTE_LLM_URL and no "
-            "llama-server) — POST /generate returns 503 and every ingestion/lightrag LLM "
-            "call fails."
+            "LLM gateway DISABLED: no chat model registered (REMOTE_LLM_URL unset) — "
+            "POST /generate returns 503 and every ingestion/lightrag LLM call fails."
         )
     elif status["ready"]:
         log.info("LLM gateway OK: serving model=%s", status["model"])

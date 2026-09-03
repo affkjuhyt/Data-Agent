@@ -7,6 +7,5 @@
   "compose_profiles": compose_profiles,
   "services": compose_services,
   "images": bundle_images,
-  "ollama_model": (ollama_model if (bundle_include_ollama | bool) else none),
-  "contents": ["images.tar.gz", "code.tar.gz", "install.sh", "SHA256SUMS", "manifest.json"] + (["ollama/"] if (bundle_include_ollama | bool) else [])
+  "contents": ["images.tar.gz", "code.tar.gz", "install.sh", "SHA256SUMS", "manifest.json"]
 } | to_nice_json }}

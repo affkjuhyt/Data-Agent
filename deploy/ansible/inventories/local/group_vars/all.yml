@@ -2,10 +2,9 @@
 # Local developer stack — same playbook as production, different knobs.
 compose_project: dataagent-e2e            # reuse the volumes tests/e2e created
 compose_extra_files:
-  - docker-compose.agent-test.yml         # litellm → host ollama, OTEL off
+  - docker-compose.agent-test.yml         # litellm → GPU server, OTEL off
   - docker-compose.e2e-dev.yml            # existing images + bind-mounted source
 compose_build: never                      # dev: never rebuild; missing images are built explicitly
-llm_backend: host_ollama
 keycloak_disable_mfa: true                # Browser MFA cannot be automated locally
 openbao_allow_reset: true                 # this stack's own volume — safe to recreate if keys are lost
 seed_demo: true                           # e2e-sql-agent + demo warehouse + metric contracts

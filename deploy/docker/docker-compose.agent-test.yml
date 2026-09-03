@@ -1,4 +1,4 @@
-# Agent E2E perf-test overlay. Points LiteLLM at the host ollama so a full agent
+# Agent E2E perf-test overlay. Points LiteLLM at the GPU server (config.agent-local.yaml) so a full agent
 # turn (planner → responder → judge → …) runs offline for measurement. Layer on
 # base + app.yml and bring up only the services one turn needs (NOT app.yml's
 # kb-backend — it collides with the kb-e2e stack on :8050):

@@ -14,7 +14,7 @@
 #     model_service kb-backend kb-ingestion-worker
 #
 # Budget (see docs/M3-CAPACITY.md): infra ~2.2GB + KB app ~1.2GB, leaving the
-# ~8GB VM plenty of headroom and ~3GB on the host for native ollama (3B model).
+# ~8GB VM plenty of headroom (LLM/embed/rerank run on the GPU server).
 
 services:
   # ── JVM/heavy stores — the big wins. Base config asks for 4g+3g Neo4j heap and

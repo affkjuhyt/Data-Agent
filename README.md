@@ -18,7 +18,7 @@ frontend/    React 19 + Vite app (npm workspace): src/, index.html, vite/vitest/
 deploy/      docker/ (Compose stacks + Kong/Kafka/Keycloak/OpenBao/LiteLLM/SQL configs) · ansible/ (one playbook, local → prod) · k8s/
 tests/       unit/ · integration/ · e2e/ (real-stack runner + Playwright) · loadtest/ (k6)
 docs/        RUNBOOK · SECURITY · AGENT-E2E · KB-SCALE-10K · M3-CAPACITY
-model/       LLM eval harness, RAGAS, ollama packaging
+model/       LLM eval harness, RAGAS
 ```
 
 | Path | Contents |
@@ -43,7 +43,7 @@ front of `kb-backend`. Pick the stack that matches your task:
 
 | Stack | File / helper | What it is | When to use |
 |---|---|---|---|
-| **kb-e2e** | `deploy/docker/docker-compose.kb-e2e.yml` | KB data plane + ingestion worker + Keycloak + DB-less Kong; richer LLM options (vLLM / local `llama`) and multilingual models | **The standard way to bring up the stack** — local dev with the Vite UI (`npm run dev`) and the ingestion/RAG pipeline |
+| **kb-e2e** | `deploy/docker/docker-compose.kb-e2e.yml` | KB data plane + ingestion worker + Keycloak + DB-less Kong; LLM/embed/rerank served by the GPU server (`REMOTE_*_URL`) | **The standard way to bring up the stack** — local dev with the Vite UI (`npm run dev`) and the ingestion/RAG pipeline |
 | **Full aggregate** | `deploy/docker/docker-compose.yml` (+ `local` override) | Every service group (storage, security, messaging, observability, all app services) | Running the whole platform, not just KB |
 | **Test fixture** | `deploy/docker/docker-compose.test.yml` | Isolated PostgreSQL only | Connector / Alembic tests |
 
@@ -74,9 +74,8 @@ created automatically on first start.
 docker compose -f deploy/docker/docker-compose.kb-e2e.yml --env-file deploy/docker/.env.kb-testing up -d --build
 ```
 
-> First start is slower: `model_service` downloads its embed/rerank weights into
-> `deploy/docker/model_service/models/` (~2.3 GB, persisted for next time) — see
-> [Local-only files](#local-only-files-not-baked-into-images-or-git).
+> `model_service` is a pure API gateway since 04-09-2026 — all inference runs on the
+> GPU server, no local weights to download.
 
 ### 3. Verify the stack is healthy
 
@@ -306,20 +305,12 @@ before bringing the KB-UI testing stack up:
 
 | Local-only file | Used by | What to do |
 |---|---|---|
-| `deploy/docker/.env.kb-testing` | kb-e2e compose interpolation — MinIO credentials (the example defaults work as-is). The LLM / embed / rerank backend is configured separately on `model_service` via its `REMOTE_*_URL` env — see [Switching the model backend](./deploy/docker/README.md#switching-the-model-backend-local-cpu--colab-gpu). | `Copy-Item deploy/docker/.env.kb-testing.example deploy/docker/.env.kb-testing` |
-| `model/ollama/weights/model.gguf` (~5.7 GB) | the optional GPU `llama` service (mounted `../model/ollama/weights:/models`) | Download a GGUF model into that path. **Only** needed if you run the local `llama` service — by default the worker and LightRAG reach the LLM through the `model_service` `/generate` gateway (point its `REMOTE_LLM_URL` at the backend), and do not require it. |
+| `deploy/docker/.env.kb-testing` | kb-e2e compose interpolation — MinIO credentials (the example defaults work as-is). The LLM / embed / rerank backend is configured separately on `model_service` via its `REMOTE_*_URL` env — see [Model backend](./deploy/docker/README.md#model-backend-gpu-server). | `Copy-Item deploy/docker/.env.kb-testing.example deploy/docker/.env.kb-testing` |
 
 Auto-managed (downloads itself — no manual file placement):
 
-- **`deploy/docker/model_service/models/`** — where the embedding + reranker weights are saved. They are
-  **not** baked into the model_service image; on the **first** `model_service` start they download
-  here (~2.3 GB for the configured `EMBED_MODEL` + `RERANK_MODEL`) and persist across recreates, so
-  later starts are instant. This keeps the image ~2.5 GB smaller. Consequences:
-  - the first bring-up needs network and the model_service healthcheck has a 300 s `start_period`
-    (kb-backend waits for it), so first start is slower — this is expected, not an error;
-  - to pre-seed offline (skip the first-run download), populate the folder from another machine's
-    `deploy/docker/model_service/models/`, or run:
-    `docker compose -f deploy/docker/docker-compose.kb-e2e.yml run --rm model_service python -c "import models, config as c; models.load(c.EMBED_MODEL, c.RERANK_MODEL)"`
+- model weights: none locally — embed/rerank/LLM đều chạy trên GPU server.
+
 - DB content lives in Docker **named volumes** (persist across image rebuilds) and is seeded by the
   tracked [`deploy/docker/sql/kb-seed.sql`](./deploy/docker/sql/kb-seed.sql) (KB seed, mounted by `docker-compose.kb-e2e-dev.yml`).
 
@@ -334,9 +325,8 @@ docker compose -f deploy/docker/docker-compose.kb-e2e.yml --env-file deploy/dock
 curl http://localhost:8050/health   # -> {"status":"ok"} (direct probe; app traffic goes via Kong :8000)
 ```
 
-Switch the model_service backend (LOCAL CPU vs. remote Colab GPU) by setting the
-`REMOTE_*_URL` env on `model_service` and recreating that one container — no image
-rebuild required. See [Switching the model backend](./deploy/docker/README.md#switching-the-model-backend-local-cpu--colab-gpu).
+The model backend is the GPU server; change `REMOTE_*_URL` in `.env` and recreate `model_service` — no image
+rebuild required.
 
 ### Official Docker Commands
 
@@ -414,25 +404,6 @@ alias dc='docker compose -f ~/Data-Agent/docker/docker-compose.yml \
 
 ---
 
-### Khởi động llama-server (local LLM)
-
-llama-server chạy trực tiếp trên host (không qua Docker), cần bật **trước** khi start stack:
-
-```bash
-# Tải model lần đầu (chỉ chạy 1 lần)
-bash model/llama-server/download-model.sh
-
-# Khởi động llama-server ở port 8088
-bash model/llama-server/start-llama.sh &
-
-# Kiểm tra
-curl http://localhost:8088/health
-```
-
-Tắt llama-server:
-```bash
-pkill -f llama-server
-```
 
 ---
 
@@ -500,7 +471,7 @@ dc down -v
 | Frontend | http://10.10.55.11:3000 |
 | Kong proxy | http://10.10.55.11:8000 |
 | Langfuse | http://10.10.55.11:3001 |
-| llama-server | http://10.10.55.11:8088 |
+| GPU model server | http://10.10.55.101:8001-8004 (vLLM main/fast, TEI embed/rerank) |
 
 The local and shared-dev overrides both add `migrate` and `seed` jobs.
 
@@ -508,7 +479,6 @@ Separate intent-specific Docker paths also exist:
 
 - Test-only: [`deploy/docker/docker-compose.test.yml`](./deploy/docker/docker-compose.test.yml)
 - KB-UI integration: [`deploy/docker/docker-compose.kb-e2e.yml`](./deploy/docker/docker-compose.kb-e2e.yml)
-- Standalone model experiment: [`model/ollama/docker/docker-compose.yml`](./model/ollama/docker/docker-compose.yml)
 
 ### Common URLs (Docker stack)
 

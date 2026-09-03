@@ -29,22 +29,3 @@
     state: link
     force: true
 
-- name: Host ollama (LLM tier for local/appliance)
-  when: llm_backend == 'host_ollama'
-  block:
-    - name: ollama answers
-      ansible.builtin.uri:
-        url: "{{ ollama_url }}/api/tags"
-        return_content: true
-      register: ollama_tags
-      failed_when: false
-
-    - name: ollama must be running (brew services start ollama / `ollama serve`)
-      ansible.builtin.fail:
-        msg: "ollama not reachable at {{ ollama_url }} — start it, or set llm_backend=litellm_config"
-      when: ollama_tags.status | default(0) != 200
-
-    - name: Pull {{ ollama_model }} when missing
-      ansible.builtin.command: ollama pull {{ ollama_model }}
-      when: ollama_model not in (ollama_tags.json.models | map(attribute='name') | list)
-      changed_when: true

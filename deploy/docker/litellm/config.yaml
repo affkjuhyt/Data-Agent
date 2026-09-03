@@ -1,87 +1,160 @@
+# LiteLLM model routing — GPU server A100 40GB (10.10.55.101) since 04-09-2026.
+#
+# Backends (see .env — all *_BASE_URL vars resolve there, litellm reads them
+# via `os.environ/` at startup):
+#   agent-main  Qwen3-14B-AWQ   vLLM   :8001  (accuracy tier)
+#   agent-fast  Qwen3-4B-AWQ    vLLM   :8002  (routing/rewrite tier)
+#   BAAI/bge-m3 TEI             :8003  (OpenAI-compatible /v1/embeddings)
+#   bge-reranker-v2-m3 TEI      :8004  (reached via model_service /rerank, not litellm)
+#
+# Services address ALIASES only — swap a backend here, no code changes.
+# `chat_template_kwargs.enable_thinking: false` — Qwen3 defaults to emitting
+# <think> blocks; every alias below feeds a JSON parser or a latency-sensitive
+# path, so thinking is off globally. Re-enable per-alias only after an eval
+# shows the quality is worth the tokens (responder/orchestrator-planner are the
+# candidates — conversation_runner already strips <think> from responder output).
+# No YAML anchors on purpose: litellm may mutate litellm_params per entry, and
+# an anchor would make the entries share one object.
+
 model_list:
+  # ── accuracy tier → agent-main (Qwen3-14B-AWQ) ─────────────────────────────
   - model_name: planner
     litellm_params:
-      model: openai/haiku
-      api_base: http://host.docker.internal:8089/v1
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
       api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
 
   - model_name: responder
     litellm_params:
-      model: openai/sonnet
-      api_base: http://host.docker.internal:8089/v1
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
       api_key: not-needed
-
-  - model_name: guardrail
-    litellm_params:
-      model: openai/haiku
-      api_base: http://host.docker.internal:8089/v1
-      api_key: not-needed
-
-  - model_name: rewriter
-    litellm_params:
-      model: openai/haiku
-      api_base: http://host.docker.internal:8089/v1
-      api_key: not-needed
-
-  - model_name: suggester
-    litellm_params:
-      model: openai/haiku
-      api_base: http://host.docker.internal:8089/v1
-      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
 
   - model_name: judge
     litellm_params:
-      model: openai/haiku
-      api_base: http://host.docker.internal:8089/v1
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
       api_key: not-needed
-
-  - model_name: visualize
-    litellm_params:
-      model: openai/haiku
-      api_base: http://host.docker.internal:8089/v1
-      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
 
   - model_name: text_to_sql
     litellm_params:
-      model: openai/haiku
-      api_base: http://host.docker.internal:8089/v1
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
       api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
 
-  - model_name: embedder
-    litellm_params:
-      model: openai/bge-m3
-      api_base: http://model_service:8001/v1
-      api_key: not-needed
-
-  # Orchestrator level — ToT planner + summary (Claude via proxy-ai on host)
   - model_name: orchestrator-planner
     litellm_params:
-      model: openai/sonnet
-      api_base: http://host.docker.internal:8089/v1
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
       api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+
+  # Was missing from this file although orchestrator code defaults to it
+  # (ORCHESTRATOR_JUDGE_MODEL → openai/orchestrator-judge).
+  - model_name: orchestrator-judge
+    litellm_params:
+      model: openai/agent-main
+      api_base: os.environ/LLM_MAIN_BASE_URL
+      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+
+  # ── fast tier → agent-fast (Qwen3-4B-AWQ) ──────────────────────────────────
+  - model_name: guardrail
+    litellm_params:
+      model: openai/agent-fast
+      api_base: os.environ/LLM_FAST_BASE_URL
+      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+
+  - model_name: rewriter
+    litellm_params:
+      model: openai/agent-fast
+      api_base: os.environ/LLM_FAST_BASE_URL
+      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+
+  - model_name: suggester
+    litellm_params:
+      model: openai/agent-fast
+      api_base: os.environ/LLM_FAST_BASE_URL
+      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
+
+  - model_name: visualize
+    litellm_params:
+      model: openai/agent-fast
+      api_base: os.environ/LLM_FAST_BASE_URL
+      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
 
   - model_name: orchestrator-summary
     litellm_params:
-      model: openai/haiku
-      api_base: http://host.docker.internal:8089/v1
-      api_key: not-needed
-
-  # Local LLM via llama.cpp server (CPU-only, fallback)
-  - model_name: local-qwen
-    litellm_params:
-      model: openai/qwen3-8b-instruct
-      api_base: http://host.docker.internal:8088/v1
+      model: openai/agent-fast
+      api_base: os.environ/LLM_FAST_BASE_URL
       api_key: not-needed
       extra_body:
-        enable_thinking: false
+        chat_template_kwargs:
+          enable_thinking: false
+
+  # Legacy aliases (old llama.cpp on the host) — kept so existing callers keep
+  # working, now served by the GPU fast tier.
+  - model_name: local-qwen
+    litellm_params:
+      model: openai/agent-fast
+      api_base: os.environ/LLM_FAST_BASE_URL
+      api_key: not-needed
+      extra_body:
+        chat_template_kwargs:
+          enable_thinking: false
 
   - model_name: local
     litellm_params:
-      model: openai/qwen3-8b-instruct
-      api_base: http://host.docker.internal:8088/v1
+      model: openai/agent-fast
+      api_base: os.environ/LLM_FAST_BASE_URL
       api_key: not-needed
       extra_body:
-        enable_thinking: false
+        chat_template_kwargs:
+          enable_thinking: false
+
+  # ── embeddings → TEI bge-m3 (OpenAI-compatible /v1) ────────────────────────
+  # Same model/vector space (1024-dim bge-m3) the stack already used via
+  # model_service, so agent_memories / workflow_memory / schema_catalog stay valid.
+  - model_name: embedder
+    litellm_params:
+      model: openai/BAAI/bge-m3
+      api_base: os.environ/EMBEDDING_V1_BASE_URL
+      api_key: not-needed
+
+# ── previous backend (Claude via host proxy :8089) — revert/fallback ─────────
+#   - model_name: responder
+#     litellm_params:
+#       model: openai/sonnet
+#       api_base: http://host.docker.internal:8089/v1
+#       api_key: not-needed
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY

@@ -41,7 +41,7 @@ deploy/ansible/
 ├── roles/
 │   ├── common/defaults/main.yml # MỌI giá trị mặc định (ưu tiên thấp nhất → inventory đè được)
 │   ├── code/                    # git clone / rsync lên host (bỏ qua khi local)
-│   ├── preflight/               # docker, compose v2, .env từ .env.example, ollama + model
+│   ├── preflight/               # docker, compose v2, .env từ .env.example
 │   ├── app_env/                 # GATEWAY_KEY, SERVICE_AUTH_SECRET, KAFKA_ADMIN_PASSWORD, VITE_API_URL
 │   ├── compose_stack/           # docker compose up (chỉ build image thiếu), chờ postgres/kong/keycloak/litellm, schema keycloak|kong
 │   ├── gateway/                 # deploy/docker/kong/kong-setup.sh (route, JWT, CORS, mật khẩu user dev); Keycloak MFA off (local)
@@ -71,12 +71,11 @@ Bí mật: nếu `vault_*` không được định nghĩa, role `common` sinh gi
 
 ```bash
 ansible-playbook site.yml --tags bundle                      # dist/bundle/<project>-<git-describe>/
-ansible-playbook site.yml --tags bundle -e '{"compose_services":["postgres","redis"],"bundle_include_ollama":false}'  # thử nhanh
+ansible-playbook site.yml --tags bundle -e '{"compose_services":["postgres","redis"]}'  # thử nhanh
 ```
 
 Kết quả: `images.tar.gz` (chỉ image của `compose_services`, `docker save`), `code.tar.gz` (infra + playbook +
-seed + docs — **không** có source, không có `.env`/khóa; có bước tự kiểm tra rò rỉ), `ollama/` (manifest + blob của
-`ollama_model`, khi `llm_backend=host_ollama`), `install.sh`, `manifest.json`, `SHA256SUMS`. Image tarball được
+seed + docs — **không** có source, không có `.env`/khóa; có bước tự kiểm tra rò rỉ), `install.sh`, `manifest.json`, `SHA256SUMS`. Image tarball được
 cache theo phiên bản (`bundle_reuse_images`) nên đổi cấu hình không phải `docker save` lại.
 
 Trên host mạng đóng (chỉ cần Docker + python3): `./install.sh --dir /opt/data-agent` → kiểm checksum, `docker load`,
