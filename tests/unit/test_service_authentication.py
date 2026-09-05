@@ -26,7 +26,7 @@ import pytest
 import yaml
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-COMPOSE = REPO_ROOT / "deploy" / "docker" / "docker-compose.app.yml"
+K8S = REPO_ROOT / "deploy" / "k8s"
 SERVICES = REPO_ROOT / "backend" / "services"
 
 pytestmark = pytest.mark.unit
@@ -44,8 +44,16 @@ _NOT_APP_SERVICES = {
 }
 
 
-def _compose() -> dict:
-    return yaml.safe_load(COMPOSE.read_text(encoding="utf-8")) or {}
+def _k8s_docs() -> list[dict]:
+    docs = [
+        d
+        for sub in ("", "database", "service", "job")
+        for f in sorted((K8S / sub).glob("*.yaml"))
+        for d in yaml.safe_load_all(f.read_text(encoding="utf-8"))
+        if d
+    ]
+    assert docs, "no manifests found — deploy/k8s moved again"
+    return docs
 
 
 def _service_dir(name: str) -> pathlib.Path | None:
@@ -85,37 +93,52 @@ def _authenticating_services() -> set[str]:
 
 
 class TestNothingUnauthenticatedIsPublished:
-    def test_every_host_published_app_service_authenticates(self):
-        """The check that would have caught flow_builder and minio_service.
+    """Compose published host ports; a cluster publishes a Service type. The
+    decision is the same one — making a service reachable without the gateway —
+    so it is still the decision that has to come with an identity check."""
 
-        Publishing a port is the decision that makes a service reachable without
-        the gateway, so it is the decision that has to come with an identity
-        check — whichever service happens to make it.
-        """
-        authenticating = _authenticating_services()
-        offenders = []
-        for name, spec in (_compose().get("services") or {}).items():
-            if not (spec or {}).get("ports"):
-                continue
-            if name in _NOT_APP_SERVICES or _service_dir(name) is None:
-                continue
-            if name not in authenticating:
-                offenders.append(name)
+    def _exposed_services(self) -> list[dict]:
+        return [
+            d for d in _k8s_docs()
+            if d["kind"] == "Service"
+            and d["spec"].get("type") in ("NodePort", "LoadBalancer")
+        ]
 
+    def test_only_kong_is_reachable_from_outside_the_cluster(self):
+        """Kong is the only way in. Everything else is ClusterIP, so an Ingress
+        cannot accidentally be pointed at a service that trusts its caller."""
+        offenders = [
+            s["metadata"]["name"] for s in self._exposed_services()
+            if s["metadata"]["name"] != "kong"
+        ]
         assert not offenders, (
-            "host-published service(s) with no caller authentication: "
-            f"{sorted(offenders)} — either add the shared get_current_user "
-            "dependency or stop publishing the port"
+            f"NodePort/LoadBalancer on {sorted(offenders)} — reachable without "
+            "Kong. Use ClusterIP and route through the gateway."
         )
 
-    @pytest.mark.parametrize("service", ["workflow_runtime"])
-    def test_the_agent_tier_is_not_published_to_the_host(self, service):
-        """Kong is the only way in. The service-side dependency is what makes
-        reaching the port useless; the closed port is the outer layer, and it is
-        the one that does not depend on getting the code right."""
-        spec = (_compose().get("services") or {}).get(service) or {}
-        assert not spec.get("ports"), f"{service} publishes a host port"
-        assert spec.get("expose"), f"{service} should still expose its port to the compose network"
+    def test_every_externally_reachable_app_service_authenticates(self):
+        authenticating = _authenticating_services()
+        offenders = []
+        for svc in self._exposed_services():
+            name = svc["metadata"]["name"]
+            if name in _NOT_APP_SERVICES or _service_dir(name) is None:
+                continue
+            # Service names are kebab-case, code directories snake_case.
+            if name.replace("-", "_") not in authenticating:
+                offenders.append(name)
+        assert not offenders, (
+            f"externally reachable service(s) with no caller authentication: "
+            f"{sorted(offenders)} — either add the shared get_current_user "
+            "dependency or make the Service ClusterIP"
+        )
+
+    def test_the_agent_tier_has_no_externally_reachable_service(self):
+        agent_tier = {"workflow-runtime", "flow-builder", "sandbox-executor"}
+        offenders = [
+            s["metadata"]["name"] for s in self._exposed_services()
+            if s["metadata"]["name"] in agent_tier
+        ]
+        assert not offenders, f"{offenders} are reachable without Kong"
 
 
 class TestNoTenantComesFromAClientHeader:

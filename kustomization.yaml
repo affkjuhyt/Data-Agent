@@ -1,0 +1,105 @@
+# kubectl apply -k .
+#
+# The file-backed ConfigMaps are generated from the same files deploy/docker/
+# builds the images from, so each config has one copy in the repo. The
+# name-suffix hash rolls every pod that mounts a file when that file changes.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - deploy/k8s/namespace.yaml
+  - deploy/k8s/configmap.yaml
+  - deploy/k8s/rbac.yaml
+  - deploy/k8s/networkpolicy-service.yaml
+  - deploy/k8s/networkpolicy-database.yaml
+  - deploy/k8s/database/clickhouse.yaml
+  - deploy/k8s/database/elasticsearch.yaml
+  - deploy/k8s/database/kafka.yaml
+  - deploy/k8s/database/minio.yaml
+  - deploy/k8s/database/mongo.yaml
+  - deploy/k8s/database/neo4j.yaml
+  - deploy/k8s/database/openbao.yaml
+  - deploy/k8s/database/pgbouncer.yaml
+  - deploy/k8s/database/postgres.yaml
+  - deploy/k8s/database/qdrant.yaml
+  - deploy/k8s/database/redis.yaml
+  - deploy/k8s/service/auth-api.yaml
+  - deploy/k8s/service/flow-builder.yaml
+  - deploy/k8s/service/frontend.yaml
+  - deploy/k8s/service/grafana.yaml
+  - deploy/k8s/service/jaeger.yaml
+  - deploy/k8s/service/kb-backend.yaml
+  - deploy/k8s/service/kb-ingestion-worker.yaml
+  - deploy/k8s/service/keycloak.yaml
+  - deploy/k8s/service/kibana.yaml
+  - deploy/k8s/service/kong.yaml
+  - deploy/k8s/service/langfuse-worker.yaml
+  - deploy/k8s/service/langfuse.yaml
+  - deploy/k8s/service/litellm.yaml
+  - deploy/k8s/service/llm-exporter.yaml
+  - deploy/k8s/service/model-service.yaml
+  - deploy/k8s/service/platform-workers-audit.yaml
+  - deploy/k8s/service/platform-workers-memory.yaml
+  - deploy/k8s/service/platform-workers-schema-crawler.yaml
+  - deploy/k8s/service/prometheus.yaml
+  - deploy/k8s/service/release-worker.yaml
+  - deploy/k8s/service/sandbox-executor.yaml
+  - deploy/k8s/service/workflow-runtime.yaml
+  - deploy/k8s/job/db-init.yaml
+  - deploy/k8s/job/eval.yaml
+  - deploy/k8s/job/kafka-topics.yaml
+  - deploy/k8s/job/kong-migration.yaml
+  - deploy/k8s/job/migrate.yaml
+  - deploy/k8s/job/minio-init.yaml
+  - deploy/k8s/job/postgres-backup.yaml
+  - deploy/k8s/job/postgres-restore.yaml
+  - deploy/k8s/job/seed.yaml
+  - deploy/k8s/job/setup.yaml
+
+configMapGenerator:
+  - name: postgres-initdb
+    namespace: dataagent-database
+    files:
+      - 01-create-dbs.sql=deploy/docker/sql/create-extra-dbs.sql
+      - 03-app-schema.sql=deploy/docker/sql/init.sql
+  - name: db-init-sql
+    namespace: dataagent-service
+    files:
+      - 01-grants.sql=deploy/docker/sql/grant-runtime-writer.sql
+      - 02-kb-seed.sql=deploy/docker/sql/kb-seed.sql
+  - name: seed-sql
+    namespace: dataagent-service
+    files:
+      - seed.sql=backend/services/workflow_runtime/migrations/seed.sql
+  - name: keycloak-realm
+    namespace: dataagent-service
+    files:
+      - deploy/docker/keycloak/realm-export.json
+  - name: keycloak-scripts
+    namespace: dataagent-service
+    files:
+      - deploy/docker/keycloak/setup-audience-mappers.sh
+  - name: kong-scripts
+    namespace: dataagent-service
+    files:
+      - deploy/docker/kong/kong-setup.sh
+  - name: litellm-config
+    namespace: dataagent-service
+    files:
+      - config.yaml=deploy/docker/litellm/config.yaml
+  - name: prometheus-config
+    namespace: dataagent-service
+    files:
+      - deploy/docker/monitoring/prometheus.yml
+  - name: grafana-datasources
+    namespace: dataagent-service
+    files:
+      - deploy/docker/monitoring/grafana/provisioning/datasources/prometheus.yml
+  - name: grafana-dashboards-provider
+    namespace: dataagent-service
+    files:
+      - deploy/docker/monitoring/grafana/provisioning/dashboards/provider.yml
+  - name: grafana-dashboards
+    namespace: dataagent-service
+    files:
+      - deploy/docker/monitoring/grafana/dashboards/kb-ccu.json

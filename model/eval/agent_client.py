@@ -28,7 +28,7 @@ import httpx
 
 from model.eval import _paths
 
-_LITELLM_BASE = os.getenv("LITELLM_BASE_URL", "http://localhost:4000")
+_LITELLM_BASE = os.getenv("LITELLM_BASE_URL", "http://localhost:8500")
 _LITELLM_KEY = os.getenv("LITELLM_API_KEY", "anything")
 _RESPONDER_MODEL = os.getenv("EVAL_RESPONDER_MODEL", "responder")
 

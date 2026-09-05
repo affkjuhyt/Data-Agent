@@ -5,7 +5,7 @@ import Keycloak from 'keycloak-js';
 const w = window as Window & { __kc?: Keycloak };
 if (!w.__kc) {
   w.__kc = new Keycloak({
-    url:      import.meta.env.VITE_KEYCLOAK_URL    || 'http://localhost:8080',
+    url:      import.meta.env.VITE_KEYCLOAK_URL    || 'http://localhost:8110',
     realm:    import.meta.env.VITE_KEYCLOAK_REALM  || 'aeroflow',
     clientId: import.meta.env.VITE_KEYCLOAK_CLIENT || 'aeroflow-frontend',
   });

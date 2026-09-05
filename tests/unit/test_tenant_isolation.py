@@ -230,10 +230,15 @@ class TestTheContractTestDoesNotProveTheDeployment:
         suite = (REPO_ROOT / "tests" / "integration" / "test_rls_enforcement.py").read_text(encoding="utf-8")
         assert "app_user" in suite
 
-        compose = (INFRA / "docker-compose.app.yml").read_text(encoding="utf-8")
+        # Connection strings live in the k8s manifests and the documented Secret.
+        k8s = REPO_ROOT / "deploy" / "k8s"
+        sources = [f for sub in ("", "database", "service", "job")
+                   for f in sorted((k8s / sub).glob("*.yaml"))] + [k8s / "README.md"]
         dsn_lines = [
-            line for line in compose.splitlines()
-            if re.search(r"(DATABASE_URL|POSTGRES_URL):", line)
+            line
+            for path in sources
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if re.search(r"(DATABASE_URL|POSTGRES_URL|POSTGRES_DSN|RUNTIME_DB_URL)", line)
         ]
         assert dsn_lines, "no service DSNs found — the check has drifted"
         assert not any("app_user" in line for line in dsn_lines), (

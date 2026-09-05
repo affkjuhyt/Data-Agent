@@ -1,0 +1,129 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: elasticsearch
+  namespace: dataagent-database
+  labels:
+    app: elasticsearch
+    app.kubernetes.io/part-of: dataagent
+automountServiceAccountToken: false
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: elasticsearch-env
+  namespace: dataagent-database
+  labels:
+    app: elasticsearch
+    app.kubernetes.io/part-of: dataagent
+data:
+  discovery.type: single-node
+  xpack.security.enabled: 'false'
+  ES_JAVA_OPTS: -Xms512m -Xmx512m
+  http.port: '8380'
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: elasticsearch
+  namespace: dataagent-database
+  labels:
+    app: elasticsearch
+    app.kubernetes.io/part-of: dataagent
+spec:
+  serviceName: elasticsearch
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elasticsearch
+  template:
+    metadata:
+      labels:
+        app: elasticsearch
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      containers:
+      - name: elasticsearch
+        image: elasticsearch:8.12.0
+        ports:
+        - containerPort: 8380
+          name: http
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: '2'
+            memory: 2Gi
+        readinessProbe:
+          httpGet:
+            path: /_cluster/health
+            port: 8380
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /_cluster/health
+            port: 8380
+          initialDelaySeconds: 90
+          periodSeconds: 20
+          failureThreshold: 6
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: data
+          mountPath: /usr/share/elasticsearch/data
+        - name: tmp
+          mountPath: /tmp
+        envFrom:
+        - configMapRef:
+            name: elasticsearch-env
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      serviceAccountName: elasticsearch
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 20Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch
+  namespace: dataagent-database
+  labels:
+    app: elasticsearch
+    app.kubernetes.io/part-of: dataagent
+spec:
+  selector:
+    app: elasticsearch
+  ports:
+  - port: 8380
+    targetPort: 8380
+    name: http
+  type: ClusterIP

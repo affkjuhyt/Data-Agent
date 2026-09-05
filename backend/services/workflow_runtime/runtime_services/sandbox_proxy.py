@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
-_SANDBOX_EXECUTOR_URL = os.environ.get("SANDBOX_EXECUTOR_URL", "http://localhost:8500")
+_SANDBOX_EXECUTOR_URL = os.environ.get("SANDBOX_EXECUTOR_URL", "http://localhost:8260")
 
 
 async def get_sandbox_status() -> JSONResponse:

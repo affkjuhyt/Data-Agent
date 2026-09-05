@@ -382,5 +382,5 @@ export const AuthAuditPanel = () => {
   );
 };
 
-const KC_URL   = import.meta.env.VITE_KEYCLOAK_URL   ?? 'http://localhost:8080';
+const KC_URL   = import.meta.env.VITE_KEYCLOAK_URL   ?? 'http://localhost:8110';
 const KC_REALM = import.meta.env.VITE_KEYCLOAK_REALM ?? 'aeroflow';

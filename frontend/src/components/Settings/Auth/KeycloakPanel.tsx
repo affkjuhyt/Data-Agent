@@ -11,7 +11,7 @@ import { Shield, ShieldCheck, ExternalLink, Copy, Check, Save, Server } from 'lu
 import { Badge, Button, Card, EmptyState, ErrorState, LoadingState } from '../../ui';
 import { usePlatformSetting } from '../../../lib/usePlatformSettings';
 
-const KC_URL    = import.meta.env.VITE_KEYCLOAK_URL    ?? 'http://localhost:8080';
+const KC_URL    = import.meta.env.VITE_KEYCLOAK_URL    ?? 'http://localhost:8110';
 const KC_REALM  = import.meta.env.VITE_KEYCLOAK_REALM  ?? 'aeroflow';
 const KC_CLIENT = import.meta.env.VITE_KEYCLOAK_CLIENT ?? 'aeroflow-frontend';
 const KC_ADMIN_URL = `${KC_URL}/admin/master/console/#/${KC_REALM}`;

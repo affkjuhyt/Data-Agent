@@ -20,7 +20,7 @@ import time
 
 import httpx
 
-SANDBOX_EXECUTOR_URL = os.environ.get("SANDBOX_EXECUTOR_URL", "http://localhost:8500")
+SANDBOX_EXECUTOR_URL = os.environ.get("SANDBOX_EXECUTOR_URL", "http://localhost:8260")
 
 _POLL_INITIAL_DELAY_S = 0.2
 _POLL_MAX_DELAY_S = 1.0

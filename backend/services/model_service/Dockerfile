@@ -18,6 +18,6 @@ COPY . .
 RUN addgroup --system app && adduser --system --ingroup app app
 USER app
 
-EXPOSE 8001
+EXPOSE 8230
 
-CMD ["uvicorn", "app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["uvicorn", "app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8230"]

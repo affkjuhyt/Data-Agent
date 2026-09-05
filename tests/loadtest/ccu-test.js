@@ -10,18 +10,18 @@
 //
 // Run (install: `brew install k6`):
 //   k6 run tests/loadtest/ccu-test.js
-//   BASE_URL=http://localhost:8050 VUS=50 DURATION=1m TENANT=... KB=... \
+//   BASE_URL=http://localhost:8220 VUS=50 DURATION=1m TENANT=... KB=... \
 //     k6 run tests/loadtest/ccu-test.js
 //
 // Auth: hits kb-backend directly on :8050 and injects the X-Kong-* identity Kong
 // would add (the :8050 port exists for exactly this). To go through the real
-// gateway instead, set BASE_URL=http://localhost:8000 and pass a Bearer token.
+// gateway instead, set BASE_URL=http://localhost:8100 and pass a Bearer token.
 
 import http from 'k6/http';
 import { check } from 'k6';
 import { Rate, Trend } from 'k6/metrics';
 
-const BASE   = __ENV.BASE_URL || 'http://localhost:8050';
+const BASE   = __ENV.BASE_URL || 'http://localhost:8220';
 const TENANT = __ENV.TENANT   || 'a0000000-0000-0000-0000-000000000001';
 const KB     = __ENV.KB       || '00000000-0000-0003-0000-000000000001';
 const VUS    = parseInt(__ENV.VUS || '30');

@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 # Rerank runs on model_service's local cross-encoder (/rerank). litellm.rerank has no
 # provider for the local setup ("Unsupported provider: openai"), so call it directly.
-_MODEL_SERVICE = os.environ.get("MODEL_SERVICE_URL", "http://kb-model_service:8001").rstrip("/")
+_MODEL_SERVICE = os.environ.get("MODEL_SERVICE_URL", "http://model_service:8230").rstrip("/")
 
 
 def reranker_node(state: AgentState) -> dict[str, Any]:

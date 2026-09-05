@@ -13,7 +13,7 @@ Env:
   LLM_MODEL        model name (default agent-main)
   PROBE_INTERVAL   seconds between probe cycles (default 30)
   PROBE_CONCURRENCY number of parallel requests in the concurrent probe (default 3)
-  LISTEN_PORT      /metrics port (default 9200)
+  LISTEN_PORT      /metrics port (default 8270)
 """
 import json
 import os
@@ -31,7 +31,7 @@ BASE_URL    = os.getenv("LLM_BASE_URL", "http://10.10.55.101:8001").rstrip("/")
 MODEL       = os.getenv("LLM_MODEL", "agent-main")
 INTERVAL    = float(os.getenv("PROBE_INTERVAL", "30"))
 CONCURRENCY = int(os.getenv("PROBE_CONCURRENCY", "3"))
-PORT        = int(os.getenv("LISTEN_PORT", "9200"))
+PORT        = int(os.getenv("LISTEN_PORT", "8270"))
 
 SINGLE_PROMPT     = "List 5 capital cities."
 CONCURRENT_PROMPT = "Explain what machine learning is in 5 sentences."

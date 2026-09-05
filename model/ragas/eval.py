@@ -42,9 +42,9 @@ from ragas import evaluate
 from ragas.llms import LangchainLLMWrapper
 from ragas.metrics import AnswerCorrectness, AnswerRelevancy, Faithfulness
 
-LITELLM_URL = os.getenv("LITELLM_BASE_URL", "http://localhost:4000")
+LITELLM_URL = os.getenv("LITELLM_BASE_URL", "http://localhost:8500")
 LITELLM_API_KEY = os.getenv("LITELLM_API_KEY", "anything")
-RUNTIME_URL = os.getenv("WORKFLOW_RUNTIME_URL", "http://localhost:8001")
+RUNTIME_URL = os.getenv("WORKFLOW_RUNTIME_URL", "http://localhost:8240")
 DEFAULT_AGENT_ID = os.getenv("AGENT_ID", "00000000-0000-0000-0000-000000000030")
 TEST_CASES_PATH = os.path.join(os.path.dirname(__file__), "test_cases.json")
 

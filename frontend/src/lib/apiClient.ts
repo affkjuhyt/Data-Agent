@@ -16,7 +16,7 @@ import keycloak from './keycloak';
 
 const BASE =
   (import.meta.env.VITE_API_URL as string | undefined) ??
-  'http://localhost:8000'; // Kong gateway
+  'http://localhost:8100'; // Kong gateway
 
 /** Bearer-only auth header. Kong injects the authoritative X-* identity. */
 const authHeaders = (): Record<string, string> =>

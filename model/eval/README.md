@@ -47,12 +47,12 @@ python -m model.eval.run  --tier offline --out eval-report.json
 python -m model.eval.gate --report eval-report.json --tier offline
 
 # both tiers, against a live stack
-export LITELLM_BASE_URL=http://localhost:4000 AGENT_ID=<uuid>
+export LITELLM_BASE_URL=http://localhost:8500 AGENT_ID=<uuid>
 python -m model.eval.run  --tier all --out eval-report.json
 python -m model.eval.gate --report eval-report.json --tier offline --tier online
 
 # or in the stack's own network
-docker compose -f deploy/docker/docker-compose.app.yml --profile eval run --rm eval
+kubectl apply -f deploy/k8s/job/eval.yaml
 ```
 
 `run.py` always exits 0 when the run completed — judging is `gate.py`'s job.

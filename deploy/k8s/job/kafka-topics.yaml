@@ -1,0 +1,86 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kafka-topics
+  namespace: dataagent-service
+  labels:
+    app: kafka-topics
+    app.kubernetes.io/part-of: dataagent
+automountServiceAccountToken: false
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-topics-env
+  namespace: dataagent-service
+  labels:
+    app: kafka-topics
+    app.kubernetes.io/part-of: dataagent
+data:
+  INGEST_PARTITIONS: '3'
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-topics
+  namespace: dataagent-service
+  labels:
+    app: kafka-topics
+    app.kubernetes.io/part-of: dataagent
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: kafka-topics
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      automountServiceAccountToken: false
+      containers:
+      - name: kafka-topics
+        image: apache/kafka:3.7.0
+        command:
+        - bash
+        - -c
+        - |
+          until /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka.dataagent-database.svc.cluster.local:8352 --list >/dev/null 2>&1; do echo waiting for kafka; sleep 3; done
+          for t in kb.promote.silver kb.promote.gold; do
+            /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka.dataagent-database.svc.cluster.local:8352 --create --if-not-exists --topic "$t" --partitions "$INGEST_PARTITIONS" --replication-factor 1
+            /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka.dataagent-database.svc.cluster.local:8352 --alter --topic "$t" --partitions "$INGEST_PARTITIONS" || true
+          done
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        envFrom:
+        - configMapRef:
+            name: kafka-topics-env
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      serviceAccountName: kafka-topics

@@ -97,3 +97,6 @@ deploy/ansible/inventories/prod/group_vars/all.yml
 deploy/ansible/inventories/prod/group_vars/all/vault.yml
 .ansible-secrets/
 deploy/docker/keycloak/spi/target/
+
+# filled-in secret source for deploy/k8s/create-secrets.sh
+deploy/k8s/secrets.env
