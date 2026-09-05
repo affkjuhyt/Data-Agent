@@ -69,7 +69,32 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 60
+      initContainers:
+      # readOnlyRootFilesystem: true — /etc/kafka/docker/configure renders
+      # server.properties into /opt/kafka/config (which ships the KRaft
+      # templates it renders from) on every boot; seed a writable copy first.
+      - name: copy-config
+        image: apache/kafka:3.7.0
+        command: ["sh", "-c", "cp -r /opt/kafka/config/. /config-writable/"]
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: config
+          mountPath: /config-writable
       containers:
       - name: kafka
         image: apache/kafka:3.7.0
@@ -112,6 +137,10 @@ spec:
           readOnly: true
         - name: data
           mountPath: /var/lib/kafka/data
+        - name: config
+          mountPath: /opt/kafka/config
+        - name: logs
+          mountPath: /opt/kafka/logs
         - name: tmp
           mountPath: /tmp
         envFrom:
@@ -125,6 +154,10 @@ spec:
           secretName: kafka-jaas
       - name: tmp
         emptyDir: {}
+      - name: config
+        emptyDir: {}
+      - name: logs
+        emptyDir: {}
       serviceAccountName: kafka
   volumeClaimTemplates:
   - metadata:
@@ -134,7 +167,7 @@ spec:
       - ReadWriteOnce
       resources:
         requests:
-          storage: 20Gi
+          storage: 8Gi
 
 ---
 apiVersion: v1

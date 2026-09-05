@@ -33,6 +33,7 @@ class BronzeUploadRequest(BaseModel):
     file_bytes:   bytes
     content_type: str = "application/octet-stream"
     knowledge_base_id: str | None = None
+    ingestion_mode: str = "document"
 
 
 class WebBronzeRequest(BaseModel):
@@ -72,6 +73,7 @@ async def upload_to_bronze(
     language: Language,
     doc_metadata: Any,
     knowledge_base_id: str | None = None,
+    ingestion_mode: str = "document",
 ) -> dict[str, Any]:
     if len(file_data) > cfg.MAX_FILE_SIZE_BYTES:
         raise ValueError(
@@ -99,6 +101,7 @@ async def upload_to_bronze(
         abstract=abstract,
         doc_metadata=doc_metadata,
         current_tier=Tier.BRONZE,
+        ingestion_mode=ingestion_mode,
         path=object_key,
     )
     data_res = await postgres.insert(kb_insert)

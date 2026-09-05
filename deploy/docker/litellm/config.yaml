@@ -173,8 +173,14 @@ litellm_settings:
   # rạc thay vì nối vào đúng trace của request. Tracing giờ do app-level xử lý
   # (backend/services/workflow_runtime và orchestrator/ bên trong — xem observability.py
   # mỗi service: @observe() decorator + langfuse.langchain.CallbackHandler).
-  cache: true
-  cache_params:
-    type: redis
-    redis_host: os.environ/REDIS_HOST
-    redis_port: os.environ/REDIS_PORT
+  # Disabled: ghcr.io/berriai/litellm:main-stable (pulled 05-09-2026) crashes
+  # on every boot wiring this up — TypeError: Redis.__init__() got an
+  # unexpected keyword argument 'redis_host'. litellm's redis_cache.py passes
+  # cache_params through to redis-py using its own `redis_host`/`redis_port`
+  # names, and this image's pinned redis-py version no longer accepts them
+  # (wants `host`/`port`). Upstream version-skew bug, not a config issue —
+  # re-enable once litellm bumps its redis-py pin (or pin an older litellm
+  # image known to work) and confirm from a real litellm crash log, not just
+  # this comment, since litellm changes fast.
+  cache: false
+

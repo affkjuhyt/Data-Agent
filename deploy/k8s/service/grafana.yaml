@@ -35,6 +35,10 @@ metadata:
     app.kubernetes.io/part-of: dataagent
 spec:
   replicas: 1
+  # grafana-data is RWO (local-path, single-node) — see prometheus.yaml's
+  # identical comment; RollingUpdate's old+new pod overlap corrupts/locks it.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: grafana
@@ -53,6 +57,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 30
       containers:
       - name: grafana

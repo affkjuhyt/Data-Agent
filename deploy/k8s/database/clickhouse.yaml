@@ -50,6 +50,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 60
       containers:
       - name: clickhouse
@@ -94,8 +95,17 @@ spec:
           mountPath: /var/log/clickhouse-server
         - name: tmp
           mountPath: /tmp
+        # readOnlyRootFilesystem: true — the entrypoint writes the langfuse
+        # user's config here on every boot.
+        - name: users-config
+          mountPath: /etc/clickhouse-server/users.d
         args:
         - /entrypoint.sh
+        # clickhouse-server treats a bare argument starting with "--" as one
+        # of its OWN flags (--config-file, --daemon, ...) unless a literal
+        # "--" comes first to mark everything after it as config overrides —
+        # without it this fails immediately with "Unknown option specified".
+        - --
         - --http_port=8370
         - --tcp_port=8371
         envFrom:
@@ -106,6 +116,8 @@ spec:
       volumes:
       - name: tmp
         emptyDir: {}
+      - name: users-config
+        emptyDir: {}
       serviceAccountName: clickhouse
   volumeClaimTemplates:
   - metadata:
@@ -115,7 +127,7 @@ spec:
       - ReadWriteOnce
       resources:
         requests:
-          storage: 20Gi
+          storage: 10Gi
   - metadata:
       name: logs
     spec:

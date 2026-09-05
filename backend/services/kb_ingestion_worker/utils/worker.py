@@ -24,6 +24,7 @@ from services.kb_ingestion_worker.utils.pipeline_events import PipelineEventEmit
 from services.kb_ingestion_worker.silver import promote_to_silver
 from services.kb_ingestion_worker.gold import promote_to_gold
 from services.kb_ingestion_worker.conflict_resolver import resolve_batch
+from services.kb_ingestion_worker.structured_pipeline.propose import propose_structured_table
 
 log = logging.getLogger(__name__)
 
@@ -102,6 +103,10 @@ async def consume_loop(
     silver_sem = asyncio.Semaphore(cfg.SILVER_CONCURRENCY)
     gold_sem = asyncio.Semaphore(cfg.GOLD_CONCURRENCY)
     conflict_sem = asyncio.Semaphore(cfg.CONFLICT_CONCURRENCY)
+    # Same Docling converter as silver (SILVER_CONCURRENCY, not a separate
+    # cap) — the shared DocumentConverter isn't proven thread-safe, same
+    # reasoning that pins silver itself to 1.
+    structured_sem = asyncio.Semaphore(cfg.SILVER_CONCURRENCY)
 
     async def handle_silver(event: dict[str, Any], data_id: str, tenant_id: str, approved_by: str) -> None:
         async with silver_sem:
@@ -150,6 +155,17 @@ async def consume_loop(
                     event=event, exc=exc,
                 )
 
+    async def handle_structured_propose(data_id: str, job_id: str, tenant_id: str) -> None:
+        async with structured_sem:
+            # propose_structured_table catches its own exceptions and marks
+            # the job 'failed' (a legitimate, user-visible terminal state —
+            # the review screen shows the error and the user can retry from
+            # the UI, which starts a fresh job). Nothing to retry/DLQ here.
+            await propose_structured_table(
+                minio=minio, postgres=postgres, docling=docling_parser, mongo=mongo,
+                data_id=data_id, job_id=job_id, tenant_id=tenant_id,
+            )
+
     async def handle_batch_resolve(batch_id: str) -> None:
         async with conflict_sem:
             await resolve_batch(batch_id, postgres, qdrant_svc, graph, model, db)
@@ -173,11 +189,19 @@ async def consume_loop(
             if not batch_id:
                 raise ValueError(f"resolve_batch event missing batch_id: {event}")
             await handle_batch_resolve(batch_id)
+        elif stage == "propose_structured":
+            job_id = event.get("job_id", "")
+            if not data_id or not tenant_id or not job_id:
+                raise ValueError(f"propose_structured event missing required fields: {event}")
+            await handle_structured_propose(data_id, job_id, tenant_id)
         else:
             raise ValueError(f"unknown event type: {stage!r}")
 
     await consumer.start_consuming(
-        topics=[cfg.KAFKA_TOPIC_SILVER, cfg.KAFKA_TOPIC_GOLD, cfg.KAFKA_TOPIC_CONFLICT_RESOLVE],
+        topics=[
+            cfg.KAFKA_TOPIC_SILVER, cfg.KAFKA_TOPIC_GOLD, cfg.KAFKA_TOPIC_CONFLICT_RESOLVE,
+            cfg.KAFKA_TOPIC_STRUCTURED_PROPOSE,
+        ],
         handler=handler,
         concurrency=cfg.CONSUME_CONCURRENCY,
     )

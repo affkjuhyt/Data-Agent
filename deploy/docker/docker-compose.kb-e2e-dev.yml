@@ -1,0 +1,143 @@
+# KB E2E — SELF-CONTAINED DEV overlay (the original kb-e2e behaviour).
+#
+# Unlike docker-compose.kb-e2e.yml (which is standalone and reuses shared infra
+# from another stack), THIS file is an OVERLAY on docker-compose.yml: it brings
+# up the whole KB world in ONE project, with dev-friendly resource sizing. Use it
+# when you just want a complete KB stack on your machine and nothing else is
+# running.
+#
+# It is NOT standalone — always combine with the base:
+#
+#   docker compose --profile runtime \
+#     -f deploy/docker/docker-compose.yml \
+#     -f deploy/docker/docker-compose.kb-e2e-dev.yml \
+#     --env-file deploy/docker/.env.kb-testing \
+#     up -d --build <services...>
+#
+# Bring-up: docker compose --profile runtime -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e-dev.yml up -d --build
+# (--profile runtime: the base file keeps postgres/minio/kong… behind that profile)
+#
+# Specify only KB services on the up command to avoid starting the full platform
+# (workflow_runtime, flow_builder, auth_api, frontend, etc.):
+#
+#   ... up -d --build \
+#     postgres mongo qdrant neo4j minio kafka keycloak \
+#     kong-migration kong kong-setup minio-init \
+#     model_service kb-backend kb-ingestion-worker
+#
+# What this overlay adds / overrides:
+#   postgres        — adds KB seed data mount (05-kb-seed.sql)
+#   keycloak        — adds healthcheck (main compose omits it)
+#   minio-init      — creates the knowledge-base bucket (KB-specific)
+#   kong-setup      — configures Kong routes + JWT plugin for KB services
+#   model_service   — adds remote GPU server env vars + KB postgres DSN
+#   kb-backend      — publishes :8050, adds LightRAG tuning knobs
+#   kb-ingestion-worker — adds docling cache volume
+
+volumes:
+  docling_cache:
+
+services:
+
+  # ── Extend postgres: add KB seed data on fresh volumes ────────────────────────
+  # init scripts run in lexicographic order; 05 runs after the base file's 04.
+  postgres:
+    volumes:
+      - ./sql/kb-seed.sql:/docker-entrypoint-initdb.d/05-kb-seed.sql:ro
+
+  keycloak:
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /realms/aeroflow/.well-known/openid-configuration HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && cat <&3 | grep -q 'issuer'"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  minio-init:
+    image: minio/mc
+    container_name: kb-minio-init
+    restart: "no"
+    entrypoint: >
+      sh -c "
+        mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minio} ${MINIO_ROOT_PASSWORD:-minio_secret} &&
+        mc mb --ignore-existing local/knowledge-base &&
+        echo 'MinIO: knowledge-base bucket ready.'
+      "
+    depends_on:
+      minio: { condition: service_healthy }
+
+  kong-setup:
+    image: python:3-alpine
+    container_name: kb-kong-setup
+    restart: "no"
+    volumes:
+      - ./kong:/scripts:ro
+    environment:
+      KONG_ADMIN_URL: http://dataagent-kong:8001
+      KEYCLOAK_URL: http://dataagent-keycloak:8080
+      KEYCLOAK_PUBLIC_URL: http://localhost:8080
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        apk add --no-cache curl bash > /dev/null 2>&1
+        python3 -c "open('/tmp/k.sh','w').write(open('/scripts/kong-setup.sh').read().replace(chr(13),''))"
+        bash /tmp/k.sh
+    depends_on:
+      kong: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
+      kb-backend: { condition: service_started }
+
+  model_service:
+    build:
+      context: ../../backend/services/model_service
+    environment:
+      # Pure API gateway — all inference on the GPU server (TEI embed/rerank +
+      # vLLM chat). REMOTE_* unset ⇒ /embed //rerank //generate return 503.
+      REMOTE_EMBED_URL: ${REMOTE_EMBED_URL:-}
+      REMOTE_RERANK_URL: ${REMOTE_RERANK_URL:-}
+      REMOTE_API_KEY: ${REMOTE_API_KEY:-}
+      REMOTE_LLM_URL: ${REMOTE_LLM_URL:-http://10.10.55.101:8002}
+      REMOTE_LLM_KEY: ${REMOTE_LLM_KEY:-}
+      REMOTE_LLM_MODEL: ${REMOTE_LLM_MODEL:-agent-fast}
+      OMP_NUM_THREADS: "2"
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-admin}@postgres/${POSTGRES_DB:-dataagent}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  kb-backend:
+    build:
+      context: ../..
+      dockerfile: backend/services/kb_backend/Dockerfile
+    ports:
+      # Loopback only — direct callers bypass Kong and can forge identity headers.
+      - "127.0.0.1:8050:8000"
+    environment:
+      NEO4J_URL: bolt://neo4j:7687
+      MONGO_URL: mongodb://mongo:27017/${POSTGRES_DB:-dataagent}
+      QDRANT_PASS1_LIMIT: ${QDRANT_PASS1_LIMIT:-3}
+      QDRANT_PASS2_LIMIT: ${QDRANT_PASS2_LIMIT:-2}
+      RRF_TOP_N: ${RRF_TOP_N:-20}
+      RERANK_TOP_N: ${RERANK_TOP_N:-5}
+      NEO4J_MAX_HOPS: ${NEO4J_MAX_HOPS:-1}
+      NEO4J_MAX_NEIGHBOURS: ${NEO4J_MAX_NEIGHBOURS:-5}
+      DOC_NARROWING: ${DOC_NARROWING:-1}
+      DOC_PASS_TOP_M: ${DOC_PASS_TOP_M:-3}
+      DOC_PASS_CHUNK_LIMIT: ${DOC_PASS_CHUNK_LIMIT:-5}
+      QUERY_ALIAS_RESOLVE: ${QUERY_ALIAS_RESOLVE:-1}
+      TYPE_AWARE: ${TYPE_AWARE:-1}
+    depends_on:
+      minio-init: { condition: service_completed_successfully }
+
+  kb-ingestion-worker:
+    build:
+      context: ../..
+      dockerfile: backend/services/kb_ingestion_worker/Dockerfile
+    environment:
+      MINIO_BUCKET: knowledge-base
+      LLM_MODEL: agent-fast
+      HF_HOME: /root/.cache/huggingface
+    volumes:
+      - docling_cache:/root/.cache/huggingface
+    depends_on:
+      minio-init: { condition: service_completed_successfully }

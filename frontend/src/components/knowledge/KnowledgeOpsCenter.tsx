@@ -24,6 +24,7 @@ import { OperationalHeader } from '../shared/OperationalHeader';
 import { StatusBadge } from '../shared/StatusBadge';
 import { ConflictWorkspace } from './conflicts/ConflictWorkspace';
 import { IngestionWizard } from './ingest/IngestionWizard';
+import { StructuredTableReview } from './ingest/StructuredTableReview';
 import { AssetDetailWorkspace } from './inventory/AssetDetailWorkspace';
 import { DetailDrawer } from '../shared/DetailDrawer';
 import { FleetOverview } from './fleet/FleetOverview';
@@ -74,6 +75,12 @@ const KnowledgeOpsCenter = () => {
   const [selectedAssetReadOnly, setSelectedAssetReadOnly] = useState(false);
   const [assetTab, setAssetTab] = useState<'PREVIEW' | 'CHUNKS' | 'TABLES' | 'LOGS' | 'TIMELINE' | 'CONFIGS'>('PREVIEW');
   const [showIngestionWizard, setShowIngestionWizard] = useState(false);
+  const [reviewSchemaDoc, setReviewSchemaDoc] = useState<KnowledgeDocument | null>(null);
+  // AssetInventory manages its own paginated fetch of /api/data/documents —
+  // bumping this remounts it (fresh fetch) after a structured-table job is
+  // approved/rejected, so the row's action button reflects the new state
+  // without the user needing to switch tabs and back.
+  const [inventoryRefreshKey, setInventoryRefreshKey] = useState(0);
   const [showWarehouseWizard, setShowWarehouseWizard] = useState(false);
   const [showPromoteWizard, setShowPromoteWizard] = useState(false);
 
@@ -113,8 +120,10 @@ const KnowledgeOpsCenter = () => {
         );
       case 'INVENTORY':  return (
         <AssetInventory
+          key={inventoryRefreshKey}
           onSelectAsset={handleSelectAsset}
           onPromote={(doc) => startPromotion(doc.data_id, doc.name, doc.current_tier as 'bronze' | 'silver', doc.current_tier === 'bronze' ? 'silver' : 'gold')}
+          onReviewSchema={(doc) => setReviewSchemaDoc(doc)}
           promotingIds={promotingIds}
         />
       );
@@ -171,6 +180,29 @@ const KnowledgeOpsCenter = () => {
             setActiveSubTab('WAREHOUSE');
           }}
         />
+      </DetailDrawer>
+
+      {/* ── Structured-table schema review drawer ── */}
+      <DetailDrawer
+        isOpen={!!reviewSchemaDoc}
+        onClose={() => setReviewSchemaDoc(null)}
+        title="Review Structured Table Schema"
+        subtitle={reviewSchemaDoc?.name || ''}
+        icon={Table2}
+        size="wide"
+        persistKey="kb-structured-review"
+        footer={null}
+      >
+        {reviewSchemaDoc && (
+          <StructuredTableReview
+            document={reviewSchemaDoc}
+            onClose={() => setReviewSchemaDoc(null)}
+            onDone={() => {
+              setReviewSchemaDoc(null);
+              setInventoryRefreshKey(k => k + 1);
+            }}
+          />
+        )}
       </DetailDrawer>
 
       {/* ── Asset detail drawer ── */}

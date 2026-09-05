@@ -7,11 +7,9 @@ import {
   ChevronLeft,
   Lock,
   Upload,
-  Calendar,
-  User,
-  Link2,
   Check,
   AlertCircle,
+  X as XIcon,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../../lib/utils';
@@ -20,6 +18,12 @@ import { STEPS, SOURCES, formatBytes } from './ingest.data';
 import { apiUpload, apiGet, apiMutate } from '../../../lib/apiClient';
 
 interface KnowledgeBaseOption { id: string; name: string; }
+
+const SPREADSHEET_EXTENSIONS = ['xlsx', 'xls', 'csv'];
+const isSpreadsheetFile = (filename: string): boolean => {
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  return SPREADSHEET_EXTENSIONS.includes(ext);
+};
 
 export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => void, onCancel: () => void }) => {
   const { addDocument, user } = useAppState();
@@ -41,10 +45,23 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
       .catch(() => setKnowledgeBases([]));
   }, []);
 
-  // Local uploaded state
+  // Local uploaded state — an array so multiple files can be queued in one
+  // pass; single-file mode (the common case) is just this array with one
+  // item and behaves exactly as before (custom name, per-file metadata).
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadedFile, setUploadedFile] = useState<{ name: string; size: string; type: string } | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const isMultiFile = selectedFiles.length > 1;
+  const firstFile = selectedFiles[0] ?? null;
+
+  // Opt-in: LLM proposes a table schema from the spreadsheet, a human
+  // reviews it (AssetInventory's "Review Schema" button, once the file
+  // lands in Bronze), and only on approval is a real Postgres table
+  // created. Left off (the default), a spreadsheet goes through the exact
+  // same RAG/Qdrant path as any other document — nothing about that path
+  // changes here. Only offered when uploading a single spreadsheet file —
+  // structured-table review is a per-document flow.
+  const [structuredMode, setStructuredMode] = useState(false);
 
   // Ingest state
   const [isAddingInProcess, setIsAddingInProcess] = useState(false);
@@ -80,37 +97,47 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const cleanName = file.name.replace(/\.[^/.]+$/, "");
-      setAssetName(cleanName);
-      const sizeFormatted = formatBytes(file.size);
-      
-      setUploadedFile({
-        name: file.name,
-        size: sizeFormatted,
-        type: file.name.split('.').pop()?.toUpperCase() || 'RAW'
-      });
+    const newFiles = Array.from(e.target.files ?? []);
+    if (newFiles.length === 0) return;
+    // Re-selecting the same <input> fires onChange again with the same
+    // FileList reference cleared — reset it so picking the same file twice
+    // in a row (e.g. after removing it) still triggers a change event.
+    e.target.value = '';
 
-      if (selectedSource === 'image') {
-        setImageMetadata({
-          type: file.name.split('.').pop()?.toUpperCase() || 'PNG',
-          file_size: sizeFormatted,
-          height: '1440px',
-          width: '2560px',
-          color_space: 'sRGB (Display P3)'
-        });
-      } else if (selectedSource === 'video') {
-        setVideoMetadata({
-          type: file.name.split('.').pop()?.toUpperCase() || 'MP4',
-          file_size: sizeFormatted,
-          height: '1080px',
-          width: '1920px',
-          total_frame: '11,250'
-        });
-      }
-      setErrorMsg(null);
+    setSelectedFiles(prev => [...prev, ...newFiles]);
+    const allFiles = [...selectedFiles, ...newFiles];
+    const first = newFiles[0];
+    const sizeFormatted = formatBytes(first.size);
+
+    // Custom naming only makes sense for a single file — multiple files
+    // each keep their own filename as the document name (set at submit time).
+    if (allFiles.length === 1) {
+      setAssetName(first.name.replace(/\.[^/.]+$/, ''));
     }
+    if (!isSpreadsheetFile(first.name) || allFiles.length > 1) setStructuredMode(false);
+
+    if (selectedSource === 'image') {
+      setImageMetadata({
+        type: first.name.split('.').pop()?.toUpperCase() || 'PNG',
+        file_size: sizeFormatted,
+        height: '1440px',
+        width: '2560px',
+        color_space: 'sRGB (Display P3)'
+      });
+    } else if (selectedSource === 'video') {
+      setVideoMetadata({
+        type: first.name.split('.').pop()?.toUpperCase() || 'MP4',
+        file_size: sizeFormatted,
+        height: '1080px',
+        width: '1920px',
+        total_frame: '11,250'
+      });
+    }
+    setErrorMsg(null);
+  };
+
+  const removeFile = (idx: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== idx));
   };
 
   const executeAddData = async () => {
@@ -130,38 +157,83 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
         return;
       }
     } else {
-      if (!assetName.trim()) {
-        setErrorMsg('A valid file name is required.');
+      if (selectedFiles.length === 0) {
+        setErrorMsg('Please select at least one file to upload.');
         return;
       }
-      if (!uploadedFile) {
-        setErrorMsg('Please select a file to upload.');
+      if (!isMultiFile && !assetName.trim()) {
+        setErrorMsg('A valid file name is required.');
         return;
       }
     }
 
     setIsAddingInProcess(true);
     setErrorMsg(null);
+    setIngestionLogs(['Establishing Bronze-Level ingestion pipeline stream...']);
 
-    const logList = [
-      'Establishing Bronze-Level ingestion pipeline stream...',
-      'Mapping payload storage allocations... COMPLETED',
-      'Locking hardware metadata & extraction fingerprints...',
-      'Verifying digital signatures against tenant policies...',
-      'Transferring chunks into global Data Lake (Bronze)... SUCCESS'
-    ];
+    const uploadOneFile = async (file: File) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      // NOTE: Do NOT include role_id, tenant_id, or user_id in body — they
+      // are auto-injected as headers (X-Role, X-Tenant-Id, X-User-Id). A
+      // single file keeps the custom Knowledge Name; multiple files each
+      // take their own filename (no single name would fit all of them, and
+      // the backend requires unique names per tenant anyway).
+      const docName = isMultiFile ? file.name.replace(/\.[^/.]+$/, '') : assetName;
+      formData.append('name', docName);
+      formData.append('abstract', docName);
+      formData.append('language', 'english');
+      formData.append('source_type', selectedSource as string);
+      if (knowledgeBaseId) formData.append('knowledge_base_id', knowledgeBaseId);
+      if (structuredMode && !isMultiFile) formData.append('ingestion_mode', 'structured_table');
+      // doc_metadata field names MUST mirror the backend metadata models
+      // (Document.doc_type, Image.image_type, Video.video_type) — those *_type
+      // fields are required, so sending a generic "type" breaks the bronze insert.
+      const fileExt = (file.name.split('.').pop() || 'FILE').toUpperCase();
+      const apiMetadata =
+        selectedSource === 'image'
+          ? {
+              image_type:  imageMetadata.type,
+              height:      parseInt(imageMetadata.height, 10) || 0,
+              width:       parseInt(imageMetadata.width, 10) || 0,
+              color_space: imageMetadata.color_space,
+            }
+          : selectedSource === 'video'
+          ? {
+              video_type:  videoMetadata.type,
+              height:      parseInt(videoMetadata.height, 10) || 0,
+              width:       parseInt(videoMetadata.width, 10) || 0,
+              total_frame: parseInt(String(videoMetadata.total_frame).replace(/[^0-9]/g, ''), 10) || 0,
+            }
+          : {
+              doc_type:       `Doc/${fileExt}`,
+              author:         author || 'Anonymous',
+              published_date: publishedDate || new Date().toISOString().split('T')[0],
+            };
+      formData.append('doc_metadata', JSON.stringify(apiMetadata));
 
-    let pointer = 0;
-    setIngestionLogs([logList[0]]);
-
-    const interval = setInterval(() => {
-      pointer++;
-      if (pointer < logList.length) {
-        setIngestionLogs(prev => [...prev, logList[pointer]]);
-      } else {
-        clearInterval(interval);
-      }
-    }, 550);
+      const result = await apiUpload<{ data_id: string; name: string; path: string; layer: string }>(
+        '/api/pipeline/ingestion/bronze',
+        formData
+      );
+      setIngestionLogs(prev => [...prev, `Registered: ${result.name} (${result.data_id})`]);
+      addDocument({
+        data_id: result.data_id,
+        name: result.name,
+        source_type: selectedSource ?? 'doc',
+        current_tier: 'bronze',
+        status: 'RAW',
+        added_on: new Date().toISOString(),
+        added_by: user.name || 'AI Engineer',
+        ingestion_mode: (structuredMode && !isMultiFile) ? 'structured_table' : 'document',
+        metadata: {
+          doc_type: selectedSource === 'doc' ? `Doc/${fileExt}` : selectedSource === 'image' ? 'Image' : 'Video',
+          warehouse_type: null,
+          author: selectedSource === 'doc' ? (author || null) : null,
+          published_date: publishedDate || new Date().toISOString().split('T')[0],
+        },
+      });
+    };
 
     try {
       // Web portal: no file — register the URL as bronze. The bronze→silver step
@@ -192,74 +264,12 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
             url: webUrl,
           },
         });
-      }
-
-      // Upload to real backend API via apiUpload (auto-injects context headers)
-      if (selectedSource !== 'web' && fileInputRef.current?.files?.[0]) {
-        const file = fileInputRef.current.files[0];
-        const formData = new FormData();
-
-        formData.append('file', file);
-        // NOTE: Do NOT include role_id, tenant_id, or user_id in body
-        // They are auto-injected as headers (X-Role, X-Tenant-Id, X-User-Id)
-        // The typed Knowledge Name becomes the document name; the real upload
-        // filename is sent on the file part and used only for storage.
-        formData.append('name', assetName);
-        formData.append('abstract', assetName);
-        formData.append('language', 'english');
-        formData.append('source_type', selectedSource);
-        if (knowledgeBaseId) formData.append('knowledge_base_id', knowledgeBaseId);
-        // doc_metadata field names MUST mirror the backend metadata models
-        // (Document.doc_type, Image.image_type, Video.video_type) — those *_type fields
-        // are required, so sending a generic "type" makes the bronze insert reject it.
-        const fileExt = (uploadedFile?.type || file.name.split('.').pop() || 'FILE').toUpperCase();
-        const apiMetadata =
-          selectedSource === 'image'
-            ? {
-                image_type:  imageMetadata.type,
-                height:      parseInt(imageMetadata.height, 10) || 0,
-                width:       parseInt(imageMetadata.width, 10) || 0,
-                color_space: imageMetadata.color_space,
-              }
-            : selectedSource === 'video'
-            ? {
-                video_type:  videoMetadata.type,
-                height:      parseInt(videoMetadata.height, 10) || 0,
-                width:       parseInt(videoMetadata.width, 10) || 0,
-                total_frame: parseInt(String(videoMetadata.total_frame).replace(/[^0-9]/g, ''), 10) || 0,
-              }
-            : {
-                doc_type:       `Doc/${fileExt}`,
-                author:         author || 'Anonymous',
-                published_date: publishedDate || new Date().toISOString().split('T')[0],
-              };
-        formData.append('doc_metadata', JSON.stringify(apiMetadata));
-
-        const result = await apiUpload<{ data_id: string; name: string; path: string; layer: string }>(
-          '/api/pipeline/ingestion/bronze',
-          formData
-        );
-
-        // Update logs with success
-        setIngestionLogs(prev => [...prev, `Document registered in database: ${result.data_id}`]);
-
-        // Add to local state
-        addDocument({
-          data_id: result.data_id,
-          name: result.name,
-          source_type: selectedSource ?? 'doc',
-          current_tier: 'bronze',
-          status: 'RAW',
-          added_on: new Date().toISOString(),
-          added_by: user.name || 'AI Engineer',
-          metadata: {
-            // doc_type drives the UI's source category + asset-type display.
-            doc_type: selectedSource === 'doc' ? `Doc/${fileExt}` : selectedSource === 'image' ? 'Image' : 'Video',
-            warehouse_type: null,
-            author: selectedSource === 'doc' ? (author || null) : null,
-            published_date: publishedDate || new Date().toISOString().split('T')[0],
-          },
-        });
+      } else {
+        // Sequential, not parallel: keeps the log readable and avoids
+        // hammering the gateway with N simultaneous uploads for a batch.
+        for (const file of selectedFiles) {
+          await uploadOneFile(file);
+        }
       }
 
       setTimeout(() => {
@@ -280,15 +290,16 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
     <div className="flex flex-col h-full bg-[#FCFBF7] text-[#111111] select-none">
       
       {/* Hidden file selector trigger */}
-      <input 
-        type="file" 
-        ref={fileInputRef} 
+      <input
+        type="file"
+        ref={fileInputRef}
         onChange={handleFileChange}
         className="hidden"
+        multiple
         accept={
           selectedSource === 'image' ? 'image/*' :
           selectedSource === 'video' ? 'video/*' :
-          selectedSource === 'doc' ? '.pdf,.docx,.txt,.md' :
+          selectedSource === 'doc' ? '.pdf,.docx,.txt,.md,.xlsx,.xls,.csv' :
           '*'
         }
       />
@@ -416,7 +427,7 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
-              className="space-y-5 max-w-xl mx-auto"
+              className="space-y-5 max-w-3xl mx-auto"
             >
               <div className="text-center mb-2">
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#FFF9E8] border border-[#BFA66A] rounded-full text-[10px] text-[#8A5A00] font-mono font-bold uppercase mb-2">
@@ -434,39 +445,90 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
                 {selectedSource !== 'web' && (
                   <div className="flex flex-col gap-1.5 pb-4 border-b border-[#BFA66A]">
                     <span className="text-[10px] font-black uppercase tracking-widest text-[#111111]">Source Payload *</span>
-                    <span className="text-[10px] text-[#5A5A5A] mb-1">Upload a valid raw resource file from your machine</span>
-                    
-                    <div className="w-full">
-                      {uploadedFile ? (
-                        <div className="p-3 bg-[#FFFDF6] border border-[#BFA66A] rounded-xl flex items-center justify-between">
+                    <span className="text-[10px] text-[#5A5A5A] mb-1">Upload one or more raw resource files from your machine</span>
+
+                    <div className="w-full flex flex-col gap-2">
+                      {selectedFiles.map((f, idx) => (
+                        <div key={`${f.name}-${idx}`} className="p-3 bg-[#FFFDF6] border border-[#BFA66A] rounded-xl flex items-center justify-between">
                           <div className="flex items-center gap-3 overflow-hidden">
                             <div className="p-2 bg-[#F3E2A7] border border-[#BFA66A] text-[#8A5A00] rounded-lg shrink-0">
                               <FileText className="w-4 h-4" />
                             </div>
                             <div className="overflow-hidden">
-                              <div className="text-xs font-bold text-[#111111] truncate">{uploadedFile.name}</div>
-                              <div className="text-[10px] font-mono text-[#5A5A5A] mt-0.5">{uploadedFile.size} • {uploadedFile.type}</div>
+                              <div className="text-xs font-bold text-[#111111] truncate">{f.name}</div>
+                              <div className="text-[10px] font-mono text-[#5A5A5A] mt-0.5">
+                                {formatBytes(f.size)} • {(f.name.split('.').pop() || 'RAW').toUpperCase()}
+                              </div>
                             </div>
                           </div>
                           <button
                             type="button"
-                            onClick={handleFileUploadClick}
-                            className="btn-secondary btn-sm"
+                            onClick={() => removeFile(idx)}
+                            className="p-1.5 text-[#5A5A5A] hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
+                            aria-label={`Remove ${f.name}`}
                           >
-                            Replace
+                            <XIcon className="w-4 h-4" />
                           </button>
                         </div>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={handleFileUploadClick}
-                          className="w-full py-5 bg-[#FFFDF6] hover:bg-[#FFF9E8] border-2 border-dashed border-[#BFA66A] hover:border-[#8A5A00] rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all group cursor-pointer"
-                        >
-                          <Upload className="w-4.5 h-4.5 text-[#8A5A00] group-hover:scale-105 transition-transform" />
-                          <span className="text-[10px] font-black uppercase tracking-wider text-[#111111]">Upload Resource</span>
-                        </button>
-                      )}
+                      ))}
+                      <button
+                        type="button"
+                        onClick={handleFileUploadClick}
+                        className={cn(
+                          'w-full bg-[#FFFDF6] hover:bg-[#FFF9E8] border-2 border-dashed border-[#BFA66A] hover:border-[#8A5A00] rounded-xl flex flex-col items-center justify-center gap-1.5 transition-all group cursor-pointer',
+                          selectedFiles.length === 0 ? 'py-5' : 'py-3'
+                        )}
+                      >
+                        <Upload className="w-4.5 h-4.5 text-[#8A5A00] group-hover:scale-105 transition-transform" />
+                        <span className="text-[10px] font-black uppercase tracking-wider text-[#111111]">
+                          {selectedFiles.length === 0 ? 'Upload Resource' : 'Add More Files'}
+                        </span>
+                      </button>
                     </div>
+                    {isMultiFile && (
+                      <span className="text-[10px] text-[#5A5A5A] pt-1">
+                        {selectedFiles.length} files selected — each keeps its own filename as its Knowledge Name.
+                      </span>
+                    )}
+
+                    {/* Spreadsheet-only: opt into LLM-proposed schema + human
+                        review before a real Postgres table gets created.
+                        Off by default — the file otherwise goes through the
+                        exact same RAG/Qdrant path as any other document.
+                        Single-file only — structured-table review is a
+                        per-document flow. */}
+                    {selectedSource === 'doc' && !isMultiFile && firstFile && isSpreadsheetFile(firstFile.name) && (
+                      <div className="flex flex-col gap-1.5 pt-4">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-[#111111]">How should this data be added?</span>
+                        <div className="content-card content-card--static inline-flex p-1 shadow-2xs w-fit">
+                          <button
+                            type="button"
+                            onClick={() => setStructuredMode(false)}
+                            className={cn(
+                              'px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wide transition-all',
+                              !structuredMode ? 'bg-[#B88719] text-white shadow-sm' : 'text-[#5A5A5A] hover:bg-[#FAF6ED]'
+                            )}
+                          >
+                            Add to knowledge base
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setStructuredMode(true)}
+                            className={cn(
+                              'px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-wide transition-all',
+                              structuredMode ? 'bg-[#B88719] text-white shadow-sm' : 'text-[#5A5A5A] hover:bg-[#FAF6ED]'
+                            )}
+                          >
+                            Convert to structured table
+                          </button>
+                        </div>
+                        <span className="text-[10px] text-[#5A5A5A]">
+                          {structuredMode
+                            ? 'An LLM will propose a table schema from this file for you to review — no table is created until you approve it.'
+                            : 'Default: chunked and embedded for semantic search, same as any other document.'}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -475,14 +537,22 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
                   <label className="text-[10px] font-black uppercase tracking-widest text-[#111111]">
                     {selectedSource === 'web' ? 'Web Portal Name *' : 'Knowledge Name *'}
                   </label>
-                  <span className="text-[10px] text-[#5A5A5A] mb-1">Dynamic system identifier assigned to resource</span>
-                  <input
-                    type="text"
-                    placeholder={selectedSource === 'web' ? "e.g., AeroFlow Web Documentation" : "e.g., enterprise_sso_schema"}
-                    value={assetName}
-                    onChange={(e) => setAssetName(e.target.value)}
-                    className="field-input text-xs font-mono"
-                  />
+                  <span className="text-[10px] text-[#5A5A5A] mb-1">
+                    {isMultiFile ? 'Each file keeps its own filename as its name' : 'Dynamic system identifier assigned to resource'}
+                  </span>
+                  {isMultiFile ? (
+                    <div className="field-input text-xs font-mono text-[#5A5A5A] bg-[#FAF6ED] cursor-not-allowed">
+                      {selectedFiles.length} files — named individually
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder={selectedSource === 'web' ? "e.g., AeroFlow Web Documentation" : "e.g., enterprise_sso_schema"}
+                      value={assetName}
+                      onChange={(e) => setAssetName(e.target.value)}
+                      className="field-input text-xs font-mono"
+                    />
+                  )}
                 </div>
 
                 {/* 2b. Knowledge Base selector — the kind of knowledge this doc belongs to */}
@@ -506,16 +576,13 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
                   <div className="flex flex-col gap-1.5 pb-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-[#111111]">URL Endpoint *</label>
                     <span className="text-[10px] text-[#5A5A5A] mb-1">Absolute online source crawl destination</span>
-                    <div className="relative">
-                      <Link2 className="w-3.5 h-3.5 text-[#8A5A00] absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        placeholder="https://docs.aeroflow.ai/index"
-                        value={webUrl}
-                        onChange={(e) => setWebUrl(e.target.value)}
-                        className="field-input pl-9 text-xs font-mono"
-                      />
-                    </div>
+                    <input
+                      type="text"
+                      placeholder="https://docs.aeroflow.ai/index"
+                      value={webUrl}
+                      onChange={(e) => setWebUrl(e.target.value)}
+                      className="field-input text-xs font-mono"
+                    />
                   </div>
                 )}
 
@@ -525,31 +592,24 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
                     <div className="flex flex-col gap-1.5 pb-2">
                       <label className="text-[10px] font-black uppercase tracking-widest text-[#111111]">Author / Contributor</label>
                       <span className="text-[10px] text-[#5A5A5A] mb-1">Author name tagged inside index ledger</span>
-                      <div className="relative">
-                        <User className="w-3.5 h-3.5 text-[#8A5A00] absolute left-3 top-1/2 -translate-y-1/2" />
-                        <input
-                          type="text"
-                          placeholder="Optional"
-                          value={author}
-                          onChange={(e) => setAuthor(e.target.value)}
-                          className="field-input pl-9 text-xs"
-                        />
-                      </div>
+                      <input
+                        type="text"
+                        placeholder="Optional"
+                        value={author}
+                        onChange={(e) => setAuthor(e.target.value)}
+                        className="field-input text-xs"
+                      />
                     </div>
 
                     <div className="flex flex-col gap-1.5 pb-2">
                       <label className="text-[10px] font-black uppercase tracking-widest text-[#111111]">Published Date</label>
                       <span className="text-[10px] text-[#5A5A5A] mb-1">Time or year signature of artifact publishment</span>
-                      <div className="relative">
-                        <Calendar className="w-3.5 h-3.5 text-[#8A5A00] absolute left-3 top-1/2 -translate-y-1/2" />
-                        <input
-                          type="text"
-                          placeholder="YYYY-MM-DD (Optional)"
-                          value={publishedDate}
-                          onChange={(e) => setPublishedDate(e.target.value)}
-                          className="field-input pl-9 text-xs font-mono"
-                        />
-                      </div>
+                      <input
+                        type="date"
+                        value={publishedDate}
+                        onChange={(e) => setPublishedDate(e.target.value)}
+                        className="field-input text-xs font-mono"
+                      />
                     </div>
                   </>
                 )}

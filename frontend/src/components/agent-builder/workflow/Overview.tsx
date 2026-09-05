@@ -216,6 +216,7 @@ const WorkflowEngine = () => {
   const [builderAgentId, setBuilderAgentId] = useState<string | undefined>();
   const [builderWorkflowVersionId, setBuilderWorkflowVersionId] = useState<string | undefined>();
   const [builderWorkflowId, setBuilderWorkflowId] = useState<string | undefined>();
+  const [builderSourceVersionId, setBuilderSourceVersionId] = useState<string | undefined>();
   const [creating, setCreating] = useState(false);
   const [createName, setCreateName] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -243,6 +244,7 @@ const WorkflowEngine = () => {
       setBuilderAgentId(data.agent_id);
       setBuilderWorkflowVersionId(data.workflow_version_id);
       setBuilderWorkflowId(data.workflow_id);
+      setBuilderSourceVersionId(undefined);
       setShowCreateModal(false);
       setCreateName('');
       setSelectedWorkflow(null);
@@ -259,10 +261,26 @@ const WorkflowEngine = () => {
     try {
       const data = await apiGet<any>(`/api/agents/${agent.id}`);
       const workflows: ApiWorkflow[] = data.workflows ?? [];
-      const wv = workflows[0]?.draft_version_id ?? null;
+      const workflowId = workflows[0]?.id;
+      let wv = workflows[0]?.draft_version_id ?? null;
+      let sourceVersionId: string | undefined;
+
+      // publish_workflow_version flips the draft to "published" in place — it
+      // doesn't leave a new draft behind — so a published-only workflow has no
+      // draft_version_id here. Create one now (before the canvas ever renders)
+      // so Builder's existing sourceVersionId-copy effect can load the published
+      // nodes into it; doing this lazily on Save instead races that same effect
+      // and wipes the on-screen canvas back to empty.
+      if (!wv && workflowId) {
+        const created = await apiMutate<any>('POST', `/api/workflows/${workflowId}/versions`);
+        wv = created.workflow_version_id;
+        sourceVersionId = created.source_version_id ?? undefined;
+      }
+
       setBuilderAgentId(agent.id);
       setBuilderWorkflowVersionId(wv ?? undefined);
-      setBuilderWorkflowId(workflows[0]?.id ?? undefined);
+      setBuilderWorkflowId(workflowId ?? undefined);
+      setBuilderSourceVersionId(sourceVersionId);
       setSelectedWorkflow(null);
       setBuilderSource('REGISTRY');
       setActiveTab('BUILDER');
@@ -335,6 +353,7 @@ const WorkflowEngine = () => {
     setBuilderAgentId(undefined);
     setBuilderWorkflowVersionId(undefined);
     setBuilderWorkflowId(undefined);
+    setBuilderSourceVersionId(undefined);
     setActiveTab(builderSource);
   };
 
@@ -476,6 +495,7 @@ const WorkflowEngine = () => {
         agentId={builderAgentId}
         workflowVersionId={builderWorkflowVersionId}
         workflowId={builderWorkflowId}
+        sourceVersionId={builderSourceVersionId}
       />
     );
   }
@@ -574,6 +594,41 @@ const WorkflowEngine = () => {
       </motion.div>
 
       {/* Create Agent Modal */}
+      {showCreateModal && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40"
+          onClick={() => { if (!creating) setShowCreateModal(false); }}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="font-bold text-[#111111]">New Workflow</h3>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-[#5F5F5F]">Tên agent</label>
+              <input
+                autoFocus
+                type="text"
+                value={createName}
+                onChange={e => setCreateName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleCreateAgent()}
+                placeholder="VD: Customer Support Bot"
+                className="ui-input w-full px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowCreateModal(false)} className="btn-ghost" disabled={creating}>Hủy</button>
+              <button
+                onClick={handleCreateAgent}
+                disabled={creating || !createName.trim()}
+                className="px-4 py-2 text-sm font-semibold text-white bg-[#B88719] hover:bg-[#8A5A00] disabled:opacity-50 rounded-lg"
+              >
+                {creating ? 'Đang tạo…' : 'Tạo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

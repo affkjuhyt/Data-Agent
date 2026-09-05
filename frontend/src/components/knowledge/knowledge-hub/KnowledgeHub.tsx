@@ -17,6 +17,7 @@ import { apiGet, apiMutate } from '../../../lib/apiClient';
 import { useAppState } from '../../../AppStateContext';
 import { useCursorPagination } from '../../../lib/useCursorPagination';
 import { Pagination } from '../../shared/Pagination';
+import { FilterPopover } from '../../shared/FilterPopover';
 import { KnowledgeDocument } from '../../../types';
 import {
   GraphHubTab, DBDocument, getSubType,
@@ -564,7 +565,7 @@ export const KnowledgeHubView = () => {
           <DetailDrawer
             isOpen={newVerDrawerOpen}
             onClose={() => setNewVerDrawerOpen(false)}
-            title={`New Version Â· ${selectedChunk?.id ?? ''}`}
+            title={`New Version · ${selectedChunk?.id ?? ''}`}
             subtitle={selectedChunk?.title ?? ''}
             icon={GitBranch}
             size="standard"
@@ -612,52 +613,30 @@ export const KnowledgeHubView = () => {
           </DetailDrawer>
 
           {docsLoading ? (
-            <div className="flex items-center justify-center py-20 text-[#5F5F5F] text-sm">Loading databaseâ€¦</div>
+            <div className="flex items-center justify-center py-20 text-[#5F5F5F] text-sm">Loading database…</div>
           ) : !selectedDoc ? (
             /* â"€â"€ GOLD-STYLE DOCUMENT TABLE â"€â"€ */
             <div className="space-y-4">
 
-              {/* Source filter placed directly above the search bar (same layout as Data Layers) */}
-              <div className="bg-[#FFFDF8] border border-[#BFA66A] p-5 rounded-2xl flex flex-col gap-4">
-                {/* Source-type filter pills — multi-select, server-side filtering */}
-                <div className="flex flex-col gap-2">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-[#8A5A00] opacity-80 font-mono">
-                    Source Type
-                  </span>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {DB_SOURCE_CHIPS.map(st => {
-                      const active = selectedSources.has(st.id);
-                      return (
-                        <button
-                          key={st.id}
-                          onClick={() => toggleSource(st.id)}
-                          aria-pressed={active}
-                          className={cn(
-                            'flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer',
-                            active
-                              ? 'bg-[#111111] border-[#B88719] text-[#D9B86C]'
-                              : 'bg-white border-[#BFA66A] text-[#5A4209] opacity-60 hover:opacity-100 hover:border-[#BFA66A] hover:bg-[#FFFDF8]'
-                          )}
-                        >
-                          <st.icon className="w-3 h-3" />
-                          {st.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Search input */}
-                <div className="border-t border-[#BFA66A] pt-3.5 flex items-center">
-                  <div className="relative group w-full sm:w-80">
-                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#5F5F5F] pointer-events-none" />
-                    <input
-                      value={dbSearch}
-                      onChange={e => setDbSearch(e.target.value)}
-                      placeholder="Search by name, type, author, languageâ€¦"
-                      className="ui-input w-full pl-9 pr-4 py-2 text-xs"
-                    />
-                  </div>
+              {/* Filters (collapsed into a popover) + search, one compact row */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <FilterPopover
+                  activeCount={DB_SOURCE_CHIPS.length - selectedSources.size}
+                  groups={[{
+                    label: 'Source Type',
+                    options: DB_SOURCE_CHIPS.map(st => ({ id: st.id, label: st.label })),
+                    isActive: (id) => selectedSources.has(id as SourceCategory),
+                    onToggle: (id) => toggleSource(id as SourceCategory),
+                  }]}
+                />
+                <div className="relative group w-full sm:w-80 sm:ml-auto">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#5F5F5F] pointer-events-none" />
+                  <input
+                    value={dbSearch}
+                    onChange={e => setDbSearch(e.target.value)}
+                    placeholder="Search by name, type, author, language…"
+                    className="ui-input w-full pl-9 pr-4 py-2 text-xs"
+                  />
                 </div>
               </div>
 
@@ -665,13 +644,13 @@ export const KnowledgeHubView = () => {
                 {/* Table header */}
                 <div className="px-6 py-4 bg-[#FFFDF8] border-b border-[#BFA66A] flex items-center justify-between">
                   <span className="text-[10px] font-mono font-black text-[#5A4209] uppercase tracking-widest">
-                    Gold Layer Â· {selectedSources.size === DB_SOURCE_CHIPS.length
+                    Gold Layer · {selectedSources.size === DB_SOURCE_CHIPS.length
                       ? 'All Types'
                       : selectedSources.size === 0
                         ? 'None Selected'
                         : DB_SOURCE_CHIPS.filter(c => selectedSources.has(c.id)).map(c => c.label).join(', ')}
                     {dbSearch.trim() && (
-                      <span className="ml-2 text-[#B88719]">Â· "{dbSearch.trim()}"</span>
+                      <span className="ml-2 text-[#B88719]">· "{dbSearch.trim()}"</span>
                     )}
                   </span>
                   <span className="text-[9px] font-mono font-bold py-1 px-2 bg-[#FFF9E8] border border-[#BFA66A] rounded-lg text-[#3F3F3F]">
@@ -890,16 +869,16 @@ export const KnowledgeHubView = () => {
                   <ArrowLeft className="w-3.5 h-3.5" />
                   Back to Database
                 </button>
-                <span className="text-[10px] font-mono text-[#5F5F5F]">Â·</span>
+                <span className="text-[10px] font-mono text-[#5F5F5F]">·</span>
                 <span className="text-xs font-bold text-[#111111] uppercase truncate max-w-xs">{selectedDoc.name}</span>
                 <span className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 bg-green-50 border border-green-200 rounded-lg text-green-700 text-[10px] font-bold">
                   <Link className="w-3.5 h-3.5" />
-                  Connected Â· {selectedDoc.type}
+                  Connected · {selectedDoc.type}
                 </span>
               </div>
 
               {warehouseConfigsLoading ? (
-                <div className="flex items-center justify-center py-20 text-[#5F5F5F] text-sm">Loading configsâ€¦</div>
+                <div className="flex items-center justify-center py-20 text-[#5F5F5F] text-sm">Loading configs…</div>
               ) : (
                 <div className="flex gap-6 overflow-hidden" style={{ height: 'calc(100vh - 340px)', minHeight: 520 }}>
 
@@ -941,13 +920,13 @@ export const KnowledgeHubView = () => {
                               <span className="text-[9px] font-mono text-[#5F5F5F]">{cfg.tables.length} tables</span>
                             </div>
                             <div className="text-xs text-[#111111] font-bold truncate uppercase tracking-tight">{cfg.name}</div>
-                            <div className="text-[10px] text-[#5F5F5F] mt-0.5 font-mono">{cfg.version} Â· {cfg.syncSchedule}</div>
+                            <div className="text-[10px] text-[#5F5F5F] mt-0.5 font-mono">{cfg.version} · {cfg.syncSchedule}</div>
                           </div>
                           {cfg.status !== 'Active' && (
                             pendingDeleteConfig === cfg.id ? (
                               <div className="flex gap-1 mt-2">
                                 <button onClick={() => handleDeleteConfig(cfg.id)} className="flex-1 py-1 bg-red-600 text-white rounded-lg text-[9px] font-black uppercase cursor-pointer">Confirm Delete</button>
-                                <button onClick={() => setPendingDeleteConfig(null)} className="btn-ghost btn-sm">âœ•</button>
+                                <button onClick={() => setPendingDeleteConfig(null)} className="btn-ghost btn-sm">✕</button>
                               </div>
                             ) : (
                               <button onClick={e => { e.stopPropagation(); setPendingDeleteConfig(cfg.id); }}
@@ -969,7 +948,7 @@ export const KnowledgeHubView = () => {
                       <div className="px-6 pt-5 pb-4 border-b border-[#BFA66A] shrink-0 bg-[#FFFDF8]">
                         <div className="flex items-start justify-between">
                           <div>
-                            <span className="text-[10px] font-mono text-[#8A5A00] font-black">{selectedConfig.id} Â· Table Config</span>
+                            <span className="text-[10px] font-mono text-[#8A5A00] font-black">{selectedConfig.id} · Table Config</span>
                             <h3 className="text-base font-bold text-[#111111] font-display">{selectedConfig.name}</h3>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
@@ -1017,7 +996,7 @@ export const KnowledgeHubView = () => {
                         <div className="px-6 py-3 border-b border-[#BFA66A] flex items-center justify-between bg-[#FEFEFE] shrink-0">
                           <span className="text-[9px] font-black uppercase tracking-widest text-[#5A4209] font-mono flex items-center gap-1.5">
                             <Table2 className="w-3.5 h-3.5 text-[#B88719]" />
-                            Table Set Â· {selectedConfig.tables.length} tables
+                            Table Set · {selectedConfig.tables.length} tables
                           </span>
                           <span className="text-[9px] font-mono text-[#5F5F5F]">{selectedConfig.createdAt}</span>
                         </div>
@@ -1043,7 +1022,7 @@ export const KnowledgeHubView = () => {
                                   {pendingDeleteTable === tbl.id ? (
                                     <div className="flex items-center justify-end gap-1">
                                       <button onClick={() => handleDeleteTable(tbl.id)} className="px-2 py-0.5 bg-red-600 text-white rounded text-[9px] font-black cursor-pointer">Confirm</button>
-                                      <button onClick={() => setPendingDeleteTable(null)} className="btn-ghost btn-sm">âœ•</button>
+                                      <button onClick={() => setPendingDeleteTable(null)} className="btn-ghost btn-sm">✕</button>
                                     </div>
                                   ) : (
                                     <button onClick={() => setPendingDeleteTable(tbl.id)} className="opacity-0 group-hover:opacity-100 p-1 text-[#5F5F5F] hover:text-red-500 hover:bg-red-50 rounded-lg transition-all cursor-pointer">
@@ -1073,16 +1052,16 @@ export const KnowledgeHubView = () => {
                   <ArrowLeft className="w-3.5 h-3.5" />
                   Back to Database
                 </button>
-                <span className="text-[10px] font-mono text-[#5F5F5F]">Â·</span>
+                <span className="text-[10px] font-mono text-[#5F5F5F]">·</span>
                 <span className="text-xs font-bold text-[#111111] uppercase truncate max-w-xs">{selectedDoc.name}</span>
                 <span className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 bg-green-50 border border-green-200 rounded-lg text-green-700 text-[10px] font-bold">
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  Gold Layer Â· Active
+                  Gold Layer · Active
                 </span>
               </div>
 
               {chunksLoading ? (
-                <div className="flex items-center justify-center py-20 text-[#5F5F5F] text-sm">Loading chunksâ€¦</div>
+                <div className="flex items-center justify-center py-20 text-[#5F5F5F] text-sm">Loading chunks…</div>
               ) : (
                 /* Split panel */
                 <div className="flex gap-6 overflow-hidden" style={{ height: 'calc(100vh - 340px)', minHeight: 520 }}>
@@ -1128,7 +1107,7 @@ export const KnowledgeHubView = () => {
                           {pendingDeleteChunk === chunk.id ? (
                             <div className="flex items-center gap-1 mt-2">
                               <button onClick={() => handleDeleteChunk(chunk.id)} className="flex-1 py-1 bg-red-600 text-white rounded-lg text-[9px] font-black uppercase tracking-wide cursor-pointer">Confirm Delete</button>
-                              <button onClick={() => setPendingDeleteChunk(null)} className="btn-ghost btn-sm">âœ•</button>
+                              <button onClick={() => setPendingDeleteChunk(null)} className="btn-ghost btn-sm">✕</button>
                             </div>
                           ) : (
                             <button
@@ -1149,7 +1128,7 @@ export const KnowledgeHubView = () => {
                       {/* Chunk header */}
                       <div className="px-6 pt-5 pb-4 border-b border-[#BFA66A] shrink-0 flex justify-between items-center bg-[#FFFDF8]">
                         <div>
-                          <span className="text-[10px] font-mono text-[#8A5A00] font-black">{selectedChunk.id} Â· Semantic Node</span>
+                          <span className="text-[10px] font-mono text-[#8A5A00] font-black">{selectedChunk.id} · Semantic Node</span>
                           <h3 className="text-base font-bold text-[#111111] font-display">{selectedChunk.title}</h3>
                         </div>
                         <span className="text-[9px] font-black uppercase text-[#B88719] bg-[#FFF9E9] border border-[#BFA66A] px-2.5 py-1 rounded-lg">
@@ -1207,7 +1186,7 @@ export const KnowledgeHubView = () => {
                               pendingDeleteVersion === ver.version_number ? (
                                 <div className="flex gap-1 pr-2">
                                   <button onClick={() => handleDeleteVersion(ver.version_number)} className="px-1.5 py-0.5 bg-red-600 text-white rounded text-[8px] font-black cursor-pointer">OK</button>
-                                  <button onClick={() => setPendingDeleteVersion(null)} className="btn-ghost btn-sm">âœ•</button>
+                                  <button onClick={() => setPendingDeleteVersion(null)} className="btn-ghost btn-sm">✕</button>
                                 </div>
                               ) : (
                                 <button onClick={() => setPendingDeleteVersion(ver.version_number)} className="pr-2 text-[#5F5F5F] hover:text-red-500 transition-colors cursor-pointer">
@@ -1299,7 +1278,7 @@ export const KnowledgeHubView = () => {
             isOpen={!!selectedCollection}
             onClose={() => { setSelectedCollection(null); setQdrantQuery(''); setQdrantPoints([]); }}
             title={selectedCollection?.name ?? ''}
-            subtitle={`${selectedCollection?.id ?? ''} Â· ${selectedCollection?.embedding_model ?? ''}`}
+            subtitle={`${selectedCollection?.id ?? ''} · ${selectedCollection?.embedding_model ?? ''}`}
             icon={Layers}
             size="xwide"
             persistKey="qdrant-collection-detail"
@@ -1314,7 +1293,7 @@ export const KnowledgeHubView = () => {
 
                   {[
                     { label: 'Collection ID',    value: selectedCollection.id },
-                    { label: 'Embedding Model',  value: selectedCollection.embedding_model ?? 'â€"' },
+                    { label: 'Embedding Model',  value: selectedCollection.embedding_model ?? '—' },
                     { label: 'Dimensions',       value: String(selectedCollection.dimensions) },
                     { label: 'Distance Metric',  value: selectedCollection.distance },
                     { label: 'Vector Points (your tenant)', value: selectedCollection.points.toLocaleString() },
@@ -1435,7 +1414,7 @@ export const KnowledgeHubView = () => {
                     {selectedCollection.active && qdrantSearching && (
                       <div className="flex items-center justify-center h-full gap-2 text-[#B88719]">
                         <Loader2 className="w-5 h-5 animate-spin" />
-                        <span className="text-xs font-medium">Searchingâ€¦</span>
+                        <span className="text-xs font-medium">Searching…</span>
                       </div>
                     )}
                     {selectedCollection.active && !qdrantSearching && qdrantPoints.map((pt, idx) => (
@@ -1548,7 +1527,7 @@ export const KnowledgeHubView = () => {
                     </div>
                     <div>
                       <span className="text-[8px] font-mono text-[#5F5F5F] font-bold uppercase tracking-wider block mb-0.5">Embedding Model</span>
-                      <span className="text-[10px] font-bold font-mono text-[#3F3F3F]">{col.embedding_model ?? 'â€"'}</span>
+                      <span className="text-[10px] font-bold font-mono text-[#3F3F3F]">{col.embedding_model ?? '—'}</span>
                     </div>
                     <div>
                       <span className="text-[8px] font-mono text-[#5F5F5F] font-bold uppercase tracking-wider block mb-1">Indexed</span>
@@ -1673,7 +1652,7 @@ export const KnowledgeHubView = () => {
                 </div>
               )}
 
-              {/* Step rows â€" vertical */}
+              {/* Step rows — vertical */}
               {steps.map((step, si) => {
                 const fromEntity = si === 0 ? startNode : steps[si - 1].nodeType;
                 const targets = getTargets(fromEntity);

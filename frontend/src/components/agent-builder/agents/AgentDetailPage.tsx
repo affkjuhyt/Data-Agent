@@ -37,9 +37,9 @@ interface LLMProvider { id: string; name: string; model_id: string; type: string
 interface SystemPrompt { id: string; name: string; }
 
 const TEMPLATE_OPTIONS: { id: TemplateId; label: string; desc: string }[] = [
-  { id: 'blank',       label: 'Blank',          desc: 'Bắt đầu từ đầu' },
+  { id: 'blank',       label: 'Blank',          desc: 'Start from scratch' },
   { id: 'rag',         label: 'RAG',            desc: 'Planner → KB Search → Reranker → Responder' },
-  { id: 'multi-agent', label: 'Multi-Agent',    desc: 'RAG + MCP Tool song song' },
+  { id: 'multi-agent', label: 'Multi-Agent',    desc: 'RAG + MCP Tool in parallel' },
   { id: 'hitl',        label: 'Human Approval', desc: 'RAG + MCP + Human review' },
 ];
 
@@ -128,7 +128,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
       : `/api/workflow-versions/${versionId}/publish`;
     try {
       await apiMutate('POST', endpoint, mode === 'publish' ? { changelog } : undefined);
-      showToast(mode === 'republish' ? '✓ Rollback thành công' : '✓ Published thành công');
+      showToast(mode === 'republish' ? '✓ Rollback succeeded' : '✓ Published successfully');
       setPublishModal(null);
       setChangelog('');
       // Refetch agent + versions
@@ -139,7 +139,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
           .then(versions => setWfVersions(prev => ({ ...prev, [wf.id]: versions })))
           .catch(() => {});
       }
-    } catch { showToast('Thao tác thất bại'); }
+    } catch { showToast('Action failed'); }
   }, [publishModal, changelog, agentId]);
 
   const fetchAgent = useCallback(async () => {
@@ -222,10 +222,10 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
         changelog:        wizardChangelog || undefined,
         kb_connection_id: wizardKbId || undefined,
       });
-      showToast('✓ Agent published thành công');
+      showToast('✓ Agent published successfully');
       setWizardOpen(false);
       fetchAgent();
-    } catch { showToast('Publish thất bại'); }
+    } catch { showToast('Publish failed'); }
     finally { setWizardPublishing(false); }
   };
 
@@ -248,7 +248,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
         initialNodes: tpl?.nodes.map(n => ({ id: n.id, type: n.type, position: n.position, data: n.data })) ?? [],
         initialEdges: tpl?.edges.map(e => ({ id: e.id, source: e.source, target: e.target, type: e.type, label: e.label })) ?? [],
       });
-    } catch { showToast('Tạo workflow thất bại'); }
+    } catch { showToast('Failed to create workflow'); }
     finally { setCreating(false); }
   };
 
@@ -256,29 +256,29 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
     if (!deleteWfConfirm) return;
     try {
       await apiMutate('DELETE', `/api/workflows/${deleteWfConfirm}`);
-      showToast('Đã xóa workflow');
+      showToast('Workflow deleted');
       setDeleteWfConfirm(null);
       fetchAgent();
-    } catch { showToast('Xóa thất bại'); }
+    } catch { showToast('Failed to delete'); }
   };
 
   const handleDeleteDraft = async () => {
     if (!deleteConfirm) return;
     try {
       await apiMutate('DELETE', `/api/workflow-versions/${deleteConfirm}`);
-      showToast('Đã xóa draft');
+      showToast('Draft deleted');
       setDeleteConfirm(null);
       fetchAgent();
-    } catch { showToast('Xóa thất bại'); }
+    } catch { showToast('Failed to delete'); }
   };
 
   const handleUnpublish = async () => {
     setUnpublishing(true);
     try {
       await apiMutate('POST', `/api/agents/${agentId}/unpublish`);
-      showToast('✓ Agent đã được unpublish');
+      showToast('✓ Agent has been unpublished');
       fetchAgent();
-    } catch { showToast('Unpublish thất bại'); }
+    } catch { showToast('Unpublish failed'); }
     finally { setUnpublishing(false); }
   };
 
@@ -286,10 +286,10 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
     setSavingSettings(true);
     try {
       await apiMutate('PATCH', `/api/agents/${agentId}`, settingsForm);
-      showToast('✓ Đã lưu settings');
+      showToast('✓ Settings saved');
       setSettingsEdit(false);
       fetchAgent();
-    } catch { showToast('Lưu thất bại'); }
+    } catch { showToast('Failed to save'); }
     finally { setSavingSettings(false); }
   };
 
@@ -320,7 +320,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
     );
   }
 
-  if (!agent) return <div className="p-8 text-[#5F5F5F] text-sm">Đang tải...</div>;
+  if (!agent) return <div className="p-8 text-[#5F5F5F] text-sm">Loading...</div>;
 
   const isPublished = !!agent.published_version_id;
 
@@ -347,11 +347,11 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
             <button
               onClick={handleUnpublish}
               disabled={unpublishing}
-              title="Gỡ agent khỏi playground ngay lập tức"
+              title="Remove the agent from the playground immediately"
               className="btn-danger"
             >
               <PowerOff className="w-3.5 h-3.5" />
-              {unpublishing ? 'Đang gỡ…' : 'Unpublish'}
+              {unpublishing ? 'Removing…' : 'Unpublish'}
             </button>
           )}
           <button
@@ -416,7 +416,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                         <GitMerge className="w-4 h-4 text-blue-500" />
                         <span className="text-sm font-semibold text-[#111111]">{wf.name}</span>
                         {isPublished && wf.id === agent?.active_workflow_id && (
-                          <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded font-semibold">● đang dùng</span>
+                          <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded font-semibold">● in use</span>
                         )}
                       </div>
                       <div className="flex items-center gap-2">
@@ -432,10 +432,10 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                                 isNewDraft: true,
                                 sourceVersionId: data.source_version_id ?? undefined,
                               });
-                            } catch { showToast('Thất bại'); }
+                            } catch { showToast('Failed'); }
                           }}
                           disabled={hasDraft}
-                          title={hasDraft ? 'Publish draft trước khi tạo mới' : 'Tạo draft version mới'}
+                          title={hasDraft ? 'Publish the draft before creating a new one' : 'Create a new draft version'}
                           className="btn-ghost btn-sm"
                         >
                           <Plus className="w-3 h-3" /> New Draft
@@ -443,12 +443,12 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                         <button
                           onClick={() => {
                             if (wf.id === agent?.active_workflow_id) {
-                              showToast('Workflow đang được agent sử dụng — hãy republish agent với workflow khác trước.');
+                              showToast('This workflow is in use by the agent — republish the agent with a different workflow first.');
                               return;
                             }
                             setDeleteWfConfirm(wf.id);
                           }}
-                          title="Xóa workflow"
+                          title="Delete workflow"
                           className="p-1.5 border border-red-200 text-red-400 hover:bg-red-50 rounded-lg transition-colors"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -461,12 +461,12 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                       <div className="flex items-center justify-between px-4 py-3 bg-emerald-50/50">
                         <div className="flex items-center gap-3">
                           <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                          <span className="text-xs font-bold text-emerald-700">v{published.version} · đang chạy</span>
+                          <span className="text-xs font-bold text-emerald-700">v{published.version} · live</span>
                           {published.changelog && (
                             <span className="text-[11px] text-[#5F5F5F] italic max-w-[200px] truncate">"{published.changelog}"</span>
                           )}
                           {published.published_at && (
-                            <span className="text-[10px] text-[#5F5F5F]">{new Date(published.published_at).toLocaleDateString('vi-VN')}</span>
+                            <span className="text-[10px] text-[#5F5F5F]">{new Date(published.published_at).toLocaleDateString('en-US')}</span>
                           )}
                         </div>
                         {/* Deploy v cũ dropdown */}
@@ -487,14 +487,14 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                               }}
                               className="btn-ghost btn-sm"
                             >
-                              <RotateCcw className="w-3 h-3" /> Deploy v cũ <ChevronDown className="w-3 h-3" />
+                              <RotateCcw className="w-3 h-3" /> Deploy old v <ChevronDown className="w-3 h-3" />
                             </button>
                           </div>
                         )}
                       </div>
                     ) : (
                       <div className="px-4 py-3 text-xs text-[#5F5F5F] italic flex items-center gap-2">
-                        <Clock className="w-3.5 h-3.5" /> Chưa có version nào được publish
+                        <Clock className="w-3.5 h-3.5" /> No published version yet
                       </div>
                     )}
 
@@ -533,7 +533,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
 
               {(!agent.workflows || agent.workflows.length === 0) && (
                 <div className="text-center py-12 text-[#5F5F5F] text-sm">
-                  Chưa có workflow. Bấm "+ New Workflow" để tạo.
+                  No workflows yet. Click "+ New Workflow" to create one.
                 </div>
               )}
             </div>
@@ -591,7 +591,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                   onChange={e => setSettingsForm(f => ({ ...f, responder_model_id: e.target.value }))}
                   className="ui-input w-full py-2 px-3 text-sm"
                 >
-                  <option value="">— Chọn model —</option>
+                  <option value="">— Select model —</option>
                   {llmProviders.filter(p => p.type === 'chat').map(p => (
                     <option key={p.id} value={p.id}>{p.name} ({p.model_id})</option>
                   ))}
@@ -612,7 +612,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                   onChange={e => setSettingsForm(f => ({ ...f, system_prompt_id: e.target.value }))}
                   className="ui-input w-full py-2 px-3 text-sm"
                 >
-                  <option value="">— Chọn prompt —</option>
+                  <option value="">— Select prompt —</option>
                   {systemPrompts.map(p => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
@@ -628,7 +628,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
             <div className="flex items-center justify-between py-2 px-3 bg-[#FAFAF5] rounded-xl border border-[#BFA66A]">
               <div>
                 <div className="text-sm font-semibold text-[#2A2A2A]">Memory</div>
-                <div className="text-[10px] text-[#5F5F5F]">Bật memory middleware</div>
+                <div className="text-[10px] text-[#5F5F5F]">Enable the memory middleware</div>
               </div>
               <button
                 onClick={() => settingsEdit && setSettingsForm(f => ({ ...f, memory_enabled: !f.memory_enabled }))}
@@ -649,7 +649,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
           onMouseDown={e => e.stopPropagation()}
         >
           <div className="px-3 py-2 text-[10px] font-black text-[#5F5F5F] uppercase tracking-widest border-b border-[#BFA66A]">
-            Chọn version để deploy
+            Select a version to deploy
           </div>
           {(wfVersions[deployDropdown] ?? []).filter(v => v.status === 'archived').map(v => (
             <div key={v.id} className="flex items-center justify-between px-3 py-2.5 hover:bg-[#FFF9E8]">
@@ -657,7 +657,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                 <span className="text-xs font-bold text-[#2A2A2A]">v{v.version}</span>
                 {v.changelog && <span className="text-[11px] text-[#5F5F5F] ml-2 italic">"{v.changelog}"</span>}
                 {v.published_at && (
-                  <div className="text-[10px] text-[#5F5F5F] mt-0.5">{new Date(v.published_at).toLocaleDateString('vi-VN')}</div>
+                  <div className="text-[10px] text-[#5F5F5F] mt-0.5">{new Date(v.published_at).toLocaleDateString('en-US')}</div>
                 )}
               </div>
               <button
@@ -694,14 +694,14 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
               </div>
 
               <div className="mb-4">
-                <label className="text-[10px] font-bold text-[#5F5F5F] uppercase tracking-widest mb-1.5 block">Tên Workflow</label>
+                <label className="text-[10px] font-bold text-[#5F5F5F] uppercase tracking-widest mb-1.5 block">Workflow Name</label>
                 <input
                   autoFocus
                   type="text"
                   value={newWfName}
                   onChange={e => setNewWfName(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') handleCreateWorkflow(); }}
-                  placeholder="VD: Workflow tra cứu biển số"
+                  placeholder="e.g. License Plate Lookup Workflow"
                   className="ui-input w-full py-2.5 px-4 text-sm"
                 />
               </div>
@@ -727,13 +727,13 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
               </div>
 
               <div className="flex justify-end gap-2">
-                <button onClick={() => setShowCreateWf(false)} className="btn-ghost">Huỷ</button>
+                <button onClick={() => setShowCreateWf(false)} className="btn-ghost">Cancel</button>
                 <button
                   onClick={handleCreateWorkflow}
                   disabled={!newWfName.trim() || creating}
                   className="px-4 py-2 text-xs font-bold bg-[#B88719] hover:bg-[#9A7015] text-white rounded-xl disabled:opacity-50"
                 >
-                  {creating ? 'Đang tạo…' : 'Tạo & Mở Builder'}
+                  {creating ? 'Creating…' : 'Create & Open Builder'}
                 </button>
               </div>
             </motion.div>
@@ -746,25 +746,25 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
             <h3 className="font-bold text-[#111111]">
-              {publishModal.mode === 'republish' ? '↩ Rollback version này?' : '🚀 Publish version này?'}
+              {publishModal.mode === 'republish' ? '↩ Roll back to this version?' : '🚀 Publish this version?'}
             </h3>
             {publishModal.mode === 'publish' && (
               <div className="space-y-1">
-                <label className="text-xs font-semibold text-[#5F5F5F]">Changelog (tuỳ chọn)</label>
+                <label className="text-xs font-semibold text-[#5F5F5F]">Changelog (optional)</label>
                 <input
                   autoFocus
                   value={changelog}
                   onChange={e => setChangelog(e.target.value)}
-                  placeholder="Mô tả thay đổi trong version này..."
+                  placeholder="Describe what changed in this version..."
                   className="ui-input w-full px-3 py-2 text-sm"
                 />
               </div>
             )}
             {publishModal.mode === 'republish' && (
-              <p className="text-sm text-[#5F5F5F]">Version hiện tại sẽ bị archive. Agent sẽ chạy version này ngay lập tức.</p>
+              <p className="text-sm text-[#5F5F5F]">The current version will be archived. The agent will run this version immediately.</p>
             )}
             <div className="flex justify-end gap-2">
-              <button onClick={() => { setPublishModal(null); setChangelog(''); }} className="btn-ghost">Hủy</button>
+              <button onClick={() => { setPublishModal(null); setChangelog(''); }} className="btn-ghost">Cancel</button>
               <button
                 onClick={handleConfirmPublish}
                 className={`px-4 py-2 text-sm font-semibold text-white rounded-lg ${publishModal.mode === 'republish' ? 'bg-indigo-500 hover:bg-indigo-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}
@@ -780,11 +780,11 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
       {deleteWfConfirm && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
-            <h3 className="font-bold text-[#111111]">Xóa workflow này?</h3>
-            <p className="text-sm text-[#5F5F5F]">Toàn bộ versions và canvas sẽ bị xóa khỏi database và không thể khôi phục.</p>
+            <h3 className="font-bold text-[#111111]">Delete this workflow?</h3>
+            <p className="text-sm text-[#5F5F5F]">All versions and canvases will be permanently deleted from the database.</p>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setDeleteWfConfirm(null)} className="btn-ghost">Hủy</button>
-              <button onClick={handleDeleteWorkflow} className="px-4 py-2 text-sm font-semibold text-white bg-red-500 hover:bg-red-600 rounded-lg">Xóa</button>
+              <button onClick={() => setDeleteWfConfirm(null)} className="btn-ghost">Cancel</button>
+              <button onClick={handleDeleteWorkflow} className="px-4 py-2 text-sm font-semibold text-white bg-red-500 hover:bg-red-600 rounded-lg">Delete</button>
             </div>
           </div>
         </div>
@@ -794,11 +794,11 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
       {deleteConfirm && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
-            <h3 className="font-bold text-[#111111]">Xóa draft này?</h3>
-            <p className="text-sm text-[#5F5F5F]">Draft sẽ bị xóa khỏi database và không thể khôi phục.</p>
+            <h3 className="font-bold text-[#111111]">Delete this draft?</h3>
+            <p className="text-sm text-[#5F5F5F]">The draft will be permanently deleted from the database.</p>
             <div className="flex justify-end gap-2">
-              <button onClick={() => setDeleteConfirm(null)} className="btn-ghost">Hủy</button>
-              <button onClick={handleDeleteDraft} className="px-4 py-2 text-sm font-semibold text-white bg-red-500 hover:bg-red-600 rounded-lg">Xóa</button>
+              <button onClick={() => setDeleteConfirm(null)} className="btn-ghost">Cancel</button>
+              <button onClick={handleDeleteDraft} className="px-4 py-2 text-sm font-semibold text-white bg-red-500 hover:bg-red-600 rounded-lg">Delete</button>
             </div>
           </div>
         </div>
@@ -826,7 +826,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                     </button>
                   )}
                   <h3 className="text-sm font-bold text-[#111111]">
-                    {wizardStep === 1 ? 'Publish Agent — Chọn Workflow' : 'Publish Agent — Cấu hình'}
+                    {wizardStep === 1 ? 'Publish Agent — Select Workflow' : 'Publish Agent — Configure'}
                   </h3>
                 </div>
                 <button onClick={() => setWizardOpen(false)} className="p-1.5 hover:bg-[#F3E2A7] rounded-lg text-[#5F5F5F]">
@@ -841,13 +841,13 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                   const publishable = (agent?.workflows ?? []).filter(wf => wf.published_version_id);
                   if (publishable.length === 0) return (
                     <div className="text-center py-10 space-y-2">
-                      <p className="text-sm font-semibold text-[#2A2A2A]">Chưa có workflow nào được publish</p>
-                      <p className="text-xs text-[#5F5F5F]">Publish ít nhất một workflow version trước khi publish agent.</p>
+                      <p className="text-sm font-semibold text-[#2A2A2A]">No published workflows yet</p>
+                      <p className="text-xs text-[#5F5F5F]">Publish at least one workflow version before publishing the agent.</p>
                     </div>
                   );
                   return (
                     <div className="space-y-2">
-                      <p className="text-xs text-[#5F5F5F] mb-3">Chọn workflow agent sẽ sử dụng. Chỉ hiển thị workflow đã có published version.</p>
+                      <p className="text-xs text-[#5F5F5F] mb-3">Select the workflow the agent will use. Only workflows with a published version are shown.</p>
                       {publishable.map(wf => {
                         const pubV = (wfVersions[wf.id] ?? []).find(v => v.status === 'published');
                         const isActive = wf.id === agent?.active_workflow_id;
@@ -861,7 +861,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                               <div className="flex items-center gap-2">
                                 <span className="text-sm font-semibold text-[#111111]">{wf.name}</span>
                                 {isActive && (
-                                  <span className="text-[10px] px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full font-semibold">● đang dùng</span>
+                                  <span className="text-[10px] px-2 py-0.5 bg-blue-50 text-blue-600 rounded-full font-semibold">● in use</span>
                                 )}
                               </div>
                               <span className="text-[10px] px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full font-semibold">
@@ -872,7 +872,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                               <p className="text-[11px] text-[#5F5F5F] mt-0.5 italic">"{pubV.changelog}"</p>
                             )}
                             {pubV?.published_at && (
-                              <p className="text-[10px] text-[#5F5F5F] mt-0.5">{new Date(pubV.published_at).toLocaleDateString('vi-VN')}</p>
+                              <p className="text-[10px] text-[#5F5F5F] mt-0.5">{new Date(pubV.published_at).toLocaleDateString('en-US')}</p>
                             )}
                           </button>
                         );
@@ -900,12 +900,12 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                       {/* Node type alerts */}
                       {hasMcp && (
                         <div className="px-3 py-2.5 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-700">
-                          ℹ Workflow có MCP node — cấu hình MCP endpoint trong Settings tab sau khi publish.
+                          ℹ This workflow has an MCP node — configure the MCP endpoint in the Settings tab after publishing.
                         </div>
                       )}
                       {hasHumanApproval && (
                         <div className="px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-700">
-                          ⚠ Workflow có Human Approval node — cần cấu hình approver sau khi publish.
+                          ⚠ This workflow has a Human Approval node — the approver needs to be configured after publishing.
                         </div>
                       )}
 
@@ -916,14 +916,14 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                             KB Connection
                           </label>
                           {wizardKbConns.length === 0 ? (
-                            <p className="text-xs text-[#5F5F5F] italic">Chưa có KB connection nào — thêm trong Settings.</p>
+                            <p className="text-xs text-[#5F5F5F] italic">No KB connections yet — add one in Settings.</p>
                           ) : (
                             <select
                               value={wizardKbId}
                               onChange={e => setWizardKbId(e.target.value)}
                               className="ui-input w-full py-2 px-3 text-sm"
                             >
-                              <option value="">— Chọn KB connection —</option>
+                              <option value="">— Select KB connection —</option>
                               {wizardKbConns.map(kb => (
                                 <option key={kb.id} value={kb.id}>{kb.name}</option>
                               ))}
@@ -935,7 +935,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                       {/* Changelog */}
                       <div>
                         <label className="text-[10px] font-bold text-[#5F5F5F] uppercase tracking-widest mb-1.5 block">
-                          Changelog (tuỳ chọn)
+                          Changelog (optional)
                         </label>
                         <input
                           autoFocus
@@ -943,7 +943,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
                           value={wizardChangelog}
                           onChange={e => setWizardChangelog(e.target.value)}
                           onKeyDown={e => { if (e.key === 'Enter') handleWizardConfirm(); }}
-                          placeholder="Mô tả thay đổi trong version này..."
+                          placeholder="Describe what changed in this version..."
                           className="ui-input w-full py-2 px-3 text-sm"
                         />
                       </div>
@@ -956,7 +956,7 @@ export const AgentDetailPage: React.FC<Props> = ({ agentId, onBack }) => {
               {wizardStep === 2 && (
                 <div className="flex justify-end gap-2 px-6 py-4 border-t border-[#BFA66A] shrink-0">
                   <button onClick={() => setWizardOpen(false)} className="btn-ghost">
-                    Huỷ
+                    Cancel
                   </button>
                   <button
                     onClick={handleWizardConfirm}

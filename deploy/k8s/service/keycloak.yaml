@@ -19,6 +19,9 @@ metadata:
     app.kubernetes.io/part-of: dataagent
 data:
   KC_DB: postgres
+  # Same class of bug as KONG_PG_USER: unset, Keycloak defaults to
+  # connecting as role "keycloak", which doesn't exist — only "admin" does.
+  KC_DB_USERNAME: admin
   KC_DB_URL: jdbc:postgresql://postgres.dataagent-database.svc.cluster.local:8300/dataagent
   KC_DB_SCHEMA: keycloak
   KC_HTTP_ENABLED: 'true'
@@ -42,7 +45,17 @@ metadata:
     app: keycloak
     app.kubernetes.io/part-of: dataagent
 spec:
-  replicas: 2
+  # JGroups/Infinispan clustering (session + authorization-code replication
+  # across replicas) requires working pod discovery (DNS_PING/KUBE_PING).
+  # On this cluster it silently fails — both pods log "no members
+  # discovered... creating cluster as coordinator" and each forms its own
+  # isolated 1-node cluster. With 2 replicas behind a non-sticky
+  # ClusterIP/NodePort, the authorization code issued by pod A during
+  # /auth is invisible to pod B, so a token exchange landing on the other
+  # pod 400s with invalid_grant. Single physical node anyway (no real HA
+  # from 2 replicas on the same node) — pin to 1 until clustering is
+  # actually fixed.
+  replicas: 1
   selector:
     matchLabels:
       app: keycloak
@@ -61,10 +74,14 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 30
       containers:
       - name: keycloak
-        image: quay.io/keycloak/keycloak:24.0
+        # Built from deploy/docker/keycloak/Dockerfile — `kc.sh build --db=postgres`
+        # baked in, so --optimized below can skip re-augmenting (and writing
+        # to /opt/keycloak) at every boot under readOnlyRootFilesystem.
+        image: REGISTRY/dataagent/keycloak:latest
         args:
         - start
         - --optimized
@@ -81,15 +98,21 @@ spec:
             memory: 1Gi
         readinessProbe:
           httpGet:
+            # Keycloak 24.0.5 never actually opens the separate management
+            # port (8111) despite KC_HEALTH_ENABLED=true baked in at image
+            # build time — health endpoints are served on the main port here.
             path: /health/ready
-            port: 8111
+            port: 8110
           initialDelaySeconds: 5
           periodSeconds: 10
           failureThreshold: 3
         livenessProbe:
           httpGet:
+            # Keycloak 24.0.5 never actually opens the separate management
+            # port (8111) despite KC_HEALTH_ENABLED=true baked in at image
+            # build time — health endpoints are served on the main port here.
             path: /health/ready
-            port: 8111
+            port: 8110
           initialDelaySeconds: 90
           periodSeconds: 20
           failureThreshold: 6
@@ -138,8 +161,11 @@ spec:
   ports:
   - port: 8110
     targetPort: 8110
+    nodePort: 30110
     name: http
   - port: 8111
     targetPort: 8111
     name: health
-  type: ClusterIP
+  # Browsers need to reach Keycloak directly for the login redirect —
+  # single-node appliance mode, no ingress controller — see kong.yaml.
+  type: NodePort

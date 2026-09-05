@@ -61,6 +61,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 60
       containers:
       - name: redis

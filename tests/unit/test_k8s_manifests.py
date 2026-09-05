@@ -419,12 +419,13 @@ class TestEveryPodIsHardened:
 
     def test_no_pod_mounts_a_service_account_token(self):
         """A mounted token is a credential waiting to be stolen out of a
-        compromised container. OpenBao is the one workload that calls the API
-        server (TokenReview for the Kubernetes auth method), so it is the one
-        exception — and the only one with a RoleBinding."""
+        compromised container. OpenBao calls the API server (TokenReview for
+        the Kubernetes auth method) and sandbox-executor manages its own pool
+        of execution pods (backend/services/sandbox_executor/k8s_pool.py) —
+        the two deliberate exceptions, and the only two with a RoleBinding."""
         bad = [w for w, pod in self._pods()
                if pod.get("automountServiceAccountToken") is not False
-               and not w.endswith("openbao")]
+               and not w.endswith("openbao") and not w.endswith("sandbox-executor")]
         assert not bad, f"pods still automounting a SA token: {bad}"
 
     def test_every_container_drops_privileges(self):
@@ -554,16 +555,17 @@ class TestPortsFollowThePlan:
 
 # ── namespaces, identity and network isolation ─────────────────────────────
 
-SVC_NS, DB_NS = "dataagent-service", "dataagent-database"
+SVC_NS, DB_NS, SANDBOX_NS = "dataagent-service", "dataagent-database", "dataagent-sandbox"
+ALL_NS = (SVC_NS, DB_NS, SANDBOX_NS)
 
 
-class TestTheTwoNamespaces:
+class TestTheNamespaces:
     def test_both_exist_and_are_part_of_dataagent(self):
         found = {
             d["metadata"]["name"]: d["metadata"]["labels"]
             for _, d in TOP_LEVEL if d["kind"] == "Namespace"
         }
-        assert set(found) == {SVC_NS, DB_NS}, f"expected two namespaces, got {sorted(found)}"
+        assert set(found) == set(ALL_NS), f"expected {sorted(ALL_NS)}, got {sorted(found)}"
         for name, labels in found.items():
             assert labels.get("app.kubernetes.io/part-of") == "dataagent", name
             assert labels.get("pod-security.kubernetes.io/enforce") == "restricted", name
@@ -575,9 +577,9 @@ class TestTheTwoNamespaces:
             f"{p.name}:{d['kind']}/{d['metadata']['name']}={d['metadata'].get('namespace')}"
             for p, d in TOP_LEVEL
             if d["kind"] not in ("Namespace", "ClusterRole", "ClusterRoleBinding")
-            and d["metadata"].get("namespace") not in (SVC_NS, DB_NS)
+            and d["metadata"].get("namespace") not in ALL_NS
         ]
-        assert not bad, f"objects outside the two namespaces: {bad}"
+        assert not bad, f"objects outside the three namespaces: {bad}"
 
     def test_the_stores_are_in_the_database_namespace(self):
         stores = {"postgres", "mongo", "redis", "qdrant", "neo4j", "kafka", "minio",
@@ -590,7 +592,7 @@ class TestTheTwoNamespaces:
 
 
 class TestDenyAllIsTheDefault:
-    @pytest.mark.parametrize("namespace", [SVC_NS, DB_NS])
+    @pytest.mark.parametrize("namespace", [SVC_NS, DB_NS, SANDBOX_NS])
     def test_each_namespace_denies_all_ingress_and_egress(self, namespace):
         """An empty podSelector with no rules is the only shape that denies
         everything — inside the namespace as well as across it."""
@@ -617,6 +619,21 @@ class TestDenyAllIsTheDefault:
             f"{namespace} denies egress with no DNS exception — every lookup fails"
         )
 
+    def test_the_sandbox_namespace_has_no_allow_rules_at_all(self):
+        """dataagent-sandbox is the k8s-native equivalent of the Docker
+        backend's `network_disabled=True` (no network namespace at all,
+        docker_runner.py/k8s_pool.py module docstrings) — not of the other
+        two namespaces' "reopen one flow at a time" pattern. Not even DNS:
+        a sandboxed exec has no legitimate reason to resolve anything."""
+        policies = [
+            d for _, d in TOP_LEVEL
+            if d["kind"] == "NetworkPolicy" and d["metadata"]["namespace"] == SANDBOX_NS
+        ]
+        assert len(policies) == 1 and policies[0]["metadata"]["name"] == "default-deny-all", (
+            f"dataagent-sandbox must carry only default-deny-all, found: "
+            f"{sorted(d['metadata']['name'] for d in policies)}"
+        )
+
 
 class TestEveryWorkloadHasItsOwnIdentity:
     def test_each_workload_names_a_service_account_of_its_own(self):
@@ -636,22 +653,25 @@ class TestEveryWorkloadHasItsOwnIdentity:
                 bad.append(f"{name}: no ServiceAccount object in {ns}")
         assert not bad, f"workloads without a dedicated ServiceAccount: {bad}"
 
-    def test_openbao_is_the_only_account_granted_anything(self):
+    def test_only_the_two_deliberate_exceptions_are_granted_anything(self):
         """A ServiceAccount with no binding can call almost nothing. That is
-        the default here; every exception has to be deliberate."""
+        the default here; every exception has to be deliberate. OpenBao
+        (TokenReview for the Kubernetes auth method) and sandbox-executor
+        (manages its own pool of execution pods, k8s_pool.py) are the two."""
         granted = {
             s["name"]
             for _, d in TOP_LEVEL if d["kind"] in ("RoleBinding", "ClusterRoleBinding")
             for s in d["subjects"] if s["kind"] == "ServiceAccount"
         }
-        assert granted == {"openbao"}, (
-            f"only openbao should hold RBAC; these do: {sorted(granted)}"
+        assert granted == {"openbao", "sandbox-executor"}, (
+            f"only openbao and sandbox-executor should hold RBAC; these do: {sorted(granted)}"
         )
 
     def test_openbao_is_granted_only_what_the_auth_method_needs(self):
         rules = [
             r
-            for _, d in TOP_LEVEL if d["kind"] in ("Role", "ClusterRole")
+            for _, d in TOP_LEVEL
+            if d["kind"] in ("Role", "ClusterRole") and d["metadata"]["name"].startswith("openbao")
             for r in d["rules"]
         ]
         allowed = {
@@ -664,6 +684,36 @@ class TestEveryWorkloadHasItsOwnIdentity:
             for r in rules for g in r["apiGroups"] for res in r["resources"] for v in r["verbs"]
         }
         assert actual <= allowed, f"OpenBao granted more than it needs: {sorted(actual - allowed)}"
+        assert not any("*" in r["verbs"] or "*" in r["resources"] for r in rules), (
+            "no wildcard verbs or resources"
+        )
+
+    def test_sandbox_executor_is_granted_only_pod_lifecycle_in_its_own_namespace(self):
+        """k8s_pool.py needs to create/watch/retire its own pool's pods and
+        exec into them — nothing about Secrets, ConfigMaps, or any other
+        namespace's resources."""
+        role_docs = [
+            d for _, d in TOP_LEVEL
+            if d["kind"] == "Role" and d["metadata"]["name"] == "sandbox-executor-pool"
+        ]
+        assert role_docs, "expected a sandbox-executor-pool Role"
+        for d in role_docs:
+            assert d["metadata"]["namespace"] == "dataagent-sandbox", (
+                "sandbox-executor's Role must be scoped to dataagent-sandbox, "
+                f"not {d['metadata']['namespace']}"
+            )
+        rules = [r for d in role_docs for r in d["rules"]]
+        allowed = {
+            ("", "pods", "get"), ("", "pods", "list"), ("", "pods", "watch"),
+            ("", "pods", "create"), ("", "pods", "delete"),
+            ("", "pods/exec", "get"), ("", "pods/exec", "create"),
+            ("", "pods/log", "get"),
+        }
+        actual = {
+            (g, res, v)
+            for r in rules for g in r["apiGroups"] for res in r["resources"] for v in r["verbs"]
+        }
+        assert actual <= allowed, f"sandbox-executor granted more than it needs: {sorted(actual - allowed)}"
         assert not any("*" in r["verbs"] or "*" in r["resources"] for r in rules), (
             "no wildcard verbs or resources"
         )

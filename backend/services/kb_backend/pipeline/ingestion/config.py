@@ -10,6 +10,7 @@ MAX_FILE_SIZE_BYTES = int(os.getenv("MAX_FILE_SIZE_MB", "200")) * 1024 * 1024
 
 KAFKA_TOPIC_SILVER = os.getenv("KAFKA_TOPIC_SILVER", "kb.promote.silver")
 KAFKA_TOPIC_GOLD = os.getenv("KAFKA_TOPIC_GOLD", "kb.promote.gold")
+KAFKA_TOPIC_STRUCTURED_PROPOSE = os.getenv("KAFKA_TOPIC_STRUCTURED_PROPOSE", "kb.structured.propose")
 
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "knowledge")
 CONFLICT_SIMILARITY_THRESHOLD = float(os.getenv("CONFLICT_SIMILARITY_THRESHOLD", "0.92"))

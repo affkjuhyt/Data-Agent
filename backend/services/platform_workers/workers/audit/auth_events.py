@@ -15,7 +15,7 @@ def get_tenant_id(cur: Any, realm_id: str) -> Any:
     if not realm_id:
         return None
     cur.execute(
-        "SELECT tenant_id FROM keycloak_realm_configs WHERE realm_name = %s LIMIT 1",
+        'SELECT tenant_id FROM "KeycloakRealmConfigs" WHERE realm_name = %s LIMIT 1',
         (realm_id,),
     )
     row = cur.fetchone()
@@ -36,7 +36,7 @@ def insert_event(cur: Any, event: dict[str, Any]) -> bool:
     # do a point-read first; the bridge is single-threaded so there's no race.
     if source_event_id:
         cur.execute(
-            "SELECT 1 FROM audit_logs WHERE source_event_id = %s LIMIT 1",
+            'SELECT 1 FROM "AuditLogs" WHERE source_event_id = %s LIMIT 1',
             (source_event_id,),
         )
         if cur.fetchone():
@@ -44,7 +44,7 @@ def insert_event(cur: Any, event: dict[str, Any]) -> bool:
 
     cur.execute(
         """
-        INSERT INTO audit_logs
+        INSERT INTO "AuditLogs"
           (tenant_id, actor, actor_type, action, resource_type, resource_id,
            status, metadata, ip_address, source_event_id)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)

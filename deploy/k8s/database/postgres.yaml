@@ -53,6 +53,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 60
       containers:
       - name: postgres
@@ -105,6 +106,12 @@ spec:
         - name: tmp
           mountPath: /tmp
         envFrom:
+        # Missing this made the image bootstrap its default superuser/db
+        # ("postgres"/"postgres") instead of admin/dataagent from
+        # dataagent-config — every other workload's DATABASE_URL then failed
+        # auth against the "admin" user that was never created.
+        - configMapRef:
+            name: dataagent-config
         - configMapRef:
             name: postgres-env
         - secretRef:

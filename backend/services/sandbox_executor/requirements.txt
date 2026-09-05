@@ -2,6 +2,9 @@ fastapi==0.115.0
 uvicorn[standard]==0.30.6
 pydantic==2.9.2
 docker==7.1.0
+# k8s_pool.py / k8s_runner.py — SANDBOX_BACKEND=kubernetes talks to the API
+# server instead of a Docker socket that doesn't exist in the k8s deployment.
+kubernetes==31.0.0
 sqlparse==0.5.1
 snowflake-connector-python==3.12.2
 asyncpg==0.30.0

@@ -22,6 +22,20 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KONG_ADMIN="${KONG_ADMIN_URL:-http://localhost:8101}"
 KC_BASE="${KEYCLOAK_URL:-http://localhost:8110}"
+
+# Upstream hostnames below default to the docker-compose container names
+# (underscores, matching the backend/services/<name> directory names). k8s
+# Service objects can't contain underscores at all (DNS-1035 label rule),
+# so deploy/k8s/service/*.yaml names them with hyphens instead
+# (workflow-runtime, flow-builder, auth-api, release-worker) — the k8s
+# ConfigMap (deploy/k8s/configmap.yaml) overrides these four to match.
+# Without the override, Kong's upstream DNS lookup 503s with "name error"
+# the moment a route actually gets proxied (JWT/CORS checks can pass fine
+# before that point, which is what made this easy to miss).
+WORKFLOW_RUNTIME_HOST="${WORKFLOW_RUNTIME_HOST:-workflow_runtime}"
+FLOW_BUILDER_HOST="${FLOW_BUILDER_HOST:-flow_builder}"
+AUTH_API_HOST="${AUTH_API_HOST:-auth_api}"
+RELEASE_WORKER_HOST="${RELEASE_WORKER_HOST:-release_worker}"
 REALM="${KEYCLOAK_REALM:-aeroflow}"
 # Set SKIP_JWT=1 to skip JWT plugin registration (useful for dev with VITE_MOCK_AUTH=true)
 SKIP_JWT="${SKIP_JWT:-0}"
@@ -51,7 +65,10 @@ echo "✅ Keycloak ready"
 # passwords on every first boot. Safe to re-run — PUT is idempotent.
 echo "🔑 Setting dev user passwords in Keycloak realm '$REALM'..."
 KC_ADMIN_TOKEN=$(curl -sf -X POST "$KC_BASE/realms/master/protocol/openid-connect/token" \
-  -d "grant_type=password&client_id=admin-cli&username=admin&password=admin" \
+  --data-urlencode "grant_type=password" \
+  --data-urlencode "client_id=admin-cli" \
+  --data-urlencode "username=${KEYCLOAK_ADMIN:-admin}" \
+  --data-urlencode "password=${KEYCLOAK_ADMIN_PASSWORD:-admin}" \
   | python3 -c "import sys,json; print(json.load(sys.stdin).get('access_token',''))" 2>/dev/null || true)
 
 if [ -z "$KC_ADMIN_TOKEN" ]; then
@@ -116,7 +133,7 @@ curl -sf -X PUT "$KONG_ADMIN/services/workflow_runtime" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "workflow_runtime",
-    "host": "workflow_runtime",
+    "host": "'"$WORKFLOW_RUNTIME_HOST"'",
     "port": 8240,
     "protocol": "http",
     "connect_timeout": 5000,
@@ -128,7 +145,7 @@ curl -sf -X PUT "$KONG_ADMIN/services/flow_builder" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "flow_builder",
-    "host": "flow_builder",
+    "host": "'"$FLOW_BUILDER_HOST"'",
     "port": 8250,
     "protocol": "http",
     "connect_timeout": 5000,
@@ -167,7 +184,7 @@ curl -sf -X PUT "$KONG_ADMIN/services/auth_api" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "auth_api",
-    "url": "http://auth_api:8200",
+    "url": "http://'"$AUTH_API_HOST"':8200",
     "connect_timeout": 5000,
     "read_timeout": 30000
   }' | json_field name | xargs -I{} echo "  → service: {}"
@@ -208,7 +225,7 @@ curl -sf -X PUT "$KONG_ADMIN/services/release_worker" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "release_worker",
-    "url": "http://release_worker:8210",
+    "url": "http://'"$RELEASE_WORKER_HOST"':8210",
     "connect_timeout": 5000,
     "read_timeout": 60000
   }' | json_field name | xargs -I{} echo "  → service: {}"
@@ -375,7 +392,7 @@ upsert_plugin "$KONG_ADMIN/services/kb-backend/plugins" \
 # verification runs — without it every cross-origin request 401s on preflight.
 echo "🌐 Enabling CORS on kb-backend-route..."
 upsert_plugin "$KONG_ADMIN/routes/kb-backend-route/plugins" \
-  '{"name":"cors","config":{"origins":["http://localhost:3000","http://localhost:8150"],"methods":["GET","POST","PUT","PATCH","DELETE","OPTIONS"],"headers":["Authorization","Content-Type","X-Role","X-Request-ID"],"credentials":true,"max_age":3600}}' \
+  '{"name":"cors","config":{"origins":["http://localhost:3000","http://localhost:8150","http://localhost:30280","http://10.10.55.101:30280"],"methods":["GET","POST","PUT","PATCH","DELETE","OPTIONS"],"headers":["Authorization","Content-Type","X-Role","X-Request-ID"],"credentials":true,"max_age":3600}}' \
   "cors"
 
 # ── 5. IP restriction ─────────────────────────────────────────────────
@@ -416,7 +433,7 @@ fi
 # so OPTIONS preflight returns 200 without needing a token.
 echo "🌐 Enabling global CORS plugin..."
 upsert_plugin "$KONG_ADMIN/plugins" \
-  '{"name":"cors","config":{"origins":["http://localhost:3000","http://localhost:8150"],"methods":["GET","POST","PUT","PATCH","DELETE","OPTIONS"],"headers":["Content-Type","Authorization","X-Tenant-ID","X-Conversation-Id","Accept","X-Role"],"exposed_headers":["X-Conversation-Id","X-Kong-Request-Id"],"credentials":false,"max_age":3600,"preflight_continue":false}}' \
+  '{"name":"cors","config":{"origins":["http://localhost:3000","http://localhost:8150","http://localhost:30280","http://10.10.55.101:30280"],"methods":["GET","POST","PUT","PATCH","DELETE","OPTIONS"],"headers":["Content-Type","Authorization","X-Tenant-ID","X-Conversation-Id","Accept","X-Role"],"exposed_headers":["X-Conversation-Id","X-Kong-Request-Id"],"credentials":false,"max_age":3600,"preflight_continue":false}}' \
   "cors" "global"
 
 # ── 9. Correlation ID (tracing) ────────────────────────────────────────
@@ -592,12 +609,12 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "✅ Kong configuration complete"
 echo ""
-echo "  Proxy :  http://localhost:8100"
+echo "  Proxy :  http://localhost:8000"
 echo "  Admin :  in-network only (kong-admin:8001)"
 echo ""
 echo "  JWT:    RS256, issuer=$ISSUER"
 echo "  Routes: /api/agents|workflows|workflow-versions  -> flow_builder:8250"
-echo "          /api/conversations|traces|nodes|catalog|platform|billing -> workflow_runtime:8001"
+echo "          /api/conversations|traces|nodes|catalog|platform|billing -> workflow_runtime:8240"
 echo "  CORS:   localhost:3000, localhost:8150"
 MTLS_STATUS="NOT configured (run deploy/docker/certs/gen-certs.sh first)"
 [ -f "$CERT_FILE" ] && MTLS_STATUS="Configured (Kong presents client cert)"

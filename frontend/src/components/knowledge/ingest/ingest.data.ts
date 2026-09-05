@@ -8,7 +8,7 @@ export const STEPS = [
 export const SOURCES = [
   { id: 'video', name: 'Video Asset',  icon: Video,     desc: 'Ingest high-quality streaming payloads (MP4, MKV/AVI)'          },
   { id: 'image', name: 'Image Asset',  icon: ImageIcon, desc: 'Process structural graphic resources (PNG, JPEG, WebP)'          },
-  { id: 'doc',   name: 'Document Hub', icon: FileText,  desc: 'Extract semantic elements & text (PDF, Word, Markdown)'          },
+  { id: 'doc',   name: 'Document Hub', icon: FileText,  desc: 'Extract semantic elements & text (PDF, Word, Markdown, Excel, CSV)' },
   { id: 'web',   name: 'Web Portal',   icon: Globe,     desc: 'Crawl absolute URL endpoints, HTML markup and assets'            },
 ];
 

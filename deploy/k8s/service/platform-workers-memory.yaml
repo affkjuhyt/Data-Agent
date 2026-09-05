@@ -20,7 +20,7 @@ metadata:
 data:
   WORKER: memory
   OTEL_SERVICE_NAME: platform-workers-memory
-  DB_HOST: postgres
+  DB_HOST: postgres.dataagent-database.svc.cluster.local
   DB_PORT: '8300'
   KAFKA_SASL_USERNAME: memory-consumer
   KAFKA_TOPIC: memory.extraction.requested
@@ -56,6 +56,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 30
       containers:
       - name: platform-workers-memory

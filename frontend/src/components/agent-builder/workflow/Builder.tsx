@@ -628,7 +628,7 @@ const KeyValueEditor = ({ value, onChange }: { value: string; onChange: (v: stri
           />
           <button
             onClick={() => removeRow(i)}
-            title="Xoá cặp key-value"
+            title="Remove key-value pair"
             className="shrink-0 w-5 h-5 flex items-center justify-center rounded-md text-slate-700 hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
           >
             <X size={11} />
@@ -639,7 +639,7 @@ const KeyValueEditor = ({ value, onChange }: { value: string; onChange: (v: stri
         onClick={addRow}
         className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-dashed border-white/15 text-[10px] font-semibold text-slate-500 hover:text-white hover:border-white/30 transition-colors"
       >
-        <Plus size={11} /> Thêm cặp key-value
+        <Plus size={11} /> Add key-value pair
       </button>
     </div>
   );
@@ -694,14 +694,14 @@ const ConfirmDangerModal = ({
           onClick={onCancel}
           className="px-4 py-2 text-xs font-bold text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition-all disabled:opacity-40"
         >
-          Huỷ
+          Cancel
         </button>
         <button
           disabled={busy}
           onClick={onConfirm}
           className="px-4 py-2 text-xs font-bold text-white bg-red-500/80 hover:bg-red-500 rounded-xl transition-all disabled:opacity-40"
         >
-          {busy ? 'Đang xoá…' : confirmLabel}
+          {busy ? 'Deleting…' : confirmLabel}
         </button>
       </div>
     </motion.div>
@@ -741,8 +741,8 @@ const DbConnectionEditor = ({ value, onChange }: { value: string; onChange: (v: 
         { host: row.host, port: row.port || 5432, database: row.database, user: row.user, password: pw },
       );
       if (!testRes.success) {
-        setTestResult(prev => ({ ...prev, [i]: { ok: false, message: testRes.error || 'Không kết nối được' } }));
-        addToast('Không lưu — kết nối thất bại, kiểm tra lại thông tin');
+        setTestResult(prev => ({ ...prev, [i]: { ok: false, message: testRes.error || 'Could not connect' } }));
+        addToast('Not saved — connection failed, check the details');
         return;
       }
 
@@ -756,12 +756,12 @@ const DbConnectionEditor = ({ value, onChange }: { value: string; onChange: (v: 
         delete next[i];
         return next;
       });
-      addToast('Đã kiểm tra kết nối và lưu mật khẩu an toàn');
+      addToast('Connection verified and password saved securely');
     } catch (e) {
-      // apiMutate đã trả đúng lỗi thật từ server (403 thiếu quyền, 422 sai
-      // dữ liệu, 500 lỗi backend...) — hiện nguyên lỗi đó, không tự đoán
-      // luôn là "thiếu quyền" (dễ gây hiểu nhầm khi lỗi thật là chỗ khác).
-      addToast(`Lưu mật khẩu thất bại: ${e instanceof Error ? e.message : String(e)}`);
+      // apiMutate already surfaces the real server error (403 forbidden, 422
+      // invalid data, 500 backend error...) — show it as-is instead of
+      // guessing "forbidden" when the real cause is something else.
+      addToast(`Failed to save password: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setSavingIdx(null);
     }
@@ -779,7 +779,7 @@ const DbConnectionEditor = ({ value, onChange }: { value: string; onChange: (v: 
         try {
           await apiMutate('DELETE', `/api/auth/secrets/${row.secretId}`);
         } catch (e) {
-          addToast(`Đã xoá khỏi canvas nhưng chưa xoá được secret trên server (cần dọn tay): ${e instanceof Error ? e.message : String(e)}`);
+          addToast(`Removed from canvas, but the secret could not be deleted on the server (needs manual cleanup): ${e instanceof Error ? e.message : String(e)}`);
         }
       }
       onChange(serializeDbConns(rows.filter((_, idx) => idx !== deleteIdx)));
@@ -795,14 +795,14 @@ const DbConnectionEditor = ({ value, onChange }: { value: string; onChange: (v: 
         <div key={i} className="p-3 rounded-xl bg-white/[0.03] border border-white/20 space-y-2.5 relative">
           <button
             onClick={() => setDeleteIdx(i)}
-            title="Xoá kết nối"
+            title="Remove connection"
             className="absolute top-2.5 right-2.5 w-5 h-5 flex items-center justify-center rounded-md text-slate-700 hover:text-red-400 hover:bg-red-500/10 transition-colors"
           >
             <X size={11} />
           </button>
 
-          <Field label="Tên kết nối">
-            <TextInput value={row.name} onChange={v => updateRow(i, { name: v })} placeholder="DB Bán hàng" />
+          <Field label="Connection name">
+            <TextInput value={row.name} onChange={v => updateRow(i, { name: v })} placeholder="Sales DB" />
           </Field>
 
           <div className="grid grid-cols-[2fr_1fr] gap-2">
@@ -831,13 +831,13 @@ const DbConnectionEditor = ({ value, onChange }: { value: string; onChange: (v: 
               <div className="flex items-center gap-1.5 py-1.5 px-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
                 <ShieldCheck size={12} className="text-emerald-400 shrink-0" />
                 <span className="text-[11px] text-emerald-400 flex-1 truncate">
-                  Đã lưu an toàn (secret_id: {row.secretId.slice(0, 8)})
+                  Saved securely (secret_id: {row.secretId.slice(0, 8)})
                 </span>
                 <button
                   onClick={() => updateRow(i, { secretId: '' })}
                   className="text-[10px] text-slate-500 hover:text-white underline shrink-0"
                 >
-                  Đổi
+                  Change
                 </button>
               </div>
             ) : (
@@ -847,13 +847,13 @@ const DbConnectionEditor = ({ value, onChange }: { value: string; onChange: (v: 
                     type={visiblePasswords[i] ? 'text' : 'password'}
                     value={pendingPasswords[i] || ''}
                     onChange={e => setPendingPasswords(prev => ({ ...prev, [i]: e.target.value }))}
-                    placeholder="Nhập mật khẩu"
+                    placeholder="Enter password"
                     className="w-full bg-white/5 border border-white/20 rounded-lg py-1.5 pl-2 pr-8 text-[11px] text-white focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-slate-700"
                   />
                   <button
                     type="button"
                     onClick={() => setVisiblePasswords(prev => ({ ...prev, [i]: !prev[i] }))}
-                    title={visiblePasswords[i] ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                    title={visiblePasswords[i] ? 'Hide password' : 'Show password'}
                     className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-600 hover:text-white transition-colors"
                   >
                     {visiblePasswords[i] ? <EyeOff size={12} /> : <Eye size={12} />}
@@ -862,10 +862,10 @@ const DbConnectionEditor = ({ value, onChange }: { value: string; onChange: (v: 
                 <button
                   onClick={() => savePassword(i)}
                   disabled={!pendingPasswords[i] || savingIdx === i}
-                  title="Kiểm tra kết nối thật rồi mới lưu — sai thì báo lỗi, không lưu"
+                  title="Tests the real connection before saving — errors are reported and nothing is saved"
                   className="shrink-0 px-2.5 py-1.5 rounded-lg bg-teal-600/80 hover:bg-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[10px] font-semibold whitespace-nowrap transition-colors flex items-center gap-1"
                 >
-                  <PlugZap size={11} /> {savingIdx === i ? 'Đang kiểm tra…' : 'Lưu 🔒'}
+                  <PlugZap size={11} /> {savingIdx === i ? 'Testing…' : 'Save 🔒'}
                 </button>
               </div>
             )}
@@ -874,11 +874,11 @@ const DbConnectionEditor = ({ value, onChange }: { value: string; onChange: (v: 
             )}
           </Field>
 
-          <Field label="Ghi chú thêm (tuỳ chọn)">
+          <Field label="Additional notes (optional)">
             <textarea
               value={row.note || ''}
               onChange={e => updateRow(i, { note: e.target.value })}
-              placeholder="VD: bảng orders là đơn hàng, không phải lệnh sản xuất"
+              placeholder="e.g. the orders table holds sales orders, not production orders"
               rows={2}
               className="w-full bg-white/5 border border-white/20 rounded-xl py-2 px-3 text-xs text-white font-mono focus:outline-none focus:ring-1 focus:ring-white/20 placeholder:text-slate-700 resize-none"
             />
@@ -889,19 +889,19 @@ const DbConnectionEditor = ({ value, onChange }: { value: string; onChange: (v: 
         onClick={addRow}
         className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-dashed border-white/15 text-[10px] font-semibold text-slate-500 hover:text-white hover:border-white/30 transition-colors"
       >
-        <Plus size={11} /> Thêm kết nối
+        <Plus size={11} /> Add connection
       </button>
 
       <AnimatePresence>
         {deleteIdx !== null && (
           <ConfirmDangerModal
-            title="Xoá kết nối này?"
+            title="Remove this connection?"
             message={
               rows[deleteIdx]?.secretId
-                ? `Mật khẩu đã lưu (secret_id: ${rows[deleteIdx].secretId.slice(0, 8)}) sẽ bị xoá vĩnh viễn khỏi kho bí mật, không khôi phục được.`
-                : 'Kết nối chưa lưu mật khẩu — xoá khỏi canvas, không ảnh hưởng gì khác.'
+                ? `The saved password (secret_id: ${rows[deleteIdx].secretId.slice(0, 8)}) will be permanently deleted from the secret store and cannot be recovered.`
+                : 'This connection has no saved password — it will just be removed from the canvas, nothing else is affected.'
             }
-            confirmLabel="Xoá"
+            confirmLabel="Remove"
             busy={deleting}
             onConfirm={confirmRemove}
             onCancel={() => setDeleteIdx(null)}
@@ -912,26 +912,26 @@ const DbConnectionEditor = ({ value, onChange }: { value: string; onChange: (v: 
   );
 };
 
-const MCP_TOOLS = ['tra_cuu_phat_nguoi', 'query_dashboard', 'send_alert', 'export_report'];
+const MCP_TOOLS = ['lookup_traffic_violation', 'query_dashboard', 'send_alert', 'export_report'];
 
 const BUILTIN_TOOLS: Array<{ name: string; hint: string; category: 'data' | 'filesystem' | 'filesystem-write' | 'shell' | 'langchain' | 'agent' }> = [
   // Data
-  { name: 'text_to_pandas',    hint: 'Phân tích file CSV/Excel',       category: 'data'             },
+  { name: 'text_to_pandas',    hint: 'Analyze CSV/Excel files',        category: 'data'             },
   // File system — read
-  { name: 'file_read',         hint: 'Đọc file text',                  category: 'filesystem'       },
-  { name: 'grep',              hint: 'Tìm regex trong file',           category: 'filesystem'       },
-  { name: 'glob',              hint: 'Liệt kê file theo pattern',      category: 'filesystem'       },
+  { name: 'file_read',         hint: 'Read a text file',               category: 'filesystem'       },
+  { name: 'grep',              hint: 'Search files with regex',        category: 'filesystem'       },
+  { name: 'glob',              hint: 'List files matching a pattern',  category: 'filesystem'       },
   // File system — write
-  { name: 'file_write',        hint: 'Ghi/tạo file',                   category: 'filesystem-write' },
-  { name: 'file_edit',         hint: 'Sửa file (string replacement)',  category: 'filesystem-write' },
+  { name: 'file_write',        hint: 'Write/create a file',            category: 'filesystem-write' },
+  { name: 'file_edit',         hint: 'Edit a file (string replacement)', category: 'filesystem-write' },
   // Shell
-  { name: 'bash',              hint: 'Thực thi lệnh shell',            category: 'shell'            },
+  { name: 'bash',              hint: 'Execute a shell command',        category: 'shell'            },
   // LangChain
-  { name: 'web_search',        hint: 'Tìm kiếm web (DuckDuckGo)',      category: 'langchain'        },
-  { name: 'wikipedia',         hint: 'Tra cứu Wikipedia',              category: 'langchain'        },
-  { name: 'calculator',        hint: 'Tính toán số học',               category: 'langchain'        },
+  { name: 'web_search',        hint: 'Search the web (DuckDuckGo)',    category: 'langchain'        },
+  { name: 'wikipedia',         hint: 'Look up Wikipedia',              category: 'langchain'        },
+  { name: 'calculator',        hint: 'Do arithmetic',                  category: 'langchain'        },
   // Multi-agent
-  { name: 'delegate_to_agent', hint: 'Ủy quyền cho agent khác',       category: 'agent'            },
+  { name: 'delegate_to_agent', hint: 'Delegate to another agent',      category: 'agent'            },
 ];
 
 // â”€â”€â”€ Config Panel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -971,28 +971,28 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
           </div>
         </div>
         <button onClick={onClose} className="w-7 h-7 flex items-center justify-center hover:bg-white/10 rounded-lg text-slate-500 hover:text-white transition-all text-xs">
-          âœ•
+          ✕
         </button>
       </div>
 
       <div className="flex-1 overflow-auto custom-scrollbar p-5 space-y-5">
         {d.nodeType === 'trigger' && (
-          <InfoNote text="Nhận tất cả loại input từ user" />
+          <InfoNote text="Accepts every kind of input from the user" />
         )}
 
         {d.nodeType === 'guardrail' && (
-          <InfoNote text="Node khóa — tự động kiểm tra input/output. Config guardrail rules trong Agent Settings." />
+          <InfoNote text="Locked node — automatically checks input/output. Configure guardrail rules in Agent Settings." />
         )}
 
         {d.nodeType === 'planner' && (
           <>
             <Field label="Model"><Readonly value={models.planner ?? '—'} /></Field>
-            <InfoNote text="Tá»± Ä‘á»™ng Ä‘á»c allowed_tools tá»« MCP Tool node" />
+            <InfoNote text="Automatically reads allowed_tools from the MCP Tool node" />
           </>
         )}
 
         {d.nodeType === 'kb_search' && (
-          <InfoNote text="Tự động tìm kiếm knowledge base của tenant hiện tại. Không cần cấu hình thêm." />
+          <InfoNote text="Automatically searches the current tenant's knowledge base. No further configuration needed." />
         )}
 
         {d.nodeType === 'mcp' && (
@@ -1019,7 +1019,7 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
                 })}
               </div>
             </Field>
-            <InfoNote text="Planner Ä‘á»c danh sÃ¡ch nÃ y Ä‘á»ƒ quyáº¿t Ä‘á»‹nh" />
+            <InfoNote text="The Planner reads this list to decide" />
           </>
         )}
 
@@ -1145,7 +1145,7 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
                 </>
               )}
 
-              <InfoNote text="Planner tự động biết các tool này và quyết định khi nào gọi dựa vào câu hỏi user." />
+              <InfoNote text="The Planner automatically knows about these tools and decides when to call them based on the user's question." />
             </>
           );
         })()}
@@ -1164,14 +1164,14 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
         )}
 
         {d.nodeType === 'visualization' && (
-          <InfoNote text="Tự động vẽ biểu đồ khi user yêu cầu VÀ node này được nối cạnh từ 1 nguồn có dữ liệu dạng bảng (DB Connector luôn có; KB Search/MCP/Tool Executor chỉ vẽ được nếu dữ liệu trả về đúng dạng bảng). Chạy song song với nhánh trả lời text — không cần nối tiếp Responder." />
+          <InfoNote text="Automatically draws a chart when the user asks for one AND this node is connected to a source with tabular data (DB Connector always has it; KB Search/MCP/Tool Executor can only draw one if the returned data is actually tabular). Runs in parallel with the text-answer branch — no need to chain it after Responder." />
         )}
 
         {d.nodeType === 'responder' && (
           <>
             <Field label="Model"><Readonly value={models.responder ?? '—'} /></Field>
             <Field label="System Prompt">
-              <Sel value={(d.systemPromptName as string) || 'prompt_default'} options={['prompt_default', 'prompt_phat_nguoi_v2', 'prompt_dashboard']} onChange={v => upd('systemPromptName', v)} />
+              <Sel value={(d.systemPromptName as string) || 'prompt_default'} options={['prompt_default', 'prompt_violations_v2', 'prompt_dashboard']} onChange={v => upd('systemPromptName', v)} />
             </Field>
             <Slider label="Temperature" value={Number(d.temperature ?? 0.2)} min={0} max={1} step={0.05} onChange={v => upd('temperature', v)} color="#3B82F6" />
             <Field label="Max Tokens">
@@ -1187,7 +1187,7 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
         )}
 
         {d.nodeType === 'output' && (
-          <InfoNote text="Tráº£ structured data vá» Chat UI" />
+          <InfoNote text="Returns structured data to the Chat UI" />
         )}
 
         {d.nodeType === 'human_approval' && (
@@ -1197,11 +1197,11 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
         )}
 
         {['condition', 'db_query', 'send_notification', 'loop'].includes(d.nodeType) && (
-          <InfoNote text="Node nÃ y chÆ°a cÃ³ config. KÃ©o vÃ o canvas vÃ  káº¿t ná»‘i vá»›i cÃ¡c node khÃ¡c." />
+          <InfoNote text="This node has no config yet. Drag it onto the canvas and connect it to other nodes." />
         )}
 
         {d.nodeType === 'judge' && (
-          <InfoNote text="Đánh giá toàn bộ trace sau responder. Route lại nếu lỗi: RETRIEVAL→kb_search, REASONING→responder, TOOL→tool_executor, DATA_QUALITY→human_approval." />
+          <InfoNote text="Evaluates the whole trace after the responder. Re-routes on failure: RETRIEVAL→kb_search, REASONING→responder, TOOL→tool_executor, DATA_QUALITY→human_approval." />
         )}
 
         {d.nodeType === 'metadata_injector' && (
@@ -1212,19 +1212,19 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
                 onChange={v => upd('metadataKv', v)}
               />
             </Field>
-            <InfoNote text="Các cặp key-value được chèn vào ngữ cảnh của Planner và Responder." />
+            <InfoNote text="These key-value pairs are injected into the Planner's and Responder's context." />
           </>
         )}
 
         {d.nodeType === 'db_connector' && (
           <>
-            <Field label="Kết nối DB">
+            <Field label="DB Connection">
               <DbConnectionEditor
                 value={(d.dbConnections as string) || ''}
                 onChange={v => upd('dbConnections', v)}
               />
             </Field>
-            <InfoNote text="Schema tự đọc từ information_schema, không cần gõ tay. Chỉ 1 kết nối → dùng luôn. ≥2 kết nối → tự động chọn DB phù hợp theo câu hỏi (1 lệnh LLM), không cần Planner biết tên DB." />
+            <InfoNote text="Schema is read automatically from information_schema, no need to type it in. A single connection is used as-is. With 2+ connections, the right DB is picked automatically based on the question (one LLM call) — the Planner doesn't need to know the DB name." />
           </>
         )}
       </div>
@@ -1274,7 +1274,7 @@ const NodeLibrary = ({ usedTypes, nodes: libraryNodes = ALL_LIBRARY_NODES }: { u
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Find nodeâ€¦"
+            placeholder="Find node…"
             className="w-full bg-white/5 border border-white/20 rounded-xl py-1.5 pl-8 pr-3 text-[11px] focus:outline-none focus:ring-1 focus:ring-white/10 text-slate-400 placeholder:text-slate-700"
           />
         </div>
@@ -1316,7 +1316,7 @@ const NodeLibrary = ({ usedTypes, nodes: libraryNodes = ALL_LIBRARY_NODES }: { u
 
       <div className="p-3 border-t border-white/20">
         <p className="text-[9px] text-slate-700 leading-relaxed">
-          KÃ©o node vÃ o canvas Ä‘á»ƒ thÃªm vÃ o workflow
+          Drag a node onto the canvas to add it to the workflow
         </p>
       </div>
     </div>
@@ -1558,8 +1558,8 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
       const updated = await apiGet<WorkflowVersion[]>(`/api/workflows/${workflowId}/versions`);
       setVersions(updated);
       setActiveVersionId(data.workflow_version_id);
-      addToast(`Tạo draft v${data.version} thành công`);
-    } catch { addToast('Tạo version thất bại'); }
+      addToast(`Created draft v${data.version}`);
+    } catch { addToast('Failed to create version'); }
     finally { setCreatingVersion(false); }
   }, [workflowId, addToast]);
 
@@ -1570,8 +1570,8 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
       const updated = await apiGet<WorkflowVersion[]>(`/api/workflows/${workflowId}/versions`);
       setVersions(updated);
       if (activeVersionId === versionId) setActiveVersionId(updated[0]?.id);
-      addToast('Đã xóa version');
-    } catch { addToast('Xóa thất bại'); }
+      addToast('Version deleted');
+    } catch { addToast('Failed to delete'); }
   }, [workflowId, activeVersionId, addToast]);
 
   // â”€â”€ Flow state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1689,7 +1689,7 @@ const WorkflowBuilder = ({ onClose, workflow, template = 'multi-agent', agentId,
       // trước, Planner sau, thì cạnh/vị trí neo không tự vẽ lại được (onDrop
       // chỉ chạy đúng 1 lần lúc thả, không theo dõi canvas thay đổi sau đó).
       if (!planner && !responder) {
-        addToast('Cần có node Planner hoặc Responder trên canvas trước khi thêm Metadata Injector');
+        addToast('Add a Planner or Responder node to the canvas before adding a Metadata Injector');
         return;
       }
 
@@ -2000,7 +2000,7 @@ ${edges.map(e => `  - from: "${e.source}"  to: "${e.target}"`).join('\n')}`;
             <div className="flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
               <span className="text-[9px] font-black text-slate-600 uppercase tracking-widest">
-                {nodes.length} nodes Â· {edges.length} edges
+                {nodes.length} nodes · {edges.length} edges
               </span>
             </div>
           </div>

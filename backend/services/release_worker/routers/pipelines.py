@@ -45,7 +45,7 @@ def approve_deployment(
     with get_pg_conn() as conn:
         with conn.cursor() as cur:
             # Lấy package_id từ pipeline
-            cur.execute("SELECT id FROM release_packages WHERE pipeline_id=%s LIMIT 1",
+            cur.execute('SELECT id FROM "ReleasePackages" WHERE pipeline_id=%s LIMIT 1',
                         (pipeline_id,))
             row = cur.fetchone()
             if not row:
@@ -53,7 +53,7 @@ def approve_deployment(
             package_id = row[0]
 
             cur.execute(
-                """INSERT INTO release_approvals
+                """INSERT INTO "ReleaseApprovals"
                    (package_id, environment, decision, approved_by, comment)
                    VALUES (%s, %s, %s, %s, %s)
                    ON CONFLICT (package_id, environment, approved_by) DO UPDATE
@@ -119,7 +119,7 @@ def list_pipelines(
                     """SELECT id, pipeline_name, triggered_by, trigger_type, commit_sha,
                               branch, package_version, target_env, status, risk_score,
                               error_message, created_at, updated_at, completed_at
-                       FROM pipelines
+                       FROM "Pipelines"
                        WHERE status = %s
                        ORDER BY created_at DESC LIMIT %s""",
                     (status, limit)
@@ -129,7 +129,7 @@ def list_pipelines(
                     """SELECT id, pipeline_name, triggered_by, trigger_type, commit_sha,
                               branch, package_version, target_env, status, risk_score,
                               error_message, created_at, updated_at, completed_at
-                       FROM pipelines
+                       FROM "Pipelines"
                        ORDER BY created_at DESC LIMIT %s""",
                     (limit,)
                 )
@@ -162,8 +162,8 @@ def list_rollback_targets(user: dict[str, Any] = Depends(get_current_user)) -> d
                          PARTITION BY COALESCE(p.pipeline_name, rh.pipeline_id), rh.environment
                          ORDER BY rh.deployed_at DESC
                        ) AS rn
-                     FROM release_history rh
-                     JOIN pipelines p ON p.id = rh.pipeline_id
+                     FROM "ReleaseHistory" rh
+                     JOIN "Pipelines" p ON p.id = rh.pipeline_id
                      WHERE rh.status IN ('SUCCESS', 'ROLLED_BACK')
                    ),
                    current_v AS (
@@ -196,7 +196,7 @@ def get_release_history(
                 cur.execute(
                     """SELECT pipeline_id, package_id, environment, status,
                               triggered_by, deployed_at, duration_ms
-                       FROM release_history
+                       FROM "ReleaseHistory"
                        WHERE environment=%s
                        ORDER BY deployed_at DESC LIMIT %s""",
                     (environment, limit)
@@ -205,7 +205,7 @@ def get_release_history(
                 cur.execute(
                     """SELECT pipeline_id, package_id, environment, status,
                               triggered_by, deployed_at, duration_ms
-                       FROM release_history
+                       FROM "ReleaseHistory"
                        ORDER BY deployed_at DESC LIMIT %s""",
                     (limit,)
                 )
@@ -223,7 +223,7 @@ def get_pipeline(pipeline_id: str, user: dict[str, Any] = Depends(get_current_us
     with get_pg_conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
-                "SELECT id, triggered_by, status, created_at, updated_at, error_message FROM pipelines WHERE id=%s",
+                'SELECT id, triggered_by, status, created_at, updated_at, error_message FROM "Pipelines" WHERE id=%s',
                 (pipeline_id,)
             )
             row = cur.fetchone()
@@ -235,7 +235,7 @@ def get_pipeline(pipeline_id: str, user: dict[str, Any] = Depends(get_current_us
                     pipeline[k] = pipeline[k].isoformat()
 
             cur.execute(
-                "SELECT step_name, status, started_at, completed_at, duration_ms, output, error FROM pipeline_steps WHERE pipeline_id=%s ORDER BY id",
+                'SELECT step_name, status, started_at, completed_at, duration_ms, output, error FROM "PipelineSteps" WHERE pipeline_id=%s ORDER BY id',
                 (pipeline_id,)
             )
             steps = [dict(s) for s in cur.fetchall()]

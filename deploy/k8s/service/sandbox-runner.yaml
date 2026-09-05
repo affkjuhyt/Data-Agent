@@ -1,0 +1,16 @@
+# The identity for pods sandbox-executor creates dynamically in
+# dataagent-sandbox (backend/services/sandbox_executor/k8s_pool.py) — there
+# is no Deployment/Pod here to apply; the pool creates and destroys these
+# pods itself via the API (see rbac.yaml's sandbox-executor-pool Role for
+# what it's allowed to do). automountServiceAccountToken stays false: a
+# sandbox pod never calls the API server itself, only sandbox-executor does,
+# on the pool's behalf.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sandbox-runner
+  namespace: dataagent-sandbox
+  labels:
+    app: sandbox-runner
+    app.kubernetes.io/part-of: dataagent
+automountServiceAccountToken: false

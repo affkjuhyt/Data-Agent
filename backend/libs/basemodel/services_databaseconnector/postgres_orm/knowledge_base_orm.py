@@ -118,6 +118,15 @@ class KBDataORM(Base):
     abstract: Mapped[str] = mapped_column(Text, nullable=False)
     doc_metadata: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False)
     current_tier: Mapped[str] = mapped_column(String(16), default=Tier.BRONZE.value, nullable=False)
+    # 'document' (default, today's RAG/Qdrant path, unchanged) or
+    # 'structured_table' (opt-in: LLM proposes a schema from the file, a
+    # human reviews it, and only on approval does a real Postgres table get
+    # created — see KBStructuredImportJob). A real column rather than a key
+    # inside `doc_metadata`: that column is a strictly-validated discriminated
+    # union per source_type (Document/Image/Video/Web/Warehouse in
+    # postgres_model.py) and silently drops any key its Pydantic model
+    # doesn't declare.
+    ingestion_mode: Mapped[str] = mapped_column(String(32), default="document", server_default="document", nullable=False)
     path: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
     added_on: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
@@ -324,6 +333,40 @@ class KBTableORM(Base):
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
 
     owner: Mapped["KBDataORM"] = relationship(back_populates="tables")
+
+
+@register("orm")
+class KBStructuredImportJobORM(Base):
+    """Review lifecycle for the opt-in 'structured table' ingestion mode
+    (KBDataORM.ingestion_mode == 'structured_table'): an LLM proposes a
+    schema from the uploaded spreadsheet, a human reviews/edits it here, and
+    only on approval does a real table get created in the `kb_structured`
+    Postgres schema (recorded, at that point, as a KBTableORM row — this
+    table is the review/audit trail, KBTableORM is the pointer to the
+    finished table)."""
+    __tablename__ = "KBStructuredImportJob"
+    __table_args__ = (
+        Index("idx_kbstructuredimportjob_owner_created", "owner_id", text("created_at DESC")),
+    )
+
+    job_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBData.data_id", ondelete="CASCADE"), nullable=False, index=True)
+    # proposing -> proposed -> approved | rejected, or failed at any point
+    # before 'proposed' (worker-side error, e.g. Docling/LLM failure).
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="proposing", server_default="proposing")
+    llm_proposed_schema: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    human_edited_schema: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    # First ~20 parsed rows only, for the review screen — the full parsed
+    # table lives in Mongo (kb_structured_staging), not duplicated here.
+    sample_rows: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    created_table_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    reviewed_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    reviewed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
 
 
 @register("orm")

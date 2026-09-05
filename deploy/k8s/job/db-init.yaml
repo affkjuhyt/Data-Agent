@@ -18,7 +18,14 @@ metadata:
     app: db-init
     app.kubernetes.io/part-of: dataagent
 data:
-  PGHOST: postgres
+  # Short name doesn't resolve cross-namespace (this Job runs in
+  # dataagent-service, postgres is in dataagent-database) — same class of bug
+  # as kong's KONG_PG_HOST. PGUSER: psql/libpq don't read POSTGRES_USER.
+  PGHOST: postgres.dataagent-database.svc.cluster.local
+  PGUSER: admin
+  # libpq defaults the target database to the username when unset — without
+  # this it tries to connect to a database literally named "admin".
+  PGDATABASE: dataagent
   WAIT_FOR_TABLE: Agents
   PGPORT: '8300'
 
@@ -50,6 +57,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
+      enableServiceLinks: false
       containers:
       - name: db-init
         image: postgres:16-alpine

@@ -18,7 +18,14 @@ metadata:
     app: seed
     app.kubernetes.io/part-of: dataagent
 data:
-  PGHOST: postgres
+  # Short name doesn't resolve cross-namespace — same class of bug as kong's
+  # KONG_PG_HOST (this Job runs in dataagent-service, postgres in
+  # dataagent-database).
+  PGHOST: postgres.dataagent-database.svc.cluster.local
+  PGUSER: admin
+  # libpq defaults the target database to the username when unset — without
+  # this it tries to connect to a database literally named "admin".
+  PGDATABASE: dataagent
   PGPORT: '8300'
 
 ---
@@ -49,6 +56,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
+      enableServiceLinks: false
       containers:
       - name: seed
         image: postgres:16-alpine
@@ -56,7 +64,7 @@ spec:
         - sh
         - -c
         - |
-          until pg_isready -h postgres -U "$POSTGRES_USER" >/dev/null 2>&1; do echo waiting for postgres; sleep 2; done
+          until pg_isready -U "$PGUSER" >/dev/null 2>&1; do echo waiting for postgres; sleep 2; done
           psql -v ON_ERROR_STOP=1 -f /seed/seed.sql
         resources:
           requests:

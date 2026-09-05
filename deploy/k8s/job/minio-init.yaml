@@ -49,6 +49,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
+      enableServiceLinks: false
       containers:
       - name: minio-init
         image: minio/mc

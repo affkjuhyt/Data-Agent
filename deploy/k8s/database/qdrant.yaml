@@ -52,6 +52,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 60
       containers:
       - name: qdrant
@@ -94,11 +95,20 @@ spec:
           mountPath: /qdrant/storage
         - name: tmp
           mountPath: /tmp
+        # readOnlyRootFilesystem: true — qdrant panics at boot if it can't
+        # create ./snapshots/tmp under its working directory. Ephemeral: ad
+        # hoc snapshots don't survive a pod restart here (there's no PVC for
+        # them), which is fine for operational temp files but not for
+        # snapshots meant as backups — give those their own PVC first.
+        - name: snapshots
+          mountPath: /qdrant/snapshots
         envFrom:
         - configMapRef:
             name: qdrant-env
       volumes:
       - name: tmp
+        emptyDir: {}
+      - name: snapshots
         emptyDir: {}
       serviceAccountName: qdrant
   volumeClaimTemplates:
@@ -109,7 +119,7 @@ spec:
       - ReadWriteOnce
       resources:
         requests:
-          storage: 20Gi
+          storage: 10Gi
 
 ---
 apiVersion: v1

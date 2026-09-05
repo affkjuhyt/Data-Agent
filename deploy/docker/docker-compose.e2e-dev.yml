@@ -1,0 +1,47 @@
+# E2E "dev" overlay — run the CURRENT source on the EXISTING images.
+#
+# The service images bake requirements + code; rebuilding them just to pick up
+# a code change means a full pip install (slow on a throttled network). Since
+# the Python deps only change with requirements.txt, mount the working tree over
+# /app instead and reuse the last built image. tests/e2e/e2e.sh adds this
+# layer when E2E_MODE=dev (the default) and only builds images that are missing.
+#
+# Not for production: bind mounts, host-owned files, no image provenance.
+services:
+  # Image names are normally derived from the compose project; pin them so the
+  # E2E project reuses the images the day-to-day "infra" project built.
+  kafka:            { image: infra-kafka }
+  kong-migration:   { image: infra-kong-migration }
+  kong:             { image: infra-kong }
+  migrate:          { image: infra-migrate }
+  sandbox_executor:
+    image: infra-sandbox_executor
+    environment:
+      OTEL_SDK_DISABLED: "true"
+      # No warm Python containers: the E2E path is SQL (asyncpg in-process,
+      # behind sql_guard). Building sandbox-runner:latest is only needed for
+      # /execute/python — `docker build -t sandbox-runner:latest backend/services/sandbox_executor/sandbox_runner/`.
+      SANDBOX_POOL_SIZE: "0"
+  # platform-workers-* carry an explicit `image:` in docker-compose.app.yml, so
+  # the dev stack reuses the same tag without an override here.
+
+  workflow_runtime:
+    image: infra-workflow_runtime
+    # Bố cục /app phải PHẢN CHIẾU backend/, không phải thư mục service. Sau đợt
+    # restructure, code import `services.workflow_runtime.*` và `libs.*` như hai
+    # package gốc; mount thư mục service thẳng vào /app (cách cũ) khiến main.py
+    # chết ngay lúc import với "No module named 'services'".
+    # Dockerfile của service vẫn còn theo bố cục cũ — xem ghi chú trong đó.
+    command: ["uvicorn", "services.workflow_runtime.main:app", "--host", "0.0.0.0", "--port", "8001"]
+    volumes:
+      - ../../backend/libs:/app/libs:ro
+      - ../../backend/services/workflow_runtime:/app/services/workflow_runtime
+      - /app/logs                    # image has /app/logs owned by app; keep it writable
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      OTEL_SDK_DISABLED: "true"      # no jaeger in this stack — stop the export retry spam
+
+  # docker-compose.local.yml pins postgres:16 (Debian) for psql; the alpine tag
+  # is what the stack's own postgres runs and is already present locally.
+  seed:
+    image: postgres:16-alpine

@@ -36,6 +36,7 @@ class IngestionPipeline:
             language=Language(req.language),
             doc_metadata=req.doc_metadata,
             knowledge_base_id=req.knowledge_base_id,
+            ingestion_mode=req.ingestion_mode,
         )
 
     async def bronze_web(

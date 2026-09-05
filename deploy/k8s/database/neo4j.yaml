@@ -66,6 +66,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 60
       containers:
       - name: neo4j
@@ -112,6 +113,14 @@ spec:
           mountPath: /var/lib/neo4j/run
         - name: tmp
           mountPath: /tmp
+        # readOnlyRootFilesystem: true — NEO4J_PLUGINS=["apoc"] above makes
+        # the entrypoint download/copy apoc.jar here on every boot.
+        - name: plugins
+          mountPath: /var/lib/neo4j/plugins
+        # readOnlyRootFilesystem: true — installing apoc also rewrites
+        # neo4j.conf with the plugin's default settings.
+        - name: conf
+          mountPath: /var/lib/neo4j/conf
         envFrom:
         - configMapRef:
             name: neo4j-env
@@ -122,6 +131,10 @@ spec:
         emptyDir: {}
       - name: tmp
         emptyDir: {}
+      - name: plugins
+        emptyDir: {}
+      - name: conf
+        emptyDir: {}
       serviceAccountName: neo4j
   volumeClaimTemplates:
   - metadata:
@@ -131,7 +144,7 @@ spec:
       - ReadWriteOnce
       resources:
         requests:
-          storage: 20Gi
+          storage: 10Gi
   - metadata:
       name: logs
     spec:

@@ -53,7 +53,34 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 60
+      initContainers:
+      # readOnlyRootFilesystem: true means /usr/share/elasticsearch/config
+      # (baked into the image with elasticsearch.yml, jvm.options, ...) can't
+      # be written to — but ES creates its keystore there on every boot if
+      # one doesn't exist yet. Seed a writable copy into the "config" emptyDir
+      # before the real container starts.
+      - name: copy-config
+        image: elasticsearch:8.12.0
+        command: ["sh", "-c", "cp -r /usr/share/elasticsearch/config/. /config-writable/"]
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 128Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: config
+          mountPath: /config-writable
       containers:
       - name: elasticsearch
         image: elasticsearch:8.12.0
@@ -91,6 +118,10 @@ spec:
         volumeMounts:
         - name: data
           mountPath: /usr/share/elasticsearch/data
+        - name: config
+          mountPath: /usr/share/elasticsearch/config
+        - name: logs
+          mountPath: /usr/share/elasticsearch/logs
         - name: tmp
           mountPath: /tmp
         envFrom:
@@ -98,6 +129,10 @@ spec:
             name: elasticsearch-env
       volumes:
       - name: tmp
+        emptyDir: {}
+      - name: config
+        emptyDir: {}
+      - name: logs
         emptyDir: {}
       serviceAccountName: elasticsearch
   volumeClaimTemplates:
@@ -108,7 +143,7 @@ spec:
       - ReadWriteOnce
       resources:
         requests:
-          storage: 20Gi
+          storage: 8Gi
 
 ---
 apiVersion: v1

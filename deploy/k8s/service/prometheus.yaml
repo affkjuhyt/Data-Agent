@@ -19,6 +19,11 @@ metadata:
     app.kubernetes.io/part-of: dataagent
 spec:
   replicas: 1
+  # prometheus-data is RWO (local-path, single-node — see volumeClaimTemplate
+  # below) — the default RollingUpdate briefly runs old+new pod together and
+  # the new one fails to lock the TSDB directory the old one still holds.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: prometheus
@@ -37,6 +42,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 30
       containers:
       - name: prometheus
@@ -54,8 +60,11 @@ spec:
             cpu: 100m
             memory: 256Mi
           limits:
-            cpu: 500m
-            memory: 512Mi
+            # Modest cut — still needs to scrape every service, but not on
+            # the request path; headroom goes to
+            # kong/workflow-runtime/model-service instead.
+            cpu: 300m
+            memory: 384Mi
         readinessProbe:
           httpGet:
             path: /-/ready
@@ -111,7 +120,7 @@ spec:
   - ReadWriteOnce
   resources:
     requests:
-      storage: 10Gi
+      storage: 8Gi
 
 ---
 apiVersion: v1

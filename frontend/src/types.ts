@@ -46,6 +46,11 @@ export interface KnowledgeDocument {
   added_by?: string | null;     // user_id of uploader
   added_on?: string | null;     // timestamp
   abstract?: string | null;
+  // 'document' (default) or 'structured_table' — a real KBData column, not
+  // part of the `metadata` JSONB bag below (see backend's ingestion_mode
+  // migration: that column is a strictly-typed discriminated union and
+  // would silently drop an unrecognized key).
+  ingestion_mode?: string | null;
   metadata: {
     doc_type?: string | null;   // computed from source_type + extension
     language?: string | null;

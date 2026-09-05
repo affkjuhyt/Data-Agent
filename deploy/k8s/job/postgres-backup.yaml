@@ -18,7 +18,14 @@ metadata:
     app: postgres-backup
     app.kubernetes.io/part-of: dataagent
 data:
-  PGHOST: postgres
+  # Short name doesn't resolve cross-namespace (this CronJob runs in
+  # dataagent-service, postgres in dataagent-database) — same class of bug as
+  # kong's KONG_PG_HOST. PGUSER/PGDATABASE: libpq defaults the target
+  # database to the username when neither is set, i.e. pg_dump would try to
+  # dump a database literally named "admin".
+  PGHOST: postgres.dataagent-database.svc.cluster.local
+  PGUSER: admin
+  PGDATABASE: dataagent
   BACKUP_RETENTION_DAYS: '7'
   PGPORT: '8300'
 
@@ -36,7 +43,7 @@ spec:
   - ReadWriteOnce
   resources:
     requests:
-      storage: 50Gi
+      storage: 15Gi
 
 ---
 apiVersion: batch/v1
