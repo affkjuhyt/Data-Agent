@@ -1,0 +1,108 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kb-ingestion-worker
+  namespace: dataagent-service
+  labels:
+    app: kb-ingestion-worker
+    app.kubernetes.io/part-of: dataagent
+automountServiceAccountToken: false
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kb-ingestion-worker-env
+  namespace: dataagent-service
+  labels:
+    app: kb-ingestion-worker
+    app.kubernetes.io/part-of: dataagent
+data:
+  LLM_MODEL: agent-fast
+  HF_HOME: /cache
+  USE_VLM: 'false'
+  GOLD_CHUNK_CONCURRENCY: '1'
+  SILVER_CONCURRENCY: '1'
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: docling-cache
+  namespace: dataagent-service
+  labels:
+    app: kb-ingestion-worker
+    app.kubernetes.io/part-of: dataagent
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kb-ingestion-worker
+  namespace: dataagent-service
+  labels:
+    app: kb-ingestion-worker
+    app.kubernetes.io/part-of: dataagent
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: kb-ingestion-worker
+  template:
+    metadata:
+      labels:
+        app: kb-ingestion-worker
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: kb-ingestion-worker
+        image: REGISTRY/dataagent/kb-ingestion-worker:latest
+        envFrom:
+        - configMapRef:
+            name: dataagent-config
+        - configMapRef:
+            name: kb-ingestion-worker-env
+        - secretRef:
+            name: kb-ingestion-worker-secrets
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: '2'
+            memory: 4Gi
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: cache
+          mountPath: /cache
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: cache
+        persistentVolumeClaim:
+          claimName: docling-cache
+      - name: tmp
+        emptyDir: {}
+      serviceAccountName: kb-ingestion-worker

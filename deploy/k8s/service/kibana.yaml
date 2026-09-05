@@ -1,0 +1,119 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kibana
+  namespace: dataagent-service
+  labels:
+    app: kibana
+    app.kubernetes.io/part-of: dataagent
+automountServiceAccountToken: false
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kibana-env
+  namespace: dataagent-service
+  labels:
+    app: kibana
+    app.kubernetes.io/part-of: dataagent
+data:
+  ELASTICSEARCH_HOSTS: http://elasticsearch.dataagent-database.svc.cluster.local:8380
+  SERVER_PORT: '8440'
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana
+  namespace: dataagent-service
+  labels:
+    app: kibana
+    app.kubernetes.io/part-of: dataagent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kibana
+  template:
+    metadata:
+      labels:
+        app: kibana
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: kibana
+        image: kibana:8.12.0
+        ports:
+        - containerPort: 8440
+          name: http
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: '1'
+            memory: 1Gi
+        readinessProbe:
+          httpGet:
+            path: /api/status
+            port: 8440
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /api/status
+            port: 8440
+          initialDelaySeconds: 90
+          periodSeconds: 20
+          failureThreshold: 6
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: data
+          mountPath: /usr/share/kibana/data
+        - name: tmp
+          mountPath: /tmp
+        envFrom:
+        - configMapRef:
+            name: kibana-env
+      volumes:
+      - name: data
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+      serviceAccountName: kibana
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kibana
+  namespace: dataagent-service
+  labels:
+    app: kibana
+    app.kubernetes.io/part-of: dataagent
+spec:
+  selector:
+    app: kibana
+  ports:
+  - port: 8440
+    targetPort: 8440
+    name: http
+  type: ClusterIP
