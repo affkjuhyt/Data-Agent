@@ -11,7 +11,7 @@ tests/e2e/e2e.sh all        # lần đầu ~5 phút (không build lại image �
 ## Chế độ chạy & cách ly
 
 * **`E2E_MODE=dev` (mặc định)** — dùng image đã có (`infra-*`) và **bind-mount source** hiện tại vào
-  `/app` (overlay `deploy/docker/docker-compose.e2e-dev.yml`); chỉ build image nào thiếu. Đổi code Python →
+  `/app` (overlay `deploy/docker/overlay-dev.yml`); chỉ build image nào thiếu. Đổi code Python →
   `docker restart dataagent-workflow_runtime` là đủ, không cần rebuild (pip install qua mạng chậm mất 30–40 phút).
   `E2E_MODE=build` rebuild toàn bộ như CI.
 * **Project compose riêng `dataagent-e2e`** (`E2E_PROJECT`) — volume Postgres/Keycloak/OpenBao **mới** mỗi lần
@@ -27,7 +27,7 @@ Từng bước, chạy lại được độc lập:
 | Bước | Làm gì | Lặp lại được? |
 |---|---|---|
 | `preflight` | docker, ollama (+ pull `qwen2.5:3b`), sinh `GATEWAY_KEY` / `SERVICE_AUTH_SECRET` vào `.env` nếu trống, giữ đúng **một** model trên GPU | ✅ |
-| `up` | `docker compose up` 16 service cần cho một lượt agent (không có KB tier); chạy alembic + seed tenant | ✅ |
+| `up` | SUPERSEDED — dựng 16 service cho một lượt agent; cần port sang kubectl (deploy/k8s) | ⚠ |
 | `setup` | `deploy/docker/kong/kong-setup.sh` (route, plugin JWT, mật khẩu user dev, CORS `:3000`); OpenBao init/unseal, KV v2 `secret/`, AppRole chỉ-đọc → `.env`, ghi mật khẩu kho demo; tạo lại workflow_runtime | ✅ |
 | `seed` | Postgres: agent `e2e-sql-agent`, 2 chỉ số đã duyệt (`doanh_thu_gop`, `doanh_thu_thuan`) + từ đồng nghĩa, hàng `secrets_vault`, bảng `fact_sales` 8 tháng trong `sandbox_dev`; Mongo: canvas planner → db_connector → rrf → reranker → responder/visualization → judge | ✅ (rebuild bảng demo) |
 | `smoke "câu hỏi"` | In từng frame SSE, tô riêng `__evidence` (SQL, metric, số dòng) | ✅ |
@@ -89,5 +89,5 @@ Mọi lượt được ghi ra `tests/e2e/out/turn-*.json` (toàn bộ frame) đ�
 * **Lượt treo > 60 s** → hai model đang nằm trên GPU; `preflight` unload model lạ, hoặc
   `docker stop llm_exporter kb-model_service` nếu stack KB đang chạy (docs/AGENT-E2E.md §5).
 * **`migrate` lỗi** → `tests/e2e/e2e.sh logs migrate`; volume Postgres cũ có thể lệch head.
-* **Keycloak login form không hiện** → `.env` `VITE_KEYCLOAK_URL` phải là `http://localhost:8080`
+* **Keycloak login form không hiện** → `.env` `VITE_KEYCLOAK_URL` phải là `http://localhost:8110`
   (issuer trong token phải khớp `KEYCLOAK_PUBLIC_URL` mà `kong-setup.sh` cấu hình).

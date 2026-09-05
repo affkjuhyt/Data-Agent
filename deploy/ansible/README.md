@@ -1,3 +1,9 @@
+> **SUPERSEDED.** Every role here deploys through Docker Compose, and the
+> compose files were removed when `deploy/k8s/` became the only deployment
+> definition. The playbook cannot run until the `compose_stack` role is
+> replaced with a Kubernetes equivalent. The offline appliance bundle
+> (`--tags bundle`) shipped compose files and is affected the same way.
+
 # Triển khai bằng Ansible — một playbook, mọi môi trường
 
 ```bash
@@ -43,7 +49,7 @@ deploy/ansible/
 │   ├── code/                    # git clone / rsync lên host (bỏ qua khi local)
 │   ├── preflight/               # docker, compose v2, .env từ .env.example
 │   ├── app_env/                 # GATEWAY_KEY, SERVICE_AUTH_SECRET, KAFKA_ADMIN_PASSWORD, VITE_API_URL
-│   ├── compose_stack/           # docker compose up (chỉ build image thiếu), chờ postgres/kong/keycloak/litellm, schema keycloak|kong
+│   ├── compose_stack/           # SUPERSEDED — dựa trên docker compose, không còn file compose
 │   ├── gateway/                 # deploy/docker/kong/kong-setup.sh (route, JWT, CORS, mật khẩu user dev); Keycloak MFA off (local)
 │   ├── kafka_topics/            # deploy/docker/kafka/kafka-setup.sh (topic + ACL)
 │   ├── openbao/                 # init/unseal (key lưu 0600 trên host), KV v2, policy, AppRole → .env, secret kho demo
@@ -62,7 +68,7 @@ Bí mật: nếu `vault_*` không được định nghĩa, role `common` sinh gi
 
 ## Prod khác local ở đâu (toàn bộ nằm trong `inventories/prod/group_vars/all.yml`)
 
-* `compose_extra_files: [docker-compose.prod.yml]` — WAL archive, backup sidecar, TLS; không bind-mount source.
+* `compose_extra_files: [postgres-backup.yml]` + `env_extra` (WAL archive, TLS OpenBao, SCRAM); không bind-mount source.
 * `compose_build: policy|always` (LLM routing lives in `deploy/docker/litellm/config.yaml`).
 * `keycloak_disable_mfa: false`, `seed_demo: false`, `openbao_allow_reset: false`, `run_smoke: true`.
 * `kong_public_url` / `keycloak_url` là địa chỉ công bố (issuer trong token phải khớp).
@@ -88,7 +94,7 @@ chép model, giải nén, chạy playbook local. Hoặc từ máy điều khiể
 backend/            services/ · libs/ · alembic/      (import root Python; image build context = repo root)
 frontend/           src/ · vite/vitest/tsconfig · Dockerfile.dev   (npm workspace, root package.json chỉ forward)
 deploy/
-├── docker/         compose + config runtime (kong, kafka, keycloak, openbao, litellm, sql…) — đi theo gói cài; project name pin = infra
+├── docker/         compose per-service + config runtime (kong, kafka, keycloak, openbao, litellm, sql…) — đi theo gói cài
 ├── ansible/        playbook này
 └── k8s/            manifest thô cho cụm k8s; Đợt 3 thay bằng helm/
 tests/              unit/ · integration/ · e2e/ (e2e.sh, Playwright, seed) · loadtest/ (k6)
@@ -98,7 +104,7 @@ docs/  model/  scripts/ (chỉ công cụ dev)
 Playbook tham chiếu: `compose_dir = deploy/docker`, seed = `tests/e2e/seed.sql` + `seed-flow.js`, bundle đóng gói
 `deploy/docker` + `deploy/ansible` + seed + `docs/RUNBOOK.md`/`docs/SECURITY.md`. Đã dọn cùng đợt: `infra/scripts/` (kiểm Kong admin
 → task trong role `verify`, bật bằng `kong_admin_published: false`), toàn bộ `.ps1`, `infra/postgres/` (seed KB → `deploy/docker/sql/kb-seed.sql`),
-`scripts/seed_dev_agent.sql`. Overlay `kb-e2e.dev` giờ tự đủ trên base (`--profile runtime`, có `build:` riêng cho model_service/kb-backend/worker).
+`scripts/seed_dev_agent.sql`. KB tier chạy bằng `deploy/k8s/service/` (model_service/kb-backend/worker mỗi cái một file).
 
 **Ansible có "đưa k8s vào" được không?** Được, nhưng là **playbook khác** (`deploy/ansible/k8s.yml`, collection
 `kubernetes.core`: `helm`/`k8s` module) vì đích khác hẳn: appliance = Docker Compose trên một máy, k8s = cụm có sẵn

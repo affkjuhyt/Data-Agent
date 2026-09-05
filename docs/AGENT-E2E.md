@@ -9,8 +9,7 @@ over an SSE stream** — no run_id/poll; the turn is done at `data: [DONE]`.
 ## 1. Bring it up (local)
 
 Everything runs offline against the host **ollama** (`:11434`). LiteLLM is pointed
-at it with a wildcard model in `deploy/docker/docker-compose.agent-test.yml` +
-`deploy/docker/litellm/config.agent-local.yaml`.
+at it with a wildcard model in `deploy/docker/litellm/config.yaml`.
 
 ```bash
 # 1. seed a published demo agent (Agents table is empty on a fresh DB) — same seed the
@@ -18,29 +17,28 @@ at it with a wildcard model in `deploy/docker/docker-compose.agent-test.yml` +
 docker exec -i dataagent-postgres psql -U admin -d dataagent < tests/e2e/seed.sql
 docker exec -i dataagent-mongo mongosh --quiet < tests/e2e/seed-flow.js
 
-# 2. bring up the agent tier (base + app + local-LLM overlay). NOT app.yml's
-#    kb-backend — it collides with the kb-e2e stack on :8050.
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.app.yml \
-  -f deploy/docker/docker-compose.agent-test.yml up -d --build \
-  litellm orchestrator workflow-runtime platform-workers-memory
+# 2. bring up the agent tier. NOT kb-backend — it collides with the KB stack on :8220.
+kubectl apply -f deploy/k8s/service/litellm.yaml \
+  -f deploy/k8s/service/workflow-runtime.yaml \
+  -f deploy/k8s/service/platform-workers-memory.yaml
 
 # (optional, only for SQL/code tools) sandbox-executor needs its runner image:
 #   docker build -t sandbox-runner:latest backend/services/sandbox-executor/sandbox_runner/
-#   docker compose ... up -d sandbox-executor openbao
+#   kubectl apply -f deploy/k8s/service/sandbox-executor.yaml -f deploy/k8s/database/openbao.yaml
 ```
 
-Host ports: **Kong `:8000`**, litellm `:4000`. The orchestrator (`8003`) and
-workflow-runtime (`8001`) are **not published** — they are reachable only through
+Host ports: **Kong `:8100`**, litellm `:8500`. The orchestrator and
+workflow-runtime (`8240`) are **not published** — they are reachable only through
 Kong, which verifies the Keycloak JWT and injects the identity headers plus the
 shared `X-Gateway-Key`. Forged identity headers no longer work: both services
 verify their caller (`backend/libs/shared/auth.py`), and the orchestrator authenticates
 to workflow-runtime with a signed service assertion.
 
 Get a token the same way the KB stack does, then send it as `Authorization:
-Bearer $TOKEN` to `:8000`:
+Bearer $TOKEN` to `:8100`:
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:8080/realms/aeroflow/protocol/openid-connect/token   -d grant_type=password -d client_id=aeroflow-frontend   -d username=helios-engineer -d password='H3lios@Eng001!' | jq -r .access_token)
+TOKEN=$(curl -s -X POST http://localhost:8110/realms/aeroflow/protocol/openid-connect/token   -d grant_type=password -d client_id=aeroflow-frontend   -d username=helios-engineer -d password='H3lios@Eng001!' | jq -r .access_token)
 ```
 
 Requires `GATEWAY_KEY` and `SERVICE_AUTH_SECRET` set in `.env` (same value across
@@ -52,20 +50,20 @@ Header on every call: `Authorization: Bearer $TOKEN`. Identity headers are
 **injected by Kong from the token** — sending your own is pointless (the plugin
 clears them) and reaching a service port directly is no longer possible.
 
-All paths below go through Kong on `:8000`, not the service port.
+All paths below go through Kong on `:8100`, not the service port.
 
 | # | Method + path | Purpose |
 |---|---|---|
-| 0 | `GET :8000/api/orchestrate/health` | liveness |
-| 1 | `POST :8000/api/orchestrate/stream` | **the agent turn** (SSE). Body `{query, user_id, agent_id}`. `agent_id` set → single-agent (predictable); omit → multi-agent ToT planner (heavier). Frames: `{"__session_id":…}`, text tokens `"…"`, `{"__suggestions":…}`/`{"__chart":…}`/`{"__clarification":…}`, then `[DONE]`. |
-| 2 | `POST :8000/api/orchestrate/stream` (no `agent_id`) | multi-agent worst-case cost |
-| 3 | `POST :8000/api/orchestrate/resume` | HITL — only after a `{"__clarification":…}` frame; JSON, not SSE. Body `{session_id, clarification}`. |
-| 4 | `POST :8000/api/conversations/run` | downstream single-agent executor (isolate agent-exec latency from the orchestrator layer). |
-| 5 | `POST :4000/v1/chat/completions` | the LLM tier (bottleneck). `Authorization: Bearer sk-dev`. |
+| 0 | `GET :8100/api/orchestrate/health` | liveness |
+| 1 | `POST :8100/api/orchestrate/stream` | **the agent turn** (SSE). Body `{query, user_id, agent_id}`. `agent_id` set → single-agent (predictable); omit → multi-agent ToT planner (heavier). Frames: `{"__session_id":…}`, text tokens `"…"`, `{"__suggestions":…}`/`{"__chart":…}`/`{"__clarification":…}`, then `[DONE]`. |
+| 2 | `POST :8100/api/orchestrate/stream` (no `agent_id`) | multi-agent worst-case cost |
+| 3 | `POST :8100/api/orchestrate/resume` | HITL — only after a `{"__clarification":…}` frame; JSON, not SSE. Body `{session_id, clarification}`. |
+| 4 | `POST :8100/api/conversations/run` | downstream single-agent executor (isolate agent-exec latency from the orchestrator layer). |
+| 5 | `POST :8500/v1/chat/completions` | the LLM tier (bottleneck). `Authorization: Bearer sk-dev`. |
 
 Minimal turn:
 ```bash
-curl -N -X POST http://localhost:8000/api/orchestrate/stream \
+curl -N -X POST http://localhost:8100/api/orchestrate/stream \
   -H 'Content-Type: application/json' \
   -H 'X-Tenant-Id: a0000000-0000-0000-0000-000000000001' \
   -H 'X-User-ID: 11111111-1111-1111-1111-111111111111' \
@@ -116,7 +114,7 @@ with no `[DONE]`. Two root causes, both about the **single shared GPU**:
    or in prod give each tier its own GPU / a GPU pool.
 2. **OTEL tracing to `jaeger:4317` (not running).** Both services export spans there
    and spam "export timeout"; disabled with `OTEL_SDK_DISABLED=true` (in
-   `docker-compose.agent-test.yml`). Bring up jaeger instead if you want traces.
+   `.env`). Bring up jaeger instead if you want traces.
 
 After both fixes: **single turn ~5 s, 3 concurrent ~10.5 s, 0 hangs** (was 60 s+).
 The lesson: the agent turn is fine; the single GPU is a **shared contention point** —
@@ -144,7 +142,7 @@ Production stability fixes (the real ask):
    the admission slot is released. Verified: disconnecting mid-turn frees the slot
    immediately (a following turn gets 200, not 429).
 2. **Admission control (DONE).** `ORCHESTRATOR_MAX_CONCURRENT_TURNS` (default 8; set
-   to **2** on this single-GPU box in `docker-compose.agent-test.yml`) caps
+   to **2** on this single-GPU box via `.env`) caps
    concurrent turns; over the cap the orchestrator sheds **429 + Retry-After**
    instead of piling onto the GPU — same backpressure pattern as the KB gateway.
    Verified: 5 concurrent at cap 2 → 2×200, 3×429.

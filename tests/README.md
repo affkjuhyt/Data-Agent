@@ -66,7 +66,7 @@ service really uses and slow installs for unit-only runs.
 ### Python — e2e (live stack)
 
 ```powershell
-docker compose -f docker/docker-compose.yml -f docker/docker-compose.local.yml up -d --build
+kubectl apply -f deploy/k8s/database/ && kubectl apply -f deploy/k8s/service/
 bash deploy/docker/kong/kong-setup.sh
 $env:LIVE_STACK = "1"
 pytest -m e2e tests/integration -v

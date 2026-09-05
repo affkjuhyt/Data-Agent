@@ -40,19 +40,17 @@ Two structural wastes in the VM:
 |---|---|---|
 | LLM 7B → **3B** (`qwen2.5:3b`, 1.9 GB) | ~4 GB host | `REMOTE_LLM_MODEL=qwen2.5:3b` (measured: entity-extraction call 4.1 s vs 60 s+ timeout on the 7B vision model) |
 | **Drop observability** | ~1.9 GB VM | don't select those services (they're profile/opt-in) |
-| **Cap heaps** (Neo4j/Mongo/Kafka/Keycloak) | ~1 GB VM | `deploy/docker/docker-compose.kb-lite.yml` |
+| **Cap heaps** (Neo4j/Mongo/Kafka/Keycloak) | ~1 GB VM | `resources.limits` + the `*_HEAP`/`*_JAVA_OPTS` env in each `deploy/k8s/database/*.yaml` |
 
 ### Bring up the lite stack
 
 ```bash
-# 1. Infra (base + lite caps, KB profile, explicit list = no observability)
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-lite.yml \
-  --env-file .env --profile kb up -d \
-  postgres redis mongo qdrant neo4j minio kafka keycloak kong
+# 1. Stores. Lower resources.limits in each manifest for a laptop cluster
+#    (k3s / kind / Docker Desktop) — the committed values target a real node.
+kubectl apply -f deploy/k8s/database/
 
-# 2. KB app services (attach to the same network)
-docker compose -f deploy/docker/docker-compose.kb-e2e.yml --env-file deploy/docker/.env.kb-testing up -d \
-  model-service kb-backend kb-ingestion-worker
+# 2. App tier
+kubectl apply -f deploy/k8s/service/
 
 # 3. Native ollama with a small model, 2 parallel slots
 OLLAMA_NUM_PARALLEL=2 ollama serve   # (or the app; then: ollama pull qwen2.5:3b)
