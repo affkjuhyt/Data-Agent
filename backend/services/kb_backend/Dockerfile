@@ -77,7 +77,7 @@ EXPOSE 8220
 
 # Probe the /health endpoint added to backend/services/kb_backend/main.py
 HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8220/health')"
 
 # Workers are env-tunable. One async worker plateaus at ~1900 rps / ~1 core
 # (measured, docs/KB-SCALE-10K.md §6); set UVICORN_WORKERS = CPU cores to use the rest
