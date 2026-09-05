@@ -49,8 +49,13 @@ async def planner_classifier(question: str, config: dict[str, Any] | None = None
     """
     _paths.ensure(_paths.WORKFLOW_RUNTIME)
     from nodes.model_harness.planner import planner_node
+    from config_loader import DEV_CONFIG
 
-    result = await planner_node({"query": question, "config": config or {}})  # type: ignore[arg-type]
+    # planner_node's own inline default ("planner", no provider prefix) only
+    # works via a Router that pre-resolves it — bare litellm.acompletion() needs
+    # DEV_CONFIG's "openai/planner" (or a case-supplied override) to reach the
+    # LiteLLM proxy without "LLM Provider NOT provided".
+    result = await planner_node({"query": question, "config": {**DEV_CONFIG, **(config or {})}})  # type: ignore[arg-type]
     return {
         "intent": result.get("intent", ""),
         "analysis_type": result.get("analysis_type", ""),

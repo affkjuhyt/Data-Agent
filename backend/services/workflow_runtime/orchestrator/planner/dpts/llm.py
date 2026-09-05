@@ -108,7 +108,7 @@ class LLM:
         self, node: Node, k: int | None = None, agents: list[dict[str, Any]] | None = None
     ) -> list[ChildThought]:
         import asyncio
-        from orchestrator import config
+        from services.workflow_runtime.orchestrator import config
         k = k or self.branching
         messages = build_messages(
             node.goal or node.thought,

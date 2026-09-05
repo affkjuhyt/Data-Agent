@@ -319,6 +319,12 @@ KONG_GATEWAY_KEY="${GATEWAY_KEY:-${KB_GATEWAY_KEY:-}}"
 if [ -z "$KONG_GATEWAY_KEY" ]; then
   echo "⚠️  GATEWAY_KEY is empty — upstreams will accept X-Kong-Verified without proof it came from Kong."
 fi
+# aeroflow-jwks' `gateway_key` field, when present, must be non-empty (schema:
+# len_min=1) — so omit the key entirely rather than send "" when unset.
+GATEWAY_KEY_JSON_FIELD=""
+if [ -n "$KONG_GATEWAY_KEY" ]; then
+  GATEWAY_KEY_JSON_FIELD=",\"gateway_key\":\"$KONG_GATEWAY_KEY\""
+fi
 
 if [ "$SKIP_JWT" = "1" ]; then
   echo "⚠️  SKIP_JWT=1 — removing aeroflow-jwks plugins if present (dev mode)"
@@ -334,24 +340,24 @@ for p in data.get('data', []):
 else
   echo "🔐 Enabling aeroflow-jwks plugin on workflow_runtime..."
   upsert_plugin "$KONG_ADMIN/services/workflow_runtime/plugins" \
-    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"workflow_runtime\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
+    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"workflow_runtime\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE$GATEWAY_KEY_JSON_FIELD}}" \
     "aeroflow-jwks"
 
   echo "🔐 Enabling aeroflow-jwks plugin on flow_builder..."
   upsert_plugin "$KONG_ADMIN/services/flow_builder/plugins" \
-    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"flow_builder\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
+    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"flow_builder\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE$GATEWAY_KEY_JSON_FIELD}}" \
     "aeroflow-jwks"
 
   # ── 4b. aeroflow-jwks on release_worker ────────────────────────────────
   echo "🔐 Enabling aeroflow-jwks plugin on release_worker (aud=release_worker)..."
   upsert_plugin "$KONG_ADMIN/services/release_worker/plugins" \
-    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"release_worker\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
+    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"release_worker\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE$GATEWAY_KEY_JSON_FIELD}}" \
     "aeroflow-jwks"
 
   # ── 4c. aeroflow-jwks on auth_api ──────────────────────────────────────
   echo "🔐 Enabling aeroflow-jwks plugin on auth_api (aud=auth_api)..."
   upsert_plugin "$KONG_ADMIN/services/auth_api/plugins" \
-    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"auth_api\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
+    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"auth_api\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE$GATEWAY_KEY_JSON_FIELD}}" \
     "aeroflow-jwks"
 
 fi
@@ -361,7 +367,7 @@ fi
 # aeroflow-frontend client applies — no new Keycloak mapper needed.
 echo "🔐 Enabling aeroflow-jwks plugin on kb-backend (aud=aeroflow-backend)..."
 upsert_plugin "$KONG_ADMIN/services/kb-backend/plugins" \
-  "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"aeroflow-backend\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE,\"gateway_key\":\"$KONG_GATEWAY_KEY\"}}" \
+  "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"aeroflow-backend\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE$GATEWAY_KEY_JSON_FIELD}}" \
   "aeroflow-jwks"
 
 # ── 4e. CORS on kb-backend-route ───────────────────────────────────────

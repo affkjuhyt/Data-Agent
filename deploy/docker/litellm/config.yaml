@@ -17,15 +17,21 @@
 # an anchor would make the entries share one object.
 
 model_list:
-  # ── accuracy tier → agent-main (Qwen3-14B-AWQ) ─────────────────────────────
+  # planner is a blocking step on every request (intent + slot extraction,
+  # JSON-schema output) before the responder ever starts streaming — moved to
+  # agent-fast for latency. Re-validated via model/eval online tier (04-09-2026):
+  # intent_accuracy and unsupported_recall must be re-checked after this change,
+  # not just assumed from the agent-main baseline.
   - model_name: planner
     litellm_params:
-      model: openai/agent-main
-      api_base: os.environ/LLM_MAIN_BASE_URL
+      model: openai/agent-fast
+      api_base: os.environ/LLM_FAST_BASE_URL
       api_key: not-needed
       extra_body:
         chat_template_kwargs:
           enable_thinking: false
+
+  # ── accuracy tier → agent-main (Qwen3-14B-AWQ) ─────────────────────────────
 
   - model_name: responder
     litellm_params:
@@ -38,8 +44,13 @@ model_list:
 
   - model_name: judge
     litellm_params:
-      model: openai/agent-main
-      api_base: os.environ/LLM_MAIN_BASE_URL
+      # Must differ from `responder` (agent-main) — a model grading its own
+      # answers is a well-known eval anti-pattern. First live model/eval run
+      # (04-09-2026) had judge == responder and hallucination_rate came back
+      # 0.60 even though the deterministic unsupported_number_rate was 0.00 —
+      # consistent with self-grading bias, not real hallucination.
+      model: openai/agent-fast
+      api_base: os.environ/LLM_FAST_BASE_URL
       api_key: not-needed
       extra_body:
         chat_template_kwargs:

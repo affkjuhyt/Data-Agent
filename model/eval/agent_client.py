@@ -30,7 +30,9 @@ from model.eval import _paths
 
 _LITELLM_BASE = os.getenv("LITELLM_BASE_URL", "http://localhost:4000")
 _LITELLM_KEY = os.getenv("LITELLM_API_KEY", "anything")
-_RESPONDER_MODEL = os.getenv("EVAL_RESPONDER_MODEL", "responder")
+# "openai/" prefix required: bare litellm.acompletion() (no Router) needs it to
+# resolve a custom api_base, matching config_loader.DEV_CONFIG's "openai/responder".
+_RESPONDER_MODEL = os.getenv("EVAL_RESPONDER_MODEL", "openai/responder")
 
 # The system prompt the agent builder fills in per agent. Neutral here so the
 # metric reflects the platform's own grounding rules rather than one tenant's

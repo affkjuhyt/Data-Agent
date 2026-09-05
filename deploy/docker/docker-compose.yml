@@ -510,6 +510,13 @@ services:
       LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_EMAIL:-admin@example.com}
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_PASSWORD:-Admin@12345678}
       LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_NAME:-Admin}
+      # Newer Langfuse requires an explicit org/project id to actually run the
+      # LANGFUSE_INIT_* seeding — without it, every other LANGFUSE_INIT_* var
+      # is silently ignored (see startup log: "LANGFUSE_INIT_ORG_ID is not
+      # set..."), no org/project/key ever gets created, and every trace export
+      # using LANGFUSE_PUBLIC_KEY/SECRET_KEY 401s forever.
+      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-dev-org}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-dev-project}
       LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG:-GTEL}
       LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT:-data-agent}
       LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}

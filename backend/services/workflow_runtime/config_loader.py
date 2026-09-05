@@ -17,7 +17,11 @@ DEV_CONFIG = {
     "kb_endpoint": os.environ.get("KB_ENDPOINT", "http://localhost:8080"),
     "planner_model": "openai/planner",
     "planner_temperature": 0,
-    "planner_max_tokens": 256,
+    # 256 truncated mid-JSON on plans with 2+ tool_calls (each carries its own
+    # "reason" text) — the cut response fails validation and falls back to
+    # analysis_type="other", which is how a real forecast/anomaly question
+    # silently misses unsupported_recall instead of being genuinely misclassified.
+    "planner_max_tokens": 768,
     "planner_response_format": {"type": "json_object"},
     "planner_timeout": 60,
     "planner_num_retries": 0,
@@ -52,7 +56,7 @@ DEV_CONFIG = {
 
 async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict[str, Any] | None:
     from libs.database_connector.postgres_connector import client
-    from mongo_client import load_flow_nodes, load_flow_edges
+    from services.workflow_runtime.mongo_client import load_flow_nodes, load_flow_edges
 
     if not client.is_connected():
         logger.debug("DB not available — using DEV_CONFIG")
@@ -177,7 +181,7 @@ async def _resolve_warehouse_secret(node_cfg: dict[str, Any], tenant_id: str | N
     if not secret_id or not tenant_id:
         return
 
-    from warehouse_secrets import resolve_snowflake_password
+    from services.workflow_runtime.warehouse_secrets import resolve_snowflake_password
     password = await resolve_snowflake_password(tenant_id, secret_id)
     if password:
         connection["password"] = password
@@ -197,7 +201,7 @@ async def _resolve_db_connector_secrets(node_cfg: dict[str, Any], tenant_id: str
     if not db_connections:
         return
 
-    from warehouse_secrets import resolve_db_connector_password
+    from services.workflow_runtime.warehouse_secrets import resolve_db_connector_password
     for name, connection in db_connections.items():
         secret_id = connection.pop("secret_id", "")
         if not secret_id or not tenant_id:

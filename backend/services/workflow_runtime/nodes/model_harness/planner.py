@@ -261,7 +261,7 @@ async def planner_node(state: AgentState) -> dict[str, Any]:
     clarifications: list[dict[str, Any]] = []
     if not state.get("previous_clarification"):
         try:
-            from semantic_layer import check_underspecified
+            from services.workflow_runtime.semantic_layer import check_underspecified
 
             clarifications = await check_underspecified(
                 cfg.get("tenant_id", "") or "", state["query"], analysis_type.value, slots,
