@@ -11,7 +11,7 @@ ceiling. Each test should be readable in 30 seconds and fail with a
 specific message.
 
 Run:
-    docker compose -f docker/docker-compose.test.yml up -d   # optional
+    # a local Postgres on :5432 (optional; testcontainers otherwise)
     pytest -m integration tests/integration/test_auth_api_smoke.py -v
 """
 from __future__ import annotations

@@ -15,9 +15,8 @@ docs/auth-runbook.md "JWKS rotation grace period" for that.
 
 Requires the full live stack:
 
-    docker compose -f docker/docker-compose.yml -f docker/docker-compose.local.yml up -d
-    docker compose -f docker/docker-compose.yml --profile setup run --rm keycloak-audience-setup
-    docker compose -f docker/docker-compose.yml --profile setup run --rm kong-setup
+    kubectl apply -f deploy/k8s/database/ -f deploy/k8s/service/
+    kubectl apply -f deploy/k8s/job/setup.yaml
     LIVE_STACK=1 pytest -m e2e tests/integration/test_jwt_audience.py -v
 """
 from __future__ import annotations
