@@ -19,7 +19,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - run: pip install ruff
+      - run: pip install ".[dev]"
       - run: ruff check .
       - run: ruff format --check .
 
@@ -32,7 +32,7 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - run: pip install mypy
+      - run: pip install ".[dev]"
       - name: Typecheck · whole tree (report)
         run: mypy --install-types --non-interactive backend/services backend/libs || true
         # ^ `|| true` while strict surface is small — drop once mypy passes clean.
@@ -165,7 +165,7 @@ jobs:
           python-version: "3.11"
       - name: Install validators
         run: |
-          pip install "kubernetes>=31.0" pyyaml pytest
+          pip install ".[test]"
           curl -sSL -o /tmp/kubeconform.tar.gz \
             https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
           tar -xzf /tmp/kubeconform.tar.gz -C /usr/local/bin kubeconform
@@ -231,7 +231,7 @@ jobs:
             echo "::endgroup::"
           done
       - name: Filesystem vuln + secret + misconfig scan (trivy · report)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: fs
           scan-ref: .
