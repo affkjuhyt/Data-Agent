@@ -14,7 +14,7 @@ _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 _DEFAULT_SYSTEM_PROMPT = open(os.path.join(_PROMPTS_DIR, "default_system_prompt.txt"), encoding="utf-8").read().strip()
 
 DEV_CONFIG = {
-    "kb_endpoint": os.environ.get("KB_ENDPOINT", "http://localhost:8080"),
+    "kb_endpoint": os.environ.get("KB_ENDPOINT", "http://kb-backend:8220"),
     "planner_model": "openai/planner",
     "planner_temperature": 0,
     "planner_max_tokens": 256,

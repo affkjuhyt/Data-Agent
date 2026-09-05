@@ -15,7 +15,7 @@ async def get_trace_observations(
 ) -> JSONResponse | dict[str, Any]:
     public_key = os.environ.get("LANGFUSE_PUBLIC_KEY")
     secret_key = os.environ.get("LANGFUSE_SECRET_KEY")
-    host = os.environ.get("LANGFUSE_HOST", "http://localhost:3001")
+    host = os.environ.get("LANGFUSE_HOST", "http://localhost:8420")
 
     if not public_key or not secret_key:
         return JSONResponse(status_code=503, content={"detail": "Langfuse not configured"})

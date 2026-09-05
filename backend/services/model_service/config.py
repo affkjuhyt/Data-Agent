@@ -1,6 +1,6 @@
 import os
 
-PORT         = int(os.getenv("MODEL_SERVICE_PORT", "8001"))
+PORT         = int(os.getenv("MODEL_SERVICE_PORT", "8230"))
 # All inference is remote (GPU server: TEI embed/rerank + vLLM chat) — the
 # in-process EMBED/RERANK model config went away with the local torch stack.
 REMOTE_EMBED_URL  = os.getenv("REMOTE_EMBED_URL",  "").rstrip("/")

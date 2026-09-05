@@ -21,7 +21,7 @@ import { check, sleep } from 'k6';
 import { Rate, Trend } from 'k6/metrics';
 import { randomIntBetween } from 'https://jslib.k6.io/k6-utils/1.2.0/index.js';
 
-const BASE   = __ENV.BASE_URL || 'http://localhost:8000';   // Kong → kb-backend
+const BASE   = __ENV.BASE_URL || 'http://localhost:8100';   // Kong → kb-backend
 const TENANT = __ENV.TENANT   || 'a0000000-0000-0000-0000-000000000001';
 const KB     = __ENV.KB       || '00000000-0000-0003-0000-000000000001';
 const VUS    = parseInt(__ENV.VUS || '10000');

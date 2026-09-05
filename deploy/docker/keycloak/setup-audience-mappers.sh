@@ -12,13 +12,12 @@
 # updates the existing mappers.
 #
 # Usage:
-#   docker compose -f docker/docker-compose.yml --profile setup run --rm \
-#     keycloak-audience-setup
+#   docker compose -f deploy/docker/job-setup.yml up setup
 # OR from host (when Keycloak is exposed on :8080):
 #   bash deploy/docker/keycloak/setup-audience-mappers.sh
 set -euo pipefail
 
-KC_BASE="${KEYCLOAK_URL:-http://localhost:8080}"
+KC_BASE="${KEYCLOAK_URL:-http://localhost:8110}"
 REALM="${KEYCLOAK_REALM:-aeroflow}"
 ADMIN_USER="${KEYCLOAK_ADMIN:-admin}"
 ADMIN_PASS="${KEYCLOAK_ADMIN_PASSWORD:-admin}"

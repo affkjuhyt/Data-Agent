@@ -8,7 +8,7 @@ import { Copy, Lock, Server } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { Card, EmptyState } from '../../ui';
 
-const KC_URL   = import.meta.env.VITE_KEYCLOAK_URL   ?? 'http://localhost:8080';
+const KC_URL   = import.meta.env.VITE_KEYCLOAK_URL   ?? 'http://localhost:8110';
 const KC_REALM = import.meta.env.VITE_KEYCLOAK_REALM ?? 'aeroflow';
 const JWKS_URL = `${KC_URL}/realms/${KC_REALM}/protocol/openid-connect/certs`;
 

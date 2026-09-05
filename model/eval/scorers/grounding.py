@@ -166,7 +166,7 @@ def ragas_faithfulness(model: str | None = None) -> Callable[[list[dict[str, Any
     def _score(rows: list[dict[str, Any]]) -> list[float]:
         judge = LangchainLLMWrapper(ChatOpenAI(
             model=judge_model,
-            base_url=f"{os.getenv('LITELLM_BASE_URL', 'http://localhost:4000')}/v1",
+            base_url=f"{os.getenv('LITELLM_BASE_URL', 'http://localhost:8500')}/v1",
             api_key=os.getenv("LITELLM_API_KEY", "anything"),
         ))
         dataset = Dataset.from_dict({

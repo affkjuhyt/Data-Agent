@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 import litellm
 
-_LITELLM_BASE = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
+_LITELLM_BASE = os.environ.get("LITELLM_BASE_URL", "http://localhost:8500")
 _LITELLM_KEY = os.environ.get("LITELLM_API_KEY", "sk-dev")
 _MAX_CHECK_CHARS = 2000
 

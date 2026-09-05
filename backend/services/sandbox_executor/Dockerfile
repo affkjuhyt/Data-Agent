@@ -15,4 +15,4 @@ COPY *.py ./
 COPY api ./api
 COPY core ./core
 COPY execution ./execution
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8500"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8260"]

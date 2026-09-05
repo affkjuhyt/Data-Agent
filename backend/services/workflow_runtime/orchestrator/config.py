@@ -1,7 +1,7 @@
 import os
 
 # ── LiteLLM gateway ─────────────────────────────────────────────────────────
-LITELLM_BASE_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
+LITELLM_BASE_URL = os.environ.get("LITELLM_BASE_URL", "http://localhost:8500")
 LITELLM_API_KEY = os.environ.get("LITELLM_API_KEY", "sk-dev")
 
 # Model aliases — phải khớp với model_name trong deploy/docker/litellm/config.yaml

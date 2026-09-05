@@ -1,7 +1,7 @@
 import os
 
 LITELLM_BASE_URL    = os.getenv("LITELLM_BASE_URL",    "http://litellm:4000")
-MODEL_SERVICE_URL   = os.getenv("MODEL_SERVICE_URL",   "http://model_service:8001")
+MODEL_SERVICE_URL   = os.getenv("MODEL_SERVICE_URL",   "http://model_service:8230")
 LLM_MODEL = os.getenv("LLM_MODEL", "agent-fast")
 VLM_MODEL = os.getenv("VLM_MODEL", "agent-main")
 

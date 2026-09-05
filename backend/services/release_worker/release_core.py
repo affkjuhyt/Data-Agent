@@ -818,7 +818,7 @@ def run_server(app: FastAPI) -> None:
     consumer_thread = threading.Thread(target=_consumer_supervisor, daemon=True)
     consumer_thread.start()
 
-    uvicorn.run(app, host="0.0.0.0", port=8100, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=8210, log_level="info")
 
 
 # Static re-export list (was a dynamic globals() comprehension mypy can't
