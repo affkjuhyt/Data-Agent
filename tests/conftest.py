@@ -161,14 +161,14 @@ def patched_env(monkeypatch: pytest.MonkeyPatch) -> "_EnvPatcher":
 def live_stack() -> dict[str, str]:
     """Return Keycloak + Kong URLs for promoted live-stack tests.
 
-    Skip if LIVE_STACK env is not set. CI sets it after `docker compose up`.
+    Skip if LIVE_STACK env is not set; set it when a cluster is reachable.
     """
     if os.environ.get("LIVE_STACK") != "1":
         pytest.skip(
             "Live stack not requested — set LIVE_STACK=1 and bring up "
-            "docker/docker-compose.yml + .local.yml before running."
+            "deploy/k8s manifests applied to a cluster before running."
         )
     return {
-        "keycloak": os.environ.get("LIVE_KEYCLOAK_URL", "http://localhost:8080"),
-        "kong": os.environ.get("LIVE_KONG_URL", "http://localhost:8000"),
+        "keycloak": os.environ.get("LIVE_KEYCLOAK_URL", "http://localhost:8110"),
+        "kong": os.environ.get("LIVE_KONG_URL", "http://localhost:8100"),
     }

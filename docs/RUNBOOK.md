@@ -8,7 +8,7 @@ stack. For architecture see [`README.md`](./README.md); for security posture see
 
 ## 1. Prerequisites
 
-- Docker Engine / OrbStack with Compose v2 (`docker compose`, not `docker-compose`).
+- A Kubernetes cluster and `kubectl` context; Docker only to build images.
 - A populated `.env` — copy the template and fill secrets:
   ```bash
   cp .env.example .env
@@ -20,12 +20,12 @@ stack. For architecture see [`README.md`](./README.md); for security posture see
 
 ## 2. Bring the stack up
 
-Compose files live in `deploy/docker/` and are composed as a base + overlays. Pick the stack
-that matches the task (see the table in `README.md`):
+Manifests live in `deploy/k8s/`, split into `database/`, `service/` and `job/`. Pick the
+tier that matches the task (see `deploy/k8s/README.md` for the full apply order):
 
 ```bash
-# Standard local dev — KB data plane + ingestion + Keycloak + Kong
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml up -d --build
+# Agent tier — stores, Keycloak, Kong, OpenBao, LiteLLM, runtime + one-shot jobs
+kubectl apply -f deploy/k8s/database/ && kubectl apply -f deploy/k8s/service/
 
 # Seed Kong routes + the aeroflow-jwks plugin (required once per fresh stack)
 bash deploy/docker/kong/kong-setup.sh
@@ -33,7 +33,7 @@ bash deploy/docker/kong/kong-setup.sh
 
 The KB backend is **fail-closed**: requests must arrive through Kong with a verified
 Keycloak identity (`X-Kong-Verified`) or get `401`. Hitting `kb-backend` directly on
-`:8050` returning `401` is expected (confirms fail-closed).
+`:8220` returning `401` is expected (confirms fail-closed).
 
 ## 3. Database migrations (Alembic)
 
@@ -62,20 +62,20 @@ Every service exposes `GET /health`. After bring-up:
 
 ```bash
 # Gateway reachable + Keycloak realm published
-curl -sf http://localhost:8000/ >/dev/null && echo "kong OK"
-curl -sf http://localhost:8080/realms/aeroflow/.well-known/openid-configuration >/dev/null && echo "keycloak OK"
+curl -sf http://localhost:8100/ >/dev/null && echo "kong OK"
+curl -sf http://localhost:8110/realms/aeroflow/.well-known/openid-configuration >/dev/null && echo "keycloak OK"
 
-# Per-service (adjust ports): auth-api 8200, model-service 8001, flow-builder 8002,
-# orchestrator 8003, release-worker 8100, sandbox-executor 8500
+# Per-service: auth-api 8200, release-worker 8210, kb-backend 8220, model-service 8230,
+# workflow-runtime 8240 and flow-builder 8250 / sandbox-executor 8260 are not published
 curl -sf http://localhost:8200/health && echo " auth-api OK"
 ```
 
-Container-level health is also wired via `HEALTHCHECK` in the compose stack —
-`docker compose ps` shows `healthy`/`unhealthy`.
+Readiness and liveness probes are set on every Deployment —
+`kubectl -n dataagent get pods` shows the result.
 
 ## 5. LLM / model backend
 
-`model-service` (`:8001`) is the embed/rerank/generate gateway. Generation is proxied
+`model-service` (`:8230`) is the embed/rerank/generate gateway. Generation is proxied
 to an LLM backend via `REMOTE_LLM_URL`.
 
 - **Native Ollama (recommended on Apple Silicon — Metal GPU):** run `ollama serve` on
@@ -83,17 +83,17 @@ to an LLM backend via `REMOTE_LLM_URL`.
   `qwen2.5vl:7b` / `qwen2.5:7b` are used (set `REMOTE_LLM_MODEL`).
 - Do **not** run Ollama inside Docker on macOS — it falls back to CPU and pegs the VM.
 - Model weights are **not** baked into the `model-service` image; they download at first
-  start into the mounted `HF_HOME` volume (`deploy/docker/model-service/models`).
+  start into the mounted `HF_HOME` volume.
 
 ## 6. Troubleshooting
 
 | Symptom | Cause / fix |
 |---|---|
-| `docker ps` hangs for a long time | A container pegging the Docker VM (seen with Ollama-in-Docker on CPU). Find/stop it: `docker stats --no-stream`; prefer native Ollama. |
+| A pod stuck in `CreateContainerConfigError` | `dataagent-secrets` is missing a key it references — `kubectl -n dataagent describe pod <name>` names it. |
 | API returns `401` everywhere | Kong not seeded — run `bash deploy/docker/kong/kong-setup.sh`; or Keycloak realm not up yet. |
 | `Dockerfile cannot be empty` | A Dockerfile got truncated by a bad edit — restore with `git checkout HEAD -- <path>`. |
 | Build re-downloads torch/docling every time | Cache invalidated (e.g. Dockerfile/base changed). The pip layer for `kb-ingestion-worker` / `model-service` installs CPU-only torch first — expect ~minutes on a cold cache. |
-| `ModuleNotFoundError: shared` in a service | That service copies `backend/libs/shared` as the bare `shared` package (build context = repo root). Confirm compose `context: ..` + `COPY backend/libs/shared/ ./shared/`. |
+| `ModuleNotFoundError: shared` in a service | That service copies `backend/libs/shared` as the bare `shared` package — build with the repo root as context. |
 | Retrieval quality poor | Check the LLM backend is actually reachable (`REMOTE_LLM_URL`) and the right model is set — a degraded/CPU model is the usual root cause, not the pipeline. |
 
 ## 7. Pre-release checklist
@@ -104,6 +104,6 @@ Before promoting a build (see `SECURITY.md` for the security items):
 - [ ] `lint-imports` → contracts kept (architecture rule)
 - [ ] `pytest -m "unit or integration"` green; coverage ≥ gate (`fail_under` in `pyproject.toml`)
 - [ ] `alembic upgrade head` applies cleanly on a fresh DB
-- [ ] `docker compose ... config` validates for each target overlay
+- [ ] `kubeconform -strict deploy/k8s/` clean and `pytest tests/unit/test_k8s_manifests.py` green
 - [ ] CI `security-scan` reviewed (pip-audit + trivy) — no unexplained HIGH/CRITICAL
 - [ ] `.env` for the target environment has real secrets (no template defaults)

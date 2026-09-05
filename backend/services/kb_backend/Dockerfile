@@ -6,7 +6,7 @@
 #   docker build -f backend/services/kb_backend/Dockerfile -t kb-backend .
 #
 # Or via Compose:
-#   docker compose -f deploy/docker/docker-compose.kb-e2e.yml up kb-backend
+#   docker compose -f deploy/docker/kb-backend.yml up kb-backend
 
 
 # ── Stage 1: compile Python wheels ───────────────────────────────────────────
@@ -55,7 +55,7 @@ ENV PYTHONPATH=/app \
     PYTHONDONTWRITEBYTECODE=1
 
 # ── Default service URLs (override via env or docker-compose) ─────────────────
-# These match the names used in docker-compose.kb-e2e.yml
+# These match the names used in deploy/docker/kb-backend.yml
 ENV POSTGRES_URL="postgresql+asyncpg://aeroflow:aeroflow_secret@postgres/aeroflow_kb" \
     MONGO_URL="mongodb://mongo:27017/dataagent" \
     MINIO_URL="http://minio:miniominio@minio:9000" \
@@ -73,7 +73,7 @@ RUN useradd --no-create-home --uid 1001 kb \
     && chown kb:kb /app/logs
 USER kb
 
-EXPOSE 8000
+EXPOSE 8220
 
 # Probe the /health endpoint added to backend/services/kb_backend/main.py
 HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
@@ -84,4 +84,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
 # and add headroom for CPU-bound steps (RRF fusion, serialize) + cold-embed load.
 # Shell form so ${UVICORN_WORKERS} expands at runtime.
 ENV UVICORN_WORKERS=1
-CMD uvicorn services.kb_backend.main:app --host 0.0.0.0 --port 8000 --workers ${UVICORN_WORKERS} --log-level info
+CMD uvicorn services.kb_backend.main:app --host 0.0.0.0 --port 8220 --workers ${UVICORN_WORKERS} --log-level info

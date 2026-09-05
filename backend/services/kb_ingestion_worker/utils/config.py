@@ -8,7 +8,7 @@ QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333")
 NEO4J_URI = os.getenv("NEO4J_URI", "bolt://neo4j:7687")
 # The LLM/embed/rerank backend is owned entirely by model_service. The worker
 # only knows this URL and never which backend (local vs Colab) serves a call.
-MODEL_SERVICE_URL = os.getenv("MODEL_SERVICE_URL", "http://model_service:8001")
+MODEL_SERVICE_URL = os.getenv("MODEL_SERVICE_URL", "http://model_service:8230")
 # Result-cache invalidation: after gold completes, bump the tenant's retrieval-cache
 # version in Redis so searches reflect the new content (KB-SCALE-10K.md §2).
 REDIS_URL            = os.getenv("REDIS_URL", "redis://redis:6379/0")

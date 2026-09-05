@@ -80,7 +80,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run the Data Agent evaluation corpus.")
     parser.add_argument("--tier", choices=["offline", "online", "all"], default="offline")
     parser.add_argument("--out", default="eval-report.json")
-    parser.add_argument("--agent-url", default=os.getenv("WORKFLOW_RUNTIME_URL", "http://localhost:8001"))
+    parser.add_argument("--agent-url", default=os.getenv("WORKFLOW_RUNTIME_URL", "http://localhost:8240"))
     parser.add_argument("--agent-id", default=os.getenv("AGENT_ID", ""))
     parser.add_argument("--tenant-id", default=os.getenv("EVAL_TENANT_ID", "dev-tenant"))
     args = parser.parse_args()

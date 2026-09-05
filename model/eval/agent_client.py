@@ -28,7 +28,7 @@ import httpx
 
 from model.eval import _paths
 
-_LITELLM_BASE = os.getenv("LITELLM_BASE_URL", "http://localhost:4000")
+_LITELLM_BASE = os.getenv("LITELLM_BASE_URL", "http://localhost:8500")
 _LITELLM_KEY = os.getenv("LITELLM_API_KEY", "anything")
 # "openai/" prefix required: bare litellm.acompletion() (no Router) needs it to
 # resolve a custom api_base, matching config_loader.DEV_CONFIG's "openai/responder".

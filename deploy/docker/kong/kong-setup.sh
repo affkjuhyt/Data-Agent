@@ -4,25 +4,24 @@
 # (deploy/docker/kong/plugins/aeroflow-jwks), which fetches and caches the
 # Keycloak JWKS itself — no public-key registration in Kong is needed.
 #
-# Run after stack is healthy. Since Kong's admin API is locked to the
-# kong-admin-net (see docs/auth-runbook.md "Kong admin hardening"), this
-# script CANNOT be run from the host. Use the compose-managed runner:
+# Run after the stack is healthy. Kong's admin API is not published unless
+# deploy/docker/overlay-kong-admin.yml is in the file list (and then only on
+# loopback), so the in-cluster runner is the portable way:
 #
-#   docker compose -f docker/docker-compose.yml --profile setup run --rm kong-setup
+#   docker compose -f deploy/docker/job-setup.yml up setup
 #
 # Or, with Phase 3 key-auth enabled:
 #
-#   docker compose -f docker/docker-compose.yml --profile setup run --rm \
-#     -e ENABLE_ADMIN_KEY_AUTH=1 kong-setup
+#   ENABLE_ADMIN_KEY_AUTH=1 docker compose -f deploy/docker/job-setup.yml up setup
 #
-# Requires: curl, python3 (installed by the compose runner — see
-# docker-compose.security.yml `kong-setup` service).
+# Requires: curl, python3 (baked into the runner image — see
+# deploy/docker/setup/Dockerfile).
 
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-KONG_ADMIN="${KONG_ADMIN_URL:-http://localhost:8001}"
-KC_BASE="${KEYCLOAK_URL:-http://localhost:8080}"
+KONG_ADMIN="${KONG_ADMIN_URL:-http://localhost:8101}"
+KC_BASE="${KEYCLOAK_URL:-http://localhost:8110}"
 REALM="${KEYCLOAK_REALM:-aeroflow}"
 # Set SKIP_JWT=1 to skip JWT plugin registration (useful for dev with VITE_MOCK_AUTH=true)
 SKIP_JWT="${SKIP_JWT:-0}"
@@ -101,7 +100,7 @@ fi
 PYTHON=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || echo "")
 if [ -z "$PYTHON" ] || ! "$PYTHON" -c "import sys; assert sys.version_info >= (3,6)" 2>/dev/null; then
   echo "  → Python not found on host; using docker python:3-alpine"
-  # Compose network name is pinned in docker-compose.yml (data-agent-network)
+  # Compose network name is pinned in every per-service file (data-agent-network)
   DOCKER_NET=$(docker network ls --filter name=data-agent-network --format '{{.Name}}' | head -1)
   PY_RUN="docker run --rm -i --network ${DOCKER_NET} python:3-alpine python3"
 else
@@ -118,7 +117,7 @@ curl -sf -X PUT "$KONG_ADMIN/services/workflow_runtime" \
   -d '{
     "name": "workflow_runtime",
     "host": "workflow_runtime",
-    "port": 8001,
+    "port": 8240,
     "protocol": "http",
     "connect_timeout": 5000,
     "read_timeout": 60000
@@ -130,7 +129,7 @@ curl -sf -X PUT "$KONG_ADMIN/services/flow_builder" \
   -d '{
     "name": "flow_builder",
     "host": "flow_builder",
-    "port": 8002,
+    "port": 8250,
     "protocol": "http",
     "connect_timeout": 5000,
     "read_timeout": 30000
@@ -209,7 +208,7 @@ curl -sf -X PUT "$KONG_ADMIN/services/release_worker" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "release_worker",
-    "url": "http://release_worker:8100",
+    "url": "http://release_worker:8210",
     "connect_timeout": 5000,
     "read_timeout": 60000
   }' | json_field name | xargs -I{} echo "  → service: {}"
@@ -236,7 +235,7 @@ curl -sf -X PUT "$KONG_ADMIN/services/kb-backend" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "kb-backend",
-    "url": "http://kb-backend:8000",
+    "url": "http://kb-backend:8220",
     "connect_timeout": 5000,
     "read_timeout": 60000
   }' | json_field name | xargs -I{} echo "  → service: {}"
@@ -281,10 +280,10 @@ print(matches[0] if matches else '')
 
 # ISSUER must match the `iss` claim Keycloak actually emits in tokens.
 # Keycloak derives that from `KC_HOSTNAME_URL` (or the request Host header
-# when KC_HOSTNAME_STRICT=false). Browser clients hit http://localhost:8080
-# so tokens carry iss=http://localhost:8080/realms/<realm>. Override via
+# when KC_HOSTNAME_STRICT=false). Browser clients hit http://localhost:8110
+# so tokens carry iss=http://localhost:8110/realms/<realm>. Override via
 # KEYCLOAK_PUBLIC_URL if your deploy uses a different external URL.
-KC_PUBLIC="${KEYCLOAK_PUBLIC_URL:-http://localhost:8080}"
+KC_PUBLIC="${KEYCLOAK_PUBLIC_URL:-http://localhost:8110}"
 ISSUER="$KC_PUBLIC/realms/$REALM"
 
 # JWKS_URI is a NETWORK URL — Kong fetches keys via the in-cluster hostname,
@@ -376,7 +375,7 @@ upsert_plugin "$KONG_ADMIN/services/kb-backend/plugins" \
 # verification runs — without it every cross-origin request 401s on preflight.
 echo "🌐 Enabling CORS on kb-backend-route..."
 upsert_plugin "$KONG_ADMIN/routes/kb-backend-route/plugins" \
-  '{"name":"cors","config":{"origins":["http://localhost:3000","http://localhost:5173"],"methods":["GET","POST","PUT","PATCH","DELETE","OPTIONS"],"headers":["Authorization","Content-Type","X-Role","X-Request-ID"],"credentials":true,"max_age":3600}}' \
+  '{"name":"cors","config":{"origins":["http://localhost:3000","http://localhost:8150"],"methods":["GET","POST","PUT","PATCH","DELETE","OPTIONS"],"headers":["Authorization","Content-Type","X-Role","X-Request-ID"],"credentials":true,"max_age":3600}}' \
   "cors"
 
 # ── 5. IP restriction ─────────────────────────────────────────────────
@@ -417,7 +416,7 @@ fi
 # so OPTIONS preflight returns 200 without needing a token.
 echo "🌐 Enabling global CORS plugin..."
 upsert_plugin "$KONG_ADMIN/plugins" \
-  '{"name":"cors","config":{"origins":["http://localhost:3000","http://localhost:5173"],"methods":["GET","POST","PUT","PATCH","DELETE","OPTIONS"],"headers":["Content-Type","Authorization","X-Tenant-ID","X-Conversation-Id","Accept","X-Role"],"exposed_headers":["X-Conversation-Id","X-Kong-Request-Id"],"credentials":false,"max_age":3600,"preflight_continue":false}}' \
+  '{"name":"cors","config":{"origins":["http://localhost:3000","http://localhost:8150"],"methods":["GET","POST","PUT","PATCH","DELETE","OPTIONS"],"headers":["Content-Type","Authorization","X-Tenant-ID","X-Conversation-Id","Accept","X-Role"],"exposed_headers":["X-Conversation-Id","X-Kong-Request-Id"],"credentials":false,"max_age":3600,"preflight_continue":false}}' \
   "cors" "global"
 
 # ── 9. Correlation ID (tracing) ────────────────────────────────────────
@@ -507,11 +506,8 @@ fi
 if [ "${ENABLE_ADMIN_KEY_AUTH:-0}" = "1" ]; then
   echo "🔒 Phase 3: registering Kong-fronting-Kong admin proxy with key-auth..."
 
-  # Kong admin is bound to KONG_ADMIN_IP:8001 on the kong-admin-net interface.
-  # From Kong's OWN container, 127.0.0.1:8001 also reaches it iff KONG_ADMIN_LISTEN
-  # includes a loopback binding — currently it doesn't. So upstream the service
-  # to the `kong-admin` alias, which resolves to the admin-net IP from Kong's
-  # data plane without hardcoding it.
+  # Upstream to the `kong-admin` network alias rather than a hardcoded address,
+  # so this keeps working wherever Kong lands (compose alias or k8s Service).
   ADMIN_UPSTREAM="${KONG_ADMIN_UPSTREAM:-http://kong-admin:8001}"
 
   curl -sf -X PUT "$KONG_ADMIN/services/kong-admin-proxy" \
@@ -596,13 +592,13 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "✅ Kong configuration complete"
 echo ""
-echo "  Proxy :  http://localhost:8000"
-echo "  Admin :  internal only (kong-admin-net 172.30.0.10:8001)"
+echo "  Proxy :  http://localhost:8100"
+echo "  Admin :  in-network only (kong-admin:8001)"
 echo ""
 echo "  JWT:    RS256, issuer=$ISSUER"
-echo "  Routes: /api/agents|workflows|workflow-versions  -> flow_builder:8002"
+echo "  Routes: /api/agents|workflows|workflow-versions  -> flow_builder:8250"
 echo "          /api/conversations|traces|nodes|catalog|platform|billing -> workflow_runtime:8001"
-echo "  CORS:   localhost:3000, localhost:5173"
+echo "  CORS:   localhost:3000, localhost:8150"
 MTLS_STATUS="NOT configured (run deploy/docker/certs/gen-certs.sh first)"
 [ -f "$CERT_FILE" ] && MTLS_STATUS="Configured (Kong presents client cert)"
 echo "  mTLS:   $MTLS_STATUS"

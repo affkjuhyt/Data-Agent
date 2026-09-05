@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 _DEV_AGENT_ID  = os.getenv("DEV_AGENT_ID",  "00000000-0000-0000-0000-000000000030")
 _DEV_TENANT_ID = os.getenv("DEV_TENANT_ID", "00000000-0000-0000-0000-000000000001")
 
-_LITELLM_BASE  = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
+_LITELLM_BASE  = os.environ.get("LITELLM_BASE_URL", "http://localhost:8500")
 _LITELLM_KEY   = os.environ.get("LITELLM_API_KEY",  "sk-dev")
 _QDRANT_URL    = os.environ.get("QDRANT_URL",        "http://localhost:6333")
 _EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "1024"))

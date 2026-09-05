@@ -20,7 +20,7 @@ import time
 import urllib.request
 import concurrent.futures as cf
 
-BASE   = os.environ.get("BASE_URL", "http://localhost:8001")
+BASE   = os.environ.get("BASE_URL", "http://localhost:8240")
 AGENT  = os.environ.get("AGENT_ID", "00000000-0000-0000-0000-000000000030")
 TENANT = os.environ.get("TENANT", "a0000000-0000-0000-0000-000000000001")
 HEADERS = {

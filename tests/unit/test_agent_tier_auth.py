@@ -206,17 +206,31 @@ class TestOrchestratorToRuntimeLeg:
 
 
 class TestPortsAreClosed:
-    """The dependency is the real control, but leaving the ports published would
+    """The dependency is the real control, but leaving the tier reachable would
     keep a direct path open for anything that later regressed."""
 
-    def test_compose_does_not_publish_the_agent_tier(self):
-        compose = (REPO_ROOT / "deploy" / "docker" / "docker-compose.app.yml").read_text(encoding="utf-8")
+    def test_no_service_exposes_the_agent_tier_outside_the_cluster(self):
+        import yaml
 
-        for mapping in ('"8001:8001"', '"8003:8003"'):
-            assert mapping not in compose, (
-                f"{mapping} is published again — workflow_runtime (and the orchestrator "
-                "inside it) must be reachable only through Kong"
-            )
+        k8s = REPO_ROOT / "deploy" / "k8s"
+        services = [
+            d
+            for sub in ("", "database", "service", "job")
+            for f in sorted((k8s / sub).glob("*.yaml"))
+            for d in yaml.safe_load_all(f.read_text(encoding="utf-8"))
+            if d and d["kind"] == "Service"
+        ]
+        assert services, "no Services found — deploy/k8s moved again"
+
+        exposed = [
+            s["metadata"]["name"] for s in services
+            if s["spec"].get("type") in ("NodePort", "LoadBalancer")
+            and s["metadata"]["name"] != "kong"
+        ]
+        assert not exposed, (
+            f"{exposed} reachable without Kong — workflow-runtime (and the "
+            "orchestrator inside it) must only be reachable through the gateway"
+        )
 
     def test_vite_dev_proxy_does_not_forge_an_identity(self):
         """The dev server used to be a second gateway, injecting a hardcoded

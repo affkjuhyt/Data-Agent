@@ -20,7 +20,7 @@ from libs.shared.embeddings import aembed_one
 
 logger = logging.getLogger(__name__)
 
-_LITELLM_BASE  = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
+_LITELLM_BASE  = os.environ.get("LITELLM_BASE_URL", "http://localhost:8500")
 _LITELLM_KEY   = os.environ.get("LITELLM_API_KEY",  "sk-dev")
 _QDRANT_URL    = os.environ.get("QDRANT_URL",        "http://localhost:6333")
 _EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "1024"))

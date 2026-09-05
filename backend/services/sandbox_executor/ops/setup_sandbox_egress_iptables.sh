@@ -9,7 +9,7 @@
 #   - if sandbox_executor talks to the host's own /var/run/docker.sock
 #     (SANDBOX_DOCKER_HOST unset): run directly on the host.
 #   - if using the rootless Docker-in-Docker sidecar
-#     (deploy/docker/docker-compose.app.yml's sandbox-dockerd,
+#     (deploy/docker/service_sandbox-dockerd.yml's sandbox-dockerd,
 #     SANDBOX_DOCKER_HOST=tcp://sandbox-dockerd:2375, the default in this
 #     repo's compose setup): run INSIDE that sidecar's own network
 #     namespace, e.g. `docker exec -it dataagent-sandbox-dockerd sh -c '...'`

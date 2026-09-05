@@ -10,7 +10,7 @@
 // model MODEST concurrency (VUS) — this is a chat agent, not a 10k-CCU search tier.
 //
 //   VUS=5 DURATION=2m THINK=5 k6 run tests/loadtest/agent-e2e.js
-//   AGENT_ID=... TENANT=... BASE_URL=http://localhost:8001 VUS=10 k6 run tests/loadtest/agent-e2e.js
+//   AGENT_ID=... TENANT=... BASE_URL=http://localhost:8240 VUS=10 k6 run tests/loadtest/agent-e2e.js
 //
 // Env: BASE_URL (workflow_runtime, which serves /api/orchestrate; default :8001), VUS, DURATION, THINK (s between a
 //      user's turns), AGENT_ID (single-agent → predictable path), TENANT, MULTI
@@ -21,7 +21,7 @@ import { check, sleep } from 'k6';
 import { Rate, Trend, Counter } from 'k6/metrics';
 import { randomIntBetween } from 'https://jslib.k6.io/k6-utils/1.2.0/index.js';
 
-const BASE    = __ENV.BASE_URL || 'http://localhost:8001';
+const BASE    = __ENV.BASE_URL || 'http://localhost:8240';
 const TENANT  = __ENV.TENANT   || 'a0000000-0000-0000-0000-000000000001';
 const AGENT   = __ENV.AGENT_ID || '00000000-0000-0000-0000-000000000030';
 const VUS     = parseInt(__ENV.VUS || '5');

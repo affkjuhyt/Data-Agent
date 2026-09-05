@@ -1,0 +1,131 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mongo
+  namespace: dataagent-database
+  labels:
+    app: mongo
+    app.kubernetes.io/part-of: dataagent
+automountServiceAccountToken: false
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongo-env
+  namespace: dataagent-database
+  labels:
+    app: mongo
+    app.kubernetes.io/part-of: dataagent
+data:
+  MONGO_INITDB_DATABASE: dataagent
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongo
+  namespace: dataagent-database
+  labels:
+    app: mongo
+    app.kubernetes.io/part-of: dataagent
+spec:
+  serviceName: mongo
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongo
+  template:
+    metadata:
+      labels:
+        app: mongo
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      containers:
+      - name: mongo
+        image: mongo:7.0
+        args:
+        - mongod
+        - --wiredTigerCacheSizeGB
+        - '0.5'
+        - --bind_ip_all
+        - --port
+        - '8310'
+        ports:
+        - containerPort: 8310
+          name: http
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: '1'
+            memory: 1Gi
+        readinessProbe:
+          tcpSocket:
+            port: 8310
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          tcpSocket:
+            port: 8310
+          initialDelaySeconds: 30
+          periodSeconds: 20
+          failureThreshold: 6
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: data
+          mountPath: /data/db
+        - name: tmp
+          mountPath: /tmp
+        envFrom:
+        - configMapRef:
+            name: mongo-env
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      serviceAccountName: mongo
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 20Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongo
+  namespace: dataagent-database
+  labels:
+    app: mongo
+    app.kubernetes.io/part-of: dataagent
+spec:
+  selector:
+    app: mongo
+  ports:
+  - port: 8310
+    targetPort: 8310
+    name: mongo
+  clusterIP: None

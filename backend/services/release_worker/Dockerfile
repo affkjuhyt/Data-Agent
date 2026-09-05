@@ -21,7 +21,7 @@ COPY backend/libs/shared/ ./shared/
 RUN addgroup --system app && adduser --system --ingroup app app
 USER app
 
-EXPOSE 8100
+EXPOSE 8210
 
 # Chạy FastAPI service qua framework entrypoint.
-CMD ["uvicorn", "app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8100"]
+CMD ["uvicorn", "app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8210"]

@@ -1,0 +1,164 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dataagent-config
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+data:
+  #Postgres
+  POSTGRES_DB: dataagent
+  POSTGRES_USER: admin
+  POSTGRES_HOST: postgres
+
+  #Mongo
+  MONGODB_URL: mongodb://mongo.dataagent-database.svc.cluster.local:8310/dataagent
+  MONGO_URL: mongodb://mongo.dataagent-database.svc.cluster.local:8310/dataagent
+
+  #Redis
+  REDIS_URL: redis://redis.dataagent-database.svc.cluster.local:8320
+
+  #Qdrant
+  QDRANT_URL: http://qdrant.dataagent-database.svc.cluster.local:8330
+
+  #Neo4j
+  NEO4J_URI: bolt://neo4j.dataagent-database.svc.cluster.local:8341
+  NEO4J_URL: bolt://neo4j.dataagent-database.svc.cluster.local:8341
+
+  #Minio
+  MINIO_ENDPOINT: http://minio.dataagent-database.svc.cluster.local:8360
+  MINIO_BUCKET: knowledge-base
+
+  #Openbao
+  OPENBAO_ADDR: http://openbao.dataagent-database.svc.cluster.local:8120
+
+  #Kafka
+  KAFKA_BOOTSTRAP_SERVERS: kafka.dataagent-database.svc.cluster.local:8350
+  KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+  KAFKA_SASL_MECHANISM: PLAIN
+  KAFKA_URL: kafka.dataagent-database.svc.cluster.local:8352
+
+  #Litellm
+  LITELLM_BASE_URL: http://litellm.dataagent-service.svc.cluster.local:8500
+
+  #Model Service
+  MODEL_SERVICE_URL: http://model-service.dataagent-service.svc.cluster.local:8230
+
+  #Workflow Run Time
+  WORKFLOW_RUNTIME_URL: http://workflow-runtime.dataagent-service.svc.cluster.local:8240
+
+  #Sandbox-executor
+  SANDBOX_EXECUTOR_URL: http://sandbox-executor.dataagent-service.svc.cluster.local:8260
+
+  #Knowledge-Base
+  KB_ENDPOINT: http://kb-backend.dataagent-service.svc.cluster.local:8220
+
+  #Kong
+  KONG_ADMIN_URL: http://kong-admin.dataagent-service.svc.cluster.local:8101
+
+  #KeyCloak
+  KEYCLOAK_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
+  KC_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
+  KEYCLOAK_REALM: aeroflow
+  KC_REALM: aeroflow
+
+  #Langfuse
+  LANGFUSE_HOST: http://langfuse.dataagent-service.svc.cluster.local:8420
+
+  #Otel / Jaeger
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger.dataagent-service.svc.cluster.local:8431
+  OTEL_SDK_DISABLED: 'false'
+
+  #LLM
+  REMOTE_EMBED_URL: http://10.10.55.101:8003
+  REMOTE_RERANK_URL: http://10.10.55.101:8004
+  REMOTE_LLM_URL: http://10.10.55.101:8002
+  REMOTE_LLM_MODEL: agent-fast
+  EMBEDDING_DIM: '1024'
+  RUNTIME_ALLOWED_SERVICES: ''
+
+  #Others
+  KB_ALLOWED_SERVICES: workflow_runtime
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dataagent-config
+  namespace: dataagent-database
+  labels:
+    app.kubernetes.io/part-of: dataagent
+data:
+  #Postgres
+  POSTGRES_DB: dataagent
+  POSTGRES_USER: admin
+  POSTGRES_HOST: postgres
+
+  #Mongo
+  MONGODB_URL: mongodb://mongo.dataagent-database.svc.cluster.local:8310/dataagent
+  MONGO_URL: mongodb://mongo.dataagent-database.svc.cluster.local:8310/dataagent
+
+  #Redis
+  REDIS_URL: redis://redis.dataagent-database.svc.cluster.local:8320
+
+  #Qdrant
+  QDRANT_URL: http://qdrant.dataagent-database.svc.cluster.local:8330
+
+  #Neo4j
+  NEO4J_URI: bolt://neo4j.dataagent-database.svc.cluster.local:8341
+  NEO4J_URL: bolt://neo4j.dataagent-database.svc.cluster.local:8341
+
+  #Minio
+  MINIO_ENDPOINT: http://minio.dataagent-database.svc.cluster.local:8360
+  MINIO_BUCKET: knowledge-base
+
+  #Openbao
+  OPENBAO_ADDR: http://openbao.dataagent-database.svc.cluster.local:8120
+
+  #Kafka
+  KAFKA_BOOTSTRAP_SERVERS: kafka.dataagent-database.svc.cluster.local:8350
+  KAFKA_SECURITY_PROTOCOL: SASL_PLAINTEXT
+  KAFKA_SASL_MECHANISM: PLAIN
+  KAFKA_URL: kafka.dataagent-database.svc.cluster.local:8352
+
+  #Litellm
+  LITELLM_BASE_URL: http://litellm.dataagent-service.svc.cluster.local:8500
+
+  #Model Service
+  MODEL_SERVICE_URL: http://model-service.dataagent-service.svc.cluster.local:8230
+
+  #Workflow
+  WORKFLOW_RUNTIME_URL: http://workflow-runtime.dataagent-service.svc.cluster.local:8240
+
+  #Sandbox-Executor
+  SANDBOX_EXECUTOR_URL: http://sandbox-executor.dataagent-service.svc.cluster.local:8260
+
+  #Knowledge-Base
+  KB_ENDPOINT: http://kb-backend.dataagent-service.svc.cluster.local:8220
+
+  #Kong
+  KONG_ADMIN_URL: http://kong-admin.dataagent-service.svc.cluster.local:8101
+
+  #Keycloak
+  KEYCLOAK_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
+  KC_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
+  KEYCLOAK_REALM: aeroflow
+  KC_REALM: aeroflow
+
+  #Langfuse
+  LANGFUSE_HOST: http://langfuse.dataagent-service.svc.cluster.local:8420
+
+  #Otel / Jaeger
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger.dataagent-service.svc.cluster.local:8431
+  OTEL_SDK_DISABLED: 'false'
+
+  #LLM
+  REMOTE_EMBED_URL: http://10.10.55.101:8003
+  REMOTE_RERANK_URL: http://10.10.55.101:8004
+  REMOTE_LLM_URL: http://10.10.55.101:8002
+  REMOTE_LLM_MODEL: agent-fast
+  EMBEDDING_DIM: '1024'
+  RUNTIME_ALLOWED_SERVICES: ''
+
+  #Others
+  KB_ALLOWED_SERVICES: workflow_runtime

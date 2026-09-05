@@ -22,7 +22,7 @@ from services.workflow_runtime.nodes.sandbox.tool_executor._utils import (
 
 logger = logging.getLogger(__name__)
 
-_LITELLM_BASE = __import__("os").environ.get("LITELLM_BASE_URL", "http://localhost:4000")
+_LITELLM_BASE = __import__("os").environ.get("LITELLM_BASE_URL", "http://localhost:8500")
 _LITELLM_KEY  = __import__("os").environ.get("LITELLM_API_KEY",  "sk-dev")
 
 # Wall-clock budget for one query at sandbox_executor, on top of which

@@ -12,11 +12,11 @@
 #
 #   N=6 tests/loadtest/ingestion_throughput.sh
 #
-# Env: N (docs, default 6), API (default http://localhost:8050 = kb-backend direct),
+# Env: N (docs, default 6), API (default http://localhost:8220 = kb-backend direct),
 #      TENANT, TIMEOUT (per-stage seconds, default 240).
 set -o pipefail  # not -u: empty associative-array refs abort under set -u
 
-API=${API:-http://localhost:8050}
+API=${API:-http://localhost:8220}
 TENANT=${TENANT:-a0000000-0000-0000-0000-000000000001}
 N=${N:-6}
 TIMEOUT=${TIMEOUT:-240}

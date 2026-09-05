@@ -12,7 +12,7 @@ from services.workflow_runtime.state import AgentState
 
 logger = logging.getLogger(__name__)
 
-_LITELLM_BASE = os.environ.get("LITELLM_BASE_URL", "http://localhost:4000")
+_LITELLM_BASE = os.environ.get("LITELLM_BASE_URL", "http://localhost:8500")
 _LITELLM_KEY  = os.environ.get("LITELLM_API_KEY",  "sk-dev")
 
 _VERDICT_PASS = "PASS"

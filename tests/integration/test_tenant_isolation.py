@@ -5,7 +5,7 @@ now an individual test so failures are visible per case in CI rather than
 folded into one boolean.
 
 Requires a live stack:
-    docker compose -f docker/docker-compose.yml -f docker/docker-compose.local.yml up -d
+    kubectl apply -f deploy/k8s/database/ -f deploy/k8s/service/
     LIVE_STACK=1 pytest -m e2e tests/integration/test_tenant_isolation.py
 """
 from __future__ import annotations

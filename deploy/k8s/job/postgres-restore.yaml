@@ -1,0 +1,125 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postgres-restore
+  namespace: dataagent-database
+  labels:
+    app: postgres-restore
+    app.kubernetes.io/part-of: dataagent
+automountServiceAccountToken: false
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-restore-pg-restore-env
+  namespace: dataagent-database
+  labels:
+    app: postgres-restore
+    app.kubernetes.io/part-of: dataagent
+data:
+  PGHOST: postgres
+  PGPORT: '8300'
+  PGUSER: admin
+  PGDATABASE: postgres
+  TARGET_DB: dataagent
+  DUMP_FILE: dump_YYYYmmdd_HHMMSS.sql.gz
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postgres-restore
+  namespace: dataagent-database
+  labels:
+    app: postgres-restore
+    app.kubernetes.io/part-of: dataagent
+spec:
+  suspend: true
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: postgres-restore
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: pg-restore
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        image: postgres:16-alpine
+        command:
+        - sh
+        - -c
+        - |
+          set -eu
+          path="/backups/dumps/${DUMP_FILE}"
+          if [ ! -f "${path}" ]; then
+            echo "[restore] ${path} not found — set DUMP_FILE to a real dump" >&2
+            ls -lt /backups/dumps >&2
+            exit 1
+          fi
+
+          # Verify the dump BEFORE dropping anything. Checking afterwards
+          # would mean discovering a truncated archive with the database
+          # already gone — the one state worse than the one you are
+          # recovering from. Same two checks the backup job applies before
+          # it accepts a dump, repeated here because the file has sat on a
+          # volume since then.
+          echo "[restore] verifying ${path}"
+          gzip -t "${path}"
+          if ! gunzip -c "${path}" | tail -5 | grep -q "PostgreSQL database dump complete"; then
+            echo "[restore] ABORTED — ${path} does not end with a completion marker;" >&2
+            echo "[restore] it is truncated. ${TARGET_DB} has NOT been touched." >&2
+            exit 1
+          fi
+
+          echo "[restore] `date -Iseconds` restoring ${path} into ${TARGET_DB}"
+          # FORCE terminates other sessions. Step 1 of the procedure should
+          # have stopped them; this makes a forgotten pod fail the restore
+          # loudly rather than leaving it half-applied.
+          psql -v ON_ERROR_STOP=1 -c "DROP DATABASE IF EXISTS ${TARGET_DB} WITH (FORCE)"
+          psql -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${TARGET_DB}"
+          gunzip -c "${path}" | psql -v ON_ERROR_STOP=1 -d "${TARGET_DB}"
+          echo "[restore] done — now run deploy/k8s/migrate-job.yaml before scaling writers up"
+        volumeMounts:
+        - name: backups
+          mountPath: /backups
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: '2'
+            memory: 1Gi
+        envFrom:
+        - configMapRef:
+            name: postgres-restore-pg-restore-env
+        - secretRef:
+            name: postgres-restore-secrets
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: backups
+        persistentVolumeClaim:
+          claimName: postgres-backups
+          readOnly: true
+      serviceAccountName: postgres-restore

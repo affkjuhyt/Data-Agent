@@ -15,7 +15,7 @@ One top-level folder per concern — a team edits its own tree without touching 
 ```
 backend/     Python import root: services/ (16 FastAPI/worker services), libs/ (shared layer), alembic/ (migrations)
 frontend/    React 19 + Vite app (npm workspace): src/, index.html, vite/vitest/tsconfig, Dockerfile.dev
-deploy/      docker/ (Compose stacks + Kong/Kafka/Keycloak/OpenBao/LiteLLM/SQL configs) · ansible/ (one playbook, local → prod) · k8s/
+deploy/      k8s/ (manifests: database/ service/ job/) · docker/ (Dockerfiles + service config) · ansible/ (superseded)
 tests/       unit/ · integration/ · e2e/ (real-stack runner + Playwright) · loadtest/ (k6)
 docs/        RUNBOOK · SECURITY · AGENT-E2E · KB-SCALE-10K · M3-CAPACITY
 model/       LLM eval harness, RAGAS
@@ -27,27 +27,30 @@ model/       LLM eval harness, RAGAS
 | [`backend/services/`](./backend/services) | Backend microservices: `kb_backend`, `kb_ingestion_worker`, `auth_api`, `flow_builder`, `workflow_runtime` (which also hosts the multi-agent orchestrator at `/api/orchestrate`), `model_service`, `sandbox_executor`, `release_worker`, `platform_workers` (one image; `WORKER=memory\|schema-crawler\|audit` — ex memory-consumer, schema-crawler-worker, audit-bridge + audit-consumer). Each owns its `Dockerfile` (build context = repo root) |
 | [`backend/libs/`](./backend/libs) | Shared cross-service layer: `libs/basemodel` (domain models/ORM), `libs/database_connector` (infra clients), `libs/shared` (logger, auth, observability), `libs/semantic` (metric contracts). Innermost architecture layer |
 | [`backend/alembic/`](./backend/alembic) | Database migrations (`alembic -c backend/alembic/alembic.ini upgrade head`) |
-| [`deploy/docker/`](./deploy/docker) | Docker Compose stacks (base + overlays) and every service config (`kong`, `kafka`, `keycloak`, `openbao`, `litellm`, `sql`, `certs`…). Compose project name is pinned to `infra` |
+| [`deploy/docker/`](./deploy/docker) | Dockerfiles and service config (`kong`, `kafka`, `keycloak`, `openbao`, `litellm`, `sql`, `certs`…) — build contexts and ConfigMap sources, no stack definition |
 | [`deploy/ansible/`](./deploy/ansible) · [`deploy/k8s/`](./deploy/k8s) | Ansible playbook (local appliance → on-prem server, offline bundle) · raw Kubernetes manifests |
 | [`tests/`](./tests) | `pytest` unit/integration (`pythonpath = [".", "backend"]`), `tests/e2e/e2e.sh` full-stack runner + Playwright UI test, `tests/loadtest` k6 |
 | [`docs/RUNBOOK.md`](./docs/RUNBOOK.md) · [`docs/SECURITY.md`](./docs/SECURITY.md) | Deploy/operate runbook · security posture & release hardening |
 
 ---
 
-## Docker stacks at a glance
+## Deployment at a glance
 
 There is no mock server — the frontend talks to the real `kb-backend`, which is **fail-closed**:
 every API request must arrive through **Kong** carrying a verified Keycloak identity (`X-Kong-Verified`),
 or it is rejected with `401`. So a usable stack needs **Keycloak** (login) + **Kong** (gateway) in
 front of `kb-backend`. Pick the stack that matches your task:
 
-| Stack | File / helper | What it is | When to use |
-|---|---|---|---|
-| **kb-e2e** | `deploy/docker/docker-compose.kb-e2e.yml` | KB data plane + ingestion worker + Keycloak + DB-less Kong; LLM/embed/rerank served by the GPU server (`REMOTE_*_URL`) | **The standard way to bring up the stack** — local dev with the Vite UI (`npm run dev`) and the ingestion/RAG pipeline |
-| **Full aggregate** | `deploy/docker/docker-compose.yml` (+ `local` override) | Every service group (storage, security, messaging, observability, all app services) | Running the whole platform, not just KB |
-| **Test fixture** | `deploy/docker/docker-compose.test.yml` | Isolated PostgreSQL only | Connector / Alembic tests |
+| Tier | Path | What it is |
+|---|---|---|
+| **database** | `deploy/k8s/database/` | StatefulSets: Postgres, Mongo, Redis, Qdrant, Neo4j, Kafka, MinIO, ClickHouse, Elasticsearch, OpenBao + PgBouncer |
+| **service** | `deploy/k8s/service/` | Deployments: Kong, Keycloak, the app tier, the workers, observability |
+| **job** | `deploy/k8s/job/` | `migrate`, `db-init`, `seed`, `minio-init`, `kong-migration`, `setup`, `kafka-topics`, `eval` + the backup CronJob |
 
-> `kb-backend` is also published on `:8050` — but hitting it directly bypasses Kong, so it returns
+One manifest per workload. [`deploy/k8s/README.md`](./deploy/k8s/README.md) has the
+apply order, the Secret, and the ConfigMaps built from `deploy/docker/`.
+
+> `kb-backend` is also published on `:8220` — but hitting it directly bypasses Kong, so it returns
 > `401` by design (handy to confirm fail-closed behaviour).
 
 ---
@@ -59,19 +62,22 @@ End-to-end local development with the Vite dev server, the ingestion pipeline, a
 ### 1. One-time setup
 
 ```powershell
-npm install                                                       # frontend deps
-Copy-Item deploy/docker/.env.kb-testing.example deploy/docker/.env.kb-testing     # gitignored env (see Local-only files)
+npm install                                                # frontend deps
+kubectl apply -f deploy/k8s/namespace.yaml
+kubectl apply -f deploy/k8s/configmap.yaml -f deploy/k8s/networkpolicy.yaml
 ```
 
-### 2. Start the stack (Docker)
+Then create `dataagent-secrets` and the file-backed ConfigMaps — the exact commands
+are in [`deploy/k8s/README.md`](./deploy/k8s/README.md).
 
-Brings up Postgres, Qdrant, Neo4j, MongoDB, MinIO, Kafka, model_service, `kb-backend`,
-`kb_ingestion_worker`, **Keycloak** (`:8080`), and a DB-less **Kong** gateway (`:8000`). Postgres
-tables (incl. a dedicated `keycloak` DB), Qdrant collections, and the Kong route/JWT plugin are all
-created automatically on first start.
+### 2. Start the stack
+
+Stores first, then the migration jobs, then the services. Ports below are what a
+`kubectl port-forward` gives you; in a real cluster an Ingress fronts Kong.
 
 ```powershell
-docker compose -f deploy/docker/docker-compose.kb-e2e.yml --env-file deploy/docker/.env.kb-testing up -d --build
+kubectl apply -f deploy/k8s/database/
+kubectl apply -f deploy/k8s/service/
 ```
 
 > `model_service` is a pure API gateway since 04-09-2026 — all inference runs on the
@@ -80,19 +86,19 @@ docker compose -f deploy/docker/docker-compose.kb-e2e.yml --env-file deploy/dock
 ### 3. Verify the stack is healthy
 
 ```powershell
-docker compose -f deploy/docker/docker-compose.kb-e2e.yml ps     # every service "healthy"
-curl http://localhost:8050/health                               # -> {"status":"ok"} (direct; bypasses Kong)
+kubectl -n dataagent get pods              # every pod Running/Ready
+curl http://localhost:8220/health                               # -> {"status":"ok"} (direct; bypasses Kong)
 ```
 
 ### 4. Start the frontend
 
-The UI logs in through Keycloak and sends API traffic through Kong (`:8000`), so point it there:
+The UI logs in through Keycloak and sends API traffic through Kong (`:8100`), so point it there:
 
 ```powershell
-$env:VITE_KEYCLOAK_URL    = "http://localhost:8080"
+$env:VITE_KEYCLOAK_URL    = "http://localhost:8110"
 $env:VITE_KEYCLOAK_REALM  = "aeroflow"
 $env:VITE_KEYCLOAK_CLIENT = "aeroflow-frontend"
-$env:VITE_API_URL         = "http://localhost:8000"   # Kong proxy — NOT :8050
+$env:VITE_API_URL         = "http://localhost:8100"   # Kong proxy — NOT :8220
 npm run dev                                            # Vite dev server on http://localhost:3000
 ```
 
@@ -102,8 +108,8 @@ Open http://localhost:3000, log in as **`helios-admin` / `H3lios@Admin01!`**, an
 ### Shutdown
 
 ```powershell
-docker compose -f deploy/docker/docker-compose.kb-e2e.yml down       # stop, keep data (volumes)
-docker compose -f deploy/docker/docker-compose.kb-e2e.yml down -v    # also wipe DB volumes
+kubectl delete -f deploy/k8s/service/        # stop, keep PVCs
+kubectl -n dataagent delete pvc --all        # also wipe the data
 ```
 
 ---
@@ -113,8 +119,8 @@ docker compose -f deploy/docker/docker-compose.kb-e2e.yml down -v    # also wipe
 The `kb-backend` exposes the LightRAG retrieval pipeline over HTTP. Use it to fetch the top-ranked
 Gold-layer chunks for a query and feed them to your own LLM for RAG.
 
-**Base URL:** `http://localhost:8000` (the **Kong** gateway). These routes are fail-closed — call them
-through Kong with a Keycloak bearer token, not `kb-backend` directly (`:8050` returns `401`).
+**Base URL:** `http://localhost:8100` (the **Kong** gateway). These routes are fail-closed — call them
+through Kong with a Keycloak bearer token, not `kb-backend` directly (`:8220` returns `401`).
 
 | Method & path | Purpose |
 |---|---|
@@ -129,7 +135,7 @@ verifies the token and injects the authoritative `X-*` identity; the client send
 Get one via the password grant (helios-* users have no required actions):
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:8080/realms/aeroflow/protocol/openid-connect/token \
+TOKEN=$(curl -s -X POST http://localhost:8110/realms/aeroflow/protocol/openid-connect/token \
   -d grant_type=password -d client_id=aeroflow-frontend \
   -d username=helios-engineer -d password='H3lios@Eng001!' | jq -r .access_token)
 ```
@@ -147,7 +153,7 @@ Body fields:
 | `entity_types` | object | `{}` | `{name: type}` e.g. `{"Việt Minh":"organization"}` — per-entity typed search |
 
 ```bash
-curl -X POST http://localhost:8000/api/pipeline/light-rag/retrieve \
+curl -X POST http://localhost:8100/api/pipeline/light-rag/retrieve \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"query":"Điều kiện thành lập thư viện cơ sở?","knowledge_base":""}'
@@ -219,9 +225,9 @@ npm run dev
 The dev server talks to the backend via:
 
 - `VITE_KEYCLOAK_URL` / `VITE_KEYCLOAK_REALM` / `VITE_KEYCLOAK_CLIENT` — Keycloak login
-  (defaults: `http://localhost:8080`, `aeroflow`, `aeroflow-frontend`)
-- `VITE_API_URL` — base URL for KB API calls (default `http://localhost:8000`, the **Kong** gateway —
-  **not** `kb-backend` on `:8050`, which is fail-closed)
+  (defaults: `http://localhost:8110`, `aeroflow`, `aeroflow-frontend`)
+- `VITE_API_URL` — base URL for KB API calls (default `http://localhost:8100`, the **Kong** gateway —
+  **not** `kb-backend` on `:8220`, which is fail-closed)
 
 The defaults already match the kb-e2e stack, so plain `npm run dev` works against it;
 override only if a service is on a different host/port.
@@ -237,9 +243,9 @@ npm run test          # vitest run
 | Service | URL |
 |---|---|
 | Frontend (Vite dev) | http://localhost:3000 |
-| Keycloak (login) | http://localhost:8080 |
-| KB API via Kong (`VITE_API_URL`) | http://localhost:8000 |
-| kb-backend (direct — bypasses Kong = 401) | http://localhost:8050 |
+| Keycloak (login) | http://localhost:8110 |
+| KB API via Kong (`VITE_API_URL`) | http://localhost:8100 |
+| kb-backend (direct — bypasses Kong = 401) | http://localhost:8220 |
 
 ---
 
@@ -254,22 +260,19 @@ of truth** — every service lives there, tagged with a **profile** (`kb`, `runt
 `--profile`, not a separate `-f` file:
 
 ```bash
-docker compose -f deploy/docker/docker-compose.yml --profile kb up -d               # KB data plane
-docker compose -f deploy/docker/docker-compose.yml --profile observability up -d    # Jaeger + ES + Kibana + Filebeat + Langfuse
+kubectl apply -f deploy/k8s/service/         # app tier
+kubectl -n dataagent get hpa                 # autoscaling status
 ```
 
-> The old per-concern split files (`storage` / `messaging` / `observability`) were
-> folded into the base file's profiles — see git history if you need the diff.
+> The base file and its twelve overlays were replaced by one file per service —
+> the originals are kept in [`deploy/docker/.old/`](./deploy/docker/.old).
 
-Compose files (all under [`deploy/docker/`](./deploy/docker)):
-
-- [`docker-compose.yml`](./deploy/docker/docker-compose.yml): **base / source of truth** — every service, gated by profiles
-- [`docker-compose.app.yml`](./deploy/docker/docker-compose.app.yml): application + frontend tier (also profile-gated)
-- [`docker-compose.security.yml`](./deploy/docker/docker-compose.security.yml): overlay — HA Keycloak (2 nodes + HAProxy) and hardened Kong admin
-- [`docker-compose.prod.yml`](./deploy/docker/docker-compose.prod.yml): production hardening overlay — required secrets, TLS, WAL archiving + `postgres-backup` sidecar, `redis.conf`
-- [`docker-compose.local.yml`](./deploy/docker/docker-compose.local.yml): local developer override (adds `migrate` + `seed`)
-- [`docker-compose.test.yml`](./deploy/docker/docker-compose.test.yml): test-only PostgreSQL fixture
-- [`docker-compose.kb-e2e.yml`](./deploy/docker/docker-compose.kb-e2e.yml): isolated KB-UI integration stack — data plane + ingestion worker + Keycloak + DB-less Kong
+Compose files live in [`deploy/docker/`](./deploy/docker), one per service:
+`database/`, `service/` and `job/`, one manifest per workload, and
+`overlay-*.yml` for the two patches (host-published Kong admin, dev bind mounts).
+Environment differences that used to be overlay files — production hardening,
+small-RAM caps, dev tuning — are environment variables now; see
+[`deploy/docker/README.md`](./deploy/docker/README.md).
 
 ### Prerequisites
 
@@ -312,7 +315,7 @@ Auto-managed (downloads itself — no manual file placement):
 - model weights: none locally — embed/rerank/LLM đều chạy trên GPU server.
 
 - DB content lives in Docker **named volumes** (persist across image rebuilds) and is seeded by the
-  tracked [`deploy/docker/sql/kb-seed.sql`](./deploy/docker/sql/kb-seed.sql) (KB seed, mounted by `docker-compose.kb-e2e-dev.yml`).
+  tracked [`deploy/docker/sql/kb-seed.sql`](./deploy/docker/sql/kb-seed.sql) (KB seed, applied by `deploy/k8s/job/db-init.yaml`).
 
 ### KB-UI testing stack
 
@@ -321,8 +324,8 @@ backend against the UI. Full walkthrough — including the frontend env and logi
 [Running the KB-UI — kb-e2e](#running-the-kb-ui--kb-e2e-full-local-dev) above:
 
 ```powershell
-docker compose -f deploy/docker/docker-compose.kb-e2e.yml --env-file deploy/docker/.env.kb-testing up -d --build
-curl http://localhost:8050/health   # -> {"status":"ok"} (direct probe; app traffic goes via Kong :8000)
+kubectl apply -f deploy/k8s/service/
+curl http://localhost:8220/health   # -> {"status":"ok"} (direct probe; app traffic goes via Kong :8100)
 ```
 
 The model backend is the GPU server; change `REMOTE_*_URL` in `.env` and recreate `model_service` — no image
@@ -337,33 +340,33 @@ Run all commands from the repository root.
 Start or refresh the full local stack:
 
 ```powershell
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml up -d --build
+kubectl apply -f deploy/k8s/database/
 ```
 
 Stop the local stack and keep data:
 
 ```powershell
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml down
+kubectl delete -f deploy/k8s/service/
 ```
 
 Stop the local stack and remove volumes:
 
 ```powershell
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml down -v
+kubectl -n dataagent delete pvc --all
 ```
 
 #### Shared dev server
 
 ```powershell
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml up -d --build
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml down
+kubectl apply -f deploy/k8s/database/
+kubectl delete -f deploy/k8s/service/
 ```
 
 #### Compose validation
 
 ```powershell
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml config
-docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml config
+kubectl apply --dry-run=client -R -f deploy/k8s/
+kubectl apply --dry-run=client -R -f deploy/k8s/
 ```
 
 #### Test fixture
@@ -371,8 +374,8 @@ docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compo
 Start the isolated PostgreSQL fixture used by connector and Alembic tests:
 
 ```powershell
-docker compose -f deploy/docker/docker-compose.test.yml up -d
-docker compose -f deploy/docker/docker-compose.test.yml down -v
+# integration tests spin Postgres up through testcontainers
+pytest -m integration
 ```
 
 ### Runtime Shape
@@ -396,10 +399,7 @@ The base stack includes these service groups:
 ```bash
 source ~/.bashrc   # nếu chưa load alias dc
 # hoặc thêm thủ công vào ~/.bashrc:
-# litellm's host-gateway (host.docker.internal) is already in the base file,
-# so the old -f docker-compose.llm.yml overlay is no longer needed.
-alias dc='docker compose -f ~/Data-Agent/docker/docker-compose.yml \
-                         -f ~/Data-Agent/docker/docker-compose.local.yml'
+alias k='kubectl -n dataagent'
 ```
 
 ---
@@ -420,11 +420,7 @@ dc up -d --build
 Kong cần được config 1 lần sau khi start (CORS, routes, JWT plugin...):
 
 ```bash
-docker compose \
-  -f docker/docker-compose.yml \
-  -f docker/docker-compose.local.yml \
-  -f docker/docker-compose.security.yml \
-  --profile setup run --rm kong-setup
+kubectl apply -f deploy/k8s/job/setup.yaml
 ```
 
 > Cần chạy lại nếu `down -v` (xóa volume Kong DB).
@@ -473,36 +469,41 @@ dc down -v
 | Langfuse | http://10.10.55.11:3001 |
 | GPU model server | http://10.10.55.101:8001-8004 (vLLM main/fast, TEI embed/rerank) |
 
-The local and shared-dev overrides both add `migrate` and `seed` jobs.
+The one-shot jobs live in [`deploy/k8s/job/`](./deploy/k8s/job) — `migrate`, `db-init`, `seed`, `setup`.
 
 Separate intent-specific Docker paths also exist:
 
-- Test-only: [`deploy/docker/docker-compose.test.yml`](./deploy/docker/docker-compose.test.yml)
-- KB-UI integration: [`deploy/docker/docker-compose.kb-e2e.yml`](./deploy/docker/docker-compose.kb-e2e.yml)
+- Integration fixtures: testcontainers (see `tests/integration/`)
 
 ### Common URLs (Docker stack)
 
+Every host port is `8xxx`; `8000–8099` is reserved for the LLM tier and left
+empty. Full map in [`deploy/docker/README.md`](./deploy/docker/README.md).
+
 | Service | URL |
 |---|---|
-| Frontend | http://localhost:5173 |
-| Kong proxy | http://localhost:8000 |
-| Kong admin | http://localhost:8900 |
-| workflow_runtime | http://localhost:8001 |
-| flow_builder | http://localhost:8002 |
-| kb-backend | http://localhost:8050 |
-| release_worker | http://localhost:8100 |
+| Frontend | http://localhost:8150 |
+| Kong proxy — **all API traffic** | http://localhost:8100 |
+| Kong admin (loopback, opt-in overlay) | http://localhost:8101 |
+| Keycloak | http://localhost:8110 |
+| OpenBao | http://localhost:8120 |
 | auth_api | http://localhost:8200 |
-| model_service | http://localhost:8600 |
-| Keycloak | http://localhost:8080 |
-| Langfuse | http://localhost:3001 |
-| LiteLLM | http://localhost:4000 |
-| Jaeger | http://localhost:16686 |
-| MinIO console | http://localhost:9001 |
-| Qdrant | http://localhost:6333 |
+| release_worker | http://localhost:8210 |
+| kb-backend (loopback, debug only) | http://localhost:8220 |
+| model_service | http://localhost:8230 |
+| Postgres / Mongo / Redis / Qdrant | 8300 / 8310 / 8320 / 8330 |
+| Kafka / MinIO API + console | 8340 / 8350 + 8351 |
+| Prometheus / Grafana / Langfuse | 8400 / 8410 / 8420 |
+| Jaeger UI / Kibana | 8430 / 8440 |
+| LiteLLM | http://localhost:8500 |
+
+Not published — reachable only through Kong or in-network: `workflow_runtime`
+(`:8240`), `flow_builder` (`:8250`), `sandbox_executor` (`:8260`), `llm_exporter`
+(`:8270`), Neo4j (`:7474`/`:7687`).
 
 ### Notes
 
-- `docker compose config` requires a real `.env` because several services reference `env_file: ../../.env`.
+- `deploy/k8s` reads secrets from the `dataagent-secrets` Secret; `.env` is only used to build images and run tests locally.
 - Container names are prefixed `dataagent-*` and share the `data-agent-network` Docker network.
 - The Keycloak realm is `aeroflow`; the frontend authenticates against it via the `VITE_KEYCLOAK_*` variables.
 - Neo4j is exposed only on the internal network (ports `7474`/`7687`) and is not published to the host by default.

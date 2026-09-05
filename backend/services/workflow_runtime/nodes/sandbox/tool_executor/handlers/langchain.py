@@ -10,7 +10,7 @@ from services.workflow_runtime.nodes.sandbox.tool_executor._utils import _get_qu
 
 logger = logging.getLogger(__name__)
 
-_LITELLM_BASE = __import__("os").environ.get("LITELLM_BASE_URL", "http://localhost:4000")
+_LITELLM_BASE = __import__("os").environ.get("LITELLM_BASE_URL", "http://localhost:8500")
 _LITELLM_KEY  = __import__("os").environ.get("LITELLM_API_KEY",  "sk-dev")
 
 
