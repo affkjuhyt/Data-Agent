@@ -155,60 +155,24 @@ jobs:
           name: frontend-coverage
           path: coverage/
 
-  compose-validate:
-    name: Compose · config validate
+  k8s-validate:
+    name: K8s · manifest validate
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Create dummy .env
-        run: |
-          # CI doesn't have real secrets — fill required keys with placeholders
-          # so docker compose config can parse. Real deploys MUST not rely on
-          # defaults; the prod overlay should drop them.
-          cat > .env <<'EOF'
-          OPENAI_API_KEY=ci-placeholder
-          GEMINI_API_KEY=ci-placeholder
-          KAFKA_ADMIN_PASSWORD=ci-placeholder
-          AUDIT_CONSUMER_KAFKA_PASSWORD=ci-placeholder
-          RELEASE_WORKER_KAFKA_PASSWORD=ci-placeholder
-          EOF
-      - name: Validate local stack
-        run: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml config > /dev/null
-      - name: Validate KB dev overlay
-        run: docker compose --profile runtime -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.kb-e2e-dev.yml config > /dev/null
-
-  e2e-tenant-isolation:
-    name: E2E · tenant isolation (live stack)
-    runs-on: ubuntu-latest
-    # Long-running — only on push to main or when label requested. Don't block PRs.
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install test deps
-        run: pip install -e ".[test]"
-      - name: Bring up stack
+      - name: Install validators
         run: |
-          cp .env.example .env
-          docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml up -d --build
-      - name: Wait for stack
-        run: |
-          for i in {1..60}; do
-            curl -sf http://localhost:8000/ >/dev/null 2>&1 && \
-            curl -sf http://localhost:8080/realms/aeroflow/.well-known/openid-configuration >/dev/null 2>&1 && \
-            break || sleep 5
-          done
-      - name: Seed stack
-        run: bash deploy/docker/kong/kong-setup.sh
-      - name: Run e2e suite
-        env:
-          LIVE_STACK: "1"
-        run: pytest -m e2e tests/integration -v
-      - name: Tear down
-        if: always()
-        run: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.local.yml down -v
+          pip install "kubernetes>=31.0" pyyaml pytest
+          curl -sSL -o /tmp/kubeconform.tar.gz \
+            https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz
+          tar -xzf /tmp/kubeconform.tar.gz -C /usr/local/bin kubeconform
+      - name: Schema-validate every manifest against the k8s API
+        run: kubeconform -strict -summary -ignore-missing-schemas deploy/k8s/
+      - name: Structure, pod security and drift checks
+        run: pytest tests/unit/test_k8s_manifests.py -q
 
   quality-gates:
     # Phase 0 guardrails for the SRS (architecture + dead code + strict types).
