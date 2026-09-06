@@ -25,7 +25,7 @@ export type SseEvent =
   | { type: 'done' }
   | { type: 'unknown'; raw: unknown };
 
-const DEFAULT_ERROR = 'Đã xảy ra lỗi, vui lòng thử lại.';
+const DEFAULT_ERROR = 'An error occurred, please try again.';
 
 /** One `data:` payload → a typed event. Never throws. */
 export function parseSseData(raw: string): SseEvent {

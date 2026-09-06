@@ -136,7 +136,7 @@ async def stream_orchestration(
         "summary_ms":              0,
     }
 
-    graph = get_graph()
+    graph = await get_graph()
     lf = get_langfuse_client()
 
     async def _run() -> AsyncIterator[str]:

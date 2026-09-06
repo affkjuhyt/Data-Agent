@@ -655,7 +655,7 @@ const KeyValueEditor = ({ value, onChange }: { value: string; onChange: (v: stri
 // component sau khi lưu xong.
 type DbConnRow = {
   name: string; host: string; port: number; database: string; user: string;
-  secretId: string; note: string;
+  secretId: string; note: string; schema?: string;
 };
 
 const parseDbConns = (raw: string): DbConnRow[] => {
@@ -723,7 +723,7 @@ const DbConnectionEditor = ({ value, onChange }: { value: string; onChange: (v: 
     onChange(serializeDbConns(next));
   };
   const addRow = () => onChange(serializeDbConns([
-    ...rows, { name: '', host: '', port: 5432, database: '', user: '', secretId: '', note: '' },
+    ...rows, { name: '', host: '', port: 5432, database: '', schema: '', user: '', secretId: '', note: '' },
   ]));
 
   // "Lưu" giờ gộp cả bước test kết nối — sai thì báo lỗi và KHÔNG lưu, đúng
@@ -820,6 +820,14 @@ const DbConnectionEditor = ({ value, onChange }: { value: string; onChange: (v: 
 
           <Field label="Database">
             <TextInput value={row.database} onChange={v => updateRow(i, { database: v })} placeholder="salesdb" />
+          </Field>
+
+          <Field label="Schema (optional)">
+            <TextInput
+              value={row.schema || ''}
+              onChange={v => updateRow(i, { schema: v })}
+              placeholder="public"
+            />
           </Field>
 
           <Field label="User">
@@ -1224,7 +1232,7 @@ const ConfigPanel = ({ node, onClose, onUpdate }: ConfigPanelProps) => {
                 onChange={v => upd('dbConnections', v)}
               />
             </Field>
-            <InfoNote text="Schema is read automatically from information_schema, no need to type it in. A single connection is used as-is. With 2+ connections, the right DB is picked automatically based on the question (one LLM call) — the Planner doesn't need to know the DB name." />
+            <InfoNote text="Tables and columns are read automatically from information_schema, no need to type them in — leave Schema blank for the default 'public'. Only set it when the tables live elsewhere, e.g. 'kb_structured' for tables created by the Knowledge Base's structured-table import. A single connection is used as-is. With 2+ connections, the right DB is picked automatically based on the question (one LLM call) — the Planner doesn't need to know the DB name." />
           </>
         )}
       </div>

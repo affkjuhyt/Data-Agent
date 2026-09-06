@@ -12,8 +12,8 @@ import { formatCompact, formatNumber } from '../../../lib/formatVN';
 import type { ChartSpec } from '../types';
 import { CHART_COLORS, useAnswerTheme } from './AnswerTheme';
 
-// Axis ticks: compact Vietnamese units ("600 triệu") so long amounts do not
-// overflow the axis; tooltips keep the full number.
+// Axis ticks: compact units ("600M") so long amounts do not overflow the
+// axis; tooltips keep the full number.
 const tickFormatter = (v: unknown) => (typeof v === 'number' ? (Math.abs(v) >= 10_000 ? formatCompact(v) : formatNumber(v)) : String(v ?? ''));
 const valueFormatter = (v: unknown) => (typeof v === 'number' ? formatNumber(v) : String(v ?? ''));
 

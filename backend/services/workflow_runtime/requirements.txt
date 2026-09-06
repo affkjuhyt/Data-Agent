@@ -2,6 +2,15 @@ fastapi==0.115.0
 uvicorn[standard]==0.30.6
 pydantic==2.9.2
 langgraph>=0.2,<1.0
+# Shared checkpointer for the orchestration graph: MemorySaver is per-process,
+# so a /resume call load-balanced to a different replica than the one that
+# started the session sees no state ("Session không tồn tại hoặc đã hoàn
+# thành" even for a genuinely in-progress clarification). Postgres-backed
+# instead — any replica can resume any session. Uses psycopg (v3), a
+# different driver from this codebase's asyncpg-based stack, because that's
+# what langgraph-checkpoint-postgres is built on; see orchestrator/graph.py.
+langgraph-checkpoint-postgres>=2.0,<3.0
+psycopg[binary,pool]>=3.1,<4.0
 litellm==1.59.9
 python-dotenv>=1.0
 httpx==0.27.2

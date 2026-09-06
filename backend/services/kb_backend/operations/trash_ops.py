@@ -12,8 +12,11 @@ from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm i
     KBDataORM,
     KBTextBlockORM,
     KBTextBlockVersionORM,
+    KBTextTableORM,
     KBLifecycleHistoryORM,
     KBTableORM,
+    KBConflictORM,
+    KBConflictBatchORM,
 )
 from services.kb_backend.pipeline.light_rag import config as lr_cfg
 from services.kb_backend.pipeline.ingestion.config import MINIO_BUCKET
@@ -230,7 +233,7 @@ async def restore(postgres: Any, qdrant: Any, level: str, item_id: str, tenant_i
     log.info("trash restore %s %s", level, item_id)
 
 
-_DOC_MONGO_COLLECTIONS = ("kb_silver_staging", "kb_ingestion_logs", "pipeline_events")
+_DOC_MONGO_COLLECTIONS = ("kb_silver_staging", "kb_structured_staging", "kb_ingestion_logs", "pipeline_events")
 
 
 async def flush(
@@ -276,7 +279,48 @@ async def flush(
 
         async with postgres.get_client() as session:
             try:
+                # Deletion order matters: none of these FKs actually cascade at
+                # the DB level (the ORM's ondelete="CASCADE" describes intent
+                # for Base.metadata.create_all, but the real schema comes from
+                # Alembic migrations, which never added it here) — a parent
+                # delete with live children raises ForeignKeyViolationError
+                # rather than silently cascading. Children first, in
+                # dependency order.
+                block_ids = (await session.execute(
+                    sa_select(KBTextBlockORM.block_id).where(KBTextBlockORM.owner_id == iid)
+                )).scalars().all()
+                if block_ids:
+                    version_ids = (await session.execute(
+                        sa_select(KBTextBlockVersionORM.version_id)
+                        .where(KBTextBlockVersionORM.block_id.in_(block_ids))
+                    )).scalars().all()
+                    if version_ids:
+                        await session.execute(
+                            sa_delete(KBTextTableORM).where(KBTextTableORM.version_id.in_(version_ids))
+                        )
+                    await session.execute(
+                        sa_delete(KBTextBlockVersionORM).where(KBTextBlockVersionORM.block_id.in_(block_ids))
+                    )
                 await session.execute(sa_delete(KBTextBlockORM).where(KBTextBlockORM.owner_id == iid))
+
+                # Same story for KBConflict -> KBData: no DB-level cascade, so a
+                # document that ever raised a gold-promotion conflict blocks its
+                # own deletion until these are cleared first.
+                batch_ids = (await session.execute(
+                    sa_select(KBConflictORM.batch_id)
+                    .where(KBConflictORM.data_id == iid, KBConflictORM.batch_id.is_not(None))
+                )).scalars().all()
+                await session.execute(sa_delete(KBConflictORM).where(KBConflictORM.data_id == iid))
+                if batch_ids:
+                    await session.execute(
+                        sa_delete(KBConflictBatchORM).where(
+                            KBConflictBatchORM.batch_id.in_(set(batch_ids)),
+                            ~sa_select(KBConflictORM.conflict_id)
+                            .where(KBConflictORM.batch_id == KBConflictBatchORM.batch_id)
+                            .exists(),
+                        )
+                    )
+
                 await session.execute(sa_delete(KBTableORM).where(KBTableORM.owner_id == iid))
                 await session.execute(sa_delete(KBLifecycleHistoryORM).where(KBLifecycleHistoryORM.data_id == iid))
                 await session.execute(sa_delete(KBDataORM).where(KBDataORM.data_id == iid))

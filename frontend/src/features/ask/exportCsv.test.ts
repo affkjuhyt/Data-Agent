@@ -3,12 +3,12 @@ import { csvFileName, toCsv } from './exportCsv';
 
 describe('toCsv', () => {
   it('writes a BOM, quoted fields and CRLF', () => {
-    const csv = toCsv(['vùng', 'doanh_thu'], [
-      { vùng: 'Miền Bắc', doanh_thu: 1200 },
-      { vùng: 'Miền "Nam"', doanh_thu: null },
+    const csv = toCsv(['region', 'revenue'], [
+      { region: 'North — Zürich', revenue: 1200 },
+      { region: 'South "Bay"', revenue: null },
     ]);
     expect(csv.charCodeAt(0)).toBe(0xfeff);
-    expect(csv.slice(1)).toBe('"vùng","doanh_thu"\r\n"Miền Bắc","1200"\r\n"Miền ""Nam""",""\r\n');
+    expect(csv.slice(1)).toBe('"region","revenue"\r\n"North — Zürich","1200"\r\n"South ""Bay""",""\r\n');
   });
 
   it('keeps raw values so numbers stay numbers in Excel', () => {
@@ -19,10 +19,10 @@ describe('toCsv', () => {
 });
 
 describe('csvFileName', () => {
-  it('slugs Vietnamese and stamps the date', () => {
-    expect(csvFileName('Doanh thu thuần tháng 6 theo vùng', new Date(2026, 5, 30)))
-      .toBe('doanh-thu-thuan-thang-6-theo-vung-20260630.csv');
-    expect(csvFileName('   ', new Date(2026, 0, 1))).toBe('ket-qua-20260101.csv');
+  it('slugs non-ASCII text and stamps the date', () => {
+    expect(csvFileName('Net revenue for June by region', new Date(2026, 5, 30)))
+      .toBe('net-revenue-for-june-by-region-20260630.csv');
+    expect(csvFileName('   ', new Date(2026, 0, 1))).toBe('result-20260101.csv');
     expect(csvFileName('đơn hàng Đã huỷ', new Date(2026, 0, 1))).toBe('don-hang-da-huy-20260101.csv');
   });
 });

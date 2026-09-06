@@ -30,6 +30,14 @@ export default defineConfig(({ mode }) => {
       // both into the same cold-start scan as react itself.
       include: ["motion", "motion/react", "framer-motion"],
     },
+    preview: {
+      // vite preview validates the incoming Host header by default (DNS
+      // rebinding protection) — this is reached via the k8s NodePort
+      // (<node-ip>:30280) or through Kong, neither of which is "localhost",
+      // so the default would 403 every real request. Trusted internal
+      // network, not a public-facing preview server.
+      allowedHosts: true,
+    },
     server: {
       // Behind a NodePort/reverse proxy, the browser's page origin (e.g.
       // :30280) differs from the port this dev server actually listens on

@@ -9,7 +9,7 @@ export function CitationPanel({ citations }: { citations: Citation[] }) {
   return (
     <div style={{ marginTop: 8, padding: '10px 12px', background: 'var(--ab-bg)', border: '1px solid var(--ab-border)', borderRadius: 10 }}>
       <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.02em', textTransform: 'uppercase', color: 'var(--ab-muted)', marginBottom: 8 }}>
-        📎 Nguồn tham khảo
+        📎 Sources
       </div>
       {citations.map((c, i) => {
         const color = colors[c.type] ?? colors.kb;

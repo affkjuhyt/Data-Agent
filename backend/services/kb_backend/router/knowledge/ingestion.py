@@ -17,8 +17,9 @@ from services.kb_backend.schemas import PromoteResponse, WebIngestRequest
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.operations.document_ops import (
-    fetch_one as _fetch_doc, name_exists as _name_exists, reprocess_gold_documents,
+    fetch_one as _fetch_doc, fetch_by_name as _fetch_doc_by_name, reprocess_gold_documents,
 )
+from services.kb_backend.operations.trash_ops import flush as _trash_flush
 from services.kb_backend.pipeline.ingestion import config as cfg
 from services.kb_backend.pipeline.ingestion.bronze import BronzeUploadRequest, WebBronzeRequest
 
@@ -42,6 +43,29 @@ async def _fetch_kbdata_or_404(postgres: Any, tenant_id: str, role_id: str, data
     if record is None:
         raise HTTPException(status_code=404, detail=f"KBData not found: {data_id}")
     return record
+
+
+async def _replace_existing_document_if_any(request: Request, ctx: dict[str, Any], name: str) -> None:
+    """Re-uploading under a Knowledge Name that already exists is treated as
+    "this is an updated version of that same source" (e.g. a periodically
+    revised statistics export or a re-crawled web portal) rather than a
+    naming conflict: hard-delete the existing document first — this frees
+    the (tenant_id, name) unique constraint, which a soft delete does not
+    (see trash_ops.flush's docstring / idx_kbdata_tenant_name) — then the
+    caller's normal bronze insert proceeds with the new content."""
+    postgres = svc(request, "postgres")
+    existing = await _fetch_doc_by_name(postgres, ctx["tenant_id"], name)
+    if existing is None:
+        return
+    log.info(
+        "ingestion: replacing existing document name=%r data_id=%s tenant=%s",
+        name, existing["data_id"], ctx["tenant_id"],
+    )
+    await _trash_flush(
+        postgres, svc(request, "qdrant"), svc(request, "neo4j"),
+        "document", str(existing["data_id"]), ctx["tenant_id"],
+        minio=svc(request, "minio"), mongo=svc(request, "mongo"),
+    )
 
 
 async def _log_promotion_queued(mongo: Any, data_id: str, stage: str) -> None:
@@ -95,11 +119,7 @@ async def ingest_bronze(
         raise HTTPException(status_code=422, detail="Invalid source type or language")
 
     postgres = svc(request, "postgres")
-    if await _name_exists(postgres, ctx["tenant_id"], name):
-        raise HTTPException(
-            status_code=409,
-            detail=f"A document named '{name}' already exists. Choose a different Knowledge Name.",
-        )
+    await _replace_existing_document_if_any(request, ctx, name)
 
     try:
         meta_dict = json.loads(doc_metadata)
@@ -158,11 +178,7 @@ async def ingest_bronze_web(
         raise HTTPException(status_code=422, detail="Invalid language")
 
     postgres = svc(request, "postgres")
-    if await _name_exists(postgres, ctx["tenant_id"], name):
-        raise HTTPException(
-            status_code=409,
-            detail=f"A document named '{name}' already exists. Choose a different Knowledge Name.",
-        )
+    await _replace_existing_document_if_any(request, ctx, name)
 
     log.info("POST /ingestion/bronze/web tenant=%s url=%s", ctx["tenant_id"], url)
     try:

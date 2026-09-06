@@ -1,6 +1,6 @@
 /**
  * Pure helpers that turn an `EvidenceRun` into the chips a reader scans:
- * "approved metric v3", "1.204 dòng", "3 bảng", freshness, risks.
+ * "approved metric v3", "1,204 rows", "3 tables", freshness, risks.
  * Kept free of React so both the inline strip and the side panel (and tests)
  * agree on what a run means.
  */
@@ -17,7 +17,7 @@ interface Chip {
   title?: string;
 }
 
-/** "doanh_thu_thuan@3" → { key: "doanh_thu_thuan", version: "3" } */
+/** "net_revenue@3" → { key: "net_revenue", version: "3" } */
 export function splitMetricRef(ref: string | undefined | null): { key: string; version: string | null } {
   if (!ref) return { key: '', version: null };
   const at = ref.lastIndexOf('@');
@@ -33,39 +33,39 @@ export function runChips(run: EvidenceRun): Chip[] {
     chips.push({
       key: 'metric',
       tone: 'ok',
-      label: `Chỉ số đã duyệt · ${key}${version ? ` v${version}` : ''}`,
-      title: run.metric.owner ? `Chủ sở hữu: ${run.metric.owner}` : undefined,
+      label: `Approved metric · ${key}${version ? ` v${version}` : ''}`,
+      title: run.metric.owner ? `Owner: ${run.metric.owner}` : undefined,
     });
   } else {
-    chips.push({ key: 'metric', tone: 'warn', label: 'SQL do mô hình sinh', title: 'Không khớp chỉ số đã duyệt nào — câu SQL do mô hình viết, đã qua guard chỉ-đọc.' });
+    chips.push({ key: 'metric', tone: 'warn', label: 'Model-generated SQL', title: "Didn't match any approved metric — the SQL was written by the model, and passed through the read-only guard." });
   }
 
   if (run.row_count !== null && run.row_count !== undefined) {
-    chips.push({ key: 'rows', tone: 'neutral', label: `${formatNumber(run.row_count)} dòng` });
+    chips.push({ key: 'rows', tone: 'neutral', label: `${formatNumber(run.row_count)} rows` });
   }
 
   const tables = run.provenance?.tables?.length ?? 0;
   if (tables > 0) {
-    chips.push({ key: 'tables', tone: 'neutral', label: `${tables} bảng`, title: run.provenance!.tables!.map(t => t.table).join(', ') });
+    chips.push({ key: 'tables', tone: 'neutral', label: `${tables} tables`, title: run.provenance!.tables!.map(t => t.table).join(', ') });
   }
-  if (run.db_name) chips.push({ key: 'db', tone: 'neutral', label: run.db_name, title: run.db_type ? `Loại: ${run.db_type}` : undefined });
+  if (run.db_name) chips.push({ key: 'db', tone: 'neutral', label: run.db_name, title: run.db_type ? `Type: ${run.db_type}` : undefined });
 
   const status = run.provenance?.status;
   if (status) {
-    const f = FRESHNESS_LABELS[status] ?? { label: `Độ tươi: ${status}`, tone: 'warn' as const };
-    const asOf = run.provenance?.as_of ? ` · đến ${formatDateTime(run.provenance.as_of)}` : '';
+    const f = FRESHNESS_LABELS[status] ?? { label: `Freshness: ${status}`, tone: 'warn' as const };
+    const asOf = run.provenance?.as_of ? ` · as of ${formatDateTime(run.provenance.as_of)}` : '';
     chips.push({ key: 'freshness', tone: f.tone, label: `${f.label}${asOf}` });
   }
 
   const findings = run.aggregation?.findings ?? [];
   if (findings.length) {
-    chips.push({ key: 'aggregation', tone: 'bad', label: 'Rủi ro cộng gộp', title: findings.map(f => f.detail).join('\n') });
+    chips.push({ key: 'aggregation', tone: 'bad', label: 'Aggregation risk', title: findings.map(f => f.detail).join('\n') });
   } else if (run.aggregation?.structurally_safe) {
-    chips.push({ key: 'aggregation', tone: 'ok', label: 'Không nhân đôi dòng', title: 'Câu lệnh không có join nào có thể nhân bản dòng trước khi cộng.' });
+    chips.push({ key: 'aggregation', tone: 'ok', label: 'No row duplication', title: 'The statement has no join that could duplicate rows before aggregating.' });
   }
 
   if (run.truncation?.reason) {
-    chips.push({ key: 'truncation', tone: 'warn', label: 'Kết quả bị cắt', title: `Lý do: ${run.truncation.reason}` });
+    chips.push({ key: 'truncation', tone: 'warn', label: 'Result truncated', title: `Reason: ${run.truncation.reason}` });
   }
 
   return chips;

@@ -57,6 +57,24 @@ async def name_exists(postgres: Any, tenant_id: str, name: str) -> bool:
     return resp.code == 200 and bool(resp.data)
 
 
+async def fetch_by_name(postgres: Any, tenant_id: str, name: str) -> dict[str, Any] | None:
+    """The existing KBData row with this exact (tenant_id, name), if any.
+
+    `idx_kbdata_tenant_name` is a plain unique index (no `is_deleted`
+    predicate) — a soft-deleted row still occupies the name, so this
+    intentionally does NOT filter is_deleted either: whatever this returns
+    is the row actually blocking a same-name insert right now."""
+    resp = await postgres.read(ReadJoinRequest(
+        tenant_id=tenant_id,
+        joins_table=["KBData"],
+        filters=[WhereFilter(table_name="KBData", column_name="name", value=name)],
+        limit=1,
+    ))
+    if resp.code == 200 and resp.data:
+        return cast(dict[str, Any], resp.data[0])
+    return None
+
+
 async def get_doc_history(postgres: Any, doc_id: str, tenant_id: str, role_id: str | None = None) -> list[
     dict[str, Any]]:
     try:

@@ -3,13 +3,16 @@ from __future__ import annotations
 from typing import Any
 import asyncio
 import logging
+import os
+import re
 import time
 from contextlib import nullcontext
 
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import StateGraph, START, END
+from psycopg_pool import AsyncConnectionPool
 
 from services.workflow_runtime.observability import get_langfuse_client
 from services.workflow_runtime.orchestrator import config
@@ -30,11 +33,67 @@ from services.workflow_runtime.orchestrator.summary import summarize, synthesis_
 logger = logging.getLogger(__name__)
 
 _MAX_REPLAN = 2
-# The state holds a live PlanningProcess (needed for report_node_failure) which the
-# default msgpack serde can't encode → checkpoint writes crashed the multi-agent
-# turn after the answer already streamed. pickle_fallback pickles such objects.
-_checkpointer = MemorySaver(serde=JsonPlusSerializer(pickle_fallback=True))
 _FAKE_STREAM_WORD_DELAY = 0.02  # giây/từ — hiệu ứng gõ chữ khi replay text đã duyệt xong
+
+# ── Checkpointer ──────────────────────────────────────────────────────────────
+# Postgres-backed rather than the in-process MemorySaver it replaced: this
+# service runs multiple replicas behind a plain ClusterIP Service (no session
+# affinity), so a /resume call for a pending clarification can land on a pod
+# that never saw /stream open that session — MemorySaver made that a 404
+# ("Session không tồn tại hoặc đã hoàn thành") even though the session was
+# genuinely still open, just on a different pod. Any replica can now see any
+# session's state.
+#
+# psycopg (v3), not this codebase's usual asyncpg — that's the driver
+# langgraph-checkpoint-postgres is built on. The checkpoint tables it creates
+# (checkpoints/checkpoint_blobs/checkpoint_writes) have no tenant_id column,
+# so they're outside anything a1b2c3d4e5f6_enable_tenant_rls.py's
+# tenant_id-column scan would have found — no RLS policy applies to them,
+# same as any other non-tenant-scoped table, and thread_id (the session/trace
+# id) is already the effective partition key.
+#
+# The state holds a live PlanningProcess (needed for report_node_failure) which
+# the default msgpack serde can't encode — checkpoint writes crashed the
+# multi-agent turn after the answer already streamed. pickle_fallback pickles
+# such objects; kept identically for the Postgres saver.
+_CHECKPOINTER_SERDE = JsonPlusSerializer(pickle_fallback=True)
+_ASYNC_DRIVER_RE = re.compile(r"^postgresql\+\w+://")
+
+
+def _checkpointer_dsn() -> str:
+    url = os.environ.get("RUNTIME_DB_URL") or os.environ.get("DATABASE_URL") or ""
+    if not url:
+        raise RuntimeError(
+            "RUNTIME_DB_URL/DATABASE_URL not set — cannot open the shared "
+            "LangGraph checkpointer (Postgres)."
+        )
+    # This codebase's URLs are SQLAlchemy-style ("postgresql+asyncpg://...");
+    # psycopg wants the plain scheme.
+    return _ASYNC_DRIVER_RE.sub("postgresql://", url)
+
+
+_graph_lock = asyncio.Lock()
+_compiled_graph: Any = None
+_checkpoint_pool: AsyncConnectionPool | None = None
+
+
+async def _open_checkpointer() -> AsyncPostgresSaver:
+    global _checkpoint_pool
+    _checkpoint_pool = AsyncConnectionPool(
+        conninfo=_checkpointer_dsn(),
+        max_size=10,
+        open=False,
+        # autocommit: AsyncPostgresSaver manages its own transactions per call.
+        # prepare_threshold=None: disables server-side prepared statements —
+        # harmless direct-to-Postgres, and required if a pooler (e.g.
+        # PgBouncer, provisioned elsewhere in this cluster) ever sits in front
+        # of this DSN in transaction-pooling mode.
+        kwargs={"autocommit": True, "prepare_threshold": None},
+    )
+    await _checkpoint_pool.open()
+    saver = AsyncPostgresSaver(_checkpoint_pool, serde=_CHECKPOINTER_SERDE)
+    await saver.setup()
+    return saver
 
 
 # ── Route ─────────────────────────────────────────────────────────────────────
@@ -391,7 +450,7 @@ async def suggestion_node(state: OrchestratorState) -> dict[str, Any]:
 
 # ── Build graph ───────────────────────────────────────────────────────────────
 
-def build_graph() -> Any:
+def build_graph(checkpointer: Any) -> Any:
     builder = StateGraph(OrchestratorState)
 
     builder.add_node("input_refine", input_refine_node)
@@ -441,11 +500,18 @@ def build_graph() -> Any:
 
     builder.add_edge("suggestion", END)
 
-    return builder.compile(checkpointer=_checkpointer)
+    return builder.compile(checkpointer=checkpointer)
 
 
-_graph = build_graph()
-
-
-def get_graph() -> Any:
-    return _graph
+async def get_graph() -> Any:
+    """Lazily opens the shared checkpointer and compiles the graph on first
+    call, then returns the cached instance — compiling eagerly at import time
+    (the previous shape) can't work here since opening the checkpointer's
+    connection pool and running its one-time `.setup()` are both async."""
+    global _compiled_graph
+    if _compiled_graph is None:
+        async with _graph_lock:
+            if _compiled_graph is None:
+                checkpointer = await _open_checkpointer()
+                _compiled_graph = build_graph(checkpointer)
+    return _compiled_graph

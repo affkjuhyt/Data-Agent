@@ -37,10 +37,19 @@ _SCHEMA_TIMEOUT_S = 20
 # on the way through sandbox_executor like any agent-written query.
 # Phase 1: table NAMES only — one row per table, so a warehouse with hundreds of
 # tables costs hundreds of rows rather than tens of thousands.
+# `{schema}` defaults to 'public' (every connection before this field existed
+# behaves exactly as before) but lets a connection point at a non-default
+# schema — e.g. `kb_structured`, where the KB's structured-table feature
+# creates one real table per approved spreadsheet import, alongside the
+# app's own internal tables which stay in `public` and stay invisible to
+# whatever role this connection authenticates as (Postgres denies by default;
+# nothing here grants across schemas). ClickHouse has no such notion
+# (currentDatabase() already scopes it) so `{schema}` in that template is
+# inert — .format() is still safe to call on it, just a no-op substitution.
 _TABLES_SQL = {
     "postgres": (
         "SELECT table_name FROM information_schema.tables "
-        "WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name"
+        "WHERE table_schema = '{schema}' AND table_type = 'BASE TABLE' ORDER BY table_name"
     ),
     "clickhouse": (
         "SELECT table_name FROM information_schema.tables "
@@ -54,7 +63,7 @@ _TABLES_SQL = {
 _COLUMNS_SQL = {
     "postgres": (
         "SELECT table_name, column_name, data_type FROM information_schema.columns "
-        "WHERE table_schema = 'public' AND table_name IN ({tables}) "
+        "WHERE table_schema = '{schema}' AND table_name IN ({tables}) "
         "ORDER BY table_name, ordinal_position"
     ),
     "clickhouse": (
@@ -77,6 +86,16 @@ _TABLE_LIST_CEILING = 5000
 # Table names are interpolated into the phase-2 IN list, so they are validated
 # rather than trusted — even coming from the catalog.
 _TABLE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _safe_schema(conn_cfg: dict[str, Any]) -> str:
+    """The canvas connection's `schema` field, interpolated directly into
+    _TABLES_SQL/_COLUMNS_SQL — validated as a plain identifier (same regex as
+    table names above) rather than trusted, even though it comes from
+    agent-builder config rather than a chat message. Falls back to 'public'
+    (the only value this ever was before the field existed) on anything else."""
+    schema = str(conn_cfg.get("schema") or "public").strip()
+    return schema if _TABLE_NAME_RE.match(schema) else "public"
 
 
 def _sandbox_connection(conn_cfg: dict[str, Any]) -> dict[str, Any]:
@@ -404,8 +423,9 @@ async def _list_tables(
     from services.workflow_runtime.redis_cache import cache_get_schema, cache_set_schema
 
     host, port, database = conn_cfg.get("host", ""), conn_cfg.get("port", 5432), conn_cfg.get("database", "")
+    db_schema = _safe_schema(conn_cfg)
 
-    cached = await cache_get_schema(tenant_id, host, port, database)
+    cached = await cache_get_schema(tenant_id, host, port, database, db_schema)
     if cached is not None:
         try:
             parsed = json.loads(cached)
@@ -418,8 +438,9 @@ async def _list_tables(
         logger.info("text_to_sql | discarding stale cached schema shape for db=%s", database)
 
     db_type = (conn_cfg.get("type") or "postgres").lower()
+    sql = _TABLES_SQL.get(db_type, _TABLES_SQL["postgres"]).format(schema=db_schema)
     rows, error, _, _ = await _sandbox_sql(
-        _TABLES_SQL.get(db_type, _TABLES_SQL["postgres"]), conn_cfg, timeout_s=_SCHEMA_TIMEOUT_S,
+        sql, conn_cfg, timeout_s=_SCHEMA_TIMEOUT_S,
         # Its own audit action: reading information_schema discloses the shape of
         # the tenant's warehouse, but it is not a business query and mixing the
         # two would drown the trail.
@@ -441,7 +462,7 @@ async def _list_tables(
             "the schema view may be incomplete", database, len(names),
         )
 
-    await cache_set_schema(tenant_id, host, port, database, json.dumps({"tables": names}))
+    await cache_set_schema(tenant_id, host, port, database, json.dumps({"tables": names}), db_schema)
     return names
 
 
@@ -466,7 +487,7 @@ async def _fetch_columns(
     db_type = (conn_cfg.get("type") or "postgres").lower()
     template = _COLUMNS_SQL.get(db_type, _COLUMNS_SQL["postgres"])
     rows, error, _, _ = await _sandbox_sql(
-        template.format(tables=in_list), conn_cfg, timeout_s=_SCHEMA_TIMEOUT_S,
+        template.format(schema=_safe_schema(conn_cfg), tables=in_list), conn_cfg, timeout_s=_SCHEMA_TIMEOUT_S,
         audit_ctx=audit_ctx, target=target, action=audit.ACTION_SCHEMA_INTROSPECT,
     )
     if error is not None:

@@ -245,6 +245,74 @@ only image built under `deploy/` — everything else pulls a public image direct
 A Job's pod template is immutable, so re-applying a completed Job fails. Delete
 it first: `kubectl -n dataagent-service delete job migrate --ignore-not-found`.
 
+## Redeploying after a code or migration change
+
+This is the loop for pushing a code change to an already-running cluster — not
+the fresh-cluster bootstrap above. Local dev points `docker`/`kubectl` at a
+single-node cluster with its own registry at `localhost:5000`; substitute your
+real registry if this is remote.
+
+**One service changed — the common case:**
+
+```bash
+# Context is the repo root for every backend service and for migrate; frontend
+# is the one exception (its Dockerfile.dev expects `frontend/` as context).
+docker build -f backend/services/<name>/Dockerfile -t localhost:5000/dataagent/<name>:latest .
+docker push localhost:5000/dataagent/<name>:latest
+
+kubectl -n dataagent-service rollout restart deployment/<name>
+kubectl -n dataagent-service rollout status deployment/<name> --timeout=120s
+```
+
+`<name>` is the image name from `kustomization.yaml`'s `images:` list, which is
+not always the directory name — `backend/services/kb_ingestion_worker/` builds
+`kb-ingestion-worker` (hyphen), `backend/services/workflow_runtime/` builds
+`workflow_runtime` (underscore). Check that list rather than guessing from the
+path. `imagePullPolicy: Always` is set on every workload, so a `:latest` push
+plus a rollout restart is enough — no need to bump a tag for local iteration.
+
+**A new Alembic migration:**
+
+```bash
+docker build -f backend/alembic/Dockerfile -t localhost:5000/dataagent/migrate:latest .
+docker push localhost:5000/dataagent/migrate:latest
+
+kubectl -n dataagent-service delete job migrate --ignore-not-found   # immutable pod template — see above
+kubectl apply -k .                                                   # NOT -f deploy/k8s/job/migrate.yaml directly:
+                                                                       # the raw file still has the REGISTRY/ placeholder
+kubectl -n dataagent-service wait --for=condition=complete job/migrate --timeout=5m
+kubectl -n dataagent-service logs -l job-name=migrate --tail=50
+```
+
+Before writing a new revision file, verify there is exactly one head — a
+hand-picked hex ID can collide with one already used elsewhere in
+`backend/alembic/versions/` (this has happened; Alembic doesn't catch it until
+`upgrade heads` sees two files claiming the same revision):
+
+```bash
+grep -rl "revision.*=.*['\"]<your-new-id>['\"]" backend/alembic/versions/   # expect: only your new file
+```
+
+`kubectl apply -k .` re-applies the *entire* kustomization, not just the
+migrate Job — on a cluster that already has data, this routinely errors on
+unrelated resources it wants to reconcile (a PVC `storage` request kubernetes
+won't let shrink, a StatefulSet field that's immutable post-creation). Those
+errors are expected noise, not a sign the migrate Job failed — check `job/migrate`
+itself (`get pods`, `logs`) rather than the apply command's exit code.
+
+**Frontend:**
+
+```bash
+docker build -f frontend/Dockerfile.dev -t localhost:5000/dataagent/frontend:latest frontend
+docker push localhost:5000/dataagent/frontend:latest
+kubectl -n dataagent-service rollout restart deployment/frontend
+kubectl -n dataagent-service rollout status deployment/frontend --timeout=90s
+```
+
+Run `cd frontend && npx tsc --noEmit` first — it must run from `frontend/`
+(no `tsconfig.json` at the repo root, so running it from there silently exits
+0 with no output, which reads exactly like "no errors").
+
 ## Ports
 
 Every workload listens on an `8xxx` port. For each one the **containerPort, the

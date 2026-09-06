@@ -29,6 +29,20 @@ from libs.database_connector.minio_connector import MinIOClient
 MAX_CHUNK_CHARS: int = 4000
 MIN_CHUNK_CHARS: int = 200
 
+# Tables get a much larger ceiling than prose. A GSO-style statistics table
+# (tens of rows, ~20 year columns) is a few thousand characters as markdown —
+# comfortably one chunk. Fragmenting it across several row-group chunks (the
+# previous approach) means retrieval has to happen to pull back the ONE
+# fragment that contains the specific row a question asks about; answer
+# synthesis reads the full Postgres `content` of whichever chunk gets
+# retrieved (see kb_backend/pipeline/light_rag/pipeline.py's
+# `chunk_context = pg.get("content") or ...`), not a truncated preview, so a
+# bigger single chunk directly means "the whole table was in context", not
+# just "the embedding saw more of it". Only tables past this size (rare in
+# practice) still split by row groups. Real precise aggregation/lookup still
+# belongs to the structured-table -> SQL path, not vector chunks at any size.
+TABLE_MAX_CHUNK_CHARS: int = 30000
+
 _converter: DocumentConverter | None = None
 
 
@@ -97,6 +111,64 @@ def _table_description(name: str, headers: list[str], rows: list[list[str]]) -> 
     return desc
 
 
+def _md_cell(value: str) -> str:
+    # Pipes and newlines break markdown table syntax; a table cell should
+    # never legitimately contain either for this kind of statistics data.
+    return str(value).replace("|", "/").replace("\n", " ").strip()
+
+
+def _table_caption(name: str, headers: list[str], total_rows: int) -> str:
+    col_str = ", ".join(h for h in headers if h) or "unknown columns"
+    return f"Table: {name} ({total_rows} row(s), {len(headers)} column(s): {col_str})"
+
+
+def _table_markdown_header(headers: list[str]) -> str:
+    display = [_md_cell(h) or "—" for h in headers]
+    header_row = "| " + " | ".join(display) + " |"
+    sep_row = "| " + " | ".join("---" for _ in display) + " |"
+    return header_row + "\n" + sep_row
+
+
+def _table_row_chunks(name: str, headers: list[str], rows: list[list[str]], max_chars: int) -> list[str]:
+    """Serialize the whole table as one or more markdown-table chunks —
+    unlike _table_description (a short one-liner kept for the Tables tab UI,
+    which only ever samples row 0), this is what actually becomes
+    embedded/searchable chunk content, so a query about row 47 of a 71-row
+    statistics table has something to match against. Markdown-table syntax
+    rather than a "header=value" prose dump: LLMs read/parse it far more
+    reliably for exact lookups, and it is what most modern table-extraction
+    pipelines converge on for this reason. `max_chars` (TABLE_MAX_CHUNK_CHARS,
+    much larger than the plain-text ceiling) keeps a normal-sized statistics
+    table to ONE chunk — every fragment repeats the caption + header + rule so
+    a row-group chunk still stands alone if retrieved in isolation, only for
+    the rare table too big to fit in one."""
+    caption = _table_caption(name, headers, len(rows))
+    if not rows:
+        return [caption]
+
+    md_header = _table_markdown_header(headers)
+    preamble = caption + "\n" + md_header
+    row_lines = [
+        "| " + " | ".join(_md_cell(row[i]) if i < len(row) else "" for i in range(len(headers))) + " |"
+        for row in rows
+    ]
+
+    chunks: list[str] = []
+    cur: list[str] = []
+    cur_len = len(preamble)
+    for line in row_lines:
+        line_len = len(line) + 1
+        if cur and cur_len + line_len > max_chars:
+            chunks.append(preamble + "\n" + "\n".join(cur))
+            cur = []
+            cur_len = len(preamble)
+        cur.append(line)
+        cur_len += line_len
+    if cur:
+        chunks.append(preamble + "\n" + "\n".join(cur))
+    return chunks
+
+
 def _build_parsed_tables(doc: Any) -> list[dict[str, Any] | None]:
     result: list[dict[str, Any] | None] = []
     for idx, table_item in enumerate(doc.tables):
@@ -149,9 +221,21 @@ def _iter_chunks(doc: Any, parsed_tables: list[dict[str, Any] | None], max_chars
                 pt = parsed_tables[doc_idx]
                 doc_idx += 1
                 if pt is not None:
-                    yield {"block_index": chunk_idx, "content": pt["description"],
-                           "table_involved": True, "table": pt}
-                    chunk_idx += 1
+                    row_texts = _table_row_chunks(
+                        pt["table_name"], pt["data"]["headers"], pt["data"]["rows"], TABLE_MAX_CHUNK_CHARS,
+                    )
+                    for i, text in enumerate(row_texts):
+                        yield {
+                            "block_index": chunk_idx,
+                            "content": text,
+                            "table_involved": True,
+                            # Full row data only goes on the first fragment — every
+                            # fragment already carries the header line, and attaching
+                            # it to each would persist the same rows N times into
+                            # KBTextTable for no benefit (the Tables tab reads it once).
+                            "table": pt if i == 0 else None,
+                        }
+                        chunk_idx += 1
         elif isinstance(item, SectionHeaderItem):
             header = f"{'#' * level} {item.text}"
             cur_len = len("\n\n".join(buf))

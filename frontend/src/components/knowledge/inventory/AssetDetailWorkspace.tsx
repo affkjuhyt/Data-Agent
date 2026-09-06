@@ -32,7 +32,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../../lib/utils';
 import { useAppState } from '../../../AppStateContext';
 import { KnowledgeDocument, KnowledgeLayer, PagedResponse } from '../../../types';
-import { apiGet, apiMutate } from '../../../lib/apiClient';
+import { apiGet, apiMutate, apiBlob } from '../../../lib/apiClient';
 import {
   ChunkVersion, Chunk, TableColumn, DocTable,
   WarehouseConfigTable, WarehouseConfigVersion,
@@ -118,29 +118,103 @@ export const AssetDetailWorkspace = ({
       .finally(() => setChunksLoading(false));
   }, [document.data_id, document.current_tier, chunksPage]);
 
-  // Fetch chunks when tab is CHUNKS, doc changes, or page changes
+  // Spreadsheet uploads (.xlsx/.xls/.csv) have no native browser renderer —
+  // PREVIEW shows the same parsed table data as the TABLES tab instead of a
+  // file viewer, so it needs this fetch too, not just when TABLES is active.
+  const isSpreadsheetDoc = /^Doc\/(XLSX|XLS|CSV)$/i.test(document.metadata?.doc_type || '');
+  const docExtension = (document.extension || '').toLowerCase();
+  // PDF, image and video all have a real, native browser renderer — no
+  // processing needed to view them, so these work at ANY tier (bronze
+  // included), unlike the tabs/branches below that depend on pipeline output.
+  const isPdfDoc = document.source_type === 'doc' && docExtension === 'pdf';
+  const isPlainTextDoc = document.source_type === 'doc' && (docExtension === 'txt' || docExtension === 'md');
+  const isImageDoc = document.source_type === 'image';
+  const isVideoDoc = document.source_type === 'video';
+  const isWebDoc = document.source_type === 'web';
+  // Everything else with no native renderer (docx, pptx, ...) and no
+  // structured-table extraction — the closest real preview is the parsed
+  // Chunks text, same content the Chunks tab shows, once it exists (silver+).
+  const needsChunkTextPreview = (document.source_type === 'doc' && !isSpreadsheetDoc && !isPdfDoc && !isPlainTextDoc) || isWebDoc;
+
+  // Fetch chunks when tab is CHUNKS, or PREVIEW needs the same text (docx and
+  // other formats with no native renderer — see needsChunkTextPreview above),
+  // or doc changes/pages.
   useEffect(() => {
-    if (activeTab !== 'CHUNKS') return;
+    if (activeTab !== 'CHUNKS' && !(activeTab === 'PREVIEW' && needsChunkTextPreview)) return;
     fetchChunks();
-  }, [activeTab, fetchChunks]);
+  }, [activeTab, fetchChunks, needsChunkTextPreview]);
 
   // Chunks are generated asynchronously by the ingestion worker after a Silver/Gold
   // promotion, so they don't exist the instant the tab opens. Poll (capped) until
   // they appear instead of showing an empty list that never updates.
   useEffect(() => {
-    if (activeTab !== 'CHUNKS' || document.current_tier === 'bronze') return;
+    if (document.current_tier === 'bronze') return;
+    if (activeTab !== 'CHUNKS' && !(activeTab === 'PREVIEW' && needsChunkTextPreview)) return;
     if (chunks.length > 0 || chunkPolls >= CHUNK_POLL_MAX) return;
     const id = setTimeout(() => { fetchChunks(); setChunkPolls(p => p + 1); }, 3500);
     return () => clearTimeout(id);
-  }, [activeTab, document.current_tier, chunks.length, chunkPolls, fetchChunks]);
+  }, [activeTab, document.current_tier, chunks.length, chunkPolls, fetchChunks, needsChunkTextPreview]);
 
   // Reset page + poll counter when doc or tab changes
   useEffect(() => { setChunksPage(1); }, [document.data_id]);
   useEffect(() => { setChunkPolls(0); }, [document.data_id, activeTab]);
 
+  // ── Raw-file preview (PDF/image/video/plain-text/spreadsheet) ──────
+  // Authenticated resource: fetched as a Blob via apiClient (a bare
+  // <img>/<iframe> src can't carry the bearer token) and handed to the DOM
+  // as an object URL, revoked on cleanup to avoid leaking memory.
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const [previewText, setPreviewText] = useState<string | null>(null);
+  const [previewSheets, setPreviewSheets] = useState<{ name: string; headers: string[]; rows: (string | number)[][] }[] | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState(false);
+  // Spreadsheets are parsed client-side (SheetJS) straight from the raw
+  // upload — no need to wait for Docling/Silver processing just to LOOK at
+  // what's in the file, unlike the Tables tab's backend-extracted data
+  // (which is what the RAG/structured-table pipeline actually uses).
+  const needsRawFilePreview = isPdfDoc || isImageDoc || isVideoDoc || isPlainTextDoc || isSpreadsheetDoc;
+
+  useEffect(() => {
+    if (activeTab !== 'PREVIEW' || !needsRawFilePreview) return;
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setPreviewLoading(true);
+    setPreviewError(false);
+    apiBlob(`/api/knowledge/documents/${document.data_id}/file`)
+      .then(async blob => {
+        if (cancelled) return;
+        if (isPlainTextDoc) {
+          setPreviewText(await blob.text());
+        } else if (isSpreadsheetDoc) {
+          const XLSX = await import('xlsx');
+          const buf = await blob.arrayBuffer();
+          const workbook = XLSX.read(buf, { type: 'array' });
+          const sheets = workbook.SheetNames.map(name => {
+            const rows = XLSX.utils.sheet_to_json<(string | number)[]>(workbook.Sheets[name], { header: 1, blankrows: false });
+            const [headers, ...body] = rows;
+            return { name, headers: (headers ?? []).map(h => String(h ?? '')), rows: body };
+          }).filter(s => s.headers.length > 0 || s.rows.length > 0);
+          if (!cancelled) setPreviewSheets(sheets);
+        } else {
+          objectUrl = URL.createObjectURL(blob);
+          setPreviewBlobUrl(objectUrl);
+        }
+      })
+      .catch(() => { if (!cancelled) setPreviewError(true); })
+      .finally(() => { if (!cancelled) setPreviewLoading(false); });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      setPreviewBlobUrl(null);
+      setPreviewSheets(null);
+      setPreviewText(null);
+    };
+  }, [activeTab, document.data_id, needsRawFilePreview, isPlainTextDoc, isSpreadsheetDoc]);
+
   // Fetch tables when tab is TABLES, doc changes, or page changes
   useEffect(() => {
-    if (activeTab !== 'TABLES' || document.current_tier === 'bronze') return;
+    if (document.current_tier === 'bronze') return;
+    if (activeTab !== 'TABLES' && !(activeTab === 'PREVIEW' && isSpreadsheetDoc)) return;
     setTablesLoading(true);
     apiGet<PagedResponse<DocTable> | DocTable[]>(
       `/api/knowledge/documents/${document.data_id}/tables`,
@@ -155,7 +229,7 @@ export const AssetDetailWorkspace = ({
       })
       .catch(() => { setTables([]); setTablesHasNext(false); })
       .finally(() => setTablesLoading(false));
-  }, [activeTab, document.data_id, document.current_tier, tablesPage]);
+  }, [activeTab, document.data_id, document.current_tier, tablesPage, isSpreadsheetDoc]);
 
   // Reset table page when doc changes
   useEffect(() => { setTablesPage(1); }, [document.data_id]);
@@ -596,44 +670,126 @@ export const AssetDetailWorkspace = ({
                              <span>PREVIEW MODE</span>
                           </div>
                        </div>
-                       <div className="flex-1 p-10 overflow-y-auto custom-scrollbar flex justify-center bg-[#FCFBF7]/50">
-                          {document.current_tier === 'bronze' ? (
-                             <div className="max-w-2xl w-full bg-[#FFFFFF] rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.03)] p-12 text-[#111111] font-serif leading-relaxed min-h-[500px] border border-[#BFA66A]">
-                                <h1 className="text-2xl font-bold mb-8 border-b pb-4 border-[#BFA66A] text-[#111111]">{document.name}</h1>
-                                <p className="mb-6 text-sm text-[#2A2A2A]">This structural pipeline resource serves as the direct source of truth for regional data ingestion. Raw strings and properties are cataloged on local, low-latency cold-storage sectors prior to chunking and token vectorizations.</p>
-                                <div className="h-40 bg-[#FFFDF8] rounded-2xl border border-dashed border-[#BFA66A] flex flex-col items-center justify-center text-[#8A5A00] p-6 mb-8 text-center shadow-xs">
-                                   <Database className="w-6 h-6 text-[#B88719] mb-2.5 animate-pulse" />
-                                   <span className="text-xs font-mono font-black uppercase tracking-widest">[BRONZE STAGE RAW INPUT REPOSITORY]</span>
-                                   <span className="text-[10px] text-[#3F3F3F] mt-1.5">Raw stream parsed with 100% security clearance protocols matched</span>
+                       <div className={cn(
+                         "flex-1 overflow-y-auto custom-scrollbar flex justify-center bg-[#FCFBF7]/50",
+                         needsRawFilePreview && !isPlainTextDoc && !previewError ? "p-0" : "p-10"
+                       )}>
+                          {needsRawFilePreview ? (
+                             previewLoading ? (
+                                <div className="flex items-center justify-center h-full text-xs text-[#5A5A5A]">Loading file…</div>
+                             ) : previewError ? (
+                                <div className="max-w-xl w-full flex flex-col gap-3 items-center justify-center h-full text-center p-10">
+                                   <FileText className="w-8 h-8 text-[#8A5A00]" />
+                                   <p className="text-xs text-[#5A5A5A]">Couldn't load a preview for this file.</p>
+                                   <a href={`/api/knowledge/documents/${document.data_id}/file`} target="_blank" rel="noopener noreferrer" className="btn-secondary btn-sm">
+                                     Download original file
+                                   </a>
                                 </div>
-                                <p className="mb-6 text-sm text-[#2A2A2A]">Future promotions to the Silver layer will automatically segment raw blocks into discrete semantic chunks, stripping metadata noise and scrubbing properties for candidate PII leaks.</p>
-                             </div>
-                          ) : document.current_tier === 'silver' ? (
-                             <div className="max-w-2xl w-full space-y-6">
-                                <div className="p-5 bg-[#FFF9E8] border border-[#BFA66A] rounded-2xl text-[10px] font-black text-[#8A5A00] uppercase tracking-widest flex items-center justify-center gap-3 shadow-xs">
-                                   <Zap className="w-4 h-4 text-[#B88719]" /> AI-Assisted Normalization Active
+                             ) : isPlainTextDoc ? (
+                                <pre className="w-full max-w-4xl p-10 whitespace-pre-wrap break-words text-xs font-mono text-[#2A2A2A] leading-relaxed">{previewText}</pre>
+                             ) : isImageDoc ? (
+                                <div className="w-full h-full flex items-center justify-center p-6">
+                                   <img src={previewBlobUrl ?? undefined} alt={document.name} className="max-w-full max-h-full rounded-xl shadow-md object-contain" />
                                 </div>
-                                <div className="content-card content-card--static font-mono text-[11px] text-[#2A2A2A] p-8 leading-relaxed">
-                                   <span className="text-[#8A5A00] font-bold"># Normalized Segment: {document.name}</span><br/><br/>
-                                   <span className="text-[#5D4037] font-semibold">## Extraction Metrics</span><br/>
-                                   - Ingestion Status: Normalization verified.<br/>
-                                   - Candidate tokens parsed: 4,120 successfully sanitized.<br/>
-                                   - Document parsing converted to Markdown specs.<br/><br/>
-                                   <span className="text-[#5D4037] font-semibold">## Security Scrubber</span><br/>
-                                   - Enterprise scope tenant validation: GlobalCorp OK.<br/>
-                                   - Automatic PII filter sweep: STAGE COMPLETED.<br/>
-                                   - Cross-tenant contamination checks: IMMUNE.
+                             ) : isVideoDoc ? (
+                                <div className="w-full h-full flex items-center justify-center p-6">
+                                   <video src={previewBlobUrl ?? undefined} controls className="max-w-full max-h-full rounded-xl shadow-md" />
                                 </div>
-                             </div>
+                             ) : isSpreadsheetDoc ? (
+                                !previewSheets || previewSheets.length === 0 ? (
+                                   <div className="max-w-xl w-full flex flex-col gap-3 items-center justify-center h-full text-center p-10">
+                                      <Table2 className="w-8 h-8 text-[#8A5A00]" />
+                                      <p className="text-xs text-[#5A5A5A]">No sheets with data were found in this file.</p>
+                                   </div>
+                                ) : (
+                                   <div className="w-full max-w-4xl flex flex-col gap-6 p-8">
+                                      {previewSheets.map(sheet => (
+                                        <div key={sheet.name} className="content-card content-card--static overflow-hidden">
+                                           <div className="px-5 py-3 bg-[#FFFDF8] border-b border-[#BFA66A] flex items-center justify-between">
+                                              <span className="text-xs font-black text-[#111111]">{sheet.name}</span>
+                                              <span className="text-[10px] text-[#5A5A5A] font-mono">{sheet.rows.length} rows / {sheet.headers.length} cols</span>
+                                           </div>
+                                           <div className="overflow-x-auto max-h-96 custom-scrollbar">
+                                              <table className="w-full text-[11px] font-mono">
+                                                 <thead className="bg-[#FFFDF6] border-b border-[#BFA66A] sticky top-0">
+                                                    <tr>
+                                                       {sheet.headers.map((h, i) => (
+                                                         <th key={i} className="text-left font-bold p-2.5 whitespace-nowrap text-[#5A4209]">{h || `Column ${i + 1}`}</th>
+                                                       ))}
+                                                    </tr>
+                                                 </thead>
+                                                 <tbody>
+                                                    {sheet.rows.slice(0, 50).map((row, i) => (
+                                                      <tr key={i} className="border-b border-[#F0E8D0] last:border-0">
+                                                         {sheet.headers.map((_, ci) => (
+                                                           <td key={ci} className="p-2.5 whitespace-nowrap text-[#2A2A2A]">{row[ci] ?? ''}</td>
+                                                         ))}
+                                                      </tr>
+                                                    ))}
+                                                 </tbody>
+                                              </table>
+                                           </div>
+                                           {sheet.rows.length > 50 && (
+                                             <div className="px-5 py-2 text-[10px] text-[#5A5A5A] bg-[#FFFDF8] border-t border-[#BFA66A]">
+                                                Showing first 50 of {sheet.rows.length} rows.
+                                             </div>
+                                           )}
+                                        </div>
+                                      ))}
+                                   </div>
+                                )
+                             ) : (
+                                // PDF — browsers render this natively.
+                                <iframe src={previewBlobUrl ?? undefined} title={document.name} className="w-full h-full border-0" />
+                             )
+                          ) : needsChunkTextPreview ? (
+                             document.current_tier === 'bronze' ? (
+                                <div className="max-w-xl w-full flex flex-col gap-4 items-center justify-center h-full text-center">
+                                   <div className="w-16 h-16 rounded-full bg-[#FFF9E8] border border-[#BFA66A] flex items-center justify-center">
+                                      <FileText className="w-7 h-7 text-[#B88719]" />
+                                   </div>
+                                   <div>
+                                      <h3 className="text-base font-bold text-[#111111] mb-1.5">Not processed yet</h3>
+                                      <p className="text-xs text-[#5A5A5A] leading-relaxed">
+                                         {isWebDoc
+                                           ? <>This portal hasn't been crawled yet. Click <strong>Process to Silver</strong> below to extract its text.</>
+                                           : <>Browsers can't render this file type directly. Click <strong>Process to Silver</strong> below to extract its text — it'll show up here and in the Chunks tab.</>}
+                                      </p>
+                                   </div>
+                                   {!isWebDoc && (
+                                     <a href={`/api/knowledge/documents/${document.data_id}/file`} target="_blank" rel="noopener noreferrer" className="btn-secondary btn-sm">
+                                       Download original file
+                                     </a>
+                                   )}
+                                   {isWebDoc && document.metadata?.url && (
+                                     <a href={document.metadata.url} target="_blank" rel="noopener noreferrer" className="btn-secondary btn-sm">
+                                       Open source URL
+                                     </a>
+                                   )}
+                                </div>
+                             ) : chunksLoading ? (
+                                <div className="flex items-center justify-center h-full text-xs text-[#5A5A5A]">Loading extracted text…</div>
+                             ) : chunks.length === 0 ? (
+                                <div className="max-w-xl w-full flex flex-col gap-3 items-center justify-center h-full text-center">
+                                   <FileText className="w-8 h-8 text-[#8A5A00]" />
+                                   <p className="text-xs text-[#5A5A5A]">No text has been extracted from this document yet.</p>
+                                </div>
+                             ) : (
+                                <div className="w-full max-w-3xl content-card content-card--static p-8">
+                                   <pre className="whitespace-pre-wrap break-words text-xs font-mono text-[#2A2A2A] leading-relaxed">
+                                     {chunks.map(c => c.text).join('\n\n---\n\n')}
+                                   </pre>
+                                </div>
+                             )
                           ) : (
-                             <div className="w-full flex flex-col gap-6 items-center justify-center h-full max-w-sm mx-auto text-center">
-                                <div className="w-20 h-20 rounded-full bg-[#FFF9E8] border border-[#BFA66A] flex items-center justify-center shadow-lg shadow-[#B88719]/5 animate-pulse">
-                                   <Zap className="w-8 h-8 text-[#B88719]" />
-                                </div>
-                                <div>
-                                   <h3 className="text-base font-bold text-[#111111] mb-2">Vectorized Gold Retrieval Node</h3>
-                                   <p className="text-xs text-[#3F3F3F] leading-relaxed">This physical knowledge asset resides securely in the Active production GOLD layer. Fully index-ready for prompt semantic retrieval pipelines.</p>
-                                </div>
+                             // Every known source_type (doc/image/video/web) is handled above —
+                             // this is just a safety net for an unexpected/unrecognized one.
+                             <div className="max-w-xl w-full flex flex-col gap-3 items-center justify-center h-full text-center">
+                                <FileText className="w-8 h-8 text-[#8A5A00]" />
+                                <p className="text-xs text-[#5A5A5A]">No preview available for this asset type.</p>
+                                <a href={`/api/knowledge/documents/${document.data_id}/file`} target="_blank" rel="noopener noreferrer" className="btn-secondary btn-sm">
+                                  Download original file
+                                </a>
                              </div>
                           )}
                        </div>

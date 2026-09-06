@@ -44,52 +44,52 @@ function RunDetail({ run, index, total }: { run: EvidenceRun; index: number; tot
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingTop: index ? 12 : 0, borderTop: index ? '1px dashed var(--ab-border)' : 'none' }}>
-      {total > 1 && <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ab-accent)' }}>Truy vấn {index + 1} / {total}</div>}
+      {total > 1 && <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--ab-accent)' }}>Query {index + 1} / {total}</div>}
 
-      <Section icon={Sigma} title="Cách tính">
+      <Section icon={Sigma} title="How it's calculated">
         {run.generated_by === 'semantic_layer' && metric ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
               <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--ab-fg)' }}>{key}</span>
-              {version && <Chip label={`v${version} · đã duyệt`} tone="ok" />}
+              {version && <Chip label={`v${version} · approved`} tone="ok" />}
             </div>
-            <Row k="Chủ sở hữu" v={metric.owner} />
-            <Row k="Định nghĩa" v={metric.definition} />
-            <Row k="Phép tính" v={metric.aggregation ? `${metric.aggregation.toUpperCase()}${metric.unit ? ` · đơn vị ${metric.unit}` : ''}` : null} />
-            <Row k="Khớp qua" v={metric.matched_term ? <>từ đồng nghĩa “{metric.matched_term}”</> : null} />
-            <Row k="Chiều" v={metric.dimensions?.length ? metric.dimensions.join(', ') : null} />
-            <Row k="Bộ lọc" v={filters.length ? filters.join(' · ') : 'không'} />
-            <Row k="Cột thời gian" v={metric.business_date_column} />
-            <Row k="Độ chi tiết" v={metric.grain} />
+            <Row k="Owner" v={metric.owner} />
+            <Row k="Definition" v={metric.definition} />
+            <Row k="Calculation" v={metric.aggregation ? `${metric.aggregation.toUpperCase()}${metric.unit ? ` · unit ${metric.unit}` : ''}` : null} />
+            <Row k="Matched via" v={metric.matched_term ? <>synonym "{metric.matched_term}"</> : null} />
+            <Row k="Dimensions" v={metric.dimensions?.length ? metric.dimensions.join(', ') : null} />
+            <Row k="Filters" v={filters.length ? filters.join(' · ') : 'none'} />
+            <Row k="Date column" v={metric.business_date_column} />
+            <Row k="Grain" v={metric.grain} />
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <Chip label={GENERATED_BY_LABELS[run.generated_by] ?? run.generated_by} tone="warn" />
             <span style={{ fontSize: 11, color: 'var(--ab-muted)' }}>
-              Câu hỏi không khớp chỉ số đã duyệt nào, nên mô hình tự viết SQL. Câu lệnh vẫn phải qua guard chỉ-đọc, giới hạn dòng và nhật ký truy cập. Đăng ký chỉ số cho câu hỏi này để lần sau ra cùng một con số.
+              The question didn't match any approved metric, so the model wrote its own SQL. The statement still goes through the read-only guard, a row limit, and an access log. Register a metric for this question so it returns the same number next time.
             </span>
           </div>
         )}
       </Section>
 
-      <Section icon={Database} title="Truy vấn">
-        <Row k="Cơ sở dữ liệu" v={run.db_name ? `${run.db_name}${run.db_type ? ` (${run.db_type})` : ''}` : null} />
-        <Row k="Số dòng" v={run.row_count !== null && run.row_count !== undefined ? formatNumber(run.row_count) : null} />
-        <Row k="Thực thi" v="sandbox_executor · READ ONLY · đã ghi nhật ký" />
+      <Section icon={Database} title="Query">
+        <Row k="Database" v={run.db_name ? `${run.db_name}${run.db_type ? ` (${run.db_type})` : ''}` : null} />
+        <Row k="Row count" v={run.row_count !== null && run.row_count !== undefined ? formatNumber(run.row_count) : null} />
+        <Row k="Executed via" v="sandbox_executor · READ ONLY · logged" />
         <SqlBlock sql={run.sql} />
-        <div style={{ marginTop: 6 }}><CopyButton text={run.sql} label="Sao chép SQL" /></div>
+        <div style={{ marginTop: 6 }}><CopyButton text={run.sql} label="Copy SQL" /></div>
       </Section>
 
-      <Section icon={Gauge} title="Nguồn dữ liệu">
+      <Section icon={Gauge} title="Data source">
         {fresh && (
           <div style={{ marginBottom: 4 }}>
             <Chip label={fresh.label} tone={fresh.tone} />
           </div>
         )}
-        <Row k="Dữ liệu đến" v={prov?.as_of ? formatDateTime(prov.as_of) : prov ? 'chưa đo được' : null} />
-        <Row k="Tuổi dữ liệu" v={typeof prov?.age_seconds === 'number' ? formatDuration(prov.age_seconds * 1000) : null} />
-        <Row k="Phân loại" v={prov?.classification} />
-        <Row k="Chủ dữ liệu" v={prov?.owners?.length ? prov.owners.join(', ') : null} />
+        <Row k="Data as of" v={prov?.as_of ? formatDateTime(prov.as_of) : prov ? 'not measured' : null} />
+        <Row k="Data age" v={typeof prov?.age_seconds === 'number' ? formatDuration(prov.age_seconds * 1000) : null} />
+        <Row k="Classification" v={prov?.classification} />
+        <Row k="Data owner" v={prov?.owners?.length ? prov.owners.join(', ') : null} />
         {prov?.tables?.length ? (
           <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
             {prov.tables.map(t => (
@@ -101,14 +101,14 @@ function RunDetail({ run, index, total }: { run: EvidenceRun; index: number; tot
             ))}
           </div>
         ) : !prov ? (
-          <span style={{ fontSize: 11, color: 'var(--ab-muted)' }}>Chưa có thông tin quản trị cho các bảng này — kho dữ liệu chưa được crawl.</span>
+          <span style={{ fontSize: 11, color: 'var(--ab-muted)' }}>No governance info for these tables yet — the warehouse hasn't been crawled.</span>
         ) : null}
-        {prov?.stale_tables?.length ? <Row k="Quá hạn" v={prov.stale_tables.join(', ')} /> : null}
-        {prov?.unknown_tables?.length ? <Row k="Chưa đo" v={prov.unknown_tables.join(', ')} /> : null}
+        {prov?.stale_tables?.length ? <Row k="Stale" v={prov.stale_tables.join(', ')} /> : null}
+        {prov?.unknown_tables?.length ? <Row k="Unmeasured" v={prov.unknown_tables.join(', ')} /> : null}
       </Section>
 
       {(findings.length > 0 || run.truncation?.reason || run.rows_capped) && (
-        <Section icon={AlertTriangle} title="Cảnh báo">
+        <Section icon={AlertTriangle} title="Warnings">
           <ul style={{ margin: 0, paddingLeft: 16, display: 'flex', flexDirection: 'column', gap: 3 }}>
             {findings.map((f, i) => (
               <li key={i} style={{ color: 'var(--ab-bad)' }}>
@@ -117,11 +117,11 @@ function RunDetail({ run, index, total }: { run: EvidenceRun; index: number; tot
             ))}
             {run.truncation?.reason && (
               <li style={{ color: 'var(--ab-warn)' }}>
-                Kết quả không đầy đủ: {TRUNCATION_LABELS[run.truncation.reason] ?? run.truncation.reason}
-                {run.truncation.rows_returned ? ` (${formatNumber(run.truncation.rows_returned)} dòng)` : ''}.
+                Incomplete result: {TRUNCATION_LABELS[run.truncation.reason] ?? run.truncation.reason}
+                {run.truncation.rows_returned ? ` (${formatNumber(run.truncation.rows_returned)} rows)` : ''}.
               </li>
             )}
-            {run.rows_capped && <li style={{ color: 'var(--ab-muted)' }}>Bảng bên dưới chỉ xem trước {formatNumber(run.rows.length)} dòng đầu.</li>}
+            {run.rows_capped && <li style={{ color: 'var(--ab-muted)' }}>The table below only previews the first {formatNumber(run.rows.length)} rows.</li>}
           </ul>
         </Section>
       )}
@@ -137,7 +137,7 @@ export function EvidencePanel({ message }: { message: AskMessage | null }) {
     return (
       <div style={{ padding: '28px 16px', textAlign: 'center', color: 'var(--ab-muted)', fontSize: 12, lineHeight: 1.6 }}>
         <ShieldCheck size={22} style={{ margin: '0 auto 8px', opacity: 0.4 }} />
-        Hỏi một câu để xem con số ra từ đâu: chỉ số nào, câu SQL nào, bao nhiêu dòng, dữ liệu tươi đến khi nào.
+        Ask a question to see where the number came from: which metric, which SQL, how many rows, how fresh the data is.
       </div>
     );
   }
@@ -147,7 +147,7 @@ export function EvidencePanel({ message }: { message: AskMessage | null }) {
   if (message.status === 'streaming' && !ev) {
     return (
       <div style={{ padding: '28px 16px', textAlign: 'center', color: 'var(--ab-muted)', fontSize: 12, lineHeight: 1.6 }}>
-        Đang chạy… bằng chứng (chỉ số, SQL, số dòng) sẽ hiện khi câu trả lời hoàn tất.
+        Running… evidence (metric, SQL, row count) will appear once the answer is complete.
       </div>
     );
   }
@@ -155,7 +155,7 @@ export function EvidencePanel({ message }: { message: AskMessage | null }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ fontSize: 11, color: 'var(--ab-muted)' }}>
-        Câu trả lời lúc {formatTime(message.timestamp)}{message.latencyMs ? ` · ${formatDuration(message.latencyMs)}` : ''}
+        Answered at {formatTime(message.timestamp)}{message.latencyMs ? ` · ${formatDuration(message.latencyMs)}` : ''}
       </div>
 
       {hasRuns ? (
@@ -163,19 +163,19 @@ export function EvidencePanel({ message }: { message: AskMessage | null }) {
       ) : (
         <div style={{ fontSize: 12, color: 'var(--ab-muted)', lineHeight: 1.6 }}>
           {ev?.clarifications?.length
-            ? 'Chưa có truy vấn nào chạy — hệ thống đang chờ bạn làm rõ câu hỏi.'
-            : 'Câu trả lời này không đọc từ kho dữ liệu (trả lời từ tài liệu hoặc hội thoại), nên không có SQL để hiển thị.'}
+            ? 'No query has run yet — the system is waiting for you to clarify the question.'
+            : "This answer wasn't read from the warehouse (it answers from documents or conversation), so there's no SQL to show."}
         </div>
       )}
 
       {ev?.warnings?.length ? (
-        <Section icon={AlertTriangle} title="Cảnh báo đơn vị">
+        <Section icon={AlertTriangle} title="Unit warnings">
           {ev.warnings.map((w, i) => <div key={i} style={{ color: 'var(--ab-bad)' }}>{w.detail}</div>)}
         </Section>
       ) : null}
 
       {citations.length > 0 && (
-        <Section icon={FileText} title="Nguồn tham khảo">
+        <Section icon={FileText} title="Sources">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {citations.map(c => (
               <div key={c.index} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>

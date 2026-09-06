@@ -81,7 +81,7 @@ async def cache_set_messages(conversation_id: str, messages: list[dict[str, Any]
         logger.warning("redis | cache_set failed conv=%s: %s", conversation_id, e)
 
 
-def _schema_key(tenant_id: str, host: str, port: int, database: str) -> str:
+def _schema_key(tenant_id: str, host: str, port: int, database: str, db_schema: str = "public") -> str:
     # Cố ý KHÔNG dùng connection "name" (do người dùng tự đặt, đổi tên không
     # đổi DB thật) hay user/password (đổi tài khoản không đổi cấu trúc bảng)
     # — key theo đúng danh tính DB vật lý, để 2 connection khác tên trỏ cùng
@@ -91,24 +91,27 @@ def _schema_key(tenant_id: str, host: str, port: int, database: str) -> str:
     # tables relevant to this question reach the prompt), so caching the
     # rendered text would key one query's selection under every query. Bumping
     # the prefix retires v1 values instead of feeding a JSON parser prose.
-    return f"db_schema_v2:{tenant_id}:{host}:{port}:{database}"
+    # v3: adds the Postgres schema (was implicitly always 'public') — two
+    # connections to the same host/port/database but different schemas (e.g.
+    # kb_structured vs public) must not share a cached table list.
+    return f"db_schema_v3:{tenant_id}:{host}:{port}:{database}:{db_schema}"
 
 
-async def cache_get_schema(tenant_id: str, host: str, port: int, database: str) -> Optional[str]:
+async def cache_get_schema(tenant_id: str, host: str, port: int, database: str, db_schema: str = "public") -> Optional[str]:
     if not _client:
         return None
     try:
-        return cast(Optional[str], await _client.get(_schema_key(tenant_id, host, port, database)))
+        return cast(Optional[str], await _client.get(_schema_key(tenant_id, host, port, database, db_schema)))
     except Exception as e:
         logger.warning("redis | cache_get_schema failed db=%s: %s", database, e)
         return None
 
 
-async def cache_set_schema(tenant_id: str, host: str, port: int, database: str, schema_text: str) -> None:
+async def cache_set_schema(tenant_id: str, host: str, port: int, database: str, schema_text: str, db_schema: str = "public") -> None:
     if not _client:
         return
     try:
-        await _client.set(_schema_key(tenant_id, host, port, database), schema_text, ex=_SCHEMA_TTL)
+        await _client.set(_schema_key(tenant_id, host, port, database, db_schema), schema_text, ex=_SCHEMA_TTL)
     except Exception as e:
         logger.warning("redis | cache_set_schema failed db=%s: %s", database, e)
 
