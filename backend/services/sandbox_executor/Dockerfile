@@ -23,4 +23,6 @@ COPY *.py ./
 COPY api ./api
 COPY core ./core
 COPY execution ./execution
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8260"]
+
+# No CMD/EXPOSE: the start command and the port are deployment concerns and
+# live in deploy/k8s. Keeping them here too meant two places to change.
