@@ -20,9 +20,3 @@ COPY --chown=app:app backend/libs/ ./libs/
 COPY --chown=app:app backend/services/workflow_runtime/ .
 
 USER app
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"
-
-# Production: gunicorn -k uvicorn.workers.UvicornWorker -w 4 main:app
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8240"]

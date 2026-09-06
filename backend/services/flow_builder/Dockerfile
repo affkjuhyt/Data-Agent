@@ -7,4 +7,4 @@ COPY backend/services/flow_builder/ .
 # Drop root — read-only app surface.
 RUN addgroup --system app && adduser --system --ingroup app app
 USER app
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8250"]
+
