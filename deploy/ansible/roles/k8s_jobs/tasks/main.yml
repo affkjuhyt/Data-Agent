@@ -1,0 +1,68 @@
+---
+- name: Run migration and init jobs
+  when: (apply_jobs | bool)
+  block:
+    - name: Delete completed jobs
+      ansible.builtin.command: >
+        {{ kubectl }} -n {{ ns_service }} delete job {{ item }} --ignore-not-found
+      loop: "{{ ['kong-migration', 'migrate'] + job_workloads }}"
+      changed_when: true
+
+    - name: Create migration jobs
+      ansible.builtin.shell: |
+        set -euo pipefail
+        stage=$(mktemp -d)
+        trap 'rm -rf "$stage"' EXIT
+        for f in kong-migration migrate; do
+          {{ k8s_sed }} {{ k8s_dir }}/job/$f.yaml > "$stage/$f.yaml"
+        done
+        {{ kubectl }} apply -f "$stage/"
+      args:
+        executable: /bin/bash
+      register: mig_apply
+      changed_when: "'created' in mig_apply.stdout or 'configured' in mig_apply.stdout"
+
+    - name: Wait for migrate
+      ansible.builtin.command: >
+        {{ kubectl }} -n {{ ns_service }} wait --for=condition=complete job/migrate
+        --timeout={{ wait_job }}s
+      changed_when: false
+
+    - name: Create init jobs
+      ansible.builtin.shell: |
+        set -euo pipefail
+        stage=$(mktemp -d)
+        trap 'rm -rf "$stage"' EXIT
+        for f in {{ job_workloads | join(' ') }}; do
+          {{ k8s_sed }} {{ k8s_dir }}/job/$f.yaml > "$stage/$f.yaml"
+        done
+        {{ kubectl }} apply -f "$stage/"
+      args:
+        executable: /bin/bash
+      register: init_apply
+      changed_when: "'created' in init_apply.stdout or 'configured' in init_apply.stdout"
+
+    - name: Wait for init jobs
+      ansible.builtin.command: >
+        {{ kubectl }} -n {{ ns_service }} wait --for=condition=complete job/{{ item }}
+        --timeout={{ wait_job }}s
+      loop: "{{ job_workloads }}"
+      changed_when: false
+
+  rescue:
+    - name: Get job logs
+      ansible.builtin.shell: >
+        {{ kubectl }} -n {{ ns_service }} logs job/{{ item }} --tail=40 2>&1 || true
+      args:
+        executable: /bin/bash
+      loop: "{{ ['migrate'] + job_workloads }}"
+      register: job_logs
+      changed_when: false
+
+    - name: Report diagnosis
+      ansible.builtin.debug:
+        msg: "{{ job_logs.results | map(attribute='stdout_lines') | flatten }}"
+
+    - name: Fail jobs
+      ansible.builtin.fail:
+        msg: "See the job logs above. Nothing was deleted."

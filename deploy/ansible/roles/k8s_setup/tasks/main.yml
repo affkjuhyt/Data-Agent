@@ -1,0 +1,38 @@
+---
+- name: Run gateway setup
+  when: (apply_setup | bool)
+  block:
+    - name: Delete setup job
+      ansible.builtin.command: >
+        {{ kubectl }} -n {{ ns_service }} delete job setup --ignore-not-found
+      changed_when: true
+
+    - name: Create setup job
+      ansible.builtin.command: "{{ kubectl }} apply -f {{ k8s_dir }}/job/setup.yaml"
+      register: setup_apply
+      changed_when: "'created' in setup_apply.stdout or 'configured' in setup_apply.stdout"
+
+    - name: Wait for setup
+      ansible.builtin.command: >
+        {{ kubectl }} -n {{ ns_service }} wait --for=condition=complete job/setup
+        --timeout={{ wait_job }}s
+      changed_when: false
+
+    - name: Create backup cronjob
+      ansible.builtin.command: "{{ kubectl }} apply -f {{ k8s_dir }}/job/postgres-backup.yaml"
+      register: backup_apply
+      changed_when: "'created' in backup_apply.stdout or 'configured' in backup_apply.stdout"
+
+- name: Get restore suspend flag
+  ansible.builtin.command: >
+    {{ kubectl }} -n {{ ns_database }} get job postgres-restore
+    -o jsonpath={% raw %}'{.spec.suspend}'{% endraw %}
+  register: restore_suspend
+  changed_when: false
+  failed_when: false
+
+- name: Check restore is suspended
+  ansible.builtin.assert:
+    that: restore_suspend.stdout == 'true'
+    fail_msg: "postgres-restore is not suspended and will drop a database."
+  when: restore_suspend.rc == 0

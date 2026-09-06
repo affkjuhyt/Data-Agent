@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# SUPERSEDED — this runner drives the Docker Compose stack, which was removed
+# when deploy/k8s became the only deployment definition. It cannot run as-is.
+# Porting it means replacing the `docker compose` calls with kubectl against a
+# namespace created from deploy/k8s/. Kept for the seed/setup/smoke logic below.
 # Data Agent — end-to-end runner: real stack, real gateway, real LLM (GPU server vLLM).
 #
 #   tests/e2e/e2e.sh all            # preflight → up → setup → seed → test → ui
@@ -10,9 +14,9 @@
 #   tests/e2e/e2e.sh ui             # Playwright: real Keycloak login → Hỏi dữ liệu → answer
 #   tests/e2e/e2e.sh status | logs [svc…] | token | down [-v]
 #
-# Layers: deploy/docker/docker-compose.yml (infra) + .app.yml (services) + .agent-test.yml
-# (litellm → GPU server, OTEL off) + .local.yml (alembic migrate + tenant seed).
-# Only the services one agent turn needs are started — not the KB tier.
+# One compose file per service (deploy/docker/<service>.yml, job-*.yml for the
+# one-shots) merged into a single project. Only the services one agent turn
+# needs are started — not the KB tier.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
@@ -22,23 +26,31 @@ cd "$ROOT"
 # "infra") keeps its Postgres/Keycloak/KB data untouched; E2E always starts from
 # a fresh database so migrations + seed are reproducible.
 E2E_PROJECT=${E2E_PROJECT:-dataagent-e2e}
-COMPOSE=(docker compose -p "$E2E_PROJECT" --env-file .env --profile runtime -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.app.yml
-         -f deploy/docker/docker-compose.agent-test.yml -f deploy/docker/docker-compose.local.yml)
+D=deploy/docker
+COMPOSE=(docker compose -p "$E2E_PROJECT" --env-file .env
+         -f "$D/service_postgres.yml" -f "$D/service_redis.yml" -f "$D/service_mongo.yml"
+         -f "$D/service_kafka.yml" -f "$D/service_minio.yml" -f "$D/service_openbao.yml"
+         -f "$D/service_litellm.yml" -f "$D/service_keycloak.yml" -f "$D/service_kong.yml"
+         -f "$D/overlay-kong-admin.yml"
+         -f "$D/job-kong-migration.yml" -f "$D/job-minio-init.yml"
+         -f "$D/job-migrate.yml" -f "$D/job-db-init.yml" -f "$D/job-seed.yml"
+         -f "$D/service_sandbox_executor.yml" -f "$D/service_workflow_runtime.yml"
+         -f "$D/service_platform-workers-memory.yml")
 # dev (default): existing images + bind-mounted source, build only what is
 # missing. build: rebuild every image (slow — full pip install per service).
 E2E_MODE=${E2E_MODE:-dev}
-if [ "$E2E_MODE" = "dev" ]; then COMPOSE+=(-f deploy/docker/docker-compose.e2e-dev.yml); fi
-SERVICES=(postgres redis mongo kafka minio openbao litellm keycloak kong-migration kong
-          migrate seed sandbox_executor workflow_runtime platform-workers-memory)
+if [ "$E2E_MODE" = "dev" ]; then COMPOSE+=(-f "$D/overlay-dev.yml"); fi
+SERVICES=(postgres redis mongo kafka minio minio-init openbao litellm keycloak kong-migration kong
+          migrate db-init seed sandbox_executor workflow_runtime platform-workers-memory)
 
 TENANT=a0000000-0000-0000-0000-000000000001
 export E2E_AGENT_ID=${E2E_AGENT_ID:-0000000e-2e00-4000-8000-000000000001}
 export E2E_USER=${E2E_USER:-helios-engineer}
 export E2E_PASS=${E2E_PASS:-H3lios@Eng001!}
-export E2E_KONG=${E2E_KONG:-http://localhost:8000}
-export E2E_KEYCLOAK=${E2E_KEYCLOAK:-http://localhost:8080}
-KONG_ADMIN=${KONG_ADMIN:-http://localhost:8900}
-OPENBAO=${OPENBAO:-http://localhost:8300}
+export E2E_KONG=${E2E_KONG:-http://localhost:8100}
+export E2E_KEYCLOAK=${E2E_KEYCLOAK:-http://localhost:8110}
+KONG_ADMIN=${KONG_ADMIN:-http://localhost:8101}
+OPENBAO=${OPENBAO:-http://localhost:8120}
 GPU_LLM=${GPU_LLM:-http://10.10.55.101:8002}   # vLLM agent-fast — what deploy/docker/litellm/config.agent-local.yaml routes to
 DB_SECRET_KEY=e2e_dw_password
 DB_SECRET_VALUE=sandbox_reader_dev_pw         # deploy/docker/sql/create-extra-dbs.sql
@@ -134,6 +146,8 @@ evict_other_project() {  # container_name is fixed per service — another proje
 up() {
   log "docker compose up (${#SERVICES[@]} services, mode=$E2E_MODE, project=$E2E_PROJECT)"
   evict_other_project
+  # Every per-service file joins this network as external.
+  docker network create data-agent-network >/dev/null 2>&1 || true
   if [ "$E2E_MODE" = "dev" ]; then
     ensure_images
     "${COMPOSE[@]}" up -d --no-build "${SERVICES[@]}"
@@ -146,13 +160,13 @@ up() {
   docker exec dataagent-postgres psql -U admin -d dataagent -qc "CREATE SCHEMA IF NOT EXISTS keycloak; CREATE SCHEMA IF NOT EXISTS kong;" >/dev/null
   wait_for "kong admin" 120 curl -sf "$KONG_ADMIN/status"
   wait_for "keycloak"  180 curl -sf "$E2E_KEYCLOAK/realms/aeroflow/.well-known/openid-configuration"
-  wait_for "litellm"   120 curl -sf http://localhost:4000/health/liveliness
+  wait_for "litellm"   120 curl -sf http://localhost:8500/health/liveliness
   wait_for "openbao"   60  curl -s "$OPENBAO/v1/sys/health"
   for c in dataagent-workflow_runtime dataagent-sandbox_executor; do
     wait_for "$c running" 60 sh -c "docker inspect -f '{{.State.Status}}' $c | grep -q running"
   done
-  # migrate/seed are one-shot: make sure they exited 0
-  for c in migrate seed; do
+  # migrate/db-init/seed are one-shot: make sure they exited 0
+  for c in migrate db-init seed; do
     local code; code=$("${COMPOSE[@]}" ps -a --format '{{.Service}} {{.ExitCode}}' | awk -v s="$c" '$1==s{print $2}')
     [ "${code:-0}" = "0" ] || die "$c exited with $code — see: ${COMPOSE[*]} logs $c"
   done
@@ -292,7 +306,7 @@ test_ui() {
 
 status() {
   "${COMPOSE[@]}" ps
-  echo; for u in "$KONG_ADMIN/status" "$E2E_KEYCLOAK/realms/aeroflow" "http://localhost:4000/health/liveliness" "$OPENBAO/v1/sys/health" "$GPU_LLM/v1/models"; do
+  echo; for u in "$KONG_ADMIN/status" "$E2E_KEYCLOAK/realms/aeroflow" "http://localhost:8500/health/liveliness" "$OPENBAO/v1/sys/health" "$GPU_LLM/v1/models"; do
     printf '%-60s %s\n' "$u" "$(curl -s -o /dev/null -w '%{http_code}' "$u")"
   done
 }

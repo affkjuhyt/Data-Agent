@@ -54,7 +54,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: release-worker
-        image: REGISTRY/dataagent/release_worker:latest
+        image: dataagent/release_worker:latest
         ports:
         - containerPort: 8210
           name: http
@@ -96,6 +96,14 @@ spec:
         volumeMounts:
         - name: tmp
           mountPath: /tmp
+        command:
+        - uvicorn
+        - app:create_app
+        - --factory
+        - --host
+        - 0.0.0.0
+        - --port
+        - '8210'
       volumes:
       - name: tmp
         emptyDir: {}

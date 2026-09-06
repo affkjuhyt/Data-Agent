@@ -28,7 +28,7 @@ model/       LLM eval harness, RAGAS
 | [`backend/libs/`](./backend/libs) | Shared cross-service layer: `libs/basemodel` (domain models/ORM), `libs/database_connector` (infra clients), `libs/shared` (logger, auth, observability), `libs/semantic` (metric contracts). Innermost architecture layer |
 | [`backend/alembic/`](./backend/alembic) | Database migrations (`alembic -c backend/alembic/alembic.ini upgrade head`) |
 | [`deploy/docker/`](./deploy/docker) | Dockerfiles and service config (`kong`, `kafka`, `keycloak`, `openbao`, `litellm`, `sql`, `certs`…) — build contexts and ConfigMap sources, no stack definition |
-| [`deploy/ansible/`](./deploy/ansible) · [`deploy/k8s/`](./deploy/k8s) | Ansible playbook (local appliance → on-prem server, offline bundle) · raw Kubernetes manifests |
+| [`deploy/ansible/`](./deploy/ansible) · [`deploy/k8s/`](./deploy/k8s) | Ansible playbooks (Kubernetes setup + rolling updates) · raw Kubernetes manifests |
 | [`tests/`](./tests) | `pytest` unit/integration (`pythonpath = [".", "backend"]`), `tests/e2e/e2e.sh` full-stack runner + Playwright UI test, `tests/loadtest` k6 |
 | [`docs/RUNBOOK.md`](./docs/RUNBOOK.md) · [`docs/SECURITY.md`](./docs/SECURITY.md) | Deploy/operate runbook · security posture & release hardening |
 

@@ -65,7 +65,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: kb-backend
-        image: REGISTRY/dataagent/kb-backend:latest
+        image: dataagent/kb-backend:latest
         ports:
         - containerPort: 8220
           name: http
@@ -107,6 +107,11 @@ spec:
         volumeMounts:
         - name: tmp
           mountPath: /tmp
+        command:
+        - sh
+        - -c
+        - exec uvicorn services.kb_backend.main:app --host 0.0.0.0 --port 8220 --workers "${UVICORN_WORKERS:-1}"
+          --log-level info
       volumes:
       - name: tmp
         emptyDir: {}

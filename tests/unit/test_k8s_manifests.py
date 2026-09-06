@@ -56,7 +56,12 @@ def _docs(path: pathlib.Path) -> list[dict]:
 
 
 def _all_docs(directory: pathlib.Path) -> list[tuple[pathlib.Path, dict]]:
-    return [(f, d) for f in sorted(directory.glob("*.yaml")) for d in _docs(f)]
+    return [
+        (f, d)
+        for f in sorted(directory.glob("*.yaml"))
+        if f.name != "kustomization.yaml"
+        for d in _docs(f)
+    ]
 
 
 # `kubectl apply -R -f deploy/k8s/` covers these three tiers plus the shared
@@ -809,7 +814,7 @@ class TestImageReferencesAreIntact:
     def test_every_image_is_one_we_recognise(self):
         bad = [
             f"{w}: {i}" for w, i in self._images()
-            if not i.startswith("REGISTRY/dataagent/") and i not in self.KNOWN
+            if not i.startswith("dataagent/") and i not in self.KNOWN
         ]
         assert not bad, (
             f"unexpected image — add it to KNOWN if deliberate: {bad}"
@@ -818,7 +823,7 @@ class TestImageReferencesAreIntact:
     def test_our_images_all_carry_the_dataagent_prefix(self):
         bad = [
             f"{w}: {i}" for w, i in self._images()
-            if i.startswith("REGISTRY/") and not i.startswith("REGISTRY/dataagent/")
+            if "/" in i and i not in self.KNOWN and not i.startswith("dataagent/")
         ]
         assert not bad, f"built image outside the dataagent/ namespace: {bad}"
 
@@ -838,23 +843,38 @@ class TestPostgresClientsUseTheRightPort:
         assert not bad, f"Postgres clients on the wrong port: {bad}"
 
 
-class TestFileBackedConfigMapsAreGenerated:
-    """The config files live once, in deploy/docker/, where the images are built
-    from them. The kustomization turns those same files into ConfigMaps, so
-    there is no second copy and no imperative `kubectl create` step to forget."""
+class TestFileBackedConfigMapsAreCreatable:
+    """These ConfigMaps hold files that live in deploy/docker/, so they are made
+    imperatively by create-configmaps.sh rather than committed as manifests.
+    That script and the manifests have to agree, or a pod waits forever on a
+    volume that never appears."""
 
-    KUSTOMIZATION = REPO_ROOT / "kustomization.yaml"
+    SCRIPT = K8S_DIR / "create-configmaps.sh"
+
+    ALIASES = {'"$DB"': "dataagent-database", '"$SVC"': "dataagent-service"}
 
     @classmethod
-    def _kustomization(cls) -> dict:
-        return yaml.safe_load(cls.KUSTOMIZATION.read_text(encoding="utf-8"))
+    def _lines(cls) -> list[str]:
+        """The script joined on backslash-continuations, comments dropped."""
+        body = cls.SCRIPT.read_text(encoding="utf-8").replace("\\\n", " ")
+        return [ln for ln in body.splitlines() if not ln.lstrip().startswith("#")]
 
     @classmethod
-    def _generated(cls) -> set[tuple[str, str]]:
-        return {
-            (g["namespace"], g["name"])
-            for g in cls._kustomization().get("configMapGenerator", [])
-        }
+    def _created(cls) -> set[tuple[str, str]]:
+        found = set()
+        for line in cls._lines():
+            m = re.match(r"cm (\S+) (\S+)", line.strip())
+            if m:
+                found.add((cls.ALIASES.get(m.group(1), m.group(1)), m.group(2)))
+        return found
+
+    @classmethod
+    def _sources(cls) -> list[str]:
+        return [
+            s.split("=")[-1].replace("$K", "deploy/docker")
+            for line in cls._lines()
+            for s in re.findall(r"--from-file=(\S+)", line)
+        ]
 
     @staticmethod
     def _mounted() -> set[tuple[str, str]]:
@@ -877,44 +897,132 @@ class TestFileBackedConfigMapsAreGenerated:
             for _, d in TOP_LEVEL if d["kind"] == "ConfigMap"
         }
 
-    def test_every_mounted_configmap_is_inline_or_generated(self):
-        missing = self._mounted() - self._inline() - self._generated()
+    def test_every_mounted_configmap_is_inline_or_created_by_the_script(self):
+        missing = self._mounted() - self._inline() - self._created()
         assert not missing, (
             f"mounted but nothing creates it: {sorted(missing)} — the pod waits "
             f"forever for that volume"
         )
 
-    def test_no_generator_is_unused(self):
-        extra = self._generated() - self._mounted()
-        assert not extra, f"configMapGenerator entries nothing mounts: {sorted(extra)}"
+    def test_the_script_creates_nothing_unused(self):
+        extra = self._created() - self._mounted()
+        assert not extra, f"create-configmaps.sh creates ConfigMaps nothing mounts: {sorted(extra)}"
 
-    def test_a_generator_lands_in_the_namespace_that_mounts_it(self):
+    def test_each_configmap_is_created_in_the_namespace_that_mounts_it(self):
         """ConfigMaps are namespaced. `db-init-sql` is the trap: the SQL targets
         the database, but the Job that mounts it runs in the service namespace."""
         by_name: dict[str, set[str]] = {}
         for ns, name in self._mounted():
             by_name.setdefault(name, set()).add(ns)
         wrong = [
-            f"{name}: generated into {ns}, mounted in {sorted(by_name[name])}"
-            for ns, name in self._generated()
+            f"{name}: created in {ns}, mounted in {sorted(by_name[name])}"
+            for ns, name in self._created()
             if name in by_name and ns not in by_name[name]
         ]
-        assert not wrong, f"generated into the wrong namespace: {wrong}"
+        assert not wrong, f"created in the wrong namespace: {wrong}"
 
-    def test_every_generator_source_file_exists(self):
+    def test_every_source_file_exists(self):
+        missing = [s for s in self._sources() if not (REPO_ROOT / s).exists()]
+        assert not missing, f"create-configmaps.sh reads files that do not exist: {missing}"
+
+
+# ── the Dockerfiles carry no deployment config ─────────────────────────────
+
+class TestDockerfilesCarryNoDeploymentConfig:
+    """The start command, the port and every environment-dependent value live in
+    deploy/k8s. A Dockerfile that also carries them is a second place to change,
+    and the two drift — which is how the images ended up pinned to pre-migration
+    ports and a hardcoded Postgres password."""
+
+    DOCKERFILES = sorted(
+        list((REPO_ROOT / "backend" / "services").glob("*/Dockerfile"))
+        + [REPO_ROOT / "backend" / "alembic" / "Dockerfile",
+           REPO_ROOT / "model" / "eval" / "Dockerfile",
+           REPO_ROOT / "frontend" / "Dockerfile.dev"]
+    )
+
+    # facts about the image layout, not about any environment
+    BUILD_TIME_ENV = {
+        "PYTHONPATH", "PYTHONUNBUFFERED", "PYTHONDONTWRITEBYTECODE",
+        "PIP_NO_CACHE_DIR", "PLAYWRIGHT_BROWSERS_PATH",
+    }
+
+    def test_the_set_is_not_empty(self):
+        assert len(self.DOCKERFILES) >= 12, "Dockerfile discovery broke"
+
+    @pytest.mark.parametrize("path", DOCKERFILES, ids=lambda p: p.parent.name)
+    def test_no_expose_or_start_command(self, path):
+        offenders = [
+            line.strip()
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if re.match(r"^\s*(EXPOSE|CMD|ENTRYPOINT)\b", line)
+        ]
+        assert not offenders, (
+            f"{path.parent.name}/{path.name} still declares {offenders} — the port "
+            f"and start command belong to the manifest"
+        )
+
+    @pytest.mark.parametrize("path", DOCKERFILES, ids=lambda p: p.parent.name)
+    def test_no_environment_dependent_env(self, path):
+        body = path.read_text(encoding="utf-8")
+        # ENV blocks continue across backslash-terminated lines
+        names, in_env = [], False
+        for line in body.splitlines():
+            s = line.strip()
+            if re.match(r"^ENV\b", s):
+                in_env = True
+                s = s[3:].strip()
+            elif not in_env:
+                continue
+            for m in re.finditer(r"([A-Z][A-Z0-9_]*)=", s):
+                names.append(m.group(1))
+            in_env = s.endswith("\\")
+        leaked = sorted(set(names) - self.BUILD_TIME_ENV)
+        assert not leaked, (
+            f"{path.parent.name}/{path.name} bakes in {leaked} — put it in the "
+            f"workload's ConfigMap or Secret instead"
+        )
+
+    @pytest.mark.parametrize("path", DOCKERFILES, ids=lambda p: p.parent.name)
+    def test_no_dangling_line_continuation(self, path):
+        """Removing a directive that was the continuation of the line above it
+        leaves a trailing backslash and an unbuildable image — docker only finds
+        out at build time, so find it here."""
+        lines = path.read_text(encoding="utf-8").splitlines()
+        dangling = []
+        for i, line in enumerate(lines):
+            if not line.rstrip().endswith("\\"):
+                continue
+            nxt = next((l for l in lines[i + 1:] if l.strip()), "")
+            if not nxt or nxt.lstrip().startswith("#"):
+                dangling.append(f"line {i + 1}: {line.strip()[:60]}")
+        assert not dangling, f"{path.parent.name}/{path.name} {dangling}"
+
+
+class TestEveryBuiltImageIsStartedByItsManifest:
+    """With no CMD in the image, a manifest that forgets `command` gives a pod
+    that starts and immediately exits."""
+
+    # dataagent/kong is a thin layer over kong:3.6-ubuntu — it adds our Lua
+    # plugin and inherits the upstream entrypoint, which is the right start
+    # command. Everything else builds from a bare base and has no CMD left.
+    INHERITS_UPSTREAM_ENTRYPOINT = {"dataagent/kong:latest"}
+
+    def test_our_containers_all_declare_a_command(self):
         missing = []
-        for g in self._kustomization().get("configMapGenerator", []):
-            for entry in g.get("files", []):
-                path = entry.split("=", 1)[-1]
-                if not (REPO_ROOT / path).is_file():
-                    missing.append(f"{g['name']}: {path}")
-        assert not missing, f"configMapGenerator points at files that do not exist: {missing}"
-
-    def test_every_manifest_is_listed_as_a_resource(self):
-        listed = set(self._kustomization()["resources"])
-        on_disk = {
-            str(f.relative_to(REPO_ROOT)).replace("\\", "/")
-            for d in APPLIED_DIRS for f in d.glob("*.yaml")
-        }
-        missing = on_disk - listed
-        assert not missing, f"manifest not in kustomization.yaml — it will not apply: {sorted(missing)}"
+        for _, doc in TOP_LEVEL:
+            spec = doc.get("spec", {})
+            tmpl = spec.get("template") or spec.get("jobTemplate", {}).get("spec", {}).get("template")
+            pod = (tmpl or {}).get("spec")
+            if not pod:
+                continue
+            for c in pod.get("containers", []) + pod.get("initContainers", []):
+                if not c["image"].startswith("dataagent/"):
+                    continue
+                if c["image"] in self.INHERITS_UPSTREAM_ENTRYPOINT:
+                    continue
+                if not c.get("command") and not c.get("args"):
+                    missing.append(f"{doc['metadata']['name']}/{c['name']}")
+        assert not missing, (
+            f"built image with no command and no CMD to fall back on: {missing}"
+        )

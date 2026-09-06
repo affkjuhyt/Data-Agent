@@ -52,7 +52,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: model-service
-        image: REGISTRY/dataagent/model_service:latest
+        image: dataagent/model_service:latest
         ports:
         - containerPort: 8230
           name: http
@@ -94,6 +94,14 @@ spec:
         volumeMounts:
         - name: tmp
           mountPath: /tmp
+        command:
+        - uvicorn
+        - app:create_app
+        - --factory
+        - --host
+        - 0.0.0.0
+        - --port
+        - '8230'
       volumes:
       - name: tmp
         emptyDir: {}

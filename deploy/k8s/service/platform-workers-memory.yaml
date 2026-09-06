@@ -59,7 +59,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: platform-workers-memory
-        image: REGISTRY/dataagent/platform-workers:latest
+        image: dataagent/platform-workers:latest
         envFrom:
         - configMapRef:
             name: dataagent-config
@@ -84,6 +84,11 @@ spec:
         volumeMounts:
         - name: tmp
           mountPath: /tmp
+        command:
+        - python
+        - -u
+        - -m
+        - services.platform_workers
       volumes:
       - name: tmp
         emptyDir: {}

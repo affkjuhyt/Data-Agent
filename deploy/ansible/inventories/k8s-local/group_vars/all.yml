@@ -1,0 +1,16 @@
+---
+apply_databases: true
+apply_jobs: false
+apply_services: false
+apply_setup: false
+
+image_tag: latest
+image_import: ""
+image_push: false
+
+wait_statefulset: 600
+wait_job: 900
+
+public_api_url: http://localhost:8100
+keycloak_public_url: http://localhost:8110
+langfuse_public_url: http://localhost:8420

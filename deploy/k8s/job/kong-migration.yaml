@@ -54,7 +54,7 @@ spec:
       automountServiceAccountToken: false
       containers:
       - name: kong-migration
-        image: REGISTRY/dataagent/kong:latest
+        image: dataagent/kong:latest
         command:
         - sh
         - -c
