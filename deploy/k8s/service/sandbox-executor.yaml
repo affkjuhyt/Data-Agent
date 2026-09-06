@@ -82,7 +82,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: sandbox-executor
-        image: REGISTRY/dataagent/sandbox_executor:latest
+        image: dataagent/sandbox_executor:latest
         ports:
         - containerPort: 8260
           name: http
@@ -124,6 +124,13 @@ spec:
         volumeMounts:
         - name: tmp
           mountPath: /tmp
+        command:
+        - uvicorn
+        - app:app
+        - --host
+        - 0.0.0.0
+        - --port
+        - '8260'
       volumes:
       - name: tmp
         emptyDir: {}

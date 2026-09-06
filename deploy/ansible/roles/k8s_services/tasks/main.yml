@@ -1,0 +1,38 @@
+---
+- name: Deploy service tier
+  when: (apply_services | bool)
+  block:
+    - name: Create service workloads
+      ansible.builtin.shell: |
+        set -euo pipefail
+        stage=$(mktemp -d)
+        trap 'rm -rf "$stage"' EXIT
+        for f in {{ k8s_dir }}/service/*.yaml; do
+          {{ k8s_sed }} "$f" > "$stage/$(basename "$f")"
+        done
+        {{ kubectl }} apply -f "$stage/"
+      args:
+        executable: /bin/bash
+      register: svc_apply
+      changed_when: "'created' in svc_apply.stdout or 'configured' in svc_apply.stdout"
+
+    - name: Wait for gateway
+      ansible.builtin.command: >
+        {{ kubectl }} -n {{ ns_service }} rollout status deployment/{{ item }}
+        --timeout={{ wait_rollout }}s
+      loop: [keycloak, kong]
+      changed_when: false
+
+    - name: Wait for services
+      ansible.builtin.command: >
+        {{ kubectl }} -n {{ ns_service }} rollout status deployment/{{ item }}
+        --timeout={{ wait_rollout }}s
+      register: svc_rollout
+      changed_when: false
+      failed_when: false
+      loop: "{{ service_workloads }}"
+
+    - name: Report failed rollouts
+      ansible.builtin.debug:
+        msg: "{{ svc_rollout.results | rejectattr('rc', 'equalto', 0) | map(attribute='item') | list }}"
+      when: svc_rollout.results | rejectattr('rc', 'equalto', 0) | list | length > 0

@@ -1,0 +1,83 @@
+---
+- name: Check namespaces
+  ansible.builtin.command: >
+    {{ kubectl }} get namespace {{ item }} -o jsonpath={% raw %}'{.status.phase}'{% endraw %}
+  register: ns_check
+  failed_when: ns_check.stdout != 'Active'
+  changed_when: false
+  loop:
+    - "{{ ns_service }}"
+    - "{{ ns_database }}"
+
+- name: Check networkpolicies
+  ansible.builtin.command: >
+    {{ kubectl }} -n {{ item }} get networkpolicy default-deny-all -o name
+  register: denyall
+  failed_when: denyall.rc != 0
+  changed_when: false
+  loop:
+    - "{{ ns_service }}"
+    - "{{ ns_database }}"
+
+- name: Check rolebindings
+  ansible.builtin.command: >
+    {{ kubectl }} -n {{ ns_database }} get rolebinding
+    -o jsonpath={% raw %}'{range .items[*]}{.subjects[*].name} {end}'{% endraw %}
+  register: bindings
+  changed_when: false
+  failed_when: bindings.stdout | trim | replace('openbao', '') | trim | length > 0
+
+- name: Check store ports
+  ansible.builtin.command: >
+    {{ kubectl }} -n {{ ns_database }} get svc {{ item.svc }}
+    -o jsonpath={% raw %}'{.spec.ports[0].port}'{% endraw %}
+  register: svc_port
+  failed_when: svc_port.stdout != (item.port | string)
+  changed_when: false
+  loop:
+    - { svc: postgres, port: 8300 }
+    - { svc: mongo, port: 8310 }
+    - { svc: redis, port: 8320 }
+    - { svc: minio, port: 8360 }
+  loop_control:
+    label: "{{ item.svc }}:{{ item.port }}"
+
+- name: Get unready pods
+  ansible.builtin.command: >
+    {{ kubectl }} get pods -A
+    --field-selector=status.phase!=Running,status.phase!=Succeeded
+    -o jsonpath={% raw %}'{range .items[*]}{.metadata.namespace}/{.metadata.name}={.status.phase} {end}'{% endraw %}
+  register: bad_pods
+  changed_when: false
+
+- name: Get running images
+  ansible.builtin.command: >
+    {{ kubectl }} -n {{ ns_service }} get deployment
+    -o jsonpath={% raw %}'{range .items[*]}{.metadata.name}={.spec.template.spec.containers[0].image} {end}'{% endraw %}
+  register: running_images
+  changed_when: false
+
+- name: List deployed images
+  ansible.builtin.set_fact:
+    deployed_images: "{{ running_images.stdout.split() | select('search', image_prefix ~ '/') | list }}"
+
+- name: List mismatched tags
+  ansible.builtin.set_fact:
+    wrong_tag: >-
+      {{ deployed_images | reject('search', ':' ~ (image_tag | regex_escape) ~ '$') | list }}
+
+- name: Check deployed tag
+  ansible.builtin.assert:
+    that:
+      - deployed_images | length > 0
+      - wrong_tag | length == 0
+    fail_msg: "expected {{ image_tag }}, found {{ wrong_tag | join(', ') | default('no deployments', true) }}"
+    success_msg: "{{ deployed_images | length }} deployments on {{ image_tag }}"
+  when: image_tag != 'latest' and (apply_services | bool)
+
+- name: Report summary
+  ansible.builtin.debug:
+    msg:
+      - "tag:       {{ image_tag }}"
+      - "deployed:  {{ deployed_images | join(' ') | default('none', true) }}"
+      - "not ready: {{ bad_pods.stdout | trim | default('none', true) }}"

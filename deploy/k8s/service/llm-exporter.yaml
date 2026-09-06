@@ -55,7 +55,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: llm-exporter
-        image: REGISTRY/dataagent/llm_exporter:latest
+        image: dataagent/llm_exporter:latest
         ports:
         - containerPort: 8270
           name: http
@@ -93,6 +93,13 @@ spec:
         envFrom:
         - configMapRef:
             name: llm-exporter-env
+        command:
+        - uvicorn
+        - exporter:app
+        - --host
+        - 0.0.0.0
+        - --port
+        - '8270'
       volumes:
       - name: tmp
         emptyDir: {}

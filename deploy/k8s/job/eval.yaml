@@ -52,7 +52,7 @@ spec:
       enableServiceLinks: false
       containers:
       - name: eval
-        image: REGISTRY/dataagent/eval:latest
+        image: dataagent/eval:latest
         envFrom:
         - configMapRef:
             name: dataagent-config
@@ -79,6 +79,11 @@ spec:
           mountPath: /reports
         - name: tmp
           mountPath: /tmp
+        command:
+        - sh
+        - -c
+        - python -m model.eval.run --tier all --out /reports/eval-report.json && python -m model.eval.gate
+          --report /reports/eval-report.json
       volumes:
       - name: reports
         emptyDir: {}
