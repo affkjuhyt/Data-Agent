@@ -250,6 +250,36 @@ _ALIAS_VERIFY_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
+# Structured-table ingestion mode: propose a normalized schema from a
+# spreadsheet's flat header row + a small row sample. Closed type vocabulary
+# — must match kb_backend's structured_table.py _TYPE_MAP one-for-one, since
+# that's what actually creates the Postgres columns after human review.
+STRUCTURED_COLUMN_TYPES = ["text", "integer", "numeric", "boolean", "date", "timestamp"]
+
+_TABLE_SCHEMA_PROPOSAL_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "table_name": {"type": "string"},
+        "description": {"type": "string"},
+        "columns": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "type": {"type": "string", "enum": STRUCTURED_COLUMN_TYPES},
+                    "nullable": {"type": "boolean"},
+                    "source_header": {"type": "string"},
+                },
+                "required": ["name", "type", "nullable", "source_header"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["table_name", "description", "columns"],
+    "additionalProperties": False,
+}
+
 SCHEMAS_BY_SYSTEM_TYPE: dict[str, dict[str, Any]] = {
     "entity-intent": _ENTITY_INTENT_SCHEMA,
     "relationship": _RELATIONSHIP_SCHEMA,
@@ -263,4 +293,5 @@ SCHEMAS_BY_SYSTEM_TYPE: dict[str, dict[str, Any]] = {
     "doc-entity": _DOC_ENTITY_SCHEMA,
     "alias-verify": _ALIAS_VERIFY_SCHEMA,
     "merge-verify": _MERGE_VERIFY_SCHEMA,
+    "table-schema-proposal": _TABLE_SCHEMA_PROPOSAL_SCHEMA,
 }

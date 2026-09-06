@@ -20,6 +20,11 @@ metadata:
 data:
   VITE_KEYCLOAK_REALM: aeroflow
   VITE_KEYCLOAK_CLIENT: aeroflow-frontend
+  # frontend/vite.config.ts's hmr.clientPort — this pod is reached at this
+  # NodePort (service/frontend.yaml), not the :8280 vite listens on inside
+  # the container; without this the HMR websocket tries the wrong port and
+  # the browser can never reach it.
+  VITE_HMR_CLIENT_PORT: '30280'
 
 ---
 apiVersion: apps/v1
@@ -31,7 +36,14 @@ metadata:
     app: frontend
     app.kubernetes.io/part-of: dataagent
 spec:
-  replicas: 2
+  # `npm run dev` is a stateful Vite dev server (per-process optimizeDeps
+  # cache, own module graph) — the Service below has no session affinity, so
+  # >1 replica lets a single page load split its module/chunk requests
+  # across two independent dev-server processes, each with its own React
+  # pre-bundle instance. Two "react" copies in one page is exactly what
+  # throws "Invalid hook call" / "Cannot read properties of null
+  # (reading 'useState')". Keep this at 1 as long as this runs `npm run dev`.
+  replicas: 1
   selector:
     matchLabels:
       app: frontend
@@ -50,6 +62,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 30
       containers:
       - name: frontend
@@ -88,6 +101,12 @@ spec:
         volumeMounts:
         - name: tmp
           mountPath: /tmp
+        - name: vite-temp
+          mountPath: /app/node_modules/.vite-temp
+        # Separate from .vite-temp above: this is vite's dependency
+        # pre-bundling cache, also written at every dev-server start.
+        - name: vite-cache
+          mountPath: /app/node_modules/.vite
         args:
         - npm
         - run
@@ -104,6 +123,14 @@ spec:
             name: frontend-secrets
       volumes:
       - name: tmp
+        emptyDir: {}
+      # readOnlyRootFilesystem: true, but vite's dev server bundles
+      # vite.config.ts on the fly and writes the bundle next to it —
+      # node_modules/.vite-temp/ — before it will even start. Without a
+      # writable mount there the container never gets past that first write.
+      - name: vite-temp
+        emptyDir: {}
+      - name: vite-cache
         emptyDir: {}
       serviceAccountName: frontend
 
@@ -122,5 +149,7 @@ spec:
   ports:
   - port: 8280
     targetPort: 8280
+    nodePort: 30280
     name: http
-  type: ClusterIP
+  # Single-node appliance mode, no ingress controller — see kong.yaml.
+  type: NodePort

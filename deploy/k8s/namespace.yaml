@@ -54,3 +54,38 @@ spec:
     defaultRequest:
       cpu: 100m
       memory: 128Mi
+
+---
+# Holds only the sandbox-executor pool's warm execution pods (k8s_pool.py) —
+# nothing else runs here. A dedicated namespace makes the isolation boundary
+# a namespace boundary too: networkpolicy-sandbox.yaml's default-deny has no
+# allow rules at all (unlike -service/-database, which reopen specific
+# flows), and rbac.yaml's sandbox-executor grant is scoped to only this
+# namespace's pods/pods-exec, nothing in -service or -database.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dataagent-sandbox
+  labels:
+    name: dataagent-sandbox
+    app.kubernetes.io/part-of: dataagent
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: defaults
+  namespace: dataagent-sandbox
+spec:
+  limits:
+  - type: Container
+    default:
+      cpu: 500m
+      memory: 512Mi
+    defaultRequest:
+      cpu: 100m
+      memory: 128Mi

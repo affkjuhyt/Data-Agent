@@ -19,15 +19,17 @@ import { useAppState } from '../../../AppStateContext';
 import { apiMutate } from '../../../lib/apiClient';
 import { useCursorPagination } from '../../../lib/useCursorPagination';
 import { Pagination } from '../../shared/Pagination';
+import { FilterPopover } from '../../shared/FilterPopover';
 import { SourceCategory, SOURCE_CATEGORIES, ALL_SOURCE_CATEGORIES, sourceParam } from './inventory.data';
 
 interface AssetInventoryProps {
   onSelectAsset: (asset: KnowledgeDocument) => void;
   onPromote?: (doc: KnowledgeDocument) => void;
+  onReviewSchema?: (doc: KnowledgeDocument) => void;
   promotingIds?: Set<string>;
 }
 
-export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Set() }: AssetInventoryProps) => {
+export const AssetInventory = ({ onSelectAsset, onPromote, onReviewSchema, promotingIds = new Set() }: AssetInventoryProps) => {
   const { updateDocument, deleteDocument } = useAppState();
   const [activeFilter, setActiveFilter] = useState<'bronze' | 'silver' | 'gold'>('bronze');
   // Multi-select source chips, default all-on. Backend does the filtering
@@ -186,73 +188,42 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
 
   return (
     <div className="space-y-6 h-full">
-      {/* ─── FILTERS PLACED DIRECTLY ABOVE SEARCH BAR ─── */}
-      <div className="bg-[#FFFDF8] border border-[#BFA66A] p-5 rounded-2xl flex flex-col gap-4">
-         <div className="flex flex-col gap-2">
-            <span className="text-[10px] font-black uppercase tracking-widest text-[#8A5A00] opacity-80 font-mono">
-               Data Layers Filter
-            </span>
-            <div className="flex gap-2.5">
-               {(['bronze', 'silver', 'gold'] as const).map(filter => (
-                 <button
-                   key={filter}
-                   onClick={() => handleFilterChange(filter)}
-                   className={cn(
-                     "px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
-                     filter === activeFilter
-                       ? filter === 'bronze'
-                         ? "bg-[#92620A] text-white shadow-md shadow-[#92620A]/20"
-                         : filter === 'silver'
-                           ? "bg-[#4A5568] text-white shadow-md shadow-[#4A5568]/20"
-                           : "bg-[#B88719] text-white shadow-md shadow-[#B88719]/20"
-                       : "bg-white border border-[#BFA66A] text-[#8A5A00] hover:bg-[#FFF9E8]/20"
-                   )}
-                 >
-                   {filter === 'bronze' ? 'Bronze Data Layer' : filter === 'silver' ? 'Silver Data Layer' : 'Gold Data Layer'}
-                 </button>
-               ))}
-            </div>
-         </div>
-         
-         {/* Source type filter */}
-         <div className="flex flex-col gap-2">
-            <span className="text-[10px] font-black uppercase tracking-widest text-[#8A5A00] opacity-80 font-mono">
-               Source Type
-            </span>
-            <div className="flex gap-2 flex-wrap">
-               {SOURCE_CATEGORIES.map(({ id, label }) => {
-                 const active = selectedSources.has(id);
-                 return (
-                   <button
-                     key={id}
-                     onClick={() => toggleSource(id)}
-                     aria-pressed={active}
-                     className={cn(
-                       "px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
-                       active
-                         ? "bg-[#1E1B15] text-[#D9B86C] border border-[#BFA66A] shadow-sm"
-                         : "bg-white border border-[#BFA66A] text-[#8A5A00] opacity-60 hover:opacity-100 hover:bg-[#FFF9E8]/40"
-                     )}
-                   >
-                     {label}
-                   </button>
-                 );
-               })}
-            </div>
-         </div>
-
-         <div className="border-t border-[#BFA66A] pt-3.5 flex items-center">
-            <div className="relative group w-full sm:w-80">
-               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8A5A00] opacity-65 group-focus-within:opacity-100 transition-opacity" />
-               <input 
-                 type="text" 
-                 placeholder="Search by name, ID or author..." 
-                 value={searchQuery}
-                 onChange={(e) => handleSearchChange(e.target.value)}
-                 className="ui-input pl-12 pr-6 py-2.5 text-xs w-full font-mono" 
-               />
-            </div>
-         </div>
+      {/* ─── Filters (collapsed into a popover) + search, one compact row ─── */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <FilterPopover
+          activeCount={(activeFilter !== 'bronze' ? 1 : 0) + (ALL_SOURCE_CATEGORIES.length - selectedSources.size)}
+          groups={[
+            {
+              label: 'Data Layers Filter',
+              options: (['bronze', 'silver', 'gold'] as const).map(f => ({
+                id: f,
+                label: f === 'bronze' ? 'Bronze Data Layer' : f === 'silver' ? 'Silver Data Layer' : 'Gold Data Layer',
+                activeClassName:
+                  f === 'bronze' ? 'bg-[#92620A] text-white border border-[#92620A] shadow-md shadow-[#92620A]/20'
+                  : f === 'silver' ? 'bg-[#4A5568] text-white border border-[#4A5568] shadow-md shadow-[#4A5568]/20'
+                  : 'bg-[#B88719] text-white border border-[#B88719] shadow-md shadow-[#B88719]/20',
+              })),
+              isActive: (id) => id === activeFilter,
+              onToggle: (id) => handleFilterChange(id as 'bronze' | 'silver' | 'gold'),
+            },
+            {
+              label: 'Source Type',
+              options: SOURCE_CATEGORIES.map(({ id, label }) => ({ id, label })),
+              isActive: (id) => selectedSources.has(id as SourceCategory),
+              onToggle: (id) => toggleSource(id as SourceCategory),
+            },
+          ]}
+        />
+        <div className="relative group w-full sm:w-80 sm:ml-auto">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8A5A00] opacity-65 group-focus-within:opacity-100 transition-opacity" />
+          <input
+            type="text"
+            placeholder="Search by name, ID or author..."
+            value={searchQuery}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            className="ui-input pl-12 pr-6 py-2.5 text-xs w-full font-mono"
+          />
+        </div>
       </div>
 
       {/* ─── BATCH PROCESS ACTION BAR PLACED ABOVE TABLE ─── */}
@@ -413,6 +384,14 @@ export const AssetInventory = ({ onSelectAsset, onPromote, promotingIds = new Se
                               <CheckCircle2 className="w-3.5 h-3.5" />
                               <span className="text-[10px] font-mono font-black uppercase tracking-wider">Warehouse</span>
                             </div>
+                          ) : doc.ingestion_mode === 'structured_table' && doc.current_tier === 'bronze' ? (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onReviewSchema?.(doc); }}
+                              className="btn-ghost btn-sm"
+                            >
+                              Review Schema
+                              <ArrowRight className="w-3 h-3" />
+                            </button>
                           ) : (processingId === doc.data_id || promotingIds.has(doc.data_id)) ? (
                             <span className="text-[10px] font-mono font-bold text-[#B88719] uppercase tracking-wide flex items-center justify-end gap-1.5 font-mono">
                               <span className="w-3 h-3 rounded-full border-2 border-[#B88719] border-t-[#B88719] animate-spin" />

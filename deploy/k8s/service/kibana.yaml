@@ -50,6 +50,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 30
       containers:
       - name: kibana
@@ -62,8 +63,10 @@ spec:
             cpu: 250m
             memory: 512Mi
           limits:
-            cpu: '1'
-            memory: 1Gi
+            # Halved — not on the request path; headroom goes to
+            # kong/workflow-runtime/model-service instead.
+            cpu: 500m
+            memory: 512Mi
         readinessProbe:
           httpGet:
             path: /api/status

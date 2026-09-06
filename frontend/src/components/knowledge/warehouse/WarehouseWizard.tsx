@@ -157,10 +157,10 @@ export const WarehouseWizard = ({ onCancel, onComplete }: WarehouseWizardProps) 
     : false;
 
   return (
-    <div className="content-card content-card--static overflow-hidden">
+    <div className="content-card content-card--static overflow-hidden h-full flex flex-col">
 
       {/* Step indicator */}
-      <div className="bg-[#FFFDF8] border-b border-[#BFA66A] px-8 py-5 flex items-center gap-2">
+      <div className="bg-[#FFFDF8] border-b border-[#BFA66A] px-8 py-5 flex items-center gap-2 shrink-0">
         {([1, 2, 3, 4] as WizardStep[]).map((s, idx) => (
           <React.Fragment key={s}>
             <div className={cn(
@@ -183,7 +183,7 @@ export const WarehouseWizard = ({ onCancel, onComplete }: WarehouseWizardProps) 
       </div>
 
       {/* Step content */}
-      <div className="p-8 min-h-[400px] flex flex-col">
+      <div className="p-8 flex-1 overflow-y-auto custom-scrollbar flex flex-col">
 
         {/* Step 1 — Choose type */}
         {step === 1 && (
@@ -387,7 +387,7 @@ export const WarehouseWizard = ({ onCancel, onComplete }: WarehouseWizardProps) 
       </div>
 
       {/* Footer navigation */}
-      <div className="bg-[#FFFDF8]/60 border-t border-[#BFA66A] px-8 py-5 flex items-center justify-between">
+      <div className="bg-[#FFFDF8]/60 border-t border-[#BFA66A] px-8 py-5 flex items-center justify-between shrink-0">
         <button
           onClick={() => step === 1 ? onCancel() : setStep(prev => (prev - 1) as WizardStep)}
           className="btn-secondary btn-sm"

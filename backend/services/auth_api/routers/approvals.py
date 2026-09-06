@@ -269,7 +269,7 @@ def get_available_tenants(_user: dict[str, Any] = Depends(get_current_user)) -> 
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
-                "SELECT id, name, slug FROM tenants WHERE is_active = true AND deleted_at IS NULL ORDER BY name"
+                'SELECT id, name, slug FROM "Tenants" WHERE is_active = true AND deleted_at IS NULL ORDER BY name'
             )
             return [{"id": str(r["id"]), "name": r["name"], "slug": r["slug"]} for r in cur.fetchall()]
     finally:

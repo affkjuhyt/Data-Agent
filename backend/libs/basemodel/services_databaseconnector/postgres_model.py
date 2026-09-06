@@ -288,6 +288,7 @@ class KBDataInsert(TenantModel):
     abstract: str
     doc_metadata: MetadataType
     current_tier: Tier = Tier.BRONZE
+    ingestion_mode: str = "document"
     path: Optional[str] = None
     model_config = ConfigDict(use_enum_values=True)
 
@@ -381,6 +382,20 @@ class KBTableInsert(BaseModel):
     description: Optional[str] = None
     table_schema: Optional[dict[str, Any]] = None
     created_by: Optional[str] = None
+
+
+@register("insert")
+class KBStructuredImportJobInsert(BaseModel):
+    owner_id: str
+    status: str = "proposing"
+    llm_proposed_schema: Optional[dict[str, Any]] = None
+    human_edited_schema: Optional[dict[str, Any]] = None
+    sample_rows: Optional[dict[str, Any]] = None
+    created_table_name: Optional[str] = None
+    error_message: Optional[str] = None
+    created_by: Optional[str] = None
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime.datetime] = None
 
 
 @register("insert")
@@ -526,6 +541,11 @@ class KBWarehouseConfigDelete(BaseModel):
 @register("delete")
 class KBTableDelete(BaseModel):
     table_id: str
+
+
+@register("delete")
+class KBStructuredImportJobDelete(BaseModel):
+    job_id: str
 
 
 @register("delete")

@@ -1,3 +1,68 @@
+# sandbox-executor (dataagent-service) manages its own warm pool of
+# execution pods in dataagent-sandbox — see backend/services/sandbox_executor/
+# k8s_pool.py. Scoped to that one namespace and exactly the verbs the pool
+# needs: create/delete/get/list/watch on pods to spawn, health-check and
+# retire pool members, and create on pods/exec to run code in them. No
+# access to Secrets, ConfigMaps, or anything outside this namespace — a
+# compromised sandbox pod (or a bug in this code) can affect the sandbox
+# pool's own pods and nothing else the RBAC system would need to protect.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sandbox-executor-pool
+  namespace: dataagent-sandbox
+  labels:
+    app: sandbox-executor
+    app.kubernetes.io/part-of: dataagent
+rules:
+- apiGroups:
+  - ''
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - delete
+- apiGroups:
+  - ''
+  resources:
+  - pods/exec
+  verbs:
+  # The exec subresource is a WebSocket upgrade over HTTP GET, not POST —
+  # RBAC checks "get" for it regardless of client libraries calling their
+  # own wrapper method "create"/"connect". Both listed since which verb a
+  # given client library version actually sends isn't worth relitigating
+  # here — this subresource has no other capability to over-grant.
+  - get
+  - create
+- apiGroups:
+  - ''
+  resources:
+  - pods/log
+  verbs:
+  - get
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sandbox-executor-pool
+  namespace: dataagent-sandbox
+  labels:
+    app: sandbox-executor
+    app.kubernetes.io/part-of: dataagent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sandbox-executor-pool
+subjects:
+- kind: ServiceAccount
+  name: sandbox-executor
+  namespace: dataagent-service
+
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

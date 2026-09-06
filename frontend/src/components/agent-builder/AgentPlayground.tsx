@@ -990,7 +990,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
       setTraceLoading(false);
     } catch {
       setMessages(prev => prev.map(m =>
-        m.id === placeholderId ? { ...m, content: 'Lỗi: không kết nối được backend.' } : m,
+        m.id === placeholderId ? { ...m, content: 'Error: could not connect to the backend.' } : m,
       ));
       setTraceLoading(false);
     } finally {
@@ -1004,10 +1004,10 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     const { convId, placeholderId } = pendingApproval;
     try {
       const data = await apiMutate<any>('POST', `/api/reviews/${convId}/resume`, { approved, note: approvalNote });
-      const responseText = data.response || (approved ? '' : 'Yêu cầu không được phê duyệt.');
+      const responseText = data.response || (approved ? '' : 'Request was not approved.');
       setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: responseText } : m));
     } catch {
-      setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: 'Lỗi khi xử lý phê duyệt.' } : m));
+      setMessages(prev => prev.map(m => m.id === placeholderId ? { ...m, content: 'Error processing the approval.' } : m));
     } finally {
       setPendingApproval(null);
       setApprovalNote('');
@@ -1039,12 +1039,12 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
       const res = await resumeClarification(clar.sessionId, answer);
       setMessages(prev => prev.map(m => m.id === answerId ? {
         ...m,
-        content: res.response || (res.success ? '' : 'Không thể xử lý yêu cầu này.'),
+        content: res.response || (res.success ? '' : 'Could not process this request.'),
         suggestions: res.suggestions ?? [],
         status: res.success ? 'done' : 'error',
       } : m));
     } catch (err) {
-      setMessages(prev => prev.map(m => m.id === answerId ? { ...m, status: 'error', content: `Lỗi khi tiếp tục: ${(err as Error).message}` } : m));
+      setMessages(prev => prev.map(m => m.id === answerId ? { ...m, status: 'error', content: `Error resuming: ${(err as Error).message}` } : m));
     } finally {
       setSending(false);
     }
@@ -1243,7 +1243,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
               <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }}
                 style={{ margin: '0 12px 8px', background: '#FAF7EC', border: '1px solid #D6C79F', borderRadius: 12, overflow: 'hidden' }}>
                 <p style={{ padding: '10px 14px 6px', fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#777777', margin: 0 }}>
-                  Chọn hướng tiếp cận
+                  Choose an approach
                 </p>
                 <div style={{ padding: '0 8px 8px', display: 'flex', flexDirection: 'column', gap: 4 }}>
                   {pendingOptions.map((opt, i) => (
@@ -1262,7 +1262,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                           if (customOptionInput.trim()) { setCustomOptionInput(''); handleSend(customOptionInput.trim()); }
                         }
                       }}
-                      placeholder="Tự nhập câu trả lời..."
+                      placeholder="Type your own answer..."
                       rows={1}
                       style={{ flex: 1, background: 'transparent', fontSize: 13, color: '#3F3F3F', resize: 'none', outline: 'none', border: 'none', lineHeight: 1.5, fontFamily: 'inherit', fontStyle: 'italic' }}
                     />
@@ -1287,7 +1287,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                 <div style={{ padding: '10px 14px 6px', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#D9B86C', flexShrink: 0 }} />
                   <span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#B88719', fontWeight: 700 }}>
-                    Cần phê duyệt
+                    Approval needed
                   </span>
                 </div>
                 <div style={{ padding: '4px 14px 10px', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1304,7 +1304,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                   <textarea
                     value={approvalNote}
                     onChange={e => setApprovalNote(e.target.value)}
-                    placeholder="Ghi chú (tuỳ chọn)..."
+                    placeholder="Note (optional)..."
                     rows={1}
                     style={{ background: '#F8F5EC', border: '1px solid #F3EEDF', borderRadius: 6, padding: '6px 9px', fontSize: 11.5, color: '#3F3F3F', fontFamily: 'inherit', resize: 'none', outline: 'none' }}
                   />
@@ -1313,13 +1313,13 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                       disabled={approvalLoading}
                       onClick={() => handleApproval(false)}
                       style={{ flex: 1, padding: '7px 0', borderRadius: 7, border: '1px solid #F5B5B5', background: '#FDECEC', color: '#C62828', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: approvalLoading ? 0.5 : 1 }}>
-                      Từ chối
+                      Reject
                     </button>
                     <button
                       disabled={approvalLoading}
                       onClick={() => handleApproval(true)}
                       style={{ flex: 1, padding: '7px 0', borderRadius: 7, border: '1px solid #A5D6A7', background: '#E8F5E9', color: '#1D6F4C', fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: approvalLoading ? 0.5 : 1 }}>
-                      {approvalLoading ? 'Đang xử lý...' : 'Phê duyệt ✓'}
+                      {approvalLoading ? 'Processing...' : 'Approve ✓'}
                     </button>
                   </div>
                 </div>
@@ -1350,7 +1350,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                 placeholder={
                   traceLoading
-                    ? 'Đang tải trace, vui lòng đợi…'
+                    ? 'Loading trace, please wait…'
                     : mode === 'unified'
                       ? 'Ask anything — orchestrator plans & assigns agents…'
                       : !selectedAgent

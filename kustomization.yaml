@@ -12,6 +12,7 @@ resources:
   - deploy/k8s/rbac.yaml
   - deploy/k8s/networkpolicy-service.yaml
   - deploy/k8s/networkpolicy-database.yaml
+  - deploy/k8s/networkpolicy-sandbox.yaml
   - deploy/k8s/database/clickhouse.yaml
   - deploy/k8s/database/elasticsearch.yaml
   - deploy/k8s/database/kafka.yaml
@@ -44,6 +45,7 @@ resources:
   - deploy/k8s/service/prometheus.yaml
   - deploy/k8s/service/release-worker.yaml
   - deploy/k8s/service/sandbox-executor.yaml
+  - deploy/k8s/service/sandbox-runner.yaml
   - deploy/k8s/service/workflow-runtime.yaml
   - deploy/k8s/job/db-init.yaml
   - deploy/k8s/job/eval.yaml
@@ -103,3 +105,42 @@ configMapGenerator:
     namespace: dataagent-service
     files:
       - deploy/docker/monitoring/grafana/dashboards/kb-ccu.json
+
+# REGISTRY/ is a placeholder in the checked-in manifests (tests/unit/test_k8s_manifests.py
+# asserts every workload image either starts with it or is an external image
+# it recognises) — real substitution happens here, at apply time, so the repo
+# never hardcodes one registry. This single-node cluster runs a local
+# registry (see deploy/k8s/install-k3s.sh + build-push-images.sh).
+images:
+  - name: REGISTRY/dataagent/auth_api
+    newName: localhost:5000/dataagent/auth_api
+  - name: REGISTRY/dataagent/flow_builder
+    newName: localhost:5000/dataagent/flow_builder
+  - name: REGISTRY/dataagent/kb-backend
+    newName: localhost:5000/dataagent/kb-backend
+  - name: REGISTRY/dataagent/kb-ingestion-worker
+    newName: localhost:5000/dataagent/kb-ingestion-worker
+  - name: REGISTRY/dataagent/llm_exporter
+    newName: localhost:5000/dataagent/llm_exporter
+  - name: REGISTRY/dataagent/model_service
+    newName: localhost:5000/dataagent/model_service
+  - name: REGISTRY/dataagent/platform-workers
+    newName: localhost:5000/dataagent/platform-workers
+  - name: REGISTRY/dataagent/release_worker
+    newName: localhost:5000/dataagent/release_worker
+  - name: REGISTRY/dataagent/sandbox_executor
+    newName: localhost:5000/dataagent/sandbox_executor
+  - name: REGISTRY/dataagent/workflow_runtime
+    newName: localhost:5000/dataagent/workflow_runtime
+  - name: REGISTRY/dataagent/migrate
+    newName: localhost:5000/dataagent/migrate
+  - name: REGISTRY/dataagent/kong
+    newName: localhost:5000/dataagent/kong
+  - name: REGISTRY/dataagent/frontend
+    newName: localhost:5000/dataagent/frontend
+  - name: REGISTRY/dataagent/eval
+    newName: localhost:5000/dataagent/eval
+  - name: REGISTRY/dataagent/keycloak
+    newName: localhost:5000/dataagent/keycloak
+  - name: REGISTRY/dataagent/setup
+    newName: localhost:5000/dataagent/setup

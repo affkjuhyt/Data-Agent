@@ -38,7 +38,7 @@ def list_drift_events(
             if resolved is not None:
                 cur.execute(
                     """SELECT id, env_pair, drift_keys, severity, detected_at, resolved
-                       FROM drift_events
+                       FROM "DriftEvents"
                        WHERE resolved = %s
                        ORDER BY detected_at DESC LIMIT %s""",
                     (resolved, limit)
@@ -46,7 +46,7 @@ def list_drift_events(
             else:
                 cur.execute(
                     """SELECT id, env_pair, drift_keys, severity, detected_at, resolved
-                       FROM drift_events
+                       FROM "DriftEvents"
                        ORDER BY detected_at DESC LIMIT %s""",
                     (limit,)
                 )
@@ -74,7 +74,7 @@ def resolve_drift_event(
     with get_pg_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE drift_events SET resolved = true WHERE id = %s",
+                'UPDATE "DriftEvents" SET resolved = true WHERE id = %s',
                 (drift_id,)
             )
             if cur.rowcount == 0:

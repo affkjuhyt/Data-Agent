@@ -348,7 +348,7 @@ async def _catalog_schema_text(tenant_id: str, conn_cfg: dict[str, Any], query: 
         return ""
 
     try:
-        from schema_catalog import format_catalog_context, retrieve_schema_catalog
+        from services.workflow_runtime.schema_catalog import format_catalog_context, retrieve_schema_catalog
 
         hits = await retrieve_schema_catalog(
             tenant_id, query, warehouse_id=warehouse_id, limit=_CATALOG_TOP_K,
@@ -401,7 +401,7 @@ async def _list_tables(
 
     Cached because the table list changes at DDL speed, not per question.
     """
-    from redis_cache import cache_get_schema, cache_set_schema
+    from services.workflow_runtime.redis_cache import cache_get_schema, cache_set_schema
 
     host, port, database = conn_cfg.get("host", ""), conn_cfg.get("port", 5432), conn_cfg.get("database", "")
 
@@ -527,7 +527,7 @@ async def _provenance(
     if not tenant_id:
         return None
     try:
-        from data_provenance import provenance_for_sql
+        from services.workflow_runtime.data_provenance import provenance_for_sql
 
         return await provenance_for_sql(tenant_id, conn_cfg, sql)
     except Exception as e:
@@ -628,7 +628,7 @@ async def _semantic_result(
     lookup against a cached catalog — no LLM call, no database round-trip.
     """
     try:
-        from semantic_layer import match_question
+        from services.workflow_runtime.semantic_layer import match_question
 
         from libs.semantic import AnalyticalSlots
 

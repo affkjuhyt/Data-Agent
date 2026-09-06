@@ -118,6 +118,13 @@ spec:
     ports:
     - protocol: TCP
       port: 8110
+  # keycloak is also NodePort (30110, see service/keycloak.yaml) on this
+  # single-node cluster — no ingress controller to front it, and the browser
+  # needs to reach it directly for the login redirect. No `from` = all
+  # sources, same pattern as allow-ingress-controller-to-kong.
+  - ports:
+    - protocol: TCP
+      port: 8110
     - protocol: TCP
       port: 8111
 
@@ -143,6 +150,7 @@ spec:
     - podSelector:
         matchLabels:
           app: workflow-runtime
+
     ports:
     - protocol: TCP
       port: 8220
@@ -521,6 +529,12 @@ spec:
     ports:
     - protocol: TCP
       port: 8280
+  # frontend is also NodePort (30280, see service/frontend.yaml) on this
+  # single-node cluster — browsers load the UI directly, not through Kong.
+  # No `from` = all sources, same pattern as allow-ingress-controller-to-kong.
+  - ports:
+    - protocol: TCP
+      port: 8280
 
 ---
 apiVersion: networking.k8s.io/v1
@@ -596,8 +610,50 @@ spec:
         cidr: 10.10.55.101/32
     ports:
     - protocol: TCP
+      port: 8001
+    - protocol: TCP
       port: 8002
     - protocol: TCP
       port: 8003
     - protocol: TCP
       port: 8004
+
+---
+# k8s_pool.py calls the API server (create/exec/delete pods in
+# dataagent-sandbox) via its in-cluster ServiceAccount token — kube-apiserver
+# runs as a host process in k3s, not a Pod, so podSelector-based rules can't
+# name it; the ClusterIP every in-cluster client actually dials
+# (`kubernetes.default.svc`, always 10.43.0.1:443 in this cluster) is the
+# only thing to allow.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-k8s-api
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: sandbox-executor
+  policyTypes:
+  - Egress
+  egress:
+  # Both the kubernetes.default ClusterIP (what the in-cluster client
+  # library actually dials — KUBERNETES_SERVICE_HOST/PORT) and the real
+  # node address kube-apiserver listens on (`kubectl get endpoints
+  # kubernetes`) — see the debugging note in this policy's history for why
+  # both are listed rather than assuming which one a given NetworkPolicy
+  # implementation matches on for egress to a Service.
+  - to:
+    - ipBlock:
+        cidr: 10.43.0.1/32
+    ports:
+    - protocol: TCP
+      port: 443
+  - to:
+    - ipBlock:
+        cidr: 10.10.55.101/32
+    ports:
+    - protocol: TCP
+      port: 6443

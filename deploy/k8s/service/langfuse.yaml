@@ -72,6 +72,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 30
       containers:
       - name: langfuse
@@ -84,7 +85,14 @@ spec:
             cpu: 250m
             memory: 512Mi
           limits:
-            cpu: '1'
+            # Memory reverted to 2Gi: 1Gi OOM-killed Langfuse's Next.js
+            # server on startup ("JavaScript heap out of memory") every
+            # time, leaving a permanently crash-looping pod behind a stuck
+            # rollout — the trace-viewer UI hit that pod ~half the time via
+            # round-robin, which is what made it "cực kỳ chậm". CPU stays
+            # halved (that wasn't the crash cause and it's off the request
+            # path); headroom goes to kong/workflow-runtime/model-service.
+            cpu: 500m
             memory: 2Gi
         readinessProbe:
           httpGet:

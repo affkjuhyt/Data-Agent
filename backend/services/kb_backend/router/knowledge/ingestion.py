@@ -69,6 +69,7 @@ async def ingest_bronze(
         source_type: str = Form(...),
         doc_metadata: str = Form("{}"),
         knowledge_base_id: str = Form(""),
+        ingestion_mode: str = Form("document"),
         ctx: dict[str, Any] = Depends(require_perm("addData")),
 ) -> Any:
     file_bytes = await file.read()
@@ -78,6 +79,14 @@ async def ingest_bronze(
     name = name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="Knowledge Name is required")
+
+    if ingestion_mode not in ("document", "structured_table"):
+        raise HTTPException(status_code=422, detail="Invalid ingestion_mode")
+    if ingestion_mode == "structured_table" and extension not in ("xlsx", "xls", "csv"):
+        raise HTTPException(
+            status_code=422,
+            detail="structured_table mode requires an .xlsx, .xls, or .csv file",
+        )
 
     try:
         src = SourceType(source_type)
@@ -117,6 +126,7 @@ async def ingest_bronze(
                 file_bytes=file_bytes,
                 content_type=file.content_type or "application/octet-stream",
                 knowledge_base_id=knowledge_base_id or None,
+                ingestion_mode=ingestion_mode,
             ),
             svc(request, "minio").get_client(),
             svc(request, "postgres"),

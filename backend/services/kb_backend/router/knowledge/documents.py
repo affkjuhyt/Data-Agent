@@ -16,7 +16,7 @@ from services.kb_backend.schemas import (
     CreateChunkVersionRequest,
 )
 from services.kb_backend.dependencies.services import svc
-from services.kb_backend.dependencies.auth import require_perm
+from services.kb_backend.dependencies.auth import authenticate, require_perm
 from services.kb_backend.pipeline.ingestion.config import MINIO_BUCKET
 from services.kb_backend.operations.chunk_ops import (
     get_chunks, delete_chunk, activate_chunk_version,

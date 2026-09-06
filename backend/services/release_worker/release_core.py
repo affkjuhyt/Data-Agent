@@ -108,7 +108,7 @@ def update_pipeline_status(pipeline_id: str, status: str, error: Optional[str] =
     with get_pg_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                """UPDATE pipelines SET status=%s, error_message=%s, updated_at=now(),
+                """UPDATE "Pipelines" SET status=%s, error_message=%s, updated_at=now(),
                    completed_at=CASE WHEN %s IN ('SUCCESS','FAILED','ROLLED_BACK') THEN now() ELSE NULL END
                    WHERE id=%s""",
                 (status, error, status, pipeline_id)
@@ -122,7 +122,7 @@ def record_pipeline_step(pipeline_id: str, step_name: str, status: str,
     with get_pg_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                """INSERT INTO pipeline_steps
+                """INSERT INTO "PipelineSteps"
                    (pipeline_id, step_name, status, started_at, completed_at, duration_ms, output, error)
                    VALUES (%s, %s, %s, now(), now(), %s, %s, %s)""",
                 (pipeline_id, step_name, status, duration_ms,
@@ -136,7 +136,7 @@ def write_release_history(pipeline_id: str, package_id: str, environment: str,
     with get_pg_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                """INSERT INTO release_history
+                """INSERT INTO "ReleaseHistory"
                    (pipeline_id, package_id, environment, status, triggered_by, duration_ms)
                    VALUES (%s, %s, %s, %s, %s, %s)""",
                 (pipeline_id, package_id, environment, status, triggered_by, duration_ms)
@@ -198,7 +198,7 @@ def _run_pipeline_impl(pipeline_event: dict[str, Any]) -> dict[str, Any]:
             with get_pg_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        """INSERT INTO pipelines
+                        """INSERT INTO "Pipelines"
                            (id, pipeline_name, triggered_by, trigger_type, commit_sha, branch,
                             package_version, target_env, status)
                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'RUNNING')
@@ -256,7 +256,7 @@ def _run_pipeline_impl(pipeline_event: dict[str, Any]) -> dict[str, Any]:
             with get_pg_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        """INSERT INTO release_packages
+                        """INSERT INTO "ReleasePackages"
                            (id, pipeline_id, artifact_paths, validation_score,
                             status, created_by, environment_targets, scan_result)
                            VALUES (%s, %s, %s, %s, 'VALIDATED', %s, %s, %s)
@@ -424,7 +424,7 @@ def _run_approval_deploy(pipeline_id: str, environment: str, triggered_by: str) 
     try:
         with get_pg_conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT id FROM release_packages WHERE pipeline_id=%s LIMIT 1",
+                cur.execute('SELECT id FROM "ReleasePackages" WHERE pipeline_id=%s LIMIT 1',
                             (pipeline_id,))
                 row = cur.fetchone()
                 if not row:
@@ -487,7 +487,7 @@ def _execute_rollback_core(rollback_event: dict[str, Any]) -> dict[str, Any]:
             with get_pg_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        """UPDATE rollback_operations
+                        """UPDATE "RollbackOperations"
                            SET status='PARTIAL_ROLLBACK', current_step=%s,
                                steps_result=%s, completed_at=now()
                            WHERE id=%s""",
@@ -506,7 +506,7 @@ def _execute_rollback_core(rollback_event: dict[str, Any]) -> dict[str, Any]:
             with get_pg_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        """INSERT INTO rollback_operations
+                        """INSERT INTO "RollbackOperations"
                            (id, from_version, to_version, environment, triggered_by, reason, status)
                            VALUES (%s, %s, %s, %s, %s, %s, 'INITIATED')""",
                         (rollback_id, from_version, to_version, environment,
@@ -552,7 +552,7 @@ def _execute_rollback_core(rollback_event: dict[str, Any]) -> dict[str, Any]:
             with get_pg_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        """UPDATE rollback_operations
+                        """UPDATE "RollbackOperations"
                            SET status='SUCCESS', current_step=3,
                                steps_result=%s, completed_at=now()
                            WHERE id=%s""",
@@ -579,7 +579,7 @@ def _step1_update_release_pointer(environment: str, version: str) -> None:
     with get_pg_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                """INSERT INTO environment_configs (environment, key, value, updated_by)
+                """INSERT INTO "EnvironmentConfigs" (environment, key, value, updated_by)
                    VALUES (%s, 'active_version', %s, 'release_worker')
                    ON CONFLICT (environment, key, version) DO UPDATE
                    SET value=%s, updated_at=now()""",
@@ -689,7 +689,7 @@ def _detect_config_drift_core() -> dict[str, Any]:
             with get_pg_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        """INSERT INTO drift_events
+                        """INSERT INTO "DriftEvents"
                            (env_pair, drift_keys, severity)
                            VALUES (%s, %s, 'CRITICAL_DRIFT')
                            RETURNING id""",
@@ -729,7 +729,7 @@ def _get_env_config(environment: str) -> dict[str, Any]:
     with get_pg_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                """SELECT key, value FROM environment_configs
+                """SELECT key, value FROM "EnvironmentConfigs"
                    WHERE environment=%s AND is_active=true""",
                 (environment,)
             )

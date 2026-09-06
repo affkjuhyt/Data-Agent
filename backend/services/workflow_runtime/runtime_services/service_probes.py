@@ -82,7 +82,7 @@ async def _probe_postgres() -> str:
 
 
 async def _probe_redis() -> str:
-    import redis_cache
+    import services.workflow_runtime.redis_cache as redis_cache
 
     if redis_cache._client is not None:
         await redis_cache._client.ping()
@@ -109,7 +109,7 @@ async def _probe_mongo() -> str:
 
 
 async def _probe_kafka() -> str:
-    import kafka_producer
+    import services.workflow_runtime.kafka_producer as kafka_producer
 
     if not os.environ.get("KAFKA_BOOTSTRAP_SERVERS"):
         raise _Unknown("KAFKA_BOOTSTRAP_SERVERS not set")

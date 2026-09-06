@@ -38,6 +38,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 60
       containers:
       - name: minio
@@ -102,7 +103,7 @@ spec:
       - ReadWriteOnce
       resources:
         requests:
-          storage: 50Gi
+          storage: 20Gi
 
 ---
 apiVersion: v1

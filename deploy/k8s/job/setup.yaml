@@ -49,14 +49,16 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
+      enableServiceLinks: false
       containers:
       - name: setup
-        image: python:3.12-alpine
+        # Built from deploy/docker/setup/Dockerfile (bash/curl baked in at
+        # build time) — this pod has no egress to install them at runtime.
+        image: REGISTRY/dataagent/setup:latest
         command:
         - sh
         - -c
         - |
-          apk add --no-cache bash curl >/dev/null
           until curl -sf "$KEYCLOAK_URL/realms/$KEYCLOAK_REALM" >/dev/null; do echo waiting for keycloak; sleep 3; done
           until curl -sf "$KONG_ADMIN_URL" >/dev/null; do echo waiting for kong admin; sleep 3; done
           bash /scripts/keycloak/setup-audience-mappers.sh

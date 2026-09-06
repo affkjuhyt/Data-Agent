@@ -51,6 +51,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 30
       containers:
       - name: jaeger
@@ -65,8 +66,10 @@ spec:
             cpu: 100m
             memory: 256Mi
           limits:
-            cpu: 500m
-            memory: 512Mi
+            # Halved — jaeger isn't on the request path; headroom goes to
+            # kong/workflow-runtime/model-service instead.
+            cpu: 250m
+            memory: 256Mi
         readinessProbe:
           httpGet:
             path: /

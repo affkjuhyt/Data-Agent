@@ -48,7 +48,7 @@ from execution.code_executor import run_python_job, run_shell_job
 from execution.sql_executor import load_backend, run_sql_job
 from security_visitor import validate_python_code, SecurityError
 from sql_guard import validate_select_only, SQLGuardError
-from docker_runner import (
+from sandbox_runner_backend import (
     run_python_sandboxed,
     run_shell_sandboxed,
     ExecutionTimeoutError,

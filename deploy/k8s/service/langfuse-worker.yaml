@@ -66,6 +66,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
+      enableServiceLinks: false
       terminationGracePeriodSeconds: 30
       containers:
       - name: langfuse-worker
@@ -78,8 +79,9 @@ spec:
             cpu: 250m
             memory: 512Mi
           limits:
-            cpu: '1'
-            memory: 2Gi
+            # Halved — same reasoning as langfuse.yaml.
+            cpu: 500m
+            memory: 1Gi
         readinessProbe:
           tcpSocket:
             port: 8421

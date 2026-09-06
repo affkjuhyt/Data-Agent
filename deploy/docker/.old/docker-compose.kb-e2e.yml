@@ -87,6 +87,12 @@ services:
       KONG_ADMIN_URL: http://dataagent-kong:8001
       KEYCLOAK_URL: http://dataagent-keycloak:8080
       KEYCLOAK_PUBLIC_URL: http://localhost:8080
+      # Without this, the script's KONG_GATEWAY_KEY is always empty, so the
+      # aeroflow-jwks plugin never sends X-Gateway-Key — fine for kb-backend
+      # (no GATEWAY_KEY of its own => permissive), but flow_builder/
+      # workflow_runtime/auth_api/release_worker load the real GATEWAY_KEY via
+      # `env_file: ../../.env` and then reject every request as unverified.
+      GATEWAY_KEY: ${GATEWAY_KEY:-}
     entrypoint:
       - /bin/sh
       - -c

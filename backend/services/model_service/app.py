@@ -6,7 +6,7 @@ import time
 from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import APIRouter, FastAPI, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 import config as cfg
 from backends import registry, bootstrap, sync_with_retry, chat_status, Capability
 from backends.base import (
@@ -66,9 +66,23 @@ def _record_llm(ms: float, model: str, ok: bool, out_len: int) -> None:
 
 
 @router.get("/health")
-def health() -> dict[str, Any]:
+def health() -> JSONResponse:
+    # bootstrap(registry) runs synchronously in lifespan() before the app
+    # starts accepting connections (create_app() below) — by the time any
+    # request reaches here, embed/rerank registration has already either
+    # succeeded or permanently failed (register_embedding_models has no
+    # retry of its own; only the DB id-sync task does, and that's a
+    # different thing — see backends/sync.py). "loading" is therefore not a
+    # transient window a real 503 would false-positive during: a TEI probe
+    # that failed at boot (e.g. a momentary network hiccup) never retries,
+    # so k8s never sees a body it can act on and the pod stays "ready"
+    # forever with a permanently broken /embed and /rerank unless something
+    # restarts it. Returning a real 503 lets liveness/readinessProbe do that
+    # (deploy/k8s/service/model-service.yaml uses this same endpoint for
+    # both) instead of only ever returning 200.
     ready = registry.has(Capability.EMBED) and registry.has(Capability.RERANK)
-    return {"status": "ok" if ready else "loading", "llm": chat_status(registry)}
+    body = {"status": "ok" if ready else "loading", "llm": chat_status(registry)}
+    return JSONResponse(body, status_code=200 if ready else 503)
 
 
 @router.get("/capabilities")

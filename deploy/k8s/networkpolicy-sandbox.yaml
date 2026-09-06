@@ -1,0 +1,23 @@
+# dataagent-sandbox holds only sandbox-executor's warm execution pods
+# (backend/services/sandbox_executor/k8s_pool.py). Unlike -service and
+# -database, this default-deny has NO allow rules layered back on top —
+# not even allow-dns. That is deliberate: it is the k8s-native equivalent of
+# the Docker backend's `network_disabled=True` (no network namespace at
+# all), not of the platform's usual "reopen one flow at a time" pattern.
+# A pod here still gets an IP, but every ingress/egress packet — including
+# DNS — is dropped by the CNI's policy enforcement. Verified on this cluster
+# to actually be enforced, not just declared, before relying on it here:
+# an unlabeled pod could not reach either a same-cluster Service or an
+# external IP that no NetworkPolicy named it in.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: dataagent-sandbox
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress

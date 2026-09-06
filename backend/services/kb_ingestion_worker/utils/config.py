@@ -18,6 +18,7 @@ KAFKA_CONSUMER_GROUP = os.getenv("KAFKA_CONSUMER_GROUP", "kb-ingestion")
 KAFKA_TOPIC_SILVER = os.getenv("KAFKA_TOPIC_SILVER", "kb.promote.silver")
 KAFKA_TOPIC_GOLD = os.getenv("KAFKA_TOPIC_GOLD", "kb.promote.gold")
 KAFKA_TOPIC_CONFLICT_RESOLVE = os.getenv("KAFKA_TOPIC_CONFLICT_RESOLVE", "kb.resolve.conflict")
+KAFKA_TOPIC_STRUCTURED_PROPOSE = os.getenv("KAFKA_TOPIC_STRUCTURED_PROPOSE", "kb.structured.propose")
 
 # ── Dead-letter queue + bounded retry (silver & gold) ─────────────────────────
 # Previously a silver/gold exception was logged, the document marked FAILED, and

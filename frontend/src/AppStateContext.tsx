@@ -87,7 +87,11 @@ export const resolveRoute = (module: string, sub?: string): { module: string; su
   return { module, sub };
 };
 
-const routePath = (module: string, sub?: string) => `/${module}${sub ? `/${sub}` : ''}`;
+// Sub-tab keys are uppercase internally (ROUTE_MAP, REDIRECT_MAP, ...) but the
+// URL renders them lowercase — /build/workflows reads better than
+// /build/WORKFLOWS. parseRoute upper-cases whatever it reads back so both
+// case forms of a link (including ones bookmarked before this change) resolve.
+const routePath = (module: string, sub?: string) => `/${module}${sub ? `/${sub.toLowerCase()}` : ''}`;
 
 const parseRoute = (fallback: { module: string; sub?: string }): { module: string; sub?: string } => {
   if (typeof window === 'undefined') return fallback;
@@ -95,7 +99,7 @@ const parseRoute = (fallback: { module: string; sub?: string }): { module: strin
   const raw = legacyHash || window.location.pathname.replace(/^\/+/, '');
   if (!raw) return fallback;
   const [module, sub] = raw.split('/');
-  return resolveRoute(module || fallback.module, sub || undefined);
+  return resolveRoute(module || fallback.module, sub ? sub.toUpperCase() : undefined);
 };
 
 const writeRoute = (module: string, sub?: string) => {

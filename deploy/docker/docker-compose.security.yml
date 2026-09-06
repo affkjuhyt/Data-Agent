@@ -1,0 +1,311 @@
+services:
+  # ─── Keycloak HA cluster ──────────────────────────────────────────────────
+  # 2-node Active/Active cluster behind HAProxy. Both nodes share the same
+  # Postgres `keycloak` schema (single source of truth). Session sync via
+  # Infinispan distributed cache, JGroups TCPPING for peer discovery
+  # (multicast doesn't work in Docker bridge networks).
+  #
+  # See docs/disaster-recovery.md "Keycloak HA" for failover behavior and
+  # docs/auth-runbook.md "Keycloak HA" for runbook ops.
+  #
+  # Realm import: BOTH nodes get the --import-realm flag. Keycloak treats
+  # subsequent imports as idempotent (skips if realm exists), so a race on
+  # cold-start is safe in practice. The risk window is ~10s.
+  keycloak-node1:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: dataagent-keycloak-1
+    restart: unless-stopped
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-dataagent}
+      KC_DB_USERNAME: ${POSTGRES_USER:-admin}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      KC_DB_SCHEMA: keycloak
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      # Pin the `iss` claim Keycloak emits to a single canonical URL,
+      # regardless of which interface the request came in on. Without this,
+      # tokens fetched via `localhost:8080` (browser) vs `keycloak:8080`
+      # (in-cluster service) carry different iss values — Kong's issuer
+      # validation can only match one. See docs/auth-runbook.md.
+      KC_HOSTNAME_URL: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8080}
+      # Trust X-Forwarded-* headers from HAProxy (KC builds correct issuer URI)
+      KC_PROXY: edge
+      KC_HEALTH_ENABLED: "true"
+      KC_CACHE: ispn
+      KC_CACHE_STACK: tcp
+      # Explicit peer list — Docker DNS doesn't do multicast. Each node's
+      # JGroups port (7800) discovers the other via service name.
+      JAVA_OPTS_APPEND: >-
+        -Djgroups.bind_addr=site_local
+        -Djgroups.tcpping.initial_hosts=keycloak-node1[7800],keycloak-node2[7800]
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    ports:
+      # Direct access for debugging — production deploys must NOT expose
+      # individual node ports; only the LB.
+      - "8081:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # Keycloak UBI image has bash but NOT nc/curl/wget. Use bash's `/dev/tcp`
+      # virtual file to test port is open — works on RHEL/UBI bash.
+      # (haproxy-alpine for the LB uses `nc -z` instead; busybox sh doesn't
+      # understand /dev/tcp.)
+      test: ["CMD-SHELL", "exec 6<>/dev/tcp/127.0.0.1/8080 && echo > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  keycloak-node2:
+    image: quay.io/keycloak/keycloak:24.0
+    container_name: dataagent-keycloak-2
+    restart: unless-stopped
+    command: start-dev --import-realm
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-dataagent}
+      KC_DB_USERNAME: ${POSTGRES_USER:-admin}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      KC_DB_SCHEMA: keycloak
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      # Same as node1 — pin iss claim. Both nodes MUST agree on this URL or
+      # tokens from node1 and node2 wouldn't pass the same validator.
+      KC_HOSTNAME_URL: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8080}
+      KC_PROXY: edge
+      KC_HEALTH_ENABLED: "true"
+      KC_CACHE: ispn
+      KC_CACHE_STACK: tcp
+      JAVA_OPTS_APPEND: >-
+        -Djgroups.bind_addr=site_local
+        -Djgroups.tcpping.initial_hosts=keycloak-node1[7800],keycloak-node2[7800]
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    ports:
+      - "8082:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # Keycloak UBI bash supports /dev/tcp; nc isn't in the image. Same
+      # reasoning as keycloak-node1 above.
+      test: ["CMD-SHELL", "exec 6<>/dev/tcp/127.0.0.1/8080 && echo > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  # HAProxy load balancer — single entrypoint on :8080. Health-checks the
+  # nodes via /health/ready (GET, expect 200) and removes unhealthy ones
+  # from the rotation in ~10s. Cookie-based session affinity reduces
+  # Infinispan cache lookups but is NOT required for correctness — Infinispan
+  # sync means either node can serve any session.
+  keycloak-lb:
+    image: haproxy:2.9-alpine
+    container_name: dataagent-keycloak-lb
+    restart: unless-stopped
+    volumes:
+      - ./haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    ports:
+      - "8080:8080"
+    networks:
+      # Network aliases so existing services using `keycloak:8080` (env var
+      # KEYCLOAK_URL in workflow_runtime, frontend, etc.) keep working. The
+      # LB transparently fronts both nodes. `aeroflow-keycloak-lb` is the
+      # name kong-setup.sh and a few other scripts already expect.
+      default:
+        aliases:
+          - keycloak
+          - aeroflow-keycloak-lb
+    depends_on:
+      keycloak-node1:
+        condition: service_healthy
+      keycloak-node2:
+        condition: service_healthy
+    healthcheck:
+      # Lightweight check: HAProxy stats page proxied via the LB port itself.
+      # Falls back to confirming socket open if stats isn't exposed.
+      # `/dev/tcp` is a bash-only feature; alpine images use busybox sh which
+      # doesn't know it. `nc -z` is portable across busybox + GNU.
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kong-migration:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/kong/Dockerfile
+    container_name: dataagent-kong-migration
+    command: kong migrations bootstrap
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: postgres
+      KONG_PG_PORT: 5432
+      KONG_PG_DATABASE: ${POSTGRES_DB:-dataagent}
+      KONG_PG_USER: ${POSTGRES_USER:-admin}
+      KONG_PG_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      KONG_PG_SCHEMA: kong
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
+  kong:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/kong/Dockerfile
+    container_name: dataagent-kong
+    restart: unless-stopped
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: postgres
+      KONG_PG_PORT: 5432
+      KONG_PG_DATABASE: ${POSTGRES_DB:-dataagent}
+      KONG_PG_USER: ${POSTGRES_USER:-admin}
+      KONG_PG_PASSWORD: ${POSTGRES_PASSWORD:-dev123}
+      KONG_PG_SCHEMA: kong
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      # Admin API binds ONLY to the kong-admin-net interface (KONG_ADMIN_IP).
+      # Containers on the default network cannot reach this — they see
+      # connection-refused. Host cannot reach this either (no port mapping
+      # AND admin-net is `internal: true`). See docs/auth-runbook.md
+      # "Kong admin hardening". IP + subnet come from .env (single source of
+      # truth) so changing the CIDR is a one-place edit.
+      KONG_ADMIN_LISTEN: "${KONG_ADMIN_IP:-172.30.0.10}:8001"
+      KONG_PROXY_LISTEN: "0.0.0.0:8000"
+      KONG_PLUGINS: bundled,aeroflow-jwks
+    networks:
+      default: {}
+      kong-admin-net:
+        # Clients resolve `kong-admin` on this network — a network-scoped alias
+        # that deterministically returns the admin-net IP, so no client needs
+        # to hardcode the IP. The default `kong` hostname is NOT used because it
+        # can resolve to the default-net IP where admin isn't listening.
+        aliases:
+          - kong-admin
+        ipv4_address: ${KONG_ADMIN_IP:-172.30.0.10}
+    ports:
+      # Proxy port — public, where Kong serves API traffic.
+      - "8000:8000"
+      # 8900:8001 (admin API) intentionally removed. Admin is now reachable
+      # only from containers on kong-admin-net. To inspect admin from host:
+      #   docker exec dataagent-kong curl -sf http://"$KONG_ADMIN_IP":8001/status
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kong-migration:
+        condition: service_completed_successfully
+    healthcheck:
+      # Health check runs INSIDE the container, so 127.0.0.1 works regardless
+      # of which interface admin binds to. `kong health` checks proxy too.
+      test: ["CMD", "kong", "health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # One-off runner: adds Audience protocol mappers to the aeroflow-frontend
+  # Keycloak client so tokens it issues include aeroflow-backend, auth_api,
+  # and release_worker in the `aud` claim. Required for Kong's aeroflow-jwks
+  # audience validation (set by kong-setup) to pass. Idempotent.
+  #
+  # Run after Keycloak is healthy:
+  #   docker compose -f docker/docker-compose.yml --profile setup run --rm \
+  #     keycloak-audience-setup
+  keycloak-audience-setup:
+    image: python:3-alpine
+    profiles: ["setup"]
+    volumes:
+      - ./keycloak:/scripts:ro
+    environment:
+      KEYCLOAK_URL: http://aeroflow-keycloak-lb:8080
+      KEYCLOAK_REALM: aeroflow
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+    depends_on:
+      keycloak-lb:
+        condition: service_healthy
+    command: >
+      sh -c "apk add --no-cache bash curl &&
+             bash /scripts/setup-audience-mappers.sh"
+
+  # One-off runner that executes deploy/docker/kong/kong-setup.sh from inside the
+  # cluster. Joins kong-admin-net so it can reach Kong's admin IP, and the
+  # default net so it can reach Keycloak. Profile `setup` keeps it out of the
+  # normal `docker compose up` lifecycle — run explicitly:
+  #
+  #   docker compose -f docker/docker-compose.yml --profile setup run --rm kong-setup
+  #
+  # Or with Phase 3 key-auth (Kong-fronting-Kong) enabled:
+  #
+  #   docker compose -f docker/docker-compose.yml --profile setup run --rm \
+  #     -e ENABLE_ADMIN_KEY_AUTH=1 kong-setup
+  kong-setup:
+    image: bash:5
+    profiles: ["setup"]
+    networks:
+      default: {}
+      kong-admin-net: {}
+    volumes:
+      - ./kong:/scripts:ro
+      - ./certs:/certs
+    environment:
+      # Reach Kong admin via the `kong-admin` network alias — see hardening
+      # section in docs/auth-runbook.md.
+      KONG_ADMIN_URL: http://kong-admin:8001
+      # Admin subnet for the defense-in-depth ip-restriction in kong-setup.sh —
+      # kept in lockstep with the network CIDR via .env.
+      KONG_ADMIN_SUBNET: ${KONG_ADMIN_SUBNET:-172.30.0.0/24}
+      KEYCLOAK_URL: http://aeroflow-keycloak-lb:8080
+      KEYCLOAK_REALM: aeroflow
+      ENABLE_ADMIN_KEY_AUTH: ${ENABLE_ADMIN_KEY_AUTH:-0}
+    # `docker compose run` honors depends_on unless --no-deps is passed.
+    # Without these, the runner spins immediately and hangs for 150s waiting
+    # for a Kong that may not exist yet (the gap a fresh dev hit on 2026-06-07).
+    depends_on:
+      kong:
+        condition: service_healthy
+      keycloak-lb:
+        condition: service_healthy
+    # bash:5 is alpine-based; install the runtime deps the setup script uses
+    # (curl for HTTP, python3 for JSON parsing) before running.
+    command: >
+      sh -c "apk add --no-cache curl python3 &&
+             bash /scripts/kong-setup.sh"
+
+  openbao:
+    image: ${OPENBAO_IMAGE:-openbao/openbao:latest}
+    container_name: dataagent-openbao
+    restart: unless-stopped
+    ports:
+      - "8300:8200"
+    command: server -config=/openbao/config/config.hcl
+    cap_add: [IPC_LOCK]
+    environment:
+      BAO_SKIP_DROP_ROOT: "true"
+    volumes:
+      - openbao_data:/openbao/data
+      - ./openbao:/openbao/config:ro
+
+networks:
+  # Isolated, host-unreachable network for Kong's Admin API. `internal: true`
+  # means no outbound/host routing — only attached containers can talk to it.
+  # The subnet is pinned from .env so KONG_ADMIN_IP is guaranteed to live
+  # inside it; changing the CIDR is a one-place edit in .env (M3 fix).
+  kong-admin-net:
+    internal: true
+    ipam:
+      config:
+        - subnet: ${KONG_ADMIN_SUBNET:-172.30.0.0/24}

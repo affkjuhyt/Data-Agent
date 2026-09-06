@@ -549,52 +549,19 @@ export const ConflictWorkspace = () => {
         </div>
       </div>
 
-      {/* TIER FILTER BAR & SEARCH */}
-      <div className="bg-[#FFFDF8] border border-[#BFA66A] p-5 rounded-2xl flex flex-col gap-4 shadow-sm">
-        <div className="flex flex-col gap-2">
-          <span className="text-[10px] font-black uppercase tracking-widest text-[#8A5A00] opacity-80 font-mono">
-            Integrity Status Selection
-          </span>
-          <div className="flex flex-wrap gap-2.5">
-            {(['pending', 'awaiting', 'resolved'] as const).map(tab => {
-              const labelMap = {
-                pending:  `Pending (${pendingCount})`,
-                awaiting: `Awaiting AI (${awaitingCount})`,
-                resolved: `Resolved (${resolvedCount})`,
-              };
-              return (
-                <button
-                  key={tab}
-                  onClick={() => {
-                    setActiveTab(tab);
-                    handleCloseDrawer();
-                    if (tab === 'pending') setPendingView('batches');
-                  }}
-                  className={cn(
-                    "px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer",
-                    tab === activeTab
-                      ? "bg-[#B88719] text-white shadow-md shadow-[#B88719]/15"
-                      : "bg-white border border-[#BFA66A] text-[#8A5A00] hover:bg-[#FFF9E8]/20"
-                  )}
-                >
-                  {labelMap[tab]}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="border-t border-[#BFA66A] pt-3.5 flex items-center">
-          <div className="relative group w-full sm:w-80">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8A5A00] opacity-65 group-focus-within:opacity-100 transition-opacity" />
-            <input
-              type="text"
-              placeholder="Filter by type or detection date..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="ui-input pl-12 pr-6 py-2.5 text-xs w-full font-mono"
-            />
-          </div>
+      {/* SEARCH — status selection already lives on the metric cards above
+          (clicking Pending/Awaiting/Resolved sets the same activeTab), so
+          this no longer duplicates it as a second, full-width chip row. */}
+      <div className="flex items-center">
+        <div className="relative group w-full sm:w-80 sm:ml-auto">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8A5A00] opacity-65 group-focus-within:opacity-100 transition-opacity" />
+          <input
+            type="text"
+            placeholder="Filter by type or detection date..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="ui-input pl-12 pr-6 py-2.5 text-xs w-full font-mono"
+          />
         </div>
       </div>
 
