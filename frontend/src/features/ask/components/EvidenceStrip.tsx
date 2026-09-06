@@ -1,7 +1,7 @@
 /**
- * "Vì sao tin được" — one line under the answer: which approved metric (or
- * model-written SQL), how many rows, how many tables, how fresh, any risk —
- * and a "Xem SQL" toggle. Everything comes from the `__evidence` frame.
+ * "Why you can trust this" — one line under the answer: which approved metric
+ * (or model-written SQL), how many rows, how many tables, how fresh, any risk
+ * — and a "View SQL" toggle. Everything comes from the `__evidence` frame.
  */
 import React, { useState } from 'react';
 import { Check, ChevronDown, ChevronUp, Code2, Copy, ShieldCheck } from 'lucide-react';
@@ -29,7 +29,7 @@ export function Chip({ label, tone, title }: { label: string; tone: Tone; title?
   );
 }
 
-export function CopyButton({ text, label = 'Sao chép' }: { text: string; label?: string }) {
+export function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
   const copy = async () => {
     try {
@@ -40,7 +40,7 @@ export function CopyButton({ text, label = 'Sao chép' }: { text: string; label?
   };
   return (
     <button type="button" className="ab-btn" onClick={copy} title={label}>
-      {done ? <Check size={11} /> : <Copy size={11} />} {done ? 'Đã chép' : label}
+      {done ? <Check size={11} /> : <Copy size={11} />} {done ? 'Copied' : label}
     </button>
   );
 }
@@ -68,9 +68,9 @@ export function EvidenceStrip({ evidence, onOpenPanel }: { evidence: Evidence; o
     <div data-testid="evidence-strip" style={{ marginTop: 10, padding: '8px 10px', borderRadius: 10, background: 'var(--ab-bg)', border: '1px solid var(--ab-border)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
         <ShieldCheck size={12} style={{ color: 'var(--ab-accent)' }} />
-        <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--ab-muted)' }}>Vì sao tin được</span>
+        <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--ab-muted)' }}>Why you can trust this</span>
         {onOpenPanel && (
-          <button type="button" className="ab-link" style={{ marginLeft: 'auto' }} onClick={onOpenPanel}>Chi tiết ›</button>
+          <button type="button" className="ab-link" style={{ marginLeft: 'auto' }} onClick={onOpenPanel}>Details ›</button>
         )}
       </div>
 
@@ -85,15 +85,15 @@ export function EvidenceStrip({ evidence, onOpenPanel }: { evidence: Evidence; o
               onClick={() => setOpenSql(openSql === i ? null : i)}
               style={{ marginLeft: 'auto' }}
             >
-              <Code2 size={11} /> {openSql === i ? 'Ẩn SQL' : 'Xem SQL'} {openSql === i ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+              <Code2 size={11} /> {openSql === i ? 'Hide SQL' : 'View SQL'} {openSql === i ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
             </button>
           </div>
           {openSql === i && (
             <div>
               <SqlBlock sql={run.sql} />
               <div style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'center' }}>
-                <CopyButton text={run.sql} label="Sao chép SQL" />
-                <span style={{ fontSize: 10.5, color: 'var(--ab-muted)' }}>Đã qua guard chỉ-đọc · ghi nhật ký truy cập</span>
+                <CopyButton text={run.sql} label="Copy SQL" />
+                <span style={{ fontSize: 10.5, color: 'var(--ab-muted)' }}>Passed the read-only guard · access logged</span>
               </div>
             </div>
           )}

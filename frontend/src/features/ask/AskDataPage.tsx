@@ -55,9 +55,9 @@ function speechRecognition(): (new () => Recognition) | null {
 }
 
 const EXAMPLES = [
-  'Doanh thu thuần tháng này theo vùng',
-  'So sánh số đơn hàng quý này với quý trước',
-  'Top 10 khách hàng theo doanh thu năm nay',
+  'Net revenue this month by region',
+  'Compare order count this quarter to last quarter',
+  'Top 10 customers by revenue this year',
 ];
 
 /* ─── page ────────────────────────────────────────────────────────── */
@@ -138,7 +138,7 @@ export default function AskDataPage() {
     if (!SR) return;
     if (listening) { recogRef.current?.stop(); return; }
     const r = new SR();
-    r.lang = 'vi-VN'; r.interimResults = false; r.continuous = false;
+    r.lang = 'en-US'; r.interimResults = false; r.continuous = false;
     r.onresult = e => {
       const t = Array.from({ length: e.results.length }, (_, i) => e.results[i][0]?.transcript ?? '').join(' ').trim();
       if (t) setInput(prev => (prev ? `${prev} ${t}` : t));
@@ -158,7 +158,7 @@ export default function AskDataPage() {
     el.style.height = `${Math.min(el.scrollHeight, 140)}px`;
   };
 
-  const scopeLabel = scope === 'auto' ? 'Tự động — điều phối chọn agent' : agents.find(a => a.id === scope)?.label ?? scope;
+  const scopeLabel = scope === 'auto' ? 'Automatic — orchestrator picks the agent' : agents.find(a => a.id === scope)?.label ?? scope;
 
   return (
     <AnswerTheme mode="light" className="ask-workspace">
@@ -166,35 +166,35 @@ export default function AskDataPage() {
         {/* left: scope · saved · history */}
         <aside className="ask-sidebar">
           <section className="ask-side-section">
-            <div className="text-[10px] font-bold uppercase tracking-widest text-[#5F5F5F] mb-2">Phạm vi</div>
+            <div className="text-[10px] font-bold uppercase tracking-widest text-[#5F5F5F] mb-2">Scope</div>
             <div className="space-y-0.5">
               <button type="button" onClick={() => setScope('auto')} className={cn('subnav-item', scope === 'auto' && 'active')}>
-                <Brain className="subnav-icon w-3.5 h-3.5" /><span className="flex-1 truncate">Tự động</span>
+                <Brain className="subnav-icon w-3.5 h-3.5" /><span className="flex-1 truncate">Automatic</span>
               </button>
-              {agentsLoading && <div className="text-[11px] text-[#5F5F5F] px-3 py-1">Đang tải agent…</div>}
+              {agentsLoading && <div className="text-[11px] text-[#5F5F5F] px-3 py-1">Loading agents…</div>}
               {agents.map(a => (
                 <button key={a.id} type="button" onClick={() => setScope(a.id)} className={cn('subnav-item', scope === a.id && 'active')} title={a.description}>
                   <Bot className="subnav-icon w-3.5 h-3.5" /><span className="flex-1 truncate">{a.label}</span>
                 </button>
               ))}
               {!agentsLoading && agents.length === 0 && (
-                <div className="text-[11px] text-[#5F5F5F] px-3 py-1 leading-relaxed">Chưa tải được danh sách agent — câu hỏi sẽ được điều phối tự động.</div>
+                <div className="text-[11px] text-[#5F5F5F] px-3 py-1 leading-relaxed">Could not load the agent list — questions will be routed automatically.</div>
               )}
             </div>
           </section>
 
           <section className="ask-side-section">
-            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#5F5F5F] mb-2"><Bookmark size={11} /> Câu hỏi đã lưu</div>
+            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#5F5F5F] mb-2"><Bookmark size={11} /> Saved questions</div>
             {saved.length === 0 ? (
-              <div className="text-[11px] text-[#5F5F5F] leading-relaxed">Bấm “Lưu câu hỏi” dưới một câu trả lời để ghim lại đây.</div>
+              <div className="text-[11px] text-[#5F5F5F] leading-relaxed">Click "Save question" under an answer to pin it here.</div>
             ) : (
               <ul className="space-y-1 m-0 p-0 list-none">
                 {saved.map(s => (
                   <li key={s.q} className="group flex items-start gap-1">
-                    <button type="button" onClick={() => ask(s.q)} disabled={sending} className="flex-1 text-left text-[12px] text-[#2A2A2A] hover:text-[#8A5A00] leading-snug" title="Hỏi lại">
+                    <button type="button" onClick={() => ask(s.q)} disabled={sending} className="flex-1 text-left text-[12px] text-[#2A2A2A] hover:text-[#8A5A00] leading-snug" title="Ask again">
                       {s.q}
                     </button>
-                    <button type="button" onClick={() => removeSaved(s.q)} aria-label="Bỏ lưu" className="opacity-0 group-hover:opacity-100 text-[#5F5F5F] hover:text-[#A83A32] shrink-0 mt-0.5"><Trash2 size={11} /></button>
+                    <button type="button" onClick={() => removeSaved(s.q)} aria-label="Unsave" className="opacity-0 group-hover:opacity-100 text-[#5F5F5F] hover:text-[#A83A32] shrink-0 mt-0.5"><Trash2 size={11} /></button>
                   </li>
                 ))}
               </ul>
@@ -202,14 +202,14 @@ export default function AskDataPage() {
           </section>
 
           <section className="ask-side-section">
-            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#5F5F5F] mb-2"><History size={11} /> Lịch sử</div>
+            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#5F5F5F] mb-2"><History size={11} /> History</div>
             {history.length === 0 ? (
-              <div className="text-[11px] text-[#5F5F5F]">Chưa có câu hỏi nào.</div>
+              <div className="text-[11px] text-[#5F5F5F]">No questions yet.</div>
             ) : (
               <ul className="space-y-1.5 m-0 p-0 list-none">
                 {history.slice(0, 12).map(h => (
                   <li key={h.q}>
-                    <button type="button" onClick={() => setInput(h.q)} className="w-full text-left" title="Đưa vào ô nhập">
+                    <button type="button" onClick={() => setInput(h.q)} className="w-full text-left" title="Put in the input box">
                       <div className="text-[12px] text-[#2A2A2A] hover:text-[#8A5A00] leading-snug truncate">{h.q}</div>
                       <div className="text-[10px] text-[#5F5F5F]">{formatRelative(h.at)}</div>
                     </button>
@@ -226,22 +226,22 @@ export default function AskDataPage() {
             <div className="ask-chat-title">
               <div className="ask-chat-icon"><ShieldCheck size={16} /></div>
               <div className="min-w-0">
-                <h2>Hỏi dữ liệu</h2>
+                <h2>Ask your data</h2>
                 <p>{scopeLabel}</p>
               </div>
             </div>
             <div className="ask-chat-actions">
               <button type="button" className="ab-btn" onClick={() => setPanelOpen(v => !v)} aria-pressed={panelOpen}>
-                {panelOpen ? <PanelRightClose size={12} /> : <PanelRightOpen size={12} />} {panelOpen ? 'Ẩn bằng chứng' : 'Hiện bằng chứng'}
+                {panelOpen ? <PanelRightClose size={12} /> : <PanelRightOpen size={12} />} {panelOpen ? 'Hide evidence' : 'Show evidence'}
               </button>
               {sending && (
-                <button type="button" className="ab-btn" onClick={stop}><Square size={10} /> Dừng</button>
+                <button type="button" className="ab-btn" onClick={stop}><Square size={10} /> Stop</button>
               )}
             </div>
           </div>
           <div className="ask-scope-row xl:hidden">
             <button type="button" onClick={() => setScope('auto')} className={cn('ask-scope-pill', scope === 'auto' && 'active')}>
-              <Brain size={12} /> Tự động
+              <Brain size={12} /> Automatic
             </button>
             {agents.map(a => (
               <button key={a.id} type="button" onClick={() => setScope(a.id)} className={cn('ask-scope-pill', scope === a.id && 'active')} title={a.description}>
@@ -256,8 +256,8 @@ export default function AskDataPage() {
                 <div className="ask-empty-icon">
                   <ShieldCheck className="w-6 h-6" />
                 </div>
-                <h3>Bắt đầu bằng một câu hỏi rõ ràng</h3>
-                <p>Hệ thống sẽ hỏi lại khi thiếu kỳ, chỉ số hoặc phạm vi dữ liệu trước khi chạy truy vấn.</p>
+                <h3>Start with a clear question</h3>
+                <p>The system will ask back when a period, metric, or data scope is missing before it runs a query.</p>
                 <div className="flex flex-wrap justify-center gap-2">
                   {EXAMPLES.map(e => (
                     <button key={e} type="button" className="ab-chip-btn" onClick={() => setInput(e)}>{e}</button>
@@ -304,12 +304,11 @@ export default function AskDataPage() {
               <textarea
                 ref={textareaRef}
                 value={input}
-                disabled={sending}
                 rows={1}
                 onChange={e => { setInput(e.target.value); adjustHeight(); }}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); } }}
-                placeholder={sending ? 'Đang trả lời…' : 'Hỏi về dữ liệu của bạn…'}
-                aria-label="Câu hỏi"
+                placeholder={sending ? 'Answering… (you can still type your next question)' : 'Ask about your data…'}
+                aria-label="Question"
                 className="ask-input"
                 style={{ maxHeight: 140 }}
               />
@@ -318,8 +317,8 @@ export default function AskDataPage() {
                   type="button"
                   onClick={toggleMic}
                   aria-pressed={listening}
-                  aria-label={listening ? 'Dừng ghi âm' : 'Nói câu hỏi'}
-                  title={listening ? 'Dừng ghi âm' : 'Nói câu hỏi (tiếng Việt)'}
+                  aria-label={listening ? 'Stop recording' : 'Speak your question'}
+                  title={listening ? 'Stop recording' : 'Speak your question'}
                   className={cn('ask-icon-button', listening && 'listening')}
                 >
                   {listening ? <MicOff size={15} /> : <Mic size={15} />}
@@ -329,7 +328,7 @@ export default function AskDataPage() {
                 type="button"
                 onClick={() => ask()}
                 disabled={!input.trim() || sending}
-                aria-label="Gửi câu hỏi"
+                aria-label="Send question"
                 className="ask-send-button"
               >
                 <Send size={15} />
@@ -352,7 +351,7 @@ export default function AskDataPage() {
             >
               <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[#BFA66A] shrink-0">
                 <ShieldCheck size={13} className="text-[#B88719]" />
-                <span className="text-[12px] font-semibold text-[#111111]">Con số này ở đâu ra</span>
+                <span className="text-[12px] font-semibold text-[#111111]">Where is the number</span>
                 <ChevronRight size={12} className="text-[#5F5F5F] ml-auto" />
               </div>
               <div style={{ flex: 1, overflowY: 'auto', padding: 14, width: 340 }}>

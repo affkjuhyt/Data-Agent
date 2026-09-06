@@ -22,7 +22,7 @@ async def resume_orchestration(req: ClarificationResume) -> OrchestrateResponse:
     session_id là thread_id của LangGraph checkpointer VÀ Langfuse trace_id —
     request resume này tiếp tục CÙNG 1 trace đã mở ở /api/orchestrate/stream.
     """
-    graph = get_graph()
+    graph = await get_graph()
     lf = get_langfuse_client()
     lg_config_base = {"configurable": {"thread_id": req.session_id}}
 

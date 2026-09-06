@@ -50,7 +50,16 @@ async def run_suggestion(query: str, messages: list[dict[str, Any]], final_respo
             temperature=0.3,
             max_tokens=150,
             response_format={"type": "json_object"},
-            timeout=cfg.get("suggestion_timeout", 30),
+            # Suggestions sit on the graph's critical path before the stream
+            # closes (see orchestrator/graph.py's suggestion_node) — the
+            # answer has already fully streamed to the user by the time this
+            # call starts, so a slow/overloaded model here shows up as dead
+            # silence rather than visible progress. 150 max_tokens should
+            # answer in a couple seconds on a healthy backend; bounding this
+            # at 10s (was 30s) caps the worst case without changing behavior
+            # on the common, fast path — a timeout still degrades to no
+            # suggestions (caught below), never an error shown to the user.
+            timeout=cfg.get("suggestion_timeout", 10),
         )
         output = response.choices[0].message.content or ""
         lf = get_langfuse_client()

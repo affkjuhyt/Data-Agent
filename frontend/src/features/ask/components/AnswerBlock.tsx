@@ -102,15 +102,15 @@ export function AnswerBlock({
       {!streaming && msg.content && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
           {run && rows.length > 0 && (
-            <button type="button" className="ab-btn" onClick={exportCsv} title="Tải bảng dữ liệu (CSV, mở bằng Excel)">
-              <Download size={11} /> Xuất CSV
+            <button type="button" className="ab-btn" onClick={exportCsv} title="Download the data table (CSV, opens in Excel)">
+              <Download size={11} /> Export CSV
             </button>
           )}
-          {run?.sql && <CopyButton text={run.sql} label="Sao chép SQL" />}
-          <CopyButton text={msg.content} label="Sao chép câu trả lời" />
+          {run?.sql && <CopyButton text={run.sql} label="Copy SQL" />}
+          <CopyButton text={msg.content} label="Copy answer" />
           {onSave && (
-            <button type="button" className="ab-btn" onClick={onSave} title="Lưu câu hỏi này để hỏi lại nhanh">
-              <Bookmark size={11} /> Lưu câu hỏi
+            <button type="button" className="ab-btn" onClick={onSave} title="Save this question to ask again quickly">
+              <Bookmark size={11} /> Save question
             </button>
           )}
           {showTimestamp && (

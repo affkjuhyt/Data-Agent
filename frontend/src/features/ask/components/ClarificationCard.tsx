@@ -5,7 +5,7 @@
  * answered without guessing (backend/libs/semantic/ambiguity.py) and sends the
  * question WITH clickable options. Until now the UI blanked the message.
  * This renders the question(s), one button per option (slot keys mapped to
- * Vietnamese), and a free-text fallback. What happens on answer depends on
+ * readable labels), and a free-text fallback. What happens on answer depends on
  * `clarification.kind` — see types.ts.
  */
 import { useState } from 'react';
@@ -35,15 +35,15 @@ export function ClarificationCard({
     <div
       data-testid="clarification-card"
       role="group"
-      aria-label="Cần làm rõ trước khi trả lời"
+      aria-label="Needs clarification before answering"
       style={{ marginTop: 10, borderRadius: 10, border: '1px solid var(--ab-accent)', background: 'var(--ab-accent-bg)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <HelpCircle size={13} style={{ color: 'var(--ab-accent)' }} />
         <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--ab-accent)' }}>
-          {clarification.kind === 'resume' ? 'Đang chờ bạn trả lời' : 'Cần làm rõ trước khi chạy'}
+          {clarification.kind === 'resume' ? 'Waiting for your answer' : 'Needs clarification before running'}
         </span>
-        <span style={{ fontSize: 10.5, color: 'var(--ab-muted)', marginLeft: 'auto' }}>Chưa chạy truy vấn nào</span>
+        <span style={{ fontSize: 10.5, color: 'var(--ab-muted)', marginLeft: 'auto' }}>No query has run yet</span>
       </div>
 
       {questions.map((q, i) => (
@@ -75,11 +75,11 @@ export function ClarificationCard({
           disabled={disabled}
           onChange={e => setCustom(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitCustom(); } }}
-          placeholder="Hoặc trả lời theo cách khác…"
-          aria-label="Trả lời khác"
+          placeholder="Or answer in your own words…"
+          aria-label="Custom answer"
           style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 12.5, color: 'var(--ab-fg)', fontFamily: 'inherit' }}
         />
-        <button type="button" className="ab-btn ab-btn-primary" onClick={submitCustom} disabled={disabled || !custom.trim()} aria-label="Gửi câu trả lời">
+        <button type="button" className="ab-btn ab-btn-primary" onClick={submitCustom} disabled={disabled || !custom.trim()} aria-label="Send answer">
           <Send size={11} />
         </button>
       </div>

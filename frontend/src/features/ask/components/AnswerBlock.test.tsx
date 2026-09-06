@@ -15,15 +15,15 @@ const run: EvidenceRun = {
   sql: 'SELECT region, SUM(amount) AS revenue FROM fact_sales GROUP BY region',
   row_count: 1204,
   generated_by: 'semantic_layer',
-  metric: { metric: 'doanh_thu_thuan@3', owner: 'Phòng Tài chính', aggregation: 'sum', unit: 'VND' },
+  metric: { metric: 'net_revenue@3', owner: 'Finance department', aggregation: 'sum', unit: 'USD' },
   provenance: { status: 'fresh', as_of: '2026-06-30T23:00:00', tables: [{ table: 'fact_sales' }, { table: 'dim_region' }] },
   aggregation: { findings: [], structurally_safe: true, aggregates: ['SUM'], joins: 0 },
   truncation: null,
   columns: ['region', 'revenue'],
   rows: [
-    { region: 'Miền Bắc', revenue: '612000000.00' },
-    { region: 'Miền Nam', revenue: 480000000 },
-    { region: 'Miền Trung', revenue: 192560000 },
+    { region: 'North', revenue: '612000000.00' },
+    { region: 'South', revenue: 480000000 },
+    { region: 'Central', revenue: 192560000 },
   ],
   rows_capped: false,
 };
@@ -33,12 +33,12 @@ const evidence: Evidence = { runs: [run], clarifications: [], warnings: [] };
 const msg: AskMessage = {
   id: 'a1',
   role: 'assistant',
-  content: 'Doanh thu thuần tháng 6/2026 là **1.284.560.000 ₫** [1].',
+  content: 'Net revenue for June 2026 is **$1,284,560,000** [1].',
   timestamp: '2026-06-30T14:02:00',
   status: 'done',
   evidence,
   citations: [{ index: 1, source: 'tool/sql', type: 'db', snippet: '[...]' }],
-  suggestions: ['So với tháng 5', 'Tách theo sản phẩm'],
+  suggestions: ['Compare to May', 'Split by product'],
 };
 
 const wrap = (ui: React.ReactElement) => render(<AnswerTheme mode="light">{ui}</AnswerTheme>);
@@ -47,51 +47,51 @@ describe('AnswerBlock', () => {
   it('shows answer, table, evidence strip with metric + SQL toggle, and suggestions', () => {
     wrap(<AnswerBlock msg={msg} onSuggestion={() => {}} />);
 
-    expect(screen.getByText(/Doanh thu thuần tháng 6\/2026/)).toBeInTheDocument();
+    expect(screen.getByText(/Net revenue for June 2026/)).toBeInTheDocument();
 
     const grid = screen.getByTestId('data-grid');
-    expect(within(grid).getByText(/1\.204 dòng/)).toBeInTheDocument();
-    // Vietnamese number formatting of a numeric string from Postgres
-    expect(within(grid).getByText('612.000.000')).toBeInTheDocument();
+    expect(within(grid).getByText(/1,204 rows/)).toBeInTheDocument();
+    // US number formatting of a numeric string from Postgres
+    expect(within(grid).getByText('612,000,000')).toBeInTheDocument();
 
     const strip = screen.getByTestId('evidence-strip');
-    expect(within(strip).getByText(/Chỉ số đã duyệt · doanh_thu_thuan v3/)).toBeInTheDocument();
-    expect(within(strip).getByText('2 bảng')).toBeInTheDocument();
-    expect(within(strip).getByText(/Dữ liệu tươi/)).toBeInTheDocument();
+    expect(within(strip).getByText(/Approved metric · net_revenue v3/)).toBeInTheDocument();
+    expect(within(strip).getByText('2 tables')).toBeInTheDocument();
+    expect(within(strip).getByText(/Fresh data/)).toBeInTheDocument();
 
     expect(screen.queryByTestId('sql-block')).not.toBeInTheDocument();
-    fireEvent.click(within(strip).getByRole('button', { name: /Xem SQL/ }));
+    fireEvent.click(within(strip).getByRole('button', { name: /View SQL/ }));
     expect(screen.getByTestId('sql-block')).toHaveTextContent('SELECT region, SUM(amount)');
 
-    expect(screen.getByRole('button', { name: /So với tháng 5/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Compare to May/ })).toBeInTheDocument();
   });
 
   it('labels model-written SQL honestly', () => {
-    const llmRun: EvidenceRun = { ...run, generated_by: 'llm', metric: null, aggregation: { findings: [{ kind: 'fan_out', detail: 'join có thể nhân đôi dòng' }], structurally_safe: false, aggregates: ['SUM'], joins: 1 } };
+    const llmRun: EvidenceRun = { ...run, generated_by: 'llm', metric: null, aggregation: { findings: [{ kind: 'fan_out', detail: 'join may duplicate rows' }], structurally_safe: false, aggregates: ['SUM'], joins: 1 } };
     const chips = runChips(llmRun).map(c => c.label);
-    expect(chips).toContain('SQL do mô hình sinh');
-    expect(chips).toContain('Rủi ro cộng gộp');
+    expect(chips).toContain('Model-generated SQL');
+    expect(chips).toContain('Aggregation risk');
   });
 
-  it('renders the clarification card and forwards the chosen option in Vietnamese', () => {
+  it('renders the clarification card and forwards the chosen option', () => {
     const onAnswer = vi.fn();
     const asking: AskMessage = {
       ...msg,
-      content: 'Bạn muốn xem trong khoảng thời gian nào?',
+      content: 'What time range do you want to see?',
       evidence: undefined,
       citations: undefined,
       suggestions: undefined,
       clarification: {
         kind: 'followup',
-        questions: [{ reason: 'missing_time_range', text: 'Bạn muốn xem trong khoảng thời gian nào?', options: ['this_month', 'last_quarter'] }],
+        questions: [{ reason: 'missing_time_range', text: 'What time range do you want to see?', options: ['this_month', 'last_quarter'] }],
       },
     };
     wrap(<AnswerBlock msg={asking} onAnswerClarification={onAnswer} />);
 
     const card = screen.getByTestId('clarification-card');
-    expect(within(card).getByText('Thiếu khoảng thời gian')).toBeInTheDocument();
-    fireEvent.click(within(card).getByRole('button', { name: 'Quý trước' }));
-    expect(onAnswer).toHaveBeenCalledWith('Quý trước');
+    expect(within(card).getByText('Missing time range')).toBeInTheDocument();
+    fireEvent.click(within(card).getByRole('button', { name: 'Last quarter' }));
+    expect(onAnswer).toHaveBeenCalledWith('Last quarter');
   });
 
   it('shows typing dots while streaming with no text', () => {
@@ -104,12 +104,12 @@ describe('AnswerBlock', () => {
 describe('ClarificationCard', () => {
   it('accepts a free-text answer on Enter', () => {
     const onAnswer = vi.fn();
-    wrap(<ClarificationCard clarification={{ kind: 'resume', sessionId: 's1', questions: [{ text: 'Kỳ nào?' }] }} onAnswer={onAnswer} />);
-    expect(screen.getByText('Đang chờ bạn trả lời')).toBeInTheDocument();
-    const input = screen.getByLabelText('Trả lời khác');
-    fireEvent.change(input, { target: { value: 'từ 01/06 đến 15/06' } });
+    wrap(<ClarificationCard clarification={{ kind: 'resume', sessionId: 's1', questions: [{ text: 'Which period?' }] }} onAnswer={onAnswer} />);
+    expect(screen.getByText('Waiting for your answer')).toBeInTheDocument();
+    const input = screen.getByLabelText('Custom answer');
+    fireEvent.change(input, { target: { value: 'from 06/01 to 06/15' } });
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(onAnswer).toHaveBeenCalledWith('từ 01/06 đến 15/06');
+    expect(onAnswer).toHaveBeenCalledWith('from 06/01 to 06/15');
   });
 });
 
@@ -119,19 +119,19 @@ describe('DataGrid', () => {
   it('pages in place and sorts on header click', () => {
     wrap(<DataGrid columns={['id', 'amount']} rows={rows} pageSize={10} />);
     expect(screen.getAllByRole('row')).toHaveLength(11); // header + 10
-    fireEvent.click(screen.getByRole('button', { name: /Xem thêm/ }));
+    fireEvent.click(screen.getByRole('button', { name: /more rows/ }));
     expect(screen.getAllByRole('row')).toHaveLength(26); // all 25 rows + header
 
     const amountHeader = screen.getByRole('columnheader', { name: /amount/ });
     fireEvent.click(amountHeader); // asc
     const firstDataRow = screen.getAllByRole('row')[1];
-    expect(within(firstDataRow).getByText('1.000')).toBeInTheDocument();
+    expect(within(firstDataRow).getByText('1,000')).toBeInTheDocument();
     expect(amountHeader).toHaveAttribute('aria-sort', 'ascending');
   });
 
   it('flags a truncated result', () => {
     wrap(<DataGrid columns={['id']} rows={[{ id: 1 }]} truncation={{ reason: 'row_limit', rows_returned: 1 }} />);
-    expect(screen.getByText(/trần số dòng/)).toBeInTheDocument();
+    expect(screen.getByText(/row cap/)).toBeInTheDocument();
   });
 
   it('loads full result pages from the backend artifact', async () => {
@@ -156,7 +156,7 @@ describe('DataGrid', () => {
 
     await waitFor(() => expect(loadRows).toHaveBeenCalledWith({ offset: 0, limit: 500, sort: undefined, dir: undefined }));
     expect(screen.getByText('SO-501')).toBeInTheDocument();
-    expect(screen.getByText(/Full result 1-1 \/ 1\.200 dòng/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Excel \+ Nguồn/ })).toBeInTheDocument();
+    expect(screen.getByText(/Full result 1-1 \/ 1,200 rows/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Excel \+ Source/ })).toBeInTheDocument();
   });
 });

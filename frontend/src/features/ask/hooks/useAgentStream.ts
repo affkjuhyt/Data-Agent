@@ -138,7 +138,7 @@ export function useAgentStream({ userId, agentId, historyTurns = 10 }: UseAgentS
       patch(assistantId, m => ({
         ...m,
         status: 'error',
-        content: m.content || (aborted ? 'Đã dừng.' : 'Lỗi: không kết nối được backend.'),
+        content: m.content || (aborted ? 'Stopped.' : 'Error: could not connect to the backend.'),
       }));
       if (!aborted) console.warn('ask | stream failed', err);
     } finally {
@@ -175,7 +175,7 @@ export function useAgentStream({ userId, agentId, historyTurns = 10 }: UseAgentS
       if (!mounted.current) return;
       patch(answerId, m => ({
         ...m,
-        content: res.response || (res.success ? '' : 'Không thể xử lý yêu cầu này.'),
+        content: res.response || (res.success ? '' : 'Could not process this request.'),
         suggestions: res.suggestions ?? [],
         status: res.success ? 'done' : 'error',
         latencyMs: Date.now() - started,
@@ -185,7 +185,7 @@ export function useAgentStream({ userId, agentId, historyTurns = 10 }: UseAgentS
       }));
     } catch (err) {
       if (!mounted.current) return;
-      patch(answerId, m => ({ ...m, status: 'error', content: `Lỗi khi tiếp tục: ${(err as Error).message}` }));
+      patch(answerId, m => ({ ...m, status: 'error', content: `Error resuming: ${(err as Error).message}` }));
     } finally {
       if (mounted.current) setSending(false);
     }

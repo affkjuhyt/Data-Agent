@@ -3,10 +3,10 @@ import { parseSseData, readSseStream, type SseEvent } from './sse';
 
 describe('parseSseData', () => {
   it('maps every control frame the backend emits', () => {
-    expect(parseSseData('"xin chào"')).toEqual({ type: 'token', text: 'xin chào' });
+    expect(parseSseData('"hello"')).toEqual({ type: 'token', text: 'hello' });
     expect(parseSseData('{"__session_id":"s1"}')).toEqual({ type: 'session', sessionId: 's1' });
-    expect(parseSseData('{"__clarification":{"session_id":"s1","questions":["Kỳ nào?"]}}'))
-      .toEqual({ type: 'clarification', sessionId: 's1', questions: ['Kỳ nào?'] });
+    expect(parseSseData('{"__clarification":{"session_id":"s1","questions":["Which period?"]}}'))
+      .toEqual({ type: 'clarification', sessionId: 's1', questions: ['Which period?'] });
     expect(parseSseData('{"__pending_review":{"conv_id":"c1","payload":{"title":"t"}}}'))
       .toEqual({ type: 'pending_review', convId: 'c1', payload: { title: 't' } });
     expect(parseSseData('{"__pending_review":"c2"}'))
@@ -14,11 +14,11 @@ describe('parseSseData', () => {
     expect(parseSseData('{"__chart":[{"chart_type":"bar"}]}').type).toBe('chart');
     expect(parseSseData('{"__citations":[{"index":1}]}').type).toBe('citations');
     expect(parseSseData('{"__suggestions":["a","b"]}')).toEqual({ type: 'suggestions', suggestions: ['a', 'b'] });
-    expect(parseSseData('{"__options":["Tháng này"]}')).toEqual({ type: 'options', options: ['Tháng này'] });
+    expect(parseSseData('{"__options":["This month"]}')).toEqual({ type: 'options', options: ['This month'] });
     expect(parseSseData('{"__conv_ids":[{"conv_id":"c"}]}').type).toBe('conv_ids');
     expect(parseSseData('[DONE]')).toEqual({ type: 'done' });
-    expect(parseSseData('[ERROR] hỏng rồi')).toEqual({ type: 'error', message: 'hỏng rồi' });
-    expect(parseSseData('[ERROR]')).toEqual({ type: 'error', message: 'Đã xảy ra lỗi, vui lòng thử lại.' });
+    expect(parseSseData('[ERROR] broken')).toEqual({ type: 'error', message: 'broken' });
+    expect(parseSseData('[ERROR]')).toEqual({ type: 'error', message: 'An error occurred, please try again.' });
   });
 
   it('normalises a partial evidence frame into the full shape', () => {
@@ -67,8 +67,8 @@ describe('readSseStream', () => {
 
   it('flushes a trailing frame without a newline', async () => {
     const events: SseEvent[] = [];
-    await readSseStream(streamOf(['data: "cuối"']), e => events.push(e));
-    expect(events).toEqual([{ type: 'token', text: 'cuối' }]);
+    await readSseStream(streamOf(['data: "last"']), e => events.push(e));
+    expect(events).toEqual([{ type: 'token', text: 'last' }]);
   });
 
   it('ignores comment / blank lines and CRLF', async () => {

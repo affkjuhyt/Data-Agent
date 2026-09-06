@@ -36,13 +36,10 @@ metadata:
     app: frontend
     app.kubernetes.io/part-of: dataagent
 spec:
-  # `npm run dev` is a stateful Vite dev server (per-process optimizeDeps
-  # cache, own module graph) — the Service below has no session affinity, so
-  # >1 replica lets a single page load split its module/chunk requests
-  # across two independent dev-server processes, each with its own React
-  # pre-bundle instance. Two "react" copies in one page is exactly what
-  # throws "Invalid hook call" / "Cannot read properties of null
-  # (reading 'useState')". Keep this at 1 as long as this runs `npm run dev`.
+  # `vite preview` serves a static, already-built dist/ — no per-process
+  # module graph like the dev server has, so unlike that server this is safe
+  # to scale past 1 replica behind the Service's plain round-robin (every
+  # replica serves byte-identical files from the same image).
   replicas: 1
   selector:
     matchLabels:
@@ -101,16 +98,10 @@ spec:
         volumeMounts:
         - name: tmp
           mountPath: /tmp
-        - name: vite-temp
-          mountPath: /app/node_modules/.vite-temp
-        # Separate from .vite-temp above: this is vite's dependency
-        # pre-bundling cache, also written at every dev-server start.
-        - name: vite-cache
-          mountPath: /app/node_modules/.vite
         args:
         - npm
         - run
-        - dev
+        - preview
         - --
         - --host
         - 0.0.0.0
@@ -123,14 +114,6 @@ spec:
             name: frontend-secrets
       volumes:
       - name: tmp
-        emptyDir: {}
-      # readOnlyRootFilesystem: true, but vite's dev server bundles
-      # vite.config.ts on the fly and writes the bundle next to it —
-      # node_modules/.vite-temp/ — before it will even start. Without a
-      # writable mount there the container never gets past that first write.
-      - name: vite-temp
-        emptyDir: {}
-      - name: vite-cache
         emptyDir: {}
       serviceAccountName: frontend
 

@@ -1,7 +1,7 @@
 /**
- * The data table under an answer. Vietnamese users finish an analysis in a
- * table — a number without its rows cannot be checked. Sortable, paged in
- * place ("xem thêm"), numeric columns right-aligned, values through formatVN.
+ * The data table under an answer. Users finish an analysis in a table — a
+ * number without its rows cannot be checked. Sortable, paged in place
+ * ("show more"), numeric columns right-aligned, values through formatVN.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpDown, Download, FileSpreadsheet, Table2 } from 'lucide-react';
@@ -43,10 +43,10 @@ function compare(a: unknown, b: unknown): number {
   if (na !== null && nb !== null) return na - nb;
   if (a === null || a === undefined) return 1;
   if (b === null || b === undefined) return -1;
-  return String(a).localeCompare(String(b), 'vi');
+  return String(a).localeCompare(String(b), 'en');
 }
 
-export function DataGrid({ columns, rows, rowCount, capped, truncation, pageSize = 10, title = 'Bảng dữ liệu', onExport, fullResult }: DataGridProps) {
+export function DataGrid({ columns, rows, rowCount, capped, truncation, pageSize = 10, title = 'Data table', onExport, fullResult }: DataGridProps) {
   const [sort, setSort] = useState<Sort>(null);
   const [visible, setVisible] = useState(pageSize);
   const [mode, setMode] = useState<Mode>('preview');
@@ -86,7 +86,7 @@ export function DataGrid({ columns, rows, rowCount, capped, truncation, pageSize
       setFullTotal(page.total);
       setFullHasMore(page.has_more);
     }).catch(e => {
-      if (!cancelled) setFullError(e instanceof Error ? e.message : 'Không tải được full result');
+      if (!cancelled) setFullError(e instanceof Error ? e.message : 'Could not load the full result');
     }).finally(() => {
       if (!cancelled) setFullLoading(false);
     });
@@ -124,7 +124,7 @@ export function DataGrid({ columns, rows, rowCount, capped, truncation, pageSize
   };
 
   const truncNote = truncation?.reason
-    ? TRUNCATION_LABELS[truncation.reason] ?? `kết quả bị cắt (${truncation.reason})`
+    ? TRUNCATION_LABELS[truncation.reason] ?? `result truncated (${truncation.reason})`
     : null;
 
   return (
@@ -132,7 +132,7 @@ export function DataGrid({ columns, rows, rowCount, capped, truncation, pageSize
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderBottom: '1px solid var(--ab-border)' }}>
         <Table2 size={12} style={{ color: 'var(--ab-accent)' }} />
         <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--ab-muted)' }}>
-          {title} · {formatNumber(total)} dòng
+          {title} · {formatNumber(total)} rows
         </span>
         {fullResult?.loadRows && (
           <div style={{ display: 'flex', gap: 3, padding: 2, border: '1px solid var(--ab-border)', borderRadius: 8, marginLeft: 'auto' }}>
@@ -155,7 +155,7 @@ export function DataGrid({ columns, rows, rowCount, capped, truncation, pageSize
             onClick={onExport}
             className="ab-btn"
             style={{ marginLeft: fullResult?.loadRows ? 0 : 'auto' }}
-            title="Tải bảng này dưới dạng CSV (mở được bằng Excel)"
+            title="Download this table as CSV (opens in Excel)"
           >
             <Download size={11} /> CSV preview
           </button>
@@ -166,9 +166,9 @@ export function DataGrid({ columns, rows, rowCount, capped, truncation, pageSize
             onClick={exportXlsx}
             className="ab-btn"
             disabled={xlsxLoading}
-            title="Tải Excel gồm sheet Dữ liệu và Nguồn"
+            title="Download Excel with Data and Source sheets"
           >
-            <FileSpreadsheet size={11} /> {xlsxLoading ? 'Đang tạo…' : 'Excel + Nguồn'}
+            <FileSpreadsheet size={11} /> {xlsxLoading ? 'Generating…' : 'Excel + Source'}
           </button>
         )}
       </div>
@@ -228,27 +228,27 @@ export function DataGrid({ columns, rows, rowCount, capped, truncation, pageSize
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', fontSize: 10.5, color: 'var(--ab-muted)', flexWrap: 'wrap' }}>
         <span>
           {mode === 'full'
-            ? `Full result ${formatNumber(fullOffset + 1)}-${formatNumber(fullOffset + shown.length)} / ${formatNumber(fullTotal)} dòng`
-            : `Preview ${formatNumber(shown.length)} / ${formatNumber(rows.length)} dòng${capped ? ' (xem trước)' : ''}`}
+            ? `Full result ${formatNumber(fullOffset + 1)}-${formatNumber(fullOffset + shown.length)} / ${formatNumber(fullTotal)} rows`
+            : `Preview ${formatNumber(shown.length)} / ${formatNumber(rows.length)} rows${capped ? ' (preview)' : ''}`}
         </span>
-        {fullLoading && <span>Đang tải full result…</span>}
+        {fullLoading && <span>Loading full result…</span>}
         {truncNote && <span style={{ color: 'var(--ab-warn)' }}>{truncNote}</span>}
         {mode === 'preview' && visible < sorted.length && (
           <button type="button" className="ab-link" onClick={() => setVisible(v => v + pageSize * 2)}>
-            Xem thêm {formatNumber(Math.min(pageSize * 2, sorted.length - visible))} dòng
+            Show {formatNumber(Math.min(pageSize * 2, sorted.length - visible))} more rows
           </button>
         )}
         {mode === 'preview' && visible > pageSize && sorted.length > pageSize && (
-          <button type="button" className="ab-link" onClick={() => setVisible(pageSize)}>Thu gọn</button>
+          <button type="button" className="ab-link" onClick={() => setVisible(pageSize)}>Collapse</button>
         )}
         {mode === 'full' && fullOffset > 0 && (
           <button type="button" className="ab-link" onClick={() => setFullOffset(Math.max(0, fullOffset - fullPageSize))}>
-            <ArrowLeft size={10} /> Trang trước
+            <ArrowLeft size={10} /> Previous page
           </button>
         )}
         {mode === 'full' && fullHasMore && (
           <button type="button" className="ab-link" onClick={() => setFullOffset(fullOffset + fullPageSize)}>
-            Trang sau <ArrowRight size={10} />
+            Next page <ArrowRight size={10} />
           </button>
         )}
       </div>

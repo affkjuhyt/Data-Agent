@@ -212,6 +212,15 @@ async def approve_structured_table(
             f'CREATE TABLE kb_structured.{quote_identifier(final_name)} '
             f'(id BIGSERIAL PRIMARY KEY, tenant_id UUID NOT NULL, {col_defs})'
         ))
+        # Belt-and-braces alongside migration d4e5f6a7b8c9's ALTER DEFAULT
+        # PRIVILEGES (which already covers this for the common case): grant
+        # explicitly too, and don't let a missing role — an environment that
+        # hasn't run that migration yet — fail the whole approval.
+        await session.execute(text(
+            "DO $$ BEGIN "
+            f"  GRANT SELECT ON kb_structured.{quote_identifier(final_name)} TO kb_structured_reader; "
+            "EXCEPTION WHEN undefined_object THEN NULL; END $$;"
+        ))
 
         coercion_failures = 0
         insert_cols = ", ".join(quote_identifier(name) for name, _, _, _ in columns)

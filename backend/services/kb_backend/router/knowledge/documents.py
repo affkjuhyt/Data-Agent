@@ -4,6 +4,7 @@ Serves AssetDetailWorkspace and KnowledgeHub (chunk/version management).
 """
 import mimetypes
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
@@ -191,9 +192,20 @@ async def get_document_file_route(doc_id: str, request: Request, ctx: dict[str, 
     record = await fetch_one_or_404(svc(request, "postgres"), doc_id, ctx["tenant_id"])
     data = await svc(request, "minio").download(MINIO_BUCKET, record["path"])
     content_type = mimetypes.guess_type(record["name"])[0] or "application/octet-stream"
+    # HTTP header values are Latin-1 only — a Vietnamese-diacritic name (the
+    # common case in this KB) would otherwise raise UnicodeEncodeError deep in
+    # Starlette's header encoding and surface as a bare 500. RFC 5987's
+    # filename* carries the real UTF-8 name; the plain filename is an
+    # ASCII-safe fallback for clients that ignore filename*.
+    ascii_name = record["name"].encode("ascii", "ignore").decode() or "file"
     return Response(
         content=data,
         media_type=content_type,
-        headers={"Content-Disposition": f'inline; filename="{record["name"]}"'},
+        headers={
+            "Content-Disposition": (
+                f'inline; filename="{ascii_name}"; '
+                f"filename*=UTF-8''{quote(record['name'])}"
+            )
+        },
     )
 

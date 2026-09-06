@@ -257,6 +257,15 @@ def _extract_node_config(flow_nodes: list[dict[str, Any]]) -> dict[str, Any]:
                     "host":      conn.get("host", ""),
                     "port":      conn.get("port", 5432),
                     "database":  conn.get("database", ""),
+                    # Postgres-only; defaults to 'public' — the only schema
+                    # this ever queried before the field existed. Lets a
+                    # connection point at a non-default schema, e.g.
+                    # `kb_structured` (the KB's structured-table feature's
+                    # tables), without exposing anything else in that
+                    # database — handlers/data.py's introspection is scoped
+                    # to exactly this schema, and nothing grants the
+                    # connecting role visibility into any other one.
+                    "schema":    conn.get("schema") or "public",
                     "user":      conn.get("user", ""),
                     # Resolved against OpenBao in load_agent_config() via
                     # warehouse_secrets.py — no plaintext password read here.

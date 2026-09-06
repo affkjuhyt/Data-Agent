@@ -39,6 +39,14 @@ marks exactly as written ("Đà Nẵng" stays "Đà Nẵng", never "Da Nang"). T
 change meaning in Vietnamese — altering them corrupts the entity.
 Prefer keeping concrete names, numbers, and dates over generic phrasing: these
 summaries are later merged into a document summary.
+TABLE CHUNKS: if the chunk starts with "Table: ..." followed by a markdown
+table, do NOT just restate the row/column counts — those are already in the
+text. Instead name the actual indicator/topic (from the table name or
+surrounding text), the row categories present (e.g. name 2–3 actual regions/
+groups from the table, not "various regions"), and the column range (e.g.
+"2005–2024"), so the summary itself is useful for a reader deciding whether
+this table has the number they need — never a placeholder like "various
+metrics" or "various age groups" in place of what the table actually contains.
 
 ── entities (0–8 knowledge-graph entities that appear IN THIS CHUNK) ─────────────
 The specific named things this chunk is about. For each: name, type, description
@@ -86,6 +94,14 @@ dự án), giữ nguyên toàn bộ dấu ("Đà Nẵng" giữ là "Đà Nẵng"
 Dấu thanh làm thay đổi nghĩa — sai dấu là sai thực thể.
 Ưu tiên giữ tên riêng, con số, mốc thời gian thay vì câu chữ chung chung: các tóm
 tắt này sẽ được gộp thành tóm tắt tài liệu.
+ĐOẠN LÀ BẢNG: nếu đoạn bắt đầu bằng "Table: ..." theo sau là một bảng markdown,
+KHÔNG chỉ nhắc lại số dòng/số cột — thông tin đó đã có sẵn trong đoạn. Thay vào
+đó nêu rõ chỉ tiêu/chủ đề thực sự của bảng (lấy từ tên bảng hoặc văn bản xung
+quanh), nêu tên 2–3 hạng mục dòng thực tế trong bảng (ví dụ: nêu đích danh vài
+tỉnh/vùng/nhóm cụ thể, không viết "các vùng miền" chung chung), và khoảng cột
+(ví dụ "2005–2024"), để bản tóm tắt thực sự giúp người đọc biết bảng này có
+đúng số liệu họ cần hay không — tuyệt đối không dùng cụm chung chung như "các
+chỉ số khác nhau" hay "các nhóm tuổi khác nhau" thay cho nội dung thật của bảng.
 
 ── entities (0–8 thực thể tri thức XUẤT HIỆN TRONG ĐOẠN NÀY) ─────────────────────
 Những thứ có tên cụ thể mà đoạn nói đến. Mỗi thực thể: name, type, description

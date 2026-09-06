@@ -118,6 +118,23 @@ export async function apiUpload<T = unknown>(
 }
 
 /**
+ * Fetch a binary resource (the original uploaded file, for preview/download)
+ * as a Blob. A plain `<img src="...">`/`<iframe src="...">` can't carry the
+ * bearer token — the browser doesn't attach custom headers for resource-
+ * loading tags — so authenticated media has to go through `fetch()` here and
+ * get handed to the DOM as an object URL (`URL.createObjectURL(blob)`,
+ * revoked by the caller when no longer needed).
+ */
+export async function apiBlob(path: string): Promise<Blob> {
+  const res = await fetch(`${BASE}${path}`, {
+    headers: authHeaders(),
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.blob();
+}
+
+/**
  * Streaming GET (Server-Sent Events / chunked) over the same gateway path:
  * attaches the bearer token and returns the raw Response so the caller can read
  * `response.body` as a stream. No JSON unwrap, no timeout — streams are
