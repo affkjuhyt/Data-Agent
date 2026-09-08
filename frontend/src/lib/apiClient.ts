@@ -54,13 +54,23 @@ export async function apiGet<T>(
   return unwrapEnvelope<T>(await res.json());
 }
 
+/** Thrown when the row changed since it was read (HTTP 412). */
+export class StaleVersionError extends Error {
+  constructor(message = 'This item was changed by someone else. Reload and try again.') {
+    super(message);
+    this.name = 'StaleVersionError';
+  }
+}
+
 export async function apiMutate<T = unknown>(
   method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
+  ifMatch?: string,
 ): Promise<T> {
   const headers: Record<string, string> = { ...authHeaders() };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (ifMatch) headers['If-Match'] = `"${ifMatch}"`;
 
   const res = await fetch(`${BASE}${path}`, {
     method,
@@ -80,6 +90,7 @@ export async function apiMutate<T = unknown>(
     if (res.status === 403) {
       window.dispatchEvent(new CustomEvent('app:forbidden', { detail: msg }));
     }
+    if (res.status === 412) throw new StaleVersionError();
     throw new Error(msg);
   }
   if (res.status === 204 || res.headers.get('content-length') === '0') return undefined as T;

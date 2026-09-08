@@ -48,6 +48,7 @@ export interface DocTable {
   description: string;
   columns: TableColumn[];
   rows: Record<string, string | null>[];
+  row_version: string;
 }
 
 export interface WarehouseConfigTable {
@@ -64,4 +65,5 @@ export interface WarehouseConfigVersion {
   created_at: string;
   connection: Record<string, string>;
   tables: WarehouseConfigTable[];
+  row_version: string;
 }

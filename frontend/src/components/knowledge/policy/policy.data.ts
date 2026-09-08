@@ -10,6 +10,7 @@ export interface FilterPolicy {
   added_by: string;
   added_when: string;
   active: boolean;
+  row_version: string;
 }
 
 export const BASE_EXTRACTION_POLICY = `Extract all named entities including:

@@ -41,6 +41,7 @@ export interface WConfig {
   syncSchedule: string;
   tables: WTableEntry[];
   connection?: Record<string, string>; // real credentials from backend
+  row_version: string;
 }
 
 export interface WConnection {

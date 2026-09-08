@@ -34,6 +34,7 @@ function normalizeWConfig(raw: Record<string, unknown>, idx: number): WConfig {
     status: rawStatus === 'Active' ? 'Active' : rawStatus === 'Archived' ? 'Archived' : 'Draft',
     syncSchedule: (raw.syncSchedule as string) ?? (raw.sync_schedule as string) ?? 'Manual',
     connection: raw.connection as Record<string, string> | undefined,
+    row_version: (raw.row_version as string) ?? '',
     tables,
   };
 }
