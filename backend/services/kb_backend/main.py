@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig, PoolConfig
+from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
 from libs.database_connector.postgres_connector import PostgresClient
 from libs.database_connector.qdrant_connector import QdrantClient as QdrantService
 from libs.database_connector.neo4j_connector import Neo4jClient
@@ -31,9 +31,6 @@ log = logging.getLogger(__name__)
 # POSTGRES_URL keeps an un-migrated deployment working; setting it is what
 # makes row-level security actually apply to this service.
 _POSTGRES_URL = os.environ.get("KB_BACKEND_URL_ASYNC", "") or os.environ.get("POSTGRES_URL", "")
-# Set when _POSTGRES_URL points at PgBouncer: session-scoped work (advisory
-# locks) needs a connection that is not multiplexed per transaction.
-_POSTGRES_DIRECT_URL = os.environ.get("POSTGRES_DIRECT_URL", "")
 _MONGO_URL = os.environ.get("MONGO_URL", "mongodb://mongo:27017/dataagent")
 _MINIO_URL = os.environ.get("MINIO_URL", "http://minioadmin:minioadmin@minio:9000")
 _KAFKA_URL = os.environ.get("KAFKA_URL", "kafka:9092")
@@ -44,7 +41,6 @@ _RESULT_CACHE_TTL = int(os.environ.get("RESULT_CACHE_TTL", "900"))
 KB_LITE = os.getenv("KB_LITE", "false").lower() == "true"
 
 _postgres = PostgresClient()
-_postgres_direct = PostgresClient(PoolConfig.from_env("POSTGRES_DIRECT")) if _POSTGRES_DIRECT_URL else None
 _qdrant = QdrantService()
 _neo4j = Neo4jClient()
 _mongo = MongoClient()
@@ -84,8 +80,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     retry = RetryConfig()
 
     _postgres.set_url(_POSTGRES_URL)
-    if _postgres_direct is not None:
-        _postgres_direct.set_url(_POSTGRES_DIRECT_URL)
     _qdrant.set_url(cfg.QDRANT_URL)
     _neo4j.set_url(cfg.NEO4J_URL)
     _mongo.set_url(_MONGO_URL)
@@ -95,8 +89,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _redis.set_url(_REDIS_URL)
 
     await _postgres.open(retry)
-    if _postgres_direct is not None:
-        await _postgres_direct.open(retry)
     async with _postgres.get_platform_client() as session:
         migrated = await session.scalar(text(
             "SELECT 1 FROM information_schema.tables WHERE table_name = 'KBData'"
@@ -122,7 +114,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             log.warning("Redis (result cache) unavailable — retrieval works uncached: %s", e)
 
     app.state.postgres = _postgres
-    app.state.postgres_direct = _postgres_direct or _postgres
     app.state.qdrant = _qdrant
     app.state.neo4j = _neo4j
     app.state.mongo = _mongo
@@ -156,8 +147,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await asyncio.gather(*hc_tasks, return_exceptions=True)
 
     await _postgres.close()
-    if _postgres_direct is not None:
-        await _postgres_direct.close()
     await _qdrant.close()
     await _neo4j.close()
     await _mongo.close()

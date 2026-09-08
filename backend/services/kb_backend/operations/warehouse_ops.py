@@ -6,6 +6,7 @@ import uuid
 from fastapi import HTTPException
 from sqlalchemy import select as sa_select, update as sa_update, func as sa_func
 
+from libs.shared.row_version import with_new_version
 from libs.basemodel.services_databaseconnector.postgres_model import (
     ReadJoinRequest, WhereFilter,
     KBWarehouseConfigInsert, KBWarehouseConfigDelete,
@@ -220,7 +221,7 @@ async def activate_warehouse_config(
         await session.execute(
             sa_update(KBWarehouseConfigORM)
             .where(KBWarehouseConfigORM.warehouse_id == warehouse_uuid)
-            .values(is_active=False)
+            .values(**with_new_version(is_active=False))
         )
         await session.execute(
             sa_update(KBWarehouseConfigORM)
@@ -228,7 +229,7 @@ async def activate_warehouse_config(
                 KBWarehouseConfigORM.config_id == config_uuid,
                 KBWarehouseConfigORM.warehouse_id == warehouse_uuid,
             )
-            .values(is_active=True)
+            .values(**with_new_version(is_active=True))
         )
         await session.commit()
     return {"status": "ok", "config_id": config_id}

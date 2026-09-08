@@ -55,17 +55,26 @@ def _document_name_key(tenant_id: str, name: str) -> int:
 
 @asynccontextmanager
 async def _document_name_lock(postgres: Any, tenant_id: str, name: str) -> AsyncIterator[None]:
-    """Serialise replace-then-insert; session-scoped as the work spans transactions.
+    """Serialise replace-then-insert for one (tenant, name).
 
-    Must run on a connection that is not transaction-pooled — see
-    app.state.postgres_direct."""
+    Rejects rather than queues: a waiting request would hold its connection for
+    the whole ingest. The session stays in one transaction so the lock keeps the
+    same backend under transaction pooling.
+    """
     key = _document_name_key(tenant_id, name)
-    async with postgres.get_client() as session:
-        await session.execute(text("SELECT pg_advisory_lock(:key)"), {"key": key})
-        try:
-            yield
-        finally:
-            await session.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
+    session = postgres.get_client()
+    acquired = await session.scalar(text("SELECT pg_try_advisory_lock(:key)"), {"key": key})
+    if not acquired:
+        await session.close()
+        raise HTTPException(
+            status_code=409,
+            detail=f"'{name}' is currently being ingested. Wait for it to finish, or use a different name.",
+        )
+    try:
+        yield
+    finally:
+        await session.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
+        await session.close()
 
 
 async def _replace_existing_document_if_any(request: Request, ctx: dict[str, Any], name: str) -> None:
@@ -152,7 +161,7 @@ async def ingest_bronze(
         raise HTTPException(status_code=422, detail="Invalid metadata format")
 
     log.info("POST /ingestion/bronze tenant=%s source=%s size=%d", ctx["tenant_id"], src, len(file_bytes))
-    async with _document_name_lock(svc(request, "postgres_direct"), ctx["tenant_id"], name):
+    async with _document_name_lock(svc(request, "postgres"), ctx["tenant_id"], name):
         await _replace_existing_document_if_any(request, ctx, name)
         try:
             return await svc(request, "ingestion").bronze(
@@ -204,7 +213,7 @@ async def ingest_bronze_web(
     postgres = svc(request, "postgres")
 
     log.info("POST /ingestion/bronze/web tenant=%s url=%s", ctx["tenant_id"], url)
-    async with _document_name_lock(svc(request, "postgres_direct"), ctx["tenant_id"], name):
+    async with _document_name_lock(svc(request, "postgres"), ctx["tenant_id"], name):
         await _replace_existing_document_if_any(request, ctx, name)
         try:
             return await svc(request, "ingestion").bronze_web(

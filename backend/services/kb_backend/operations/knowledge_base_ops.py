@@ -5,6 +5,7 @@ import uuid
 from fastapi import HTTPException
 from sqlalchemy import update as sa_update
 
+from libs.shared.row_version import with_new_version
 from libs.basemodel.services_databaseconnector.postgres_model import (
     ReadJoinRequest,
     KBKnowledgeBaseInsert,
@@ -87,7 +88,7 @@ async def delete_knowledge_base(postgres: Any, knowledge_base_id: str, tenant_id
                 KBDataORM.knowledge_base_id == kb_uuid,
                 KBDataORM.is_deleted == False,
             )
-            .values(knowledge_base_id=_DEFAULT_KB_ID)
+            .values(**with_new_version(knowledge_base_id=_DEFAULT_KB_ID))
         )
         await session.commit()
     log.info(

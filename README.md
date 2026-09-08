@@ -427,11 +427,17 @@ kubectl apply -f deploy/k8s/job/setup.yaml
 
 ---
 
-### Cấp quyền cho runtime_writer (chạy 1 lần sau migrate)
+### Cấp quyền cho app_user / runtime_writer (chạy 1 lần sau migrate)
+
+Trên k8s, `job/db-init.yaml` chạy bước này và đặt mật khẩu từ Secret.
+Chạy tay thì phải đặt mật khẩu cùng lúc, nếu không role không đăng nhập được:
 
 ```bash
 docker exec -i dataagent-postgres psql -U admin -d dataagent \
-  < deploy/docker/sql/grant-runtime-writer.sql
+  < deploy/docker/sql/grant-roles.sql
+docker exec -i dataagent-postgres psql -U admin -d dataagent \
+  -c "ALTER ROLE app_user       WITH LOGIN PASSWORD '<APP_USER_PASSWORD>'" \
+  -c "ALTER ROLE runtime_writer WITH LOGIN PASSWORD '<RUNTIME_WRITER_PASSWORD>'"
 ```
 
 ---

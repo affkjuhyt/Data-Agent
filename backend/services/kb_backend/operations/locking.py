@@ -1,9 +1,11 @@
 """Optimistic locking: SELECT ... FOR UPDATE, verify row_version, then update."""
 import uuid
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from fastapi import HTTPException
-from sqlalchemy import func, select, update as sa_update
+from sqlalchemy import select, update as sa_update
+
+from libs.shared.row_version import with_new_version
 
 
 def parse_if_match(value: str | None) -> uuid.UUID | None:
@@ -64,15 +66,10 @@ async def update_locked(
                     detail="Resource was modified by someone else — reload and retry",
                 )
 
-            values = mutate(row)
-            new_version = uuid.uuid4()
-            await session.execute(
-                sa_update(orm)
-                .where(*conditions)
-                .values(**values, row_version=new_version, updated_at=func.now())
-            )
+            changes = with_new_version(**mutate(row))
+            await session.execute(sa_update(orm).where(*conditions).values(**changes))
             await session.commit()
-            return new_version
+            return cast(uuid.UUID, changes["row_version"])
         except HTTPException:
             await session.rollback()
             raise
