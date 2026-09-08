@@ -2,10 +2,17 @@ import logging
 import re
 from typing import Any, Callable
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 
+from libs.database_connector.postgres_connector import set_current_tenant
 from libs.shared.auth import allowed_services, resolve_caller
 from services.kb_backend.config import resolve_role_id
+from services.kb_backend.dependencies.permissions import (
+    PERMISSIONS,
+    PermissionStoreUnavailable,
+    UnknownPermission,
+    store,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -19,82 +26,27 @@ _UUID_RE = re.compile(
     r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I
 )
 
-UNIVERSAL_PERMISSIONS: dict[str, bool] = {
-    "viewDocuments": False, "editTableRow": False,
-    "viewConflicts": False,
-    "viewFleetStats": False,
-    "viewKnowledgeBases": False,
-    "retrieveKnowledge": False,
-    "viewGraph": False, "runGraphQuery": False,
-    "viewPolicies": False,
-    "viewQdrantCollections": False, "searchQdrant": False,
-    "viewTrash": False,
-    "viewWarehouses": False,
+# Keycloak realm-role name → this service's canonical spelling. Only the
+# irregular ones need an entry; anything else is upper-cased with dashes turned
+# into underscores, so `business-operator` → `BUSINESS_OPERATOR` for free.
+#
+# This is NOT the permission matrix — that lives in the RolePermissions table
+# (see dependencies/permissions.py). It is the name normalisation that has to
+# happen first, so that the role in a JWT and the role_id in a database row are
+# the same string.
+_ROLE_ALIASES: dict[str, str] = {
+    "platform-admin":   "PLATFORM_ADMIN",
+    "ai-engineer":      "AI_ENGINEER",
+    "executive-viewer": "EXECUTIVE",
 }
 
-RESTRICTED_PERMISSIONS: dict[str, bool] = {
-    "addData": False,
-    "processLayer": False,
-    "deleteData": False,
-    "addChunkVersion": False,
-    "editConflict": False,
-    "addFilteringPolicy": False,
-    "editFilteringPolicy": False,
-    "deleteFilteringPolicy": False,
-    "editExtractionPolicy": False,
-    "toggleQdrant": False,
-    "addWarehouse": False,
-    "addWarehouseConfig": False,
-    "editWarehouseConfig": False,
-}
 
-def blank_permission_grants() -> dict[str, bool]:
-    return {**UNIVERSAL_PERMISSIONS, **RESTRICTED_PERMISSIONS}
+def canonical_role(raw: str) -> str:
+    raw = (raw or "").strip()
+    return _ROLE_ALIASES.get(raw.lower(), raw.upper().replace("-", "_"))
 
-class PermissionRegistry:
-    __slots__ = ("_grants", "_aliases")
 
-    def __init__(self) -> None:
-        self._grants: dict[str, dict[str, bool]] = {}
-        self._aliases: dict[str, str] = {}
-
-    def alias(self, keycloak_role: str, canonical: str) -> "PermissionRegistry":
-        self._aliases[keycloak_role.strip().lower()] = canonical
-        return self
-
-    def grant(self, role: str, *permission_names: str) -> "PermissionRegistry":
-        granted = blank_permission_grants()
-        for permission_name in permission_names:
-            granted[permission_name] = True
-        self._grants[role] = granted
-        return self
-
-    def canonical_role(self, raw: str) -> str:
-        raw = (raw or "").strip()
-        return self._aliases.get(raw.lower(), raw.upper().replace("-", "_"))
-
-    def permissions_for(self, role: str) -> dict[str, bool]:
-        return self._grants.get(role, blank_permission_grants())
-
-    def can(self, role: str, *permission_names: str) -> bool:
-        granted = self.permissions_for(role)
-        return any(granted.get(permission_name, False) for permission_name in permission_names)
-
-    def known_roles(self) -> frozenset[str]:
-        return frozenset(self._grants)
-
-RBAC = (
-    PermissionRegistry()
-    .alias("platform-admin", "PLATFORM_ADMIN")
-    .alias("ai-engineer", "AI_ENGINEER")
-    .alias("executive-viewer", "EXECUTIVE")
-    .grant("PLATFORM_ADMIN", *UNIVERSAL_PERMISSIONS, *RESTRICTED_PERMISSIONS)
-    .grant("AI_ENGINEER", "toggleQdrant", "editExtractionPolicy", *UNIVERSAL_PERMISSIONS)
-    .grant("EXECUTIVE", "editConflict", "processLayer", "addFilteringPolicy", *UNIVERSAL_PERMISSIONS)
-    .grant("BUSINESS_OPERATOR", *UNIVERSAL_PERMISSIONS)
-)
-
-def authenticate(
+async def authenticate(
         x_kong_verified: str = Header(default="", alias="X-Kong-Verified"),
         x_gateway_key: str = Header(default="", alias="X-Gateway-Key"),
         x_service_assertion: str = Header(default="", alias="X-Service-Assertion"),
@@ -104,13 +56,14 @@ def authenticate(
         x_user_roles: str = Header(default="", alias="X-User-Roles"),
         x_role_id: str = Header(default="", alias="X-Role-Id"),
 ) -> dict[str, Any]:
-    """Resolve the caller, then map their roles onto this service's RBAC.
+    """Resolve the caller and canonicalise their roles.
 
     The trust decision — signed service assertion, or Kong proven by the shared
     gateway key, and nothing else — lives in backend/libs/shared/auth.resolve_caller so
     every service makes it identically. What stays here is kb-backend's own
     layer: canonicalising Keycloak role names and deriving the role_id that
-    operations/access.py filters documents by.
+    operations/access.py filters documents by. What the role may DO is a
+    separate question, answered from Postgres by require_perm.
     """
     caller = resolve_caller(
         x_kong_verified=x_kong_verified,
@@ -129,7 +82,7 @@ def authenticate(
     # path has no equivalent, its roles list is authoritative.
     if not raw_roles and caller.raw_role_id:
         raw_roles = [caller.raw_role_id]
-    roles = [RBAC.canonical_role(r) for r in raw_roles]
+    roles = [canonical_role(r) for r in raw_roles]
 
     if not caller.tenant_id or not _UUID_RE.match(caller.tenant_id):
         raise HTTPException(status_code=400, detail="Verified request missing valid tenant_id")
@@ -139,6 +92,9 @@ def authenticate(
     # an authenticated list: Kong emits the token's roles, the assertion is
     # signed. It is why neither may take roles from a bare header.
     role = roles[0] if roles else ""
+    # Every session opened for this request scopes itself to this tenant.
+    # async so the ContextVar lands in the request's task, not a threadpool.
+    set_current_tenant(caller.tenant_id)
     return {
         "role": role,
         "roles": roles,
@@ -149,9 +105,54 @@ def authenticate(
         "auth_source": caller.auth_source,
     }
 
-def require_perm(*permission_names: str) -> Callable[..., dict[str, Any]]:
-    def _dep(ctx: dict[str, Any] = Depends(authenticate)) -> dict[str, Any]:
-        if not RBAC.can(ctx["role"], *permission_names):
+
+def postgres_for(request: Request) -> Any:
+    """The Postgres client the permission matrix is read from.
+
+    Reached through app.state rather than imported from main, both to avoid the
+    import cycle and so a test can supply its own.
+    """
+    postgres = getattr(request.app.state, "postgres", None)
+    if postgres is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Permission store unavailable: this deployment has no Postgres client.",
+        )
+    return postgres
+
+
+def require_perm(*permission_names: str) -> Callable[..., Any]:
+    """Authorise the caller for ANY of `permission_names`, per RolePermissions.
+
+    A role that holds none of them is a 403. A matrix that cannot be read at
+    all is a 503 — the request is not denied on policy, it is unanswerable, and
+    reporting that as 403 would send an operator hunting for a missing grant
+    that exists.
+
+    Names are checked against the catalogue HERE, as the route is being
+    declared, so a typo is an ImportError at startup rather than a route that
+    every role is quietly refused.
+    """
+    unknown = sorted(set(permission_names) - PERMISSIONS)
+    if unknown:
+        raise UnknownPermission(
+            f"require_perm({', '.join(map(repr, permission_names))}) names "
+            f"{unknown}, which the catalogue in dependencies/permissions.py does not "
+            "define. Add it there (and seed a RolePermissions row) or fix the spelling."
+        )
+
+    async def _dep(
+            request: Request,
+            ctx: dict[str, Any] = Depends(authenticate),
+    ) -> dict[str, Any]:
+        try:
+            permitted = await store.can(postgres_for(request), ctx["role"], *permission_names)
+        except PermissionStoreUnavailable:
+            raise HTTPException(
+                status_code=503,
+                detail="Permission store unavailable — cannot authorise this request.",
+            ) from None
+        if not permitted:
             raise HTTPException(
                 status_code=403,
                 detail=f"Role '{ctx['role'] or 'unknown'}' lacks permission: {' or '.join(permission_names)}",

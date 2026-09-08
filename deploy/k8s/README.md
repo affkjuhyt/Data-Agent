@@ -226,9 +226,11 @@ deliberately when you mean to restore:
 `kubectl -n dataagent-database patch job postgres-restore -p '{"spec":{"suspend":false}}'`.
 A test fails the build if that flag is ever flipped in the manifest. Our images
 are named `dataagent/<service_name>:latest`, which resolves against a node's
-local image store; prefix a registry at apply time if you push somewhere. They
+local image store; prefix a registry at apply time if you push somewhere. Every
+one carries `imagePullPolicy: IfNotPresent` — Kubernetes defaults a `:latest`
+tag to `Always`, which never finds a locally built image. They
 are built from `backend/services/<name>/Dockerfile` (plus `backend/alembic/`,
-`model/eval/`, `frontend/Dockerfile.dev`). `deploy/docker/kong/Dockerfile` is the
+`model/eval/`, `frontend/Dockerfile`). `deploy/docker/kong/Dockerfile` is the
 only image built under `deploy/` — everything else pulls a public image directly.
 
 A Job's pod template is immutable, so re-applying a completed Job fails. Delete
@@ -245,7 +247,7 @@ real registry if this is remote.
 
 ```bash
 # Context is the repo root for every backend service and for migrate; frontend
-# is the one exception (its Dockerfile.dev expects `frontend/` as context).
+# is the one exception (its Dockerfile expects `frontend/` as context).
 docker build -f backend/services/<name>/Dockerfile -t localhost:5000/dataagent/<name>:latest .
 docker push localhost:5000/dataagent/<name>:latest
 
@@ -292,11 +294,14 @@ itself (`get pods`, `logs`) rather than the apply command's exit code.
 **Frontend:**
 
 ```bash
-docker build -f frontend/Dockerfile.dev -t localhost:5000/dataagent/frontend:latest frontend
+docker build -f frontend/Dockerfile -t localhost:5000/dataagent/frontend:latest frontend
 docker push localhost:5000/dataagent/frontend:latest
 kubectl -n dataagent-service rollout restart deployment/frontend
 kubectl -n dataagent-service rollout status deployment/frontend --timeout=90s
 ```
+
+Not `Dockerfile.dev` — the manifest runs `npm run preview`, which serves `dist/`,
+and only `frontend/Dockerfile` runs `npm run build` to produce it.
 
 Run `cd frontend && npx tsc --noEmit` first — it must run from `frontend/`
 (no `tsconfig.json` at the repo root, so running it from there silently exits
@@ -386,6 +391,28 @@ the Python services never apply in-cluster.
 `tests/unit/test_k8s_manifests.py` asserts the range, that no two Services share
 a port, that `8000–8099` stays empty, and that `port == targetPort ==
 containerPort` for every workload.
+
+## The setup Job
+
+`job/setup.yaml` is the one workload the NetworkPolicies let reach **both** Kong
+and Keycloak (`allow-kong` and `allow-keycloak` both list `setup`), so everything
+that has to talk to the gateway and to identity in one breath lives there:
+
+| Step | Controlled by |
+| --- | --- |
+| Keycloak audience mappers | always |
+| Kong services, routes, JWT plugin, CORS, dev passwords | always |
+| `browserFlow = browser` (browser MFA off) | `KEYCLOAK_DISABLE_MFA=1` in `setup-env` |
+| Anonymous call to `/api/orchestrate/stream` must be 401/403 | always — the Job fails if the gateway is not fail-closed |
+| `/api/catalog/agents` + `/api/reviews/pending` with a real token | `SMOKE_USER` + `SMOKE_PASSWORD`, blank = skipped |
+
+The anonymous check works even when the upstream is down, because Kong's JWT
+plugin rejects before proxying — a 503 there means the route is wrong, not that
+the service is missing.
+
+`SMOKE_USER` is empty by default. To enable the token check, set it to a realm
+user (`kong-setup.sh` creates `helios-engineer`, `helios-admin`, `helios-viewer`)
+and put that user's password in `SMOKE_PASSWORD`.
 
 ## Ingress
 

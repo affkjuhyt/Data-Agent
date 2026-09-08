@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from services.kb_backend.dependencies.auth import authenticate, require_perm
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.schemas import RetrieveRequest, RetrieveResponse
+from libs.shared.auth import require_tenant
 from libs.shared.kb_result_cache import ResultCache, query_hash
 
 log = logging.getLogger(__name__)
@@ -40,7 +41,7 @@ async def retrieve(
         request: Request,
         ctx: dict[str, Any] = Depends(require_perm("retrieveKnowledge")),
 ) -> RetrieveResponse:
-    tenant_id = body.tenant_id or ctx["tenant_id"] or "default"
+    tenant_id = require_tenant(ctx)
     knowledge_base = body.knowledge_base or None
     # The caller's document tier, from the verified identity — never from the
     # request body. `require_perm` above answers "may this caller retrieve at
@@ -93,7 +94,7 @@ async def retrieve_stream(
         request: Request,
         ctx: dict[str, Any] = Depends(require_perm("retrieveKnowledge")),
 ) -> StreamingResponse:
-    tenant_id = body.tenant_id or ctx["tenant_id"] or "default"
+    tenant_id = require_tenant(ctx)
     knowledge_base = body.knowledge_base or None
     # Same scope as /retrieve. The streaming variant runs the same pipeline, so
     # leaving it unscoped would leave the whole bypass open through one route.
