@@ -145,7 +145,7 @@ spec:
           app: kong
     - namespaceSelector:
         matchLabels:
-          name: dataagent-service
+          name: dataagent-database
       podSelector:
         matchLabels:
           app: pgbouncer
@@ -327,7 +327,7 @@ spec:
           app: kong
     - namespaceSelector:
         matchLabels:
-          name: dataagent-service
+          name: dataagent-database
       podSelector:
         matchLabels:
           app: pgbouncer
@@ -509,7 +509,7 @@ spec:
           app: kong
     - namespaceSelector:
         matchLabels:
-          name: dataagent-service
+          name: dataagent-database
       podSelector:
         matchLabels:
           app: pgbouncer
@@ -691,7 +691,7 @@ spec:
           app: kong
     - namespaceSelector:
         matchLabels:
-          name: dataagent-service
+          name: dataagent-database
       podSelector:
         matchLabels:
           app: pgbouncer
@@ -875,7 +875,7 @@ spec:
           app: kong
     - namespaceSelector:
         matchLabels:
-          name: dataagent-service
+          name: dataagent-database
       podSelector:
         matchLabels:
           app: pgbouncer
@@ -1059,7 +1059,7 @@ spec:
           app: kong
     - namespaceSelector:
         matchLabels:
-          name: dataagent-service
+          name: dataagent-database
       podSelector:
         matchLabels:
           app: pgbouncer
@@ -1243,7 +1243,7 @@ spec:
           app: kong
     - namespaceSelector:
         matchLabels:
-          name: dataagent-service
+          name: dataagent-database
       podSelector:
         matchLabels:
           app: pgbouncer
@@ -1427,7 +1427,7 @@ spec:
           app: kong
     - namespaceSelector:
         matchLabels:
-          name: dataagent-service
+          name: dataagent-database
       podSelector:
         matchLabels:
           app: pgbouncer
@@ -1609,7 +1609,7 @@ spec:
           app: kong
     - namespaceSelector:
         matchLabels:
-          name: dataagent-service
+          name: dataagent-database
       podSelector:
         matchLabels:
           app: pgbouncer
@@ -1791,7 +1791,7 @@ spec:
           app: kong
     - namespaceSelector:
         matchLabels:
-          name: dataagent-service
+          name: dataagent-database
       podSelector:
         matchLabels:
           app: pgbouncer
@@ -1973,7 +1973,7 @@ spec:
           app: kong
     - namespaceSelector:
         matchLabels:
-          name: dataagent-service
+          name: dataagent-database
       podSelector:
         matchLabels:
           app: pgbouncer

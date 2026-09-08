@@ -23,13 +23,14 @@ data:
   LISTEN_PORT: '8390'
   POOL_MODE: transaction
   MAX_CLIENT_CONN: '10000'
-  # Per replica, per (user,db). 2 replicas x (20+5) = 50 of Postgres' 100.
+  # Per (user,db). One replica, so this is the real ceiling: 20+5 of Postgres' 100.
   DEFAULT_POOL_SIZE: '20'
   MIN_POOL_SIZE: '5'
   RESERVE_POOL_SIZE: '5'
   AUTH_TYPE: scram-sha-256
-  # No DB_USER: the client's own role is forwarded upstream, so RLS still applies.
-  AUTH_USER: pgbouncer_auth
+  # DB_USER sets auth_user= on the database line, never user= — the client's own
+  # role still reaches Postgres, so RLS applies. Its password is DB_PASSWORD.
+  DB_USER: pgbouncer_auth
   AUTH_QUERY: SELECT usename, passwd FROM public.pgbouncer_get_auth($1)
 
 ---
@@ -42,7 +43,9 @@ metadata:
     app: pgbouncer
     app.kubernetes.io/part-of: dataagent
 spec:
-  replicas: 2
+  # One pooler on purpose: a second would split the pool and double the
+  # upstream connections it is there to cap.
+  replicas: 1
   selector:
     matchLabels:
       app: pgbouncer

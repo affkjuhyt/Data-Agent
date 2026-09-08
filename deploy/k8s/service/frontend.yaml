@@ -64,6 +64,7 @@ spec:
       containers:
       - name: frontend
         image: dataagent/frontend:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8280
           name: http
@@ -98,6 +99,9 @@ spec:
         volumeMounts:
         - name: tmp
           mountPath: /tmp
+        # vite preview writes here; the root filesystem is read-only.
+        - name: vite-temp
+          mountPath: /app/node_modules/.vite-temp
         envFrom:
         - configMapRef:
             name: frontend-env
@@ -114,6 +118,8 @@ spec:
         - '8280'
       volumes:
       - name: tmp
+        emptyDir: {}
+      - name: vite-temp
         emptyDir: {}
       serviceAccountName: frontend
 

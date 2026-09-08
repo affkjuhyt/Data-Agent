@@ -20,6 +20,18 @@ metadata:
 data:
   OTEL_SERVICE_NAME: kb-backend
   UVICORN_WORKERS: '4'
+  POSTGRES_STATEMENT_TIMEOUT: '30'
+  # Per worker: 5 kept open + 5 burst. x4 workers = 40 of Postgres' 100 slots.
+  POSTGRES_MAX_CONNECTIONS: '5'
+  POSTGRES_MAX_OVERFLOW: '5'
+  # Required behind PgBouncer transaction pooling.
+  POSTGRES_STATEMENT_CACHE_SIZE: '0'
+  # Small direct pool for session-scoped advisory locks (bypasses PgBouncer).
+  POSTGRES_DIRECT_MAX_CONNECTIONS: '2'
+  POSTGRES_DIRECT_MAX_OVERFLOW: '2'
+  # Turn on once KB_BACKEND_URL_ASYNC points at the kb_backend role: it
+  # makes a scoped session on an RLS-exempt role a hard error instead of a warning.
+  STRICT_TENANT_ISOLATION: '0'
   QDRANT_PASS1_LIMIT: '3'
   QDRANT_PASS2_LIMIT: '2'
   RRF_TOP_N: '20'
@@ -67,6 +79,7 @@ spec:
       containers:
       - name: kb-backend
         image: dataagent/kb-backend:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8220
           name: http

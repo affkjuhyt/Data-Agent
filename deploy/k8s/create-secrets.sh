@@ -118,7 +118,7 @@ kubectl -n dataagent-database create secret generic kafka-secrets \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-database create secret generic pgbouncer-secrets \
-  --from-literal=AUTH_PASSWORD="${PGBOUNCER_AUTH_PASSWORD}" \
+  --from-literal=DB_PASSWORD="${PGBOUNCER_AUTH_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic kong-secrets \
