@@ -2,17 +2,15 @@ from typing import Any
 import logging
 import uuid
 from fastapi import HTTPException
-from sqlalchemy import select as sa_select, update as sa_update, func as sa_func
+from sqlalchemy import select as sa_select, func as sa_func
 
-from libs.basemodel.services_databaseconnector.postgres_model import (
-    ReadJoinRequest, WhereFilter,
-)
 from services.kb_backend.operations.pagination import PAGE_SIZE
 from services.kb_backend.operations.access import assert_document_access, document_tier
 from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBTextBlockORM, KBTextBlockVersionORM, KBTextTableORM,
 )
 from services.kb_backend.schemas import to_string
+from services.kb_backend.operations.locking import update_locked
 
 log = logging.getLogger(__name__)
 
@@ -112,6 +110,7 @@ async def get_tables(
                 dict(zip(headers, r)) if isinstance(r, list) else r
                 for r in rows_raw
             ],
+            "row_version": to_string(tbl.row_version),
         })
     return {
         "items": tables,
@@ -122,38 +121,35 @@ async def get_tables(
 
 
 async def update_table_row(postgres: Any, table_id: str, row_index: int, updates: dict[str, Any], doc_id: str,
-                           tenant_id: str, role_id: str | None = None) -> dict[str, Any]:
+                           tenant_id: str, role_id: str | None = None,
+                           expected_version: uuid.UUID | None = None) -> dict[str, Any]:
     await assert_document_access(postgres, doc_id, tenant_id, role_id)
     await _assert_table_belongs_to_document(postgres, table_id, doc_id)
-    resp = await postgres.read(ReadJoinRequest(
-        joins_table=["KBTextTable"],
-        filters=[WhereFilter(table_name="KBTextTable", column_name="version_id", value=table_id)],
-        limit=1,
-    ))
-    if resp.code != 200 or not resp.data:
-        raise HTTPException(status_code=404, detail="Table not found")
-
-    tbl = resp.data[0]
-    data = tbl.get("data") or {}
-    rows = list(data.get("rows", []))
-    headers = data.get("headers", [])
-
-    if row_index >= len(rows):
-        raise HTTPException(status_code=404, detail=f"Row {row_index} not found")
-
-    row = rows[row_index]
-    if isinstance(row, list):
-        row = dict(zip(headers, row))
-    row.update(updates)
-    rows[row_index] = row
-    data["rows"] = rows
 
     table_uuid = uuid.UUID(table_id) if isinstance(table_id, str) else table_id
-    async with postgres.get_client() as session:
-        await session.execute(
-            sa_update(KBTextTableORM)
-            .where(KBTextTableORM.version_id == table_uuid)
-            .values(data=data)
-        )
-        await session.commit()
-    return {"status": "ok", "row": row}
+    edited: dict[str, Any] = {}
+
+    def mutate(locked: Any) -> dict[str, Any]:
+        data = dict(locked.data or {})
+        rows = list(data.get("rows", []))
+        headers = data.get("headers", [])
+        if row_index >= len(rows):
+            raise HTTPException(status_code=404, detail=f"Row {row_index} not found")
+        row = rows[row_index]
+        if isinstance(row, list):
+            row = dict(zip(headers, row))
+        row.update(updates)
+        rows[row_index] = row
+        data["rows"] = rows
+        edited.update(row)
+        return {"data": data}
+
+    new_version = await update_locked(
+        postgres,
+        KBTextTableORM,
+        [KBTextTableORM.version_id == table_uuid],
+        mutate=mutate,
+        expected_version=expected_version,
+        not_found_detail="Table not found",
+    )
+    return {"status": "ok", "row": edited, "row_version": str(new_version)}

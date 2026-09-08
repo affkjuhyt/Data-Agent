@@ -18,6 +18,8 @@ from services.kb_backend.operations.access import assert_child_scoped, kbdata_ro
 from services.kb_backend.operations.pagination import PAGE_SIZE, build_cursor_page
 from services.kb_backend.schemas import to_string
 
+from services.kb_backend.operations.locking import update_locked
+
 log = logging.getLogger(__name__)
 
 
@@ -38,14 +40,14 @@ async def list_warehouses(postgres: Any, tenant_id: str, cursor: str | None = No
             sa_select(sa_func.count()).select_from(KBWarehouseORM)
             .where(
                 KBWarehouseORM.tenant_id == tenant_uuid,
-                KBWarehouseORM.is_deleted == False,  # noqa: E712
+                KBWarehouseORM.is_deleted == False,
             )
         ) or 0
         rows = (await session.execute(
             sa_select(KBWarehouseORM)
             .where(
                 KBWarehouseORM.tenant_id == tenant_uuid,
-                KBWarehouseORM.is_deleted == False,  # noqa: E712
+                KBWarehouseORM.is_deleted == False,
             )
             .order_by(KBWarehouseORM.inserted_at.desc(), KBWarehouseORM.warehouse_id.desc())
             .offset(offset).limit(PAGE_SIZE)
@@ -96,7 +98,7 @@ async def _warehouse_row_exists(postgres: Any, warehouse_id: str, tenant_id: str
             .where(
                 KBWarehouseORM.warehouse_id == uuid.UUID(warehouse_id),
                 KBWarehouseORM.tenant_id == uuid.UUID(tenant_id),
-                KBWarehouseORM.is_deleted == False,  # noqa: E712
+                KBWarehouseORM.is_deleted == False,
             )
             .limit(1)
         )
@@ -123,6 +125,7 @@ def _to_wconfig(row: dict[str, Any]) -> dict[str, Any]:
     ver_label = f"v{ver_num}"
     return {
         "id": to_string(row.get("config_id")),
+        "row_version": to_string(row.get("row_version")),
         "name": f"Config {ver_label}",
         "version": ver_label,
         "version_number": ver_label,
@@ -248,38 +251,26 @@ async def delete_warehouse_config(
 
 
 async def delete_config_table(
-        postgres: Any, warehouse_id: str, config_id: str, table_id: str, tenant_id: str, role_id: str | None = None,
-) -> None:
+        postgres: Any, warehouse_id: str, config_id: str, table_id: str, tenant_id: str,
+        role_id: str | None = None, expected_version: uuid.UUID | None = None,
+) -> dict[str, Any]:
     await _assert_tenant(postgres, warehouse_id, tenant_id, role_id)
-    await assert_child_scoped(
-        postgres, KBWarehouseConfigORM.config_id, config_id,
-        KBWarehouseConfigORM.warehouse_id, warehouse_id, not_found_detail="Config not found",
-    )
-    resp = await postgres.read(ReadJoinRequest(
-        joins_table=["KBWarehouseConfig"],
-        filters=[WhereFilter(
-            table_name="KBWarehouseConfig",
-            column_name="config_id",
-            value=config_id,
-        )],
-        limit=1,
-    ))
-    if resp.code != 200 or not resp.data:
-        raise HTTPException(status_code=404, detail="Config not found")
-
-    row = resp.data[0]
-    cfg = row.get("config") or {}
-    cfg["selected_tables"] = [t for t in (cfg.get("selected_tables") or []) if t != table_id]
 
     config_uuid = uuid.UUID(config_id) if isinstance(config_id, str) else config_id
     warehouse_uuid = uuid.UUID(warehouse_id) if isinstance(warehouse_id, str) else warehouse_id
-    async with postgres.get_client() as session:
-        await session.execute(
-            sa_update(KBWarehouseConfigORM)
-            .where(
-                KBWarehouseConfigORM.config_id == config_uuid,
-                KBWarehouseConfigORM.warehouse_id == warehouse_uuid,
-            )
-            .values(config=cfg)
-        )
-        await session.commit()
+
+    def mutate(locked: Any) -> dict[str, Any]:
+        cfg = dict(locked.config or {})
+        cfg["selected_tables"] = [t for t in (cfg.get("selected_tables") or []) if t != table_id]
+        return {"config": cfg}
+
+    new_version = await update_locked(
+        postgres,
+        KBWarehouseConfigORM,
+        [KBWarehouseConfigORM.config_id == config_uuid,
+         KBWarehouseConfigORM.warehouse_id == warehouse_uuid],
+        mutate=mutate,
+        expected_version=expected_version,
+        not_found_detail="Config not found",
+    )
+    return {"status": "ok", "row_version": str(new_version)}

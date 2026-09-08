@@ -1,13 +1,15 @@
 """/api/knowledge/policies — FilterPolicy and ExtractionPolicy CRUD."""
 from typing import Any
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Header, Response
 
 from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
 from services.kb_backend.schemas import (
     CreateFilterPolicyRequest, UpdateFilterPolicyRequest, UpdateExtractionPolicyRequest,
 )
+from libs.shared.auth import require_tenant
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
+from services.kb_backend.operations.locking import require_if_match, etag
 from services.kb_backend.operations.policy_ops import (
     list_filter_policies, create_filter_policy, update_filter_policy,
     delete_filter_policy, get_extraction_policy, update_extraction_policy,
@@ -15,7 +17,6 @@ from services.kb_backend.operations.policy_ops import (
 
 router = APIRouter(prefix="/api/knowledge/policies", tags=["Knowledge-Policies"])
 
-from services.kb_backend.config import DEFAULT_TENANT_ID as _DEFAULT_TENANT
 
 
 @router.get("/filtering", response_model=ResponseModel)
@@ -43,7 +44,7 @@ async def create_filter_policy_route(
         name=body.name,
         ptype=body.type,
         content=body.content,
-        tenant_id=ctx["tenant_id"] or _DEFAULT_TENANT,
+        tenant_id=require_tenant(ctx),
         created_by=ctx["user_name"],
     )
     return ResponseModel(code=200, data=result)
@@ -54,6 +55,8 @@ async def update_filter_policy_route(
         policy_id: str,
         body: UpdateFilterPolicyRequest,
         request: Request,
+        response: Response,
+        if_match: str = Header(default="", alias="If-Match"),
         ctx: dict[str, Any] = Depends(require_perm("editFilteringPolicy")),
 ) -> ResponseModel[Any]:
     result = await update_filter_policy(
@@ -61,7 +64,10 @@ async def update_filter_policy_route(
         policy_id=policy_id,
         tenant_id=ctx["tenant_id"],
         body=body.model_dump(exclude_none=True),
+        expected_version=require_if_match(if_match),
     )
+    if result.get("row_version"):
+        response.headers["ETag"] = etag(result["row_version"])
     return ResponseModel(code=200, data=result)
 
 
@@ -74,7 +80,7 @@ async def delete_filter_policy_route(
     await delete_filter_policy(
         postgres=svc(request, "postgres"),
         policy_id=policy_id,
-        tenant_id=ctx["tenant_id"] or _DEFAULT_TENANT,
+        tenant_id=require_tenant(ctx),
     )
     return ResponseModel(code=200, data=None)
 
@@ -94,12 +100,15 @@ async def get_extraction_policy_route(
 @router.put("/extraction/custom", response_model=ResponseModel)
 async def update_extraction_policy_route(
         body: UpdateExtractionPolicyRequest,
-        request: Request, ctx: dict[str, Any] = Depends(require_perm("editExtractionPolicy")),
+        request: Request,
+        if_match: str = Header(default="", alias="If-Match"),
+        ctx: dict[str, Any] = Depends(require_perm("editExtractionPolicy")),
 ) -> ResponseModel[Any]:
     result = await update_extraction_policy(
         postgres=svc(request, "postgres"),
         custom=body.custom,
-        tenant_id=ctx["tenant_id"] or _DEFAULT_TENANT,
+        tenant_id=require_tenant(ctx),
         created_by=ctx["user_name"],
+        expected_version=require_if_match(if_match),
     )
     return ResponseModel(code=200, data=result)

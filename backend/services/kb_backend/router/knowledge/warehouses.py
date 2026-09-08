@@ -3,12 +3,13 @@
 Shared helpers are also re-exported for documents.py aliases.
 """
 from typing import Any
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Header, Response
 
 from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
 from services.kb_backend.schemas import CreateWarehouseConfigRequest
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
+from services.kb_backend.operations.locking import require_if_match, etag
 from services.kb_backend.operations.warehouse_ops import (
     get_warehouse_configs, create_warehouse_config,
     activate_warehouse_config, delete_warehouse_config,
@@ -98,10 +99,15 @@ async def delete_config_table_route(
         warehouse_id: str,
         config_id: str,
         table_id: str,
-        request: Request, ctx: dict[str, Any] = Depends(require_perm("editWarehouseConfig")),
+        request: Request,
+        response: Response,
+        if_match: str = Header(default="", alias="If-Match"),
+        ctx: dict[str, Any] = Depends(require_perm("editWarehouseConfig")),
 ) -> ResponseModel[Any]:
-    await delete_config_table(
+    result = await delete_config_table(
         svc(request, "postgres"), warehouse_id, config_id, table_id,
         tenant_id=ctx["tenant_id"], role_id=ctx["role_id"],
+        expected_version=require_if_match(if_match),
     )
-    return ResponseModel(code=200, data=None)
+    response.headers["ETag"] = etag(result["row_version"])
+    return ResponseModel(code=200, data=result)
