@@ -1,6 +1,7 @@
 import asyncio
 import os
 import uuid
+from contextvars import ContextVar
 from typing import Any, cast
 
 from sqlalchemy import select, update as sa_update, delete as sa_delete, text, tuple_, func
@@ -11,7 +12,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 import logging
-from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig, ResponseModel
+from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig, PoolConfig, ResponseModel
 from pydantic import BaseModel
 from libs.basemodel.services_databaseconnector.postgres_model import (
     REGISTRY, MODEL_TO_TABLE, ReadJoinRequest, SelectInLoadRequest, DMLPreparation, DQLPreparation,
@@ -22,33 +23,22 @@ import libs.basemodel.services_databaseconnector.postgres_orm  # noqa: F401 — 
 log = logging.getLogger(__name__)
 
 
-def _engine_kwargs() -> dict[str, Any]:
-    """Build create_async_engine kwargs from env, defaulting to SQLAlchemy's own
-    defaults so existing deployments are unchanged.
-
-    Why this matters for concurrency: the async engine hands out connections from
-    a bounded pool (`pool_size` kept open + up to `max_overflow` burst). When all
-    are checked out, further requests WAIT up to `pool_timeout` seconds, then fail.
-    Under concurrent UI + retrieval + long-lived SSE progress streams (each of
-    which periodically checks out a connection), the 5+10 default can become the
-    ceiling. These knobs let ops raise the ceiling without a code change.
-
-    `command_timeout` (asyncpg) caps how long a single statement may run. Without
-    it a stuck query holds its pooled connection forever — one runaway query can
-    starve the whole pool. Default unset (no cap) to preserve current behaviour;
-    set POSTGRES_STATEMENT_TIMEOUT to enable.
-    """
+def _engine_kwargs(pool: PoolConfig) -> dict[str, Any]:
+    """pool_size kept open + max_overflow burst; requests wait pool_timeout for a free one."""
     kwargs: dict[str, Any] = {
         "pool_pre_ping": True,
-        "pool_size":     int(os.getenv("POSTGRES_POOL_SIZE", "5")),
-        "max_overflow":  int(os.getenv("POSTGRES_MAX_OVERFLOW", "10")),
-        "pool_timeout":  int(os.getenv("POSTGRES_POOL_TIMEOUT", "30")),
-        "pool_recycle":  int(os.getenv("POSTGRES_POOL_RECYCLE", "1800")),
+        "pool_size":     pool.max_connections,
+        "max_overflow":  pool.max_overflow,
+        "pool_timeout":  pool.pool_timeout,
+        "pool_recycle":  pool.pool_recycle,
     }
-    stmt_timeout = os.getenv("POSTGRES_STATEMENT_TIMEOUT")
-    if stmt_timeout:
-        # asyncpg accepts command_timeout (seconds) via connect_args.
-        kwargs["connect_args"] = {"command_timeout": float(stmt_timeout)}
+    connect_args: dict[str, Any] = {}
+    if pool.statement_timeout:
+        connect_args["command_timeout"] = pool.statement_timeout
+    if pool.statement_cache_size is not None:
+        connect_args["statement_cache_size"] = pool.statement_cache_size
+    if connect_args:
+        kwargs["connect_args"] = connect_args
     return kwargs
 
 
@@ -386,6 +376,19 @@ class PostgresTransaction:
 
 from contextlib import asynccontextmanager
 
+# Set once per request; get_client() scopes every session to it.
+# None = no request context (workers, startup).
+_current_tenant: ContextVar[str | None] = ContextVar("app_tenant_id", default=None)
+
+
+def set_current_tenant(tenant_id: str | None) -> None:
+    _current_tenant.set(tenant_id or None)
+
+
+def current_tenant() -> str | None:
+    return _current_tenant.get()
+
+
 @asynccontextmanager
 async def _tenant_session(factory: Any, tenant_id: str) -> Any:
     # is_local=true: setting scoped to current transaction, auto-reset on commit/rollback.
@@ -408,9 +411,10 @@ _WARNED_SCOPED_WITHOUT_RLS = False
 
 class PostgresClient:
     __slots__ = ("_engine", "_session_factory", "_connection_wait", "_healthy", "_connected",
-                 "_timeout", "_url", "_bypasses_rls",)
+                 "_timeout", "_url", "_bypasses_rls", "_pool",)
 
-    def __init__(self) -> None:
+    def __init__(self, pool: PoolConfig | None = None) -> None:
+        self._pool: PoolConfig = pool or PoolConfig.from_env("POSTGRES")
         self._engine: AsyncEngine | None = None
         self._session_factory: async_sessionmaker[AsyncSession] | None = None
         self._timeout: int = 10
@@ -428,7 +432,7 @@ class PostgresClient:
 
         for attempt in range(retry.count):
             try:
-                self._engine = create_async_engine(self._url, **_engine_kwargs())
+                self._engine = create_async_engine(self._url, **_engine_kwargs(self._pool))
                 self._session_factory = async_sessionmaker(self._engine, expire_on_commit=False)
                 async with self._engine.connect() as conn:
                     await conn.execute(text("SELECT 1"))
@@ -485,7 +489,7 @@ class PostgresClient:
                 "is INERT for this connection. Tenant isolation here rests entirely on "
                 "explicit WHERE clauses; get_client(tenant_id=...) will set app.tenant_id "
                 "but no policy will read it. Point this service at the app_user role "
-                "(APP_DATABASE_URL / deploy/docker/sql/grant-app-user.sql) to make RLS effective.",
+                "(APP_DATABASE_URL / deploy/docker/sql/grant-roles.sql) to make RLS effective.",
                 row.current_user,
             )
         else:
@@ -548,11 +552,18 @@ class PostgresClient:
         """
         if self._session_factory is None:
             raise RuntimeError("PostgresClient is not open — call open() first")
-        if tenant_id is None:
+        scoped_to = tenant_id or current_tenant()
+        if scoped_to is None:
             return self._session_factory()
         if self._bypasses_rls:
             self._warn_scoped_but_unenforced()
-        return _tenant_session(self._session_factory, tenant_id)
+        return _tenant_session(self._session_factory, scoped_to)
+
+    def get_platform_client(self) -> Any:
+        """Unscoped on purpose — only for tables with no tenant_id."""
+        if self._session_factory is None:
+            raise RuntimeError("PostgresClient is not open — call open() first")
+        return self._session_factory()
 
     def _warn_scoped_but_unenforced(self) -> None:
         global _WARNED_SCOPED_WITHOUT_RLS
@@ -591,46 +602,51 @@ class PostgresClient:
             raise RuntimeError("PostgresClient is not open — call open() first")
         return PostgresTransaction(self._session_factory)
 
-    async def insert(self, data: BaseModel) -> ResponseModel[Any]:
+    @staticmethod
+    def _integrity_response(error: IntegrityError, table_name: str) -> ResponseModel[Any]:
+        sqlstate = getattr(getattr(error, "orig", None), "sqlstate", None)
+        if sqlstate == "23505":      # unique_violation
+            return ResponseModel(code=409, error=f"Record already exists in {table_name}")
+        if sqlstate == "23503":      # foreign_key_violation
+            return ResponseModel(code=409, error=f"{table_name}: references a record that does not exist")
+        if sqlstate == "23502":      # not_null_violation
+            return ResponseModel(code=400, error=f"{table_name}: a required field is missing")
+        if sqlstate == "23514":      # check_violation
+            return ResponseModel(code=400, error=f"{table_name}: a value failed a constraint check")
+        log.warning("insert integrity error in %s (sqlstate=%s): %s", table_name, sqlstate, error)
+        return ResponseModel(code=409, error=f"Integrity error in {table_name}")
+
+    async def insert(self, data: BaseModel, session: AsyncSession | None = None) -> ResponseModel[Any]:
+        """Insert one row. Pass `session` to join a caller's transaction, uncommitted."""
         try:
             prep = _prepare_insert(data)
         except AttributeError as e:
             return ResponseModel(code=400, error=str(e))
+        assert prep.orm_cls is not None
+
+        if session is not None:
+            return await self._add_row(session, prep, commit=False)
 
         tenant_id = str(getattr(data, "tenant_id", None) or "")
-        # _prepare_insert() always sets orm_cls.
-        assert prep.orm_cls is not None
-        pks = [col.name for col in prep.orm_cls.__table__.primary_key]
-        pk_data: dict[str, Any] = {}
-        async with self.get_client(tenant_id=tenant_id or None) as session:
-            session.add(prep.instance)
-            try:
-                # flush() evaluates Python-side column defaults (uuid4) and sends the INSERT
-                # within the current transaction — so is_local tenant context is still active.
-                # We extract PK after flush (defaults resolved) but before commit.
-                await session.flush()
-                pks = [col.name for col in prep.orm_cls.__table__.primary_key]
-                pk_data = {pk: str(getattr(prep.instance, pk)) for pk in pks if
-                           getattr(prep.instance, pk) is not None}
+        async with self.get_client(tenant_id=tenant_id or None) as owned_session:
+            return await self._add_row(owned_session, prep, commit=True)
+
+    async def _add_row(self, session: Any, prep: Any, commit: bool) -> ResponseModel[Any]:
+        session.add(prep.instance)
+        try:
+            # flush() resolves Python-side defaults (uuid4) and sends the INSERT
+            # inside the current transaction, so PKs are readable before commit.
+            await session.flush()
+            pk_data = {
+                pk.name: str(getattr(prep.instance, pk.name))
+                for pk in prep.orm_cls.__table__.primary_key
+                if getattr(prep.instance, pk.name) is not None
+            }
+            if commit:
                 await session.commit()
-                await session.refresh(prep.instance)
-                # Read PK values inside the session before _tenant_session.finally
-                # calls rollback() which expires all instance attributes.
-                pk_data = {pk: str(getattr(prep.instance, pk)) for pk in pks if
-                           getattr(prep.instance, pk) is not None}
-            except IntegrityError as e:
-                await session.rollback()
-                sqlstate = getattr(getattr(e, "orig", None), "sqlstate", None)
-                if sqlstate == "23505":      # unique_violation
-                    return ResponseModel(code=409, error=f"Record already exists in {prep.table_name}")
-                if sqlstate == "23503":      # foreign_key_violation
-                    return ResponseModel(code=409, error=f"{prep.table_name}: references a record that does not exist")
-                if sqlstate == "23502":      # not_null_violation
-                    return ResponseModel(code=400, error=f"{prep.table_name}: a required field is missing")
-                if sqlstate == "23514":      # check_violation
-                    return ResponseModel(code=400, error=f"{prep.table_name}: a value failed a constraint check")
-                log.warning("insert integrity error in %s (sqlstate=%s): %s", prep.table_name, sqlstate, e)
-                return ResponseModel(code=409, error=f"Integrity error in {prep.table_name}")
+        except IntegrityError as e:
+            await session.rollback()
+            return self._integrity_response(e, prep.table_name)
         return ResponseModel(code=200, data=pk_data)
 
     async def soft_delete(self, data: BaseModel) -> ResponseModel[Any]:

@@ -2,6 +2,7 @@ from qdrant_client import models
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
 from typing import Any, List
 import asyncio
+import httpx
 import logging
 from libs.basemodel.services_databaseconnector.qdrant_model import (
     # Enums
@@ -27,6 +28,7 @@ from libs.basemodel.services_databaseconnector.shared_model import (
     ResponseModel,
     RetryConfig,
     HealthCheckLoopConfig,
+    PoolConfig,
 )
 
 # Logging Initiate
@@ -131,8 +133,11 @@ def _build_batch_points(tenant_id: str, points: List[PointData]) -> list[models.
 # Qdrant Client
 class QdrantClient:
     # Follow DatabaseConnector Protocol in server/basemodel/protocol_model.py
-    __slots__ = ("_client","_retry" ,"_connection_wait", "_healthy", "_connected", "_timeout", "_timeout_incremental", "_url")
-    def __init__(self) -> None:
+    __slots__ = ("_client", "_retry", "_connection_wait", "_healthy", "_connected", "_timeout",
+                 "_timeout_incremental", "_url", "_pool")
+
+    def __init__(self, pool: PoolConfig | None = None) -> None:
+        self._pool: PoolConfig = pool or PoolConfig.from_env("QDRANT")
         self._client: AsyncQdrantClient | None = None
         self._timeout:int = 10
         self._timeout_incremental:int = 1
@@ -235,8 +240,12 @@ class QdrantClient:
         if self._url is None:
             raise ValueError("qdrant url must be set")
         self._client = AsyncQdrantClient(
-                    url = self._url,
-                )
+            url=self._url,
+            limits=httpx.Limits(
+                max_connections=self._pool.max_connections,
+                max_keepalive_connections=self._pool.max_keepalive,
+            ),
+        )
         return self._client
 
 async def delete_collection(client: AsyncQdrantClient, item: DeleteCollectionRequest) -> ResponseModel[Any]:

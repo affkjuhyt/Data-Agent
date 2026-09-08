@@ -6,7 +6,7 @@ import asyncio
 from neo4j import AsyncGraphDatabase
 from neo4j._async.driver import AsyncDriver
 import logging
-from libs.basemodel.services_databaseconnector.shared_model import ResponseModel, RetryConfig, HealthCheckLoopConfig
+from libs.basemodel.services_databaseconnector.shared_model import ResponseModel, RetryConfig, HealthCheckLoopConfig, PoolConfig
 from libs.basemodel.services_databaseconnector.neo4j_model import (
     AddNodeRequest, AddRelationshipRequest, GraphExpandRequest,
     RelationshipDirection
@@ -16,9 +16,11 @@ log = logging.getLogger(__name__)
 
 
 class Neo4jClient:
-    __slots__ = ("_client", "_connection_wait", "_healthy", "_connected", "_timeout", "_timeout_incremental", "_url")
+    __slots__ = ("_client", "_connection_wait", "_healthy", "_connected", "_timeout",
+                 "_timeout_incremental", "_url", "_pool")
 
-    def __init__(self) -> None:
+    def __init__(self, pool: PoolConfig | None = None) -> None:
+        self._pool: PoolConfig = pool or PoolConfig.from_env("NEO4J")
         self._client: AsyncDriver | None = None
         self._timeout: int = 10
         self._timeout_incremental: int = 1
@@ -113,7 +115,10 @@ class Neo4jClient:
     def _create_connection(self) -> AsyncDriver:
         if self._url is None:
             raise ValueError("neo4j url must be set")
-        self._client = AsyncGraphDatabase.driver(uri=self._url)
+        self._client = AsyncGraphDatabase.driver(
+            uri=self._url,
+            max_connection_pool_size=self._pool.max_connections,
+        )
         return self._client
 
 

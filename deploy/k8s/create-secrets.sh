@@ -6,6 +6,7 @@ set -euo pipefail
 
 kubectl -n dataagent-service create secret generic auth-api-secrets \
   --from-literal=DATABASE_URL="${DATABASE_URL}" \
+  --from-literal=APP_DATABASE_URL="${APP_DATABASE_URL}" \
   --from-literal=OPENBAO_TOKEN="${OPENBAO_TOKEN}" \
   --from-literal=KC_ADMIN_USER="${KEYCLOAK_ADMIN}" \
   --from-literal=KC_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD}" \
@@ -21,6 +22,7 @@ kubectl -n dataagent-service create secret generic flow-builder-secrets \
 
 kubectl -n dataagent-service create secret generic kb-backend-secrets \
   --from-literal=POSTGRES_URL="${POSTGRES_URL_ASYNC}" \
+  --from-literal=KB_BACKEND_URL_ASYNC="${KB_BACKEND_URL_ASYNC}" \
   --from-literal=MINIO_URL="${MINIO_URL}" \
   --from-literal=GATEWAY_KEY="${GATEWAY_KEY}" \
   --from-literal=SERVICE_AUTH_SECRET="${SERVICE_AUTH_SECRET}" \
@@ -116,7 +118,7 @@ kubectl -n dataagent-database create secret generic kafka-secrets \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-database create secret generic pgbouncer-secrets \
-  --from-literal=DB_PASSWORD="${POSTGRES_PASSWORD}" \
+  --from-literal=AUTH_PASSWORD="${PGBOUNCER_AUTH_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic kong-secrets \
@@ -180,6 +182,11 @@ kubectl -n dataagent-service create secret generic kong-migration-secrets \
 
 kubectl -n dataagent-service create secret generic db-init-secrets \
   --from-literal=PGPASSWORD="${POSTGRES_PASSWORD}" \
+  --from-literal=APP_USER_PASSWORD="${APP_USER_PASSWORD}" \
+  --from-literal=RUNTIME_WRITER_PASSWORD="${RUNTIME_WRITER_PASSWORD}" \
+  --from-literal=SANDBOX_READER_PASSWORD="${SANDBOX_READER_PASSWORD}" \
+  --from-literal=KB_BACKEND_PASSWORD="${KB_BACKEND_PASSWORD}" \
+  --from-literal=PGBOUNCER_AUTH_PASSWORD="${PGBOUNCER_AUTH_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic seed-secrets \
@@ -195,6 +202,7 @@ kubectl -n dataagent-service create secret generic setup-secrets \
   --from-literal=KEYCLOAK_ADMIN="${KEYCLOAK_ADMIN}" \
   --from-literal=KEYCLOAK_ADMIN_PASSWORD="${KEYCLOAK_ADMIN_PASSWORD}" \
   --from-literal=KEYCLOAK_PUBLIC_URL="${KEYCLOAK_PUBLIC_URL}" \
+  --from-literal=SMOKE_PASSWORD="${SMOKE_PASSWORD}" \
   --from-literal=GATEWAY_KEY="${GATEWAY_KEY}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
@@ -208,5 +216,5 @@ kubectl -n dataagent-service create secret generic postgres-backup-secrets \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-database create secret generic postgres-restore-secrets \
-  --from-literal=PGPASSWORD="${PGPASSWORD}" \
+  --from-literal=PGPASSWORD="${POSTGRES_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -

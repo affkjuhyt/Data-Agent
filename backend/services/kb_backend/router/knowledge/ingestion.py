@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-from typing import Any, AsyncGenerator
+from typing import Any, AsyncGenerator, AsyncIterator
 import asyncio
 import datetime
+import hashlib
 import json
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import text
 
 from libs.basemodel.services_databaseconnector.postgres_model import (
     Language, SourceType, Document, Image, Video, Web, Warehouse,
@@ -43,6 +46,26 @@ async def _fetch_kbdata_or_404(postgres: Any, tenant_id: str, role_id: str, data
     if record is None:
         raise HTTPException(status_code=404, detail=f"KBData not found: {data_id}")
     return record
+
+
+def _document_name_key(tenant_id: str, name: str) -> int:
+    digest = hashlib.blake2b(f"{tenant_id}:{name}".encode(), digest_size=8).digest()
+    return int.from_bytes(digest, "big", signed=True)
+
+
+@asynccontextmanager
+async def _document_name_lock(postgres: Any, tenant_id: str, name: str) -> AsyncIterator[None]:
+    """Serialise replace-then-insert; session-scoped as the work spans transactions.
+
+    Must run on a connection that is not transaction-pooled — see
+    app.state.postgres_direct."""
+    key = _document_name_key(tenant_id, name)
+    async with postgres.get_client() as session:
+        await session.execute(text("SELECT pg_advisory_lock(:key)"), {"key": key})
+        try:
+            yield
+        finally:
+            await session.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
 
 
 async def _replace_existing_document_if_any(request: Request, ctx: dict[str, Any], name: str) -> None:
@@ -119,7 +142,6 @@ async def ingest_bronze(
         raise HTTPException(status_code=422, detail="Invalid source type or language")
 
     postgres = svc(request, "postgres")
-    await _replace_existing_document_if_any(request, ctx, name)
 
     try:
         meta_dict = json.loads(doc_metadata)
@@ -130,33 +152,35 @@ async def ingest_bronze(
         raise HTTPException(status_code=422, detail="Invalid metadata format")
 
     log.info("POST /ingestion/bronze tenant=%s source=%s size=%d", ctx["tenant_id"], src, len(file_bytes))
-    try:
-        return await svc(request, "ingestion").bronze(
-            BronzeUploadRequest(
-                tenant_id=ctx["tenant_id"],
-                role_id=ctx["role_id"],
-                name=name,
-                filename=filename,
-                extension=extension,
-                language=lang.value,
-                source_type=src.value,
-                added_by=ctx["user_name"],
-                abstract=abstract,
-                doc_metadata=metadata_obj.model_dump(mode="json"),
-                file_bytes=file_bytes,
-                content_type=file.content_type or "application/octet-stream",
-                knowledge_base_id=knowledge_base_id or None,
-                ingestion_mode=ingestion_mode,
-            ),
-            svc(request, "minio").get_client(),
-            svc(request, "postgres"),
-        )
-    except ValueError as e:
-        log.warning("Bronze ingestion ValueError: %s", e)
-        raise HTTPException(status_code=400, detail="Invalid ingestion parameters")
-    except Exception as e:
-        log.exception("Bronze ingestion error: %s", e)
-        raise HTTPException(status_code=500, detail="Ingestion failed")
+    async with _document_name_lock(svc(request, "postgres_direct"), ctx["tenant_id"], name):
+        await _replace_existing_document_if_any(request, ctx, name)
+        try:
+            return await svc(request, "ingestion").bronze(
+                BronzeUploadRequest(
+                    tenant_id=ctx["tenant_id"],
+                    role_id=ctx["role_id"],
+                    name=name,
+                    filename=filename,
+                    extension=extension,
+                    language=lang.value,
+                    source_type=src.value,
+                    added_by=ctx["user_name"],
+                    abstract=abstract,
+                    doc_metadata=metadata_obj.model_dump(mode="json"),
+                    file_bytes=file_bytes,
+                    content_type=file.content_type or "application/octet-stream",
+                    knowledge_base_id=knowledge_base_id or None,
+                    ingestion_mode=ingestion_mode,
+                ),
+                svc(request, "minio").get_client(),
+                svc(request, "postgres"),
+            )
+        except ValueError as e:
+            log.warning("Bronze ingestion ValueError: %s", e)
+            raise HTTPException(status_code=400, detail="Invalid ingestion parameters")
+        except Exception as e:
+            log.exception("Bronze ingestion error: %s", e)
+            raise HTTPException(status_code=500, detail="Ingestion failed")
 
 
 @router.post("/bronze/web", response_model=None)
@@ -178,30 +202,31 @@ async def ingest_bronze_web(
         raise HTTPException(status_code=422, detail="Invalid language")
 
     postgres = svc(request, "postgres")
-    await _replace_existing_document_if_any(request, ctx, name)
 
     log.info("POST /ingestion/bronze/web tenant=%s url=%s", ctx["tenant_id"], url)
-    try:
-        return await svc(request, "ingestion").bronze_web(
-            WebBronzeRequest(
-                tenant_id=ctx["tenant_id"],
-                role_id=ctx["role_id"],
-                name=name,
-                url=url,
-                web_name=(body.web_name or name),
-                language=lang.value,
-                added_by=ctx["user_name"],
-                abstract=body.abstract or "",
-                knowledge_base_id=body.knowledge_base_id or None,
-            ),
-            postgres,
-        )
-    except ValueError as e:
-        log.warning("Web bronze ValueError: %s", e)
-        raise HTTPException(status_code=400, detail="Invalid web ingestion parameters")
-    except Exception as e:
-        log.exception("Web bronze error: %s", e)
-        raise HTTPException(status_code=500, detail="Web ingestion failed")
+    async with _document_name_lock(svc(request, "postgres_direct"), ctx["tenant_id"], name):
+        await _replace_existing_document_if_any(request, ctx, name)
+        try:
+            return await svc(request, "ingestion").bronze_web(
+                WebBronzeRequest(
+                    tenant_id=ctx["tenant_id"],
+                    role_id=ctx["role_id"],
+                    name=name,
+                    url=url,
+                    web_name=(body.web_name or name),
+                    language=lang.value,
+                    added_by=ctx["user_name"],
+                    abstract=body.abstract or "",
+                    knowledge_base_id=body.knowledge_base_id or None,
+                ),
+                postgres,
+            )
+        except ValueError as e:
+            log.warning("Web bronze ValueError: %s", e)
+            raise HTTPException(status_code=400, detail="Invalid web ingestion parameters")
+        except Exception as e:
+            log.exception("Web bronze error: %s", e)
+            raise HTTPException(status_code=500, detail="Web ingestion failed")
 
 
 @router.post("/promote/{data_id}/silver", response_model=PromoteResponse)

@@ -3,7 +3,7 @@ import asyncio
 
 import httpx
 
-from libs.basemodel.services_databaseconnector.shared_model import HealthCheckLoopConfig, RetryConfig
+from libs.basemodel.services_databaseconnector.shared_model import HealthCheckLoopConfig, RetryConfig, PoolConfig
 from libs.shared.logger import create_logger
 
 log = create_logger("services.model", "service_model")
@@ -11,9 +11,10 @@ log = create_logger("services.model", "service_model")
 
 class ModelServiceClient:
     # Follows DatabaseConnector protocol in server/basemodel/protocol_model.py
-    __slots__ = ("_client", "_url", "_healthy", "_connected", "_timeout", "_connection_wait")
+    __slots__ = ("_client", "_url", "_healthy", "_connected", "_timeout", "_connection_wait", "_pool")
 
-    def __init__(self) -> None:
+    def __init__(self, pool: PoolConfig | None = None) -> None:
+        self._pool: PoolConfig = pool or PoolConfig.from_env("MODEL_SERVICE")
         self._client: httpx.AsyncClient | None = None
         self._url: str | None = None
         self._healthy: bool = False
@@ -30,6 +31,10 @@ class ModelServiceClient:
         self._client = httpx.AsyncClient(
             base_url=self._url,
             timeout=httpx.Timeout(connect=5.0, read=60.0, write=5.0, pool=5.0),
+            limits=httpx.Limits(
+                max_connections=self._pool.max_connections,
+                max_keepalive_connections=self._pool.max_keepalive,
+            ),
         )
         self._connected = True
         return self._client
