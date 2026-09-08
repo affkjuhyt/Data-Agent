@@ -54,6 +54,7 @@ spec:
       containers:
       - name: auth-api
         image: dataagent/auth_api:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8200
           name: http
@@ -97,7 +98,7 @@ spec:
           mountPath: /tmp
         command:
         - uvicorn
-        - main:app
+        - services.auth_api.main:app
         - --host
         - 0.0.0.0
         - --port

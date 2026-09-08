@@ -59,6 +59,7 @@ spec:
       containers:
       - name: workflow-runtime
         image: dataagent/workflow_runtime:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8240
           name: http
@@ -104,7 +105,7 @@ spec:
           mountPath: /tmp
         command:
         - uvicorn
-        - main:app
+        - services.workflow_runtime.main:app
         - --host
         - 0.0.0.0
         - --port
@@ -112,6 +113,7 @@ spec:
       initContainers:
       - name: wait-for-migrations
         image: dataagent/migrate:latest
+        imagePullPolicy: IfNotPresent
         command:
         - sh
         - -c

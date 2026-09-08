@@ -83,6 +83,7 @@ spec:
       containers:
       - name: sandbox-executor
         image: dataagent/sandbox_executor:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8260
           name: http

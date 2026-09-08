@@ -53,6 +53,7 @@ spec:
       containers:
       - name: eval
         image: dataagent/eval:latest
+        imagePullPolicy: IfNotPresent
         envFrom:
         - configMapRef:
             name: dataagent-config

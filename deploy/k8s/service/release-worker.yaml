@@ -56,6 +56,7 @@ spec:
       containers:
       - name: release-worker
         image: dataagent/release_worker:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8210
           name: http
@@ -99,8 +100,7 @@ spec:
           mountPath: /tmp
         command:
         - uvicorn
-        - app:create_app
-        - --factory
+        - services.release_worker.main:app
         - --host
         - 0.0.0.0
         - --port

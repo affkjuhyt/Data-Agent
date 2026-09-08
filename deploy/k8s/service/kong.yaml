@@ -73,6 +73,7 @@ spec:
       containers:
       - name: kong
         image: dataagent/kong:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8100
           name: proxy

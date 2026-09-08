@@ -61,6 +61,7 @@ spec:
       containers:
       - name: platform-workers-schema-crawler
         image: dataagent/platform-workers:latest
+        imagePullPolicy: IfNotPresent
         envFrom:
         - configMapRef:
             name: dataagent-config

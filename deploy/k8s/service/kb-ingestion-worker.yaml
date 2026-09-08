@@ -74,6 +74,7 @@ spec:
       containers:
       - name: kb-ingestion-worker
         image: dataagent/kb-ingestion-worker:latest
+        imagePullPolicy: IfNotPresent
         envFrom:
         - configMapRef:
             name: dataagent-config
