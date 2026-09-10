@@ -1,5 +1,5 @@
 """Pure-function unit tests for the ingestion entity registry
-(backend/services/kb_ingestion_worker/utils/entity_registry.py).
+(backend/libs/ingestion/entity_registry.py).
 
 Covers the deterministic, infra-free core of entity resolution: Vietnamese-aware
 canonicalization, the specific-type merge guard, raw-entity cleaning, and the
@@ -12,7 +12,7 @@ import sys
 
 import pytest
 
-from ._loader import SERVICES
+from ._loader import REPO_ROOT
 
 pytestmark = pytest.mark.unit
 
@@ -20,27 +20,24 @@ pytestmark = pytest.mark.unit
 pytest.importorskip("sqlalchemy")
 pytest.importorskip("qdrant_client")
 
-_WORKER_DIR = str(SERVICES / "kb_ingestion_worker")
+_BACKEND = str(REPO_ROOT / "backend")
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _worker_on_path():
-    # entity_registry does `from utils import config` — the worker dir must be on
-    # sys.path for that bare package import to resolve.
-    added = _WORKER_DIR not in sys.path
+def _backend_on_path():
+    added = _BACKEND not in sys.path
     if added:
-        sys.path.insert(0, _WORKER_DIR)
+        sys.path.insert(0, _BACKEND)
     yield
-    # Leave sys.path as-is if another module already needed it; only clean our add.
-    if added and _WORKER_DIR in sys.path:
-        sys.path.remove(_WORKER_DIR)
+    if added and _BACKEND in sys.path:
+        sys.path.remove(_BACKEND)
 
 
 @pytest.fixture(scope="module")
-def er(_worker_on_path):
+def er(_backend_on_path):
     import importlib
 
-    return importlib.import_module("utils.entity_registry")
+    return importlib.import_module("libs.ingestion.entity_registry")
 
 
 # ── to_canonical — Vietnamese-preserving ───────────────────────────────────────

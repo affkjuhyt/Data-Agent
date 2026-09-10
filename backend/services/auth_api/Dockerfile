@@ -16,7 +16,3 @@ COPY backend/services/ ./services/
 # Drop root (alpine syntax) — read-only app surface.
 RUN addgroup -S app && adduser -S -G app app
 USER app
-
-EXPOSE 8200
-
-CMD ["uvicorn", "services.auth_api.main:app", "--host", "0.0.0.0", "--port", "8200"]

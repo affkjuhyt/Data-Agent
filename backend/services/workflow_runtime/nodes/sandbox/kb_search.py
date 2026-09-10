@@ -116,10 +116,7 @@ async def kb_search_node(state: AgentState) -> dict[str, Any]:
                     resp = await client.post(
                         f"{kb_endpoint}/api/pipeline/light-rag/retrieve",
                         headers=headers,
-                        json={
-                            "query":     search_query,
-                            "tenant_id": tenant_id,
-                        },
+                        json={"query": search_query},
                     )
                     resp.raise_for_status()
                     raw = resp.json().get("results", [])

@@ -1,0 +1,122 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kb-structured-data
+  namespace: dataagent-service
+  labels:
+    app: kb-structured-data
+    ingestion_worker: structured_data
+    app.kubernetes.io/part-of: dataagent
+automountServiceAccountToken: false
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kb-structured-data-env
+  namespace: dataagent-service
+  labels:
+    app: kb-structured-data
+    ingestion_worker: structured_data
+    app.kubernetes.io/part-of: dataagent
+data:
+  # 1 replicas x (3 + 3) of Postgres' 100.
+  POSTGRES_MAX_CONNECTIONS: '3'
+  POSTGRES_MAX_OVERFLOW: '3'
+  POSTGRES_POOL_TIMEOUT: '30'
+  POSTGRES_POOL_RECYCLE: '1800'
+  HF_HOME: '/cache'
+  LLM_MODEL: 'agent-fast'
+  SILVER_CONCURRENCY: '1'
+  USE_VLM: 'false'
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kb-structured-data-cache
+  namespace: dataagent-service
+  labels:
+    app: kb-structured-data
+    ingestion_worker: structured_data
+    app.kubernetes.io/part-of: dataagent
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kb-structured-data
+  namespace: dataagent-service
+  labels:
+    app: kb-structured-data
+    ingestion_worker: structured_data
+    app.kubernetes.io/part-of: dataagent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kb-structured-data
+  template:
+    metadata:
+      labels:
+        app: kb-structured-data
+        ingestion_worker: structured_data
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: kb-structured-data
+        image: dataagent/kb-structured-data:latest
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - configMapRef:
+            name: dataagent-config
+        - configMapRef:
+            name: kb-structured-data-env
+        - secretRef:
+            name: kb-structured-data-secrets
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: '2'
+            memory: 4Gi
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: cache
+          mountPath: /cache
+        - name: tmp
+          mountPath: /tmp
+        command:
+        - python
+        - -m
+        - services.kb_structured_data.structured_data
+      volumes:
+      - name: cache
+        persistentVolumeClaim:
+          claimName: kb-structured-data-cache
+      - name: tmp
+        emptyDir: {}
+      serviceAccountName: kb-structured-data

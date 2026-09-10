@@ -26,9 +26,6 @@ data:
   POSTGRES_MAX_OVERFLOW: '5'
   # Required behind PgBouncer transaction pooling.
   POSTGRES_STATEMENT_CACHE_SIZE: '0'
-  # Small direct pool for session-scoped advisory locks (bypasses PgBouncer).
-  POSTGRES_DIRECT_MAX_CONNECTIONS: '2'
-  POSTGRES_DIRECT_MAX_OVERFLOW: '2'
   # Turn on once KB_BACKEND_URL_ASYNC points at the kb_backend role: it
   # makes a scoped session on an RLS-exempt role a hard error instead of a warning.
   STRICT_TENANT_ISOLATION: '0'
@@ -79,7 +76,7 @@ spec:
       containers:
       - name: kb-backend
         image: dataagent/kb-backend:latest
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Never
         ports:
         - containerPort: 8220
           name: http

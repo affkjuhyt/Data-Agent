@@ -1,0 +1,100 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kb-conflict-resolution
+  namespace: dataagent-service
+  labels:
+    app: kb-conflict-resolution
+    ingestion_worker: conflict_resolution
+    app.kubernetes.io/part-of: dataagent
+automountServiceAccountToken: false
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kb-conflict-resolution-env
+  namespace: dataagent-service
+  labels:
+    app: kb-conflict-resolution
+    ingestion_worker: conflict_resolution
+    app.kubernetes.io/part-of: dataagent
+data:
+  # 1 replicas x (3 + 3) of Postgres' 100.
+  POSTGRES_MAX_CONNECTIONS: '3'
+  POSTGRES_MAX_OVERFLOW: '3'
+  POSTGRES_POOL_TIMEOUT: '30'
+  POSTGRES_POOL_RECYCLE: '1800'
+  CONFLICT_CONCURRENCY: '3'
+  CONFLICT_DOCUMENT_CONCURRENCY: '3'
+  CONFLICT_QUESTION_CONCURRENCY: '3'
+  LLM_MODEL: 'agent-fast'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kb-conflict-resolution
+  namespace: dataagent-service
+  labels:
+    app: kb-conflict-resolution
+    ingestion_worker: conflict_resolution
+    app.kubernetes.io/part-of: dataagent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kb-conflict-resolution
+  template:
+    metadata:
+      labels:
+        app: kb-conflict-resolution
+        ingestion_worker: conflict_resolution
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: kb-conflict-resolution
+        image: dataagent/kb-conflict-resolution:latest
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - configMapRef:
+            name: dataagent-config
+        - configMapRef:
+            name: kb-conflict-resolution-env
+        - secretRef:
+            name: kb-conflict-resolution-secrets
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: '1'
+            memory: 1Gi
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        command:
+        - python
+        - -m
+        - services.kb_conflict_resolution.conflict_resolution
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      serviceAccountName: kb-conflict-resolution

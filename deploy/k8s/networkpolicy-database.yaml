@@ -88,7 +88,25 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: kb-ingestion-worker
+          app: kb-promote-silver
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-promote-gold
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-conflict-resolution
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-structured-data
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -270,7 +288,25 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: kb-ingestion-worker
+          app: kb-promote-silver
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-promote-gold
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-conflict-resolution
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-structured-data
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -452,7 +488,25 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: kb-ingestion-worker
+          app: kb-promote-silver
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-promote-gold
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-conflict-resolution
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-structured-data
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -634,7 +688,25 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: kb-ingestion-worker
+          app: kb-promote-silver
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-promote-gold
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-conflict-resolution
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-structured-data
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -818,7 +890,25 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: kb-ingestion-worker
+          app: kb-promote-silver
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-promote-gold
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-conflict-resolution
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-structured-data
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -1002,7 +1092,25 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: kb-ingestion-worker
+          app: kb-promote-silver
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-promote-gold
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-conflict-resolution
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-structured-data
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -1186,7 +1294,25 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: kb-ingestion-worker
+          app: kb-promote-silver
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-promote-gold
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-conflict-resolution
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-structured-data
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -1370,7 +1496,25 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: kb-ingestion-worker
+          app: kb-promote-silver
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-promote-gold
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-conflict-resolution
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-structured-data
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -1552,7 +1696,25 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: kb-ingestion-worker
+          app: kb-promote-silver
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-promote-gold
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-conflict-resolution
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-structured-data
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -1734,7 +1896,25 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: kb-ingestion-worker
+          app: kb-promote-silver
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-promote-gold
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-conflict-resolution
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-structured-data
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -1916,7 +2096,25 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: kb-ingestion-worker
+          app: kb-promote-silver
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-promote-gold
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-conflict-resolution
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: kb-structured-data
     - namespaceSelector:
         matchLabels:
           name: dataagent-service

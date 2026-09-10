@@ -10,11 +10,13 @@ GRANT ALL PRIVILEGES ON DATABASE langfuse TO admin;
 CREATE DATABASE sandbox_dev;
 GRANT ALL PRIVILEGES ON DATABASE sandbox_dev TO admin;
 
--- runtime_writer: limited role for workflow_runtime service (INSERT/SELECT only)
+-- runtime_writer: limited role for workflow_runtime service (INSERT/SELECT only).
+-- No password here: the db-init Job sets it from RUNTIME_WRITER_PASSWORD so the
+-- role and the DSN in RUNTIME_DB_URL cannot drift apart.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'runtime_writer') THEN
-    CREATE ROLE runtime_writer WITH LOGIN PASSWORD 'runtime_dev_pw';
+    CREATE ROLE runtime_writer WITH LOGIN NOBYPASSRLS;
   END IF;
 END
 $$;
@@ -24,10 +26,11 @@ GRANT CONNECT ON DATABASE dataagent TO runtime_writer;
 -- (USAGE+SELECT only, no INSERT/UPDATE/DELETE/DDL — see
 -- snowflake_readonly.py's module docstring) so sql_guard.py's SELECT-only
 -- check is exercised against the same access shape on both backends.
+-- Password set by the db-init Job from SANDBOX_READER_PASSWORD.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'sandbox_reader') THEN
-    CREATE ROLE sandbox_reader WITH LOGIN PASSWORD 'sandbox_reader_dev_pw';
+    CREATE ROLE sandbox_reader WITH LOGIN NOBYPASSRLS;
   END IF;
 END
 $$;

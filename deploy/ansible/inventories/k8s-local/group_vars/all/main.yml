@@ -20,7 +20,14 @@ image_tag: latest
 git_sync_enabled: true
 git_branch: main
 
-apply_databases: true
+# The database tier is deliberately OFF for a routine deploy. It is long-lived
+# stateful infrastructure: re-applying it rewrites live StatefulSet specs and
+# rolls every store, which is never what a code push wants. Worse, it only has
+# to differ from what the cluster was actually built from -- a different branch,
+# a hand-edited spec -- for that roll to land the pods on a spec they cannot
+# start with. Turn it on deliberately, when changing the data tier is the point:
+#   ansible-playbook deploy.yml -e apply_databases=true
+apply_databases: false
 apply_jobs: false
 apply_services: true
 apply_setup: false

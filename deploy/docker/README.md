@@ -15,7 +15,7 @@ Nothing reads it.
 | `kong/kong-setup.sh` | ConfigMap `kong-scripts` → `job/setup.yaml` |
 | `keycloak/setup-audience-mappers.sh`, `realm-export.json` | ConfigMaps `keycloak-scripts`, `keycloak-realm` |
 | `sql/create-extra-dbs.sql`, `init.sql` | ConfigMap `postgres-initdb` |
-| `sql/grant-runtime-writer.sql`, `kb-seed.sql` | ConfigMap `db-init-sql` → `job/db-init.yaml` |
+| `sql/grant-roles.sql`, `kb-seed.sql` | ConfigMap `db-init-sql` → `job/db-init.yaml` |
 | `litellm/config.yaml` | ConfigMap `litellm-config` |
 | `monitoring/prometheus.yml` | ConfigMap `prometheus-config` |
 | `monitoring/grafana/provisioning/{datasources,dashboards}/`, `grafana/dashboards/` | ConfigMaps `grafana-datasources`, `grafana-dashboards-provider`, `grafana-dashboards` |

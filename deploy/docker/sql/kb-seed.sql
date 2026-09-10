@@ -25,14 +25,97 @@ INSERT INTO "Tenants" (id, name, slug, data_residency, is_active) VALUES
     ('a0000000-0000-0000-0000-000000000001', 'Dev Tenant', 'dev', 'Asia-SE1', true)
 ON CONFLICT (id) DO NOTHING;
 
--- ── RolePermissions (FK target for KBData.role_id) ───────────────────────────
+-- ── RolePermissions ──────────────────────────────────────────────────────────
+--
+-- This table now serves TWO distinct purposes. Keep them straight:
+--
+--   1. ROLE ANCHORS (resource = '_role_anchor'). Four fixed-UUID rows that
+--      exist solely because KBData.role_id is a FK to RolePermissions.id.
+--      A document's role_id is a SENSITIVITY LABEL, not a permission — see
+--      kb_backend/operations/access.py. These UUIDs are mirrored in
+--      kb_backend/config.py ROLE_PERMISSION_IDS and MUST NOT change: live
+--      KBData rows point at them. They are excluded from permission lookups.
+--
+--   2. PERMISSION GRANTS (every other resource). One row per
+--      (role, resource, permission) the role may exercise. This is the
+--      authorisation matrix kb_backend/dependencies/auth.py:require_perm
+--      reads at request time — it used to be a hardcoded registry in that
+--      file, and this table is now the only source of truth.
+--
+-- `action` holds the permission name EXACTLY as the route decorators spell it
+-- (require_perm("viewDocuments")); `resource` groups permissions by subsystem
+-- and is not part of the lookup. Adding a row here grants nothing until some
+-- route asks for that name, and renaming one silently revokes access — so
+-- these strings and the require_perm() call sites change together.
 
+-- 1. Role anchors. The UPDATE re-labels rows seeded before permissions moved
+--    into this table, so an existing database converges on re-run.
 INSERT INTO "RolePermissions" (id, role_id, resource, action) VALUES
-    ('00000000-0000-0000-0000-000000000010', 'PLATFORM_ADMIN',    'kb_data', 'write'),
-    ('00000000-0000-0000-0000-000000000011', 'AI_ENGINEER',       'kb_data', 'write'),
-    ('00000000-0000-0000-0000-000000000012', 'BUSINESS_OPERATOR', 'kb_data', 'write'),
-    ('00000000-0000-0000-0000-000000000013', 'EXECUTIVE',         'kb_data', 'write')
+    ('00000000-0000-0000-0000-000000000010', 'PLATFORM_ADMIN',    '_role_anchor', 'label'),
+    ('00000000-0000-0000-0000-000000000011', 'AI_ENGINEER',       '_role_anchor', 'label'),
+    ('00000000-0000-0000-0000-000000000012', 'BUSINESS_OPERATOR', '_role_anchor', 'label'),
+    ('00000000-0000-0000-0000-000000000013', 'EXECUTIVE',         '_role_anchor', 'label')
 ON CONFLICT (id) DO NOTHING;
+
+UPDATE "RolePermissions"
+   SET resource = '_role_anchor', action = 'label'
+ WHERE id IN ('00000000-0000-0000-0000-000000000010',
+              '00000000-0000-0000-0000-000000000011',
+              '00000000-0000-0000-0000-000000000012',
+              '00000000-0000-0000-0000-000000000013')
+   AND (resource, action) IS DISTINCT FROM ('_role_anchor', 'label');
+
+-- 2a. Universal permissions — every role holds all of these.
+INSERT INTO "RolePermissions" (id, role_id, resource, action)
+SELECT gen_random_uuid(), r.role_id, p.resource, p.action
+  FROM (VALUES
+      ('PLATFORM_ADMIN'), ('AI_ENGINEER'), ('EXECUTIVE'), ('BUSINESS_OPERATOR')
+  ) AS r(role_id)
+  CROSS JOIN (VALUES
+      ('documents',       'viewDocuments'),
+      ('documents',       'editTableRow'),
+      ('conflicts',       'viewConflicts'),
+      ('fleet',           'viewFleetStats'),
+      ('knowledge_bases', 'viewKnowledgeBases'),
+      ('retrieval',       'retrieveKnowledge'),
+      ('graph',           'viewGraph'),
+      ('graph',           'runGraphQuery'),
+      ('policies',        'viewPolicies'),
+      ('qdrant',          'viewQdrantCollections'),
+      ('qdrant',          'searchQdrant'),
+      ('trash',           'viewTrash'),
+      ('warehouses',      'viewWarehouses')
+  ) AS p(resource, action)
+ON CONFLICT (role_id, resource, action) DO NOTHING;
+
+-- 2b. Restricted permissions — granted per role.
+--     BUSINESS_OPERATOR deliberately holds none: it is read-only beyond 2a.
+INSERT INTO "RolePermissions" (id, role_id, resource, action)
+SELECT gen_random_uuid(), v.role_id, v.resource, v.action
+  FROM (VALUES
+      -- PLATFORM_ADMIN — every restricted permission.
+      ('PLATFORM_ADMIN', 'data',       'addData'),
+      ('PLATFORM_ADMIN', 'data',       'processLayer'),
+      ('PLATFORM_ADMIN', 'data',       'deleteData'),
+      ('PLATFORM_ADMIN', 'documents',  'addChunkVersion'),
+      ('PLATFORM_ADMIN', 'conflicts',  'editConflict'),
+      ('PLATFORM_ADMIN', 'policies',   'addFilteringPolicy'),
+      ('PLATFORM_ADMIN', 'policies',   'editFilteringPolicy'),
+      ('PLATFORM_ADMIN', 'policies',   'deleteFilteringPolicy'),
+      ('PLATFORM_ADMIN', 'policies',   'editExtractionPolicy'),
+      ('PLATFORM_ADMIN', 'qdrant',     'toggleQdrant'),
+      ('PLATFORM_ADMIN', 'warehouses', 'addWarehouse'),
+      ('PLATFORM_ADMIN', 'warehouses', 'addWarehouseConfig'),
+      ('PLATFORM_ADMIN', 'warehouses', 'editWarehouseConfig'),
+      -- AI_ENGINEER
+      ('AI_ENGINEER',    'qdrant',     'toggleQdrant'),
+      ('AI_ENGINEER',    'policies',   'editExtractionPolicy'),
+      -- EXECUTIVE
+      ('EXECUTIVE',      'conflicts',  'editConflict'),
+      ('EXECUTIVE',      'data',       'processLayer'),
+      ('EXECUTIVE',      'policies',   'addFilteringPolicy')
+  ) AS v(role_id, resource, action)
+ON CONFLICT (role_id, resource, action) DO NOTHING;
 
 -- ── KBModel (embedding models — FK target for Qdrant/Neo4j/TextBlockVersion) ─
 

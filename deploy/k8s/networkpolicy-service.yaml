@@ -176,7 +176,16 @@ spec:
           app: kb-backend
     - podSelector:
         matchLabels:
-          app: kb-ingestion-worker
+          app: kb-promote-silver
+    - podSelector:
+        matchLabels:
+          app: kb-promote-gold
+    - podSelector:
+        matchLabels:
+          app: kb-conflict-resolution
+    - podSelector:
+        matchLabels:
+          app: kb-structured-data
     - podSelector:
         matchLabels:
           app: workflow-runtime
@@ -326,7 +335,16 @@ spec:
           app: workflow-runtime
     - podSelector:
         matchLabels:
-          app: kb-ingestion-worker
+          app: kb-promote-silver
+    - podSelector:
+        matchLabels:
+          app: kb-promote-gold
+    - podSelector:
+        matchLabels:
+          app: kb-conflict-resolution
+    - podSelector:
+        matchLabels:
+          app: kb-structured-data
     - podSelector:
         matchLabels:
           app: eval
@@ -601,7 +619,10 @@ spec:
       - model-service
       - litellm
       - llm-exporter
-      - kb-ingestion-worker
+      - kb-promote-silver
+      - kb-promote-gold
+      - kb-conflict-resolution
+      - kb-structured-data
   policyTypes:
   - Egress
   egress:

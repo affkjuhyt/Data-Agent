@@ -47,10 +47,10 @@ class PostgresSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="DB_", extra="ignore")
 
     host: str = "postgres"
-    port: int = 5432
+    port: int = 8300
     name: str = "dataagent"
     user: str = "admin"
-    password: str = "dev123"
+    password: str = ""
 
     def connect_kwargs(self) -> dict[str, Any]:
         return {

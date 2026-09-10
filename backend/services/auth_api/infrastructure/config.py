@@ -5,10 +5,10 @@ import structlog
 structlog.configure(processors=[structlog.processors.JSONRenderer()])
 log = structlog.get_logger()
 
-PG_DSN = os.environ.get(
-    "DATABASE_URL",
-    "postgresql://aeroflow:aeroflow_secret@postgres:5432/aeroflow",
-)
+# No default. The old one ("aeroflow:aeroflow_secret@postgres:5432/aeroflow")
+# named a user, database and port that do not exist, so a missing env var
+# failed at connect time with a confusing error instead of at startup.
+PG_DSN = os.environ.get("DATABASE_URL", "")
 KONG_ADMIN = os.environ.get("KONG_ADMIN_URL", "http://kong:8001")
 OPENBAO_ADDR = os.environ.get("OPENBAO_ADDR", "http://openbao:8200")
 

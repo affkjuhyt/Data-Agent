@@ -20,7 +20,3 @@ COPY backend/services/ ./services/
 # Drop root — read-only app surface.
 RUN addgroup --system app && adduser --system --ingroup app app
 USER app
-
-EXPOSE 8210
-
-CMD ["uvicorn", "services.release_worker.main:app", "--host", "0.0.0.0", "--port", "8210"]

@@ -378,6 +378,14 @@ else
 
 fi
 
+# ── 4c2. request-size-limiting on kb-backend ───────────────────────────
+# Ingestion buffers the whole upload, so the gateway stops oversized bodies.
+# Outside the SKIP_JWT branch: the limit applies either way.
+echo "📏 Enabling request-size-limiting on kb-backend (${KB_MAX_UPLOAD_MB:-64}MB)..."
+upsert_plugin "$KONG_ADMIN/services/kb-backend/plugins" \
+  "{\"name\":\"request-size-limiting\",\"config\":{\"allowed_payload_size\":${KB_MAX_UPLOAD_MB:-64},\"size_unit\":\"megabytes\",\"require_content_length\":false}}" \
+  "request-size-limiting"
+
 # ── 4d. aeroflow-jwks on kb-backend ────────────────────────────────────
 # Reuse aud=aeroflow-backend so the existing audience mapper on the
 # aeroflow-frontend client applies — no new Keycloak mapper needed.

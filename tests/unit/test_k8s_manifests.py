@@ -43,7 +43,10 @@ GATE_CONTAINER = "wait-for-migrations"
 
 # Queue consumers and pollers: no inbound traffic, so no Service and no HTTP probe.
 HEADLESS_WORKERS = {
-    "kb-ingestion-worker",
+    "kb-promote-silver",
+    "kb-promote-gold",
+    "kb-conflict-resolution",
+    "kb-structured-data",
     "langfuse-worker",
     "platform-workers-audit",
     "platform-workers-memory",
