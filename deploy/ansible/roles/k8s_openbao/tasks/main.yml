@@ -1,0 +1,181 @@
+---
+- name: Set openbao paths
+  ansible.builtin.set_fact:
+    bao_exec: "{{ kubectl }} exec -n {{ ns_database }} statefulset/openbao --"
+    bao_keys_file: "{{ deploy_state_dir }}/openbao-keys.json"
+
+- name: Wait for openbao
+  ansible.builtin.command: "{{ bao_exec }} bao status -format=json"
+  register: bao_status_raw
+  until: bao_status_raw.rc in [0, 2]
+  retries: 30
+  delay: 2
+  changed_when: false
+  failed_when: false
+
+- name: Set openbao status
+  ansible.builtin.set_fact:
+    bao_status: "{{ bao_status_raw.stdout | from_json }}"
+
+- name: Check existing keys file
+  ansible.builtin.stat:
+    path: "{{ bao_keys_file }}"
+  register: bao_keys_stat
+
+- name: Fail on an unopenable vault
+  ansible.builtin.fail:
+    msg: >-
+      OpenBao is initialised but {{ bao_keys_file }} is missing. Restore it, or set
+      openbao_allow_reset=true to recreate the volume. Non-production only.
+  when: bao_status.initialized and not bao_keys_stat.stat.exists and not (openbao_allow_reset | bool)
+
+- name: Initialise openbao
+  ansible.builtin.command: "{{ bao_exec }} bao operator init -key-shares=1 -key-threshold=1 -format=json"
+  register: bao_init
+  when: not bao_status.initialized
+  no_log: true
+
+- name: Write keys file
+  ansible.builtin.copy:
+    content: "{{ bao_init.stdout }}"
+    dest: "{{ bao_keys_file }}"
+    mode: "0600"
+  when: bao_init is not skipped
+  no_log: true
+
+- name: Get keys file
+  ansible.builtin.slurp:
+    src: "{{ bao_keys_file }}"
+  register: bao_keys_raw
+  no_log: true
+
+- name: Set root token
+  ansible.builtin.set_fact:
+    bao_keys: "{{ bao_keys_raw.content | b64decode | from_json }}"
+  no_log: true
+
+- name: Unseal openbao
+  ansible.builtin.command: "{{ bao_exec }} bao operator unseal {{ bao_keys.unseal_keys_b64[0] }}"
+  when: bao_status.sealed
+  changed_when: true
+  no_log: true
+
+- name: List secret engines
+  ansible.builtin.command: "{{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }} bao secrets list -format=json"
+  register: bao_mounts
+  changed_when: false
+  no_log: true
+
+- name: Enable kv v2
+  ansible.builtin.command: "{{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }} bao secrets enable -path=secret -version=2 kv"
+  when: "'secret/' not in (bao_mounts.stdout | from_json)"
+  changed_when: true
+  no_log: true
+
+- name: Enable transit
+  ansible.builtin.command: "{{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }} bao secrets enable transit"
+  when: "'transit/' not in (bao_mounts.stdout | from_json)"
+  changed_when: true
+  no_log: true
+
+- name: Write read policy
+  ansible.builtin.shell: |
+    set -euo pipefail
+    {{ kubectl }} exec -i -n {{ ns_database }} statefulset/openbao -- \
+      env BAO_TOKEN={{ bao_keys.root_token }} bao policy write workflow_runtime-read-policy - <<'POLICY'
+    path "secret/data/tenants/*" { capabilities = ["read"] }
+    POLICY
+  args:
+    executable: /bin/bash
+  changed_when: false
+  no_log: true
+
+- name: List auth methods
+  ansible.builtin.command: "{{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }} bao auth list -format=json"
+  register: bao_auth
+  changed_when: false
+  no_log: true
+
+- name: Enable approle
+  ansible.builtin.command: "{{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }} bao auth enable approle"
+  when: "'approle/' not in (bao_auth.stdout | from_json)"
+  changed_when: true
+  no_log: true
+
+- name: Write approle
+  ansible.builtin.command: >
+    {{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }}
+    bao write auth/approle/role/workflow_runtime
+    token_policies=workflow_runtime-read-policy token_ttl=1h token_max_ttl=4h
+  changed_when: false
+  no_log: true
+
+- name: Get role id
+  ansible.builtin.command: >
+    {{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }}
+    bao read -field=role_id auth/approle/role/workflow_runtime/role-id
+  register: bao_role_id
+  changed_when: false
+  no_log: true
+
+- name: Look for a previously minted secret id
+  ansible.builtin.stat:
+    path: "{{ openbao_env_file }}"
+  register: openbao_env_stat
+
+- name: Load the previously minted secret id
+  ansible.builtin.include_vars:
+    file: "{{ openbao_env_file }}"
+    name: openbao_state
+  when: openbao_env_stat.stat.exists
+  no_log: true
+
+- name: Set the previously minted secret id
+  ansible.builtin.set_fact:
+    openbao_prev: "{{ (openbao_state | default({}, true)).openbao_env | default({}, true) }}"
+  no_log: true
+  # Not read from openbao_env: deploy.yml set_fact's that before this role
+  # runs, and set_fact outranks include_vars. Reading it there would make every
+  # run look like a first run and mint a fresh secret id, invalidating the
+  # login workflow-runtime is currently using.
+
+- name: Mint secret id
+  ansible.builtin.command: >
+    {{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }}
+    bao write -f -field=secret_id auth/approle/role/workflow_runtime/secret-id
+  register: bao_secret_id
+  when: >-
+    (openbao_prev.OPENBAO_SECRET_ID | default('') | length) == 0
+    or (openbao_rotate_approle | bool)
+  changed_when: true
+  no_log: true
+
+- name: Record whether the AppRole moved
+  ansible.builtin.set_fact:
+    openbao_minted: "{{ bao_secret_id is not skipped }}"
+  # deploy.yml re-renders and reapplies the Secrets only when this is true --
+  # a fresh cluster, or an explicit rotation.
+
+- name: Record the OpenBao credentials
+  ansible.builtin.copy:
+    dest: "{{ openbao_env_file }}"
+    mode: "0600"
+    content: |
+      # Minted by the k8s_openbao role against the running OpenBao. Read back
+      # by deploy.yml, which folds these three into secrets.env; kept out of
+      # the repo and out of the vault because they only exist once a cluster
+      # does. Delete this file (and openbao-keys.json) only if you are also
+      # resetting the OpenBao volume.
+      openbao_env:
+        OPENBAO_TOKEN: "{{ bao_keys.root_token }}"
+        OPENBAO_ROLE_ID: "{{ bao_role_id.stdout | trim }}"
+        OPENBAO_SECRET_ID: "{{ bao_secret_id.stdout | default(openbao_prev.OPENBAO_SECRET_ID | default(''), true) | trim }}"
+  no_log: true
+  # A skipped mint keeps the existing secret id rather than blanking it: a
+  # rerun that does not rotate must not invalidate workflow-runtime's login.
+
+- name: Report openbao
+  ansible.builtin.debug:
+    msg: >-
+      initialised={{ bao_status.initialized }} sealed_before={{ bao_status.sealed }}
+      keys={{ bao_keys_file }} approle={{ 'minted' if bao_secret_id is not skipped else 'unchanged' }}

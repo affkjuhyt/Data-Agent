@@ -1,0 +1,649 @@
+---
+# Data Agent -> Kubernetes.
+#
+#   pull -> diff -> build what changed -> apply everything -> restart what changed
+#
+# The whole pipeline is in this file, top to bottom. Settings live in
+# roles/k8s_common/defaults/main.yml; the only roles left are the three jobs
+# that are genuinely intricate (OpenBao init, the gateway setup Job) or purely
+# informational (preflight, verify).
+#
+#   ansible-playbook deploy.yml
+#   ansible-playbook deploy.yml -e deploy_full=true    # ignore the checkpoint
+#
+# One thing this does NOT do is guess. Manifests are applied every run:
+# `kubectl apply` compares server-side and only moves a pod when the spec
+# actually differs, so it is already the change detector. The git diff decides
+# what to *build*, not what to apply.
+- name: Deploy the Data Agent stack
+  hosts: all
+  gather_facts: false
+
+  vars:
+    kubeconfig: "{{ lookup('env', 'KUBECONFIG') | default(lookup('env', 'HOME') ~ '/.kube/config', true) }}"
+
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+
+  tasks:
+    - name: Load the settings
+      ansible.builtin.import_role:
+        name: k8s_common
+
+    - name: Check the cluster
+      ansible.builtin.import_role:
+        name: k8s_preflight
+
+    # ── 1. pull ───────────────────────────────────────────────────────
+    - name: Create the state directory
+      ansible.builtin.file:
+        path: "{{ deploy_state_dir }}"
+        state: directory
+        mode: "0750"
+
+    - name: Pull {{ git_remote }}/{{ git_branch }}
+      when: git_sync_enabled | bool
+      block:
+        - name: Fetch {{ git_remote }}/{{ git_branch }}
+          ansible.builtin.command:
+            cmd: "git fetch --prune {{ git_remote }} {{ git_branch }}"
+            chdir: "{{ project_dir }}"
+          changed_when: false
+
+        - name: Get HEAD before the pull
+          ansible.builtin.command:
+            cmd: git rev-parse HEAD
+            chdir: "{{ project_dir }}"
+          register: head_before
+          changed_when: false
+
+        - name: Fast-forward onto {{ git_remote }}/{{ git_branch }}
+          ansible.builtin.command:
+            cmd: "git merge --ff-only {{ git_remote }}/{{ git_branch }}"
+            chdir: "{{ project_dir }}"
+          register: pull
+          failed_when: false
+          changed_when: pull.rc == 0 and 'Already up to date' not in pull.stdout
+          # --ff-only is the whole safety story: it either replays the remote
+          # commits onto an untouched tree or refuses before writing anything.
+          # There is no merge to resolve, no conflict state to clean up, and
+          # nothing local is overwritten. Sorting out a diverged or dirty tree
+          # is the operator's call, not this playbook's.
+
+    - name: Report a refused pull
+      when:
+        - git_sync_enabled | bool
+        - (pull | default({}, true)).rc | default(0) != 0
+      block:
+        - name: Abort a merge, if git somehow started one
+          ansible.builtin.command:
+            cmd: git merge --abort
+            chdir: "{{ project_dir }}"
+          failed_when: false
+          changed_when: false
+          # --ff-only should never leave one behind. This is the belt to that
+          # braces, so a failed pull can never hand the next stage a tree with
+          # conflict markers in it.
+
+        - name: Collect the diagnosis
+          ansible.builtin.command:
+            cmd: "{{ item.cmd }}"
+            chdir: "{{ project_dir }}"
+          loop:
+            - { name: head_now, cmd: "git rev-parse HEAD" }
+            - { name: tree, cmd: "git status --porcelain" }
+            - { name: local_only, cmd: "git log --oneline {{ git_remote }}/{{ git_branch }}..HEAD" }
+            - { name: incoming, cmd: "git log --oneline HEAD..{{ git_remote }}/{{ git_branch }}" }
+          loop_control:
+            label: "{{ item.name }}"
+          register: diagnosis
+          failed_when: false
+          changed_when: false
+
+        - name: Write the pull failure log
+          ansible.builtin.copy:
+            dest: "{{ pull_failure_log }}"
+            mode: "0640"
+            content: |
+              {{ now(utc=true).isoformat(timespec='seconds') }}Z  env={{ env_name }}
+              repo:        {{ project_dir }}
+              branch:      {{ git_remote }}/{{ git_branch }}
+              HEAD before: {{ head_before.stdout | trim }}
+              HEAD now:    {{ diagnosis.results[0].stdout | default('?') | trim }}
+
+              git merge --ff-only exited {{ pull.rc }}
+              {{ pull.stdout | default('') | trim }}
+              {{ pull.stderr | default('') | trim }}
+
+              uncommitted changes (git status --porcelain):
+              {{ diagnosis.results[1].stdout | default('') | trim | default('(none)', true) }}
+
+              commits here but not on {{ git_remote }}/{{ git_branch }}:
+              {{ diagnosis.results[2].stdout | default('') | trim | default('(none)', true) }}
+
+              commits waiting on {{ git_remote }}/{{ git_branch }}:
+              {{ diagnosis.results[3].stdout | default('') | trim | default('(none)', true) }}
+
+        - name: Refuse to deploy
+          ansible.builtin.fail:
+            msg: >-
+              Pull refused, nothing was changed and nothing was deployed.
+              {{ 'The tree has local commits that are not on ' ~ git_remote ~ '/' ~ git_branch ~ '.'
+                 if (diagnosis.results[2].stdout | default('') | trim | length) > 0
+                 else 'Local changes would be overwritten by the incoming commits.' }}
+              Resolve it by hand, then rerun. Details: {{ pull_failure_log }}
+
+    - name: Get HEAD
+      ansible.builtin.command:
+        cmd: git rev-parse HEAD
+        chdir: "{{ project_dir }}"
+      register: head
+      changed_when: false
+
+    - name: Read the checkpoint
+      ansible.builtin.slurp:
+        src: "{{ checkpoint_file }}"
+      register: checkpoint
+      failed_when: false
+
+    - name: Check the checkpoint is still in history
+      ansible.builtin.command:
+        cmd: "git cat-file -e {{ (checkpoint.content | default('') | b64decode) | trim }}^{commit}"
+        chdir: "{{ project_dir }}"
+      register: checkpoint_ok
+      when: (checkpoint.content | default('') | b64decode | trim | length) > 0
+      changed_when: false
+      failed_when: false
+      # A force-push leaves a sha `git diff` cannot resolve. That is a full
+      # deploy, not a failure.
+
+    - name: Set the diff range
+      ansible.builtin.set_fact:
+        from_sha: "{{ (checkpoint.content | default('') | b64decode) | trim }}"
+        to_sha: "{{ head.stdout | trim }}"
+        full_deploy: >-
+          {{ (deploy_full | bool)
+             or (checkpoint.content | default('') | b64decode | trim | length) == 0
+             or (checkpoint_ok.rc | default(1)) != 0 }}
+
+    - name: Diff against the checkpoint
+      ansible.builtin.command:
+        cmd: "git diff --name-only {{ from_sha }} {{ to_sha }}"
+        chdir: "{{ project_dir }}"
+      register: diff
+      when: not (full_deploy | bool)
+      changed_when: false
+
+    - name: Set what changed
+      ansible.builtin.set_fact:
+        changed_paths: "{{ diff.stdout_lines | default([]) }}"
+        secrets_changed: >-
+          {{ (full_deploy | bool) or (diff.stdout_lines | default([])
+             | select('match', '^(' ~ (secret_paths | map('regex_escape') | join('|')) ~ ')')
+             | list | length) > 0 }}
+        config_changed: >-
+          {{ (full_deploy | bool) or (diff.stdout_lines | default([])
+             | select('match', '^(' ~ (config_paths | map('regex_escape') | join('|')) ~ ')')
+             | list | length) > 0 }}
+        shared_changed: >-
+          {{ (diff.stdout_lines | default([])
+             | select('match', '^(' ~ (shared_paths | map('regex_escape') | join('|')) ~ ')')
+             | list | length) > 0 }}
+
+    - name: Report what changed
+      ansible.builtin.debug:
+        msg:
+          - "from:    {{ from_sha | default('(no checkpoint)', true) }}"
+          - "to:      {{ to_sha }}"
+          - "changed: {{ 'everything' if (full_deploy | bool) else (changed_paths | length | string) ~ ' file(s)' }}"
+          - "secrets: {{ secrets_changed }}   configmaps: {{ config_changed }}"
+
+    # ── 2. images ─────────────────────────────────────────────────────
+    - name: List every directory the change touched
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          printf '%s\n' {{ changed_paths | map('quote') | join(' ') }} | while read -r f; do
+            d=$(dirname "$f")
+            while [ "$d" != "." ] && [ "$d" != "/" ]; do
+              printf '%s\n' "$d"
+              d=$(dirname "$d")
+            done
+          done | sort -u
+        executable: /bin/bash
+      register: touched_dirs
+      when: (changed_paths | length) > 0 and not (full_deploy | bool)
+      changed_when: false
+      # Parent directories too, so a change to
+      # backend/services/auth_api/routes/x.py still finds
+      # backend/services/auth_api/Dockerfile.
+
+    - name: Look for a Dockerfile in each
+      ansible.builtin.stat:
+        path: "{{ project_dir }}/{{ item }}/Dockerfile"
+      loop: "{{ touched_dirs.stdout_lines | default([]) }}"
+      loop_control:
+        label: "{{ item }}"
+      register: dockerfiles
+
+    - name: List every image directory in the repo
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          git ls-files | grep -E '(^|/)Dockerfile$' | while read -r f; do
+            [ -f "$f" ] && dirname "$f"
+          done | sort -u
+        chdir: "{{ project_dir }}"
+        executable: /bin/bash
+      register: all_image_dirs
+      when: (full_deploy | bool) or (shared_changed | bool)
+      changed_when: false
+      # git ls-files reports the index, which can name a Dockerfile that is no
+      # longer on disk (a rename staged but not committed). Skipping those
+      # keeps a full build from dying on `docker build -f <missing>`. The flip
+      # side is deliberate: an untracked Dockerfile is not deployed, because
+      # only committed code is.
+
+    - name: Select the directories to build
+      ansible.builtin.set_fact:
+        build_dirs: >-
+          {{ all_image_dirs.stdout_lines if ((full_deploy | bool) or (shared_changed | bool))
+             else (dockerfiles.results | selectattr('stat.exists') | map(attribute='item') | list) }}
+
+    - name: List the image names the manifests ask for
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          grep -rhoE '{{ image_prefix }}/[A-Za-z0-9._-]+:' {{ k8s_dir }} | cut -d/ -f2 | tr -d ':' | sort -u
+        executable: /bin/bash
+      register: manifest_images
+      changed_when: false
+
+    - name: Name the images to build
+      ansible.builtin.set_fact:
+        images: "{{ images | default([]) + [{'dir': item, 'name': img_name, 'context': img_context}] }}"
+      loop: "{{ build_dirs }}"
+      loop_control:
+        label: "{{ img_name }}"
+      vars:
+        base: "{{ item | basename }}"
+        img_name: >-
+          {{ image_name_overrides[item]
+             | default(base if base in manifest_images.stdout_lines else base | replace('_', '-')) }}
+        img_context: "{{ item if item in image_self_context else '.' }}"
+      # deploy/k8s is the authority on names and it is not consistent
+      # (kb_backend ships as kb-backend, workflow_runtime as workflow_runtime),
+      # so try the directory name and its hyphenated form and let the manifests
+      # pick. Only backend/alembic -> migrate has to be spelled out.
+
+    - name: Report the build list
+      ansible.builtin.debug:
+        msg: "building: {{ (images | default([])) | map(attribute='name') | join(', ') | default('nothing', true) }}"
+
+    - name: Build the images
+      ansible.builtin.command:
+        cmd: >-
+          docker build
+          -f {{ project_dir }}/{{ item.dir }}/Dockerfile
+          -t {{ image_prefix }}/{{ item.name }}:{{ image_tag }}
+          {{ project_dir }}/{{ item.context }}
+      loop: "{{ images | default([]) }}"
+      loop_control:
+        label: "{{ image_prefix }}/{{ item.name }}:{{ image_tag }}"
+      changed_when: true
+
+    - name: Tag the images for the registry
+      ansible.builtin.command:
+        cmd: >-
+          docker tag {{ image_prefix }}/{{ item.name }}:{{ image_tag }}
+          {{ image_registry }}/{{ image_prefix }}/{{ item.name }}:{{ image_tag }}
+      loop: "{{ images | default([]) }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: (image_registry | length) > 0
+      changed_when: true
+
+    - name: Push the images
+      ansible.builtin.command:
+        cmd: >-
+          docker push
+          {{ (image_registry ~ '/') if (image_registry | length) > 0 else '' }}{{ image_prefix }}/{{ item.name }}:{{ image_tag }}
+      loop: "{{ images | default([]) }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: image_push | bool
+      changed_when: true
+
+    - name: Import the images into the node's own store
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          docker save {{ (images | default([])) | map(attribute='name')
+                         | map('regex_replace', '^', image_prefix ~ '/')
+                         | map('regex_replace', '$', ':' ~ image_tag) | join(' ') }} | {{ image_import }}
+        executable: /bin/bash
+      when: (image_import | length) > 0 and (images | default([]) | length) > 0
+      changed_when: true
+      # imagePullPolicy is IfNotPresent everywhere, so a node that already
+      # cached this tag never re-pulls it. Importing overwrites the tag in the
+      # node's own store, which is what makes the restart below pick up new bytes.
+
+    # ── 3. secrets ────────────────────────────────────────────────────
+    - name: Refuse to run against a plaintext vault
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          [ -f "{{ vault_file }}" ] || exit 0
+          head -c 14 "{{ vault_file }}" | grep -qF '$ANSIBLE_VAULT' && exit 0
+          echo "{{ vault_file }} is not encrypted. Run: ansible-vault encrypt {{ vault_file }}" >&2
+          exit 1
+        executable: /bin/bash
+      changed_when: false
+      # This file is meant to be committed, and only stays safe as ciphertext.
+
+    - name: Look for OpenBao credentials minted on a previous run
+      ansible.builtin.stat:
+        path: "{{ openbao_env_file }}"
+      register: openbao_state_file
+
+    - name: Load the OpenBao credentials minted on a previous run
+      ansible.builtin.include_vars:
+        file: "{{ openbao_env_file }}"
+        name: openbao_state
+      when: openbao_state_file.stat.exists
+      no_log: true
+      # Under its own name, never straight into openbao_env: set_fact outranks
+      # include_vars, so the default below would shadow the real values.
+
+    - name: Default the OpenBao credentials
+      ansible.builtin.set_fact:
+        openbao_env: >-
+          {{ {'OPENBAO_TOKEN': '', 'OPENBAO_ROLE_ID': '', 'OPENBAO_SECRET_ID': ''}
+             | combine((openbao_state | default({}, true)).openbao_env | default({}, true)) }}
+      no_log: true
+      # They are minted against a running OpenBao further down, never stored in
+      # the vault, and kept outside the repo so a re-render cannot blank them.
+
+    - name: Render secrets.env from the vault
+      ansible.builtin.template:
+        src: templates/secrets.env.j2
+        dest: "{{ secrets_env_file }}"
+        mode: "0600"
+      no_log: true
+
+    - name: Reapply the Secrets
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          set -a; . "{{ secrets_env_file }}"; set +a
+          bash "{{ k8s_dir }}/create-secrets.sh" >/dev/null
+
+          jaas=$(mktemp); trap 'rm -f "$jaas"' EXIT
+          sed -e "s|REPLACE_WITH_KAFKA_ADMIN_PASSWORD|${KAFKA_ADMIN_PASSWORD}|g" \
+              -e "s|REPLACE_WITH_AUDIT_CONSUMER_PASSWORD|${AUDIT_CONSUMER_KAFKA_PASSWORD}|g" \
+              -e "s|REPLACE_WITH_RELEASE_WORKER_PASSWORD|${RELEASE_WORKER_KAFKA_PASSWORD}|g" \
+              -e "s|REPLACE_WITH_WORKFLOW_RUNTIME_PASSWORD|${WORKFLOW_RUNTIME_KAFKA_PASSWORD}|g" \
+              -e "s|REPLACE_WITH_MEMORY_CONSUMER_PASSWORD|${MEMORY_CONSUMER_KAFKA_PASSWORD}|g" \
+              -e "s|REPLACE_WITH_SCHEMA_CRAWLER_WORKER_PASSWORD|${SCHEMA_CRAWLER_WORKER_KAFKA_PASSWORD}|g" \
+              "{{ docker_dir }}/kafka/kafka-broker-jaas.config.example" > "$jaas"
+          kubectl -n {{ ns_database }} create secret generic kafka-jaas \
+            --from-file=kafka-broker-jaas.config="$jaas" \
+            --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+        executable: /bin/bash
+      when: secrets_changed | bool
+      changed_when: true
+      # All of them, not a diff per Secret: `kubectl apply` on an unchanged
+      # Secret is a no-op on the pods, and 36 applies take a second.
+
+    # ── 4. configmaps ─────────────────────────────────────────────────
+    - name: Apply the ConfigMap manifest
+      ansible.builtin.command:
+        cmd: "{{ kubectl }} apply -f {{ k8s_dir }}/configmap.yaml"
+      register: cm_manifest
+      changed_when: "'configured' in cm_manifest.stdout or 'created' in cm_manifest.stdout"
+
+    - name: Reapply the file-backed ConfigMaps
+      ansible.builtin.command:
+        cmd: "bash {{ k8s_dir }}/create-configmaps.sh"
+        chdir: "{{ project_dir }}"
+      when: config_changed | bool
+      changed_when: true
+
+    # ── 5. manifests ──────────────────────────────────────────────────
+    - name: Apply namespaces, RBAC and NetworkPolicies
+      ansible.builtin.command:
+        cmd: >-
+          {{ kubectl }} apply
+          -f {{ k8s_dir }}/namespace.yaml
+          -f {{ k8s_dir }}/rbac.yaml
+          -f {{ k8s_dir }}/networkpolicy-service.yaml
+          -f {{ k8s_dir }}/networkpolicy-database.yaml
+      register: base_apply
+      changed_when: "'created' in base_apply.stdout or 'configured' in base_apply.stdout"
+
+    - name: Apply the database tier
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
+          for f in "{{ k8s_dir }}/database"/*.yaml; do
+            {{ manifest_sed }} "$f" > "$stage/$(basename "$f")"
+          done
+          {{ kubectl }} apply -f "$stage/"
+        executable: /bin/bash
+      register: db_apply
+      changed_when: "'created' in db_apply.stdout or 'configured' in db_apply.stdout"
+      when: apply_databases | bool
+
+    - name: Wait for the stores
+      ansible.builtin.command:
+        cmd: >-
+          {{ kubectl }} -n {{ ns_database }} rollout status statefulset/{{ item }}
+          --timeout={{ wait_statefulset }}s
+      loop: "{{ ['postgres'] + database_workloads }}"
+      changed_when: false
+      when: apply_databases | bool
+
+    - name: Wait for pgbouncer
+      ansible.builtin.command:
+        cmd: >-
+          {{ kubectl }} -n {{ ns_database }} rollout status deployment/pgbouncer
+          --timeout={{ wait_rollout }}s
+      changed_when: false
+      when: apply_databases | bool
+
+    # ── 6. OpenBao, then the Secrets that carry its credentials ───────
+    - name: Initialise OpenBao and mint the AppRole
+      ansible.builtin.import_role:
+        name: k8s_openbao
+      when: apply_databases | bool
+
+    - name: Re-render secrets.env with the minted credentials
+      ansible.builtin.template:
+        src: templates/secrets.env.j2
+        dest: "{{ secrets_env_file }}"
+        mode: "0600"
+      when: openbao_minted | default(false) | bool
+      no_log: true
+
+    - name: Reapply the Secrets that carry the OpenBao credentials
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          set -a; . "{{ secrets_env_file }}"; set +a
+          bash "{{ k8s_dir }}/create-secrets.sh" >/dev/null
+        executable: /bin/bash
+      when: openbao_minted | default(false) | bool
+      changed_when: true
+      # Only on the run that mints them -- a fresh cluster, or an explicit
+      # rotation. Every other run already rendered the right values above.
+
+    # ── 7. service tier ───────────────────────────────────────────────
+    - name: Apply the service tier
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
+          for f in "{{ k8s_dir }}/service"/*.yaml; do
+            {{ manifest_sed }} "$f" > "$stage/$(basename "$f")"
+          done
+          {{ kubectl }} apply -f "$stage/"
+        executable: /bin/bash
+      register: svc_apply
+      changed_when: "'created' in svc_apply.stdout or 'configured' in svc_apply.stdout"
+      when: apply_services | bool
+
+    - name: Wait for the gateway
+      ansible.builtin.command:
+        cmd: >-
+          {{ kubectl }} -n {{ ns_service }} rollout status deployment/{{ item }}
+          --timeout={{ wait_rollout }}s
+      loop: [keycloak, kong]
+      changed_when: false
+      when: apply_services | bool
+
+    # ── 8. jobs ───────────────────────────────────────────────────────
+    - name: Rerun the migration and init Jobs
+      when:
+        - apply_jobs | bool
+        - (full_deploy | bool)
+          or ('migrate' in ((images | default([])) | map(attribute='name') | list))
+          or ((changed_paths | select('match', '^deploy/k8s/job/') | list | length) > 0)
+      block:
+        - name: Delete the Jobs
+          ansible.builtin.command:
+            cmd: >-
+              {{ kubectl }} -n {{ ns_service }} delete job
+              {{ (migration_jobs + job_workloads) | join(' ') }} --ignore-not-found
+          changed_when: true
+          # A Job's pod template is immutable: applying over a completed Job
+          # fails, so delete-then-apply is the only way a rerun happens.
+
+        - name: Apply the migration Jobs
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
+              for j in {{ migration_jobs | join(' ') }}; do
+                {{ manifest_sed }} "{{ k8s_dir }}/job/$j.yaml" > "$stage/$j.yaml"
+              done
+              {{ kubectl }} apply -f "$stage/"
+            executable: /bin/bash
+          changed_when: true
+
+        - name: Wait for the migration Jobs
+          ansible.builtin.command:
+            cmd: >-
+              {{ kubectl }} -n {{ ns_service }} wait --for=condition=complete job/{{ item }}
+              --timeout={{ wait_job }}s
+          loop: "{{ migration_jobs }}"
+          changed_when: false
+          # Schema first: the init Jobs write rows into tables migrate creates.
+
+        - name: Apply the init Jobs
+          ansible.builtin.shell:
+            cmd: |
+              set -euo pipefail
+              stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
+              for j in {{ job_workloads | join(' ') }}; do
+                {{ manifest_sed }} "{{ k8s_dir }}/job/$j.yaml" \
+                  | sed "s|SEED_DEMO: '0'|SEED_DEMO: '{{ 1 if (seed_demo | bool) else 0 }}'|" \
+                  > "$stage/$j.yaml"
+              done
+              {{ kubectl }} apply -f "$stage/"
+            executable: /bin/bash
+          changed_when: true
+
+        - name: Wait for the init Jobs
+          ansible.builtin.command:
+            cmd: >-
+              {{ kubectl }} -n {{ ns_service }} wait --for=condition=complete job/{{ item }}
+              --timeout={{ wait_job }}s
+          loop: "{{ job_workloads }}"
+          changed_when: false
+
+      rescue:
+        - name: Get the Job logs
+          ansible.builtin.shell:
+            cmd: "{{ kubectl }} -n {{ ns_service }} logs job/{{ item }} --tail=40 2>&1 || true"
+            executable: /bin/bash
+          loop: "{{ migration_jobs + job_workloads }}"
+          register: job_logs
+          changed_when: false
+
+        - name: Report the Job logs
+          ansible.builtin.debug:
+            msg: "{{ job_logs.results | map(attribute='stdout_lines') | flatten }}"
+
+        - name: Fail on the Jobs
+          ansible.builtin.fail:
+            msg: "See the logs above. The checkpoint was not advanced, so the next run retries this commit."
+
+    # ── 9. restart what the apply could not ───────────────────────────
+    # `kubectl apply` restarts a pod whose manifest changed. It cannot see the
+    # other two changes: a rebuilt image keeps the same
+    # dataagent/<name>:latest reference, so the Deployment spec is identical,
+    # and a Secret or ConfigMap is only read at pod start.
+    - name: Restart the workloads running a rebuilt image
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          running=$({{ kubectl }} get deployments,statefulsets -A \
+            -o jsonpath='{range .items[*]}{.kind}/{.metadata.name} {.metadata.namespace} {.spec.template.spec.containers[*].image}{"\n"}{end}')
+          for ref in {{ (images | default([])) | map(attribute='name')
+                        | map('regex_replace', '^', image_deploy_prefix ~ '/')
+                        | map('regex_replace', '$', ':' ~ image_tag) | join(' ') }}; do
+            printf '%s\n' "$running" | grep -F " $ref" || true
+          done | sort -u | while read -r workload ns _; do
+            {{ kubectl }} -n "$ns" rollout restart "$workload"
+          done
+        executable: /bin/bash
+      when: (images | default([]) | length) > 0
+      changed_when: true
+
+    - name: Restart the service tier after a Secret or ConfigMap change
+      ansible.builtin.command:
+        cmd: "{{ kubectl }} -n {{ ns_service }} rollout restart deployment --all"
+      when:
+        - apply_services | bool
+        - (secrets_changed | bool) or (config_changed | bool)
+      changed_when: true
+
+    - name: Wait for the service tier
+      ansible.builtin.command:
+        cmd: >-
+          {{ kubectl }} -n {{ ns_service }} rollout status deployment/{{ item }}
+          --timeout={{ wait_rollout }}s
+      loop: "{{ service_workloads }}"
+      register: svc_rollout
+      changed_when: false
+      failed_when: false
+      when: apply_services | bool
+
+    - name: Report the workloads that did not come back
+      ansible.builtin.debug:
+        msg: >-
+          Not ready in {{ wait_rollout }}s:
+          {{ svc_rollout.results | selectattr('rc', 'defined')
+             | rejectattr('rc', 'equalto', 0) | map(attribute='item') | join(', ') }}
+      when:
+        - svc_rollout.results is defined
+        - svc_rollout.results | selectattr('rc', 'defined') | rejectattr('rc', 'equalto', 0) | list | length > 0
+
+    # ── 10. gateway, verify, checkpoint ───────────────────────────────
+    - name: Run the gateway setup Job
+      ansible.builtin.import_role:
+        name: k8s_setup
+
+    - name: Verify
+      ansible.builtin.import_role:
+        name: k8s_verify
+
+    - name: Advance the checkpoint
+      ansible.builtin.copy:
+        dest: "{{ checkpoint_file }}"
+        mode: "0640"
+        content: |
+          {{ to_sha }}
+      # Last, and only on success: a run that fails anywhere redeploys the same
+      # commit next time instead of skipping past what it never applied.

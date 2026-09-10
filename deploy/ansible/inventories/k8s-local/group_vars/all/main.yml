@@ -1,0 +1,33 @@
+---
+# Non-secret, per-environment settings. Secrets live in vault.yml (encrypted);
+# the two are stitched together in secrets.yml, which is what renders
+# deploy/k8s/secrets.env.
+
+env_name: k8s-local
+
+# Single-node k3s with its own registry. /etc/rancher/k3s/registries.yaml
+# mirrors localhost:5000, so that is how the node resolves our images -- the
+# manifests stay committed as `dataagent/<name>:latest` and this prefix is
+# applied to them on the way in. Setting it also forces imagePullPolicy to
+# Always, without which the node would keep serving its cached copy of a
+# `:latest` tag and never see a rebuild.
+image_registry: "localhost:5000"
+image_push: true
+image_import: ""
+image_tag: latest
+
+# This is a deploy host: it tracks the branch and owns every tier.
+git_sync_enabled: true
+git_branch: main
+
+apply_databases: true
+apply_jobs: false
+apply_services: true
+apply_setup: false
+
+wait_statefulset: 600
+wait_job: 900
+
+public_api_url: http://localhost:8100
+keycloak_public_url: http://localhost:8110
+langfuse_public_url: http://localhost:8420
