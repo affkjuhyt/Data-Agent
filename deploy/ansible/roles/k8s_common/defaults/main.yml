@@ -45,7 +45,7 @@ shared_paths:
   - pyproject.toml
   - uv.lock
 
-vault_file: "{{ inventory_dir }}/group_vars/all/vault.yml"
+vault_file: "{{ inventory_dir }}/.secrets/vault.yml"
 secrets_env_file: "{{ k8s_dir }}/secrets.env"
 
 secret_paths:
