@@ -31,14 +31,11 @@ cm "$DB" postgres-initdb \
 # db-init runs in the SERVICE namespace even though the SQL targets Postgres —
 # a ConfigMap has to live where the pod that mounts it runs.
 cm "$SVC" db-init-sql \
-  --from-file=01-grants.sql=$K/sql/grant-roles.sql \
+  --from-file=01-grants.sql=$K/sql/grant-runtime-writer.sql \
   --from-file=02-kb-seed.sql=$K/sql/kb-seed.sql
 
 cm "$SVC" seed-sql \
   --from-file=seed.sql=backend/services/workflow_runtime/migrations/seed.sql
-
-cm "$SVC" seed-mongo \
-  --from-file=seed-flow.js=tests/e2e/seed-flow.js
 
 cm "$SVC" keycloak-realm   --from-file=$K/keycloak/realm-export.json
 cm "$SVC" keycloak-scripts --from-file=$K/keycloak/setup-audience-mappers.sh

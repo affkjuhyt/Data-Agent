@@ -6,12 +6,7 @@ metadata:
   labels:
     app: sandbox-executor
     app.kubernetes.io/part-of: dataagent
-# The one deliberate exception beyond openbao (see deploy/k8s/README.md's
-# Identity section) — k8s_runner.py calls the API server (create/exec/delete
-# pods in dataagent-sandbox) using this token. rbac.yaml's
-# sandbox-executor-pool Role is the narrow grant that makes that safe: only
-# pods/pods-exec/pods-log, only in that one namespace.
-automountServiceAccountToken: true
+automountServiceAccountToken: false
 
 ---
 apiVersion: v1
@@ -36,16 +31,6 @@ data:
   SANDBOX_BREAKER_COOLDOWN_S: '30'
   SANDBOX_RUNTIME: ''
   SANDBOX_DOCKER_HOST: ''
-  # sandbox_runner_backend.py's switch — see that module's docstring.
-  SANDBOX_BACKEND: kubernetes
-  SANDBOX_K8S_NAMESPACE: dataagent-sandbox
-  SANDBOX_RUNNER_SERVICE_ACCOUNT: sandbox-runner
-  SANDBOX_RUNNER_UID: '10001'
-  SANDBOX_RUNNER_GID: '10001'
-  # Not a container `image:` field, so kustomization.yaml's `images:`
-  # transformer does not rewrite this one — update by hand if the registry
-  # changes (see build-push-images.sh's `sandbox-runner` entry).
-  SANDBOX_RUNNER_IMAGE: localhost:5000/dataagent/sandbox-runner:latest
 
 ---
 apiVersion: apps/v1
@@ -75,15 +60,11 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
-      # The Pod-level field is what actually controls mounting — see the
-      # ServiceAccount's own field above for why this is true here.
-      automountServiceAccountToken: true
-      enableServiceLinks: false
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       containers:
       - name: sandbox-executor
         image: dataagent/sandbox_executor:latest
-        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8260
           name: http
@@ -135,10 +116,7 @@ spec:
       volumes:
       - name: tmp
         emptyDir: {}
-      # runtimeClassName: gvisor — no gVisor RuntimeClass on this single-node
-      # k3s cluster yet (see deploy/k8s/README.md §Pod security and
-      # docs/Sandbox_SchemaCrawler_Implementation.md §8.7 before installing
-      # it). Sandbox pods run under the default runtime until then.
+      runtimeClassName: gvisor
       serviceAccountName: sandbox-executor
 
 ---

@@ -51,12 +51,10 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
-      enableServiceLinks: false
       terminationGracePeriodSeconds: 30
       containers:
       - name: llm-exporter
         image: dataagent/llm_exporter:latest
-        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8270
           name: http

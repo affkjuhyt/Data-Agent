@@ -1,11 +1,10 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: kb-structured-data
+  name: kb-ingestion-worker
   namespace: dataagent-service
   labels:
-    app: kb-structured-data
-    ingestion_worker: structured_data
+    app: kb-ingestion-worker
     app.kubernetes.io/part-of: dataagent
 automountServiceAccountToken: false
 
@@ -13,59 +12,52 @@ automountServiceAccountToken: false
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: kb-structured-data-env
+  name: kb-ingestion-worker-env
   namespace: dataagent-service
   labels:
-    app: kb-structured-data
-    ingestion_worker: structured_data
+    app: kb-ingestion-worker
     app.kubernetes.io/part-of: dataagent
 data:
-  # 1 replicas x (3 + 3) of Postgres' 100.
-  POSTGRES_MAX_CONNECTIONS: '3'
-  POSTGRES_MAX_OVERFLOW: '3'
-  POSTGRES_POOL_TIMEOUT: '30'
-  POSTGRES_POOL_RECYCLE: '1800'
-  HF_HOME: '/cache'
-  LLM_MODEL: 'agent-fast'
-  SILVER_CONCURRENCY: '1'
+  LLM_MODEL: agent-fast
+  HF_HOME: /cache
   USE_VLM: 'false'
+  GOLD_CHUNK_CONCURRENCY: '1'
+  SILVER_CONCURRENCY: '1'
+
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: kb-structured-data-cache
+  name: docling-cache
   namespace: dataagent-service
   labels:
-    app: kb-structured-data
-    ingestion_worker: structured_data
+    app: kb-ingestion-worker
     app.kubernetes.io/part-of: dataagent
 spec:
   accessModes:
   - ReadWriteOnce
   resources:
     requests:
-      storage: 5Gi
+      storage: 10Gi
 
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: kb-structured-data
+  name: kb-ingestion-worker
   namespace: dataagent-service
   labels:
-    app: kb-structured-data
-    ingestion_worker: structured_data
+    app: kb-ingestion-worker
     app.kubernetes.io/part-of: dataagent
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
-      app: kb-structured-data
+      app: kb-ingestion-worker
   template:
     metadata:
       labels:
-        app: kb-structured-data
-        ingestion_worker: structured_data
+        app: kb-ingestion-worker
         app.kubernetes.io/part-of: dataagent
     spec:
       securityContext:
@@ -77,19 +69,17 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
-      enableServiceLinks: false
       terminationGracePeriodSeconds: 30
       containers:
-      - name: kb-structured-data
-        image: dataagent/kb-structured-data:latest
-        imagePullPolicy: IfNotPresent
+      - name: kb-ingestion-worker
+        image: dataagent/kb-ingestion-worker:latest
         envFrom:
         - configMapRef:
             name: dataagent-config
         - configMapRef:
-            name: kb-structured-data-env
+            name: kb-ingestion-worker-env
         - secretRef:
-            name: kb-structured-data-secrets
+            name: kb-ingestion-worker-secrets
         resources:
           requests:
             cpu: 500m
@@ -112,11 +102,11 @@ spec:
         command:
         - python
         - -m
-        - services.kb_structured_data.structured_data
+        - services.kb_ingestion_worker
       volumes:
       - name: cache
         persistentVolumeClaim:
-          claimName: kb-structured-data-cache
+          claimName: docling-cache
       - name: tmp
         emptyDir: {}
-      serviceAccountName: kb-structured-data
+      serviceAccountName: kb-ingestion-worker

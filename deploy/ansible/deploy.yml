@@ -1,4 +1,20 @@
 ---
+# Data Agent -> Kubernetes.
+#
+#   pull -> diff -> build what changed -> apply everything -> restart what changed
+#
+# The whole pipeline is in this file, top to bottom. Settings live in
+# roles/k8s_common/defaults/main.yml; the only roles left are the three jobs
+# that are genuinely intricate (OpenBao init, the gateway setup Job) or purely
+# informational (preflight, verify).
+#
+#   ansible-playbook deploy.yml
+#   ansible-playbook deploy.yml -e deploy_full=true    # ignore the checkpoint
+#
+# One thing this does NOT do is guess. Manifests are applied every run:
+# `kubectl apply` compares server-side and only moves a pod when the spec
+# actually differs, so it is already the change detector. The git diff decides
+# what to *build*, not what to apply.
 - name: Deploy the Data Agent stack
   hosts: all
   gather_facts: false
@@ -28,6 +44,12 @@
     - name: Pull {{ git_remote }}/{{ git_branch }}
       when: git_sync_enabled | bool
       block:
+        - name: Fetch {{ git_remote }}/{{ git_branch }}
+          ansible.builtin.command:
+            cmd: "git fetch --prune {{ git_remote }} {{ git_branch }}"
+            chdir: "{{ project_dir }}"
+          changed_when: false
+
         - name: Get HEAD before the pull
           ansible.builtin.command:
             cmd: git rev-parse HEAD
@@ -35,24 +57,11 @@
           register: head_before
           changed_when: false
 
-        - name: Fetch {{ git_remote }}/{{ git_branch }}
-          ansible.builtin.command:
-            cmd: "git fetch --prune {{ git_remote }} {{ git_branch }}"
-            chdir: "{{ project_dir }}"
-          register: fetch
-          failed_when: false
-          changed_when: false
-          # Not fatal on its own. A missing credential, an unreachable host or a
-          # branch that does not exist all land here, and all of them deserve
-          # the same written diagnosis as a refused merge rather than a raw
-          # git error halfway up an Ansible traceback.
-
         - name: Fast-forward onto {{ git_remote }}/{{ git_branch }}
           ansible.builtin.command:
             cmd: "git merge --ff-only {{ git_remote }}/{{ git_branch }}"
             chdir: "{{ project_dir }}"
           register: pull
-          when: fetch.rc == 0
           failed_when: false
           changed_when: pull.rc == 0 and 'Already up to date' not in pull.stdout
           # --ff-only is the whole safety story: it either replays the remote
@@ -61,11 +70,10 @@
           # nothing local is overwritten. Sorting out a diverged or dirty tree
           # is the operator's call, not this playbook's.
 
-    - name: Report a failed pull
+    - name: Report a refused pull
       when:
         - git_sync_enabled | bool
-        - ((fetch | default({}, true)).rc | default(0) != 0)
-          or ((pull | default({}, true)).rc | default(0) != 0)
+        - (pull | default({}, true)).rc | default(0) != 0
       block:
         - name: Abort a merge, if git somehow started one
           ansible.builtin.command:
@@ -73,6 +81,10 @@
             chdir: "{{ project_dir }}"
           failed_when: false
           changed_when: false
+          # --ff-only should never leave one behind. This is the belt to that
+          # braces, so a failed pull can never hand the next stage a tree with
+          # conflict markers in it.
+
         - name: Collect the diagnosis
           ansible.builtin.command:
             cmd: "{{ item.cmd }}"
@@ -99,12 +111,9 @@
               HEAD before: {{ head_before.stdout | trim }}
               HEAD now:    {{ diagnosis.results[0].stdout | default('?') | trim }}
 
-              git fetch --prune {{ git_remote }} {{ git_branch }}  ->  exit {{ (fetch | default({}, true)).rc | default('?') }}
-              {{ (fetch | default({}, true)).stderr | default('') | trim | default('(ok)', true) }}
-
-              git merge --ff-only {{ git_remote }}/{{ git_branch }}  ->  exit {{ (pull | default({}, true)).rc | default('not reached') }}
-              {{ (pull | default({}, true)).stdout | default('') | trim }}
-              {{ (pull | default({}, true)).stderr | default('') | trim }}
+              git merge --ff-only exited {{ pull.rc }}
+              {{ pull.stdout | default('') | trim }}
+              {{ pull.stderr | default('') | trim }}
 
               uncommitted changes (git status --porcelain):
               {{ diagnosis.results[1].stdout | default('') | trim | default('(none)', true) }}
@@ -118,14 +127,11 @@
         - name: Refuse to deploy
           ansible.builtin.fail:
             msg: >-
-              Pull failed. Nothing was built, applied or restarted, and the
-              checkpoint was not advanced.
-              {{ 'Could not fetch ' ~ git_remote ~ '/' ~ git_branch ~ ' -- the remote is unreachable, the credential is missing, or that branch does not exist.'
-                 if ((fetch | default({}, true)).rc | default(0) != 0)
-                 else ('The tree has local commits that are not on ' ~ git_remote ~ '/' ~ git_branch ~ ', so it cannot fast-forward.'
-                       if (diagnosis.results[2].stdout | default('') | trim | length) > 0
-                       else 'Uncommitted local changes would be overwritten by the incoming commits.') }}
-              Resolve it by hand, then rerun. Full diagnosis: {{ pull_failure_log }}
+              Pull refused, nothing was changed and nothing was deployed.
+              {{ 'The tree has local commits that are not on ' ~ git_remote ~ '/' ~ git_branch ~ '.'
+                 if (diagnosis.results[2].stdout | default('') | trim | length) > 0
+                 else 'Local changes would be overwritten by the incoming commits.' }}
+              Resolve it by hand, then rerun. Details: {{ pull_failure_log }}
 
     - name: Get HEAD
       ansible.builtin.command:

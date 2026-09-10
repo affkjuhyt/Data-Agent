@@ -49,12 +49,10 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
-      enableServiceLinks: false
       terminationGracePeriodSeconds: 30
       containers:
       - name: flow-builder
         image: dataagent/flow_builder:latest
-        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8250
           name: http
@@ -106,7 +104,6 @@ spec:
       initContainers:
       - name: wait-for-migrations
         image: dataagent/migrate:latest
-        imagePullPolicy: IfNotPresent
         command:
         - sh
         - -c

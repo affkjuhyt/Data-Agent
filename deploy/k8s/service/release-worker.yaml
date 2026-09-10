@@ -51,12 +51,10 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
-      enableServiceLinks: false
       terminationGracePeriodSeconds: 30
       containers:
       - name: release-worker
         image: dataagent/release_worker:latest
-        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8210
           name: http
@@ -100,7 +98,8 @@ spec:
           mountPath: /tmp
         command:
         - uvicorn
-        - services.release_worker.main:app
+        - app:create_app
+        - --factory
         - --host
         - 0.0.0.0
         - --port

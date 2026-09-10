@@ -20,11 +20,6 @@ metadata:
 data:
   VITE_KEYCLOAK_REALM: aeroflow
   VITE_KEYCLOAK_CLIENT: aeroflow-frontend
-  # frontend/vite.config.ts's hmr.clientPort — this pod is reached at this
-  # NodePort (service/frontend.yaml), not the :8280 vite listens on inside
-  # the container; without this the HMR websocket tries the wrong port and
-  # the browser can never reach it.
-  VITE_HMR_CLIENT_PORT: '30280'
 
 ---
 apiVersion: apps/v1
@@ -36,11 +31,7 @@ metadata:
     app: frontend
     app.kubernetes.io/part-of: dataagent
 spec:
-  # `vite preview` serves a static, already-built dist/ — no per-process
-  # module graph like the dev server has, so unlike that server this is safe
-  # to scale past 1 replica behind the Service's plain round-robin (every
-  # replica serves byte-identical files from the same image).
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: frontend
@@ -59,12 +50,10 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
-      enableServiceLinks: false
       terminationGracePeriodSeconds: 30
       containers:
       - name: frontend
         image: dataagent/frontend:latest
-        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8280
           name: http
@@ -99,9 +88,6 @@ spec:
         volumeMounts:
         - name: tmp
           mountPath: /tmp
-        # vite preview writes here; the root filesystem is read-only.
-        - name: vite-temp
-          mountPath: /app/node_modules/.vite-temp
         envFrom:
         - configMapRef:
             name: frontend-env
@@ -110,7 +96,7 @@ spec:
         command:
         - npm
         - run
-        - preview
+        - dev
         - --
         - --host
         - 0.0.0.0
@@ -118,8 +104,6 @@ spec:
         - '8280'
       volumes:
       - name: tmp
-        emptyDir: {}
-      - name: vite-temp
         emptyDir: {}
       serviceAccountName: frontend
 
@@ -138,7 +122,5 @@ spec:
   ports:
   - port: 8280
     targetPort: 8280
-    nodePort: 30280
     name: http
-  # Single-node appliance mode, no ingress controller — see kong.yaml.
-  type: NodePort
+  type: ClusterIP

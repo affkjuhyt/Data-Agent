@@ -36,11 +36,9 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
-      enableServiceLinks: false
       containers:
       - name: migrate
         image: dataagent/migrate:latest
-        imagePullPolicy: IfNotPresent
         command:
         - alembic
         - -c

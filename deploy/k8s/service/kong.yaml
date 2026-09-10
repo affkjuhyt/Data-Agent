@@ -19,11 +19,9 @@ metadata:
     app.kubernetes.io/part-of: dataagent
 data:
   KONG_DATABASE: postgres
-  KONG_PG_HOST: postgres.dataagent-database.svc.cluster.local
+  KONG_PG_HOST: postgres
   KONG_PG_PORT: '8300'
   KONG_PG_SCHEMA: kong
-  KONG_PG_USER: admin
-  KONG_PG_DATABASE: dataagent
   KONG_PROXY_ACCESS_LOG: /dev/stdout
   KONG_ADMIN_ACCESS_LOG: /dev/stdout
   KONG_PROXY_ERROR_LOG: /dev/stderr
@@ -32,11 +30,6 @@ data:
   KONG_PROXY_LISTEN: 0.0.0.0:8100
   KONG_PLUGINS: bundled,aeroflow-jwks
   KONG_MEM_CACHE_SIZE: 128m
-  # Unset, Kong defaults nginx worker_processes to the NODE's CPU count (32
-  # here), not the pod's cpu limit ('1') — 32 workers x 128m cache alone is
-  # multiple GB, which is what was actually OOMKilling this pod, not a too-low
-  # memory limit.
-  KONG_NGINX_WORKER_PROCESSES: '2'
   KONG_PREFIX: /kong_prefix
 
 ---
@@ -68,12 +61,10 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
-      enableServiceLinks: false
       terminationGracePeriodSeconds: 30
       containers:
       - name: kong
         image: dataagent/kong:latest
-        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8100
           name: proxy
@@ -85,9 +76,7 @@ spec:
             memory: 256Mi
           limits:
             cpu: '1'
-            # 512Mi OOMKilled it under KONG_MEM_CACHE_SIZE=128m + the Lua VM
-            # + nginx workers overhead.
-            memory: 768Mi
+            memory: 512Mi
         readinessProbe:
           httpGet:
             path: /status
@@ -141,13 +130,8 @@ spec:
   ports:
   - port: 8100
     targetPort: 8100
-    nodePort: 30100
     name: proxy
-  # No ingress controller on this single-node cluster (traefik/servicelb are
-  # disabled — see deploy/k8s/install-k3s.sh) and deploy/k8s/README.md leaves
-  # ingress cluster-specific on purpose. NodePort is the appliance-mode
-  # equivalent: reachable at http://<node-ip>:30100.
-  type: NodePort
+  type: ClusterIP
 
 ---
 apiVersion: v1

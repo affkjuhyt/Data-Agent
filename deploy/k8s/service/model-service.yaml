@@ -49,12 +49,10 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       automountServiceAccountToken: false
-      enableServiceLinks: false
       terminationGracePeriodSeconds: 30
       containers:
       - name: model-service
         image: dataagent/model_service:latest
-        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8230
           name: http
