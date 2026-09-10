@@ -120,7 +120,10 @@ spec:
   - ReadWriteOnce
   resources:
     requests:
-      storage: 8Gi
+      # 10Gi, not 8Gi: the live PVC was resized up and Kubernetes forbids
+      # shrinking a bound claim -- an 8Gi request makes `kubectl apply` of the
+      # whole directory fail on this one resource.
+      storage: 10Gi
 
 ---
 apiVersion: v1

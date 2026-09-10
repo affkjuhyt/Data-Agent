@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
-# Builds every image deploy/k8s/ references and pushes it to the local
-# registry started for this single-node cluster (localhost:5000, see
-# install-k3s.sh's registries.yaml mirror). Run from the repo root.
+# Builds every image deploy/k8s/ references. Manual escape hatch; the normal
+# path is `ansible-playbook deploy.yml --tags images`, which builds only what
+# changed. Run from anywhere.
+#
+# Images are tagged exactly as deploy/k8s/*.yaml spells them --
+# `dataagent/<name>:latest`, no registry -- so a build here is immediately
+# usable by the manifests. Set REGISTRY to also tag and push a mirror copy:
+#
+#   REGISTRY=localhost:5000 bash deploy/k8s/build-push-images.sh
+#
+# With REGISTRY unset nothing is pushed: on a single-node cluster the image is
+# already in the daemon's store, and `imagePullPolicy: IfNotPresent` finds it.
 #
 # Image name : Dockerfile : build context — kept exactly as deploy/k8s/*.yaml
 # spells "dataagent/<name>" after REGISTRY/, since a couple of services use a
@@ -10,13 +19,16 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-REGISTRY="${REGISTRY:-localhost:5000}"
+REGISTRY="${REGISTRY:-}"
 
 declare -A IMAGES=(
   [auth_api]="backend/services/auth_api/Dockerfile|."
   [flow_builder]="backend/services/flow_builder/Dockerfile|."
   [kb-backend]="backend/services/kb_backend/Dockerfile|."
-  [kb-ingestion-worker]="backend/services/kb_ingestion_worker/Dockerfile|."
+  [kb-promote-silver]="backend/services/kb_promote_silver/Dockerfile|."
+  [kb-promote-gold]="backend/services/kb_promote_gold/Dockerfile|."
+  [kb-conflict-resolution]="backend/services/kb_conflict_resolution/Dockerfile|."
+  [kb-structured-data]="backend/services/kb_structured_data/Dockerfile|."
   [llm_exporter]="backend/services/llm_exporter/Dockerfile|."
   [model_service]="backend/services/model_service/Dockerfile|backend/services/model_service"
   [platform-workers]="backend/services/platform_workers/Dockerfile|."
@@ -39,13 +51,18 @@ for name in "${!IMAGES[@]}"; do
   entry="${IMAGES[$name]}"
   dockerfile="${entry%%|*}"
   context="${entry##*|}"
-  tag="$REGISTRY/dataagent/$name:latest"
+  tag="dataagent/$name:latest"
   echo "==> building $tag  (Dockerfile=$dockerfile context=$context)"
   docker build -f "$dockerfile" -t "$tag" "$context"
-  echo "==> pushing $tag"
-  docker push "$tag"
+  if [ -n "$REGISTRY" ]; then
+    echo "==> pushing $REGISTRY/$tag"
+    docker tag "$tag" "$REGISTRY/$tag"
+    docker push "$REGISTRY/$tag"
+  fi
 done
 
-echo "==> registry now holds:"
-curl -s "http://$REGISTRY/v2/_catalog"
-echo
+if [ -n "$REGISTRY" ]; then
+  echo "==> registry now holds:"
+  curl -s "http://$REGISTRY/v2/_catalog"
+  echo
+fi
