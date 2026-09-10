@@ -1,0 +1,109 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: seed
+  namespace: dataagent-service
+  labels:
+    app: seed
+    app.kubernetes.io/part-of: dataagent
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: seed-env
+  namespace: dataagent-service
+  labels:
+    app: seed
+    app.kubernetes.io/part-of: dataagent
+data:
+  PGHOST: postgres.dataagent-database.svc.cluster.local
+  PGUSER: admin
+  PGDATABASE: dataagent
+  PGPORT: '8300'
+  SEED_DEMO: '0'
+  MONGO_HOST: mongo.dataagent-database.svc.cluster.local
+  MONGO_PORT: '8310'
+  MONGO_DB: dataagent
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: seed
+  namespace: dataagent-service
+  labels:
+    app: seed
+    app.kubernetes.io/part-of: dataagent
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: seed
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      restartPolicy: OnFailure
+      enableServiceLinks: false
+      initContainers:
+      - name: seed-mongo
+        image: mongo:7.0
+        command:
+        - sh
+        - -c
+        - "[ \"$SEED_DEMO\" = \"1\" ] || { echo \"SEED_DEMO=0, skipping mongo canvas\"; exit 0; }\nuntil mongosh --quiet --host \"$MONGO_HOST\" --port \"$MONGO_PORT\" --eval \"db.runCommand({ping:1})\" >/dev/null 2>&1; do\n  echo waiting for mongo; sleep 3\ndone\nmongosh --quiet --host \"$MONGO_HOST\" --port \"$MONGO_PORT\" \"$MONGO_DB\" /seed-mongo/seed-flow.js\n"
+        envFrom:
+        - configMapRef:
+            name: seed-env
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 2000m
+            memory: 1024Mi
+        volumeMounts:
+        - name: seed-mongo
+          mountPath: /seed-mongo
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+      containers:
+      - name: seed
+        image: postgres:16-alpine
+        command:
+        - sh
+        - -c
+        - 'until pg_isready -U "$PGUSER" >/dev/null 2>&1; do echo waiting for postgres; sleep 2; done
+
+          psql -v ON_ERROR_STOP=1 -f /seed/seed.sql
+
+          '
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 2000m
+            memory: 1024Mi
+        volumeMounts:
+        - name: seed
+          mountPath: /seed
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        envFrom:
+        - configMapRef:
+            name: seed-env
+        - secretRef:
+            name: seed-secrets
+      volumes:
+      - name: seed-mongo
+        configMap:
+          name: seed-mongo
+      - name: seed
+        configMap:
+          name: seed-sql
+      - name: tmp
+        emptyDir: {}
+      serviceAccountName: seed

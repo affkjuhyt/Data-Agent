@@ -1,0 +1,130 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: model-service
+  namespace: dataagent-service
+  labels:
+    app: model-service
+    app.kubernetes.io/part-of: dataagent
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: model-service-env
+  namespace: dataagent-service
+  labels:
+    app: model-service
+    app.kubernetes.io/part-of: dataagent
+data:
+  OMP_NUM_THREADS: '2'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-service
+  namespace: dataagent-service
+  labels:
+    app: model-service
+    app.kubernetes.io/part-of: dataagent
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: model-service
+  template:
+    metadata:
+      labels:
+        app: model-service
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: model-service
+        image: dataagent/model_service:latest
+        ports:
+        - containerPort: 8230
+          name: http
+        envFrom:
+        - configMapRef:
+            name: dataagent-config
+        - configMapRef:
+            name: model-service-env
+        - secretRef:
+            name: model-service-secrets
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: '4'
+            memory: 4Gi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8230
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8230
+          initialDelaySeconds: 30
+          periodSeconds: 20
+          failureThreshold: 6
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        command:
+        - uvicorn
+        - app:create_app
+        - --factory
+        - --host
+        - 0.0.0.0
+        - --port
+        - '8230'
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      serviceAccountName: model-service
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-service
+  namespace: dataagent-service
+  labels:
+    app: model-service
+    app.kubernetes.io/part-of: dataagent
+spec:
+  selector:
+    app: model-service
+  ports:
+  - port: 8230
+    targetPort: 8230
+    name: http
+  type: ClusterIP
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: model-service
+  namespace: dataagent-service
+  labels:
+    app: model-service
+    app.kubernetes.io/part-of: dataagent
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: model-service
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70

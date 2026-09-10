@@ -1,0 +1,89 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: setup
+  namespace: dataagent-service
+  labels:
+    app: setup
+    app.kubernetes.io/part-of: dataagent
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: setup-env
+  namespace: dataagent-service
+  labels:
+    app: setup
+    app.kubernetes.io/part-of: dataagent
+data:
+  ENABLE_ADMIN_KEY_AUTH: '0'
+  KONG_ADMIN_SUBNET: ''
+  KONG_PROXY_URL: http://kong.dataagent-service.svc.cluster.local:8100
+  KEYCLOAK_DISABLE_MFA: '0'
+  SMOKE_USER: ''
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: setup
+  namespace: dataagent-service
+  labels:
+    app: setup
+    app.kubernetes.io/part-of: dataagent
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: setup
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      restartPolicy: OnFailure
+      enableServiceLinks: false
+      containers:
+      - name: setup
+        image: dataagent/setup:latest
+        imagePullPolicy: IfNotPresent
+        command:
+        - sh
+        - -c
+        - "until curl -sf \"$KEYCLOAK_URL/realms/$KEYCLOAK_REALM\" >/dev/null; do echo waiting for keycloak; sleep 3; done\nuntil curl -sf \"$KONG_ADMIN_URL\" >/dev/null; do echo waiting for kong admin; sleep 3; done\nbash /scripts/keycloak/setup-audience-mappers.sh\nbash /scripts/kong/kong-setup.sh\nif [ \"$KEYCLOAK_DISABLE_MFA\" = \"1\" ]; then\n  tok=$(curl -sf -X POST \"$KEYCLOAK_URL/realms/master/protocol/openid-connect/token\" \\\n    -d grant_type=password -d client_id=admin-cli \\\n    --data-urlencode \"username=$KEYCLOAK_ADMIN\" --data-urlencode \"password=$KEYCLOAK_ADMIN_PASSWORD\" \\\n    | python3 -c 'import sys,json;print(json.load(sys.stdin)[\"access_token\"])')\n  flow=$(curl -sf -H \"Authorization: Bearer $tok\" \"$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM\" \\\n    | python3 -c 'import sys,json;print(json.load(sys.stdin).get(\"browserFlow\",\"\"))')\n  if [ \"$flow\" != \"browser\" ]; then\n    curl -sf -X PUT -H \"Authorization: Bearer $tok\" -H \"Content-Type: application/json\" \\\n      -d '{\"browserFlow\":\"browser\"}' \"$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM\"\n    echo \"keycloak browserFlow set to browser\"\n  fi\nfi\ncode=$(curl -s -o /dev/null -w \"%{http_code}\" -X POST \"$KONG_PROXY_URL/api/orchestrate/stream\" \\\n  -H \"Content-Type: application/json\" -d '{\"query\":\"ping\",\"user_id\":\"verify\"}')\ncase \"$code\" in\n  401|403) echo \"gateway rejects anonymous: $code\" ;;\n  *) echo \"gateway is not fail-closed: got $code\"; exit 1 ;;\nesac\nif [ -n \"$SMOKE_USER\" ] && [ -n \"$SMOKE_PASSWORD\" ]; then\n  t=$(curl -sf -X POST \"$KEYCLOAK_URL/realms/$KEYCLOAK_REALM/protocol/openid-connect/token\" \\\n    -d grant_type=password -d client_id=aeroflow-frontend \\\n    --data-urlencode \"username=$SMOKE_USER\" --data-urlencode \"password=$SMOKE_PASSWORD\" \\\n    | python3 -c 'import sys,json;print(json.load(sys.stdin)[\"access_token\"])')\n  for route in /api/catalog/agents /api/reviews/pending; do\n    c=$(curl -s -o /dev/null -w \"%{http_code}\" -H \"Authorization: Bearer $t\" \"$KONG_PROXY_URL$route\")\n    [ \"$c\" = \"200\" ] || { echo \"route $route returned $c\"; exit 1; }\n    echo \"route $route ok\"\n  done\nfi\n"
+        envFrom:
+        - configMapRef:
+            name: dataagent-config
+        - configMapRef:
+            name: setup-env
+        - secretRef:
+            name: setup-secrets
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 2000m
+            memory: 1024Mi
+        volumeMounts:
+        - name: kong
+          mountPath: /scripts/kong
+          readOnly: true
+        - name: keycloak
+          mountPath: /scripts/keycloak
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        - name: certs
+          mountPath: /scripts/certs
+      volumes:
+      - name: kong
+        configMap:
+          name: kong-scripts
+      - name: keycloak
+        configMap:
+          name: keycloak-scripts
+      - name: tmp
+        emptyDir: {}
+      - name: certs
+        emptyDir: {}
+      serviceAccountName: setup

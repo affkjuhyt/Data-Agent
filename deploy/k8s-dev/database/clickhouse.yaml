@@ -1,0 +1,134 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: clickhouse
+  namespace: dataagent-database
+  labels:
+    app: clickhouse
+    app.kubernetes.io/part-of: dataagent
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clickhouse-env
+  namespace: dataagent-database
+  labels:
+    app: clickhouse
+    app.kubernetes.io/part-of: dataagent
+data:
+  CLICKHOUSE_DB: default
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: clickhouse
+  namespace: dataagent-database
+  labels:
+    app: clickhouse
+    app.kubernetes.io/part-of: dataagent
+spec:
+  serviceName: clickhouse
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clickhouse
+  template:
+    metadata:
+      labels:
+        app: clickhouse
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 60
+      containers:
+      - name: clickhouse
+        image: docker.io/clickhouse/clickhouse-server
+        ports:
+        - containerPort: 8370
+          name: http
+        - containerPort: 8371
+          name: native
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: '8'
+            memory: 8Gi
+        readinessProbe:
+          httpGet:
+            path: /ping
+            port: 8370
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /ping
+            port: 8370
+          initialDelaySeconds: 30
+          periodSeconds: 20
+          failureThreshold: 6
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/clickhouse
+        - name: logs
+          mountPath: /var/log/clickhouse-server
+        - name: tmp
+          mountPath: /tmp
+        - name: users-config
+          mountPath: /etc/clickhouse-server/users.d
+        args:
+        - /entrypoint.sh
+        - --
+        - --http_port=8370
+        - --tcp_port=8371
+        envFrom:
+        - configMapRef:
+            name: clickhouse-env
+        - secretRef:
+            name: clickhouse-secrets
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: users-config
+        emptyDir: {}
+      serviceAccountName: clickhouse
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+  - metadata:
+      name: logs
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+  namespace: dataagent-database
+  labels:
+    app: clickhouse
+    app.kubernetes.io/part-of: dataagent
+spec:
+  selector:
+    app: clickhouse
+  ports:
+  - port: 8370
+    targetPort: 8370
+    name: http
+  - port: 8371
+    targetPort: 8371
+    name: native
+  type: ClusterIP

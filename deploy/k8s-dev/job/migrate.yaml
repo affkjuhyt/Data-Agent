@@ -1,0 +1,54 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: migrate
+  namespace: dataagent-service
+  labels:
+    app: migrate
+    app.kubernetes.io/part-of: dataagent
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+  namespace: dataagent-service
+  labels:
+    app: migrate
+    app.kubernetes.io/part-of: dataagent
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: migrate
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: migrate
+        image: dataagent/migrate:latest
+        command:
+        - alembic
+        - -c
+        - alembic/alembic.ini
+        - upgrade
+        - heads
+        envFrom:
+        - secretRef:
+            name: migrate-secrets
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 2000m
+            memory: 2048Mi
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      serviceAccountName: migrate

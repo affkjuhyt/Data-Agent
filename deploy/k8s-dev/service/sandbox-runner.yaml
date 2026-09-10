@@ -1,0 +1,9 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sandbox-runner
+  namespace: dataagent-sandbox
+  labels:
+    app: sandbox-runner
+    app.kubernetes.io/part-of: dataagent

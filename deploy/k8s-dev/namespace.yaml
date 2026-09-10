@@ -1,0 +1,81 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dataagent-service
+  labels:
+    name: dataagent-service
+    app.kubernetes.io/part-of: dataagent
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: defaults
+  namespace: dataagent-service
+spec:
+  limits:
+  - type: Container
+    default:
+      cpu: 500m
+      memory: 512Mi
+    defaultRequest:
+      cpu: 100m
+      memory: 128Mi
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dataagent-database
+  labels:
+    name: dataagent-database
+    app.kubernetes.io/part-of: dataagent
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: defaults
+  namespace: dataagent-database
+spec:
+  limits:
+  - type: Container
+    default:
+      cpu: 500m
+      memory: 512Mi
+    defaultRequest:
+      cpu: 100m
+      memory: 128Mi
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dataagent-sandbox
+  labels:
+    name: dataagent-sandbox
+    app.kubernetes.io/part-of: dataagent
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: defaults
+  namespace: dataagent-sandbox
+spec:
+  limits:
+  - type: Container
+    default:
+      cpu: 500m
+      memory: 512Mi
+    defaultRequest:
+      cpu: 100m
+      memory: 128Mi

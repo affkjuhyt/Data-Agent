@@ -1,0 +1,638 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-platform
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-database
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kong
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: kong
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: frontend
+    - podSelector:
+        matchLabels:
+          app: kong-migration
+    - podSelector:
+        matchLabels:
+          app: setup
+    ports:
+    - protocol: TCP
+      port: 8100
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-keycloak
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: keycloak
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: kong
+    - podSelector:
+        matchLabels:
+          app: auth-api
+    - podSelector:
+        matchLabels:
+          app: frontend
+    - podSelector:
+        matchLabels:
+          app: setup
+    - podSelector:
+        matchLabels:
+          app: platform-workers-audit
+    ports:
+    - protocol: TCP
+      port: 8110
+  - ports:
+    - protocol: TCP
+      port: 8110
+    - protocol: TCP
+      port: 8111
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kb-backend
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: kb-backend
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: kong
+    - podSelector:
+        matchLabels:
+          app: workflow-runtime
+    ports:
+    - protocol: TCP
+      port: 8220
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-model-service
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: model-service
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: kb-backend
+    - podSelector:
+        matchLabels:
+          app: kb-promote-silver
+    - podSelector:
+        matchLabels:
+          app: kb-promote-gold
+    - podSelector:
+        matchLabels:
+          app: kb-conflict-resolution
+    - podSelector:
+        matchLabels:
+          app: kb-structured-data
+    - podSelector:
+        matchLabels:
+          app: workflow-runtime
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - protocol: TCP
+      port: 8230
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-workflow-runtime
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: workflow-runtime
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: kong
+    - podSelector:
+        matchLabels:
+          app: eval
+    ports:
+    - protocol: TCP
+      port: 8240
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-flow-builder
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: flow-builder
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: kong
+    ports:
+    - protocol: TCP
+      port: 8250
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-sandbox-executor
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: sandbox-executor
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: workflow-runtime
+    ports:
+    - protocol: TCP
+      port: 8260
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-auth-api
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: auth-api
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: kong
+    ports:
+    - protocol: TCP
+      port: 8200
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-release-worker
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: release-worker
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: kong
+    ports:
+    - protocol: TCP
+      port: 8210
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-litellm
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: litellm
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: workflow-runtime
+    - podSelector:
+        matchLabels:
+          app: kb-promote-silver
+    - podSelector:
+        matchLabels:
+          app: kb-promote-gold
+    - podSelector:
+        matchLabels:
+          app: kb-conflict-resolution
+    - podSelector:
+        matchLabels:
+          app: kb-structured-data
+    - podSelector:
+        matchLabels:
+          app: eval
+    - podSelector:
+        matchLabels:
+          app: platform-workers-memory
+    - podSelector:
+        matchLabels:
+          app: platform-workers-schema-crawler
+    ports:
+    - protocol: TCP
+      port: 8500
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-langfuse
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: langfuse
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: workflow-runtime
+    - podSelector:
+        matchLabels:
+          app: kong
+    ports:
+    - protocol: TCP
+      port: 8420
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-jaeger
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: jaeger
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: workflow-runtime
+    - podSelector:
+        matchLabels:
+          app: kb-backend
+    - podSelector:
+        matchLabels:
+          app: flow-builder
+    - podSelector:
+        matchLabels:
+          app: auth-api
+    - podSelector:
+        matchLabels:
+          app: release-worker
+    - podSelector:
+        matchLabels:
+          app: sandbox-executor
+    - podSelector:
+        matchLabels:
+          app: platform-workers-audit
+    - podSelector:
+        matchLabels:
+          app: platform-workers-memory
+    - podSelector:
+        matchLabels:
+          app: platform-workers-schema-crawler
+    ports:
+    - protocol: TCP
+      port: 8430
+    - protocol: TCP
+      port: 8431
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: prometheus
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: grafana
+    ports:
+    - protocol: TCP
+      port: 8400
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-grafana
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: grafana
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: kong
+    ports:
+    - protocol: TCP
+      port: 8410
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kibana
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: kibana
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: kong
+    ports:
+    - protocol: TCP
+      port: 8440
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-llm-exporter
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: llm-exporter
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: prometheus
+    ports:
+    - protocol: TCP
+      port: 8270
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: kong
+    ports:
+    - protocol: TCP
+      port: 8280
+  - ports:
+    - protocol: TCP
+      port: 8280
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kong-admin
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: kong
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: auth-api
+    - podSelector:
+        matchLabels:
+          app: release-worker
+    - podSelector:
+        matchLabels:
+          app: setup
+    ports:
+    - protocol: TCP
+      port: 8101
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-controller-to-kong
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: kong
+  policyTypes:
+  - Ingress
+  ingress:
+  - ports:
+    - protocol: TCP
+      port: 8100
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-remote-llm
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchExpressions:
+    - key: app
+      operator: In
+      values:
+      - model-service
+      - litellm
+      - llm-exporter
+      - kb-promote-silver
+      - kb-promote-gold
+      - kb-conflict-resolution
+      - kb-structured-data
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 10.10.55.101/32
+    ports:
+    - protocol: TCP
+      port: 8001
+    - protocol: TCP
+      port: 8002
+    - protocol: TCP
+      port: 8003
+    - protocol: TCP
+      port: 8004
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-k8s-api
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+spec:
+  podSelector:
+    matchLabels:
+      app: sandbox-executor
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 10.43.0.1/32
+    ports:
+    - protocol: TCP
+      port: 443
+  - to:
+    - ipBlock:
+        cidr: 10.10.55.101/32
+    ports:
+    - protocol: TCP
+      port: 6443
