@@ -1,6 +1,4 @@
 ---
-# Every setting deploy.yml reads. They live in a role default (the lowest
-# precedence there is) so an inventory's group_vars can override any of them.
 
 k8s_dir: "{{ project_dir }}/deploy/k8s"
 docker_dir: "{{ project_dir }}/deploy/docker"
@@ -10,73 +8,43 @@ ns_database: dataagent-database
 
 kubectl: kubectl
 
-# ── pull ──────────────────────────────────────────────────────────────
 git_sync_enabled: true
-git_remote: origin/ver.0.1
+git_remote: origin
 git_branch: k8s/ver.0.1
-# The pull is `git merge --ff-only`. It never rewrites or discards anything:
-# either the remote commits replay onto an untouched tree, or git refuses
-# before writing a byte and the run stops with a log. Reconciling a diverged
-# or dirty tree is the operator's job, deliberately not this playbook's.
 pull_failure_log: "{{ deploy_state_dir }}/last-pull-failure.log"
 
-# Deploy state lives outside the repo: it is not repo content, and it has to
-# survive whatever the operator does to the tree to unblock a refused pull.
 deploy_state_dir: "{{ lookup('env', 'HOME') | default('/var/lib', true) }}/.dataagent-deploy/{{ env_name }}"
 checkpoint_file: "{{ deploy_state_dir }}/last_deployed_sha.txt"
 openbao_env_file: "{{ deploy_state_dir }}/openbao.yml"
 
-# -e deploy_full=true -> ignore the checkpoint and treat everything as changed.
 deploy_full: false
 
-# ── images ────────────────────────────────────────────────────────────
-# Named exactly as deploy/k8s/*.yaml spells them: dataagent/<name>, no registry.
 image_prefix: dataagent
 image_tag: latest
 
 image_push: true
 image_import: ""       # e.g. "sudo k3s ctr images import -"
 
-# A registry the cluster pulls from, e.g. "localhost:5000" with a matching
-# mirror in /etc/rancher/k3s/registries.yaml. When set, it is prepended
-# everywhere: the tag that is built and pushed, the image the manifests are
-# applied with, and the reference the restart step matches on. The manifests
-# stay committed with the bare `dataagent/<name>` name; this is what a
-# particular cluster needs to resolve it.
 image_registry: ""
 image_deploy_prefix: "{{ (image_registry ~ '/') if (image_registry | length) > 0 else '' }}{{ image_prefix }}"
 
-# Applied manifests are staged through this. `cat` is the identity, used when
-# no registry is involved and the committed manifest is already correct.
-#
-# The pull-policy rewrite is not cosmetic: pulling a MUTABLE tag from a
-# registry with IfNotPresent means the node serves whatever it cached the
-# first time and never sees the rebuild. Registry + :latest requires Always.
 manifest_sed_rewrite: 'sed -e "s|{{ image_prefix }}/\([a-z0-9_-]*\):{{ image_tag }}|{{ image_deploy_prefix }}/\1:{{ image_tag }}|g" -e "s|imagePullPolicy: IfNotPresent|imagePullPolicy: Always|g"'
 manifest_sed: "{{ manifest_sed_rewrite if (image_registry | length) > 0 else 'cat' }}"
 
-# Dockerfiles that build from their own directory. Everything else builds from
-# the repo root, because it COPYs shared code out of backend/.
 image_self_context:
   - backend/services/model_service
   - backend/services/sandbox_executor
   - backend/services/sandbox_executor/sandbox_runner
   - frontend
 
-# The image name is the directory name, hyphenated if that is what the
-# manifests ask for. Only this one cannot be derived.
 image_name_overrides:
   backend/alembic: migrate
 
-# Shared code that no Dockerfile sits next to. A change here rebuilds
-# everything: these files are inside the build context of every repo-root
-# image, so a per-directory rule would ship them to nobody.
 shared_paths:
   - backend/libs
   - pyproject.toml
   - uv.lock
 
-# ── what counts as a Secret or ConfigMap change ───────────────────────
 vault_file: "{{ inventory_dir }}/group_vars/all/vault.yml"
 secrets_env_file: "{{ k8s_dir }}/secrets.env"
 
@@ -96,7 +64,6 @@ config_paths:
   - backend/services/workflow_runtime/migrations/seed.sql
   - tests/e2e/seed-flow.js
 
-# ── which tiers this inventory owns ───────────────────────────────────
 apply_databases: true
 apply_jobs: false
 apply_services: false
@@ -136,7 +103,6 @@ wait_rollout: 600
 openbao_allow_reset: false
 openbao_rotate_approle: false
 
-# ── connection details the DSNs in group_vars/all/secrets.yml build on ─
 pg_host: "postgres.{{ ns_database }}.svc.cluster.local"
 pg_port: 8300
 pg_db: dataagent
@@ -145,7 +111,6 @@ minio_host: "minio.{{ ns_database }}.svc.cluster.local"
 minio_port: 8360
 minio_user: minio
 
-# Non-secret values that still end up inside a Secret.
 public_api_url: https://dataagent.example.vn
 keycloak_public_url: https://sso.example.vn
 langfuse_public_url: https://langfuse.example.vn
