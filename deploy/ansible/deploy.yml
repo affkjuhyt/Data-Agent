@@ -164,23 +164,23 @@
       ansible.builtin.command:
         cmd: "git diff --name-only {{ from_sha }} {{ to_sha }}"
         chdir: "{{ project_dir }}"
-      register: diff
+      register: git_diff
       when: not (full_deploy | bool)
       changed_when: false
 
     - name: Set what changed
       ansible.builtin.set_fact:
-        changed_paths: "{{ diff.stdout_lines | default([]) }}"
+        changed_paths: "{{ git_diff.stdout_lines | default([]) }}"
         secrets_changed: >-
-          {{ (full_deploy | bool) or (diff.stdout_lines | default([])
+          {{ (full_deploy | bool) or (git_diff.stdout_lines | default([])
              | select('match', '^(' ~ (secret_paths | map('regex_escape') | join('|')) ~ ')')
              | list | length) > 0 }}
         config_changed: >-
-          {{ (full_deploy | bool) or (diff.stdout_lines | default([])
+          {{ (full_deploy | bool) or (git_diff.stdout_lines | default([])
              | select('match', '^(' ~ (config_paths | map('regex_escape') | join('|')) ~ ')')
              | list | length) > 0 }}
         shared_changed: >-
-          {{ (diff.stdout_lines | default([])
+          {{ (git_diff.stdout_lines | default([])
              | select('match', '^(' ~ (shared_paths | map('regex_escape') | join('|')) ~ ')')
              | list | length) > 0 }}
 
@@ -361,6 +361,7 @@
         mode: "0600"
       no_log: true
 
+
     - name: Reapply the Secrets
       ansible.builtin.shell:
         cmd: |
@@ -383,6 +384,17 @@
       when: secrets_changed | bool
       changed_when: true
 
+    - name: Apply namespaces, RBAC and NetworkPolicies
+      ansible.builtin.command:
+        cmd: >-
+          {{ kubectl }} apply
+          -f {{ k8s_dir }}/namespace.yaml
+          -f {{ k8s_dir }}/rbac.yaml
+          -f {{ k8s_dir }}/networkpolicy-service.yaml
+          -f {{ k8s_dir }}/networkpolicy-database.yaml
+      register: base_apply
+      changed_when: "'created' in base_apply.stdout or 'configured' in base_apply.stdout"
+
     - name: Apply the ConfigMap manifest
       ansible.builtin.command:
         cmd: "{{ kubectl }} apply -f {{ k8s_dir }}/configmap.yaml"
@@ -395,17 +407,6 @@
         chdir: "{{ project_dir }}"
       when: config_changed | bool
       changed_when: true
-
-    - name: Apply namespaces, RBAC and NetworkPolicies
-      ansible.builtin.command:
-        cmd: >-
-          {{ kubectl }} apply
-          -f {{ k8s_dir }}/namespace.yaml
-          -f {{ k8s_dir }}/rbac.yaml
-          -f {{ k8s_dir }}/networkpolicy-service.yaml
-          -f {{ k8s_dir }}/networkpolicy-database.yaml
-      register: base_apply
-      changed_when: "'created' in base_apply.stdout or 'configured' in base_apply.stdout"
 
     - name: Apply the database tier
       ansible.builtin.shell:
@@ -481,8 +482,20 @@
           {{ kubectl }} -n {{ ns_service }} rollout status deployment/{{ item }}
           --timeout={{ wait_rollout }}s
       loop: [keycloak, kong]
+      register: gateway_rollout
       changed_when: false
+      failed_when: false
       when: apply_services | bool
+
+    - name: Report the gateway
+      ansible.builtin.debug:
+        msg: >-
+          Gateway not ready in {{ wait_rollout }}s:
+          {{ gateway_rollout.results | selectattr('rc', 'defined')
+             | rejectattr('rc', 'equalto', 0) | map(attribute='item') | join(', ') }}
+      when:
+        - gateway_rollout.results is defined
+        - gateway_rollout.results | selectattr('rc', 'defined') | rejectattr('rc', 'equalto', 0) | list | length > 0
 
     - name: Rerun the migration and init Jobs
       when:
