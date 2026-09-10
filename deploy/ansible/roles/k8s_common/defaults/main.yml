@@ -12,8 +12,8 @@ kubectl: kubectl
 
 # ── pull ──────────────────────────────────────────────────────────────
 git_sync_enabled: true
-git_remote: origin
-git_branch: main
+git_remote: origin/ver.0.1
+git_branch: k8s/ver.0.1
 # The pull is `git merge --ff-only`. It never rewrites or discards anything:
 # either the remote commits replay onto an untouched tree, or git refuses
 # before writing a byte and the run stops with a log. Reconciling a diverged
