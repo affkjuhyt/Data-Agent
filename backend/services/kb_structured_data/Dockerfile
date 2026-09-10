@@ -7,9 +7,6 @@ WORKDIR /app
 COPY backend/services/kb_structured_data/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu &&     pip install --no-cache-dir -r /tmp/requirements.txt
 
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-RUN apt-get update && python -m playwright install --with-deps chromium && rm -rf /var/lib/apt/lists/*
-
 COPY backend/services/__init__.py   /app/services/__init__.py
 COPY backend/libs/                  /app/libs/
 COPY backend/services/kb_structured_data/         /app/services/kb_structured_data/
