@@ -96,7 +96,7 @@ spec:
           mountPath: /tmp
         command:
         - uvicorn
-        - main:app
+        - services.auth_api.main:app
         - --host
         - 0.0.0.0
         - --port
