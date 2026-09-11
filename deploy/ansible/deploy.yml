@@ -408,6 +408,7 @@
           -f {{ k8s_manifests }}/rbac.yaml
           -f {{ k8s_manifests }}/networkpolicy-service.yaml
           -f {{ k8s_manifests }}/networkpolicy-database.yaml
+          -f {{ k8s_manifests }}/networkpolicy-sandbox.yaml
       register: base_apply
       changed_when: "'created' in base_apply.stdout or 'configured' in base_apply.stdout"
 

@@ -57,7 +57,7 @@ spec:
       containers:
       - name: kb-conflict-resolution
         image: localhost:5000/dataagent/kb-conflict-resolution:latest
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         envFrom:
         - configMapRef:
             name: dataagent-config

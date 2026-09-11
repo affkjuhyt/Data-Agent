@@ -59,7 +59,7 @@ spec:
       containers:
       - name: keycloak
         image: localhost:5000/dataagent/keycloak:latest
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         args:
         - start
         - --optimized

@@ -48,7 +48,7 @@ spec:
       containers:
       - name: setup
         image: localhost:5000/dataagent/setup:latest
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         command:
         - sh
         - -c

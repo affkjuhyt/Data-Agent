@@ -2,7 +2,7 @@
 - name: Set openbao paths
   ansible.builtin.set_fact:
     bao_exec: "{{ kubectl }} exec -n {{ ns_database }} statefulset/openbao --"
-    bao_keys_file: "{{ deploy_state_dir }}/openbao-keys.json"
+    bao_keys_file: "{{ openbao_keys_file }}"
 
 - name: Wait for openbao
   ansible.builtin.command: "{{ bao_exec }} bao status -format=json"
@@ -55,7 +55,7 @@
   no_log: true
 
 - name: Unseal openbao
-  ansible.builtin.command: "{{ bao_exec }} bao operator unseal {{ bao_keys.unseal_keys_b64[0] }}"
+  ansible.builtin.command: "{{ bao_exec }} bao operator unseal {{ (bao_keys.unseal_keys_b64 | default(bao_keys.keys_base64))[0] }}"
   when: bao_status.sealed
   changed_when: true
   no_log: true

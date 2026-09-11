@@ -74,7 +74,7 @@ spec:
       containers:
       - name: kb-promote-silver
         image: localhost:5000/dataagent/kb-promote-silver:latest
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         envFrom:
         - configMapRef:
             name: dataagent-config

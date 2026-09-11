@@ -1,6 +1,11 @@
 ---
 
 env_name: k8s-local
+k8s_env: dev
+
+secrets_env_file: "{{ k8s_manifests }}/secrets.env"
+openbao_keys_file: "{{ k8s_manifests }}/.openbao-keys.json"
+openbao_env_file: "{{ k8s_manifests }}/.openbao-env.yml"
 
 image_registry: "localhost:5000"
 image_push: true

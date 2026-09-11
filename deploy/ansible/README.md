@@ -166,8 +166,11 @@ frontend change does not.
 
 ## Inventories
 
-`inventories/k8s-local/` is the developer machine: no pull, no push, images
-imported straight into k3s, database tier only. A deploy inventory sets
+`inventories/k8s-local/` is the dev server: it applies `deploy/k8s/dev/`
+(`k8s_env: dev`), pushes to the `localhost:5000` registry, and keeps
+`secrets.env`, the OpenBao keys and the minted AppRole credentials inside
+`deploy/k8s/dev/`, all git-ignored. The hardening checks in `k8s_verify` run
+only for `production`. A deploy inventory sets
 `git_sync_enabled: true`, `apply_jobs` / `apply_services` / `apply_setup: true`,
 and whichever of `image_push` / `image_registry` / `image_import` matches how
 its nodes get images.

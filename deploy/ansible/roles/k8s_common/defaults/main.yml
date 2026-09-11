@@ -18,6 +18,7 @@ pull_failure_log: "{{ deploy_state_dir }}/last-pull-failure.log"
 deploy_state_dir: "{{ lookup('env', 'HOME') | default('/var/lib', true) }}/.dataagent-deploy/{{ env_name }}"
 checkpoint_file: "{{ deploy_state_dir }}/last_deployed_sha.txt"
 openbao_env_file: "{{ deploy_state_dir }}/openbao.yml"
+openbao_keys_file: "{{ deploy_state_dir }}/openbao-keys.json"
 
 deploy_full: false
 
@@ -31,7 +32,7 @@ image_import: ""
 image_registry: ""
 image_deploy_prefix: "{{ (image_registry ~ '/') if (image_registry | length) > 0 else '' }}{{ image_prefix }}"
 
-manifest_sed_rewrite: 'sed -e "s|{{ image_prefix }}/\([a-z0-9_-]*\):{{ image_tag }}|{{ image_deploy_prefix }}/\1:{{ image_tag }}|g" -e "s|imagePullPolicy: IfNotPresent|imagePullPolicy: Always|g"'
+manifest_sed_rewrite: 'sed -e "s|image: {{ image_prefix }}/\([a-z0-9_-]*\):{{ image_tag }}|image: {{ image_deploy_prefix }}/\1:{{ image_tag }}|g" -e "s|imagePullPolicy: IfNotPresent|imagePullPolicy: Always|g"'
 manifest_sed: "{{ manifest_sed_rewrite if (image_registry | length) > 0 else 'cat' }}"
 
 image_self_context:

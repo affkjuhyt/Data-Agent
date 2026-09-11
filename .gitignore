@@ -107,4 +107,5 @@ deploy/k8s/secrets.env
 deploy/k8s/.openbao-keys.json
 deploy/k8s/dev/secrets.env
 deploy/k8s/dev/.openbao-keys.json
+deploy/k8s/dev/.openbao-env.yml
 /tmp/
