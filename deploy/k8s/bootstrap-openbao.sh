@@ -51,7 +51,7 @@ fi
 ROOT_TOKEN=$(python3 -c 'import json;print(json.load(open("'"$KEYS_FILE"'"))["root_token"])')
 UNSEAL_KEY=$(python3 -c 'import json;print(json.load(open("'"$KEYS_FILE"'"))["keys_base64"][0])')
 
-sealed=$(json "$BAO_URL/v1/sys/health" | python3 -c 'import sys,json;print(json.load(sys.stdin)["sealed"])')
+sealed=$(curl -s "$BAO_URL/v1/sys/seal-status" | python3 -c 'import sys,json;print(json.load(sys.stdin)["sealed"])')
 if [[ "$sealed" == "True" ]]; then
   json -X POST "$BAO_URL/v1/sys/unseal" -d "{\"key\":\"$UNSEAL_KEY\"}" > /dev/null
   echo "unsealed"
