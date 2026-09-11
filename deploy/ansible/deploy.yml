@@ -132,6 +132,7 @@
     - name: Reload the inventory vars from the pulled tree
       ansible.builtin.include_vars:
         dir: "{{ inventory_dir }}/group_vars/all"
+        ignore_unknown_extensions: true
       when: git_sync_enabled | bool
       no_log: true
 
