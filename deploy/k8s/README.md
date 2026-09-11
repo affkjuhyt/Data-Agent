@@ -234,6 +234,29 @@ only image built under `deploy/` — everything else pulls a public image direct
 A Job's pod template is immutable, so re-applying a completed Job fails. Delete
 it first: `kubectl -n dataagent-service delete job migrate --ignore-not-found`.
 
+## Dev set
+
+`deploy/k8s/dev/` is the same stack with the hardening removed, for a single-node
+dev cluster. Its own `secrets.env` and `.openbao-keys.json` live inside it and
+are git-ignored; nothing secret lives outside it.
+
+| | production | dev |
+| --- | --- | --- |
+| Pod security | restricted PSA, locked-down `securityContext` | privileged PSA; our images run as root with a writable root fs |
+| Network | default-deny + allow matrix | one `allow-all` per namespace |
+| Services | ClusterIP | NodePort, `nodePort = port + 22000` (30100–30599) |
+| Images | `dataagent/<name>:latest` | `localhost:5000/dataagent/<name>:latest` |
+| Replicas | as sized | 1, HPA `minReplicas: 1` |
+| Access | per-workload ServiceAccounts only | plus `dataagent-dev`, bound to `admin` in the three namespaces |
+
+```bash
+bash deploy/k8s/dev/up.sh
+kubectl -n dataagent-service get secret dataagent-dev-token -o jsonpath='{.data.token}' | base64 -d
+```
+
+`up.sh` is re-runnable. It points the helper scripts at the dev secrets through
+`SECRETS_ENV=dev/secrets.env KEYS_FILE=dev/.openbao-keys.json`.
+
 ## Ports
 
 Every workload listens on an `8xxx` port. For each one the **containerPort, the

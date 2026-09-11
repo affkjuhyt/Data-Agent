@@ -1,0 +1,106 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: postgres-backup
+  namespace: dataagent-service
+  labels:
+    app: postgres-backup
+    app.kubernetes.io/part-of: dataagent
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-backup-env
+  namespace: dataagent-service
+  labels:
+    app: postgres-backup
+    app.kubernetes.io/part-of: dataagent
+data:
+  PGHOST: postgres.dataagent-database.svc.cluster.local
+  PGUSER: admin
+  PGDATABASE: dataagent
+  BACKUP_RETENTION_DAYS: '7'
+  PGPORT: '8300'
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-backups
+  namespace: dataagent-service
+  labels:
+    app: postgres-backups
+    app.kubernetes.io/part-of: dataagent
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 15Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: dataagent-service
+  labels:
+    app: postgres-backup
+    app.kubernetes.io/part-of: dataagent
+spec:
+  schedule: 0 */6 * * *
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app: postgres-backup
+            app.kubernetes.io/part-of: dataagent
+        spec:
+          restartPolicy: OnFailure
+          containers:
+          - name: postgres-backup
+            image: postgres:16-alpine
+            command:
+            - sh
+            - -c
+            - |
+              set -eu
+              mkdir -p /backups/dumps
+              ts=$(date +%Y%m%d_%H%M%S)
+              dump=/backups/dumps/dump_${ts}.sql.gz
+              pg_dump --format=plain --no-owner --no-privileges | gzip > "${dump}.tmp" || true
+              if gzip -t "${dump}.tmp" 2>/dev/null && gunzip -c "${dump}.tmp" | tail -5 | grep -q "PostgreSQL database dump complete"; then
+                mv "${dump}.tmp" "${dump}"; echo "[backup] ok ${dump}"
+              else
+                echo "[backup] failed, previous dumps kept"; rm -f "${dump}.tmp"; exit 1
+              fi
+              find /backups/dumps -name 'dump_*.sql.gz' -mtime +${BACKUP_RETENTION_DAYS} -delete
+            resources:
+              requests:
+                cpu: 100m
+                memory: 128Mi
+              limits:
+                cpu: 500m
+                memory: 512Mi
+            volumeMounts:
+            - name: backups
+              mountPath: /backups
+            - name: tmp
+              mountPath: /tmp
+            envFrom:
+            - configMapRef:
+                name: postgres-backup-env
+            - secretRef:
+                name: postgres-backup-secrets
+          volumes:
+          - name: backups
+            persistentVolumeClaim:
+              claimName: postgres-backups
+          - name: tmp
+            emptyDir: {}
+          enableServiceLinks: false
+          serviceAccountName: postgres-backup

@@ -1,0 +1,112 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: minio
+  namespace: dataagent-database
+  labels:
+    app: minio
+    app.kubernetes.io/part-of: dataagent
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: minio
+  namespace: dataagent-database
+  labels:
+    app: minio
+    app.kubernetes.io/part-of: dataagent
+spec:
+  serviceName: minio
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 60
+      containers:
+      - name: minio
+        image: minio/minio:RELEASE.2024-01-16T16-07-38Z
+        args:
+        - server
+        - /data
+        - --address
+        - :8360
+        - --console-address
+        - :8361
+        ports:
+        - containerPort: 8360
+          name: api
+        - containerPort: 8361
+          name: console
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: '1'
+            memory: 1Gi
+        readinessProbe:
+          httpGet:
+            path: /minio/health/ready
+            port: 8360
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /minio/health/ready
+            port: 8360
+          initialDelaySeconds: 30
+          periodSeconds: 20
+          failureThreshold: 6
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: tmp
+          mountPath: /tmp
+        envFrom:
+        - secretRef:
+            name: minio-secrets
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      enableServiceLinks: false
+      serviceAccountName: minio
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 20Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: dataagent-database
+  labels:
+    app: minio
+    app.kubernetes.io/part-of: dataagent
+spec:
+  selector:
+    app: minio
+  ports:
+  - port: 8360
+    targetPort: 8360
+    nodePort: 30360
+    name: api
+  - port: 8361
+    targetPort: 8361
+    nodePort: 30361
+    name: console
+  type: NodePort

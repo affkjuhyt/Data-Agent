@@ -1,0 +1,187 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sandbox-executor-pool
+  namespace: dataagent-sandbox
+  labels:
+    app: sandbox-executor
+    app.kubernetes.io/part-of: dataagent
+rules:
+- apiGroups:
+  - ''
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - delete
+- apiGroups:
+  - ''
+  resources:
+  - pods/exec
+  verbs:
+  - get
+  - create
+- apiGroups:
+  - ''
+  resources:
+  - pods/log
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sandbox-executor-pool
+  namespace: dataagent-sandbox
+  labels:
+    app: sandbox-executor
+    app.kubernetes.io/part-of: dataagent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sandbox-executor-pool
+subjects:
+- kind: ServiceAccount
+  name: sandbox-executor
+  namespace: dataagent-service
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: openbao-kubernetes-auth
+  namespace: dataagent-database
+  labels:
+    app: openbao
+    app.kubernetes.io/part-of: dataagent
+rules:
+- apiGroups:
+  - ''
+  resources:
+  - serviceaccounts
+  verbs:
+  - get
+- apiGroups:
+  - ''
+  resources:
+  - serviceaccounts/token
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: openbao-kubernetes-auth
+  namespace: dataagent-database
+  labels:
+    app: openbao
+    app.kubernetes.io/part-of: dataagent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: openbao-kubernetes-auth
+subjects:
+- kind: ServiceAccount
+  name: openbao
+  namespace: dataagent-database
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dataagent-openbao-tokenreview
+  labels:
+    app: openbao
+    app.kubernetes.io/part-of: dataagent
+rules:
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dataagent-openbao-tokenreview
+  labels:
+    app: openbao
+    app.kubernetes.io/part-of: dataagent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: dataagent-openbao-tokenreview
+subjects:
+- kind: ServiceAccount
+  name: openbao
+  namespace: dataagent-database
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dataagent-dev
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+---
+apiVersion: v1
+kind: Secret
+type: kubernetes.io/service-account-token
+metadata:
+  name: dataagent-dev-token
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+  annotations:
+    kubernetes.io/service-account.name: dataagent-dev
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dataagent-dev-admin
+  namespace: dataagent-service
+  labels:
+    app.kubernetes.io/part-of: dataagent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admin
+subjects:
+- kind: ServiceAccount
+  name: dataagent-dev
+  namespace: dataagent-service
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dataagent-dev-admin
+  namespace: dataagent-database
+  labels:
+    app.kubernetes.io/part-of: dataagent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admin
+subjects:
+- kind: ServiceAccount
+  name: dataagent-dev
+  namespace: dataagent-service
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dataagent-dev-admin
+  namespace: dataagent-sandbox
+  labels:
+    app.kubernetes.io/part-of: dataagent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admin
+subjects:
+- kind: ServiceAccount
+  name: dataagent-dev
+  namespace: dataagent-service

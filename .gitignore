@@ -105,3 +105,6 @@ deploy/docker/keycloak/spi/target/
 # filled-in secret source for deploy/k8s/create-secrets.sh
 deploy/k8s/secrets.env
 deploy/k8s/.openbao-keys.json
+deploy/k8s/dev/secrets.env
+deploy/k8s/dev/.openbao-keys.json
+/tmp/
