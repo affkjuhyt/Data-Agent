@@ -134,6 +134,7 @@ spec:
         emptyDir: {}
       - name: logs
         emptyDir: {}
+      enableServiceLinks: false
       serviceAccountName: elasticsearch
   volumeClaimTemplates:
   - metadata:

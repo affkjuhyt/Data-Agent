@@ -123,4 +123,5 @@ spec:
         persistentVolumeClaim:
           claimName: postgres-backups
           readOnly: true
+      enableServiceLinks: false
       serviceAccountName: postgres-restore

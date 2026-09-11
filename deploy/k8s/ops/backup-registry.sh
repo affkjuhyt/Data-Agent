@@ -13,7 +13,7 @@ set -euo pipefail
 
 SRC=/home/ndip/data-agent-registry
 DEST_DIR=/home/ndip/data-agent-registry-backups
-KEEP=7
+KEEP=3
 
 mkdir -p "$DEST_DIR"
 ts=$(date +%Y%m%d_%H%M%S)

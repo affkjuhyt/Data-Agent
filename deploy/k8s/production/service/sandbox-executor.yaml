@@ -23,6 +23,10 @@ data:
   SANDBOX_MEMORY_MB: '256'
   SANDBOX_CPUS: '0.5'
   SANDBOX_POOL_SIZE: '3'
+  SANDBOX_BACKEND: kubernetes
+  SANDBOX_K8S_NAMESPACE: dataagent-sandbox
+  SANDBOX_RUNNER_IMAGE: dataagent/sandbox-runner:latest
+  SANDBOX_RUNNER_SERVICE_ACCOUNT: sandbox-runner
   SANDBOX_SQL_BACKEND: snowflake
   SANDBOX_SQL_QUEUE_WORKERS: '5'
   SANDBOX_BREAKER_ENFORCE: 'true'
@@ -117,6 +121,7 @@ spec:
       - name: tmp
         emptyDir: {}
       runtimeClassName: gvisor
+      enableServiceLinks: false
       serviceAccountName: sandbox-executor
 
 ---

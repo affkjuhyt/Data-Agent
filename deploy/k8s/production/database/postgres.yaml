@@ -124,6 +124,7 @@ spec:
         emptyDir: {}
       - name: tmp
         emptyDir: {}
+      enableServiceLinks: false
       serviceAccountName: postgres
   volumeClaimTemplates:
   - metadata:

@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from libs.basemodel.services_databaseconnector.qdrant_model import CreateCollectionRequest
 from libs.basemodel.services_databaseconnector.shared_model import HealthCheckLoopConfig, RetryConfig
@@ -22,10 +22,12 @@ from libs.database_connector.redis_connector import RedisClient
 from libs.shared.kb_result_cache import ResultCache
 from libs.ingestion import config as cfg
 from libs.ingestion import conflict_store
-from libs.ingestion.docling_parser import InlineDoclingParser, load_converter
 from libs.ingestion.graph_store import GraphStore
 from libs.ingestion.log_writer import IngestionLogger
 from libs.ingestion.stage_chain import StageChain
+
+if TYPE_CHECKING:
+    from libs.ingestion.docling_parser import InlineDoclingParser
 
 
 class Component(str, Enum):
@@ -228,6 +230,8 @@ async def startup(runtime: WorkerRuntime, components: set[Component]) -> None:
         runtime.stage_record.push("conflict_indexes_ensured")
 
     if Component.DOCLING in components:
+        from libs.ingestion.docling_parser import InlineDoclingParser, load_converter
+
         await runtime.logger.logging(f"Loading Docling converter (use_vlm={cfg.USE_VLM})...")
         load_converter(use_vlm=cfg.USE_VLM)
         runtime.stage_record.push("docling_loaded")

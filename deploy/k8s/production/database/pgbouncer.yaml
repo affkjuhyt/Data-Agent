@@ -120,6 +120,7 @@ spec:
         emptyDir: {}
       - name: config
         emptyDir: {}
+      enableServiceLinks: false
       serviceAccountName: pgbouncer
 
 ---

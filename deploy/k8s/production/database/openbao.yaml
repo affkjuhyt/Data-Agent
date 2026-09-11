@@ -129,6 +129,7 @@ spec:
           name: openbao-config
       - name: tmp
         emptyDir: {}
+      enableServiceLinks: false
       serviceAccountName: openbao
   volumeClaimTemplates:
   - metadata:

@@ -115,6 +115,7 @@ spec:
       volumes:
       - name: tmp
         emptyDir: {}
+      enableServiceLinks: false
       serviceAccountName: kb-backend
 
 ---

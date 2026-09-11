@@ -104,6 +104,7 @@ spec:
           claimName: prometheus-data
       - name: tmp
         emptyDir: {}
+      enableServiceLinks: false
       serviceAccountName: prometheus
 
 ---

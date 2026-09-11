@@ -140,4 +140,5 @@ spec:
         emptyDir: {}
       - name: certs
         emptyDir: {}
+      enableServiceLinks: false
       serviceAccountName: setup

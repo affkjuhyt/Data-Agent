@@ -126,4 +126,5 @@ spec:
               claimName: postgres-backups
           - name: tmp
             emptyDir: {}
+          enableServiceLinks: false
           serviceAccountName: postgres-backup

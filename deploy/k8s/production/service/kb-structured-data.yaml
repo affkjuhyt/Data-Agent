@@ -109,4 +109,5 @@ spec:
           claimName: kb-structured-data-cache
       - name: tmp
         emptyDir: {}
+      enableServiceLinks: false
       serviceAccountName: kb-structured-data

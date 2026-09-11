@@ -22,7 +22,7 @@ data:
   CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse.dataagent-database.svc.cluster.local:8371
   CLICKHOUSE_URL: http://clickhouse.dataagent-database.svc.cluster.local:8370
   CLICKHOUSE_CLUSTER_ENABLED: 'false'
-  REDIS_HOST: redis
+  REDIS_HOST: redis.dataagent-database.svc.cluster.local
   REDIS_PORT: '8320'
   REDIS_CONNECTION_STRING: redis://redis.dataagent-database.svc.cluster.local:8320
   LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
@@ -126,6 +126,7 @@ spec:
       volumes:
       - name: tmp
         emptyDir: {}
+      enableServiceLinks: false
       serviceAccountName: langfuse
 
 ---

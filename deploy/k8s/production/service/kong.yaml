@@ -19,9 +19,12 @@ metadata:
     app.kubernetes.io/part-of: dataagent
 data:
   KONG_DATABASE: postgres
-  KONG_PG_HOST: postgres
+  KONG_PG_HOST: postgres.dataagent-database.svc.cluster.local
   KONG_PG_PORT: '8300'
+  KONG_PG_USER: admin
+  KONG_PG_DATABASE: dataagent
   KONG_PG_SCHEMA: kong
+  KONG_NGINX_WORKER_PROCESSES: '2'
   KONG_PROXY_ACCESS_LOG: /dev/stdout
   KONG_ADMIN_ACCESS_LOG: /dev/stdout
   KONG_PROXY_ERROR_LOG: /dev/stderr
@@ -113,6 +116,7 @@ spec:
         emptyDir: {}
       - name: tmp
         emptyDir: {}
+      enableServiceLinks: false
       serviceAccountName: kong
 
 ---

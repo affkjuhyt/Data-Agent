@@ -11,3 +11,6 @@ av>=12.0.0
 trafilatura>=1.12.0
 # Headless Chromium so client-rendered portals paint before extraction.
 playwright>=1.44.0
+qdrant-client>=1.7.0
+neo4j>=5.17.0
+redis>=5.0

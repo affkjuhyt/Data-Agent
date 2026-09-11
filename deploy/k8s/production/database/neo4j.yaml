@@ -135,6 +135,7 @@ spec:
         emptyDir: {}
       - name: conf
         emptyDir: {}
+      enableServiceLinks: false
       serviceAccountName: neo4j
   volumeClaimTemplates:
   - metadata:

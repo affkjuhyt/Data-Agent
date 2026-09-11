@@ -118,6 +118,7 @@ spec:
         emptyDir: {}
       - name: users-config
         emptyDir: {}
+      enableServiceLinks: false
       serviceAccountName: clickhouse
   volumeClaimTemplates:
   - metadata:

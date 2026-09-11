@@ -67,6 +67,12 @@ spec:
             # kong/workflow-runtime/model-service instead.
             cpu: 500m
             memory: 512Mi
+        startupProbe:
+          httpGet:
+            path: /api/status
+            port: 8440
+          periodSeconds: 10
+          failureThreshold: 30
         readinessProbe:
           httpGet:
             path: /api/status
@@ -101,6 +107,7 @@ spec:
         emptyDir: {}
       - name: tmp
         emptyDir: {}
+      enableServiceLinks: false
       serviceAccountName: kibana
 
 ---

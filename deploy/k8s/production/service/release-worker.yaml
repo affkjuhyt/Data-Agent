@@ -98,7 +98,7 @@ spec:
           mountPath: /tmp
         command:
         - uvicorn
-        - app:create_app
+        - services.release_worker.app:create_app
         - --factory
         - --host
         - 0.0.0.0
@@ -107,6 +107,7 @@ spec:
       volumes:
       - name: tmp
         emptyDir: {}
+      enableServiceLinks: false
       serviceAccountName: release-worker
 
 ---

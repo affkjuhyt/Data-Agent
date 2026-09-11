@@ -16,8 +16,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-SECRETS_ENV=secrets.env
-KEYS_FILE=.openbao-keys.json
+SECRETS_ENV="${SECRETS_ENV:-secrets.env}"
+KEYS_FILE="${KEYS_FILE:-.openbao-keys.json}"
 NS=dataagent-database
 
 [[ -f "$SECRETS_ENV" ]] || { echo "run gen-secrets-env.sh first" >&2; exit 1; }
