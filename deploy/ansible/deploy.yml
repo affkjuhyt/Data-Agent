@@ -606,7 +606,7 @@
 
     - name: Restart the service tier after a Secret or ConfigMap change
       ansible.builtin.command:
-        cmd: "{{ kubectl }} -n {{ ns_service }} rollout restart deployment --all"
+        cmd: "{{ kubectl }} -n {{ ns_service }} rollout restart deployment"
       when:
         - apply_services | bool
         - (secrets_changed | bool) or (config_changed | bool)
