@@ -26,9 +26,9 @@ KC_BASE="${KEYCLOAK_URL:-http://localhost:8110}"
 # Upstream hostnames below default to the docker-compose container names
 # (underscores, matching the backend/services/<name> directory names). k8s
 # Service objects can't contain underscores at all (DNS-1035 label rule),
-# so deploy/k8s/service/*.yaml names them with hyphens instead
+# so deploy/k8s/production/service/*.yaml names them with hyphens instead
 # (workflow-runtime, flow-builder, auth-api, release-worker) — the k8s
-# ConfigMap (deploy/k8s/configmap.yaml) overrides these four to match.
+# ConfigMap (deploy/k8s/production/configmap.yaml) overrides these four to match.
 # Without the override, Kong's upstream DNS lookup 503s with "name error"
 # the moment a route actually gets proxied (JWT/CORS checks can pass fine
 # before that point, which is what made this easy to miss).

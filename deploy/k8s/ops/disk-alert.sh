@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Alerts when / crosses 80% used. Host-level, not a k8s/Prometheus rule —
 # see the note this was introduced with: local-path-provisioner doesn't
-# enforce PVC size as a real quota (deploy/k8s/database/*.yaml's `storage:`
+# enforce PVC size as a real quota (deploy/k8s/production/database/*.yaml's `storage:`
 # values are advisory), so the actual risk is /, not any one PVC, and node
 # disk metrics aren't in Prometheus here (no node-exporter/cadvisor scrape
 # target — adding one needs either a hostPath volume, which the

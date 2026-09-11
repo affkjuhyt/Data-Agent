@@ -1,0 +1,81 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kb-promote-gold
+  namespace: dataagent-service
+  labels:
+    app: kb-promote-gold
+    ingestion_worker: promote_gold
+    app.kubernetes.io/part-of: dataagent
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kb-promote-gold-env
+  namespace: dataagent-service
+  labels:
+    app: kb-promote-gold
+    ingestion_worker: promote_gold
+    app.kubernetes.io/part-of: dataagent
+data:
+  POSTGRES_MAX_CONNECTIONS: '5'
+  POSTGRES_MAX_OVERFLOW: '5'
+  POSTGRES_POOL_TIMEOUT: '30'
+  POSTGRES_POOL_RECYCLE: '1800'
+  GOLD_CHUNK_CONCURRENCY: '1'
+  GOLD_CONCURRENCY: '6'
+  LLM_MODEL: agent-fast
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kb-promote-gold
+  namespace: dataagent-service
+  labels:
+    app: kb-promote-gold
+    ingestion_worker: promote_gold
+    app.kubernetes.io/part-of: dataagent
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: kb-promote-gold
+  template:
+    metadata:
+      labels:
+        app: kb-promote-gold
+        ingestion_worker: promote_gold
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: kb-promote-gold
+        image: dataagent/kb-promote-gold:latest
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - configMapRef:
+            name: dataagent-config
+        - configMapRef:
+            name: kb-promote-gold-env
+        - secretRef:
+            name: kb-promote-gold-secrets
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: '1'
+            memory: 1Gi
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        command:
+        - python
+        - -m
+        - services.kb_promote_gold.promote_gold
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      serviceAccountName: kb-promote-gold

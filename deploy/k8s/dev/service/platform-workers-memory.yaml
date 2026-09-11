@@ -1,0 +1,77 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: platform-workers-memory
+  namespace: dataagent-service
+  labels:
+    app: platform-workers-memory
+    app.kubernetes.io/part-of: dataagent
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-workers-memory-env
+  namespace: dataagent-service
+  labels:
+    app: platform-workers-memory
+    app.kubernetes.io/part-of: dataagent
+data:
+  WORKER: memory
+  OTEL_SERVICE_NAME: platform-workers-memory
+  DB_HOST: postgres
+  DB_PORT: '8300'
+  KAFKA_SASL_USERNAME: memory-consumer
+  KAFKA_TOPIC: memory.extraction.requested
+  KAFKA_DLQ_TOPIC: memory.extraction.dlq
+  KAFKA_GROUP_ID: memory-consumer-group
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-workers-memory
+  namespace: dataagent-service
+  labels:
+    app: platform-workers-memory
+    app.kubernetes.io/part-of: dataagent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: platform-workers-memory
+  template:
+    metadata:
+      labels:
+        app: platform-workers-memory
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: platform-workers-memory
+        image: dataagent/platform-workers:latest
+        envFrom:
+        - configMapRef:
+            name: dataagent-config
+        - configMapRef:
+            name: platform-workers-memory-env
+        - secretRef:
+            name: platform-workers-memory-secrets
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        command:
+        - python
+        - -u
+        - -m
+        - services.platform_workers
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      serviceAccountName: platform-workers-memory

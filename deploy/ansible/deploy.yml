@@ -239,7 +239,7 @@
       ansible.builtin.shell:
         cmd: |
           set -euo pipefail
-          grep -rhoE '{{ image_prefix }}/[A-Za-z0-9._-]+:' {{ k8s_dir }} | cut -d/ -f2 | tr -d ':' | sort -u
+          grep -rhoE '{{ image_prefix }}/[A-Za-z0-9._-]+:' {{ k8s_manifests }} | cut -d/ -f2 | tr -d ':' | sort -u
         executable: /bin/bash
       register: manifest_images
       changed_when: false
@@ -404,16 +404,16 @@
       ansible.builtin.command:
         cmd: >-
           {{ kubectl }} apply
-          -f {{ k8s_dir }}/namespace.yaml
-          -f {{ k8s_dir }}/rbac.yaml
-          -f {{ k8s_dir }}/networkpolicy-service.yaml
-          -f {{ k8s_dir }}/networkpolicy-database.yaml
+          -f {{ k8s_manifests }}/namespace.yaml
+          -f {{ k8s_manifests }}/rbac.yaml
+          -f {{ k8s_manifests }}/networkpolicy-service.yaml
+          -f {{ k8s_manifests }}/networkpolicy-database.yaml
       register: base_apply
       changed_when: "'created' in base_apply.stdout or 'configured' in base_apply.stdout"
 
     - name: Apply the ConfigMap manifest
       ansible.builtin.command:
-        cmd: "{{ kubectl }} apply -f {{ k8s_dir }}/configmap.yaml"
+        cmd: "{{ kubectl }} apply -f {{ k8s_manifests }}/configmap.yaml"
       register: cm_manifest
       changed_when: "'configured' in cm_manifest.stdout or 'created' in cm_manifest.stdout"
 
@@ -429,7 +429,7 @@
         cmd: |
           set -euo pipefail
           stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
-          for f in "{{ k8s_dir }}/database"/*.yaml; do
+          for f in "{{ k8s_manifests }}/database"/*.yaml; do
             {{ manifest_sed }} "$f" > "$stage/$(basename "$f")"
           done
           {{ kubectl }} apply -f "$stage/"
@@ -483,7 +483,7 @@
         cmd: |
           set -euo pipefail
           stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
-          for f in "{{ k8s_dir }}/service"/*.yaml; do
+          for f in "{{ k8s_manifests }}/service"/*.yaml; do
             {{ manifest_sed }} "$f" > "$stage/$(basename "$f")"
           done
           {{ kubectl }} apply -f "$stage/"
@@ -518,7 +518,7 @@
         - apply_jobs | bool
         - (full_deploy | bool)
           or ('migrate' in ((images | default([])) | map(attribute='name') | list))
-          or ((changed_paths | select('match', '^deploy/k8s/job/') | list | length) > 0)
+          or ((changed_paths | select('match', '^deploy/k8s/(production|dev)/job/') | list | length) > 0)
       block:
         - name: Delete the Jobs
           ansible.builtin.command:
@@ -533,7 +533,7 @@
               set -euo pipefail
               stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
               for j in {{ migration_jobs | join(' ') }}; do
-                {{ manifest_sed }} "{{ k8s_dir }}/job/$j.yaml" > "$stage/$j.yaml"
+                {{ manifest_sed }} "{{ k8s_manifests }}/job/$j.yaml" > "$stage/$j.yaml"
               done
               {{ kubectl }} apply -f "$stage/"
             executable: /bin/bash
@@ -553,7 +553,7 @@
               set -euo pipefail
               stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
               for j in {{ job_workloads | join(' ') }}; do
-                {{ manifest_sed }} "{{ k8s_dir }}/job/$j.yaml" \
+                {{ manifest_sed }} "{{ k8s_manifests }}/job/$j.yaml" \
                   | sed "s|SEED_DEMO: '0'|SEED_DEMO: '{{ 1 if (seed_demo | bool) else 0 }}'|" \
                   > "$stage/$j.yaml"
               done

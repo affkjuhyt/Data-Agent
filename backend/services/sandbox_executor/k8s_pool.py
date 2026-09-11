@@ -38,7 +38,7 @@ over 1:1, and why:
     this code.
   * `network_disabled=True` (Docker: no network namespace at all) becomes
     a NetworkPolicy default-deny-all with zero allow rules in the
-    dataagent-sandbox namespace (deploy/k8s/networkpolicy-sandbox.yaml) —
+    dataagent-sandbox namespace (deploy/k8s/production/networkpolicy-sandbox.yaml) —
     the pod still gets an IP, but every ingress/egress packet is dropped by
     the CNI's policy enforcement. This was verified to actually be enforced
     on this cluster (not just declared) before relying on it here.

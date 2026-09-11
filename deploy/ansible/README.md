@@ -161,7 +161,7 @@ Nothing else is touched.
 
 Jobs are delete-then-apply (their pod template is immutable) and only rerun on
 a full deploy, when the `migrate` image was rebuilt, or when something under
-`deploy/k8s/job/` changed — so an Alembic revision reruns migrations and a
+`deploy/k8s/production/job/` changed — so an Alembic revision reruns migrations and a
 frontend change does not.
 
 ## Inventories

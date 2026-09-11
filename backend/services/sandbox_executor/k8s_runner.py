@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 SANDBOX_NAMESPACE = os.environ.get("SANDBOX_K8S_NAMESPACE", "dataagent-sandbox")
 SANDBOX_IMAGE = os.environ.get("SANDBOX_RUNNER_IMAGE", "REGISTRY/dataagent/sandbox-runner:latest")
 SANDBOX_SERVICE_ACCOUNT = os.environ.get("SANDBOX_RUNNER_SERVICE_ACCOUNT", "sandbox-runner")
-# Matches deploy/k8s/service/sandbox-runner.yaml's securityContext.runAsUser/Group.
+# Matches deploy/k8s/production/service/sandbox-runner.yaml's securityContext.runAsUser/Group.
 SANDBOX_RUNNER_UID = int(os.environ.get("SANDBOX_RUNNER_UID", "10001"))
 SANDBOX_RUNNER_GID = int(os.environ.get("SANDBOX_RUNNER_GID", "10001"))
 

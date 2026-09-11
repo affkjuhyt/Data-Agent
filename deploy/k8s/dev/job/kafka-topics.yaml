@@ -1,0 +1,64 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kafka-topics
+  namespace: dataagent-service
+  labels:
+    app: kafka-topics
+    app.kubernetes.io/part-of: dataagent
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-topics-env
+  namespace: dataagent-service
+  labels:
+    app: kafka-topics
+    app.kubernetes.io/part-of: dataagent
+data:
+  INGEST_PARTITIONS: '3'
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-topics
+  namespace: dataagent-service
+  labels:
+    app: kafka-topics
+    app.kubernetes.io/part-of: dataagent
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: kafka-topics
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      restartPolicy: OnFailure
+      enableServiceLinks: false
+      containers:
+      - name: kafka-topics
+        image: apache/kafka:3.7.0
+        command:
+        - bash
+        - -c
+        - "# INTERNAL:8352 has no SASL \u2014 those connections are ANONYMOUS, and\n# KAFKA_SUPER_USERS (kafka.yaml) lists User:ANONYMOUS as a\n# superuser, so this Job gets full admin rights (topic + ACL\n# management) here without needing any broker credentials.\nB=kafka.dataagent-database.svc.cluster.local:8352\nKT=/opt/kafka/bin/kafka-topics.sh\nKA=/opt/kafka/bin/kafka-acls.sh\n\nuntil $KT --bootstrap-server \"$B\" --list >/dev/null 2>&1; do echo waiting for kafka; sleep 3; done\n\nfor t in kb.promote.silver kb.promote.gold kb.structured.propose; do\n  $KT --bootstrap-server \"$B\" --create --if-not-exists --topic \"$t\" --partitions \"$INGEST_PARTITIONS\" --replication-factor 1\n  $KT --bootstrap-server \"$B\" --alter --topic \"$t\" --partitions \"$INGEST_PARTITIONS\" || true\ndone\n\n# Ported from deploy/docker/kafka/kafka-setup.sh \u2014 same topics +\n# ACLs the docker-compose deployment sets up, missing here until\n# now (workflow_runtime's audit.data.access WRITE has no ACL grant\n# otherwise: KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND is 'false', so\n# the produce silently stalls \u2014 metadata refresh keeps retrying\n# the authorization failure instead of raising it \u2014 until the\n# client's own 60s timeout, taking the whole request down with it).\n$KT --bootstrap-server \"$B\" --create --if-not-exists --topic audit.data.access --partitions 6 --replication-factor 1 --config retention.ms=7776000000 --config cleanup.policy=delete\n$KT --bootstrap-server \"$B\" --create --if-not-exists --topic release.pipeline.triggered --partitions 3 --replication-factor 1\n$KT --bootstrap-server \"$B\" --create --if-not-exists --topic release.pipeline.status --partitions 3 --replication-factor 1\n$KT --bootstrap-server \"$B\" --create --if-not-exists --topic release.rollback.initiated --partitions 3 --replication-factor 1\n$KT --bootstrap-server \"$B\" --create --if-not-exists --topic memory.extraction.requested --partitions 3 --replication-factor 1 --config retention.ms=604800000 --config cleanup.policy=delete\n$KT --bootstrap-server \"$B\" --create --if-not-exists --topic memory.extraction.dlq --partitions 1 --replication-factor 1 --config retention.ms=2592000000 --config cleanup.policy=delete\n$KT --bootstrap-server \"$B\" --create --if-not-exists --topic ddl.changes --partitions 3 --replication-factor 1 --config retention.ms=604800000 --config cleanup.policy=delete\n\n$KA --bootstrap-server \"$B\" --add --allow-principal User:workflow_runtime --operation Write --operation Describe --topic audit.data.access\n$KA --bootstrap-server \"$B\" --add --allow-principal User:audit-consumer --operation Read --operation Describe --topic audit.data.access\n$KA --bootstrap-server \"$B\" --add --allow-principal User:audit-consumer --operation Read --group audit-consumer-group\n\nfor t in release.pipeline.triggered release.pipeline.status release.rollback.initiated; do\n  $KA --bootstrap-server \"$B\" --add --allow-principal User:release_worker --operation Write --operation Read --operation Describe --operation Create --topic \"$t\"\ndone\n$KA --bootstrap-server \"$B\" --add --allow-principal User:release_worker --operation Read --group release_worker-group\n\n$KA --bootstrap-server \"$B\" --add --allow-principal User:workflow_runtime --operation Write --operation Describe --topic memory.extraction.requested\n$KA --bootstrap-server \"$B\" --add --allow-principal User:memory-consumer --operation Read --operation Describe --topic memory.extraction.requested\n$KA --bootstrap-server \"$B\" --add --allow-principal User:memory-consumer --operation Write --operation Describe --topic memory.extraction.dlq\n$KA --bootstrap-server \"$B\" --add --allow-principal User:memory-consumer --operation Read --group memory-consumer-group\n\n$KA --bootstrap-server \"$B\" --add --allow-principal User:schema-crawler-worker --operation Read --operation Describe --topic ddl.changes\n$KA --bootstrap-server \"$B\" --add --allow-principal User:schema-crawler-worker --operation Read --group schema-crawler-worker-group\n"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        envFrom:
+        - configMapRef:
+            name: kafka-topics-env
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      serviceAccountName: kafka-topics

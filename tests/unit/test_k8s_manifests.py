@@ -35,6 +35,7 @@ pytestmark = pytest.mark.unit
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 K8S_DIR = REPO_ROOT / "deploy" / "k8s"
+MANIFEST_DIR = K8S_DIR / "production"
 
 # Deployments that reach Postgres through the ORM, and so must not serve traffic
 # on a schema older than their code.
@@ -69,7 +70,7 @@ def _all_docs(directory: pathlib.Path) -> list[tuple[pathlib.Path, dict]]:
 
 # `kubectl apply -R -f deploy/k8s/` covers these three tiers plus the shared
 # cluster objects. dr/ is deliberately outside it.
-APPLIED_DIRS = [K8S_DIR, K8S_DIR / "database", K8S_DIR / "service", K8S_DIR / "job"]
+APPLIED_DIRS = [MANIFEST_DIR, MANIFEST_DIR / "database", MANIFEST_DIR / "service", MANIFEST_DIR / "job"]
 TOP_LEVEL = [pair for d in APPLIED_DIRS for pair in _all_docs(d)]
 DEPLOYMENTS = {d["metadata"]["name"]: d for _, d in TOP_LEVEL if d["kind"] == "Deployment"}
 WORKLOADS = {
@@ -342,14 +343,14 @@ class TestBackupsAreVerifiedNotAssumed:
         """`pg_dump | gzip > f` reports gzip's status, so a dump that dies
         mid-stream exits 0 and leaves a file that looks fine until restore
         day. The artifact has to be verified instead."""
-        script = self._script(K8S_DIR / "job" / "postgres-backup.yaml", "postgres-backup")
+        script = self._script(MANIFEST_DIR / "job" / "postgres-backup.yaml", "postgres-backup")
         assert "gzip -t" in script
         assert "PostgreSQL database dump complete" in script
 
     def test_the_restore_verifies_before_it_drops(self):
         """Ordering is the whole point: verifying after the DROP means finding
         out the archive is truncated with the database already gone."""
-        script = self._script(K8S_DIR / "job" / "postgres-restore.yaml", "pg-restore")
+        script = self._script(MANIFEST_DIR / "job" / "postgres-restore.yaml", "pg-restore")
         assert "gzip -t" in script, "restore does not verify the dump at all"
         assert script.index("gzip -t") < script.index("DROP DATABASE"), (
             "restore drops the database before verifying the dump it is about "
@@ -373,14 +374,14 @@ class TestNothingDestructiveInTheRoutineApply:
             )
             assert doc["spec"].get("suspend") is True, (
                 f"{path.name} drops a database and is not suspended. "
-                f"`kubectl apply -f deploy/k8s/job/` would start it."
+                f"`kubectl apply -f deploy/k8s/production/job/` would start it."
             )
             assert doc["spec"].get("backoffLimit") == 0, (
                 f"{path.name} would retry a half-applied restore"
             )
 
     def test_the_restore_job_ships_suspended(self):
-        restore = next(d for d in _docs(K8S_DIR / "job" / "postgres-restore.yaml")
+        restore = next(d for d in _docs(MANIFEST_DIR / "job" / "postgres-restore.yaml")
                        if d["kind"] == "Job")
         assert restore["spec"]["suspend"] is True, (
             "the restore Job must not start on apply — it drops the database"

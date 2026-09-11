@@ -31,7 +31,7 @@
   register: k8s_files
   failed_when: not k8s_files.stat.exists
   loop:
-    - "{{ k8s_dir }}/namespace.yaml"
+    - "{{ k8s_manifests }}/namespace.yaml"
     - "{{ k8s_dir }}/create-secrets.sh"
     - "{{ k8s_dir }}/create-configmaps.sh"
     - "{{ k8s_dir }}/secrets.env.example"

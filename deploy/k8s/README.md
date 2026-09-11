@@ -201,23 +201,23 @@ pod. After editing one of these files, re-run the script and restart:
 Order matters once, on a fresh cluster.
 
 ```bash
-kubectl apply -f deploy/k8s/namespace.yaml
-kubectl apply -f deploy/k8s/configmap.yaml -f deploy/k8s/rbac.yaml
-kubectl apply -f deploy/k8s/networkpolicy-service.yaml \
-              -f deploy/k8s/networkpolicy-database.yaml
+kubectl apply -f deploy/k8s/production/namespace.yaml
+kubectl apply -f deploy/k8s/production/configmap.yaml -f deploy/k8s/production/rbac.yaml
+kubectl apply -f deploy/k8s/production/networkpolicy-service.yaml \
+              -f deploy/k8s/production/networkpolicy-database.yaml
 bash deploy/k8s/create-secrets.sh      # needs secrets.env sourced
 bash deploy/k8s/create-configmaps.sh
-kubectl apply -f deploy/k8s/database/
+kubectl apply -f deploy/k8s/production/database/
 kubectl -n dataagent-database rollout status statefulset/postgres
 
-kubectl apply -f deploy/k8s/job/kong-migration.yaml -f deploy/k8s/job/migrate.yaml
+kubectl apply -f deploy/k8s/production/job/kong-migration.yaml -f deploy/k8s/production/job/migrate.yaml
 kubectl -n dataagent-service wait --for=condition=complete job/migrate --timeout=10m
-kubectl apply -f deploy/k8s/job/db-init.yaml -f deploy/k8s/job/minio-init.yaml
+kubectl apply -f deploy/k8s/production/job/db-init.yaml -f deploy/k8s/production/job/minio-init.yaml
 kubectl -n dataagent-service wait --for=condition=complete job/db-init --timeout=5m
 
-kubectl apply -f deploy/k8s/service/
-kubectl apply -f deploy/k8s/job/setup.yaml          # Kong routes + Keycloak mappers
-kubectl apply -f deploy/k8s/job/postgres-backup.yaml
+kubectl apply -f deploy/k8s/production/service/
+kubectl apply -f deploy/k8s/production/job/setup.yaml          # Kong routes + Keycloak mappers
+kubectl apply -f deploy/k8s/production/job/postgres-backup.yaml
 ```
 
 `postgres-restore` drops a database, so it ships `suspend: true` with

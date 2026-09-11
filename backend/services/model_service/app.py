@@ -78,7 +78,7 @@ def health() -> JSONResponse:
     # so k8s never sees a body it can act on and the pod stays "ready"
     # forever with a permanently broken /embed and /rerank unless something
     # restarts it. Returning a real 503 lets liveness/readinessProbe do that
-    # (deploy/k8s/service/model-service.yaml uses this same endpoint for
+    # (deploy/k8s/production/service/model-service.yaml uses this same endpoint for
     # both) instead of only ever returning 200.
     ready = registry.has(Capability.EMBED) and registry.has(Capability.RERANK)
     body = {"status": "ok" if ready else "loading", "llm": chat_status(registry)}

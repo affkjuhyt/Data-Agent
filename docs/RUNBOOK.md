@@ -25,7 +25,7 @@ tier that matches the task (see `deploy/k8s/README.md` for the full apply order)
 
 ```bash
 # Agent tier — stores, Keycloak, Kong, OpenBao, LiteLLM, runtime + one-shot jobs
-kubectl apply -f deploy/k8s/database/ && kubectl apply -f deploy/k8s/service/
+kubectl apply -f deploy/k8s/production/database/ && kubectl apply -f deploy/k8s/production/service/
 
 # Seed Kong routes + the aeroflow-jwks plugin (required once per fresh stack)
 bash deploy/docker/kong/kong-setup.sh

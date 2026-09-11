@@ -52,7 +52,7 @@ python -m model.eval.run  --tier all --out eval-report.json
 python -m model.eval.gate --report eval-report.json --tier offline --tier online
 
 # or in the stack's own network
-kubectl apply -f deploy/k8s/job/eval.yaml
+kubectl apply -f deploy/k8s/production/job/eval.yaml
 ```
 
 `run.py` always exits 0 when the run completed — judging is `gate.py`'s job.
