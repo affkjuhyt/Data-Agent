@@ -37,7 +37,7 @@ done
 json() { curl -sf "$@"; }
 
 if [[ ! -f "$KEYS_FILE" ]]; then
-  initialized=$(json "$BAO_URL/v1/sys/health" | python3 -c 'import sys,json;print(json.load(sys.stdin)["initialized"])')
+  initialized=$(curl -s "$BAO_URL/v1/sys/init" | python3 -c 'import sys,json;print(json.load(sys.stdin)["initialized"])')
   if [[ "$initialized" == "True" ]]; then
     echo "OpenBao is already initialised but $KEYS_FILE is missing — refusing to touch it." >&2
     echo "Restore the keys file, or delete the openbao PVC to reset (non-production only)." >&2
