@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: kb-ingestion-worker
+  name: kb-structured-data
   namespace: dataagent-service
   labels:
-    app: kb-ingestion-worker
+    app: kb-structured-data
     app.kubernetes.io/part-of: dataagent
 automountServiceAccountToken: false
 
@@ -12,10 +12,10 @@ automountServiceAccountToken: false
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: kb-ingestion-worker-env
+  name: kb-structured-data-env
   namespace: dataagent-service
   labels:
-    app: kb-ingestion-worker
+    app: kb-structured-data
     app.kubernetes.io/part-of: dataagent
 data:
   LLM_MODEL: agent-fast
@@ -28,10 +28,10 @@ data:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: docling-cache
+  name: kb-structured-data-cache
   namespace: dataagent-service
   labels:
-    app: kb-ingestion-worker
+    app: kb-structured-data
     app.kubernetes.io/part-of: dataagent
 spec:
   accessModes:
@@ -44,20 +44,20 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: kb-ingestion-worker
+  name: kb-structured-data
   namespace: dataagent-service
   labels:
-    app: kb-ingestion-worker
+    app: kb-structured-data
     app.kubernetes.io/part-of: dataagent
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: kb-ingestion-worker
+      app: kb-structured-data
   template:
     metadata:
       labels:
-        app: kb-ingestion-worker
+        app: kb-structured-data
         app.kubernetes.io/part-of: dataagent
     spec:
       securityContext:
@@ -71,15 +71,15 @@ spec:
       automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       containers:
-      - name: kb-ingestion-worker
-        image: dataagent/kb-ingestion-worker:latest
+      - name: kb-structured-data
+        image: dataagent/kb-structured-data:latest
         envFrom:
         - configMapRef:
             name: dataagent-config
         - configMapRef:
-            name: kb-ingestion-worker-env
+            name: kb-structured-data-env
         - secretRef:
-            name: kb-ingestion-worker-secrets
+            name: kb-structured-data-secrets
         resources:
           requests:
             cpu: 500m
@@ -102,11 +102,11 @@ spec:
         command:
         - python
         - -m
-        - services.kb_ingestion_worker
+        - services.kb_structured_data.structured_data
       volumes:
       - name: cache
         persistentVolumeClaim:
-          claimName: docling-cache
+          claimName: kb-structured-data-cache
       - name: tmp
         emptyDir: {}
-      serviceAccountName: kb-ingestion-worker
+      serviceAccountName: kb-structured-data
