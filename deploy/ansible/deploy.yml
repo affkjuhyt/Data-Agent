@@ -257,6 +257,22 @@
              | default(base if base in manifest_images.stdout_lines else base | replace('_', '-')) }}
         img_context: "{{ item if item in image_self_context else '.' }}"
 
+    - name: Narrow the build list to images_only
+      ansible.builtin.set_fact:
+        images: >-
+          {{ images | default([])
+             | selectattr('name', 'in', images_only.split(',') | map('trim') | reject('equalto', '') | list)
+             | list }}
+      when: (images_only | length) > 0
+
+    - name: Check images_only matched something
+      ansible.builtin.assert:
+        that: (images | default([])) | length > 0
+        fail_msg: >-
+          images_only={{ images_only }} matched nothing buildable.
+          Known: {{ (build_dirs | default([])) | map('basename') | join(', ') }}
+      when: (images_only | length) > 0
+
     - name: Report the build list
       ansible.builtin.debug:
         msg: "building: {{ (images | default([])) | map(attribute='name') | join(', ') | default('nothing', true) }}"

@@ -21,6 +21,7 @@ deploy_full: false
 
 image_prefix: dataagent
 image_tag: latest
+images_only: ""
 
 image_push: true
 image_import: ""       # e.g. "sudo k3s ctr images import -"
