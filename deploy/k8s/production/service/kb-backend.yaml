@@ -43,7 +43,6 @@ metadata:
     app: kb-backend
     app.kubernetes.io/part-of: dataagent
 spec:
-  replicas: 3
   selector:
     matchLabels:
       app: kb-backend

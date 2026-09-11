@@ -28,7 +28,6 @@ metadata:
     app: model-service
     app.kubernetes.io/part-of: dataagent
 spec:
-  replicas: 1
   selector:
     matchLabels:
       app: model-service

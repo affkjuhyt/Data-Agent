@@ -33,7 +33,6 @@ metadata:
     app: workflow-runtime
     app.kubernetes.io/part-of: dataagent
 spec:
-  replicas: 1
   selector:
     matchLabels:
       app: workflow-runtime

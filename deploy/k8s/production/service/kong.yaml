@@ -45,7 +45,6 @@ metadata:
     app: kong
     app.kubernetes.io/part-of: dataagent
 spec:
-  replicas: 2
   selector:
     matchLabels:
       app: kong
