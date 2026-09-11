@@ -44,6 +44,11 @@ and the commits waiting to come in. The two reasons it happens:
 Reconciling either is the operator's call, deliberately not this playbook's.
 Reset, stash, commit or push by hand, then rerun.
 
+Ansible reads `group_vars` when the play starts, before the pull, so the play
+re-reads `inventories/<env>/group_vars/all` from the pulled tree right after it.
+A pulled secret or setting therefore lands in the same run. A pulled change to
+`deploy.yml` or a role still runs the old tasks until the next run.
+
 `inventories/k8s-local` sets `git_sync_enabled: false` — that inventory is a
 developer's own machine, where the tree is normally dirty or ahead and a
 fast-forward would just refuse every run.

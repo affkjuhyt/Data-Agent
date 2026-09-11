@@ -129,6 +129,12 @@
                        else 'git pull failed.') }}
               Resolve it by hand, then rerun. Full diagnosis: {{ pull_failure_log }}
 
+    - name: Reload the inventory vars from the pulled tree
+      ansible.builtin.include_vars:
+        dir: "{{ inventory_dir }}/group_vars/all"
+      when: git_sync_enabled | bool
+      no_log: true
+
     - name: Get HEAD
       ansible.builtin.command:
         cmd: git rev-parse HEAD
