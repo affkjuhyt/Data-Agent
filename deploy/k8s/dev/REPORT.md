@@ -1,5 +1,11 @@
 # Data-Agent k8s dev — bring-up report
 
+> **Historical record (2026-09-11).** Written during the first bring-up from the
+> separate checkout `~/Data-Agent-k8s`. Since PR #55 the stack is deployed from
+> `~/Data-Agent` with `deploy/ansible/deploy.yml`; current procedures are in
+> [`docs/RUNBOOK.md`](../../../docs/RUNBOOK.md). Statements below about `up.sh`,
+> `dev/` being untracked, and "nothing is committed" no longer hold.
+
 Server `ndip` (10.10.55.101), single-node k3s v1.36, repo `~/Data-Agent-k8s`, branch `k8s/ver.0.1`.
 
 ## Result

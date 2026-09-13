@@ -1,192 +1,190 @@
-# Ansible — Data Agent on Kubernetes
+# Ansible — deploying Data Agent to Kubernetes
+
+One playbook, [`deploy.yml`](deploy.yml), deploys the whole stack from **this
+checkout** to the cluster in your kubeconfig. It is incremental: it diffs git
+against the last successful deploy and only rebuilds, reapplies and restarts
+what that change touches.
+
+- Operating the dev server (URLs, logins, demo data, OpenBao, disk):
+  [`docs/RUNBOOK.md`](../../docs/RUNBOOK.md)
+- Manifest design (namespaces, ports, network policy, the dev/production split):
+  [`deploy/k8s/README.md`](../k8s/README.md)
 
 ```bash
 cd deploy/ansible
-export ANSIBLE_VAULT_PASSWORD_FILE=~/.dataagent-vault-pass
-ansible-playbook deploy.yml
+ansible-playbook deploy.yml                                         # normal run
+ansible-playbook deploy.yml -e apply_jobs=true -e apply_setup=true  # also allow Jobs + gateway setup
 ```
 
-One playbook, read top to bottom:
+Run it on the machine that holds the kubeconfig and the Docker daemon — the
+inventory uses `ansible_connection: local`. [`ansible.cfg`](ansible.cfg) selects
+`inventories/k8s-local` and reads the vault password from
+`inventories/k8s-local/.secrets/vault_pass`. Run it with stdin redirected
+(`</dev/null`) when calling it from a non-interactive shell; Ansible refuses
+non-blocking stdio.
 
-```
-pull  ->  diff  ->  build what changed  ->  apply everything  ->  restart what changed
-```
+> **Only committed changes are deployed.** Change detection is
+> `git diff <last deployed sha> HEAD`. An uncommitted edit is invisible: no image
+> is rebuilt, no Secret or ConfigMap is reapplied, no Job reruns — and the run
+> still reports success. Commit first (a local commit is enough). See
+> [Uncommitted changes](#uncommitted-changes) for the escape hatches.
 
-Everything is in [deploy.yml](deploy.yml). Settings are in
-[roles/k8s_common/defaults/main.yml](roles/k8s_common/defaults/main.yml) — a
-role default, so any inventory's `group_vars` can override it. The only roles
-left are the ones that do something genuinely intricate (`k8s_openbao`,
-`k8s_setup`) or purely informational (`k8s_preflight`, `k8s_verify`).
+## What a run does
 
-`ansible.cfg` defaults to `inventories/k8s-local` (`ansible_connection: local` —
-run it on the machine with the kubeconfig and the Docker daemon).
+Everything is in `deploy.yml`, top to bottom. Settings are role defaults in
+[`roles/k8s_common/defaults/main.yml`](roles/k8s_common/defaults/main.yml),
+overridden by the inventory's `group_vars/all/`.
 
-## 1. Pull
-
-```
-git fetch --prune origin main
-git merge --ff-only origin/main
-```
-
-Fast-forward only, and that is the entire safety story: git either replays the
-remote commits onto an untouched tree, or it **refuses before writing a byte**.
-There is no merge to resolve, no conflict state to clean up, and nothing local
-is ever discarded.
-
-A refused pull stops the run before anything is built, applied or restarted,
-and writes `~/.dataagent-deploy/<env>/last-pull-failure.log` with git's own
-output, the working-tree status, the commits you have that the remote does not,
-and the commits waiting to come in. The two reasons it happens:
-
-* **the tree has diverged** — local commits that are not on `origin/main`;
-* **local changes would be overwritten** by an incoming commit.
-
-Reconciling either is the operator's call, deliberately not this playbook's.
-Reset, stash, commit or push by hand, then rerun.
-
-Ansible reads `group_vars` when the play starts, before the pull, so the play
-re-reads `inventories/<env>/group_vars/all` from the pulled tree right after it.
-A pulled secret or setting therefore lands in the same run. A pulled change to
-`deploy.yml` or a role still runs the old tasks until the next run.
-
-`inventories/k8s-local` sets `git_sync_enabled: false` — that inventory is a
-developer's own machine, where the tree is normally dirty or ahead and a
-fast-forward would just refuse every run.
-
-## 2. Diff
-
-`git diff --name-only <checkpoint> HEAD` — one diff, read three ways:
-
-| Bucket | Test | Effect |
+| # | Step | Runs when |
 | --- | --- | --- |
-| code | a changed directory (or any parent of it) contains a `Dockerfile` | build that image |
-| secrets | a path under `secret_paths` | rerun `create-secrets.sh` |
-| config | a path under `config_paths` | rerun `create-configmaps.sh` |
+| 1 | **Preflight** (`k8s_preflight`): kubectl, API server, nodes Ready, required files, reports whether RuntimeClass `gvisor` exists | always |
+| 2 | **Git sync**: `git switch <git_branch>` then `git pull <git_remote> <git_branch>`. On failure it aborts the merge, writes `~/.dataagent-deploy/<env>/last-pull-failure.log`, and stops before touching anything | `git_sync_enabled` |
+| 3 | **Diff** against the checkpoint `~/.dataagent-deploy/<env>/last_deployed_sha.txt`. No checkpoint, or a sha no longer in history, means a full deploy | always |
+| 4 | **Build**: every changed directory, or a parent of one, that holds a `Dockerfile`. A change under `shared_paths` (`backend/libs`, `pyproject.toml`, `uv.lock`) rebuilds **every** image. Tagged `dataagent/<name>:latest`, re-tagged and pushed to `image_registry` | something to build |
+| 5 | **Secrets**: render `secrets.env` from the vault (every run), then reapply every Secret and `kafka-jaas` | reapply only when a path in `secret_paths` changed |
+| 6 | **Base manifests**: namespaces, RBAC, NetworkPolicies, `configmap.yaml` (every run); rerun `create-configmaps.sh` | file-backed ConfigMaps only when a path in `config_paths` changed |
+| 7 | **Database tier**: apply `database/`, wait for every store and pgbouncer | `apply_databases` |
+| 8 | **OpenBao** (`k8s_openbao`): unseal, KV v2 + transit, read policy, demo warehouse password (if `seed_demo`), AppRole. A secret-id is minted only on the first run or with `openbao_rotate_approle` | `apply_databases` |
+| 9 | **Service tier**: apply `service/`, wait for Keycloak and Kong | `apply_services` |
+| 10 | **Jobs**: delete, run `kong-migration` + `migrate`, then `db-init`, `minio-init`, `kafka-topics`, `seed` | `apply_jobs` **and** one of: full deploy, the `migrate` image was rebuilt, a file under `deploy/k8s/<env>/job/` changed |
+| 11 | **Restart** every Deployment/StatefulSet running a rebuilt image | an image was built |
+| 12 | **Restart the service tier** (`rollout restart` every Deployment in `dataagent-service`) | `apply_services` and Secrets or ConfigMaps were reapplied |
+| 13 | **Gateway setup** (`k8s_setup`): rerun the `setup` Job — Kong services/routes/plugins/CORS, the JWT issuer, Keycloak audience mappers, dev user passwords — and apply the backup CronJob | `apply_setup` |
+| 14 | **Verify** (`k8s_verify`), then write the checkpoint | always; the checkpoint only advances if every step above succeeded |
 
-The checkpoint is `~/.dataagent-deploy/<env>/last_deployed_sha.txt` — one file,
-one sha, outside the repo because it is not repo content and has to survive
-whatever you do to the tree to unblock a refused pull.
-Written **last**, so a run that fails anywhere redeploys the same commit next
-time instead of skipping past what it never applied. Delete it (or pass
-`-e deploy_full=true`) to force a full deploy.
+Why restarts are explicit: a rebuilt image keeps the same `:latest` reference,
+so `kubectl apply` sees an identical spec and changes nothing; and a Secret or
+ConfigMap is only read when a pod starts.
 
-## 3. Build
+When `image_registry` is set, manifests are piped through a `sed` that prefixes
+`image: dataagent/<name>:latest` with the registry and turns
+`imagePullPolicy: IfNotPresent` into `Always`, so a restart pulls the new
+`:latest`. The dev manifests already spell `localhost:5000/dataagent/<name>:latest`.
 
-Changed paths → their directories and every parent → `stat` for a `Dockerfile`
-→ that is the build list. The parents matter: a change to
-`backend/services/auth_api/routes/v1/users.py` has to find
-`backend/services/auth_api/Dockerfile`.
+## Inventory `k8s-local`
 
-**`shared_paths` is the exception that makes this correct.** `backend/libs/`,
-`pyproject.toml` and `uv.lock` have no `Dockerfile` next to them, but they sit
-inside the build context of every image that builds from the repo root. A pure
-per-directory rule would ship a `backend/libs/` change to nobody, so a change
-there rebuilds everything.
+The only inventory. It deploys the single-node dev server from
+[`inventories/k8s-local/group_vars/all/main.yml`](inventories/k8s-local/group_vars/all/main.yml):
 
-Image name = directory name, hyphenated if that is what `deploy/k8s/*.yaml`
-asks for — the manifests are not consistent (`kb_backend` ships as
-`kb-backend`, `workflow_runtime` as `workflow_runtime`), so both spellings are
-tried and the manifests arbitrate. Only `backend/alembic` → `migrate` is
-spelled out, in `image_name_overrides`. Build context is the repo root unless
-the directory is listed in `image_self_context`.
+| Setting | Value | Why |
+| --- | --- | --- |
+| `k8s_env` | `dev` | applies `deploy/k8s/dev/` |
+| `secrets_env_file`, `openbao_keys_file`, `openbao_env_file` | under `deploy/k8s/dev/` | server-only state, git-ignored |
+| `image_registry` / `image_push` | `localhost:5000` / `true` | k3s pulls from the local registry |
+| `git_sync_enabled` | `false` | people edit code in this same checkout; a sync would `git switch main` and pull into their working tree |
+| `git_branch` | `main` | used only if sync is turned on |
+| `apply_databases` / `apply_services` | `true` | |
+| `apply_jobs` / `apply_setup` | `false` | Jobs rerun migrations, reset role passwords and rebuild demo tables; setup rewrites Kong config. Opt in per run with `-e` |
+| `seed_demo` | `true` | the `seed` Job loads demo data (see RUNBOOK) |
+| `public_api_url`, `keycloak_public_url`, `langfuse_public_url` | `http://10.10.55.101:30100`, `:30110`, `:30420` | the URLs **browsers** use — see below |
 
-Tags are always `dataagent/<name>:latest` — no registry prefix, exactly as the
-manifests spell it. Where the bytes go is separate:
+The three public URLs must be reachable from a user's browser. They end up in
+`VITE_API_URL` / `VITE_KEYCLOAK_URL` (frontend), `KC_HOSTNAME_URL` (the `iss`
+claim Keycloak puts in every token), Kong's JWT `issuer`, and Langfuse's
+`NEXTAUTH_URL`. Setting them to `localhost:8100` / `:8110` makes every browser
+outside the server fail with "Connecting to Keycloak…" and
+`ERR_CONNECTION_REFUSED`. To change them, follow
+[RUNBOOK → Change the public URL](../../docs/RUNBOOK.md#6-change-the-public-url).
 
-| Variable | Effect |
+## Settings you pass with `-e`
+
+| Flag | Effect |
 | --- | --- |
-| `image_import` | pipe `docker save` into the node's own store, e.g. `sudo k3s ctr images import -` |
-| `image_registry` | also tag and push `<registry>/dataagent/<name>:latest` |
-| `image_push` | push the bare `dataagent/<name>:latest` |
+| `apply_jobs=true` | allow step 10. It still needs a trigger (full deploy, `migrate` rebuilt, or a changed Job file) |
+| `apply_setup=true` | run step 13. Needed after changing the public URLs, `kong-setup.sh` or the Keycloak mappers |
+| `images_only=kb-backend,frontend` | narrow the build list to these image names |
+| `deploy_full=true` | treat everything as changed: rebuild **all** images, reapply all Secrets and ConfigMaps, rerun Jobs (with `apply_jobs`). Needs tens of GB of free disk — check `df -h /` first |
+| `seed_demo=false` | run the `seed` Job without demo data |
+| `openbao_rotate_approle=true` | mint a new AppRole secret-id and reapply the Secrets that carry it; restart `workflow-runtime` and `auth-api` afterwards |
+| `openbao_allow_reset=true` | allow re-initialising OpenBao when the keys file is missing. **Destroys every secret in the vault** — throwaway clusters only |
+| `git_sync_enabled=true` | pull before deploying (see step 2) |
 
-> Every workload sets `imagePullPolicy: IfNotPresent`, so a node that already
-> cached a `:latest` tag **never re-pulls it**. Pushing to a remote registry
-> alone is not enough on such a node — import into the node store (what
-> `k8s-local` does) or run a registry the node treats as a mirror. This is the
-> most likely reason a deploy "succeeds" and the old code keeps running.
+## Secrets
 
-## 4. Secrets and ConfigMaps
-
-Secrets come from the encrypted `inventories/<env>/group_vars/all/vault.yml`,
-which holds raw passwords and nothing composite. `group_vars/all/secrets.yml`
-derives every DSN, `MINIO_URL` and `NEO4J_AUTH` from them, so a password and
-the URL embedding it cannot drift apart. Those values render into
-`deploy/k8s/secrets.env`, and `create-secrets.sh` decides which key reaches
-which workload — that script is unchanged.
-
-```bash
-cd inventories/k8s-local/group_vars/all
-cp vault.yml.example vault.yml
-$EDITOR vault.yml                     # passwords only; DSNs are derived
-ansible-vault encrypt vault.yml       # then commit it
-ansible-vault edit vault.yml          # from then on
+```
+.secrets/vault.yml                 raw passwords (vault_*), ansible-vault encrypted
+   └─ group_vars/all/secrets.yml   derives every DSN, MINIO_URL, NEO4J_AUTH, the public URLs → secret_env
+        └─ templates/secrets.env.j2 + OpenBao AppRole creds → deploy/k8s/dev/secrets.env (every run)
+             └─ deploy/k8s/create-secrets.sh → one <workload>-secrets per workload, only the keys it reads
 ```
 
-The **encrypted** vault is meant to be committed — it is ciphertext, and
-committing it is what lets `git diff` say "the secrets changed in this pull".
-Only the password stays out of the repo, and the playbook refuses to run if
-`vault.yml` turns out to be plaintext.
+- The vault lives in `inventories/k8s-local/.secrets/` and is **not in git**
+  (`.gitignore`: `deploy/ansible/inventories/*/.secrets/`). The `.gitignore`
+  comment about committing an encrypted `vault.yml` describes an older layout.
+- Keys are listed in [`group_vars/all/vault.yml.example`](inventories/k8s-local/group_vars/all/vault.yml.example).
+  Edit with `ansible-vault edit inventories/k8s-local/.secrets/vault.yml`.
+- Because the vault is outside git, **editing it does not trigger a reapply.**
+  Run with `-e secrets_changed=true` (Secrets are reapplied and the service tier
+  restarted in the same run).
+- Postgres admin, Keycloak admin, MinIO, Neo4j and ClickHouse read their password
+  only when their storage is first initialised. Changing one afterwards updates
+  the Secret but not the store, and the services lose access. The Postgres app
+  roles (`app_user`, `runtime_writer`, `sandbox_reader`, `kb_backend`,
+  `pgbouncer_auth`, `kb_ingestion_worker`) are different: the `db-init` Job sets
+  their passwords on every run.
+- `OPENBAO_TOKEN` / `OPENBAO_ROLE_ID` / `OPENBAO_SECRET_ID` are not in the vault;
+  `k8s_openbao` writes them to `deploy/k8s/dev/.openbao-env.yml`.
+- `.secrets/secrets.env.vault` is a leftover from the previous pipeline. Nothing reads it.
+- Do not run `create-secrets.sh` by hand from some other env file. Every Secret
+  is overwritten from that file; if it came from a different generation, the
+  services lose their database, Kafka and gateway credentials at the next restart.
 
-When the diff says secrets moved, all of them are reapplied. No per-Secret
-comparison: `kubectl apply` on an unchanged Secret does nothing to the running
-pods, and 36 applies take about a second. ConfigMaps work the same way.
+## Server-only state
 
-`OPENBAO_TOKEN` / `ROLE_ID` / `SECRET_ID` are not in the vault — they only
-exist once a cluster does. `k8s_openbao` mints them into
-`~/.dataagent-deploy/<env>/openbao.yml`, and the Secrets carrying them are
-reapplied on the run that mints them.
+None of this is in git. Losing the first three means losing the stack's secrets.
 
-### Migrating from the old `.secrets/secrets.env`
+| Path | Holds | If lost |
+| --- | --- | --- |
+| `deploy/ansible/inventories/k8s-local/.secrets/vault.yml` | every password | unrecoverable — back it up |
+| `deploy/ansible/inventories/k8s-local/.secrets/vault_pass` | the vault password | the vault can't be opened |
+| `deploy/k8s/dev/.openbao-keys.json` | OpenBao unseal key + root token | **the vault can never be unsealed again**; the only way out is wiping the OpenBao PVC and every secret in it |
+| `deploy/k8s/dev/.openbao-env.yml` | minted AppRole role-id / secret-id | regenerate with `-e openbao_rotate_approle=true` |
+| `deploy/k8s/dev/secrets.env` | rendered Secrets source | regenerated on every run |
+| `~/.dataagent-deploy/k8s-local/last_deployed_sha.txt` | checkpoint | next run is a full deploy |
+| `~/.dataagent-deploy/k8s-local/last-pull-failure.log` | last failed git sync | — |
 
-For each `vault_*` key in `vault.yml.example`, copy the matching password from
-the old file (`vault_postgres_password` from `POSTGRES_PASSWORD`, and so on).
-Do **not** copy the DSNs, `MINIO_URL` or `NEO4J_AUTH` — those are rebuilt from
-the passwords. `OPENBAO_*` are not copied either.
+The checkpoint lives in `$HOME`, keyed by `env_name` — **not** by checkout. Two
+checkouts using this inventory share it, and share the cluster.
 
-## 5. Apply, then restart
+## Uncommitted changes
 
-Manifests are applied **every run**, never gated on the diff. `kubectl apply`
-compares server-side and only moves a pod when the spec actually differs, so it
-is already the change detector — running our own on top of it just adds a way
-to be wrong, and would let a manual `kubectl edit` or a hand-deleted resource
-drift out of sight forever.
+Commit, then run. If you cannot commit yet:
 
-That handles manifest changes. It does **not** handle the other two, and this
-is worth being precise about:
+| Option | Cost |
+| --- | --- |
+| `-e deploy_full=true` | rebuilds every image — slow and disk-heavy |
+| `-e secrets_changed=true -e config_changed=true` | reapplies every Secret and file-backed ConfigMap, restarts the service tier; builds nothing |
+| add `-e '{"changed_paths": ["deploy/k8s/dev/job/seed.yaml"]}'` (with `apply_jobs=true`) | also lets the Jobs rerun |
 
-* a rebuilt image keeps the same `dataagent/<name>:latest` reference, so the
-  Deployment spec is byte-identical and apply is a no-op — the pod keeps
-  running the old image;
-* a Secret or ConfigMap is only read when a pod starts.
+These overrides work because `-e` outranks the diff result. The checkpoint
+still advances to `HEAD`, so the next run will not see those files as changed
+either: commit them before relying on the pipeline again.
 
-So after the apply there is one restart step: the workloads running a rebuilt
-image are found by asking the cluster which ones use that image reference, and
-restarted; and the service tier is restarted if any Secret or ConfigMap moved.
-Nothing else is touched.
+## Moving the deploy to another checkout
 
-Jobs are delete-then-apply (their pod template is immutable) and only rerun on
-a full deploy, when the `migrate` image was rebuilt, or when something under
-`deploy/k8s/production/job/` changed — so an Alembic revision reruns migrations and a
-frontend change does not.
+Done once, when the stack moved from `~/Data-Agent-k8s` to `~/Data-Agent`:
 
-## Inventories
-
-`inventories/k8s-local/` is the dev server: it applies `deploy/k8s/dev/`
-(`k8s_env: dev`), pushes to the `localhost:5000` registry, and keeps
-`secrets.env`, the OpenBao keys and the minted AppRole credentials inside
-`deploy/k8s/dev/`, all git-ignored. The hardening checks in `k8s_verify` run
-only for `production`. A deploy inventory sets
-`git_sync_enabled: true`, `apply_jobs` / `apply_services` / `apply_setup: true`,
-and whichever of `image_push` / `image_registry` / `image_import` matches how
-its nodes get images.
+1. Make sure the new checkout contains the checkpoint commit
+   (`git cat-file -e $(cat ~/.dataagent-deploy/k8s-local/last_deployed_sha.txt)`),
+   otherwise the first run is a full deploy.
+2. Copy the server-only state — `inventories/k8s-local/.secrets/` and
+   `deploy/k8s/dev/{secrets.env,.openbao-keys.json,.openbao-env.yml}` — with
+   `cp -p`, then check that `git status --ignored` lists each as ignored (`!!`).
+3. Run `ansible-playbook deploy.yml` with no overrides. Expect
+   `changed: 0 file(s)` and `building: nothing` when both checkouts are at the
+   same commit. Compare the freshly rendered `deploy/k8s/dev/secrets.env` with
+   the old one (`cmp`); they must be identical.
+4. Stop deploying from the old checkout.
 
 ## Recovering
 
 | Symptom | Fix |
 | --- | --- |
-| a deploy failed — did it skip those changes? | no: the checkpoint only advances on success. Rerun. |
-| `Pull refused` | read `~/.dataagent-deploy/<env>/last-pull-failure.log`; reconcile the tree by hand, then rerun |
-| everything rebuilt unexpectedly | the checkpoint sha is unreachable (force-push or GC). Expected, once. |
-| new code, old pods | `IfNotPresent` plus a cached `:latest` — see the note in section 3 |
-| a Secret looks stale | `ansible-playbook deploy.yml -e deploy_full=true` |
-| `OpenBao is initialised but openbao-keys.json is missing` | restore the key file, or `-e openbao_allow_reset=true` on a throwaway cluster |
+| A run failed — were those changes skipped? | No. The checkpoint only advances on success; fix the cause and rerun |
+| Run succeeded but nothing changed in the cluster | The change isn't committed — see [Uncommitted changes](#uncommitted-changes) |
+| `Wait for the init Jobs` times out | `kubectl -n dataagent-service get pods -l job-name=<job>`; `ImagePullBackOff` means the image is gone (e.g. `minio/mc`, now replaced by the pinned MinIO server image) |
+| `field is immutable` on a Job | A Job's pod template can't change; the pipeline deletes Jobs before applying. By hand: `kubectl -n dataagent-service delete job <name>` first |
+| `Pull failed` | Read `~/.dataagent-deploy/k8s-local/last-pull-failure.log`, reconcile the tree by hand, rerun |
+| Everything rebuilt unexpectedly | The checkpoint sha isn't in this checkout's history (new checkout, force-push). Expected once |
+| `OpenBao is initialised but … openbao-keys.json is missing` | Restore the keys file from backup. `openbao_allow_reset=true` wipes the vault |
+| Tokens rejected with 401 after changing the public URL | Kong still has the old `issuer`: rerun with `-e apply_setup=true` |
