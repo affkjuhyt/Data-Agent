@@ -21,6 +21,12 @@
 \set tenant '''a0000000-0000-0000-0000-000000000001'''
 \set warehouse '''0000000e-2e00-4000-8000-00000000000a'''
 \set cfg '''0000000e-2e00-4000-8000-00000000000b'''
+-- Kho demo nhìn từ crawler: mặc định là service compose; job seed trên k8s truyền
+-- DW_HOST / DW_PORT. \getenv giữ nguyên giá trị mặc định khi biến môi trường không có.
+\set dw_host postgres
+\set dw_port 5432
+\getenv dw_host DW_HOST
+\getenv dw_port DW_PORT
 
 -- ── 1. Đăng ký kho demo làm KBWarehouse ──────────────────────────────────────
 -- Không có hàng này thì schema-crawler không biết kho demo tồn tại, SchemaCatalog
@@ -33,15 +39,15 @@ VALUES (:warehouse, :tenant, 'Postgres', 'Kho demo (sandbox_dev) — dữ liệu
 ON CONFLICT (warehouse_id) DO UPDATE
     SET service = EXCLUDED.service, tenant_id = EXCLUDED.tenant_id, is_deleted = false;
 
--- config.connection dùng host "postgres" (tên service trong compose) vì crawler
--- chạy trong container. Chạy crawler ngoài container thì override host lúc gọi,
--- đừng sửa hàng này — nó là cấu hình đúng của nền tảng.
+-- config.connection là địa chỉ kho mà crawler thấy từ trong container (dw_host /
+-- dw_port ở trên). psql không thay biến bên trong chuỗi $json$, nên host/port
+-- được ghi đè bằng jsonb_set sau khi dựng JSON.
 --
 -- config.governance là phần KHAI BÁO: owner / nhãn / lineage / SLA. Crawler chỉ
 -- đọc, không bao giờ đoán (backend/services/platform_workers/workers/schema_crawler/governance.py).
 -- Chỉ freshness_column là đổi hành vi crawler — nó bật truy vấn watermark.
 INSERT INTO "KBWarehouseConfig"(config_id, warehouse_id, version_number, is_active, config, created_by, is_deleted)
-VALUES (:cfg, :warehouse, 1, true, $json${
+VALUES (:cfg, :warehouse, 1, true, jsonb_set(jsonb_set($json${
   "connection": {
     "host": "postgres",
     "port": 5432,
@@ -76,7 +82,10 @@ VALUES (:cfg, :warehouse, 1, true, $json${
       "public.dim_product": {"owner": "Phòng Dữ liệu", "classification": "internal"}
     }
   }
-}$json$::jsonb, 'seed-governance', false)
+}$json$::jsonb,
+    '{connection,host}', to_jsonb(:'dw_host'::text)),
+    '{connection,port}', to_jsonb(:'dw_port'::int)),
+  'seed-governance', false)
 ON CONFLICT (config_id) DO UPDATE
     SET config = EXCLUDED.config, is_active = true, is_deleted = false;
 

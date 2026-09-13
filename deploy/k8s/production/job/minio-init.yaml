@@ -52,7 +52,9 @@ spec:
       enableServiceLinks: false
       containers:
       - name: minio-init
-        image: minio/mc
+        # minio/mc is no longer pullable from Docker Hub; the pinned server
+        # image (database/minio.yaml) ships the same mc client.
+        image: minio/minio:RELEASE.2024-01-16T16-07-38Z
         command:
         - sh
         - -c

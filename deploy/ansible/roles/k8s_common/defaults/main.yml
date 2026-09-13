@@ -67,6 +67,8 @@ config_paths:
   - deploy/docker/litellm
   - deploy/docker/monitoring
   - backend/services/workflow_runtime/migrations/seed.sql
+  - tests/e2e/seed.sql
+  - tests/e2e/seed-governance.sql
   - tests/e2e/seed-flow.js
 
 apply_databases: true
@@ -99,6 +101,7 @@ service_workloads:
 migration_jobs: [kong-migration, migrate]
 job_workloads: [db-init, minio-init, kafka-topics, seed]
 seed_demo: false
+seed_demo_tenant: a0000000-0000-0000-0000-000000000001
 
 wait_namespace: 60
 wait_statefulset: 600
