@@ -27,6 +27,12 @@ data:
   # this it tries to connect to a database literally named "admin".
   PGDATABASE: dataagent
   PGPORT: '8300'
+  PGUSER: admin
+  PGDATABASE: dataagent
+  SEED_DEMO: '0'
+  MONGO_HOST: mongo.dataagent-database.svc.cluster.local
+  MONGO_PORT: '8310'
+  MONGO_DB: dataagent
 
 ---
 apiVersion: batch/v1
@@ -57,6 +63,41 @@ spec:
           type: RuntimeDefault
       automountServiceAccountToken: false
       enableServiceLinks: false
+      initContainers:
+      - name: seed-mongo
+        image: mongo:7.0
+        command:
+        - sh
+        - -c
+        - |
+          [ "$SEED_DEMO" = "1" ] || { echo "SEED_DEMO=0, skipping mongo canvas"; exit 0; }
+          until mongosh --quiet --host "$MONGO_HOST" --port "$MONGO_PORT" --eval "db.runCommand({ping:1})" >/dev/null 2>&1; do
+            echo waiting for mongo; sleep 3
+          done
+          mongosh --quiet --host "$MONGO_HOST" --port "$MONGO_PORT" "$MONGO_DB" /seed-mongo/seed-flow.js
+        envFrom:
+        - configMapRef:
+            name: seed-env
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: seed-mongo
+          mountPath: /seed-mongo
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
       containers:
       - name: seed
         image: postgres:16-alpine
@@ -92,6 +133,9 @@ spec:
         - secretRef:
             name: seed-secrets
       volumes:
+      - name: seed-mongo
+        configMap:
+          name: seed-mongo
       - name: seed
         configMap:
           name: seed-sql

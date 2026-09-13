@@ -8,9 +8,10 @@ from typing import Any, BinaryIO, cast
 from urllib.parse import urlparse
 
 import aioboto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
-from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
+from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig, PoolConfig
 from libs.shared.logger import create_logger
 
 log = create_logger("services.minio", "service_minio")
@@ -19,10 +20,11 @@ log = create_logger("services.minio", "service_minio")
 class MinIOClient:
     __slots__ = (
         "_session", "_endpoint", "_access_key", "_secret_key",
-        "_connected", "_healthy", "_url",
+        "_connected", "_healthy", "_url", "_pool",
     )
 
-    def __init__(self) -> None:
+    def __init__(self, pool: PoolConfig | None = None) -> None:
+        self._pool: PoolConfig = pool or PoolConfig.from_env("MINIO")
         self._session: aioboto3.Session | None = None
         self._endpoint: str | None = None
         self._access_key: str | None = None
@@ -55,6 +57,7 @@ class MinIOClient:
             "endpoint_url": self._endpoint,
             "aws_access_key_id": self._access_key,
             "aws_secret_access_key": self._secret_key,
+            "config": Config(max_pool_connections=self._pool.max_connections),
         }
 
     async def _check_health(self, config: HealthCheckLoopConfig) -> None:

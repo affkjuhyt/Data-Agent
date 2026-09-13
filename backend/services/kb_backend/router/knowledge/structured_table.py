@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 import logging
+import os
 import uuid
 import datetime
 
@@ -9,8 +10,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select as sa_select, update as sa_update, text
 
-from libs.basemodel.services_databaseconnector.postgres_model import KBStructuredImportJobInsert, KBTableInsert, Tier
-from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import KBStructuredImportJobORM, KBDataORM
+from libs.basemodel.services_databaseconnector.postgres_model import KBStructuredImportJobInsert, Tier
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+    KBStructuredImportJobORM, KBDataORM, KBTableORM,
+)
 from libs.shared.sql_identifiers import safe_identifier, quote_identifier, UnsafeIdentifier
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
@@ -20,6 +23,13 @@ from services.kb_backend.router.knowledge.ingestion import _fetch_kbdata_or_404
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/pipeline/structured", tags=["StructuredTable"])
+
+_INSERT_BATCH_SIZE = int(os.getenv("KB_STRUCTURED_INSERT_BATCH", "1000"))
+_MAX_IMPORT_ROWS = int(os.getenv("KB_STRUCTURED_MAX_ROWS", "200000"))
+
+# Off until the agent's configured reader role is pinned down: RLS on a role
+# that never sets app.tenant_id empties these tables instead of scoping them.
+_ENFORCE_ROW_LEVEL_SECURITY = os.getenv("KB_STRUCTURED_RLS", "").lower() in ("1", "true", "yes")
 
 # Closed vocabulary — matches kb_ingestion_worker's "table-schema-proposal"
 # LLM schema and the columns() TYPE_MAP below one-for-one. Never let a
@@ -150,6 +160,139 @@ async def get_structured_job(
     return _job_to_dict(job)
 
 
+Columns = list[tuple[str, str, bool, Optional[str]]]
+
+
+def _validated_columns(final_schema: TableSchema) -> Columns:
+    """(name, type, nullable, source_header) — source_header is the ORIGINAL
+    spreadsheet column, which the reviewer may have renamed."""
+    if not final_schema.columns:
+        raise HTTPException(status_code=422, detail="Schema must have at least one column")
+    try:
+        columns = [
+            (safe_identifier(column.name, "column name"), column.type, column.nullable, column.source_header)
+            for column in final_schema.columns
+        ]
+    except UnsafeIdentifier as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    for _, column_type, _, _ in columns:
+        if column_type not in _TYPE_MAP:
+            raise HTTPException(status_code=422, detail=f"Unsupported column type: {column_type!r}")
+    return columns
+
+
+async def _staged_rows(mongo: Any, data_id: str) -> tuple[list[str], list[list[Any]]]:
+    staging = await mongo.get_client()["kb_structured_staging"].find_one({"data_id": data_id})
+    if not staging or not staging.get("rows"):
+        raise HTTPException(
+            status_code=409,
+            detail="Parsed data for this document is no longer available — re-run propose",
+        )
+    rows = staging["rows"]
+    if len(rows) > _MAX_IMPORT_ROWS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Import has {len(rows)} rows; the limit is {_MAX_IMPORT_ROWS}",
+        )
+    return staging.get("headers", []), rows
+
+
+def _coerced_rows(rows: list[list[Any]], headers: list[str], columns: Columns,
+                  tenant_id: str) -> tuple[list[dict[str, Any]], int]:
+    """Parameter sets for executemany, plus how many values would not convert."""
+    header_index = {header: index for index, header in enumerate(headers)}
+    parameter_sets: list[dict[str, Any]] = []
+    coercion_failures = 0
+    for row in rows:
+        params: dict[str, Any] = {"tenant_id": tenant_id}
+        for position, (_, column_type, _, source_header) in enumerate(columns):
+            source_index = header_index.get(source_header) if source_header else None
+            raw_value = row[source_index] if source_index is not None and source_index < len(row) else None
+            params[f"c{position}"] = _coerce(raw_value, column_type)
+            if raw_value not in (None, "") and params[f"c{position}"] is None:
+                coercion_failures += 1
+        parameter_sets.append(params)
+    return parameter_sets, coercion_failures
+
+
+async def _unused_table_name(session: Any, preferred_name: str) -> str:
+    """Collisions are only ever against other imports — kb_structured holds nothing else."""
+    candidate = preferred_name
+    suffix = 1
+    while (await session.execute(
+        text("SELECT 1 FROM information_schema.tables "
+             "WHERE table_schema = 'kb_structured' AND table_name = :name"),
+        {"name": candidate},
+    )).first() is not None:
+        suffix += 1
+        candidate = f"{preferred_name}_{suffix}"
+    return candidate
+
+
+async def _create_import_table(session: Any, table_name: str, columns: Columns) -> None:
+    qualified_name = f"kb_structured.{quote_identifier(table_name)}"
+    column_definitions = ", ".join(
+        f"{quote_identifier(name)} {_TYPE_MAP[column_type]}" + ("" if nullable else " NOT NULL")
+        for name, column_type, nullable, _ in columns
+    )
+    await session.execute(text(
+        f"CREATE TABLE {qualified_name} "
+        f"(id BIGSERIAL PRIMARY KEY, tenant_id UUID NOT NULL, {column_definitions})"
+    ))
+    # Migration d4e5f6a7b8c9 covers this by default privileges; the guard keeps
+    # an environment that has not run it yet from failing the approval.
+    await session.execute(text(
+        "DO $$ BEGIN "
+        f"  GRANT SELECT ON {qualified_name} TO kb_structured_reader; "
+        "EXCEPTION WHEN undefined_object THEN NULL; END $$;"
+    ))
+    if _ENFORCE_ROW_LEVEL_SECURITY:
+        await session.execute(text(f"ALTER TABLE {qualified_name} ENABLE ROW LEVEL SECURITY"))
+        await session.execute(text(f"ALTER TABLE {qualified_name} FORCE ROW LEVEL SECURITY"))
+        await session.execute(text(
+            f"CREATE POLICY tenant_isolation ON {qualified_name} "
+            "USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid) "
+            "WITH CHECK (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)"
+        ))
+
+
+async def _insert_rows(session: Any, table_name: str, columns: Columns,
+                       parameter_sets: list[dict[str, Any]]) -> None:
+    insert_columns = ", ".join(quote_identifier(name) for name, _, _, _ in columns)
+    placeholders = ", ".join(f":c{position}" for position in range(len(columns)))
+    statement = text(
+        f"INSERT INTO kb_structured.{quote_identifier(table_name)} (tenant_id, {insert_columns}) "
+        f"VALUES (:tenant_id, {placeholders})"
+    )
+    # executemany per batch — one round-trip per row starved the pool.
+    for start in range(0, len(parameter_sets), _INSERT_BATCH_SIZE):
+        await session.execute(statement, parameter_sets[start:start + _INSERT_BATCH_SIZE])
+
+
+async def _record_approval(session: Any, job: Any, data_id: str, table_name: str,
+                           columns: Columns, final_schema: TableSchema, reviewer: str) -> None:
+    qualified_name = f"kb_structured.{table_name}"
+    session.add(KBTableORM(
+        owner_id=uuid.UUID(data_id),
+        table_name=qualified_name,
+        description=(job.llm_proposed_schema or {}).get("description") if job.llm_proposed_schema else None,
+        table_schema={"columns": [{"name": n, "type": t, "nullable": nl} for n, t, nl, _ in columns]},
+        created_by=reviewer,
+    ))
+    await session.execute(
+        sa_update(KBStructuredImportJobORM)
+        .where(KBStructuredImportJobORM.job_id == job.job_id)
+        .values(
+            status="approved", human_edited_schema=final_schema.model_dump(),
+            created_table_name=qualified_name, reviewed_by=reviewer,
+            reviewed_at=datetime.datetime.now(datetime.timezone.utc),
+        )
+    )
+    await session.execute(
+        sa_update(KBDataORM).where(KBDataORM.data_id == uuid.UUID(data_id)).values(current_tier=Tier.GOLD.value)
+    )
+
+
 @router.post("/{data_id}/approve")
 async def approve_structured_table(
         data_id: str,
@@ -158,7 +301,6 @@ async def approve_structured_table(
         ctx: dict[str, Any] = Depends(require_perm("processLayer")),
 ) -> dict[str, Any]:
     postgres = svc(request, "postgres")
-    mongo = svc(request, "mongo")
 
     await _fetch_kbdata_or_404(postgres, ctx["tenant_id"], ctx["role_id"], data_id)
     job = await _latest_job(postgres, data_id)
@@ -166,113 +308,22 @@ async def approve_structured_table(
         raise HTTPException(status_code=409, detail="No proposal is ready for review on this document")
 
     final_schema = body.schema_
-    try:
-        table_name = safe_identifier(final_schema.table_name, "table_name")
-        # source_header ties a column back to the ORIGINAL spreadsheet
-        # header its values come from — `name` is whatever the human
-        # renamed it to in the review screen and won't generally match any
-        # header in the parsed file.
-        columns = [
-            (safe_identifier(c.name, "column name"), c.type, c.nullable, c.source_header)
-            for c in final_schema.columns
-        ]
-    except UnsafeIdentifier as e:
-        raise HTTPException(status_code=422, detail=str(e))
+    columns = _validated_columns(final_schema)
+    headers, rows = await _staged_rows(svc(request, "mongo"), data_id)
+    parameter_sets, coercion_failures = _coerced_rows(rows, headers, columns, ctx["tenant_id"])
 
-    for _, col_type, _, _ in columns:
-        if col_type not in _TYPE_MAP:
-            raise HTTPException(status_code=422, detail=f"Unsupported column type: {col_type!r}")
-    if not columns:
-        raise HTTPException(status_code=422, detail="Schema must have at least one column")
-
-    staging = await mongo.get_client()["kb_structured_staging"].find_one({"data_id": data_id})
-    if not staging or not staging.get("rows"):
-        raise HTTPException(status_code=409, detail="Parsed data for this document is no longer available — re-run propose")
-    headers: list[str] = staging.get("headers", [])
-    rows: list[list[Any]] = staging["rows"]
-
+    # DDL, rows and the catalogue row share one transaction: the whole import
+    # lands or none of it does.
     async with postgres.get_client() as session:
-        # Auto-suffix on name collision inside kb_structured — the physical
-        # table lives in its own schema, so collisions are only ever against
-        # other structured imports, never the application's own tables.
-        final_name = table_name
-        suffix = 1
-        while (await session.execute(
-            text('SELECT 1 FROM information_schema.tables WHERE table_schema = \'kb_structured\' AND table_name = :n'),
-            {"n": final_name},
-        )).first() is not None:
-            suffix += 1
-            final_name = f"{table_name}_{suffix}"
-
-        col_defs = ", ".join(
-            f"{quote_identifier(name)} {_TYPE_MAP[col_type]}" + ("" if nullable else " NOT NULL")
-            for name, col_type, nullable, _ in columns
-        )
-        await session.execute(text(
-            f'CREATE TABLE kb_structured.{quote_identifier(final_name)} '
-            f'(id BIGSERIAL PRIMARY KEY, tenant_id UUID NOT NULL, {col_defs})'
-        ))
-        # Belt-and-braces alongside migration d4e5f6a7b8c9's ALTER DEFAULT
-        # PRIVILEGES (which already covers this for the common case): grant
-        # explicitly too, and don't let a missing role — an environment that
-        # hasn't run that migration yet — fail the whole approval.
-        await session.execute(text(
-            "DO $$ BEGIN "
-            f"  GRANT SELECT ON kb_structured.{quote_identifier(final_name)} TO kb_structured_reader; "
-            "EXCEPTION WHEN undefined_object THEN NULL; END $$;"
-        ))
-
-        coercion_failures = 0
-        insert_cols = ", ".join(quote_identifier(name) for name, _, _, _ in columns)
-        placeholders = ", ".join(f":c{i}" for i in range(len(columns)))
-        insert_sql = text(
-            f'INSERT INTO kb_structured.{quote_identifier(final_name)} (tenant_id, {insert_cols}) '
-            f'VALUES (:tenant_id, {placeholders})'
-        )
-        header_index = {h: i for i, h in enumerate(headers)}
-        for row in rows:
-            params: dict[str, Any] = {"tenant_id": ctx["tenant_id"]}
-            for i, (name, col_type, _, source_header) in enumerate(columns):
-                src_idx = header_index.get(source_header) if source_header else None
-                raw = row[src_idx] if src_idx is not None and src_idx < len(row) else None
-                params[f"c{i}"] = _coerce(raw, col_type)
-                if raw not in (None, "") and params[f"c{i}"] is None:
-                    coercion_failures += 1
-            await session.execute(insert_sql, params)
-
-        # CREATE TABLE + all row inserts commit together — a coercion
-        # failure never rolls this back (it just yields a NULL cell and a
-        # warning count), but a DB-level error here (e.g. a bad DDL) rolls
-        # back the whole table, never leaving a half-populated one behind.
+        preferred_name = safe_identifier(final_schema.table_name, "table_name")
+        table_name = await _unused_table_name(session, preferred_name)
+        await _create_import_table(session, table_name, columns)
+        await _insert_rows(session, table_name, columns, parameter_sets)
+        await _record_approval(session, job, data_id, table_name, columns, final_schema, ctx["user_name"])
         await session.commit()
 
-    # postgres.insert() opens/commits its own session — separate from the
-    # DDL/DML session above, which already committed the physical table.
-    await postgres.insert(KBTableInsert(
-        owner_id=data_id, table_name=f"kb_structured.{final_name}",
-        description=(job.llm_proposed_schema or {}).get("description") if job.llm_proposed_schema else None,
-        table_schema={"columns": [{"name": n, "type": t, "nullable": nl} for n, t, nl, _ in columns]},
-        created_by=ctx["user_name"],
-    ))
-
-    now = datetime.datetime.now(datetime.timezone.utc)
-    async with postgres.get_client() as session:
-        await session.execute(
-            sa_update(KBStructuredImportJobORM)
-            .where(KBStructuredImportJobORM.job_id == job.job_id)
-            .values(
-                status="approved", human_edited_schema=final_schema.model_dump(),
-                created_table_name=f"kb_structured.{final_name}",
-                reviewed_by=ctx["user_name"], reviewed_at=now,
-            )
-        )
-        await session.execute(
-            sa_update(KBDataORM).where(KBDataORM.data_id == uuid.UUID(data_id)).values(current_tier=Tier.GOLD.value)
-        )
-        await session.commit()
-
-    log.info("Structured table approved data_id=%s table=kb_structured.%s rows=%d", data_id, final_name, len(rows))
-    return {"table_name": f"kb_structured.{final_name}", "row_count": len(rows), "coercion_warnings": coercion_failures}
+    log.info("Structured table approved data_id=%s table=kb_structured.%s rows=%d", data_id, table_name, len(rows))
+    return {"table_name": f"kb_structured.{table_name}", "row_count": len(rows), "coercion_warnings": coercion_failures}
 
 
 @router.post("/{data_id}/reject")

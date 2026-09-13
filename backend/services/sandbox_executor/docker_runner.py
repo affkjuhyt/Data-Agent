@@ -161,7 +161,7 @@ _pool_lock = threading.Lock()
 
 def _get_client() -> Any:
     """Talks to a rootless Docker-in-Docker sidecar (`sandbox-dockerd` in
-    deploy/docker/docker-compose.app.yml) when SANDBOX_DOCKER_HOST is set, instead of
+    a rootless DinD sidecar) when SANDBOX_DOCKER_HOST is set, instead of
     the host's own /var/run/docker.sock. A compromise of this process then
     only yields root inside that sidecar's rootless user namespace, not on
     the real host (see docs/Sandbox_SchemaCrawler_Implementation.md §8.7/§9

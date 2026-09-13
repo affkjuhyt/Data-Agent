@@ -104,30 +104,35 @@ async def upload_to_bronze(
         ingestion_mode=ingestion_mode,
         path=object_key,
     )
-    data_res = await postgres.insert(kb_insert)
-    if data_res.code != 200:
-        await minio.delete(cfg.MINIO_BUCKET, object_key)
-        raise RuntimeError(f"Postgres KBData insert failed: {data_res.error}")
+    # Document and its first lifecycle row share one transaction: a document
+    # with no history was previously possible whenever the second insert failed.
+    async with postgres.get_client(tenant_id=tenant_id) as session:
+        data_res = await postgres.insert(kb_insert, session=session)
+        if data_res.code != 200:
+            await minio.delete(cfg.MINIO_BUCKET, object_key)
+            raise RuntimeError(f"Postgres KBData insert failed: {data_res.error}")
 
-    assert data_res.data is not None
-    actual_data_id: str = data_res.data["data_id"]
+        assert data_res.data is not None
+        actual_data_id: str = data_res.data["data_id"]
 
-    hist_res = await postgres.insert(KBLifecycleHistoryInsert(
-        data_id=actual_data_id,
-        to_tier=Tier.BRONZE,
-        from_tier=None,
-        approved_by=added_by,
-        notes=f"Ingested as bronze: {filename} ({source_type.value})",
-        pipeline_metadata={
-            "stage":       "bronze",
-            "source_type": source_type.value,
-            "extension":   extension,
-            "file_size":   len(file_data),
-            "filename":    filename,
-        },
-    ))
-    if hist_res.code != 200:
-        log.warning("Lifecycle history insert failed data_id=%s: %s", actual_data_id, hist_res.error)
+        hist_res = await postgres.insert(KBLifecycleHistoryInsert(
+            data_id=actual_data_id,
+            to_tier=Tier.BRONZE,
+            from_tier=None,
+            approved_by=added_by,
+            notes=f"Ingested as bronze: {filename} ({source_type.value})",
+            pipeline_metadata={
+                "stage":       "bronze",
+                "source_type": source_type.value,
+                "extension":   extension,
+                "file_size":   len(file_data),
+                "filename":    filename,
+            },
+        ), session=session)
+        if hist_res.code != 200:
+            await minio.delete(cfg.MINIO_BUCKET, object_key)
+            raise RuntimeError(f"Postgres lifecycle history insert failed: {hist_res.error}")
+        await session.commit()
 
     log.info("Bronze registered data_id=%s tenant=%s", actual_data_id, tenant_id)
     return {
@@ -166,23 +171,25 @@ async def register_web_bronze(
         current_tier=Tier.BRONZE,
         path=None,
     )
-    data_res = await postgres.insert(kb_insert)
-    if data_res.code != 200:
-        raise RuntimeError(f"Postgres KBData insert failed: {data_res.error}")
+    async with postgres.get_client(tenant_id=tenant_id) as session:
+        data_res = await postgres.insert(kb_insert, session=session)
+        if data_res.code != 200:
+            raise RuntimeError(f"Postgres KBData insert failed: {data_res.error}")
 
-    assert data_res.data is not None
-    actual_data_id: str = data_res.data["data_id"]
+        assert data_res.data is not None
+        actual_data_id: str = data_res.data["data_id"]
 
-    hist_res = await postgres.insert(KBLifecycleHistoryInsert(
-        data_id=actual_data_id,
-        to_tier=Tier.BRONZE,
-        from_tier=None,
-        approved_by=added_by,
-        notes=f"Ingested web portal as bronze: {url}",
-        pipeline_metadata={"stage": "bronze", "source_type": SourceType.WEB.value, "url": url},
-    ))
-    if hist_res.code != 200:
-        log.warning("Lifecycle history insert failed data_id=%s: %s", actual_data_id, hist_res.error)
+        hist_res = await postgres.insert(KBLifecycleHistoryInsert(
+            data_id=actual_data_id,
+            to_tier=Tier.BRONZE,
+            from_tier=None,
+            approved_by=added_by,
+            notes=f"Ingested web portal as bronze: {url}",
+            pipeline_metadata={"stage": "bronze", "source_type": SourceType.WEB.value, "url": url},
+        ), session=session)
+        if hist_res.code != 200:
+            raise RuntimeError(f"Postgres lifecycle history insert failed: {hist_res.error}")
+        await session.commit()
 
     log.info("Bronze registered web data_id=%s url=%s tenant=%s", actual_data_id, url, tenant_id)
     return {

@@ -72,7 +72,8 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: kong
-        image: REGISTRY/dataagent/kong:latest
+        image: dataagent/kong:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8100
           name: proxy

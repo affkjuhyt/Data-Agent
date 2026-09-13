@@ -20,6 +20,9 @@ metadata:
 data:
   ENABLE_ADMIN_KEY_AUTH: '0'
   KONG_ADMIN_SUBNET: ''
+  KONG_PROXY_URL: http://kong.dataagent-service.svc.cluster.local:8100
+  KEYCLOAK_DISABLE_MFA: '0'
+  SMOKE_USER: ''
 
 ---
 apiVersion: batch/v1
@@ -54,7 +57,8 @@ spec:
       - name: setup
         # Built from deploy/docker/setup/Dockerfile (bash/curl baked in at
         # build time) — this pod has no egress to install them at runtime.
-        image: REGISTRY/dataagent/setup:latest
+        image: dataagent/setup:latest
+        imagePullPolicy: IfNotPresent
         command:
         - sh
         - -c
@@ -63,6 +67,36 @@ spec:
           until curl -sf "$KONG_ADMIN_URL" >/dev/null; do echo waiting for kong admin; sleep 3; done
           bash /scripts/keycloak/setup-audience-mappers.sh
           bash /scripts/kong/kong-setup.sh
+          if [ "$KEYCLOAK_DISABLE_MFA" = "1" ]; then
+            tok=$(curl -sf -X POST "$KEYCLOAK_URL/realms/master/protocol/openid-connect/token" \
+              -d grant_type=password -d client_id=admin-cli \
+              --data-urlencode "username=$KEYCLOAK_ADMIN" --data-urlencode "password=$KEYCLOAK_ADMIN_PASSWORD" \
+              | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+            flow=$(curl -sf -H "Authorization: Bearer $tok" "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM" \
+              | python3 -c 'import sys,json;print(json.load(sys.stdin).get("browserFlow",""))')
+            if [ "$flow" != "browser" ]; then
+              curl -sf -X PUT -H "Authorization: Bearer $tok" -H "Content-Type: application/json" \
+                -d '{"browserFlow":"browser"}' "$KEYCLOAK_URL/admin/realms/$KEYCLOAK_REALM"
+              echo "keycloak browserFlow set to browser"
+            fi
+          fi
+          code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$KONG_PROXY_URL/api/orchestrate/stream" \
+            -H "Content-Type: application/json" -d '{"query":"ping","user_id":"verify"}')
+          case "$code" in
+            401|403) echo "gateway rejects anonymous: $code" ;;
+            *) echo "gateway is not fail-closed: got $code"; exit 1 ;;
+          esac
+          if [ -n "$SMOKE_USER" ] && [ -n "$SMOKE_PASSWORD" ]; then
+            t=$(curl -sf -X POST "$KEYCLOAK_URL/realms/$KEYCLOAK_REALM/protocol/openid-connect/token" \
+              -d grant_type=password -d client_id=aeroflow-frontend \
+              --data-urlencode "username=$SMOKE_USER" --data-urlencode "password=$SMOKE_PASSWORD" \
+              | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
+            for route in /api/catalog/agents /api/reviews/pending; do
+              c=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $t" "$KONG_PROXY_URL$route")
+              [ "$c" = "200" ] || { echo "route $route returned $c"; exit 1; }
+              echo "route $route ok"
+            done
+          fi
         envFrom:
         - configMapRef:
             name: dataagent-config

@@ -17,7 +17,8 @@ Nothing reads it.
 | `sql/create-extra-dbs.sql`, `init.sql` | ConfigMap `postgres-initdb` |
 | `sql/grant-runtime-writer.sql`, `kb-seed.sql` | ConfigMap `db-init-sql` → `job/db-init.yaml` |
 | `litellm/config.yaml` | ConfigMap `litellm-config` |
-| `monitoring/prometheus.yml`, `monitoring/grafana/provisioning/` | ConfigMaps `prometheus-config`, `grafana-provisioning` |
+| `monitoring/prometheus.yml` | ConfigMap `prometheus-config` |
+| `monitoring/grafana/provisioning/{datasources,dashboards}/`, `grafana/dashboards/` | ConfigMaps `grafana-datasources`, `grafana-dashboards-provider`, `grafana-dashboards` |
 | `redis/redis.conf` | superseded — the ConfigMap in `database/redis.yaml` carries it |
 | `openbao/config.hcl` | superseded — the ConfigMap in `database/openbao.yaml` carries it |
 | `certs/gen-certs.sh` | dev TLS material, generated files git-ignored |
@@ -25,8 +26,9 @@ Nothing reads it.
 | `filebeat/`, `haproxy/` | unused — see "Not ported" in the k8s README |
 
 Application images build from `backend/services/<name>/Dockerfile` with the repo
-root as context. `deploy/k8s/README.md` has the exact `kubectl create configmap`
-commands for every file above.
+root as context. The ConfigMaps above are created by
+[`deploy/k8s/create-configmaps.sh`](../k8s/create-configmaps.sh), which reads
+these files in place — there is no second copy.
 
 ## Building
 
@@ -40,8 +42,9 @@ Images are named `dataagent/<service_name>`; push them as
 
 ## Ports
 
-Container ports are fixed in each service's Dockerfile and matched by the
-manifests: auth-api 8200, release-worker 8210, kb-backend 8220, model-service
+Ports are not in the Dockerfiles. Each image has no `EXPOSE` and no `CMD` — the
+start command and the port live in the workload's manifest, so there is one place
+to change them: auth-api 8200, release-worker 8210, kb-backend 8220, model-service
 8230, workflow-runtime 8240, flow-builder 8250, sandbox-executor 8260,
 llm-exporter 8270. `8000–8099` stays reserved for the LLM tier. Third-party
 images keep their native port.

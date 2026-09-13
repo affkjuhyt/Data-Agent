@@ -87,19 +87,33 @@ def _tenant_condition(level: str, tenant_id: str) -> Any:
     return KBTextBlockVersionORM.block_id.in_(owned_block_ids)
 
 
-async def _assert_trash_item_owned_by_tenant(postgres: Any, level: str, item_id: uuid.UUID, tenant_id: str) -> None:
-    id_column_by_level = {
-        "document": KBDataORM.data_id,
-        "chunk": KBTextBlockORM.block_id,
-        "version": KBTextBlockVersionORM.version_id,
-    }
-    id_column = id_column_by_level[level]
+_ID_COLUMN_BY_LEVEL = {
+    "document": KBDataORM.data_id,
+    "chunk": KBTextBlockORM.block_id,
+    "version": KBTextBlockVersionORM.version_id,
+}
+
+
+async def _trash_target(
+        postgres: Any, level: str, item_id: uuid.UUID, tenant_id: str | None,
+) -> tuple[bool, str | None]:
+    """(row still present, MinIO object key) — one session for what took three."""
+    id_column = _ID_COLUMN_BY_LEVEL[level]
     async with postgres.get_client() as session:
-        owned = await session.scalar(
-            sa_select(id_column).where(id_column == item_id, _tenant_condition(level, tenant_id)).limit(1)
-        )
-    if owned is None:
-        raise HTTPException(status_code=404, detail=f"{level} not found")
+        if await session.scalar(sa_select(id_column).where(id_column == item_id).limit(1)) is None:
+            return False, None
+        if tenant_id:
+            owned = await session.scalar(
+                sa_select(id_column)
+                .where(id_column == item_id, _tenant_condition(level, tenant_id))
+                .limit(1)
+            )
+            if owned is None:
+                raise HTTPException(status_code=404, detail=f"{level} not found")
+        if level != "document":
+            return True, None
+        object_key = await session.scalar(sa_select(KBDataORM.path).where(KBDataORM.data_id == item_id))
+    return True, object_key
 
 
 async def list_trash(postgres: Any, level: str, tenant_id: str | None) -> dict[str, Any]:
@@ -236,132 +250,110 @@ async def restore(postgres: Any, qdrant: Any, level: str, item_id: str, tenant_i
 _DOC_MONGO_COLLECTIONS = ("kb_silver_staging", "kb_structured_staging", "kb_ingestion_logs", "pipeline_events")
 
 
+async def _delete_blocks(session: Any, block_ids: list[uuid.UUID]) -> None:
+    """Versions and text tables first: these FKs do not cascade in the real schema."""
+    if not block_ids:
+        return
+    version_ids = (await session.execute(
+        sa_select(KBTextBlockVersionORM.version_id).where(KBTextBlockVersionORM.block_id.in_(block_ids))
+    )).scalars().all()
+    if version_ids:
+        await session.execute(sa_delete(KBTextTableORM).where(KBTextTableORM.version_id.in_(version_ids)))
+        await session.execute(
+            sa_delete(KBTextBlockVersionORM).where(KBTextBlockVersionORM.block_id.in_(block_ids))
+        )
+    await session.execute(sa_delete(KBTextBlockORM).where(KBTextBlockORM.block_id.in_(block_ids)))
+
+
+async def _delete_document(session: Any, data_id: uuid.UUID) -> None:
+    block_ids = (await session.execute(
+        sa_select(KBTextBlockORM.block_id).where(KBTextBlockORM.owner_id == data_id)
+    )).scalars().all()
+    await _delete_blocks(session, list(block_ids))
+
+    # A document that ever raised a gold-promotion conflict blocks its own
+    # deletion until these are cleared; the batch goes only if now empty.
+    batch_ids = (await session.execute(
+        sa_select(KBConflictORM.batch_id)
+        .where(KBConflictORM.data_id == data_id, KBConflictORM.batch_id.is_not(None))
+    )).scalars().all()
+    await session.execute(sa_delete(KBConflictORM).where(KBConflictORM.data_id == data_id))
+    if batch_ids:
+        await session.execute(
+            sa_delete(KBConflictBatchORM).where(
+                KBConflictBatchORM.batch_id.in_(set(batch_ids)),
+                ~sa_select(KBConflictORM.conflict_id)
+                .where(KBConflictORM.batch_id == KBConflictBatchORM.batch_id)
+                .exists(),
+            )
+        )
+
+    await session.execute(sa_delete(KBTableORM).where(KBTableORM.owner_id == data_id))
+    await session.execute(sa_delete(KBLifecycleHistoryORM).where(KBLifecycleHistoryORM.data_id == data_id))
+    await session.execute(sa_delete(KBDataORM).where(KBDataORM.data_id == data_id))
+
+
+async def _purge_vectors_and_graph(qdrant: Any, neo4j: Any, level: str,
+                                   item_id: str, tenant_id: str | None) -> None:
+    if level == "document":
+        await _qdrant_delete_by_data_id(qdrant, tenant_id, item_id)
+        async with neo4j.get_client().session() as graph:
+            await (await graph.run(
+                "MATCH ()-[r:RELATES {data_id: $did}]-() DELETE r", did=item_id)).consume()
+    elif level == "chunk":
+        await _qdrant_delete_block(qdrant, item_id)
+
+
+async def _purge_document_blobs(minio: Any, mongo: Any, object_key: str | None, data_id: str) -> None:
+    """Best-effort: a leftover blob is garbage, not a correctness problem."""
+    if minio is not None and object_key:
+        try:
+            await minio.get_client().delete(MINIO_BUCKET, object_key)
+        except Exception as exc:
+            log.warning("trash flush: minio delete failed key=%s: %s", object_key, exc)
+    if mongo is None:
+        return
+    database = mongo.get_client()
+    for collection in _DOC_MONGO_COLLECTIONS:
+        try:
+            await database[collection].delete_many({"data_id": data_id})
+        except Exception as exc:
+            log.warning("trash flush: mongo delete failed coll=%s data_id=%s: %s", collection, data_id, exc)
+
+
 async def flush(
         postgres: Any, qdrant: Any, neo4j: Any, level: str, item_id: str, tenant_id: str | None,
         minio: Any = None, mongo: Any = None,
 ) -> None:
     if level not in LEVELS:
         raise HTTPException(status_code=422, detail=f"Unknown trash level: {level}")
-    iid = uuid.UUID(item_id)
+    item_uuid = uuid.UUID(item_id)
+
+    still_exists, object_key = await _trash_target(postgres, level, item_uuid, tenant_id)
+    if not still_exists:
+        log.info("trash flush %s %s — row already gone (cascaded by a parent flush); skipping",
+                 level, item_id)
+        return
+
+    # Vectors first: a deleted row with live vectors stays searchable.
+    await _purge_vectors_and_graph(qdrant, neo4j, level, item_id, tenant_id)
 
     async with postgres.get_client() as session:
-        if level == "document":
-            still_exists = await session.scalar(
-                sa_select(KBDataORM.data_id).where(KBDataORM.data_id == iid)
-            )
-        elif level == "chunk":
-            still_exists = await session.scalar(
-                sa_select(KBTextBlockORM.block_id).where(KBTextBlockORM.block_id == iid)
-            )
-        else:
-            still_exists = await session.scalar(
-                sa_select(KBTextBlockVersionORM.version_id).where(KBTextBlockVersionORM.version_id == iid)
-            )
-    if not still_exists:
-        log.info(
-            "trash flush %s %s — row already gone (cascaded by a parent flush); skipping",
-            level, item_id,
-        )
-        return
-    if tenant_id:
-        await _assert_trash_item_owned_by_tenant(postgres, level, iid, tenant_id)
+        try:
+            if level == "document":
+                await _delete_document(session, item_uuid)
+            elif level == "chunk":
+                await _delete_blocks(session, [item_uuid])
+            else:
+                await session.execute(
+                    sa_delete(KBTextBlockVersionORM).where(KBTextBlockVersionORM.version_id == item_uuid)
+                )
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
 
     if level == "document":
-        async with postgres.get_client() as session:
-            object_key = await session.scalar(
-                sa_select(KBDataORM.path).where(KBDataORM.data_id == iid)
-            )
-
-        await _qdrant_delete_by_data_id(qdrant, tenant_id, item_id)
-        async with neo4j.get_client().session() as session:
-            await (await session.run(
-                "MATCH ()-[r:RELATES {data_id: $did}]-() DELETE r", did=item_id)).consume()
-
-        async with postgres.get_client() as session:
-            try:
-                # Deletion order matters: none of these FKs actually cascade at
-                # the DB level (the ORM's ondelete="CASCADE" describes intent
-                # for Base.metadata.create_all, but the real schema comes from
-                # Alembic migrations, which never added it here) — a parent
-                # delete with live children raises ForeignKeyViolationError
-                # rather than silently cascading. Children first, in
-                # dependency order.
-                block_ids = (await session.execute(
-                    sa_select(KBTextBlockORM.block_id).where(KBTextBlockORM.owner_id == iid)
-                )).scalars().all()
-                if block_ids:
-                    version_ids = (await session.execute(
-                        sa_select(KBTextBlockVersionORM.version_id)
-                        .where(KBTextBlockVersionORM.block_id.in_(block_ids))
-                    )).scalars().all()
-                    if version_ids:
-                        await session.execute(
-                            sa_delete(KBTextTableORM).where(KBTextTableORM.version_id.in_(version_ids))
-                        )
-                    await session.execute(
-                        sa_delete(KBTextBlockVersionORM).where(KBTextBlockVersionORM.block_id.in_(block_ids))
-                    )
-                await session.execute(sa_delete(KBTextBlockORM).where(KBTextBlockORM.owner_id == iid))
-
-                # Same story for KBConflict -> KBData: no DB-level cascade, so a
-                # document that ever raised a gold-promotion conflict blocks its
-                # own deletion until these are cleared first.
-                batch_ids = (await session.execute(
-                    sa_select(KBConflictORM.batch_id)
-                    .where(KBConflictORM.data_id == iid, KBConflictORM.batch_id.is_not(None))
-                )).scalars().all()
-                await session.execute(sa_delete(KBConflictORM).where(KBConflictORM.data_id == iid))
-                if batch_ids:
-                    await session.execute(
-                        sa_delete(KBConflictBatchORM).where(
-                            KBConflictBatchORM.batch_id.in_(set(batch_ids)),
-                            ~sa_select(KBConflictORM.conflict_id)
-                            .where(KBConflictORM.batch_id == KBConflictBatchORM.batch_id)
-                            .exists(),
-                        )
-                    )
-
-                await session.execute(sa_delete(KBTableORM).where(KBTableORM.owner_id == iid))
-                await session.execute(sa_delete(KBLifecycleHistoryORM).where(KBLifecycleHistoryORM.data_id == iid))
-                await session.execute(sa_delete(KBDataORM).where(KBDataORM.data_id == iid))
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
-
-        if minio is not None and object_key:
-            try:
-                await minio.get_client().delete(MINIO_BUCKET, object_key)
-            except Exception as exc:
-                log.warning("trash flush: minio delete failed key=%s: %s", object_key, exc)
-
-        if mongo is not None:
-            db = mongo.get_client()
-            for coll in _DOC_MONGO_COLLECTIONS:
-                try:
-                    await db[coll].delete_many({"data_id": item_id})
-                except Exception as exc:
-                    log.warning("trash flush: mongo delete failed coll=%s data_id=%s: %s", coll, item_id, exc)
-
-    elif level == "chunk":
-        await _qdrant_delete_block(qdrant, item_id)
-        async with postgres.get_client() as session:
-            try:
-                await session.execute(sa_delete(KBTextBlockORM).where(KBTextBlockORM.block_id == iid))
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
-
-    else:
-        async with postgres.get_client() as session:
-            try:
-                await session.execute(
-                    sa_delete(KBTextBlockVersionORM).where(KBTextBlockVersionORM.version_id == iid)
-                )
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
+        await _purge_document_blobs(minio, mongo, object_key, item_id)
 
     log.info("trash flush %s %s (permanent)", level, item_id)

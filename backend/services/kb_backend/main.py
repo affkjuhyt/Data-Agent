@@ -8,9 +8,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
-
-from libs.basemodel.services_databaseconnector.postgres_orm.base import Base
 
 from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
 from libs.database_connector.postgres_connector import PostgresClient
@@ -30,29 +27,32 @@ from services.kb_backend.pipeline.ingestion.pipeline import IngestionPipeline
 
 log = logging.getLogger(__name__)
 
-_POSTGRES_URL  = os.environ.get("POSTGRES_URL",  "postgresql+asyncpg://aeroflow:aeroflow_secret@postgres/aeroflow_kb")
-_MONGO_URL     = os.environ.get("MONGO_URL",     "mongodb://mongo:27017/dataagent")
-_MINIO_URL     = os.environ.get("MINIO_URL",     "http://minioadmin:minioadmin@minio:9000")
-_KAFKA_URL     = os.environ.get("KAFKA_URL",     "kafka:9092")
-_REDIS_URL     = os.environ.get("REDIS_URL",     "redis://redis:6379/0")
+# KB_BACKEND_URL_ASYNC is the table-scoped, NOBYPASSRLS role. Falling back to
+# POSTGRES_URL keeps an un-migrated deployment working; setting it is what
+# makes row-level security actually apply to this service.
+_POSTGRES_URL = os.environ.get("KB_BACKEND_URL_ASYNC", "") or os.environ.get("POSTGRES_URL", "")
+_MONGO_URL = os.environ.get("MONGO_URL", "mongodb://mongo:27017/dataagent")
+_MINIO_URL = os.environ.get("MINIO_URL", "http://minioadmin:minioadmin@minio:9000")
+_KAFKA_URL = os.environ.get("KAFKA_URL", "kafka:9092")
+_REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 _RESULT_CACHE_ENABLED = os.environ.get("RESULT_CACHE_ENABLED", "true").lower() in {"1", "true", "yes"}
-_RESULT_CACHE_TTL     = int(os.environ.get("RESULT_CACHE_TTL", "900"))
+_RESULT_CACHE_TTL = int(os.environ.get("RESULT_CACHE_TTL", "900"))
 
 KB_LITE = os.getenv("KB_LITE", "false").lower() == "true"
 
 _postgres = PostgresClient()
-_qdrant   = QdrantService()
-_neo4j    = Neo4jClient()
-_mongo    = MongoClient()
-_minio    = MinIOClient()
-_model    = ModelServiceClient()
+_qdrant = QdrantService()
+_neo4j = Neo4jClient()
+_mongo = MongoClient()
+_minio = MinIOClient()
+_model = ModelServiceClient()
 
 _kafka_producer = KafkaProducerClient()
-_redis    = RedisClient()
+_redis = RedisClient()
 _result_cache = ResultCache(_redis, _RESULT_CACHE_TTL, _RESULT_CACHE_ENABLED)
 
-_light_rag  = LightRAGPipeline()
-_ingestion  = IngestionPipeline()
+_light_rag = LightRAGPipeline()
+_ingestion = IngestionPipeline()
 
 
 def _supervise(task: asyncio.Task[Any]) -> asyncio.Task[Any]:
@@ -67,30 +67,15 @@ def _supervise(task: asyncio.Task[Any]) -> asyncio.Task[Any]:
         else:
             log.error("Background task %r exited unexpectedly (loops should run "
                       "for the process lifetime)", t.get_name())
+
     task.add_done_callback(_on_done)
     return task
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    _pg_db = _POSTGRES_URL.rsplit("/", 1)[-1].split("?")[0]
-    admin_url = _POSTGRES_URL.rsplit("/", 1)[0] + "/template1"
-    admin_engine = create_async_engine(admin_url, isolation_level="AUTOCOMMIT")
-    try:
-        async with admin_engine.connect() as conn:
-            exists = await conn.scalar(
-                text("SELECT 1 FROM pg_database WHERE datname = :name"),
-                {"name": _pg_db},
-            )
-            if not exists:
-                await conn.execute(text(f"CREATE DATABASE {_pg_db}"))
-    finally:
-        await admin_engine.dispose()
-
-    kb_engine = create_async_engine(_POSTGRES_URL)
-    async with kb_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    await kb_engine.dispose()
+    if not _POSTGRES_URL:
+        raise RuntimeError("POSTGRES_URL is not set (see deploy/k8s/secrets.env.example)")
 
     retry = RetryConfig()
 
@@ -104,6 +89,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _redis.set_url(_REDIS_URL)
 
     await _postgres.open(retry)
+    async with _postgres.get_platform_client() as session:
+        migrated = await session.scalar(text(
+            "SELECT 1 FROM information_schema.tables WHERE table_name = 'KBData'"
+        ))
+    if not migrated:
+        raise RuntimeError("Schema is missing — run the migrate Job before starting kb-backend")
+
     if KB_LITE:
         log.warning(
             "KB_LITE=true — skipping Qdrant/Neo4j/Mongo/MinIO/model_service/Kafka "
@@ -118,34 +110,34 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await _kafka_producer.open(retry)
         try:
             await _redis.open(retry)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             log.warning("Redis (result cache) unavailable — retrieval works uncached: %s", e)
 
-    app.state.postgres       = _postgres
-    app.state.qdrant         = _qdrant
-    app.state.neo4j          = _neo4j
-    app.state.mongo          = _mongo
-    app.state.minio          = _minio
-    app.state.model          = _model
+    app.state.postgres = _postgres
+    app.state.qdrant = _qdrant
+    app.state.neo4j = _neo4j
+    app.state.mongo = _mongo
+    app.state.minio = _minio
+    app.state.model = _model
     app.state.kafka_producer = _kafka_producer
-    app.state.redis          = _redis
-    app.state.result_cache   = _result_cache
-    app.state.light_rag      = _light_rag
-    app.state.ingestion      = _ingestion
+    app.state.redis = _redis
+    app.state.result_cache = _result_cache
+    app.state.light_rag = _light_rag
+    app.state.ingestion = _ingestion
 
     hc = HealthCheckLoopConfig()
     hc_tasks = [
-        _supervise(asyncio.create_task(_postgres.health_check_loop(hc),       name="hc-postgres")),
+        _supervise(asyncio.create_task(_postgres.health_check_loop(hc), name="hc-postgres")),
     ]
     if not KB_LITE:
         hc_tasks += [
-            _supervise(asyncio.create_task(_qdrant.health_check_loop(hc),         name="hc-qdrant")),
-            _supervise(asyncio.create_task(_neo4j.health_check_loop(hc),          name="hc-neo4j")),
-            _supervise(asyncio.create_task(_mongo.health_check_loop(hc),          name="hc-mongo")),
-            _supervise(asyncio.create_task(_minio.health_check_loop(hc),          name="hc-minio")),
-            _supervise(asyncio.create_task(_model.health_check_loop(hc),          name="hc-model")),
+            _supervise(asyncio.create_task(_qdrant.health_check_loop(hc), name="hc-qdrant")),
+            _supervise(asyncio.create_task(_neo4j.health_check_loop(hc), name="hc-neo4j")),
+            _supervise(asyncio.create_task(_mongo.health_check_loop(hc), name="hc-mongo")),
+            _supervise(asyncio.create_task(_minio.health_check_loop(hc), name="hc-minio")),
+            _supervise(asyncio.create_task(_model.health_check_loop(hc), name="hc-model")),
             _supervise(asyncio.create_task(_kafka_producer.health_check_loop(hc), name="hc-kafka-producer")),
-            _supervise(asyncio.create_task(cache_sweep_loop(_qdrant.get_client()), name="cache-sweep")),
+            _supervise(asyncio.create_task(cache_sweep_loop(_qdrant), name="cache-sweep")),
         ]
 
     yield

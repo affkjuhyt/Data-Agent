@@ -356,6 +356,7 @@ export const AssetDetailWorkspace = ({
             created_at: new Date().toISOString(),
             connection,
             tables,
+            row_version: (raw as unknown as Record<string, string>).row_version ?? '',
           };
       setConfigs(prev => [created, ...prev]);
       setSelectedConfig(created);
@@ -423,10 +424,11 @@ export const AssetDetailWorkspace = ({
     if (!editingCell || !selectedTable) return;
     setCellSaveStatus('saving');
     try {
-      await apiMutate(
+      const res = await apiMutate<{ row_version?: string }>(
         'PATCH',
         `/api/knowledge/documents/${document.data_id}/tables/${selectedTable.id}/rows/${editingCell.rowIndex}`,
-        { column: editingCell.column, value: editingValue }
+        { column: editingCell.column, value: editingValue },
+        selectedTable.row_version,
       );
       setTables(prev => prev.map(t => {
         if (t.id !== selectedTable.id) return t;
@@ -434,7 +436,7 @@ export const AssetDetailWorkspace = ({
           if (idx !== editingCell.rowIndex) return row;
           return { ...row, [editingCell.column]: editingValue };
         });
-        const updated = { ...t, rows: updatedRows };
+        const updated = { ...t, rows: updatedRows, row_version: res?.row_version ?? t.row_version };
         setSelectedTable(updated);
         return updated;
       }));

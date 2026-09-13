@@ -81,7 +81,8 @@ spec:
         # Built from deploy/docker/keycloak/Dockerfile — `kc.sh build --db=postgres`
         # baked in, so --optimized below can skip re-augmenting (and writing
         # to /opt/keycloak) at every boot under readOnlyRootFilesystem.
-        image: REGISTRY/dataagent/keycloak:latest
+        image: dataagent/keycloak:latest
+        imagePullPolicy: IfNotPresent
         args:
         - start
         - --optimized

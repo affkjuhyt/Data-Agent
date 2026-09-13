@@ -3,6 +3,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Request
 
 from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
+from libs.shared.auth import require_tenant
 from services.kb_backend.schemas import ToggleQdrantCollectionRequest, QdrantSearchRequest
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
@@ -55,7 +56,7 @@ async def semantic_search_route(
         model=svc(request, "model").get_client(),
         collection_id=collection_id,
         query=body.query,
-        tenant_id=body.tenant_id or ctx["tenant_id"] or "",
+        tenant_id=require_tenant(ctx),
         limit=body.limit,
     )
     return ResponseModel(code=200, data=result)

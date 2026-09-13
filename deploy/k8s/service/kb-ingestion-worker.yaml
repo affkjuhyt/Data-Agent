@@ -73,7 +73,8 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: kb-ingestion-worker
-        image: REGISTRY/dataagent/kb-ingestion-worker:latest
+        image: dataagent/kb-ingestion-worker:latest
+        imagePullPolicy: IfNotPresent
         envFrom:
         - configMapRef:
             name: dataagent-config
@@ -100,6 +101,10 @@ spec:
           mountPath: /cache
         - name: tmp
           mountPath: /tmp
+        command:
+        - python
+        - -m
+        - services.kb_ingestion_worker
       volumes:
       - name: cache
         persistentVolumeClaim:

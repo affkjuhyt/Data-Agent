@@ -71,6 +71,7 @@ export const PolicyCenter = () => {
   const [customExtraction, setCustomExtraction] = useState('');
   const [editingExtraction, setEditingExtraction] = useState(false);
   const [customExtractionDraft, setCustomExtractionDraft] = useState('');
+  const [extractionVersion, setExtractionVersion] = useState('');
 
   const fetchPolicies = (page: number) => {
     setPoliciesLoading(true);
@@ -93,8 +94,11 @@ export const PolicyCenter = () => {
   }, [policiesPage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    apiGet<{ base: string; custom: string }>('/api/knowledge/policies/extraction')
-      .then(data => setCustomExtraction(data.custom ?? ''))
+    apiGet<{ base: string; custom: string; row_version: string }>('/api/knowledge/policies/extraction')
+      .then(data => {
+        setCustomExtraction(data.custom ?? '');
+        setExtractionVersion(data.row_version ?? '');
+      })
       .catch(() => {});
   }, []);
 
@@ -133,7 +137,7 @@ export const PolicyCenter = () => {
     setSaveError(null);
     try {
       if (editingPolicy) {
-        await apiMutate('PUT', `/api/knowledge/policies/filtering/${editingPolicy.id}`, { name: formName, type: formType, content });
+        await apiMutate('PUT', `/api/knowledge/policies/filtering/${editingPolicy.id}`, { name: formName, type: formType, content }, editingPolicy.row_version);
       } else {
         await apiMutate('POST', '/api/knowledge/policies/filtering', { name: formName, type: formType, content });
       }
@@ -152,7 +156,12 @@ export const PolicyCenter = () => {
     if (!current) return;
     const newActive = !current.active;
     setFilterPolicies(prev => prev.map(p => p.id === id ? { ...p, active: newActive } : p));
-    apiMutate('PUT', `/api/knowledge/policies/filtering/${id}`, { active: newActive })
+    apiMutate<{ row_version?: string }>('PUT', `/api/knowledge/policies/filtering/${id}`, { active: newActive }, current.row_version)
+      .then(res => {
+        if (res?.row_version) {
+          setFilterPolicies(prev => prev.map(p => p.id === id ? { ...p, row_version: res.row_version! } : p));
+        }
+      })
       .catch(() => {
         // Revert optimistic update on failure
         setFilterPolicies(prev => prev.map(p => p.id === id ? { ...p, active: current.active } : p));
@@ -638,7 +647,14 @@ export const PolicyCenter = () => {
                       onClick={() => {
                         setCustomExtraction(customExtractionDraft);
                         setEditingExtraction(false);
-                        apiMutate('PUT', '/api/knowledge/policies/extraction/custom', { custom: customExtractionDraft }).catch(() => {});
+                        apiMutate<{ row_version?: string }>(
+                          'PUT',
+                          '/api/knowledge/policies/extraction/custom',
+                          { custom: customExtractionDraft },
+                          extractionVersion,
+                        )
+                          .then(res => { if (res?.row_version) setExtractionVersion(res.row_version); })
+                          .catch(() => {});
                       }}
                       className="px-4 py-1.5 bg-[#B88719] text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-[#8A5A00] transition-all flex items-center gap-1.5 cursor-pointer"
                     >

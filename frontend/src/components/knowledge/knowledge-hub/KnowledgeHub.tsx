@@ -60,6 +60,7 @@ function normalizeWConfig(raw: Record<string, unknown>, idx: number): WConfig {
     status: rawStatus === 'Active' ? 'Active' : rawStatus === 'Archived' ? 'Archived' : 'Draft',
     syncSchedule: (raw.syncSchedule as string) ?? (raw.sync_schedule as string) ?? 'Manual',
     connection: raw.connection as Record<string, string> | undefined,
+    row_version: (raw.row_version as string) ?? '',
     tables,
   };
 }
@@ -306,8 +307,17 @@ export const KnowledgeHubView = () => {
   const handleDeleteTable = async (tableId: string) => {
     if (!selectedDoc || !selectedConfig) return;
     try {
-      await apiMutate('DELETE', `/api/knowledge/warehouses/${selectedDoc.id}/configs/${selectedConfig.id}/tables/${tableId}`);
-      const updated = { ...selectedConfig, tables: selectedConfig.tables.filter(t => t.id !== tableId) };
+      const res = await apiMutate<{ row_version?: string }>(
+        'DELETE',
+        `/api/knowledge/warehouses/${selectedDoc.id}/configs/${selectedConfig.id}/tables/${tableId}`,
+        undefined,
+        selectedConfig.row_version,
+      );
+      const updated = {
+        ...selectedConfig,
+        tables: selectedConfig.tables.filter(t => t.id !== tableId),
+        row_version: res?.row_version ?? selectedConfig.row_version,
+      };
       setWarehouseConfigs(prev => prev.map(c => c.id === selectedConfig.id ? updated : c));
       setSelectedConfig(updated);
     } catch { /* ForbiddenToast handles 403 */ } finally { setPendingDeleteTable(null); }
@@ -467,6 +477,7 @@ export const KnowledgeHubView = () => {
       status: 'Draft',
       syncSchedule: newCfgSchedule,
       tables: pickedTables,
+      row_version: '',
     };
     setWarehouseConfigs(prev => [newCfg, ...prev]);
     setSelectedConfig(newCfg);

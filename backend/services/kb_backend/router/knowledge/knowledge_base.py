@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, Request
 
 from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
 from services.kb_backend.schemas import CreateKnowledgeBaseRequest
+from libs.shared.auth import require_tenant
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.operations.knowledge_base_ops import (
@@ -11,7 +12,6 @@ from services.kb_backend.operations.knowledge_base_ops import (
 
 router = APIRouter(prefix="/api/knowledge/knowledge-bases", tags=["Knowledge-Bases"])
 
-from services.kb_backend.config import DEFAULT_TENANT_ID as _DEFAULT_TENANT
 
 
 @router.get("", response_model=ResponseModel)
@@ -35,7 +35,7 @@ async def create_knowledge_base_route(
         postgres=svc(request, "postgres"),
         name=body.name,
         description=body.description,
-        tenant_id=ctx["tenant_id"] or _DEFAULT_TENANT,
+        tenant_id=require_tenant(ctx),
         created_by=ctx["user_name"],
     )
     return ResponseModel(code=200, data=result)
@@ -49,6 +49,6 @@ async def delete_knowledge_base_route(
     await delete_knowledge_base(
         postgres=svc(request, "postgres"),
         knowledge_base_id=knowledge_base_id,
-        tenant_id=ctx["tenant_id"] or _DEFAULT_TENANT,
+        tenant_id=require_tenant(ctx),
     )
     return ResponseModel(code=200, data=None)

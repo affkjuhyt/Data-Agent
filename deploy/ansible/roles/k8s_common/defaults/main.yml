@@ -1,0 +1,85 @@
+---
+k8s_dir: "{{ project_dir }}/deploy/k8s"
+docker_dir: "{{ project_dir }}/deploy/docker"
+
+ns_service: dataagent-service
+ns_database: dataagent-database
+
+kubectl: kubectl
+
+image_prefix: dataagent
+image_tag: latest
+image_import: ""
+image_push: false
+k8s_sed: 'sed -e "s|dataagent/\([a-z_-]*\):latest|{{ image_prefix }}/\1:{{ image_tag }}|g"'
+
+images:
+  - { name: auth_api, file: backend/services/auth_api/Dockerfile, context: "." }
+  - { name: flow_builder, file: backend/services/flow_builder/Dockerfile, context: "." }
+  - { name: kb-backend, file: backend/services/kb_backend/Dockerfile, context: "." }
+  - { name: kb-ingestion-worker, file: backend/services/kb_ingestion_worker/Dockerfile, context: "." }
+  - { name: llm_exporter, file: backend/services/llm_exporter/Dockerfile, context: "." }
+  - { name: model_service, file: backend/services/model_service/Dockerfile, context: backend/services/model_service }
+  - { name: platform-workers, file: backend/services/platform_workers/Dockerfile, context: "." }
+  - { name: release_worker, file: backend/services/release_worker/Dockerfile, context: "." }
+  - { name: sandbox_executor, file: backend/services/sandbox_executor/Dockerfile, context: backend/services/sandbox_executor }
+  - { name: workflow_runtime, file: backend/services/workflow_runtime/Dockerfile, context: "." }
+  - { name: migrate, file: backend/alembic/Dockerfile, context: "." }
+  - { name: kong, file: deploy/docker/kong/Dockerfile, context: "." }
+  - { name: frontend, file: frontend/Dockerfile.dev, context: frontend }
+  - { name: eval, file: model/eval/Dockerfile, context: "." }
+
+images_only: ""
+
+apply_databases: true
+apply_jobs: false
+apply_services: false
+apply_setup: false
+
+database_workloads:
+  - redis
+  - mongo
+  - minio
+  - kafka
+  - openbao
+  - qdrant
+  - neo4j
+  - clickhouse
+  - elasticsearch
+
+job_workloads: [db-init, minio-init, kafka-topics]
+
+service_workloads:
+  - litellm
+  - auth-api
+  - flow-builder
+  - workflow-runtime
+  - kb-backend
+  - model-service
+  - release-worker
+  - sandbox-executor
+  - frontend
+
+wait_namespace: 60
+wait_statefulset: 600
+wait_job: 900
+wait_rollout: 600
+
+secrets_env_source: "{{ inventory_dir }}/secrets.env.vault"
+secrets_env_file: "{{ k8s_dir }}/secrets.env"
+
+pg_host: "postgres.{{ ns_database }}.svc.cluster.local"
+pg_port: 8300
+pg_db: dataagent
+pg_user: admin
+minio_host: "minio.{{ ns_database }}.svc.cluster.local"
+minio_port: 8360
+minio_user: minio
+
+public_api_url: https://dataagent.example.vn
+keycloak_public_url: https://sso.example.vn
+langfuse_public_url: https://langfuse.example.vn
+keycloak_admin_user: admin
+clickhouse_user: clickhouse
+langfuse_init_email: admin@example.com
+eval_agent_id: ""

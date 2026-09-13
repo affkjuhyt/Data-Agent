@@ -165,50 +165,36 @@ correct failure.
 
 ## File-backed ConfigMaps
 
-Config that lives as files in `deploy/docker/` is mounted from ConfigMaps built
-out of those same files, so there is one copy of each:
+Some config is a *file*, not a set of env vars — SQL, a Keycloak realm export, the
+Kong setup script, Prometheus and Grafana provisioning. Those files live once, in
+`deploy/docker/`, where they are also read directly by anyone running the script
+by hand. Rather than copy them into YAML, they are turned into ConfigMaps and
+mounted as volumes:
 
 ```bash
-K=deploy/docker
-DB=dataagent-database
-SVC=dataagent-service
-
-kubectl -n $DB create configmap postgres-initdb \
-  --from-file=01-create-dbs.sql=$K/sql/create-extra-dbs.sql \
-  --from-file=03-app-schema.sql=$K/sql/init.sql
-
-# db-init runs in the SERVICE namespace even though it talks to Postgres
-kubectl -n $SVC create configmap db-init-sql \
-  --from-file=01-grants.sql=$K/sql/grant-runtime-writer.sql \
-  --from-file=02-kb-seed.sql=$K/sql/kb-seed.sql
-
-kubectl -n $SVC create configmap seed-sql \
-  --from-file=seed.sql=backend/services/workflow_runtime/migrations/seed.sql
-kubectl -n $SVC create configmap keycloak-realm \
-  --from-file=$K/keycloak/realm-export.json
-kubectl -n $SVC create configmap keycloak-scripts \
-  --from-file=$K/keycloak/setup-audience-mappers.sh
-kubectl -n $SVC create configmap kong-scripts \
-  --from-file=$K/kong/kong-setup.sh
-kubectl -n $SVC create configmap litellm-config \
-  --from-file=config.yaml=$K/litellm/config.yaml
-kubectl -n $SVC create configmap prometheus-config \
-  --from-file=$K/monitoring/prometheus.yml
-
-# `--from-file=<dir>` is NOT recursive, and monitoring/grafana/provisioning/
-# holds only subdirectories — so Grafana needs one ConfigMap per directory.
-kubectl -n $SVC create configmap grafana-datasources \
-  --from-file=$K/monitoring/grafana/provisioning/datasources/
-kubectl -n $SVC create configmap grafana-dashboards-provider \
-  --from-file=$K/monitoring/grafana/provisioning/dashboards/
-kubectl -n $SVC create configmap grafana-dashboards \
-  --from-file=$K/monitoring/grafana/dashboards/
+bash deploy/k8s/create-configmaps.sh
 ```
 
-Each ConfigMap is namespaced into whichever namespace the pod that mounts it
-runs in — `db-init-sql` follows the `db-init` Job into `dataagent-service`, not
-the database namespace where the SQL is applied. A test asserts every mounted
-ConfigMap is one of these or is declared inline in a manifest.
+[`create-configmaps.sh`](create-configmaps.sh) is re-runnable — each ConfigMap goes
+through `--dry-run=client -o yaml | kubectl apply`, so it updates rather than
+fails on a second run. Three tests keep it honest against the manifests: every
+mounted ConfigMap must be created by it (or declared inline), it must not create
+anything nothing mounts, and each must land in the namespace of the pod that
+mounts it.
+
+Two of those are easy to get wrong:
+
+- **`db-init-sql` belongs to `dataagent-service`**, not the database namespace —
+  the SQL targets Postgres, but a ConfigMap has to live where the *pod* runs, and
+  the `db-init` Job runs in the service namespace.
+- **`--from-file=<dir>` is not recursive.** `monitoring/grafana/provisioning/`
+  contains only subdirectories, so Grafana takes three ConfigMaps
+  (`grafana-datasources`, `grafana-dashboards-provider`, `grafana-dashboards`),
+  not one.
+
+Neither `envFrom` nor a volume mount picks up a ConfigMap change on a running
+pod. After editing one of these files, re-run the script and restart:
+`kubectl -n <ns> rollout restart deployment/<name>`.
 
 ## Apply
 
@@ -217,8 +203,10 @@ Order matters once, on a fresh cluster.
 ```bash
 kubectl apply -f deploy/k8s/namespace.yaml
 kubectl apply -f deploy/k8s/configmap.yaml -f deploy/k8s/rbac.yaml
-kubectl apply -f deploy/k8s/networkpolicy-service.yaml               -f deploy/k8s/networkpolicy-database.yaml
-# ... create the Secrets and the file-backed ConfigMaps above ...
+kubectl apply -f deploy/k8s/networkpolicy-service.yaml \
+              -f deploy/k8s/networkpolicy-database.yaml
+bash deploy/k8s/create-secrets.sh      # needs secrets.env sourced
+bash deploy/k8s/create-configmaps.sh
 kubectl apply -f deploy/k8s/database/
 kubectl -n dataagent-database rollout status statefulset/postgres
 
@@ -236,10 +224,13 @@ kubectl apply -f deploy/k8s/job/postgres-backup.yaml
 `backoffLimit: 0` — applying it creates the Job but never starts it. Unsuspend
 deliberately when you mean to restore:
 `kubectl -n dataagent-database patch job postgres-restore -p '{"spec":{"suspend":false}}'`.
-A test fails the build if that flag is ever flipped in the manifest. Replace
-`REGISTRY/` with your registry; images are named `dataagent/<service_name>`,
-built from `backend/services/<name>/Dockerfile` (plus `backend/alembic/`,
-`model/eval/`, `frontend/Dockerfile.dev`). `deploy/docker/kong/Dockerfile` is the
+A test fails the build if that flag is ever flipped in the manifest. Our images
+are named `dataagent/<service_name>:latest`, which resolves against a node's
+local image store; prefix a registry at apply time if you push somewhere. Every
+one carries `imagePullPolicy: IfNotPresent` — Kubernetes defaults a `:latest`
+tag to `Always`, which never finds a locally built image. They
+are built from `backend/services/<name>/Dockerfile` (plus `backend/alembic/`,
+`model/eval/`, `frontend/Dockerfile`). `deploy/docker/kong/Dockerfile` is the
 only image built under `deploy/` — everything else pulls a public image directly.
 
 A Job's pod template is immutable, so re-applying a completed Job fails. Delete
@@ -256,7 +247,7 @@ real registry if this is remote.
 
 ```bash
 # Context is the repo root for every backend service and for migrate; frontend
-# is the one exception (its Dockerfile.dev expects `frontend/` as context).
+# is the one exception (its Dockerfile expects `frontend/` as context).
 docker build -f backend/services/<name>/Dockerfile -t localhost:5000/dataagent/<name>:latest .
 docker push localhost:5000/dataagent/<name>:latest
 
@@ -303,11 +294,14 @@ itself (`get pods`, `logs`) rather than the apply command's exit code.
 **Frontend:**
 
 ```bash
-docker build -f frontend/Dockerfile.dev -t localhost:5000/dataagent/frontend:latest frontend
+docker build -f frontend/Dockerfile -t localhost:5000/dataagent/frontend:latest frontend
 docker push localhost:5000/dataagent/frontend:latest
 kubectl -n dataagent-service rollout restart deployment/frontend
 kubectl -n dataagent-service rollout status deployment/frontend --timeout=90s
 ```
+
+Not `Dockerfile.dev` — the manifest runs `npm run preview`, which serves `dist/`,
+and only `frontend/Dockerfile` runs `npm run build` to produce it.
 
 Run `cd frontend && npx tsc --noEmit` first — it must run from `frontend/`
 (no `tsconfig.json` at the repo root, so running it from there silently exits
@@ -318,6 +312,9 @@ Run `cd frontend && npx tsc --noEmit` first — it must run from `frontend/`
 Every workload listens on an `8xxx` port. For each one the **containerPort, the
 Service `port` and its `targetPort` are the same number** — there is nothing to
 translate when reading a manifest or a URL.
+
+For the images we build the port appears exactly once, in the manifest's
+`command`: the Dockerfiles carry no `EXPOSE` and no `CMD`.
 
 **`8000–8099` is reserved and must stay unallocated.** It belongs to the LLM
 tier: the GPU server already serves vLLM on `:8002`, TEI embed on `:8003` and
@@ -344,15 +341,15 @@ band. Nothing in `deploy/k8s/` may use it.
 | keycloak | service | 8080 | **8110** | `KC_HTTP_PORT` |
 | keycloak (health) | service | 9000 | **8111** | `KC_HTTP_MANAGEMENT_PORT` |
 | openbao | database | 8200 | **8120** | `config.hcl` listener |
-| auth-api | service | 8200 | **8200** | Dockerfile `--port` (unchanged) |
-| release-worker | service | 8100 | **8210** | Dockerfile `--port` |
-| kb-backend | service | 8000 | **8220** | Dockerfile `--port` |
-| model-service | service | 8001 | **8230** | Dockerfile `--port`, `MODEL_SERVICE_PORT` |
-| workflow-runtime | service | 8001 | **8240** | Dockerfile `--port` |
-| flow-builder | service | 8002 | **8250** | Dockerfile `--port` |
-| sandbox-executor | service | 8500 | **8260** | Dockerfile `--port` |
-| llm-exporter | service | 9200 | **8270** | `LISTEN_PORT` |
-| frontend | service | 3000 | **8280** | vite `--port` |
+| auth-api | service | 8200 | **8200** | manifest `command` (unchanged) |
+| release-worker | service | 8100 | **8210** | manifest `command` |
+| kb-backend | service | 8000 | **8220** | manifest `command` |
+| model-service | service | 8001 | **8230** | manifest `command` |
+| workflow-runtime | service | 8001 | **8240** | manifest `command` |
+| flow-builder | service | 8002 | **8250** | manifest `command` |
+| sandbox-executor | service | 8500 | **8260** | manifest `command` |
+| llm-exporter | service | 9200 | **8270** | manifest `command` |
+| frontend | service | 3000 | **8280** | manifest `command` (vite `--port`) |
 | postgres | database | 5432 | **8300** | `PGPORT` |
 | mongo | database | 27017 | **8310** | `mongod --port` |
 | redis | database | 6379 | **8320** | `redis.conf` |
@@ -394,6 +391,28 @@ the Python services never apply in-cluster.
 `tests/unit/test_k8s_manifests.py` asserts the range, that no two Services share
 a port, that `8000–8099` stays empty, and that `port == targetPort ==
 containerPort` for every workload.
+
+## The setup Job
+
+`job/setup.yaml` is the one workload the NetworkPolicies let reach **both** Kong
+and Keycloak (`allow-kong` and `allow-keycloak` both list `setup`), so everything
+that has to talk to the gateway and to identity in one breath lives there:
+
+| Step | Controlled by |
+| --- | --- |
+| Keycloak audience mappers | always |
+| Kong services, routes, JWT plugin, CORS, dev passwords | always |
+| `browserFlow = browser` (browser MFA off) | `KEYCLOAK_DISABLE_MFA=1` in `setup-env` |
+| Anonymous call to `/api/orchestrate/stream` must be 401/403 | always — the Job fails if the gateway is not fail-closed |
+| `/api/catalog/agents` + `/api/reviews/pending` with a real token | `SMOKE_USER` + `SMOKE_PASSWORD`, blank = skipped |
+
+The anonymous check works even when the upstream is down, because Kong's JWT
+plugin rejects before proxying — a 503 there means the route is wrong, not that
+the service is missing.
+
+`SMOKE_USER` is empty by default. To enable the token check, set it to a realm
+user (`kong-setup.sh` creates `helios-engineer`, `helios-admin`, `helios-viewer`)
+and put that user's password in `SMOKE_PASSWORD`.
 
 ## Ingress
 

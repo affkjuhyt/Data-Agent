@@ -1,0 +1,51 @@
+---
+- name: Check kubectl
+  ansible.builtin.command: "{{ kubectl }} version --client -o json"
+  changed_when: false
+
+- name: Check API server
+  ansible.builtin.command: "{{ kubectl }} get --raw /healthz"
+  register: apiserver
+  until: apiserver.rc == 0
+  retries: 10
+  delay: 3
+  changed_when: false
+
+- name: Get current context
+  ansible.builtin.command: "{{ kubectl }} config current-context"
+  register: kube_context
+  changed_when: false
+  failed_when: false
+
+- name: Check node readiness
+  ansible.builtin.command: >
+    {{ kubectl }} get nodes
+    -o jsonpath={% raw %}'{range .items[*]}{.metadata.name}={.status.conditions[?(@.type=="Ready")].status} {end}'{% endraw %}
+  register: nodes
+  changed_when: false
+  failed_when: "'=False' in nodes.stdout or nodes.stdout | trim | length == 0"
+
+- name: Check required files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: k8s_files
+  failed_when: not k8s_files.stat.exists
+  loop:
+    - "{{ k8s_dir }}/namespace.yaml"
+    - "{{ k8s_dir }}/create-secrets.sh"
+    - "{{ k8s_dir }}/create-configmaps.sh"
+    - "{{ k8s_dir }}/secrets.env.example"
+    - "{{ docker_dir }}/kafka/kafka-broker-jaas.config.example"
+
+- name: Check gvisor runtimeclass
+  ansible.builtin.command: "{{ kubectl }} get runtimeclass gvisor"
+  register: gvisor
+  changed_when: false
+  failed_when: false
+
+- name: Report preflight
+  ansible.builtin.debug:
+    msg:
+      - "context: {{ kube_context.stdout | default('none') }}"
+      - "nodes:   {{ nodes.stdout | trim }}"
+      - "gvisor:  {{ 'present' if gvisor.rc == 0 else 'missing, sandbox-executor will stay Pending' }}"

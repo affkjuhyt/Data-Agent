@@ -1,0 +1,12 @@
+---
+- name: Release a new build
+  hosts: all
+  gather_facts: false
+
+  roles:
+    - { role: k8s_common, tags: [always] }
+    - { role: k8s_preflight, tags: [preflight] }
+    - { role: k8s_images, tags: [images] }
+    - { role: k8s_jobs, tags: [jobs] }
+    - { role: k8s_services, tags: [services] }
+    - { role: k8s_verify, tags: [verify] }

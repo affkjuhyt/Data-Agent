@@ -3,15 +3,17 @@ import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
 import logging
-from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
+from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig, PoolConfig
 
 log = logging.getLogger(__name__)
 
 
 class MongoClient:
-    __slots__ = ("_client", "_db", "_db_name", "_connection_wait", "_healthy", "_connected", "_timeout", "_url")
+    __slots__ = ("_client", "_db", "_db_name", "_connection_wait", "_healthy", "_connected",
+                 "_timeout", "_url", "_pool")
 
-    def __init__(self) -> None:
+    def __init__(self, pool: PoolConfig | None = None) -> None:
+        self._pool: PoolConfig = pool or PoolConfig.from_env("MONGO")
         self._client: AsyncIOMotorClient | None = None
         self._db: AsyncIOMotorDatabase | None = None
         self._db_name: str = "dataagent"
@@ -31,7 +33,11 @@ class MongoClient:
 
         for attempt in range(retry.count):
             try:
-                self._client = AsyncIOMotorClient(self._url, serverSelectionTimeoutMS=self._timeout * 1000)
+                self._client = AsyncIOMotorClient(
+                    self._url,
+                    serverSelectionTimeoutMS=self._timeout * 1000,
+                    maxPoolSize=self._pool.max_connections,
+                )
                 self._db = self._client[self._db_name]
                 await asyncio.wait_for(
                     self._client.admin.command("ping"),

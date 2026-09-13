@@ -3,7 +3,6 @@ import json
 import logging
 import uuid
 from fastapi import HTTPException
-from sqlalchemy import update as sa_update
 
 from libs.basemodel.services_databaseconnector.postgres_model import (
     ReadJoinRequest, OrderBy, OrderDirection,
@@ -11,7 +10,7 @@ from libs.basemodel.services_databaseconnector.postgres_model import (
     KBExtractionPolicyInsert,
     PolicyFilteringType,
 )
-from services.kb_backend.operations.access import assert_child_scoped
+from services.kb_backend.operations.locking import update_locked
 from services.kb_backend.operations.pagination import (
     PAGE_SIZE, get_cursor, advance, build_page,
 )
@@ -45,6 +44,7 @@ def _to_filter_policy(row: dict[str, Any]) -> dict[str, Any]:
         "added_by": row.get("created_by", ""),
         "added_when": to_string(row.get("created_at", ""))[:10],
         "active": bool(row.get("is_active", False)),
+        "row_version": to_string(row.get("row_version")),
     }
 
 
@@ -100,7 +100,8 @@ async def create_filter_policy(
     return {"policy_id": resp.data.get("policy_id")}
 
 
-async def update_filter_policy(postgres: Any, policy_id: str, tenant_id: str, body: dict[str, Any]) -> dict[str, Any]:
+async def update_filter_policy(postgres: Any, policy_id: str, tenant_id: str, body: dict[str, Any],
+                               expected_version: uuid.UUID) -> dict[str, Any]:
     updates: dict[str, Any] = {}
     if "name" in body:
         updates["policy_name"] = body["name"]
@@ -116,23 +117,18 @@ async def update_filter_policy(postgres: Any, policy_id: str, tenant_id: str, bo
     if not updates:
         return {"status": "no-op"}
 
-    await assert_child_scoped(
-        postgres, KBFilterPolicyORM.policy_id, policy_id, KBFilterPolicyORM.tenant_id, tenant_id,
-        not_found_detail="Policy not found",
-    )
     policy_uuid = uuid.UUID(policy_id) if isinstance(policy_id, str) else policy_id
     tenant_uuid = uuid.UUID(tenant_id) if isinstance(tenant_id, str) else tenant_id
-    async with postgres.get_client() as session:
-        await session.execute(
-            sa_update(KBFilterPolicyORM)
-            .where(
-                KBFilterPolicyORM.policy_id == policy_uuid,
-                KBFilterPolicyORM.tenant_id == tenant_uuid,
-            )
-            .values(**updates)
-        )
-        await session.commit()
-    return {"status": "ok", "policy_id": policy_id}
+    new_version = await update_locked(
+        postgres,
+        KBFilterPolicyORM,
+        [KBFilterPolicyORM.policy_id == policy_uuid,
+         KBFilterPolicyORM.tenant_id == tenant_uuid],
+        mutate=lambda row: updates,
+        expected_version=expected_version,
+        not_found_detail="Policy not found",
+    )
+    return {"status": "ok", "policy_id": policy_id, "row_version": str(new_version)}
 
 
 async def delete_filter_policy(postgres: Any, policy_id: str, tenant_id: str) -> None:
@@ -152,13 +148,16 @@ async def get_extraction_policy(postgres: Any, tenant_id: str | None) -> dict[st
         tenant_id=tenant_id, joins_table=["KBExtractionPolicy"], limit=1,
     ))
     custom = ""
+    row_version = ""
     if resp.code == 200 and resp.data:
         custom = resp.data[0].get("custom_override") or ""
-    return {"base": _BASE_EXTRACTION, "custom": custom}
+        row_version = to_string(resp.data[0].get("row_version"))
+    return {"base": _BASE_EXTRACTION, "custom": custom, "row_version": row_version}
 
 
 async def update_extraction_policy(
         postgres: Any, custom: str, tenant_id: str, created_by: str,
+        expected_version: uuid.UUID,
 ) -> dict[str, Any]:
     resp = await postgres.read(ReadJoinRequest(
         tenant_id=tenant_id, joins_table=["KBExtractionPolicy"], limit=1,
@@ -167,16 +166,16 @@ async def update_extraction_policy(
         pid = resp.data[0].get("policy_id")
         pid_uuid = uuid.UUID(pid) if isinstance(pid, str) else pid
         tenant_uuid = uuid.UUID(tenant_id) if isinstance(tenant_id, str) else tenant_id
-        async with postgres.get_client() as session:
-            await session.execute(
-                sa_update(KBExtractionPolicyORM)
-                .where(
-                    KBExtractionPolicyORM.policy_id == pid_uuid,
-                    KBExtractionPolicyORM.tenant_id == tenant_uuid,
-                )
-                .values(custom_override=custom)
-            )
-            await session.commit()
+        new_version = await update_locked(
+            postgres,
+            KBExtractionPolicyORM,
+            [KBExtractionPolicyORM.policy_id == pid_uuid,
+             KBExtractionPolicyORM.tenant_id == tenant_uuid],
+            mutate=lambda row: {"custom_override": custom},
+            expected_version=expected_version,
+            not_found_detail="Policy not found",
+        )
+        return {"status": "ok", "row_version": str(new_version)}
     else:
         from libs.basemodel.services_databaseconnector.postgres_model import PolicyExtractionType
         await postgres.insert(KBExtractionPolicyInsert(

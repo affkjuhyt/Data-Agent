@@ -6,7 +6,6 @@ from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
 from libs.basemodel.services_databaseconnector.postgres_model import (
     KBWarehouseInsert,
     KBWarehouseConfigInsert,
-    KBWarehouseDelete,
     WarehouseConfigPayload,
 )
 from services.kb_backend.schemas import ConnectSnowflakeRequest, SelectTablesRequest
@@ -104,42 +103,42 @@ async def select_warehouse_tables(
             "columns": col_schema.get("columns", []),
         })
 
-    wh_ins = await postgres.insert(KBWarehouseInsert(
-        tenant_id=ctx["tenant_id"],
-        service=body.warehouse_type,
-        description=body.connection_name,
-    ))
-    if wh_ins.code != 200:
-        log.error("warehouse_connect: failed to create warehouse record: %s", wh_ins.error)
-        raise HTTPException(status_code=500, detail="Failed to create warehouse")
-    warehouse_id: str = wh_ins.data["warehouse_id"]
+    # Warehouse and its first config share one transaction, so a failed config
+    # rolls the warehouse back instead of needing a compensating delete.
+    async with postgres.get_client(tenant_id=ctx["tenant_id"]) as session:
+        wh_ins = await postgres.insert(KBWarehouseInsert(
+            tenant_id=ctx["tenant_id"],
+            service=body.warehouse_type,
+            description=body.connection_name,
+        ), session=session)
+        if wh_ins.code != 200:
+            log.error("warehouse_connect: failed to create warehouse record: %s", wh_ins.error)
+            raise HTTPException(status_code=500, detail="Failed to create warehouse")
+        warehouse_id: str = wh_ins.data["warehouse_id"]
 
-    cfg_ins = await postgres.insert(KBWarehouseConfigInsert(
-        warehouse_id=warehouse_id,
-        version_number=1,
-        is_active=True,
-        created_by=ctx["user_name"],
-        config=WarehouseConfigPayload(
-            host=body.account_identifier,
-            database=body.database,
-            selected_tables=tables,
-            connection={
-                "account": body.account_identifier,
-                "username": body.user,
-                "warehouse": body.warehouse,
-                "database": body.database,
-                "schema": body.schema,
-                "role": body.role,
-            },
-        ),
-    ))
-    if cfg_ins.code != 200:
-        log.error("warehouse_connect: failed to create config: %s", cfg_ins.error)
-        try:
-            await postgres.soft_delete(KBWarehouseDelete(warehouse_id=warehouse_id))
-        except Exception as e:
-            log.error("warehouse_connect: orphan cleanup failed for %s: %s", warehouse_id, e)
-        raise HTTPException(status_code=500, detail="Failed to create warehouse config")
+        cfg_ins = await postgres.insert(KBWarehouseConfigInsert(
+            warehouse_id=warehouse_id,
+            version_number=1,
+            is_active=True,
+            created_by=ctx["user_name"],
+            config=WarehouseConfigPayload(
+                host=body.account_identifier,
+                database=body.database,
+                selected_tables=tables,
+                connection={
+                    "account": body.account_identifier,
+                    "username": body.user,
+                    "warehouse": body.warehouse,
+                    "database": body.database,
+                    "schema": body.schema,
+                    "role": body.role,
+                },
+            ),
+        ), session=session)
+        if cfg_ins.code != 200:
+            log.error("warehouse_connect: failed to create config: %s", cfg_ins.error)
+            raise HTTPException(status_code=500, detail="Failed to create warehouse config")
+        await session.commit()
 
     log.info("Created warehouse %s with config %s (%d tables)", warehouse_id, cfg_ins.data.get("config_id"),
              len(tables))

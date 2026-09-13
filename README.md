@@ -28,7 +28,7 @@ model/       LLM eval harness, RAGAS
 | [`backend/libs/`](./backend/libs) | Shared cross-service layer: `libs/basemodel` (domain models/ORM), `libs/database_connector` (infra clients), `libs/shared` (logger, auth, observability), `libs/semantic` (metric contracts). Innermost architecture layer |
 | [`backend/alembic/`](./backend/alembic) | Database migrations (`alembic -c backend/alembic/alembic.ini upgrade head`) |
 | [`deploy/docker/`](./deploy/docker) | Dockerfiles and service config (`kong`, `kafka`, `keycloak`, `openbao`, `litellm`, `sql`, `certs`…) — build contexts and ConfigMap sources, no stack definition |
-| [`deploy/ansible/`](./deploy/ansible) · [`deploy/k8s/`](./deploy/k8s) | Ansible playbook (local appliance → on-prem server, offline bundle) · raw Kubernetes manifests |
+| [`deploy/ansible/`](./deploy/ansible) · [`deploy/k8s/`](./deploy/k8s) | Ansible playbooks (Kubernetes setup + rolling updates) · raw Kubernetes manifests |
 | [`tests/`](./tests) | `pytest` unit/integration (`pythonpath = [".", "backend"]`), `tests/e2e/e2e.sh` full-stack runner + Playwright UI test, `tests/loadtest` k6 |
 | [`docs/RUNBOOK.md`](./docs/RUNBOOK.md) · [`docs/SECURITY.md`](./docs/SECURITY.md) | Deploy/operate runbook · security posture & release hardening |
 
@@ -427,11 +427,17 @@ kubectl apply -f deploy/k8s/job/setup.yaml
 
 ---
 
-### Cấp quyền cho runtime_writer (chạy 1 lần sau migrate)
+### Cấp quyền cho app_user / runtime_writer (chạy 1 lần sau migrate)
+
+Trên k8s, `job/db-init.yaml` chạy bước này và đặt mật khẩu từ Secret.
+Chạy tay thì phải đặt mật khẩu cùng lúc, nếu không role không đăng nhập được:
 
 ```bash
 docker exec -i dataagent-postgres psql -U admin -d dataagent \
-  < deploy/docker/sql/grant-runtime-writer.sql
+  < deploy/docker/sql/grant-roles.sql
+docker exec -i dataagent-postgres psql -U admin -d dataagent \
+  -c "ALTER ROLE app_user       WITH LOGIN PASSWORD '<APP_USER_PASSWORD>'" \
+  -c "ALTER ROLE runtime_writer WITH LOGIN PASSWORD '<RUNTIME_WRITER_PASSWORD>'"
 ```
 
 ---

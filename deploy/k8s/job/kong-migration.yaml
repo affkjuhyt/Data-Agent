@@ -57,7 +57,8 @@ spec:
       enableServiceLinks: false
       containers:
       - name: kong-migration
-        image: REGISTRY/dataagent/kong:latest
+        image: dataagent/kong:latest
+        imagePullPolicy: IfNotPresent
         command:
         - sh
         - -c

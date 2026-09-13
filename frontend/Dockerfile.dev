@@ -20,5 +20,3 @@ COPY package*.json ./
 RUN --mount=type=cache,target=/root/.npm npm install --no-audit --no-fund
 
 COPY . .
-EXPOSE 8280
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

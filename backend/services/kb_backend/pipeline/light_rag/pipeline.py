@@ -278,15 +278,16 @@ async def purge_expired_cache(qdrant: AsyncQdrantClient, collection: str) -> int
 
 
 async def cache_sweep_loop(
-        qdrant: AsyncQdrantClient,
+        qdrant_connector: Any,
         collection: str = cfg.QDRANT_CACHE_COLLECTION,
         interval: int = cfg.CACHE_SWEEP_INTERVAL,
 ) -> None:
+    """Takes the connector, not a client: a reconnect replaces the client."""
     log.info("cache | sweep loop started (interval=%ds, ttl=%ds)", interval, cfg.CACHE_TTL_SECONDS)
     while True:
         await asyncio.sleep(interval)
         try:
-            await purge_expired_cache(qdrant, collection)
+            await purge_expired_cache(qdrant_connector.get_client(), collection)
         except Exception as exc:
             log.warning("cache | sweep loop error: %s", exc)
 

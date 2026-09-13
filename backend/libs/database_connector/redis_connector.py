@@ -4,15 +4,16 @@ from typing import cast
 
 import redis.asyncio as aioredis
 
-from libs.basemodel.services_databaseconnector.shared_model import HealthCheckLoopConfig, RetryConfig
+from libs.basemodel.services_databaseconnector.shared_model import HealthCheckLoopConfig, RetryConfig, PoolConfig
 
 log = logging.getLogger(__name__)
 
 
 class RedisClient:
-    __slots__ = ("_client", "_healthy", "_connected", "_url")
+    __slots__ = ("_client", "_healthy", "_connected", "_url", "_pool")
 
-    def __init__(self) -> None:
+    def __init__(self, pool: PoolConfig | None = None) -> None:
+        self._pool: PoolConfig = pool or PoolConfig.from_env("REDIS")
         self._client: aioredis.Redis | None = None
         self._healthy: bool = False
         self._connected: bool = False
@@ -27,7 +28,9 @@ class RedisClient:
 
         for attempt in range(retry.count):
             try:
-                client = aioredis.from_url(self._url, decode_responses=True)
+                client = aioredis.from_url(
+                    self._url, decode_responses=True, max_connections=self._pool.max_connections,
+                )
                 await client.ping()
                 self._client = client
                 self._connected = True

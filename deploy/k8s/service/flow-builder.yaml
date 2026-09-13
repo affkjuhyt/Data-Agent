@@ -53,7 +53,8 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: flow-builder
-        image: REGISTRY/dataagent/flow_builder:latest
+        image: dataagent/flow_builder:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8250
           name: http
@@ -95,9 +96,17 @@ spec:
         volumeMounts:
         - name: tmp
           mountPath: /tmp
+        command:
+        - uvicorn
+        - main:app
+        - --host
+        - 0.0.0.0
+        - --port
+        - '8250'
       initContainers:
       - name: wait-for-migrations
-        image: REGISTRY/dataagent/migrate:latest
+        image: dataagent/migrate:latest
+        imagePullPolicy: IfNotPresent
         command:
         - sh
         - -c

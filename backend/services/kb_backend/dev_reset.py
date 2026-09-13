@@ -21,7 +21,7 @@ from libs.database_connector.minio_connector import MinIOClient
 from services.kb_backend.pipeline.light_rag import config as cfg
 from services.kb_backend.operations import trash_ops
 
-POSTGRES_URL = os.getenv("POSTGRES_URL", "postgresql+asyncpg://admin:dev123@postgres/aeroflow_kb")
+POSTGRES_URL = os.environ.get("POSTGRES_URL", "")
 MONGO_URL    = os.getenv("MONGO_URL",    "mongodb://mongo:27017/kb_staging")
 MINIO_URL    = os.getenv("MINIO_URL",    "http://minio:miniominio@minio:9000")
 

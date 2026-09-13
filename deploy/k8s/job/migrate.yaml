@@ -39,7 +39,8 @@ spec:
       enableServiceLinks: false
       containers:
       - name: migrate
-        image: REGISTRY/dataagent/migrate:latest
+        image: dataagent/migrate:latest
+        imagePullPolicy: IfNotPresent
         command:
         - alembic
         - -c

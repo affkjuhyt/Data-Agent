@@ -6,7 +6,7 @@ import mimetypes
 from typing import Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Header, Response
 from fastapi.responses import Response
 
 from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
@@ -23,6 +23,7 @@ from services.kb_backend.operations.chunk_ops import (
     get_chunks, delete_chunk, activate_chunk_version,
     delete_chunk_version, create_chunk_version,
 )
+from services.kb_backend.operations.locking import require_if_match, etag
 from services.kb_backend.operations.table_ops import get_tables, update_table_row
 from services.kb_backend.operations.warehouse_ops import (
     get_warehouse_configs, create_warehouse_config, activate_warehouse_config,
@@ -125,12 +126,17 @@ async def update_table_row_route(
         table_id: str,
         row_index: int,
         body: UpdateTableRowRequest,
-        request: Request, ctx: dict[str, Any] = Depends(require_perm("editTableRow")),
+        request: Request,
+        response: Response,
+        if_match: str = Header(default="", alias="If-Match"),
+        ctx: dict[str, Any] = Depends(require_perm("editTableRow")),
 ) -> ResponseModel[Any]:
     result = await update_table_row(
         svc(request, "postgres"), table_id, row_index, body.model_dump(),
         doc_id=doc_id, tenant_id=ctx["tenant_id"], role_id=ctx["role_id"],
+        expected_version=require_if_match(if_match),
     )
+    response.headers["ETag"] = etag(result["row_version"])
     return ResponseModel(code=200, data=result)
 
 

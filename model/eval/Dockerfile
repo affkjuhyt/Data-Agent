@@ -30,4 +30,3 @@ COPY backend/services/workflow_runtime ./backend/services/workflow_runtime
 
 # Runs everything and gates on the result: a report with no verdict is a
 # dashboard, and this container exists to answer yes or no.
-CMD ["sh", "-c", "python -m model.eval.run --tier all --out /reports/eval-report.json && python -m model.eval.gate --report /reports/eval-report.json"]
