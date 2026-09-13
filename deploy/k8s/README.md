@@ -201,23 +201,23 @@ pod. After editing one of these files, re-run the script and restart:
 Order matters once, on a fresh cluster.
 
 ```bash
-kubectl apply -f deploy/k8s/namespace.yaml
-kubectl apply -f deploy/k8s/configmap.yaml -f deploy/k8s/rbac.yaml
-kubectl apply -f deploy/k8s/networkpolicy-service.yaml \
-              -f deploy/k8s/networkpolicy-database.yaml
+kubectl apply -f deploy/k8s/production/namespace.yaml
+kubectl apply -f deploy/k8s/production/configmap.yaml -f deploy/k8s/production/rbac.yaml
+kubectl apply -f deploy/k8s/production/networkpolicy-service.yaml \
+              -f deploy/k8s/production/networkpolicy-database.yaml
 bash deploy/k8s/create-secrets.sh      # needs secrets.env sourced
 bash deploy/k8s/create-configmaps.sh
-kubectl apply -f deploy/k8s/database/
+kubectl apply -f deploy/k8s/production/database/
 kubectl -n dataagent-database rollout status statefulset/postgres
 
-kubectl apply -f deploy/k8s/job/kong-migration.yaml -f deploy/k8s/job/migrate.yaml
+kubectl apply -f deploy/k8s/production/job/kong-migration.yaml -f deploy/k8s/production/job/migrate.yaml
 kubectl -n dataagent-service wait --for=condition=complete job/migrate --timeout=10m
-kubectl apply -f deploy/k8s/job/db-init.yaml -f deploy/k8s/job/minio-init.yaml
+kubectl apply -f deploy/k8s/production/job/db-init.yaml -f deploy/k8s/production/job/minio-init.yaml
 kubectl -n dataagent-service wait --for=condition=complete job/db-init --timeout=5m
 
-kubectl apply -f deploy/k8s/service/
-kubectl apply -f deploy/k8s/job/setup.yaml          # Kong routes + Keycloak mappers
-kubectl apply -f deploy/k8s/job/postgres-backup.yaml
+kubectl apply -f deploy/k8s/production/service/
+kubectl apply -f deploy/k8s/production/job/setup.yaml          # Kong routes + Keycloak mappers
+kubectl apply -f deploy/k8s/production/job/postgres-backup.yaml
 ```
 
 `postgres-restore` drops a database, so it ships `suspend: true` with
@@ -226,86 +226,36 @@ deliberately when you mean to restore:
 `kubectl -n dataagent-database patch job postgres-restore -p '{"spec":{"suspend":false}}'`.
 A test fails the build if that flag is ever flipped in the manifest. Our images
 are named `dataagent/<service_name>:latest`, which resolves against a node's
-local image store; prefix a registry at apply time if you push somewhere. Every
-one carries `imagePullPolicy: IfNotPresent` — Kubernetes defaults a `:latest`
-tag to `Always`, which never finds a locally built image. They
+local image store; prefix a registry at apply time if you push somewhere. They
 are built from `backend/services/<name>/Dockerfile` (plus `backend/alembic/`,
-`model/eval/`, `frontend/Dockerfile`). `deploy/docker/kong/Dockerfile` is the
+`model/eval/`, `frontend/Dockerfile.dev`). `deploy/docker/kong/Dockerfile` is the
 only image built under `deploy/` — everything else pulls a public image directly.
 
 A Job's pod template is immutable, so re-applying a completed Job fails. Delete
 it first: `kubectl -n dataagent-service delete job migrate --ignore-not-found`.
 
-## Redeploying after a code or migration change
+## Dev set
 
-This is the loop for pushing a code change to an already-running cluster — not
-the fresh-cluster bootstrap above. Local dev points `docker`/`kubectl` at a
-single-node cluster with its own registry at `localhost:5000`; substitute your
-real registry if this is remote.
+`deploy/k8s/dev/` is the same stack with the hardening removed, for a single-node
+dev cluster. Its own `secrets.env` and `.openbao-keys.json` live inside it and
+are git-ignored; nothing secret lives outside it.
 
-**One service changed — the common case:**
-
-```bash
-# Context is the repo root for every backend service and for migrate; frontend
-# is the one exception (its Dockerfile expects `frontend/` as context).
-docker build -f backend/services/<name>/Dockerfile -t localhost:5000/dataagent/<name>:latest .
-docker push localhost:5000/dataagent/<name>:latest
-
-kubectl -n dataagent-service rollout restart deployment/<name>
-kubectl -n dataagent-service rollout status deployment/<name> --timeout=120s
-```
-
-`<name>` is the image name from `kustomization.yaml`'s `images:` list, which is
-not always the directory name — `backend/services/kb_ingestion_worker/` builds
-`kb-ingestion-worker` (hyphen), `backend/services/workflow_runtime/` builds
-`workflow_runtime` (underscore). Check that list rather than guessing from the
-path. `imagePullPolicy: Always` is set on every workload, so a `:latest` push
-plus a rollout restart is enough — no need to bump a tag for local iteration.
-
-**A new Alembic migration:**
+| | production | dev |
+| --- | --- | --- |
+| Pod security | restricted PSA, locked-down `securityContext` | privileged PSA; our images run as root with a writable root fs |
+| Network | default-deny + allow matrix | one `allow-all` per namespace |
+| Services | ClusterIP | NodePort, `nodePort = port + 22000` (30100–30599) |
+| Images | `dataagent/<name>:latest` | `localhost:5000/dataagent/<name>:latest` |
+| Replicas | as sized | 1, HPA `minReplicas: 1` |
+| Access | per-workload ServiceAccounts only | plus `dataagent-dev`, bound to `admin` in the three namespaces |
 
 ```bash
-docker build -f backend/alembic/Dockerfile -t localhost:5000/dataagent/migrate:latest .
-docker push localhost:5000/dataagent/migrate:latest
-
-kubectl -n dataagent-service delete job migrate --ignore-not-found   # immutable pod template — see above
-kubectl apply -k .                                                   # NOT -f deploy/k8s/job/migrate.yaml directly:
-                                                                       # the raw file still has the REGISTRY/ placeholder
-kubectl -n dataagent-service wait --for=condition=complete job/migrate --timeout=5m
-kubectl -n dataagent-service logs -l job-name=migrate --tail=50
+bash deploy/k8s/dev/up.sh
+kubectl -n dataagent-service get secret dataagent-dev-token -o jsonpath='{.data.token}' | base64 -d
 ```
 
-Before writing a new revision file, verify there is exactly one head — a
-hand-picked hex ID can collide with one already used elsewhere in
-`backend/alembic/versions/` (this has happened; Alembic doesn't catch it until
-`upgrade heads` sees two files claiming the same revision):
-
-```bash
-grep -rl "revision.*=.*['\"]<your-new-id>['\"]" backend/alembic/versions/   # expect: only your new file
-```
-
-`kubectl apply -k .` re-applies the *entire* kustomization, not just the
-migrate Job — on a cluster that already has data, this routinely errors on
-unrelated resources it wants to reconcile (a PVC `storage` request kubernetes
-won't let shrink, a StatefulSet field that's immutable post-creation). Those
-errors are expected noise, not a sign the migrate Job failed — check `job/migrate`
-itself (`get pods`, `logs`) rather than the apply command's exit code.
-
-**Frontend:**
-
-```bash
-docker build -f frontend/Dockerfile -t localhost:5000/dataagent/frontend:latest frontend
-docker push localhost:5000/dataagent/frontend:latest
-kubectl -n dataagent-service rollout restart deployment/frontend
-kubectl -n dataagent-service rollout status deployment/frontend --timeout=90s
-```
-
-Not `Dockerfile.dev` — the manifest runs `npm run preview`, which serves `dist/`,
-and only `frontend/Dockerfile` runs `npm run build` to produce it.
-
-Run `cd frontend && npx tsc --noEmit` first — it must run from `frontend/`
-(no `tsconfig.json` at the repo root, so running it from there silently exits
-0 with no output, which reads exactly like "no errors").
+`up.sh` is re-runnable. It points the helper scripts at the dev secrets through
+`SECRETS_ENV=dev/secrets.env KEYS_FILE=dev/.openbao-keys.json`.
 
 ## Ports
 
@@ -391,28 +341,6 @@ the Python services never apply in-cluster.
 `tests/unit/test_k8s_manifests.py` asserts the range, that no two Services share
 a port, that `8000–8099` stays empty, and that `port == targetPort ==
 containerPort` for every workload.
-
-## The setup Job
-
-`job/setup.yaml` is the one workload the NetworkPolicies let reach **both** Kong
-and Keycloak (`allow-kong` and `allow-keycloak` both list `setup`), so everything
-that has to talk to the gateway and to identity in one breath lives there:
-
-| Step | Controlled by |
-| --- | --- |
-| Keycloak audience mappers | always |
-| Kong services, routes, JWT plugin, CORS, dev passwords | always |
-| `browserFlow = browser` (browser MFA off) | `KEYCLOAK_DISABLE_MFA=1` in `setup-env` |
-| Anonymous call to `/api/orchestrate/stream` must be 401/403 | always — the Job fails if the gateway is not fail-closed |
-| `/api/catalog/agents` + `/api/reviews/pending` with a real token | `SMOKE_USER` + `SMOKE_PASSWORD`, blank = skipped |
-
-The anonymous check works even when the upstream is down, because Kong's JWT
-plugin rejects before proxying — a 503 there means the route is wrong, not that
-the service is missing.
-
-`SMOKE_USER` is empty by default. To enable the token check, set it to a realm
-user (`kong-setup.sh` creates `helios-engineer`, `helios-admin`, `helios-viewer`)
-and put that user's password in `SMOKE_PASSWORD`.
 
 ## Ingress
 

@@ -8,7 +8,7 @@
 #
 # SANDBOX_BACKEND=kubernetes (deploy/k8s/) needs none of that: it calls the
 # API server over HTTPS with its own ServiceAccount token (k8s_runner.py),
-# an ordinary unprivileged operation — deploy/k8s/service/sandbox-executor.yaml
+# an ordinary unprivileged operation — deploy/k8s/production/service/sandbox-executor.yaml
 # runs this same image as runAsNonRoot/runAsUser 10001 there, which k8s sets
 # directly regardless of this image's own (root) default.
 FROM python:3.11.9-slim

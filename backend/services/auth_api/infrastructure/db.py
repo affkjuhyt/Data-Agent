@@ -17,6 +17,8 @@ def get_owner_pool() -> pg_pool.ThreadedConnectionPool:
     if owner_pool is None:
         with owner_pool_lock:
             if owner_pool is None:
+                if not PG_DSN:
+                    raise RuntimeError("DATABASE_URL is not set (see deploy/k8s/secrets.env.example)")
                 owner_pool = pg_pool.ThreadedConnectionPool(POOL_MIN, OWNER_POOL_MAX, PG_DSN)
     return owner_pool
 

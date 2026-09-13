@@ -1,6 +1,0 @@
----
-- name: Restart services
-  ansible.builtin.command: >
-    {{ kubectl }} -n {{ ns_service }} rollout restart deployment --all
-  when: (apply_services | bool)
-  changed_when: true

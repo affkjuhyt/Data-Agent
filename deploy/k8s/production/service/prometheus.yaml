@@ -1,0 +1,145 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: dataagent-service
+  labels:
+    app: prometheus
+    app.kubernetes.io/part-of: dataagent
+automountServiceAccountToken: false
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: dataagent-service
+  labels:
+    app: prometheus
+    app.kubernetes.io/part-of: dataagent
+spec:
+  replicas: 1
+  # prometheus-data is RWO (local-path, single-node — see volumeClaimTemplate
+  # below) — the default RollingUpdate briefly runs old+new pod together and
+  # the new one fails to lock the TSDB directory the old one still holds.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: prometheus
+        image: prom/prometheus:v2.54.1
+        args:
+        - --config.file=/etc/prometheus/prometheus.yml
+        - --storage.tsdb.path=/prometheus
+        - --storage.tsdb.retention.time=15d
+        - --web.listen-address=:8400
+        ports:
+        - containerPort: 8400
+          name: http
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            # Modest cut — still needs to scrape every service, but not on
+            # the request path; headroom goes to
+            # kong/workflow-runtime/model-service instead.
+            cpu: 300m
+            memory: 384Mi
+        readinessProbe:
+          httpGet:
+            path: /-/ready
+            port: 8400
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /-/ready
+            port: 8400
+          initialDelaySeconds: 30
+          periodSeconds: 20
+          failureThreshold: 6
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: config
+          mountPath: /etc/prometheus
+          readOnly: true
+        - name: data
+          mountPath: /prometheus
+        - name: tmp
+          mountPath: /tmp
+        envFrom: []
+      volumes:
+      - name: config
+        configMap:
+          name: prometheus-config
+      - name: data
+        persistentVolumeClaim:
+          claimName: prometheus-data
+      - name: tmp
+        emptyDir: {}
+      enableServiceLinks: false
+      serviceAccountName: prometheus
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-data
+  namespace: dataagent-service
+  labels:
+    app: prometheus-data
+    app.kubernetes.io/part-of: dataagent
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      # 10Gi, not 8Gi: the live PVC was resized up and Kubernetes forbids
+      # shrinking a bound claim -- an 8Gi request makes `kubectl apply` of the
+      # whole directory fail on this one resource.
+      storage: 10Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: dataagent-service
+  labels:
+    app: prometheus
+    app.kubernetes.io/part-of: dataagent
+spec:
+  selector:
+    app: prometheus
+  ports:
+  - port: 8400
+    targetPort: 8400
+    name: http
+  type: ClusterIP

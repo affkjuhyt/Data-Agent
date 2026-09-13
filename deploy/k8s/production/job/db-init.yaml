@@ -1,0 +1,113 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: db-init
+  namespace: dataagent-service
+  labels:
+    app: db-init
+    app.kubernetes.io/part-of: dataagent
+automountServiceAccountToken: false
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-init-env
+  namespace: dataagent-service
+  labels:
+    app: db-init
+    app.kubernetes.io/part-of: dataagent
+data:
+  # Short name doesn't resolve cross-namespace (this Job runs in
+  # dataagent-service, postgres is in dataagent-database) — same class of bug
+  # as kong's KONG_PG_HOST. PGUSER: psql/libpq don't read POSTGRES_USER.
+  PGHOST: postgres.dataagent-database.svc.cluster.local
+  PGUSER: admin
+  # libpq defaults the target database to the username when unset — without
+  # this it tries to connect to a database literally named "admin".
+  PGDATABASE: dataagent
+  WAIT_FOR_TABLE: Agents
+  PGPORT: '8300'
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-init
+  namespace: dataagent-service
+  labels:
+    app: db-init
+    app.kubernetes.io/part-of: dataagent
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: db-init
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      containers:
+      - name: db-init
+        image: postgres:16-alpine
+        command:
+        - sh
+        - -c
+        - |
+          until psql -tAc "SELECT 1 FROM information_schema.tables WHERE table_name = 'Agents'" 2>/dev/null | grep -q 1; do
+            echo waiting for migrations; sleep 3
+          done
+          for f in /sql/*.sql; do echo applying $f; psql -v ON_ERROR_STOP=1 -f "$f"; done
+          echo setting role passwords
+          psql -v ON_ERROR_STOP=1             -v app_user_password="$APP_USER_PASSWORD"             -v runtime_writer_password="$RUNTIME_WRITER_PASSWORD"             -v sandbox_reader_password="$SANDBOX_READER_PASSWORD"             -v kb_backend_password="$KB_BACKEND_PASSWORD"             -v pgbouncer_auth_password="$PGBOUNCER_AUTH_PASSWORD"             -v kb_ingestion_worker_password="$KB_INGESTION_WORKER_PASSWORD" <<'SQL'
+          ALTER ROLE app_user       WITH LOGIN PASSWORD :'app_user_password';
+          ALTER ROLE runtime_writer WITH LOGIN PASSWORD :'runtime_writer_password';
+          ALTER ROLE sandbox_reader WITH LOGIN PASSWORD :'sandbox_reader_password';
+          ALTER ROLE kb_backend     WITH LOGIN PASSWORD :'kb_backend_password';
+          ALTER ROLE pgbouncer_auth WITH LOGIN PASSWORD :'pgbouncer_auth_password';
+          ALTER ROLE kb_ingestion_worker WITH LOGIN PASSWORD :'kb_ingestion_worker_password';
+          SQL
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: sql
+          mountPath: /sql
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        envFrom:
+        - configMapRef:
+            name: db-init-env
+        - secretRef:
+            name: db-init-secrets
+      volumes:
+      - name: sql
+        configMap:
+          name: db-init-sql
+      - name: tmp
+        emptyDir: {}
+      enableServiceLinks: false
+      serviceAccountName: db-init

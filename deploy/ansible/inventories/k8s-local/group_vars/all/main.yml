@@ -1,0 +1,28 @@
+---
+
+env_name: k8s-local
+k8s_env: dev
+
+secrets_env_file: "{{ k8s_manifests }}/secrets.env"
+openbao_keys_file: "{{ k8s_manifests }}/.openbao-keys.json"
+openbao_env_file: "{{ k8s_manifests }}/.openbao-env.yml"
+
+image_registry: "localhost:5000"
+image_push: true
+image_import: ""
+image_tag: latest
+
+git_sync_enabled: true
+git_branch: k8s/ver.0.1
+
+apply_databases: true
+apply_jobs: false
+apply_services: true
+apply_setup: false
+
+wait_statefulset: 600
+wait_job: 900
+
+public_api_url: http://localhost:8100
+keycloak_public_url: http://localhost:8110
+langfuse_public_url: http://localhost:8420

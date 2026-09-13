@@ -26,9 +26,9 @@ KC_BASE="${KEYCLOAK_URL:-http://localhost:8110}"
 # Upstream hostnames below default to the docker-compose container names
 # (underscores, matching the backend/services/<name> directory names). k8s
 # Service objects can't contain underscores at all (DNS-1035 label rule),
-# so deploy/k8s/service/*.yaml names them with hyphens instead
+# so deploy/k8s/production/service/*.yaml names them with hyphens instead
 # (workflow-runtime, flow-builder, auth-api, release-worker) — the k8s
-# ConfigMap (deploy/k8s/configmap.yaml) overrides these four to match.
+# ConfigMap (deploy/k8s/production/configmap.yaml) overrides these four to match.
 # Without the override, Kong's upstream DNS lookup 503s with "name error"
 # the moment a route actually gets proxied (JWT/CORS checks can pass fine
 # before that point, which is what made this easy to miss).
@@ -377,6 +377,14 @@ else
     "aeroflow-jwks"
 
 fi
+
+# ── 4c2. request-size-limiting on kb-backend ───────────────────────────
+# Ingestion buffers the whole upload, so the gateway stops oversized bodies.
+# Outside the SKIP_JWT branch: the limit applies either way.
+echo "📏 Enabling request-size-limiting on kb-backend (${KB_MAX_UPLOAD_MB:-64}MB)..."
+upsert_plugin "$KONG_ADMIN/services/kb-backend/plugins" \
+  "{\"name\":\"request-size-limiting\",\"config\":{\"allowed_payload_size\":${KB_MAX_UPLOAD_MB:-64},\"size_unit\":\"megabytes\",\"require_content_length\":false}}" \
+  "request-size-limiting"
 
 # ── 4d. aeroflow-jwks on kb-backend ────────────────────────────────────
 # Reuse aud=aeroflow-backend so the existing audience mapper on the

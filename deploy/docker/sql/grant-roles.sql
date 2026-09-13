@@ -162,3 +162,40 @@ $$;
 
 REVOKE ALL ON FUNCTION public.pgbouncer_get_auth(TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.pgbouncer_get_auth(TEXT) TO pgbouncer_auth;
+
+-- ── kb_ingestion_worker ──────────────────────────────────────────────────────
+-- Table-scoped role for the ingestion worker. Same rule as kb_backend: no
+-- ALL TABLES grant and no default privileges, so a new table reaches this
+-- service only by being listed here.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'kb_ingestion_worker') THEN
+    CREATE ROLE kb_ingestion_worker WITH LOGIN;
+  END IF;
+END
+$$;
+
+ALTER ROLE kb_ingestion_worker NOSUPERUSER;
+ALTER ROLE kb_ingestion_worker NOBYPASSRLS;
+
+GRANT CONNECT ON DATABASE dataagent TO kb_ingestion_worker;
+GRANT USAGE ON SCHEMA public TO kb_ingestion_worker;
+
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM kb_ingestion_worker;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON
+  "KBData",
+  "KBTextBlock",
+  "KBTextBlockVersion",
+  "KBTextTable",
+  "KBLifecycleHistory",
+  "KBConflict",
+  "KBConflictBatch",
+  "KBStructuredImportJob"
+TO kb_ingestion_worker;
+
+GRANT SELECT ON
+  "KBFilterPolicy",
+  "KBEntityLookup",
+  "KBQdrantCollection"
+TO kb_ingestion_worker;

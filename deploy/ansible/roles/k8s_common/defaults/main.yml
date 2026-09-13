@@ -1,5 +1,8 @@
 ---
+
 k8s_dir: "{{ project_dir }}/deploy/k8s"
+k8s_env: production
+k8s_manifests: "{{ k8s_dir }}/{{ k8s_env }}"
 docker_dir: "{{ project_dir }}/deploy/docker"
 
 ns_service: dataagent-service
@@ -7,29 +10,64 @@ ns_database: dataagent-database
 
 kubectl: kubectl
 
+git_sync_enabled: true
+git_remote: origin
+git_branch: k8s/ver.0.1
+pull_failure_log: "{{ deploy_state_dir }}/last-pull-failure.log"
+
+deploy_state_dir: "{{ lookup('env', 'HOME') | default('/var/lib', true) }}/.dataagent-deploy/{{ env_name }}"
+checkpoint_file: "{{ deploy_state_dir }}/last_deployed_sha.txt"
+openbao_env_file: "{{ deploy_state_dir }}/openbao.yml"
+openbao_keys_file: "{{ deploy_state_dir }}/openbao-keys.json"
+
+deploy_full: false
+
 image_prefix: dataagent
 image_tag: latest
-image_import: ""
-image_push: false
-k8s_sed: 'sed -e "s|dataagent/\([a-z_-]*\):latest|{{ image_prefix }}/\1:{{ image_tag }}|g"'
-
-images:
-  - { name: auth_api, file: backend/services/auth_api/Dockerfile, context: "." }
-  - { name: flow_builder, file: backend/services/flow_builder/Dockerfile, context: "." }
-  - { name: kb-backend, file: backend/services/kb_backend/Dockerfile, context: "." }
-  - { name: kb-ingestion-worker, file: backend/services/kb_ingestion_worker/Dockerfile, context: "." }
-  - { name: llm_exporter, file: backend/services/llm_exporter/Dockerfile, context: "." }
-  - { name: model_service, file: backend/services/model_service/Dockerfile, context: backend/services/model_service }
-  - { name: platform-workers, file: backend/services/platform_workers/Dockerfile, context: "." }
-  - { name: release_worker, file: backend/services/release_worker/Dockerfile, context: "." }
-  - { name: sandbox_executor, file: backend/services/sandbox_executor/Dockerfile, context: backend/services/sandbox_executor }
-  - { name: workflow_runtime, file: backend/services/workflow_runtime/Dockerfile, context: "." }
-  - { name: migrate, file: backend/alembic/Dockerfile, context: "." }
-  - { name: kong, file: deploy/docker/kong/Dockerfile, context: "." }
-  - { name: frontend, file: frontend/Dockerfile.dev, context: frontend }
-  - { name: eval, file: model/eval/Dockerfile, context: "." }
-
 images_only: ""
+
+image_push: true
+image_import: ""
+
+image_registry: ""
+image_deploy_prefix: "{{ (image_registry ~ '/') if (image_registry | length) > 0 else '' }}{{ image_prefix }}"
+
+manifest_sed_rewrite: 'sed -e "s|image: {{ image_prefix }}/\([a-z0-9_-]*\):{{ image_tag }}|image: {{ image_deploy_prefix }}/\1:{{ image_tag }}|g" -e "s|imagePullPolicy: IfNotPresent|imagePullPolicy: Always|g"'
+manifest_sed: "{{ manifest_sed_rewrite if (image_registry | length) > 0 else 'cat' }}"
+
+image_self_context:
+  - backend/services/model_service
+  - backend/services/sandbox_executor
+  - backend/services/sandbox_executor/sandbox_runner
+  - frontend
+
+image_name_overrides:
+  backend/alembic: migrate
+
+shared_paths:
+  - backend/libs
+  - pyproject.toml
+  - uv.lock
+
+vault_file: "{{ inventory_dir }}/.secrets/vault.yml"
+secrets_env_file: "{{ k8s_dir }}/secrets.env"
+
+secret_paths:
+  - deploy/k8s/create-secrets.sh
+  - deploy/docker/kafka/kafka-broker-jaas.config.example
+  - "deploy/ansible/inventories/{{ env_name }}/group_vars"
+
+config_paths:
+  - deploy/k8s/create-configmaps.sh
+  - deploy/k8s/production/configmap.yaml
+  - deploy/k8s/dev/configmap.yaml
+  - deploy/docker/sql
+  - deploy/docker/keycloak
+  - deploy/docker/kong
+  - deploy/docker/litellm
+  - deploy/docker/monitoring
+  - backend/services/workflow_runtime/migrations/seed.sql
+  - tests/e2e/seed-flow.js
 
 apply_databases: true
 apply_jobs: false
@@ -47,8 +85,6 @@ database_workloads:
   - clickhouse
   - elasticsearch
 
-job_workloads: [db-init, minio-init, kafka-topics]
-
 service_workloads:
   - litellm
   - auth-api
@@ -60,13 +96,17 @@ service_workloads:
   - sandbox-executor
   - frontend
 
+migration_jobs: [kong-migration, migrate]
+job_workloads: [db-init, minio-init, kafka-topics, seed]
+seed_demo: false
+
 wait_namespace: 60
 wait_statefulset: 600
 wait_job: 900
 wait_rollout: 600
 
-secrets_env_source: "{{ inventory_dir }}/secrets.env.vault"
-secrets_env_file: "{{ k8s_dir }}/secrets.env"
+openbao_allow_reset: false
+openbao_rotate_approle: false
 
 pg_host: "postgres.{{ ns_database }}.svc.cluster.local"
 pg_port: 8300

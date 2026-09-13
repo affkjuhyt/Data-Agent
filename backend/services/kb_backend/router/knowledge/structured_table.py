@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select as sa_select, update as sa_update, text
 
+from libs.shared.row_version import with_new_version
 from libs.basemodel.services_databaseconnector.postgres_model import KBStructuredImportJobInsert, Tier
 from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBStructuredImportJobORM, KBDataORM, KBTableORM,
@@ -289,7 +290,7 @@ async def _record_approval(session: Any, job: Any, data_id: str, table_name: str
         )
     )
     await session.execute(
-        sa_update(KBDataORM).where(KBDataORM.data_id == uuid.UUID(data_id)).values(current_tier=Tier.GOLD.value)
+        sa_update(KBDataORM).where(KBDataORM.data_id == uuid.UUID(data_id)).values(**with_new_version(current_tier=Tier.GOLD.value))
     )
 
 

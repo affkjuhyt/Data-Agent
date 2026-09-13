@@ -5,7 +5,7 @@ now an individual test so failures are visible per case in CI rather than
 folded into one boolean.
 
 Requires a live stack:
-    kubectl apply -f deploy/k8s/database/ -f deploy/k8s/service/
+    kubectl apply -f deploy/k8s/production/database/ -f deploy/k8s/production/service/
     LIVE_STACK=1 pytest -m e2e tests/integration/test_tenant_isolation.py
 """
 from __future__ import annotations

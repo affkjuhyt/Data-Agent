@@ -1,6 +1,6 @@
 """_get_client() (sandbox_schema_docs.docx §1.4, PR review fix §8.7) — should
 prefer the rootless Docker-in-Docker sidecar (SANDBOX_DOCKER_HOST, set in
-deploy/k8s/service/sandbox-executor.yaml) over the host's own
+deploy/k8s/production/service/sandbox-executor.yaml) over the host's own
 /var/run/docker.sock, so a compromised sandbox_executor no longer reaches
 host root through the socket. docker.from_env()/docker.DockerClient are
 mocked — no real Docker daemon needed for this branching logic.

@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any, AsyncGenerator, AsyncIterator
 import asyncio
 import datetime
-import hashlib
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -11,12 +10,12 @@ from contextlib import asynccontextmanager
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy import text
 
 from libs.basemodel.services_databaseconnector.postgres_model import (
     Language, SourceType, Document, Image, Video, Web, Warehouse,
 )
 from services.kb_backend.schemas import PromoteResponse, WebIngestRequest
+from libs.shared.document_lock import DocumentBusy, document_lock
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.operations.document_ops import (
@@ -48,33 +47,32 @@ async def _fetch_kbdata_or_404(postgres: Any, tenant_id: str, role_id: str, data
     return record
 
 
-def _document_name_key(tenant_id: str, name: str) -> int:
-    digest = hashlib.blake2b(f"{tenant_id}:{name}".encode(), digest_size=8).digest()
-    return int.from_bytes(digest, "big", signed=True)
+_ACTIVE_STAGES = {"RUNNING", "CHUNKING", "EMBEDDING", "GRAPH_EXTRACTING", "GOLD_GRAPH", "GOLD_REDUCE"}
+
+
+async def _active_stage(mongo: Any, data_id: str) -> str | None:
+    """The stage currently running for this document, or None if it is idle."""
+    record = await mongo.get_client()["kb_ingestion_logs"].find_one(
+        {"data_id": data_id}, {"status": 1, "stage": 1}
+    )
+    if not record:
+        return None
+    if str(record.get("status", "")).upper() not in _ACTIVE_STAGES:
+        return None
+    return str(record.get("stage") or record.get("status") or "processing")
 
 
 @asynccontextmanager
 async def _document_name_lock(postgres: Any, tenant_id: str, name: str) -> AsyncIterator[None]:
-    """Serialise replace-then-insert for one (tenant, name).
-
-    Rejects rather than queues: a waiting request would hold its connection for
-    the whole ingest. The session stays in one transaction so the lock keeps the
-    same backend under transaction pooling.
-    """
-    key = _document_name_key(tenant_id, name)
-    session = postgres.get_client()
-    acquired = await session.scalar(text("SELECT pg_try_advisory_lock(:key)"), {"key": key})
-    if not acquired:
-        await session.close()
+    """Shared document lock, surfaced to the caller as 409 rather than a wait."""
+    try:
+        async with document_lock(postgres, tenant_id, name):
+            yield
+    except DocumentBusy:
         raise HTTPException(
             status_code=409,
-            detail=f"'{name}' is currently being ingested. Wait for it to finish, or use a different name.",
+            detail=f"'{name}' is currently being processed. Wait for it to finish, or use a different name.",
         )
-    try:
-        yield
-    finally:
-        await session.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
-        await session.close()
 
 
 async def _replace_existing_document_if_any(request: Request, ctx: dict[str, Any], name: str) -> None:
@@ -251,6 +249,13 @@ async def promote_to_silver(
     record = await _fetch_kbdata_or_404(postgres, ctx["tenant_id"], ctx["role_id"], data_id)
     log.info("POST /ingestion/promote/%s/silver tenant=%s", data_id, ctx["tenant_id"])
 
+    stage = await _active_stage(mongo, data_id)
+    if stage:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This document is currently in the {stage} stage. Wait for it to finish before promoting again.",
+        )
+
     try:
         await kafka_producer.produce(
             topic=cfg.KAFKA_TOPIC_SILVER,
@@ -296,6 +301,13 @@ async def promote_to_gold(
         )
 
     log.info("POST /ingestion/promote/%s/gold tenant=%s", data_id, ctx["tenant_id"])
+
+    stage = await _active_stage(mongo, data_id)
+    if stage:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This document is currently in the {stage} stage. Wait for it to finish before promoting again.",
+        )
 
     try:
         await kafka_producer.produce(

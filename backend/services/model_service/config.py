@@ -21,7 +21,4 @@ EMBED_BATCH_ENABLED = _flag("EMBED_BATCH_ENABLED")
 EMBED_BATCH_MAX     = int(os.getenv("EMBED_BATCH_MAX", "64"))       # texts per encode
 EMBED_BATCH_WAIT_MS = float(os.getenv("EMBED_BATCH_WAIT_MS", "8"))  # coalesce window
 
-POSTGRES_DSN = os.getenv(
-    "POSTGRES_DSN",
-    "postgresql://aeroflow:aeroflow_secret@postgres/aeroflow_kb",
-)
+POSTGRES_DSN = os.environ.get("POSTGRES_DSN", "")

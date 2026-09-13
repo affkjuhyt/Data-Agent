@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kong-migration
+  namespace: dataagent-service
+  labels:
+    app: kong-migration
+    app.kubernetes.io/part-of: dataagent
+automountServiceAccountToken: false
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kong-migration-env
+  namespace: dataagent-service
+  labels:
+    app: kong-migration
+    app.kubernetes.io/part-of: dataagent
+data:
+  KONG_DATABASE: postgres
+  KONG_PG_HOST: postgres.dataagent-database.svc.cluster.local
+  KONG_PG_PORT: '8300'
+  KONG_PG_USER: admin
+  KONG_PG_DATABASE: dataagent
+  KONG_PG_SCHEMA: kong
+  KONG_PREFIX: /kong_prefix
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kong-migration
+  namespace: dataagent-service
+  labels:
+    app: kong-migration
+    app.kubernetes.io/part-of: dataagent
+spec:
+  backoffLimit: 6
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app: kong-migration
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      automountServiceAccountToken: false
+      containers:
+      - name: kong-migration
+        image: dataagent/kong:latest
+        command:
+        - sh
+        - -c
+        - kong migrations bootstrap || kong migrations up
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: prefix
+          mountPath: /kong_prefix
+        - name: tmp
+          mountPath: /tmp
+        envFrom:
+        - configMapRef:
+            name: kong-migration-env
+        - secretRef:
+            name: kong-migration-secrets
+      volumes:
+      - name: prefix
+        emptyDir: {}
+      - name: tmp
+        emptyDir: {}
+      enableServiceLinks: false
+      serviceAccountName: kong-migration

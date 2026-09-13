@@ -145,12 +145,12 @@ likewise pooled per replica.
    skipping embed entirely**; version bump → cache miss → recompute verified.
    (The in-pipeline Qdrant *semantic* cache stays as an independent L1 with its
    own 24 h TTL; flushing it on gold too is a follow-up.)
-3. [x] **PgBouncer** (transaction pooling) — `deploy/k8s/database/pgbouncer.yaml`.
+3. [x] **PgBouncer** (transaction pooling) — `deploy/k8s/production/database/pgbouncer.yaml`.
    Verified: 20 client connections multiplex onto ~10 real Postgres backends
    (`DEFAULT_POOL_SIZE`). Cutover note (asyncpg `statement_cache_size=0`) is in the
    overlay. Read replicas remain a deploy-topology step (managed PG / k8s).
 4. [x] **Qdrant replication** — 2-node distributed cluster in
-   `deploy/k8s/database/qdrant.yaml` with `QDRANT_CLUSTER_ENABLED=true` and >1 replica. Verified: a
+   `deploy/k8s/production/database/qdrant.yaml` with `QDRANT_CLUSTER_ENABLED=true` and >1 replica. Verified: a
    collection with `shard_number=2, replication_factor=2` keeps 4 shard-copies
    (2 local + 2 remote), a point inserted on node-0 reads back from BOTH nodes,
    and reads survive killing node-1 (which re-syncs on restart). **Use ≥3 nodes in
@@ -175,7 +175,7 @@ likewise pooled per replica.
    GPU-less (here) or on a GPU node pool — the manifest only changes scheduling.
    Plus **DDoS/flood protection** at kb-gateway (global + per-IP rate + max-concurrent
    → 429/503, verified: 10 parallel @ max-concurrent=2 → 8×503+2×200).
-8. [x] **Observability** — Prometheus + Grafana (`deploy/k8s/service/prometheus.yaml` + `grafana.yaml`,
+8. [x] **Observability** — Prometheus + Grafana (`deploy/k8s/production/service/prometheus.yaml` + `grafana.yaml`,
    ). kb-gateway `/metrics` (Go): RPS by status, latency
    histogram, in-flight, rejections; model-service `/metrics` (Py): embed cache
    hit-rate, batch size, detected device. Provisioned Grafana dashboard **"KB —
@@ -276,7 +276,7 @@ The **crud/Postgres path degrades faster** than retrieval (cache-hit), so the DB
 path is the latency-sensitive one, not retrieval.
 
 **Fix (found + applied):** `uvicorn --workers` is now env-tunable
-(`UVICORN_WORKERS`, default 1) in `backend/services/kb_backend/Dockerfile` + `deploy/k8s/service/kb-backend.yaml`.
+(`UVICORN_WORKERS`, default 1) in `backend/services/kb_backend/Dockerfile` + `deploy/k8s/production/service/kb-backend.yaml`.
 Same VUS=300 sweep with **4 workers**:
 
 | VUS=300 | 1 worker | 4 workers |
@@ -290,7 +290,7 @@ Same VUS=300 sweep with **4 workers**:
 rps** that 10k CCU needs — the backend tier is *not* the ceiling once it uses more
 than one core. Set `UVICORN_WORKERS` = CPU cores per replica; the DB path benefits
 most (crud p95 6× better) because it was serialized on the single process's GIL.
-Next DB lever if pushed further: the PgBouncer pooler in `deploy/k8s/database/pgbouncer.yaml`.
+Next DB lever if pushed further: the PgBouncer pooler in `deploy/k8s/production/database/pgbouncer.yaml`.
 
 ### LLM tier — generation benchmark (`model/llama-server/benchmark_llm.py`, ollama qwen2.5:3b)
 
@@ -476,7 +476,7 @@ async). Silver (parse + extract) dominates. These are tiny docs — real
 multi-chunk documents scale the LLM/embed work per doc, so 0.16 docs/s is an
 optimistic floor. **Scale path:** ingestion is embarrassingly parallel across
 documents — add Kafka partitions + more `kb-ingestion-worker` replicas
-(`deploy/k8s/job/kafka-topics.yaml` + `--scale`) to multiply docs/sec; it never shares a queue with the
+(`deploy/k8s/production/job/kafka-topics.yaml` + `--scale`) to multiply docs/sec; it never shares a queue with the
 online retrieval path, so it can't hurt CCU.
 
 #### Scaled + large-document run (where the code needs work)

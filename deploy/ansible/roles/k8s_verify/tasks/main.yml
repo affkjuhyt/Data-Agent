@@ -15,6 +15,7 @@
   register: denyall
   failed_when: denyall.rc != 0
   changed_when: false
+  when: k8s_env == 'production'
   loop:
     - "{{ ns_service }}"
     - "{{ ns_database }}"
@@ -26,6 +27,7 @@
   register: bindings
   changed_when: false
   failed_when: bindings.stdout | trim | replace('openbao', '') | trim | length > 0
+  when: k8s_env == 'production'
 
 - name: Check store ports
   ansible.builtin.command: >

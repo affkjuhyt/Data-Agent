@@ -44,7 +44,7 @@ export default defineConfig(({ mode }) => {
       // inside its container (:8280) — the HMR client otherwise tries to
       // open a websocket back to the container-internal port, which the
       // browser can't reach at all. VITE_HMR_CLIENT_PORT tells it which
-      // externally-reachable port to use instead (deploy/k8s/service/
+      // externally-reachable port to use instead (deploy/k8s/production/service/
       // frontend.yaml sets it to the NodePort, 30280).
       hmr: process.env.DISABLE_HMR !== "true"
         ? { clientPort: Number(env.VITE_HMR_CLIENT_PORT) || undefined }

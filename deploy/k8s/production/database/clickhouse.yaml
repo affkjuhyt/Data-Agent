@@ -1,0 +1,160 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: clickhouse
+  namespace: dataagent-database
+  labels:
+    app: clickhouse
+    app.kubernetes.io/part-of: dataagent
+automountServiceAccountToken: false
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clickhouse-env
+  namespace: dataagent-database
+  labels:
+    app: clickhouse
+    app.kubernetes.io/part-of: dataagent
+data:
+  CLICKHOUSE_DB: default
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: clickhouse
+  namespace: dataagent-database
+  labels:
+    app: clickhouse
+    app.kubernetes.io/part-of: dataagent
+spec:
+  serviceName: clickhouse
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clickhouse
+  template:
+    metadata:
+      labels:
+        app: clickhouse
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 60
+      containers:
+      - name: clickhouse
+        image: docker.io/clickhouse/clickhouse-server
+        ports:
+        - containerPort: 8370
+          name: http
+        - containerPort: 8371
+          name: native
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: '2'
+            memory: 2Gi
+        readinessProbe:
+          httpGet:
+            path: /ping
+            port: 8370
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /ping
+            port: 8370
+          initialDelaySeconds: 30
+          periodSeconds: 20
+          failureThreshold: 6
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/clickhouse
+        - name: logs
+          mountPath: /var/log/clickhouse-server
+        - name: tmp
+          mountPath: /tmp
+        # readOnlyRootFilesystem: true — the entrypoint writes the langfuse
+        # user's config here on every boot.
+        - name: users-config
+          mountPath: /etc/clickhouse-server/users.d
+        args:
+        - /entrypoint.sh
+        # clickhouse-server treats a bare argument starting with "--" as one
+        # of its OWN flags (--config-file, --daemon, ...) unless a literal
+        # "--" comes first to mark everything after it as config overrides —
+        # without it this fails immediately with "Unknown option specified".
+        - --
+        - --http_port=8370
+        - --tcp_port=8371
+        envFrom:
+        - configMapRef:
+            name: clickhouse-env
+        - secretRef:
+            name: clickhouse-secrets
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: users-config
+        emptyDir: {}
+      enableServiceLinks: false
+      serviceAccountName: clickhouse
+  volumeClaimTemplates:
+  - metadata:
+      name: data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+  - metadata:
+      name: logs
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 5Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+  namespace: dataagent-database
+  labels:
+    app: clickhouse
+    app.kubernetes.io/part-of: dataagent
+spec:
+  selector:
+    app: clickhouse
+  ports:
+  - port: 8370
+    targetPort: 8370
+    name: http
+  - port: 8371
+    targetPort: 8371
+    name: native
+  type: ClusterIP

@@ -58,8 +58,21 @@ kubectl -n dataagent-service create secret generic model-service-secrets \
   --from-literal=REMOTE_LLM_KEY="${REMOTE_LLM_KEY}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl -n dataagent-service create secret generic kb-ingestion-worker-secrets \
-  --from-literal=POSTGRES_URL="${POSTGRES_URL_ASYNC}" \
+kubectl -n dataagent-service create secret generic kb-promote-silver-secrets \
+  --from-literal=POSTGRES_URL="${KB_INGESTION_WORKER_URL_ASYNC}" \
+  --from-literal=MINIO_URL="${MINIO_URL}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl -n dataagent-service create secret generic kb-promote-gold-secrets \
+  --from-literal=POSTGRES_URL="${KB_INGESTION_WORKER_URL_ASYNC}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl -n dataagent-service create secret generic kb-conflict-resolution-secrets \
+  --from-literal=POSTGRES_URL="${KB_INGESTION_WORKER_URL_ASYNC}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl -n dataagent-service create secret generic kb-structured-data-secrets \
+  --from-literal=POSTGRES_URL="${KB_INGESTION_WORKER_URL_ASYNC}" \
   --from-literal=MINIO_URL="${MINIO_URL}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
@@ -187,6 +200,7 @@ kubectl -n dataagent-service create secret generic db-init-secrets \
   --from-literal=SANDBOX_READER_PASSWORD="${SANDBOX_READER_PASSWORD}" \
   --from-literal=KB_BACKEND_PASSWORD="${KB_BACKEND_PASSWORD}" \
   --from-literal=PGBOUNCER_AUTH_PASSWORD="${PGBOUNCER_AUTH_PASSWORD}" \
+  --from-literal=KB_INGESTION_WORKER_PASSWORD="${KB_INGESTION_WORKER_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic seed-secrets \

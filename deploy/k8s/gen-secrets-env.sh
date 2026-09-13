@@ -13,7 +13,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-OUT=secrets.env
+OUT="${SECRETS_ENV:-secrets.env}"
 NODE_IP="${NODE_IP:-$(hostname -I | awk '{print $1}')}"
 
 rand() { openssl rand -hex "${1:-20}"; }

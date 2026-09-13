@@ -11,7 +11,7 @@
 # CIDR is exactly that.
 #
 # model-service, litellm, llm-exporter and kb-ingestion-worker all call out
-# to 10.10.55.101 directly (see deploy/k8s/configmap.yaml's *_BASE_URL /
+# to 10.10.55.101 directly (see deploy/k8s/production/configmap.yaml's *_BASE_URL /
 # REMOTE_*_URL values) — this blocks all of them.
 #
 # Needs root (this repo has no passwordless sudo on this host) — run once:

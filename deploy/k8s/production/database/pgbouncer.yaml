@@ -1,0 +1,142 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pgbouncer
+  namespace: dataagent-database
+  labels:
+    app: pgbouncer
+    app.kubernetes.io/part-of: dataagent
+automountServiceAccountToken: false
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pgbouncer-env
+  namespace: dataagent-database
+  labels:
+    app: pgbouncer
+    app.kubernetes.io/part-of: dataagent
+data:
+  DB_HOST: postgres
+  DB_PORT: '8300'
+  LISTEN_PORT: '8390'
+  POOL_MODE: transaction
+  MAX_CLIENT_CONN: '10000'
+  # Per (user,db). One replica, so this is the real ceiling: 20+5 of Postgres' 100.
+  DEFAULT_POOL_SIZE: '20'
+  MIN_POOL_SIZE: '5'
+  RESERVE_POOL_SIZE: '5'
+  AUTH_TYPE: scram-sha-256
+  # DB_USER sets auth_user= on the database line, never user= — the client's own
+  # role still reaches Postgres, so RLS applies. Its password is DB_PASSWORD.
+  DB_USER: pgbouncer_auth
+  AUTH_QUERY: SELECT usename, passwd FROM public.pgbouncer_get_auth($1)
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pgbouncer
+  namespace: dataagent-database
+  labels:
+    app: pgbouncer
+    app.kubernetes.io/part-of: dataagent
+spec:
+  # One pooler on purpose: a second would split the pool and double the
+  # upstream connections it is there to cap.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pgbouncer
+  template:
+    metadata:
+      labels:
+        app: pgbouncer
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        # edoburu/pgbouncer's entrypoint always writes `user = postgres` into
+        # pgbouncer.ini, and pgbouncer then setuid()s to that account at boot
+        # — a no-op we can actually be granted (no CAP_SETUID) only by
+        # already running as that exact uid/gid. 70 is "postgres" in this
+        # image's /etc/passwd.
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: pgbouncer
+        image: edoburu/pgbouncer:latest
+        ports:
+        - containerPort: 8390
+          name: http
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 128Mi
+        readinessProbe:
+          tcpSocket:
+            port: 8390
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          tcpSocket:
+            port: 8390
+          initialDelaySeconds: 30
+          periodSeconds: 20
+          failureThreshold: 6
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        # readOnlyRootFilesystem: true — the entrypoint generates
+        # pgbouncer.ini here on every boot.
+        - name: config
+          mountPath: /etc/pgbouncer
+        envFrom:
+        - configMapRef:
+            name: pgbouncer-env
+        - secretRef:
+            name: pgbouncer-secrets
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: config
+        emptyDir: {}
+      enableServiceLinks: false
+      serviceAccountName: pgbouncer
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgbouncer
+  namespace: dataagent-database
+  labels:
+    app: pgbouncer
+    app.kubernetes.io/part-of: dataagent
+spec:
+  selector:
+    app: pgbouncer
+  ports:
+  - port: 8390
+    targetPort: 8390
+    name: pgbouncer
+  type: ClusterIP

@@ -8,14 +8,23 @@ what workflow_runtime was sending.
 """
 from __future__ import annotations
 
+import asyncio
 import importlib
 
 import pytest
 from fastapi import HTTPException
 
 from libs.shared.service_identity import mint_service_assertion
+from services.kb_backend.dependencies.permissions import store
 
 pytestmark = pytest.mark.unit
+
+
+class _NoDatabase:
+    """A Postgres client that fails the test if the store ever queries it."""
+
+    def get_client(self, tenant_id: str | None = None):
+        raise AssertionError("the permission store must not query for an empty role")
 
 SECRET = "test-shared-secret"
 TENANT = "a0000000-0000-0000-0000-000000000001"
@@ -39,14 +48,18 @@ def _assertion(roles, *, service="workflow_runtime", tenant=TENANT, user="u1", s
 
 
 def _call(auth, **kwargs):
-    """Invoke authenticate() with FastAPI's Header defaults filled in."""
+    """Invoke authenticate() with FastAPI's Header defaults filled in.
+
+    It is async so the tenant ContextVar it sets lands in the request's task
+    rather than a threadpool worker.
+    """
     params = {
         "x_kong_verified": "", "x_gateway_key": "", "x_service_assertion": "",
         "x_user_id": "", "x_user_name": "", "x_tenant_id": "",
         "x_user_roles": "", "x_role_id": "",
     }
     params.update(kwargs)
-    return auth.authenticate(**params)
+    return asyncio.run(auth.authenticate(**params))
 
 
 class TestServiceAssertionPath:
@@ -102,11 +115,16 @@ class TestServiceAssertionPath:
         assert exc.value.status_code == 401
 
     def test_empty_roles_yields_no_permissions(self, auth):
-        """An assertion with no roles must not become a wildcard."""
+        """An assertion with no roles must not become a wildcard.
+
+        The matrix lives in Postgres now, so the store is handed a client that
+        raises if touched: an empty role has to be denied outright, not by a
+        lookup that could answer differently on a different database.
+        """
         ctx = _call(auth, x_service_assertion=_assertion([]))
 
         assert ctx["role"] == ""
-        assert auth.RBAC.can(ctx["role"], "retrieveKnowledge") is False
+        assert asyncio.run(store.can(_NoDatabase(), ctx["role"], "retrieveKnowledge")) is False
 
     def test_assertion_with_a_bad_tenant_is_a_400(self, auth):
         with pytest.raises(HTTPException) as exc:

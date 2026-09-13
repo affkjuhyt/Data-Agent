@@ -18,13 +18,13 @@ docker exec -i dataagent-postgres psql -U admin -d dataagent < tests/e2e/seed.sq
 docker exec -i dataagent-mongo mongosh --quiet < tests/e2e/seed-flow.js
 
 # 2. bring up the agent tier. NOT kb-backend — it collides with the KB stack on :8220.
-kubectl apply -f deploy/k8s/service/litellm.yaml \
-  -f deploy/k8s/service/workflow-runtime.yaml \
-  -f deploy/k8s/service/platform-workers-memory.yaml
+kubectl apply -f deploy/k8s/production/service/litellm.yaml \
+  -f deploy/k8s/production/service/workflow-runtime.yaml \
+  -f deploy/k8s/production/service/platform-workers-memory.yaml
 
 # (optional, only for SQL/code tools) sandbox-executor needs its runner image:
 #   docker build -t sandbox-runner:latest backend/services/sandbox-executor/sandbox_runner/
-#   kubectl apply -f deploy/k8s/service/sandbox-executor.yaml -f deploy/k8s/database/openbao.yaml
+#   kubectl apply -f deploy/k8s/production/service/sandbox-executor.yaml -f deploy/k8s/production/database/openbao.yaml
 ```
 
 Host ports: **Kong `:8100`**, litellm `:8500`. The orchestrator and

@@ -1,0 +1,143 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sandbox-executor
+  namespace: dataagent-service
+  labels:
+    app: sandbox-executor
+    app.kubernetes.io/part-of: dataagent
+automountServiceAccountToken: false
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sandbox-executor-env
+  namespace: dataagent-service
+  labels:
+    app: sandbox-executor
+    app.kubernetes.io/part-of: dataagent
+data:
+  OTEL_SERVICE_NAME: sandbox-executor
+  SANDBOX_TIMEOUT_S: '10'
+  SANDBOX_MEMORY_MB: '256'
+  SANDBOX_CPUS: '0.5'
+  SANDBOX_POOL_SIZE: '3'
+  SANDBOX_BACKEND: kubernetes
+  SANDBOX_K8S_NAMESPACE: dataagent-sandbox
+  SANDBOX_RUNNER_IMAGE: dataagent/sandbox-runner:latest
+  SANDBOX_RUNNER_SERVICE_ACCOUNT: sandbox-runner
+  SANDBOX_SQL_BACKEND: snowflake
+  SANDBOX_SQL_QUEUE_WORKERS: '5'
+  SANDBOX_BREAKER_ENFORCE: 'true'
+  SANDBOX_BREAKER_WINDOW_S: '60'
+  SANDBOX_BREAKER_THRESHOLD: '5'
+  SANDBOX_BREAKER_COOLDOWN_S: '30'
+  SANDBOX_RUNTIME: ''
+  SANDBOX_DOCKER_HOST: ''
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sandbox-executor
+  namespace: dataagent-service
+  labels:
+    app: sandbox-executor
+    app.kubernetes.io/part-of: dataagent
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: sandbox-executor
+  template:
+    metadata:
+      labels:
+        app: sandbox-executor
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: sandbox-executor
+        image: dataagent/sandbox_executor:latest
+        ports:
+        - containerPort: 8260
+          name: http
+        envFrom:
+        - configMapRef:
+            name: dataagent-config
+        - configMapRef:
+            name: sandbox-executor-env
+        - secretRef:
+            name: sandbox-executor-secrets
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: '2'
+            memory: 2Gi
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8260
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8260
+          initialDelaySeconds: 30
+          periodSeconds: 20
+          failureThreshold: 6
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        command:
+        - uvicorn
+        - app:app
+        - --host
+        - 0.0.0.0
+        - --port
+        - '8260'
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      runtimeClassName: gvisor
+      enableServiceLinks: false
+      serviceAccountName: sandbox-executor
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sandbox-executor
+  namespace: dataagent-service
+  labels:
+    app: sandbox-executor
+    app.kubernetes.io/part-of: dataagent
+spec:
+  selector:
+    app: sandbox-executor
+  ports:
+  - port: 8260
+    targetPort: 8260
+    name: http
+  type: ClusterIP

@@ -1,0 +1,70 @@
+---
+# Copy to vault.yml, fill in, then encrypt it:
+#
+#   cp vault.yml.example vault.yml
+#   $EDITOR vault.yml
+#   ansible-vault encrypt vault.yml
+#   ansible-vault edit vault.yml      # from then on
+#
+# The ENCRYPTED vault.yml is meant to be committed. That is what makes
+# `git diff` able to say "the secrets changed in this pull" at all, and it is
+# safe: the file on disk is ciphertext. Only the vault password stays out of
+# the repo (ansible.cfg reads it from ANSIBLE_VAULT_PASSWORD_FILE).
+#
+# Composite values -- every DSN, MINIO_URL, NEO4J_AUTH -- are NOT here. They
+# are derived from these passwords in group_vars/all/secrets.yml so that a
+# password and the URL embedding it cannot drift apart.
+#
+# Generate a value:  openssl rand -hex 32
+# Avoid @ : / ? # and whitespace in any password that lands in a DSN -- those
+# characters change how the URL parses, and the failure surfaces much later as
+# an auth error against the wrong host.
+
+# ── Postgres roles ────────────────────────────────────────────────────
+vault_postgres_password: ""
+vault_app_user_password: ""
+vault_runtime_writer_password: ""
+vault_sandbox_reader_password: ""
+vault_kb_backend_password: ""
+vault_kb_ingestion_worker_password: ""
+vault_pgbouncer_auth_password: ""
+
+# ── other stores ──────────────────────────────────────────────────────
+vault_neo4j_password: ""
+vault_clickhouse_password: ""
+vault_minio_root_password: ""
+
+# ── Kafka SASL, one principal per consumer ────────────────────────────
+vault_kafka_admin_password: ""
+vault_audit_consumer_kafka_password: ""
+vault_memory_consumer_kafka_password: ""
+vault_release_worker_kafka_password: ""
+vault_schema_crawler_worker_kafka_password: ""
+vault_workflow_runtime_kafka_password: ""
+
+# ── schema crawler, read-only on external systems ─────────────────────
+vault_postgres_crawler_password: ""
+vault_clickhouse_crawler_password: ""
+vault_snowflake_crawler_password: ""
+
+# ── identity and gateway ──────────────────────────────────────────────
+vault_keycloak_admin_password: ""
+vault_gateway_key: ""
+vault_service_auth_secret: ""
+vault_smoke_password: ""
+
+# ── LLM tier ──────────────────────────────────────────────────────────
+vault_litellm_api_key: ""
+vault_openai_api_key: ""
+vault_gemini_api_key: ""
+vault_remote_api_key: ""
+vault_remote_llm_key: ""
+
+# ── observability ─────────────────────────────────────────────────────
+vault_langfuse_salt: ""
+vault_langfuse_encryption_key: ""
+vault_langfuse_nextauth_secret: ""
+vault_langfuse_public_key: ""
+vault_langfuse_secret_key: ""
+vault_langfuse_init_password: ""
+vault_grafana_admin_password: ""

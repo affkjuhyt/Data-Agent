@@ -94,10 +94,18 @@ tests/e2e/out/
 deploy/ansible/inventories/*/.secrets/
 deploy/ansible/inventories/prod/hosts.yml
 deploy/ansible/inventories/prod/group_vars/all.yml
-deploy/ansible/inventories/prod/group_vars/all/vault.yml
+# NOT vault.yml: an ansible-vault file is ciphertext on disk and is meant to be
+# committed. Committing it is what lets the deploy pipeline see "the secrets
+# changed in this pull" from a git diff. Only the vault PASSWORD stays out of
+# the repo (ANSIBLE_VAULT_PASSWORD_FILE). A plaintext copy must not be:
+deploy/ansible/inventories/*/group_vars/all/vault.plain.yml
 .ansible-secrets/
 deploy/docker/keycloak/spi/target/
 
 # filled-in secret source for deploy/k8s/create-secrets.sh
 deploy/k8s/secrets.env
 deploy/k8s/.openbao-keys.json
+deploy/k8s/dev/secrets.env
+deploy/k8s/dev/.openbao-keys.json
+deploy/k8s/dev/.openbao-env.yml
+/tmp/

@@ -66,7 +66,7 @@ service really uses and slow installs for unit-only runs.
 ### Python — e2e (live stack)
 
 ```powershell
-kubectl apply -f deploy/k8s/database/ && kubectl apply -f deploy/k8s/service/
+kubectl apply -f deploy/k8s/production/database/ && kubectl apply -f deploy/k8s/production/service/
 bash deploy/docker/kong/kong-setup.sh
 $env:LIVE_STACK = "1"
 pytest -m e2e tests/integration -v

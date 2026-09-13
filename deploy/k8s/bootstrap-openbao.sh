@@ -16,8 +16,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-SECRETS_ENV=secrets.env
-KEYS_FILE=.openbao-keys.json
+SECRETS_ENV="${SECRETS_ENV:-secrets.env}"
+KEYS_FILE="${KEYS_FILE:-.openbao-keys.json}"
 NS=dataagent-database
 
 [[ -f "$SECRETS_ENV" ]] || { echo "run gen-secrets-env.sh first" >&2; exit 1; }
@@ -37,7 +37,7 @@ done
 json() { curl -sf "$@"; }
 
 if [[ ! -f "$KEYS_FILE" ]]; then
-  initialized=$(json "$BAO_URL/v1/sys/health" | python3 -c 'import sys,json;print(json.load(sys.stdin)["initialized"])')
+  initialized=$(curl -s "$BAO_URL/v1/sys/init" | python3 -c 'import sys,json;print(json.load(sys.stdin)["initialized"])')
   if [[ "$initialized" == "True" ]]; then
     echo "OpenBao is already initialised but $KEYS_FILE is missing — refusing to touch it." >&2
     echo "Restore the keys file, or delete the openbao PVC to reset (non-production only)." >&2
@@ -51,7 +51,7 @@ fi
 ROOT_TOKEN=$(python3 -c 'import json;print(json.load(open("'"$KEYS_FILE"'"))["root_token"])')
 UNSEAL_KEY=$(python3 -c 'import json;print(json.load(open("'"$KEYS_FILE"'"))["keys_base64"][0])')
 
-sealed=$(json "$BAO_URL/v1/sys/health" | python3 -c 'import sys,json;print(json.load(sys.stdin)["sealed"])')
+sealed=$(curl -s "$BAO_URL/v1/sys/seal-status" | python3 -c 'import sys,json;print(json.load(sys.stdin)["sealed"])')
 if [[ "$sealed" == "True" ]]; then
   json -X POST "$BAO_URL/v1/sys/unseal" -d "{\"key\":\"$UNSEAL_KEY\"}" > /dev/null
   echo "unsealed"

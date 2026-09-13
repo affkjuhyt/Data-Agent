@@ -43,9 +43,9 @@ front of `kb-backend`. Pick the stack that matches your task:
 
 | Tier | Path | What it is |
 |---|---|---|
-| **database** | `deploy/k8s/database/` | StatefulSets: Postgres, Mongo, Redis, Qdrant, Neo4j, Kafka, MinIO, ClickHouse, Elasticsearch, OpenBao + PgBouncer |
-| **service** | `deploy/k8s/service/` | Deployments: Kong, Keycloak, the app tier, the workers, observability |
-| **job** | `deploy/k8s/job/` | `migrate`, `db-init`, `seed`, `minio-init`, `kong-migration`, `setup`, `kafka-topics`, `eval` + the backup CronJob |
+| **database** | `deploy/k8s/production/database/` | StatefulSets: Postgres, Mongo, Redis, Qdrant, Neo4j, Kafka, MinIO, ClickHouse, Elasticsearch, OpenBao + PgBouncer |
+| **service** | `deploy/k8s/production/service/` | Deployments: Kong, Keycloak, the app tier, the workers, observability |
+| **job** | `deploy/k8s/production/job/` | `migrate`, `db-init`, `seed`, `minio-init`, `kong-migration`, `setup`, `kafka-topics`, `eval` + the backup CronJob |
 
 One manifest per workload. [`deploy/k8s/README.md`](./deploy/k8s/README.md) has the
 apply order, the Secret, and the ConfigMaps built from `deploy/docker/`.
@@ -63,8 +63,8 @@ End-to-end local development with the Vite dev server, the ingestion pipeline, a
 
 ```powershell
 npm install                                                # frontend deps
-kubectl apply -f deploy/k8s/namespace.yaml
-kubectl apply -f deploy/k8s/configmap.yaml -f deploy/k8s/networkpolicy.yaml
+kubectl apply -f deploy/k8s/production/namespace.yaml
+kubectl apply -f deploy/k8s/production/configmap.yaml -f deploy/k8s/production/networkpolicy.yaml
 ```
 
 Then create `dataagent-secrets` and the file-backed ConfigMaps — the exact commands
@@ -76,8 +76,8 @@ Stores first, then the migration jobs, then the services. Ports below are what a
 `kubectl port-forward` gives you; in a real cluster an Ingress fronts Kong.
 
 ```powershell
-kubectl apply -f deploy/k8s/database/
-kubectl apply -f deploy/k8s/service/
+kubectl apply -f deploy/k8s/production/database/
+kubectl apply -f deploy/k8s/production/service/
 ```
 
 > `model_service` is a pure API gateway since 04-09-2026 — all inference runs on the
@@ -108,7 +108,7 @@ Open http://localhost:3000, log in as **`helios-admin` / `H3lios@Admin01!`**, an
 ### Shutdown
 
 ```powershell
-kubectl delete -f deploy/k8s/service/        # stop, keep PVCs
+kubectl delete -f deploy/k8s/production/service/        # stop, keep PVCs
 kubectl -n dataagent delete pvc --all        # also wipe the data
 ```
 
@@ -260,7 +260,7 @@ of truth** — every service lives there, tagged with a **profile** (`kb`, `runt
 `--profile`, not a separate `-f` file:
 
 ```bash
-kubectl apply -f deploy/k8s/service/         # app tier
+kubectl apply -f deploy/k8s/production/service/         # app tier
 kubectl -n dataagent get hpa                 # autoscaling status
 ```
 
@@ -315,7 +315,7 @@ Auto-managed (downloads itself — no manual file placement):
 - model weights: none locally — embed/rerank/LLM đều chạy trên GPU server.
 
 - DB content lives in Docker **named volumes** (persist across image rebuilds) and is seeded by the
-  tracked [`deploy/docker/sql/kb-seed.sql`](./deploy/docker/sql/kb-seed.sql) (KB seed, applied by `deploy/k8s/job/db-init.yaml`).
+  tracked [`deploy/docker/sql/kb-seed.sql`](./deploy/docker/sql/kb-seed.sql) (KB seed, applied by `deploy/k8s/production/job/db-init.yaml`).
 
 ### KB-UI testing stack
 
@@ -324,7 +324,7 @@ backend against the UI. Full walkthrough — including the frontend env and logi
 [Running the KB-UI — kb-e2e](#running-the-kb-ui--kb-e2e-full-local-dev) above:
 
 ```powershell
-kubectl apply -f deploy/k8s/service/
+kubectl apply -f deploy/k8s/production/service/
 curl http://localhost:8220/health   # -> {"status":"ok"} (direct probe; app traffic goes via Kong :8100)
 ```
 
@@ -340,13 +340,13 @@ Run all commands from the repository root.
 Start or refresh the full local stack:
 
 ```powershell
-kubectl apply -f deploy/k8s/database/
+kubectl apply -f deploy/k8s/production/database/
 ```
 
 Stop the local stack and keep data:
 
 ```powershell
-kubectl delete -f deploy/k8s/service/
+kubectl delete -f deploy/k8s/production/service/
 ```
 
 Stop the local stack and remove volumes:
@@ -358,8 +358,8 @@ kubectl -n dataagent delete pvc --all
 #### Shared dev server
 
 ```powershell
-kubectl apply -f deploy/k8s/database/
-kubectl delete -f deploy/k8s/service/
+kubectl apply -f deploy/k8s/production/database/
+kubectl delete -f deploy/k8s/production/service/
 ```
 
 #### Compose validation
@@ -420,7 +420,7 @@ dc up -d --build
 Kong cần được config 1 lần sau khi start (CORS, routes, JWT plugin...):
 
 ```bash
-kubectl apply -f deploy/k8s/job/setup.yaml
+kubectl apply -f deploy/k8s/production/job/setup.yaml
 ```
 
 > Cần chạy lại nếu `down -v` (xóa volume Kong DB).
@@ -475,7 +475,7 @@ dc down -v
 | Langfuse | http://10.10.55.11:3001 |
 | GPU model server | http://10.10.55.101:8001-8004 (vLLM main/fast, TEI embed/rerank) |
 
-The one-shot jobs live in [`deploy/k8s/job/`](./deploy/k8s/job) — `migrate`, `db-init`, `seed`, `setup`.
+The one-shot jobs live in [`deploy/k8s/production/job/`](./deploy/k8s/production/job) — `migrate`, `db-init`, `seed`, `setup`.
 
 Separate intent-specific Docker paths also exist:
 

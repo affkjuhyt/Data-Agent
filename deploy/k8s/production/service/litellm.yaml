@@ -1,0 +1,155 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: litellm
+  namespace: dataagent-service
+  labels:
+    app: litellm
+    app.kubernetes.io/part-of: dataagent
+automountServiceAccountToken: false
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-env
+  namespace: dataagent-service
+  labels:
+    app: litellm
+    app.kubernetes.io/part-of: dataagent
+data:
+  HF_HOME: /tmp/hf
+  # deploy/docker/litellm/config.yaml's cache_params reads REDIS_HOST/PORT
+  # specifically — the shared dataagent-config only has REDIS_URL, which
+  # litellm's own config doesn't use.
+  REDIS_HOST: redis.dataagent-database.svc.cluster.local
+  REDIS_PORT: '8320'
+  # deploy/docker/litellm/config.yaml's model list reads these two directly
+  # (os.environ/LLM_MAIN_BASE_URL, os.environ/LLM_FAST_BASE_URL) — the shared
+  # dataagent-config only has REMOTE_LLM_URL (model-service's own naming),
+  # which litellm's config doesn't reference at all. Without these, litellm
+  # falls back to the real https://api.openai.com default base URL and every
+  # completion request hangs/500s trying to reach the internet (correctly
+  # blocked by NetworkPolicy — see allow-egress-remote-llm). vllm-main/
+  # vllm-fast run on the host in --network host mode (deploy/k8s/switch-gpu-
+  # containers-to-host-network.sh), reachable at the node's real IP.
+  LLM_MAIN_BASE_URL: http://10.10.55.101:8001/v1
+  LLM_FAST_BASE_URL: http://10.10.55.101:8002/v1
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: dataagent-service
+  labels:
+    app: litellm
+    app.kubernetes.io/part-of: dataagent
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: litellm
+  template:
+    metadata:
+      labels:
+        app: litellm
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: litellm
+        image: ghcr.io/berriai/litellm:main-stable
+        args:
+        - --config
+        - /app/config.yaml
+        - --port
+        - '8500'
+        ports:
+        - containerPort: 8500
+          name: http
+        resources:
+          requests:
+            cpu: 250m
+            memory: 512Mi
+          limits:
+            cpu: '1'
+            # 1Gi OOMKilled it on every boot — loading its own bundled
+            # model_prices_and_context_window.json (the remote fetch fails
+            # closed, by design here — no egress to github.com) plus FastAPI
+            # needs more headroom.
+            memory: 2Gi
+        readinessProbe:
+          httpGet:
+            path: /health/liveliness
+            port: 8500
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /health/liveliness
+            port: 8500
+          initialDelaySeconds: 30
+          periodSeconds: 20
+          failureThreshold: 6
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - name: hf-cache
+          mountPath: /tmp/hf
+        - name: config
+          mountPath: /app/config.yaml
+          subPath: config.yaml
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        envFrom:
+        - configMapRef:
+            name: litellm-env
+        - secretRef:
+            name: litellm-secrets
+      volumes:
+      - name: hf-cache
+        emptyDir:
+          sizeLimit: 2Gi
+      - name: config
+        configMap:
+          name: litellm-config
+      - name: tmp
+        emptyDir: {}
+      enableServiceLinks: false
+      serviceAccountName: litellm
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  namespace: dataagent-service
+  labels:
+    app: litellm
+    app.kubernetes.io/part-of: dataagent
+spec:
+  selector:
+    app: litellm
+  ports:
+  - port: 8500
+    targetPort: 8500
+    name: http
+  type: ClusterIP
