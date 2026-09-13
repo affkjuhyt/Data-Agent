@@ -50,6 +50,9 @@ class AgentState(TypedDict):
     judge_error_type: Optional[str]   # "PLANNING_ERROR" | "DATA_QUALITY" | "GROUNDING_ERROR"
     judge_reason: Optional[str]
     judge_phase1_error: Optional[str]  # "RETRIEVAL_ERROR" | "TOOL_ERROR" | None — set bởi judge_phase1_node
+    # Signatures of tool plans judge_phase1 already sent back to the planner. A
+    # repeat would return the same nothing, so it stops the loop (graph.py).
+    attempted_plans: List[str]
     human_approved: Optional[bool]    # None = chưa qua HITL node, True/False = kết quả review
     human_note: Optional[str]         # ghi chú reviewer khi reject
     injected_metadata: Optional[dict[str, Any]]  # set bởi metadata_injector_node — đọc bởi planner + responder

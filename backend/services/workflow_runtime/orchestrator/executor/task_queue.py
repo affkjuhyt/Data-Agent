@@ -24,12 +24,9 @@ class TaskNode:
     latency_ms: int = 0
 
 
-def build_rounds(tasks: list[dict[str, Any]]) -> tuple[list[list[TaskNode]], list[dict[str, Any]]]:
-    """
-    Nhận tasks[] từ 1 target, trả về (rounds, stuck_tasks).
-    stuck_tasks không rỗng khi phát hiện circular/broken dependency.
-    """
-    nodes = [
+def build_nodes(tasks: list[dict[str, Any]]) -> list[TaskNode]:
+    """Nhận tasks[] từ 1 target, trả về TaskNode theo đúng thứ tự."""
+    return [
         TaskNode(
             index=i,
             title=t.get("title", f"task_{i}"),
@@ -39,6 +36,14 @@ def build_rounds(tasks: list[dict[str, Any]]) -> tuple[list[list[TaskNode]], lis
         )
         for i, t in enumerate(tasks)
     ]
+
+
+def build_rounds(tasks: list[dict[str, Any]]) -> tuple[list[list[TaskNode]], list[dict[str, Any]]]:
+    """
+    Nhận tasks[] từ 1 target, trả về (rounds, stuck_tasks).
+    stuck_tasks không rỗng khi phát hiện circular/broken dependency.
+    """
+    nodes = build_nodes(tasks)
 
     done_set: set[int] = set()
     rounds: list[list[TaskNode]] = []

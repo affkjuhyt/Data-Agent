@@ -33,19 +33,94 @@ from services.workflow_runtime.memory_middleware import (
     retrieve_pending_reminders,
 )
 from services.workflow_runtime.observability import flush_langfuse, get_langchain_callback_handler
+from services.workflow_runtime.nodes.model_harness.responder import RESPONDER_TOKEN_EVENT
+from services.workflow_runtime.runtime_services.answer_ready import notify_answer_ready
+from services.workflow_runtime.nodes.sandbox.kb_search import discard_speculative_search
 from services.workflow_runtime.schemas import RunRequest
 from services.workflow_runtime.workflow_memory import record_workflow_outcome, retrieve_workflow_memory
 from libs.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
 
 logger = logging.getLogger(__name__)
 
-_FAKE_STREAM_WORD_DELAY = 0.02  # giây/từ — hiệu ứng gõ chữ khi replay text đã duyệt xong
+# Withdraws the answer on screen: the judge sent it back for another try, the
+# output guardrail blocked it, or the turn stopped for a human review.
+_RESET_FRAME = 'data: {"__reset": true}\n\n'
+_HIDDEN_TAGS = ("<think>", "<OPTIONS>")
+
+
+def _partial_tag(text: str, tags: tuple[str, ...]) -> str:
+    """The longest end of `text` that could still grow into one of `tags`."""
+    best = ""
+    for tag in tags:
+        for n in range(min(len(tag) - 1, len(text)), len(best), -1):
+            if text.endswith(tag[:n]):
+                best = text[-n:]
+                break
+    return best
+
+
+class _LiveAnswer:
+    """The responder's answer as it streams, minus what the final text strips
+    (_strip_think_and_options): a <think> block is dropped, and nothing from
+    <OPTIONS> on is shown — the options go out as their own frame. A piece that
+    could be the start of a tag is held back until the next token settles it."""
+
+    def __init__(self) -> None:
+        self.emitted = ""
+        self._held = ""
+        self._in_think = False
+        self._closed = False
+
+    def feed(self, chunk: str) -> str:
+        if self._closed:
+            return ""
+        text, self._held = self._held + chunk, ""
+        shown: list[str] = []
+        while text:
+            if self._in_think:
+                end = text.find("</think>")
+                if end == -1:
+                    self._held = _partial_tag(text, ("</think>",))
+                    break
+                text, self._in_think = text[end + len("</think>"):], False
+                continue
+            found = [(text.find(tag), tag) for tag in _HIDDEN_TAGS if tag in text]
+            if found:
+                pos, tag = min(found)
+                shown.append(text[:pos])
+                text = text[pos + len(tag):]
+                if tag == "<OPTIONS>":
+                    self._closed = True
+                    break
+                self._in_think = True
+                continue
+            self._held = _partial_tag(text, _HIDDEN_TAGS)
+            shown.append(text[:len(text) - len(self._held)])
+            break
+        piece = "".join(shown)
+        if not self.emitted:
+            piece = piece.lstrip()  # the final text is stripped too
+        self.emitted += piece
+        return piece
+
+
+def _remaining(streamed: str, final: str) -> str | None:
+    """What still has to be sent after `streamed` for the user to read `final`,
+    or None when what was streamed is not the start of it."""
+    if final.startswith(streamed):
+        return final[len(streamed):]
+    # Whitespace streamed before an <OPTIONS> block that the final text strips.
+    trimmed = streamed.rstrip()
+    if final.startswith(trimmed):
+        tail = final[len(trimmed):]
+        return tail if tail.strip() else ""
+    return None
 
 
 def _strip_think_and_options(text: str) -> tuple[str, list[str] | None]:
-    """Xử lý 1 lần trên TOÀN BỘ text (không cần incremental nữa — đã có sẵn cả
-    chuỗi vì responder không còn stream live) — bỏ <think>...</think>, tách
-    <OPTIONS>...</OPTIONS> ra riêng."""
+    """Xử lý 1 lần trên TOÀN BỘ text của câu trả lời cuối — bỏ
+    <think>...</think>, tách <OPTIONS>...</OPTIONS> ra riêng. _LiveAnswer áp
+    đúng các quy tắc này lên text đang stream."""
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
     text = re.sub(r"<think>.*", "", text, flags=re.DOTALL)  # thiếu close tag (bị cắt max_tokens)
 
@@ -65,11 +140,6 @@ def _strip_think_and_options(text: str) -> tuple[str, list[str] | None]:
             text = text[:open_match.start()]
 
     return text.strip(), options
-
-
-def _chunk_words(text: str) -> list[str]:
-    words = text.split(" ")
-    return [w if i == 0 else " " + w for i, w in enumerate(words)]
 
 
 class _GraphCache(LRUCache[str, Any]):
@@ -249,6 +319,12 @@ async def run_conversation_stream(
     # now signs and forwards. An empty list is meaningful — kb_search fails
     # closed on it rather than substituting a default.
     cfg["user_roles"] = list(caller.get("roles") or [])
+    # The planner searches the knowledge base with the user's question while it
+    # decides (nodes/sandbox/kb_search.py) — only where a kb_search node exists.
+    # The default graph (no canvas) has one.
+    kb_in_graph = not flow_nodes or any(
+        (n.get("data", {}).get("nodeType") or n.get("type")) == "kb_search" for n in flow_nodes
+    )
     # Strip verbose build-time fields — không cần runtime, chỉ làm Langfuse input thêm to
     cfg.pop("flow_nodes", None)
     cfg.pop("flow_edges", None)
@@ -376,6 +452,119 @@ async def run_conversation_stream(
 
     guardrail_cfg = req.guardrail_cfg.model_dump() if req.guardrail_cfg else {}
 
+    async def _persist_turn(
+        *,
+        assistant_text: str,
+        latency: int,
+        responder_options: list[str] | None,
+        pending_citations: list[dict[str, Any]] | None,
+        detected_language: str | None,
+        detected_intent: str | None,
+        detected_analysis: str | None,
+        detected_slots: dict[str, Any] | None,
+        detected_clarify: list[dict[str, Any]],
+        node_traces: list[dict[str, Any]],
+    ) -> None:
+        try:
+            assistant_msg_id = None
+            if conv_id:
+                # Sequential on purpose: history is ordered by created_at, so the
+                # user message has to land before the assistant one.
+                await save_message(conv_id, "user", req.query)
+                assistant_msg_id = await save_message(
+                    conv_id,
+                    "assistant",
+                    assistant_text,
+                    latency_ms=latency,
+                    metadata={
+                        "agent_version_id": cfg.get("agent_version_id"),
+                        "language": detected_language,
+                        "intent": detected_intent,
+                        # Recorded on the message so "how often is this platform
+                        # asked to forecast?" is answerable from stored traffic
+                        # rather than needing new instrumentation later.
+                        "analysis_type": detected_analysis,
+                        # Persisted on the message so the next turn can
+                        # inherit them even if Redis has gone cold.
+                        "slots": (
+                            _slots_with_marker(detected_slots, detected_clarify)
+                            if detected_slots else None
+                        ),
+                        **({"clarifications": detected_clarify} if detected_clarify else {}),
+                        "responder_model": cfg.get("responder_model"),
+                        **({"pending_options": responder_options} if responder_options else {}),
+                        **({"pending_approval": conv_id} if conv_id and conv_id in _pending_reviews else {}),
+                        **({"citations": pending_citations} if pending_citations else {}),
+                    },
+                )
+                cache_writes = [cache_append_messages(conv_id, [
+                    {"role": "user",      "content": req.query},
+                    {"role": "assistant", "content": assistant_text},
+                ])]
+                if detected_slots:
+                    # Fast path for the next turn's refinement. The same slots
+                    # went into the message metadata above, which is what makes
+                    # this a cache rather than the source of truth.
+                    #
+                    # The clarification marker rides along with the slots rather
+                    # than in its own key: the next turn reads exactly one thing
+                    # to reconstruct context, so the two can never disagree about
+                    # whether a question is currently outstanding.
+                    cache_writes.append(cache_set_slots(conv_id, _slots_with_marker(detected_slots, detected_clarify)))
+                await asyncio.gather(*cache_writes)
+                if assistant_msg_id:
+                    if node_traces:
+                        # Each row carries its own trace_index — no ordering to keep.
+                        await asyncio.gather(*(
+                            save_trace(
+                                message_id=assistant_msg_id,
+                                trace_index=idx,
+                                tool_name=nt["tool_name"],
+                                input=nt["input"],
+                                output=nt["output"],
+                                latency_ms=nt["latency_ms"],
+                                status=nt.get("status", "success"),
+                            )
+                            for idx, nt in enumerate(node_traces)
+                        ))
+                    else:
+                        await save_trace(
+                            message_id=assistant_msg_id,
+                            trace_index=0,
+                            tool_name="responder",
+                            input={"query": req.query},
+                            output={"response": assistant_text},
+                            latency_ms=latency,
+                        )
+
+            # orchestrated=True: orchestrator sẽ ghi memory sau synthesize, agent không ghi
+            if not req.orchestrated and cfg.get("memory_enabled") and conv_id:
+                final_state = {**state, "response": assistant_text}
+                await apply_memory_policy(
+                    final_state, agent_id, tenant_id, user_ref,
+                    conversation_id=conv_id, message_id=assistant_msg_id,
+                )
+        except Exception:
+            logger.exception("conversation_runner | persisting turn failed conv=%s", conv_id)
+        finally:
+            await asyncio.to_thread(flush_langfuse)
+
+        for nt in (node_traces if cfg.get("memory_enabled") and not req.orchestrated else []):
+            if not nt["tool_name"].startswith("tool/"):
+                continue
+            task_type = _DATA_TOOL_TASK_TYPE.get(nt["tool_name"][len("tool/"):])
+            if not task_type:
+                continue
+            _fire_and_forget(record_workflow_outcome(
+                tenant_id=tenant_id,
+                agent_id=agent_id,
+                task_type=task_type,
+                task_description=nt["input"].get("query") or "",
+                param_snapshot=nt["input"].get("arguments") or {},
+                outcome="success" if nt.get("status", "success") == "success" else "failed",
+                duration_ms=nt.get("latency_ms"),
+            ))
+
     async def event_stream() -> AsyncIterator[str]:
         full_response: list[str] = []
         started_at = time.monotonic()
@@ -405,13 +594,32 @@ async def run_conversation_stream(
         last_responder_evidence: dict[str, Any] | None = None
         pending_evidence: dict[str, Any] | None = None
         guardrail_task: asyncio.Task[Any] | None = None
+        # The answer shown while the responder writes it. The judge and the
+        # output guardrail still decide on the finished text; a rejected one is
+        # withdrawn with _RESET_FRAME. An orchestrated run (multi-agent) is
+        # joined into a summary nobody watches being written, so it streams nothing.
+        live = _LiveAnswer()
 
-        lg_config = {"callbacks": callbacks, "configurable": {"thread_id": conv_id}}
+        kb_speculation: dict[str, Any] = {"enabled": kb_in_graph}
+        lg_config = {"callbacks": callbacks, "configurable": {"thread_id": conv_id, "kb_speculation": kb_speculation}}
 
         try:
             async for event in graph.astream_events(state, version="v2", config=lg_config):
                 kind = event["event"]
                 node = event.get("metadata", {}).get("langgraph_node", "")
+
+                if kind == "on_custom_event" and event.get("name") == RESPONDER_TOKEN_EVENT:
+                    if not req.orchestrated:
+                        piece = live.feed(event["data"])
+                        if piece:
+                            yield f"data: {json.dumps(piece)}\n\n"
+                    continue
+
+                if kind == "on_chain_start" and event.get("name") == "responder" and live.emitted:
+                    # The judge sent the answer back: the one on screen is withdrawn
+                    # before the next attempt streams.
+                    yield _RESET_FRAME
+                    live = _LiveAnswer()
 
                 if kind == "on_chain_start" and node and not _skip_trace(node):
                     node_start_times[node] = time.monotonic()
@@ -472,7 +680,8 @@ async def run_conversation_stream(
 
             # Graph đã chạy xong hẳn — nếu có Judge, nghĩa là đã PASS hoặc hết
             # loop_max_iterations (force-accept); last_responder_text là bản
-            # duy nhất đáng tin. Không có gì được gửi ra SSE cho tới đây.
+            # duy nhất đáng tin. Trước đây chỉ có text đang stream (live) được
+            # gửi ra; từ đây nó được giữ, bổ sung hoặc rút lại.
 
             # Detect interrupt (human_approval node đang chờ reviewer) — nếu có,
             # chưa tới lúc đánh giá output (chưa chắc đây là bản cuối).
@@ -493,6 +702,8 @@ async def run_conversation_stream(
                         "suspended_at": time.monotonic(),
                     }
                     logger.info("human_approval | conv=%s suspended, waiting for review", conv_id)
+                    if live.emitted:
+                        yield _RESET_FRAME
                     yield f"data: {json.dumps({'__pending_review': {'conv_id': conv_id, 'payload': interrupt_payload}})}\n\n"
                     yield "data: [DONE]\n\n"
                     return
@@ -513,6 +724,8 @@ async def run_conversation_stream(
                 if triggered:
                     assistant_text = reason or "Xin lỗi, tôi không thể trả lời câu hỏi này."
                     full_response.append(assistant_text)
+                    if live.emitted:
+                        yield _RESET_FRAME
                     yield f"data: {json.dumps(assistant_text)}\n\n"
                 else:
                     clean_text, responder_options = _strip_think_and_options(last_responder_text)
@@ -528,9 +741,16 @@ async def run_conversation_stream(
                         clean_text = clean_text.rstrip() + f"\n\n📊 Đã tạo {suffix} minh hoạ bên dưới."
                     assistant_text = clean_text
                     full_response.append(clean_text)
-                    for chunk in _chunk_words(clean_text):
-                        yield f"data: {json.dumps(chunk)}\n\n"
-                        await asyncio.sleep(_FAKE_STREAM_WORD_DELAY)
+                    # Final and approved: anything that only needs the text can
+                    # start now (see answer_ready.py).
+                    notify_answer_ready(clean_text)
+                    rest = _remaining(live.emitted, clean_text)
+                    if rest is None:
+                        # What streamed is not how the approved answer starts.
+                        yield _RESET_FRAME
+                        rest = clean_text
+                    if rest or not live.emitted:
+                        yield f"data: {json.dumps(rest)}\n\n"
 
             # Evidence BEFORE options/suggestions: a client that stops reading at
             # the first "what next" frame still has the "why trust this" one.
@@ -551,7 +771,8 @@ async def run_conversation_stream(
             if pending_citations:
                 yield f"data: {json.dumps({'__citations': pending_citations})}\n\n"
 
-            await asyncio.to_thread(flush_langfuse)
+            # A network export; the stream's consumer must not wait on it.
+            _fire_and_forget(asyncio.to_thread(flush_langfuse))
             yield "data: [DONE]\n\n"
 
         except Exception:
@@ -560,98 +781,26 @@ async def run_conversation_stream(
         finally:
             if guardrail_task and not guardrail_task.done():
                 guardrail_task.cancel()
+            # A search the graph never took (error, interrupt, disconnect).
+            discard_speculative_search(kb_speculation)
             latency = int((time.monotonic() - started_at) * 1000)
             assistant_text = "".join(full_response)
-
-            if conv_id:
-                await save_message(conv_id, "user", req.query)
-                assistant_msg_id = await save_message(
-                    conv_id,
-                    "assistant",
-                    assistant_text,
-                    latency_ms=latency,
-                    metadata={
-                        "agent_version_id": cfg.get("agent_version_id"),
-                        "language": detected_language,
-                        "intent": detected_intent,
-                        # Recorded on the message so "how often is this platform
-                        # asked to forecast?" is answerable from stored traffic
-                        # rather than needing new instrumentation later.
-                        "analysis_type": detected_analysis,
-                        # Persisted on the message so the next turn can
-                        # inherit them even if Redis has gone cold.
-                        "slots": (
-                            _slots_with_marker(detected_slots, detected_clarify)
-                            if detected_slots else None
-                        ),
-                        **({"clarifications": detected_clarify} if detected_clarify else {}),
-                        "responder_model": cfg.get("responder_model"),
-                        **({"pending_options": responder_options} if responder_options else {}),
-                        **({"pending_approval": conv_id} if conv_id and conv_id in _pending_reviews else {}),
-                        **({"citations": pending_citations} if pending_citations else {}),
-                    },
-                )
-                await cache_append_messages(conv_id, [
-                    {"role": "user",      "content": req.query},
-                    {"role": "assistant", "content": assistant_text},
-                ])
-                if detected_slots:
-                    # Fast path for the next turn's refinement. The same slots
-                    # went into the message metadata above, which is what makes
-                    # this a cache rather than the source of truth.
-                    #
-                    # The clarification marker rides along with the slots rather
-                    # than in its own key: the next turn reads exactly one thing
-                    # to reconstruct context, so the two can never disagree about
-                    # whether a question is currently outstanding.
-                    await cache_set_slots(conv_id, _slots_with_marker(detected_slots, detected_clarify))
-                if assistant_msg_id:
-                    if node_traces:
-                        for idx, nt in enumerate(node_traces):
-                            await save_trace(
-                                message_id=assistant_msg_id,
-                                trace_index=idx,
-                                tool_name=nt["tool_name"],
-                                input=nt["input"],
-                                output=nt["output"],
-                                latency_ms=nt["latency_ms"],
-                                status=nt.get("status", "success"),
-                            )
-                    else:
-                        await save_trace(
-                            message_id=assistant_msg_id,
-                            trace_index=0,
-                            tool_name="responder",
-                            input={"query": req.query},
-                            output={"response": assistant_text},
-                            latency_ms=latency,
-                        )
-
-            # orchestrated=True: orchestrator sẽ ghi memory sau synthesize, agent không ghi
-            if not req.orchestrated and cfg.get("memory_enabled") and conv_id:
-                final_state = {**state, "response": assistant_text}
-                await apply_memory_policy(
-                    final_state, agent_id, tenant_id, user_ref,
-                    conversation_id=conv_id, message_id=assistant_msg_id,
-                )
-
-            flush_langfuse()
-
-            for nt in (node_traces if cfg.get("memory_enabled") and not req.orchestrated else []):
-                if not nt["tool_name"].startswith("tool/"):
-                    continue
-                task_type = _DATA_TOOL_TASK_TYPE.get(nt["tool_name"][len("tool/"):])
-                if not task_type:
-                    continue
-                _fire_and_forget(record_workflow_outcome(
-                    tenant_id=tenant_id,
-                    agent_id=agent_id,
-                    task_type=task_type,
-                    task_description=nt["input"].get("query") or "",
-                    param_snapshot=nt["input"].get("arguments") or {},
-                    outcome="success" if nt.get("status", "success") == "success" else "failed",
-                    duration_ms=nt.get("latency_ms"),
-                ))
+            # The answer is already delivered. An in-process consumer (the
+            # orchestrator) only reaches this finally when it closes the stream,
+            # so awaiting the writes here held its next step — suggestions, the
+            # next plan task — on DB round trips and a network flush.
+            _fire_and_forget(_persist_turn(
+                assistant_text=assistant_text,
+                latency=latency,
+                responder_options=responder_options,
+                pending_citations=pending_citations,
+                detected_language=detected_language,
+                detected_intent=detected_intent,
+                detected_analysis=detected_analysis,
+                detected_slots=detected_slots,
+                detected_clarify=detected_clarify,
+                node_traces=node_traces,
+            ))
 
     response = StreamingResponse(event_stream(), media_type="text/event-stream")
     response.headers["X-Conversation-Id"] = conv_id or ""

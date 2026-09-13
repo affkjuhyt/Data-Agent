@@ -6,6 +6,8 @@ import os
 
 import litellm
 
+from services.workflow_runtime.runtime_services import llm_call
+
 from services.workflow_runtime.state import AgentState
 
 logger = logging.getLogger(__name__)
@@ -93,7 +95,8 @@ async def _pick_chart_schema(query: str, columns: list[str], sample_rows: list[d
         '"series": [{"key": "<tên cột, chỉ khi chart_type=composed>", "type": "bar" | "line" | "area"}]}'
     )
     try:
-        resp = await litellm.acompletion(
+        resp = await llm_call.acompletion(
+            "llm:visualization", litellm.acompletion,
             model=model, api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
             messages=[{"role": "user", "content": prompt}],
             temperature=0, max_tokens=400, timeout=15,

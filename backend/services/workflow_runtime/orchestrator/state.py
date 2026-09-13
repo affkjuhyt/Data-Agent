@@ -35,6 +35,9 @@ class OrchestratorState(TypedDict):
     final_response: str
     citations: list[dict]
     suggestions: list[str]
+    # Set when single_agent/summary already produced the suggestions alongside
+    # the answer replay, so suggestion_node does not call the model again.
+    suggestions_ready: bool
     target_results: list[Any]
     recovered: bool
     success: bool

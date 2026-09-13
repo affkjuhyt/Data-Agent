@@ -17,13 +17,32 @@ from typing import Any
 import asyncio
 import os
 import time
+import weakref
 
 import httpx
 
 SANDBOX_EXECUTOR_URL = os.environ.get("SANDBOX_EXECUTOR_URL", "http://localhost:8260")
 
-_POLL_INITIAL_DELAY_S = 0.2
+# A metric or schema query usually finishes in tens of ms; a 200 ms first wait
+# was most of its latency. Backoff still reaches the 1 s cap within ~8 polls.
+_POLL_INITIAL_DELAY_S = 0.05
 _POLL_MAX_DELAY_S = 1.0
+
+# One pooled client per event loop and timeout: a fresh AsyncClient per query
+# paid a TCP connect on every submit. httpx clients are bound to the loop that
+# first used them, hence per loop (weakly, so a closed loop's clients go too).
+_shared_clients: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, dict[float, httpx.AsyncClient]]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def shared_client(timeout: float) -> httpx.AsyncClient:
+    per_loop = _shared_clients.setdefault(asyncio.get_running_loop(), {})
+    client = per_loop.get(timeout)
+    if client is None or client.is_closed:
+        client = httpx.AsyncClient(timeout=timeout)
+        per_loop[timeout] = client
+    return client
 # Budget on top of the tool's own execution timeout to cover queueing delay
 # (worker pull latency, or a circuit-breaker HALF_OPEN cooldown wait) that sits
 # in front of acquire+exec — it isn't part of timeout_s itself.

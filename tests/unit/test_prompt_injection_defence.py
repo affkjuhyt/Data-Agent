@@ -252,7 +252,8 @@ class TestResponderFencesRetrievedChunks:
             return _canned("Doanh thu là 42.")
 
         monkeypatch.setattr(responder.litellm, "acompletion", fake_completion, raising=False)
-        monkeypatch.setattr(responder, "get_langfuse_client", lambda: None)
+        from services.workflow_runtime.runtime_services import llm_call
+        monkeypatch.setattr(llm_call, "get_langfuse_client", lambda: None)
         await responder.responder_node(self._state(chunks))
         return captured["messages"][0]["content"]
 
@@ -315,7 +316,8 @@ class TestJudgeFencesRetrievedChunks:
             return _canned('{"verdict": "PASS"}')
 
         monkeypatch.setattr(judge.litellm, "acompletion", fake_completion, raising=False)
-        monkeypatch.setattr(judge, "get_langfuse_client", lambda: None)
+        from services.workflow_runtime.runtime_services import llm_call
+        monkeypatch.setattr(llm_call, "get_langfuse_client", lambda: None)
         await judge.judge_node(state)
         return [m["content"] for m in captured["messages"]]
 
@@ -361,7 +363,8 @@ class TestPlannerMemoryCannotBreakOut:
             return _canned('{"intent": "question", "language": "vi", "tool_calls": []}')
 
         monkeypatch.setattr(planner.litellm, "acompletion", fake_completion, raising=False)
-        monkeypatch.setattr(planner, "get_langfuse_client", lambda: None)
+        from services.workflow_runtime.runtime_services import llm_call
+        monkeypatch.setattr(llm_call, "get_langfuse_client", lambda: None)
         await planner.planner_node({
             "query": "doanh thu quý 1", "config": {}, "memory_context": [],
             "workflow_memory_context": [], "loop_iteration": 0, "judge_reason": "",

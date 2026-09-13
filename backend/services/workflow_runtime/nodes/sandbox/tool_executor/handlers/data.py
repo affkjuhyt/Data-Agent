@@ -12,7 +12,8 @@ import httpx
 import litellm
 
 from libs.shared import aggregation_check, audit
-from services.workflow_runtime.nodes.sandbox.tool_executor._sandbox_http import POLL_OVERHEAD_S, submit_and_poll
+from services.workflow_runtime.nodes.sandbox.tool_executor._sandbox_http import POLL_OVERHEAD_S, shared_client, submit_and_poll
+from services.workflow_runtime.runtime_services import llm_call
 from services.workflow_runtime.nodes.sandbox.tool_executor._utils import (
     _get_query,
     _safe_path,
@@ -177,15 +178,14 @@ async def _sandbox_sql(
         )
 
     try:
-        async with httpx.AsyncClient(timeout=10) as http:
-            result = await submit_and_poll(
-                http, "/execute/sql",
-                {"sql": sql, "connection": _sandbox_connection(conn_cfg)},
-                overall_timeout_s=timeout_s + POLL_OVERHEAD_S,
-            )
+        result = await submit_and_poll(
+            shared_client(10), "/execute/sql",
+            {"sql": sql, "connection": _sandbox_connection(conn_cfg)},
+            overall_timeout_s=timeout_s + POLL_OVERHEAD_S,
+        )
     except Exception as e:
         _record(audit.DECISION_ERROR, None, f"sandbox_executor unreachable: {e}")
-        return None, f"sandbox_executor unreachable: {e}", False
+        return None, f"sandbox_executor unreachable: {e}", False, None
 
     if result.get("_http_status") == 503:
         _record(audit.DECISION_ERROR, None, "sandbox_executor overloaded")
@@ -618,7 +618,8 @@ async def _run_one_query(
         if attempt >= 2:
             break
         try:
-            resp = await litellm.acompletion(
+            resp = await llm_call.acompletion(
+                "llm:text_to_sql_repair", litellm.acompletion,
                 model=sql_mdl, api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
                 messages=[{"role": "user", "content":
                     f"Chuyển câu hỏi sau thành SQL.\n\nSchema:\n{schema_text}\n\n"
@@ -759,17 +760,22 @@ async def _text_to_sql_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tup
     # `query` drives which tables reach the prompt — the catalog embeds it,
     # the introspection fallback ranks against it. Passing it is what keeps
     # the schema block proportional to the question instead of the warehouse.
-    schema_texts = {
-        name: await _get_schema_text(tenant_id, conn_cfg, query, audit_ctx=audit_ctx, target=name)
-        for name, conn_cfg in db_connections.items()
-    }
+    # One schema lookup per connection (catalog embed + search, or introspection),
+    # independent of each other.
+    names = list(db_connections)
+    texts = await asyncio.gather(*(
+        _get_schema_text(tenant_id, db_connections[name], query, audit_ctx=audit_ctx, target=name)
+        for name in names
+    ))
+    schema_texts = dict(zip(names, texts))
 
     if len(db_connections) == 1:
         name = next(iter(db_connections))
         note = db_connections[name].get("note", "")
         schema_block = f"{schema_texts[name]}\n{note}".strip()
         try:
-            resp = await litellm.acompletion(
+            resp = await llm_call.acompletion(
+                "llm:text_to_sql", litellm.acompletion,
                 model=sql_mdl, api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
                 messages=[{"role": "user", "content":
                     f"Chuyển câu hỏi sau thành SQL.\n\nSchema:\n{schema_block}\n\n"
@@ -793,7 +799,8 @@ async def _text_to_sql_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tup
             f"\n\nCâu hỏi: {query}"
         )
         try:
-            resp = await litellm.acompletion(
+            resp = await llm_call.acompletion(
+                "llm:text_to_sql", litellm.acompletion,
                 model=sql_mdl, api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0, max_tokens=1024, timeout=20,
@@ -919,7 +926,8 @@ async def _text_to_pandas_handler(call: dict[str, Any], cfg: dict[str, Any]) -> 
         # acompletion, not completion: this runs on the event loop serving every
         # other conversation, and the synchronous call blocked all of them for
         # the duration of the generation.
-        resp = await litellm.acompletion(
+        resp = await llm_call.acompletion(
+            "llm:python_codegen", litellm.acompletion,
             model=cfg.get("planner_model", "planner"), api_base=_LITELLM_BASE, api_key=_LITELLM_KEY,
             messages=[{"role": "user", "content": (
                 f"Viết Python pandas để trả lời: {query}\n"

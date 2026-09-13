@@ -62,6 +62,15 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 
 GRANT SELECT ON "Agents" TO runtime_writer;
 
+-- LangGraph checkpointer (workflow_runtime/orchestrator/graph.py): its setup()
+-- runs CREATE TABLE IF NOT EXISTS on every start, and Postgres checks CREATE
+-- on the schema before it checks whether the table exists — so pre-creating
+-- the tables is not enough. Postgres 15+ grants no CREATE on public, and
+-- runtime_writer must not get it there. The checkpointer uses this schema via
+-- search_path instead, and runtime_writer owns only what it creates in it.
+CREATE SCHEMA IF NOT EXISTS langgraph;
+GRANT USAGE, CREATE ON SCHEMA langgraph TO runtime_writer;
+
 
 -- ── sandbox_reader ───────────────────────────────────────────────────────────
 -- Its privileges live in create-extra-dbs.sql against the sandbox_dev database.

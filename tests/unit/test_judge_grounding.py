@@ -118,3 +118,34 @@ def test_route_after_judge_pass_goes_to_end():
 
     route = graph_mod._make_route_after_judge(frozenset({"planner", "responder"}))
     assert route({"judge_verdict": "PASS"}) == "end"
+
+
+async def test_the_judge_sees_the_rows_the_responder_answered_from(monkeypatch):
+    """The judge used to see 400 chars per item: a monthly SQL result was cut to
+    its first months, every later figure read as invented, and a correct answer
+    failed GROUNDING_ERROR (3/3 live). It now gets the responder's budget."""
+    import nodes.model_harness.judge as judge_mod
+
+    captured = {}
+
+    async def fake_completion(**kwargs):
+        captured["user"] = kwargs["messages"][1]["content"]
+        return _canned({"verdict": "PASS"})
+
+    monkeypatch.setattr(judge_mod.litellm, "acompletion", fake_completion, raising=False)
+    from services.workflow_runtime.runtime_services import llm_call
+    monkeypatch.setattr(llm_call, "get_langfuse_client", lambda: None)
+    rows = "".join(f'{{"month": {m}, "net": {m}000000}}' for m in range(1, 80))
+    assert len(rows) > 1500
+
+    await judge_mod.judge_node({
+        "config": {"context_max_chars": 1500},
+        "query": "doanh thu thuần theo tháng",
+        "response": "Tháng 40: 40000000",
+        "loop_iteration": 0,
+        "reranked_chunks": [{"content": rows}],
+        "tool_errors": [],
+    })
+
+    assert rows[:1500] in captured["user"]
+    assert rows[:1501] not in captured["user"]

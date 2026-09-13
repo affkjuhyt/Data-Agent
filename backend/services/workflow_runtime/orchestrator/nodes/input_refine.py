@@ -5,14 +5,15 @@ import asyncio
 import json
 import logging
 import os
+from datetime import datetime
 
 import litellm
 from langchain_core.callbacks.manager import adispatch_custom_event
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import interrupt
 
-from services.workflow_runtime.observability import get_langfuse_client
 from services.workflow_runtime.orchestrator.state import OrchestratorState
+from services.workflow_runtime.runtime_services import llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,25 @@ _LITELLM_KEY  = os.environ.get("LITELLM_API_KEY", "sk-dev")
 
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "prompts")
 _SYSTEM = open(os.path.join(_PROMPTS_DIR, "input_refine_system.txt"), encoding="utf-8").read()
+
+# Business calendar, as the agent planner uses (nodes/model_harness/planner.py).
+_BUSINESS_TZ = os.environ.get("BUSINESS_TIMEZONE", "Asia/Ho_Chi_Minh")
+
+
+def _today_line() -> str:
+    # Without today's date the model called 2026 "the future" and asked whether
+    # data for it existed — a clarification round trip on a complete question.
+    try:
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo(_BUSINESS_TZ))
+    except Exception:
+        now = datetime.now()
+    return f"Hôm nay là ngày {now:%d/%m/%Y}."
+
+
+def merge_clarification(query: str, clarification: str) -> str:
+    """The question the agent works on once the user answered a clarification."""
+    return f"{query}\n\nThông tin bổ sung: {clarification}"
 
 
 async def run_input_refine(
@@ -42,7 +62,7 @@ async def run_input_refine(
         if role in ("user", "assistant"):
             history_lines.append(f"{role.capitalize()}: {content}")
 
-    user_content = ""
+    user_content = _today_line() + "\n\n"
     if history_lines:
         user_content += "Lịch sử hội thoại:\n" + "\n".join(history_lines) + "\n\n"
     user_content += f"Câu hỏi hiện tại: {query}"
@@ -53,7 +73,8 @@ async def run_input_refine(
         {"role": "user",   "content": user_content},
     ]
     try:
-        response = await litellm.acompletion(
+        response = await llm_call.acompletion(
+            "llm:input_refine", litellm.acompletion,
             model=model,
             api_base=_LITELLM_BASE,
             api_key=_LITELLM_KEY,
@@ -64,18 +85,6 @@ async def run_input_refine(
             timeout=cfg.get("input_refine_timeout", 20),
         )
         output = response.choices[0].message.content or ""
-        lf = get_langfuse_client()
-        if lf:
-            usage = response.usage or {}
-            lf.update_current_generation(
-                model=model,
-                input=messages_payload,
-                output=output,
-                usage_details={
-                    "input": getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", 0),
-                    "output": getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", 0),
-                },
-            )
         result = json.loads(output or "{}")
         action = result.get("action", "keep")
 
@@ -107,7 +116,7 @@ async def input_refine_node(state: OrchestratorState, config: RunnableConfig) ->
     xong khi input_refine đã xong → chạy tiếp bình thường như cũ, guardrail
     vẫn được check lại ở gate cuối để không bỏ sót case guardrail xong SAU."""
     if state.get("clarification_response"):
-        merged = f"{state['query']}\n\nThông tin bổ sung: {state['clarification_response']}"
+        merged = merge_clarification(state["query"], state["clarification_response"])
         return {"rewritten_query": merged, "clarification_needed": False}
 
     query = state.get("query", "")

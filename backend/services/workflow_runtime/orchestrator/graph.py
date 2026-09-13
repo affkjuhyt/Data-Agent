@@ -6,12 +6,13 @@ import logging
 import os
 import re
 import time
-from contextlib import nullcontext
+from contextlib import nullcontext, suppress
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import StateGraph, START, END
+from langgraph.types import interrupt
 from psycopg_pool import AsyncConnectionPool
 
 from services.workflow_runtime.observability import get_langfuse_client
@@ -21,8 +22,9 @@ from services.workflow_runtime.orchestrator.executor import execute_plan
 from langchain_core.callbacks.manager import adispatch_custom_event
 
 from services.workflow_runtime.orchestrator.executor.agent_client import call_agent_stream, extract_guardrail_cfg
-from services.workflow_runtime.orchestrator.nodes.input_refine import input_refine_node
+from services.workflow_runtime.orchestrator.nodes.input_refine import input_refine_node, merge_clarification, run_input_refine
 from services.workflow_runtime.orchestrator.nodes.suggestion import run_suggestion
+from services.workflow_runtime.runtime_services.answer_ready import answer_ready_hook
 from services.workflow_runtime.orchestrator.planner import create_plan, report_node_failure
 from services.workflow_runtime.orchestrator.schemas import TargetResult, TaskResult
 from libs.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
@@ -33,7 +35,6 @@ from services.workflow_runtime.orchestrator.summary import summarize, synthesis_
 logger = logging.getLogger(__name__)
 
 _MAX_REPLAN = 2
-_FAKE_STREAM_WORD_DELAY = 0.02  # giây/từ — hiệu ứng gõ chữ khi replay text đã duyệt xong
 
 # ── Checkpointer ──────────────────────────────────────────────────────────────
 # Postgres-backed rather than the in-process MemorySaver it replaced: this
@@ -58,6 +59,14 @@ _FAKE_STREAM_WORD_DELAY = 0.02  # giây/từ — hiệu ứng gõ chữ khi repl
 # such objects; kept identically for the Postgres saver.
 _CHECKPOINTER_SERDE = JsonPlusSerializer(pickle_fallback=True)
 _ASYNC_DRIVER_RE = re.compile(r"^postgresql\+\w+://")
+
+# The saver's tables live in their own schema. runtime_writer has no CREATE on
+# public (Postgres 15+ default, and deploy/docker/sql/grant-roles.sql keeps it
+# that way), but setup() issues CREATE TABLE IF NOT EXISTS on every start, so it
+# gets CREATE on this schema instead. The saver's SQL is unqualified, so
+# search_path is enough. A pooler in transaction mode would drop the `options`
+# startup parameter; set search_path on the role there instead.
+_CHECKPOINTER_SCHEMA = "langgraph"
 
 
 def _checkpointer_dsn() -> str:
@@ -88,7 +97,11 @@ async def _open_checkpointer() -> AsyncPostgresSaver:
         # harmless direct-to-Postgres, and required if a pooler (e.g.
         # PgBouncer, provisioned elsewhere in this cluster) ever sits in front
         # of this DSN in transaction-pooling mode.
-        kwargs={"autocommit": True, "prepare_threshold": None},
+        kwargs={
+            "autocommit": True,
+            "prepare_threshold": None,
+            "options": f"-c search_path={_CHECKPOINTER_SCHEMA}",
+        },
     )
     await _checkpoint_pool.open()
     saver = AsyncPostgresSaver(_checkpoint_pool, serde=_CHECKPOINTER_SERDE)
@@ -106,17 +119,48 @@ def _route_mode(state: OrchestratorState) -> str:
     return "single_agent" if state.get("agent_id") else "fetch_agents"
 
 
+def _route_start(state: OrchestratorState) -> str:
+    # A single-agent turn runs its input_refine check alongside the agent
+    # (single_agent_node); only a multi-agent turn refines first.
+    return "single_agent" if state.get("agent_id") else "input_refine"
+
+
+def _same_question(a: str, b: str) -> bool:
+    return " ".join(a.casefold().split()) == " ".join(b.casefold().split())
+
+
 # ── Single agent path ─────────────────────────────────────────────────────────
 
+_AGENT_STREAM_END = object()
+
+
 async def single_agent_node(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
+    guardrail_task = (config.get("configurable") or {}).get("guardrail_task")
+    query = state["query"]
+
+    # The clarification/rewrite check (input_refine) runs ALONGSIDE the agent
+    # instead of in front of it, where it held every question for one LLM call.
+    # The agent starts on the user's words and its events are held until the
+    # check decides: keep → release them, rewrite → restart on the rewritten
+    # question, clarify → drop them and ask. Nothing from a dropped run reaches
+    # the user. On resume the answer is merged in and there is nothing to check.
+    refine_task: asyncio.Task[tuple[str, list[str]]] | None = None
+    if state.get("clarification_response"):
+        query = merge_clarification(state["query"], state["clarification_response"])
+    else:
+        refine_task = asyncio.create_task(
+            run_input_refine(query, state.get("messages", []), state.get("cfg", {}))
+        )
+
     # Gate input guardrail — await task đã bắn nền từ routers/stream.py, ngay
     # trước khi gọi ra ngoài (side-effect thật, workflow_runtime có thể chạy
     # bash/SQL). Nếu guardrail đã xong từ sớm (thường vậy) thì không mất thêm
     # latency gì cả.
-    guardrail_task = (config.get("configurable") or {}).get("guardrail_task")
     if guardrail_task:
         triggered, reason = await guardrail_task
         if triggered:
+            if refine_task is not None:
+                refine_task.cancel()
             refusal = reason or "Xin lỗi, tôi không thể trả lời câu hỏi này."
             await adispatch_custom_event("token", refusal)
             return {
@@ -135,56 +179,142 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
     lf = get_langfuse_client()
     ctx = lf.start_as_current_span(
         name="single-agent",
-        input={"query": state["rewritten_query"], "agent_id": state["agent_id"]},
+        input={"query": query, "agent_id": state["agent_id"]},
     ) if lf else nullcontext()
 
     buffer: list[str] = []
     conversation_id = None
     citations: list[dict] = []
     success = False
-    with ctx as span:
-        try:
-            async for event_type, data in call_agent_stream(
-                agent_id=state["agent_id"],
-                prompt=state["rewritten_query"],
-                user_id=state["user_id"],
-                tenant_id=state["tenant_id"],
-                user_roles=state.get("user_roles") or [],
-                guardrail_cfg=extract_guardrail_cfg(state.get("cfg", {})),
-            ):
-                if event_type == "token":
-                    buffer.append(data)
-                    await adispatch_custom_event("token", data)
-                elif event_type == "conv_id":
-                    conversation_id = data
-                elif event_type == "pending_review":
-                    await adispatch_custom_event("pending_review", data)
-                elif event_type == "chart":
-                    await adispatch_custom_event("chart", data)
-                elif event_type == "citations":
-                    citations = data
-                    await adispatch_custom_event("citations", data)
-                elif event_type == "options":
-                    await adispatch_custom_event("options", data)
-                elif event_type == "evidence":
-                    await adispatch_custom_event("evidence", data)
-            success = True
-        except Exception as e:
-            logger.warning("single_agent | failed: %s", e)
-            err = "Đã xảy ra lỗi, vui lòng thử lại."
-            buffer = [err]
+    response_text = ""
+    latency_ms = 0
+    questions: list[str] = []
 
-        response_text = "".join(buffer)
-        latency_ms = round((time.monotonic() - t0) * 1000)
-        if span is not None:
-            span.update(
-                output={"response": response_text[:2000], "conversation_id": conversation_id},
-                metadata={"latency_ms": latency_ms, "success": success},
-            )
+    # Suggestions only need the approved answer. The runner announces it before
+    # replaying it word by word (runtime_services/answer_ready.py), so the
+    # suggestion call runs alongside the replay instead of after it.
+    suggestion_task: asyncio.Task[list[str]] | None = None
+
+    def _on_answer_ready(text: str) -> None:
+        nonlocal suggestion_task
+        if suggestion_task is None:
+            suggestion_task = asyncio.create_task(run_suggestion(
+                query, state.get("messages", []), text, state.get("cfg", {}),
+            ))
+
+    def start_agent(prompt: str) -> tuple[asyncio.Task[None], asyncio.Queue[Any]]:
+        events: asyncio.Queue[Any] = asyncio.Queue()
+
+        async def pump() -> None:
+            try:
+                async for item in call_agent_stream(
+                    agent_id=state["agent_id"],
+                    prompt=prompt,
+                    user_id=state["user_id"],
+                    tenant_id=state["tenant_id"],
+                    user_roles=state.get("user_roles") or [],
+                    guardrail_cfg=extract_guardrail_cfg(state.get("cfg", {})),
+                ):
+                    await events.put(item)
+            except Exception as e:
+                await events.put(("__failed__", e))
+            finally:
+                events.put_nowait(_AGENT_STREAM_END)
+
+        return asyncio.create_task(pump()), events
+
+    async def stop(task: asyncio.Task[None]) -> None:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+    agent_task: asyncio.Task[None] | None = None
+    hook_token = answer_ready_hook.set(_on_answer_ready)
+    try:
+        with ctx as span:
+            agent_task, events = start_agent(query)
+            if refine_task is not None:
+                refined, questions = await refine_task
+                if questions or not _same_question(refined, query):
+                    await stop(agent_task)
+                    if suggestion_task is not None:
+                        suggestion_task.cancel()
+                        suggestion_task = None
+                    if not questions:
+                        logger.info("single_agent | input_refine rewrote the question — restarting the agent on it")
+                        query = refined
+                        agent_task, events = start_agent(query)
+
+            if not questions:
+                try:
+                    while True:
+                        item = await events.get()
+                        if item is _AGENT_STREAM_END:
+                            break
+                        event_type, data = item
+                        if event_type == "__failed__":
+                            raise data
+                        if event_type == "token":
+                            buffer.append(data)
+                            await adispatch_custom_event("token", data)
+                        elif event_type == "reset":
+                            buffer.clear()
+                            await adispatch_custom_event("reset", None)
+                        elif event_type == "conv_id":
+                            conversation_id = data
+                        elif event_type == "pending_review":
+                            await adispatch_custom_event("pending_review", data)
+                        elif event_type == "chart":
+                            await adispatch_custom_event("chart", data)
+                        elif event_type == "citations":
+                            citations = data
+                            await adispatch_custom_event("citations", data)
+                        elif event_type == "options":
+                            await adispatch_custom_event("options", data)
+                        elif event_type == "evidence":
+                            await adispatch_custom_event("evidence", data)
+                    success = True
+                except Exception as e:
+                    logger.warning("single_agent | failed: %s", e)
+                    err = "Đã xảy ra lỗi, vui lòng thử lại."
+                    buffer = [err]
+
+                response_text = "".join(buffer)
+                latency_ms = round((time.monotonic() - t0) * 1000)
+                if span is not None:
+                    span.update(
+                        output={"response": response_text[:2000], "conversation_id": conversation_id},
+                        metadata={"latency_ms": latency_ms, "success": success},
+                    )
+    except BaseException:
+        if agent_task is not None and not agent_task.done():
+            agent_task.cancel()
+        if refine_task is not None and not refine_task.done():
+            refine_task.cancel()
+        if suggestion_task is not None:
+            suggestion_task.cancel()
+        raise
+    finally:
+        answer_ready_hook.reset(hook_token)
+
+    if questions:
+        # Outside the span and the stream handling: interrupt() raises to pause
+        # the graph. On resume this node runs again with the answer merged in.
+        logger.info("input_refine | clarification needed, questions=%d", len(questions))
+        interrupt({"clarification_questions": questions})
+
+    # Only an answer that fully arrived keeps its early suggestions; otherwise
+    # suggestion_node runs on the final text as before.
+    suggestions_update: dict[str, Any] = {}
+    if suggestion_task is not None:
+        if success:
+            suggestions_update = {"suggestions": await suggestion_task, "suggestions_ready": True}
+        else:
+            suggestion_task.cancel()
 
     task_result = TaskResult(
         task_index=0,
-        task_title=state["rewritten_query"][:100],
+        task_title=query[:100],
         agent_id=state["agent_id"],
         output=response_text,
         success=success,
@@ -193,28 +323,56 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
         latency_ms=latency_ms,
     )
     return {
+        "rewritten_query": query,
         "final_response": response_text,
         "success": success,
         "executor_ms": latency_ms,
         "target_results": [TargetResult(
             node_id="single",
-            description=state["rewritten_query"][:100],
+            description=query[:100],
             task_results=[task_result],
             success=success,
         )],
+        **suggestions_update,
     }
 
 
 # ── Multi agent path ──────────────────────────────────────────────────────────
 
-async def fetch_agents_node(state: OrchestratorState) -> dict[str, Any]:
-    agents = await fetch_published_agents(state["tenant_id"])
+async def fetch_agents_node(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
+    # routers/stream.py starts this query alongside input_refine — it only needs
+    # tenant_id. Query here when it did not (resume paths).
+    prefetched = (config.get("configurable") or {}).get("agents_task")
+    agents = await prefetched if prefetched is not None else await fetch_published_agents(state["tenant_id"])
     return {"agents": agents}
+
+
+def discard_plan_speculation(speculation: dict[str, Any] | None) -> None:
+    """Drop the ToT plan routers/stream.py started ahead of input_refine."""
+    task = (speculation or {}).pop("task", None)
+    if task is None:
+        return
+    if not task.done():
+        task.cancel()
+    elif not task.cancelled():
+        task.exception()  # retrieve it, so an unused failed plan is not reported as unhandled
+
+
+def _take_plan_speculation(speculation: dict[str, Any] | None, query: str) -> "asyncio.Task[Any] | None":
+    """The plan started on the user's words, if input_refine kept those words."""
+    if not speculation or "task" not in speculation:
+        return None
+    if not _same_question(speculation.get("query", ""), query):
+        discard_plan_speculation(speculation)
+        return None
+    task: asyncio.Task[Any] = speculation.pop("task")
+    return task
 
 
 async def tot_planner_node(state: OrchestratorState, config: RunnableConfig) -> dict[str, Any]:
     t0 = time.monotonic()
     redis = (config.get("configurable") or {}).get("redis")
+    speculation = (config.get("configurable") or {}).get("plan_speculation")
     tenant_id, session_id, query = state["tenant_id"], state["session_id"], state["rewritten_query"]
 
     # Client retried the same session_id (e.g. timed out waiting for a slow
@@ -222,6 +380,7 @@ async def tot_planner_node(state: OrchestratorState, config: RunnableConfig) -> 
     # re-billing every agent call that already succeeded.
     cached = await load_cached_plan(redis, tenant_id, session_id, query)
     if cached is not None:
+        discard_plan_speculation(speculation)
         process, plan, progress = cached
         logger.info("tot_planner | resumed session=%s plan=%s", session_id, plan.plan_id)
         return {
@@ -232,7 +391,14 @@ async def tot_planner_node(state: OrchestratorState, config: RunnableConfig) -> 
             "success": True,
         }
 
-    plan_result = await create_plan(query, agents=state["agents"])
+    # routers/stream.py started planning on the user's words while input_refine
+    # ran; it is the same plan when the question was kept.
+    prefetched = _take_plan_speculation(speculation, query)
+    if prefetched is not None:
+        logger.info("tot_planner | reusing the plan started alongside input_refine")
+        plan_result = await prefetched
+    else:
+        plan_result = await create_plan(query, agents=state["agents"])
     planner_ms = round((time.monotonic() - t0) * 1000)
     if plan_result is None:
         return {"plan": None, "planner_ms": planner_ms, "success": False}
@@ -420,25 +586,34 @@ async def summary_node(state: OrchestratorState) -> dict[str, Any]:
             "guardrail_reason": reason,
         }
 
-    # Pass — "giả streaming": chia theo từ, thả dần ra SSE với độ trễ nhân tạo
-    # nhỏ để giữ lại hiệu ứng gõ chữ, dù text đã sinh xong từ trước.
-    words = text.split(" ")
-    for i, word in enumerate(words):
-        chunk = word if i == 0 else " " + word
-        await adispatch_custom_event("token", chunk)
-        await asyncio.sleep(_FAKE_STREAM_WORD_DELAY)
+    # Suggestions only need the approved text — start them now so they run
+    # alongside the rest of this node instead of after it (suggestion_node skips).
+    suggestion_task = asyncio.create_task(run_suggestion(query, state.get("messages", []), text, cfg))
+    try:
+        # The approved text in one frame. It used to be replayed word by word
+        # with an artificial delay, which only added seconds to an answer that
+        # was already complete.
+        await adispatch_custom_event("token", text)
 
-    if citations:
-        await adispatch_custom_event("citations", citations)
+        if citations:
+            await adispatch_custom_event("citations", citations)
+    except BaseException:
+        suggestion_task.cancel()
+        raise
 
+    summary_ms = round((time.monotonic() - t0) * 1000)
     return {
         "final_response": text,
         "citations": citations,
-        "summary_ms": round((time.monotonic() - t0) * 1000),
+        "suggestions": await suggestion_task,
+        "suggestions_ready": True,
+        "summary_ms": summary_ms,
     }
 
 
 async def suggestion_node(state: OrchestratorState) -> dict[str, Any]:
+    if state.get("suggestions_ready"):
+        return {}
     suggestions = await run_suggestion(
         state["rewritten_query"],
         state.get("messages", []),
@@ -469,7 +644,13 @@ def build_graph(checkpointer: Any) -> Any:
     # ngay tại đây thay vì phải đợi hết input_refine mới biết. Gate cuối
     # (single_agent_node/execute_node) vẫn giữ nguyên, phòng case guardrail
     # xong SAU khi input_refine đã chạy xong.
-    builder.add_edge(START, "input_refine")
+    # Single-agent turns go straight to the agent, which runs the input_refine
+    # check alongside itself (single_agent_node). Multi-agent turns refine first,
+    # while routers/stream.py already plans on the user's words (tot_planner_node).
+    builder.add_conditional_edges(
+        START, _route_start,
+        {"single_agent": "single_agent", "input_refine": "input_refine"},
+    )
     builder.add_conditional_edges(
         "input_refine", _route_after_input_refine,
         {"route": "route", "blocked": END},

@@ -65,6 +65,11 @@ export function useAgentStream({ userId, agentId, historyTurns = 10 }: UseAgentS
           buffer += e.text;
           patch(assistantId, m => ({ ...m, content: buffer }));
           break;
+        case 'reset':
+          // The streamed answer was rejected; its replacement follows.
+          buffer = '';
+          patch(assistantId, m => ({ ...m, content: '' }));
+          break;
         case 'session':
           sessionId = e.sessionId;
           patch(assistantId, m => ({ ...m, sessionId: e.sessionId }));

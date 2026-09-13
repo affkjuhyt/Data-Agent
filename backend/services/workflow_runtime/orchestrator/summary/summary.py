@@ -10,7 +10,7 @@ import litellm
 
 from services.workflow_runtime.orchestrator import config
 from libs.shared import untrusted
-from services.workflow_runtime.observability import get_langfuse_client
+from services.workflow_runtime.runtime_services import llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,8 @@ async def summarize(original_query: str, agent_outputs: list[str]) -> str:
         {"role": "user", "content": user_message},
     ]
 
-    resp = await litellm.acompletion(
+    resp = await llm_call.acompletion(
+        "llm:summary", litellm.acompletion,
         model=config.SUMMARY_MODEL,
         api_base=config.LITELLM_BASE_URL,
         api_key=config.LITELLM_API_KEY,
@@ -67,18 +68,6 @@ async def summarize(original_query: str, agent_outputs: list[str]) -> str:
     )
 
     answer = resp.choices[0].message.content
-    lf = get_langfuse_client()
-    if lf:
-        usage = resp.usage or {}
-        lf.update_current_generation(
-            model=config.SUMMARY_MODEL,
-            input=messages_payload,
-            output=answer,
-            usage_details={
-                "input": getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", 0),
-                "output": getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", 0),
-            },
-        )
     logger.info("summary | query_len=%d outputs=%d ans_len=%d",
                 len(original_query), len(agent_outputs), len(answer))
     return cast(str, answer)
@@ -104,7 +93,8 @@ async def synthesis_judge_check(original_query: str, agent_outputs: list[str], t
         )},
     ]
     try:
-        resp = await litellm.acompletion(
+        resp = await llm_call.acompletion(
+            "llm:synthesis_judge", litellm.acompletion,
             model=config.SYNTHESIS_JUDGE_MODEL,
             api_base=config.LITELLM_BASE_URL,
             api_key=config.LITELLM_API_KEY,
@@ -115,18 +105,6 @@ async def synthesis_judge_check(original_query: str, agent_outputs: list[str], t
             timeout=15,
         )
         raw = resp.choices[0].message.content or ""
-        lf = get_langfuse_client()
-        if lf:
-            usage = resp.usage or {}
-            lf.update_current_generation(
-                model=config.SYNTHESIS_JUDGE_MODEL,
-                input=messages_payload,
-                output=raw,
-                usage_details={
-                    "input": getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", 0),
-                    "output": getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", 0),
-                },
-            )
         data = json.loads(raw or "{}")
     except Exception as e:
         logger.warning("synthesis_judge | LLM call failed: %s → PASS fallback", e)
