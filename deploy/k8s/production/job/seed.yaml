@@ -27,12 +27,15 @@ data:
   # this it tries to connect to a database literally named "admin".
   PGDATABASE: dataagent
   PGPORT: '8300'
-  PGUSER: admin
-  PGDATABASE: dataagent
   SEED_DEMO: '0'
   MONGO_HOST: mongo.dataagent-database.svc.cluster.local
   MONGO_PORT: '8310'
   MONGO_DB: dataagent
+  # The demo warehouse as workflow_runtime and the schema crawler reach it.
+  DW_HOST: postgres.dataagent-database.svc.cluster.local
+  DW_PORT: '8300'
+  # mongosh writes its history under $HOME; the root filesystem is read-only.
+  HOME: /tmp
 
 ---
 apiVersion: batch/v1
@@ -107,6 +110,10 @@ spec:
         - |
           until pg_isready -U "$PGUSER" >/dev/null 2>&1; do echo waiting for postgres; sleep 2; done
           psql -v ON_ERROR_STOP=1 -f /seed/seed.sql
+          if [ "$SEED_DEMO" = "1" ]; then
+            psql -v ON_ERROR_STOP=1 -f /seed/demo.sql
+            psql -v ON_ERROR_STOP=1 -f /seed/demo-governance.sql
+          fi
         resources:
           requests:
             cpu: 100m

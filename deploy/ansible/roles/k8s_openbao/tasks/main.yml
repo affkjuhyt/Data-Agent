@@ -90,6 +90,18 @@
   changed_when: false
   no_log: true
 
+- name: Write the demo warehouse password
+  ansible.builtin.command: >
+    {{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }}
+    bao kv put -mount=secret tenants/{{ seed_demo_tenant }}/e2e_dw_password
+    value={{ vault_sandbox_reader_password }}
+  when: seed_demo | bool
+  changed_when: false
+  no_log: true
+  # tests/e2e/seed.sql registers secrets_vault row e2e_dw_password; the demo
+  # agent's db_connector resolves it here. sandbox_reader's password is the one
+  # the db-init Job sets, so both come from the same vault value.
+
 - name: List auth methods
   ansible.builtin.command: "{{ bao_exec }} env BAO_TOKEN={{ bao_keys.root_token }} bao auth list -format=json"
   register: bao_auth
