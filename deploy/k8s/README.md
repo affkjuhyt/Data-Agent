@@ -1,17 +1,29 @@
 # Kubernetes manifests
 
-One workload per file, in three tiers.
+One workload per file, in three tiers, in two manifest sets.
+
+Deploy with [`deploy/ansible/deploy.yml`](../ansible/README.md) — it applies
+these in the right order, builds images, renders Secrets and reruns Jobs. The
+manual commands further down document what it does. Day-to-day operation of the
+dev server is in [`docs/RUNBOOK.md`](../../docs/RUNBOOK.md).
 
 ```
 deploy/k8s/
-  namespace.yaml               dataagent-service + dataagent-database (restricted PSA)
-  configmap.yaml               dataagent-config, one copy per namespace
-  rbac.yaml                    the single RBAC exception (OpenBao)
-  networkpolicy-service.yaml   deny-all + the service-tier allow matrix
-  networkpolicy-database.yaml  deny-all + who may reach each store
-  database/                    StatefulSets for the stores (11)
-  service/                     Deployments (23)
-  job/                         Jobs + the backup CronJob + the restore job (10)
+  production/                    hardened set (the sections below describe it)
+    namespace.yaml               dataagent-service + dataagent-database (restricted PSA)
+    configmap.yaml               dataagent-config, one copy per namespace
+    rbac.yaml                    the single RBAC exception (OpenBao)
+    networkpolicy-*.yaml         deny-all + the allow matrices
+    database/                    StatefulSets for the stores (11)
+    service/                     Deployments
+    job/                         Jobs + the backup CronJob + the restore job
+  dev/                           the same stack relaxed for the single-node dev server — see "Dev set"
+  create-secrets.sh              per-workload Secrets from a secrets.env
+  create-configmaps.sh           file-backed ConfigMaps from deploy/docker/ and tests/e2e/
+  gen-secrets-env.sh, bootstrap-openbao.sh, gen-kafka-jaas-secret.sh
+                                 helpers for dev/up.sh (legacy bootstrap)
+  build-push-images.sh           legacy image build; deploy.yml builds images now
+  ops/                           host cron scripts: disk-alert.sh, backup-registry.sh
 ```
 
 ## Namespaces
@@ -113,7 +125,8 @@ envFrom:
 ```
 
 `<workload>-env` is committed next to the workload in the same file. `dataagent-config`
-lives in [`configmap.yaml`](configmap.yaml), once per namespace.
+lives in [`production/configmap.yaml`](production/configmap.yaml) (and
+`dev/configmap.yaml`), once per namespace.
 
 A ConfigMap change does **not** reach a running pod through `envFrom` — restart it:
 `kubectl -n <ns> rollout restart deployment/<name>`.
@@ -132,14 +145,19 @@ needs them, and both fail *silently* when absent — an unset `GATEWAY_KEY` make
 `X-Kong-Verified` trusted on its own, and a mismatched `SERVICE_AUTH_SECRET`
 makes `kb_search` return no chunks. Check those two first if retrieval goes quiet.
 
-Fill one env file and run the generated script; it creates all 33 Secrets in the
-right namespaces with the right subsets:
+[`create-secrets.sh`](create-secrets.sh) reads one env file and creates every
+Secret in the right namespace with the right subset. The deploy pipeline renders
+that file from the ansible vault and runs the script for you — see
+[`deploy/ansible/README.md` → Secrets](../ansible/README.md#secrets). By hand:
 
 ```bash
-cp deploy/k8s/secrets.env.example secrets.env   # fill in every value
-set -a; . ./secrets.env; set +a
+set -a; . deploy/k8s/dev/secrets.env; set +a     # the file the pipeline rendered
 bash deploy/k8s/create-secrets.sh
 ```
+
+It overwrites every Secret. Only feed it a file you know matches the running
+cluster — an env file from another generation silently replaces the database,
+Kafka and gateway credentials the stores were initialised with.
 
 [`create-secrets.sh`](create-secrets.sh) is generated from the same table the
 manifests use, so it cannot drift from what the pods reference.
@@ -198,7 +216,8 @@ pod. After editing one of these files, re-run the script and restart:
 
 ## Apply
 
-Order matters once, on a fresh cluster.
+`deploy/ansible/deploy.yml` performs these steps. This is the manual equivalent
+for the production set; order matters once, on a fresh cluster.
 
 ```bash
 kubectl apply -f deploy/k8s/production/namespace.yaml
@@ -236,9 +255,9 @@ it first: `kubectl -n dataagent-service delete job migrate --ignore-not-found`.
 
 ## Dev set
 
-`deploy/k8s/dev/` is the same stack with the hardening removed, for a single-node
-dev cluster. Its own `secrets.env` and `.openbao-keys.json` live inside it and
-are git-ignored; nothing secret lives outside it.
+`deploy/k8s/dev/` is the same stack with the hardening removed, for the
+single-node dev server (`10.10.55.101`). Its `secrets.env`, `.openbao-keys.json`
+and `.openbao-env.yml` live inside it and are git-ignored.
 
 | | production | dev |
 | --- | --- | --- |
@@ -249,12 +268,20 @@ are git-ignored; nothing secret lives outside it.
 | Replicas | as sized | 1, HPA `minReplicas: 1` |
 | Access | per-workload ServiceAccounts only | plus `dataagent-dev`, bound to `admin` in the three namespaces |
 
+Deploy it with the pipeline (inventory `k8s-local` sets `k8s_env: dev`):
+
 ```bash
-bash deploy/k8s/dev/up.sh
+cd deploy/ansible && ansible-playbook deploy.yml
 kubectl -n dataagent-service get secret dataagent-dev-token -o jsonpath='{.data.token}' | base64 -d
 ```
 
-`up.sh` is re-runnable. It points the helper scripts at the dev secrets through
+The dev frontend runs the Vite dev server (`frontend/Dockerfile.dev`), which reads
+`VITE_API_URL` / `VITE_KEYCLOAK_URL` from `frontend-secrets` when the pod starts.
+
+`dev/up.sh` is the **legacy bootstrap** used for the first bring-up. Don't run it
+against the existing dev cluster: it applies Secrets from whatever
+`dev/secrets.env` is on disk, mints a new OpenBao secret-id, and runs `seed`
+without demo data. It points the helper scripts at the dev files through
 `SECRETS_ENV=dev/secrets.env KEYS_FILE=dev/.openbao-keys.json`.
 
 ## Ports
@@ -345,7 +372,9 @@ containerPort` for every workload.
 ## Ingress
 
 Not included — it is cluster-specific. Point one at `kong:8100`; that is the only
-service meant to receive outside traffic. `kong-admin:8101` is a separate
+service meant to receive outside traffic. The dev set has no ingress: browsers
+use the NodePorts (frontend `30280`, Kong `30100`, Keycloak `30110`), and those
+URLs must match `public_api_url` / `keycloak_public_url` in the Ansible inventory. `kong-admin:8101` is a separate
 ClusterIP Service and must never be exposed.
 
 ## Not ported from compose
