@@ -1,11 +1,12 @@
 from typing import Any, Callable
+import json
 import logging
 from collections import defaultdict
 from langgraph.graph import StateGraph, START, END
 from services.workflow_runtime.nodes.context.metadata_injector import metadata_injector_node
 from services.workflow_runtime.nodes.model_harness.human_approval import human_approval_node
 from services.workflow_runtime.nodes.model_harness.judge import judge_node
-from services.workflow_runtime.nodes.model_harness.planner import planner_node
+from services.workflow_runtime.nodes.model_harness.planner import PLANNER_FALLBACK_REASON, planner_node
 from services.workflow_runtime.nodes.model_harness.reranker import reranker_node
 from services.workflow_runtime.nodes.model_harness.responder import responder_node
 from services.workflow_runtime.nodes.model_harness.rrf_ranking import rrf_ranking_node
@@ -85,6 +86,25 @@ def join_retrieval_node(state: AgentState) -> dict[str, Any]:
 _JUDGE_PHASE1_NODE = "judge_phase1"
 
 
+def _plan_signature(tool_calls: list[dict[str, Any]], query: str) -> str:
+    """What a tool plan asks for: type, tool, normalised query and arguments per
+    call, order-free. A call without a query searches the user's question, as
+    kb_search does."""
+    calls = sorted(
+        json.dumps(
+            [
+                tc.get("type"),
+                tc.get("tool_name"),
+                " ".join(str(tc.get("query") or query).casefold().split()),
+                tc.get("arguments") or {},
+            ],
+            ensure_ascii=False, sort_keys=True, default=str,
+        )
+        for tc in tool_calls
+    )
+    return "\n".join(calls)
+
+
 _PHASE1_REASONS = {
     "RETRIEVAL_ERROR": "Không tìm thấy dữ liệu liên quan — thử diễn đạt lại câu hỏi hoặc dùng nguồn/tool khác.",
     "TOOL_ERROR": "Công cụ đã thử nhiều lần nhưng vẫn lỗi — thử cách tiếp cận hoặc tool khác.",
@@ -100,6 +120,12 @@ async def judge_phase1_node(state: AgentState) -> dict[str, Any]:
     lỗi ra đây, nên không phải lỗi tạm thời). Reset đúng phần cần sinh lại, route
     thẳng về planner ngay — tiết kiệm chi phí rrf_ranking/reranker/responder
     cho các lỗi biết được sớm mà không cần LLM.
+
+    Chỉ quay lại planner khi planner KHÔNG quyết định được gì (output không
+    parse được → plan dự phòng PLANNER_FALLBACK_REASON). Một plan planner đã
+    chọn rõ ràng mà vẫn rỗng hoặc lỗi (KB trống, tool đã tự sửa mà vẫn lỗi) thì
+    đi tiếp để responder nói "không tìm thấy": hỏi lại planner chỉ ra đúng plan
+    cũ (đo thực tế: 3 lần plan y hệt trên KB trống, ~1,3 s mỗi lần).
 
     CỐ Ý không cố phân biệt "data thật sự không tồn tại" với "query sai
     logic nên ra 0 dòng" (ví dụ SQL chạy thành công nhưng row_count=0) —
@@ -165,6 +191,23 @@ async def judge_phase1_node(state: AgentState) -> dict[str, Any]:
     if error_type is None:
         return _pass()
 
+    # Retry only a plan the planner did not actually decide. A decided plan that
+    # came back empty (an empty knowledge base) or failed after the tool's own
+    # corrections has its answer: say nothing was found.
+    if not any(tc.get("reason") == PLANNER_FALLBACK_REASON for tc in state.get("tool_calls") or []):
+        logger.info("judge_phase1 | %s on a decided plan → answer from what came back, no retry", error_type)
+        return _pass()
+
+    # Running the same plan again returns the same nothing — and a planner told
+    # to change strategy often emits the identical plan anyway (seen live: three
+    # identical re-plans against an empty knowledge base, ~1.3 s each). Stop at
+    # the first repeat instead of spending the rest of loop_max_iterations.
+    signature = _plan_signature(state.get("tool_calls") or [], state.get("query", ""))
+    attempted = list(state.get("attempted_plans") or [])
+    if signature in attempted:
+        logger.info("judge_phase1 | planner repeated a plan that already returned %s → stop retrying", error_type)
+        return _pass()
+
     if iteration >= max_iter:
         logger.warning("judge_phase1 | max_iterations=%d reached → force pass", max_iter)
         return _pass()
@@ -173,6 +216,7 @@ async def judge_phase1_node(state: AgentState) -> dict[str, Any]:
         "judge_phase1_error": error_type,
         "judge_reason": _PHASE1_REASONS[error_type],
         "loop_iteration": iteration + 1,
+        "attempted_plans": attempted + [signature],
         "kb_chunks": [], "mcp_results": [], "tool_results": [], "tool_errors": [],
         "db_results": [], "db_error": None,
         "rrf_results": [], "reranked_chunks": [],

@@ -1,4 +1,5 @@
 from typing import Any
+import asyncio
 import json
 import os
 import logging
@@ -118,12 +119,17 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
                 for r in mcp_rows
             ]
 
-        # 4. Load flow_nodes + flow_edges từ MongoDB
-        flow_nodes = await load_flow_nodes(wv_id) if wv_id else []
-        flow_edges = await load_flow_edges(wv_id) if wv_id else []
+        # 4. Load flow_nodes + flow_edges từ MongoDB — hai query độc lập
+        if wv_id:
+            flow_nodes, flow_edges = await asyncio.gather(load_flow_nodes(wv_id), load_flow_edges(wv_id))
+        else:
+            flow_nodes, flow_edges = [], []
         node_cfg   = _extract_node_config(flow_nodes)
-        await _resolve_warehouse_secret(node_cfg, tenant_id)
-        await _resolve_db_connector_secrets(node_cfg, tenant_id)
+        # Each resolves a different part of node_cfg (execute_sql vs db_connections).
+        await asyncio.gather(
+            _resolve_warehouse_secret(node_cfg, tenant_id),
+            _resolve_db_connector_secrets(node_cfg, tenant_id),
+        )
 
         # A connected KB makes kb_search available to the planner even when the
         # agent has no explicit flow canvas — so answers get grounded in documents
@@ -202,15 +208,19 @@ async def _resolve_db_connector_secrets(node_cfg: dict[str, Any], tenant_id: str
         return
 
     from services.workflow_runtime.warehouse_secrets import resolve_db_connector_password
-    for name, connection in db_connections.items():
+
+    async def _resolve(name: str, connection: dict[str, Any]) -> None:
         secret_id = connection.pop("secret_id", "")
         if not secret_id or not tenant_id:
-            continue
+            return
         password = await resolve_db_connector_password(tenant_id, secret_id)
         if password:
             connection["password"] = password
         else:
             logger.warning("could not resolve db_connector secret_id=%s for connection=%s tenant=%s — will fail auth", secret_id, name, tenant_id)
+
+    # One secrets_vault lookup + one vault read per connection, independent of each other.
+    await asyncio.gather(*(_resolve(name, connection) for name, connection in db_connections.items()))
 
 
 def _extract_node_config(flow_nodes: list[dict[str, Any]]) -> dict[str, Any]:

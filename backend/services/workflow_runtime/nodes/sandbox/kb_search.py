@@ -1,6 +1,9 @@
 from typing import Any
+import asyncio
 import logging
+import unicodedata
 import httpx
+from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, ValidationError
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
 
@@ -63,8 +66,22 @@ class KBChunk(BaseModel):
     doc_id: str = ""     # để FE build link mở file gốc: /api/knowledge/documents/{doc_id}/file
 
 
-async def kb_search_node(state: AgentState) -> dict[str, Any]:
-    cfg         = state["config"]
+async def kb_search_node(state: AgentState, config: RunnableConfig | None = None) -> dict[str, Any]:
+    kb_call = next(
+        (tc for tc in state.get("tool_calls", []) if tc.get("type") == "kb_search"),
+        None,
+    )
+    search_query = (kb_call or {}).get("query") or state["query"]
+
+    speculation = ((config or {}).get("configurable") or {}).get("kb_speculation")
+    prefetched = _take_speculative_search(speculation, search_query)
+    if prefetched is not None:
+        logger.info("kb_search | reusing the search started alongside the planner")
+        return await prefetched
+    return await search_knowledge_base(state["config"], search_query)
+
+
+async def search_knowledge_base(cfg: dict[str, Any], search_query: str) -> dict[str, Any]:
     kb_endpoint = cfg.get("kb_endpoint", "")
     tenant_id   = cfg.get("tenant_id", "")
 
@@ -93,12 +110,6 @@ async def kb_search_node(state: AgentState) -> dict[str, Any]:
         return {"kb_chunks": [], "kb_error": f"knowledge base search not authorized: {e}"}
 
     timeout = httpx.Timeout(connect=5.0, read=30.0, write=5.0, pool=5.0)
-
-    kb_call = next(
-        (tc for tc in state.get("tool_calls", []) if tc.get("type") == "kb_search"),
-        None,
-    )
-    search_query = (kb_call or {}).get("query") or state["query"]
 
     try:
         async for attempt in AsyncRetrying(
@@ -166,3 +177,42 @@ async def kb_search_node(state: AgentState) -> dict[str, Any]:
     # returns from inside the loop or raises (caught above) — this satisfies
     # the type checker's need for an explicit fallthrough return.
     return {"kb_chunks": []}
+
+
+# ── Speculative search ───────────────────────────────────────────────────────
+# The planner and the knowledge-base search used to run one after the other,
+# though the search usually does not depend on the plan: when the planner asks
+# for no tool at all, the graph still searches the user's question. So the
+# planner starts that search the moment it starts deciding, and kb_search_node
+# takes the result if its query turns out to be the same one. A different query
+# (the planner rewrote it) or no kb_search at all cancels it. The per-turn
+# holder travels in LangGraph's `configurable` ("kb_speculation", set by
+# conversation_runner), never in state, since a task cannot be checkpointed.
+
+def _normalize_query(query: str) -> str:
+    return " ".join(unicodedata.normalize("NFC", query or "").casefold().split())
+
+
+def start_speculative_search(speculation: dict[str, Any], cfg: dict[str, Any], query: str) -> None:
+    if not speculation.get("enabled") or "task" in speculation or not cfg.get("kb_endpoint"):
+        return
+    speculation["query"] = _normalize_query(query)
+    speculation["task"] = asyncio.create_task(search_knowledge_base(cfg, query))
+
+
+def discard_speculative_search(speculation: dict[str, Any] | None) -> None:
+    task = (speculation or {}).pop("task", None)
+    if task is not None and not task.done():
+        task.cancel()
+
+
+def _take_speculative_search(
+    speculation: dict[str, Any] | None, query: str,
+) -> "asyncio.Task[dict[str, Any]] | None":
+    if not speculation or "task" not in speculation:
+        return None
+    if speculation.get("query") == _normalize_query(query):
+        task: asyncio.Task[dict[str, Any]] = speculation.pop("task")
+        return task
+    discard_speculative_search(speculation)
+    return None

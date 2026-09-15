@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from services.workflow_runtime.observability import get_langfuse_client
 from services.workflow_runtime.orchestrator.planner.dpts.plan import Plan, Target
 from services.workflow_runtime.orchestrator.schemas import TargetResult, TaskResult
-from .task_queue import TaskNode, build_rounds, collect_context
+from .task_queue import TaskNode, build_nodes, collect_context
 from .agent_client import call_agent
 
 logger = logging.getLogger(__name__)
@@ -91,7 +91,11 @@ async def _execute_target(
     guardrail_cfg: dict[str, Any] | None = None,
 ) -> tuple[TargetResult, bool, str]:
     """
-    Chạy tất cả tasks trong 1 target theo rounds (song song trong round, tuần tự giữa rounds).
+    Chạy tasks trong 1 target theo depend_on: mỗi task khởi chạy ngay khi mọi task
+    nó phụ thuộc đã xong, không đợi cả "round" — task chỉ phụ thuộc 1 task nhanh
+    không bị giữ lại bởi 1 task chậm không liên quan. Task phụ thuộc nhận output
+    của các task nó phụ thuộc (kể cả bắc cầu). Có task lỗi thì không khởi chạy
+    task mới; task đang chạy được chạy hết.
     """
     lf = get_langfuse_client()
     ctx = lf.start_as_current_span(
@@ -100,64 +104,100 @@ async def _execute_target(
     ) if lf else nullcontext()
 
     with ctx:
-        rounds, _ = build_rounds([t.model_dump() for t in target.tasks])
-        all_nodes: list[TaskNode] = []
-        task_results: list[TaskResult] = []
+        nodes = build_nodes([t.model_dump() for t in target.tasks])
+        by_index = {n.index: n for n in nodes}
+        pending = [n.index for n in nodes]
+        finished: set[int] = set()
+        launched: list[TaskNode] = []
+        running: dict[asyncio.Task[TaskNode], int] = {}
         target_failed = False
         failed_task_title: str | None = None
 
-        for round_nodes in rounds:
-            intra_context = collect_context(all_nodes)
+        def dependency_context(node: TaskNode) -> str:
+            seen: set[int] = set()
+            stack = list(node.depend_on)
+            while stack:
+                dep = stack.pop()
+                if dep in seen or dep not in by_index:
+                    continue
+                seen.add(dep)
+                stack.extend(by_index[dep].depend_on)
+            return collect_context([by_index[i] for i in sorted(seen)])
 
-            async def run_one(node: TaskNode) -> TaskNode:
-                # agent_name_map đã có sẵn (build từ danh sách agents ở execute_plan)
-                # — gán vào node TRƯỚC khi _run_task mở span "[task]", để input
-                # span hiện đúng tên agent thay vì rơi về agent_id (frontend
-                # trimInput() fallback agent_name → agent_id khi rỗng).
-                node.agent_name = (agent_name_map or {}).get(node.agent_id, "")
-                parts = []
-                if node.depend_on:
-                    if intra_context:
-                        parts.append(f"## Kết quả từ các task phụ thuộc\n{intra_context}")
-                else:
-                    if prior_context:
-                        parts.append(f"## Kết quả từ các bước trước\n{prior_context}")
-                    if node.input:
-                        parts.append(f"## Nội dung\n{node.input}")
-                parts.append(f"Nhiệm vụ: {node.title}")
-                return await _run_task(
-                    node, "\n\n".join(parts), user_id,
-                    tenant_id=tenant_id, user_roles=user_roles, orchestrated=orchestrated,
-                    executor_start=executor_start, guardrail_cfg=guardrail_cfg,
-                )
+        async def run_one(node: TaskNode, dep_context: str) -> TaskNode:
+            # agent_name_map đã có sẵn (build từ danh sách agents ở execute_plan)
+            # — gán vào node TRƯỚC khi _run_task mở span "[task]", để input
+            # span hiện đúng tên agent thay vì rơi về agent_id (frontend
+            # trimInput() fallback agent_name → agent_id khi rỗng).
+            node.agent_name = (agent_name_map or {}).get(node.agent_id, "")
+            parts = []
+            if node.depend_on:
+                if dep_context:
+                    parts.append(f"## Kết quả từ các task phụ thuộc\n{dep_context}")
+            else:
+                if prior_context:
+                    parts.append(f"## Kết quả từ các bước trước\n{prior_context}")
+                if node.input:
+                    parts.append(f"## Nội dung\n{node.input}")
+            parts.append(f"Nhiệm vụ: {node.title}")
+            return await _run_task(
+                node, "\n\n".join(parts), user_id,
+                tenant_id=tenant_id, user_roles=user_roles, orchestrated=orchestrated,
+                executor_start=executor_start, guardrail_cfg=guardrail_cfg,
+            )
 
-            completed = await asyncio.gather(*(run_one(n) for n in round_nodes))
-            all_nodes.extend(completed)
+        def launch(index: int) -> None:
+            node = by_index[index]
+            pending.remove(index)
+            launched.append(node)
+            running[asyncio.create_task(run_one(node, dependency_context(node)))] = index
 
-            for node in completed:
-                task_results.append(TaskResult(
-                    task_index=node.index,
-                    task_title=node.title,
-                    agent_id=node.agent_id,
-                    agent_name=(agent_name_map or {}).get(node.agent_id, ""),
-                    output=node.output or "",
-                    success=node.success,
-                    error=node.output if not node.success else None,
-                    conversation_id=node.conversation_id,
-                    citations=node.citations,
-                    start_ms=node.start_ms,
-                    latency_ms=node.latency_ms,
-                ))
-                if not node.success and not target_failed:
-                    target_failed = True
-                    failed_task_title = node.title
+        try:
+            while pending or running:
+                if not target_failed:
+                    ready = [i for i in pending if all(d in finished for d in by_index[i].depend_on)]
+                    if not ready and not running:
+                        logger.warning(
+                            "executor | dependency cycle or broken deps, forcing remaining tasks: %s",
+                            [{"index": i, "title": by_index[i].title, "depend_on": by_index[i].depend_on} for i in pending],
+                        )
+                        ready = list(pending)
+                    for index in ready:
+                        launch(index)
+                if not running:
+                    break
+                done, _ = await asyncio.wait(running, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    node = task.result()
+                    finished.add(running.pop(task))
+                    if not node.success and not target_failed:
+                        target_failed = True
+                        failed_task_title = node.title
+        finally:
+            # Cancelled turn (client gone): don't leave agent calls running.
+            for task in running:
+                task.cancel()
 
-            if target_failed:
-                break
+        task_results = [
+            TaskResult(
+                task_index=node.index,
+                task_title=node.title,
+                agent_id=node.agent_id,
+                agent_name=(agent_name_map or {}).get(node.agent_id, ""),
+                output=node.output or "",
+                success=node.success,
+                error=node.output if not node.success else None,
+                conversation_id=node.conversation_id,
+                citations=node.citations,
+                start_ms=node.start_ms,
+                latency_ms=node.latency_ms,
+            )
+            for node in launched
+        ]
 
         success = not target_failed
         target_output = "\n\n".join(
-            f"[{n.title}]: {n.output}" for n in all_nodes if n.success and n.output
+            f"[{n.title}]: {n.output}" for n in launched if n.success and n.output
         )
         return TargetResult(
             node_id=target.node_id,

@@ -23,15 +23,23 @@ _RESULT_ID_RE = re.compile(r"^[a-f0-9]{32}$")
 _MAX_SHEET_ROWS = int(os.getenv("ANSWER_EXPORT_MAX_XLSX_ROWS", "100000"))
 
 
-def _s3_client() -> Any:
-    import boto3
+_client: Any = None
 
-    return boto3.client(
-        "s3",
-        endpoint_url=os.getenv("MINIO_ENDPOINT", "http://minio:9000"),
-        aws_access_key_id=os.getenv("MINIO_ACCESS_KEY", "minio"),
-        aws_secret_access_key=os.getenv("MINIO_SECRET_KEY", "minio_secret"),
-    )
+
+def _s3_client() -> Any:
+    # boto3 clients are thread-safe but slow to build (credential and endpoint
+    # resolution, on the event loop); every export and download built a new one.
+    global _client
+    if _client is None:
+        import boto3
+
+        _client = boto3.client(
+            "s3",
+            endpoint_url=os.getenv("MINIO_ENDPOINT", "http://minio:9000"),
+            aws_access_key_id=os.getenv("MINIO_ACCESS_KEY", "minio"),
+            aws_secret_access_key=os.getenv("MINIO_SECRET_KEY", "minio_secret"),
+        )
+    return _client
 
 
 def _prefix(tenant_id: str, result_id: str) -> str:
@@ -174,16 +182,22 @@ async def create_answer_export(run: dict[str, Any], *, tenant_id: str, question:
     payload_bytes = json.dumps(payload, ensure_ascii=False, default=_json_default).encode("utf-8")
 
     try:
-        xlsx = await asyncio.to_thread(build_xlsx, run, question)
         client = _s3_client()
-        await asyncio.to_thread(_ensure_bucket, client)
-        await asyncio.to_thread(_put_object, client, f"{prefix}/payload.json", payload_bytes, "application/json; charset=utf-8")
-        await asyncio.to_thread(
-            _put_object,
-            client,
-            f"{prefix}/answer.xlsx",
-            xlsx,
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        # The workbook build and the bucket check are independent, and so are
+        # the two uploads once the bucket exists.
+        xlsx, _ = await asyncio.gather(
+            asyncio.to_thread(build_xlsx, run, question),
+            asyncio.to_thread(_ensure_bucket, client),
+        )
+        await asyncio.gather(
+            asyncio.to_thread(_put_object, client, f"{prefix}/payload.json", payload_bytes, "application/json; charset=utf-8"),
+            asyncio.to_thread(
+                _put_object,
+                client,
+                f"{prefix}/answer.xlsx",
+                xlsx,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ),
         )
     except Exception as e:  # noqa: BLE001 - export is optional, answer must still stream
         logger.warning("answer_export | disabled for run=%s: %s", run.get("id"), e)

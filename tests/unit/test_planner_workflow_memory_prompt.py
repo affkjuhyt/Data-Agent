@@ -47,7 +47,8 @@ async def test_planner_injects_past_successful_runs_block(monkeypatch):
         return _canned_completion({"intent": "task", "language": "vi", "tool_calls": []})
 
     monkeypatch.setattr(planner_mod.litellm, "acompletion", fake_completion)
-    monkeypatch.setattr(planner_mod, "get_langfuse_client", lambda: None)
+    from services.workflow_runtime.runtime_services import llm_call
+    monkeypatch.setattr(llm_call, "get_langfuse_client", lambda: None)
 
     state = {
         "query": "doanh thu quý 1 theo khu vực",
@@ -80,7 +81,8 @@ async def test_planner_omits_block_when_no_workflow_memory_context(monkeypatch):
         return _canned_completion({"intent": "question", "language": "vi", "tool_calls": []})
 
     monkeypatch.setattr(planner_mod.litellm, "acompletion", fake_completion)
-    monkeypatch.setattr(planner_mod, "get_langfuse_client", lambda: None)
+    from services.workflow_runtime.runtime_services import llm_call
+    monkeypatch.setattr(llm_call, "get_langfuse_client", lambda: None)
 
     state = {
         "query": "doanh thu quý 1 theo khu vực",
@@ -110,7 +112,8 @@ async def test_planner_escapes_quotes_in_workflow_memory_context(monkeypatch):
         return _canned_completion({"intent": "task", "language": "vi", "tool_calls": []})
 
     monkeypatch.setattr(planner_mod.litellm, "acompletion", fake_completion)
-    monkeypatch.setattr(planner_mod, "get_langfuse_client", lambda: None)
+    from services.workflow_runtime.runtime_services import llm_call
+    monkeypatch.setattr(llm_call, "get_langfuse_client", lambda: None)
 
     state = {
         "query": "test",

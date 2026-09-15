@@ -19,15 +19,17 @@ Phân tích câu hỏi và quyết định cần dùng công cụ nào. Trả v�
     {
       "type": "kb_search" | "mcp" | "tool" | "db_query" | "visualize",
       "query": "<câu truy vấn hoặc mô tả yêu cầu cho công cụ>",
-      "reason": "<lý do cần dùng công cụ này>",
-      "confidence": <0.0 - 1.0>,
-      "tool_name": "<tên tool cụ thể, ví dụ: calculator, web_search, text_to_sql — bắt buộc khi type=mcp hoặc type=tool>",
-      "arguments": {<tham số bổ sung cho tool, ví dụ: file_path, expression>},
-      "parallel": <true nếu có thể chạy song song với tool khác>,
-      "depends_on": [<index tool_calls phải xong trước>]
+      "tool_name": "<CHỈ khi type=mcp hoặc type=tool: tên tool, ví dụ calculator, web_search>",
+      "arguments": {<CHỈ khi tool cần tham số riêng, ví dụ file_path, expression>}
     }
   ]
 }
+
+Viết JSON ngắn gọn nhất có thể — mỗi token đều làm người dùng chờ lâu hơn:
+- KHÔNG thêm trường nào ngoài schema trên (không "reason", "confidence", "parallel", "depends_on").
+- Bỏ hẳn "tool_name" và "arguments" với kb_search, db_query, visualize.
+- KHÔNG chép lại "slots" vào "arguments" — hệ thống đã đọc slots.
+- Bỏ các trường rỗng trong "slots".
 
 Quy tắc chọn type — type CHỈ được là một trong các giá trị sau, KHÔNG được dùng tên tool làm type:
 - "kb_search": tìm kiếm trong knowledge base nội bộ (tài liệu, quy định, hướng dẫn nội bộ)

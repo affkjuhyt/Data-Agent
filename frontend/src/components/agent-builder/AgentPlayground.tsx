@@ -27,6 +27,11 @@ interface TraceStep {
   startAbsMs: number;       // absolute epoch ms, dùng để tính offset chính xác cho inner spans
   tokens: number;
   cost: number;
+  // Model calls only: request sent → first token, and output tokens per
+  // second after it.
+  model?: string;
+  ttftMs?: number;
+  tokensPerSec?: number;
   input: string;
   output: string;
   iteration: number;
@@ -81,6 +86,9 @@ function spanType(node: string): { label: string; color: string; bg: string } {
     return { label: 'AGENT',      color: '#6B4FBB', bg: '#EFEAFB' };
   if (node === 'router')
     return { label: 'ROUTING',    color: '#B88719', bg: '#F4E8C3' };
+  // A single model call (runtime_services/llm_call.py), whatever the step.
+  if (node.startsWith('llm:'))
+    return { label: 'LLM',        color: '#B88719', bg: '#F4E8C3' };
   if (node.includes('guardrail'))
     return { label: 'GUARD',      color: '#C62828', bg: '#FDECEC' };
   if (node === 'orchestrator-synthesizer')
@@ -168,6 +176,29 @@ function trimInput(name: string, raw: any): string {
     default:
       return JSON.stringify(raw, null, 2);
   }
+}
+
+// Time to first token and decode speed of one model call, from the
+// completionStartTime its generation records (runtime_services/llm_call.py).
+function generationSpeed(o: any): { ttftMs: number; tokensPerSec?: number; outputTokens: number; decodeMs: number } | undefined {
+  if (o?.type !== 'GENERATION' || !o.completionStartTime || !o.startTime) return undefined;
+  const start = new Date(o.startTime).getTime();
+  const first = new Date(o.completionStartTime).getTime();
+  const ttftMs = Math.max(0, first - start);
+  const outputTokens = Number(o.usage?.output ?? 0);
+  const decodeMs = o.endTime ? new Date(o.endTime).getTime() - first : 0;
+  const tokensPerSec = outputTokens > 1 && decodeMs > 0 ? (outputTokens - 1) / (decodeMs / 1000) : undefined;
+  return { ttftMs, tokensPerSec, outputTokens, decodeMs };
+}
+
+// User-facing timings of the turn, recorded on the root "orchestrate" span
+// (orchestrator/routers/stream.py): request received → first answer token,
+// and → last answer token.
+function turnTimings(obs: any[]): { ttftMs?: number; responseMs?: number } {
+  const ids = new Set(obs.map(o => o?.id));
+  const root = obs.find(o => o?.name === 'orchestrate' && !ids.has(o.parentObservationId));
+  const num = (v: any) => (v === null || v === undefined || v === '' || isNaN(Number(v)) ? undefined : Number(v));
+  return { ttftMs: num(root?.metadata?.ttft_ms), responseMs: num(root?.metadata?.response_ms) };
 }
 
 function mapObservations(obs: any[], traceId?: string): TraceStep[] {
@@ -290,6 +321,7 @@ function mapObservations(obs: any[], traceId?: string): TraceStep[] {
     const prevEnd = lastEndByName[o.name];
     const isConcurrentBranch = isRetryStart && prevEnd !== undefined && absMs < prevEnd;
     lastEndByName[o.name] = Math.max(prevEnd ?? 0, endAbsMs);
+    const speed = generationSpeed(o);
     return {
       id: o.id,
       node: displayName,
@@ -299,6 +331,9 @@ function mapObservations(obs: any[], traceId?: string): TraceStep[] {
       latencyMs,
       tokens: o.usage ? ((o.usage.input ?? 0) + (o.usage.output ?? 0)) : 0,
       cost: o.calculatedTotalCost ?? 0,
+      model: o.type === 'GENERATION' ? (o.model ?? undefined) : undefined,
+      ttftMs: speed?.ttftMs,
+      tokensPerSec: speed?.tokensPerSec,
       input: trimInput(o.name, o.input),
       output: o.level === 'ERROR' && o.statusMessage
         ? o.statusMessage
@@ -497,10 +532,29 @@ function TracePanel({ steps, traceLoading, traceId, rawObservations }: {
     setSubSteps(prev => ({ ...prev, [key]: mapped }));
   };
 
-  // Reset to first row when steps change (new result)
+  // A trace fills in over several polls: keep the selected row while it still
+  // exists, and only fall back to the first row when it does not.
   useEffect(() => {
-    if (steps.length > 0) { setSelectedId(steps[0].id); setTab('input'); setCollapsedGroups(new Set()); }
+    if (steps.length === 0) return;
+    if (!steps.some(s => s.id === selectedId)) { setSelectedId(steps[0].id); setTab('input'); }
   }, [steps]);
+
+  // A different trace starts from a clean slate.
+  useEffect(() => {
+    setCollapsedGroups(new Set());
+    setExpanded(new Set());
+    setSubSteps({});
+  }, [traceId]);
+
+  // Expanded agent groups were built from the observations known at the time;
+  // rebuild them as later polls bring in the rest of the trace.
+  useEffect(() => {
+    setSubSteps(prev => {
+      const keys = Object.keys(prev);
+      if (keys.length === 0) return prev;
+      return Object.fromEntries(keys.map(k => [k, mapObservations(getDescendants(rawObservations, k))]));
+    });
+  }, [rawObservations]);
 
   /* Drag handlers */
   useEffect(() => {
@@ -552,6 +606,15 @@ function TracePanel({ steps, traceLoading, traceId, rawObservations }: {
   // dùng allRows. rawObservations ổn định, không đổi theo expand/collapse.
   const totalTok  = rawObservations.reduce((s, o) => s + ((o?.usage?.input ?? 0) + (o?.usage?.output ?? 0)), 0);
   const totalCost = rawObservations.reduce((s, o) => s + (o?.calculatedTotalCost ?? 0), 0);
+  const turn = turnTimings(rawObservations);
+  // Decode speed over every model call of the turn, weighted by the tokens
+  // each produced — the speed the GPU delivered, apart from the pipeline.
+  const decode = rawObservations.reduce((acc, o) => {
+    const sp = generationSpeed(o);
+    if (sp && sp.outputTokens > 1 && sp.decodeMs > 0) { acc.tok += sp.outputTokens - 1; acc.ms += sp.decodeMs; }
+    return acc;
+  }, { tok: 0, ms: 0 });
+  const fmtSec = (ms?: number) => (ms === undefined ? '—' : (ms / 1000).toFixed(2) + 's');
   // Find selected by ID — immune to index shifts from expand/collapse
   const sel = allRows.find(r => r.step.id === selectedId)?.step ?? allRows[0]?.step;
 
@@ -584,14 +647,17 @@ function TracePanel({ steps, traceLoading, traceId, rawObservations }: {
       </div>
 
       {/* ── KPI strip ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', borderBottom: '1px solid #F3EEDF', flexShrink: 0 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(72px, 1fr))', borderBottom: '1px solid #F3EEDF', flexShrink: 0 }}>
         {[
-          { k: 'latency', v: (headerTotalMs / 1000).toFixed(2) + 's', c: '#111111' },
-          { k: 'tokens',  v: totalTok.toLocaleString(),          c: '#B88719' },
-          { k: 'cost',    v: '$' + totalCost.toFixed(4),         c: '#5A7A1E' },
-          { k: 'spans',   v: String(steps.length),               c: '#B88719' },
-        ].map(({ k, v, c }, i) => (
-          <div key={k} style={{ padding: '7px 10px', borderRight: i < 3 ? '1px solid #F8F5EC' : 'none' }}>
+          { k: 'ttft',     v: fmtSec(turn.ttftMs),                c: '#111111', t: 'Request received → first answer token shown to the user' },
+          { k: 'response', v: fmtSec(turn.responseMs),            c: '#111111', t: 'Request received → last answer token (answer complete)' },
+          { k: 'decode',   v: decode.ms > 0 ? (decode.tok / (decode.ms / 1000)).toFixed(0) + ' tok/s' : '—', c: '#2F6FB3', t: 'Model output speed across all LLM calls, after their first token' },
+          { k: 'latency',  v: (headerTotalMs / 1000).toFixed(2) + 's', c: '#111111', t: 'Span of the whole trace' },
+          { k: 'tokens',   v: totalTok.toLocaleString(),          c: '#B88719', t: 'Input + output tokens' },
+          { k: 'cost',     v: '$' + totalCost.toFixed(4),         c: '#5A7A1E', t: 'Calculated cost' },
+          { k: 'spans',    v: String(steps.length),               c: '#B88719', t: 'Visible spans' },
+        ].map(({ k, v, c, t }) => (
+          <div key={k} title={t} style={{ padding: '7px 10px', borderRight: '1px solid #F8F5EC' }}>
             <div style={{ fontSize: 8.5, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#777777', marginBottom: 2 }}>{k}</div>
             <div style={{ fontSize: 12, fontWeight: 600, color: c, fontFamily: 'var(--font-mono)' }}>{v}</div>
           </div>
@@ -609,12 +675,14 @@ function TracePanel({ steps, traceLoading, traceId, rawObservations }: {
               Observations
             </span>
             <span style={{ fontSize: 9.5, color: '#777777', fontFamily: 'var(--font-mono)' }}>
-              {traceLoading ? 'streaming…' : steps.length + ' spans · ' + headerTotalMs + 'ms'}
+              {steps.length === 0
+                ? (traceLoading ? 'streaming…' : '0 spans')
+                : steps.length + ' spans · ' + headerTotalMs + 'ms' + (traceLoading ? ' · loading…' : '')}
             </span>
           </div>
           {/* rows */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '2px 0 4px' }}>
-            {traceLoading ? (
+            {traceLoading && allRows.length === 0 ? (
               <div style={{ padding: '4px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
                 {[0, 1, 2, 3].map(i => (
                   <div key={i} className="pulse-soft" style={{ height: 22, borderRadius: 4, background: '#F8F5EC', opacity: 1 - i * 0.18 }} />
@@ -679,7 +747,7 @@ function TracePanel({ steps, traceLoading, traceId, rawObservations }: {
 
         {/* Span Detail section */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-          {!traceLoading && sel ? (
+          {sel ? (
             <>
               {/* span header */}
               <div style={{ padding: '7px 14px 5px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flexShrink: 0 }}>
@@ -693,6 +761,9 @@ function TracePanel({ steps, traceLoading, traceId, rawObservations }: {
               <div style={{ padding: '0 14px 5px', display: 'flex', alignItems: 'center', gap: 12, fontSize: 10, color: '#5F5F5F', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
                 <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Clock size={9} />{sel.latencyMs}ms</span>
                 {sel.tokens > 0 && <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><Zap size={9} />{sel.tokens} tok</span>}
+                {sel.ttftMs !== undefined && <span title="Time to first token">TTFT {sel.ttftMs}ms</span>}
+                {sel.tokensPerSec !== undefined && <span title="Output tokens per second after the first token">{sel.tokensPerSec.toFixed(0)} tok/s</span>}
+                {sel.model && <span style={{ color: '#777777' }}>{sel.model}</span>}
                 <span style={{ color: sel.status === 'success' ? '#5A7A1E' : '#C62828' }}>● {sel.status}</span>
               </div>
               {/* tabs */}
@@ -711,7 +782,7 @@ function TracePanel({ steps, traceLoading, traceId, rawObservations }: {
               <div style={{ flex: 1, overflowY: 'auto', padding: '10px 14px' }}>
                 {tab === 'input'    && <JsonView value={sel.input} />}
                 {tab === 'output'   && <JsonView value={sel.output} />}
-                {tab === 'metadata' && <JsonView value={{ span_id: sel.id, node: sel.node, type: spanType(sel.node).label.toLowerCase(), status: sel.status, latency_ms: sel.latencyMs, tokens: sel.tokens, cost_usd: sel.cost }} />}
+                {tab === 'metadata' && <JsonView value={{ span_id: sel.id, node: sel.node, type: spanType(sel.node).label.toLowerCase(), status: sel.status, latency_ms: sel.latencyMs, tokens: sel.tokens, cost_usd: sel.cost, model: sel.model, ttft_ms: sel.ttftMs, tokens_per_s: sel.tokensPerSec === undefined ? undefined : Math.round(sel.tokensPerSec) }} />}
               </div>
             </>
           ) : (
@@ -814,6 +885,9 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
 
   const bottomRef   = useRef<HTMLDivElement>(null);
   const selectorRef = useRef<HTMLDivElement>(null);
+  // Bumped per sent message: a trace still loading for an earlier message stops
+  // updating the panel once a newer one is on its way.
+  const traceRunRef = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const adjustHeight = () => {
@@ -855,10 +929,10 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
   /* ── canSend ── */
-  // Khoá gửi tin nhắn trong lúc trace panel đang fetch/poll (traceLoading) —
-  // gửi tiếp sẽ tạo request mới đè lên session đang chờ trace, dễ gây nhầm
-  // lẫn thứ tự conversation.
-  const canSend = input.trim().length > 0 && !sending && !traceLoading && (mode === 'unified' || !!selectedAgent);
+  // Only an answer in flight blocks sending. The trace loads on its own after
+  // the answer is done (Langfuse stores spans a few seconds after they end) and
+  // used to lock the input for up to 20 s; a newer message now supersedes it.
+  const canSend = input.trim().length > 0 && !sending && (mode === 'unified' || !!selectedAgent);
 
   /* ── Send — unified handler cho cả single agent và multi-agent ── */
   const handleSendStream = async (text: string) => {
@@ -870,6 +944,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
     setSending(true);
     setTraceLoading(true);
+    const traceRun = ++traceRunRef.current;
     setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', content: '', timestamp: now, status: 'streaming' }]);
 
     try {
@@ -907,6 +982,10 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
             case 'token':
               fullText += ev.text;
               patch(m => ({ ...m, content: fullText }));
+              break;
+            case 'reset':
+              fullText = '';
+              patch(m => ({ ...m, content: '' }));
               break;
             case 'suggestions':
               patch(m => ({ ...m, suggestions: ev.suggestions }));
@@ -955,44 +1034,51 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
       }
       setMessages(prev => prev.map(m => m.id === placeholderId && m.status === 'streaming' ? { ...m, status: 'done' } : m));
 
+      // The answer is complete: unlock the input and show the suggestion chips
+      // now, not after the trace has loaded.
+      setSending(false);
+
       // Stream xong → fetch trace theo session_id (= trace_id). Langfuse v3 ghi
       // dữ liệu BẤT ĐỒNG BỘ (Redis queue → Clickhouse worker), nên lần fetch
-      // đầu có thể chỉ thấy 1 phần observations (vd thiếu "suggestion" — node
-      // chạy sau cùng, ghi lên Clickhouse trễ hơn). KHÔNG dừng poll ngay khi
-      // có kết quả đầu tiên — đợi số lượng observations ỔN ĐỊNH (2 lần liên
-      // tiếp bằng nhau) mới coi là đã lấy đủ.
+      // đầu có thể chỉ thấy 1 phần observations. The panel shows each partial
+      // result as it arrives, and polling stops when the backend reports the
+      // root span stored (`complete`) — a count that stops changing was not
+      // proof: it stopped on partial traces and kept polling finished ones.
       if (sessionId) {
         const id = sessionId;
+        const deadline = Date.now() + 30_000;
         let prevCount = -1;
         let consecutiveErrors = 0;
-        // 20 lần x 1000ms = 20s tổng — Langfuse worker (Redis→Clickhouse) đôi khi
-        // trễ hơn khoảng đệm cũ (10x800ms=8s), nhất là ngay sau khi cả cụm service
-        // vừa restart. 1 lỗi network thoáng qua không được làm dừng hẳn polling —
-        // chỉ bỏ cuộc sau nhiều lần lỗi LIÊN TIẾP (backend thật sự có vấn đề).
-        for (let i = 0; i < 20; i++) {
+        while (traceRunRef.current === traceRun && Date.now() < deadline) {
           try {
-            const { observations, traceId: obsTraceId } = await apiGet<any>(`/api/orchestrate/traces/${id}`);
+            const { observations, traceId: obsTraceId, complete } = await apiGet<any>(`/api/orchestrate/traces/${id}`);
             consecutiveErrors = 0;
-            const mapped = mapObservations(observations ?? [], obsTraceId);
-            if (mapped.length > 0) {
-              setTraceSteps(mapped);
-              setRawObservations(observations ?? []);
-              if (mapped.length === prevCount) break; // ổn định 2 lần liên tiếp → dừng
-              prevCount = mapped.length;
+            if (traceRunRef.current !== traceRun) break;
+            const obs = observations ?? [];
+            if (obs.length !== prevCount) {
+              prevCount = obs.length;
+              const mapped = mapObservations(obs, obsTraceId);
+              if (mapped.length > 0) {
+                setTraceSteps(mapped);
+                setRawObservations(obs);
+              }
             }
+            if (complete) break;
           } catch {
+            // 1 lỗi network thoáng qua không được làm dừng hẳn polling — chỉ
+            // bỏ cuộc sau nhiều lần lỗi LIÊN TIẾP (backend thật sự có vấn đề).
             consecutiveErrors++;
             if (consecutiveErrors >= 4) break;
           }
-          await new Promise(r => setTimeout(r, 1000));
+          await new Promise(r => setTimeout(r, 700));
         }
       }
-      setTraceLoading(false);
+      if (traceRunRef.current === traceRun) setTraceLoading(false);
     } catch {
       setMessages(prev => prev.map(m =>
         m.id === placeholderId ? { ...m, content: 'Error: could not connect to the backend.' } : m,
       ));
-      setTraceLoading(false);
+      if (traceRunRef.current === traceRun) setTraceLoading(false);
     } finally {
       setSending(false);
     }
@@ -1027,7 +1113,10 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
       return;
     }
     setSending(true);
-    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, clarification: undefined } : m));
+    // Keep what was asked as the message text (as useAgentStream does): the
+    // card goes away, and an empty bubble would leave no trace of the question.
+    const asked = clar.questions.map(q => q.text).filter(Boolean).join('\n');
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, clarification: undefined, content: m.content || asked } : m));
     const echoId = Date.now().toString();
     const answerId = (Date.now() + 1).toString();
     const now = formatTime(new Date());
@@ -1052,7 +1141,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
 
   const handleSend = (override?: string) => {
     const text = (override ?? input).trim();
-    if (!text || sending || traceLoading) return;
+    if (!text || sending) return;
     setPendingOptions(null);
     if (mode === 'single' && !selectedAgent) return;
     handleSendStream(text);
@@ -1197,7 +1286,10 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
             )}
             <AnimatePresence initial={false}>
               {messages.map(msg => {
-                if (msg.content === '' && msg.role === 'assistant' && msg.status !== 'error' && !msg.clarification && !msg.evidence) {
+                // Typing dots only while a reply is actually in flight. A finished
+                // message can be empty too — the turn that asked a clarification,
+                // once its card is answered — and showed a second set of dots.
+                if (msg.status === 'streaming' && msg.content === '' && msg.role === 'assistant' && !msg.clarification && !msg.evidence) {
                   return (
                     <motion.div key={msg.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} style={{ display: 'flex', gap: 10 }}>
                       <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#D6C79F', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1345,20 +1437,17 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
               <textarea
                 ref={textareaRef}
                 value={input}
-                disabled={traceLoading}
                 onChange={e => { setInput(e.target.value); adjustHeight(); }}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                 placeholder={
-                  traceLoading
-                    ? 'Loading trace, please wait…'
-                    : mode === 'unified'
-                      ? 'Ask anything — orchestrator plans & assigns agents…'
-                      : !selectedAgent
-                        ? 'Select an agent first…'
-                        : 'Ask the agent anything… (Enter to send)'
+                  mode === 'unified'
+                    ? 'Ask anything — orchestrator plans & assigns agents…'
+                    : !selectedAgent
+                      ? 'Select an agent first…'
+                      : 'Ask the agent anything… (Enter to send)'
                 }
                 rows={1}
-                style={{ flex: 1, background: 'transparent', fontSize: 13, color: '#111111', resize: 'none', outline: 'none', border: 'none', lineHeight: 1.55, fontFamily: 'inherit', maxHeight: 120, overflowY: 'auto', cursor: traceLoading ? 'not-allowed' : 'text' }}
+                style={{ flex: 1, background: 'transparent', fontSize: 13, color: '#111111', resize: 'none', outline: 'none', border: 'none', lineHeight: 1.55, fontFamily: 'inherit', maxHeight: 120, overflowY: 'auto', cursor: 'text' }}
               />
               <button
                 onClick={() => handleSend()}

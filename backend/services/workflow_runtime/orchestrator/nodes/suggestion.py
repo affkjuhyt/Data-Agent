@@ -5,7 +5,7 @@ import os
 
 import litellm
 
-from services.workflow_runtime.observability import get_langfuse_client
+from services.workflow_runtime.runtime_services import llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,8 @@ async def run_suggestion(query: str, messages: list[dict[str, Any]], final_respo
         {"role": "user",   "content": "\n\n".join(parts)},
     ]
     try:
-        response = await litellm.acompletion(
+        response = await llm_call.acompletion(
+            "llm:suggestion", litellm.acompletion,
             model=model,
             api_base=_LITELLM_BASE,
             api_key=_LITELLM_KEY,
@@ -62,18 +63,6 @@ async def run_suggestion(query: str, messages: list[dict[str, Any]], final_respo
             timeout=cfg.get("suggestion_timeout", 10),
         )
         output = response.choices[0].message.content or ""
-        lf = get_langfuse_client()
-        if lf:
-            usage = response.usage or {}
-            lf.update_current_generation(
-                model=model,
-                input=messages_payload,
-                output=output,
-                usage_details={
-                    "input": getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", 0),
-                    "output": getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", 0),
-                },
-            )
         result = json.loads(output or "{}")
         topics = result.get("topics", [])
         if isinstance(topics, list):

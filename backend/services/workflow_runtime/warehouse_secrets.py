@@ -89,7 +89,9 @@ async def _resolve_vault_password(tenant_id: str, secret_id: str, key_type: str)
         )
         return None
 
-    vault = _get_vault()
+    # hvac is synchronous: is_authenticated() and the AppRole login are HTTP
+    # calls that would otherwise stall every other turn on the event loop.
+    vault = await asyncio.to_thread(_get_vault)
     if vault is None:
         return None
 

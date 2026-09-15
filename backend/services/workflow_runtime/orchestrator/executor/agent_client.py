@@ -186,6 +186,7 @@ async def call_agent_stream(
       ("citations", list[dict]) — nguồn đã được responder trích dẫn (workflow_runtime)
       ("options", list[str])   — lựa chọn trả lời khi agent hỏi lại (responder <OPTIONS>)
       ("evidence", dict)       — SQL đã chạy, metric contract, provenance, rows preview
+      ("reset", None)          — bỏ toàn bộ token đã nhận; câu trả lời thay thế theo sau
     """
     if not agent_id:
         raise ValueError("agent_id is empty")
@@ -217,6 +218,9 @@ async def call_agent_stream(
         elif isinstance(parsed, dict):
             if "__suggestions" in parsed:
                 pass  # orchestrator tự gen suggestions
+            elif parsed.get("__reset"):
+                # The text streamed so far was withdrawn (judge retry, guardrail).
+                yield ("reset", None)
             elif "__pending_review" in parsed:
                 yield ("pending_review", parsed["__pending_review"])
             elif "__chart" in parsed:

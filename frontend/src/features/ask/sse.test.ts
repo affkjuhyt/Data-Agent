@@ -5,6 +5,7 @@ describe('parseSseData', () => {
   it('maps every control frame the backend emits', () => {
     expect(parseSseData('"hello"')).toEqual({ type: 'token', text: 'hello' });
     expect(parseSseData('{"__session_id":"s1"}')).toEqual({ type: 'session', sessionId: 's1' });
+    expect(parseSseData('{"__reset":true}')).toEqual({ type: 'reset' });
     expect(parseSseData('{"__clarification":{"session_id":"s1","questions":["Which period?"]}}'))
       .toEqual({ type: 'clarification', sessionId: 's1', questions: ['Which period?'] });
     expect(parseSseData('{"__pending_review":{"conv_id":"c1","payload":{"title":"t"}}}'))

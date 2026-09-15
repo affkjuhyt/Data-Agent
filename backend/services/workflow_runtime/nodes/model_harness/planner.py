@@ -5,14 +5,16 @@ import re
 import time
 import logging
 import litellm
+from langchain_core.runnables import RunnableConfig
 from xml.sax.saxutils import quoteattr
 from pydantic import BaseModel, ValidationError  # noqa: F401
 
 from libs.semantic import AnalyticalSlots, merge as merge_slots
 from libs.shared import untrusted
 from services.workflow_runtime.nodes.model_harness.intent import AnalysisType, capability, parse as parse_analysis_type
+from services.workflow_runtime.nodes.sandbox.kb_search import discard_speculative_search, start_speculative_search
 from services.workflow_runtime.nodes.sandbox.tool_executor import TOOL_DEFINITIONS
-from services.workflow_runtime.observability import get_langfuse_client
+from services.workflow_runtime.runtime_services import llm_call
 from services.workflow_runtime.state import AgentState
 
 
@@ -79,8 +81,13 @@ _LITELLM_KEY = os.environ.get("LITELLM_API_KEY", "sk-dev")
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "prompts")
 _SYSTEM = open(os.path.join(_PROMPTS_DIR, "planner_system.txt"), encoding="utf-8").read()
 
+# Marks the plan used when the model's output could not be parsed: the planner
+# did not decide anything, which is the one case judge_phase1 sends back for
+# another try (graph.py).
+PLANNER_FALLBACK_REASON = "planner fallback"
+
 _FALLBACK_TOOL_CALLS: list[dict[str, Any]] = [
-    {"type": "kb_search", "query": None, "reason": "planner fallback", "confidence": 0.5, "parallel": True, "depends_on": []}
+    {"type": "kb_search", "query": None, "reason": PLANNER_FALLBACK_REASON, "confidence": 0.5, "parallel": True, "depends_on": []}
 ]
 
 _CODE_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
@@ -101,9 +108,15 @@ def _extract_json_object(raw: str) -> str | None:
     return None
 
 
-async def planner_node(state: AgentState) -> dict[str, Any]:
+async def planner_node(state: AgentState, config: RunnableConfig | None = None) -> dict[str, Any]:
     t0 = time.monotonic()
     cfg = state.get("config", {})
+
+    # First pass only: search the user's question while deciding. kb_search
+    # reuses it when the plan searches that same question (nodes/sandbox/kb_search.py).
+    speculation = ((config or {}).get("configurable") or {}).get("kb_speculation")
+    if speculation is not None and not state.get("loop_iteration"):
+        start_speculative_search(speculation, cfg, state["query"])
 
     # The planner turns "tháng này" / "quý trước" into dates. A model that is
     # not told what day it is can only guess the year — and it did (2023, on a
@@ -174,7 +187,8 @@ async def planner_node(state: AgentState) -> dict[str, Any]:
         {"role": "system", "content": system},
         {"role": "user", "content": state["query"]},
     ]
-    response = await litellm.acompletion(
+    response = await llm_call.acompletion(
+        "llm:planner", litellm.acompletion,
         model=model,
         api_base=_LITELLM_BASE,
         api_key=_LITELLM_KEY,
@@ -190,14 +204,6 @@ async def planner_node(state: AgentState) -> dict[str, Any]:
     usage = response.usage or {}
     prompt_tokens = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", 0)
     completion_tokens = getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", 0)
-    lf = get_langfuse_client()
-    if lf:
-        lf.update_current_generation(
-            model=model,
-            input=messages_payload,
-            output=response.choices[0].message.content,
-            usage_details={"input": prompt_tokens, "output": completion_tokens},
-        )
     logger.info("planner | latency=%dms prompt_tokens=%d completion_tokens=%d",
                 latency_ms, prompt_tokens, completion_tokens)
 
@@ -281,6 +287,7 @@ async def planner_node(state: AgentState) -> dict[str, Any]:
         # query whose scope is the thing in question produces a confident number
         # for a question nobody asked.
         logger.info("planner | asking %d clarification(s) before executing", len(clarifications))
+        discard_speculative_search(speculation)
         return {
             "tool_calls": [],
             "intent": intent,
@@ -289,6 +296,11 @@ async def planner_node(state: AgentState) -> dict[str, Any]:
             "clarifications": clarifications,
             "language": language,
         }
+
+    # A plan with tools but no kb_search will not search the question. (No
+    # tool_calls at all still routes to kb_search, so that case keeps it.)
+    if tool_calls and not any(tc.get("type") == "kb_search" for tc in tool_calls):
+        discard_speculative_search(speculation)
 
     return {
         "tool_calls": tool_calls,

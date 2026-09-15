@@ -12,6 +12,9 @@ import type { ChartSpec, Citation, Evidence } from './types';
 
 export type SseEvent =
   | { type: 'token'; text: string }
+  // The answer streamed so far was withdrawn (rejected by the judge or the
+  // output guardrail); the text that replaces it follows as tokens.
+  | { type: 'reset' }
   | { type: 'session'; sessionId: string }
   | { type: 'clarification'; sessionId: string; questions: string[] }
   | { type: 'pending_review'; convId: string; payload: unknown }
@@ -50,6 +53,7 @@ export function parseSseData(raw: string): SseEvent {
   const obj = parsed as Record<string, unknown>;
 
   if (typeof obj.__session_id === 'string') return { type: 'session', sessionId: obj.__session_id };
+  if (obj.__reset === true) return { type: 'reset' };
 
   if (obj.__clarification && typeof obj.__clarification === 'object') {
     const c = obj.__clarification as { session_id?: string; questions?: unknown };

@@ -7,7 +7,7 @@ import time
 import litellm
 
 from libs.shared import untrusted
-from services.workflow_runtime.observability import get_langfuse_client
+from services.workflow_runtime.runtime_services import llm_call
 from services.workflow_runtime.state import AgentState
 
 logger = logging.getLogger(__name__)
@@ -45,11 +45,25 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
     reranked  = state.get("reranked_chunks", [])
     tool_errs = state.get("tool_errors", [])
 
+    # Same budget the responder answered from (responder.py): the judge used to
+    # see only 400 chars per item, so a 30-row SQL result was cut to its first
+    # rows and every figure after them read as invented — GROUNDING_ERROR on a
+    # correct answer, then a wasted responder retry. Reproduced live: 3/3 FAIL
+    # truncated, 0/3 with the responder's context.
+    max_chunks = cfg.get("context_max_chunks", 5)
+    max_chars  = cfg.get("context_max_chars", 4000)
     context_lines = []
-    for i, c in enumerate(reranked[:5], 1):
+    total_chars = 0
+    for i, c in enumerate(reranked[:max_chunks], 1):
         content = c.get("content", "")
-        if content:
-            context_lines.append(f"[{i}] {content[:400]}")
+        if not content:
+            continue
+        if total_chars + len(content) > max_chars:
+            content = content[:max_chars - total_chars]
+        context_lines.append(f"[{i}] {content}")
+        total_chars += len(content)
+        if total_chars >= max_chars:
+            break
     # Same content the responder answered from, so the same fence: a chunk
     # that talks the judge into PASS is a cheaper attack than one that talks
     # the responder into leaking, and it clears the way for the next.
@@ -61,7 +75,7 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
         f"CÂU HỎI: {state['query']}\n\n"
         f"CONTEXT ĐÃ RETRIEVE:\n{context_text}\n\n"
         f"TOOL ERRORS:\n{tool_err_text}\n\n"
-        f"CÂU TRẢ LỜI CỦA AI:\n{response[:800]}"
+        f"CÂU TRẢ LỜI CỦA AI:\n{response[:4000]}"
     )
 
     model = cfg.get("judge_model", "openai/judge")
@@ -70,7 +84,8 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
         {"role": "user",   "content": user_msg},
     ]
     try:
-        resp = await litellm.acompletion(
+        resp = await llm_call.acompletion(
+            "llm:judge", litellm.acompletion,
             model=model,
             api_base=_LITELLM_BASE,
             api_key=_LITELLM_KEY,
@@ -81,18 +96,6 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
             timeout=15,
         )
         raw  = resp.choices[0].message.content or ""
-        lf = get_langfuse_client()
-        if lf:
-            usage = resp.usage or {}
-            lf.update_current_generation(
-                model=model,
-                input=messages_payload,
-                output=raw,
-                usage_details={
-                    "input": getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", 0),
-                    "output": getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", 0),
-                },
-            )
         data = json.loads(raw)
     except Exception as e:
         logger.warning("judge | LLM call failed: %s → PASS fallback", e)

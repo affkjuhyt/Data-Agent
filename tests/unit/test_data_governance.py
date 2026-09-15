@@ -728,7 +728,8 @@ class TestResponderDisclosure:
             )
 
         monkeypatch.setattr(responder.litellm, "acompletion", fake_completion)
-        monkeypatch.setattr(responder, "get_langfuse_client", lambda: None)
+        from services.workflow_runtime.runtime_services import llm_call
+        monkeypatch.setattr(llm_call, "get_langfuse_client", lambda: None)
         out = await responder.responder_node(self._state(chunks))
         return captured["messages"][0]["content"], out
 
@@ -767,7 +768,8 @@ class TestResponderDisclosure:
             )
 
         monkeypatch.setattr(responder.litellm, "acompletion", fake_completion)
-        monkeypatch.setattr(responder, "get_langfuse_client", lambda: None)
+        from services.workflow_runtime.runtime_services import llm_call
+        monkeypatch.setattr(llm_call, "get_langfuse_client", lambda: None)
 
         out = await responder.responder_node(self._state([self._chunk(prov)]))
 

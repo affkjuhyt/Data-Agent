@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import nullcontext
@@ -15,8 +16,9 @@ from services.workflow_runtime.observability import get_langchain_callback_handl
 
 from libs.shared.auth import require_tenant
 from services.workflow_runtime.orchestrator import config
-from services.workflow_runtime.orchestrator.agent_catalog import fetch_guardrail_config
-from services.workflow_runtime.orchestrator.graph import get_graph
+from services.workflow_runtime.orchestrator.agent_catalog import fetch_guardrail_config, fetch_published_agents
+from services.workflow_runtime.orchestrator.graph import discard_plan_speculation, get_graph
+from services.workflow_runtime.orchestrator.planner import create_plan
 from services.workflow_runtime.orchestrator.nodes.guardrail import run_guardrail
 from services.workflow_runtime.orchestrator.schemas import OrchestrateRequest
 
@@ -54,6 +56,18 @@ def _release_turn() -> None:
         _turn_slots.release()
 
 
+# asyncio keeps only weak references to tasks; hold fire-and-forget ones here.
+_background_tasks: set[asyncio.Task[Any]] = set()
+
+
+def _flush_in_background(lf: Any) -> None:
+    """Langfuse export is a network call the client should not wait on. The
+    orchestrate span is already closed, so sending [DONE] first loses nothing."""
+    task = asyncio.create_task(asyncio.to_thread(lf.flush))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
 @health_router.get("/api/orchestrate/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -69,6 +83,8 @@ async def stream_orchestration(
     request: Request,
     caller: dict[str, Any] = Depends(get_current_user),
 ) -> Response:
+    # Start of the user's wait: the timings recorded on the trace count from here.
+    received = time.monotonic()
 
     # Admission control — shed instead of piling a slow turn onto the busy GPU.
     if not await _try_acquire_turn():
@@ -102,6 +118,18 @@ async def stream_orchestration(
     # Input đã trọn vẹn ngay từ t=0 nên race này không đánh đổi gì về đúng-đắn,
     # chỉ ẩn latency của guardrail phía sau latency của pipeline.
     guardrail_task = asyncio.create_task(run_guardrail(req.query, cfg, req.messages))
+    # A multi-agent turn needs the tenant's published agents. The query only
+    # needs tenant_id, so it runs alongside input_refine instead of after it.
+    agents_task = None if req.agent_id else asyncio.create_task(fetch_published_agents(tenant_id))
+    # The ToT plan only needs the question and the agents, and makes no calls
+    # beyond the model — so it starts now instead of after input_refine. Used
+    # when input_refine keeps the question; dropped if it rewrites or asks.
+    plan_speculation: dict[str, Any] | None = None
+    if agents_task is not None and not req.clarification_response:
+        async def _plan_ahead() -> Any:
+            return await create_plan(req.query, agents=await agents_task)
+
+        plan_speculation = {"query": req.query, "task": asyncio.create_task(_plan_ahead())}
 
     initial_state = {
         "query":                   req.query,
@@ -128,6 +156,7 @@ async def stream_orchestration(
         "final_response":          "",
         "citations":               [],
         "suggestions":             [],
+        "suggestions_ready":       False,
         "target_results":          [],
         "recovered":               False,
         "success":                 False,
@@ -152,7 +181,13 @@ async def stream_orchestration(
             metadata={"tenant_id": tenant_id, "user_id": req.user_id},
         ) if lf else nullcontext()
 
-        with span_ctx:
+        # What the user waited for, recorded on the root span so the trace panel
+        # can show it: the first answer token and the last one (the answer
+        # complete), counted from the moment the request arrived.
+        first_token_ms: int | None = None
+        last_token_ms: int | None = None
+
+        with span_ctx as root:
             # PHẢI tạo handler ở đây, sau khi span "orchestrate" đã là OTEL
             # current span — get_langchain_callback_handler() đọc context này
             # để nối đúng cha, tạo trước sẽ khiến nó tự thành root (xem
@@ -163,6 +198,8 @@ async def stream_orchestration(
                     "thread_id": session_id,
                     "redis": request.app.state.redis,
                     "guardrail_task": guardrail_task,
+                    "agents_task": agents_task,
+                    "plan_speculation": plan_speculation,
                 },
                 "callbacks": [handler] if handler else [],
             }
@@ -176,7 +213,15 @@ async def stream_orchestration(
                     if kind == "on_custom_event":
                         if name == "token":
                             final_response += event["data"] if isinstance(event["data"], str) else ""
+                            if final_response:
+                                last_token_ms = round((time.monotonic() - received) * 1000)
+                                if first_token_ms is None:
+                                    first_token_ms = last_token_ms
                             yield _sse(event["data"])
+                        elif name == "reset":
+                            # The answer on screen was withdrawn; its replacement follows.
+                            final_response = ""
+                            yield _sse({"__reset": True})
                         elif name == "pending_review":
                             yield _sse({"__pending_review": event["data"]})
                         elif name == "chart":
@@ -191,7 +236,7 @@ async def stream_orchestration(
             except Exception as e:
                 logger.error("stream | graph error: %s", e)
                 if lf:
-                    await asyncio.to_thread(lf.flush)
+                    _flush_in_background(lf)
                 if not guardrail_task.done():
                     guardrail_task.cancel()
                 # The answer may already have streamed in full — a failure in a
@@ -204,9 +249,16 @@ async def stream_orchestration(
             finally:
                 if not guardrail_task.done():
                     guardrail_task.cancel()
+                if root is not None:
+                    root.update(metadata={
+                        "ttft_ms": first_token_ms,
+                        "response_ms": last_token_ms,
+                        "total_ms": round((time.monotonic() - received) * 1000),
+                        "answer_chars": len(final_response),
+                    })
 
         if lf:
-            await asyncio.to_thread(lf.flush)
+            _flush_in_background(lf)
 
         snapshot = await graph.aget_state(lg_config)
         if snapshot.next:
@@ -264,5 +316,9 @@ async def stream_orchestration(
             _release_turn()
             if not guardrail_task.done():
                 guardrail_task.cancel()
+            if agents_task is not None and not agents_task.done():
+                agents_task.cancel()
+            # Never taken: input_refine asked or rewrote, or the turn failed.
+            discard_plan_speculation(plan_speculation)
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

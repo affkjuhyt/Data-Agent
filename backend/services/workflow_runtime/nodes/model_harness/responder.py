@@ -1,4 +1,6 @@
 from typing import Any
+import asyncio
+import contextlib
 import json
 import os
 import re
@@ -6,11 +8,12 @@ import time
 import logging
 
 import litellm
+from langchain_core.callbacks.manager import adispatch_custom_event
 
 from libs.shared import aggregation_check, freshness, untrusted
 from services.workflow_runtime.answer_exports import create_answer_export
 from services.workflow_runtime.nodes.model_harness.intent import guidance, parse as parse_analysis_type
-from services.workflow_runtime.observability import get_langfuse_client
+from services.workflow_runtime.runtime_services import llm_call
 from services.workflow_runtime.state import AgentState
 
 logger = logging.getLogger(__name__)
@@ -95,6 +98,18 @@ _LANGUAGE_RULE    = "IMPORTANT — Language: Respond in {LANGUAGE}. Vietnamese m
 _LANGUAGE_LABELS = {"vi": "Vietnamese", "en": "English"}
 
 _CITATION_MARKER_RE = re.compile(r"\[(\d+)\]")
+
+# Custom event carrying the answer as it is written. conversation_runner.py
+# shows it live and withdraws it if the judge or the output guardrail rejects
+# the finished answer.
+RESPONDER_TOKEN_EVENT = "responder_token"
+
+
+async def _stream_token(text: str) -> None:
+    # Outside a graph run there is no parent run to attach the event to:
+    # nobody is listening, and the complete answer is still returned.
+    with contextlib.suppress(RuntimeError):
+        await adispatch_custom_event(RESPONDER_TOKEN_EVENT, text)
 
 # Rows shipped to the UI per SQL run inside the `__evidence` frame. The full
 # result already went to the model (capped by result_limits in the sandbox);
@@ -222,6 +237,8 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
     }
 
     chunk_meta: dict[int, dict] = {}
+    # (evidence run, its export task) — exports run alongside the LLM call below.
+    export_jobs: list[tuple[dict[str, Any], asyncio.Task[dict[str, Any] | None]]] = []
     if state.get("reranked_chunks"):
         max_chunks = cfg.get("context_max_chunks", 5)
         max_chars  = cfg.get("context_max_chars", 4000)
@@ -292,13 +309,13 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
                 run["citation_index"] = i + 1
                 if full_rows:
                     full_run = {**run, "rows": full_rows}
-                    export_meta = await create_answer_export(
+                    # Independent of the prompt: built and uploaded while the
+                    # model answers, attached to this run once both are done.
+                    export_jobs.append((run, asyncio.create_task(create_answer_export(
                         full_run,
                         tenant_id=cfg.get("tenant_id", "") or "",
                         question=state["query"],
-                    )
-                    if export_meta:
-                        run["export"] = export_meta
+                    ))))
                 evidence["runs"].append(run)
 
             if total_chars >= max_chars:
@@ -350,29 +367,31 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
 
     model = cfg.get("responder_model", "responder")
     t0 = time.monotonic()
-    response = await litellm.acompletion(
-        model=model,
-        api_base=_LITELLM_BASE,
-        api_key=_LITELLM_KEY,
-        messages=messages,
-        temperature=cfg.get("responder_temperature", 0.2),
-        max_tokens=cfg.get("responder_max_tokens", 1000),
-    )
+    try:
+        response = await llm_call.acompletion(
+            "llm:responder", litellm.acompletion,
+            on_token=_stream_token,
+            model=model,
+            api_base=_LITELLM_BASE,
+            api_key=_LITELLM_KEY,
+            messages=messages,
+            temperature=cfg.get("responder_temperature", 0.2),
+            max_tokens=cfg.get("responder_max_tokens", 1000),
+        )
+    except BaseException:
+        for _, job in export_jobs:
+            job.cancel()
+        raise
     latency_ms = int((time.monotonic() - t0) * 1000)
+    for run, job in export_jobs:
+        export_meta = await job
+        if export_meta:
+            run["export"] = export_meta
 
     full_text = response.choices[0].message.content or ""
     usage = response.usage or {}
     prompt_tokens     = getattr(usage, "prompt_tokens", None) or getattr(usage, "input_tokens", 0)
     completion_tokens = getattr(usage, "completion_tokens", None) or getattr(usage, "output_tokens", 0)
-
-    lf = get_langfuse_client()
-    if lf:
-        lf.update_current_generation(
-            model=model,
-            input=messages,
-            output=full_text,
-            usage_details={"input": prompt_tokens, "output": completion_tokens},
-        )
 
     logger.info("responder | latency=%dms prompt=%s completion=%s",
                 latency_ms, prompt_tokens, completion_tokens)
