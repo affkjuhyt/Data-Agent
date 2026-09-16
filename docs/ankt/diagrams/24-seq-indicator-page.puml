@@ -1,0 +1,61 @@
+@startuml 24-seq-indicator-page
+title Mở trang chỉ số và hỏi trong ngữ cảnh — các service được gọi
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+autonumber
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có |
+  |<#E6F0FF> | Có một phần |
+  |<#FFF4D6> | Chưa có |
+endlegend
+
+actor "Chuyên viên" as U
+participant "frontend" as FE #E6F0FF
+participant "kong" as K #EEF7EE
+participant "indicator-catalog-svc" as CAT #FFF4D6
+participant "compute-svc" as CMP #FFF4D6
+participant "observation-svc" as OBS #FFF4D6
+participant "kb-backend" as KB #E6F0FF
+participant "alert-svc" as ALR #FFF4D6
+participant "workflow-runtime" as WR #EEF7EE
+participant "mcp-gateway" as MG #FFF4D6
+
+U -> FE : mở /indicators/ECO-D2-S22-001
+FE -> K : các request song song (JWT)
+par
+  K -> CAT : GET /indicators/{id}\n(định nghĩa · phiên bản · ngưỡng theo kỳ)
+  CAT --> FE : metadata (cache 5 phút)
+else
+  K -> CMP : POST /query {intent: trend_with_threshold, period: 2010..2025}
+  CMP -> OBS : GET /series/{key}/observations?vintage=latest
+  OBS --> CMP : quan sát + release + source_ref
+  CMP --> FE : giá trị · trạng thái ngưỡng · cờ đã điều chỉnh
+else
+  K -> KB : GET /documents?ids=… (tên · số hiệu · ngày · trang)
+  KB --> FE : metadata tài liệu nguồn
+else
+  K -> ALR : GET /alerts?indicator={id}&status=open
+  ALR --> FE : cảnh báo đang mở
+end
+FE --> U : trang chỉ số hoàn chỉnh
+
+U -> FE : đổi vintage = "2024-uoc-thuc-hien"
+FE -> K : POST /query {vintage: as_of 2025-03-01}
+K -> CMP : point-in-time query
+CMP --> FE : chuỗi theo vintage đã chọn
+
+U -> FE : hỏi "Vì sao năm 2020 giảm?"
+FE -> K : POST /api/orchestrate/stream\n{query, context: {indicator_id, period, vintage}}
+K -> WR : SSE
+WR -> MG : MCP tools/call decompose_change
+MG -> CMP : POST /compute/decompose
+CMP --> MG : đóng góp dư nợ · GDP · đánh giá lại GDP
+MG --> WR : kết quả + evidence
+WR --> FE : stream câu trả lời + evidence frame
+FE --> U : câu trả lời + nút mở trang tài liệu
+U -> FE : bấm trích dẫn
+FE -> K : GET /documents/{doc_id}/pages/{n}
+K -> KB : ảnh trang + bbox
+KB --> FE : trang có highlight
+@enduml

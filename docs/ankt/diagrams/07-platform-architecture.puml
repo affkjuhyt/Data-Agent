@@ -1,0 +1,136 @@
+@startuml 07-platform-architecture
+title Kiến trúc nền tảng Data Agent đa chỉ số — các lớp (plane)
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam wrapWidth 260
+skinparam ArrowColor #555555
+skinparam component<<reuse>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam component<<extend>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam component<<new>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+
+legend top right
+  |= Màu |= Ý nghĩa |
+  |<#EEF7EE> | Dùng lại nguyên trạng |
+  |<#E6F0FF> | Mở rộng thành phần có sẵn |
+  |<#FFF4D6> | Xây mới |
+endlegend
+
+package "A. Experience plane" {
+  component "Ứng dụng phân tích\n(Ask · Catalog · Dashboard · Cảnh báo · Báo cáo)" <<extend>> as UI_Analyst
+  component "Data Studio\n(nguồn · trích xuất · mapping · registry · DQ · lineage)" <<new>> as UI_Data
+  component "Eval & Model Lab" <<new>> as UI_Eval
+  component "Client ngoài qua MCP/API\n(IDE · BI · hệ thống khác)" <<new>> as Ext
+}
+
+package "B. Access plane" {
+  component "Kong · Keycloak · Policy engine\n(RBAC/ABAC theo phân loại dữ liệu)" <<extend>> as Gateway
+  component "Indicator API (REST) · MCP Gateway" <<new>> as PubAPI
+}
+
+package "C. Agent plane" {
+  component "Router / Supervisor\n(fast path ↔ multi-agent)" <<extend>> as Router
+  component "Analysis planner\n→ Analysis Query (IQL, có kiểu)" <<new>> as Planner
+  component "Specialist sub-agents\n(6–7 vai trò chuyên môn)" <<new>> as SubAgents
+  component "Tool registry động + MCP client" <<new>> as ToolGW
+  component "Verifier\n(số · trích dẫn · vintage · quyền)" <<extend>> as Verifier
+  component "Session context\n(chỉ số · kỳ · vùng · vintage)" <<extend>> as Memory
+}
+
+package "D. Semantic & Compute plane" {
+  component "Indicator & Concept Catalog\n(taxonomy · biến · công thức · codelist SDMX)" <<new>> as Catalog
+  component "Indicator search index (hybrid)" <<new>> as Resolver
+  component "Computation engine\n(IQL compiler · transforms · FX · căn kỳ)" <<new>> as Engine
+  component "Semantic layer (binding warehouse)" <<extend>> as SemLayer
+  component "Threshold · Alert rules" <<new>> as Threshold
+  component "Model registry dự báo / DSA (sau)" <<new>> as Models
+}
+
+package "E. Data plane" {
+  component "Observation store\n(series_key · period · value · vintage)" <<new>> as ObsStore
+  component "Registry DB (Postgres)" <<new>> as Registry
+  component "Knowledge base (Qdrant · Neo4j · MinIO)\n+ metadata văn bản · trang/bbox" <<extend>> as KB
+  component "Warehouse ngoài\n(Postgres · Snowflake · ClickHouse · …)" <<reuse>> as DW
+  component "Metadata · lineage graph" <<new>> as Lineage
+}
+
+package "F. Ingestion plane" {
+  component "Source registry · Release calendar" <<new>> as SrcReg
+  component "Connector runtime\n(file · web · API/SDMX · DB)" <<new>> as Conn
+  component "Scheduler (Dagster)" <<new>> as Orchestr
+  component "Extraction (OCR · layout · table · VLM)" <<new>> as Extract
+  component "Mapping & normalization" <<new>> as Normalize
+  component "Validation · Reconciliation" <<new>> as DQ
+  component "Review / curation" <<new>> as Review
+  component "Publisher + event bus (Kafka)" <<extend>> as Publish
+}
+
+package "G. Model serving" {
+  component "LiteLLM · vLLM" <<reuse>> as LLM
+  component "Embedding · Reranker" <<reuse>> as EmbR
+  component "OCR · VLM workers (GPU batch)" <<new>> as Vision
+}
+
+package "H. Governance & Quality (xuyên suốt)" {
+  component "Audit · Langfuse · Prometheus" <<reuse>> as Audit
+  component "Eval service\n(golden set theo họ chỉ số · regression khi dữ liệu sửa)" <<new>> as Eval
+  component "Phân loại · giấy phép · retention" <<extend>> as Classif
+}
+
+UI_Analyst --> Gateway
+UI_Data --> Gateway
+UI_Eval --> Gateway
+Ext --> PubAPI
+Gateway --> Router
+Gateway --> PubAPI
+
+Router --> Planner
+Router --> SubAgents
+Router --> Memory
+Planner --> ToolGW
+SubAgents --> ToolGW
+SubAgents --> Verifier
+SubAgents --> LLM
+ToolGW --> PubAPI : MCP
+
+PubAPI --> Catalog
+PubAPI --> Engine
+PubAPI --> KB
+Resolver --> Catalog
+Resolver --> EmbR
+Engine --> Catalog
+Engine --> ObsStore
+Engine --> SemLayer
+Engine --> Models
+SemLayer --> DW
+Threshold --> Engine
+Catalog --> Registry
+
+Orchestr --> Conn
+Conn --> SrcReg
+Conn --> Extract
+Extract --> Vision
+Extract --> Normalize
+Normalize --> Catalog
+Normalize --> DQ
+DQ --> Review
+Review --> Publish
+Publish --> ObsStore
+Publish --> KB
+Publish --> Lineage
+Publish ..> Threshold : observation.published
+Publish ..> Eval : chạy lại regression
+KB --> EmbR
+Eval --> Audit
+Classif --> Gateway
+@enduml

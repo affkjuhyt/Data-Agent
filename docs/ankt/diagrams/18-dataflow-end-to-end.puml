@@ -1,0 +1,66 @@
+@startuml 18-dataflow-end-to-end
+title Luồng dữ liệu đầu–cuối: nguồn → quan sát → chỉ số → cảnh báo/eval → câu trả lời
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có |
+  |<#E6F0FF> | Có một phần |
+  |<#FFF4D6> | Chưa có |
+endlegend
+
+|Nguồn & Thu thập|
+start
+#FFF4D6:Dagster chạy connector theo lịch/sensor
+[đọc cấu hình: source-registry · credential: OpenBao];
+#FFF4D6:Tải file/API → tính SHA-256
+[ghi MinIO ankt-raw · PG ingest_source.artifact];
+if (Artifact mới?) then (có)
+else (trùng hash)
+  #FFF4D6:Ghi lần chạy, bỏ qua;
+  stop
+endif
+|Trích xuất & Chuẩn hoá|
+fork
+  #EEF7EE:Văn bản → KB pipeline
+  [MinIO knowledge-base · Qdrant knowledge · Neo4j];
+fork again
+  #E6F0FF:PDF/ảnh → extraction-svc (OCR · layout · bảng)
+  [ảnh trang + JSON: MinIO ankt-derived];
+fork again
+  #E6F0FF:XLSX/CSV/API/SDMX → parser có cấu trúc;
+end fork
+#FFF4D6:mapping-svc: ô/cột → biến · chiều · kỳ · đơn vị
+[quy tắc: PG ingest_mapping · codelist: indicator-catalog];
+#FFF4D6:data-quality-svc: DQ rules + reconciliation
+[PG ingest_dq];
+|Duyệt|
+#FFF4D6:curation-svc: hàng đợi maker → checker
+[PG ingest_review];
+|Phát hành|
+#FFF4D6:observation-svc: append quan sát + release/vintage
+[ClickHouse obs.observation · PG observation.release];
+#FFF4D6:Phát sự kiện observation.published;
+|Tính toán · Cảnh báo · Eval|
+fork
+  #FFF4D6:compute-svc tính lại chỉ số liên quan
+  [ClickHouse obs.indicator_value · Redis cache];
+  #FFF4D6:alert-svc so ngưỡng theo kỳ
+  [PG alert];
+  #FFF4D6:notification-svc gửi hộp thư/email
+  [PG notification · Redis pub/sub → SSE];
+fork again
+  #FFF4D6:metadata-lineage-svc ghi cạnh lineage
+  [Neo4j];
+fork again
+  #FFF4D6:eval-svc chạy regression các case bị ảnh hưởng
+  [PG eval · Langfuse];
+end fork
+|Agent · UI|
+#EEF7EE:Người dùng hỏi / mở trang chỉ số;
+#E6F0FF:workflow-runtime → mcp-gateway → compute/observation/kb
+[Redis session · Langfuse trace];
+#E6F0FF:Câu trả lời + evidence (vintage · nguồn · trang)
+[PG platform.conversation · answer_lineage];
+stop
+@enduml

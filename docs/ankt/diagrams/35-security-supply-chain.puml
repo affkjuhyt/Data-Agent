@@ -1,0 +1,47 @@
+@startuml 35-security-supply-chain
+title Bảo mật chuỗi cung ứng phần mềm — cổng kiểm soát từ commit tới cluster
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có |
+  |<#E6F0FF> | Có một phần |
+  |<#FFF4D6> | Chưa có |
+endlegend
+
+|Máy developer|
+start
+#E6F0FF:pre-commit (ruff · gitleaks · ký commit)
+(gói pre-commit có trong dev deps, chưa có file cấu hình);
+|CI · mã nguồn|
+fork
+  #EEF7EE:ruff · mypy strict · import-linter (chặn);
+fork again
+  #FFF4D6:gitleaks quét secret (chặn)
+  (hiện chỉ trivy secret, chỉ báo cáo);
+fork again
+  #E6F0FF:SAST: semgrep/bandit
+  (bandit chỉ chạy trong release-worker);
+fork again
+  #E6F0FF:pip-audit · npm audit (chặn HIGH+)
+  (pip-audit chỉ báo cáo; npm audit chưa có);
+fork again
+  #E6F0FF:trivy fs misconfig (chỉ báo cáo);
+end fork
+|CI · image|
+#FFF4D6:Base image ghim digest (TODO trong SECURITY.md);
+#FFF4D6:Build image → syft SBOM;
+#FFF4D6:trivy image (chặn CRITICAL);
+#FFF4D6:cosign ký image + attest SBOM;
+|Repo|
+#FFF4D6:Renovate/Dependabot PR vá phụ thuộc;
+#FFF4D6:CODEOWNERS · branch protection;
+|Cluster|
+#FFF4D6:Kyverno: chỉ nhận image đã ký,
+cấm :latest, bắt buộc resources/probes;
+#EEF7EE:PodSecurity restricted · NetworkPolicy default-deny;
+#EEF7EE:OpenBao cho secret ứng dụng;
+#FFF4D6:External Secrets thay secrets.env từ ansible-vault;
+#EEF7EE:Audit truy cập dữ liệu (Kafka audit.data.access);
+stop
+@enduml

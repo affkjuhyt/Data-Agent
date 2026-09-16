@@ -15,50 +15,49 @@ agent's tool-call still waits for a final result, because
 code_interpreter.py polls to completion before returning (mục i, "đã
 chốt mô hình đồng bộ").
 """
-from typing import Any
-from collections.abc import AsyncIterator
 import asyncio
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse, StreamingResponse
+from typing import Any
 
 import minio_store
 from api.responses import (
-    SandboxJSONResponse,
     job_status_response as _response_job_status,
+)
+from api.responses import (
     job_summary as _response_job_summary,
-    json_default as _json_default,
+)
+from api.responses import (
     sse_events as _response_sse_events,
-    sse_line as _sse_line,
+)
+from api.responses import (
     submit as _response_submit,
 )
 from api.schemas import (
-    ClickHouseConnectionParams,
     CONNECTION_PARAMS,
     ExecutePythonRequest,
-    ExecuteSQLRequest,
     ExecuteShellRequest,
-    PostgresConnectionParams,
-    SnowflakeConnectionParams,
+    ExecuteSQLRequest,
 )
 from core.settings import load_settings
 from execution.code_executor import run_python_job, run_shell_job
 from execution.sql_executor import load_backend, run_sql_job
-from security_visitor import validate_python_code, SecurityError
-from sql_guard import validate_select_only, SQLGuardError
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse, StreamingResponse
+from job_queue import Job, JobQueue
+from output import DEFAULT_MAX_OUTPUT_CHARS, truncate_output
 from sandbox_runner_backend import (
+    ExecutionTimeoutError,
+    SandboxCircuitOpenError,
+    SandboxRunError,
+    get_pool,
     run_python_sandboxed,
     run_shell_sandboxed,
-    ExecutionTimeoutError,
-    SandboxRunError,
-    SandboxCircuitOpenError,
-    get_pool,
     shutdown_pool,
 )
-from job_queue import Job, JobQueue
-from output import truncate_output, DEFAULT_MAX_OUTPUT_CHARS
+from security_visitor import SecurityError, validate_python_code
+from sql_guard import SQLGuardError, validate_select_only
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [sandbox_executor] %(levelname)s %(message)s")
 logger = logging.getLogger("sandbox_executor")

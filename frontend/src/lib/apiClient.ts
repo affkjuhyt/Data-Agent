@@ -55,7 +55,7 @@ export async function apiGet<T>(
 }
 
 /** Thrown when the row changed since it was read (HTTP 412). */
-export class StaleVersionError extends Error {
+class StaleVersionError extends Error {
   constructor(message = 'This item was changed by someone else. Reload and try again.') {
     super(message);
     this.name = 'StaleVersionError';

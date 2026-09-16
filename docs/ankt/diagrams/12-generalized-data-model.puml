@@ -1,0 +1,143 @@
+@startuml 12-generalized-data-model
+title Mô hình dữ liệu tổng quát cho vô số chỉ số (theo tinh thần SDMX)
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam linetype ortho
+hide circle
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có |
+  |<#E6F0FF> | Có một phần (bảng tương tự đã có) |
+  |<#FFF4D6> | Chưa có |
+endlegend
+
+entity "taxonomy_node" as tx #FFF4D6 {
+  * node_id <<PK>>
+  --
+  level (domain | subdomain | group)
+  parent_id · name_vi · name_en
+  boundary_rules
+}
+
+entity "indicator" as ind #FFF4D6 {
+  * indicator_id <<PK>>
+  --
+  taxonomy_node_id <<FK>>
+  name_vi · name_en · aliases[]
+  polarity · indicator_timing
+  status · owner · reviewer
+}
+
+entity "indicator_version" as iv #E6F0FF {
+  * indicator_id · version
+  --
+  definition · interpretation_note
+  unit · unit_multiplier · decimal_precision
+  frequency · stock_or_flow
+  approved_by · valid_from
+}
+
+entity "formula_node" as fn #FFF4D6 {
+  * node_id <<PK>>
+  --
+  indicator_id · version <<FK>>
+  op (ref | ratio | sum | diff | growth | share | fx_convert ...)
+  inputs[] (variable_id | node_id)
+  alignment_rule
+}
+
+entity "variable" as var #FFF4D6 {
+  * variable_id <<PK>>
+  --
+  concept · measure · price_basis
+  stock_or_flow · time_basis · perimeter
+  unit · currency
+}
+
+entity "binding" as bd #E6F0FF {
+  * binding_id <<PK>>
+  --
+  variable_id <<FK>>
+  kind (observation_series | warehouse_metric | api_series)
+  target (series_key | metric_key@version | endpoint)
+  priority (preferred | reconstruction | cross_check)
+}
+
+entity "dimension" as dim #FFF4D6 {
+  * dimension_id <<PK>>
+  --
+  name (REF_AREA | FREQ | SECTOR | CURRENCY | INSTRUMENT ...)
+  codelist_id <<FK>>
+}
+
+entity "codelist / code" as cl #FFF4D6 {
+  * codelist_id · code
+  --
+  label_vi · label_en · parent_code
+  mapping_to_external (SDMX · IMF · WB)
+}
+
+entity "series" as se #FFF4D6 {
+  * series_key <<PK>>
+  --
+  variable_id <<FK>>
+  dimension_values {REF_AREA=VN, SECTOR=GG, ...}
+  classification · source_id <<FK>>
+}
+
+entity "observation" as ob #FFF4D6 {
+  * series_key · period · release_id
+  --
+  value · obs_status (ước | sơ bộ | chính thức)
+  source_ref {doc_id · page · table · cell · bbox | api_call}
+  extracted_by · reviewed_by
+}
+
+entity "release" as rl #FFF4D6 {
+  * release_id <<PK>>
+  --
+  source_id <<FK>> · doc_id <<FK>>
+  release_date · vintage_label
+}
+
+entity "source / source_document" as src #E6F0FF {
+  * source_id · doc_id
+  --
+  publisher · license · schedule
+  title · doc_number · issued_date
+  effective_from · effective_to · sha256
+}
+
+entity "threshold" as th #FFF4D6 {
+  * threshold_id <<PK>>
+  --
+  indicator_id <<FK>> · level · operator · value
+  valid_from · valid_to · legal_basis_doc_id
+}
+
+entity "answer_lineage" as al #E6F0FF {
+  * answer_id · item
+  --
+  indicator_id · series_key · period
+  release_id · doc_id · page
+  model/config version · verifier_result
+}
+
+tx ||--o{ tx
+tx ||--o{ ind
+ind ||--o{ iv
+iv ||--o{ fn
+var ||--o{ fn
+var ||--o{ bd
+var ||--o{ se
+dim ||--o{ cl
+se }o--o{ cl : dimension_values
+se ||--o{ ob
+rl ||--o{ ob
+src ||--o{ rl
+src ||--o{ se
+ind ||--o{ th
+src ||--o{ th
+ob ||--o{ al
+ind ||--o{ al
+@enduml

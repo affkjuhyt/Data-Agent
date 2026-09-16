@@ -1,0 +1,82 @@
+@startuml 26-gitops-target
+title GitOps mục tiêu — CI build & ký image, Argo CD đồng bộ theo repo cấu hình
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam wrapWidth 230
+skinparam ArrowColor #555555
+skinparam component<<have>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam component<<partial>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam component<<missing>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có |
+  |<#E6F0FF> | Có một phần |
+  |<#FFF4D6> | Chưa có |
+endlegend
+
+package "Repo ứng dụng · Data-Agent" {
+  component "Mã nguồn · Dockerfile · tests" <<have>> as APP
+  component "Renovate / Dependabot" <<missing>> as RENO
+}
+
+package "CI · GitHub Actions" {
+  component "Lint · type · unit · integration · eval offline" <<have>> as CI1
+  component "E2E smoke trên k3d" <<missing>> as CI2
+  component "buildx + cache · tag = git SHA / semver" <<missing>> as CI3
+  component "SBOM (syft) · trivy image (chặn CRITICAL)" <<missing>> as CI4
+  component "cosign ký image" <<missing>> as CI5
+  component "PR cập nhật tag vào repo GitOps" <<missing>> as CI6
+}
+
+component "Registry\n(localhost:5000 → Harbor có scan)" <<partial>> as REG
+
+package "Repo GitOps · dataagent-deploy" {
+  component "base/ (manifest hiện có)" <<partial>> as BASE
+  component "overlays/dev · staging · prod (Kustomize)" <<missing>> as OVL
+  component "apps/ (Argo CD app-of-apps)" <<missing>> as APPS
+}
+
+package "Cluster" {
+  component "Argo CD\n(sync · drift detection · rollback = git revert)" <<missing>> as ARGO
+  component "Argo Rollouts\n(canary + phân tích Prometheus/eval)" <<missing>> as ROLL
+  component "External Secrets Operator" <<missing>> as ESO
+  component "OpenBao" <<have>> as BAO
+  component "Kyverno\n(verify chữ ký · policy)" <<missing>> as KYV
+  component "Workload (namespace service/database/sandbox)" <<have>> as WL
+  component "Job migrate = PreSync hook" <<partial>> as MIG
+}
+
+component "Ansible\n(chỉ còn bootstrap node, OpenBao, GPU)" <<partial>> as ANS
+
+APP --> CI1
+RENO --> APP : PR nâng cấp phụ thuộc
+CI1 --> CI2
+CI2 --> CI3
+CI3 --> CI4
+CI4 --> CI5
+CI5 --> REG : push
+CI5 --> CI6
+CI6 --> OVL : PR tag mới
+BASE --> OVL
+APPS --> ARGO
+ARGO --> OVL : theo dõi
+ARGO --> MIG : sync wave 0
+ARGO --> ROLL : sync wave 1
+ROLL --> WL
+ESO --> BAO : đọc secret
+ESO --> WL : k8s Secret
+KYV --> REG : verify cosign
+KYV --> WL : admission
+ANS --> BAO
+@enduml

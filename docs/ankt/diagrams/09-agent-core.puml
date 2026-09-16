@@ -1,0 +1,101 @@
+@startuml 09-agent-core
+title Agent core cho hàng trăm chỉ số — sub-agent chuyên môn + MCP + API
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam wrapWidth 250
+skinparam ArrowColor #555555
+skinparam component<<reuse>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam component<<extend>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam component<<new>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+
+package "Agent core (workflow-runtime)" {
+  component "Router\n(độ phức tạp · quyền · làm rõ câu hỏi)" <<extend>> as Router
+  component "Fast path: Indicator Analyst đơn\n(tra cứu · so ngưỡng · xu hướng)\n≤ 3 lời gọi tool" <<new>> as Fast
+  component "Supervisor / Analysis Planner\n(DAG bước phân tích · Analysis Query)" <<extend>> as Sup
+
+  package "Specialist sub-agents (dùng chung, KHÔNG tạo theo từng chỉ số)" {
+    component "Indicator Analyst\n(số liệu · biến đổi · phân rã biến động)" <<new>> as A1
+    component "Document & Legal Researcher\n(văn bản · hiệu lực · căn cứ ngưỡng)" <<new>> as A2
+    component "Data / SQL Analyst\n(warehouse ad-hoc · semantic layer)" <<extend>> as A3
+    component "International Comparator\n(IMF/WB · ánh xạ phạm vi)" <<new>> as A4
+    component "Scenario & Forecast Analyst\n(model đã kiểm định — giai đoạn sau)" <<new>> as A5
+    component "Report Writer\n(bản tin · báo cáo dài)" <<new>> as A6
+  }
+
+  component "Verifier / Critic\n(số ⊆ evidence ± dung sai · trích dẫn ·\nvintage · quyền truy cập)" <<extend>> as Ver
+  component "Synthesizer\n(tổng hợp · trình bày · chart · evidence frame)" <<extend>> as Syn
+  component "Tool registry động\n(chọn tool theo ngữ cảnh · quyền theo vai trò)" <<new>> as TR
+  component "MCP client (Streamable HTTP)" <<new>> as MC
+}
+
+package "MCP servers (chuẩn MCP, bọc Platform API)" {
+  component "indicator-mcp\nsearch_indicators · get_definition ·\nlist_dimensions · get_thresholds" <<new>> as M1
+  component "data-mcp\nquery(AnalysisQuery) · get_observations ·\nlist_vintages" <<new>> as M2
+  component "compute-mcp\ntransform · ratio · decompose_change ·\ncompare_threshold" <<new>> as M3
+  component "source-mcp\nget_source_document · cite(page, bbox) ·\nsearch_legal(effective_at)" <<new>> as M4
+  component "warehouse-mcp\nsemantic_query · text_to_sql (guarded)" <<extend>> as M5
+  component "intl-mcp\nimf_series · worldbank_series ·\nmap_perimeter" <<new>> as M6
+  component "report-mcp\nrender_chart · export_xlsx ·\nbuild_briefing" <<extend>> as M7
+}
+
+package "Platform API (REST, nguồn sự thật)" {
+  component "Indicator Catalog API" <<new>> as API1
+  component "Observation & Compute API" <<new>> as API2
+  component "Source & Knowledge API" <<extend>> as API3
+  component "sandbox-executor (SQL/Python)" <<reuse>> as API4
+}
+
+Router --> Fast : câu hỏi đơn
+Router --> Sup : đa bước / đa lĩnh vực / báo cáo
+Sup --> A1
+Sup --> A2
+Sup --> A3
+Sup --> A4
+Sup --> A5
+Sup --> A6
+Fast --> TR
+A1 --> TR
+A2 --> TR
+A3 --> TR
+A4 --> TR
+A5 --> TR
+A6 --> TR
+TR --> MC
+MC --> M1
+MC --> M2
+MC --> M3
+MC --> M4
+MC --> M5
+MC --> M6
+MC --> M7
+M1 --> API1
+M2 --> API2
+M3 --> API2
+M4 --> API3
+M5 --> API4
+M6 --> API2
+M7 --> API2
+Fast --> Ver
+A1 --> Ver
+A2 --> Ver
+A3 --> Ver
+A4 --> Ver
+A6 --> Ver
+Ver --> Syn
+
+note bottom of MC
+  UI, BI và client ngoài gọi cùng Platform API;
+  agent gọi qua MCP → một nguồn sự thật cho mọi kênh.
+end note
+@enduml

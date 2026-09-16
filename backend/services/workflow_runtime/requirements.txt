@@ -22,7 +22,6 @@ langchain>=0.3,<1.0
 langchain-core>=0.3,<1.0
 langchain-openai==0.3.5
 langchain-community>=0.3,<1.0
-duckduckgo-search>=6.0  # DuckDuckGoSearchAPIWrapper (tool_executor web_search handler) — langchain-community không tự kéo package client này
 asyncpg==0.30.0
 sqlalchemy[asyncio]==2.0.35
 regex>=2024.0

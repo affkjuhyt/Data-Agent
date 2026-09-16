@@ -1,0 +1,55 @@
+@startuml 20-bf-release-lifecycle
+title Luồng nghiệp vụ 2 — Một kỳ công bố số liệu mới (release) đi vào hệ thống
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+legend top right
+  Trạng thái: **toàn bộ quy trình chưa có trên hệ thống**.
+  Có sẵn để tái dùng: KB pipeline bronze→silver→gold (Kafka),
+  duyệt schema bảng xlsx, freshness watermark của schema catalog.
+endlegend
+
+|Connector|
+start
+:Phát hiện bản công bố mới
+(lịch công bố · hash · diff trang);
+:Lưu artifact gốc + đăng ký release;
+|Extraction & DQ|
+:Trích xuất → mapping → chuẩn hoá;
+:DQ rules + so bản trước + so nguồn khác;
+if (Lỗi chặn?) then (có)
+  |Data steward (maker)|
+  :Xử lý issue: sửa mapping/giá trị hoặc loại artifact;
+else (không)
+endif
+|Data steward (maker)|
+:Duyệt candidate observation
+(ảnh trang + ô số · sửa kèm lý do);
+|Checker|
+:Duyệt lần 2 (người khác maker);
+if (Đồng ý?) then (có)
+else (không)
+  :Trả lại maker kèm ghi chú;
+  stop
+endif
+|Hệ thống|
+:Phát hành observation append-only
+(release · vintage · revision_status);
+:Tính lại chỉ số phụ thuộc;
+if (Số liệu cũ bị điều chỉnh?) then (có)
+  :Đánh dấu "đã điều chỉnh" trên chỉ số;
+  :Chạy eval regression cho case bị ảnh hưởng;
+  |Nhóm Research|
+  :Duyệt cập nhật golden case theo vintage mới;
+  |Hệ thống|
+else (không)
+endif
+:So ngưỡng theo kỳ → trạng thái chỉ số;
+if (Trạng thái thay đổi / bất thường?) then (có)
+  :Tạo cảnh báo → thông báo người phụ trách;
+else (không)
+endif
+|Người dùng · Agent|
+:Dashboard, trang chỉ số, câu trả lời dùng vintage mới
+(ghi rõ số đã điều chỉnh so với bản trước);
+stop
+@enduml

@@ -1,0 +1,132 @@
+@startuml 05-indicator-data-model
+title Mô hình dữ liệu lõi cho đa chỉ số (Indicator · Source · Observation · Golden)
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam linetype ortho
+hide circle
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có |
+  |<#E6F0FF> | Có một phần (bảng tương tự đã có) |
+  |<#FFF4D6> | Chưa có |
+endlegend
+
+entity "indicator" as indicator #FFF4D6 {
+  * indicator_id : text <<PK>>
+  --
+  name_vi · name_en · aliases[]
+  domain_id · subdomain_id
+  polarity · indicator_timing
+  status · owner · reviewer
+}
+
+entity "indicator_version\n(≈ semantic_metric_version hiện có)" as iv #E6F0FF {
+  * indicator_id <<FK>>
+  * version : semver
+  --
+  formula_expression
+  unit · unit_multiplier · decimal_precision
+  stock_or_flow (stock | flow | ratio)
+  frequency · reference_area
+  valid_from · approved_by · approved_at
+}
+
+entity "variable" as var #FFF4D6 {
+  * variable_id <<PK>>
+  --
+  concept · measure · price_basis
+  unit · unit_multiplier · currency
+  stock_or_flow · time_basis
+  perimeter (VN_law | IMF_GG | ...)
+}
+
+entity "formula_input" as fi #FFF4D6 {
+  * indicator_id · version <<FK>>
+  * variable_id <<FK>>
+  --
+  role (numerator | denominator | component)
+  alignment_rule (same_calendar_year ...)
+  path (preferred | reconstruction)
+}
+
+entity "threshold" as th #FFF4D6 {
+  * threshold_id <<PK>>
+  --
+  indicator_id <<FK>>
+  level (warning | ceiling)
+  operator · value
+  valid_from · valid_to
+  legal_basis_doc_id <<FK>>
+}
+
+entity "source_document\n(≈ KB document hiện có)" as sd #E6F0FF {
+  * doc_id <<PK>>
+  --
+  title · doc_number · issuer
+  issued_date · effective_from · effective_to
+  doc_type (luật | nghị quyết | bản tin | niên giám | API)
+  url · file_uri (MinIO) · sha256
+  source_tier · classification
+}
+
+entity "release" as rel #FFF4D6 {
+  * release_id <<PK>>
+  --
+  doc_id <<FK>>
+  release_date
+  vintage_label
+  revision_status (ước | sơ bộ | chính thức | quyết toán)
+}
+
+entity "observation" as obs #FFF4D6 {
+  * obs_id <<PK>>
+  --
+  variable_id <<FK>> · release_id <<FK>>
+  reference_area · period
+  value · unit · unit_multiplier
+  source_ref {page · table · row · col · bbox}
+  extracted_by (ocr | api | manual) · reviewed_by
+  status (candidate | approved | rejected)
+}
+
+entity "indicator_value" as ival #FFF4D6 {
+  * indicator_id · version · period · vintage
+  --
+  value · threshold_status
+  input_obs_ids[]
+  computed_at · engine_version
+}
+
+entity "reconciliation" as rec #FFF4D6 {
+  * rec_id <<PK>>
+  --
+  computed_value · official_obs_id
+  delta · tolerance · status
+  cause (vintage | perimeter | rounding | extraction)
+}
+
+entity "golden_case\n(≈ model/eval/cases hiện có)" as gc #E6F0FF {
+  * case_id <<PK>>
+  --
+  category (L1..L4 | refuse)
+  question · indicator_id · period
+  expected_value · tolerance_type · tolerance_value
+  expected_threshold_status
+  doc_id <<FK>> · page · vintage_label
+  answerable · reviewer · approved_at
+}
+
+indicator ||--o{ iv
+iv ||--o{ fi
+var ||--o{ fi
+indicator ||--o{ th
+sd ||--o{ th : căn cứ pháp lý
+sd ||--o{ rel
+rel ||--o{ obs
+var ||--o{ obs
+iv ||--o{ ival
+ival ||--o| rec
+obs ||--o{ rec
+indicator ||--o{ gc
+sd ||--o{ gc
+@enduml

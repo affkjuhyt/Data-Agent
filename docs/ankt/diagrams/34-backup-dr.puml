@@ -1,0 +1,63 @@
+@startuml 34-backup-dr
+title Backup & Disaster Recovery theo từng datastore
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam wrapWidth 250
+skinparam ArrowColor #555555
+skinparam component<<have>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam component<<partial>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam component<<missing>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có |
+  |<#E6F0FF> | Có một phần |
+  |<#FFF4D6> | Chưa có |
+endlegend
+
+package "Datastore → phương pháp backup" {
+  component "Postgres\npg_dump 6h → PVC cùng node\n→ mục tiêu: WAL-G PITR + off-site" <<partial>> as PG
+  component "MinIO (file gốc · báo cáo)\nversioning + replication site 2" <<missing>> as S3
+  component "ClickHouse (observation)\nBACKUP TO S3 hằng ngày" <<missing>> as CH
+  component "Qdrant\nsnapshot API hằng ngày" <<missing>> as QD
+  component "Neo4j\nneo4j-admin dump hằng ngày" <<missing>> as N4
+  component "Mongo\nmongodump hằng ngày" <<missing>> as MG
+  component "OpenBao\nraft snapshot hằng giờ + ký gửi unseal key" <<missing>> as BAO
+  component "Kafka\ntopic tái tạo được từ artifact gốc" <<partial>> as KF
+  component "Registry image\nbackup-registry.sh hằng ngày (giữ 3)" <<have>> as REG
+  component "Manifest · cấu hình\ntrong git" <<have>> as GIT
+  component "Tài nguyên k8s + PVC\nVelero" <<missing>> as VEL
+}
+
+package "Đích & kiểm chứng" {
+  component "Kho backup ngoài site\n(S3/MinIO site 2, mã hoá)" <<missing>> as OFF
+  component "Diễn tập khôi phục hằng tháng\n(đo RPO/RTO thực tế)" <<missing>> as DRILL
+  component "DR runbook\n(RPO ≤ 1h dữ liệu nghiệp vụ, RTO ≤ 4h)" <<missing>> as RB
+  component "postgres-restore Job" <<have>> as RST
+}
+
+PG --> OFF
+S3 --> OFF
+CH --> OFF
+QD --> OFF
+N4 --> OFF
+MG --> OFF
+BAO --> OFF
+VEL --> OFF
+REG --> OFF
+OFF --> DRILL
+RST --> DRILL
+DRILL --> RB
+GIT --> RB
+KF ..> S3 : phát lại từ artifact
+@enduml
