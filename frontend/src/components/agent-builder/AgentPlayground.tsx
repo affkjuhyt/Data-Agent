@@ -12,9 +12,9 @@ import keycloak from '../../lib/keycloak';
 import { formatTime } from '../../lib/formatVN';
 import { AnswerBlock } from '../../features/ask/components/AnswerBlock';
 import { AnswerTheme } from '../../features/ask/components/AnswerTheme';
-import { resumeClarification } from '../../features/ask/api';
 import { parseSseData } from '../../features/ask/sse';
-import type { ChartSpec, Citation, Clarification, Evidence } from '../../features/ask/types';
+import type { ChartSpec, Citation, Clarification, ClarificationAnswer, ClarificationReply, Evidence } from '../../features/ask/types';
+import { withClarificationAnswer } from '../../features/ask/hooks/useAgentStream';
 
 /* ─── Types ─────────────────────────────────────────────────── */
 
@@ -803,7 +803,7 @@ function ChatBubble({ msg, busy, onSuggestion, onAnswerClarification }: {
   msg: Message;
   busy?: boolean;
   onSuggestion: (text: string) => void;
-  onAnswerClarification: (msgId: string, answer: string) => void;
+  onAnswerClarification: (msgId: string, reply: ClarificationReply) => void;
 }) {
   const isUser = msg.role === 'user';
   return (
@@ -845,7 +845,7 @@ function ChatBubble({ msg, busy, onSuggestion, onAnswerClarification }: {
                 msg={{ ...msg, timestamp: new Date().toISOString(), suggestions: undefined }}
                 busy={busy}
                 onSuggestion={onSuggestion}
-                onAnswerClarification={answer => onAnswerClarification(msg.id, answer)}
+                onAnswerClarification={reply => onAnswerClarification(msg.id, reply)}
                 showTimestamp={false}
               />
             )
@@ -889,6 +889,9 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
   // updating the panel once a newer one is on its way.
   const traceRunRef = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Single mode: the agent's own conversation, continued turn to turn so its
+  // slots and "just asked" marker carry over. Cleared with the thread.
+  const agentConvRef = useRef<string | null>(null);
 
   const adjustHeight = () => {
     const el = textareaRef.current;
@@ -935,7 +938,10 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
   const canSend = input.trim().length > 0 && !sending && (mode === 'unified' || !!selectedAgent);
 
   /* ── Send — unified handler cho cả single agent và multi-agent ── */
-  const handleSendStream = async (text: string) => {
+  // `query`: what the backend works on when it differs from the bubble text;
+  // `answers`: options picked on the previous turn's clarification card.
+  const handleSendStream = async (text: string, opts: { query?: string; answers?: ClarificationAnswer[]; resumeSessionId?: string } = {}) => {
+    const query = opts.query || text;
     const now = formatTime(new Date());
     const userMsgId = Date.now().toString();
     const placeholderId = (Date.now() + 1).toString();
@@ -948,16 +954,24 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
     setMessages(prev => [...prev, { id: placeholderId, role: 'assistant', content: '', timestamp: now, status: 'streaming' }]);
 
     try {
-      const res = await fetch(`${API_URL}/api/orchestrate/stream`, {
+      // A resume streams the same frames as a new turn (/resume/stream), so the
+      // resumed answer keeps its charts and evidence and can ask again.
+      const res = await fetch(`${API_URL}/api/orchestrate/${opts.resumeSessionId ? 'resume/stream' : 'stream'}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(keycloak?.token ? { Authorization: `Bearer ${keycloak.token}` } : {}) },
-        body: JSON.stringify({
-          query:    text,
-          agent_id: mode === 'single' ? selectedAgent : undefined,
-          user_id:  keycloak?.tokenParsed?.sub ?? 'playground',
-          messages: messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
-        }),
+        body: JSON.stringify(opts.resumeSessionId
+          ? { session_id: opts.resumeSessionId, clarification: text }
+          : {
+            query,
+            agent_id: mode === 'single' ? selectedAgent : undefined,
+            user_id:  keycloak?.tokenParsed?.sub ?? 'playground',
+            messages: messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
+            // Continue the agent's own thread (slots + "just asked" marker), as useAgentStream does.
+            conversation_id: (mode === 'single' && agentConvRef.current) || undefined,
+            clarification_answers: opts.answers?.length ? opts.answers : undefined,
+          }),
       });
+      if (!res.ok || !res.body) throw new Error(`${res.status} ${res.statusText}`);
 
       const reader  = res.body!.getReader();
       const decoder = new TextDecoder();
@@ -1001,7 +1015,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
               // answer wired to /api/orchestrate/resume (was: blank the message).
               patch(m => ({
                 ...m,
-                clarification: { kind: 'resume', sessionId: ev.sessionId || sessionId || '', questions: ev.questions.map(text => ({ text })) },
+                clarification: { kind: 'resume', sessionId: ev.sessionId || sessionId || '', questions: ev.details },
               }));
               break;
             case 'options':
@@ -1013,9 +1027,12 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                 ...m,
                 evidence: ev.evidence,
                 clarification: m.clarification ?? (ev.evidence.clarifications.length
-                  ? { kind: 'followup', questions: ev.evidence.clarifications }
+                  ? { kind: 'followup', questions: ev.evidence.clarifications, query }
                   : undefined),
               }));
+              break;
+            case 'conv_ids':
+              if (mode === 'single' && ev.convs[0]?.conv_id) agentConvRef.current = ev.convs[0].conv_id;
               break;
             case 'pending_review':
               patch(m => ({ ...m, content: '' }));
@@ -1103,48 +1120,32 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
 
   /* Answer a clarification card: resume the interrupted orchestration, or
      send the choice as the next turn (deterministic runtime questions). */
-  const handleClarificationAnswer = async (msgId: string, answer: string) => {
+  const handleClarificationAnswer = async (msgId: string, reply: ClarificationReply) => {
     const target = messages.find(m => m.id === msgId);
     const clar = target?.clarification;
-    if (!clar || sending) return;
+    const answer = reply.text.trim();
+    if (!clar || sending || !answer) return;
     if (clar.kind === 'followup') {
       setMessages(prev => prev.map(m => m.id === msgId ? { ...m, clarification: undefined } : m));
-      handleSend(answer);
+      handleSend(answer, {
+        query: clar.query ? withClarificationAnswer(clar.query, answer) : undefined,
+        answers: reply.answers,
+      });
       return;
     }
-    setSending(true);
     // Keep what was asked as the message text (as useAgentStream does): the
     // card goes away, and an empty bubble would leave no trace of the question.
     const asked = clar.questions.map(q => q.text).filter(Boolean).join('\n');
     setMessages(prev => prev.map(m => m.id === msgId ? { ...m, clarification: undefined, content: m.content || asked } : m));
-    const echoId = Date.now().toString();
-    const answerId = (Date.now() + 1).toString();
-    const now = formatTime(new Date());
-    setMessages(prev => [...prev,
-      { id: echoId, role: 'user', content: answer, timestamp: now, status: 'done' },
-      { id: answerId, role: 'assistant', content: '', timestamp: now, status: 'streaming' },
-    ]);
-    try {
-      const res = await resumeClarification(clar.sessionId, answer);
-      setMessages(prev => prev.map(m => m.id === answerId ? {
-        ...m,
-        content: res.response || (res.success ? '' : 'Could not process this request.'),
-        suggestions: res.suggestions ?? [],
-        status: res.success ? 'done' : 'error',
-      } : m));
-    } catch (err) {
-      setMessages(prev => prev.map(m => m.id === answerId ? { ...m, status: 'error', content: `Error resuming: ${(err as Error).message}` } : m));
-    } finally {
-      setSending(false);
-    }
+    handleSend(answer, { resumeSessionId: clar.sessionId });
   };
 
-  const handleSend = (override?: string) => {
+  const handleSend = (override?: string, opts?: { query?: string; answers?: ClarificationAnswer[]; resumeSessionId?: string }) => {
     const text = (override ?? input).trim();
     if (!text || sending) return;
     setPendingOptions(null);
     if (mode === 'single' && !selectedAgent) return;
-    handleSendStream(text);
+    handleSendStream(text, opts);
   };
 
   /* ── Derived ── */
@@ -1174,7 +1175,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
           </div>
           <div style={{ display: 'flex', gap: 2, padding: 3, background: '#F3EEDF', borderRadius: 9, border: '1px solid #D6C79F' }}>
             {([['unified', 'Unified Chat'], ['single', 'Single Agent']] as const).map(([id, label]) => (
-              <button key={id} onClick={() => { setMode(id); setMessages([]); setTraceSteps([]); setRawObservations([]); }} style={{
+              <button key={id} onClick={() => { setMode(id); setMessages([]); agentConvRef.current = null; setTraceSteps([]); setRawObservations([]); }} style={{
                 padding: '5px 11px', borderRadius: 7, fontSize: 11, fontWeight: 600, border: 'none', cursor: 'pointer',
                 background: mode === id ? '#F4E8C3' : 'transparent',
                 color: mode === id ? '#B88719' : '#5F5F5F',
@@ -1215,7 +1216,7 @@ export default function AgentPlayground({ embedded = false }: { embedded?: boole
                     {agents.length === 0 && <p style={{ padding: '8px 12px', fontSize: 12, color: '#777777' }}>No agents found</p>}
                     {agents.map(a => (
                       <button key={a.id}
-                        onClick={() => { setSelectedAgent(a.id); setSelectorOpen(false); setConversationId(null); setMessages([]); setPendingOptions(null); }}
+                        onClick={() => { setSelectedAgent(a.id); setSelectorOpen(false); setConversationId(null); setMessages([]); agentConvRef.current = null; setPendingOptions(null); }}
                         style={{
                           width: '100%', textAlign: 'left', padding: '8px 12px', fontSize: 11.5,
                           background: selectedAgent === a.id ? '#F4E8C3' : 'transparent',

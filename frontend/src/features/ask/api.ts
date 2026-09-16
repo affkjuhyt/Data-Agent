@@ -5,7 +5,7 @@
 import { API_URL } from '../../lib/config';
 import { apiGet } from '../../lib/apiClient';
 import keycloak from '../../lib/keycloak';
-import type { AgentOption, OrchestrateResponse } from './types';
+import type { AgentOption, ClarificationAnswer } from './types';
 
 const authHeaders = (): Record<string, string> =>
   keycloak?.token ? { Authorization: `Bearer ${keycloak.token}` } : {};
@@ -15,43 +15,42 @@ interface OrchestratePayload {
   agent_id?: string;
   user_id: string;
   messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  /** single-agent mode: the agent conversation this turn continues */
+  conversation_id?: string;
+  /** options picked on the previous turn's clarification card */
+  clarification_answers?: ClarificationAnswer[];
 }
 
-/** POST /api/orchestrate/stream — returns the raw Response; caller reads the SSE body. */
-export async function openOrchestrateStream(payload: OrchestratePayload, signal?: AbortSignal): Promise<Response> {
-  const res = await fetch(`${API_URL}/api/orchestrate/stream`, {
+async function openStream(path: string, body: unknown, signal?: AbortSignal): Promise<Response> {
+  const res = await fetch(`${API_URL}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
     signal,
   });
   if (!res.ok || !res.body) {
-    throw new Error(`${res.status} ${res.statusText || 'stream unavailable'}`);
-  }
-  return res;
-}
-
-/**
- * POST /api/orchestrate/resume — continue an interrupted orchestration with
- * the user's clarification. Not through apiMutate: that client has a 3 s
- * timeout, and resuming runs the rest of the graph (tens of seconds on a
- * shared GPU). The whole answer comes back in one JSON body, not a stream.
- */
-export async function resumeClarification(sessionId: string, clarification: string): Promise<OrchestrateResponse> {
-  const res = await fetch(`${API_URL}/api/orchestrate/resume`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify({ session_id: sessionId, clarification }),
-  });
-  if (!res.ok) {
-    let msg = `${res.status} ${res.statusText}`;
+    let msg = `${res.status} ${res.statusText || 'stream unavailable'}`;
     try {
       const j = await res.json();
       if (j?.detail) msg = String(j.detail);
     } catch { /* keep status text */ }
     throw new Error(msg);
   }
-  return (await res.json()) as OrchestrateResponse;
+  return res;
+}
+
+/** POST /api/orchestrate/stream — returns the raw Response; caller reads the SSE body. */
+export function openOrchestrateStream(payload: OrchestratePayload, signal?: AbortSignal): Promise<Response> {
+  return openStream('/api/orchestrate/stream', payload, signal);
+}
+
+/**
+ * POST /api/orchestrate/resume/stream — continue an interrupted orchestration
+ * with the user's clarification. Streams the same frames as /stream, so the
+ * resumed answer gets its charts and evidence, and a card if it asks again.
+ */
+export function openResumeStream(sessionId: string, clarification: string, signal?: AbortSignal): Promise<Response> {
+  return openStream('/api/orchestrate/resume/stream', { session_id: sessionId, clarification }, signal);
 }
 
 /** GET /api/catalog/agents — the scopes a question can be asked in today. */

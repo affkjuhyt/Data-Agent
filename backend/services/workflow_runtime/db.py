@@ -16,7 +16,7 @@ except ImportError:
 from sqlalchemy import select
 
 from libs.database_connector.postgres_connector import client
-from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import AgentsORM, MessagesORM
+from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import AgentsORM, ConversationsORM, MessagesORM
 from libs.basemodel.services_databaseconnector.postgres_orm.auth_release_orm import MembersORM
 from libs.basemodel.services_databaseconnector.postgres_model import (
     ConversationsInsert, MessagesInsert, AgentTracesInsert,
@@ -141,6 +141,29 @@ async def _has_role(tenant_id: str, user_ref: str, min_role: str) -> bool:
         )
         row = result.first()
     return bool(row) and _ROLE_WEIGHTS.get(row[0], 0) >= _ROLE_WEIGHTS.get(min_role, 0)
+
+
+async def conversation_owned_by(conversation_id: str, tenant_id: str, user_ref: str) -> bool:
+    """True when this conversation exists in tenant_id and was started by user_ref.
+
+    History and slots are loaded by conversation id under tenant RLS only, and
+    the id comes from the client — so without this check a caller could
+    continue, and read, another user's thread in the same tenant.
+    """
+    if not client.is_connected() or not conversation_id:
+        return False
+    try:
+        async with client.get_client(tenant_id=tenant_id) as session:
+            result = await session.execute(
+                select(ConversationsORM.id)
+                .where(ConversationsORM.id == UUID(conversation_id))
+                .where(ConversationsORM.tenant_id == UUID(tenant_id))
+                .where(ConversationsORM.user_ref == user_ref)
+            )
+            return result.first() is not None
+    except Exception as e:
+        logger.warning("conversation_owned_by failed conv_id=%s: %s", conversation_id, e)
+        return False
 
 
 async def create_conversation(

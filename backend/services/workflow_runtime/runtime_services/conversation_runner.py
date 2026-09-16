@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from langgraph.checkpoint.memory import MemorySaver
 
 from services.workflow_runtime.config_loader import load_agent_config
-from services.workflow_runtime.db import create_conversation, get_last_slots, get_messages, save_message, save_trace, validate_agent_tenant
+from services.workflow_runtime.db import conversation_owned_by, create_conversation, get_last_slots, get_messages, save_message, save_trace, validate_agent_tenant
 from services.workflow_runtime.redis_cache import (
     cache_append_messages,
     cache_get_messages,
@@ -250,10 +250,18 @@ def invalidate_graph_version(workflow_version_id: str) -> int:
     return removed
 
 
+def _previous_clarified_reasons(previous_slots: dict[str, Any] | None) -> list[str] | None:
+    """Reasons the previous turn's marker settled; None when it predates them."""
+    reasons = (previous_slots or {}).get("_clarified_reasons")
+    return [str(r) for r in reasons] if isinstance(reasons, list) else None
+
+
 def _slots_with_marker(
     slots: dict[str, Any], clarifications: list[dict[str, Any]],
+    clarified_reasons: list[str] | tuple[str, ...] = (),
 ) -> dict[str, Any]:
-    """Stamp "a clarification is outstanding" onto the slots.
+    """Stamp "a clarification is outstanding" onto the slots, with the reasons
+    already asked about in this line of questioning (not to be asked again).
 
     Rides along with the slots rather than living in its own key so the Redis
     cache and the durable message metadata carry it identically — otherwise a
@@ -263,7 +271,11 @@ def _slots_with_marker(
     AnalyticalSlots.from_dict ignores keys it does not know, so this is inert
     everywhere except the one place that reads it.
     """
-    return {**slots, "_asked_clarification": bool(clarifications)}
+    return {
+        **slots,
+        "_asked_clarification": bool(clarifications),
+        "_clarified_reasons": list(clarified_reasons),
+    }
 
 
 async def run_conversation_stream(
@@ -336,6 +348,14 @@ async def run_conversation_stream(
     # cfg["user_ref"] before, but nothing ever set the key, so it always fell
     # through to a hardcoded UUID literal.
     cfg["user_ref"] = user_ref
+
+    # The conversation id is client-supplied (directly, or relayed by the
+    # orchestrator) and history/slots are then read by id under tenant RLS
+    # only. Continue a thread only if this caller started it; otherwise start
+    # a fresh one rather than exposing someone else's.
+    if req.conversation_id and not await conversation_owned_by(req.conversation_id, tenant_id, user_ref):
+        logger.warning("conversation %s is not owned by the caller — starting a new one", req.conversation_id)
+        req = req.model_copy(update={"conversation_id": None})
 
     # orchestrated=True: orchestrator đã fetch memory và pass xuống, dùng luôn
     # orchestrated=False: single agent mode, tự fetch memory như bình thường
@@ -438,6 +458,10 @@ async def run_conversation_stream(
         # user answering it, so the rules must not fire again — otherwise a
         # question they cannot fully resolve asks the same thing forever.
         "previous_clarification": bool((previous_slots or {}).get("_asked_clarification")),
+        "previous_clarified_reasons": _previous_clarified_reasons(previous_slots),
+        "clarified_reasons": None,
+        "assumptions": None,
+        "clarification_answers": [a.model_dump() for a in req.clarification_answers],
         "language": None,
         "config": cfg,
     }
@@ -463,6 +487,7 @@ async def run_conversation_stream(
         detected_analysis: str | None,
         detected_slots: dict[str, Any] | None,
         detected_clarify: list[dict[str, Any]],
+        detected_clarified: list[str],
         node_traces: list[dict[str, Any]],
     ) -> None:
         try:
@@ -487,7 +512,7 @@ async def run_conversation_stream(
                         # Persisted on the message so the next turn can
                         # inherit them even if Redis has gone cold.
                         "slots": (
-                            _slots_with_marker(detected_slots, detected_clarify)
+                            _slots_with_marker(detected_slots, detected_clarify, detected_clarified)
                             if detected_slots else None
                         ),
                         **({"clarifications": detected_clarify} if detected_clarify else {}),
@@ -510,7 +535,7 @@ async def run_conversation_stream(
                     # than in its own key: the next turn reads exactly one thing
                     # to reconstruct context, so the two can never disagree about
                     # whether a question is currently outstanding.
-                    cache_writes.append(cache_set_slots(conv_id, _slots_with_marker(detected_slots, detected_clarify)))
+                    cache_writes.append(cache_set_slots(conv_id, _slots_with_marker(detected_slots, detected_clarify, detected_clarified)))
                 await asyncio.gather(*cache_writes)
                 if assistant_msg_id:
                     if node_traces:
@@ -584,6 +609,7 @@ async def run_conversation_stream(
         detected_analysis: str | None = None
         detected_slots: dict[str, Any] | None = None
         detected_clarify: list[dict[str, Any]] = []
+        detected_clarified: list[str] = []
 
         # Race Judge (tự chạy trong graph, có thể khiến responder chạy lại
         # nhiều lần) + Guardrail output check trên CÙNG 1 bản text — mỗi lần
@@ -664,6 +690,7 @@ async def run_conversation_stream(
                             detected_analysis = out.get("analysis_type")
                             detected_slots    = out.get("slots")
                             detected_clarify  = out.get("clarifications") or []
+                            detected_clarified = out.get("clarified_reasons") or []
                     elif node == "responder":
                         out = event["data"].get("output", {})
                         text = out.get("response", "") if isinstance(out, dict) else ""
@@ -799,6 +826,7 @@ async def run_conversation_stream(
                 detected_analysis=detected_analysis,
                 detected_slots=detected_slots,
                 detected_clarify=detected_clarify,
+                detected_clarified=detected_clarified,
                 node_traces=node_traces,
             ))
 

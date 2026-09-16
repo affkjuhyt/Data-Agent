@@ -3,12 +3,15 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import nullcontext
+from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from langgraph.types import Command
 
+from services.workflow_runtime.auth import get_current_user
 from services.workflow_runtime.observability import get_langchain_callback_handler, get_langfuse_client
 from services.workflow_runtime.orchestrator.graph import get_graph
+from services.workflow_runtime.orchestrator.routers.stream import load_pending_session, pending_questions
 from services.workflow_runtime.orchestrator.schemas import ClarificationResume, OrchestrateResponse
 
 logger = logging.getLogger(__name__)
@@ -16,20 +19,25 @@ router = APIRouter()
 
 
 @router.post("/api/orchestrate/resume", response_model=OrchestrateResponse)
-async def resume_orchestration(req: ClarificationResume) -> OrchestrateResponse:
+async def resume_orchestration(
+    req: ClarificationResume,
+    caller: dict[str, Any] = Depends(get_current_user),
+) -> OrchestrateResponse:
     """
     Resume orchestration sau khi user cung cấp clarification.
     session_id là thread_id của LangGraph checkpointer VÀ Langfuse trace_id —
     request resume này tiếp tục CÙNG 1 trace đã mở ở /api/orchestrate/stream.
+
+    Non-streaming: the answer comes back in one body, without charts, evidence
+    or the agent's own clarification options. POST /api/orchestrate/resume/stream
+    streams the same frames as /stream and is what the UI uses.
     """
     graph = await get_graph()
     lf = get_langfuse_client()
     lg_config_base = {"configurable": {"thread_id": req.session_id}}
 
-    # Kiểm tra graph có đang bị interrupt không
-    snapshot = await graph.aget_state(lg_config_base)
-    if not snapshot.next:
-        raise HTTPException(404, "Session không tồn tại hoặc đã hoàn thành.")
+    # Graph phải đang bị interrupt, và session phải của chính caller này.
+    await load_pending_session(graph, req.session_id, caller)
 
     span_ctx = lf.start_as_current_span(
         trace_context={"trace_id": req.session_id},
@@ -49,6 +57,19 @@ async def resume_orchestration(req: ClarificationResume) -> OrchestrateResponse:
         )
     if lf:
         await asyncio.to_thread(lf.flush)
+
+    # Interrupted again: say so, or the client shows an empty answer and has
+    # no way to reply.
+    after = await graph.aget_state(lg_config_base)
+    if after.next:
+        return OrchestrateResponse(
+            plan_id=req.session_id,
+            response="",
+            success=True,
+            needs_clarification=True,
+            clarification_questions=pending_questions(after),
+            session_id=req.session_id,
+        )
 
     if result.get("guardrail_triggered"):
         return OrchestrateResponse(

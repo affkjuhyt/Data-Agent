@@ -10,7 +10,7 @@ import { Bookmark, Download, Sparkles } from 'lucide-react';
 import { formatTime } from '../../../lib/formatVN';
 import { downloadResultXlsx, fetchResultRows } from '../api';
 import { csvFileName, downloadCsv, toCsv } from '../exportCsv';
-import type { AskMessage } from '../types';
+import type { AskMessage, ClarificationReply } from '../types';
 import { ChartRenderer } from './ChartRenderer';
 import { CitationPanel } from './CitationPanel';
 import { ClarificationCard } from './ClarificationCard';
@@ -25,7 +25,7 @@ interface AnswerBlockProps {
   question?: string;
   busy?: boolean;
   onSuggestion?: (text: string) => void;
-  onAnswerClarification?: (answer: string) => void;
+  onAnswerClarification?: (reply: ClarificationReply) => void;
   onSave?: () => void;
   onOpenEvidence?: () => void;
   /** hide the inline strip when a side panel already shows the details */

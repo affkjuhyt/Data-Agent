@@ -218,6 +218,31 @@ class TestOrchestratorForwardsEvidenceAndOptions:
         # suggestions are the orchestrator's own job — still not forwarded
         assert not any(e[0] == "suggestions" for e in events)
 
+    async def test_agent_client_continues_the_thread_and_relays_answers(self, agent_client, monkeypatch):
+        """Without the conversation id every turn is a fresh thread: no
+        inherited slots, no "just asked" marker — and the answer is asked again."""
+        ac = agent_client
+
+        async def _body():
+            yield "data: [DONE]\n\n"
+
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.headers = {"X-Conversation-Id": "conv-1"}
+        resp.body_iterator = _body()
+        run = AsyncMock(return_value=resp)
+        monkeypatch.setattr(ac, "_run_agent", run)
+
+        answers = [{"reason": "missing_time_range", "value": "this_month"}]
+        _ = [e async for e in ac.call_agent_stream(
+            "agent-1", "doanh thu", tenant_id="t1",
+            conversation_id="conv-1", clarification_answers=answers,
+        )]
+
+        payload = run.await_args.args[0]
+        assert payload["conversation_id"] == "conv-1"
+        assert payload["clarification_answers"] == answers
+
     def test_single_agent_node_and_sse_route_pass_them_through(self):
         graph_src = (pathlib.Path(_ORCH_DIR) / "graph.py").read_text(encoding="utf-8")
         stream_src = (pathlib.Path(_ORCH_DIR) / "routers" / "stream.py").read_text(encoding="utf-8")

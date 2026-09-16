@@ -101,7 +101,9 @@ export function EvidenceStrip({ evidence, onOpenPanel }: { evidence: Evidence; o
       ))}
 
       {evidence.warnings.map((w, i) => (
-        <div key={i} style={{ marginTop: 6, fontSize: 11, color: 'var(--ab-bad)' }}>⚠ {w.detail}</div>
+        w.kind === 'assumption'
+          ? <div key={i} data-testid="assumption" style={{ marginTop: 6, fontSize: 11, color: 'var(--ab-muted)' }}>ⓘ Assumed: {w.detail}</div>
+          : <div key={i} style={{ marginTop: 6, fontSize: 11, color: 'var(--ab-bad)' }}>⚠ {w.detail}</div>
       ))}
     </div>
   );

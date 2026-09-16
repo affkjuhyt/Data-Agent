@@ -10,6 +10,9 @@ from xml.sax.saxutils import quoteattr
 from pydantic import BaseModel, ValidationError  # noqa: F401
 
 from libs.semantic import AnalyticalSlots, merge as merge_slots
+from libs.semantic.ambiguity import ALL_REASONS as ALL_CLARIFICATION_REASONS
+from libs.semantic.ambiguity import apply_answers as apply_clarification_answers
+from libs.semantic.ambiguity import settle as settle_clarifications
 from libs.shared import untrusted
 from services.workflow_runtime.nodes.model_harness.intent import AnalysisType, capability, parse as parse_analysis_type
 from services.workflow_runtime.nodes.sandbox.kb_search import discard_speculative_search, start_speculative_search
@@ -257,30 +260,53 @@ async def planner_node(state: AgentState, config: RunnableConfig | None = None) 
     previous_slots = AnalyticalSlots.from_dict(state.get("previous_slots"))
     slots = merge_slots(previous_slots, incoming_slots)
 
+    # Options picked on the clarification card, applied as given — last, so a
+    # model that misread the answer text cannot override what was clicked.
+    answers = state.get("clarification_answers") or []
+    if answers:
+        slots = apply_clarification_answers(slots, answers)
+
     # Deterministic underspecification check, AFTER the merge — a follow-up
     # inherits the period, so asking for one before merging would interrupt
     # every refinement of an already-scoped question.
-    #
-    # Skipped once the user has answered: `previous_clarification` marks the
-    # turn that asked. Without it a question the rules cannot fully resolve
-    # would loop, asking the same thing forever.
-    clarifications: list[dict[str, Any]] = []
-    if not state.get("previous_clarification"):
-        try:
-            from services.workflow_runtime.semantic_layer import check_underspecified
+    raised: list[dict[str, Any]] = []
+    try:
+        from services.workflow_runtime.semantic_layer import check_underspecified
 
-            clarifications = await check_underspecified(
-                cfg.get("tenant_id", "") or "", state["query"], analysis_type.value, slots,
-            )
-        except Exception as e:
-            # Never block a turn on the checker itself — a question that could
-            # have been clarified is a smaller failure than one that cannot be
-            # asked at all.
-            logger.warning("planner | underspecification check unavailable: %s", e)
+        raised = await check_underspecified(
+            cfg.get("tenant_id", "") or "", state["query"], analysis_type.value, slots,
+        )
+    except Exception as e:
+        # Never block a turn on the checker itself — a question that could
+        # have been clarified is a smaller failure than one that cannot be
+        # asked at all.
+        logger.warning("planner | underspecification check unavailable: %s", e)
+
+    # Each reason is asked once per line of questioning. One answered this
+    # turn, or asked on an earlier turn of the same line, becomes an assumption
+    # the answer states instead of a second question; a gap not asked about yet
+    # is still asked. A turn answering a clarification is the same line even if
+    # the model re-worded the metric; a new metric otherwise starts a new line
+    # (the same rule merge_slots uses).
+    previously_asked = bool(state.get("previous_clarification"))
+    same_line = bool(answers) or previously_asked or not (
+        incoming_slots.metric and previous_slots.metric and incoming_slots.metric != previous_slots.metric
+    )
+    previous_reasons = state.get("previous_clarified_reasons")
+    if previous_reasons is None and previously_asked:
+        # Marker written before it carried reasons: it meant "asked", so treat
+        # everything as asked rather than ask again.
+        previous_reasons = list(ALL_CLARIFICATION_REASONS)
+    settled = {str(a.get("reason") or "") for a in answers}
+    if same_line:
+        settled |= set(previous_reasons or [])
+    asked, assumptions = settle_clarifications(raised, settled)
+    clarifications: list[dict[str, Any]] = [dict(q) for q in asked]
+    clarified_reasons = sorted((settled | {str(c.get("reason") or "") for c in clarifications}) - {""})
 
     logger.info(
-        "planner | intent=%s analysis_type=%s metric=%s filters=%d language=%s",
-        intent, analysis_type.value, slots.metric or "-", len(slots.filters), language,
+        "planner | intent=%s analysis_type=%s metric=%s filters=%d language=%s assumptions=%d",
+        intent, analysis_type.value, slots.metric or "-", len(slots.filters), language, len(assumptions),
     )
     if clarifications:
         # Ask instead of running. tool_calls are dropped on purpose: executing a
@@ -294,6 +320,8 @@ async def planner_node(state: AgentState, config: RunnableConfig | None = None) 
             "analysis_type": analysis_type.value,
             "slots": slots.to_dict(),
             "clarifications": clarifications,
+            "assumptions": assumptions,
+            "clarified_reasons": clarified_reasons,
             "language": language,
         }
 
@@ -308,5 +336,7 @@ async def planner_node(state: AgentState, config: RunnableConfig | None = None) 
         "analysis_type": analysis_type.value,
         "slots": slots.to_dict(),
         "clarifications": [],
+        "assumptions": assumptions,
+        "clarified_reasons": clarified_reasons,
         "language": language,
     }

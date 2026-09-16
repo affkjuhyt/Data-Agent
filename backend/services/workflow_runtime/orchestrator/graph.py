@@ -22,7 +22,12 @@ from services.workflow_runtime.orchestrator.executor import execute_plan
 from langchain_core.callbacks.manager import adispatch_custom_event
 
 from services.workflow_runtime.orchestrator.executor.agent_client import call_agent_stream, extract_guardrail_cfg
-from services.workflow_runtime.orchestrator.nodes.input_refine import input_refine_node, merge_clarification, run_input_refine
+from services.workflow_runtime.orchestrator.nodes.input_refine import (
+    clarification_payload,
+    input_refine_node,
+    merge_clarification,
+    run_input_refine,
+)
 from services.workflow_runtime.orchestrator.nodes.suggestion import run_suggestion
 from services.workflow_runtime.runtime_services.answer_ready import answer_ready_hook
 from services.workflow_runtime.orchestrator.planner import create_plan, report_node_failure
@@ -143,14 +148,21 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
     # The agent starts on the user's words and its events are held until the
     # check decides: keep → release them, rewrite → restart on the rewritten
     # question, clarify → drop them and ask. Nothing from a dropped run reaches
-    # the user. On resume the answer is merged in and there is nothing to check.
-    refine_task: asyncio.Task[tuple[str, list[str]]] | None = None
+    # the user.
+    #
+    # A turn that answers a clarification (resume, or picks from the agent's
+    # card) is checked too, rewrite-only. The answer is merged into the
+    # question that was asked, which may still say "ông" — and the agent sees
+    # this question alone, not the conversation, so an unresolved pronoun was
+    # searched as is and answered about whoever the search found. Asking again
+    # is refused there: that is the loop the answer just ended.
+    clarification_answers = state.get("clarification_answers") or []
+    answered = bool(state.get("clarification_response") or clarification_answers)
     if state.get("clarification_response"):
         query = merge_clarification(state["query"], state["clarification_response"])
-    else:
-        refine_task = asyncio.create_task(
-            run_input_refine(query, state.get("messages", []), state.get("cfg", {}))
-        )
+    refine_task: asyncio.Task[tuple[str, list[dict[str, Any]]]] | None = asyncio.create_task(
+        run_input_refine(query, state.get("messages", []), state.get("cfg", {}), allow_clarify=not answered)
+    )
 
     # Gate input guardrail — await task đã bắn nền từ routers/stream.py, ngay
     # trước khi gọi ra ngoài (side-effect thật, workflow_runtime có thể chạy
@@ -188,7 +200,7 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
     success = False
     response_text = ""
     latency_ms = 0
-    questions: list[str] = []
+    questions: list[dict[str, Any]] = []
 
     # Suggestions only need the approved answer. The runner announces it before
     # replaying it word by word (runtime_services/answer_ready.py), so the
@@ -214,6 +226,8 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
                     tenant_id=state["tenant_id"],
                     user_roles=state.get("user_roles") or [],
                     guardrail_cfg=extract_guardrail_cfg(state.get("cfg", {})),
+                    conversation_id=state.get("agent_conversation_id"),
+                    clarification_answers=clarification_answers,
                 ):
                     await events.put(item)
             except Exception as e:
@@ -301,7 +315,7 @@ async def single_agent_node(state: OrchestratorState, config: RunnableConfig) ->
         # Outside the span and the stream handling: interrupt() raises to pause
         # the graph. On resume this node runs again with the answer merged in.
         logger.info("input_refine | clarification needed, questions=%d", len(questions))
-        interrupt({"clarification_questions": questions})
+        interrupt(clarification_payload(questions))
 
     # Only an answer that fully arrived keeps its early suggestions; otherwise
     # suggestion_node runs on the final text as before.

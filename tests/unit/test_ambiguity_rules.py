@@ -103,6 +103,92 @@ class TestMissingTimeRange:
             assert option in RELATIVE_PERIODS
 
 
+class TestApplyAnswers:
+    """A pick on the card becomes a slot as given — re-reading it from chat text
+    was free to lose it, and the rules then asked the same question again."""
+
+    def test_a_period_pick_sets_the_relative_period_and_clears_a_range(self):
+        slots = AnalyticalSlots(metric="doanh thu", time_range=("2025-01-01", "2026-01-01"))
+
+        out = ambiguity.apply_answers(slots, [{"reason": "missing_time_range", "value": "last_month"}])
+
+        assert out.relative_period == "last_month"
+        assert out.time_range is None
+        assert out.metric == "doanh thu"
+
+    def test_the_answered_question_is_no_longer_asked(self):
+        answered = ambiguity.apply_answers(
+            AnalyticalSlots(), [{"reason": "missing_time_range", "value": "this_month"}],
+        )
+
+        assert Reason.MISSING_TIME_RANGE not in _reasons(_check(slots=answered))
+
+    def test_a_baseline_pick_sets_compare_to(self):
+        out = ambiguity.apply_answers(
+            AnalyticalSlots(), [{"reason": "comparison_without_baseline", "value": "same_period_last_year"}],
+        )
+
+        assert out.compare_to == "same_period_last_year"
+
+    def test_a_metric_pick_resolves_to_exactly_that_metric(self):
+        """The option is the display name, which the resolver registers."""
+        resolver = MetricResolver(build_catalog([GROSS, NET], {"revenue_gross": ["doanh thu"]}))
+        out = ambiguity.apply_answers(
+            AnalyticalSlots(metric="doanh thu", dimensions=("miền",)),
+            [{"reason": "ambiguous_metric", "value": NET.name}],
+        )
+
+        assert resolver.resolve(out.metric).definition.key == "revenue_net"
+        assert out.dimensions == ("miền",)
+
+    @pytest.mark.parametrize("answer", [
+        {"reason": "missing_time_range", "value": "since forever"},
+        {"reason": "comparison_without_baseline", "value": "yesterday"},
+        {"reason": "no_such_reason", "value": "this_month"},
+        {"reason": "missing_time_range", "value": ""},
+        {"reason": "ambiguous_metric", "value": "x" * 500},
+    ])
+    def test_values_outside_the_vocabulary_are_ignored(self, answer):
+        slots = AnalyticalSlots(metric="doanh thu")
+
+        assert ambiguity.apply_answers(slots, [answer]) == slots
+
+
+class TestSettle:
+    """A reason is asked once; after that its default reading is stated."""
+
+    RAISED = [
+        {"reason": "ambiguous_metric", "text": "?", "options": ["Doanh thu gộp", "Doanh thu thuần"]},
+        {"reason": "missing_time_range", "text": "?", "options": ["this_month"]},
+    ]
+
+    def test_nothing_settled_asks_everything(self):
+        ask, assume = ambiguity.settle(self.RAISED, set())
+
+        assert ask == self.RAISED
+        assert assume == []
+
+    def test_a_settled_reason_is_stated_not_asked(self):
+        ask, assume = ambiguity.settle(self.RAISED, {"missing_time_range"})
+
+        assert [q["reason"] for q in ask] == ["ambiguous_metric"]
+        assert [a["reason"] for a in assume] == ["missing_time_range"]
+        assert assume[0]["kind"] == "assumption"
+        assert "toàn bộ dữ liệu lịch sử" in assume[0]["detail"]
+
+    def test_the_metric_assumption_names_what_was_used_and_the_alternative(self):
+        _, assume = ambiguity.settle(self.RAISED, {"ambiguous_metric"})
+
+        assert "“Doanh thu gộp”" in assume[0]["detail"]
+        assert "Doanh thu thuần" in assume[0]["detail"]
+
+    @pytest.mark.parametrize("reason", ambiguity.ALL_REASONS)
+    def test_every_reason_has_an_assumption_to_state(self, reason):
+        _, assume = ambiguity.settle([{"reason": reason, "text": "", "options": ["X"]}], {reason})
+
+        assert assume[0]["detail"]
+
+
 class TestAmbiguousMetric:
     def test_two_metrics_that_compute_differently_are_flagged(self):
         """Gross and net differ by exactly the refunds — the confusion the

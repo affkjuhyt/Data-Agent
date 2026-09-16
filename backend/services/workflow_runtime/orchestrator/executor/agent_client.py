@@ -176,6 +176,8 @@ async def call_agent_stream(
     tenant_id: str = "",
     user_roles: list[str] | None = None,
     guardrail_cfg: dict[str, Any] | None = None,
+    conversation_id: str | None = None,
+    clarification_answers: list[dict[str, Any]] | None = None,
 ) -> AsyncIterator[tuple[str, Any]]:
     """
     Async generator — yield (event_type, data):
@@ -194,6 +196,11 @@ async def call_agent_stream(
     payload = {
         "query": prompt, "agent_id": agent_id, "messages": [], "orchestrated": False,
         "guardrail_cfg": guardrail_cfg,
+        # Continue the agent's own thread: the previous turn's slots and the
+        # marker saying it just asked live there. A fresh thread per turn made
+        # every answer to a clarification look like turn one — which asks.
+        "conversation_id": conversation_id,
+        "clarification_answers": clarification_answers or [],
     }
 
     resp = await _run_agent(payload, _caller_for(user_id, tenant_id, user_roles))

@@ -129,20 +129,36 @@ export interface ClarificationQuestion {
 export interface Evidence {
   runs: EvidenceRun[];
   clarifications: ClarificationQuestion[];
-  warnings: Array<{ kind: string; detail: string; expression?: string }>;
+  /** kind "assumption": a default reading applied instead of asking again (carries `reason`) */
+  warnings: Array<{ kind: string; detail: string; expression?: string; reason?: string }>;
 }
 
 /**
  * Two ways the backend asks before answering:
  *  - `resume`: the orchestrator graph is interrupted; the answer must go to
- *    POST /api/orchestrate/resume with the session id.
+ *    POST /api/orchestrate/resume/stream with the session id.
  *  - `followup`: the agent answered with a question (deterministic rules in
  *    backend/libs/semantic/ambiguity.py, or a responder <OPTIONS> block); the answer
  *    is simply the next user turn and the backend merges it into the slots.
  */
 export type Clarification =
   | { kind: 'resume'; sessionId: string; questions: ClarificationQuestion[] }
-  | { kind: 'followup'; questions: ClarificationQuestion[] };
+  /** `query`: the question as sent on the turn that asked, so the answer can
+   *  be sent as that question plus the answer instead of the bare answer. */
+  | { kind: 'followup'; questions: ClarificationQuestion[]; query?: string };
+
+/** An option picked on the card — backend workflow_runtime.schemas.ClarificationAnswer. */
+export interface ClarificationAnswer {
+  reason: string;
+  value: string;
+}
+
+/** What answering a clarification card produces. `answers` is empty for a
+ *  free-text reply or options that carry no reason. */
+export interface ClarificationReply {
+  text: string;
+  answers: ClarificationAnswer[];
+}
 
 export interface PendingReviewInfo {
   convId: string;
@@ -173,13 +189,3 @@ export interface AgentOption {
   routing_keywords?: string[];
 }
 
-/** OrchestrateResponse from POST /api/orchestrate/resume */
-export interface OrchestrateResponse {
-  plan_id: string;
-  response: string;
-  success: boolean;
-  needs_clarification?: boolean;
-  clarification_questions?: string[];
-  suggestions?: string[];
-  session_id?: string;
-}
