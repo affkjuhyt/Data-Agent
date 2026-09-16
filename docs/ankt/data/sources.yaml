@@ -375,3 +375,186 @@ sources:
     schedule: every 15 min
     tier: L
     verified: S
+
+# ── Database / warehouse để kiểm thử hệ thống (thêm 16/09/2026) ────────
+# Khác với `sources` ở trên: đây KHÔNG phải nguồn dữ liệu ANKT, mà là đích kiểm thử
+# cho đường warehouse (sandbox SQL, semantic layer, schema catalog, freshness, guard).
+# engine: engine thực thi cần có · tests: thành phần hệ thống mà nguồn này chạm tới.
+# Trạng thái mạng đã đo từ server dự án ngày 16/09/2026.
+test_warehouses:
+  # ── Công khai, gọi được ngay ──
+  - id: wh-clickhouse-play
+    publisher: ClickHouse Inc.
+    title: ClickHouse play — cụm công khai chỉ đọc
+    connector: db-readonly
+    engine: clickhouse
+    endpoint: https://play.clickhouse.com/
+    protocol: https (cổng 443)
+    auth: user=play, không mật khẩu
+    server_version: 26.9.1.52
+    databases: [default (69 bảng), blogs, mgbench, git_clickhouse]
+    scale: github_events 11,14 tỷ dòng/771 GiB · trips 3,47 tỷ/214 GiB · ontime 205 triệu · hits 100 triệu/13,4 GiB · opensky 66 triệu · uk_price_paid 30 triệu · menu_item 1,33 triệu + dish 428k
+    read_only: cưỡng chế phía server (CREATE TABLE → ACCESS_DENIED code 497)
+    tests: [clickhouse-executor, sql-guard, row-cap, truncation, aggregation-check, schema-crawler, text-to-sql-clickhouse]
+    tier: S
+    verified: V
+    checked: 2026-09-16
+    notes: Đích kiểm thử tốt nhất hiện có — không phải tự dựng gì, có bảng tỷ dòng để test row cap, và có cặp menu_item↔dish làm join fan-out thật.
+
+  - id: wh-rfam-mysql
+    publisher: EMBL-EBI
+    title: Rfam public MySQL
+    connector: db-readonly
+    engine: mysql
+    endpoint: mysql-rfam-public.ebi.ac.uk:4497
+    protocol: mysql (cổng 4497 mở từ server dự án)
+    auth: user=rfamro, không mật khẩu, database=Rfam
+    server_version: 8.0.32-24
+    tests: [mysql-driver-CHUA-CO, schema-crawler, text-to-sql-mysql-CHUA-CO]
+    tier: S
+    verified: V
+    checked: 2026-09-16
+    notes: Bắt tay giao thức đã xác minh (MySQL protocol 10). Hệ thống CHƯA hỗ trợ MySQL — đây là nguồn để kiểm thử khi bổ sung driver.
+
+  - id: wh-ensembl-mysql
+    publisher: Ensembl
+    title: Ensembl public MySQL
+    connector: db-readonly
+    engine: mysql
+    endpoint: ensembldb.ensembl.org:3306
+    protocol: mysql (cổng 3306 mở từ server dự án)
+    auth: user=anonymous, không mật khẩu
+    server_version: 5.6.33
+    tests: [mysql-driver-CHUA-CO, schema-crawler]
+    tier: M
+    verified: V
+    checked: 2026-09-16
+    notes: Schema rất lớn (hàng nghìn bảng/DB) — hợp để test schema crawler và bước chọn bảng khi catalog lớn.
+
+  - id: wh-ebi-postgres
+    publisher: EMBL-EBI (RNAcentral)
+    title: RNAcentral public Postgres
+    connector: db-readonly
+    engine: postgres
+    endpoint: hh-pgsql-public.ebi.ac.uk:5432
+    auth: user=reader, database=pfmegrnargs
+    tests: [postgres-executor, schema-crawler]
+    tier: S
+    verified: U
+    checked: 2026-09-16
+    notes: "Không tới được từ server dự án: No route to host. Thử lại từ mạng khác trước khi đưa vào kế hoạch."
+
+  # ── Cần tài khoản ──
+  - id: wh-snowflake-sample
+    publisher: Snowflake
+    title: SNOWFLAKE_SAMPLE_DATA (TPC-H, TPC-DS) trên bản dùng thử
+    connector: db-readonly
+    engine: snowflake
+    auth: tài khoản dùng thử 30 ngày
+    tests: [snowflake-executor, sql-guard]
+    tier: M
+    verified: U
+    notes: Chứng minh executor Snowflake chạy, NHƯNG agent vẫn không sinh được SQL Snowflake (handlers/data.py chỉ map postgres + clickhouse).
+
+  - id: wh-bigquery-public
+    publisher: Google Cloud
+    title: BigQuery public datasets
+    connector: db-readonly
+    engine: bigquery
+    auth: tài khoản GCP, có hạn mức miễn phí
+    tests: [bigquery-driver-CHUA-CO]
+    tier: M
+    verified: U
+    notes: Hệ thống chưa có driver BigQuery (README mục 3.1 đã nêu là khoảng trống).
+
+  - id: wh-databricks-sample
+    publisher: Databricks
+    title: Databricks free edition — samples catalog
+    connector: db-readonly
+    engine: databricks
+    auth: tài khoản free edition
+    tests: [databricks-driver-CHUA-CO]
+    tier: M
+    verified: U
+    notes: Wizard UI đã liệt kê databricks nhưng KHÔNG có backend — nguồn này để kiểm thử nếu quyết định làm thật, hoặc để gỡ khỏi UI nếu không.
+
+  # ── Tự dựng (tải về, nạp vào Postgres/ClickHouse của dự án) ──
+  - id: wh-self-pagila
+    publisher: devrimgunduz/pagila
+    title: Pagila (bản Postgres của Sakila)
+    connector: db-readonly
+    engine: postgres
+    url: https://github.com/devrimgunduz/pagila
+    size: ~3 MB
+    tests: [postgres-executor, semantic-layer, text-to-sql-postgres, e2e-smoke]
+    tier: S
+    verified: V
+    checked: 2026-09-16
+
+  - id: wh-self-chinook
+    publisher: lerocha/chinook-database
+    title: Chinook
+    connector: db-readonly
+    engine: postgres
+    url: https://github.com/lerocha/chinook-database
+    size: ~1 MB
+    tests: [postgres-executor, semantic-layer]
+    tier: S
+    verified: V
+    checked: 2026-09-16
+
+  - id: wh-self-job-imdb
+    publisher: gregrahn/join-order-benchmark
+    title: Join Order Benchmark (IMDB) — 21 bảng, 113 truy vấn nhiều join
+    connector: db-readonly
+    engine: postgres
+    url: https://github.com/gregrahn/join-order-benchmark
+    size: ~3,6 GB sau khi nạp
+    tests: [aggregation-check-fan-out, sql-guard, row-cap, query-timeout]
+    tier: M
+    verified: V
+    checked: 2026-09-16
+    notes: Bộ duy nhất trong danh sách được thiết kế quanh join phức tạp — đúng thứ `aggregation_check.analyse()` sinh ra để bắt.
+
+  - id: wh-self-tpch
+    publisher: TPC (sinh bằng dbgen hoặc extension tpch của DuckDB)
+    title: TPC-H
+    connector: db-readonly
+    engine: postgres | clickhouse
+    url: https://duckdb.org/docs/stable/core_extensions/tpch
+    size: SF1 ~1 GB · SF10 ~10 GB (chọn theo ổ đĩa còn trống)
+    tests: [row-cap, query-timeout, connection-pool, hpa-load]
+    tier: M
+    verified: V
+    checked: 2026-09-16
+
+  - id: bench-spider-text2sql
+    publisher: Yale LILY
+    title: Spider — 200 CSDL, 10.181 câu hỏi có SQL chuẩn
+    connector: benchmark
+    url: https://yale-lily.github.io/spider
+    tests: [text-to-sql-accuracy, model-eval-scorers-sql]
+    tier: M
+    verified: V
+    checked: 2026-09-16
+    notes: Có đáp án SQL nên cắm thẳng được vào model/eval/scorers/sql.py — cách duy nhất đo độ chính xác sinh SQL bằng con số.
+
+  - id: bench-bird-text2sql
+    publisher: BIRD-bench
+    title: BIRD — 95 CSDL lớn, 12.751 câu hỏi
+    connector: benchmark
+    url: https://bird-bench.github.io/
+    tests: [text-to-sql-accuracy, schema-selection-catalog-lon]
+    tier: L
+    verified: V
+    checked: 2026-09-16
+
+  - id: wh-ankt-derived
+    publisher: Tự dựng từ IN1/IN5/IN8/IN9 trong `sources`
+    title: Warehouse chỉ số kinh tế (WDI + IMF WEO + BIS nạp vào Postgres/ClickHouse)
+    connector: db-readonly
+    engine: postgres | clickhouse
+    tests: [text-to-sql-postgres, semantic-layer, freshness, classification, rls, tien-than-observation-store]
+    tier: M
+    verified: U
+    notes: Giá trị cao nhất cho ANKT — vừa kiểm thử đường warehouse bằng dữ liệu đúng miền, vừa là bản nháp của observation store.

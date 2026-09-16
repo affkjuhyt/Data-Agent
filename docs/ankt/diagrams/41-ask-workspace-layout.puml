@@ -1,0 +1,88 @@
+@startuml 41-ask-workspace-layout
+title Ask Workspace — ba bề mặt liên kết (Ngữ cảnh · Hội thoại · Canvas)
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam wrapWidth 200
+skinparam component<<have>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam component<<partial>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam component<<missing>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có |
+  |<#E6F0FF> | Có một phần |
+  |<#FFF4D6> | Chưa có |
+  Hội thoại là **dòng lệnh**. Canvas là nơi kết quả sống thành **block có danh tính**.
+  Ngữ cảnh là **tập nguồn agent được phép nhìn**, do người dùng kiểm soát tường minh.
+endlegend
+
+package "A · Ngữ cảnh — agent được nhìn thấy gì" {
+  component "Trình duyệt nguồn\nwarehouse · bảng · cột (schema-catalog)" as A1 <<partial>>
+  component "Bộ sưu tập tri thức\ncollection · tài liệu · hiệu lực" as A2 <<partial>>
+  component "Danh mục chỉ số\nchỉ số · biến · vintage" as A3 <<missing>>
+  component "Tệp tải lên phiên này\nxlsx · csv · pdf — nhãn 'chưa duyệt'" as A4 <<missing>>
+  component "Kết quả trước đó\npin block làm đầu vào" as A5 <<missing>>
+  component "Ngân sách ngữ cảnh\nbao nhiêu bảng · dòng · token" as A6 <<missing>>
+}
+
+package "B · Hội thoại — dòng lệnh" {
+  component "Composer + @-mention\ngắn bảng · tài liệu · chỉ số · block · tệp" as B1 <<missing>>
+  component "Chip ngữ cảnh sửa được\nkỳ · vintage · vùng · nguồn" as B2 <<missing>>
+  component "Stream câu trả lời · làm rõ · dừng" as B3 <<have>>
+  component "Tường thuật tiến trình\nbước · sub-agent · tool đang chạy" as B4 <<missing>>
+  component "Nhắm mục tiêu block\n'làm lại block #3 theo quý'" as B5 <<missing>>
+}
+
+package "C · Canvas — block có danh tính" {
+  component "BlockCard\nid · tiêu đề · spec · kết quả · nguồn" as C1 <<missing>>
+  component "Bảng: sort · phân trang · xuất\n(DataGrid hiện có)" as C2 <<have>>
+  component "Biểu đồ 8 loại (ChartRenderer)" as C3 <<have>>
+  component "Shelves mã hoá kéo thả\nX · Y · màu · kích thước · lọc" as C4 <<missing>>
+  component "Pivot · nhóm · top-N · so kỳ" as C5 <<missing>>
+  component "Trình soạn SQL + autocomplete schema" as C6 <<missing>>
+  component "Ô mã Python/pandas" as C7 <<missing>>
+  component "IndicatorValueCard · ngưỡng · vintage" as C8 <<missing>>
+  component "Bảng chứng cứ (EvidencePanel)" as C9 <<partial>>
+  component "Lịch sử phiên bản block · undo/redo" as C10 <<missing>>
+  component "Bố cục lưới kéo thả · so sánh cạnh nhau" as C11 <<missing>>
+}
+
+package "D · Đầu ra" {
+  component "Xuất xlsx có sheet Nguồn" as D1 <<have>>
+  component "Ghim vào dashboard cá nhân" as D2 <<missing>>
+  component "Đưa vào báo cáo / bản tin" as D3 <<missing>>
+  component "Lưu thành saved view (tham số)" as D4 <<missing>>
+  component "Đăng ký cảnh báo từ block" as D5 <<missing>>
+  component "Đăng ký metric contract đã duyệt" as D6 <<missing>>
+  component "Chia sẻ workspace · deep-link · bình luận" as D7 <<missing>>
+}
+
+A1 --> B1 : kéo cột vào composer
+A4 --> B1
+A5 --> B1
+B1 --> C1 : câu hỏi sinh block
+B5 --> C1 : sửa block đã có
+C1 --> C4
+C1 --> C6
+C1 --> D1
+C1 --> D3
+C4 ..> C1 : reshape tại chỗ (không chạy lại)
+C6 ..> C1 : chạy lại → cùng block, phiên bản mới
+A6 -[hidden]- A1
+
+note bottom of "C · Canvas — block có danh tính"
+  Mọi block mang cùng `QuerySpec`. Đổi ở bất kỳ tầng nào
+  (chip · shelves · form · SQL) đều ghi vào spec đó,
+  nên block luôn tái lập được và luôn có nguồn.
+end note
+@enduml

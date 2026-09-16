@@ -1,0 +1,78 @@
+@startmindmap 37-ui-information-architecture
+title Bản đồ điều hướng giao diện Data Agent (IA mục tiêu)
+caption Xanh lá = đã có · Xanh dương = có một phần · Vàng = chưa có · (E) lãnh đạo · (A) chuyên viên · (S) steward · (Q) QA · (X) quản trị
+
+*[#E6F0FF] Data Agent
+
+**[#FFF4D6] Tổng quan (E·A)
+***[#FFF4D6] Heatmap domain × trạng thái ngưỡng
+***[#FFF4D6] Cảnh báo mới · việc được giao
+***[#FFF4D6] Lịch công bố sắp tới
+***[#FFF4D6] Bản tin gần nhất
+***[#FFF4D6] Dashboard cá nhân (tự ghim chỉ số)
+
+**[#E6F0FF] Hỏi dữ liệu (E·A)
+***[#EEF7EE] Hội thoại stream · làm rõ · dừng
+***[#FFF4D6] Chip ngữ cảnh sửa được (chỉ số · kỳ · vintage · vùng)
+***[#FFF4D6] Khối trả lời theo intent (giá trị · xu hướng · phân rã · so sánh)
+***[#E6F0FF] Bảng chứng cứ (có; thiếu chỉ số · vintage · trang)
+***[#FFF4D6] Thẻ từ chối có lối ra
+***[#E6F0FF] Lịch sử · câu hỏi đã lưu (hiện: localStorage)
+***[#FFF4D6] Mở trong Explorer · đưa vào báo cáo · báo số sai
+
+**[#FFF4D6] Chỉ số (A·E)
+***[#FFF4D6] Danh mục · lọc taxonomy · trạng thái ngưỡng
+***[#FFF4D6] Trang chỉ số
+****[#FFF4D6] Định nghĩa · công thức · biến · căn cứ pháp lý
+****[#FFF4D6] Chuỗi thời gian có dải ngưỡng theo giai đoạn
+****[#FFF4D6] Bảng quan sát kèm nguồn tới trang
+****[#FFF4D6] Vintage · tam giác điều chỉnh
+****[#FFF4D6] Phân rã biến động · so sánh quốc tế
+****[#FFF4D6] Panel hỏi agent theo ngữ cảnh
+***[#FFF4D6] Explorer (dựng truy vấn IQL không viết JSON)
+***[#FFF4D6] Rổ so sánh tự định nghĩa · phân tích đã lưu
+
+**[#FFF4D6] Cảnh báo (A·E)
+***[#FFF4D6] Hộp cảnh báo · lọc · mức độ
+***[#FFF4D6] Xác nhận · giao việc · đóng kèm lý do
+***[#FFF4D6] Đăng ký nhận cảnh báo theo chỉ số/domain
+
+left side
+
+**[#E6F0FF] Dữ liệu — Data Studio (S)
+***[#E6F0FF] Nguồn & Connector · lịch · SLA
+***[#E6F0FF] Trích xuất & Duyệt (workbench trang + bbox)
+***[#FFF4D6] Mapping & Chuẩn hoá
+***[#FFF4D6] Series & Vintage Explorer
+***[#E6F0FF] Chất lượng & Đối chiếu · issue dữ liệu
+***[#E6F0FF] Lineage & Tác động
+***[#FFF4D6] Indicator Studio (định nghĩa · ngưỡng · duyệt)
+***[#E6F0FF] Tri thức · văn bản · hiệu lực
+
+**[#FFF4D6] Báo cáo (A·E)
+***[#FFF4D6] Bản tin theo template · khối nội dung
+***[#FFF4D6] Soạn có agent hỗ trợ · duyệt
+***[#FFF4D6] Lịch phát hành · tải PDF/DOCX
+
+**[#FFF4D6] Đánh giá (Q)
+***[#FFF4D6] Golden set · dung sai · duyệt case
+***[#FFF4D6] Lần chạy eval · so sánh · scorecard theo họ chỉ số
+***[#E6F0FF] Trace (hiện: TraceExplorer · Langfuse)
+
+**[#EEF7EE] Xây dựng (Q·X)
+***[#EEF7EE] Agents · Workflows · Versions · Playground
+
+**[#EEF7EE] Vận hành (X)
+***[#EEF7EE] Hội thoại · Trace · Chờ duyệt · Phân tích
+***[#FFF4D6] Nhật ký truy cập số liệu mật
+
+**[#EEF7EE] Cài đặt (X)
+***[#EEF7EE] Tổ chức · IAM · Auth · Secrets · Hạ tầng · API
+***[#FFF4D6] Quyền theo phân loại dữ liệu (ABAC)
+
+**[#FFF4D6] Xuyên suốt
+***[#FFF4D6] Hộp thư & thông báo realtime
+***[#FFF4D6] Tìm kiếm toàn cục · command palette
+***[#FFF4D6] Chuyển ngôn ngữ (vi/en)
+***[#FFF4D6] Hồ sơ · sở thích (đơn vị · vintage mặc định · mật độ)
+@endmindmap

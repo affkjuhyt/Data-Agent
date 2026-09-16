@@ -1,0 +1,82 @@
+@startuml 50-number-provenance-pipeline
+title Đường đi của một con số — kỹ thuật cần ở mỗi bước và trạng thái hiện tại
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam wrapWidth 250
+legend top right
+  |= Màu |= Trạng thái kỹ thuật |
+  |<#EEF7EE> | Đã có |
+  |<#E6F0FF> | Có một phần |
+  |<#FFF4D6> | Chưa có |
+  Đây là chuỗi quyết định tính đúng của cả hệ thống: **một mắt xích vàng
+  làm hỏng con số ở đầu ra**, dù mọi mắt xích khác đã xanh.
+endlegend
+
+|Nguồn|
+#EEF7EE:**Tài liệu gốc** (PDF bản tin nợ công, có thể là bản scan)
+lưu MinIO;
+#FFF4D6:Tính **SHA-256**, chống trùng, gắn `release`
+—— *chưa có: dedup theo hash nội dung*;
+
+|Trích xuất|
+#FFF4D6:**OCR** trang scan
+—— *chưa có: `do_ocr=False` trong docling_parser.py*;
+#E6F0FF:**Phân tích layout + cấu trúc bảng** (Docling · TableFormer)
+—— *có, nhưng bảng chỉ thành chunk markdown*;
+#FFF4D6:**Giữ toạ độ**: `page_no`, `bbox`, `cell`, độ tin cậy
+—— *chưa có: Docling trả `prov` nhưng không lưu*;
+note right
+  **Rủi ro cao nhất của toàn dự án**: OCR đọc sai một chữ số
+  hoặc nhầm dấu thập phân tạo ra câu trả lời sai nhưng trông
+  đáng tin. Đo bằng **độ chính xác token số**, không phải CER/WER.
+end note
+
+|Chuẩn hoá|
+#FFF4D6:**Ánh xạ** ô → biến · chiều · kỳ · đơn vị
+—— *chưa có mapping-svc; `kb_structured_data` chỉ lấy bảng lớn nhất mỗi file*;
+#FFF4D6:**Chuẩn hoá đơn vị · bội số · tiền tệ/FX**
+—— *chưa có: `unit` hiện là text tự do*;
+#FFF4D6:**Số thập phân chính xác** (Decimal, không float)
+—— *chưa có: Decimal chỉ dùng khi tuần tự hoá*;
+
+|Kiểm soát|
+#E6F0FF:**Rule chất lượng**: miền giá trị · tổng thành phần = tổng
+—— *`check_subtotals`, `check_units` đã có, chưa nối vào pipeline dữ liệu*;
+#FFF4D6:**Đối chiếu** tự tính vs số chính thức, theo dung sai;
+#E6F0FF:**Duyệt maker–checker**, ghi `value_edit` kèm giá trị gốc
+—— *có mô hình duyệt cho schema bảng, chưa có cho từng ô số*;
+
+|Lưu trữ|
+#FFF4D6:**Observation append-only**: `(series_key, period, release_id)`
+số điều chỉnh là bản ghi mới, không ghi đè;
+#FFF4D6:**Truy vấn point-in-time**: `argMax(value, release_date)`
+với `release_date <= as_of`;
+
+|Tính toán|
+#FFF4D6:**Formula DAG**: ratio · căn kỳ stock/flow · phân rã biến động
+—— *chưa có; compiler hiện chỉ làm sum/count/avg/min/max trên 1 bảng*;
+#FFF4D6:**Làm tròn theo `decimal_precision`** đã công bố;
+#FFF4D6:**Chọn ngưỡng theo kỳ dữ liệu** (`valid_from`/`valid_to`),
+không theo ngày hỏi;
+
+|Trả lời|
+#EEF7EE:LLM diễn giải (không tự tính số)
+—— *nền đã có: metric contract đã tách số học khỏi LLM*;
+#E6F0FF:**Verifier**: số ⊆ evidence
+—— *có `judge`, nhưng so khớp chuỗi chữ số: `128,4` = `1284`*;
+if (Số có trong evidence, trong dung sai, đúng vintage?) then (đạt)
+  #FFF4D6:**Verifier mở rộng**: dung sai theo loại case ·
+  nhất quán vintage · trích dẫn giải được tới trang;
+else (không đạt)
+  #FFF4D6:**Chặn hiển thị**, nêu lý do có cấu trúc;
+  kill
+endif
+
+|Giao diện|
+#E6F0FF:**Định dạng vi-VN**: `1.284,5` · `dd/MM/yyyy`
+—— *`formatVN.ts` đang định dạng theo chuẩn Mỹ*;
+#FFF4D6:**Bấm vào số → mở đúng trang tài liệu, highlight ô**;
+#EEF7EE:Xuất Excel kèm sheet "Nguồn"
+—— *đã có: `answer_exports.build_xlsx`*;
+stop
+@enduml

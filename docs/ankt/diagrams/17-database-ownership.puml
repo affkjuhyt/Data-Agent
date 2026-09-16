@@ -18,6 +18,13 @@ skinparam database<<new>> {
   BackgroundColor #FFF4D6
   BorderColor #C08A00
 }
+legend top right
+  |= Màu |= Trạng thái service |
+  |<#FFFFFF> | Dùng lại nguyên trạng |
+  |<#E6F0FF> | Có, cần mở rộng |
+  |<#FFF4D6> | Xây mới |
+endlegend
+
 left to right direction
 
 package "Service" {
