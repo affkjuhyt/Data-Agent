@@ -17,11 +17,22 @@ class GuardrailCfg(BaseModel):
     guardrail_timeout: int = 15
 
 
+class ClarificationAnswer(BaseModel):
+    """One option picked on a clarification card: the `reason` of the question
+    it answers (libs.semantic.ambiguity.Reason) and the option's slot value."""
+    reason: str = Field(max_length=64)
+    value: str = Field(max_length=200)
+
+
 class RunRequest(BaseModel):
     query: str
     agent_id: str
     conversation_id: Optional[str] = None
     messages: List[Message] = []
+    # Structured answers to the previous turn's clarification. Applied straight
+    # onto the slots by the planner (ambiguity.apply_answers), not re-read from
+    # the query text.
+    clarification_answers: List[ClarificationAnswer] = Field(default_factory=list, max_length=8)
     # True khi được gọi từ orchestrator trong multi-agent mode:
     #   - dùng memory_context từ request thay vì tự fetch
     #   - skip memory write (orchestrator sẽ ghi sau synthesize)

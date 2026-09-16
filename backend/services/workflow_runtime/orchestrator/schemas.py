@@ -2,6 +2,13 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 
+class ClarificationAnswer(BaseModel):
+    """An option picked on the agent's clarification card (mirrors
+    workflow_runtime.schemas.ClarificationAnswer)."""
+    reason: str = Field(max_length=64)
+    value: str = Field(max_length=200)
+
+
 class OrchestrateRequest(BaseModel):
     query: str
     user_id: str = "default"
@@ -13,6 +20,12 @@ class OrchestrateRequest(BaseModel):
     # Khi frontend nhận __clarification event, user trả lời rồi gửi lại request với field này
     clarification_response: Optional[str] = None
     messages: list[dict[str, Any]] = Field(default_factory=list)
+    # Single-agent mode: the agent conversation (from __conv_ids) this turn
+    # continues. Its slots and "just asked" marker live there — without it
+    # every turn starts a fresh thread and an answer looks like turn one.
+    conversation_id: Optional[str] = None
+    # Options picked on a clarification card, relayed to the agent as is.
+    clarification_answers: list[ClarificationAnswer] = Field(default_factory=list, max_length=8)
 
 
 class TaskSchema(BaseModel):

@@ -5,9 +5,9 @@
  * interrupted orchestration or by sending the choice as the next turn.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { openOrchestrateStream, resumeClarification } from '../api';
+import { openOrchestrateStream, openResumeStream } from '../api';
 import { readSseStream, type SseEvent } from '../sse';
-import type { AskMessage, Clarification } from '../types';
+import type { AskMessage, Clarification, ClarificationAnswer, ClarificationReply } from '../types';
 
 interface UseAgentStreamOptions {
   userId: string;
@@ -17,25 +17,45 @@ interface UseAgentStreamOptions {
   historyTurns?: number;
 }
 
+interface SendOptions {
+  /** what the backend works on, when it differs from the text shown in the bubble */
+  query?: string;
+  /** options picked on the previous turn's clarification card */
+  answers?: ClarificationAnswer[];
+  /** answer an interrupted orchestration (the text is the answer) instead of asking anew */
+  resumeSessionId?: string;
+}
+
 const nowIso = () => new Date().toISOString();
 let seq = 0;
 const nextId = () => `${Date.now().toString(36)}-${(seq++).toString(36)}`;
+
+/** The question a clarification answer is sent as: the question that was asked
+ *  about, plus the answer. Mirrors backend input_refine.merge_clarification. */
+export const withClarificationAnswer = (query: string, answer: string) => `${query}\n\nThông tin bổ sung: ${answer}`;
 
 export function useAgentStream({ userId, agentId, historyTurns = 10 }: UseAgentStreamOptions) {
   const [messages, setMessages] = useState<AskMessage[]>([]);
   const [sending, setSending] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const mounted = useRef(true);
+  // Single-agent mode: the agent's own conversation, continued turn to turn.
+  // The previous turn's slots and its "I just asked" marker live there; a new
+  // thread per turn made every answer to a clarification look like turn one.
+  const agentConvRef = useRef<string | null>(null);
 
   useEffect(() => () => { mounted.current = false; abortRef.current?.abort(); }, []);
+  // Another agent (or auto routing) cannot continue this agent's thread.
+  useEffect(() => { agentConvRef.current = null; }, [agentId]);
 
   const patch = useCallback((id: string, fn: (m: AskMessage) => AskMessage) => {
     setMessages(prev => prev.map(m => (m.id === id ? fn(m) : m)));
   }, []);
 
-  const send = useCallback(async (text: string) => {
+  const send = useCallback(async (text: string, opts: SendOptions = {}) => {
     const q = text.trim();
     if (!q || sending) return;
+    const query = opts.query?.trim() || q;
 
     const userMsg: AskMessage = { id: nextId(), role: 'user', content: q, timestamp: nowIso(), status: 'done' };
     const assistantId = nextId();
@@ -80,7 +100,7 @@ export function useAgentStream({ userId, agentId, historyTurns = 10 }: UseAgentS
           const clar: Clarification = {
             kind: 'resume',
             sessionId: e.sessionId || sessionId || '',
-            questions: e.questions.map(text => ({ text })),
+            questions: e.details,
           };
           patch(assistantId, m => ({ ...m, clarification: clar }));
           break;
@@ -91,13 +111,16 @@ export function useAgentStream({ userId, agentId, historyTurns = 10 }: UseAgentS
             // Deterministic questions from the runtime: render them as a card
             // whose answer is simply the next turn (slots merge server-side).
             if (e.evidence.clarifications.length && !m.clarification) {
-              next.clarification = { kind: 'followup', questions: e.evidence.clarifications };
+              next.clarification = { kind: 'followup', questions: e.evidence.clarifications, query };
             }
             return next;
           });
           break;
         case 'options':
           options = e.options;
+          break;
+        case 'conv_ids':
+          if (agentId && e.convs[0]?.conv_id) agentConvRef.current = e.convs[0].conv_id;
           break;
         case 'chart':
           patch(assistantId, m => ({ ...m, chartSpecs: e.specs }));
@@ -120,10 +143,19 @@ export function useAgentStream({ userId, agentId, historyTurns = 10 }: UseAgentS
     };
 
     try {
-      const res = await openOrchestrateStream(
-        { query: q, agent_id: agentId || undefined, user_id: userId, messages: history },
-        controller.signal,
-      );
+      const res = opts.resumeSessionId
+        ? await openResumeStream(opts.resumeSessionId, query, controller.signal)
+        : await openOrchestrateStream(
+          {
+            query,
+            agent_id: agentId || undefined,
+            user_id: userId,
+            messages: history,
+            conversation_id: (agentId && agentConvRef.current) || undefined,
+            clarification_answers: opts.answers?.length ? opts.answers : undefined,
+          },
+          controller.signal,
+        );
       await readSseStream(res.body!, onEvent);
 
       if (!mounted.current) return;
@@ -132,7 +164,7 @@ export function useAgentStream({ userId, agentId, historyTurns = 10 }: UseAgentS
         // A responder <OPTIONS> block without structured clarifications:
         // still a question the user should be able to answer in one click.
         if (options && !next.clarification) {
-          next.clarification = { kind: 'followup', questions: [{ text: '', options }] };
+          next.clarification = { kind: 'followup', questions: [{ text: '', options }], query };
         }
         if (interrupted && !next.content) next.content = next.clarification?.questions.map(x => x.text).filter(Boolean).join('\n') || '';
         return next;
@@ -143,7 +175,9 @@ export function useAgentStream({ userId, agentId, historyTurns = 10 }: UseAgentS
       patch(assistantId, m => ({
         ...m,
         status: 'error',
-        content: m.content || (aborted ? 'Stopped.' : 'Error: could not connect to the backend.'),
+        content: m.content || (aborted
+          ? 'Stopped.'
+          : opts.resumeSessionId ? `Error resuming: ${(err as Error).message}` : 'Error: could not connect to the backend.'),
       }));
       if (!aborted) console.warn('ask | stream failed', err);
     } finally {
@@ -153,51 +187,38 @@ export function useAgentStream({ userId, agentId, historyTurns = 10 }: UseAgentS
   }, [agentId, historyTurns, messages, patch, sending, userId]);
 
   /** Answer the clarification attached to message `id`. */
-  const answerClarification = useCallback(async (id: string, answer: string) => {
+  const answerClarification = useCallback(async (id: string, reply: ClarificationReply) => {
     const target = messages.find(m => m.id === id);
     const clar = target?.clarification;
-    if (!clar || sending) return;
+    if (!clar || sending || !reply.text.trim()) return;
 
     if (clar.kind === 'followup') {
       patch(id, m => ({ ...m, clarification: undefined }));
-      await send(answer);
+      // The bubble shows the answer; the backend gets the question it answers
+      // plus the answer, so the turn stands on its own even if the thread
+      // could not be continued. The picks themselves go as structured answers.
+      await send(reply.text, {
+        query: clar.query ? withClarificationAnswer(clar.query, reply.text) : undefined,
+        answers: reply.answers,
+      });
       return;
     }
 
-    // resume: the interrupted graph continues with the user's words and the
-    // whole answer comes back in one JSON body.
-    setSending(true);
-    const started = Date.now();
-    const echo: AskMessage = { id: nextId(), role: 'user', content: answer, timestamp: nowIso(), status: 'done' };
-    const answerId = nextId();
-    setMessages(prev => [
-      ...prev.map(m => (m.id === id ? { ...m, clarification: undefined } : m)),
-      echo,
-      { id: answerId, role: 'assistant', content: '', timestamp: nowIso(), status: 'streaming', sessionId: clar.sessionId },
-    ]);
-    try {
-      const res = await resumeClarification(clar.sessionId, answer);
-      if (!mounted.current) return;
-      patch(answerId, m => ({
-        ...m,
-        content: res.response || (res.success ? '' : 'Could not process this request.'),
-        suggestions: res.suggestions ?? [],
-        status: res.success ? 'done' : 'error',
-        latencyMs: Date.now() - started,
-        clarification: res.needs_clarification && res.clarification_questions?.length
-          ? { kind: 'resume', sessionId: clar.sessionId, questions: res.clarification_questions.map(text => ({ text })) }
-          : undefined,
-      }));
-    } catch (err) {
-      if (!mounted.current) return;
-      patch(answerId, m => ({ ...m, status: 'error', content: `Error resuming: ${(err as Error).message}` }));
-    } finally {
-      if (mounted.current) setSending(false);
-    }
+    // resume: the interrupted graph continues with the user's words, streamed
+    // like any turn — so a question it asks next comes back as a card. The
+    // card goes; what it asked stays as the message text.
+    const asked = clar.questions.map(q => q.text).filter(Boolean).join('\n');
+    patch(id, m => ({ ...m, clarification: undefined, content: m.content || asked }));
+    await send(reply.text, { resumeSessionId: clar.sessionId });
   }, [messages, patch, send, sending]);
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
-  const reset = useCallback(() => { abortRef.current?.abort(); setMessages([]); setSending(false); }, []);
+  const reset = useCallback(() => {
+    abortRef.current?.abort();
+    agentConvRef.current = null;
+    setMessages([]);
+    setSending(false);
+  }, []);
 
   return { messages, sending, send, answerClarification, stop, reset };
 }

@@ -26,11 +26,17 @@ transport uses.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field, replace
 from enum import Enum
+from typing import Any
 
 from libs.semantic.models import MetricDefinition
-from libs.semantic.slots import AnalyticalSlots
+from libs.semantic.slots import COMPARISONS, RELATIVE_PERIODS, AnalyticalSlots
+
+# A metric pick is free text as far as the wire is concerned; anything longer
+# than a metric name is not one.
+_MAX_METRIC_ANSWER = 200
 
 # Analysis types where a missing period actually changes the answer. A lookup
 # ("quy định nghỉ phép là gì?") has no period to miss.
@@ -41,6 +47,9 @@ class Reason(str, Enum):
     MISSING_TIME_RANGE = "missing_time_range"
     AMBIGUOUS_METRIC = "ambiguous_metric"
     COMPARISON_WITHOUT_BASELINE = "comparison_without_baseline"
+
+
+ALL_REASONS = tuple(r.value for r in Reason)
 
 
 @dataclass(frozen=True)
@@ -136,6 +145,78 @@ def check(
             ))
 
     return questions
+
+
+def apply_answers(
+    slots: AnalyticalSlots, answers: Iterable[Mapping[str, object]],
+) -> AnalyticalSlots:
+    """Write the options a user picked on a clarification card onto the slots.
+
+    The options `check` offers are slot values already, so an answer needs no
+    model to interpret it. Sending the pick as chat text ("This month") and
+    letting the planner re-read it was free to lose it — and then the rules
+    asked the same question again.
+
+    This is user input: an unknown reason, or a value outside the slot's
+    vocabulary, is ignored rather than written.
+    """
+    for answer in answers:
+        reason = str(answer.get("reason") or "")
+        value = str(answer.get("value") or "").strip()
+        if not value:
+            continue
+        if reason == Reason.MISSING_TIME_RANGE.value and value in RELATIVE_PERIODS:
+            slots = replace(slots, relative_period=value, time_range=None)
+        elif reason == Reason.COMPARISON_WITHOUT_BASELINE.value and value in COMPARISONS:
+            slots = replace(slots, compare_to=value)
+        elif reason == Reason.AMBIGUOUS_METRIC.value and len(value) <= _MAX_METRIC_ANSWER:
+            # The option is the metric's display name, which the resolver
+            # registers as a term — so it resolves to exactly that metric.
+            slots = replace(slots, metric=value)
+    return slots
+
+
+def _assumption_text(question: Mapping[str, Any]) -> str:
+    """The default reading that stands when a question is not asked again."""
+    reason = question.get("reason")
+    options = [str(o) for o in (question.get("options") or [])]
+    if reason == Reason.MISSING_TIME_RANGE.value:
+        return "Chưa chọn khoảng thời gian — số liệu được tính trên toàn bộ dữ liệu lịch sử."
+    if reason == Reason.AMBIGUOUS_METRIC.value and options:
+        # `check` lists the metric that resolved first, then the alternatives.
+        if len(options) == 1:
+            return f"Đang dùng chỉ số “{options[0]}”."
+        return f"Đang dùng chỉ số “{options[0]}”; câu hỏi cũng có thể hiểu là: {', '.join(options[1:])}."
+    if reason == Reason.COMPARISON_WITHOUT_BASELINE.value:
+        return "Chưa chọn mốc so sánh — câu trả lời không đối chiếu với một kỳ gốc cụ thể."
+    return str(question.get("text") or "")
+
+
+def settle(
+    questions: Iterable[Mapping[str, Any]], settled: Iterable[str],
+) -> tuple[list[Mapping[str, Any]], list[dict[str, Any]]]:
+    """Split the questions `check` raised into those still to ask and the
+    assumptions to state instead.
+
+    A reason already asked about in this line of questioning, or answered this
+    turn, is not asked a second time: repeating it is what made clarification
+    feel endless. Its default reading stands — and is said out loud, because a
+    silently applied default reads exactly like what the user meant. A gap the
+    user has not been asked about yet is still asked.
+    """
+    done = set(settled)
+    ask: list[Mapping[str, Any]] = []
+    assume: list[dict[str, Any]] = []
+    for question in questions:
+        if question.get("reason") in done:
+            assume.append({
+                "kind": "assumption",
+                "reason": question.get("reason"),
+                "detail": _assumption_text(question),
+            })
+        else:
+            ask.append(question)
+    return ask, assume
 
 
 def to_payload(questions: list[Question]) -> dict[str, object]:

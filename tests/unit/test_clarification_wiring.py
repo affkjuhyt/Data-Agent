@@ -64,6 +64,10 @@ def _stub_check(monkeypatch, questions):
     mod = types.ModuleType("semantic_layer")
     mod.check_underspecified = AsyncMock(return_value=questions)
     monkeypatch.setitem(sys.modules, "semantic_layer", mod)
+    # The planner imports it by its package path; with the full service
+    # importable, only this key reaches it (the short one alone left the real
+    # checker running and these tests failing).
+    monkeypatch.setitem(sys.modules, "services.workflow_runtime.semantic_layer", mod)
     return mod
 
 
@@ -111,20 +115,57 @@ class TestAskingReplacesAnswering:
 
 
 class TestLoopGuard:
-    async def test_the_check_is_skipped_right_after_asking(self, monkeypatch):
-        """Turn N asks; turn N+1 is the answer. Re-running the rules there
-        would ask the same thing forever."""
+    async def test_a_reason_asked_last_turn_becomes_an_assumption(self, monkeypatch):
+        """Turn N asks; turn N+1 is the answer. Asking the same thing again is
+        what made the card feel endless — the default is stated instead."""
         planner = _planner()
         monkeypatch.setattr(planner.litellm, "acompletion", AsyncMock(return_value=_llm(_PLAN)))
-        mod = _stub_check(monkeypatch, CLARIFICATION)
+        _stub_check(monkeypatch, CLARIFICATION)
 
         result = await planner.planner_node({
             "query": "tháng 6",
             "config": {"tenant_id": "t-1"},
             "previous_clarification": True,
+            "previous_clarified_reasons": ["missing_time_range"],
         })
 
-        mod.check_underspecified.assert_not_awaited()
+        assert result["clarifications"] == []
+        assert [a["reason"] for a in result["assumptions"]] == ["missing_time_range"]
+        assert result["tool_calls"]
+
+    async def test_a_gap_not_asked_about_yet_is_still_asked(self, monkeypatch):
+        """The guard is per reason: answering the period must not wave through
+        a metric ambiguity nobody has asked about."""
+        metric_q = {"reason": "ambiguous_metric", "text": "Chỉ số nào?", "options": ["Doanh thu gộp", "Doanh thu thuần"]}
+        planner = _planner()
+        monkeypatch.setattr(planner.litellm, "acompletion", AsyncMock(return_value=_llm(_PLAN)))
+        _stub_check(monkeypatch, [metric_q, *CLARIFICATION])
+
+        result = await planner.planner_node({
+            "query": "tháng 6",
+            "config": {"tenant_id": "t-1"},
+            "previous_clarification": True,
+            "previous_clarified_reasons": ["missing_time_range"],
+        })
+
+        assert result["clarifications"] == [metric_q]
+        assert [a["reason"] for a in result["assumptions"]] == ["missing_time_range"]
+        assert result["tool_calls"] == []
+        assert result["clarified_reasons"] == ["ambiguous_metric", "missing_time_range"]
+
+    async def test_a_new_metric_starts_a_new_line_of_questioning(self, monkeypatch):
+        result = await _run(monkeypatch, questions=CLARIFICATION, state_extra={
+            "previous_slots": {"metric": "số khách hàng"},
+            "previous_clarified_reasons": ["missing_time_range"],
+        })
+
+        assert result["clarifications"] == CLARIFICATION
+        assert result["assumptions"] == []
+
+    async def test_a_marker_without_reasons_still_means_asked(self, monkeypatch):
+        """Threads marked before reasons were recorded must not be asked again."""
+        result = await _run(monkeypatch, questions=CLARIFICATION, state_extra={"previous_clarification": True})
+
         assert result["clarifications"] == []
         assert result["tool_calls"]
 
@@ -136,12 +177,14 @@ class TestLoopGuard:
         pytest.importorskip("sqlalchemy", reason="workflow_runtime deps not installed")
         import runtime_services.conversation_runner as runner
 
-        marked = runner._slots_with_marker({"metric": "x"}, CLARIFICATION)
+        marked = runner._slots_with_marker({"metric": "x"}, CLARIFICATION, ["missing_time_range"])
         cleared = runner._slots_with_marker({"metric": "x"}, [])
 
         assert marked["_asked_clarification"] is True
         assert cleared["_asked_clarification"] is False
         assert marked["metric"] == "x"
+        assert runner._previous_clarified_reasons(marked) == ["missing_time_range"]
+        assert runner._previous_clarified_reasons({"_asked_clarification": True}) is None
 
     async def test_the_marker_is_inert_for_slot_parsing(self):
         """It travels inside the slots dict, so it must not become a slot."""
@@ -151,6 +194,33 @@ class TestLoopGuard:
 
         assert parsed.metric == "x"
         assert not hasattr(parsed, "_asked_clarification")
+
+
+class TestStructuredAnswers:
+    async def test_a_picked_period_lands_on_the_slots(self, monkeypatch):
+        result = await _run(monkeypatch, state_extra={
+            "clarification_answers": [{"reason": "missing_time_range", "value": "last_month"}],
+        })
+
+        assert result["slots"]["relative_period"] == "last_month"
+        assert result["slots"]["metric"] == "doanh thu"
+
+    async def test_an_answered_reason_is_not_asked_again(self, monkeypatch):
+        """Holds even when the thread that asked could not be continued, so
+        `previous_clarification` is not set."""
+        planner = _planner()
+        monkeypatch.setattr(planner.litellm, "acompletion", AsyncMock(return_value=_llm(_PLAN)))
+        _stub_check(monkeypatch, CLARIFICATION)
+
+        result = await planner.planner_node({
+            "query": "doanh thu bao nhiêu\n\nThông tin bổ sung: Last month",
+            "config": {"tenant_id": "t-1"},
+            "clarification_answers": [{"reason": "missing_time_range", "value": "last_month"}],
+        })
+
+        assert result["clarifications"] == []
+        assert result["tool_calls"]
+        assert result["clarified_reasons"] == ["missing_time_range"]
 
 
 class TestFailureIsNotFatal:
@@ -195,6 +265,19 @@ class TestResponderAsksInstead:
         assert 'state.get("clarifications")' in source
         assert "HỎI LẠI" in source
         assert "không đoán" in source
+
+    def test_the_responder_states_assumptions(self):
+        """An applied default the answer does not mention reads exactly like
+        what the user meant."""
+        import inspect
+
+        import nodes.model_harness.responder as responder
+
+        source = inspect.getsource(responder.responder_node)
+
+        assert 'state.get("assumptions")' in source
+        assert "NÊU RÕ" in source
+        assert '"warnings": list(assumptions)' in source
 
 
 class TestAskingSkipsRetrieval:

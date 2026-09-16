@@ -224,6 +224,17 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
         if options:
             system_prompt += "\nGợi ý lựa chọn: " + ", ".join(options)
 
+    # A gap already asked about is not asked twice (ambiguity.settle): its
+    # default reading was applied instead, and the answer has to say so — "all
+    # history" otherwise reads exactly like the period the user meant.
+    assumptions = [] if clarifications else (state.get("assumptions") or [])
+    if assumptions:
+        notes = "\n".join(f"- {a.get('detail', '')}" for a in assumptions)
+        system_prompt += (
+            "\n\nNgười dùng chưa chọn một số thông tin nên câu trả lời dùng cách hiểu mặc định. "
+            f"NÊU RÕ ngắn gọn các giả định sau ngay đầu câu trả lời:\n{notes}"
+        )
+
     system_prompt += "\n\n" + _LANGUAGE_RULE.replace("{LANGUAGE}", lang_label)
 
     # Deterministic "why trust this" payload for the UI — built alongside the
@@ -233,7 +244,8 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
     evidence: dict[str, Any] = {
         "runs": [],
         "clarifications": clarifications,
-        "warnings": [],
+        # Assumptions first: they qualify the whole answer, unit warnings one figure.
+        "warnings": list(assumptions),
     }
 
     chunk_meta: dict[int, dict] = {}

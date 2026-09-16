@@ -25,6 +25,10 @@ class OrchestratorState(TypedDict):
     clarification_needed: bool
     clarification_questions: list[str]
     clarification_response: Optional[str]  # user trả lời sau interrupt
+    # Options picked on the agent's clarification card ({reason, value}).
+    clarification_answers: list[dict[str, Any]]
+    # Single-agent mode: the agent conversation this turn continues.
+    agent_conversation_id: Optional[str]
 
     # Execution
     agents: list[dict[str, Any]]            # published agents từ catalog

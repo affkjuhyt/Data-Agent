@@ -91,7 +91,22 @@ describe('AnswerBlock', () => {
     const card = screen.getByTestId('clarification-card');
     expect(within(card).getByText('Missing time range')).toBeInTheDocument();
     fireEvent.click(within(card).getByRole('button', { name: 'Last quarter' }));
-    expect(onAnswer).toHaveBeenCalledWith('Last quarter');
+    expect(onAnswer).toHaveBeenCalledWith({
+      text: 'Last quarter',
+      answers: [{ reason: 'missing_time_range', value: 'last_quarter' }],
+    });
+  });
+
+  it('shows an assumption apart from warnings', () => {
+    const assumed: AskMessage = {
+      ...msg,
+      evidence: {
+        ...evidence,
+        warnings: [{ kind: 'assumption', reason: 'missing_time_range', detail: 'No time range chosen — computed over all history.' }],
+      },
+    };
+    wrap(<AnswerBlock msg={assumed} />);
+    expect(within(screen.getByTestId('evidence-strip')).getByTestId('assumption')).toHaveTextContent('Assumed: No time range chosen');
   });
 
   it('shows typing dots while streaming with no text', () => {
@@ -109,7 +124,88 @@ describe('ClarificationCard', () => {
     const input = screen.getByLabelText('Custom answer');
     fireEvent.change(input, { target: { value: 'from 06/01 to 06/15' } });
     fireEvent.keyDown(input, { key: 'Enter' });
-    expect(onAnswer).toHaveBeenCalledWith('from 06/01 to 06/15');
+    expect(onAnswer).toHaveBeenCalledWith({ text: 'from 06/01 to 06/15', answers: [] });
+  });
+
+  it('collects one pick per question and answers once all are picked', () => {
+    const onAnswer = vi.fn();
+    wrap(
+      <ClarificationCard
+        clarification={{
+          kind: 'followup',
+          questions: [
+            { reason: 'ambiguous_metric', text: 'Which metric?', options: ['Doanh thu gộp', 'Doanh thu thuần'] },
+            { reason: 'missing_time_range', text: 'Which period?', options: ['this_month', 'last_month'] },
+          ],
+        }}
+        onAnswer={onAnswer}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Doanh thu thuần' }));
+    expect(onAnswer).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Doanh thu thuần' })).toHaveAttribute('aria-pressed', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Last month' }));
+    expect(onAnswer).toHaveBeenCalledTimes(1);
+    expect(onAnswer).toHaveBeenCalledWith({
+      text: 'Doanh thu thuần, Last month',
+      answers: [
+        { reason: 'ambiguous_metric', value: 'Doanh thu thuần' },
+        { reason: 'missing_time_range', value: 'last_month' },
+      ],
+    });
+  });
+
+  it('offers Other next to the options, answered as text only', () => {
+    const onAnswer = vi.fn();
+    wrap(
+      <ClarificationCard
+        clarification={{ kind: 'followup', questions: [{ reason: 'missing_time_range', text: 'Which period?', options: ['this_month', 'last_month'] }] }}
+        onAnswer={onAnswer}
+      />,
+    );
+
+    expect(screen.queryByLabelText('Custom answer')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Other/ }));
+    const input = screen.getByLabelText('Custom answer');
+    fireEvent.change(input, { target: { value: 'the last 45 days' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    // Not a slot value, so no structured answer — the text carries it.
+    expect(onAnswer).toHaveBeenCalledWith({ text: 'the last 45 days', answers: [] });
+  });
+
+  it('pairs each answer with its question when the model asked several', () => {
+    const onAnswer = vi.fn();
+    wrap(
+      <ClarificationCard
+        clarification={{
+          kind: 'resume',
+          sessionId: 's1',
+          questions: [
+            { text: 'Which branch?', options: ['Hà Nội', 'TP.HCM'] },
+            { text: 'Which period?', options: ['This quarter'] },
+          ],
+        }}
+        onAnswer={onAnswer}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'TP.HCM' }));
+    fireEvent.click(screen.getAllByRole('button', { name: /Other/ })[1]);
+    const input = screen.getByLabelText('Custom answer 2');
+    fireEvent.change(input, { target: { value: 'June 2026' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send answer 2' }));
+
+    expect(onAnswer).toHaveBeenCalledWith({ text: 'Which branch? → TP.HCM; Which period? → June 2026', answers: [] });
+  });
+
+  it('sends options without a reason as text only', () => {
+    const onAnswer = vi.fn();
+    wrap(<ClarificationCard clarification={{ kind: 'followup', questions: [{ text: '', options: ['Yes', 'No'] }] }} onAnswer={onAnswer} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Yes' }));
+    expect(onAnswer).toHaveBeenCalledWith({ text: 'Yes', answers: [] });
   });
 });
 

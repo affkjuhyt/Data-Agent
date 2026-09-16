@@ -168,9 +168,15 @@ export function EvidencePanel({ message }: { message: AskMessage | null }) {
         </div>
       )}
 
-      {ev?.warnings?.length ? (
+      {ev?.warnings?.some(w => w.kind === 'assumption') ? (
+        <Section icon={AlertTriangle} title="Assumptions">
+          {ev.warnings.filter(w => w.kind === 'assumption').map((w, i) => <div key={i} style={{ color: 'var(--ab-muted)' }}>{w.detail}</div>)}
+        </Section>
+      ) : null}
+
+      {ev?.warnings?.some(w => w.kind !== 'assumption') ? (
         <Section icon={AlertTriangle} title="Unit warnings">
-          {ev.warnings.map((w, i) => <div key={i} style={{ color: 'var(--ab-bad)' }}>{w.detail}</div>)}
+          {ev.warnings.filter(w => w.kind !== 'assumption').map((w, i) => <div key={i} style={{ color: 'var(--ab-bad)' }}>{w.detail}</div>)}
         </Section>
       ) : null}
 

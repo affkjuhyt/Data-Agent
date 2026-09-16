@@ -8,7 +8,7 @@
  * network chunks — a frame split across two chunks used to be parsed as two
  * broken pieces of text.
  */
-import type { ChartSpec, Citation, Evidence } from './types';
+import type { ChartSpec, Citation, ClarificationQuestion, Evidence } from './types';
 
 export type SseEvent =
   | { type: 'token'; text: string }
@@ -16,7 +16,8 @@ export type SseEvent =
   // output guardrail); the text that replaces it follows as tokens.
   | { type: 'reset' }
   | { type: 'session'; sessionId: string }
-  | { type: 'clarification'; sessionId: string; questions: string[] }
+  // `details`: the questions with their options; texts only from an older backend.
+  | { type: 'clarification'; sessionId: string; questions: string[]; details: ClarificationQuestion[] }
   | { type: 'pending_review'; convId: string; payload: unknown }
   | { type: 'chart'; specs: ChartSpec[] }
   | { type: 'citations'; citations: Citation[] }
@@ -56,11 +57,18 @@ export function parseSseData(raw: string): SseEvent {
   if (obj.__reset === true) return { type: 'reset' };
 
   if (obj.__clarification && typeof obj.__clarification === 'object') {
-    const c = obj.__clarification as { session_id?: string; questions?: unknown };
+    const c = obj.__clarification as { session_id?: string; questions?: unknown; details?: unknown };
+    const questions = Array.isArray(c.questions) ? c.questions.map(String) : [];
+    const details = Array.isArray(c.details)
+      ? c.details
+        .filter((d): d is { text: unknown; options?: unknown } => !!d && typeof d === 'object' && 'text' in d)
+        .map(d => ({ text: String(d.text), options: Array.isArray(d.options) ? d.options.map(String) : [] }))
+      : [];
     return {
       type: 'clarification',
       sessionId: c.session_id ?? '',
-      questions: Array.isArray(c.questions) ? c.questions.map(String) : [],
+      questions,
+      details: details.length ? details : questions.map(text => ({ text })),
     };
   }
 

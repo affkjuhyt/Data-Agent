@@ -7,7 +7,7 @@ describe('parseSseData', () => {
     expect(parseSseData('{"__session_id":"s1"}')).toEqual({ type: 'session', sessionId: 's1' });
     expect(parseSseData('{"__reset":true}')).toEqual({ type: 'reset' });
     expect(parseSseData('{"__clarification":{"session_id":"s1","questions":["Which period?"]}}'))
-      .toEqual({ type: 'clarification', sessionId: 's1', questions: ['Which period?'] });
+      .toEqual({ type: 'clarification', sessionId: 's1', questions: ['Which period?'], details: [{ text: 'Which period?' }] });
     expect(parseSseData('{"__pending_review":{"conv_id":"c1","payload":{"title":"t"}}}'))
       .toEqual({ type: 'pending_review', convId: 'c1', payload: { title: 't' } });
     expect(parseSseData('{"__pending_review":"c2"}'))
@@ -20,6 +20,20 @@ describe('parseSseData', () => {
     expect(parseSseData('[DONE]')).toEqual({ type: 'done' });
     expect(parseSseData('[ERROR] broken')).toEqual({ type: 'error', message: 'broken' });
     expect(parseSseData('[ERROR]')).toEqual({ type: 'error', message: 'An error occurred, please try again.' });
+  });
+
+  it('keeps the options of each clarification question', () => {
+    const ev = parseSseData(JSON.stringify({ __clarification: {
+      session_id: 's1',
+      questions: ['Which branch?'],
+      details: [{ text: 'Which branch?', options: ['Hanoi', 'HCMC'] }, { options: ['no text'] }],
+    } }));
+    expect(ev).toEqual({
+      type: 'clarification',
+      sessionId: 's1',
+      questions: ['Which branch?'],
+      details: [{ text: 'Which branch?', options: ['Hanoi', 'HCMC'] }],
+    });
   });
 
   it('normalises a partial evidence frame into the full shape', () => {

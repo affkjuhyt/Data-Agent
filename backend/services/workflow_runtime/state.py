@@ -44,6 +44,17 @@ class AgentState(TypedDict):
     # True when the PREVIOUS turn asked one. Suppresses re-asking, so a
     # question the rules cannot fully resolve does not loop forever.
     previous_clarification: Optional[bool]
+    # Reasons already asked about or answered in this line of questioning, from
+    # the previous turn's marker. None when that marker predates reasons.
+    previous_clarified_reasons: Optional[list[str]]
+    # THIS turn's settled reasons, persisted for the next turn.
+    clarified_reasons: Optional[list[str]]
+    # Default readings applied instead of re-asking ({kind, reason, detail});
+    # the responder states them and they ride on evidence.warnings.
+    assumptions: Optional[list[dict[str, Any]]]
+    # Options the user picked on that clarification ({reason, value}), applied
+    # onto the slots by the planner instead of being re-read from the text.
+    clarification_answers: Optional[list[dict[str, Any]]]
     language: Optional[str]           # "vi" | "en" — set by planner
     loop_iteration: int               # số lần judge đã chạy (tăng mỗi lần judge FAIL)
     judge_verdict: Optional[str]      # "PASS" | "FAIL"
