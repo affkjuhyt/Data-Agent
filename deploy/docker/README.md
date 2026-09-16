@@ -1,11 +1,12 @@
 # deploy/docker — build contexts and service config
 
-This directory no longer defines a stack. The Compose files were removed once
-[`deploy/k8s/`](../k8s) became the only deployment definition; what remains is
-what the images are built from and what the cluster mounts as ConfigMaps.
+[`deploy/k8s/`](../k8s) is the deployment definition. This directory holds what
+the images are built from, what the cluster mounts as ConfigMaps, and the Compose
+stack that `tests/e2e/e2e.sh` runs locally (`docker-compose.yml` infra +
+`docker-compose.app.yml` services + `.agent-test.yml` / `.local.yml` overlays,
+plus `docker-compose.e2e-dev.yml` for bind-mounted source).
 
-The superseded Compose stack is kept verbatim in [`.old/`](.old/) for reference.
-Nothing reads it.
+Compose is for local E2E only; it is not a supported production path.
 
 ## What is here
 

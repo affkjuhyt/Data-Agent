@@ -1,0 +1,90 @@
+@startuml 32-mlops-architecture
+title Kiến trúc MLOps / LLMOps
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam wrapWidth 220
+skinparam ArrowColor #555555
+skinparam component<<have>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam component<<partial>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam component<<missing>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có |
+  |<#E6F0FF> | Có một phần |
+  |<#FFF4D6> | Chưa có |
+endlegend
+
+package "Registry tài sản" {
+  component "MLflow tracking + model registry\n(Postgres + MinIO)" <<missing>> as MLF
+  component "DVC (remote MinIO)\nbenchmark corpus · dữ liệu SFT" <<missing>> as DVC
+  component "Golden set jsonl trong git\n(model/eval/cases)" <<partial>> as GS
+  component "Prompt trong git +\nbảng SystemPrompts có version" <<partial>> as PR
+  component "Agent / workflow versions (flow-builder)" <<have>> as AGV
+  component "Config LiteLLM (ConfigMap)" <<have>> as LLC
+}
+
+package "Đánh giá" {
+  component "eval-gate offline (CI)" <<have>> as EG
+  component "release-gate online" <<have>> as RG
+  component "RAGAS (thử nghiệm)" <<partial>> as RAG
+  component "Benchmark harness\nOCR · retrieval · LLM" <<missing>> as BH
+  component "eval-svc: regression theo sự kiện dữ liệu" <<missing>> as ES
+}
+
+package "Serving" {
+  component "LiteLLM router" <<have>> as LLR
+  component "Trọng số canary · shadow" <<missing>> as CAN
+  component "vLLM docker run :latest" <<partial>> as VD
+  component "vLLM/TEI Deployment ghim\nimage tag + HF revision" <<missing>> as VK
+  component "TEI embed · rerank" <<have>> as TEI
+  component "OCR / VLM workers" <<missing>> as OCR
+  component "GPU Operator · MIG / time-slicing ·\nhàng đợi batch (Kueue)" <<missing>> as GPU
+}
+
+package "Giám sát model" {
+  component "Langfuse traces (TTFT · decode tok/s)" <<have>> as LFT
+  component "Langfuse scores · datasets · feedback" <<missing>> as LFS
+  component "llm-exporter (probe)" <<have>> as LLE
+  component "Drift: chủ đề câu hỏi · recall retrieval ·\ntỉ lệ từ chối · lỗi số" <<missing>> as DRIFT
+}
+
+package "Model định lượng (giai đoạn sau)" {
+  component "Dự báo · EWS · DSA\nbacktest + registry" <<missing>> as ECON
+  component "Fine-tune LoRA (tuỳ chọn)" <<missing>> as FT
+}
+
+EG --> GS
+RG --> GS
+BH --> DVC
+BH --> MLF
+EG --> MLF
+RG --> MLF
+PR --> MLF
+LLC --> MLF
+MLF --> CAN : phiên bản được duyệt
+CAN --> LLR
+LLR --> VD
+LLR --> VK
+LLR --> TEI
+VK --> GPU
+OCR --> GPU
+LLR --> LFT
+LFT --> LFS
+LFS --> DRIFT
+DRIFT --> ES
+ES --> GS
+LFS --> DVC : trace → nhãn → dataset
+DVC --> FT
+ECON --> MLF
+@enduml

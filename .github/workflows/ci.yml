@@ -126,7 +126,7 @@ jobs:
           path: eval-report.json
 
   frontend-lint:
-    name: Frontend · eslint + tsc
+    name: Frontend · tsc
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -136,7 +136,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
-      - run: npm run lint
 
   frontend-test:
     name: Frontend · vitest

@@ -1,0 +1,72 @@
+@startuml 33-dataops-observability
+title DataOps — giám sát sức khoẻ dữ liệu và pipeline
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam wrapWidth 220
+skinparam ArrowColor #555555
+skinparam component<<have>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam component<<partial>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam component<<missing>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có |
+  |<#E6F0FF> | Có một phần |
+  |<#FFF4D6> | Chưa có |
+endlegend
+
+package "Tín hiệu dữ liệu" {
+  component "Freshness watermark bảng warehouse\n(freshness.py · data_as_of)" <<partial>> as FRESH
+  component "Tiến độ ingestion KB\n(pipeline events · SSE)" <<partial>> as KBP
+  component "Lần chạy connector (Dagster)\nthành công · thời lượng · số bản ghi" <<missing>> as RUN
+  component "Lịch công bố vs thực tế\n(trễ so với dự kiến)" <<missing>> as CAL
+  component "Kết quả DQ rule theo release" <<missing>> as DQ
+  component "Reconciliation\n(tự tính vs chính thức)" <<missing>> as REC
+  component "Hàng đợi duyệt\n(backlog · tuổi · SLA)" <<missing>> as REV
+  component "Consumer lag Kafka\n(ingest · observation · compute)" <<missing>> as LAG
+  component "Tỉ lệ ô OCR phải sửa" <<missing>> as OCRF
+}
+
+package "Tổng hợp" {
+  component "data-metrics exporter\n(Prometheus metrics từ PG ingest_* / Dagster)" <<missing>> as EXP
+  component "OpenLineage events → metadata-lineage-svc" <<missing>> as OL
+  component "Prometheus" <<partial>> as PROM
+}
+
+package "Hiển thị & cảnh báo" {
+  component "Dashboard: Data freshness theo nguồn" <<missing>> as D1
+  component "Dashboard: Pipeline health" <<missing>> as D2
+  component "Dashboard: DQ scorecard · reconciliation" <<missing>> as D3
+  component "Dashboard: Review SLA" <<missing>> as D4
+  component "Alert: quá SLA · DQ fail · connector lỗi liên tiếp ·\nbacklog > ngưỡng · lệch nguồn" <<missing>> as AL
+  component "Trang Nguồn dữ liệu (Data Studio)" <<missing>> as UI
+}
+
+FRESH --> EXP
+KBP --> EXP
+RUN --> EXP
+CAL --> EXP
+DQ --> EXP
+REC --> EXP
+REV --> EXP
+OCRF --> EXP
+LAG --> PROM
+EXP --> PROM
+RUN --> OL
+PROM --> D1
+PROM --> D2
+PROM --> D3
+PROM --> D4
+PROM --> AL
+EXP --> UI
+@enduml

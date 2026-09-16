@@ -41,3 +41,10 @@ This project is indexed by GitNexus as **Data-Agent** (19329 symbols, 30020 rela
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+## Repo conventions
+
+The GitNexus block above covers code navigation. Everything else — command surface
+(`make help`), naming, comment style, dead-code policy, the shell-script replacement
+plan, and what "done" means — lives in [`CLAUDE.md`](CLAUDE.md). Read it before making
+changes; it is the authority when the two disagree.

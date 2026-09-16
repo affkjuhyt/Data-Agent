@@ -88,7 +88,6 @@ Keycloak client. The built-in defaults (`localhost:8110` / `localhost:8100`) onl
 port-forwards. App users are listed in [RUNBOOK §2](./docs/RUNBOOK.md#2-urls-and-logins).
 
 ```bash
-npm run lint          # tsc --noEmit (type check)
 npm run build         # production build
 npm run test          # vitest run
 ```
@@ -214,6 +213,6 @@ pytest tests/unit/test_k8s_manifests.py      # manifest invariants (security, po
 
 ## Docker Compose (legacy)
 
-The Compose files under [`deploy/docker/`](./deploy/docker) (`docker-compose*.yml`, plus
-[`.old/`](./deploy/docker/.old)) predate the Kubernetes deployment. They are kept for reference and
-parts of `tests/e2e/`, are not maintained, and are not a supported way to run the platform.
+The Compose files under [`deploy/docker/`](./deploy/docker) (`docker-compose*.yml`) predate the
+Kubernetes deployment. `tests/e2e/e2e.sh` still drives them; they are not a supported way to run the
+platform in production.

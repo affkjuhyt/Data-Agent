@@ -1,0 +1,84 @@
+@startuml 15-service-landscape
+title Bản đồ service mục tiêu — hiện có · mở rộng · xây mới
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam wrapWidth 230
+skinparam component<<reuse>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam component<<extend>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam component<<new>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+
+legend top right
+  |= Màu |= Ý nghĩa |
+  |<#EEF7EE> | Hiện có, dùng lại |
+  |<#E6F0FF> | Hiện có, cần mở rộng |
+  |<#FFF4D6> | Chưa có, xây mới |
+endlegend
+
+package "Truy cập" {
+  component "frontend\n(Ask · Catalog · Dashboard · Data Studio)" <<extend>> as FE
+  component "kong" <<reuse>> as KONG
+  component "keycloak" <<reuse>> as KC
+  component "auth-api\n(+ quyết định quyền theo phân loại dữ liệu)" <<extend>> as AUTH
+}
+
+package "Agent" {
+  component "workflow-runtime\n(router · supervisor · sub-agent · verifier)" <<extend>> as WR
+  component "mcp-gateway\n(indicator · data · compute · source · intl · report)" <<new>> as MCPG
+  component "flow-builder" <<reuse>> as FB
+  component "sandbox-executor / runner" <<reuse>> as SBX
+  component "model-service" <<reuse>> as MS
+  component "litellm" <<reuse>> as LLM
+}
+
+package "Chỉ số" {
+  component "indicator-catalog-svc\n(taxonomy · chỉ số · biến · công thức ·\nngưỡng · codelist · duyệt phiên bản)" <<new>> as CAT
+  component "observation-svc\n(series · release/vintage · quan sát ·\nphát hành append-only)" <<new>> as OBS
+  component "compute-svc\n(Analysis Query · công thức · căn kỳ ·\nngưỡng theo kỳ · phân rã · cache)" <<new>> as CMP
+  component "alert-svc\n(luật cảnh báo · đánh giá · dedup · vòng đời)" <<new>> as ALR
+  component "report-svc\n(bản tin · template · DOCX/PDF · lịch)" <<new>> as RPT
+}
+
+package "Ingestion" {
+  component "source-registry-svc\n(nguồn · giấy phép · lịch công bố · SLA)" <<new>> as SRC
+  component "ingestion-orchestrator (Dagster)\n+ connector code location" <<new>> as DAG
+  component "extraction-svc (GPU worker)\n(OCR · layout · bảng · VLM)" <<new>> as EXT
+  component "mapping-svc\n(mapping + chuẩn hoá đơn vị/FX/kỳ)" <<new>> as MAP
+  component "data-quality-svc\n(DQ rules · reconciliation)" <<new>> as DQ
+  component "curation-svc\n(hàng đợi duyệt · maker–checker)" <<new>> as CUR
+}
+
+package "Tri thức" {
+  component "kb-backend\n(+ document registry · trang/bbox ·\nhiệu lực văn bản · ảnh trang)" <<extend>> as KB
+  component "kb-promote-silver / gold" <<extend>> as KBP
+  component "kb-structured-data\n(nhiều sheet/bảng)" <<extend>> as KBS
+  component "kb-conflict-resolution" <<reuse>> as KBC
+  component "schema-crawler worker" <<reuse>> as CRAWL
+}
+
+package "Chất lượng · Vận hành" {
+  component "eval-svc\n(golden set · sinh case · chạy eval ·\nregression theo sự kiện)" <<new>> as EVAL
+  component "metadata-lineage-svc\n(nguồn → quan sát → chỉ số → câu trả lời)" <<new>> as LIN
+  component "notification-svc\n(hộp thư · email · Slack · SSE)" <<new>> as NOTI
+  component "platform-workers\n(audit · memory)" <<reuse>> as PW
+  component "release-worker" <<reuse>> as RW
+  component "langfuse · prometheus · grafana · jaeger" <<reuse>> as OBSV
+  component "llm-exporter" <<reuse>> as LLME
+}
+
+package "Model serving (GPU)" {
+  component "vLLM (Qwen3-14B · Qwen3-4B)" <<reuse>> as VLLM
+  component "TEI embed · rerank" <<reuse>> as TEI
+  component "OCR · VLM runtime\n(chạy trong extraction-svc)" <<new>> as VIS
+}
+@enduml

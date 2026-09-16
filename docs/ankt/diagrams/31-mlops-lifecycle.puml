@@ -1,0 +1,52 @@
+@startuml 31-mlops-lifecycle
+title Vòng đời thay đổi model / prompt / routing (LLMOps)
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có |
+  |<#E6F0FF> | Có một phần |
+  |<#FFF4D6> | Chưa có |
+endlegend
+
+|Kỹ sư AI / Data|
+start
+#E6F0FF:Đề xuất thay đổi: model LLM · prompt · routing LiteLLM ·
+embedding · reranker · OCR/VLM · model dự báo
+(prompt trong git có; chưa có quy trình đăng ký);
+|CI|
+#EEF7EE:Unit test + eval-gate offline (policy · SQL);
+#FFF4D6:Benchmark harness (OCR · retrieval · LLM · tốc độ/VRAM);
+|Registry|
+#FFF4D6:Đăng ký candidate (MLflow):
+model + revision · prompt hash · config LiteLLM ·
+version golden set · kết quả benchmark;
+|Staging|
+#EEF7EE:release-gate: eval offline + online;
+#FFF4D6:Golden set chỉ số (giá trị · nguồn · vintage · ngưỡng);
+#FFF4D6:Shadow traffic: nhân bản request thật,
+so điểm Langfuse cũ/mới (không trả cho người dùng);
+if (Tốt hơn hoặc bằng?) then (đạt)
+else (không)
+  #FFF4D6:Loại candidate, ghi lý do vào registry;
+  stop
+endif
+|Production|
+#FFF4D6:Canary qua trọng số LiteLLM 10% → 50% → 100%;
+#E6F0FF:Giám sát: TTFT · tok/s · lỗi · chi phí token (trace có) ·
+điểm chất lượng · phản hồi người dùng · tỉ lệ từ chối (chưa có);
+if (Hồi quy / drift?) then (có)
+  #FFF4D6:Rollback route về phiên bản trước;
+else (không)
+  #FFF4D6:Promote "production" trong registry;
+endif
+|Data flywheel|
+#FFF4D6:Chọn trace lỗi/hay → chuyên gia gán nhãn
+→ golden set mới · dữ liệu SFT (nếu cần);
+note right
+  Đổi model embedding = kế hoạch re-index riêng
+  (dual index, chuyển alias khi xong).
+  Hiện chỉ có ghi chú "re-ingest" trong RUNBOOK.
+end note
+stop
+@enduml

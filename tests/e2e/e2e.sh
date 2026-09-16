@@ -27,19 +27,13 @@ cd "$ROOT"
 # a fresh database so migrations + seed are reproducible.
 E2E_PROJECT=${E2E_PROJECT:-dataagent-e2e}
 D=deploy/docker
-COMPOSE=(docker compose -p "$E2E_PROJECT" --env-file .env
-         -f "$D/service_postgres.yml" -f "$D/service_redis.yml" -f "$D/service_mongo.yml"
-         -f "$D/service_kafka.yml" -f "$D/service_minio.yml" -f "$D/service_openbao.yml"
-         -f "$D/service_litellm.yml" -f "$D/service_keycloak.yml" -f "$D/service_kong.yml"
-         -f "$D/overlay-kong-admin.yml"
-         -f "$D/job-kong-migration.yml" -f "$D/job-minio-init.yml"
-         -f "$D/job-migrate.yml" -f "$D/job-db-init.yml" -f "$D/job-seed.yml"
-         -f "$D/service_sandbox_executor.yml" -f "$D/service_workflow_runtime.yml"
-         -f "$D/service_platform-workers-memory.yml")
+COMPOSE=(docker compose -p "$E2E_PROJECT" --env-file .env --profile runtime
+         -f "$D/docker-compose.yml" -f "$D/docker-compose.app.yml"
+         -f "$D/docker-compose.agent-test.yml" -f "$D/docker-compose.local.yml")
 # dev (default): existing images + bind-mounted source, build only what is
 # missing. build: rebuild every image (slow — full pip install per service).
 E2E_MODE=${E2E_MODE:-dev}
-if [ "$E2E_MODE" = "dev" ]; then COMPOSE+=(-f "$D/overlay-dev.yml"); fi
+if [ "$E2E_MODE" = "dev" ]; then COMPOSE+=(-f "$D/docker-compose.e2e-dev.yml"); fi
 SERVICES=(postgres redis mongo kafka minio minio-init openbao litellm keycloak kong-migration kong
           migrate db-init seed sandbox_executor workflow_runtime platform-workers-memory)
 

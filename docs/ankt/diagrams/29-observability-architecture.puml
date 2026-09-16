@@ -1,0 +1,87 @@
+@startuml 29-observability-architecture
+title Monitoring & Observability — metrics · logs · traces · LLM · dữ liệu · cảnh báo
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam wrapWidth 220
+skinparam ArrowColor #555555
+skinparam component<<have>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam component<<partial>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam component<<missing>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có |
+  |<#E6F0FF> | Có một phần |
+  |<#FFF4D6> | Chưa có |
+endlegend
+
+package "Nguồn tín hiệu" {
+  component "Service FastAPI\n(OTel trace → Jaeger có;\n/metrics chỉ model-service, llm-exporter)" <<partial>> as SVC
+  component "Frontend RUM\n(Web Vitals · lỗi JS)" <<missing>> as RUM
+  component "Node · pod · container" <<missing>> as NODE
+  component "GPU (dcgm)" <<missing>> as GPUM
+  component "Postgres · Redis · Kafka lag ·\nClickHouse · Qdrant · MinIO" <<missing>> as DBX
+  component "LLM: Langfuse traces · llm-exporter" <<have>> as LLMS
+  component "LLM: Langfuse scores · feedback" <<missing>> as LLMSC
+  component "Dữ liệu: freshness · DQ · backlog duyệt ·\nconnector · reconciliation" <<missing>> as DATAS
+  component "Blackbox / uptime (Kong, UI, API)" <<missing>> as BB
+}
+
+package "Thu thập" {
+  component "OpenTelemetry Collector" <<missing>> as OTEL
+  component "kube-prometheus-stack\n(node-exporter · kube-state · cAdvisor)" <<missing>> as KPS
+  component "Prometheus (3 scrape job)" <<partial>> as PROM
+  component "Fluent Bit DaemonSet\n(Filebeat chỉ có ở compose)" <<missing>> as FB
+}
+
+package "Lưu trữ & hiển thị" {
+  component "Prometheus TSDB (15 ngày)" <<have>> as TSDB
+  component "Elasticsearch + Kibana" <<have>> as ES
+  component "Jaeger" <<have>> as JG
+  component "Langfuse" <<have>> as LF
+  component "Grafana\n(1 dashboard KB CCU)" <<partial>> as GRAF
+}
+
+package "Cảnh báo & SLO" {
+  component "PrometheusRule (alert rules)" <<missing>> as RULE
+  component "SLO engine (Sloth/Pyrra) · burn rate" <<missing>> as SLO
+  component "Alertmanager (group · dedup · route)" <<missing>> as AM
+  component "Kênh: on-call · Slack/Teams · email ·\nnotification-svc" <<missing>> as CH
+  component "disk-alert.sh (cron, chỉ ghi log)" <<partial>> as DISK
+}
+
+SVC --> OTEL
+RUM --> OTEL
+OTEL --> JG : traces
+OTEL --> PROM : metrics
+NODE --> KPS
+GPUM --> KPS
+DBX --> KPS
+BB --> KPS
+KPS --> PROM
+PROM --> TSDB
+SVC --> FB : log JSON (trace_id)
+FB --> ES
+LLMS --> LF
+LLMSC --> LF
+DATAS --> PROM
+TSDB --> GRAF
+ES --> GRAF
+JG --> GRAF
+LF --> GRAF
+TSDB --> RULE
+SLO --> RULE
+RULE --> AM
+AM --> CH
+DISK ..> CH : thay thế bằng rule
+@enduml

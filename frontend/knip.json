@@ -1,6 +1,8 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "ignore": ["scripts/**"],
+  "ignore": [
+    "scripts/**"
+  ],
   "ignoreDependencies": [
     "@typescript-eslint/eslint-plugin",
     "@typescript-eslint/parser",
@@ -10,6 +12,5 @@
     "prettier",
     "tsx",
     "vite"
-  ],
-  "ignoreBinaries": ["knip", "prettier", "tsc", "vite", "vitest"]
+  ]
 }

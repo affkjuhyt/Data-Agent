@@ -1,0 +1,141 @@
+@startuml 02-target-architecture
+title Kiến trúc mục tiêu — Nền tảng phân tích đa chỉ số An ninh kinh tế
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam wrapWidth 280
+skinparam ArrowColor #555555
+skinparam component<<reuse>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam component<<extend>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam component<<new>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+
+legend top right
+  |= Màu |= Ý nghĩa |
+  |<#EEF7EE> | Dùng lại nguyên trạng |
+  |<#E6F0FF> | Mở rộng thành phần có sẵn |
+  |<#FFF4D6> | Xây mới |
+endlegend
+
+package "1. Trải nghiệm người dùng" {
+  component "Ask Data\n+ trích dẫn tới trang/ô số" <<extend>> as UI_Ask
+  component "Danh mục & trang chỉ số\n(định nghĩa · công thức · ngưỡng ·\nchuỗi thời gian · vintage)" <<new>> as UI_Ind
+  component "Dashboard ANKT · Hộp cảnh báo" <<new>> as UI_Dash
+  component "Báo cáo / Bản tin (PDF/DOCX)" <<new>> as UI_Rep
+  component "Workbench dữ liệu\n(duyệt trích xuất · vintage · reconcile)" <<new>> as UI_WB
+  component "Registry editor\n(chỉ số · biến · nguồn · ngưỡng)" <<new>> as UI_Reg
+  component "Eval & Benchmark console" <<new>> as UI_Eval
+}
+
+component "Kong · Keycloak · RBAC theo phân loại dữ liệu" <<extend>> as Gateway
+
+package "2. Tầng Agent" {
+  component "Orchestrator (refine · route · ToT · summary)" <<reuse>> as Orch
+  component "Agent graph (planner · retrieval · responder · judge)" <<reuse>> as Agent
+  component "Indicator resolver\n(câu hỏi → indicator_id · kỳ · vintage)" <<new>> as Resolver
+  component "Tools: compute_indicator ·\ncompare_threshold · explain_change" <<new>> as Tools
+  component "Numeric verifier\n(số trong câu trả lời ⊆ evidence ± dung sai)" <<extend>> as Verifier
+}
+
+package "3. Dịch vụ chỉ số (Indicator Service)" {
+  component "Indicator Registry\n(ECO-001.5: taxonomy · polarity ·\nformula DAG · thresholds[])" <<new>> as Registry
+  component "Computation Engine\n(căn kỳ stock/flow · đơn vị · FX ·\nlàm tròn · ratio/derived)" <<new>> as Compute
+  component "Validation & Reconciliation\n(tự tính vs chính thức · dung sai)" <<new>> as Recon
+  component "Threshold & Alert Engine" <<new>> as Alert
+  component "Semantic layer (metric contract)" <<extend>> as Sem
+}
+
+package "4. Dữ liệu & đấu nối" {
+  component "Source Registry\n(tên · số hiệu · ngày · cơ quan · URL · SHA-256)" <<new>> as SrcReg
+  component "Observation Store (point-in-time)\n(value · period · release/vintage ·\nsource_ref: trang/bảng/ô)" <<new>> as Obs
+  component "Connector Hub\n• Tài liệu/web theo lịch\n• API/SDMX (IMF · WB · BIS)\n• Warehouse\n• Upload thủ công + metadata" <<new>> as Hub
+  component "Pipeline Scheduler\n(K8s CronJob → Dagster)" <<new>> as Sched
+  component "Document Extraction\n(OCR · layout · table → candidate obs)" <<new>> as Extract
+  component "Data Quality rules" <<new>> as DQ
+  component "Warehouse connectors · schema catalog" <<extend>> as WH
+  component "Knowledge base (luật · nghị quyết · báo cáo)\n+ trang/bbox · hiệu lực văn bản" <<extend>> as KB
+}
+
+package "5. Model serving (GPU)" {
+  component "LiteLLM · vLLM (LLM)" <<reuse>> as LLM
+  component "Embedding · Reranker (benchmark)" <<extend>> as EmbR
+  component "OCR · Layout · Table · VLM service" <<new>> as Vision
+}
+
+package "6. Đánh giá & vận hành" {
+  component "Golden set (Langfuse Datasets)\ncase: đáp số · dung sai · tài liệu nguồn" <<extend>> as Golden
+  component "Scorers: numeric-tolerance ·\ncitation · vintage · threshold-status" <<new>> as Scorers
+  component "Release gate" <<reuse>> as Gate
+  component "Benchmark harness\n(OCR · retrieval · LLM)" <<new>> as Bench
+  component "Audit · Langfuse traces · Prometheus" <<reuse>> as Obsv
+}
+
+database "Postgres\n(registry · observations · sources)" as PG
+database "MinIO (tài liệu gốc)" as S3
+database "Qdrant" as QD
+
+UI_Ask --> Gateway
+UI_Ind --> Gateway
+UI_Dash --> Gateway
+UI_Rep --> Gateway
+UI_WB --> Gateway
+UI_Reg --> Gateway
+UI_Eval --> Gateway
+
+Gateway --> Orch
+Gateway --> Registry
+Gateway --> Extract
+Gateway --> Golden
+Orch --> Agent
+Agent --> Resolver
+Resolver --> Registry
+Agent --> Tools
+Tools --> Compute
+Tools --> Alert
+Agent --> KB
+Agent --> Sem
+Agent --> Verifier
+Agent --> LLM
+
+Compute --> Registry
+Compute --> Obs
+Recon --> Obs
+Recon --> Compute
+Alert --> Registry
+Alert --> Compute
+Sem --> WH
+
+Sched --> Hub
+Hub --> SrcReg
+Hub --> S3
+Hub --> Extract
+Hub --> WH
+Extract --> Vision
+Extract --> Obs : candidate (chờ duyệt)
+DQ --> Obs
+Obs --> SrcReg
+KB --> SrcReg
+KB --> QD
+KB --> EmbR
+
+Registry --> PG
+Obs --> PG
+SrcReg --> PG
+
+Golden --> SrcReg
+Scorers --> Golden
+Gate --> Scorers
+Bench --> Vision
+Bench --> EmbR
+Bench --> LLM
+Agent --> Obsv
+@enduml

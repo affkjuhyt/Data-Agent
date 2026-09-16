@@ -32,7 +32,7 @@ dev = [
 # Python import root is backend/ — `import libs…`, `import services…` resolve there.
 [tool.setuptools.packages.find]
 where = ["backend"]
-exclude = ["tests*", "archive*", "node_modules*", "dist*"]
+exclude = ["tests*", "node_modules*", "dist*"]
 
 # ─── Pytest ────────────────────────────────────────────────────────────────
 [tool.pytest.ini_options]
@@ -123,7 +123,6 @@ exclude = [
     "*/alembic/*",
     "*/__pycache__/*",
     "*/tests/*",
-    "archive/",
     "*/node_modules/*",
 ]
 
@@ -133,7 +132,6 @@ line-length = 100
 target-version = "py311"
 src = [".", "backend"]   # libs/ and services/ are first-party for isort — they live under backend/
 extend-exclude = [
-    "archive",
     "backend/alembic/versions",
     "node_modules",
     "dist",

@@ -2,9 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { SlidersHorizontal, ChevronDown } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
-export interface FilterGroupOption { id: string; label: string; activeClassName?: string }
+interface FilterGroupOption { id: string; label: string; activeClassName?: string }
 
-export interface FilterGroupDef {
+interface FilterGroupDef {
   label: string;
   options: FilterGroupOption[];
   isActive: (id: string) => boolean;

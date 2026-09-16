@@ -1,0 +1,116 @@
+@startuml 36-capability-status-map
+title Bản đồ trạng thái năng lực toàn nền tảng (09/2026) — đã có · một phần · chưa có
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam wrapWidth 190
+skinparam component<<have>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam component<<partial>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam component<<missing>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có |
+  |<#E6F0FF> | Có một phần |
+  |<#FFF4D6> | Chưa có |
+endlegend
+
+package "Dữ liệu đầu vào" {
+  component "Upload tài liệu" <<have>>
+  component "Warehouse\nPostgres/Snowflake/ClickHouse" <<have>>
+  component "Web ingest (1 URL)" <<partial>>
+  component "Import xlsx/csv (1 bảng)" <<partial>>
+  component "OCR · trang/bbox" <<missing>>
+  component "Connector API/SDMX" <<missing>>
+  component "Scheduler thu thập" <<missing>>
+  component "Source registry" <<missing>>
+  component "Mapping · chuẩn hoá" <<missing>>
+  component "DQ · reconciliation" <<missing>>
+  component "Duyệt maker–checker" <<missing>>
+}
+
+package "Tri thức" {
+  component "KB retrieval + rerank" <<have>>
+  component "Phát hiện mâu thuẫn" <<have>>
+  component "Entity graph" <<have>>
+  component "Metadata văn bản · hiệu lực" <<missing>>
+}
+
+package "Chỉ số" {
+  component "Semantic layer\n(1 bảng · 1 cột)" <<partial>>
+  component "Indicator catalog" <<missing>>
+  component "Observation · vintage" <<missing>>
+  component "Compute engine" <<missing>>
+  component "Ngưỡng theo kỳ" <<missing>>
+  component "Alert engine" <<missing>>
+  component "Báo cáo (có xlsx export)" <<partial>>
+}
+
+package "Agent" {
+  component "Orchestrator · ToT planner" <<have>>
+  component "Stream · làm rõ · reset" <<have>>
+  component "Guardrail · judge" <<have>>
+  component "Evidence frame" <<have>>
+  component "Verifier số có dung sai" <<partial>>
+  component "Sub-agent chuyên môn" <<partial>>
+  component "MCP chuẩn" <<missing>>
+  component "Tool registry động" <<missing>>
+}
+
+package "Giao diện" {
+  component "Ask Data" <<have>>
+  component "Knowledge Ops" <<have>>
+  component "Builder · Playground" <<have>>
+  component "Trace TTFT · decode" <<have>>
+  component "Data Studio" <<partial>>
+  component "Catalog · trang chỉ số" <<missing>>
+  component "Dashboard ANKT" <<missing>>
+  component "Hộp cảnh báo" <<missing>>
+  component "Eval console" <<missing>>
+}
+
+package "Đánh giá" {
+  component "Eval gate offline/online" <<have>>
+  component "Golden set có dung sai + nguồn" <<missing>>
+  component "Benchmark model" <<missing>>
+}
+
+package "DevOps · GitOps" {
+  component "CI lint/type/test" <<have>>
+  component "Ansible deploy" <<have>>
+  component "Security scan (chỉ báo cáo)" <<partial>>
+  component "GitOps Argo CD" <<missing>>
+  component "Image SHA · SBOM · ký" <<missing>>
+  component "Staging" <<missing>>
+  component "External Secrets" <<missing>>
+}
+
+package "Monitoring" {
+  component "Tracing Jaeger" <<have>>
+  component "Langfuse" <<have>>
+  component "Prometheus · Grafana cơ bản" <<partial>>
+  component "Log k8s" <<partial>>
+  component "Backup (chỉ Postgres)" <<partial>>
+  component "Alertmanager · rules" <<missing>>
+  component "SLO" <<missing>>
+  component "DR runbook" <<missing>>
+}
+
+package "MLOps" {
+  component "Prompt trong git" <<have>>
+  component "vLLM (docker :latest)" <<partial>>
+  component "Model registry" <<missing>>
+  component "Dataset versioning" <<missing>>
+  component "Canary · shadow LLM" <<missing>>
+  component "GPU scheduling" <<missing>>
+}
+@enduml

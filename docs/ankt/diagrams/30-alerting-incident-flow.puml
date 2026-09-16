@@ -1,0 +1,51 @@
+@startuml 30-alerting-incident-flow
+title Luồng cảnh báo vận hành và xử lý sự cố
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có |
+  |<#E6F0FF> | Có một phần |
+  |<#FFF4D6> | Chưa có |
+endlegend
+
+|Giám sát|
+start
+#FFF4D6:Rule vượt ngưỡng
+(SLO burn rate · lỗi 5xx · TTFT p95 · GPU/VRAM ·
+ổ đĩa · Kafka lag · connector lỗi · dữ liệu quá SLA ·
+eval regression);
+#FFF4D6:Alertmanager gom nhóm · khử trùng · ức chế;
+if (Mức độ?) then (P1)
+  #FFF4D6:Gọi on-call (điện thoại/app);
+elseif (P2) then
+  #FFF4D6:Kênh Slack/Teams của đội;
+else (P3)
+  #FFF4D6:Tạo ticket;
+endif
+|On-call|
+#FFF4D6:Xác nhận (ack);
+#E6F0FF:Mở dashboard + runbook gắn trong alert
+(RUNBOOK.md đã có, chưa gắn với alert);
+#E6F0FF:Điều tra: Grafana → Jaeger trace → Kibana log → Langfuse
+(Jaeger, Kibana, Langfuse có; chưa liên kết trace_id);
+if (Nguyên nhân?) then (bản phát hành)
+  #E6F0FF:Rollback
+  (hiện tại: Ansible thủ công; mục tiêu: git revert/Argo abort);
+elseif (quá tải) then
+  #E6F0FF:Scale (HPA có cho 4 service) / giảm tải;
+elseif (LLM backend) then
+  #FFF4D6:Chuyển route LiteLLM sang model dự phòng;
+else (dữ liệu)
+  #FFF4D6:Tạm dừng connector · đánh dấu dữ liệu nghi vấn;
+endif
+|Giám sát|
+#FFF4D6:Kiểm tra SLO hồi phục → resolve;
+|Đội kỹ thuật|
+if (P1?) then (có)
+  #FFF4D6:Postmortem không đổ lỗi trong 3 ngày;
+  #FFF4D6:Action item · cập nhật runbook và rule;
+else (không)
+endif
+stop
+@enduml

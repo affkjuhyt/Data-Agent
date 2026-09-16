@@ -1,0 +1,55 @@
+@startuml 27-environments-promotion
+title Môi trường và luồng promote: dev → staging → prod
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có |
+  |<#E6F0FF> | Có một phần |
+  |<#FFF4D6> | Chưa có |
+endlegend
+
+|Developer|
+start
+#EEF7EE:Mở PR;
+|CI|
+#EEF7EE:Kiểm tra PR (lint · test · eval offline);
+#EEF7EE:Merge main;
+#FFF4D6:Build image tag = SHA · SBOM · scan · ký;
+|Repo GitOps|
+#FFF4D6:Bot mở PR bump overlays/dev (auto-merge);
+|dev (server hiện tại)|
+#E6F0FF:Argo CD sync
+(hiện tại: Ansible thủ công);
+#FFF4D6:E2E smoke tự động;
+|Release manager|
+#E6F0FF:Tạo release vX.Y.Z
+(release-gate đã có, chưa gắn triển khai);
+|Repo GitOps|
+#FFF4D6:PR bump overlays/staging;
+|staging|
+#FFF4D6:Argo CD sync;
+fork
+  #E6F0FF:Eval online (release-gate.yml);
+fork again
+  #FFF4D6:E2E đầy đủ + k6 load test;
+fork again
+  #FFF4D6:Kiểm tra migration trên bản sao dữ liệu;
+end fork
+if (Đạt ngưỡng?) then (đạt)
+else (không)
+  #FFF4D6:Chặn promote, mở issue;
+  stop
+endif
+|Repo GitOps|
+#FFF4D6:PR bump overlays/prod (2 người duyệt);
+|prod|
+#FFF4D6:Argo Rollouts canary 10% → 50% → 100%
+phân tích: error rate · p95 · TTFT · eval mẫu;
+if (Chỉ số canary tốt?) then (tốt)
+  #FFF4D6:Promote 100%;
+else (xấu)
+  #FFF4D6:Tự động abort + git revert;
+endif
+stop
+@enduml
