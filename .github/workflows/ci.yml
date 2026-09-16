@@ -52,7 +52,7 @@ jobs:
         # first surface that regresses.
         run: |
           for target in \
-            backend/libs/basemodel backend/libs/database_connector backend/libs/shared \
+            backend/libs/basemodel backend/libs/database_connector backend/libs/indicator backend/libs/shared \
             backend/services/kb_backend backend/services/workflow_runtime \
             backend/services/auth_api backend/services/flow_builder backend/services/model_service \
             backend/services/release_worker backend/services/sandbox_executor \

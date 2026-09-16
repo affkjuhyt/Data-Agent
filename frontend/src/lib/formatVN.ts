@@ -1,27 +1,38 @@
 /**
- * US number / currency / date formatting — one place, no locale guessing.
+ * Vietnamese number / currency / date formatting — one place, no locale guessing.
  *
  * Everything user-facing in the data agent goes through here instead of
  * `toLocaleString()` without arguments (which formats according to the
  * viewer's browser, so the same number reads "1,284,560" on one laptop and
- * "1.284.560" on the next). The rules follow US convention:
+ * "1.284.560" on the next). The rules follow Vietnamese convention
+ * (docs/ankt/UI-DESIGN.md section 3):
  *
- *   - thousands grouped with ","  → 1,284,560,000
- *   - decimals with "."           → 1.28
- *   - currency suffixed with "₫"  → 1,284,560,000 ₫
- *   - compact form                → 1.28B · 12.5M · 3.2K
- *   - dates as MM/dd/yyyy, weeks start on Sunday
+ *   - thousands grouped with "."  → 1.284.560.000
+ *   - decimals with ","           → 1,28
+ *   - currency suffixed with "₫"  → 1.284.560.000 ₫
+ *   - multipliers as words        → 1,28 tỷ · 12,5 triệu · 3,2 nghìn
+ *   - dates as dd/MM/yyyy, weeks start on Monday
+ *
+ * This file used to emit US convention despite its name. That is a worse bug
+ * than it looks: a debt bulletin writing "128,4" means 128.4, so rendering the
+ * same figure as "128.4" — or worse, reading it back as 128,400 — produces an
+ * answer that is wrong while looking entirely credible.
+ *
+ * The convention applies to OUTPUT only. `toNumber` still parses "." as the
+ * decimal point because its inputs are machine values (Postgres NUMERIC arrives
+ * as "1284560000.00", JSON numbers are always US-format); "fixing" the parser
+ * to match the display convention would corrupt every value on the way in.
  *
  * Implemented by hand rather than through Intl so the output is identical in
  * every runtime (Node without full ICU, older WebViews) and fully unit-testable.
  */
 
-const GROUP = ',';
-const DECIMAL = '.';
+const GROUP = '.';
+const DECIMAL = ',';
 const DASH = '—';
 
-/** getDay() index for the first day of the week (Sunday === 0). */
-export const WEEK_STARTS_ON = 0;
+/** getDay() index for the first day of the week (Monday === 1). */
+export const WEEK_STARTS_ON = 1;
 
 type Numeric = number | string | bigint | null | undefined;
 
@@ -32,7 +43,12 @@ interface NumberOptions {
   minFractionDigits?: number;
 }
 
-/** Coerce to a finite number, or null. Accepts numeric strings ("1200.50"). */
+/**
+ * Coerce to a finite number, or null. Accepts numeric strings ("1200.50").
+ *
+ * Machine format, deliberately: the "." here is a decimal point, not a
+ * thousands group. Callers pass API/database values, never text a user typed.
+ */
 export function toNumber(value: Numeric): number | null {
   if (value === null || value === undefined) return null;
   if (typeof value === 'bigint') return Number(value);
@@ -53,7 +69,7 @@ function groupInteger(digits: string): string {
   return out;
 }
 
-/** 1284560000 → "1,284,560,000"; 1.2845 → "1.28"; "1200.50" → "1,200.5". */
+/** 1284560000 → "1.284.560.000"; 1.2845 → "1,28"; "1200.50" → "1.200,5". */
 export function formatNumber(value: Numeric, opts: NumberOptions = {}): string {
   const n = toNumber(value);
   if (n === null) return DASH;
@@ -66,6 +82,8 @@ export function formatNumber(value: Numeric, opts: NumberOptions = {}): string {
   let fixed = Math.abs(n).toFixed(max);
   if (fixed.includes('e')) fixed = Math.abs(n).toLocaleString('en-US', { useGrouping: false, maximumFractionDigits: max });
 
+  // Split on "." — toFixed and en-US toLocaleString both emit machine format,
+  // so this is still the decimal point even though "." groups on the way out.
   let [intPart, fracPart = ''] = fixed.split('.');
   // strip trailing zeros beyond the minimum
   while (fracPart.length > min && fracPart.endsWith('0')) fracPart = fracPart.slice(0, -1);
@@ -75,26 +93,31 @@ export function formatNumber(value: Numeric, opts: NumberOptions = {}): string {
   return fracPart ? `${sign}${grouped}${DECIMAL}${fracPart}` : `${sign}${grouped}`;
 }
 
+// Words, not B/M/K: UI-DESIGN section 3 asks for multipliers spelled out, and
+// "nghìn tỷ" (10^12) earns its place at the top because Vietnamese fiscal
+// reporting states public debt and budget figures in it — 3.109,2 nghìn tỷ
+// đồng is how the source itself writes the number.
 const COMPACT_UNITS: Array<[number, string]> = [
-  [1e9, 'B'],
-  [1e6, 'M'],
-  [1e3, 'K'],
+  [1e12, 'nghìn tỷ'],
+  [1e9, 'tỷ'],
+  [1e6, 'triệu'],
+  [1e3, 'nghìn'],
 ];
 
-/** 1284560000 → "1.28B"; 12500000 → "12.5M"; 950 → "950". */
+/** 1284560000 → "1,28 tỷ"; 12500000 → "12,5 triệu"; 950 → "950". */
 export function formatCompact(value: Numeric, maxFractionDigits = 2): string {
   const n = toNumber(value);
   if (n === null) return DASH;
   const abs = Math.abs(n);
   for (const [threshold, unit] of COMPACT_UNITS) {
     if (abs >= threshold) {
-      return `${formatNumber(n / threshold, { maxFractionDigits })}${unit}`;
+      return `${formatNumber(n / threshold, { maxFractionDigits })} ${unit}`;
     }
   }
   return formatNumber(n);
 }
 
-/** "1,284,560,000 ₫" — or, with `compact`, "1.28B ₫" for tight cells. */
+/** "1.284.560.000 ₫" — or, with `compact`, "1,28 tỷ ₫" for tight cells. */
 export function formatCurrency(value: Numeric, opts: { compact?: boolean; currency?: string } = {}): string {
   const n = toNumber(value);
   if (n === null) return DASH;
@@ -103,7 +126,7 @@ export function formatCurrency(value: Numeric, opts: { compact?: boolean; curren
   return `${body} ${symbol}`;
 }
 
-/** 0.125 → "12.5%". Takes a ratio, not a percentage. */
+/** 0.125 → "12,5%". Takes a ratio, not a percentage. */
 export function formatPercent(ratio: Numeric, maxFractionDigits = 1): string {
   const n = toNumber(ratio);
   if (n === null) return DASH;
@@ -120,11 +143,11 @@ export function toDate(value: DateInput): Date | null {
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
-/** MM/dd/yyyy */
+/** dd/MM/yyyy */
 export function formatDate(value: DateInput): string {
   const d = toDate(value);
   if (!d) return DASH;
-  return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()}`;
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
 /** HH:mm (24h) */
@@ -135,14 +158,14 @@ export function formatTime(value: DateInput, withSeconds = false): string {
   return withSeconds ? `${base}:${pad(d.getSeconds())}` : base;
 }
 
-/** MM/dd/yyyy HH:mm */
+/** dd/MM/yyyy HH:mm */
 export function formatDateTime(value: DateInput): string {
   const d = toDate(value);
   if (!d) return DASH;
   return `${formatDate(d)} ${formatTime(d)}`;
 }
 
-/** 850 → "850 ms"; 3200 → "3.2s"; 72000 → "1m 12s". */
+/** 850 → "850 ms"; 3200 → "3,2s"; 72000 → "1m 12s". */
 export function formatDuration(ms: Numeric): string {
   const n = toNumber(ms);
   if (n === null || n < 0) return DASH;
@@ -172,9 +195,9 @@ export function formatRelative(value: DateInput, now: Date = new Date()): string
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
 
 /**
- * Format one table cell of unknown type the way a US reader expects.
+ * Format one table cell of unknown type the way a Vietnamese reader expects.
  * Numeric strings (Postgres NUMERIC arrives as "1284560000.00") are treated as
- * numbers; ISO dates become MM/dd/yyyy (with HH:mm when a time is present).
+ * numbers; ISO dates become dd/MM/yyyy (with HH:mm when a time is present).
  */
 export function formatCell(value: unknown): string {
   if (value === null || value === undefined) return DASH;

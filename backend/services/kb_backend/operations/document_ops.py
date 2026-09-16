@@ -116,6 +116,7 @@ _SOURCE_CATEGORY_TYPES: dict[str, list[str]] = {
     "doc": ["doc"],
     "media": ["image", "video"],
     "web": ["web"],
+    "api": ["api"],
 }
 
 

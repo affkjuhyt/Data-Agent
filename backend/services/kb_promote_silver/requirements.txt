@@ -1,4 +1,7 @@
-docling>=2.0.0
+# Pinned, not >=: docling's default OCR engine is `auto`, which resolves to
+# whichever backend is installed, so a floating version can change extracted
+# digits between rebuilds. Bump deliberately and re-run the OCR baseline.
+docling==2.126.0
 motor>=3.3.0
 asyncpg>=0.29.0
 sqlalchemy[asyncio]>=2.0.0

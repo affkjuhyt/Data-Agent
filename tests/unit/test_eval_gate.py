@@ -194,8 +194,10 @@ async def test_a_classifier_error_counts_as_wrong_not_as_skipped():
     ],
 )
 def test_unsupported_numbers_finds_figures_that_are_in_no_source(answer, contexts, expected):
-    """Separator-insensitive on purpose: 128,4 and 128.4 are the same figure,
-    and an answer that drops the separator has not invented anything."""
+    """Convention-insensitive, not separator-insensitive: 128,4 and 128.4 are
+    the same figure read under two conventions, but 1284 is a different figure.
+    Deleting the separator instead of parsing it is the E2 defect — see
+    tests/unit/test_eval_numeric.py."""
     from model.eval.scorers import grounding
 
     assert grounding.unsupported_numbers(answer, contexts) == expected

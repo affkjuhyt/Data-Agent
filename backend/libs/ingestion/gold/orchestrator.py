@@ -171,6 +171,7 @@ async def _process_chunk(
             "entities": entities.canonicals,
             "embedding_model_id": embed_model_id,
             "knowledge_base": knowledge_base,
+            "region": chunk.get("region"),
         },
         embedding=embedding,
         summary=summary,

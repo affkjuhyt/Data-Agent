@@ -56,6 +56,10 @@ class SourceType(str, Enum):
     IMAGE = "image"
     VIDEO = "video"
     WAREHOUSE = "warehouse"
+    # A machine-readable feed pulled by a connector (ankt.source). Its artifact
+    # is the publisher's raw response rather than a file someone uploaded, but
+    # it is a bronze document like any other and belongs in the same listings.
+    API = "api"
 
 
 class Tier(str, Enum):
@@ -208,8 +212,29 @@ class Warehouse(BaseModel):
     warehouse_type: str | None = None
 
 
+class Api(BaseModel):
+    """A connector's stored response (ankt.source).
+
+    `sha256` is what makes the artifact checkable: the publisher's own
+    `lastupdated` is a claim, this is a fact, and the two disagree when a source
+    re-stamps a file it did not change. The rest records which series of which
+    source at which vintage, so a figure can be traced back to the bytes it was
+    read out of without another lookup.
+    """
+
+    source_type: Literal[SourceType.API]
+    sha256: str
+    ankt_source: str | None = None
+    series_key: str | None = None
+    vintage_label: str | None = None
+    release_date: str | None = None
+    fetched_at: str | None = None
+    observations: int | None = None
+    bytes: int | None = None
+
+
 MetadataType = Annotated[
-    Union[Document, Image, Video, Web, Warehouse],
+    Union[Document, Image, Video, Web, Warehouse, Api],
     Field(discriminator="source_type"),
 ]
 

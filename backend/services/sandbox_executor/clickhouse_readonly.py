@@ -84,7 +84,14 @@ def _is_readonly_setting_error(exc: BaseException) -> bool:
     """
     if getattr(exc, "code", None) == 164:
         return True
-    return "readonly mode" in str(exc).lower()
+    text = str(exc).lower()
+    # Two different refusals, and only the first is the server's. Against a
+    # cluster that enforces read-only per user (ClickHouse play, and any
+    # hardened warehouse), clickhouse_connect declines the setting ITSELF with
+    # "Setting readonly is unknown or readonly" — no code 164, no "readonly
+    # mode", so the ladder never descended and every query failed on a target
+    # that was already exactly as safe as the setting was trying to make it.
+    return "readonly mode" in text or "unknown or readonly" in text
 
 
 class ClickHouseQueryError(Exception):

@@ -66,26 +66,30 @@ async def list_warehouses(postgres: Any, tenant_id: str, cursor: str | None = No
             )).all()
             creators = {str(wid): (cb or "") for wid, cb in crows}
 
-    docs = []
-    for w in rows:
-        service = (w.service or "").lower()
-        docs.append({
-            "data_id": str(w.warehouse_id),
-            "name": w.description or f"Warehouse ({service.title()})",
-            "source_type": "warehouse",
-            "extension": None,
-            "current_tier": "gold",
-            "status": "PUBLISHED",
-            "added_by": creators.get(str(w.warehouse_id), ""),
-            "added_on": str(w.created_at or ""),
-            "abstract": None,
-            "metadata": {
-                "doc_type": f"Warehouse/{service}",
-                "language": None,
-                "access_role": None,
-                "warehouse_type": service,
-            },
-        })
+        # Inside the session on purpose: exiting the `async with` closes it and
+        # detaches every ORM instance, so `w.service` below would raise
+        # DetachedInstanceError while trying to refresh an expired attribute.
+        # The rows were already loaded — it is the attribute access that fails.
+        docs = []
+        for w in rows:
+            service = (w.service or "").lower()
+            docs.append({
+                "data_id": str(w.warehouse_id),
+                "name": w.description or f"Warehouse ({service.title()})",
+                "source_type": "warehouse",
+                "extension": None,
+                "current_tier": "gold",
+                "status": "PUBLISHED",
+                "added_by": creators.get(str(w.warehouse_id), ""),
+                "added_on": str(w.created_at or ""),
+                "abstract": None,
+                "metadata": {
+                    "doc_type": f"Warehouse/{service}",
+                    "language": None,
+                    "access_role": None,
+                    "warehouse_type": service,
+                },
+            })
 
     has_next = offset + PAGE_SIZE < total
     next_cursor = base64.urlsafe_b64encode(str(offset + PAGE_SIZE).encode()).decode() if has_next else None

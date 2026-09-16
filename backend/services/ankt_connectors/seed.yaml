@@ -1,0 +1,135 @@
+# Bootstrap for the source registry — NOT the runtime source of truth.
+#
+# `python -m services.ankt_connectors seed` upserts these rows into ankt.source,
+# ankt.variable and ankt.source_binding, after which the registry is what runs
+# and what the Nguồn dữ liệu screen lists. A steward adding the next source does
+# it there, not here; this file exists so the first seven do not have to be
+# typed in by hand, and so a fresh environment starts with something to look at.
+#
+# Note what is NOT in any Python module any more: base URLs, response shapes,
+# series keys, which publisher uses which envelope. All of it is config, which
+# is the whole point — `connector` names a protocol, and the thirty-ninth source
+# is a row rather than a deploy.
+
+sources:
+  - code: intl-imf-weo
+    title: IMF World Economic Outlook
+    publisher: International Monetary Fund
+    connector: sdmx
+    schedule: semi-annual
+    licence: IMF terms of use
+    config:
+      base_url: https://api.imf.org/external/sdmx/3.0/data/dataflow
+      agency: IMF.RES
+      dataflow: WEO
+      # WEO tables carry projections to +5 years in the same column as
+      # outturns, with nothing marking the boundary.
+      drop_projections: true
+    bindings:
+      - variable: gdp_current_imf
+        series_key: VNM.NGDP.A
+      - variable: government_debt_gg_imf
+        series_key: VNM.GGXWDG.A
+      - variable: government_revenue_gg_imf
+        series_key: VNM.GGR.A
+      - variable: government_net_lending_imf
+        series_key: VNM.GGXCNL.A
+      - variable: government_debt_ratio_imf
+        series_key: VNM.GGXWDG_NGDP.A
+
+  - code: intl-wb-wdi
+    title: World Bank World Development Indicators
+    publisher: World Bank
+    connector: rest-json
+    schedule: quarterly
+    licence: CC BY 4.0
+    config:
+      url_template: https://api.worldbank.org/v2/country/VNM/indicator/{key}
+      params: {format: json, per_page: "200"}
+      rows_path: [1]
+      vintage_path: [0, lastupdated]
+      period_field: date
+      vintage_prefix: WDI
+    bindings:
+      - variable: gdp_current_wb
+        series_key: NY.GDP.MKTP.CN
+
+  # Same publisher, same API host, INCOMPATIBLE envelope: the databank
+  # endpoints answer with a bare object where the indicator endpoint answers
+  # with [header, rows]. One plugin, two configs — this pair is the reason the
+  # extraction spec exists instead of a `shape: worldbank` flag.
+  - code: intl-wb-ids
+    title: World Bank International Debt Statistics
+    publisher: World Bank
+    connector: rest-json
+    schedule: yearly
+    licence: CC BY 4.0
+    config:
+      url_template: https://api.worldbank.org/v2/sources/6/country/VNM/series/{key}/counterpart-area/WLD/time/all
+      params: {format: json, per_page: "200"}
+      rows_path: [source, data]
+      vintage_path: [lastupdated]
+      vintage_prefix: IDS
+      period_from:
+        list_field: variable
+        match_key: concept
+        match_value: Time
+        take: id
+        strip_prefix: "YR"
+    bindings:
+      - variable: external_debt_total_wb
+        series_key: DT.DOD.DECT.CD
+
+# One variable per (concept, SOURCE), never one per concept. The IMF's
+# general-government debt and Vietnam's legal definition of public debt measure
+# different things; averaging or overwriting one with the other is exactly the
+# confusion `perimeter` exists to stop, and keeping them apart is what makes
+# "why does the IMF say 31% when the bulletin says 37%" answerable.
+variables:
+  - code: gdp_current_imf
+    concept: GDP giá hiện hành (IMF WEO)
+    unit: money
+    currency: VND
+    stock_or_flow: flow
+    perimeter: IMF_WEO
+
+  - code: gdp_current_wb
+    concept: GDP giá hiện hành (World Bank WDI)
+    unit: money
+    currency: VND
+    stock_or_flow: flow
+    perimeter: WB_WDI
+
+  - code: government_debt_gg_imf
+    concept: Nợ chính phủ chung, tổng dư nợ
+    unit: money
+    currency: VND
+    stock_or_flow: stock
+    perimeter: IMF_general_government
+
+  - code: government_revenue_gg_imf
+    concept: Thu ngân sách chính phủ chung
+    unit: money
+    currency: VND
+    stock_or_flow: flow
+    perimeter: IMF_general_government
+
+  - code: government_net_lending_imf
+    concept: Cho vay/đi vay ròng của chính phủ chung
+    unit: money
+    currency: VND
+    stock_or_flow: flow
+    perimeter: IMF_general_government
+
+  - code: government_debt_ratio_imf
+    concept: Nợ chính phủ chung so với GDP (IMF công bố sẵn)
+    unit: percent
+    stock_or_flow: ratio
+    perimeter: IMF_general_government
+
+  - code: external_debt_total_wb
+    concept: Tổng dư nợ nước ngoài
+    unit: money
+    currency: USD
+    stock_or_flow: stock
+    perimeter: WB_IDS

@@ -208,3 +208,34 @@ GRANT SELECT ON
   "KBEntityLookup",
   "KBQdrantCollection"
 TO kb_ingestion_worker;
+
+-- ── ankt schema ──────────────────────────────────────────────────────────────
+-- The indicator platform's own schema (migrations d3f4a5b6c7d8 onward). Listed
+-- here so a freshly initialised database matches an existing one that got the
+-- same grants through migration b7c8d9e0f1a2.
+--
+-- kb_backend needs writes, not just reads: the Nguồn dữ liệu screen runs
+-- connectors, and a connector appends observations and releases. Both roles
+-- below are NOBYPASSRLS, so the tenant_isolation policies on these tables are
+-- live for them — unlike `admin`, which bypasses and is why the CLI warns.
+DO $$
+DECLARE
+  target text;
+  tbl    text;
+BEGIN
+  FOREACH target IN ARRAY ARRAY['kb_backend', 'runtime_writer', 'app_user'] LOOP
+    IF EXISTS (SELECT FROM pg_roles WHERE rolname = target) THEN
+      EXECUTE format('GRANT USAGE ON SCHEMA ankt TO %I', target);
+      FOREACH tbl IN ARRAY ARRAY['variable', 'source_document', 'release',
+                                 'observation', 'indicator', 'threshold',
+                                 'source', 'source_binding', 'connector_run'] LOOP
+        IF EXISTS (SELECT FROM information_schema.tables
+                    WHERE table_schema = 'ankt' AND table_name = tbl) THEN
+          EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON ankt.%I TO %I',
+                         tbl, target);
+        END IF;
+      END LOOP;
+    END IF;
+  END LOOP;
+END
+$$;

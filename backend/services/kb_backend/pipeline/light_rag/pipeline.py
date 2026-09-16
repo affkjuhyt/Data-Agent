@@ -739,6 +739,11 @@ def _build_result_list(
                 "doc_name": str(pg.get("doc_name") or ""),
                 "source_type": str(pg.get("source_type") or ""),
                 "tier": str(pg.get("current_tier") or ""),
+                # Page and box, recorded at ingestion. Absent for documents
+                # parsed before coordinates were kept, and for formats that
+                # have no page geometry at all — a citation then names the
+                # document without being able to open it at the figure.
+                "region": (hit.get("payload") or {}).get("region"),
             },
         })
     return enriched

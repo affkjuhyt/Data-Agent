@@ -15,6 +15,7 @@ from services.kb_backend.router.knowledge.qdrant           import router as qdra
 from services.kb_backend.router.knowledge.neo4j            import router as neo4j_router
 from services.kb_backend.router.knowledge.trash            import router as trash_router
 from services.kb_backend.router.knowledge.identity         import router as identity_router
+from services.kb_backend.router.knowledge.sources          import router as sources_router
 
 router = APIRouter()
 router.include_router(data_router)
@@ -25,6 +26,7 @@ router.include_router(structured_table_router)
 router.include_router(documents_router)
 router.include_router(warehouses_router)
 router.include_router(warehouse_connect_router)
+router.include_router(sources_router)
 router.include_router(conflicts_router)
 router.include_router(policies_router)
 router.include_router(knowledge_base_router)

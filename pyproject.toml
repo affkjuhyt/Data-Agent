@@ -197,6 +197,7 @@ exclude = [
 module = [
     "libs.basemodel.*",
     "libs.database_connector.*",
+    "libs.indicator.*",
     "libs.shared.*",
 ]
 disallow_untyped_defs = true

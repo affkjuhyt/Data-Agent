@@ -5,12 +5,16 @@
 // Warehouses are managed in their own Warehouses sub-tab (WarehouseCenter), not in
 // the Data Layer / Knowledge Hub document listings — so 'warehouse' is intentionally
 // NOT a browsable source category here.
-export type SourceCategory = 'doc' | 'media' | 'web';
+export type SourceCategory = 'doc' | 'media' | 'web' | 'api';
 
 export const SOURCE_CATEGORIES: { id: SourceCategory; label: string }[] = [
   { id: 'doc',       label: 'Doc' },
   { id: 'media',     label: 'Media' },
   { id: 'web',       label: 'Web' },
+  // Connector feeds (ankt.source). Without this chip the default all-on filter
+  // sends `?source=doc,media,web`, which matches no `api` row — every artifact
+  // a connector stored is in the database and invisible on the screen.
+  { id: 'api',       label: 'API' },
 ];
 
 export const ALL_SOURCE_CATEGORIES: SourceCategory[] = SOURCE_CATEGORIES.map(c => c.id);

@@ -50,9 +50,9 @@ describe('AnswerBlock', () => {
     expect(screen.getByText(/Net revenue for June 2026/)).toBeInTheDocument();
 
     const grid = screen.getByTestId('data-grid');
-    expect(within(grid).getByText(/1,204 rows/)).toBeInTheDocument();
+    expect(within(grid).getByText(/1\.204 rows/)).toBeInTheDocument();
     // US number formatting of a numeric string from Postgres
-    expect(within(grid).getByText('612,000,000')).toBeInTheDocument();
+    expect(within(grid).getByText('612.000.000')).toBeInTheDocument();
 
     const strip = screen.getByTestId('evidence-strip');
     expect(within(strip).getByText(/Approved metric · net_revenue v3/)).toBeInTheDocument();
@@ -221,7 +221,7 @@ describe('DataGrid', () => {
     const amountHeader = screen.getByRole('columnheader', { name: /amount/ });
     fireEvent.click(amountHeader); // asc
     const firstDataRow = screen.getAllByRole('row')[1];
-    expect(within(firstDataRow).getByText('1,000')).toBeInTheDocument();
+    expect(within(firstDataRow).getByText('1.000')).toBeInTheDocument();
     expect(amountHeader).toHaveAttribute('aria-sort', 'ascending');
   });
 
@@ -252,7 +252,7 @@ describe('DataGrid', () => {
 
     await waitFor(() => expect(loadRows).toHaveBeenCalledWith({ offset: 0, limit: 500, sort: undefined, dir: undefined }));
     expect(screen.getByText('SO-501')).toBeInTheDocument();
-    expect(screen.getByText(/Full result 1-1 \/ 1,200 rows/)).toBeInTheDocument();
+    expect(screen.getByText(/Full result 1-1 \/ 1\.200 rows/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Excel \+ Source/ })).toBeInTheDocument();
   });
 });

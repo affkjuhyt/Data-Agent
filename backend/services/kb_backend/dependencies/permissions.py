@@ -45,6 +45,13 @@ CATALOG: dict[str, str] = {
     "addWarehouse":            "warehouses",
     "addWarehouseConfig":      "warehouses",
     "editWarehouseConfig":     "warehouses",
+    # ANKT external sources. Granted by migration a6b7c8d9e0f1 to whoever
+    # already holds viewWarehouses — the same data-engineering role manages
+    # both kinds of external connection, and a permission nobody was granted
+    # would make the screen 403 for everyone on the day it shipped.
+    "viewSources":             "sources",
+    "editSource":              "sources",
+    "runSource":               "sources",
 }
 
 PERMISSIONS: frozenset[str] = frozenset(CATALOG)

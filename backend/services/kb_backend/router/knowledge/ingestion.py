@@ -12,7 +12,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from libs.basemodel.services_databaseconnector.postgres_model import (
-    Language, SourceType, Document, Image, Video, Web, Warehouse,
+    Language, SourceType, Document, Image, Video, Web, Warehouse, Api,
 )
 from services.kb_backend.schemas import PromoteResponse, WebIngestRequest
 from libs.shared.document_lock import DocumentBusy, document_lock
@@ -35,6 +35,10 @@ _META_CLS: dict[SourceType, type[BaseModel]] = {
     SourceType.IMAGE: Image,
     SourceType.VIDEO: Video,
     SourceType.WAREHOUSE: Warehouse,
+    # Uploaded by a connector rather than a person, but the route validates
+    # metadata the same way for every source type and a missing key here would
+    # turn into a confusing 422.
+    SourceType.API: Api,
 }
 
 _TERMINAL_STATUSES = {"PUBLISHED", "FAILED"}
