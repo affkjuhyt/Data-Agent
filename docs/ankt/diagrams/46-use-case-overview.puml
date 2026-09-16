@@ -1,0 +1,118 @@
+@startuml 46-use-case-overview
+title Sơ đồ ca sử dụng — vai trò × chức năng, kèm trạng thái hiện thực
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam wrapWidth 180
+skinparam usecase<<have>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam usecase<<partial>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam usecase<<missing>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có |
+  |<#E6F0FF> | Có một phần |
+  |<#FFF4D6> | Chưa có |
+  Đọc nhanh: đếm ô vàng theo vai trò = khối lượng còn phải làm cho vai trò đó.
+endlegend
+
+left to right direction
+
+actor "Lãnh đạo" as EXEC
+actor "Chuyên viên\nphân tích" as ANA
+actor "Data steward" as STE
+actor "Research /\nReviewer" as RES
+actor "QA / Eval" as QA
+actor "Quản trị" as ADM
+
+rectangle "Data Agent" {
+  usecase "UC01 Hỏi đáp có trích dẫn" as U1 <<partial>>
+  usecase "UC02 Xem dashboard ANKT\n(heatmap domain × ngưỡng)" as U2 <<missing>>
+  usecase "UC03 Nhận & xử lý cảnh báo" as U3 <<missing>>
+  usecase "UC04 Xem trang chỉ số\n(chuỗi · ngưỡng · vintage)" as U4 <<missing>>
+  usecase "UC05 So sánh nguồn / quốc gia\n(cảnh báo phạm vi)" as U5 <<missing>>
+  usecase "UC06 Phân rã biến động" as U6 <<missing>>
+  usecase "UC07 Mở tài liệu nguồn\ntới đúng trang" as U7 <<partial>>
+  usecase "UC08 Truy vấn ad-hoc SQL\ntrên warehouse" as U8 <<partial>>
+  usecase "UC09 Thao tác BI trên kết quả\n(pivot · kéo thả · cột tính)" as U9 <<missing>>
+  usecase "UC10 Gắn ngữ cảnh · tải tệp" as U10 <<missing>>
+  usecase "UC11 Xuất Excel kèm nguồn" as U11 <<have>>
+  usecase "UC12 Soạn & duyệt bản tin" as U12 <<missing>>
+  usecase "UC13 Giao việc · theo dõi" as U13 <<missing>>
+
+  usecase "UC20 Nạp tài liệu vào kho tri thức" as U20 <<have>>
+  usecase "UC21 Cấu hình nguồn & lịch thu thập" as U21 <<missing>>
+  usecase "UC22 Duyệt số liệu trích xuất\n(maker–checker)" as U22 <<partial>>
+  usecase "UC23 Ánh xạ & chuẩn hoá\n(ô → biến · đơn vị · kỳ)" as U23 <<missing>>
+  usecase "UC24 Xử lý issue dữ liệu\n& đối chiếu" as U24 <<partial>>
+  usecase "UC25 Quản lý release & vintage" as U25 <<missing>>
+
+  usecase "UC30 Định nghĩa / sửa chỉ số\n(công thức · ngưỡng)" as U30 <<missing>>
+  usecase "UC31 Duyệt phiên bản chỉ số" as U31 <<missing>>
+
+  usecase "UC40 Quản lý golden set" as U40 <<missing>>
+  usecase "UC41 Chạy & so sánh eval" as U41 <<partial>>
+  usecase "UC42 Benchmark model" as U42 <<missing>>
+  usecase "UC43 Xem trace & chi phí" as U43 <<have>>
+
+  usecase "UC50 Quản lý người dùng & quyền" as U50 <<have>>
+  usecase "UC51 Phân quyền theo\nphân loại dữ liệu (ABAC)" as U51 <<missing>>
+  usecase "UC52 Nhật ký truy cập số liệu mật" as U52 <<partial>>
+  usecase "UC53 Vận hành hạ tầng & backup" as U53 <<partial>>
+  usecase "UC54 Xây dựng agent / workflow" as U54 <<have>>
+}
+
+EXEC --> U1
+EXEC --> U2
+EXEC --> U3
+EXEC --> U4
+EXEC --> U12
+EXEC --> U13
+
+ANA --> U1
+ANA --> U4
+ANA --> U5
+ANA --> U6
+ANA --> U7
+ANA --> U8
+ANA --> U9
+ANA --> U10
+ANA --> U11
+ANA --> U12
+ANA --> U3
+
+STE --> U20
+STE --> U21
+STE --> U22
+STE --> U23
+STE --> U24
+STE --> U25
+
+RES --> U30
+RES --> U31
+RES --> U40
+
+QA --> U40
+QA --> U41
+QA --> U42
+QA --> U43
+
+ADM --> U50
+ADM --> U51
+ADM --> U52
+ADM --> U53
+ADM --> U54
+
+note bottom
+  **Thực trạng 09/2026**: 5/30 ca sử dụng đã có · 8/30 có một phần · **17/30 chưa có**.
+  Toàn bộ nhóm UC20–UC31 (dữ liệu và chỉ số) — tức phần lõi nghiệp vụ ANKT — gần như chưa có.
+  Nhóm đã có nhất là UC50–UC54 (nền tảng, builder, vận hành), vốn thừa kế từ sản phẩm BI doanh nghiệp.
+end note
+@enduml

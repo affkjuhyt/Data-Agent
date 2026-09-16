@@ -1,0 +1,96 @@
+@startuml 38-answer-render-contract
+title Hợp đồng render câu trả lời — intent quyết định bố cục, không phải LLM
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam wrapWidth 200
+skinparam component<<have>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam component<<partial>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam component<<missing>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+legend top right
+  |= Màu |= Trạng thái primitive |
+  |<#EEF7EE> | Đã có |
+  |<#E6F0FF> | Có một phần |
+  |<#FFF4D6> | Chưa có |
+  Quy tắc: `intent` trong Analysis Query (IQL) chọn khối hiển thị.
+  LLM sinh IQL và lời diễn giải, **không** chọn bố cục và **không** sinh số.
+endlegend
+
+package "1 · Ý định (IQL.intent)" {
+  component "lookup" as I1 <<missing>>
+  component "compare_threshold" as I2 <<missing>>
+  component "trend" as I3 <<missing>>
+  component "decompose_change" as I4 <<missing>>
+  component "cross_section" as I5 <<missing>>
+  component "cross_country" as I6 <<missing>>
+  component "explain_definition" as I7 <<missing>>
+  component "scenario\n(giai đoạn sau)" as I8 <<missing>>
+  component "ad_hoc_sql\n(warehouse)" as I9 <<have>>
+}
+
+package "2 · Khối hiển thị dùng lại" {
+  component "IndicatorValueCard\ngiá trị · đơn vị · kỳ · vintage ·\ntrạng thái ngưỡng · nguồn" as B1 <<missing>>
+  component "ThresholdTimeSeries\nchuỗi + dải ngưỡng theo giai đoạn" as B2 <<missing>>
+  component "DecompositionWaterfall\nđóng góp tử số · mẫu số · đánh giá lại" as B3 <<missing>>
+  component "ComparisonMatrix\n+ PerimeterWarning" as B4 <<missing>>
+  component "RankingTable\nxếp hạng theo chiều" as B5 <<missing>>
+  component "DefinitionCard\ncông thức · biến · căn cứ pháp lý" as B6 <<missing>>
+  component "ScenarioTable\nđầu vào · kết quả · model đã kiểm định" as B7 <<missing>>
+  component "DataGrid + ChartRenderer\n(Ask hiện có)" as B8 <<have>>
+  component "EvidencePanel\n+ indicator · vintage · trang" as B9 <<partial>>
+  component "SourceRefChip → PageViewer\nảnh trang + highlight bbox" as B10 <<missing>>
+}
+
+package "3 · Khối bắt buộc kèm mọi câu trả lời" {
+  component "ContextChips\ngiả định đã áp dụng, sửa được → chạy lại" as C1 <<missing>>
+  component "VerifierBadge\nsố ⊆ evidence · dung sai · vintage" as C2 <<partial>>
+  component "FeedbackBar\nđúng/sai · báo số sai → issue" as C3 <<missing>>
+  component "ActionBar\nExplorer · báo cáo · lưu · xuất" as C4 <<partial>>
+}
+
+package "4 · Trạng thái không có câu trả lời" {
+  component "RefusalCard\nNO_DATA_FOR_PERIOD · FREQUENCY_NOT_AVAILABLE ·\nVINTAGE_NOT_FOUND · INDICATOR_NOT_APPROVED ·\nACCESS_DENIED — mỗi mã một lối ra" as R1 <<missing>>
+  component "ClarificationCard\n(hiện có, thêm 'trả lời với giả định X')" as R2 <<partial>>
+  component "PartialResultBanner\nthiếu kỳ · nguồn lỗi · số đã rút lại" as R3 <<missing>>
+}
+
+I1 --> B1
+I2 --> B1
+I2 --> B2
+I3 --> B2
+I4 --> B3
+I4 --> B2
+I5 --> B5
+I6 --> B4
+I7 --> B6
+I8 --> B7
+I9 --> B8
+
+B1 ..> B10 : mỗi số bấm được
+B2 ..> B10
+B3 ..> B10
+B4 ..> B10
+B5 ..> B10
+B1 ..> B9
+B8 ..> B9
+
+C1 -[hidden]- C2
+C2 -[hidden]- C3
+C3 -[hidden]- C4
+
+note bottom of R1
+  Mã lỗi có cấu trúc do compute-svc trả về
+  (SERVICE-DESIGN mục 3.3) được ánh xạ 1–1
+  sang lối ra trên giao diện — xem UI-DESIGN mục 8.
+end note
+@enduml

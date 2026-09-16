@@ -16,6 +16,14 @@ skinparam component<<gap>> {
   FontColor #8E1B1B
 }
 
+legend top right
+  |= Màu |= Ý nghĩa |
+  |<#FFFFFF> | Đã có trong hệ thống hiện tại |
+  |<#FDECEC> | Khoảng trống — chưa có |
+  Sơ đồ **hiện trạng**: chỉ hai màu (có / chưa có). Các sơ đồ mục tiêu dùng
+  thang ba màu (đã có · có một phần · chưa có) — xem [DIAGRAM-INDEX] mục 4.
+endlegend
+
 actor "Lãnh đạo / Chuyên viên" as User
 actor "Data / AI engineer" as Eng
 

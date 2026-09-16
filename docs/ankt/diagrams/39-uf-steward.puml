@@ -1,0 +1,75 @@
+@startuml 39-uf-steward
+title Luồng giao diện — Data steward duyệt một kỳ công bố số liệu
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có |
+  |<#E6F0FF> | Có một phần |
+  |<#FFF4D6> | Chưa có |
+  Năng suất là yêu cầu chính: một kỳ công bố có thể sinh hàng trăm ô cần duyệt.
+  Workbench phải thao tác được **hoàn toàn bằng bàn phím**.
+endlegend
+
+|Steward (maker)|
+start
+#FFF4D6:Nhận thông báo "kỳ công bố mới chờ duyệt"
+(hộp thư · email) → mở **hàng đợi duyệt**;
+#FFF4D6:Lọc theo nguồn · domain · mức DQ · độ tin cậy ô;
+#E6F0FF:Mở một lô trích xuất
+(hiện: StructuredTableReview cho xlsx/csv);
+
+partition "Workbench duyệt trích xuất" {
+  #FFF4D6:Bố cục 2 cột: **ảnh trang có khung bbox** ↔ **bảng ứng viên sửa được**;
+  #FFF4D6:Hệ thống tô sẵn: ô độ tin cậy thấp · ô vi phạm DQ ·
+  ô lệch bất thường so kỳ trước;
+  #FFF4D6:Điều hướng bàn phím: j/k ô kế · Enter sửa ·
+  a duyệt · r từ chối · ? phím tắt;
+  repeat
+    #FFF4D6:Đối chiếu ô với ảnh trang (click ô → cuộn tới bbox);
+    if (Giá trị đúng?) then (đúng)
+      #FFF4D6:Duyệt ô (hoặc duyệt cả cột/bảng nếu không có cờ);
+    else (sai)
+      #FFF4D6:Sửa giá trị + chọn lý do
+      (OCR sai · sai đơn vị · sai kỳ · sai bội số);
+      #FFF4D6:Hệ thống ghi `value_edit` kèm giá trị gốc (không mất vết);
+    endif
+  repeat while (Còn ô có cờ?) is (còn)
+  -> hết;
+}
+
+#FFF4D6:Kiểm tra bảng chuẩn hoá: biến · chiều · kỳ · đơn vị · bội số;
+if (Mapping sai?) then (có)
+  #FFF4D6:Sửa mapping → lưu thành **quy tắc cho nguồn này**
+  (lần sau tự áp dụng);
+else (không)
+endif
+#FFF4D6:Xem kết quả DQ và đối chiếu (tổng thành phần · so nguồn khác);
+if (Có lỗi chặn?) then (có)
+  #FFF4D6:Tạo issue dữ liệu → gán người xử lý;
+  stop
+else (không)
+endif
+#FFF4D6:Gửi duyệt (submit) kèm ghi chú;
+
+|Steward khác (checker)|
+#FFF4D6:Mở lô đã submit — chỉ xem **chênh lệch so với đề xuất máy**
+và các ô đã sửa;
+if (Đồng ý?) then (có)
+  #FFF4D6:Phê duyệt (maker ≠ checker, hệ thống chặn tự duyệt);
+else (không)
+  #FFF4D6:Trả lại kèm lý do → về maker;
+  stop
+endif
+
+|Hệ thống|
+#FFF4D6:Phát hành release → `observation.published`;
+#FFF4D6:Tính lại chỉ số phụ thuộc · cập nhật cache · sinh cảnh báo nếu đổi trạng thái ngưỡng;
+#FFF4D6:Chạy eval regression cho golden case bị ảnh hưởng;
+#FFF4D6:Thông báo cho chuyên viên phụ trách · cập nhật lineage;
+
+|Chuyên viên|
+#FFF4D6:Thấy số mới trên trang chỉ số kèm cờ "đã điều chỉnh"
+và giá trị bản trước;
+stop
+@enduml

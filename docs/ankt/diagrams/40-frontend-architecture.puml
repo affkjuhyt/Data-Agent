@@ -1,0 +1,85 @@
+@startuml 40-frontend-architecture
+title Kiến trúc frontend mục tiêu — module, primitive dùng chung, lớp API
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam wrapWidth 190
+skinparam component<<have>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam component<<partial>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam component<<missing>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có |
+  |<#E6F0FF> | Có một phần |
+  |<#FFF4D6> | Chưa có |
+endlegend
+
+package "features/ — mỗi màn hình một thư mục" {
+  component "ask/\n(đã có: SSE · evidence · chart · export)" <<partial>>
+  component "overview/\ndashboard ANKT · dashboard cá nhân" <<missing>>
+  component "indicators/\ncatalog · trang chỉ số · explorer" <<missing>>
+  component "alerts/\nhộp cảnh báo · đăng ký" <<missing>>
+  component "reports/\nsoạn bản tin · duyệt · lịch" <<missing>>
+  component "studio/\nnguồn · duyệt trích xuất · mapping ·\nvintage · DQ · lineage · indicator studio" <<partial>>
+  component "eval/\ngolden set · lần chạy · scorecard" <<missing>>
+  component "knowledge/ · agent-builder/ · Settings/\n(đã có)" <<have>>
+}
+
+package "components/indicator/ — primitive miền ANKT" {
+  component "IndicatorValueCard" <<missing>>
+  component "ThresholdTimeSeries" <<missing>>
+  component "VintageControl · RevisionBadge" <<missing>>
+  component "SourceRefChip · DocumentPageViewer" <<missing>>
+  component "DecompositionWaterfall · ComparisonMatrix" <<missing>>
+  component "ContextChips · RefusalCard · VerifierBadge" <<missing>>
+  component "UnitDisplay (đơn vị · bội số · tiền tệ)" <<missing>>
+}
+
+package "components/ui/ · shared/ — design system chung" {
+  component "DataTable · DetailDrawer · FilterPopover ·\nStatusBadge · Pagination · OperationalHeader" <<have>>
+  component "Skeleton · EmptyState · ErrorState" <<have>>
+  component "CommandPalette · NotificationBell" <<missing>>
+}
+
+package "lib/ — hạ tầng client" {
+  component "apiClient (fetch + auth)" <<have>>
+  component "api/catalog · observation · compute ·\nalert · report · eval · studio" <<missing>>
+  component "iql.ts — dựng Analysis Query có kiểu" <<missing>>
+  component "sse.ts · useAgentStream" <<have>>
+  component "notifications.ts (SSE hộp thư)" <<missing>>
+  component "urlState.ts — trạng thái màn hình trong URL" <<missing>>
+  component "i18n/ (vi · en)" <<missing>>
+  component "formatVN.ts — **đang định dạng kiểu Mỹ**, phải sửa" <<partial>>
+  component "permissions.ts · AuthProvider · keycloak" <<have>>
+}
+
+cloud "Kong" as K #EEF7EE
+
+node "Platform API" as API {
+  component "indicator-catalog · observation · compute ·\nalert · report · eval · curation · kb" <<missing>>
+  component "workflow-runtime (SSE) · platform · auth" <<have>>
+}
+
+"features/ — mỗi màn hình một thư mục" --> "components/indicator/ — primitive miền ANKT"
+"features/ — mỗi màn hình một thư mục" --> "components/ui/ · shared/ — design system chung"
+"components/indicator/ — primitive miền ANKT" --> "lib/ — hạ tầng client"
+"features/ — mỗi màn hình một thư mục" --> "lib/ — hạ tầng client"
+"lib/ — hạ tầng client" --> K
+K --> API
+
+note bottom of "components/indicator/ — primitive miền ANKT"
+  Một primitive dùng ở mọi bề mặt: hội thoại, trang chỉ số,
+  dashboard, cảnh báo, báo cáo. Đổi cách hiển thị vintage
+  hay trạng thái ngưỡng = sửa một chỗ.
+end note
+@enduml

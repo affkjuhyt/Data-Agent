@@ -76,6 +76,12 @@ package "Giao diện" {
   component "Dashboard ANKT" <<missing>>
   component "Hộp cảnh báo" <<missing>>
   component "Eval console" <<missing>>
+  component "Primitive chỉ số\n(giá trị · ngưỡng · vintage · nguồn)" <<missing>>
+  component "Xem trang tài liệu + highlight" <<missing>>
+  component "Hộp thư · thông báo · giao việc" <<missing>>
+  component "Deep-link theo tham số" <<missing>>
+  component "i18n (nhãn trộn Việt–Anh)" <<missing>>
+  component "Định dạng số/ngày\n(formatVN đang theo chuẩn Mỹ)" <<partial>>
 }
 
 package "Đánh giá" {

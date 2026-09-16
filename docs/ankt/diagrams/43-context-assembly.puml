@@ -1,0 +1,69 @@
+@startuml 43-context-assembly
+title Lắp ngữ cảnh cho một câu hỏi — người dùng kiểm soát agent nhìn thấy gì
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+autonumber
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có |
+  |<#E6F0FF> | Có một phần |
+  |<#FFF4D6> | Chưa có |
+  Nguyên tắc: agent **không** tự quét toàn bộ kho. Tập nguồn là một danh sách
+  tường minh, người dùng thấy và sửa được trước khi gửi.
+endlegend
+
+actor "Chuyên viên" as U
+participant "Ask Workspace" as FE #E6F0FF
+participant "kong" as K #EEF7EE
+participant "kb-backend" as KB #E6F0FF
+participant "workflow-runtime" as WR #EEF7EE
+participant "sandbox-executor" as SB #EEF7EE
+participant "indicator/compute" as CMP #FFF4D6
+
+== Dựng tập nguồn (trước khi hỏi) ==
+U -> FE : mở Ask, xem rail Ngữ cảnh
+FE -> K : GET /api/schema-catalog
+K --> FE : bảng · cột · phân loại · độ tươi · row_count
+FE -> K : GET /api/knowledge/collections
+K --> FE : bộ sưu tập tri thức
+FE -> K : GET /indicators?status=approved
+K --> FE : danh mục chỉ số (chưa có)
+FE --> U : rail hiển thị nguồn khả dụng + nhãn phân loại
+
+U -> FE : gõ "@" → chọn bảng `fact_debt`, tài liệu "Bản tin nợ công 17"
+note right of FE
+  @-mention gắn **tham chiếu**, không dán nội dung:
+  {kind, id, label} — nội dung do backend lấy khi chạy.
+end note
+
+== Tải tệp làm ngữ cảnh phiên ==
+U -> FE : kéo thả `du-lieu-thang.xlsx` vào composer
+FE -> K : POST /api/knowledge/bronze (scope = session)
+K -> KB : lưu MinIO + SHA-256 · tạo data_id
+KB --> FE : data_id
+FE -> K : GET /api/knowledge/documents/{id}/stream (SSE tiến trình)
+KB --> FE : parse → bảng trích được
+FE --> U : xem trước bảng · chọn sheet/bảng · gắn nhãn **"chưa duyệt · dữ liệu phiên"**
+
+== Gửi câu hỏi ==
+U -> FE : "So dư nợ trong file với số công bố 2024"
+FE -> K : POST /api/orchestrate/stream\n{query, context_refs[], scope, session_files[]}
+K -> WR : orchestrate
+WR -> WR : router chọn tool theo **context_refs**,\nkhông quét toàn bộ catalog
+par
+  WR -> SB : execute_sql (bảng đã gắn, read-only guard)
+  SB --> WR : rows + provenance
+else
+  WR -> KB : retrieve (collection đã gắn)
+  KB --> WR : chunk + doc_id + trang
+else
+  WR -> CMP : query(IQL) cho chỉ số đã gắn
+  CMP --> WR : giá trị · vintage · ngưỡng
+end
+WR -> WR : verifier: số ⊆ evidence · dung sai · vintage
+WR --> FE : stream: __progress · __block · __evidence · __verification
+FE --> U : block trên canvas + dải nguồn đã dùng
+
+U -> FE : mở "agent đã nhìn thấy gì"
+FE --> U : đúng danh sách nguồn + dòng/đoạn đã đọc,\ntách rõ **đã duyệt** và **dữ liệu phiên**
+@enduml

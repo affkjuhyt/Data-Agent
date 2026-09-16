@@ -1,0 +1,137 @@
+@startuml 49-technique-stack
+title Bản đồ kỹ thuật theo tầng — đã có · một phần · chưa có (09/2026)
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam wrapWidth 195
+skinparam component<<have>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam component<<partial>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam component<<missing>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+legend top right
+  |= Màu |= Trạng thái kỹ thuật |
+  |<#EEF7EE> | Đã hiện thực, dùng được |
+  |<#E6F0FF> | Có nhưng chưa đủ cho ANKT, hoặc đang tắt bằng cờ |
+  |<#FFF4D6> | Chưa có |
+  Đọc cùng [TECH-DESIGN.md]. Mỗi ô là một **kỹ thuật**, không phải một service.
+endlegend
+
+package "1 · Điều phối & lập kế hoạch" {
+  component "LangGraph StateGraph +\ncheckpointer Postgres (resume đa replica)" <<have>>
+  component "DPTS tree search\n(candidate pool · expanding queue ·\nplanner gate · memory estimator)" <<have>>
+  component "Executor DAG có phụ thuộc\n+ thu ngữ cảnh giữa task" <<have>>
+  component "interrupt() để hỏi lại giữa chừng" <<have>>
+  component "Router theo độ phức tạp\n(fast path vs supervisor)" <<missing>>
+  component "Supervisor + sub-agent chuyên môn" <<partial>>
+}
+
+package "2 · Ngữ nghĩa & sinh truy vấn" {
+  component "Metric contract → SQL tất định\n(compile_metric, 2 dialect)" <<have>>
+  component "Resolver đồng nghĩa dài nhất thắng\n(tất định, giải thích được)" <<have>>
+  component "AnalyticalSlots (metric · dimension ·\ntime_range · compare_to)" <<partial>>
+  component "compare_to: parse được,\n**chưa compile**" <<partial>>
+  component "IQL/QuerySpec compiler có kiểu" <<missing>>
+  component "Tìm chỉ số hybrid\n(BM25 + dense + alias + taxonomy)" <<missing>>
+}
+
+package "3 · An toàn thực thi" {
+  component "SQL guard **hai bộ phân tích**\n(sql_scan lexer riêng + sqlparse,\nbắt buộc đồng thuận)" <<have>>
+  component "AST visitor cho Python\n(whitelist module + denylist call)" <<have>>
+  component "Pool container Docker/k8s,\nhàng đợi theo kind" <<have>>
+  component "Row/byte/cell cap + timeout" <<have>>
+  component "Gói phân tích chuỗi thời gian\n(scipy · statsmodels)" <<missing>>
+}
+
+package "4 · Chất lượng số học" {
+  component "aggregation_check: phát hiện\nfan-out do join (báo **rủi ro**, không báo sai)" <<have>>
+  component "check_units · check_subtotals" <<have>>
+  component "Số thập phân chính xác (Decimal),\nđơn vị · bội số · FX" <<missing>>
+  component "Formula DAG evaluator\n(ratio · căn kỳ stock/flow · phân rã)" <<missing>>
+  component "So khớp có dung sai theo loại case" <<missing>>
+  component "Định dạng số/ngày vi-VN\n(formatVN đang theo chuẩn Mỹ)" <<partial>>
+}
+
+package "5 · Truy xuất tri thức" {
+  component "LightRAG: canonicalize (LLM) →\ncache ngữ nghĩa Qdrant (0.92 · TTL 24h) →\nvector theo loại thực thể →\ngraph Neo4j → RRF (k=60) → rerank" <<have>>
+  component "Cache L0 Redis khớp chính xác" <<have>>
+  component "Ngân sách suy giảm (degrade budget)" <<partial>>
+  component "Lexical/BM25 (Postgres tsvector)\n— **có mã, tắt bằng cờ**" <<partial>>
+  component "Lọc theo hiệu lực văn bản (effective_at)" <<missing>>
+  component "Trích dẫn tới trang · bbox" <<missing>>
+}
+
+package "6 · Xử lý tài liệu" {
+  component "Docling: layout · TableFormer ·\nchunk 4000 ký tự (bảng 30000)" <<partial>>
+  component "OCR — **do_ocr=False**" <<missing>>
+  component "VLM (VLM_MODEL trỏ model chỉ văn bản)" <<missing>>
+  component "Giữ page_no/bbox từ `prov`" <<missing>>
+  component "Excel nhiều sheet/nhiều bảng" <<missing>>
+  component "Dedup theo hash nội dung" <<missing>>
+}
+
+package "7 · Dữ liệu chỉ số" {
+  component "Observation store append-only" <<missing>>
+  component "Truy vấn point-in-time\n(argMax theo release_date)" <<missing>>
+  component "Ngưỡng theo khoảng hiệu lực" <<missing>>
+  component "Codelist SDMX (REF_AREA · FREQ · UNIT_MULT)" <<missing>>
+  component "Cache giá trị chỉ số có phiên bản engine" <<missing>>
+}
+
+package "8 · Thu thập dữ liệu" {
+  component "Upload + bronze→silver→gold qua Kafka" <<have>>
+  component "Web ingest (trafilatura + Playwright)" <<partial>>
+  component "Scheduler · sensor lịch công bố" <<missing>>
+  component "Phát hiện bản mới (ETag · hash · diff)" <<missing>>
+  component "Connector REST/SDMX · backfill · retry" <<missing>>
+  component "DQ rule engine · reconciliation" <<missing>>
+  component "Maker–checker có vết sửa" <<partial>>
+}
+
+package "9 · Công cụ agent" {
+  component "15 tool (SQL · Python · pandas ·\nweb · wiki · file · delegate)" <<have>>
+  component "tool_grant — cấp quyền theo agent" <<have>>
+  component "MCP **đúng giao thức** (Streamable HTTP)" <<missing>>
+  component "Tool registry động, chọn theo embedding" <<missing>>
+}
+
+package "10 · Bảo mật & quản trị" {
+  component "Kong JWKS + gỡ header client giả" <<have>>
+  component "Service assertion HMAC có hạn" <<have>>
+  component "RLS Postgres theo `app.tenant_id`" <<have>>
+  component "OpenBao (hvac) cho credential" <<have>>
+  component "Đánh dấu nội dung **không tin cậy** trong prompt" <<have>>
+  component "PII detector (regex, không phụ thuộc)" <<have>>
+  component "audit: record_sql_access · record_tool_access" <<have>>
+  component "ABAC theo phân loại dữ liệu" <<missing>>
+  component "Row policy ClickHouse" <<missing>>
+}
+
+package "11 · Sự kiện & nhất quán" {
+  component "Kafka manual commit (auto_commit=False)" <<have>>
+  component "Consumer idempotent theo `source_event_id`" <<have>>
+  component "Optimistic lock (row_version)" <<have>>
+  component "Redis pub/sub xoá cache đa replica" <<have>>
+  component "Envelope sự kiện chuẩn + DLQ toàn hệ" <<partial>>
+  component "Recompute theo sự kiện + xoá cache theo series" <<missing>>
+}
+
+package "12 · Quan sát & đánh giá" {
+  component "OTEL (FastAPI · SQLAlchemy · httpx · redis)\n+ Jaeger · structlog ECS" <<have>>
+  component "Langfuse v3 (OTEL-based)" <<have>>
+  component "Scorer offline tất định + release gate" <<have>>
+  component "Ngưỡng online **provisional**, chưa có baseline" <<partial>>
+  component "Scorer số: strip dấu phân cách →\n`128,4` = `1284`" <<partial>>
+  component "Scorer nguồn/trang · vintage · ngưỡng" <<missing>>
+  component "Sinh case từ observation + regression" <<missing>>
+  component "Benchmark OCR/embedding/rerank/LLM" <<missing>>
+}
+@enduml
