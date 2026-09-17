@@ -42,7 +42,21 @@ const STATUS_TONE: Record<string, string> = {
   running: 'text-amber-700 bg-amber-50 border-amber-200',
 };
 
-const EMPTY_FORM = { title: '', publisher: '', connector_type: 'web_crawl' as SourceRow['connector_type'], url: '', cron: '0 3 * * *', render: false };
+const EMPTY_FORM = { title: '', publisher: '', connector_type: 'web_crawl' as SourceRow['connector_type'], url: '', render: false };
+
+const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']; // cron day-of-week: 0=Sun..6=Sat
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/** Compose a 5-field cron from a friendlier "time + repeat days" picker (iOS
+ * Clock-style) so the person filling the form never has to know cron syntax.
+ * No days selected, or all 7, both mean "every day" — `*` in the day field. */
+function buildCron(time: string, days: number[]): string {
+  const [hh, mm] = time.split(':');
+  const hour = parseInt(hh, 10) || 0;
+  const minute = parseInt(mm, 10) || 0;
+  const dayField = days.length === 0 || days.length === 7 ? '*' : [...days].sort().join(',');
+  return `${minute} ${hour} * * ${dayField}`;
+}
 
 export const SourceRegistry = () => {
   const { items: sources, page, totalPages, hasNext, isLoading, canJump, goTo, reload } =
@@ -50,6 +64,8 @@ export const SourceRegistry = () => {
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [scheduleTime, setScheduleTime] = useState('03:00');
+  const [scheduleDays, setScheduleDays] = useState<number[]>([]); // [] = every day
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -74,22 +90,28 @@ export const SourceRegistry = () => {
   };
 
   const submitAdd = async () => {
-    if (!form.title.trim() || !form.url.trim() || !form.cron.trim()) {
-      setErrorMsg('Title, URL and Cron are required.');
+    if (!form.title.trim() || !form.url.trim() || !scheduleTime) {
+      setErrorMsg('Title, URL and a time are required.');
       return;
     }
     setSaving(true);
     setErrorMsg(null);
     try {
-      await apiMutate('POST', '/api/knowledge/sources', form);
+      await apiMutate('POST', '/api/knowledge/sources', { ...form, cron: buildCron(scheduleTime, scheduleDays) });
       setShowAddForm(false);
       setForm(EMPTY_FORM);
+      setScheduleTime('03:00');
+      setScheduleDays([]);
       reload();
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : 'Failed to create source.');
     } finally {
       setSaving(false);
     }
+  };
+
+  const toggleDay = (day: number) => {
+    setScheduleDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day].sort());
   };
 
   const deleteSource = async (id: string) => {
@@ -145,18 +167,18 @@ export const SourceRegistry = () => {
         <div className="content-card content-card--static p-6 space-y-4">
           {errorMsg && <div className="text-xs text-red-600 font-mono">{errorMsg}</div>}
           <div className="grid grid-cols-2 gap-4">
-            <label className="text-xs font-bold text-[#5F5F5F] space-y-1 block">
-              Title
-              <input className="input-field" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
-            </label>
-            <label className="text-xs font-bold text-[#5F5F5F] space-y-1 block">
-              Publisher
-              <input className="input-field" value={form.publisher} onChange={e => setForm(f => ({ ...f, publisher: e.target.value }))} />
-            </label>
-            <label className="text-xs font-bold text-[#5F5F5F] space-y-1 block">
-              Connector Type
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">Title</label>
+              <input className="ui-input w-full text-xs px-3 py-2" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">Publisher</label>
+              <input className="ui-input w-full text-xs px-3 py-2" value={form.publisher} onChange={e => setForm(f => ({ ...f, publisher: e.target.value }))} />
+            </div>
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">Connector Type</label>
               <select
-                className="input-field"
+                className="ui-input w-full text-xs px-3 py-2"
                 value={form.connector_type}
                 onChange={e => setForm(f => ({ ...f, connector_type: e.target.value as SourceRow['connector_type'] }))}
               >
@@ -164,15 +186,48 @@ export const SourceRegistry = () => {
                 <option value="web_crawl">Web Crawl (static HTML)</option>
                 <option value="web_crawl_headless">Web Crawl (JS-rendered / headless)</option>
               </select>
-            </label>
-            <label className="text-xs font-bold text-[#5F5F5F] space-y-1 block">
-              URL
-              <input className="input-field" value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))} placeholder="https://..." />
-            </label>
-            <label className="text-xs font-bold text-[#5F5F5F] space-y-1 block">
-              Cron (5 fields, server time)
-              <input className="input-field font-mono" value={form.cron} onChange={e => setForm(f => ({ ...f, cron: e.target.value }))} placeholder="0 3 * * *" />
-            </label>
+            </div>
+            <div>
+              <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">URL</label>
+              <input className="ui-input w-full text-xs px-3 py-2 font-mono" value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))} placeholder="https://..." />
+            </div>
+            <div className="col-span-2">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">Schedule (server time)</label>
+              <div className="flex items-center gap-4 flex-wrap">
+                <input
+                  type="time"
+                  className="ui-input text-xs px-3 py-2 font-mono w-32"
+                  value={scheduleTime}
+                  onChange={e => setScheduleTime(e.target.value)}
+                />
+                <div className="flex items-center gap-1.5">
+                  {DAY_LABELS.map((label, day) => {
+                    const active = scheduleDays.includes(day);
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        title={DAY_NAMES[day]}
+                        onClick={() => toggleDay(day)}
+                        className={`w-7 h-7 rounded-full text-[11px] font-bold border transition-colors ${
+                          active
+                            ? 'bg-[#B88719] border-[#B88719] text-white'
+                            : 'bg-white border-[#BFA66A] text-[#5F5F5F] hover:bg-[#FFF9E8]'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <span className="text-[11px] font-mono text-[#8A8A8A]">
+                  {scheduleDays.length === 0 || scheduleDays.length === 7
+                    ? 'Every day'
+                    : scheduleDays.map(d => DAY_NAMES[d].slice(0, 3)).join(', ')}
+                  {' at '}{scheduleTime}
+                </span>
+              </div>
+            </div>
           </div>
           <div className="flex justify-end gap-2">
             <button className="btn-ghost btn-sm" onClick={() => { setShowAddForm(false); setErrorMsg(null); }}>Cancel</button>
@@ -293,7 +348,7 @@ export const SourceRegistry = () => {
               others are reported below with a reason.
             </p>
             <textarea
-              className="input-field font-mono text-xs h-64 w-full"
+              className="ui-input font-mono text-xs h-64 w-full px-3 py-2"
               value={bulkText}
               onChange={e => setBulkText(e.target.value)}
               placeholder="sources:&#10;  - id: my-source&#10;    connector: web-crawl&#10;    landing_url: https://...&#10;    schedule: daily"
