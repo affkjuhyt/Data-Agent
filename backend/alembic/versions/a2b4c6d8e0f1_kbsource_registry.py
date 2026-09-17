@@ -79,6 +79,17 @@ def upgrade() -> None:
         DO $$
         BEGIN
             GRANT SELECT, INSERT, UPDATE, DELETE ON "KBSource", "KBSourceConfig", "KBSourceRun" TO app_user;
+            -- kb_backend is the table-scoped, NOBYPASSRLS role kb-backend actually
+            -- connects as in a real deploy (KB_BACKEND_URL_ASYNC) — app_user alone
+            -- 500s every route touching these tables with "permission denied for
+            -- table KBSource" (found by hitting the real deployed API, not caught
+            -- by any test: testcontainers/CI runs as the Postgres superuser and
+            -- never exercises this role at all). Guarded because kb_backend is
+            -- created by deploy/k8s/create-secrets.sh's grant-roles.sql, not by
+            -- any migration — a fresh CI/testcontainers Postgres never has it.
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'kb_backend') THEN
+                GRANT SELECT, INSERT, UPDATE, DELETE ON "KBSource", "KBSourceConfig", "KBSourceRun" TO kb_backend;
+            END IF;
             ALTER TABLE "KBSource" ENABLE ROW LEVEL SECURITY;
             ALTER TABLE "KBSource" FORCE ROW LEVEL SECURITY;
             CREATE POLICY tenant_isolation ON "KBSource"
