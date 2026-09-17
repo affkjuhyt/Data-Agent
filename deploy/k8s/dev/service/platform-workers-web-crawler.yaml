@@ -22,13 +22,7 @@ data:
   DB_HOST: postgres.dataagent-database.svc.cluster.local
   DB_PORT: '8300'
   MINIO_BUCKET: knowledge-base
-  # No KAFKA_SASL_USERNAME yet: unlike schema-crawler, this worker has no
-  # dedicated Kafka principal/ACL provisioned. KafkaSettings.sasl_kwargs()
-  # returns {} with no username set, and try_kafka_consumer() is best-effort
-  # (required=False) — the worker runs in cron-only mode (no "Run Now" via
-  # Kafka) until a web-crawler-worker SASL user + ACLs are added, same as
-  # schema-crawler's DDL-trigger path degrades when Kafka is unavailable.
-  # Scheduled crawling is unaffected either way.
+  KAFKA_SASL_USERNAME: web-crawler-worker
   KAFKA_WEB_CRAWL_TRIGGER_TOPIC: web-crawl.manual-trigger
   KAFKA_GROUP_ID: web-crawler-worker-group
   POLL_INTERVAL_SECONDS: '15'

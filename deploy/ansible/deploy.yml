@@ -399,6 +399,7 @@
               -e "s|REPLACE_WITH_WORKFLOW_RUNTIME_PASSWORD|${WORKFLOW_RUNTIME_KAFKA_PASSWORD}|g" \
               -e "s|REPLACE_WITH_MEMORY_CONSUMER_PASSWORD|${MEMORY_CONSUMER_KAFKA_PASSWORD}|g" \
               -e "s|REPLACE_WITH_SCHEMA_CRAWLER_WORKER_PASSWORD|${SCHEMA_CRAWLER_WORKER_KAFKA_PASSWORD}|g" \
+              -e "s|REPLACE_WITH_WEB_CRAWLER_WORKER_PASSWORD|${WEB_CRAWLER_WORKER_KAFKA_PASSWORD}|g" \
               "{{ docker_dir }}/kafka/kafka-broker-jaas.config.example" > "$jaas"
           kubectl -n {{ ns_database }} create secret generic kafka-jaas \
             --from-file=kafka-broker-jaas.config="$jaas" \
