@@ -102,6 +102,14 @@ kubectl -n dataagent-service create secret generic platform-workers-schema-crawl
   --from-literal=CLICKHOUSE_CRAWLER_PASSWORD="${CLICKHOUSE_CRAWLER_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+# No dedicated Kafka SASL user yet (see platform-workers-web-crawler.yaml's
+# ConfigMap comment) — only the DB and MinIO credentials it actually needs
+# today, both already-existing shared vars, no new vault entries required.
+kubectl -n dataagent-service create secret generic platform-workers-web-crawler-secrets \
+  --from-literal=DB_PASSWORD="${POSTGRES_PASSWORD}" \
+  --from-literal=MINIO_URL="${MINIO_URL}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 kubectl -n dataagent-service create secret generic frontend-secrets \
   --from-literal=VITE_KEYCLOAK_URL="${KEYCLOAK_PUBLIC_URL}" \
   --from-literal=VITE_API_BASE_URL="${PUBLIC_API_URL}" \
