@@ -8,6 +8,7 @@ front doors onto one implementation, not two implementations.
     python -m services.ankt_connectors seed --dsn ... --tenant ...
     python -m services.ankt_connectors list --dsn ... --tenant ...
     python -m services.ankt_connectors run  --dsn ... --tenant ... [--source CODE]
+    python -m services.ankt_connectors promote --dsn ... --tenant ...
 """
 from __future__ import annotations
 
@@ -112,9 +113,32 @@ async def command_run(dsn: str, tenant_id: uuid.UUID, only: str | None) -> int:
     return 1 if failures else 0
 
 
+async def command_promote(dsn: str, tenant_id: uuid.UUID) -> int:
+    """One-shot for artifacts stored before promotion existed."""
+    from libs.database_connector.postgres_connector import PostgresClient
+    from services.ankt_connectors.promote import backfill
+
+    tier_pg = PostgresClient()
+    tier_pg.set_url(dsn)
+    await tier_pg.open()
+    try:
+        async with _session(dsn, tenant_id) as session:
+            done = await backfill(session, tier_pg, tenant_id)
+    finally:
+        await tier_pg.close()
+    if not done:
+        print("  không có artifact nào còn ở bronze")
+        return 0
+    for row in done:
+        print(f"  {row['variable_code']:28} {row['series_key']:24} "
+              f"{row['observations']:>4} quan sát  → gold")
+    print(f"  {len(done)} artifact đã đi hết bronze → silver → gold")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="ankt-connectors")
-    parser.add_argument("command", choices=("seed", "list", "run"))
+    parser.add_argument("command", choices=("seed", "list", "run", "promote"))
     parser.add_argument("--dsn", default=os.environ.get("ANKT_DSN"))
     parser.add_argument("--tenant", default=os.environ.get("ANKT_TENANT_ID"))
     parser.add_argument("--source", help="chỉ chạy một nguồn theo mã")
@@ -128,6 +152,8 @@ def main() -> int:
         return asyncio.run(command_seed(args.dsn, tenant))
     if args.command == "list":
         return asyncio.run(command_list(args.dsn, tenant))
+    if args.command == "promote":
+        return asyncio.run(command_promote(args.dsn, tenant))
     return asyncio.run(command_run(args.dsn, tenant, args.source))
 
 

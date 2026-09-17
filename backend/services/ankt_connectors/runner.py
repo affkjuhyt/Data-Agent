@@ -19,6 +19,7 @@ from typing import Any
 import httpx
 
 from services.ankt_connectors import artifact
+from services.ankt_connectors import promote as promote_mod
 from services.ankt_connectors.db import (
     commit,
     execute,
@@ -30,6 +31,18 @@ from services.ankt_connectors.db import (
 from services.ankt_connectors.plugins import ConfigError, FetchError, fetch
 
 _TIMEOUT = httpx.Timeout(60.0, connect=15.0)
+
+
+@dataclass(frozen=True)
+class _Written:
+    """What `_write` did, beyond the count the summary reports.
+
+    The release and the period span are needed by the promotion note, and
+    re-deriving them there would mean a second read of rows just written.
+    """
+    inserted: int
+    release_id: str | None
+    periods: tuple[str, str] | None
 
 
 @dataclass(frozen=True)
@@ -124,10 +137,26 @@ async def run_source(
 
             written = await _write(session, tenant_id, binding, fetched, stored)
             totals["fetched"] += len(fetched.points)
-            totals["inserted"] += written
-            totals["skipped"] += len(fetched.points) - written
+            totals["inserted"] += written.inserted
+            totals["skipped"] += len(fetched.points) - written.inserted
             warnings.extend(fetched.warnings)
             ok += 1
+
+            # Only after the observations are committed, and only for an
+            # artifact this run actually stored. A byte-identical response is
+            # already at gold from the run that first saw it; promoting it
+            # again would add a lifecycle pair recording no work.
+            if stored is not None and not stored.already_present:
+                await promote_mod.promote(
+                    postgres,
+                    data_id=stored.data_id,
+                    source_code=source["code"],
+                    series_key=binding["series_key"],
+                    variable_code=binding["variable_code"],
+                    observations_written=written.inserted,
+                    periods=written.periods,
+                    release_id=written.release_id,
+                )
     except Exception as exc:
         # rollback() first: the failing statement poisoned the transaction, so
         # the UPDATE recording the failure would itself fail and the run would
@@ -146,7 +175,7 @@ async def run_source(
 
 
 async def _write(session: Any, tenant_id: uuid.UUID, binding: Any, fetched: Any,
-                 stored: Any = None) -> int:
+                 stored: Any = None) -> _Written:
     """One release per vintage, shared by every series of that vintage.
 
     Sharing it is what makes `vintage_consistent` downstream mean something:
@@ -195,7 +224,9 @@ async def _write(session: Any, tenant_id: uuid.UUID, binding: Any, fetched: Any,
         )
         inserted += 1 if written else 0
     await commit(session, tenant_id)
-    return inserted
+    periods = sorted(p.period for p in fetched.points)
+    return _Written(inserted, str(release_id) if release_id else None,
+                    (periods[0], periods[-1]) if periods else None)
 
 
 async def _finish(session: Any, tenant_id: uuid.UUID, run_id: Any, status: str,
