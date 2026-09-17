@@ -1,0 +1,39 @@
+"""`http_file` connector — a URL that already points at a downloadable file
+(PDF/DOCX/XLSX/...), as opposed to an HTML page that needs scraping. This is
+the same shape a manual Document Hub upload produces, just fetched by the
+worker instead of picked from a human's filesystem."""
+from __future__ import annotations
+
+import httpx
+
+from libs.ingestion import config as cfg
+from libs.ingestion.connectors.base import FetchedArtifact
+
+_USER_AGENT = "DataAgent-SourceWorker/1.0"
+
+
+def fetch(config: dict) -> FetchedArtifact:
+    url = config["url"]
+    with httpx.Client(
+        follow_redirects=True,
+        timeout=httpx.Timeout(cfg.WEB_FETCH_TIMEOUT),
+        headers={"User-Agent": _USER_AGENT},
+    ) as client:
+        response = client.get(url)
+        response.raise_for_status()
+        content = response.content
+
+    if len(content) > cfg.MAX_FILE_SIZE_BYTES:
+        raise ValueError(
+            f"http_file fetch of {url} is {len(content)} bytes, "
+            f"over the {cfg.MAX_FILE_SIZE_BYTES}-byte cap"
+        )
+
+    extension = (url.rsplit(".", 1)[-1] if "." in url.rsplit("/", 1)[-1] else "bin").lower()
+    content_type = response.headers.get("content-type", "application/octet-stream").split(";")[0]
+    return FetchedArtifact(
+        content_bytes=content,
+        content_type=content_type,
+        source_url=url,
+        extension=extension,
+    )

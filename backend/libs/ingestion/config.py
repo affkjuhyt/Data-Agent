@@ -92,6 +92,11 @@ ALIAS_VERIFY = os.getenv("ALIAS_VERIFY", "1") == "1"
 # Bounded parallelism for the per-chunk summary LLM calls in the silver stage.
 SILVER_SUMMARY_CONCURRENCY = int(os.getenv("SILVER_SUMMARY_CONCURRENCY", "4"))
 
+# Shared by libs/ingestion/connectors/* — both kb_backend's manual upload
+# path and the platform_workers web-crawler worker enforce the same cap so a
+# scheduled source can't silently accept something a human upload would reject.
+MAX_FILE_SIZE_BYTES = int(os.getenv("MAX_FILE_SIZE_MB", "200")) * 1024 * 1024
+
 # Web portal fetch timeout (seconds) for the bronze→silver web path.
 WEB_FETCH_TIMEOUT = float(os.getenv("WEB_FETCH_TIMEOUT", "30"))
 # Headless-render web portals with Chromium (most are client-rendered SPAs that

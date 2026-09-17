@@ -31,6 +31,10 @@ from services.kb_backend.schemas.warehouse import (  # noqa: F401
     KnowledgeConfigTable, CreateWarehouseConfigRequest, ConnectSnowflakeRequest,
     SelectTablesRequest, WarehouseConfigResponse,
 )
+from services.kb_backend.schemas.sources import (  # noqa: F401
+    CreateSourceRequest, UpdateSourceConfigRequest, SourceResponse,
+    SourceRunResponse, BulkImportRequest, BulkImportSkipped, BulkImportResponse,
+)
 from services.kb_backend.schemas.qdrant import (  # noqa: F401
     QdrantSearchRequest, ToggleQdrantCollectionRequest,
     QdrantCollectionResponse, QdrantPointResponse, ToggleCollectionResponse,

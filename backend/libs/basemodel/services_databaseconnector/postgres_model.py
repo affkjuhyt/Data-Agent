@@ -231,6 +231,44 @@ class WarehouseConfigPayload(BaseModel):
     extra: Optional[dict[str, Any]] = None
 
 
+class SourceConnectorType(str, Enum):
+    """V1 connectors — a scheduled source lands in the same Bronze pipeline a
+    manual Document Hub / Web Portal upload does. `rest_api`/`sdmx`/`rss`/
+    `bulk_parquet` are deliberately not members yet: their destination isn't
+    the KB Bronze tier (numeric time-series sources belong to the not-yet-
+    designed Indicator Service warehouse), so adding them here before that
+    exists would commit to the wrong shape."""
+    HTTP_FILE = "http_file"
+    WEB_CRAWL = "web_crawl"
+    WEB_CRAWL_HEADLESS = "web_crawl_headless"
+
+
+class SourceConfigPayload(BaseModel):
+    """`KBSourceConfig.config` JSONB shape. `render` only matters for
+    `web_crawl`/`web_crawl_headless` (Playwright vs static httpx); ignored by
+    `http_file`. `openbao_path` is a placeholder for a future auth'd source
+    (e.g. an API key) — never store a raw secret here, per the vault
+    convention (`SecretsVaultInsert.openbao_path`)."""
+    url: str
+    format: Optional[str] = None
+    cron: str
+    render: bool = False
+    variables: Optional[list[str]] = None
+    openbao_path: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class SourceRunStatus(str, Enum):
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
+class SourceRunTrigger(str, Enum):
+    SCHEDULED = "scheduled"
+    MANUAL = "manual"
+
+
 class ModelConfig(BaseModel):
     vector_size: Optional[int] = None
     max_tokens: Optional[int] = None
@@ -373,6 +411,37 @@ class KBWarehouseConfigInsert(BaseModel):
     is_active: bool = False
     config: Optional[WarehouseConfigPayload] = None
     created_by: Optional[str] = None
+
+
+@register("insert")
+class KBSourceInsert(BaseModel):
+    tenant_id: str
+    role_id: str
+    connector_type: SourceConnectorType
+    title: str
+    publisher: Optional[str] = None
+    created_by: Optional[str] = None
+    model_config = ConfigDict(use_enum_values=True)
+
+
+@register("insert")
+class KBSourceConfigInsert(BaseModel):
+    source_id: str
+    version_number: int
+    is_active: bool = False
+    config: Optional[SourceConfigPayload] = None
+    created_by: Optional[str] = None
+
+
+@register("insert")
+class KBSourceRunInsert(BaseModel):
+    source_id: str
+    status: SourceRunStatus = SourceRunStatus.RUNNING
+    trigger: SourceRunTrigger = SourceRunTrigger.SCHEDULED
+    data_ids: Optional[list[str]] = None
+    error: Optional[str] = None
+    quality_metrics: Optional[dict[str, Any]] = None
+    model_config = ConfigDict(use_enum_values=True)
 
 
 @register("insert")
@@ -535,6 +604,16 @@ class KBWarehouseDelete(BaseModel):
 
 @register("delete")
 class KBWarehouseConfigDelete(BaseModel):
+    config_id: str
+
+
+@register("delete")
+class KBSourceDelete(BaseModel):
+    source_id: str
+
+
+@register("delete")
+class KBSourceConfigDelete(BaseModel):
     config_id: str
 
 

@@ -8,6 +8,7 @@ from services.kb_backend.router.knowledge.structured_table import router as stru
 from services.kb_backend.router.knowledge.documents        import router as documents_router
 from services.kb_backend.router.knowledge.warehouses       import router as warehouses_router
 from services.kb_backend.router.knowledge.warehouse_connect import router as warehouse_connect_router
+from services.kb_backend.router.knowledge.sources           import router as sources_router
 from services.kb_backend.router.knowledge.conflicts        import router as conflicts_router
 from services.kb_backend.router.knowledge.policies         import router as policies_router
 from services.kb_backend.router.knowledge.knowledge_base   import router as knowledge_base_router
@@ -25,6 +26,7 @@ router.include_router(structured_table_router)
 router.include_router(documents_router)
 router.include_router(warehouses_router)
 router.include_router(warehouse_connect_router)
+router.include_router(sources_router)
 router.include_router(conflicts_router)
 router.include_router(policies_router)
 router.include_router(knowledge_base_router)

@@ -5,6 +5,11 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY backend/services/platform_workers/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+# web-crawler-worker's web_crawl connector needs a real Chromium — same
+# install step as kb_promote_silver's Dockerfile, which already depends on
+# Playwright for the identical fetch.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN apt-get update && python -m playwright install --with-deps chromium && rm -rf /var/lib/apt/lists/*
 # /app mirrors backend/: `libs.*` and `services.platform_workers.*` resolve as
 # root packages, matching how the code imports after the repo restructure (the
 # old flat copy left no `services` package → "No module named 'services'" loop).

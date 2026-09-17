@@ -84,7 +84,8 @@ SELECT gen_random_uuid(), r.role_id, p.resource, p.action
       ('qdrant',          'viewQdrantCollections'),
       ('qdrant',          'searchQdrant'),
       ('trash',           'viewTrash'),
-      ('warehouses',      'viewWarehouses')
+      ('warehouses',      'viewWarehouses'),
+      ('sources',         'viewSources')
   ) AS p(resource, action)
 ON CONFLICT (role_id, resource, action) DO NOTHING;
 
@@ -107,6 +108,10 @@ SELECT gen_random_uuid(), v.role_id, v.resource, v.action
       ('PLATFORM_ADMIN', 'warehouses', 'addWarehouse'),
       ('PLATFORM_ADMIN', 'warehouses', 'addWarehouseConfig'),
       ('PLATFORM_ADMIN', 'warehouses', 'editWarehouseConfig'),
+      ('PLATFORM_ADMIN', 'sources',    'addSource'),
+      ('PLATFORM_ADMIN', 'sources',    'editSource'),
+      ('PLATFORM_ADMIN', 'sources',    'deleteSource'),
+      ('PLATFORM_ADMIN', 'sources',    'runSource'),
       -- AI_ENGINEER
       ('AI_ENGINEER',    'qdrant',     'toggleQdrant'),
       ('AI_ENGINEER',    'policies',   'editExtractionPolicy'),

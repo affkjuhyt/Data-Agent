@@ -32,14 +32,14 @@ UNIVERSAL = {
     "viewDocuments", "editTableRow", "viewConflicts", "viewFleetStats",
     "viewKnowledgeBases", "retrieveKnowledge", "viewGraph", "runGraphQuery",
     "viewPolicies", "viewQdrantCollections", "searchQdrant", "viewTrash",
-    "viewWarehouses",
+    "viewWarehouses", "viewSources",
 }
 RESTRICTED = {
     "PLATFORM_ADMIN": {
         "addData", "processLayer", "deleteData", "addChunkVersion", "editConflict",
         "addFilteringPolicy", "editFilteringPolicy", "deleteFilteringPolicy",
         "editExtractionPolicy", "toggleQdrant", "addWarehouse", "addWarehouseConfig",
-        "editWarehouseConfig",
+        "editWarehouseConfig", "addSource", "editSource", "deleteSource", "runSource",
     },
     "AI_ENGINEER": {"toggleQdrant", "editExtractionPolicy"},
     "EXECUTIVE": {"editConflict", "processLayer", "addFilteringPolicy"},

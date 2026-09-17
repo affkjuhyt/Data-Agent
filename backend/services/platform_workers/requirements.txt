@@ -1,9 +1,14 @@
 # platform-workers — union of memory-consumer, schema-crawler-worker,
-# audit-bridge and audit-consumer, pinned once.
+# audit-bridge, audit-consumer and web-crawler-worker, pinned once.
 kafka-python-ng==2.2.3
 psycopg2-binary==2.9.9
 httpx==0.27.2
 qdrant-client>=1.13,<1.14
+# web-crawler-worker: scheduling + fetch + extraction + Bronze object storage.
+croniter==2.0.5
+playwright==1.44.0
+trafilatura==1.12.2
+minio==7.2.9
 snowflake-connector-python==3.12.2
 # clickhouse_metadata.py imports it lazily — a build without it still starts
 # and still crawls Snowflake and Postgres warehouses.

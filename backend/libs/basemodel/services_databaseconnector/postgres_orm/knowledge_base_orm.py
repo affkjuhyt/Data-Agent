@@ -322,6 +322,84 @@ class KBWarehouseConfigORM(Base):
 
 
 @register("orm")
+class KBSourceORM(Base):
+    """A registered, schedulable ingest source (V1: http_file / web_crawl /
+    web_crawl_headless — see SourceConnectorType). Mirrors KBWarehouseORM's
+    shape: this table is the identity, KBSourceConfigORM below carries the
+    versioned, editable config (url/cron/etc)."""
+    __tablename__ = "KBSource"
+
+    __table_args__ = (
+        Index("idx_kbsource_tenant", "tenant_id"),
+        Index("idx_kbsource_inserted_at_desc", text("inserted_at DESC")),
+    )
+
+    source_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    # The steward's role_id at registration time — reused by the worker for every
+    # scheduled run of this source, since a cron tick has no human request context
+    # to pull a role_id from (KBData.role_id is NOT NULL).
+    role_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("RolePermissions.id"), nullable=False)
+    connector_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    publisher: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+
+    configs: Mapped[list["KBSourceConfigORM"]] = relationship(back_populates="source", cascade="all, delete-orphan")
+    runs: Mapped[list["KBSourceRunORM"]] = relationship(back_populates="source", cascade="all, delete-orphan")
+
+
+@register("orm")
+class KBSourceConfigORM(Base):
+    __tablename__ = "KBSourceConfig"
+    __table_args__ = (
+        Index("idx_kbsourceconfig_source_version", "source_id", "version_number"),
+        Index("idx_kbsourceconfig_source_active", "source_id", postgresql_where=text("is_active = true")),
+    )
+
+    config_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBSource.source_id"), nullable=False, index=True)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    row_version: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), server_default=text("gen_random_uuid()"), default=uuid.uuid4, nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    source: Mapped["KBSourceORM"] = relationship(back_populates="configs")
+
+
+@register("orm")
+class KBSourceRunORM(Base):
+    """One row per crawl attempt — read by the worker (bulk 'last run per
+    source' query, mirroring schema_crawler's _last_crawled_by_warehouse) and
+    by the Source Registry UI's run-history view."""
+    __tablename__ = "KBSourceRun"
+    __table_args__ = (
+        Index("idx_kbsourcerun_source_started_desc", "source_id", text("started_at DESC")),
+    )
+
+    run_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBSource.source_id"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    trigger: Mapped[str] = mapped_column(String(16), nullable=False)
+    data_ids: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    quality_metrics: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    finished_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    source: Mapped["KBSourceORM"] = relationship(back_populates="runs")
+
+
+@register("orm")
 class KBTableORM(Base):
     __tablename__ = "KBTable"
 
