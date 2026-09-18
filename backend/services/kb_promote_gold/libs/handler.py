@@ -5,6 +5,7 @@ import asyncio
 import logging
 from typing import Any, Awaitable, Callable
 
+from libs.database_connector.postgres_connector import set_current_tenant
 from libs.ingestion import config as cfg
 from libs.ingestion.consumer import (
     document_name,
@@ -31,6 +32,11 @@ def build_gold_handler(runtime: WorkerRuntime) -> Callable[[dict[str, Any]], Awa
         if not data_id or not tenant_id:
             log.warning("promote_gold: event missing data_id/tenant_id — skipped")
             return
+
+        # See the same fix in kb_promote_silver's handler.py — RLS-scoped
+        # reads (postgres.read(ReadJoinRequest(tenant_id=...))) rely on this
+        # ContextVar, which nothing else in a Kafka consumer ever sets.
+        set_current_tenant(tenant_id)
 
         async with stage_limit:
             failure: Exception | None = None

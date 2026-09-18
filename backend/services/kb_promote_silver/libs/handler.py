@@ -5,6 +5,7 @@ import asyncio
 import logging
 from typing import Any, Awaitable, Callable
 
+from libs.database_connector.postgres_connector import set_current_tenant
 from libs.ingestion import config as cfg
 from libs.ingestion.consumer import (
     document_name,
@@ -31,6 +32,16 @@ def build_silver_handler(runtime: WorkerRuntime) -> Callable[[dict[str, Any]], A
         if not data_id or not tenant_id:
             log.warning("promote_silver: event missing data_id/tenant_id — skipped")
             return
+
+        # `postgres.read(ReadJoinRequest(tenant_id=...))` scopes RLS off this
+        # ContextVar (see postgres_connector.get_client's docstring), not off
+        # the tenant_id argument passed into the request object — a Kafka
+        # consumer has no per-request middleware to set it, so every
+        # tenant-scoped read (KBData, KBFilterPolicy, KBExtractionPolicy, ...)
+        # silently returned zero rows until this was set explicitly. Found by
+        # actually promoting a document end-to-end, not by any test — none
+        # exist for this path.
+        set_current_tenant(tenant_id)
 
         async with stage_limit:
             failure: Exception | None = None

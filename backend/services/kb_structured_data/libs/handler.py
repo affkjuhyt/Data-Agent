@@ -9,6 +9,7 @@ import asyncio
 import logging
 from typing import Any, Awaitable, Callable
 
+from libs.database_connector.postgres_connector import set_current_tenant
 from libs.ingestion import config as cfg
 from libs.ingestion.runtime import WorkerRuntime
 from services.kb_structured_data.libs.propose import propose_structured_table
@@ -26,6 +27,11 @@ def build_structured_handler(runtime: WorkerRuntime) -> Callable[[dict[str, Any]
         if not data_id or not job_id or not tenant_id:
             log.warning("structured_data: event missing data_id/job_id/tenant_id — skipped")
             return
+
+        # See the same fix in kb_promote_silver's handler.py — RLS-scoped
+        # reads (postgres.read(ReadJoinRequest(tenant_id=...))) rely on this
+        # ContextVar, which nothing else in a Kafka consumer ever sets.
+        set_current_tenant(tenant_id)
 
         async with stage_limit:
             await propose_structured_table(

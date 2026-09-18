@@ -36,7 +36,16 @@ async def document_lock(postgres: Any, tenant_id: str, name: str) -> AsyncIterat
     under transaction pooling.
     """
     key = document_lock_key(tenant_id, name)
-    session = postgres.get_client()
+    # pg_advisory_lock is a session-level primitive, not a read of any
+    # tenant-scoped table (the lock key already encodes tenant_id via the
+    # hash) — get_platform_client() is the deliberately-unscoped session type;
+    # get_client() (bare, no tenant_id arg) instead falls back to the ambient
+    # ContextVar (see postgres_connector.get_client's docstring), and once a
+    # caller sets that, it returns an unentered async-context-manager object
+    # here rather than the plain AsyncSession this code calls .scalar()/
+    # .close() on directly — dormant until something started setting that
+    # ContextVar, which nothing did until kb_promote_silver's handler fix.
+    session = postgres.get_platform_client()
     acquired = await session.scalar(text("SELECT pg_try_advisory_lock(:key)"), {"key": key})
     if not acquired:
         await session.close()
