@@ -97,9 +97,9 @@ const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']; // cron day-of-week: 0=S
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-type ScheduleMode = 'none' | 'minutes' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+type ScheduleMode = 'none' | 'hourly' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
 const SCHEDULE_MODE_LABEL: Record<ScheduleMode, string> = {
-  none: 'No schedule', minutes: 'Every N minutes',
+  none: 'No schedule', hourly: 'Hourly',
   weekly: 'Weekly', monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly',
 };
 
@@ -110,19 +110,25 @@ const SCHEDULE_MODE_LABEL: Record<ScheduleMode, string> = {
  * "Run Now". Not every real source has a schedule a fixed set of presets can
  * express (a true one-off, or an irregular publication with no fixed
  * cadence) — "no schedule" is a legitimate choice, not a missing feature.
- * Weekly: no days selected, or all 7, both mean "every day" — `*`.
- * `hourly` (weekly mode only) drops the hour from the time picker — cron's
- * hour field becomes `*` — so "hourly" isn't its own mode, just "weekly"
- * with the hour ignored; day-of-week selection still applies (e.g. "every
- * hour, weekdays only" is a real, valid combination this allows). */
+ * Weekly: no days selected, or all 7, both mean "every day" — a wildcard day field.
+ * `hourly` is one mode covering BOTH "every N minutes" and "every N hours",
+ * via 2 fields instead of a separate mode each: `hourEvery = 0` means "don't
+ * step by hours, step by minute instead" (`minuteEvery` becomes the minute
+ * step interval); `hourEvery > 0` means "every that many hours, at
+ * :minuteEvery past the hour" (`minuteEvery` becomes a literal
+ * minute-of-hour, `hourEvery` becomes the hour step interval). */
 function buildCron(
   mode: ScheduleMode, time: string, days: number[], dayOfMonth: number, month: number,
-  everyMinutes: number, hourly: boolean,
+  hourEvery: number, minuteEvery: number,
 ): string {
   if (mode === 'none') return '';
-  if (mode === 'minutes') return `*/${Math.min(59, Math.max(1, everyMinutes))} * * * *`;
+  if (mode === 'hourly') {
+    const minute = Math.min(59, Math.max(0, minuteEvery));
+    if (hourEvery <= 0) return `*/${Math.min(59, Math.max(1, minute))} * * * *`;
+    return `${minute} */${Math.min(23, Math.max(1, hourEvery))} * * *`;
+  }
   const [hh, mm] = time.split(':');
-  const hour = hourly ? '*' : (parseInt(hh, 10) || 0);
+  const hour = parseInt(hh, 10) || 0;
   const minute = parseInt(mm, 10) || 0;
   if (mode === 'weekly') {
     const dayField = days.length === 0 || days.length === 7 ? '*' : [...days].sort().join(',');
@@ -145,9 +151,13 @@ function cronToHuman(cron: string | null | undefined): string {
   if (parts.length !== 5) return cron;
   const [min, hour, dom, month, dow] = parts;
 
-  const stepMatch = min.match(/^\*\/(\d+)$/);
-  if (stepMatch && hour === '*' && dom === '*' && month === '*' && dow === '*') {
-    return `Every ${stepMatch[1]} minute${stepMatch[1] === '1' ? '' : 's'}`;
+  const minStepMatch = min.match(/^\*\/(\d+)$/);
+  if (minStepMatch && hour === '*' && dom === '*' && month === '*' && dow === '*') {
+    return `Every ${minStepMatch[1]} minute${minStepMatch[1] === '1' ? '' : 's'}`;
+  }
+  const hourStepMatch = hour.match(/^\*\/(\d+)$/);
+  if (hourStepMatch && /^\d+$/.test(min) && dom === '*' && month === '*' && dow === '*') {
+    return `Every ${hourStepMatch[1]} hour${hourStepMatch[1] === '1' ? '' : 's'} at :${min.padStart(2, '0')}`;
   }
   if (/^\d+$/.test(min) && hour === '*' && dom === '*' && month === '*' && dow === '*') {
     return min === '0' ? 'Every hour' : `Every hour at :${min.padStart(2, '0')}`;
@@ -183,8 +193,8 @@ export const SourceRegistry = () => {
   const [scheduleDays, setScheduleDays] = useState<number[]>([]); // [] = every day
   const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState(1);
   const [scheduleMonth, setScheduleMonth] = useState(1);
-  const [scheduleEveryMinutes, setScheduleEveryMinutes] = useState(15);
-  const [scheduleHourly, setScheduleHourly] = useState(false); // weekly mode: ignore the hour, fire every hour
+  const [scheduleHourEvery, setScheduleHourEvery] = useState(0); // 0 = step by minute instead (see buildCron)
+  const [scheduleMinuteEvery, setScheduleMinuteEvery] = useState(15);
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -215,7 +225,8 @@ export const SourceRegistry = () => {
     // fan-out in sources.py's _entry_to_create_requests, since KBSourceConfig
     // carries exactly one url per source.
     const urls = form.url.split('\n').map(u => u.trim()).filter(Boolean);
-    if (!form.title.trim() || urls.length === 0 || (scheduleMode !== 'none' && !scheduleTime)) {
+    const usesTimeOfDay = scheduleMode !== 'none' && scheduleMode !== 'hourly';
+    if (!form.title.trim() || urls.length === 0 || (usesTimeOfDay && !scheduleTime)) {
       setErrorMsg('Title, at least one URL, and a time are required.');
       return;
     }
@@ -223,7 +234,7 @@ export const SourceRegistry = () => {
     setErrorMsg(null);
     const cron = buildCron(
       scheduleMode, scheduleTime, scheduleDays, scheduleDayOfMonth, scheduleMonth,
-      scheduleEveryMinutes, scheduleHourly,
+      scheduleHourEvery, scheduleMinuteEvery,
     );
     try {
       for (const url of urls) {
@@ -245,8 +256,8 @@ export const SourceRegistry = () => {
       setScheduleDays([]);
       setScheduleDayOfMonth(1);
       setScheduleMonth(1);
-      setScheduleEveryMinutes(15);
-      setScheduleHourly(false);
+      setScheduleHourEvery(0);
+      setScheduleMinuteEvery(15);
       reload();
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : 'Failed to create source.');
@@ -451,73 +462,64 @@ export const SourceRegistry = () => {
                 </div>
               )}
 
-              {scheduleMode === 'minutes' && (
-                <div className="flex items-center gap-4 flex-wrap">
-                  <label className="flex items-center gap-1.5 text-xs text-[#3F3F3F]">
-                    Every
-                    <input
-                      type="number" min={1} max={59}
-                      className="ui-input w-16 text-xs px-2 py-1 font-mono"
-                      value={scheduleEveryMinutes}
-                      onChange={e => setScheduleEveryMinutes(Math.min(59, Math.max(1, parseInt(e.target.value, 10) || 1)))}
-                    />
-                    minutes
-                  </label>
-                </div>
-              )}
-
-              {scheduleMode !== 'none' && scheduleMode !== 'minutes' && (
-                <div className="flex items-center gap-4 flex-wrap">
-                  {scheduleHourly ? (
+              {scheduleMode === 'hourly' && (
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center gap-4 flex-wrap">
                     <label className="flex items-center gap-1.5 text-xs text-[#3F3F3F]">
-                      At minute
+                      Hour
+                      <input
+                        type="number" min={0} max={23}
+                        className="ui-input w-16 text-xs px-2 py-1 font-mono"
+                        value={scheduleHourEvery}
+                        onChange={e => setScheduleHourEvery(Math.min(23, Math.max(0, parseInt(e.target.value, 10) || 0)))}
+                      />
+                    </label>
+                    <label className="flex items-center gap-1.5 text-xs text-[#3F3F3F]">
+                      Minute
                       <input
                         type="number" min={0} max={59}
                         className="ui-input w-16 text-xs px-2 py-1 font-mono"
-                        value={parseInt(scheduleTime.split(':')[1], 10) || 0}
-                        onChange={e => {
-                          const mm = Math.min(59, Math.max(0, parseInt(e.target.value, 10) || 0));
-                          setScheduleTime(`00:${String(mm).padStart(2, '0')}`);
-                        }}
+                        value={scheduleMinuteEvery}
+                        onChange={e => setScheduleMinuteEvery(Math.min(59, Math.max(0, parseInt(e.target.value, 10) || 0)))}
                       />
-                      of every hour
                     </label>
-                  ) : (
-                    <input
-                      type="time"
-                      className="ui-input text-xs px-3 py-2 font-mono w-32"
-                      value={scheduleTime}
-                      onChange={e => setScheduleTime(e.target.value)}
-                    />
-                  )}
+                  </div>
+                  <span className="text-[10px] font-mono text-[#8A8A8A]">
+                    Hour = 0 → repeat every [Minute] minutes. Hour &gt; 0 → repeat every [Hour] hours, at that minute past the hour.
+                  </span>
+                </div>
+              )}
+
+              {scheduleMode !== 'none' && scheduleMode !== 'hourly' && (
+                <div className="flex items-center gap-4 flex-wrap">
+                  <input
+                    type="time"
+                    className="ui-input text-xs px-3 py-2 font-mono w-32"
+                    value={scheduleTime}
+                    onChange={e => setScheduleTime(e.target.value)}
+                  />
 
                   {scheduleMode === 'weekly' && (
-                    <>
-                      <label className="flex items-center gap-1.5 text-xs text-[#3F3F3F]">
-                        <input type="checkbox" checked={scheduleHourly} onChange={e => setScheduleHourly(e.target.checked)} />
-                        Hourly
-                      </label>
-                      <div className="flex items-center gap-1.5">
-                        {DAY_LABELS.map((label, day) => {
-                          const active = scheduleDays.includes(day);
-                          return (
-                            <button
-                              key={day}
-                              type="button"
-                              title={DAY_NAMES[day]}
-                              onClick={() => toggleDay(day)}
-                              className={`w-7 h-7 rounded-full text-[11px] font-bold border transition-colors ${
-                                active
-                                  ? 'bg-[#B88719] border-[#B88719] text-white'
-                                  : 'bg-white border-[#BFA66A] text-[#5F5F5F] hover:bg-[#FFF9E8]'
-                              }`}
-                            >
-                              {label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </>
+                    <div className="flex items-center gap-1.5">
+                      {DAY_LABELS.map((label, day) => {
+                        const active = scheduleDays.includes(day);
+                        return (
+                          <button
+                            key={day}
+                            type="button"
+                            title={DAY_NAMES[day]}
+                            onClick={() => toggleDay(day)}
+                            className={`w-7 h-7 rounded-full text-[11px] font-bold border transition-colors ${
+                              active
+                                ? 'bg-[#B88719] border-[#B88719] text-white'
+                                : 'bg-white border-[#BFA66A] text-[#5F5F5F] hover:bg-[#FFF9E8]'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   )}
 
                   {(scheduleMode === 'monthly' || scheduleMode === 'quarterly' || scheduleMode === 'yearly') && (
@@ -551,7 +553,7 @@ export const SourceRegistry = () => {
                 <div className="text-[11px] font-mono text-[#8A8A8A] mt-2">
                   {cronToHuman(buildCron(
                     scheduleMode, scheduleTime, scheduleDays, scheduleDayOfMonth, scheduleMonth,
-                    scheduleEveryMinutes, scheduleHourly,
+                    scheduleHourEvery, scheduleMinuteEvery,
                   ))}
                 </div>
               )}
