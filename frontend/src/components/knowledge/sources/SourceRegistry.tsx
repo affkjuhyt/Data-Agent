@@ -51,6 +51,27 @@ const CONNECTOR_LABEL: Record<ConnectorType, string> = {
   sdmx: 'SDMX',
 };
 
+// Short enough to sit on a pill (full description goes in the `title` tooltip).
+const CONNECTOR_PILL_LABEL: Record<ConnectorType, string> = {
+  http_file: 'Remote File',
+  web_crawl: 'Web Page',
+  web_crawl_headless: 'Web Page (JS)',
+  rss: 'RSS Feed',
+  rest_api: 'REST API',
+  sdmx: 'SDMX',
+};
+
+const CONNECTOR_PILL_DESCRIPTION: Record<ConnectorType, string> = {
+  http_file: 'PDF/DOCX/XLSX at a direct URL',
+  web_crawl: 'Static HTML',
+  web_crawl_headless: 'JS-rendered / headless',
+  rss: 'RSS feed',
+  rest_api: 'REST API with query params + auth',
+  sdmx: 'SDMX statistical API',
+};
+
+const CONNECTOR_TYPES: ConnectorType[] = ['web_crawl', 'web_crawl_headless', 'rss', 'rest_api', 'sdmx', 'http_file'];
+
 const STATUS_TONE: Record<string, string> = {
   success: 'text-green-700 bg-green-50 border-green-200',
   failed: 'text-red-700 bg-red-50 border-red-200',
@@ -213,18 +234,27 @@ export const SourceRegistry = () => {
             </div>
             <div>
               <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">Connector Type</label>
-              <select
-                className="ui-input w-full text-xs px-3 py-2"
-                value={form.connector_type}
-                onChange={e => setForm(f => ({ ...f, connector_type: e.target.value as ConnectorType }))}
-              >
-                <option value="http_file">HTTP File (PDF/DOCX/XLSX at a direct URL)</option>
-                <option value="web_crawl">Web Crawl (static HTML)</option>
-                <option value="web_crawl_headless">Web Crawl (JS-rendered / headless)</option>
-                <option value="rss">RSS Feed</option>
-                <option value="rest_api">REST API</option>
-                <option value="sdmx">SDMX</option>
-              </select>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {CONNECTOR_TYPES.map(type => {
+                  const active = form.connector_type === type;
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      title={CONNECTOR_PILL_DESCRIPTION[type]}
+                      onClick={() => setForm(f => ({ ...f, connector_type: type }))}
+                      className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors whitespace-nowrap ${
+                        active
+                          ? 'bg-[#B88719] border-[#B88719] text-white'
+                          : 'bg-white border-[#BFA66A] text-[#5F5F5F] hover:bg-[#FFF9E8]'
+                      }`}
+                    >
+                      {CONNECTOR_PILL_LABEL[type]}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="text-[10px] font-mono text-[#8A8A8A] mt-1.5">{CONNECTOR_PILL_DESCRIPTION[form.connector_type]}</div>
             </div>
             <div>
               <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">URL</label>
