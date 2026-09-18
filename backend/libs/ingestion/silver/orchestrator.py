@@ -113,6 +113,8 @@ async def promote_to_silver(
                     accepted_chunks,
                     logger=logger,
                     emitter=emitter,
+                    postgres=postgres,
+                    tenant_id=tenant_id,
                 )
                 summary_scope.set(kept=len(accepted_chunks))
             stage_record.push("summarized")

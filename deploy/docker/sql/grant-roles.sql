@@ -205,6 +205,7 @@ TO kb_ingestion_worker;
 
 GRANT SELECT ON
   "KBFilterPolicy",
+  "KBExtractionPolicy",
   "KBEntityLookup",
   "KBQdrantCollection"
 TO kb_ingestion_worker;
