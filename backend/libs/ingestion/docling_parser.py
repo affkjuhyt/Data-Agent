@@ -15,6 +15,7 @@ from collections.abc import Generator
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import (
     PdfPipelineOptions,
+    TesseractCliOcrOptions,
     smolvlm_picture_description,
 )
 from docling.document_converter import DocumentConverter, PdfFormatOption
@@ -45,25 +46,33 @@ TABLE_MAX_CHUNK_CHARS: int = 30000
 
 _converter: DocumentConverter | None = None
 
+# Named explicitly instead of leaving docling on its `auto` OCR default, which
+# probes for whichever backend happens to be importable — a rebuild that
+# changes the installed set would then silently change extracted text.
+# Tesseract ships its language data as an apt package (tesseract-ocr-vie/-eng
+# in this service's Dockerfile), so nothing is downloaded at runtime and the
+# same image always extracts the same text. Docling only runs OCR on regions
+# with no existing text layer, so a born-digital PDF keeps its embedded text
+# instead of being re-recognized at a loss — this was previously off entirely
+# (do_ocr=False), which made a scanned PDF ingest as a silent empty document.
+_OCR_OPTIONS = TesseractCliOcrOptions(lang=["vie", "eng"])
+
 
 def load_converter(use_vlm: bool = False) -> None:
     global _converter
     if use_vlm:
         pipeline_options = PdfPipelineOptions(
+            do_ocr=True,
+            ocr_options=_OCR_OPTIONS,
             do_picture_description=True,
             picture_description_options=smolvlm_picture_description,
             generate_picture_images=True,
         )
-        _converter = DocumentConverter(
-            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
-        )
     else:
-        # Disable OCR — text-based PDFs don't need it, and the available OCR
-        # backends (torch.PP-OCRv6) are unsupported in this environment.
-        pipeline_options = PdfPipelineOptions(do_ocr=False)
-        _converter = DocumentConverter(
-            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
-        )
+        pipeline_options = PdfPipelineOptions(do_ocr=True, ocr_options=_OCR_OPTIONS)
+    _converter = DocumentConverter(
+        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
+    )
 
 
 # ── Internal parse helpers ────────────────────────────────────────────────────

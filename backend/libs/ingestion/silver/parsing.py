@@ -6,7 +6,7 @@ import io
 from typing import Any
 
 from libs.ingestion.connectors import web_crawl as web_crawl_connector
-from libs.ingestion.silver.shared import _vlm_describe
+from libs.ingestion.silver.shared import _ocr_image_bytes
 from libs.ingestion import config as cfg
 
 
@@ -51,12 +51,20 @@ async def _parse_web(docling: Any, url: str) -> list[dict[str, Any]]:
 
 
 async def _parse_image(file_bytes: bytes, extension: str) -> list[dict[str, Any]]:
-    content_type = f"image/{extension.lstrip('.')}"
-    description = await _vlm_describe(file_bytes, content_type)
-    return [{"block_index": 0, "content": description, "table_involved": False, "table": None}]
+    """OCR only (see shared._ocr_image_bytes) — a photo with no readable text
+    produces zero chunks, not an error."""
+    text = await asyncio.to_thread(_ocr_image_bytes, file_bytes)
+    if not text:
+        return []
+    return [{"block_index": 0, "content": text, "table_involved": False, "table": None}]
 
 
 async def _parse_video(file_bytes: bytes) -> list[dict[str, Any]]:
+    """Same OCR engine as `_parse_image`, run against every VLM_FRAME_INTERVAL-th
+    sampled frame — catches on-screen text (slides, captions, signage), NOT
+    spoken audio: this pipeline has no speech-to-text step. A frame with no
+    readable text contributes no chunk, so a video with no on-screen text
+    (e.g. only speech) legitimately produces zero chunks."""
     try:
         import av  # type: ignore[import]
     except ImportError as exc:
@@ -73,10 +81,12 @@ async def _parse_video(file_bytes: bytes) -> list[dict[str, Any]]:
             continue
         buffer = io.BytesIO()
         frame.to_image().save(buffer, format="JPEG")
-        description = await _vlm_describe(buffer.getvalue(), "image/jpeg")
+        text = await asyncio.to_thread(_ocr_image_bytes, buffer.getvalue())
+        if not text:
+            continue
         chunks.append({
             "block_index": len(chunks),
-            "content": f"[Frame {frame_index}] {description}",
+            "content": f"[Frame {frame_index}] {text}",
             "table_involved": False,
             "table": None,
         })
