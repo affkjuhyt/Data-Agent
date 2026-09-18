@@ -108,14 +108,22 @@ _SCHEDULE_WORD_TO_CRON = {
 }
 
 
-def _entry_to_create_request(entry: dict) -> tuple[CreateSourceRequest | None, str | None]:
-    """One ANKT registry row -> a CreateSourceRequest, or (None, reason) if
-    this connector type still isn't ingestible (manual-upload/bulk-parquet —
+def _entry_to_create_requests(entry: dict) -> tuple[list[CreateSourceRequest], str | None]:
+    """One ANKT registry row -> one or more CreateSourceRequests, or ([], reason)
+    if this connector type still isn't ingestible (manual-upload/bulk-parquet —
     the latter is a one-off dataset import, never a scheduled KBSource, see
-    the crawl-feature plan's "Explicitly deferred")."""
+    the crawl-feature plan's "Explicitly deferred").
+
+    More than one request comes out when a single registry row actually
+    bundles several distinct files — real example: an NSO monthly report row
+    with `format: [docx, xlsx]` and two `sample_urls`, one narrative report
+    and one data-table workbook. KBSourceConfig has exactly one `url`, so
+    each file becomes its own source (matching how Document Hub already
+    treats each upload as its own document) rather than silently keeping
+    only sample_urls[0] and dropping the rest."""
     raw_connector = str(entry.get("connector", "")).strip().replace("-", "_")
     if raw_connector not in _SUPPORTED_CONNECTORS:
-        return None, f"connector={entry.get('connector')!r} is not ingestible by the V1 worker yet"
+        return [], f"connector={entry.get('connector')!r} is not ingestible by the V1 worker yet"
 
     # http_file/rss/rest_api/sdmx need a literal fetchable resource URL — a
     # registry's `landing_url` is usually the browse/listing HTML page a
@@ -124,30 +132,41 @@ def _entry_to_create_request(entry: dict) -> tuple[CreateSourceRequest | None, s
     # `sample_urls[0]`, plus a note that the landing page's DNS doesn't even
     # resolve from this server). web_crawl/*_headless genuinely want the
     # landing page itself, since crawling IS the point, so those keep
-    # preferring it.
-    sample_url = next(iter(entry.get("sample_urls") or []), None)
-    if raw_connector in ("http_file", "rss", "rest_api", "sdmx"):
-        url = sample_url or entry.get("landing_url")
+    # preferring it and never fan out to sample_urls at all.
+    sample_urls = [u for u in (entry.get("sample_urls") or []) if u]
+    direct_fetch = raw_connector in ("http_file", "rss", "rest_api", "sdmx")
+    if direct_fetch and sample_urls:
+        urls = sample_urls
     else:
-        url = entry.get("landing_url") or sample_url
-    if not url:
-        return None, "no landing_url or sample_urls to crawl"
+        landing = entry.get("landing_url")
+        urls = [landing] if landing else (sample_urls[:1] if not direct_fetch else [])
+    if not urls:
+        return [], "no landing_url or sample_urls to crawl"
 
     schedule_raw = str(entry.get("schedule", "")).strip().lower()
     cron = _SCHEDULE_WORD_TO_CRON.get(schedule_raw.split(" ")[0], _DEFAULT_CRON)
 
+    base_title = entry.get("title") or entry.get("id") or urls[0]
     fmt = entry.get("format")
-    return CreateSourceRequest(
-        title=entry.get("title") or entry.get("id") or url,
-        publisher=entry.get("publisher"),
-        connector_type=raw_connector,
-        url=url,
-        format=fmt if isinstance(fmt, str) else (fmt[0] if fmt else None),
-        cron=cron,
-        render=raw_connector == "web_crawl_headless",
-        variables=entry.get("variables"),
-        notes=entry.get("notes"),
-    ), None
+    requests = []
+    for url in urls:
+        # Multiple files under one row: suffix the title with the actual file
+        # extension (not the `format` list's own order, which isn't
+        # guaranteed to line up positionally with sample_urls) so the two
+        # resulting sources are distinguishable in the registry list.
+        title = base_title if len(urls) == 1 else f"{base_title} — {url.rsplit('.', 1)[-1].upper()}"
+        requests.append(CreateSourceRequest(
+            title=title,
+            publisher=entry.get("publisher"),
+            connector_type=raw_connector,
+            url=url,
+            format=fmt if isinstance(fmt, str) else (fmt[0] if fmt else None),
+            cron=cron,
+            render=raw_connector == "web_crawl_headless",
+            variables=entry.get("variables"),
+            notes=entry.get("notes"),
+        ))
+    return requests, None
 
 
 @router.post("/bulk-import", response_model=ResponseModel)
@@ -159,8 +178,8 @@ async def bulk_import_sources_route(
     """Accepts the ANKT registry's own YAML shape (a top-level `sources:`
     list, or a bare list) as `yaml_text` — paste the file's contents. Rows
     whose connector isn't in SourceConnectorType (manual-upload/bulk-parquet)
-    are reported back under `skipped` with a reason (see
-    _entry_to_create_request)."""
+    are reported back under `skipped` with a reason; a row bundling several
+    files (see _entry_to_create_requests) creates one source per file."""
     try:
         parsed = yaml.safe_load(body.yaml_text)
     except yaml.YAMLError as e:
@@ -177,15 +196,16 @@ async def bulk_import_sources_route(
         if not isinstance(entry, dict):
             skipped.append({"title": str(entry), "reason": "not a mapping"})
             continue
-        req, reason = _entry_to_create_request(entry)
-        if req is None:
+        requests, reason = _entry_to_create_requests(entry)
+        if not requests:
             skipped.append({"title": entry.get("title") or entry.get("id") or "?", "reason": reason or "unknown"})
             continue
-        result = await create_source(
-            postgres, req.model_dump(), created_by=ctx["user_name"],
-            tenant_id=ctx["tenant_id"], role_id=ctx["role_id"],
-        )
-        created.append(result)
+        for req in requests:
+            result = await create_source(
+                postgres, req.model_dump(), created_by=ctx["user_name"],
+                tenant_id=ctx["tenant_id"], role_id=ctx["role_id"],
+            )
+            created.append(result)
 
     return ResponseModel(code=200, data={"created": created, "skipped": skipped})
 
