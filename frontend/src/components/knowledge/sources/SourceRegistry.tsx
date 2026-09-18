@@ -95,16 +95,35 @@ function parseQueryParams(text: string): Record<string, string> | undefined {
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']; // cron day-of-week: 0=Sun..6=Sat
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/** Compose a 5-field cron from a friendlier "time + repeat days" picker (iOS
- * Clock-style) so the person filling the form never has to know cron syntax.
- * No days selected, or all 7, both mean "every day" — `*` in the day field. */
-function buildCron(time: string, days: number[]): string {
+type ScheduleMode = 'none' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+const SCHEDULE_MODE_LABEL: Record<ScheduleMode, string> = {
+  none: 'No schedule', weekly: 'Weekly', monthly: 'Monthly', quarterly: 'Quarterly', yearly: 'Yearly',
+};
+
+/** Compose a 5-field cron from a friendlier picker (iOS Clock-style for
+ * weekly) so the person filling the form never has to know cron syntax.
+ * `mode: 'none'` returns "" — a manual-only source the worker's cron_due()
+ * never auto-triggers (see web_crawler/worker.py's _is_due), only run via
+ * "Run Now". Not every real source has a schedule a fixed set of presets can
+ * express (a true one-off, or an irregular publication with no fixed
+ * cadence) — "no schedule" is a legitimate choice, not a missing feature.
+ * Weekly: no days selected, or all 7, both mean "every day" — `*`. */
+function buildCron(
+  mode: ScheduleMode, time: string, days: number[], dayOfMonth: number, month: number,
+): string {
+  if (mode === 'none') return '';
   const [hh, mm] = time.split(':');
   const hour = parseInt(hh, 10) || 0;
   const minute = parseInt(mm, 10) || 0;
-  const dayField = days.length === 0 || days.length === 7 ? '*' : [...days].sort().join(',');
-  return `${minute} ${hour} * * ${dayField}`;
+  if (mode === 'weekly') {
+    const dayField = days.length === 0 || days.length === 7 ? '*' : [...days].sort().join(',');
+    return `${minute} ${hour} * * ${dayField}`;
+  }
+  if (mode === 'monthly') return `${minute} ${hour} ${dayOfMonth} * *`;
+  if (mode === 'quarterly') return `${minute} ${hour} ${dayOfMonth} 1,4,7,10 *`;
+  return `${minute} ${hour} ${dayOfMonth} ${month} *`; // yearly
 }
 
 export const SourceRegistry = () => {
@@ -113,8 +132,11 @@ export const SourceRegistry = () => {
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>('weekly');
   const [scheduleTime, setScheduleTime] = useState('03:00');
   const [scheduleDays, setScheduleDays] = useState<number[]>([]); // [] = every day
+  const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState(1);
+  const [scheduleMonth, setScheduleMonth] = useState(1);
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -139,7 +161,7 @@ export const SourceRegistry = () => {
   };
 
   const submitAdd = async () => {
-    if (!form.title.trim() || !form.url.trim() || !scheduleTime) {
+    if (!form.title.trim() || !form.url.trim() || (scheduleMode !== 'none' && !scheduleTime)) {
       setErrorMsg('Title, URL and a time are required.');
       return;
     }
@@ -148,7 +170,8 @@ export const SourceRegistry = () => {
     try {
       await apiMutate('POST', '/api/knowledge/sources', {
         title: form.title, publisher: form.publisher, connector_type: form.connector_type,
-        url: form.url, render: form.render, cron: buildCron(scheduleTime, scheduleDays),
+        url: form.url, render: form.render,
+        cron: buildCron(scheduleMode, scheduleTime, scheduleDays, scheduleDayOfMonth, scheduleMonth),
         openbao_path: form.openbaoPath || undefined,
         query_params: parseQueryParams(form.queryParamsText),
         auth_style: form.openbaoPath ? form.authStyle : undefined,
@@ -157,8 +180,11 @@ export const SourceRegistry = () => {
       });
       setShowAddForm(false);
       setForm(EMPTY_FORM);
+      setScheduleMode('weekly');
       setScheduleTime('03:00');
       setScheduleDays([]);
+      setScheduleDayOfMonth(1);
+      setScheduleMonth(1);
       reload();
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : 'Failed to create source.');
@@ -332,41 +358,100 @@ export const SourceRegistry = () => {
             )}
 
             <div className="col-span-2">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">Schedule (server time)</label>
-              <div className="flex items-center gap-4 flex-wrap">
-                <input
-                  type="time"
-                  className="ui-input text-xs px-3 py-2 font-mono w-32"
-                  value={scheduleTime}
-                  onChange={e => setScheduleTime(e.target.value)}
-                />
-                <div className="flex items-center gap-1.5">
-                  {DAY_LABELS.map((label, day) => {
-                    const active = scheduleDays.includes(day);
-                    return (
-                      <button
-                        key={day}
-                        type="button"
-                        title={DAY_NAMES[day]}
-                        onClick={() => toggleDay(day)}
-                        className={`w-7 h-7 rounded-full text-[11px] font-bold border transition-colors ${
-                          active
-                            ? 'bg-[#B88719] border-[#B88719] text-white'
-                            : 'bg-white border-[#BFA66A] text-[#5F5F5F] hover:bg-[#FFF9E8]'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <span className="text-[11px] font-mono text-[#8A8A8A]">
-                  {scheduleDays.length === 0 || scheduleDays.length === 7
-                    ? 'Every day'
-                    : scheduleDays.map(d => DAY_NAMES[d].slice(0, 3)).join(', ')}
-                  {' at '}{scheduleTime}
-                </span>
+              <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">Schedule</label>
+              <div className="flex items-center gap-1.5 flex-wrap mb-3">
+                {(Object.keys(SCHEDULE_MODE_LABEL) as ScheduleMode[]).map(mode => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setScheduleMode(mode)}
+                    className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors whitespace-nowrap ${
+                      scheduleMode === mode
+                        ? 'bg-[#B88719] border-[#B88719] text-white'
+                        : 'bg-white border-[#BFA66A] text-[#5F5F5F] hover:bg-[#FFF9E8]'
+                    }`}
+                  >
+                    {SCHEDULE_MODE_LABEL[mode]}
+                  </button>
+                ))}
               </div>
+
+              {scheduleMode === 'none' && (
+                <div className="text-[11px] font-mono text-[#8A8A8A]">
+                  Never runs on a timer — only via "Run Now". Good for a true one-off, or a source with no fixed publication cadence.
+                </div>
+              )}
+
+              {scheduleMode !== 'none' && (
+                <div className="flex items-center gap-4 flex-wrap">
+                  <input
+                    type="time"
+                    className="ui-input text-xs px-3 py-2 font-mono w-32"
+                    value={scheduleTime}
+                    onChange={e => setScheduleTime(e.target.value)}
+                  />
+
+                  {scheduleMode === 'weekly' && (
+                    <div className="flex items-center gap-1.5">
+                      {DAY_LABELS.map((label, day) => {
+                        const active = scheduleDays.includes(day);
+                        return (
+                          <button
+                            key={day}
+                            type="button"
+                            title={DAY_NAMES[day]}
+                            onClick={() => toggleDay(day)}
+                            className={`w-7 h-7 rounded-full text-[11px] font-bold border transition-colors ${
+                              active
+                                ? 'bg-[#B88719] border-[#B88719] text-white'
+                                : 'bg-white border-[#BFA66A] text-[#5F5F5F] hover:bg-[#FFF9E8]'
+                            }`}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {(scheduleMode === 'monthly' || scheduleMode === 'quarterly' || scheduleMode === 'yearly') && (
+                    <label className="flex items-center gap-1.5 text-xs text-[#3F3F3F]">
+                      Day of month
+                      <input
+                        type="number" min={1} max={31}
+                        className="ui-input w-16 text-xs px-2 py-1 font-mono"
+                        value={scheduleDayOfMonth}
+                        onChange={e => setScheduleDayOfMonth(Math.min(31, Math.max(1, parseInt(e.target.value, 10) || 1)))}
+                      />
+                    </label>
+                  )}
+
+                  {scheduleMode === 'yearly' && (
+                    <label className="flex items-center gap-1.5 text-xs text-[#3F3F3F]">
+                      Month
+                      <select
+                        className="ui-input text-xs px-2 py-1"
+                        value={scheduleMonth}
+                        onChange={e => setScheduleMonth(parseInt(e.target.value, 10))}
+                      >
+                        {MONTH_NAMES.map((name, i) => <option key={name} value={i + 1}>{name}</option>)}
+                      </select>
+                    </label>
+                  )}
+
+                  <span className="text-[11px] font-mono text-[#8A8A8A]">
+                    {scheduleMode === 'weekly' && (
+                      scheduleDays.length === 0 || scheduleDays.length === 7
+                        ? 'Every day'
+                        : scheduleDays.map(d => DAY_NAMES[d].slice(0, 3)).join(', ')
+                    )}
+                    {scheduleMode === 'monthly' && `Day ${scheduleDayOfMonth} of every month`}
+                    {scheduleMode === 'quarterly' && `Day ${scheduleDayOfMonth} of Jan/Apr/Jul/Oct`}
+                    {scheduleMode === 'yearly' && `${MONTH_NAMES[scheduleMonth - 1]} ${scheduleDayOfMonth}, every year`}
+                    {' at '}{scheduleTime}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex justify-end gap-2">

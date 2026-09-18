@@ -117,7 +117,19 @@ def _entry_to_create_request(entry: dict) -> tuple[CreateSourceRequest | None, s
     if raw_connector not in _SUPPORTED_CONNECTORS:
         return None, f"connector={entry.get('connector')!r} is not ingestible by the V1 worker yet"
 
-    url = entry.get("landing_url") or next(iter(entry.get("sample_urls") or []), None)
+    # http_file/rss/rest_api/sdmx need a literal fetchable resource URL — a
+    # registry's `landing_url` is usually the browse/listing HTML page a
+    # human would open (real example: an ANKT entry whose http_file
+    # `landing_url` is an `.htm` page with the actual PDF one level down at
+    # `sample_urls[0]`, plus a note that the landing page's DNS doesn't even
+    # resolve from this server). web_crawl/*_headless genuinely want the
+    # landing page itself, since crawling IS the point, so those keep
+    # preferring it.
+    sample_url = next(iter(entry.get("sample_urls") or []), None)
+    if raw_connector in ("http_file", "rss", "rest_api", "sdmx"):
+        url = sample_url or entry.get("landing_url")
+    else:
+        url = entry.get("landing_url") or sample_url
     if not url:
         return None, "no landing_url or sample_urls to crawl"
 

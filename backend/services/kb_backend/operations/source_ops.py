@@ -152,8 +152,11 @@ async def create_source(postgres: Any, body: dict[str, Any], created_by: str, te
             status_code=422,
             detail=f"connector_type must be one of {sorted(_VALID_CONNECTOR_TYPES)} in V1, got {connector_type!r}",
         )
-    if not body.get("cron", "").strip():
-        raise HTTPException(status_code=422, detail="cron is required")
+    # Empty cron is valid: a manual-only source the worker's cron_due() never
+    # auto-triggers (see web_crawler/worker.py's _is_due — a falsy cron_expr
+    # is simply never due), only run via "Run Now". Not every real source has
+    # a schedule the friendly picker can express yet (e.g. a true one-off, or
+    # an irregular publication with no fixed cadence).
 
     src_ins = await postgres.insert(KBSourceInsert(
         tenant_id=tenant_id, role_id=role_id, connector_type=connector_type,
@@ -164,7 +167,7 @@ async def create_source(postgres: Any, body: dict[str, Any], created_by: str, te
     source_id = src_ins.data["source_id"]
 
     config_payload = SourceConfigPayload(
-        url=body["url"], format=body.get("format"), cron=body["cron"],
+        url=body["url"], format=body.get("format"), cron=body.get("cron") or "",
         render=bool(body.get("render", False)), variables=body.get("variables"),
         openbao_path=body.get("openbao_path"), query_params=body.get("query_params"),
         auth_style=body.get("auth_style"), auth_param_name=body.get("auth_param_name"),
