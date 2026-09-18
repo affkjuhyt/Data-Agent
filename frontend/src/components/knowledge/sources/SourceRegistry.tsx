@@ -5,14 +5,23 @@ import { useCursorPagination } from '../../../lib/useCursorPagination';
 import { Pagination } from '../../shared/Pagination';
 import { DetailDrawer } from '../../shared/DetailDrawer';
 
+type ConnectorType = 'http_file' | 'web_crawl' | 'web_crawl_headless' | 'rss' | 'rest_api' | 'sdmx';
+
 interface SourceRow {
   id: string;
   title: string;
   publisher: string | null;
-  connector_type: 'http_file' | 'web_crawl' | 'web_crawl_headless';
+  connector_type: ConnectorType;
   url: string | null;
   cron: string | null;
   render: boolean;
+  openbao_path: string | null;
+  query_params: Record<string, string> | null;
+  auth_style: string | null;
+  auth_param_name: string | null;
+  recursive: boolean;
+  max_depth: number;
+  same_domain_only: boolean;
   created_by: string | null;
   created_at: string;
   last_run_status: 'running' | 'success' | 'failed' | null;
@@ -23,17 +32,23 @@ interface SourceRun {
   run_id: string;
   status: string;
   trigger: string;
+  retry_count: number;
   started_at: string;
   finished_at: string | null;
   data_ids: string[];
   error: string | null;
-  quality_metrics: { raw_len: number; content_len: number; tag_stripped_pct: number } | null;
+  quality_metrics: Record<string, unknown> | null;
 }
 
-const CONNECTOR_LABEL: Record<SourceRow['connector_type'], string> = {
+const MAX_RETRIES = 5; // mirrors platform_workers/workers/web_crawler/worker.py's MAX_RETRIES
+
+const CONNECTOR_LABEL: Record<ConnectorType, string> = {
   http_file: 'HTTP File',
   web_crawl: 'Web Crawl',
   web_crawl_headless: 'Web Crawl (headless)',
+  rss: 'RSS Feed',
+  rest_api: 'REST API',
+  sdmx: 'SDMX',
 };
 
 const STATUS_TONE: Record<string, string> = {
@@ -42,7 +57,20 @@ const STATUS_TONE: Record<string, string> = {
   running: 'text-amber-700 bg-amber-50 border-amber-200',
 };
 
-const EMPTY_FORM = { title: '', publisher: '', connector_type: 'web_crawl' as SourceRow['connector_type'], url: '', render: false };
+const EMPTY_FORM = {
+  title: '', publisher: '', connector_type: 'web_crawl' as ConnectorType, url: '', render: false,
+  openbaoPath: '', queryParamsText: '', authStyle: 'bearer', authParamName: '',
+  recursive: false, maxDepth: 1, sameDomainOnly: true,
+};
+
+/** "key=value" per line -> {key: value}, ignoring blank lines. */
+function parseQueryParams(text: string): Record<string, string> | undefined {
+  const entries = text.split('\n').map(l => l.trim()).filter(Boolean).map(l => {
+    const idx = l.indexOf('=');
+    return idx === -1 ? [l, ''] : [l.slice(0, idx).trim(), l.slice(idx + 1).trim()];
+  });
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']; // cron day-of-week: 0=Sun..6=Sat
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -97,7 +125,15 @@ export const SourceRegistry = () => {
     setSaving(true);
     setErrorMsg(null);
     try {
-      await apiMutate('POST', '/api/knowledge/sources', { ...form, cron: buildCron(scheduleTime, scheduleDays) });
+      await apiMutate('POST', '/api/knowledge/sources', {
+        title: form.title, publisher: form.publisher, connector_type: form.connector_type,
+        url: form.url, render: form.render, cron: buildCron(scheduleTime, scheduleDays),
+        openbao_path: form.openbaoPath || undefined,
+        query_params: parseQueryParams(form.queryParamsText),
+        auth_style: form.openbaoPath ? form.authStyle : undefined,
+        auth_param_name: form.authStyle === 'query_param' ? form.authParamName || undefined : undefined,
+        recursive: form.recursive, max_depth: form.maxDepth, same_domain_only: form.sameDomainOnly,
+      });
       setShowAddForm(false);
       setForm(EMPTY_FORM);
       setScheduleTime('03:00');
@@ -180,17 +216,91 @@ export const SourceRegistry = () => {
               <select
                 className="ui-input w-full text-xs px-3 py-2"
                 value={form.connector_type}
-                onChange={e => setForm(f => ({ ...f, connector_type: e.target.value as SourceRow['connector_type'] }))}
+                onChange={e => setForm(f => ({ ...f, connector_type: e.target.value as ConnectorType }))}
               >
                 <option value="http_file">HTTP File (PDF/DOCX/XLSX at a direct URL)</option>
                 <option value="web_crawl">Web Crawl (static HTML)</option>
                 <option value="web_crawl_headless">Web Crawl (JS-rendered / headless)</option>
+                <option value="rss">RSS Feed</option>
+                <option value="rest_api">REST API</option>
+                <option value="sdmx">SDMX</option>
               </select>
             </div>
             <div>
               <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">URL</label>
               <input className="ui-input w-full text-xs px-3 py-2 font-mono" value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))} placeholder="https://..." />
             </div>
+
+            {(form.connector_type === 'rest_api' || form.connector_type === 'sdmx') && (
+              <>
+                <div className="col-span-2">
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">Query Params (one "key=value" per line)</label>
+                  <textarea
+                    className="ui-input font-mono text-xs h-20 w-full px-3 py-2"
+                    value={form.queryParamsText}
+                    onChange={e => setForm(f => ({ ...f, queryParamsText: e.target.value }))}
+                    placeholder="frequency=M&#10;start_period=2020-01"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">OpenBao Path (optional — auth credential)</label>
+                  <input
+                    className="ui-input w-full text-xs px-3 py-2 font-mono"
+                    value={form.openbaoPath}
+                    onChange={e => setForm(f => ({ ...f, openbaoPath: e.target.value }))}
+                    placeholder="tenants/<tenant_id>/<key>"
+                  />
+                </div>
+                {form.openbaoPath && (
+                  <div className="flex items-end gap-3">
+                    <div className="flex-1">
+                      <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">Auth Style</label>
+                      <select
+                        className="ui-input w-full text-xs px-3 py-2"
+                        value={form.authStyle}
+                        onChange={e => setForm(f => ({ ...f, authStyle: e.target.value }))}
+                      >
+                        <option value="bearer">Bearer header</option>
+                        <option value="query_param">Query param (e.g. api_key=)</option>
+                      </select>
+                    </div>
+                    {form.authStyle === 'query_param' && (
+                      <div className="flex-1">
+                        <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">Param Name</label>
+                        <input className="ui-input w-full text-xs px-3 py-2 font-mono" value={form.authParamName} onChange={e => setForm(f => ({ ...f, authParamName: e.target.value }))} placeholder="api_key" />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {(form.connector_type === 'web_crawl' || form.connector_type === 'web_crawl_headless') && (
+              <div className="col-span-2 flex items-center gap-4">
+                <label className="flex items-center gap-1.5 text-xs text-[#3F3F3F]">
+                  <input type="checkbox" checked={form.recursive} onChange={e => setForm(f => ({ ...f, recursive: e.target.checked }))} />
+                  Follow links (recursive crawl)
+                </label>
+                {form.recursive && (
+                  <>
+                    <label className="flex items-center gap-1.5 text-xs text-[#3F3F3F]">
+                      Max depth
+                      <input
+                        type="number" min={1} max={5}
+                        className="ui-input w-16 text-xs px-2 py-1 font-mono"
+                        value={form.maxDepth}
+                        onChange={e => setForm(f => ({ ...f, maxDepth: parseInt(e.target.value, 10) || 1 }))}
+                      />
+                    </label>
+                    <label className="flex items-center gap-1.5 text-xs text-[#3F3F3F]">
+                      <input type="checkbox" checked={form.sameDomainOnly} onChange={e => setForm(f => ({ ...f, sameDomainOnly: e.target.checked }))} />
+                      Same domain only
+                    </label>
+                  </>
+                )}
+              </div>
+            )}
+
             <div className="col-span-2">
               <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">Schedule (server time)</label>
               <div className="flex items-center gap-4 flex-wrap">
@@ -323,9 +433,15 @@ export const SourceRegistry = () => {
                   <span className="text-[10px] font-mono text-[#8A8A8A]">{run.trigger} · {run.started_at.slice(0, 19).replace('T', ' ')}</span>
                 </div>
                 {run.error && <div className="text-xs font-mono text-red-600">{run.error}</div>}
+                {run.status === 'failed' && (
+                  <div className="text-[10px] font-mono text-amber-700">
+                    {run.retry_count >= MAX_RETRIES ? 'max retries reached' : `retry ${run.retry_count}/${MAX_RETRIES}`}
+                  </div>
+                )}
                 {run.quality_metrics && (
                   <div className="text-[10px] font-mono text-[#5F5F5F]">
-                    raw={run.quality_metrics.raw_len}B content={run.quality_metrics.content_len}B stripped={(run.quality_metrics.tag_stripped_pct * 100).toFixed(1)}%
+                    {Object.entries(run.quality_metrics).filter(([, v]) => v !== null && v !== undefined)
+                      .map(([k, v]) => `${k}=${v}`).join(' · ')}
                   </div>
                 )}
               </div>
@@ -344,8 +460,8 @@ export const SourceRegistry = () => {
             </div>
             <p className="text-xs text-[#5F5F5F]">
               Paste a source registry's YAML (a top-level <code>sources:</code> list, e.g. the ANKT registry).
-              Only <code>http-file</code> / <code>web-crawl</code> / <code>web-crawl-headless</code> rows are created in V1 —
-              others are reported below with a reason.
+              <code>http-file</code> / <code>web-crawl</code> / <code>web-crawl-headless</code> / <code>rss</code> / <code>rest-api</code> / <code>sdmx</code> rows
+              are created — others (manual-upload, bulk-parquet) are reported below with a reason.
             </p>
             <textarea
               className="ui-input font-mono text-xs h-64 w-full px-3 py-2"

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from libs.ingestion.connectors import http_file, web_crawl
+from libs.ingestion.connectors import http_file, rest_api, rss, web_crawl
 from libs.ingestion.connectors.base import FetchedArtifact
 
 _CONNECTORS: dict[str, Callable[[dict], FetchedArtifact]] = {
@@ -17,6 +17,11 @@ _CONNECTORS: dict[str, Callable[[dict], FetchedArtifact]] = {
     # `render=False` by default; a `web_crawl_headless` source's config is
     # expected to carry `"render": true`).
     "web_crawl_headless": web_crawl.fetch,
+    "rss": rss.fetch,
+    # rest_api and sdmx are the SAME connector — see rest_api.py's docstring:
+    # neither parses the response, both just GET-and-store-raw.
+    "rest_api": rest_api.fetch,
+    "sdmx": rest_api.fetch,
 }
 
 

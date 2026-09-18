@@ -1,8 +1,8 @@
-"""/api/knowledge/sources — the scheduled source registry (V1 connectors:
-http_file / web_crawl / web_crawl_headless). The `web-crawler` platform
-worker is a second reader of "KBSource"/"KBSourceConfig" (it decides what's
-due off "KBSourceRun"); this router owns writes and the manual "Run Now"
-trigger.
+"""/api/knowledge/sources — the scheduled source registry (http_file /
+web_crawl / web_crawl_headless / rss / rest_api / sdmx). The `web-crawler`
+platform worker is a second reader of "KBSource"/"KBSourceConfig" (it decides
+what's due off "KBSourceRun"); this router owns writes and the manual
+"Run Now" trigger.
 """
 from __future__ import annotations
 
@@ -110,8 +110,9 @@ _SCHEDULE_WORD_TO_CRON = {
 
 def _entry_to_create_request(entry: dict) -> tuple[CreateSourceRequest | None, str | None]:
     """One ANKT registry row -> a CreateSourceRequest, or (None, reason) if
-    V1 can't ingest this connector type yet (rest-api/sdmx/rss/manual-upload/
-    bulk-parquet — see the crawl-feature plan's "Explicitly deferred")."""
+    this connector type still isn't ingestible (manual-upload/bulk-parquet —
+    the latter is a one-off dataset import, never a scheduled KBSource, see
+    the crawl-feature plan's "Explicitly deferred")."""
     raw_connector = str(entry.get("connector", "")).strip().replace("-", "_")
     if raw_connector not in _SUPPORTED_CONNECTORS:
         return None, f"connector={entry.get('connector')!r} is not ingestible by the V1 worker yet"
@@ -144,8 +145,8 @@ async def bulk_import_sources_route(
         ctx: dict[str, Any] = Depends(require_perm("addSource")),
 ) -> ResponseModel[Any]:
     """Accepts the ANKT registry's own YAML shape (a top-level `sources:`
-    list, or a bare list) as `yaml_text` — paste the file's contents. Only
-    http_file/web_crawl/web_crawl_headless rows are created in V1; the rest
+    list, or a bare list) as `yaml_text` — paste the file's contents. Rows
+    whose connector isn't in SourceConnectorType (manual-upload/bulk-parquet)
     are reported back under `skipped` with a reason (see
     _entry_to_create_request)."""
     try:

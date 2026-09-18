@@ -232,29 +232,45 @@ class WarehouseConfigPayload(BaseModel):
 
 
 class SourceConnectorType(str, Enum):
-    """V1 connectors — a scheduled source lands in the same Bronze pipeline a
-    manual Document Hub / Web Portal upload does. `rest_api`/`sdmx`/`rss`/
-    `bulk_parquet` are deliberately not members yet: their destination isn't
-    the KB Bronze tier (numeric time-series sources belong to the not-yet-
-    designed Indicator Service warehouse), so adding them here before that
-    exists would commit to the wrong shape."""
+    """V1 connectors (http_file/web_crawl/web_crawl_headless) land in the same
+    Bronze pipeline a manual Document Hub / Web Portal upload does. V2 adds
+    `rss` (same fit — a feed is just another document-ish artifact) and,
+    as an accepted interim tradeoff, `rest_api`/`sdmx`: their eventual home is
+    the not-yet-built Indicator Service warehouse, but until that exists they
+    land raw response bytes in Bronze the same way `http_file` does, rather
+    than blocking on that schema. `bulk_parquet` stays out of this enum on
+    purpose — it's a one-off dataset import (see `model/eval`), never a
+    scheduled `KBSource`."""
     HTTP_FILE = "http_file"
     WEB_CRAWL = "web_crawl"
     WEB_CRAWL_HEADLESS = "web_crawl_headless"
+    RSS = "rss"
+    REST_API = "rest_api"
+    SDMX = "sdmx"
 
 
 class SourceConfigPayload(BaseModel):
     """`KBSourceConfig.config` JSONB shape. `render` only matters for
     `web_crawl`/`web_crawl_headless` (Playwright vs static httpx); ignored by
-    `http_file`. `openbao_path` is a placeholder for a future auth'd source
-    (e.g. an API key) — never store a raw secret here, per the vault
-    convention (`SecretsVaultInsert.openbao_path`)."""
+    `http_file`/`rest_api`/`sdmx`/`rss`. `openbao_path`, when set, is a vault
+    path (KV v2, e.g. `tenants/<tenant_id>/<key>`) resolved at run time by the
+    web-crawler worker — never a raw secret, per the vault convention
+    (`SecretsVaultInsert.openbao_path`). `query_params`/`auth_style`/
+    `auth_param_name` only apply to `rest_api`/`sdmx`. `recursive`/
+    `max_depth`/`same_domain_only` only apply to `web_crawl`/
+    `web_crawl_headless` — link-discovery crawl, see `KBSourceCrawlQueue`."""
     url: str
     format: Optional[str] = None
     cron: str
     render: bool = False
     variables: Optional[list[str]] = None
     openbao_path: Optional[str] = None
+    query_params: Optional[dict[str, str]] = None
+    auth_style: Optional[str] = None  # "bearer" (default when openbao_path is set) | "query_param"
+    auth_param_name: Optional[str] = None  # required when auth_style == "query_param" (e.g. "api_key")
+    recursive: bool = False
+    max_depth: int = 1
+    same_domain_only: bool = True
     notes: Optional[str] = None
 
 
@@ -267,6 +283,9 @@ class SourceRunStatus(str, Enum):
 class SourceRunTrigger(str, Enum):
     SCHEDULED = "scheduled"
     MANUAL = "manual"
+    # A link discovered by a recursive web_crawl source's own earlier run,
+    # dispatched from KBSourceCrawlQueue rather than the source's own cron.
+    RECURSIVE = "recursive"
 
 
 class ModelConfig(BaseModel):
@@ -328,6 +347,7 @@ class KBDataInsert(TenantModel):
     current_tier: Tier = Tier.BRONZE
     ingestion_mode: str = "document"
     path: Optional[str] = None
+    content_hash: Optional[str] = None
     model_config = ConfigDict(use_enum_values=True)
 
 

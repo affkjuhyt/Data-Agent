@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, AsyncGenerator, AsyncIterator
 import asyncio
 import datetime
+import hashlib
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -75,16 +76,22 @@ async def _document_name_lock(postgres: Any, tenant_id: str, name: str) -> Async
         )
 
 
-async def _replace_existing_document_if_any(request: Request, ctx: dict[str, Any], name: str) -> None:
+async def _replace_existing_document_if_any(
+    request: Request, ctx: dict[str, Any], name: str, existing: dict[str, Any] | None = None,
+) -> None:
     """Re-uploading under a Knowledge Name that already exists is treated as
     "this is an updated version of that same source" (e.g. a periodically
     revised statistics export or a re-crawled web portal) rather than a
     naming conflict: hard-delete the existing document first — this frees
     the (tenant_id, name) unique constraint, which a soft delete does not
     (see trash_ops.flush's docstring / idx_kbdata_tenant_name) — then the
-    caller's normal bronze insert proceeds with the new content."""
+    caller's normal bronze insert proceeds with the new content.
+
+    `existing` lets a caller that already fetched the row (ingest_bronze's
+    content_hash check) pass it through instead of looking it up twice."""
     postgres = svc(request, "postgres")
-    existing = await _fetch_doc_by_name(postgres, ctx["tenant_id"], name)
+    if existing is None:
+        existing = await _fetch_doc_by_name(postgres, ctx["tenant_id"], name)
     if existing is None:
         return
     log.info(
@@ -127,6 +134,7 @@ async def ingest_bronze(
         ctx: dict[str, Any] = Depends(require_perm("addData")),
 ) -> Any:
     file_bytes = await file.read()
+    content_hash = hashlib.sha256(file_bytes).hexdigest()
     filename = file.filename or "upload"
     extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
@@ -160,7 +168,16 @@ async def ingest_bronze(
 
     log.info("POST /ingestion/bronze tenant=%s source=%s size=%d", ctx["tenant_id"], src, len(file_bytes))
     async with _document_name_lock(svc(request, "postgres"), ctx["tenant_id"], name):
-        await _replace_existing_document_if_any(request, ctx, name)
+        existing = await _fetch_doc_by_name(postgres, ctx["tenant_id"], name)
+        if existing is not None and existing.get("content_hash") == content_hash:
+            log.info("ingest_bronze: %r unchanged (content_hash match) — skipping re-ingest", name)
+            return {
+                "data_id": str(existing["data_id"]),
+                "path": existing.get("path"),
+                "name": name,
+                "layer": existing.get("current_tier", "bronze"),
+            }
+        await _replace_existing_document_if_any(request, ctx, name, existing=existing)
         try:
             return await svc(request, "ingestion").bronze(
                 BronzeUploadRequest(

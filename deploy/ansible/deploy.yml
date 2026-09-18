@@ -288,7 +288,7 @@
       ansible.builtin.command:
         cmd: >-
           docker build
-          -f {{ project_dir }}/{{ item.dir }}/Dockerfile
+          -f {{ project_dir }}/{{ item.dir }}/{{ image_dockerfile_overrides[item.dir] | default('Dockerfile') }}
           -t {{ image_prefix }}/{{ item.name }}:{{ image_tag }}
           {{ project_dir }}/{{ item.context }}
       loop: "{{ images | default([]) }}"

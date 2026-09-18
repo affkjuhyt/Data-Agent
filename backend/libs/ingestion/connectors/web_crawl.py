@@ -16,6 +16,8 @@ like every other platform_workers worker — see `connectors/__init__.py`.
 """
 from __future__ import annotations
 
+from urllib.parse import urljoin, urlparse
+
 from libs.ingestion import config as cfg
 from libs.ingestion.connectors.base import FetchedArtifact
 
@@ -88,6 +90,35 @@ def _extract_main_content(html: str, url: str) -> tuple[str, str]:
     return html, "html"
 
 
+def _discover_links(html: str, url: str, same_domain_only: bool) -> list[str]:
+    """Link discovery for a `recursive` source (Quân's queue-crawl idea) —
+    best-effort: a page that fails to parse just yields no links rather than
+    failing the whole fetch, since discovery is additive on top of the page's
+    own successful ingest."""
+    try:
+        import lxml.html  # trafilatura's own dependency, no new pin needed
+    except ImportError:
+        return []
+
+    try:
+        tree = lxml.html.fromstring(html)
+    except Exception:
+        return []
+
+    origin = urlparse(url).netloc
+    links: list[str] = []
+    seen: set[str] = set()
+    for href in tree.xpath("//a/@href"):
+        absolute = urljoin(url, href).split("#", 1)[0]
+        if not absolute.startswith(("http://", "https://")) or absolute in seen:
+            continue
+        if same_domain_only and urlparse(absolute).netloc != origin:
+            continue
+        seen.add(absolute)
+        links.append(absolute)
+    return links
+
+
 def fetch(config: dict) -> FetchedArtifact:
     url = config["url"]
     render = bool(config.get("render", False))
@@ -100,10 +131,14 @@ def fetch(config: dict) -> FetchedArtifact:
     content_len = len(content)
     tag_stripped_pct = round(1 - content_len / max(raw_len, 1), 4)
 
+    extra: dict = {"raw_len": raw_len, "content_len": content_len, "tag_stripped_pct": tag_stripped_pct}
+    if config.get("recursive"):
+        extra["discovered_links"] = _discover_links(html, url, bool(config.get("same_domain_only", True)))
+
     return FetchedArtifact(
         content_bytes=content.encode("utf-8"),
         content_type="text/html",
         source_url=url,
         extension=extension,
-        extra={"raw_len": raw_len, "content_len": content_len, "tag_stripped_pct": tag_stripped_pct},
+        extra=extra,
     )

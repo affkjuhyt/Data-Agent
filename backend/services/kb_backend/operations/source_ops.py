@@ -26,7 +26,7 @@ from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm i
 )
 from services.kb_backend.operations.pagination import PAGE_SIZE, build_cursor_page
 
-_VALID_CONNECTOR_TYPES = {"http_file", "web_crawl", "web_crawl_headless"}
+_VALID_CONNECTOR_TYPES = {"http_file", "web_crawl", "web_crawl_headless", "rss", "rest_api", "sdmx"}
 
 
 def _decode_offset(cursor: str | None) -> int:
@@ -52,6 +52,13 @@ def _to_response(row: dict[str, Any], active_cfg: dict[str, Any] | None, last_ru
         "url": cfg.get("url"),
         "cron": cfg.get("cron"),
         "render": bool(cfg.get("render", False)),
+        "openbao_path": cfg.get("openbao_path"),
+        "query_params": cfg.get("query_params"),
+        "auth_style": cfg.get("auth_style"),
+        "auth_param_name": cfg.get("auth_param_name"),
+        "recursive": bool(cfg.get("recursive", False)),
+        "max_depth": cfg.get("max_depth", 1),
+        "same_domain_only": bool(cfg.get("same_domain_only", True)),
         "created_by": row["created_by"],
         "created_at": created_at.isoformat() if created_at else "",
         "last_run_status": (last_run or {}).get("status"),
@@ -159,6 +166,10 @@ async def create_source(postgres: Any, body: dict[str, Any], created_by: str, te
     config_payload = SourceConfigPayload(
         url=body["url"], format=body.get("format"), cron=body["cron"],
         render=bool(body.get("render", False)), variables=body.get("variables"),
+        openbao_path=body.get("openbao_path"), query_params=body.get("query_params"),
+        auth_style=body.get("auth_style"), auth_param_name=body.get("auth_param_name"),
+        recursive=bool(body.get("recursive", False)), max_depth=body.get("max_depth", 1),
+        same_domain_only=bool(body.get("same_domain_only", True)),
         notes=body.get("notes"),
     )
     cfg_ins = await postgres.insert(KBSourceConfigInsert(
@@ -232,6 +243,7 @@ async def list_source_runs(postgres: Any, source_id: str, tenant_id: str) -> lis
                 "run_id": str(r.run_id),
                 "status": r.status,
                 "trigger": r.trigger,
+                "retry_count": r.retry_count,
                 "started_at": r.started_at.isoformat() if r.started_at else "",
                 "finished_at": r.finished_at.isoformat() if r.finished_at else None,
                 "data_ids": r.data_ids or [],

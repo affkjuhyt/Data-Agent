@@ -106,6 +106,8 @@ kubectl -n dataagent-service create secret generic platform-workers-web-crawler-
   --from-literal=DB_PASSWORD="${POSTGRES_PASSWORD}" \
   --from-literal=MINIO_URL="${MINIO_URL}" \
   --from-literal=KAFKA_SASL_PASSWORD="${WEB_CRAWLER_WORKER_KAFKA_PASSWORD}" \
+  --from-literal=OPENBAO_ROLE_ID="${OPENBAO_ROLE_ID}" \
+  --from-literal=OPENBAO_SECRET_ID="${OPENBAO_SECRET_ID}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic frontend-secrets \

@@ -15,6 +15,7 @@ instead of the async ORM/MinIO wrappers.
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import logging
@@ -77,16 +78,17 @@ def _replace_existing_by_name(cur: Any, tenant_id: str, name: str) -> None:
 def _insert_kbdata(
     cur: Any, *, data_id: str, tenant_id: str, role_id: str, name: str, extension: str,
     source_type: str, added_by: str, abstract: str, doc_metadata: dict[str, Any], path: str | None,
+    content_hash: str | None = None,
 ) -> None:
     _replace_existing_by_name(cur, tenant_id, name)
     cur.execute(
         """INSERT INTO "KBData"
                (data_id, tenant_id, role_id, name, extension, language, source_type,
-                added_by, abstract, metadata, current_tier, ingestion_mode, path)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                added_by, abstract, metadata, current_tier, ingestion_mode, path, content_hash)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             data_id, tenant_id, role_id, name, extension, "english", source_type,
-            added_by, abstract, json.dumps(doc_metadata), _TIER_BRONZE, "document", path,
+            added_by, abstract, json.dumps(doc_metadata), _TIER_BRONZE, "document", path, content_hash,
         ),
     )
     cur.execute(
@@ -105,9 +107,22 @@ def register_http_file_bronze(
     conn: Any, *, tenant_id: str, role_id: str, title: str, added_by: str, artifact: FetchedArtifact,
 ) -> str:
     """Mirrors `upload_to_bronze(..., source_type=SourceType.DOC, ...)` —
-    the worker's automated equivalent of a manual Document Hub upload."""
+    the worker's automated equivalent of a manual Document Hub upload.
+
+    Short-circuits before touching MinIO/Postgres at all when the existing
+    row for this name already has the same content_hash — the payoff being
+    an unmodified rss/rest_api/sdmx/http_file response on every cron tick no
+    longer creates MinIO churn or a KBLifecycleHistory entry."""
     if len(artifact.content_bytes) > cfg.MAX_FILE_SIZE_BYTES:
         raise ValueError(f"artifact for {title!r} exceeds MAX_FILE_SIZE_BYTES")
+
+    content_hash = hashlib.sha256(artifact.content_bytes).hexdigest()
+    with conn.cursor() as cur:
+        cur.execute('SELECT data_id, content_hash FROM "KBData" WHERE tenant_id = %s AND name = %s', (tenant_id, title))
+        existing = cur.fetchone()
+    if existing is not None and existing[1] == content_hash:
+        log.info("register_http_file_bronze | %r unchanged (content_hash match) — skipping re-ingest", title)
+        return str(existing[0])
 
     data_id = str(uuid.uuid4())
     filename = f"{title}.{artifact.extension}"
@@ -131,6 +146,7 @@ def register_http_file_bronze(
                     "file_size": len(artifact.content_bytes),
                 },
                 path=object_key,
+                content_hash=content_hash,
             )
         conn.commit()
     except Exception:

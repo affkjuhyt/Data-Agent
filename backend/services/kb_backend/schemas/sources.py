@@ -1,6 +1,6 @@
 """Scheduled-source registry schemas — request/response for
-`/api/knowledge/sources` (V1 connectors: http_file / web_crawl /
-web_crawl_headless)."""
+`/api/knowledge/sources` (http_file / web_crawl / web_crawl_headless / rss /
+rest_api / sdmx connectors)."""
 from __future__ import annotations
 
 from typing import Any, Optional
@@ -17,6 +17,13 @@ class CreateSourceRequest(BaseModel):
     cron: str
     render: bool = False
     variables: Optional[list[str]] = None
+    openbao_path: Optional[str] = None
+    query_params: Optional[dict[str, str]] = None
+    auth_style: Optional[str] = None
+    auth_param_name: Optional[str] = None
+    recursive: bool = False
+    max_depth: int = 1
+    same_domain_only: bool = True
     notes: Optional[str] = None
 
 
@@ -26,6 +33,13 @@ class UpdateSourceConfigRequest(BaseModel):
     cron: Optional[str] = None
     render: Optional[bool] = None
     variables: Optional[list[str]] = None
+    openbao_path: Optional[str] = None
+    query_params: Optional[dict[str, str]] = None
+    auth_style: Optional[str] = None
+    auth_param_name: Optional[str] = None
+    recursive: Optional[bool] = None
+    max_depth: Optional[int] = None
+    same_domain_only: Optional[bool] = None
     notes: Optional[str] = None
 
 
@@ -37,6 +51,13 @@ class SourceResponse(BaseModel):
     url: Optional[str]
     cron: Optional[str]
     render: bool
+    openbao_path: Optional[str] = None
+    query_params: Optional[dict[str, str]] = None
+    auth_style: Optional[str] = None
+    auth_param_name: Optional[str] = None
+    recursive: bool = False
+    max_depth: int = 1
+    same_domain_only: bool = True
     created_by: Optional[str]
     created_at: str
     last_run_status: Optional[str] = None
@@ -47,6 +68,7 @@ class SourceRunResponse(BaseModel):
     run_id: str
     status: str
     trigger: str
+    retry_count: int = 0
     started_at: str
     finished_at: Optional[str]
     data_ids: list[str]

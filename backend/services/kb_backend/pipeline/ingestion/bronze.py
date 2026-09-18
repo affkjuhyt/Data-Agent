@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+import hashlib
 import logging
 import uuid
 
@@ -103,6 +104,12 @@ async def upload_to_bronze(
         current_tier=Tier.BRONZE,
         ingestion_mode=ingestion_mode,
         path=object_key,
+        # Same dedup column the scheduled-source worker uses (web_crawler/bronze.py)
+        # — router/knowledge/ingestion.py's ingest_bronze checks it against the
+        # existing row BEFORE calling this function, so re-uploading byte-identical
+        # content never reaches here at all; still stored on every insert so a
+        # future re-upload has something to compare against.
+        content_hash=hashlib.sha256(file_data).hexdigest(),
     )
     # Document and its first lifecycle row share one transaction: a document
     # with no history was previously possible whenever the second insert failed.

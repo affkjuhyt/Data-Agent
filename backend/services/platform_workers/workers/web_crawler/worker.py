@@ -1,14 +1,17 @@
 """Web Crawler Worker — cron-scheduled fetch of registered `KBSource` rows
-(V1 connectors: http_file / web_crawl / web_crawl_headless) into the same
-Bronze tier a manual Document Hub / Web Portal upload lands in.
+(http_file / web_crawl / web_crawl_headless / rss / rest_api / sdmx) into the
+same Bronze tier a manual Document Hub / Web Portal upload lands in.
 
 Structurally the same kind of always-on loop as `schema_crawler`: sync
-psycopg2, no asyncio in the loop itself. Two trigger paths: a per-source cron
-schedule (no single global interval — `libs.shared.cron.cron_due` decides
-per source, off `KBSourceRun.started_at`) and a best-effort Kafka
-'web-crawl.manual-trigger' topic for the UI's "Run Now" button — Kafka is
-optional here for the same reason schema_crawler's DDL-change trigger is:
-cron crawling must keep working even if Kafka is down.
+psycopg2, no asyncio in the loop itself. Three trigger paths per tick:
+- a per-source cron schedule (no single global interval —
+  `libs.shared.cron.cron_due` decides per source, off `KBSourceRun.started_at`);
+- a best-effort Kafka 'web-crawl.manual-trigger' topic for the UI's "Run Now"
+  button — optional, for the same reason schema_crawler's DDL-change trigger
+  is: cron crawling must keep working even if Kafka is down;
+- a bounded retry for a recently-failed run (MAX_RETRIES, exponential
+  backoff), and `KBSourceCrawlQueue` draining for a `recursive` web_crawl
+  source's discovered links (see drain_crawl_queue).
 
 `KBSource`/`KBSourceConfig` are a second reader's worth of data (this worker
 doesn't own the registry — kb_backend's `/api/knowledge/sources` API does),
@@ -22,7 +25,7 @@ import logging
 import time
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, TypedDict
 
 import psycopg2
 from kafka import KafkaConsumer
@@ -34,9 +37,19 @@ from libs.shared.cron import cron_due
 from services.platform_workers.common import kafka as kafka_factory
 from services.platform_workers.common import pg
 from services.platform_workers.common.settings import KafkaSettings, PostgresSettings
-from services.platform_workers.workers.web_crawler import bronze
+from services.platform_workers.workers.web_crawler import bronze, secrets
 
 log = logging.getLogger("platform-workers.web-crawler")
+
+# A failed run retries up to this many times (exponential backoff off
+# retry_count), then sits `status='failed'` until its next natural cron tick
+# — same terminal behavior V1 always had, just delayed instead of immediate.
+MAX_RETRIES = 5
+_RAW_BYTES_CONNECTOR_TYPES = {"http_file", "rss", "rest_api", "sdmx"}
+
+
+def _retry_backoff_seconds(retry_count: int) -> int:
+    return 300 * (2 ** min(retry_count, 6))  # 5min, 10min, 20min, ... capped at ~5h
 
 
 class Settings(BaseSettings):
@@ -90,11 +103,24 @@ def get_active_sources(cur: Any) -> list[dict[str, Any]]:
     return pg.dict_rows(cur)
 
 
-def _last_run_by_source(cur: Any) -> dict[str, datetime]:
-    """One aggregate query up front, like schema_crawler's
-    _last_crawled_by_warehouse — avoids an N+1 per-source query every tick."""
-    cur.execute("""SELECT source_id, MAX(started_at) FROM "KBSourceRun" GROUP BY source_id""")
-    return {str(sid): started for sid, started in cur.fetchall()}
+class _RunInfo(TypedDict):
+    started_at: datetime | None
+    status: str
+    retry_count: int
+    next_retry_at: datetime | None
+
+
+def _latest_run_by_source(cur: Any) -> dict[str, _RunInfo]:
+    """Latest KBSourceRun per source (started_at + retry bookkeeping) — one
+    query, not N+1, same idea as schema_crawler's _last_crawled_by_warehouse."""
+    cur.execute(
+        """SELECT DISTINCT ON (source_id) source_id, started_at, status, retry_count, next_retry_at
+           FROM "KBSourceRun" ORDER BY source_id, started_at DESC"""
+    )
+    return {
+        str(row[0]): {"started_at": row[1], "status": row[2], "retry_count": row[3], "next_retry_at": row[4]}
+        for row in cur.fetchall()
+    }
 
 
 def _is_due(cron_expr: str, last_run: datetime | None, now: datetime) -> bool:
@@ -108,7 +134,42 @@ def _is_due(cron_expr: str, last_run: datetime | None, now: datetime) -> bool:
     return cron_due(cron_expr, last_run, now)
 
 
-def run_source(conn: Any, source: dict[str, Any], trigger: str) -> None:
+def _is_retry_due(latest: _RunInfo | None, now: datetime) -> bool:
+    """A failed run gets a bounded number of extra attempts between its
+    source's normal cron ticks — see MAX_RETRIES/_retry_backoff_seconds."""
+    if latest is None or latest["status"] != "failed" or latest["retry_count"] >= MAX_RETRIES:
+        return False
+    next_retry_at = latest["next_retry_at"]
+    if next_retry_at is None:
+        return True
+    if next_retry_at.tzinfo is None:
+        next_retry_at = next_retry_at.replace(tzinfo=UTC)
+    return next_retry_at <= now
+
+
+def _enqueue_discovered_links(
+    cur: Any, source_id: str, tenant_id: str, links: list[str], depth: int, max_depth: int, discovered_from: str,
+) -> None:
+    """Feeds a `recursive` web_crawl source's next depth — `ON CONFLICT DO
+    NOTHING` on (source_id, url) means a link already seen (at any status) is
+    never re-queued, so this is naturally a "visit once" crawl, not a
+    re-poll."""
+    if depth > max_depth or not links:
+        return
+    for link in links:
+        cur.execute(
+            """INSERT INTO "KBSourceCrawlQueue" (queue_id, source_id, tenant_id, url, depth, discovered_from, status)
+                   VALUES (%s, %s, %s, %s, %s, %s, 'pending')
+                   ON CONFLICT (source_id, url) DO NOTHING""",
+            (str(uuid.uuid4()), source_id, tenant_id, link, depth, discovered_from),
+        )
+
+
+def run_source(conn: Any, source: dict[str, Any], trigger: str, retry_count: int = 0) -> None:
+    """`retry_count` is how many prior retries led to THIS attempt (0 for a
+    normal cron/manual dispatch) — each attempt is its own KBSourceRun row
+    (never reused across retries), so the row carries the count rather than
+    accumulating it via an UPDATE."""
     source_id = str(source["source_id"])
     tenant_id = str(source["tenant_id"])
     role_id = str(source["role_id"])
@@ -120,24 +181,29 @@ def run_source(conn: Any, source: dict[str, Any], trigger: str) -> None:
     run_id = str(uuid.uuid4())
     with conn.cursor() as cur:
         cur.execute(
-            """INSERT INTO "KBSourceRun" (run_id, source_id, status, trigger, started_at)
-               VALUES (%s, %s, %s, %s, now())""",
-            (run_id, source_id, "running", trigger),
+            """INSERT INTO "KBSourceRun" (run_id, source_id, status, trigger, retry_count, started_at)
+               VALUES (%s, %s, %s, %s, %s, now())""",
+            (run_id, source_id, "running", trigger, retry_count),
         )
     conn.commit()
 
+    fetch_config = config
+    if connector_type in ("rest_api", "sdmx") and config.get("openbao_path"):
+        secret = secrets.resolve_openbao_secret(config["openbao_path"])
+        if secret:
+            fetch_config = {**config, "_resolved_secret": secret}
+
     try:
-        artifact = connector_fetch(connector_type, config)
-        if connector_type == "http_file":
+        artifact = connector_fetch(connector_type, fetch_config)
+        if connector_type in _RAW_BYTES_CONNECTOR_TYPES:
             data_id = bronze.register_http_file_bronze(
                 conn, tenant_id=tenant_id, role_id=role_id, title=title, added_by=added_by, artifact=artifact,
             )
-            quality_metrics = None
         else:
             data_id = bronze.register_web_bronze(
                 conn, tenant_id=tenant_id, role_id=role_id, title=title, url=config["url"], added_by=added_by,
             )
-            quality_metrics = artifact.extra or None
+        quality_metrics = artifact.extra or None
 
         with conn.cursor() as cur:
             cur.execute(
@@ -146,6 +212,11 @@ def run_source(conn: Any, source: dict[str, Any], trigger: str) -> None:
                      WHERE run_id = %s""",
                 ("success", json.dumps([data_id]), json.dumps(quality_metrics) if quality_metrics else None, run_id),
             )
+            if connector_type in ("web_crawl", "web_crawl_headless") and config.get("recursive"):
+                _enqueue_discovered_links(
+                    cur, source_id, tenant_id, (artifact.extra or {}).get("discovered_links", []),
+                    depth=1, max_depth=int(config.get("max_depth", 1)), discovered_from=config["url"],
+                )
         conn.commit()
         log.info("run_source | source=%s (%r) connector=%s -> data_id=%s", source_id, title, connector_type, data_id)
     except Exception as e:
@@ -153,8 +224,11 @@ def run_source(conn: Any, source: dict[str, Any], trigger: str) -> None:
         log.exception("run_source | source=%s (%r) connector=%s failed", source_id, title, connector_type)
         with conn.cursor() as cur:
             cur.execute(
-                """UPDATE "KBSourceRun" SET status = %s, error = %s, finished_at = now() WHERE run_id = %s""",
-                ("failed", str(e)[:2000], run_id),
+                """UPDATE "KBSourceRun"
+                       SET status = %s, error = %s, finished_at = now(),
+                           next_retry_at = now() + (%s || ' seconds')::interval
+                     WHERE run_id = %s""",
+                ("failed", str(e)[:2000], _retry_backoff_seconds(retry_count), run_id),
             )
         conn.commit()
 
@@ -162,14 +236,98 @@ def run_source(conn: Any, source: dict[str, Any], trigger: str) -> None:
 def crawl_due_sources(conn: Any) -> None:
     with conn.cursor() as cur:
         sources = get_active_sources(cur)
-        last_run = _last_run_by_source(cur)
+        latest = _latest_run_by_source(cur)
 
     now = datetime.now(UTC)
-    due = [s for s in sources if _is_due((s.get("config") or {}).get("cron", ""), last_run.get(str(s["source_id"])), now)]
+    due: list[tuple[dict[str, Any], int]] = []
+    for s in sources:
+        info = latest.get(str(s["source_id"]))
+        cron_expr = (s.get("config") or {}).get("cron", "")
+        if _is_due(cron_expr, info["started_at"] if info else None, now):
+            due.append((s, 0))
+        elif _is_retry_due(info, now):
+            assert info is not None  # _is_retry_due already ruled out None
+            due.append((s, info["retry_count"] + 1))
     if due:
         log.info("crawl_due_sources | %d/%d source(s) due", len(due), len(sources))
-    for source in due:
-        run_source(conn, source, trigger="scheduled")
+    for source, retry_count in due:
+        run_source(conn, source, trigger="scheduled", retry_count=retry_count)
+
+
+def drain_crawl_queue(conn: Any, batch_size: int = 10) -> None:
+    """One tick's worth of a `recursive` web_crawl source's discovered-link
+    backlog — same loop slot as crawl_due_sources/drain_manual_triggers, see
+    run()."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT q.queue_id, q.source_id, q.tenant_id, q.url, q.depth,
+                      s.role_id, s.title, s.created_by, c.config
+                 FROM "KBSourceCrawlQueue" q
+                 JOIN "KBSource" s ON s.source_id = q.source_id AND s.is_deleted = false
+                 JOIN "KBSourceConfig" c ON c.source_id = s.source_id
+                                        AND c.is_active = true AND c.is_deleted = false
+                WHERE q.status = 'pending'
+                ORDER BY q.inserted_at
+                LIMIT %s""",
+            (batch_size,),
+        )
+        rows = pg.dict_rows(cur)
+    if rows:
+        log.info("drain_crawl_queue | %d pending link(s)", len(rows))
+    for row in rows:
+        _run_queue_item(conn, row)
+
+
+def _run_queue_item(conn: Any, row: dict[str, Any]) -> None:
+    queue_id = str(row["queue_id"])
+    source_id = str(row["source_id"])
+    tenant_id = str(row["tenant_id"])
+    url = row["url"]
+    depth = row["depth"]
+    config = {**(row.get("config") or {}), "url": url}
+    max_depth = int(config.get("max_depth", 1))
+    added_by = row.get("created_by") or "web-crawler-worker"
+    title = f"{row['title']} — {url}"
+
+    run_id = str(uuid.uuid4())
+    with conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO "KBSourceRun" (run_id, source_id, status, trigger, started_at)
+               VALUES (%s, %s, 'running', 'recursive', now())""",
+            (run_id, source_id),
+        )
+        cur.execute("""UPDATE "KBSourceCrawlQueue" SET status = 'running' WHERE queue_id = %s""", (queue_id,))
+    conn.commit()
+
+    try:
+        artifact = connector_fetch("web_crawl", config)
+        data_id = bronze.register_web_bronze(
+            conn, tenant_id=tenant_id, role_id=row["role_id"], title=title, url=url, added_by=added_by,
+        )
+        with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE "KBSourceRun" SET status='success', data_ids=%s, quality_metrics=%s, finished_at=now()
+                     WHERE run_id=%s""",
+                (json.dumps([data_id]), json.dumps(artifact.extra) if artifact.extra else None, run_id),
+            )
+            cur.execute("""UPDATE "KBSourceCrawlQueue" SET status = 'done' WHERE queue_id = %s""", (queue_id,))
+            if depth < max_depth:
+                _enqueue_discovered_links(
+                    cur, source_id, tenant_id, (artifact.extra or {}).get("discovered_links", []),
+                    depth=depth + 1, max_depth=max_depth, discovered_from=url,
+                )
+        conn.commit()
+        log.info("_run_queue_item | source=%s url=%s depth=%d -> data_id=%s", source_id, url, depth, data_id)
+    except Exception as e:
+        conn.rollback()
+        log.exception("_run_queue_item | source=%s url=%s failed", source_id, url)
+        with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE "KBSourceRun" SET status='failed', error=%s, finished_at=now() WHERE run_id=%s""",
+                (str(e)[:2000], run_id),
+            )
+            cur.execute("""UPDATE "KBSourceCrawlQueue" SET status = 'failed' WHERE queue_id = %s""", (queue_id,))
+        conn.commit()
 
 
 def drain_manual_triggers(conn: Any, consumer: KafkaConsumer) -> None:
@@ -238,6 +396,7 @@ def run() -> None:
             # time off KBSourceRun.started_at (_is_due()), so calling this
             # every tick is cheap and naturally staggers load across sources.
             crawl_due_sources(conn)
+            drain_crawl_queue(conn)
 
             time.sleep(POLL_INTERVAL_SECONDS)
         except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
