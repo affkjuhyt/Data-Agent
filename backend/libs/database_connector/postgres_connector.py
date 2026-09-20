@@ -399,6 +399,10 @@ async def _tenant_session(factory: Any, tenant_id: str) -> Any:
         try:
             yield session
         finally:
+            # rollback() expires every loaded instance, so any attribute read
+            # after this block (the unscoped path allows it) raised
+            # DetachedInstanceError. Detaching first leaves loaded values intact.
+            session.expunge_all()
             try:
                 await session.rollback()
             except Exception:

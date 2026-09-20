@@ -66,18 +66,30 @@ async def list_warehouses(postgres: Any, tenant_id: str, cursor: str | None = No
             )).all()
             creators = {str(wid): (cb or "") for wid, cb in crows}
 
+        # Extract to plain dicts while the rows are still attached — reading
+        # an attribute after this `async with` closes raises
+        # DetachedInstanceError (same bug class as source_ops.py's
+        # list_sources; found live via a real GET after that fix shipped).
+        row_dicts = [
+            {
+                "warehouse_id": w.warehouse_id, "service": w.service,
+                "description": w.description, "created_at": w.created_at,
+            }
+            for w in rows
+        ]
+
     docs = []
-    for w in rows:
-        service = (w.service or "").lower()
+    for w in row_dicts:
+        service = (w["service"] or "").lower()
         docs.append({
-            "data_id": str(w.warehouse_id),
-            "name": w.description or f"Warehouse ({service.title()})",
+            "data_id": str(w["warehouse_id"]),
+            "name": w["description"] or f"Warehouse ({service.title()})",
             "source_type": "warehouse",
             "extension": None,
             "current_tier": "gold",
             "status": "PUBLISHED",
-            "added_by": creators.get(str(w.warehouse_id), ""),
-            "added_on": str(w.created_at or ""),
+            "added_by": creators.get(str(w["warehouse_id"]), ""),
+            "added_on": str(w["created_at"] or ""),
             "abstract": None,
             "metadata": {
                 "doc_type": f"Warehouse/{service}",
