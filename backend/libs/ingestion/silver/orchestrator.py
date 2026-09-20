@@ -10,8 +10,10 @@ from libs.database_connector.mongo_connector import MongoClient
 from libs.database_connector.postgres_connector import PostgresClient
 from libs.ingestion.silver.filtering import _filter_chunks
 from libs.ingestion.silver.parsing import (
+    STRUCTURED_TEXT_EXTENSIONS,
     _parse_doc,
     _parse_image,
+    _parse_structured_text,
     _parse_video,
     _parse_web,
 )
@@ -33,6 +35,9 @@ async def _parse_source(
     emitter: PipelineEventEmitter,
 ) -> list[dict[str, Any]]:
     if source_type == SourceType.DOC:
+        if extension.lower().lstrip(".") in STRUCTURED_TEXT_EXTENSIONS:
+            file_bytes = await minio.download(cfg.MINIO_BUCKET, path)
+            return await _parse_structured_text(file_bytes, extension)
         return await _parse_doc(docling, cfg.MINIO_BUCKET, path, extension)
     if source_type == SourceType.WEB:
         document_metadata = kb_data.get("metadata") or kb_data.get("doc_metadata") or {}
