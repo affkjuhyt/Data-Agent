@@ -188,7 +188,7 @@ export const SourceRegistry = () => {
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
-  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>('weekly');
+  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>('none');
   const [scheduleTime, setScheduleTime] = useState('03:00');
   const [scheduleDays, setScheduleDays] = useState<number[]>([]); // [] = every day
   const [scheduleDayOfMonth, setScheduleDayOfMonth] = useState(1);
@@ -199,6 +199,20 @@ export const SourceRegistry = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [runningId, setRunningId] = useState<string | null>(null);
+
+  // Every time the form opens it starts as Web Page / No schedule, not with
+  // whatever a previous, cancelled attempt left selected.
+  const resetAddForm = () => {
+    setForm(EMPTY_FORM);
+    setScheduleMode('none');
+    setScheduleTime('03:00');
+    setScheduleDays([]);
+    setScheduleDayOfMonth(1);
+    setScheduleMonth(1);
+    setScheduleHourEvery(0);
+    setScheduleMinuteEvery(15);
+    setErrorMsg(null);
+  };
 
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [bulkText, setBulkText] = useState('');
@@ -250,14 +264,7 @@ export const SourceRegistry = () => {
         });
       }
       setShowAddForm(false);
-      setForm(EMPTY_FORM);
-      setScheduleMode('weekly');
-      setScheduleTime('03:00');
-      setScheduleDays([]);
-      setScheduleDayOfMonth(1);
-      setScheduleMonth(1);
-      setScheduleHourEvery(0);
-      setScheduleMinuteEvery(15);
+      resetAddForm();
       reload();
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : 'Failed to create source.');
@@ -278,8 +285,25 @@ export const SourceRegistry = () => {
 
   const runNow = async (id: string) => {
     setRunningId(id);
+    const before = await apiGet<SourceRun[]>(`/api/knowledge/sources/${id}/runs`);
+    const priorRunId = before[0]?.run_id ?? null;
     try {
       await apiMutate('POST', `/api/knowledge/sources/${id}/run-now`);
+      // run-now only queues a Kafka message — the worker fetches and writes
+      // the new KBSourceRun row on its own poll tick, well after this call
+      // returns. Poll until a run newer than the one before this trigger
+      // shows up and finishes, so "Last Run" updates without a full page
+      // reload; give up (silently, next manual reload still catches it)
+      // after ~30s if the worker never picks it up.
+      for (let i = 0; i < 10; i++) {
+        await new Promise(r => setTimeout(r, 3000));
+        const latestRuns = await apiGet<SourceRun[]>(`/api/knowledge/sources/${id}/runs`);
+        const latest = latestRuns[0];
+        if (latest && latest.run_id !== priorRunId && latest.status !== 'running') {
+          reload(true);
+          break;
+        }
+      }
     } finally {
       setRunningId(null);
     }
@@ -313,7 +337,7 @@ export const SourceRegistry = () => {
           <button onClick={() => setShowBulkImport(true)} className="btn-ghost btn-sm">
             <Upload className="w-3.5 h-3.5" /> Bulk Import
           </button>
-          <button onClick={() => setShowAddForm(v => !v)} className="btn-gold !text-xs">
+          <button onClick={() => { if (!showAddForm) resetAddForm(); setShowAddForm(v => !v); }} className="btn-gold !text-xs">
             <Plus className="w-3.5 h-3.5" /> Add Source
           </button>
         </div>
