@@ -8,6 +8,7 @@ import httpx
 
 from libs.ingestion import config as cfg
 from libs.ingestion.connectors.base import FetchedArtifact
+from libs.ingestion.connectors.extension import infer_extension
 
 _USER_AGENT = "DataAgent-SourceWorker/1.0"
 
@@ -29,8 +30,8 @@ def fetch(config: dict) -> FetchedArtifact:
             f"over the {cfg.MAX_FILE_SIZE_BYTES}-byte cap"
         )
 
-    extension = (url.rsplit(".", 1)[-1] if "." in url.rsplit("/", 1)[-1] else "bin").lower()
     content_type = response.headers.get("content-type", "application/octet-stream").split(";")[0]
+    extension = infer_extension(content_type, url, prefer_url=True)
     return FetchedArtifact(
         content_bytes=content,
         content_type=content_type,
