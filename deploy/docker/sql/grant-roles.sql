@@ -200,12 +200,27 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   "KBLifecycleHistory",
   "KBConflict",
   "KBConflictBatch",
-  "KBStructuredImportJob"
+  "KBStructuredImportJob",
+  -- Gold mirrors the graph into Postgres (graph_store.py: upsert nodes,
+  -- insert/delete relationships); without these it fails at "permission denied".
+  "KBNeo4jNode",
+  "KBNeo4jRelationship"
 TO kb_ingestion_worker;
 
+-- KBQdrantConnection is not read directly, but KBQdrantCollection's RLS policy
+-- (tenant_isolation_child) does EXISTS (SELECT ... FROM "KBQdrantConnection"),
+-- so without it every Gold promotion fails with "permission denied".
 GRANT SELECT ON
   "KBFilterPolicy",
   "KBExtractionPolicy",
   "KBEntityLookup",
-  "KBQdrantCollection"
+  "KBQdrantCollection",
+  "KBQdrantConnection",
+  -- Gold reads the tenant's PII-masking setting here; when the read fails it only
+  -- logs a warning and silently runs with masking disabled.
+  compliance_settings
 TO kb_ingestion_worker;
+
+-- Gold registers entity aliases (entity_registry.py _register_aliases inserts
+-- KBEntityLookup rows); without INSERT every chunk with entities fails.
+GRANT INSERT ON "KBEntityLookup" TO kb_ingestion_worker;

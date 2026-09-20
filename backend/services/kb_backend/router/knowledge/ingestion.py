@@ -58,7 +58,14 @@ async def _active_stage(mongo: Any, data_id: str) -> str | None:
     )
     if not record:
         return None
-    if str(record.get("status", "")).upper() not in _ACTIVE_STAGES:
+    status = str(record.get("status", "")).upper()
+    if status not in _ACTIVE_STAGES:
+        return None
+    # Silver's terminal log line is written with status=EMBEDDING (the
+    # frontend's promotion queue keys off it too), while a real Gold run
+    # carries stage="gold". Without this, every document that finished Silver
+    # looked "in progress" and Process to Gold always failed with 409.
+    if status == "EMBEDDING" and record.get("stage") == "silver":
         return None
     return str(record.get("stage") or record.get("status") or "processing")
 
