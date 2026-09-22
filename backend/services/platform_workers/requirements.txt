@@ -14,6 +14,10 @@ minio==7.2.9
 # AppRole pattern as workflow_runtime/warehouse_secrets.py).
 feedparser==6.0.11
 hvac==2.3.0
+# web-crawler-worker: purge a superseded document's Silver/Gold traces on
+# re-crawl (neo4j sync driver, pymongo — qdrant-client is already pinned above).
+neo4j==6.3.1
+pymongo==4.18.1
 snowflake-connector-python==3.12.2
 # clickhouse_metadata.py imports it lazily — a build without it still starts
 # and still crawls Snowflake and Postgres warehouses.
