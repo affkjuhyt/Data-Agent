@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
-import { Globe, Plus, Play, Trash2, X, Loader2, Upload, Clock } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Globe, Plus, Trash2, X, Loader2, Upload, Clock, ArrowRight, Layers, CheckCircle2, AlertCircle, Search } from 'lucide-react';
 import { apiGet, apiMutate } from '../../../lib/apiClient';
 import { useCursorPagination } from '../../../lib/useCursorPagination';
 import { Pagination } from '../../shared/Pagination';
 import { DetailDrawer } from '../../shared/DetailDrawer';
+import { FilterPopover } from '../../shared/FilterPopover';
+import { cn } from '../../../lib/utils';
 
 type ConnectorType = 'http_file' | 'web_crawl' | 'web_crawl_headless' | 'rss' | 'rest_api' | 'sdmx';
 
@@ -24,8 +26,9 @@ interface SourceRow {
   same_domain_only: boolean;
   created_by: string | null;
   created_at: string;
-  last_run_status: 'running' | 'success' | 'failed' | null;
+  last_run_status: 'queued' | 'running' | 'success' | 'failed' | null;
   last_run_at: string | null;
+  next_run_at: string | null;
 }
 
 interface SourceRun {
@@ -76,7 +79,22 @@ const STATUS_TONE: Record<string, string> = {
   success: 'text-green-700 bg-green-50 border-green-200',
   failed: 'text-red-700 bg-red-50 border-red-200',
   running: 'text-amber-700 bg-amber-50 border-amber-200',
+  queued: 'text-slate-700 bg-slate-50 border-slate-200',
 };
+
+type StatusFilter = 'active' | 'failed' | 'never';
+const STATUS_FILTER_LABEL: Record<StatusFilter, string> = {
+  active: 'Queued / Running', failed: 'Failed', never: 'Never run',
+};
+
+/** "in 6 min" / "in 3 h" / "in 2 d"; "due now" once the time has passed. */
+function relativeFromNow(iso: string): string {
+  const minutes = Math.round((Date.parse(iso) - Date.now()) / 60000);
+  if (minutes <= 0) return 'due now';
+  if (minutes < 60) return `in ${minutes} min`;
+  if (minutes < 60 * 48) return `in ${Math.round(minutes / 60)} h`;
+  return `in ${Math.round(minutes / 1440)} d`;
+}
 
 const EMPTY_FORM = {
   title: '', publisher: '', connector_type: 'web_crawl' as ConnectorType, url: '', render: false,
@@ -182,7 +200,14 @@ function cronToHuman(cron: string | null | undefined): string {
   return cron;
 }
 
-export const SourceRegistry = () => {
+interface SourceRegistryProps {
+  /** Sources with a run queued or running right now. Owned by the Knowledge Ops
+   *  shell (like `promotingIds` for Data Layers) so the lock survives switching tabs. */
+  activeSourceIds?: Set<string>;
+  onRunQueued?: (runIds: string[]) => void;
+}
+
+export const SourceRegistry = ({ activeSourceIds = new Set(), onRunQueued }: SourceRegistryProps) => {
   const { items: sources, page, totalPages, hasNext, isLoading, canJump, goTo, reload } =
     useCursorPagination<SourceRow>('/api/knowledge/sources', {}, []);
 
@@ -198,7 +223,16 @@ export const SourceRegistry = () => {
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const [runningId, setRunningId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [showVerification, setShowVerification] = useState(false);
+  const [isBatchRunning, setIsBatchRunning] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
+  // Rows deleted this session leave the table at once; the silent refresh then
+  // confirms it (same feel as Data Layers, no full-list reload).
+  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilters, setStatusFilters] = useState<Set<StatusFilter>>(new Set());
 
   // Every time the form opens it starts as Web Page / No schedule, not with
   // whatever a previous, cancelled attempt left selected.
@@ -222,6 +256,53 @@ export const SourceRegistry = () => {
   const [selected, setSelected] = useState<SourceRow | null>(null);
   const [runs, setRuns] = useState<SourceRun[]>([]);
   const [runsLoading, setRunsLoading] = useState(false);
+
+  const isActive = (s: SourceRow) =>
+    activeSourceIds.has(s.id) || s.last_run_status === 'queued' || s.last_run_status === 'running';
+  const hasActive = sources.some(isActive);
+  // While anything is queued or running, refresh the list so Last Run and the
+  // lock follow the real state; the state itself comes from the database.
+  useEffect(() => {
+    if (!hasActive) return;
+    const timer = setInterval(() => reload(true), 3000);
+    return () => clearInterval(timer);
+  }, [hasActive, reload]);
+
+  const query = searchQuery.trim().toLowerCase();
+  const matchesFilters = (s: SourceRow) => {
+    if (query && !`${s.title} ${s.url ?? ''} ${s.publisher ?? ''}`.toLowerCase().includes(query)) return false;
+    if (statusFilters.size === 0) return true;
+    return (statusFilters.has('active') && isActive(s))
+      || (statusFilters.has('failed') && s.last_run_status === 'failed')
+      || (statusFilters.has('never') && !s.last_run_status);
+  };
+  const liveSources = sources.filter(s => !removedIds.has(s.id));
+  const visible = liveSources.filter(matchesFilters);
+  const nextRunTs = (s: SourceRow) => (s.next_run_at ? Date.parse(s.next_run_at) : Number.POSITIVE_INFINITY);
+  // Manual-only sources first, then the scheduled ones with the soonest run on top.
+  const groups = [
+    { key: 'manual', label: 'No schedule — manual only', rows: visible.filter(s => !s.cron?.trim()) },
+    {
+      key: 'scheduled', label: 'Scheduled — next run soonest first',
+      rows: visible.filter(s => s.cron?.trim()).sort((a, b) => nextRunTs(a) - nextRunTs(b)),
+    },
+  ].filter(g => g.rows.length > 0);
+
+  const selectedSources = liveSources.filter(s => selectedIds.includes(s.id));
+  const visibleIds = visible.map(s => s.id);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.includes(id));
+  const toggleSelect = (id: string) =>
+    setSelectedIds(prev => (prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]));
+  const toggleSelectAll = () =>
+    setSelectedIds(prev => (allVisibleSelected
+      ? prev.filter(id => !visibleIds.includes(id))
+      : Array.from(new Set([...prev, ...visibleIds]))));
+  const toggleStatusFilter = (id: string) =>
+    setStatusFilters(prev => {
+      const next = new Set(prev);
+      if (next.has(id as StatusFilter)) next.delete(id as StatusFilter); else next.add(id as StatusFilter);
+      return next;
+    });
 
   const openRuns = (source: SourceRow) => {
     setSelected(source);
@@ -277,36 +358,67 @@ export const SourceRegistry = () => {
     setScheduleDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day].sort());
   };
 
+  const dropRemoved = (ids: string[]) =>
+    setRemovedIds(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; });
+
   const deleteSource = async (id: string) => {
-    await apiMutate('DELETE', `/api/knowledge/sources/${id}`);
     setPendingDeleteId(null);
-    reload();
+    setSelectedIds(prev => prev.filter(item => item !== id)); // a deleted row must not stay counted as selected
+    setRemovedIds(prev => new Set(prev).add(id));
+    try {
+      await apiMutate('DELETE', `/api/knowledge/sources/${id}`);
+    } catch {
+      dropRemoved([id]); // the delete failed: the row comes back
+    }
+    reload(true);
+  };
+
+  const handleBatchDelete = async () => {
+    setIsBatchDeleting(true);
+    const deleted: string[] = [];
+    for (const source of selectedSources) {
+      if (isActive(source)) continue; // a queued or running source is left alone
+      try {
+        await apiMutate('DELETE', `/api/knowledge/sources/${source.id}`);
+        deleted.push(source.id);
+      } catch { /* it stays in the list */ }
+    }
+    setRemovedIds(prev => new Set([...prev, ...deleted]));
+    setSelectedIds(prev => prev.filter(id => !deleted.includes(id)));
+    setIsBatchDeleting(false);
+    setShowDeleteConfirm(false);
+    reload(true);
+  };
+
+  // 409 = that source is already queued or running: nothing to add.
+  const queueRun = async (id: string): Promise<string | null> => {
+    try {
+      const queued = await apiMutate<{ run_id: string }>('POST', `/api/knowledge/sources/${id}/run-now`);
+      return queued.run_id;
+    } catch {
+      return null;
+    }
   };
 
   const runNow = async (id: string) => {
-    setRunningId(id);
-    const before = await apiGet<SourceRun[]>(`/api/knowledge/sources/${id}/runs`);
-    const priorRunId = before[0]?.run_id ?? null;
-    try {
-      await apiMutate('POST', `/api/knowledge/sources/${id}/run-now`);
-      // run-now only queues a Kafka message — the worker fetches and writes
-      // the new KBSourceRun row on its own poll tick, well after this call
-      // returns. Poll until a run newer than the one before this trigger
-      // shows up and finishes, so "Last Run" updates without a full page
-      // reload; give up (silently, next manual reload still catches it)
-      // after ~30s if the worker never picks it up.
-      for (let i = 0; i < 10; i++) {
-        await new Promise(r => setTimeout(r, 3000));
-        const latestRuns = await apiGet<SourceRun[]>(`/api/knowledge/sources/${id}/runs`);
-        const latest = latestRuns[0];
-        if (latest && latest.run_id !== priorRunId && latest.status !== 'running') {
-          reload(true);
-          break;
-        }
-      }
-    } finally {
-      setRunningId(null);
+    const runId = await queueRun(id);
+    onRunQueued?.(runId ? [runId] : []);
+    reload(true);
+  };
+
+  const handleBatchRun = async () => {
+    setIsBatchRunning(true);
+    const runIds: string[] = [];
+    for (const source of selectedSources) {
+      if (isActive(source)) continue;
+      const runId = await queueRun(source.id);
+      if (runId) runIds.push(runId);
     }
+    setIsBatchRunning(false);
+    setSelectedIds([]);
+    setShowVerification(false);
+    onRunQueued?.(runIds);
+    reload(true);
   };
 
   const submitBulkImport = async () => {
@@ -331,7 +443,7 @@ export const SourceRegistry = () => {
         <div className="flex items-center gap-2">
           <Globe className="w-4 h-4 text-[#B88719]" />
           <h3 className="text-sm font-bold text-[#1E1B15]">Source Registry</h3>
-          <span className="text-[10px] font-mono text-[#8A5A00] font-bold bg-[#FFF9E8] px-2 py-0.5 rounded border border-[#BFA66A]">{sources.length}</span>
+          <span className="text-[10px] font-mono text-[#8A5A00] font-bold bg-[#FFF9E8] px-2 py-0.5 rounded border border-[#BFA66A]">{liveSources.length}</span>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowBulkImport(true)} className="btn-ghost btn-sm">
@@ -579,6 +691,9 @@ export const SourceRegistry = () => {
                     scheduleMode, scheduleTime, scheduleDays, scheduleDayOfMonth, scheduleMonth,
                     scheduleHourEvery, scheduleMinuteEvery,
                   ))}
+                  <div className="mt-1 text-[#5F5F5F]">
+                    The schedule starts once you press Run Now: that first run starts immediately, then it repeats on this schedule.
+                  </div>
                 </div>
               )}
             </div>
@@ -596,65 +711,187 @@ export const SourceRegistry = () => {
         </div>
       )}
 
+      {/* ─── Filters + search, same row as Data Layers ─── */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <FilterPopover
+          activeCount={statusFilters.size}
+          groups={[{
+            label: 'Run status',
+            options: (Object.keys(STATUS_FILTER_LABEL) as StatusFilter[]).map(id => ({ id, label: STATUS_FILTER_LABEL[id] })),
+            isActive: (id) => statusFilters.has(id as StatusFilter),
+            onToggle: toggleStatusFilter,
+          }]}
+        />
+        <div className="relative group w-full sm:w-80 sm:ml-auto">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8A5A00] opacity-65 group-focus-within:opacity-100 transition-opacity" />
+          <input
+            type="text"
+            placeholder="Search by title, URL or publisher..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="ui-input pl-12 pr-6 py-2.5 text-xs w-full font-mono"
+          />
+        </div>
+      </div>
+
+      {/* ─── Batch action bar, same as Data Layers ─── */}
+      <div className="content-card content-card--static flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 gap-3 shadow-2xs">
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-bold text-[#111111]">Batch Operations Configurator</span>
+          <span className="text-[10px] font-mono text-[#5F5F5F]">
+            Select multiple sources using checkboxes to queue several crawls at once.
+          </span>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={() => { if (selectedSources.length > 0) setShowDeleteConfirm(true); }}
+          disabled={selectedSources.length === 0}
+          className={cn(
+            'px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer',
+            selectedSources.length > 0
+              ? 'bg-red-50 text-red-600 border border-red-300 hover:bg-red-100 shadow-sm'
+              : 'bg-[#FFF9E8] border border-[#BFA66A] text-[#5F5F5F] cursor-not-allowed',
+          )}
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+          <span>Delete Selected</span>
+          <span className="bg-red-200 text-red-800 font-mono text-[9px] w-4.5 h-4.5 flex items-center justify-center rounded-full font-black">
+            {selectedSources.length}
+          </span>
+        </button>
+        <button
+          onClick={() => { if (selectedSources.length > 0) setShowVerification(true); }}
+          disabled={selectedSources.length === 0}
+          className={cn(
+            'px-5 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer',
+            selectedSources.length > 0
+              ? 'bg-[#1E1B15] text-[#FAFAFA] border border-[#BFA66A] hover:bg-[#2C271E] shadow-sm transform hover:-translate-y-0.5 active:translate-y-0'
+              : 'bg-[#FFF9E8] border border-[#BFA66A] text-[#5F5F5F] cursor-not-allowed',
+          )}
+        >
+          <Layers className="w-3.5 h-3.5 text-[#D9B86C]" />
+          <span>Multiple Run</span>
+          <span className="bg-[#BFA66A] text-[#111111] font-mono text-[9px] w-4.5 h-4.5 flex items-center justify-center rounded-full font-black">
+            {selectedSources.length}
+          </span>
+        </button>
+        </div>
+      </div>
+
       <div className="content-card content-card--static overflow-hidden">
-        <table className="w-full text-left">
+        <table className="w-full text-left border-collapse">
           <thead>
-            <tr className="text-[10px] uppercase tracking-wider text-[#8A5A00] font-black border-b border-[#BFA66A] bg-[#FCFBF7]">
-              <th className="px-6 py-5">Title</th>
+            <tr className="bg-[#FFFDF8] text-[10px] font-black text-[#5A4209] uppercase tracking-widest border-b border-[#BFA66A]">
+              <th className="px-6 py-5 w-12 text-center">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  onChange={toggleSelectAll}
+                  className="w-4 h-4 rounded border-[#BFA66A] text-[#B88719] focus:ring-[#B88719] cursor-pointer"
+                />
+              </th>
+              <th className="px-6 py-5">Source</th>
               <th className="px-6 py-5">Connector</th>
               <th className="px-6 py-5">Schedule</th>
+              <th className="px-6 py-5">Next Run</th>
               <th className="px-6 py-5">Last Run</th>
-              <th className="px-8 py-5 text-right">Action</th>
+              <th className="px-8 py-5 text-right font-black">Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#BFA66A] text-[#111111]">
             {isLoading ? (
-              <tr><td colSpan={5} className="px-8 py-12 text-center bg-white">
+              <tr><td colSpan={7} className="px-8 py-12 text-center bg-white">
                 <div className="flex items-center justify-center gap-2 text-[#5F5F5F] text-xs font-mono">
                   <Loader2 className="w-4 h-4 animate-spin" /> Loading…
                 </div>
               </td></tr>
-            ) : sources.length === 0 ? (
-              <tr><td colSpan={5} className="px-8 py-12 text-center text-[#5F5F5F] text-xs font-mono bg-white">
-                No sources registered. Use "Add Source" or "Bulk Import" to register one.
+            ) : visible.length === 0 ? (
+              <tr><td colSpan={7} className="px-8 py-12 text-center text-[#5F5F5F] text-xs font-mono bg-white">
+                {liveSources.length === 0
+                  ? 'No sources registered. Use "Add Source" or "Bulk Import" to register one.'
+                  : 'No sources match the current filters.'}
               </td></tr>
-            ) : sources.map(source => (
-              <tr key={source.id} className="group transition-colors cursor-pointer bg-[#FEFDF8]/40 hover:bg-[#FEF9E4]/60" onClick={() => openRuns(source)}>
-                <td className="px-6 py-6">
-                  <div className="text-sm font-bold text-[#111111] group-hover:text-[#B88719] transition-colors">{source.title}</div>
-                  <div className="text-[10px] font-mono text-[#8A5A00] truncate max-w-xs">{source.url}</div>
-                </td>
-                <td className="px-6 py-6 font-mono text-xs text-[#3F3F3F]">{CONNECTOR_LABEL[source.connector_type]}</td>
-                <td className="px-6 py-6 font-mono text-xs text-[#5F5F5F]">
-                  <span className="inline-flex items-center gap-1" title={source.cron || undefined}><Clock className="w-3 h-3" />{cronToHuman(source.cron)}</span>
-                </td>
-                <td className="px-6 py-6 text-xs">
-                  {source.last_run_status ? (
-                    <span className={`px-2 py-0.5 rounded border text-[10px] font-bold uppercase ${STATUS_TONE[source.last_run_status] || ''}`}>
-                      {source.last_run_status}
-                    </span>
-                  ) : <span className="text-[#8A8A8A]">never run</span>}
-                </td>
-                <td className="px-8 py-6 text-right" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-center justify-end gap-2.5">
-                    <button onClick={() => runNow(source.id)} className="btn-ghost btn-sm" disabled={runningId === source.id} title="Run now">
-                      {runningId === source.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />} Run Now
-                    </button>
-                    {pendingDeleteId === source.id ? (
-                      <span className="inline-flex items-center gap-1.5">
-                        <button onClick={() => deleteSource(source.id)} className="px-2.5 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer">Confirm</button>
+            ) : groups.map(group => (
+              <React.Fragment key={group.key}>
+                <tr>
+                  <td colSpan={7} className="px-6 py-2.5 bg-[#FFF9E8] text-[10px] font-black uppercase tracking-widest text-[#8A5A00]">
+                    {group.label} <span className="font-mono text-[#5F5F5F]">({group.rows.length})</span>
+                  </td>
+                </tr>
+                {group.rows.map(source => {
+                  const active = isActive(source);
+                  return (
+                    <tr
+                      key={source.id}
+                      className={cn(
+                        'group transition-colors cursor-pointer',
+                        active
+                          ? 'bg-amber-50/60 animate-pulse'
+                          : selectedIds.includes(source.id)
+                            ? 'bg-[#FDE8A0]/40'
+                            : 'bg-[#FEFDF8]/40 hover:bg-[#FEF9E4]/60',
+                      )}
+                      onClick={() => openRuns(source)}
+                    >
+                      <td className="px-6 py-6 w-12 text-center" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(source.id)}
+                          onChange={() => toggleSelect(source.id)}
+                          className="w-4 h-4 rounded border-[#BFA66A] text-[#B88719] focus:ring-[#B88719] cursor-pointer"
+                        />
+                      </td>
+                      <td className="px-6 py-6">
+                        <div className="text-sm font-bold text-[#111111] group-hover:text-[#B88719] transition-colors">{source.title}</div>
+                        <div className="text-[10px] font-mono text-[#8A5A00] truncate max-w-xs">{source.url}</div>
+                      </td>
+                      <td className="px-6 py-6 font-mono text-xs text-[#3F3F3F]">{CONNECTOR_LABEL[source.connector_type]}</td>
+                      <td className="px-6 py-6 font-mono text-xs text-[#5F5F5F]">
+                        <span className="inline-flex items-center gap-1" title={source.cron || undefined}><Clock className="w-3 h-3" />{cronToHuman(source.cron)}</span>
+                      </td>
+                      <td className="px-6 py-6 font-mono text-xs text-[#5F5F5F]" title={source.next_run_at || undefined}>
+                        {source.next_run_at
+                          ? relativeFromNow(source.next_run_at)
+                          : (source.cron?.trim() && !source.last_run_status ? 'Not started' : '—')}
+                      </td>
+                      <td className="px-6 py-6 text-xs">
+                        {source.last_run_status ? (
+                          <span className={`px-2 py-0.5 rounded border text-[10px] font-bold uppercase ${STATUS_TONE[source.last_run_status] || ''}`}>
+                            {source.last_run_status}
+                          </span>
+                        ) : <span className="text-[#8A8A8A]">never run</span>}
+                      </td>
+                      <td className="px-8 py-6 text-right" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-2.5">
+                          {active ? (
+                            <span className="text-[10px] font-mono font-bold text-[#B88719] uppercase tracking-wide flex items-center justify-end gap-1.5">
+                              <span className="w-3 h-3 rounded-full border-2 border-[#B88719] border-t-[#B88719] animate-spin" />
+                              {source.last_run_status === 'queued' ? 'Queued...' : 'Running...'}
+                            </span>
+                          ) : (
+                            <button onClick={() => runNow(source.id)} className="btn-ghost btn-sm" title="Run now">
+                              Run Now
+                              <ArrowRight className="w-3 h-3" />
+                            </button>
+                          )}
+                          {!active && (pendingDeleteId === source.id ? (
+                            <span className="inline-flex items-center gap-1.5">
+                              <button onClick={() => deleteSource(source.id)} className="px-2.5 py-1.5 bg-red-500 hover:bg-red-600 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer">Confirm</button>
                         <button onClick={() => setPendingDeleteId(null)} className="p-1.5 bg-white border border-[#BFA66A] hover:bg-[#FFF9E8] text-[#5F5F5F] rounded-lg transition-colors cursor-pointer"><X className="w-3 h-3" /></button>
-                      </span>
-                    ) : (
-                      <button
+                            </span>
+                          ) : (
+                            <button
                         onClick={() => setPendingDeleteId(source.id)}
                         className="p-1.5 opacity-0 group-hover:opacity-100 bg-red-50 hover:bg-red-100 border border-red-200 text-red-500 rounded-lg transition-all cursor-pointer"
                         title="Delete source"
                       ><Trash2 className="w-3.5 h-3.5" /></button>
-                    )}
-                  </div>
-                </td>
-              </tr>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </React.Fragment>
             ))}
           </tbody>
         </table>
@@ -681,6 +918,13 @@ export const SourceRegistry = () => {
                   <span className="text-[10px] font-mono text-[#8A8A8A]">{run.trigger} · {run.started_at.slice(0, 19).replace('T', ' ')}</span>
                 </div>
                 {run.error && <div className="text-xs font-mono text-red-600">{run.error}</div>}
+                {run.quality_metrics?.unchanged === true && (
+                  <div className="text-xs font-mono text-[#5F5F5F]">
+                    No change since the last run — kept the existing document
+                    {run.quality_metrics.existing_tier ? ` (currently ${String(run.quality_metrics.existing_tier).toUpperCase()})` : ''}.
+                    Nothing new was added to Bronze.
+                  </div>
+                )}
                 {run.status === 'failed' && (
                   <div className="text-[10px] font-mono text-amber-700">
                     {run.retry_count >= MAX_RETRIES ? 'max retries reached' : `retry ${run.retry_count}/${MAX_RETRIES}`}
@@ -699,6 +943,189 @@ export const SourceRegistry = () => {
       </DetailDrawer>
 
       {/* ── Bulk import ── */}
+      {/* ── Batch Delete Verification (same modal shell as the run verification) ── */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs select-none">
+          <div className="bg-[#13110E] border border-[#BFA66A] rounded-[2rem] w-full max-w-lg shadow-2xl flex flex-col overflow-hidden text-white pointer-events-auto">
+            <div className="p-6 border-b border-[#BFA66A] flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <Trash2 className="w-5 h-5 text-red-400" />
+                <div>
+                  <h3 className="text-sm font-display font-black uppercase tracking-wider text-[#D9B86C]">Batch Delete Verification</h3>
+                  <p className="text-[10px] font-mono text-[#5F5F5F] mt-0.5">Please confirm sources to remove from the registry</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="p-1.5 hover:bg-white/10 rounded-xl text-slate-400 hover:text-white transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 flex-1 overflow-y-auto max-h-[320px] space-y-3 custom-scrollbar">
+              {selectedSources.length === 0 ? (
+                <div className="py-12 text-center text-[#5F5F5F] text-xs font-mono flex flex-col items-center gap-2">
+                  <AlertCircle className="w-6 h-6 text-amber-500" />
+                  <span>No sources selected.</span>
+                </div>
+              ) : (
+                selectedSources.map(source => (
+                  <div
+                    key={source.id}
+                    className="flex items-center justify-between p-3.5 bg-white/[0.03] rounded-xl border border-white/15 hover:border-[#BFA66A] transition-all gap-4"
+                  >
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => toggleSelect(source.id)}
+                        aria-label="Remove from selection"
+                        className="p-1.5 bg-white/5 hover:bg-white/10 text-slate-300 rounded-lg transition-colors border border-white/15 cursor-pointer flex items-center justify-center"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-bold text-slate-100 uppercase tracking-tight truncate max-w-[240px]">{source.title}</h4>
+                        <span className="text-[9px] font-mono text-[#5F5F5F] uppercase tracking-widest mt-0.5 block">
+                          {isActive(source) ? 'Queued or running — will be skipped' : `ID: ${source.id}`}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="shrink-0 bg-white/5 border border-white/20 text-slate-300 text-[10px] font-mono px-2.5 py-1 rounded-lg">
+                      {CONNECTOR_LABEL[source.connector_type]}
+                    </span>
+                  </div>
+                ))
+              )}
+              <p className="text-[10px] font-mono text-[#5F5F5F] pt-1">
+                The sources leave the registry. Documents they already added to Bronze stay in Data Layers.
+              </p>
+            </div>
+
+            <div className="p-6 bg-white/[0.01] border-t border-[#BFA66A] flex items-center justify-between gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-4 py-2 bg-transparent hover:bg-white/5 text-slate-300 hover:text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all border border-white/20 cursor-pointer"
+              >
+                Discard
+              </button>
+              <button
+                onClick={handleBatchDelete}
+                disabled={selectedSources.filter(s => !isActive(s)).length === 0 || isBatchDeleting}
+                className={cn(
+                  'px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all inline-flex items-center gap-2 cursor-pointer',
+                  selectedSources.filter(s => !isActive(s)).length > 0 && !isBatchDeleting
+                    ? 'bg-red-500 text-white hover:bg-red-600 shadow-md'
+                    : 'bg-slate-700 text-slate-400 cursor-not-allowed',
+                )}
+              >
+                {isBatchDeleting ? (
+                  <>
+                    <span className="w-3.5 h-3.5 rounded-full border-2 border-red-200 border-t-white animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Confirm Batch Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Batch Run Verification (same modal as Data Layers' Batch Pipeline Verification) ── */}
+      {showVerification && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs select-none">
+          <div className="bg-[#13110E] border border-[#BFA66A] rounded-[2rem] w-full max-w-lg shadow-2xl flex flex-col overflow-hidden text-white pointer-events-auto">
+            <div className="p-6 border-b border-[#BFA66A] flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <Layers className="w-5 h-5 text-[#D9B86C]" />
+                <div>
+                  <h3 className="text-sm font-display font-black uppercase tracking-wider text-[#D9B86C]">Batch Run Verification</h3>
+                  <p className="text-[10px] font-mono text-[#5F5F5F] mt-0.5">Please confirm sources staged for a crawl into BRONZE</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowVerification(false)}
+                className="p-1.5 hover:bg-white/10 rounded-xl text-slate-400 hover:text-white transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-6 flex-1 overflow-y-auto max-h-[320px] space-y-3 custom-scrollbar">
+              {selectedSources.length === 0 ? (
+                <div className="py-12 text-center text-[#5F5F5F] text-xs font-mono flex flex-col items-center gap-2">
+                  <AlertCircle className="w-6 h-6 text-amber-500" />
+                  <span>No sources selected. Please add items back or close table select view.</span>
+                </div>
+              ) : (
+                selectedSources.map(source => (
+                  <div
+                    key={source.id}
+                    className="flex items-center justify-between p-3.5 bg-white/[0.03] rounded-xl border border-white/15 hover:border-[#BFA66A] transition-all gap-4"
+                  >
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => toggleSelect(source.id)}
+                        aria-label="Remove from selection"
+                        className="p-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-500 hover:text-red-400 rounded-lg transition-colors border border-red-500/15 cursor-pointer flex items-center justify-center"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                      <div className="min-w-0">
+                        <h4 className="text-xs font-bold text-slate-100 uppercase tracking-tight truncate max-w-[240px]">{source.title}</h4>
+                        <span className="text-[9px] font-mono text-[#5F5F5F] uppercase tracking-widest mt-0.5 block">
+                          {isActive(source) ? 'Already queued or running — will be skipped' : `ID: ${source.id}`}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="shrink-0 flex items-center gap-2.5">
+                      <span className="bg-white/5 border border-white/20 text-slate-300 text-[10px] font-mono px-2.5 py-1 rounded-lg">
+                        {CONNECTOR_LABEL[source.connector_type]}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="p-6 bg-white/[0.01] border-t border-[#BFA66A] flex items-center justify-between gap-3">
+              <button
+                onClick={() => setShowVerification(false)}
+                className="px-4 py-2 bg-transparent hover:bg-white/5 text-slate-300 hover:text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all border border-white/20 cursor-pointer"
+              >
+                Discard
+              </button>
+              <button
+                onClick={handleBatchRun}
+                disabled={selectedSources.length === 0 || isBatchRunning}
+                className={cn(
+                  'px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all inline-flex items-center gap-2 cursor-pointer',
+                  selectedSources.length > 0 && !isBatchRunning
+                    ? 'bg-[#D9B86C] text-[#13110E] hover:bg-[#FFE099] shadow-md'
+                    : 'bg-slate-700 text-slate-400 cursor-not-allowed',
+                )}
+              >
+                {isBatchRunning ? (
+                  <>
+                    <span className="w-3.5 h-3.5 rounded-full border-2 border-[#8A5A00] border-t-white animate-spin" />
+                    <span>Queueing Sequence...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Confirm Batch Run</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showBulkImport && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-6" onClick={() => { setShowBulkImport(false); setBulkResult(null); }}>
           <div className="content-card content-card--static p-6 space-y-4 max-w-2xl w-full max-h-[80vh] overflow-auto" onClick={e => e.stopPropagation()}>

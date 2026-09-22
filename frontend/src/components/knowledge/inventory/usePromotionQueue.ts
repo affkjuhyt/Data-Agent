@@ -185,7 +185,11 @@ export function usePromotionQueue(
     if (rehydratedRef.current) return;
     rehydratedRef.current = true;
     queue.forEach((e) => {
-      if (e.status === 'queued' || e.status === 'processing') {
+      // `to_tier` is typed 'bronze' | 'silver' | 'gold' on the shared PromotionEntry
+      // (useCrawlActivity's Source→Bronze entries use 'bronze'), but this hook's own
+      // queue only ever holds the silver/gold promotions it created via
+      // startPromotion — narrow explicitly rather than widen _attachStream's type.
+      if ((e.status === 'queued' || e.status === 'processing') && (e.to_tier === 'silver' || e.to_tier === 'gold')) {
         inFlightRef.current.add(e.data_id);
         _attachStream(e.data_id, e.to_tier);
       }

@@ -42,6 +42,7 @@ import { useAppState } from '../../AppStateContext';
 import { apiGet, apiMutate } from '../../lib/apiClient';
 import { usePromotionQueue } from './inventory/usePromotionQueue';
 import { PromotionProgressOverlay } from './inventory/PromotionProgressOverlay';
+import { useCrawlActivity } from './sources/useCrawlActivity';
 
 type KnowledgeTabId = 'FLEET' | 'INGEST' | 'INVENTORY' | 'CONFLICTS' | 'KNOWLEDGE' | 'WAREHOUSE' | 'SOURCE_REGISTRY' | 'POLICY' | 'KNOWLEDGE_BASE' | 'TRASH';
 
@@ -51,6 +52,8 @@ const KnowledgeOpsCenter = () => {
   const promotingIds = new Set(
     promotionQueue.filter(e => e.status === 'queued' || e.status === 'processing').map(e => e.data_id),
   );
+  // Crawl runs share the Pipeline Activity panel with promotions.
+  const crawl = useCrawlActivity();
   // Knowledge's own tabs are independent of the module nav (which now lives under "Build").
   const [activeSubTab, setActiveSubTab] = useState<KnowledgeTabId>('FLEET');
 
@@ -135,7 +138,7 @@ const KnowledgeOpsCenter = () => {
       case 'WAREHOUSE':
         return <WarehouseCenter onAddWarehouse={() => setShowWarehouseWizard(true)} />;
       case 'SOURCE_REGISTRY':
-        return <SourceRegistry />;
+        return <SourceRegistry activeSourceIds={crawl.activeSourceIds} onRunQueued={crawl.onRunsQueued} />;
       case 'CONFLICTS':  return <ConflictWorkspace />;
       case 'POLICY':     return <PolicyCenter />;
       case 'KNOWLEDGE_BASE': return <KnowledgeBaseCenter />;
@@ -344,7 +347,10 @@ const KnowledgeOpsCenter = () => {
         {renderContent()}
       </div>
 
-      <PromotionProgressOverlay queue={promotionQueue} onDismiss={dismissEntry} />
+      <PromotionProgressOverlay
+        queue={[...crawl.entries, ...promotionQueue]}
+        onDismiss={(id) => (crawl.runIds.has(id) ? crawl.dismiss(id) : dismissEntry(id))}
+      />
     </div>
   );
 };

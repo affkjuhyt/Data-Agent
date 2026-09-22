@@ -5,10 +5,12 @@ import { cn } from '../../../lib/utils';
 export interface PromotionEntry {
   data_id: string;
   name: string;
-  from_tier: 'bronze' | 'silver';
-  to_tier: 'silver' | 'gold';
+  from_tier: 'source' | 'bronze' | 'silver';
+  to_tier: 'bronze' | 'silver' | 'gold';
   progress: number;
   status: 'queued' | 'processing' | 'done' | 'failed';
+  /** Overrides the default status line (e.g. "Fetching source…" for a crawl). */
+  detail?: string;
 }
 
 interface Props {
@@ -17,6 +19,7 @@ interface Props {
 }
 
 const TIER_STYLE: Record<string, string> = {
+  source: 'bg-white/10 text-[#D9B86C]',
   bronze: 'bg-[#92620A]/40 text-[#D9B86C]',
   silver: 'bg-slate-700/50 text-[#5F5F5F]',
   gold:   'bg-[#B88719]/40 text-[#FFD97A]',
@@ -92,10 +95,11 @@ export function PromotionProgressOverlay({ queue, onDismiss }: Props) {
                 {/* Status line + % */}
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-mono text-[#5F5F5F]">
-                    {entry.status === 'done'       ? 'Complete' :
-                     entry.status === 'failed'     ? 'Failed' :
-                     entry.status === 'processing' ? 'Processing pipeline…' :
-                     'Queued'}
+                    {entry.detail ??
+                     (entry.status === 'done'       ? 'Complete' :
+                      entry.status === 'failed'     ? 'Failed' :
+                      entry.status === 'processing' ? 'Processing pipeline…' :
+                      'Queued')}
                   </span>
                   <div className="flex items-center gap-1.5">
                     {entry.status === 'done' ? (
