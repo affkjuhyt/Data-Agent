@@ -179,3 +179,40 @@ def test_legacy_trigger_becomes_a_queued_row_only_when_none_is_active() -> None:
     wc.enqueue_manual_run(conn, "s1")
     insert = _sql(conn, "INSERT INTO")
     assert insert and "'queued'" in insert[0][0] and "NOT EXISTS" in insert[0][0]
+
+
+class _FakeAutoPromoteProducer:
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, dict[str, Any]]] = []
+
+    def send(self, topic: str, value: dict[str, Any]) -> None:
+        self.sent.append((topic, value))
+
+    def flush(self, timeout: float | None = None) -> None:
+        return None
+
+
+def test_publish_auto_promote_silver_sends_the_expected_payload() -> None:
+    producer = _FakeAutoPromoteProducer()
+    with patch.object(wc, "_get_promote_producer", return_value=producer):
+        wc.publish_auto_promote_silver("d1", "t1")
+    assert producer.sent == [
+        (wc._PROMOTE_SILVER_TOPIC, {
+            "event": "promote_silver", "data_id": "d1", "tenant_id": "t1",
+            "approved_by": "web-crawler-worker",
+        }),
+    ]
+
+
+def test_publish_auto_promote_silver_is_a_noop_when_kafka_is_unavailable() -> None:
+    with patch.object(wc, "_get_promote_producer", return_value=None):
+        wc.publish_auto_promote_silver("d1", "t1")  # must not raise
+
+
+def test_publish_auto_promote_silver_swallows_a_send_failure() -> None:
+    class _Boom:
+        def send(self, *_: Any, **__: Any) -> None:
+            raise RuntimeError("kafka down")
+
+    with patch.object(wc, "_get_promote_producer", return_value=_Boom()):
+        wc.publish_auto_promote_silver("d1", "t1")  # must not raise

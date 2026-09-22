@@ -34,7 +34,7 @@ from datetime import UTC, datetime
 from typing import Any, TypedDict
 
 import psycopg2
-from kafka import KafkaConsumer
+from kafka import KafkaConsumer, KafkaProducer
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -80,7 +80,54 @@ GROUP_ID = _settings.group_id
 POLL_INTERVAL_SECONDS = _settings.poll_interval_seconds
 MAX_PARALLEL_RUNS = max(1, _settings.max_parallel_runs)
 STALE_RUN_MINUTES = _settings.stale_run_minutes
+
 KAFKA_RECONNECT_INTERVAL_SECONDS = _settings.kafka_reconnect_interval_seconds
+
+# promotion_mode="auto": queue Silver ourselves after a changed crawl, same
+# topic/payload kb_backend's own POST /promote/{id}/silver route publishes
+# (kb_promote_silver then chains Gold itself — see libs/ingestion/consumer.py's
+# maybe_publish_auto_gold). Hardcoded, not imported from kb_backend: workers
+# only import libs.* and their own package, never another service's code
+# (see bronze.py's module docstring).
+_PROMOTE_SILVER_TOPIC = "kb.promote.silver"
+_promote_producer: KafkaProducer | None = None
+_promote_producer_lock = threading.Lock()
+
+
+def _get_promote_producer() -> KafkaProducer | None:
+    """One producer shared by every RunPool thread — lazy (a Kafka outage at
+    start-up must not block crawling) and best-effort (a publish failure logs
+    and moves on; it never fails the crawl that already succeeded)."""
+    global _promote_producer
+    if _promote_producer is not None:
+        return _promote_producer
+    with _promote_producer_lock:
+        if _promote_producer is None:
+            try:
+                _promote_producer = kafka_factory.producer(KafkaSettings(), attempts=1, wait_seconds=0)
+            except Exception:  # noqa: BLE001 — a down Kafka must not block crawling, only auto-promote
+                log.warning("auto-promote: Kafka producer unavailable, will retry on the next eligible run", exc_info=True)
+                return None
+    return _promote_producer
+
+
+def publish_auto_promote_silver(data_id: str, tenant_id: str) -> None:
+    producer = _get_promote_producer()
+    if producer is None:
+        return
+    try:
+        producer.send(
+            _PROMOTE_SILVER_TOPIC,
+            value={
+                "event": "promote_silver",
+                "data_id": data_id,
+                "tenant_id": tenant_id,
+                "approved_by": "web-crawler-worker",
+            },
+        )
+        producer.flush(timeout=5)
+    except Exception:  # noqa: BLE001 — a failed publish must not fail a crawl that already succeeded
+        log.warning("auto-promote: failed to queue silver for data_id=%s", data_id, exc_info=True)
 
 
 def try_kafka_consumer(retries: int = 5, delay: int = 3) -> KafkaConsumer | None:
@@ -208,17 +255,19 @@ def run_source(
         if secret:
             fetch_config = {**config, "_resolved_secret": secret}
 
+    promotion_mode = config.get("promotion_mode", "manual")
     try:
         artifact = connector_fetch(connector_type, fetch_config)
         outcome: dict[str, Any] = {}
         if connector_type in _RAW_BYTES_CONNECTOR_TYPES:
             data_id = bronze.register_http_file_bronze(
                 conn, tenant_id=tenant_id, role_id=role_id, title=title, added_by=added_by, artifact=artifact,
-                outcome=outcome,
+                outcome=outcome, source_id=source_id, promotion_mode=promotion_mode,
             )
         else:
             data_id = bronze.register_web_bronze(
                 conn, tenant_id=tenant_id, role_id=role_id, title=title, url=config["url"], added_by=added_by,
+                source_id=source_id, promotion_mode=promotion_mode,
             )
         quality_metrics = {**(artifact.extra or {}), **outcome} or None
 
@@ -236,6 +285,10 @@ def run_source(
                 )
         conn.commit()
         log.info("run_source | source=%s (%r) connector=%s -> data_id=%s", source_id, title, connector_type, data_id)
+        # A worker can't click "Process to Silver" — for an auto-promote source
+        # with a real change (not the dedup short-circuit), queue it ourselves.
+        if promotion_mode == "auto" and not outcome.get("unchanged"):
+            publish_auto_promote_silver(data_id, tenant_id)
     except Exception as e:
         conn.rollback()
         log.exception("run_source | source=%s (%r) connector=%s failed", source_id, title, connector_type)
@@ -327,10 +380,12 @@ def _run_queue_item(conn: Any, row: dict[str, Any]) -> None:
         cur.execute("""UPDATE "KBSourceCrawlQueue" SET status = 'running' WHERE queue_id = %s""", (queue_id,))
     conn.commit()
 
+    promotion_mode = config.get("promotion_mode", "manual")
     try:
         artifact = connector_fetch("web_crawl", config)
         data_id = bronze.register_web_bronze(
             conn, tenant_id=tenant_id, role_id=row["role_id"], title=title, url=url, added_by=added_by,
+            source_id=source_id, promotion_mode=promotion_mode,
         )
         with conn.cursor() as cur:
             cur.execute(
@@ -346,6 +401,8 @@ def _run_queue_item(conn: Any, row: dict[str, Any]) -> None:
                 )
         conn.commit()
         log.info("_run_queue_item | source=%s url=%s depth=%d -> data_id=%s", source_id, url, depth, data_id)
+        if promotion_mode == "auto":
+            publish_auto_promote_silver(data_id, tenant_id)
     except Exception as e:
         conn.rollback()
         log.exception("_run_queue_item | source=%s url=%s failed", source_id, url)

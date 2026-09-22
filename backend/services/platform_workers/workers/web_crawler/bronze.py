@@ -173,7 +173,7 @@ def _insert_kbdata(
 
 def register_http_file_bronze(
     conn: Any, *, tenant_id: str, role_id: str, title: str, added_by: str, artifact: FetchedArtifact,
-    outcome: dict[str, Any] | None = None,
+    outcome: dict[str, Any] | None = None, source_id: str | None = None, promotion_mode: str = "manual",
 ) -> str:
     """Mirrors `upload_to_bronze(..., source_type=SourceType.DOC, ...)` —
     the worker's automated equivalent of a manual Document Hub upload.
@@ -183,7 +183,12 @@ def register_http_file_bronze(
     an unmodified rss/rest_api/sdmx/http_file response on every cron tick no
     longer creates MinIO churn or a KBLifecycleHistory entry. When that
     happens `outcome` (if given) gets `unchanged=True` and the tier the kept
-    document is at, so the run can say why nothing new reached Bronze."""
+    document is at, so the run can say why nothing new reached Bronze.
+
+    `source_id`/`promotion_mode` are stamped into `doc_metadata` so
+    `kb_promote_silver` (a different service, with no notion of `KBSource`)
+    can decide whether to auto-queue Gold after Silver succeeds — see
+    `libs/ingestion/consumer.py`'s `maybe_publish_auto_gold`."""
     if len(artifact.content_bytes) > cfg.MAX_FILE_SIZE_BYTES:
         raise ValueError(f"artifact for {title!r} exceeds MAX_FILE_SIZE_BYTES")
 
@@ -220,6 +225,7 @@ def register_http_file_bronze(
                 doc_metadata={
                     "source_type": "doc", "doc_type": artifact.extension,
                     "file_size": len(artifact.content_bytes),
+                    "source_id": source_id, "promotion_mode": promotion_mode,
                 },
                 path=object_key,
                 content_hash=content_hash,
@@ -240,16 +246,21 @@ def register_http_file_bronze(
 
 def register_web_bronze(
     conn: Any, *, tenant_id: str, role_id: str, title: str, url: str, added_by: str,
+    source_id: str | None = None, promotion_mode: str = "manual",
 ) -> str:
     """Mirrors `register_web_bronze()` in kb_backend's bronze pipeline
     exactly (same doc_metadata shape, no MinIO object — a web source's
-    content is fetched again at Silver-promotion time)."""
+    content is fetched again at Silver-promotion time). `source_id`/
+    `promotion_mode`: see `register_http_file_bronze`'s docstring."""
     data_id = str(uuid.uuid4())
     with conn.cursor() as cur:
         _insert_kbdata(
             cur, data_id=data_id, tenant_id=tenant_id, role_id=role_id, name=title, extension="html",
             source_type="web", added_by=added_by, abstract="",
-            doc_metadata={"source_type": "web", "url": url, "web_name": title},
+            doc_metadata={
+                "source_type": "web", "url": url, "web_name": title,
+                "source_id": source_id, "promotion_mode": promotion_mode,
+            },
             path=None,
         )
     conn.commit()

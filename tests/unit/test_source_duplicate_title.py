@@ -53,6 +53,55 @@ def test_create_source_refuses_a_title_that_is_already_registered() -> None:
     assert postgres.inserted is False
 
 
+class _InsertingPostgres:
+    """Lets create_source() run past the duplicate-title check to the actual
+    inserts, so the `promotion_mode` default can be read back off the config
+    payload it built — without a real DB."""
+
+    def __init__(self) -> None:
+        self.session = _Session(existing=None)
+        self.inserted_configs: list[Any] = []
+
+    @asynccontextmanager
+    async def get_client(self) -> Any:
+        yield self.session
+
+    async def insert(self, payload: Any) -> Any:
+        if isinstance(payload, source_ops.KBSourceInsert):
+            return type("R", (), {"code": 200, "data": {"source_id": str(uuid.uuid4())}})()
+        self.inserted_configs.append(payload.config)
+        return type("R", (), {"code": 200, "data": {}})()
+
+
+def _create(body: dict[str, Any]) -> Any:
+    postgres = _InsertingPostgres()
+    fake_row = {
+        "source_id": "s", "title": body["title"], "publisher": None,
+        "connector_type": body["connector_type"], "created_by": "u", "created_at": None,
+    }
+    with patch.object(source_ops, "_source_row", return_value=fake_row):
+        asyncio.run(source_ops.create_source(postgres, body, "u", str(uuid.uuid4()), "r"))
+    return postgres.inserted_configs[0]
+
+
+def test_a_scheduled_source_defaults_to_auto_promotion() -> None:
+    config = _create({"title": "Scheduled", "connector_type": "web_crawl", "url": "https://x", "cron": "0 3 * * *"})
+    assert config.promotion_mode == "auto"
+
+
+def test_a_manual_only_source_defaults_to_manual_promotion() -> None:
+    config = _create({"title": "Manual", "connector_type": "web_crawl", "url": "https://x"})
+    assert config.promotion_mode == "manual"
+
+
+def test_an_explicit_promotion_mode_overrides_the_cron_based_default() -> None:
+    config = _create({
+        "title": "Scheduled but manual", "connector_type": "web_crawl", "url": "https://x",
+        "cron": "0 3 * * *", "promotion_mode": "manual",
+    })
+    assert config.promotion_mode == "manual"
+
+
 def test_bulk_import_skips_a_duplicate_instead_of_aborting_the_whole_import() -> None:
     yaml_text = """
 sources:

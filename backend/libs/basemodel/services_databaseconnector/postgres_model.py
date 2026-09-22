@@ -271,6 +271,12 @@ class SourceConfigPayload(BaseModel):
     recursive: bool = False
     max_depth: int = 1
     same_domain_only: bool = True
+    # "auto": the worker itself queues Silver then Gold after a successful,
+    # changed crawl — a scheduled source has no one to click the button.
+    # "manual": promotion stays a human action, as it always has been.
+    # create_source defaults this to "auto" for any source with a cron,
+    # "manual" otherwise (see source_ops.py).
+    promotion_mode: Literal["manual", "auto"] = "manual"
     notes: Optional[str] = None
 
 

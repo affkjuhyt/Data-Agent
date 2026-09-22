@@ -74,6 +74,44 @@ async def document_name(postgres: PostgresClient, data_id: str) -> str:
     return name or ""
 
 
+async def maybe_publish_auto_gold(
+    postgres: PostgresClient, producer: KafkaProducerClient | None, *, data_id: str, tenant_id: str,
+) -> bool:
+    """A scheduled source with `promotion_mode: "auto"` (stamped into
+    `KBData.metadata` by the crawler worker at Bronze time, see
+    `platform_workers/workers/web_crawler/bronze.py`) needs no human click
+    for Gold — a worker can't click a button. Called right after Silver
+    succeeds; publishes the same `promote_gold` event kb_backend's own
+    `/promote/{id}/gold` route builds. Returns whether it published, purely
+    for logging — never raises, since a failed auto-promote must not fail
+    the Silver run that already succeeded (the document simply stays at
+    Silver until the next successful auto-eligible run, or a manual click)."""
+    if producer is None:
+        return False
+    async with postgres.get_client() as session:
+        row = (await session.execute(
+            sa_select(KBDataORM.doc_metadata).where(KBDataORM.data_id == uuid.UUID(data_id))
+        )).first()
+    metadata = (row[0] or {}) if row else {}
+    if metadata.get("promotion_mode") != "auto":
+        return False
+    try:
+        await producer.produce(
+            topic=cfg.KAFKA_TOPIC_GOLD,
+            value={
+                "event": "promote_gold",
+                "data_id": data_id,
+                "tenant_id": tenant_id,
+                "neo4j_connection_id": metadata.get("neo4j_connection_id", ""),
+                "approved_by": "web-crawler-worker",
+            },
+        )
+    except Exception:  # noqa: BLE001 — a failed auto-promote must not fail the Silver run that already succeeded
+        log.warning("maybe_publish_auto_gold: failed to queue gold for data_id=%s", data_id, exc_info=True)
+        return False
+    return True
+
+
 async def reset_events_for_new_run(db: Any, data_id: str) -> None:
     """Drop a prior *completed* run's pipeline events before a new run begins.
 

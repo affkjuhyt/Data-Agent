@@ -3,7 +3,7 @@
 rest_api / sdmx connectors)."""
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel
 
@@ -24,6 +24,9 @@ class CreateSourceRequest(BaseModel):
     recursive: bool = False
     max_depth: int = 1
     same_domain_only: bool = True
+    # None (the default) lets create_source pick "auto" for a scheduled source
+    # and "manual" for a manual-only one; set explicitly to override that.
+    promotion_mode: Optional[Literal["manual", "auto"]] = None
     notes: Optional[str] = None
 
 
@@ -40,6 +43,7 @@ class UpdateSourceConfigRequest(BaseModel):
     recursive: Optional[bool] = None
     max_depth: Optional[int] = None
     same_domain_only: Optional[bool] = None
+    promotion_mode: Optional[Literal["manual", "auto"]] = None
     notes: Optional[str] = None
 
 
@@ -58,6 +62,7 @@ class SourceResponse(BaseModel):
     recursive: bool = False
     max_depth: int = 1
     same_domain_only: bool = True
+    promotion_mode: Literal["manual", "auto"] = "manual"
     created_by: Optional[str]
     created_at: str
     last_run_status: Optional[str] = None

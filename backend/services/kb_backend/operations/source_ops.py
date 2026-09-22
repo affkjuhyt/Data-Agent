@@ -8,7 +8,7 @@ from __future__ import annotations
 import base64
 import datetime
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import HTTPException
 from sqlalchemy import func as sa_func
@@ -84,6 +84,7 @@ def _to_response(row: dict[str, Any], active_cfg: dict[str, Any] | None, last_ru
         "recursive": bool(cfg.get("recursive", False)),
         "max_depth": cfg.get("max_depth", 1),
         "same_domain_only": bool(cfg.get("same_domain_only", True)),
+        "promotion_mode": cfg.get("promotion_mode", "manual"),
         "created_by": row["created_by"],
         "created_at": created_at.isoformat() if created_at else "",
         "last_run_status": (last_run or {}).get("status"),
@@ -209,13 +210,20 @@ async def create_source(postgres: Any, body: dict[str, Any], created_by: str, te
         raise HTTPException(status_code=500, detail=f"Failed to create source: {src_ins.error}")
     source_id = src_ins.data["source_id"]
 
+    cron = body.get("cron") or ""
+    # A worker can't click a button: a source with a real schedule defaults to
+    # promoting itself straight through to Gold after a changed crawl, while a
+    # manual-only (no-schedule) source keeps the human-click flow — the
+    # caller can still override either way via `promotion_mode`.
+    promotion_mode: Literal["manual", "auto"] = body.get("promotion_mode") or ("auto" if cron.strip() else "manual")
     config_payload = SourceConfigPayload(
-        url=body["url"], format=body.get("format"), cron=body.get("cron") or "",
+        url=body["url"], format=body.get("format"), cron=cron,
         render=bool(body.get("render", False)), variables=body.get("variables"),
         openbao_path=body.get("openbao_path"), query_params=body.get("query_params"),
         auth_style=body.get("auth_style"), auth_param_name=body.get("auth_param_name"),
         recursive=bool(body.get("recursive", False)), max_depth=body.get("max_depth", 1),
         same_domain_only=bool(body.get("same_domain_only", True)),
+        promotion_mode=promotion_mode,
         notes=body.get("notes"),
     )
     cfg_ins = await postgres.insert(KBSourceConfigInsert(

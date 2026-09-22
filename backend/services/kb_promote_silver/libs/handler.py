@@ -9,6 +9,7 @@ from libs.database_connector.postgres_connector import set_current_tenant
 from libs.ingestion import config as cfg
 from libs.ingestion.consumer import (
     document_name,
+    maybe_publish_auto_gold,
     requeue_busy_document,
     reset_events_for_new_run,
     route_ingestion_failure,
@@ -59,6 +60,11 @@ def build_silver_handler(runtime: WorkerRuntime) -> Callable[[dict[str, Any]], A
                         tenant_id=tenant_id,
                         approved_by=approved_by,
                         emitter=emitter,
+                    )
+                    # A scheduled source with promotion_mode=auto needs no human
+                    # click for Gold — see maybe_publish_auto_gold's docstring.
+                    await maybe_publish_auto_gold(
+                        runtime.postgres, runtime.producer, data_id=data_id, tenant_id=tenant_id,
                     )
             except DocumentBusy:
                 await requeue_busy_document(
