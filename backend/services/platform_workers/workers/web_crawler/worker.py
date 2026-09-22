@@ -6,12 +6,16 @@ Structurally the same kind of always-on loop as `schema_crawler`: sync
 psycopg2, no asyncio in the loop itself. Three trigger paths per tick:
 - a per-source cron schedule (no single global interval —
   `libs.shared.cron.cron_due` decides per source, off `KBSourceRun.started_at`);
-- a best-effort Kafka 'web-crawl.manual-trigger' topic for the UI's "Run Now"
-  button — optional, for the same reason schema_crawler's DDL-change trigger
-  is: cron crawling must keep working even if Kafka is down;
+- the UI's "Run Now": kb_backend inserts a `queued` KBSourceRun row and this
+  worker claims queued rows each tick, so it works with Kafka down. The old
+  'web-crawl.manual-trigger' topic is still consumed (best-effort) and turned
+  into a queued row for any producer that still uses it;
 - a bounded retry for a recently-failed run (MAX_RETRIES, exponential
   backoff), and `KBSourceCrawlQueue` draining for a `recursive` web_crawl
   source's discovered links (see drain_crawl_queue).
+
+Sources run concurrently (MAX_PARALLEL_RUNS, each on its own DB connection);
+a source never runs twice at once.
 
 `KBSource`/`KBSourceConfig` are a second reader's worth of data (this worker
 doesn't own the registry — kb_backend's `/api/knowledge/sources` API does),
@@ -22,8 +26,10 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from typing import Any, TypedDict
 
@@ -59,7 +65,9 @@ class Settings(BaseSettings):
 
     manual_trigger_topic: str = Field(default="web-crawl.manual-trigger", validation_alias="KAFKA_WEB_CRAWL_TRIGGER_TOPIC")
     group_id: str = Field(default="web-crawler-worker-group", validation_alias="KAFKA_GROUP_ID")
-    poll_interval_seconds: int = Field(default=15, validation_alias="POLL_INTERVAL_SECONDS")
+    poll_interval_seconds: int = Field(default=5, validation_alias="POLL_INTERVAL_SECONDS")
+    max_parallel_runs: int = Field(default=3, validation_alias="MAX_PARALLEL_RUNS")
+    stale_run_minutes: int = Field(default=30, validation_alias="STALE_RUN_MINUTES")
     kafka_reconnect_interval_seconds: int = Field(
         default=300, validation_alias="KAFKA_RECONNECT_INTERVAL_SECONDS",
     )
@@ -70,6 +78,8 @@ _settings = Settings()
 MANUAL_TRIGGER_TOPIC = _settings.manual_trigger_topic
 GROUP_ID = _settings.group_id
 POLL_INTERVAL_SECONDS = _settings.poll_interval_seconds
+MAX_PARALLEL_RUNS = max(1, _settings.max_parallel_runs)
+STALE_RUN_MINUTES = _settings.stale_run_minutes
 KAFKA_RECONNECT_INTERVAL_SECONDS = _settings.kafka_reconnect_interval_seconds
 
 
@@ -124,7 +134,8 @@ def _latest_run_by_source(cur: Any) -> dict[str, _RunInfo]:
 
 
 def _is_due(cron_expr: str, last_run: datetime | None, now: datetime) -> bool:
-    """No run yet always counts as due (mirrors schema_crawler's _is_due)."""
+    """`last_run=None` counts as due; crawl_due_sources never asks about a source
+    that has not started yet (its first run is a manual one)."""
     if not cron_expr:
         return False
     if last_run is None:
@@ -165,11 +176,14 @@ def _enqueue_discovered_links(
         )
 
 
-def run_source(conn: Any, source: dict[str, Any], trigger: str, retry_count: int = 0) -> None:
+def run_source(
+    conn: Any, source: dict[str, Any], trigger: str, retry_count: int = 0, run_id: str | None = None,
+) -> None:
     """`retry_count` is how many prior retries led to THIS attempt (0 for a
     normal cron/manual dispatch) — each attempt is its own KBSourceRun row
     (never reused across retries), so the row carries the count rather than
-    accumulating it via an UPDATE."""
+    accumulating it via an UPDATE. `run_id` is set when a queued row was
+    already claimed (status now 'running'), so no new row is inserted."""
     source_id = str(source["source_id"])
     tenant_id = str(source["tenant_id"])
     role_id = str(source["role_id"])
@@ -178,14 +192,15 @@ def run_source(conn: Any, source: dict[str, Any], trigger: str, retry_count: int
     title = source["title"]
     added_by = source.get("created_by") or "web-crawler-worker"
 
-    run_id = str(uuid.uuid4())
-    with conn.cursor() as cur:
-        cur.execute(
-            """INSERT INTO "KBSourceRun" (run_id, source_id, status, trigger, retry_count, started_at)
-               VALUES (%s, %s, %s, %s, %s, now())""",
-            (run_id, source_id, "running", trigger, retry_count),
-        )
-    conn.commit()
+    if run_id is None:
+        run_id = str(uuid.uuid4())
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO "KBSourceRun" (run_id, source_id, status, trigger, retry_count, started_at)
+                   VALUES (%s, %s, %s, %s, %s, now())""",
+                (run_id, source_id, "running", trigger, retry_count),
+            )
+        conn.commit()
 
     fetch_config = config
     if connector_type in ("rest_api", "sdmx") and config.get("openbao_path"):
@@ -195,15 +210,17 @@ def run_source(conn: Any, source: dict[str, Any], trigger: str, retry_count: int
 
     try:
         artifact = connector_fetch(connector_type, fetch_config)
+        outcome: dict[str, Any] = {}
         if connector_type in _RAW_BYTES_CONNECTOR_TYPES:
             data_id = bronze.register_http_file_bronze(
                 conn, tenant_id=tenant_id, role_id=role_id, title=title, added_by=added_by, artifact=artifact,
+                outcome=outcome,
             )
         else:
             data_id = bronze.register_web_bronze(
                 conn, tenant_id=tenant_id, role_id=role_id, title=title, url=config["url"], added_by=added_by,
             )
-        quality_metrics = artifact.extra or None
+        quality_metrics = {**(artifact.extra or {}), **outcome} or None
 
         with conn.cursor() as cur:
             cur.execute(
@@ -233,7 +250,9 @@ def run_source(conn: Any, source: dict[str, Any], trigger: str, retry_count: int
         conn.commit()
 
 
-def crawl_due_sources(conn: Any) -> None:
+def crawl_due_sources(conn: Any, pool: "RunPool | None" = None) -> None:
+    """Without a `pool` each due source runs inline (the original behaviour,
+    kept for callers/tests that drive one step at a time)."""
     with conn.cursor() as cur:
         sources = get_active_sources(cur)
         latest = _latest_run_by_source(cur)
@@ -242,8 +261,14 @@ def crawl_due_sources(conn: Any) -> None:
     due: list[tuple[dict[str, Any], int]] = []
     for s in sources:
         info = latest.get(str(s["source_id"]))
+        if info and info["status"] in ("queued", "running"):
+            continue  # already in progress; its own run will move it on
+        if info is None:
+            # A schedule starts with the first run (Run Now), not at creation or
+            # import: a bulk import must not fire dozens of crawls by itself.
+            continue
         cron_expr = (s.get("config") or {}).get("cron", "")
-        if _is_due(cron_expr, info["started_at"] if info else None, now):
+        if _is_due(cron_expr, info["started_at"], now):
             due.append((s, 0))
         elif _is_retry_due(info, now):
             assert info is not None  # _is_retry_due already ruled out None
@@ -251,7 +276,10 @@ def crawl_due_sources(conn: Any) -> None:
     if due:
         log.info("crawl_due_sources | %d/%d source(s) due", len(due), len(sources))
     for source, retry_count in due:
-        run_source(conn, source, trigger="scheduled", retry_count=retry_count)
+        if pool is None:
+            run_source(conn, source, trigger="scheduled", retry_count=retry_count)
+        elif not pool.submit(source, "scheduled", retry_count):
+            log.info("crawl_due_sources | no free slot for source=%s, next tick", source["source_id"])
 
 
 def drain_crawl_queue(conn: Any, batch_size: int = 10) -> None:
@@ -330,9 +358,140 @@ def _run_queue_item(conn: Any, row: dict[str, Any]) -> None:
         conn.commit()
 
 
+class RunPool:
+    """Runs sources concurrently, one DB connection per run (a psycopg2
+    connection is not safe to share across threads). A source that is already
+    running is refused, so the same source never runs twice at once."""
+
+    def __init__(self, pg_settings: Any, max_workers: int) -> None:
+        self._pg_settings = pg_settings
+        self._max = max_workers
+        self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="crawl")
+        self._lock = threading.Lock()
+        self._in_flight: set[str] = set()
+
+    def is_running(self, source_id: str) -> bool:
+        with self._lock:
+            return source_id in self._in_flight
+
+    def free_slots(self) -> int:
+        with self._lock:
+            return self._max - len(self._in_flight)
+
+    def submit(self, source: dict[str, Any], trigger: str, retry_count: int = 0, run_id: str | None = None) -> bool:
+        source_id = str(source["source_id"])
+        with self._lock:
+            if source_id in self._in_flight or len(self._in_flight) >= self._max:
+                return False
+            self._in_flight.add(source_id)
+        self._executor.submit(self._task, source, trigger, retry_count, run_id)
+        return True
+
+    def _task(self, source: dict[str, Any], trigger: str, retry_count: int, run_id: str | None) -> None:
+        source_id = str(source["source_id"])
+        conn = None
+        try:
+            conn = pg.connect(self._pg_settings)
+            run_source(conn, source, trigger, retry_count, run_id)
+        except Exception as exc:  # noqa: BLE001 — a crash in one run must not take the pool down
+            log.exception("RunPool | source=%s crashed outside run_source", source_id)
+            if conn is not None and run_id is not None:
+                with contextlib.suppress(Exception):
+                    _finish_run(conn, run_id, "failed", f"worker error: {exc}"[:2000])
+        finally:
+            if conn is not None:
+                with contextlib.suppress(Exception):
+                    conn.close()
+            with self._lock:
+                self._in_flight.discard(source_id)
+
+
+def _finish_run(conn: Any, run_id: Any, status: str, error: str) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE "KBSourceRun" SET status = %s, error = %s, finished_at = now() WHERE run_id = %s""",
+            (status, error, str(run_id)),
+        )
+    conn.commit()
+
+
+def enqueue_manual_run(conn: Any, source_id: str) -> None:
+    """Turns a legacy Kafka trigger into a queued row (none if one is already
+    queued or running for that source)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO "KBSourceRun" (run_id, source_id, status, trigger, retry_count)
+               SELECT %s, %s, 'queued', 'manual', 0
+                WHERE NOT EXISTS (SELECT 1 FROM "KBSourceRun"
+                                   WHERE source_id = %s AND status IN ('queued', 'running'))""",
+            (str(uuid.uuid4()), source_id, source_id),
+        )
+    conn.commit()
+
+
+def dispatch_queued_runs(conn: Any, pool: RunPool) -> None:
+    """Claims queued runs (oldest first) into free pool slots. A run whose
+    source is busy simply stays queued until that source finishes."""
+    if pool.free_slots() <= 0:
+        return
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT run_id, source_id, retry_count FROM "KBSourceRun"
+                WHERE status = 'queued' ORDER BY started_at LIMIT 50"""
+        )
+        queued = cur.fetchall()
+        sources = {str(s["source_id"]): s for s in get_active_sources(cur)} if queued else {}
+    for run_id, source_id, retry_count in queued:
+        if pool.free_slots() <= 0:
+            break
+        source = sources.get(str(source_id))
+        if source is None:
+            _finish_run(conn, run_id, "failed", "source not found or inactive")
+            continue
+        if pool.is_running(str(source_id)):
+            continue
+        with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE "KBSourceRun" SET status = 'running', started_at = now()
+                    WHERE run_id = %s AND status = 'queued'""",
+                (str(run_id),),
+            )
+            claimed = cur.rowcount == 1
+        conn.commit()
+        if claimed and not pool.submit(source, "manual", retry_count, str(run_id)):
+            with conn.cursor() as cur:  # the slot went away between the check and the submit
+                cur.execute("""UPDATE "KBSourceRun" SET status = 'queued' WHERE run_id = %s""", (str(run_id),))
+            conn.commit()
+
+
+def reset_stale_runs(conn: Any, minutes: int = STALE_RUN_MINUTES) -> None:
+    """A queued/running row this old belongs to a worker that died; without
+    this the UI would keep the source locked forever."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE "KBSourceRun"
+                  SET status = 'failed', error = 'timed out without finishing (worker lost?)', finished_at = now()
+                WHERE status IN ('queued', 'running') AND started_at < now() - (%s || ' minutes')::interval""",
+            (str(minutes),),
+        )
+    conn.commit()
+
+
+def abandon_running_runs(conn: Any) -> None:
+    """At start-up nothing of this process is running, so a 'running' row was
+    left by the previous process."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE "KBSourceRun"
+                  SET status = 'failed', error = 'interrupted by a worker restart', finished_at = now()
+                WHERE status = 'running'"""
+        )
+    conn.commit()
+
+
 def drain_manual_triggers(conn: Any, consumer: KafkaConsumer) -> None:
-    """Poll pending 'web-crawl.manual-trigger' messages and run each named
-    source immediately, ignoring its cron schedule (the UI's "Run Now")."""
+    """Legacy trigger: turn each 'web-crawl.manual-trigger' message into a
+    queued run, which dispatch_queued_runs then picks up like any other."""
     records = consumer.poll(timeout_ms=200)
     source_ids: set[str] = set()
     for messages in records.values():
@@ -344,13 +503,12 @@ def drain_manual_triggers(conn: Any, consumer: KafkaConsumer) -> None:
         return
 
     with conn.cursor() as cur:
-        sources = {str(s["source_id"]): s for s in get_active_sources(cur)}
+        known = {str(s["source_id"]) for s in get_active_sources(cur)}
     for source_id in source_ids:
-        source = sources.get(source_id)
-        if source is None:
+        if source_id in known:
+            enqueue_manual_run(conn, source_id)
+        else:
             log.warning("drain_manual_triggers | source=%s not found or inactive, skipping", source_id)
-            continue
-        run_source(conn, source, trigger="manual")
 
     with contextlib.suppress(Exception):
         consumer.commit()
@@ -374,10 +532,12 @@ def run() -> None:
 
     pg_settings = PostgresSettings()
     conn = pg.connect(pg_settings)
+    abandon_running_runs(conn)
+    pool = RunPool(pg_settings, MAX_PARALLEL_RUNS)
     consumer = try_kafka_consumer()
     last_kafka_attempt = time.time()
 
-    log.info("web-crawler started. kafka=%s", bool(consumer))
+    log.info("web-crawler started. kafka=%s parallel=%d", bool(consumer), MAX_PARALLEL_RUNS)
     while True:
         try:
             consumer, last_kafka_attempt = maybe_reconnect_kafka(consumer, time.time(), last_kafka_attempt)
@@ -392,10 +552,12 @@ def run() -> None:
                     consumer = None
                     last_kafka_attempt = time.time()
 
+            reset_stale_runs(conn)
+            dispatch_queued_runs(conn, pool)
             # No global interval gate — each source tracks its own next-due
             # time off KBSourceRun.started_at (_is_due()), so calling this
             # every tick is cheap and naturally staggers load across sources.
-            crawl_due_sources(conn)
+            crawl_due_sources(conn, pool)
             drain_crawl_queue(conn)
 
             time.sleep(POLL_INTERVAL_SECONDS)

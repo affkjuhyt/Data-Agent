@@ -25,7 +25,8 @@ data:
   KAFKA_SASL_USERNAME: web-crawler-worker
   KAFKA_WEB_CRAWL_TRIGGER_TOPIC: web-crawl.manual-trigger
   KAFKA_GROUP_ID: web-crawler-worker-group
-  POLL_INTERVAL_SECONDS: '15'
+  POLL_INTERVAL_SECONDS: '5'
+  MAX_PARALLEL_RUNS: '3'
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -60,10 +61,10 @@ spec:
         resources:
           requests:
             cpu: 200m
-            memory: 512Mi
+            memory: 768Mi
           limits:
-            cpu: 1000m
-            memory: 1Gi
+            cpu: 2000m
+            memory: 3Gi
         volumeMounts:
         - name: tmp
           mountPath: /tmp
