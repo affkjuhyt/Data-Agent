@@ -30,6 +30,9 @@ from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm i
 )
 from services.kb_backend.operations.pagination import PAGE_SIZE, build_cursor_page
 
+# "upload" is bookkeeping-only (see record_upload_as_source) — never something
+# create_source() itself accepts, since an upload's bytes land in Bronze in
+# the same request that creates this row, not on a later Run Now.
 _VALID_CONNECTOR_TYPES = {"http_file", "web_crawl", "web_crawl_headless", "rss", "rest_api", "sdmx"}
 
 _ACTIVE_RUN_STATUSES = ("queued", "running")
@@ -369,3 +372,49 @@ async def list_recent_activity(postgres: Any, tenant_id: str) -> list[dict[str, 
             }
             for r in rows
         ]
+
+
+async def record_upload_as_source(
+    postgres: Any, *, tenant_id: str, role_id: str, title: str, created_by: str, data_id: str,
+) -> None:
+    """Bookkeeping only — an uploaded file's bytes already landed in Bronze in
+    the same request (see ingestion.py's ingest_bronze); this just gives it a
+    row in Source Registry, for list/run-history parity with every other
+    source type (Phase C addendum, requested so stewards see everything
+    they've ever added in one place). No connector/worker involvement: the
+    "run" is recorded as already `success` the instant it's written.
+
+    Re-uploading the same title reuses that upload's existing KBSource row
+    (found by tenant + title + connector_type='upload') and just appends a
+    new run, instead of piling up a fresh source per re-upload — the title is
+    already the KBData identity key (see create_source's duplicate-title
+    guard), so it is one here too."""
+    tenant_uuid = uuid.UUID(tenant_id)
+    async with postgres.get_client() as session:
+        source_id = await session.scalar(
+            sa_select(KBSourceORM.source_id).where(
+                KBSourceORM.tenant_id == tenant_uuid,
+                KBSourceORM.title == title,
+                KBSourceORM.connector_type == "upload",
+            ).limit(1)
+        )
+        if source_id is None:
+            source = KBSourceORM(
+                tenant_id=tenant_uuid, role_id=uuid.UUID(role_id), connector_type="upload",
+                title=title, created_by=created_by,
+            )
+            session.add(source)
+            await session.flush()
+            config = KBSourceConfigORM(
+                source_id=source.source_id, version_number=1, is_active=True, created_by=created_by,
+                config=SourceConfigPayload(url="", cron="", promotion_mode="manual",
+                                            notes="Uploaded file — re-uploading the same title adds a run here.").model_dump(),
+            )
+            session.add(config)
+            source_id = source.source_id
+        run = KBSourceRunORM(
+            source_id=source_id, status="success", trigger="manual", data_ids=[data_id],
+            finished_at=datetime.datetime.now(datetime.timezone.utc),
+        )
+        session.add(run)
+        await session.commit()

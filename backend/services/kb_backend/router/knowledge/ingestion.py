@@ -22,6 +22,7 @@ from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.operations.document_ops import (
     fetch_one as _fetch_doc, fetch_by_name as _fetch_doc_by_name, reprocess_gold_documents,
 )
+from services.kb_backend.operations.source_ops import record_upload_as_source
 from services.kb_backend.operations.trash_ops import flush as _trash_flush
 from services.kb_backend.pipeline.ingestion import config as cfg
 from services.kb_backend.pipeline.ingestion.bronze import BronzeUploadRequest, WebBronzeRequest
@@ -186,7 +187,7 @@ async def ingest_bronze(
             }
         await _replace_existing_document_if_any(request, ctx, name, existing=existing)
         try:
-            return await svc(request, "ingestion").bronze(
+            result = await svc(request, "ingestion").bronze(
                 BronzeUploadRequest(
                     tenant_id=ctx["tenant_id"],
                     role_id=ctx["role_id"],
@@ -212,6 +213,19 @@ async def ingest_bronze(
         except Exception as e:
             log.exception("Bronze ingestion error: %s", e)
             raise HTTPException(status_code=500, detail="Ingestion failed")
+
+        # Bookkeeping only, best-effort — gives this upload a row in Source
+        # Registry for list/run-history parity with every other source type
+        # (Phase C addendum). Must never fail an upload that already
+        # succeeded.
+        try:
+            await record_upload_as_source(
+                postgres, tenant_id=ctx["tenant_id"], role_id=ctx["role_id"],
+                title=name, created_by=ctx["user_name"], data_id=str(result["data_id"]),
+            )
+        except Exception:  # noqa: BLE001 — the upload already succeeded, don't fail the request over this
+            log.warning("record_upload_as_source failed for name=%r", name, exc_info=True)
+        return result
 
 
 @router.post("/bronze/web", response_model=None)

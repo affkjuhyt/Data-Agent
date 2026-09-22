@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Globe, Plus, Trash2, X, Loader2, Upload, Clock, ArrowRight, Layers, CheckCircle2, AlertCircle, Search } from 'lucide-react';
+import { Globe, Plus, Trash2, X, Loader2, Upload, Clock, ArrowRight, Layers, CheckCircle2, AlertCircle, Search, Pencil, Save } from 'lucide-react';
 import { apiGet, apiMutate } from '../../../lib/apiClient';
 import { useCursorPagination } from '../../../lib/useCursorPagination';
 import { Pagination } from '../../shared/Pagination';
@@ -7,7 +7,10 @@ import { DetailDrawer } from '../../shared/DetailDrawer';
 import { FilterPopover } from '../../shared/FilterPopover';
 import { cn } from '../../../lib/utils';
 
-type ConnectorType = 'http_file' | 'web_crawl' | 'web_crawl_headless' | 'rss' | 'rest_api' | 'sdmx';
+// 'upload' is bookkeeping-only — a Document Hub/Video/Image upload's row here
+// (see kb_backend's record_upload_as_source), never something this screen's
+// own Add/Bulk Import form creates.
+type ConnectorType = 'http_file' | 'web_crawl' | 'web_crawl_headless' | 'rss' | 'rest_api' | 'sdmx' | 'upload';
 
 interface SourceRow {
   id: string;
@@ -24,6 +27,7 @@ interface SourceRow {
   recursive: boolean;
   max_depth: number;
   same_domain_only: boolean;
+  promotion_mode: 'manual' | 'auto';
   created_by: string | null;
   created_at: string;
   last_run_status: 'queued' | 'running' | 'success' | 'failed' | null;
@@ -52,6 +56,7 @@ const CONNECTOR_LABEL: Record<ConnectorType, string> = {
   rss: 'RSS Feed',
   rest_api: 'REST API',
   sdmx: 'SDMX',
+  upload: 'Uploaded File',
 };
 
 // Short enough to sit on a pill (full description goes in the `title` tooltip).
@@ -62,6 +67,7 @@ const CONNECTOR_PILL_LABEL: Record<ConnectorType, string> = {
   rss: 'RSS Feed',
   rest_api: 'REST API',
   sdmx: 'SDMX',
+  upload: 'Uploaded File',
 };
 
 const CONNECTOR_PILL_DESCRIPTION: Record<ConnectorType, string> = {
@@ -71,6 +77,7 @@ const CONNECTOR_PILL_DESCRIPTION: Record<ConnectorType, string> = {
   rss: 'RSS feed',
   rest_api: 'REST API with query params + auth',
   sdmx: 'SDMX statistical API',
+  upload: 'Uploaded directly from Add Data',
 };
 
 const CONNECTOR_TYPES: ConnectorType[] = ['web_crawl', 'web_crawl_headless', 'rss', 'rest_api', 'sdmx', 'http_file'];
@@ -100,6 +107,9 @@ const EMPTY_FORM = {
   title: '', publisher: '', connector_type: 'web_crawl' as ConnectorType, url: '', render: false,
   openbaoPath: '', queryParamsText: '', authStyle: 'bearer', authParamName: '',
   recursive: false, maxDepth: 1, sameDomainOnly: true,
+  // null = "use the default" (auto once a schedule is picked, manual otherwise —
+  // same rule create_source applies server-side); an explicit click always wins.
+  promotionModeOverride: null as 'manual' | 'auto' | null,
 };
 
 /** "key=value" per line -> {key: value}, ignoring blank lines. */
@@ -109,6 +119,27 @@ function parseQueryParams(text: string): Record<string, string> | undefined {
     return idx === -1 ? [l, ''] : [l.slice(0, idx).trim(), l.slice(idx + 1).trim()];
   });
   return entries.length ? Object.fromEntries(entries) : undefined;
+}
+
+/** The inverse of parseQueryParams — prefills the Edit form's textarea. */
+function queryParamsToText(params: Record<string, string> | null | undefined): string {
+  return Object.entries(params || {}).map(([k, v]) => `${k}=${v}`).join('\n');
+}
+
+interface EditFormState {
+  url: string; schedule: ScheduleState; originalCron: string; render: boolean;
+  openbaoPath: string; queryParamsText: string; authStyle: string; authParamName: string;
+  recursive: boolean; maxDepth: number; sameDomainOnly: boolean; promotionMode: 'manual' | 'auto';
+}
+
+function editFormFromSource(s: SourceRow): EditFormState {
+  return {
+    url: s.url || '', schedule: cronToScheduleState(s.cron), originalCron: s.cron || '', render: s.render,
+    openbaoPath: s.openbao_path || '', queryParamsText: queryParamsToText(s.query_params),
+    authStyle: s.auth_style || 'bearer', authParamName: s.auth_param_name || '',
+    recursive: s.recursive, maxDepth: s.max_depth, sameDomainOnly: s.same_domain_only,
+    promotionMode: s.promotion_mode || 'manual',
+  };
 }
 
 const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']; // cron day-of-week: 0=Sun..6=Sat
@@ -157,6 +188,67 @@ function buildCron(
   return `${minute} ${hour} ${dayOfMonth} ${month} *`; // yearly
 }
 
+interface ScheduleState {
+  mode: ScheduleMode; time: string; days: number[]; dayOfMonth: number; month: number;
+  hourEvery: number; minuteEvery: number;
+}
+const DEFAULT_SCHEDULE_STATE: ScheduleState = {
+  mode: 'none', time: '03:00', days: [], dayOfMonth: 1, month: 1, hourEvery: 0, minuteEvery: 15,
+};
+
+/** The inverse of buildCron — reconstructs the picker's state from an
+ * existing cron string, so Edit shows the same friendly picker Add uses
+ * instead of a raw cron field nobody but a developer can read. Not every
+ * cron this app can END UP with is one buildCron itself can PRODUCE (e.g.
+ * Bulk Import's own "semi-monthly"/"semi-annual" word presets, two arbitrary
+ * days/months at once) — those fall back to DEFAULT_SCHEDULE_STATE
+ * ('none'), and isCronRepresentable below is what tells the caller to show
+ * a "this came from outside the picker" notice rather than silently
+ * discarding it on the next Save. */
+function cronToScheduleState(cron: string | null | undefined): ScheduleState {
+  const raw = (cron || '').trim();
+  if (!raw) return { ...DEFAULT_SCHEDULE_STATE };
+  const parts = raw.split(/\s+/);
+  if (parts.length !== 5) return { ...DEFAULT_SCHEDULE_STATE };
+  const [min, hour, dom, month, dow] = parts;
+
+  const minStep = min.match(/^\*\/(\d+)$/);
+  if (minStep && hour === '*' && dom === '*' && month === '*' && dow === '*') {
+    return { ...DEFAULT_SCHEDULE_STATE, mode: 'hourly', hourEvery: 0, minuteEvery: parseInt(minStep[1], 10) };
+  }
+  const hourStep = hour.match(/^\*\/(\d+)$/);
+  if (hourStep && /^\d+$/.test(min) && dom === '*' && month === '*' && dow === '*') {
+    return { ...DEFAULT_SCHEDULE_STATE, mode: 'hourly', hourEvery: parseInt(hourStep[1], 10), minuteEvery: parseInt(min, 10) };
+  }
+  if (!/^\d+$/.test(min) || !/^\d+$/.test(hour)) return { ...DEFAULT_SCHEDULE_STATE };
+  const time = `${hour.padStart(2, '0')}:${min.padStart(2, '0')}`;
+
+  if (dom === '*' && month === '*') {
+    if (dow === '*') return { ...DEFAULT_SCHEDULE_STATE, mode: 'weekly', time, days: [] }; // "every day"
+    if (/^[\d,]+$/.test(dow)) return { ...DEFAULT_SCHEDULE_STATE, mode: 'weekly', time, days: dow.split(',').map(d => parseInt(d, 10)) };
+    return { ...DEFAULT_SCHEDULE_STATE };
+  }
+  if (/^\d+$/.test(dom) && month === '*' && dow === '*') {
+    return { ...DEFAULT_SCHEDULE_STATE, mode: 'monthly', time, dayOfMonth: parseInt(dom, 10) };
+  }
+  if (/^\d+$/.test(dom) && month === '1,4,7,10' && dow === '*') {
+    return { ...DEFAULT_SCHEDULE_STATE, mode: 'quarterly', time, dayOfMonth: parseInt(dom, 10) };
+  }
+  if (/^\d+$/.test(dom) && /^\d+$/.test(month) && dow === '*') {
+    return { ...DEFAULT_SCHEDULE_STATE, mode: 'yearly', time, dayOfMonth: parseInt(dom, 10), month: parseInt(month, 10) };
+  }
+  return { ...DEFAULT_SCHEDULE_STATE };
+}
+
+/** True when the picker can express `cron` exactly — i.e. round-tripping it
+ * through cronToScheduleState -> buildCron reproduces the same string. */
+function isCronRepresentable(cron: string | null | undefined): boolean {
+  const raw = (cron || '').trim();
+  if (!raw) return true;
+  const s = cronToScheduleState(raw);
+  return buildCron(s.mode, s.time, s.days, s.dayOfMonth, s.month, s.hourEvery, s.minuteEvery) === raw;
+}
+
 /** The inverse of buildCron, plus the handful of shapes bulk-import's own
  * word->cron presets produce (hourly, semi-monthly, semi-annual) — so the
  * registry list shows "Every year on Jan 1 at 03:00" instead of a raw
@@ -200,6 +292,149 @@ function cronToHuman(cron: string | null | undefined): string {
   return cron;
 }
 
+interface SchedulePickerProps extends ScheduleState {
+  onChange: (next: ScheduleState) => void;
+  /** Text shown under the computed cron preview — differs between Add
+   * ("runs immediately, then repeats") and Edit ("takes effect next run"). */
+  footnote: string;
+  /** Set when the source's existing cron came from outside this picker
+   * (e.g. Bulk Import's semi-monthly/semi-annual presets) — touching any
+   * control here replaces it with whatever the picker computes. */
+  unrepresentableCron?: string | null;
+}
+
+/** The friendly, no-cron-syntax-required schedule picker — used identically
+ * by both the Add Source form and the Edit tab (the user should not need to
+ * know cron to read or change a schedule either way). */
+function SchedulePicker(props: SchedulePickerProps) {
+  const { mode, time, days, dayOfMonth, month, hourEvery, minuteEvery, onChange, footnote, unrepresentableCron } = props;
+  const patch = (next: Partial<ScheduleState>) => onChange({ mode, time, days, dayOfMonth, month, hourEvery, minuteEvery, ...next });
+  const toggleDay = (day: number) => patch({ days: days.includes(day) ? days.filter(d => d !== day) : [...days, day].sort() });
+
+  return (
+    <div>
+      <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">Schedule</label>
+      {unrepresentableCron && (
+        <div className="text-[10px] font-mono text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2">
+          Current schedule ({cronToHuman(unrepresentableCron)}) was set outside this picker. Choosing an option below replaces it.
+        </div>
+      )}
+      <div className="flex items-center gap-1.5 flex-wrap mb-3">
+        {(Object.keys(SCHEDULE_MODE_LABEL) as ScheduleMode[]).map(m => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => patch({ mode: m })}
+            className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors whitespace-nowrap ${
+              mode === m ? 'bg-[#B88719] border-[#B88719] text-white' : 'bg-white border-[#BFA66A] text-[#5F5F5F] hover:bg-[#FFF9E8]'
+            }`}
+          >
+            {SCHEDULE_MODE_LABEL[m]}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'none' && (
+        <div className="text-[11px] font-mono text-[#8A8A8A]">
+          Never runs on a timer — only via "Run Now". Good for a true one-off, or a source with no fixed publication cadence.
+        </div>
+      )}
+
+      {mode === 'hourly' && (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center gap-4 flex-wrap">
+            <label className="flex items-center gap-1.5 text-xs text-[#3F3F3F]">
+              Hour
+              <input
+                type="number" min={0} max={23}
+                className="ui-input w-16 text-xs px-2 py-1 font-mono"
+                value={hourEvery}
+                onChange={e => patch({ hourEvery: Math.min(23, Math.max(0, parseInt(e.target.value, 10) || 0)) })}
+              />
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-[#3F3F3F]">
+              Minute
+              <input
+                type="number" min={0} max={59}
+                className="ui-input w-16 text-xs px-2 py-1 font-mono"
+                value={minuteEvery}
+                onChange={e => patch({ minuteEvery: Math.min(59, Math.max(0, parseInt(e.target.value, 10) || 0)) })}
+              />
+            </label>
+          </div>
+          <span className="text-[10px] font-mono text-[#8A8A8A]">
+            Hour = 0 → repeat every [Minute] minutes. Hour &gt; 0 → repeat every [Hour] hours, at that minute past the hour.
+          </span>
+        </div>
+      )}
+
+      {mode !== 'none' && mode !== 'hourly' && (
+        <div className="flex items-center gap-4 flex-wrap">
+          <input
+            type="time"
+            className="ui-input text-xs px-3 py-2 font-mono w-32"
+            value={time}
+            onChange={e => patch({ time: e.target.value })}
+          />
+
+          {mode === 'weekly' && (
+            <div className="flex items-center gap-1.5">
+              {DAY_LABELS.map((label, day) => {
+                const active = days.includes(day);
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    title={DAY_NAMES[day]}
+                    onClick={() => toggleDay(day)}
+                    className={`w-7 h-7 rounded-full text-[11px] font-bold border transition-colors ${
+                      active ? 'bg-[#B88719] border-[#B88719] text-white' : 'bg-white border-[#BFA66A] text-[#5F5F5F] hover:bg-[#FFF9E8]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {(mode === 'monthly' || mode === 'quarterly' || mode === 'yearly') && (
+            <label className="flex items-center gap-1.5 text-xs text-[#3F3F3F]">
+              Day of month
+              <input
+                type="number" min={1} max={31}
+                className="ui-input w-16 text-xs px-2 py-1 font-mono"
+                value={dayOfMonth}
+                onChange={e => patch({ dayOfMonth: Math.min(31, Math.max(1, parseInt(e.target.value, 10) || 1)) })}
+              />
+            </label>
+          )}
+
+          {mode === 'yearly' && (
+            <label className="flex items-center gap-1.5 text-xs text-[#3F3F3F]">
+              Month
+              <select
+                className="ui-input text-xs px-2 py-1"
+                value={month}
+                onChange={e => patch({ month: parseInt(e.target.value, 10) })}
+              >
+                {MONTH_NAMES.map((name, i) => <option key={name} value={i + 1}>{name}</option>)}
+              </select>
+            </label>
+          )}
+        </div>
+      )}
+
+      {mode !== 'none' && (
+        <div className="text-[11px] font-mono text-[#8A8A8A] mt-2">
+          {cronToHuman(buildCron(mode, time, days, dayOfMonth, month, hourEvery, minuteEvery))}
+          <div className="mt-1 text-[#5F5F5F]">{footnote}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface SourceRegistryProps {
   /** Sources with a run queued or running right now. Owned by the Knowledge Ops
    *  shell (like `promotingIds` for Data Layers) so the lock survives switching tabs. */
@@ -220,6 +455,9 @@ export const SourceRegistry = ({ activeSourceIds = new Set(), onRunQueued }: Sou
   const [scheduleMonth, setScheduleMonth] = useState(1);
   const [scheduleHourEvery, setScheduleHourEvery] = useState(0); // 0 = step by minute instead (see buildCron)
   const [scheduleMinuteEvery, setScheduleMinuteEvery] = useState(15);
+  // Mirrors create_source's own default (auto once a schedule is set) so the
+  // pill shown as "active" always matches what submitting would actually do.
+  const effectivePromotionMode: 'manual' | 'auto' = form.promotionModeOverride ?? (scheduleMode !== 'none' ? 'auto' : 'manual');
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -256,6 +494,10 @@ export const SourceRegistry = ({ activeSourceIds = new Set(), onRunQueued }: Sou
   const [selected, setSelected] = useState<SourceRow | null>(null);
   const [runs, setRuns] = useState<SourceRun[]>([]);
   const [runsLoading, setRunsLoading] = useState(false);
+  const [drawerTab, setDrawerTab] = useState<'runs' | 'edit'>('runs');
+  const [editForm, setEditForm] = useState<EditFormState | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const isActive = (s: SourceRow) =>
     activeSourceIds.has(s.id) || s.last_run_status === 'queued' || s.last_run_status === 'running';
@@ -306,11 +548,45 @@ export const SourceRegistry = ({ activeSourceIds = new Set(), onRunQueued }: Sou
 
   const openRuns = (source: SourceRow) => {
     setSelected(source);
+    setDrawerTab('runs');
+    setEditForm(editFormFromSource(source));
+    setEditError(null);
     setRunsLoading(true);
     apiGet<SourceRun[]>(`/api/knowledge/sources/${source.id}/runs`)
       .then(setRuns)
       .catch(() => setRuns([]))
       .finally(() => setRunsLoading(false));
+  };
+
+  // A source with a cron runs indefinitely — the upstream URL, an auth
+  // param, or the schedule itself may need to change without recreating the
+  // whole source (and losing its run history). PATCH keeps the same
+  // versioned-config shape update_source_config already implements.
+  const submitEdit = async () => {
+    if (!selected || !editForm) return;
+    if (!editForm.url.trim()) { setEditError('URL is required.'); return; }
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      const es = editForm.schedule;
+      const cron = buildCron(es.mode, es.time, es.days, es.dayOfMonth, es.month, es.hourEvery, es.minuteEvery);
+      const updated = await apiMutate<SourceRow>('PATCH', `/api/knowledge/sources/${selected.id}`, {
+        url: editForm.url.trim(), cron, render: editForm.render,
+        openbao_path: editForm.openbaoPath || undefined,
+        query_params: parseQueryParams(editForm.queryParamsText),
+        auth_style: editForm.openbaoPath ? editForm.authStyle : undefined,
+        auth_param_name: editForm.authStyle === 'query_param' ? editForm.authParamName || undefined : undefined,
+        recursive: editForm.recursive, max_depth: editForm.maxDepth, same_domain_only: editForm.sameDomainOnly,
+        promotion_mode: editForm.promotionMode,
+      });
+      setSelected(prev => (prev ? { ...prev, ...updated } : prev));
+      setDrawerTab('runs');
+      reload(true);
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : 'Failed to save changes.');
+    } finally {
+      setEditSaving(false);
+    }
   };
 
   const submitAdd = async () => {
@@ -342,6 +618,10 @@ export const SourceRegistry = ({ activeSourceIds = new Set(), onRunQueued }: Sou
           auth_style: form.openbaoPath ? form.authStyle : undefined,
           auth_param_name: form.authStyle === 'query_param' ? form.authParamName || undefined : undefined,
           recursive: form.recursive, max_depth: form.maxDepth, same_domain_only: form.sameDomainOnly,
+          // Undefined (no override touched) lets create_source apply its own
+          // default — auto for a scheduled source, manual otherwise — the
+          // same rule effectivePromotionMode previews in the form.
+          promotion_mode: form.promotionModeOverride ?? undefined,
         });
       }
       setShowAddForm(false);
@@ -352,10 +632,6 @@ export const SourceRegistry = ({ activeSourceIds = new Set(), onRunQueued }: Sou
     } finally {
       setSaving(false);
     }
-  };
-
-  const toggleDay = (day: number) => {
-    setScheduleDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day].sort());
   };
 
   const dropRemoved = (ids: string[]) =>
@@ -410,7 +686,7 @@ export const SourceRegistry = ({ activeSourceIds = new Set(), onRunQueued }: Sou
     setIsBatchRunning(true);
     const runIds: string[] = [];
     for (const source of selectedSources) {
-      if (isActive(source)) continue;
+      if (isActive(source) || source.connector_type === 'upload') continue; // nothing to re-fetch
       const runId = await queueRun(source.id);
       if (runId) runIds.push(runId);
     }
@@ -574,128 +850,41 @@ export const SourceRegistry = ({ activeSourceIds = new Set(), onRunQueued }: Sou
             )}
 
             <div className="col-span-2">
-              <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">Schedule</label>
-              <div className="flex items-center gap-1.5 flex-wrap mb-3">
-                {(Object.keys(SCHEDULE_MODE_LABEL) as ScheduleMode[]).map(mode => (
+              <SchedulePicker
+                mode={scheduleMode} time={scheduleTime} days={scheduleDays} dayOfMonth={scheduleDayOfMonth}
+                month={scheduleMonth} hourEvery={scheduleHourEvery} minuteEvery={scheduleMinuteEvery}
+                onChange={s => {
+                  setScheduleMode(s.mode); setScheduleTime(s.time); setScheduleDays(s.days);
+                  setScheduleDayOfMonth(s.dayOfMonth); setScheduleMonth(s.month);
+                  setScheduleHourEvery(s.hourEvery); setScheduleMinuteEvery(s.minuteEvery);
+                }}
+                footnote="This source runs immediately once created, then repeats on this schedule."
+              />
+            </div>
+
+            <div className="col-span-2">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">Promotion to Gold</label>
+              <div className="flex items-center gap-1.5">
+                {(['manual', 'auto'] as const).map(pmode => (
                   <button
-                    key={mode}
+                    key={pmode}
                     type="button"
-                    onClick={() => setScheduleMode(mode)}
-                    className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors whitespace-nowrap ${
-                      scheduleMode === mode
+                    onClick={() => setForm(f => ({ ...f, promotionModeOverride: pmode }))}
+                    className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors ${
+                      effectivePromotionMode === pmode
                         ? 'bg-[#B88719] border-[#B88719] text-white'
                         : 'bg-white border-[#BFA66A] text-[#5F5F5F] hover:bg-[#FFF9E8]'
                     }`}
                   >
-                    {SCHEDULE_MODE_LABEL[mode]}
+                    {pmode === 'manual' ? 'Manual' : 'Auto (straight to Gold)'}
                   </button>
                 ))}
-              </div>
-
-              {scheduleMode === 'none' && (
-                <div className="text-[11px] font-mono text-[#8A8A8A]">
-                  Never runs on a timer — only via "Run Now". Good for a true one-off, or a source with no fixed publication cadence.
-                </div>
-              )}
-
-              {scheduleMode === 'hourly' && (
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex items-center gap-4 flex-wrap">
-                    <label className="flex items-center gap-1.5 text-xs text-[#3F3F3F]">
-                      Hour
-                      <input
-                        type="number" min={0} max={23}
-                        className="ui-input w-16 text-xs px-2 py-1 font-mono"
-                        value={scheduleHourEvery}
-                        onChange={e => setScheduleHourEvery(Math.min(23, Math.max(0, parseInt(e.target.value, 10) || 0)))}
-                      />
-                    </label>
-                    <label className="flex items-center gap-1.5 text-xs text-[#3F3F3F]">
-                      Minute
-                      <input
-                        type="number" min={0} max={59}
-                        className="ui-input w-16 text-xs px-2 py-1 font-mono"
-                        value={scheduleMinuteEvery}
-                        onChange={e => setScheduleMinuteEvery(Math.min(59, Math.max(0, parseInt(e.target.value, 10) || 0)))}
-                      />
-                    </label>
-                  </div>
+                {form.promotionModeOverride === null && (
                   <span className="text-[10px] font-mono text-[#8A8A8A]">
-                    Hour = 0 → repeat every [Minute] minutes. Hour &gt; 0 → repeat every [Hour] hours, at that minute past the hour.
+                    (default — {scheduleMode !== 'none' ? 'scheduled sources default to Auto' : 'no schedule defaults to Manual'})
                   </span>
-                </div>
-              )}
-
-              {scheduleMode !== 'none' && scheduleMode !== 'hourly' && (
-                <div className="flex items-center gap-4 flex-wrap">
-                  <input
-                    type="time"
-                    className="ui-input text-xs px-3 py-2 font-mono w-32"
-                    value={scheduleTime}
-                    onChange={e => setScheduleTime(e.target.value)}
-                  />
-
-                  {scheduleMode === 'weekly' && (
-                    <div className="flex items-center gap-1.5">
-                      {DAY_LABELS.map((label, day) => {
-                        const active = scheduleDays.includes(day);
-                        return (
-                          <button
-                            key={day}
-                            type="button"
-                            title={DAY_NAMES[day]}
-                            onClick={() => toggleDay(day)}
-                            className={`w-7 h-7 rounded-full text-[11px] font-bold border transition-colors ${
-                              active
-                                ? 'bg-[#B88719] border-[#B88719] text-white'
-                                : 'bg-white border-[#BFA66A] text-[#5F5F5F] hover:bg-[#FFF9E8]'
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {(scheduleMode === 'monthly' || scheduleMode === 'quarterly' || scheduleMode === 'yearly') && (
-                    <label className="flex items-center gap-1.5 text-xs text-[#3F3F3F]">
-                      Day of month
-                      <input
-                        type="number" min={1} max={31}
-                        className="ui-input w-16 text-xs px-2 py-1 font-mono"
-                        value={scheduleDayOfMonth}
-                        onChange={e => setScheduleDayOfMonth(Math.min(31, Math.max(1, parseInt(e.target.value, 10) || 1)))}
-                      />
-                    </label>
-                  )}
-
-                  {scheduleMode === 'yearly' && (
-                    <label className="flex items-center gap-1.5 text-xs text-[#3F3F3F]">
-                      Month
-                      <select
-                        className="ui-input text-xs px-2 py-1"
-                        value={scheduleMonth}
-                        onChange={e => setScheduleMonth(parseInt(e.target.value, 10))}
-                      >
-                        {MONTH_NAMES.map((name, i) => <option key={name} value={i + 1}>{name}</option>)}
-                      </select>
-                    </label>
-                  )}
-                </div>
-              )}
-
-              {scheduleMode !== 'none' && (
-                <div className="text-[11px] font-mono text-[#8A8A8A] mt-2">
-                  {cronToHuman(buildCron(
-                    scheduleMode, scheduleTime, scheduleDays, scheduleDayOfMonth, scheduleMonth,
-                    scheduleHourEvery, scheduleMinuteEvery,
-                  ))}
-                  <div className="mt-1 text-[#5F5F5F]">
-                    The schedule starts once you press Run Now: that first run starts immediately, then it repeats on this schedule.
-                  </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
           <div className="flex justify-end gap-2">
@@ -868,6 +1057,8 @@ export const SourceRegistry = ({ activeSourceIds = new Set(), onRunQueued }: Sou
                               <span className="w-3 h-3 rounded-full border-2 border-[#B88719] border-t-[#B88719] animate-spin" />
                               {source.last_run_status === 'queued' ? 'Queued...' : 'Running...'}
                             </span>
+                          ) : source.connector_type === 'upload' ? (
+                            <span className="text-[10px] font-mono text-[#8A8A8A]" title="Re-upload the same title to add a new run">no fetch to re-run</span>
                           ) : (
                             <button onClick={() => runNow(source.id)} className="btn-ghost btn-sm" title="Run now">
                               Run Now
@@ -903,41 +1094,179 @@ export const SourceRegistry = ({ activeSourceIds = new Set(), onRunQueued }: Sou
         </div>
       )}
 
-      {/* ── Run history drawer ── */}
-      <DetailDrawer isOpen={!!selected} onClose={() => setSelected(null)} title={selected?.title || 'Source'} subtitle="Run history" icon={Globe}>
-        {runsLoading ? (
-          <div className="flex items-center gap-2 text-xs font-mono text-[#5F5F5F] p-6"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
-        ) : runs.length === 0 ? (
-          <div className="p-6 text-xs font-mono text-[#5F5F5F]">No runs yet — use "Run Now" or wait for the next scheduled tick.</div>
-        ) : (
-          <div className="divide-y divide-[#EDE6D3]">
-            {runs.map(run => (
-              <div key={run.run_id} className="p-4 space-y-1">
-                <div className="flex items-center justify-between">
-                  <span className={`px-2 py-0.5 rounded border text-[10px] font-bold uppercase ${STATUS_TONE[run.status] || ''}`}>{run.status}</span>
-                  <span className="text-[10px] font-mono text-[#8A8A8A]">{run.trigger} · {run.started_at.slice(0, 19).replace('T', ' ')}</span>
+      {/* ── Source detail drawer: Run history / Edit ── */}
+      <DetailDrawer
+        isOpen={!!selected}
+        onClose={() => setSelected(null)}
+        title={selected?.title || 'Source'}
+        subtitle={CONNECTOR_LABEL[selected?.connector_type || 'web_crawl']}
+        icon={Globe}
+        tabs={[{ id: 'runs', label: 'Run history', icon: Clock }, { id: 'edit', label: 'Edit', icon: Pencil }]}
+        activeTab={drawerTab}
+        onTabChange={(id) => setDrawerTab(id as 'runs' | 'edit')}
+      >
+        {drawerTab === 'runs' ? (
+          runsLoading ? (
+            <div className="flex items-center gap-2 text-xs font-mono text-[#5F5F5F] p-6"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</div>
+          ) : runs.length === 0 ? (
+            <div className="p-6 text-xs font-mono text-[#5F5F5F]">No runs yet — use "Run Now" or wait for the next scheduled tick.</div>
+          ) : (
+            <div className="divide-y divide-[#EDE6D3]">
+              {runs.map(run => (
+                <div key={run.run_id} className="p-4 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className={`px-2 py-0.5 rounded border text-[10px] font-bold uppercase ${STATUS_TONE[run.status] || ''}`}>{run.status}</span>
+                    <span className="text-[10px] font-mono text-[#8A8A8A]">{run.trigger} · {run.started_at.slice(0, 19).replace('T', ' ')}</span>
+                  </div>
+                  {run.error && <div className="text-xs font-mono text-red-600">{run.error}</div>}
+                  {run.quality_metrics?.unchanged === true && (
+                    <div className="text-xs font-mono text-[#5F5F5F]">
+                      No change since the last run — kept the existing document
+                      {run.quality_metrics.existing_tier ? ` (currently ${String(run.quality_metrics.existing_tier).toUpperCase()})` : ''}.
+                      Nothing new was added to Bronze.
+                    </div>
+                  )}
+                  {run.status === 'failed' && (
+                    <div className="text-[10px] font-mono text-amber-700">
+                      {run.retry_count >= MAX_RETRIES ? 'max retries reached' : `retry ${run.retry_count}/${MAX_RETRIES}`}
+                    </div>
+                  )}
+                  {run.quality_metrics && (
+                    <div className="text-[10px] font-mono text-[#5F5F5F]">
+                      {Object.entries(run.quality_metrics).filter(([, v]) => v !== null && v !== undefined)
+                        .map(([k, v]) => `${k}=${v}`).join(' · ')}
+                    </div>
+                  )}
                 </div>
-                {run.error && <div className="text-xs font-mono text-red-600">{run.error}</div>}
-                {run.quality_metrics?.unchanged === true && (
-                  <div className="text-xs font-mono text-[#5F5F5F]">
-                    No change since the last run — kept the existing document
-                    {run.quality_metrics.existing_tier ? ` (currently ${String(run.quality_metrics.existing_tier).toUpperCase()})` : ''}.
-                    Nothing new was added to Bronze.
-                  </div>
-                )}
-                {run.status === 'failed' && (
-                  <div className="text-[10px] font-mono text-amber-700">
-                    {run.retry_count >= MAX_RETRIES ? 'max retries reached' : `retry ${run.retry_count}/${MAX_RETRIES}`}
-                  </div>
-                )}
-                {run.quality_metrics && (
-                  <div className="text-[10px] font-mono text-[#5F5F5F]">
-                    {Object.entries(run.quality_metrics).filter(([, v]) => v !== null && v !== undefined)
-                      .map(([k, v]) => `${k}=${v}`).join(' · ')}
-                  </div>
-                )}
+              ))}
+            </div>
+          )
+        ) : selected && editForm && (
+          <div className="p-4 space-y-4">
+            {selected.connector_type === 'upload' ? (
+              <div className="text-xs font-mono text-[#5F5F5F]">
+                This entry records an uploaded file — there is no URL or schedule to edit. Re-upload the same title to add a new run.
               </div>
-            ))}
+            ) : (
+              <>
+                {editError && <div className="text-xs text-red-600 font-mono">{editError}</div>}
+                <div>
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">URL</label>
+                  <input
+                    className="ui-input w-full text-xs px-3 py-2 font-mono"
+                    value={editForm.url}
+                    onChange={e => setEditForm(f => f && { ...f, url: e.target.value })}
+                    placeholder="https://..."
+                  />
+                  <div className="text-[10px] font-mono text-[#8A8A8A] mt-1">
+                    Update this if the publisher moved the file/page/endpoint — the source keeps its title and run history.
+                  </div>
+                </div>
+
+                {(selected.connector_type === 'rest_api' || selected.connector_type === 'sdmx') && (
+                  <>
+                    <div>
+                      <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">Query Params (one "key=value" per line)</label>
+                      <textarea
+                        className="ui-input font-mono text-xs h-20 w-full px-3 py-2"
+                        value={editForm.queryParamsText}
+                        onChange={e => setEditForm(f => f && { ...f, queryParamsText: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">OpenBao Path (optional — auth credential)</label>
+                      <input
+                        className="ui-input w-full text-xs px-3 py-2 font-mono"
+                        value={editForm.openbaoPath}
+                        onChange={e => setEditForm(f => f && { ...f, openbaoPath: e.target.value })}
+                        placeholder="tenants/<tenant_id>/<key>"
+                      />
+                    </div>
+                    {editForm.openbaoPath && (
+                      <div className="flex items-end gap-3">
+                        <div className="flex-1">
+                          <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">Auth Style</label>
+                          <select
+                            className="ui-input w-full text-xs px-3 py-2"
+                            value={editForm.authStyle}
+                            onChange={e => setEditForm(f => f && { ...f, authStyle: e.target.value })}
+                          >
+                            <option value="bearer">Bearer header</option>
+                            <option value="query_param">Query param (e.g. api_key=)</option>
+                          </select>
+                        </div>
+                        {editForm.authStyle === 'query_param' && (
+                          <div className="flex-1">
+                            <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">Param Name</label>
+                            <input className="ui-input w-full text-xs px-3 py-2 font-mono" value={editForm.authParamName} onChange={e => setEditForm(f => f && { ...f, authParamName: e.target.value })} placeholder="api_key" />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {(selected.connector_type === 'web_crawl' || selected.connector_type === 'web_crawl_headless') && (
+                  <div className="flex items-center gap-4 flex-wrap">
+                    <label className="flex items-center gap-1.5 text-xs text-[#3F3F3F]">
+                      <input type="checkbox" checked={editForm.recursive} onChange={e => setEditForm(f => f && { ...f, recursive: e.target.checked })} />
+                      Follow links (recursive crawl)
+                    </label>
+                    {editForm.recursive && (
+                      <>
+                        <label className="flex items-center gap-1.5 text-xs text-[#3F3F3F]">
+                          Max depth
+                          <input
+                            type="number" min={1} max={5}
+                            className="ui-input w-16 text-xs px-2 py-1 font-mono"
+                            value={editForm.maxDepth}
+                            onChange={e => setEditForm(f => f && { ...f, maxDepth: parseInt(e.target.value, 10) || 1 })}
+                          />
+                        </label>
+                        <label className="flex items-center gap-1.5 text-xs text-[#3F3F3F]">
+                          <input type="checkbox" checked={editForm.sameDomainOnly} onChange={e => setEditForm(f => f && { ...f, sameDomainOnly: e.target.checked })} />
+                          Same domain only
+                        </label>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                <SchedulePicker
+                  {...editForm.schedule}
+                  onChange={s => setEditForm(f => f && { ...f, schedule: s })}
+                  footnote="Changing the schedule takes effect from the next run — it does not trigger an immediate re-run."
+                  unrepresentableCron={!isCronRepresentable(editForm.originalCron) ? editForm.originalCron : null}
+                />
+
+                <div>
+                  <label className="text-[11px] font-bold uppercase tracking-wider text-[#8A5A00] block mb-1.5">Promotion to Gold</label>
+                  <div className="flex items-center gap-1.5">
+                    {(['manual', 'auto'] as const).map(mode => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => setEditForm(f => f && { ...f, promotionMode: mode })}
+                        className={`px-3 py-1.5 rounded-full text-[11px] font-bold border transition-colors ${
+                          editForm.promotionMode === mode
+                            ? 'bg-[#B88719] border-[#B88719] text-white'
+                            : 'bg-white border-[#BFA66A] text-[#5F5F5F] hover:bg-[#FFF9E8]'
+                        }`}
+                      >
+                        {mode === 'manual' ? 'Manual' : 'Auto (straight to Gold)'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button className="btn-ghost btn-sm" onClick={() => { setEditForm(editFormFromSource(selected)); setEditError(null); }}>Reset</button>
+                  <button className="btn-gold !text-xs" onClick={submitEdit} disabled={editSaving}>
+                    {editSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} Save
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
       </DetailDrawer>
@@ -1078,7 +1407,11 @@ export const SourceRegistry = ({ activeSourceIds = new Set(), onRunQueued }: Sou
                       <div className="min-w-0">
                         <h4 className="text-xs font-bold text-slate-100 uppercase tracking-tight truncate max-w-[240px]">{source.title}</h4>
                         <span className="text-[9px] font-mono text-[#5F5F5F] uppercase tracking-widest mt-0.5 block">
-                          {isActive(source) ? 'Already queued or running — will be skipped' : `ID: ${source.id}`}
+                          {isActive(source)
+                            ? 'Already queued or running — will be skipped'
+                            : source.connector_type === 'upload'
+                              ? 'Uploaded file — no fetch to re-run, will be skipped'
+                              : `ID: ${source.id}`}
                         </span>
                       </div>
                     </div>

@@ -17,7 +17,7 @@ from fastapi import HTTPException
 
 from services.kb_backend.operations import source_ops
 from services.kb_backend.router.knowledge import sources as sources_router
-from services.kb_backend.schemas import BulkImportRequest
+from services.kb_backend.schemas import BulkImportRequest, CreateSourceRequest
 
 pytestmark = pytest.mark.unit
 
@@ -100,6 +100,83 @@ def test_an_explicit_promotion_mode_overrides_the_cron_based_default() -> None:
         "cron": "0 3 * * *", "promotion_mode": "manual",
     })
     assert config.promotion_mode == "manual"
+
+
+def test_create_source_route_auto_runs_regardless_of_schedule() -> None:
+    """Adding a source means "put this in Bronze" — no separate Run Now click
+    is required afterward, whether or not the source has a cron."""
+    async def _create(_pg: Any, body: dict[str, Any], **_: Any) -> dict[str, Any]:
+        return {"id": "new-source", "title": body["title"]}
+
+    queued: list[tuple[str, str]] = []
+
+    async def _queue(_pg: Any, source_id: str, tenant_id: str) -> dict[str, Any]:
+        queued.append((source_id, tenant_id))
+        return {"run_id": "r1", "status": "queued", "source_id": source_id}
+
+    async def _run(cron: str) -> Any:
+        with (
+            patch.object(sources_router, "create_source", _create),
+            patch.object(sources_router, "queue_run_now", _queue),
+            patch.object(sources_router, "svc", lambda *_: object()),
+        ):
+            body = CreateSourceRequest(title="X", connector_type="http_file", url="https://x/a.pdf", cron=cron)
+            return await sources_router.create_source_route(body, object(), {"user_name": "u", "tenant_id": "t", "role_id": "r"})
+
+    asyncio.run(_run(""))
+    asyncio.run(_run("0 3 * * *"))
+    assert queued == [("new-source", "t"), ("new-source", "t")]
+
+
+def test_create_source_route_auto_run_failure_does_not_fail_the_create() -> None:
+    async def _create(_pg: Any, body: dict[str, Any], **_: Any) -> dict[str, Any]:
+        return {"id": "new-source", "title": body["title"]}
+
+    async def _queue(*_: Any, **__: Any) -> dict[str, Any]:
+        raise RuntimeError("kafka/db hiccup")
+
+    async def _run() -> Any:
+        with (
+            patch.object(sources_router, "create_source", _create),
+            patch.object(sources_router, "queue_run_now", _queue),
+            patch.object(sources_router, "svc", lambda *_: object()),
+        ):
+            body = CreateSourceRequest(title="X", connector_type="http_file", url="https://x/a.pdf", cron="")
+            return await sources_router.create_source_route(body, object(), {"user_name": "u", "tenant_id": "t", "role_id": "r"})
+
+    result = asyncio.run(_run())  # must not raise
+    assert result.data["id"] == "new-source"
+
+
+def test_bulk_import_auto_runs_every_created_row() -> None:
+    yaml_text = """
+sources:
+  - {id: a, title: First, connector: http-file, sample_urls: [https://x/a.pdf]}
+"""
+
+    async def _create(_pg: Any, body: dict[str, Any], **_: Any) -> dict[str, Any]:
+        return {"id": "new", "title": body["title"]}
+
+    queued: list[str] = []
+
+    async def _queue(_pg: Any, source_id: str, tenant_id: str) -> dict[str, Any]:
+        queued.append(source_id)
+        return {"run_id": "r1", "status": "queued", "source_id": source_id}
+
+    async def _run() -> Any:
+        with (
+            patch.object(sources_router, "create_source", _create),
+            patch.object(sources_router, "queue_run_now", _queue),
+            patch.object(sources_router, "svc", lambda *_: object()),
+        ):
+            return await sources_router.bulk_import_sources_route(
+                BulkImportRequest(yaml_text=yaml_text), object(),
+                {"user_name": "u", "tenant_id": "t", "role_id": "r"},
+            )
+
+    response = asyncio.run(_run())
+    assert [c["title"] for c in response.data["created"]] == ["First"]
+    assert queued == ["new"]
 
 
 def test_bulk_import_skips_a_duplicate_instead_of_aborting_the_whole_import() -> None:

@@ -6,6 +6,7 @@ what's due off "KBSourceRun"); this router owns writes and the manual
 """
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -24,6 +25,7 @@ from services.kb_backend.operations.source_ops import (
 )
 
 _SUPPORTED_CONNECTORS = {c.value for c in SourceConnectorType}
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/knowledge/sources", tags=["Knowledge-Sources"])
 
@@ -46,16 +48,33 @@ async def list_activity_route(
     return ResponseModel(code=200, data=result)
 
 
+async def _auto_run(postgres: Any, source_id: str, tenant_id: str) -> None:
+    """Adding a source means "I want this in Bronze" — there is no reason to
+    make the steward click Run Now right after, whether or not it has a
+    schedule (a cron's "next run" is simply computed forward from this first
+    run's started_at, so nothing else needs to know a run was "the first
+    one"). Best-effort: a queueing hiccup must not fail source creation
+    itself, and Run Now stays available on the source afterward regardless."""
+    try:
+        await queue_run_now(postgres, source_id, tenant_id=tenant_id)
+    except HTTPException:
+        pass  # already queued/running somehow — nothing to do
+    except Exception:  # noqa: BLE001 — creation already succeeded, don't fail the request over this
+        log.warning("auto-run: failed to queue the first run for source_id=%s", source_id, exc_info=True)
+
+
 @router.post("", response_model=ResponseModel)
 async def create_source_route(
         body: CreateSourceRequest,
         request: Request,
         ctx: dict[str, Any] = Depends(require_perm("addSource")),
 ) -> ResponseModel[Any]:
+    postgres = svc(request, "postgres")
     result = await create_source(
-        svc(request, "postgres"), body.model_dump(), created_by=ctx["user_name"],
+        postgres, body.model_dump(), created_by=ctx["user_name"],
         tenant_id=ctx["tenant_id"], role_id=ctx["role_id"],
     )
+    await _auto_run(postgres, result["id"], ctx["tenant_id"])
     return ResponseModel(code=200, data=result)
 
 
@@ -248,7 +267,14 @@ async def bulk_import_sources_route(
     list, or a bare list) as `yaml_text` — paste the file's contents. Rows
     whose connector isn't in SourceConnectorType (manual-upload/bulk-parquet)
     are reported back under `skipped` with a reason; a row bundling several
-    files (see _entry_to_create_requests) creates one source per file."""
+    files (see _entry_to_create_requests) creates one source per file.
+
+    Every created row is auto-run immediately, same as a single interactive
+    add (see _auto_run) — the frontend's confirm step (reviewing/editing the
+    parsed rows before calling this endpoint) is what stands in for the old
+    "create now, batch-run later" gate: the storm risk that gate protected
+    against is a review the steward has, by this point, already done once
+    for the whole batch, not per row afterward."""
     try:
         parsed = yaml.safe_load(body.yaml_text)
     except yaml.YAMLError as e:
@@ -280,6 +306,7 @@ async def bulk_import_sources_route(
                     raise
                 skipped.append({"title": req.title, "reason": "already registered"})
                 continue
+            await _auto_run(postgres, result["id"], ctx["tenant_id"])
             created.append(result)
 
     return ResponseModel(code=200, data={"created": created, "skipped": skipped})
