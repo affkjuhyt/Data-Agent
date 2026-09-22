@@ -791,7 +791,10 @@ export const AssetDetailWorkspace = ({
                                    <p className="text-xs text-[#5A5A5A]">No text has been extracted from this document yet.</p>
                                 </div>
                              ) : (
-                                <div className="w-full max-w-3xl content-card content-card--static p-8">
+                                // self-start: the scroll container is a fixed-height flex row, so the
+                                // default stretch clamped this card to the viewport height and long
+                                // text overflowed past its border.
+                                <div className="w-full max-w-3xl content-card content-card--static p-8 self-start">
                                    <pre className="whitespace-pre-wrap break-words text-xs font-mono text-[#2A2A2A] leading-relaxed">
                                      {chunks.map(c => c.text).join('\n\n---\n\n')}
                                    </pre>
