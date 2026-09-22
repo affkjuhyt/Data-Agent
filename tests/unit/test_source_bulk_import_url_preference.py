@@ -30,9 +30,8 @@ def _entry(connector: str) -> dict:
     }
 
 
-@pytest.mark.parametrize("connector", ["http-file", "rss", "rest-api", "sdmx"])
-def test_direct_fetch_connectors_prefer_sample_urls_over_landing_url(connector: str) -> None:
-    reqs, reason = _entry_to_create_requests(_entry(connector))
+def test_file_download_uses_sample_urls_not_the_landing_page() -> None:
+    reqs, reason = _entry_to_create_requests(_entry("http-file"))
     assert reason is None
     assert [r.url for r in reqs] == [_MIRROR]
 
@@ -44,12 +43,12 @@ def test_crawl_connectors_still_prefer_landing_url(connector: str) -> None:
     assert [r.url for r in reqs] == [_LANDING]
 
 
-def test_falls_back_to_landing_url_when_no_sample_urls() -> None:
+def test_file_download_with_only_a_landing_page_is_skipped_not_saved_as_the_file() -> None:
     entry = _entry("http-file")
     del entry["sample_urls"]
     reqs, reason = _entry_to_create_requests(entry)
-    assert reason is None
-    assert [r.url for r in reqs] == [_LANDING]
+    assert reqs == []
+    assert reason is not None and "landing page" in reason
 
 
 def test_yearly_schedule_maps_to_a_once_a_year_cron() -> None:

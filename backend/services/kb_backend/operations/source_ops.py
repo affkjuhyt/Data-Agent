@@ -6,12 +6,16 @@ of the same kind, just fetched by a URL+cron instead of a DB connection.
 from __future__ import annotations
 
 import base64
+import datetime
 import uuid
 from typing import Any
 
 from fastapi import HTTPException
 from sqlalchemy import func as sa_func
+from sqlalchemy import or_ as sa_or
 from sqlalchemy import select as sa_select
+
+from libs.shared.cron import next_run_after
 
 from libs.basemodel.services_databaseconnector.postgres_model import (
     KBSourceConfigInsert,
@@ -28,6 +32,13 @@ from services.kb_backend.operations.pagination import PAGE_SIZE, build_cursor_pa
 
 _VALID_CONNECTOR_TYPES = {"http_file", "web_crawl", "web_crawl_headless", "rss", "rest_api", "sdmx"}
 
+_ACTIVE_RUN_STATUSES = ("queued", "running")
+# A run that has been queued or running this long is a worker that died, not a
+# slow crawl (the worker marks such rows failed too); it must not lock the
+# source forever.
+_STALE_RUN_AFTER = datetime.timedelta(minutes=30)
+_RECENT_FINISH_WINDOW = datetime.timedelta(minutes=2)
+
 
 def _decode_offset(cursor: str | None) -> int:
     if not cursor:
@@ -38,6 +49,19 @@ def _decode_offset(cursor: str | None) -> int:
         return 0
 
 
+def _next_run_at(cron: str | None, last_started: datetime.datetime | None) -> str | None:
+    """When the worker will next start this source on its own: the next cron
+    occurrence after its last run. None for a manual-only source, and for one
+    that has not started yet (a schedule begins with the first run)."""
+    if not cron or not cron.strip() or last_started is None:
+        return None
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if last_started.tzinfo is None:
+        last_started = last_started.replace(tzinfo=datetime.timezone.utc)
+    following = next_run_after(cron, last_started)
+    return max(following, now).isoformat() if following else None
+
+
 def _to_response(row: dict[str, Any], active_cfg: dict[str, Any] | None, last_run: dict[str, Any] | None) -> dict[str, Any]:
     """`row` is always a plain dict (never a live ORM instance) — see
     `_source_row`'s docstring for why."""
@@ -45,6 +69,7 @@ def _to_response(row: dict[str, Any], active_cfg: dict[str, Any] | None, last_ru
     last_run_started = (last_run or {}).get("started_at")
     created_at = row.get("created_at")
     return {
+        "next_run_at": _next_run_at(cfg.get("cron"), last_run_started),
         "id": str(row["source_id"]),
         "title": row["title"],
         "publisher": row["publisher"],
@@ -158,6 +183,24 @@ async def create_source(postgres: Any, body: dict[str, Any], created_by: str, te
     # a schedule the friendly picker can express yet (e.g. a true one-off, or
     # an irregular publication with no fixed cadence).
 
+    # The Bronze document is named after the source title (unique per tenant),
+    # so a second source with the same title would silently overwrite the
+    # first one's document on every run.
+    async with postgres.get_client() as session:
+        taken = await session.scalar(
+            sa_select(KBSourceORM.source_id).where(
+                KBSourceORM.tenant_id == uuid.UUID(tenant_id),
+                KBSourceORM.title == body["title"],
+                KBSourceORM.is_deleted == False,  # noqa: E712
+            ).limit(1)
+        )
+    if taken is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"A source titled {body['title']!r} already exists — its Bronze document is named after "
+                   "the title, so a second one would overwrite it. Use a different title.",
+        )
+
     src_ins = await postgres.insert(KBSourceInsert(
         tenant_id=tenant_id, role_id=role_id, connector_type=connector_type,
         title=body["title"], publisher=body.get("publisher"), created_by=created_by,
@@ -254,4 +297,67 @@ async def list_source_runs(postgres: Any, source_id: str, tenant_id: str) -> lis
                 "quality_metrics": r.quality_metrics,
             }
             for r in runs
+        ]
+
+
+async def queue_run_now(postgres: Any, source_id: str, tenant_id: str) -> dict[str, Any]:
+    """Records a manual run as `queued`; the worker picks queued rows up on its
+    next tick. The row (not a Kafka message) is the queue, so Run Now works
+    even when Kafka is down and the UI can show what is waiting."""
+    await _source_row(postgres, source_id, tenant_id)  # existence + tenant check
+    source_uuid = uuid.UUID(source_id)
+    cutoff = datetime.datetime.now(datetime.timezone.utc) - _STALE_RUN_AFTER
+    async with postgres.get_client() as session:
+        active = await session.scalar(
+            sa_select(KBSourceRunORM.run_id).where(
+                KBSourceRunORM.source_id == source_uuid,
+                KBSourceRunORM.status.in_(_ACTIVE_RUN_STATUSES),
+                KBSourceRunORM.started_at > cutoff,
+            ).limit(1)
+        )
+        if active is not None:
+            raise HTTPException(status_code=409, detail="This source is already queued or running")
+        run = KBSourceRunORM(source_id=source_uuid, status="queued", trigger="manual", retry_count=0)
+        session.add(run)
+        await session.flush()
+        run_id = str(run.run_id)
+        await session.commit()
+    return {"run_id": run_id, "status": "queued", "source_id": source_id}
+
+
+async def list_recent_activity(postgres: Any, tenant_id: str) -> list[dict[str, Any]]:
+    """Runs that are queued/running plus ones that finished moments ago — what
+    the Activity panel shows, across every source of the tenant."""
+    tenant_uuid = uuid.UUID(tenant_id)
+    finished_after = datetime.datetime.now(datetime.timezone.utc) - _RECENT_FINISH_WINDOW
+    async with postgres.get_client() as session:
+        rows = (await session.execute(
+            sa_select(
+                KBSourceRunORM.run_id, KBSourceRunORM.source_id, KBSourceORM.title,
+                KBSourceRunORM.status, KBSourceRunORM.trigger, KBSourceRunORM.started_at,
+                KBSourceRunORM.finished_at, KBSourceRunORM.error, KBSourceRunORM.quality_metrics,
+            )
+            .join(KBSourceORM, KBSourceORM.source_id == KBSourceRunORM.source_id)
+            .where(
+                KBSourceORM.tenant_id == tenant_uuid,
+                KBSourceORM.is_deleted == False,  # noqa: E712
+                sa_or(
+                    KBSourceRunORM.status.in_(_ACTIVE_RUN_STATUSES),
+                    KBSourceRunORM.finished_at > finished_after,
+                ),
+            )
+            .order_by(KBSourceRunORM.started_at.desc())
+            .limit(50)
+        )).all()
+        return [
+            {
+                "run_id": str(r.run_id), "source_id": str(r.source_id), "title": r.title,
+                "status": r.status, "trigger": r.trigger,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+                "error": r.error,
+                "unchanged": bool((r.quality_metrics or {}).get("unchanged")),
+                "existing_tier": (r.quality_metrics or {}).get("existing_tier"),
+            }
+            for r in rows
         ]

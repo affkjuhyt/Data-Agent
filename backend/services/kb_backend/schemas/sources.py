@@ -62,6 +62,7 @@ class SourceResponse(BaseModel):
     created_at: str
     last_run_status: Optional[str] = None
     last_run_at: Optional[str] = None
+    next_run_at: Optional[str] = None
 
 
 class SourceRunResponse(BaseModel):

@@ -50,3 +50,15 @@ def cron_due(cron: str, base: dt.datetime, now: dt.datetime) -> bool:
                 return cursor <= now
             cursor += dt.timedelta(minutes=1)
         return False
+
+
+def next_run_after(cron: str, base: dt.datetime) -> dt.datetime | None:
+    """First occurrence of `cron` after `base`; None for an empty or invalid
+    schedule (a manual-only source has no next run)."""
+    if not cron or not cron.strip():
+        return None
+    try:
+        from croniter import croniter
+        return croniter(cron, base).get_next(dt.datetime)  # type: ignore[no-any-return]
+    except Exception:
+        return None

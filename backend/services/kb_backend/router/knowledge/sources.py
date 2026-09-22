@@ -6,7 +6,9 @@ what's due off "KBSourceRun"); this router owns writes and the manual
 """
 from __future__ import annotations
 
+import re
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -18,20 +20,12 @@ from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.schemas import CreateSourceRequest, UpdateSourceConfigRequest, BulkImportRequest
 from services.kb_backend.operations.source_ops import (
     list_sources, create_source, update_source_config, delete_source, list_source_runs,
+    queue_run_now, list_recent_activity,
 )
 
 _SUPPORTED_CONNECTORS = {c.value for c in SourceConnectorType}
-_DEFAULT_CRON = "0 3 * * *"  # daily at 03:00 — a bulk-imported source without its own `schedule` still gets one
 
 router = APIRouter(prefix="/api/knowledge/sources", tags=["Knowledge-Sources"])
-
-# Consumed by platform_workers/workers/web_crawler/worker.py's best-effort
-# manual-trigger consumer — same decoupled shape as schema_crawler's
-# ddl.changes topic, so "Run Now" works even without a live consumer (it
-# just waits for the next scheduled cron tick instead, per the message
-# staying on the topic).
-MANUAL_TRIGGER_TOPIC = "web-crawl.manual-trigger"
-
 
 @router.get("", response_model=ResponseModel)
 async def list_sources_route(
@@ -40,6 +34,15 @@ async def list_sources_route(
         cursor: str | None = None,
 ) -> ResponseModel[Any]:
     result = await list_sources(svc(request, "postgres"), tenant_id=ctx["tenant_id"], cursor=cursor)
+    return ResponseModel(code=200, data=result)
+
+
+@router.get("/activity", response_model=ResponseModel)
+async def list_activity_route(
+        request: Request,
+        ctx: dict[str, Any] = Depends(require_perm("viewSources")),
+) -> ResponseModel[Any]:
+    result = await list_recent_activity(svc(request, "postgres"), tenant_id=ctx["tenant_id"])
     return ResponseModel(code=200, data=result)
 
 
@@ -93,10 +96,9 @@ async def list_source_runs_route(
 
 _SCHEDULE_WORD_TO_CRON = {
     # Best-effort mapping from the free-text `schedule` phrases the ANKT
-    # registry uses to a 5-field cron. Anything not recognised (e.g. "monthly
-    # (day 3-6)", "every 15 min") falls back to _DEFAULT_CRON — a steward can
-    # tighten it afterward via PATCH; bulk-import's job is to get all ~30
-    # sources registered in one action, not to perfectly parse every phrasing.
+    # registry uses to a 5-field cron. A phrase that is not recognised gives
+    # NO schedule (manual only) rather than a guessed one: a wrong cadence
+    # silently re-fetches on a timer nobody asked for.
     "hourly": "0 * * * *",
     "daily": "0 3 * * *",
     "semi-monthly": "0 3 1,15 * *",
@@ -106,57 +108,122 @@ _SCHEDULE_WORD_TO_CRON = {
     "semi-annual": "0 3 1 1,7 *",
     "yearly": "0 3 1 1 *",
 }
+_EVERY_MINUTES = re.compile(r"^every\s+(\d+)\s*(?:min|mins|minute|minutes)\b")
+_EVERY_HOURS = re.compile(r"^every\s+(\d+)\s*(?:h|hr|hrs|hour|hours)\b")
+_ENV_PLACEHOLDER = re.compile(r"^\$\{[A-Za-z0-9_]+\}$")
+
+
+def _schedule_to_cron(text: Any) -> str:
+    """"" (manual only) when the row has no schedule or one we cannot read."""
+    phrase = str(text or "").strip().lower()
+    if not phrase:
+        return ""
+    minutes = _EVERY_MINUTES.match(phrase)
+    if minutes and 1 <= int(minutes.group(1)) <= 59:
+        return f"*/{int(minutes.group(1))} * * * *"
+    hours = _EVERY_HOURS.match(phrase)
+    if hours and 1 <= int(hours.group(1)) <= 23:
+        return f"0 */{int(hours.group(1))} * * *"
+    return _SCHEDULE_WORD_TO_CRON.get(phrase.split(" ")[0], "")
+
+
+def _as_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value] if value else []
+    return [v for v in (value or []) if isinstance(v, str) and v]
+
+
+def _pick_urls(connector: str, entry: dict) -> tuple[list[str], str | None]:
+    """The URL(s) to fetch for one registry row, or ([], reason).
+
+    Each connector type keeps its fetchable address in a different field, and
+    `landing_url` is usually the page a person browses, not the resource:
+    - http_file: `sample_urls` (the files themselves; one source per file);
+    - web_crawl*: `landing_url` (crawling the page is the point);
+    - rss: `api_base` (the feed URL);
+    - rest_api / sdmx: `examples` / `example` (a complete request), else
+      `api_base` (the endpoint)."""
+    landing = entry.get("landing_url")
+    if connector == "http_file":
+        files = _as_list(entry.get("sample_urls"))
+        if files:
+            return files, None
+        if landing:
+            return [], "only a landing page, not the file (add the direct file URL as sample_urls)"
+        return [], "no sample_urls (direct file URL) to fetch"
+    if connector in ("web_crawl", "web_crawl_headless"):
+        urls = [landing] if landing else _as_list(entry.get("sample_urls"))[:1] or _as_list(entry.get("api_base"))
+        return urls, None if urls else "no landing_url to crawl"
+    if connector == "rss":
+        urls = _as_list(entry.get("api_base")) or _as_list(entry.get("example"))
+        return urls[:1], None if urls else "no api_base (feed URL) to fetch"
+    urls = _as_list(entry.get("examples")) + _as_list(entry.get("example")) or _as_list(entry.get("api_base"))
+    return urls, None if urls else "no example or api_base URL to fetch"
+
+
+def _strip_env_placeholder(url: str) -> tuple[str, str | None]:
+    """`...&api_key=${FRED_API_KEY}` -> (url without that parameter, "api_key").
+    The placeholder is not a value; the parameter is sent at run time as the
+    source's credential, not stored in the URL."""
+    parts = urlsplit(url)
+    pairs = parse_qsl(parts.query, keep_blank_values=True)
+    kept = [(k, v) for k, v in pairs if not _ENV_PLACEHOLDER.match(v)]
+    if len(kept) == len(pairs):
+        return url, None
+    dropped = next(k for k, v in pairs if _ENV_PLACEHOLDER.match(v))
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(kept), parts.fragment)), dropped
+
+
+_FILE_EXTENSIONS = frozenset({"pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "csv", "json", "xml", "txt", "zip"})
+
+
+def _url_label(url: str, index: int) -> str:
+    """Short suffix that tells the sources of one row apart: the file extension
+    for a download, else the dataset segment after /data/ (BIS: WS_XRU). An API
+    path ends in a dotted key (".../M.VN.VND.A"), so only known file
+    extensions count as one."""
+    segments = [part for part in urlsplit(url).path.split("/") if part]
+    last = segments[-1] if segments else ""
+    extension = last.rsplit(".", 1)[-1].lower() if "." in last else ""
+    if extension in _FILE_EXTENSIONS:
+        return extension.upper()
+    if "data" in segments and segments.index("data") + 1 < len(segments):
+        return segments[segments.index("data") + 1]
+    return str(index + 1)
 
 
 def _entry_to_create_requests(entry: dict) -> tuple[list[CreateSourceRequest], str | None]:
     """One ANKT registry row -> one or more CreateSourceRequests, or ([], reason)
-    if this connector type still isn't ingestible (manual-upload/bulk-parquet —
-    the latter is a one-off dataset import, never a scheduled KBSource, see
-    the crawl-feature plan's "Explicitly deferred").
+    if the row cannot become a scheduled source (manual-upload / bulk-parquet
+    are one-off imports; a row without a connector has nothing to fetch; the
+    address may be missing).
 
-    More than one request comes out when a single registry row actually
-    bundles several distinct files — real example: an NSO monthly report row
-    with `format: [docx, xlsx]` and two `sample_urls`, one narrative report
-    and one data-table workbook. KBSourceConfig has exactly one `url`, so
-    each file becomes its own source (matching how Document Hub already
-    treats each upload as its own document) rather than silently keeping
-    only sample_urls[0] and dropping the rest."""
-    raw_connector = str(entry.get("connector", "")).strip().replace("-", "_")
+    More than one request comes out when a single row really bundles several
+    things to fetch — an NSO report's DOCX plus XLSX, or a dataset with several
+    example queries. KBSourceConfig has exactly one `url`, so each becomes its
+    own source (as Document Hub treats each upload as its own document)."""
+    raw_connector = str(entry.get("connector") or "").strip().replace("-", "_")
+    if not raw_connector:
+        return [], "no connector declared (nothing to fetch)"
     if raw_connector not in _SUPPORTED_CONNECTORS:
         return [], f"connector={entry.get('connector')!r} is not ingestible by the V1 worker yet"
 
-    # http_file/rss/rest_api/sdmx need a literal fetchable resource URL — a
-    # registry's `landing_url` is usually the browse/listing HTML page a
-    # human would open (real example: an ANKT entry whose http_file
-    # `landing_url` is an `.htm` page with the actual PDF one level down at
-    # `sample_urls[0]`, plus a note that the landing page's DNS doesn't even
-    # resolve from this server). web_crawl/*_headless genuinely want the
-    # landing page itself, since crawling IS the point, so those keep
-    # preferring it and never fan out to sample_urls at all.
-    sample_urls = [u for u in (entry.get("sample_urls") or []) if u]
-    direct_fetch = raw_connector in ("http_file", "rss", "rest_api", "sdmx")
-    if direct_fetch and sample_urls:
-        urls = sample_urls
-    else:
-        landing = entry.get("landing_url")
-        urls = [landing] if landing else (sample_urls[:1] if not direct_fetch else [])
+    urls, reason = _pick_urls(raw_connector, entry)
     if not urls:
-        return [], "no landing_url or sample_urls to crawl"
+        return [], reason or "no URL to fetch"
 
-    schedule_raw = str(entry.get("schedule", "")).strip().lower()
-    cron = _SCHEDULE_WORD_TO_CRON.get(schedule_raw.split(" ")[0], _DEFAULT_CRON)
-
+    cron = _schedule_to_cron(entry.get("schedule"))
     base_title = entry.get("title") or entry.get("id") or urls[0]
     fmt = entry.get("format")
     requests = []
-    for url in urls:
-        # Multiple files under one row: suffix the title with the actual file
-        # extension (not the `format` list's own order, which isn't
-        # guaranteed to line up positionally with sample_urls) so the two
-        # resulting sources are distinguishable in the registry list.
-        title = base_title if len(urls) == 1 else f"{base_title} — {url.rsplit('.', 1)[-1].upper()}"
+    for index, raw_url in enumerate(urls):
+        url, credential_param = _strip_env_placeholder(raw_url)
+        notes = entry.get("notes")
+        if credential_param:
+            hint = f"API key expected as the '{credential_param}' parameter; set its OpenBao path."
+            notes = f"{notes} {hint}" if notes else hint
         requests.append(CreateSourceRequest(
-            title=title,
+            title=base_title if len(urls) == 1 else f"{base_title} — {_url_label(url, index)}",
             publisher=entry.get("publisher"),
             connector_type=raw_connector,
             url=url,
@@ -164,7 +231,9 @@ def _entry_to_create_requests(entry: dict) -> tuple[list[CreateSourceRequest], s
             cron=cron,
             render=raw_connector == "web_crawl_headless",
             variables=entry.get("variables"),
-            notes=entry.get("notes"),
+            notes=notes,
+            auth_style="query_param" if credential_param else None,
+            auth_param_name=credential_param,
         ))
     return requests, None
 
@@ -201,10 +270,16 @@ async def bulk_import_sources_route(
             skipped.append({"title": entry.get("title") or entry.get("id") or "?", "reason": reason or "unknown"})
             continue
         for req in requests:
-            result = await create_source(
-                postgres, req.model_dump(), created_by=ctx["user_name"],
-                tenant_id=ctx["tenant_id"], role_id=ctx["role_id"],
-            )
+            try:
+                result = await create_source(
+                    postgres, req.model_dump(), created_by=ctx["user_name"],
+                    tenant_id=ctx["tenant_id"], role_id=ctx["role_id"],
+                )
+            except HTTPException as exc:
+                if exc.status_code != 409:
+                    raise
+                skipped.append({"title": req.title, "reason": "already registered"})
+                continue
             created.append(result)
 
     return ResponseModel(code=200, data={"created": created, "skipped": skipped})
@@ -216,16 +291,5 @@ async def run_source_now_route(
         request: Request,
         ctx: dict[str, Any] = Depends(require_perm("runSource")),
 ) -> ResponseModel[Any]:
-    # Validate the source exists (and is this tenant's) before publishing —
-    # a 404 here is much easier to act on than a silently-ignored Kafka event.
-    await list_source_runs(svc(request, "postgres"), source_id, tenant_id=ctx["tenant_id"])
-
-    kafka_producer = svc(request, "kafka_producer")
-    try:
-        await kafka_producer.produce(
-            topic=MANUAL_TRIGGER_TOPIC,
-            value={"event": "run_now", "source_id": source_id, "tenant_id": ctx["tenant_id"]},
-        )
-    except Exception as e:
-        raise HTTPException(status_code=503, detail=f"Could not queue run-now: {e}")
-    return ResponseModel(code=200, data={"status": "queued", "source_id": source_id})
+    result = await queue_run_now(svc(request, "postgres"), source_id, tenant_id=ctx["tenant_id"])
+    return ResponseModel(code=200, data=result)
