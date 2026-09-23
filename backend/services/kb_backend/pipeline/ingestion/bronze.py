@@ -35,6 +35,7 @@ class BronzeUploadRequest(BaseModel):
     content_type: str = "application/octet-stream"
     knowledge_base_id: str | None = None
     ingestion_mode: str = "document"
+    purpose: str = "production"
 
 
 class WebBronzeRequest(BaseModel):
@@ -47,6 +48,7 @@ class WebBronzeRequest(BaseModel):
     added_by:     str
     abstract:     str = ""
     knowledge_base_id: str | None = None
+    purpose: str = "production"
 
 log = logging.getLogger(__name__)
 
@@ -75,6 +77,7 @@ async def upload_to_bronze(
     doc_metadata: Any,
     knowledge_base_id: str | None = None,
     ingestion_mode: str = "document",
+    purpose: str = "production",
 ) -> dict[str, Any]:
     if len(file_data) > cfg.MAX_FILE_SIZE_BYTES:
         raise ValueError(
@@ -103,6 +106,7 @@ async def upload_to_bronze(
         doc_metadata=doc_metadata,
         current_tier=Tier.BRONZE,
         ingestion_mode=ingestion_mode,
+        purpose=purpose,
         path=object_key,
         # Same dedup column the scheduled-source worker uses (web_crawler/bronze.py)
         # — router/knowledge/ingestion.py's ingest_bronze checks it against the
@@ -161,6 +165,7 @@ async def register_web_bronze(
     abstract: str,
     language: Language,
     knowledge_base_id: str | None = None,
+    purpose: str = "production",
 ) -> dict[str, Any]:
     metadata_obj = Web(source_type=SourceType.WEB, url=url, web_name=web_name or name)
 
@@ -176,6 +181,7 @@ async def register_web_bronze(
         abstract=abstract,
         doc_metadata=metadata_obj,
         current_tier=Tier.BRONZE,
+        purpose=purpose,
         path=None,
     )
     async with postgres.get_client(tenant_id=tenant_id) as session:

@@ -16,6 +16,9 @@ so a green `make ci` is a green pipeline.
 | Dead code | `make deadcode` | vulture (python) + knip (frontend) |
 | Frontend | `make frontend-lint`, `make frontend-test` | tsc + vitest. There is **no ESLint**: the config was v8-format, unreferenced and never ran, so it and its five devDeps were removed. Correctness is tsc's job, style is prettier's, unused code is knip's. Reintroducing ESLint means a flat `eslint.config.js`, an npm script and a CI step — all three or none |
 | End-to-end | `make e2e` | docker compose stack, `tests/e2e/e2e.sh` |
+| Serving benchmark | `make bench` | TTFT / decode / throughput per LLM role against the GPU tiers (`model/bench/`). Needs `LLM_MAIN_BASE_URL` + `LLM_FAST_BASE_URL` reachable; pass args with `BENCH_ARGS="…"`. Measures cost, not quality — `model/eval` owns quality |
+| Serving gate | `make bench-gate` | judges a bench report against `model/bench/thresholds.json`. Exit 0 pass / 1 fail / **2 inconclusive** — 2 means a budget could not be judged (shared GPU, missing metrics), re-run rather than widen |
+| Agent e2e latency | `make bench-e2e` | per-stage breakdown of one real question against a deployed agent. Needs `BENCH_AGENT_URL`, `BENCH_AGENT_ID`, `BENCH_TENANT_ID`, `GATEWAY_KEY` exported — never read from `.env` |
 | Deploy | `make deploy` | Ansible is the only deploy path; it deploys **committed** changes only |
 | Diagrams | `make diagrams` | PlantUML pinned to 1.2024.8 (see `docs/ankt/README.md`) |
 

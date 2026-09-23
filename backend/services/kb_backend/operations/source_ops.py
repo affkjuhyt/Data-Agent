@@ -11,6 +11,7 @@ import uuid
 from typing import Any, Literal
 
 from fastapi import HTTPException
+from sqlalchemy import and_ as sa_and
 from sqlalchemy import func as sa_func
 from sqlalchemy import or_ as sa_or
 from sqlalchemy import select as sa_select
@@ -88,6 +89,7 @@ def _to_response(row: dict[str, Any], active_cfg: dict[str, Any] | None, last_ru
         "max_depth": cfg.get("max_depth", 1),
         "same_domain_only": bool(cfg.get("same_domain_only", True)),
         "promotion_mode": cfg.get("promotion_mode", "manual"),
+        "purpose": cfg.get("purpose", "production"),
         "created_by": row["created_by"],
         "created_at": created_at.isoformat() if created_at else "",
         "last_run_status": (last_run or {}).get("status"),
@@ -227,6 +229,7 @@ async def create_source(postgres: Any, body: dict[str, Any], created_by: str, te
         recursive=bool(body.get("recursive", False)), max_depth=body.get("max_depth", 1),
         same_domain_only=bool(body.get("same_domain_only", True)),
         promotion_mode=promotion_mode,
+        purpose=body.get("purpose") or "production",
         notes=body.get("notes"),
     )
     cfg_ins = await postgres.insert(KBSourceConfigInsert(
@@ -347,8 +350,13 @@ async def list_recent_activity(postgres: Any, tenant_id: str) -> list[dict[str, 
                 KBSourceRunORM.run_id, KBSourceRunORM.source_id, KBSourceORM.title,
                 KBSourceRunORM.status, KBSourceRunORM.trigger, KBSourceRunORM.started_at,
                 KBSourceRunORM.finished_at, KBSourceRunORM.error, KBSourceRunORM.quality_metrics,
+                KBSourceRunORM.data_ids, KBSourceConfigORM.config,
             )
             .join(KBSourceORM, KBSourceORM.source_id == KBSourceRunORM.source_id)
+            .outerjoin(
+                KBSourceConfigORM,
+                sa_and(KBSourceConfigORM.source_id == KBSourceORM.source_id, KBSourceConfigORM.is_active == True),  # noqa: E712
+            )
             .where(
                 KBSourceORM.tenant_id == tenant_uuid,
                 KBSourceORM.is_deleted == False,  # noqa: E712
@@ -369,6 +377,8 @@ async def list_recent_activity(postgres: Any, tenant_id: str) -> list[dict[str, 
                 "error": r.error,
                 "unchanged": bool((r.quality_metrics or {}).get("unchanged")),
                 "existing_tier": (r.quality_metrics or {}).get("existing_tier"),
+                "promotion_mode": (r.config or {}).get("promotion_mode", "manual"),
+                "data_ids": r.data_ids or [],
             }
             for r in rows
         ]

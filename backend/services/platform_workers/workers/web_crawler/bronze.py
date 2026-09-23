@@ -146,17 +146,17 @@ def _replace_existing_by_name(cur: Any, tenant_id: str, name: str) -> None:
 def _insert_kbdata(
     cur: Any, *, data_id: str, tenant_id: str, role_id: str, name: str, extension: str,
     source_type: str, added_by: str, abstract: str, doc_metadata: dict[str, Any], path: str | None,
-    content_hash: str | None = None,
+    content_hash: str | None = None, purpose: str = "production",
 ) -> None:
     _replace_existing_by_name(cur, tenant_id, name)
     cur.execute(
         """INSERT INTO "KBData"
                (data_id, tenant_id, role_id, name, extension, language, source_type,
-                added_by, abstract, metadata, current_tier, ingestion_mode, path, content_hash)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                added_by, abstract, metadata, current_tier, ingestion_mode, purpose, path, content_hash)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             data_id, tenant_id, role_id, name, extension, "english", source_type,
-            added_by, abstract, json.dumps(doc_metadata), _TIER_BRONZE, "document", path, content_hash,
+            added_by, abstract, json.dumps(doc_metadata), _TIER_BRONZE, "document", purpose, path, content_hash,
         ),
     )
     cur.execute(
@@ -174,6 +174,7 @@ def _insert_kbdata(
 def register_http_file_bronze(
     conn: Any, *, tenant_id: str, role_id: str, title: str, added_by: str, artifact: FetchedArtifact,
     outcome: dict[str, Any] | None = None, source_id: str | None = None, promotion_mode: str = "manual",
+    purpose: str = "production",
 ) -> str:
     """Mirrors `upload_to_bronze(..., source_type=SourceType.DOC, ...)` —
     the worker's automated equivalent of a manual Document Hub upload.
@@ -229,6 +230,7 @@ def register_http_file_bronze(
                 },
                 path=object_key,
                 content_hash=content_hash,
+                purpose=purpose,
             )
         conn.commit()
     except Exception:
@@ -246,7 +248,7 @@ def register_http_file_bronze(
 
 def register_web_bronze(
     conn: Any, *, tenant_id: str, role_id: str, title: str, url: str, added_by: str,
-    source_id: str | None = None, promotion_mode: str = "manual",
+    source_id: str | None = None, promotion_mode: str = "manual", purpose: str = "production",
 ) -> str:
     """Mirrors `register_web_bronze()` in kb_backend's bronze pipeline
     exactly (same doc_metadata shape, no MinIO object — a web source's
@@ -262,6 +264,7 @@ def register_web_bronze(
                 "source_id": source_id, "promotion_mode": promotion_mode,
             },
             path=None,
+            purpose=purpose,
         )
     conn.commit()
     return data_id

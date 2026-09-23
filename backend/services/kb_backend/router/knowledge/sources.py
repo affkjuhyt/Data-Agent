@@ -234,6 +234,15 @@ def _entry_to_create_requests(entry: dict) -> tuple[list[CreateSourceRequest], s
     cron = _schedule_to_cron(entry.get("schedule"))
     base_title = entry.get("title") or entry.get("id") or urls[0]
     fmt = entry.get("format")
+    # A registry row rarely states these — left None (not defaulted here) so
+    # the Bulk Import review step can tell "the YAML said so" apart from "no
+    # one has decided yet" and require an explicit choice for the latter.
+    purpose = entry.get("purpose")
+    if purpose not in ("training", "production", "evaluation"):
+        purpose = None
+    promotion_mode = entry.get("promotion_mode")
+    if promotion_mode not in ("manual", "auto"):
+        promotion_mode = None
     requests = []
     for index, raw_url in enumerate(urls):
         url, credential_param = _strip_env_placeholder(raw_url)
@@ -253,8 +262,35 @@ def _entry_to_create_requests(entry: dict) -> tuple[list[CreateSourceRequest], s
             notes=notes,
             auth_style="query_param" if credential_param else None,
             auth_param_name=credential_param,
+            purpose=purpose,
+            promotion_mode=promotion_mode,
         ))
     return requests, None
+
+
+def _parse_bulk_yaml(yaml_text: str) -> tuple[list[CreateSourceRequest], list[dict[str, str]]]:
+    """One YAML document -> (rows to create, rows to skip with a reason)."""
+    try:
+        parsed = yaml.safe_load(yaml_text)
+    except yaml.YAMLError as e:
+        raise HTTPException(status_code=422, detail=f"Invalid YAML: {e}")
+
+    entries = parsed.get("sources", parsed) if isinstance(parsed, dict) else parsed
+    if not isinstance(entries, list):
+        raise HTTPException(status_code=422, detail="Expected a list of sources (optionally under a `sources:` key)")
+
+    requests: list[CreateSourceRequest] = []
+    skipped: list[dict[str, str]] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            skipped.append({"title": str(entry), "reason": "not a mapping"})
+            continue
+        entry_requests, reason = _entry_to_create_requests(entry)
+        if not entry_requests:
+            skipped.append({"title": entry.get("title") or entry.get("id") or "?", "reason": reason or "unknown"})
+            continue
+        requests.extend(entry_requests)
+    return requests, skipped
 
 
 @router.post("/bulk-import", response_model=ResponseModel)
@@ -269,45 +305,42 @@ async def bulk_import_sources_route(
     are reported back under `skipped` with a reason; a row bundling several
     files (see _entry_to_create_requests) creates one source per file.
 
+    `dry_run=True` parses (or takes `rows` as-is) and returns a `preview`
+    without creating anything — the wizard's Bulk Import step calls this
+    first, lets the steward edit the parsed rows in an editable table, then
+    resubmits with `rows` set to whatever they ended up with (dry_run=False)
+    to actually create them; `rows` skips YAML parsing entirely.
+
     Every created row is auto-run immediately, same as a single interactive
     add (see _auto_run) — the frontend's confirm step (reviewing/editing the
     parsed rows before calling this endpoint) is what stands in for the old
     "create now, batch-run later" gate: the storm risk that gate protected
     against is a review the steward has, by this point, already done once
     for the whole batch, not per row afterward."""
-    try:
-        parsed = yaml.safe_load(body.yaml_text)
-    except yaml.YAMLError as e:
-        raise HTTPException(status_code=422, detail=f"Invalid YAML: {e}")
+    postgres = svc(request, "postgres")
+    skipped: list[dict[str, str]]
+    if body.rows is not None:
+        requests, skipped = list(body.rows), []
+    else:
+        requests, skipped = _parse_bulk_yaml(body.yaml_text)
 
-    entries = parsed.get("sources", parsed) if isinstance(parsed, dict) else parsed
-    if not isinstance(entries, list):
-        raise HTTPException(status_code=422, detail="Expected a list of sources (optionally under a `sources:` key)")
+    if body.dry_run:
+        return ResponseModel(code=200, data={"preview": [r.model_dump() for r in requests], "skipped": skipped})
 
     created: list[dict[str, Any]] = []
-    skipped: list[dict[str, str]] = []
-    postgres = svc(request, "postgres")
-    for entry in entries:
-        if not isinstance(entry, dict):
-            skipped.append({"title": str(entry), "reason": "not a mapping"})
+    for req in requests:
+        try:
+            result = await create_source(
+                postgres, req.model_dump(), created_by=ctx["user_name"],
+                tenant_id=ctx["tenant_id"], role_id=ctx["role_id"],
+            )
+        except HTTPException as exc:
+            if exc.status_code != 409:
+                raise
+            skipped.append({"title": req.title, "reason": "already registered"})
             continue
-        requests, reason = _entry_to_create_requests(entry)
-        if not requests:
-            skipped.append({"title": entry.get("title") or entry.get("id") or "?", "reason": reason or "unknown"})
-            continue
-        for req in requests:
-            try:
-                result = await create_source(
-                    postgres, req.model_dump(), created_by=ctx["user_name"],
-                    tenant_id=ctx["tenant_id"], role_id=ctx["role_id"],
-                )
-            except HTTPException as exc:
-                if exc.status_code != 409:
-                    raise
-                skipped.append({"title": req.title, "reason": "already registered"})
-                continue
-            await _auto_run(postgres, result["id"], ctx["tenant_id"])
-            created.append(result)
+        await _auto_run(postgres, result["id"], ctx["tenant_id"])
+        created.append(result)
 
     return ResponseModel(code=200, data={"created": created, "skipped": skipped})
 

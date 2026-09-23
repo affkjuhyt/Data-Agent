@@ -85,17 +85,35 @@ def _build_qdrant_filters(
         return [paging_filter]
 
 
-    matching_require = build_matching_tenant()
+    matching_require: list[models.Condition] = list(build_matching_tenant())
     # Always exclude soft-deleted points from every search and scroll
     matching_require.append(
         models.FieldCondition(key="is_deleted", match=models.MatchValue(value=False))
+    )
+    # Training/Evaluation-tagged data must never surface in a live query —
+    # anh Linh's "hệ thống không tự chọn nhưng không được lẫn vào production"
+    # (Phase D). This also affects the steward-facing "test search a
+    # collection" admin tool (qdrant.py's semantic_search_route), which is an
+    # accepted tradeoff of hiding it everywhere rather than per-caller.
+    # OR'd with "no purpose key at all": every point written before this
+    # field existed has no `purpose` in its payload, and a bare FieldCondition
+    # match never matches a missing key — without the IsEmpty branch, every
+    # document promoted to Gold before Phase D would silently vanish from
+    # search the moment this filter shipped.
+    matching_require.append(
+        models.Filter(
+            should=[
+                models.FieldCondition(key="purpose", match=models.MatchValue(value="production")),
+                models.IsEmptyCondition(is_empty=models.PayloadField(key="purpose")),
+            ]
+        )
     )
     # Scope to a single knowledge base (the "kind of knowledge") when provided.
     if knowledge_base:
         matching_require.append(
             models.FieldCondition(key="knowledge_base", match=models.MatchValue(value=knowledge_base))
         )
-    matching_field = build_matching_field()
+    matching_field: list[models.Condition] = list(build_matching_field())
     if pagination_config is not None and pagination_config.pagination_cursor is not None:
         matching_require += build_paginating()
 

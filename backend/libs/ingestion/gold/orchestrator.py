@@ -93,6 +93,7 @@ async def _process_chunk(
     emitter,
     stage_record: StageChain,
     pii_mask_types: list[str] | None = None,
+    purpose: str = "production",
 ) -> dict:
     block_index = chunk["block_index"]
     if pii_mask_types:
@@ -177,6 +178,7 @@ async def _process_chunk(
         approved_by=approved_by,
         embed_model_id=embed_model_id,
         knowledge_base=knowledge_base,
+        purpose=purpose,
         entities=entities.canonicals,
         entity_type_fields=entities.qdrant_type_fields(),
         emitter=emitter,
@@ -228,7 +230,7 @@ async def promote_to_gold(
     try:
         embed_model_id = await _get_collection_embed_model_id(postgres, collection_name=cfg.QDRANT_COLLECTION)
         log.info("Gold: collection '%s' → embed_model_id=%s", cfg.QDRANT_COLLECTION, embed_model_id or "none")
-        doc_name, knowledge_base = await _get_data_row(postgres, data_id)
+        doc_name, knowledge_base, purpose = await _get_data_row(postgres, data_id)
         log.info("Gold: data_id=%s → knowledge_base=%s", data_id, knowledge_base or "none")
 
         pii_mask_types = await _load_pii_policy(postgres, tenant_id)
@@ -282,6 +284,7 @@ async def promote_to_gold(
                             emitter=emitter,
                             stage_record=stage_record,
                             pii_mask_types=pii_mask_types,
+                            purpose=purpose,
                         )
                 except Exception as exc:
                     counts["failed"] += 1
@@ -331,6 +334,7 @@ async def promote_to_gold(
                     data_id=data_id,
                     tenant_id=tenant_id,
                     knowledge_base=knowledge_base,
+                    purpose=purpose,
                     embed_model_id=embed_model_id,
                     doc_summary=doc_summary,
                     top_intents=top_intents,

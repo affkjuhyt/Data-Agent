@@ -104,6 +104,11 @@ class KBDataORM(Base):
         # byte-identical to what's already stored" before paying for a
         # delete+reinsert — see content_hash's own comment.
         Index("idx_kbdata_tenant_content_hash", "tenant_id", "content_hash"),
+        # A steward's Training/Evaluation tag is queried on every RAG/search
+        # request (the qdrant filter's own purpose column mirrors this one,
+        # but Postgres-side listings — Data Layers, Source Registry — filter
+        # here too).
+        Index("idx_kbdata_tenant_purpose", "tenant_id", "purpose"),
     )
 
     data_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -131,6 +136,11 @@ class KBDataORM(Base):
     # postgres_model.py) and silently drops any key its Pydantic model
     # doesn't declare.
     ingestion_mode: Mapped[str] = mapped_column(String(32), default="document", server_default="document", nullable=False)
+    # 'training' | 'production' | 'evaluation' — a steward tags data at
+    # ingestion time (Phase D). Non-production data is fully hidden from
+    # RAG/search by default (see qdrant_connector.py's _build_qdrant_filters)
+    # — visible only through Data Layers/Source Registry directly.
+    purpose: Mapped[str] = mapped_column(String(16), default="production", server_default="production", nullable=False)
     path: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
     # sha256 hex digest of the raw content bytes (or extracted text, for
     # web/rss sources with no stable raw bytes). Lets a re-crawl short-circuit

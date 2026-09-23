@@ -277,6 +277,10 @@ class SourceConfigPayload(BaseModel):
     # create_source defaults this to "auto" for any source with a cron,
     # "manual" otherwise (see source_ops.py).
     promotion_mode: Literal["manual", "auto"] = "manual"
+    # Stamped onto every KBData row this source's runs produce (see
+    # KBDataInsert.purpose) — a scheduled source keeps tagging the same
+    # purpose on each re-crawl without a steward re-choosing it every time.
+    purpose: Literal["training", "production", "evaluation"] = "production"
     notes: Optional[str] = None
 
 
@@ -352,6 +356,7 @@ class KBDataInsert(TenantModel):
     doc_metadata: MetadataType
     current_tier: Tier = Tier.BRONZE
     ingestion_mode: str = "document"
+    purpose: str = "production"
     path: Optional[str] = None
     content_hash: Optional[str] = None
     model_config = ConfigDict(use_enum_values=True)

@@ -139,6 +139,7 @@ async def ingest_bronze(
         doc_metadata: str = Form("{}"),
         knowledge_base_id: str = Form(""),
         ingestion_mode: str = Form("document"),
+        purpose: str = Form("production"),
         ctx: dict[str, Any] = Depends(require_perm("addData")),
 ) -> Any:
     file_bytes = await file.read()
@@ -157,6 +158,8 @@ async def ingest_bronze(
             status_code=422,
             detail="structured_table mode requires an .xlsx, .xls, or .csv file",
         )
+    if purpose not in ("training", "production", "evaluation"):
+        raise HTTPException(status_code=422, detail="Invalid purpose")
 
     try:
         src = SourceType(source_type)
@@ -203,6 +206,7 @@ async def ingest_bronze(
                     content_type=file.content_type or "application/octet-stream",
                     knowledge_base_id=knowledge_base_id or None,
                     ingestion_mode=ingestion_mode,
+                    purpose=purpose,
                 ),
                 svc(request, "minio").get_client(),
                 svc(request, "postgres"),
@@ -245,6 +249,8 @@ async def ingest_bronze_web(
         lang = Language(body.language)
     except ValueError:
         raise HTTPException(status_code=422, detail="Invalid language")
+    if body.purpose not in ("training", "production", "evaluation"):
+        raise HTTPException(status_code=422, detail="Invalid purpose")
 
     postgres = svc(request, "postgres")
 
@@ -263,6 +269,7 @@ async def ingest_bronze_web(
                     added_by=ctx["user_name"],
                     abstract=body.abstract or "",
                     knowledge_base_id=body.knowledge_base_id or None,
+                    purpose=body.purpose,
                 ),
                 postgres,
             )

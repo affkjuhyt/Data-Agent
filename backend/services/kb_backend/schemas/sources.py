@@ -27,6 +27,9 @@ class CreateSourceRequest(BaseModel):
     # None (the default) lets create_source pick "auto" for a scheduled source
     # and "manual" for a manual-only one; set explicitly to override that.
     promotion_mode: Optional[Literal["manual", "auto"]] = None
+    # Stamped onto every KBData row this source's runs produce. None (the
+    # default) lets create_source fall back to "production".
+    purpose: Optional[Literal["training", "production", "evaluation"]] = None
     notes: Optional[str] = None
 
 
@@ -44,6 +47,7 @@ class UpdateSourceConfigRequest(BaseModel):
     max_depth: Optional[int] = None
     same_domain_only: Optional[bool] = None
     promotion_mode: Optional[Literal["manual", "auto"]] = None
+    purpose: Optional[Literal["training", "production", "evaluation"]] = None
     notes: Optional[str] = None
 
 
@@ -63,6 +67,7 @@ class SourceResponse(BaseModel):
     max_depth: int = 1
     same_domain_only: bool = True
     promotion_mode: Literal["manual", "auto"] = "manual"
+    purpose: Literal["training", "production", "evaluation"] = "production"
     created_by: Optional[str]
     created_at: str
     last_run_status: Optional[str] = None
@@ -83,7 +88,16 @@ class SourceRunResponse(BaseModel):
 
 
 class BulkImportRequest(BaseModel):
-    yaml_text: str
+    # Required for the yaml_text path; ignored (may be omitted) when `rows`
+    # carries the already-parsed, steward-edited rows instead.
+    yaml_text: str = ""
+    # True: parse (or use `rows` as-is) and return a preview — nothing is
+    # created. Lets the frontend show an editable table before committing.
+    dry_run: bool = False
+    # When set, these exact rows are created (or previewed) instead of
+    # parsing `yaml_text` — the wizard's Bulk Import review step sends back
+    # whatever the steward edited from an earlier dry_run's preview.
+    rows: Optional[list[CreateSourceRequest]] = None
 
 
 class BulkImportSkipped(BaseModel):
@@ -93,4 +107,9 @@ class BulkImportSkipped(BaseModel):
 
 class BulkImportResponse(BaseModel):
     created: list[SourceResponse]
+    skipped: list[BulkImportSkipped]
+
+
+class BulkImportPreviewResponse(BaseModel):
+    preview: list[CreateSourceRequest]
     skipped: list[BulkImportSkipped]

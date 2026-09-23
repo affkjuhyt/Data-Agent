@@ -256,18 +256,19 @@ def run_source(
             fetch_config = {**config, "_resolved_secret": secret}
 
     promotion_mode = config.get("promotion_mode", "manual")
+    purpose = config.get("purpose", "production")
     try:
         artifact = connector_fetch(connector_type, fetch_config)
         outcome: dict[str, Any] = {}
         if connector_type in _RAW_BYTES_CONNECTOR_TYPES:
             data_id = bronze.register_http_file_bronze(
                 conn, tenant_id=tenant_id, role_id=role_id, title=title, added_by=added_by, artifact=artifact,
-                outcome=outcome, source_id=source_id, promotion_mode=promotion_mode,
+                outcome=outcome, source_id=source_id, promotion_mode=promotion_mode, purpose=purpose,
             )
         else:
             data_id = bronze.register_web_bronze(
                 conn, tenant_id=tenant_id, role_id=role_id, title=title, url=config["url"], added_by=added_by,
-                source_id=source_id, promotion_mode=promotion_mode,
+                source_id=source_id, promotion_mode=promotion_mode, purpose=purpose,
             )
         quality_metrics = {**(artifact.extra or {}), **outcome} or None
 
@@ -381,11 +382,12 @@ def _run_queue_item(conn: Any, row: dict[str, Any]) -> None:
     conn.commit()
 
     promotion_mode = config.get("promotion_mode", "manual")
+    purpose = config.get("purpose", "production")
     try:
         artifact = connector_fetch("web_crawl", config)
         data_id = bronze.register_web_bronze(
             conn, tenant_id=tenant_id, role_id=row["role_id"], title=title, url=url, added_by=added_by,
-            source_id=source_id, promotion_mode=promotion_mode,
+            source_id=source_id, promotion_mode=promotion_mode, purpose=purpose,
         )
         with conn.cursor() as cur:
             cur.execute(

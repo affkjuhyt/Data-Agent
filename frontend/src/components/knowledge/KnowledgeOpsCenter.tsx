@@ -52,8 +52,12 @@ const KnowledgeOpsCenter = () => {
   const promotingIds = new Set(
     promotionQueue.filter(e => e.status === 'queued' || e.status === 'processing').map(e => e.data_id),
   );
-  // Crawl runs share the Pipeline Activity panel with promotions.
-  const crawl = useCrawlActivity();
+  // Crawl runs share the Pipeline Activity panel with promotions. An
+  // auto-promote source's successful crawl hands off here to the same real,
+  // SSE-tracked Bronze->Gold progress Data Layers' manual promote uses —
+  // see useCrawlActivity's toEntry docstring for why the crawl's own entry
+  // never claims "done" at Bronze for these.
+  const crawl = useCrawlActivity((dataId, title) => startPromotion(dataId, title, 'bronze', 'gold'));
   // Knowledge's own tabs are independent of the module nav (which now lives under "Build").
   const [activeSubTab, setActiveSubTab] = useState<KnowledgeTabId>('FLEET');
 
