@@ -55,6 +55,9 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
 
   // Form Fields
   const [assetName, setAssetName] = useState('');
+  // KBSource-only (URL/feed/web) — a plain upload has no publisher concept
+  // (Document/Image/Video's doc_metadata schemas don't carry one).
+  const [publisher, setPublisher] = useState('');
   const [author, setAuthor] = useState('');
   const [publishedDate, setPublishedDate] = useState('');
 
@@ -428,6 +431,7 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
         const isFeed = selectedSource === 'doc' && docMethod === 'feed';
         const result = await apiMutate<{ id: string; title: string }>('POST', '/api/knowledge/sources', {
           title: assetName,
+          publisher: publisher.trim() || undefined,
           connector_type: effectiveConnectorType,
           url: sourceUrl.trim(),
           render: renderJs,
@@ -915,6 +919,22 @@ export const IngestionWizard = ({ onComplete, onCancel }: { onComplete: () => vo
                     />
                   )}
                 </div>
+
+                {/* 2a. Publisher — KBSource-only (matches Bulk Import's own column;
+                    a plain upload has no publisher field in its metadata schema). */}
+                {isSourceBased && (
+                  <div className="flex flex-col gap-1.5 pb-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-[#111111]">Publisher</label>
+                    <span className="text-[10px] text-[#5A5A5A] mb-1">Who originally publishes this data (optional)</span>
+                    <input
+                      type="text"
+                      placeholder="e.g., Cục Thống kê (NSO)"
+                      value={publisher}
+                      onChange={(e) => setPublisher(e.target.value)}
+                      className="field-input text-xs"
+                    />
+                  </div>
+                )}
 
                 {/* 2b. Knowledge Base selector — the kind of knowledge this doc belongs to */}
                 <div className="flex flex-col gap-1.5 pb-2">

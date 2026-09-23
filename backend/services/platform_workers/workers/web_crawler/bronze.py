@@ -196,11 +196,16 @@ def register_http_file_bronze(
     content_hash = hashlib.sha256(artifact.content_bytes).hexdigest()
     with conn.cursor() as cur:
         cur.execute(
-            'SELECT data_id, content_hash, current_tier FROM "KBData" WHERE tenant_id = %s AND name = %s',
+            'SELECT data_id, content_hash, current_tier, is_deleted FROM "KBData" WHERE tenant_id = %s AND name = %s',
             (tenant_id, title),
         )
         existing = cur.fetchone()
-    if existing is not None and existing[1] == content_hash:
+    # A soft-deleted row still occupies the name but is not "still there" —
+    # short-circuiting here would hand back a Trashed, invisible data_id and
+    # report a successful run for nothing (same bug fixed on the manual
+    # upload path in kb_backend's ingest_bronze). Fall through to the normal
+    # replace-and-insert path below instead.
+    if existing is not None and not existing[3] and existing[1] == content_hash:
         log.info("register_http_file_bronze | %r unchanged (content_hash match) — skipping re-ingest", title)
         if outcome is not None:
             outcome.update(unchanged=True, existing_tier=existing[2])

@@ -180,7 +180,13 @@ async def ingest_bronze(
     log.info("POST /ingestion/bronze tenant=%s source=%s size=%d", ctx["tenant_id"], src, len(file_bytes))
     async with _document_name_lock(svc(request, "postgres"), ctx["tenant_id"], name):
         existing = await _fetch_doc_by_name(postgres, ctx["tenant_id"], name)
-        if existing is not None and existing.get("content_hash") == content_hash:
+        # A soft-deleted row still occupies the name (see fetch_by_name's
+        # docstring) but is NOT "still there" from the uploader's point of
+        # view — short-circuiting here would silently hand back a Trashed,
+        # invisible data_id and claim success, exactly the bug found live:
+        # re-uploading a name that used to exist and was deleted must go
+        # through the normal replace path below, not this shortcut.
+        if existing is not None and not existing.get("is_deleted") and existing.get("content_hash") == content_hash:
             log.info("ingest_bronze: %r unchanged (content_hash match) — skipping re-ingest", name)
             return {
                 "data_id": str(existing["data_id"]),

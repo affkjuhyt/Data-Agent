@@ -127,6 +127,21 @@ async def promote_to_silver(
             for new_index, chunk in enumerate(accepted_chunks):
                 chunk["block_index"] = new_index
 
+            # A steward can move this document to Trash at any point during
+            # the (sometimes minutes-long) parse/filter/summarize work above
+            # — re-check right before the point of no return (writing chunks
+            # and flipping current_tier) rather than silently overriding a
+            # delete that already happened. _load_kb_data's read already
+            # filters is_deleted=False, so a deleted document raises here.
+            try:
+                await _load_kb_data(postgres, tenant_id=tenant_id, data_id=data_id)
+            except ValueError:
+                await logger.logging(
+                    "Silver stage skipped — document was deleted while processing",
+                    status="FAILED",
+                )
+                return {"data_id": data_id, "chunks_count": 0, "layer": Tier.BRONZE.value, "skipped": "document_deleted"}
+
             await _persist_silver(
                 postgres,
                 mongo,

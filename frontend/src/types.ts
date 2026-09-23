@@ -65,6 +65,10 @@ export interface KnowledgeDocument {
     file_size?: number | null;
     total_frame?: number | null;
     intents?: string[] | null;  // document-level content-purpose intents (Gold)
+    // Set only for a web-crawler-created document (absent for a manual
+    // upload, which is always manual) — 'auto' means a background source is
+    // already driving this document to Gold; see AssetInventory's action column.
+    promotion_mode?: string | null;
   };
   score?: number;
   conflicts?: boolean;

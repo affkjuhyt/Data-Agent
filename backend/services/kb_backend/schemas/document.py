@@ -59,6 +59,12 @@ class DocumentMetadata(BaseModel):
     file_size: int | None = None
     total_frame: int | None = None
     intents: list[str] = []
+    # Set only for documents the web-crawler worker created (register_http_file_bronze
+    # / register_web_bronze stamp it into doc_metadata) — absent for a manual upload,
+    # which is always manual. Lets Data Layers hide "Process to Silver/Gold" for a
+    # document an auto-promote source is already driving, for ANY viewer, not just
+    # the browser tab that happened to trigger the crawl.
+    promotion_mode: str | None = None
 
 
 class UpdateDocumentRequest(BaseModel):

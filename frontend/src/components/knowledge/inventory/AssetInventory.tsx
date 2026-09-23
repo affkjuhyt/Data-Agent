@@ -397,6 +397,15 @@ export const AssetInventory = ({ onSelectAsset, onPromote, onReviewSchema, promo
                               <span className="w-3 h-3 rounded-full border-2 border-[#B88719] border-t-[#B88719] animate-spin" />
                               Processing...
                             </span>
+                          ) : doc.metadata?.promotion_mode === 'auto' && doc.current_tier !== 'gold' ? (
+                            // A background source is already driving this to Gold —
+                            // never offer a manual button here, for any viewer: a
+                            // second "Process to Silver/Gold" click racing the
+                            // worker's own auto-promote is exactly what this avoids.
+                            <span className="text-[10px] font-mono font-bold text-[#5F5F5F] uppercase tracking-wide flex items-center justify-end gap-1.5" title="This source is set to Auto — it promotes itself, no click needed.">
+                              <span className="w-3 h-3 rounded-full border-2 border-[#BFA66A] border-t-[#8A5A00] animate-spin" />
+                              Auto-processing to {doc.current_tier === 'bronze' ? 'Silver' : 'Gold'}...
+                            </span>
                           ) : doc.current_tier === 'bronze' ? (
                             <button
                               onClick={(e) => handleProcess(e, doc)}

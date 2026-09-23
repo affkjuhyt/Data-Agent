@@ -61,12 +61,12 @@ export function usePromotionQueue(
   };
 
   const _finalise = useCallback(
-    (data_id: string, to_tier: 'silver' | 'gold', failed = false) => {
+    (data_id: string, to_tier: 'silver' | 'gold', failed = false, detail?: string) => {
       _cleanup(data_id);
       setQueue((prev) =>
         prev.map((e) =>
           e.data_id === data_id
-            ? { ...e, progress: failed ? e.progress : 100, status: failed ? 'failed' : 'done' }
+            ? { ...e, progress: failed ? e.progress : 100, status: failed ? 'failed' : 'done', detail: detail ?? e.detail }
             : e,
         ),
       );
@@ -118,7 +118,10 @@ export function usePromotionQueue(
                 };
 
                 if (data.status === 'FAILED') {
-                  _finalise(data_id, to_tier, true);
+                  // Surfaces e.g. "Silver stage skipped — document was
+                  // deleted while processing" instead of a bare "Failed"
+                  // that looks like a real pipeline error.
+                  _finalise(data_id, to_tier, true, data.message);
                   return;
                 }
                 const reachedTerminal =
