@@ -30,14 +30,15 @@ _USER_AGENT = (
 def _fetch_static(url: str) -> str:
     import httpx
 
-    with httpx.Client(
+    from libs.ingestion.connectors import tls
+
+    response = tls.get(
+        url,
         follow_redirects=True,
         timeout=httpx.Timeout(cfg.WEB_FETCH_TIMEOUT),
         headers={"User-Agent": _USER_AGENT, "Accept-Language": "vi,en;q=0.8"},
-    ) as client:
-        response = client.get(url)
-        response.raise_for_status()
-        return response.text
+    )
+    return response.text
 
 
 def _fetch_rendered(url: str) -> str:

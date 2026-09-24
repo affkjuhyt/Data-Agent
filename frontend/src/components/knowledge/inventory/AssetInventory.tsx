@@ -10,6 +10,7 @@ import {
   Trash2,
   X,
   AlertCircle,
+  AlertTriangle,
   Eye,
   Loader2,
 } from 'lucide-react';
@@ -396,6 +397,18 @@ export const AssetInventory = ({ onSelectAsset, onPromote, onReviewSchema, promo
                             <span className="text-[10px] font-mono font-bold text-[#B88719] uppercase tracking-wide flex items-center justify-end gap-1.5 font-mono">
                               <span className="w-3 h-3 rounded-full border-2 border-[#B88719] border-t-[#B88719] animate-spin" />
                               Processing...
+                            </span>
+                          ) : doc.metadata?.promotion_mode === 'auto' && doc.current_tier !== 'gold' && doc.metadata?.last_pipeline_status === 'failed' ? (
+                            // The last Silver/Gold attempt genuinely failed (bad file
+                            // format, corrupt content, ...) — without this branch the
+                            // spinner below stays up forever, since it only checks
+                            // tier + promotion_mode, not the real outcome.
+                            <span
+                              className="text-[10px] font-mono font-bold text-red-700 uppercase tracking-wide flex items-center justify-end gap-1.5"
+                              title={doc.metadata?.last_pipeline_error || 'Auto-processing failed — will retry on the next scheduled crawl.'}
+                            >
+                              <AlertTriangle className="w-3 h-3" />
+                              Auto-processing failed ({doc.metadata?.last_pipeline_stage || 'silver'})
                             </span>
                           ) : doc.metadata?.promotion_mode === 'auto' && doc.current_tier !== 'gold' ? (
                             // A background source is already driving this to Gold —

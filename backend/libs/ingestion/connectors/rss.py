@@ -7,6 +7,7 @@ from __future__ import annotations
 import httpx
 
 from libs.ingestion import config as cfg
+from libs.ingestion.connectors import tls
 from libs.ingestion.connectors.base import FetchedArtifact
 
 _USER_AGENT = "DataAgent-SourceWorker/1.0"
@@ -14,14 +15,13 @@ _USER_AGENT = "DataAgent-SourceWorker/1.0"
 
 def fetch(config: dict) -> FetchedArtifact:
     url = config["url"]
-    with httpx.Client(
+    response = tls.get(
+        url,
         follow_redirects=True,
         timeout=httpx.Timeout(cfg.WEB_FETCH_TIMEOUT),
         headers={"User-Agent": _USER_AGENT},
-    ) as client:
-        response = client.get(url)
-        response.raise_for_status()
-        content = response.content
+    )
+    content = response.content
 
     if len(content) > cfg.MAX_FILE_SIZE_BYTES:
         raise ValueError(f"rss fetch of {url} is {len(content)} bytes, over the {cfg.MAX_FILE_SIZE_BYTES}-byte cap")

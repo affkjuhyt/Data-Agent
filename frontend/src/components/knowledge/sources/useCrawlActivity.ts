@@ -62,6 +62,7 @@ export function useCrawlActivity(onAutoPromoted?: (dataId: string, title: string
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [tracked, setTracked] = useState<Set<string>>(new Set());
   const handedOffRef = useRef<Set<string>>(new Set());
+  const firstLoadRef = useRef(true);
 
   const track = useCallback((runIds: string[]) => {
     if (runIds.length === 0) return;
@@ -73,6 +74,14 @@ export function useCrawlActivity(onAutoPromoted?: (dataId: string, title: string
       const latest = await apiGet<CrawlRun[]>('/api/knowledge/sources/activity');
       setRuns(latest);
       track(latest.filter(isActive).map(run => run.run_id)); // watched in flight: keep it when it finishes
+      if (firstLoadRef.current) {
+        // Runs already finished when the page opens were handed off (or not)
+        // before this page existed. handedOffRef lives in memory, so without
+        // this every reload replayed the recent successful auto runs and
+        // brought back "Source > Gold" entries the user had already closed.
+        firstLoadRef.current = false;
+        for (const run of latest) if (!isActive(run)) handedOffRef.current.add(run.run_id);
+      }
       if (onAutoPromoted) {
         for (const run of latest) {
           if (

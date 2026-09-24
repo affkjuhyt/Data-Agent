@@ -9,6 +9,19 @@ import { apiStream } from '../../../lib/apiClient';
 // completed/failed ones were already applied to the document.
 const STORAGE_KEY = 'kb-promotion-queue-v1';
 
+// Browsers allow ~6 concurrent HTTP/1.1 connections per origin and every
+// /progress stream holds one open. Restoring six stale entries used to take all
+// six, so every other API call queued in the browser, hit apiGet's 5s timeout
+// and the Data Layers / Source Registry lists never loaded (Kong saw nothing).
+// Keep headroom for ordinary requests.
+const MAX_CONCURRENT_STREAMS = 3;
+
+// A stream that ends without a terminal event (kb-backend or Kong restarted,
+// network blip) used to leave its entry at the simulated 85% forever, since
+// nothing re-attached it. Reconnect a few times, then say so.
+const MAX_STREAM_RETRIES = 5;
+const STREAM_RETRY_BASE_MS = 3000;
+
 function loadPersisted(): PromotionEntry[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -41,6 +54,11 @@ export function usePromotionQueue(
   const [queue, setQueue] = useState<PromotionEntry[]>(loadPersisted);
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>[]>>(new Map());
   const abortRefs = useRef<Map<string, AbortController>>(new Map());
+  const activeStreamsRef = useRef<Set<string>>(new Set());
+  const waitingStreamsRef = useRef<Array<[string, 'silver' | 'gold']>>([]);
+  const attachRef = useRef<(data_id: string, to_tier: 'silver' | 'gold') => void>(() => {});
+  const retriesRef = useRef<Map<string, number>>(new Map());
+  const namesRef = useRef<Map<string, string>>(new Map());
   // Synchronous lock: prevents a rapid double-click from queuing the same doc
   // twice within one tick (before React re-renders the disabled button).
   const inFlightRef = useRef<Set<string>>(new Set());
@@ -57,6 +75,9 @@ export function usePromotionQueue(
     timersRef.current.delete(data_id);
     abortRefs.current.get(data_id)?.abort();
     abortRefs.current.delete(data_id);
+    retriesRef.current.delete(data_id);
+    activeStreamsRef.current.delete(data_id);
+    waitingStreamsRef.current = waitingStreamsRef.current.filter(([id]) => id !== data_id);
     inFlightRef.current.delete(data_id);
   };
 
@@ -90,14 +111,38 @@ export function usePromotionQueue(
   const _attachStream = useCallback(
     (data_id: string, to_tier: 'silver' | 'gold') => {
       if (abortRefs.current.has(data_id)) return; // already streaming
+      if (activeStreamsRef.current.size >= MAX_CONCURRENT_STREAMS) {
+        // Newest first: a promotion the user just started beats restored ones.
+        if (!waitingStreamsRef.current.some(([id]) => id === data_id)) {
+          waitingStreamsRef.current.unshift([data_id, to_tier]);
+        }
+        return;
+      }
       const abort = new AbortController();
       abortRefs.current.set(data_id, abort);
+      activeStreamsRef.current.add(data_id);
 
       // Routed through apiStream (not a bare fetch) so it carries the bearer
       // token and goes through Kong like every other KB request.
-      apiStream(`/api/pipeline/ingestion/documents/${data_id}/progress`, { signal: abort.signal })
+      let ended = false; // a terminal event was handled (the entry is finalised or dropped)
+      const retryLater = () => {
+        if (ended || abort.signal.aborted) return;
+        const attempt = retriesRef.current.get(data_id) ?? 0;
+        if (attempt >= MAX_STREAM_RETRIES) {
+          _finalise(data_id, to_tier, true, 'Lost connection to the progress stream');
+          return;
+        }
+        retriesRef.current.set(data_id, attempt + 1);
+        // Free the slot first so attach() does not see itself as "already streaming".
+        abortRefs.current.delete(data_id);
+        setTimeout(() => attachRef.current(data_id, to_tier), STREAM_RETRY_BASE_MS * (attempt + 1));
+      };
+
+      const name = namesRef.current.get(data_id);
+      const query = name ? `?name=${encodeURIComponent(name)}` : '';
+      apiStream(`/api/pipeline/ingestion/documents/${data_id}/progress${query}`, { signal: abort.signal })
         .then(async (res) => {
-          if (!res.ok || !res.body) return;
+          if (!res.ok || !res.body) return retryLater();
           const reader = res.body.getReader();
           const decoder = new TextDecoder();
           let buf = '';
@@ -113,11 +158,37 @@ export function usePromotionQueue(
               if (!line.startsWith('data: ')) continue;
               try {
                 const data = JSON.parse(line.slice(6)) as {
-                  status?: string; done?: boolean; message?: string;
+                  status?: string; done?: boolean; message?: string; superseded?: boolean; replaced_by?: string | null;
                   progress_pct?: number; processed_chunks?: number; total_chunks?: number;
                 };
 
+                if (data.superseded) {
+                  ended = true;
+                  const successor = data.replaced_by;
+                  _cleanup(data_id);
+                  if (successor) {
+                    // A re-crawl replaced this document: what runs now is the new
+                    // run that replaces the old one, so follow it under its new id.
+                    if (name) namesRef.current.set(successor, name);
+                    inFlightRef.current.add(successor);
+                    setQueue((prev) =>
+                      prev.some((e) => e.data_id === successor)
+                        ? prev.filter((e) => e.data_id !== data_id)
+                        : prev.map((e) =>
+                            e.data_id === data_id
+                              ? { ...e, data_id: successor, progress: 0, status: 'processing', detail: undefined }
+                              : e,
+                          ),
+                    );
+                    attachRef.current(successor, to_tier);
+                  } else {
+                    // Deleted with no replacement: nothing left to follow.
+                    setQueue((prev) => prev.filter((e) => e.data_id !== data_id));
+                  }
+                  return;
+                }
                 if (data.status === 'FAILED') {
+                  ended = true;
                   // Surfaces e.g. "Silver stage skipped — document was
                   // deleted while processing" instead of a bare "Failed"
                   // that looks like a real pipeline error.
@@ -129,6 +200,7 @@ export function usePromotionQueue(
                   (to_tier === 'gold' && data.status === 'PUBLISHED') ||
                   (to_tier === 'silver' && data.status === 'EMBEDDING');
                 if (reachedTerminal) {
+                  ended = true;
                   _finalise(data_id, to_tier);
                   return;
                 }
@@ -146,18 +218,26 @@ export function usePromotionQueue(
               } catch { /* ignore parse errors */ }
             }
           }
+          retryLater(); // the server closed the stream before any terminal event
         })
-        .catch(() => { /* SSE unavailable — the bar holds at the simulated cap */ });
+        .catch(() => retryLater())
+        .finally(() => {
+          activeStreamsRef.current.delete(data_id);
+          const next = waitingStreamsRef.current.shift();
+          if (next) attachRef.current(next[0], next[1]);
+        });
     },
     [_finalise],
   );
+  attachRef.current = _attachStream;
 
   const startPromotion = useCallback(
-    (data_id: string, name: string, from_tier: 'bronze' | 'silver', to_tier: 'silver' | 'gold') => {
+    (data_id: string, name: string, from_tier: 'source' | 'bronze' | 'silver', to_tier: 'silver' | 'gold') => {
       // Lock: never queue the same document twice while a promotion is in flight.
       if (inFlightRef.current.has(data_id)) return;
       inFlightRef.current.add(data_id);
 
+      namesRef.current.set(data_id, name);
       const entry: PromotionEntry = { data_id, name, from_tier, to_tier, progress: 0, status: 'queued' };
       setQueue((prev) => [...prev.filter((e) => e.data_id !== data_id), entry]);
 
@@ -194,6 +274,7 @@ export function usePromotionQueue(
       // startPromotion — narrow explicitly rather than widen _attachStream's type.
       if ((e.status === 'queued' || e.status === 'processing') && (e.to_tier === 'silver' || e.to_tier === 'gold')) {
         inFlightRef.current.add(e.data_id);
+        namesRef.current.set(e.data_id, e.name);
         _attachStream(e.data_id, e.to_tier);
       }
     });

@@ -505,12 +505,15 @@ def _progress_pct(status: str, stage: str, processed: int, total: int) -> float:
 async def stream_progress(
         data_id: str,
         request: Request,
+        name: str | None = None,
         ctx: dict[str, Any] = Depends(require_perm("viewDocuments"))) -> StreamingResponse:
     mongo = svc(request, "mongo")
+    postgres = svc(request, "postgres")
 
     async def generate() -> AsyncGenerator[str, None]:
         db = mongo.get_client()
         last_count = 0
+        tick = 0
 
         loop = asyncio.get_running_loop()
         last_emit = loop.time()
@@ -519,6 +522,19 @@ async def stream_progress(
         while True:
             if await request.is_disconnected():
                 return
+
+            # A re-crawl replaces the document under a new data_id and deletes
+            # the old row, so a client still following the old id would get
+            # "Waiting for worker..." forever (its queue entry stuck at 85%, and
+            # the open stream holding one of the browser's few connections).
+            if tick % 5 == 0 and await _fetch_doc(postgres, data_id, ctx["tenant_id"], ctx["role_id"]) is None:
+                # If a document with the same name now exists, this run was replaced
+                # by a newer one: tell the client to follow that one.
+                successor = await _fetch_doc_by_name(postgres, ctx["tenant_id"], name) if name else None
+                replaced_by = str(successor["data_id"]) if successor and not successor.get("is_deleted") else None
+                yield f"data: {json.dumps({'status': 'FAILED', 'done': True, 'message': 'Document was replaced or deleted', 'superseded': True, 'replaced_by': replaced_by, 'progress_pct': 0})}\n\n"
+                return
+            tick += 1
 
             emitted = False
             doc = await db["kb_ingestion_logs"].find_one({"data_id": data_id})

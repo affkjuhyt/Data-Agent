@@ -311,3 +311,80 @@ def test_recursive_source_enqueues_and_drains_discovered_links(migrated_db, work
             assert cur.fetchone()[0] == 1
     finally:
         conn.close()
+
+
+class _NoopMinio:
+    def __init__(self) -> None:
+        self.removed: list[str] = []
+
+    def bucket_exists(self, _bucket: str) -> bool:
+        return True
+
+    def put_object(self, *_a, **_kw) -> None:
+        pass
+
+    def remove_object(self, _bucket: str, key: str) -> None:
+        self.removed.append(key)
+
+
+def test_changed_content_updates_a_promoted_document_in_place(migrated_db, worker_module):
+    """Real Postgres: the UPDATE builds `metadata` with jsonb `-` and `||`
+    (a class of statement mocked cursors cannot vouch for). A re-crawl with new
+    bytes must keep the row's data_id and tier, strip the previous run's
+    pipeline stamps, keep unrelated metadata, and log the change."""
+    import json
+    from libs.ingestion.connectors.base import FetchedArtifact
+
+    tenant_id, _role, source_id = _seed_tenant_and_source(
+        migrated_db["dsn"], "Rates", connector_type="http_file", extra_config={"url": "https://example.invalid/rates.xml"},
+    )
+    versions = iter([b"<rates>1</rates>", b"<rates>2</rates>"])
+
+    def fetch(_connector_type, config):
+        return FetchedArtifact(
+            content_bytes=next(versions), content_type="text/xml", source_url=config["url"], extension="xml",
+        )
+
+    minio = _NoopMinio()
+    conn = psycopg2.connect(migrated_db["dsn"])
+    try:
+        with patch("services.platform_workers.workers.web_crawler.worker.connector_fetch", side_effect=fetch), \
+             patch("services.platform_workers.workers.web_crawler.bronze._minio_client", return_value=minio):
+            with conn.cursor() as cur:
+                source = worker_module.get_active_sources(cur)[0]
+            worker_module.run_source(conn, source, trigger="scheduled")
+
+            with conn.cursor() as cur:
+                cur.execute('SELECT data_id, path, row_version FROM "KBData" WHERE tenant_id = %s', (tenant_id,))
+                data_id, first_path, first_version = cur.fetchone()
+                cur.execute(
+                    """UPDATE "KBData" SET current_tier = 'gold',
+                              metadata = metadata || %s::jsonb WHERE data_id = %s""",
+                    (json.dumps({"last_pipeline_status": "succeeded", "last_pipeline_stage": "gold", "intents": ["x"]}), data_id),
+                )
+            conn.commit()
+
+            worker_module.run_source(conn, source, trigger="manual")
+
+        with conn.cursor() as cur:
+            cur.execute(
+                'SELECT data_id, current_tier, path, content_hash, jsonb_typeof(metadata), metadata, row_version '
+                'FROM "KBData" WHERE tenant_id = %s', (tenant_id,),
+            )
+            rows = cur.fetchall()
+            assert len(rows) == 1
+            new_id, tier, path, _hash, kind, metadata, version = rows[0]
+            assert new_id == data_id, "the document keeps its data_id across a re-crawl"
+            assert tier == "gold", "what Silver/Gold produced keeps serving until re-promotion"
+            assert path != first_path and path.startswith(f"{tenant_id}/bronze/{data_id}/")
+            assert kind == "object"
+            assert metadata["source_id"] == source_id and metadata["intents"] == ["x"]
+            assert "last_pipeline_status" not in metadata and "last_pipeline_stage" not in metadata
+            assert version != first_version
+
+            cur.execute('SELECT notes FROM "KBLifecycleHistory" WHERE data_id = %s ORDER BY 1', (data_id,))
+            notes = [r[0] for r in cur.fetchall()]
+            assert any("updated in place" in n for n in notes), notes
+        assert first_path in minio.removed, "the superseded object is removed after the swap"
+    finally:
+        conn.close()

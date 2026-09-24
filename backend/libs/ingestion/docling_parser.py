@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 import asyncio
+import io
 import os
 import re
 import tempfile
@@ -291,6 +292,20 @@ def _run_parse_sync(file_bytes: bytes, extension: str, max_chunk_chars: int = MA
         os.unlink(tmp_path)
 
 
+def _xls_to_xlsx(file_bytes: bytes) -> bytes:
+    """Docling reads OOXML only; the legacy binary .xls (still what statistics
+    offices publish) fails with "unexpected error occurred while opening the
+    document". Cell values carry over, cell formatting does not."""
+    import pandas as pd
+
+    sheets = pd.read_excel(io.BytesIO(file_bytes), sheet_name=None, header=None, engine="xlrd")
+    out = io.BytesIO()
+    with pd.ExcelWriter(out, engine="openpyxl") as writer:
+        for name, frame in sheets.items():
+            frame.to_excel(writer, sheet_name=str(name)[:31] or "Sheet", header=False, index=False)
+    return out.getvalue()
+
+
 # ── Public interface ──────────────────────────────────────────────────────────
 
 class InlineDoclingParser:
@@ -318,6 +333,9 @@ class InlineDoclingParser:
         """Parse in-memory bytes (no MinIO download). Used by the web path, which
         fetches + cleans HTML→markdown before handing it to Docling."""
         loop = asyncio.get_event_loop()
+        if extension.lower().lstrip(".") == "xls":
+            file_bytes = await loop.run_in_executor(None, _xls_to_xlsx, file_bytes)
+            extension = "xlsx"
         result = await loop.run_in_executor(
             None, _run_parse_sync, file_bytes, extension, max_chunk_chars
         )

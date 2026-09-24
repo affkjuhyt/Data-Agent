@@ -288,6 +288,9 @@ suspecting the pipeline.
 | Many pods `Evicted` at once | Disk pressure → §9 |
 | `sandbox-executor` Pending (production set) | No `gvisor` RuntimeClass; preflight reports it. The dev set doesn't use gvisor |
 | `kb_search` returns no chunks, no error | `SERVICE_AUTH_SECRET` differs between `workflow-runtime` and `kb-backend` |
+| Every `/api` call returns `503` but Kong `/status` is `200` | Kong is not at fault: kb-backend's Postgres pool stayed "not connected" after Postgres restarted. `/health` now returns `503` in that state so liveness restarts the pod; to fix by hand `kubectl -n dataagent-service rollout restart deploy/kb-backend` |
+| A worker's Kafka producer times out on metadata ("Failed to update metadata after 60 secs") though SASL login succeeds | Kafka's ACLs are gone (ACLs live in the broker's metadata, lost with it). Re-run the topics/ACL Job: `kubectl apply -f deploy/k8s/dev/job/kafka-topics.yaml` (delete the old Job first if it still exists) |
+| litellm `429 No deployments available` for `embedder`, or `401 Incorrect API key ... platform.openai.com` | `EMBEDDING_V1_BASE_URL` missing from `litellm-env`, so the embedder calls OpenAI and goes into cooldown |
 | `Dockerfile cannot be empty` | A Dockerfile was truncated by a bad edit → `git checkout HEAD -- <path>` |
 
 ## 13. Pre-release checklist

@@ -25,6 +25,7 @@ from libs.basemodel.services_databaseconnector.postgres_model import (
     SourceConfigPayload,
 )
 from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+    KBDataORM,
     KBSourceConfigORM,
     KBSourceORM,
     KBSourceRunORM,
@@ -66,12 +67,26 @@ def _next_run_at(cron: str | None, last_started: datetime.datetime | None) -> st
     return max(following, now).isoformat() if following else None
 
 
-def _to_response(row: dict[str, Any], active_cfg: dict[str, Any] | None, last_run: dict[str, Any] | None) -> dict[str, Any]:
+def _to_response(
+    row: dict[str, Any], active_cfg: dict[str, Any] | None, last_run: dict[str, Any] | None,
+    last_doc: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """`row` is always a plain dict (never a live ORM instance) — see
-    `_source_row`'s docstring for why."""
+    `_source_row`'s docstring for why.
+
+    `last_run["status"]` only reflects the crawl itself (fetch + land in
+    Bronze) — for an Auto source that succeeded but whose Silver/Gold attempt
+    then failed outright (bad file format, corrupt content: "Comtrade",
+    an old-format .xls both sat "still processing" for a full day), the crawl
+    row alone looks like a plain success. `last_doc` (from KBData.metadata,
+    stamped by `libs.ingestion.pipeline_status`) is the real downstream
+    outcome, surfaced separately so the UI can tell "crawled fine, still
+    failed" apart from "crawl itself failed" and offer a retry that re-queues
+    Silver/Gold directly rather than a whole new crawl."""
     cfg = active_cfg or {}
     last_run_started = (last_run or {}).get("started_at")
     created_at = row.get("created_at")
+    doc = last_doc or {}
     return {
         "next_run_at": _next_run_at(cfg.get("cron"), last_run_started),
         "id": str(row["source_id"]),
@@ -94,6 +109,11 @@ def _to_response(row: dict[str, Any], active_cfg: dict[str, Any] | None, last_ru
         "created_at": created_at.isoformat() if created_at else "",
         "last_run_status": (last_run or {}).get("status"),
         "last_run_at": last_run_started.isoformat() if last_run_started else None,
+        "last_doc_id": doc.get("data_id"),
+        "last_doc_current_tier": doc.get("current_tier"),
+        "last_doc_pipeline_stage": doc.get("last_pipeline_stage"),
+        "last_doc_pipeline_status": doc.get("last_pipeline_status"),
+        "last_doc_pipeline_error": doc.get("last_pipeline_error"),
     }
 
 
@@ -115,6 +135,7 @@ async def list_sources(postgres: Any, tenant_id: str, cursor: str | None = None)
         source_ids = [r.source_id for r in rows]
         active_cfgs: dict[str, dict[str, Any]] = {}
         last_runs: dict[str, dict[str, Any]] = {}
+        last_docs: dict[str, dict[str, Any]] = {}
         if source_ids:
             crows = (await session.execute(
                 sa_select(KBSourceConfigORM)
@@ -130,10 +151,32 @@ async def list_sources(postgres: Any, tenant_id: str, cursor: str | None = None)
                 .where(KBSourceRunORM.source_id.in_(source_ids))
                 .order_by(KBSourceRunORM.source_id, KBSourceRunORM.started_at.desc())
             )).scalars().all()
+            last_doc_ids: dict[str, str] = {}
             for r in rrows:
                 sid = str(r.source_id)
                 if sid not in last_runs:
                     last_runs[sid] = {"status": r.status, "started_at": r.started_at}
+                    if r.data_ids:
+                        last_doc_ids[sid] = str(r.data_ids[0])
+
+            # Batch-fetch the real post-crawl outcome for each source's last
+            # document — see _to_response's docstring for why this can't be
+            # read off the run row alone.
+            if last_doc_ids:
+                drows = (await session.execute(
+                    sa_select(KBDataORM.data_id, KBDataORM.current_tier, KBDataORM.doc_metadata)
+                    .where(KBDataORM.data_id.in_([uuid.UUID(d) for d in last_doc_ids.values()]))
+                )).all()
+                by_data_id = {
+                    str(d_id): {
+                        "data_id": str(d_id), "current_tier": tier,
+                        "last_pipeline_stage": (meta or {}).get("last_pipeline_stage"),
+                        "last_pipeline_status": (meta or {}).get("last_pipeline_status"),
+                        "last_pipeline_error": (meta or {}).get("last_pipeline_error"),
+                    }
+                    for d_id, tier, meta in drows
+                }
+                last_docs = {sid: by_data_id[did] for sid, did in last_doc_ids.items() if did in by_data_id}
 
         # Extract to plain dicts while the rows are still attached — reading
         # an attribute after this `async with` closes raises
@@ -146,7 +189,13 @@ async def list_sources(postgres: Any, tenant_id: str, cursor: str | None = None)
             for r in rows
         ]
 
-    docs = [_to_response(rd, active_cfgs.get(str(rd["source_id"])), last_runs.get(str(rd["source_id"]))) for rd in row_dicts]
+    docs = [
+        _to_response(
+            rd, active_cfgs.get(str(rd["source_id"])), last_runs.get(str(rd["source_id"])),
+            last_docs.get(str(rd["source_id"])),
+        )
+        for rd in row_dicts
+    ]
     has_next = offset + PAGE_SIZE < total
     next_cursor = base64.urlsafe_b64encode(str(offset + PAGE_SIZE).encode()).decode() if has_next else None
     return build_cursor_page(docs, total, has_next, next_cursor)

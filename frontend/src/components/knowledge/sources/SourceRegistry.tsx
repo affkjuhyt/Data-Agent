@@ -35,6 +35,14 @@ interface SourceRow {
   last_run_status: 'queued' | 'running' | 'success' | 'failed' | null;
   last_run_at: string | null;
   next_run_at: string | null;
+  // The crawl above can succeed while the resulting document's own Silver/Gold
+  // attempt then fails outright (bad file format, corrupt content) — these
+  // reflect that real downstream outcome, separate from the crawl's own status.
+  last_doc_id: string | null;
+  last_doc_current_tier: string | null;
+  last_doc_pipeline_stage: string | null;
+  last_doc_pipeline_status: string | null;
+  last_doc_pipeline_error: string | null;
 }
 
 interface SourceRun {
@@ -58,9 +66,10 @@ const STATUS_TONE: Record<string, string> = {
   queued: 'text-slate-700 bg-slate-50 border-slate-200',
 };
 
-type StatusFilter = 'active' | 'failed' | 'never';
+type StatusFilter = 'active' | 'failed' | 'never' | 'processing_failed';
 const STATUS_FILTER_LABEL: Record<StatusFilter, string> = {
   active: 'Queued / Running', failed: 'Failed', never: 'Never run',
+  processing_failed: 'Auto-processing failed',
 };
 
 /** "in 6 min" / "in 3 h" / "in 2 d"; "due now" once the time has passed. */
@@ -136,7 +145,8 @@ export const SourceRegistry = ({ activeSourceIds = new Set(), onRunQueued }: Sou
     if (statusFilters.size === 0) return true;
     return (statusFilters.has('active') && isActive(s))
       || (statusFilters.has('failed') && s.last_run_status === 'failed')
-      || (statusFilters.has('never') && !s.last_run_status);
+      || (statusFilters.has('never') && !s.last_run_status)
+      || (statusFilters.has('processing_failed') && s.last_doc_pipeline_status === 'failed');
   };
   const liveSources = sources.filter(s => !removedIds.has(s.id));
   const visible = liveSources.filter(matchesFilters);
@@ -257,6 +267,21 @@ export const SourceRegistry = ({ activeSourceIds = new Set(), onRunQueued }: Sou
     reload(true);
   };
 
+  // The crawl already succeeded and landed the document — a failed Silver/Gold
+  // attempt just needs that one stage re-queued, not a whole new crawl (which,
+  // for unchanged content, would be a no-op anyway per the content-hash skip).
+  const [retryingIds, setRetryingIds] = useState<Set<string>>(new Set());
+  const retryProcessing = async (source: SourceRow) => {
+    if (!source.last_doc_id) return;
+    const targetLayer = source.last_doc_current_tier === 'silver' ? 'gold' : 'silver';
+    setRetryingIds(prev => new Set(prev).add(source.id));
+    try {
+      await apiMutate('POST', `/api/pipeline/ingestion/promote/${source.last_doc_id}/${targetLayer}`);
+    } catch { /* surfaced naturally on the next reload's still-failed status */ }
+    setRetryingIds(prev => { const next = new Set(prev); next.delete(source.id); return next; });
+    reload(true);
+  };
+
   const handleBatchRun = async () => {
     setIsBatchRunning(true);
     const runIds: string[] = [];
@@ -364,6 +389,7 @@ export const SourceRegistry = ({ activeSourceIds = new Set(), onRunQueued }: Sou
               </th>
               <th className="px-6 py-5">Source</th>
               <th className="px-6 py-5">Connector</th>
+              <th className="px-6 py-5">Promotion</th>
               <th className="px-6 py-5">Schedule</th>
               <th className="px-6 py-5">Next Run</th>
               <th className="px-6 py-5">Last Run</th>
@@ -372,13 +398,13 @@ export const SourceRegistry = ({ activeSourceIds = new Set(), onRunQueued }: Sou
           </thead>
           <tbody className="divide-y divide-[#BFA66A] text-[#111111]">
             {isLoading ? (
-              <tr><td colSpan={7} className="px-8 py-12 text-center bg-white">
+              <tr><td colSpan={8} className="px-8 py-12 text-center bg-white">
                 <div className="flex items-center justify-center gap-2 text-[#5F5F5F] text-xs font-mono">
                   <Loader2 className="w-4 h-4 animate-spin" /> Loading…
                 </div>
               </td></tr>
             ) : visible.length === 0 ? (
-              <tr><td colSpan={7} className="px-8 py-12 text-center text-[#5F5F5F] text-xs font-mono bg-white">
+              <tr><td colSpan={8} className="px-8 py-12 text-center text-[#5F5F5F] text-xs font-mono bg-white">
                 {liveSources.length === 0
                   ? 'No sources registered. Use "Add Data" to register one, single or bulk.'
                   : 'No sources match the current filters.'}
@@ -386,7 +412,7 @@ export const SourceRegistry = ({ activeSourceIds = new Set(), onRunQueued }: Sou
             ) : groups.map(group => (
               <React.Fragment key={group.key}>
                 <tr>
-                  <td colSpan={7} className="px-6 py-2.5 bg-[#FFF9E8] text-[10px] font-black uppercase tracking-widest text-[#8A5A00]">
+                  <td colSpan={8} className="px-6 py-2.5 bg-[#FFF9E8] text-[10px] font-black uppercase tracking-widest text-[#8A5A00]">
                     {group.label} <span className="font-mono text-[#5F5F5F]">({group.rows.length})</span>
                   </td>
                 </tr>
@@ -418,6 +444,19 @@ export const SourceRegistry = ({ activeSourceIds = new Set(), onRunQueued }: Sou
                         <div className="text-[10px] font-mono text-[#8A5A00] truncate max-w-xs">{source.url}</div>
                       </td>
                       <td className="px-6 py-6 font-mono text-xs text-[#3F3F3F]">{CONNECTOR_LABEL[source.connector_type]}</td>
+                      <td className="px-6 py-6">
+                        <span
+                          className={cn(
+                            'px-2 py-0.5 rounded border text-[10px] font-bold uppercase',
+                            source.promotion_mode === 'auto'
+                              ? 'text-[#8A5A00] bg-[#FFF3D6] border-[#D9B86C]'
+                              : 'text-slate-700 bg-slate-50 border-slate-200',
+                          )}
+                          title={source.promotion_mode === 'auto' ? 'Runs straight through to Gold, no click needed' : 'Needs a manual Process click at each tier'}
+                        >
+                          {source.promotion_mode === 'auto' ? 'Auto' : 'Manual'}
+                        </span>
+                      </td>
                       <td className="px-6 py-6 font-mono text-xs text-[#5F5F5F]">
                         <span className="inline-flex items-center gap-1" title={source.cron || undefined}><Clock className="w-3 h-3" />{cronToHuman(source.cron)}</span>
                       </td>
@@ -432,6 +471,20 @@ export const SourceRegistry = ({ activeSourceIds = new Set(), onRunQueued }: Sou
                             {source.last_run_status}
                           </span>
                         ) : <span className="text-[#8A8A8A]">never run</span>}
+                        {source.last_doc_pipeline_status === 'failed' && (
+                          // The crawl above succeeded — this is the document's OWN
+                          // Silver/Gold attempt failing outright afterward (bad file
+                          // format, corrupt content), which a plain crawl "success"
+                          // badge would otherwise hide completely.
+                          <div className="mt-1">
+                            <span
+                              className="px-2 py-0.5 rounded border text-[10px] font-bold uppercase text-red-700 bg-red-50 border-red-200"
+                              title={source.last_doc_pipeline_error || undefined}
+                            >
+                              {source.last_doc_pipeline_stage || 'silver'} failed
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td className="px-8 py-6 text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-2.5">
@@ -447,6 +500,21 @@ export const SourceRegistry = ({ activeSourceIds = new Set(), onRunQueued }: Sou
                               Run Now
                               <ArrowRight className="w-3 h-3" />
                             </button>
+                          )}
+                          {!active && source.last_doc_pipeline_status === 'failed' && (
+                            retryingIds.has(source.id) ? (
+                              <span className="text-[10px] font-mono font-bold text-[#B88719] uppercase tracking-wide flex items-center gap-1.5">
+                                <Loader2 className="w-3 h-3 animate-spin" /> Retrying...
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => retryProcessing(source)}
+                                className="btn-ghost btn-sm text-red-700"
+                                title={source.last_doc_pipeline_error || 'Re-queue Silver/Gold for this document'}
+                              >
+                                Retry Processing
+                              </button>
+                            )
                           )}
                           {!active && (pendingDeleteId === source.id ? (
                             <span className="inline-flex items-center gap-1.5">

@@ -85,10 +85,15 @@ def _purge_promoted_traces(cur: Any, data_id: str) -> None:
     batch_ids = [row[0] for row in cur.fetchall()]
     cur.execute('DELETE FROM "KBConflict" WHERE data_id = %s', (data_id,))
     if batch_ids:
+        # psycopg2 adapts a plain Python list to a `text[]` literal, which
+        # Postgres refuses to compare against the `uuid` column ("operator
+        # does not exist: uuid = text") — hit for real on every re-crawl of
+        # a document with recorded conflicts (RSS Kinh tế, FRED, ... failed
+        # every single scheduled run until this cast was added).
         cur.execute(
-            """DELETE FROM "KBConflictBatch" WHERE batch_id = ANY(%s)
+            """DELETE FROM "KBConflictBatch" WHERE batch_id = ANY(%s::uuid[])
                    AND NOT EXISTS (SELECT 1 FROM "KBConflict" c WHERE c.batch_id = "KBConflictBatch".batch_id)""",
-            (batch_ids,),
+            ([str(b) for b in batch_ids],),
         )
 
     try:
@@ -141,6 +146,49 @@ def _replace_existing_by_name(cur: Any, tenant_id: str, name: str) -> None:
             _minio_client().remove_object(cfg.MINIO_BUCKET, old_path)
         except Exception:  # noqa: BLE001 — best-effort cleanup must not block the replace
             log.warning("_replace_existing_by_name | could not remove old object %s", old_path)
+
+
+# Keys the pipeline stamps on KBData.metadata for the run that just finished.
+# A new version starts clean, or the old "failed"/"succeeded" would describe
+# content that has not been processed yet.
+_PIPELINE_STAMP_KEYS = ("last_pipeline_stage", "last_pipeline_status", "last_pipeline_error")
+
+
+def _update_existing_in_place(
+    cur: Any, *, data_id: str, tier: str, added_by: str, name: str, extension: str | None,
+    path: str | None, content_hash: str | None, purpose: str, doc_metadata: dict[str, Any],
+) -> None:
+    """New content for an existing document: keep its row and `data_id`.
+
+    Replacing by delete + insert gave every re-crawl a new `data_id`, which
+    stranded anything still holding the old one (a browser's Pipeline Activity
+    entry sat at 85% forever) and removed the old content before the new one
+    was usable, so a failed Silver/Gold left nothing behind. Here the row
+    points at the new object and the tier is left alone: whatever Silver/Gold
+    already produced keeps serving until Gold's `_cleanup_previous_promotion`
+    swaps it for the new version. Extension/path/hash are only rewritten for
+    documents that carry bytes (`extension is None` for a web source)."""
+    stripped = "metadata"
+    for key in _PIPELINE_STAMP_KEYS:
+        stripped = f"({stripped} - '{key}')"
+    sets = [f"metadata = coalesce({stripped}, '{{}}'::jsonb) || %s::jsonb", "purpose = %s",
+            "row_version = gen_random_uuid()", "updated_at = now()"]
+    params: list[Any] = [json.dumps(doc_metadata), purpose]
+    if extension is not None:
+        sets += ["extension = %s", "path = %s", "content_hash = %s"]
+        params += [extension, path, content_hash]
+    params.append(data_id)
+    cur.execute(f'UPDATE "KBData" SET {", ".join(sets)} WHERE data_id = %s', tuple(params))
+    cur.execute(
+        """INSERT INTO "KBLifecycleHistory"
+               (history_id, data_id, to_tier, from_tier, approved_by, notes, pipeline_metadata)
+           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+        (
+            str(uuid.uuid4()), data_id, tier, tier, added_by,
+            f"Content updated in place by scheduled source worker: {name}",
+            json.dumps({"stage": "bronze", "update": "in_place"}),
+        ),
+    )
 
 
 def _insert_kbdata(
@@ -196,7 +244,7 @@ def register_http_file_bronze(
     content_hash = hashlib.sha256(artifact.content_bytes).hexdigest()
     with conn.cursor() as cur:
         cur.execute(
-            'SELECT data_id, content_hash, current_tier, is_deleted FROM "KBData" WHERE tenant_id = %s AND name = %s',
+            'SELECT data_id, content_hash, current_tier, is_deleted, path FROM "KBData" WHERE tenant_id = %s AND name = %s',
             (tenant_id, title),
         )
         existing = cur.fetchone()
@@ -211,9 +259,17 @@ def register_http_file_bronze(
             outcome.update(unchanged=True, existing_tier=existing[2])
         return str(existing[0])
 
-    data_id = str(uuid.uuid4())
+    in_place = existing is not None and not existing[3]
+    # New content for a live document keeps its data_id; a soft-deleted one
+    # still occupies the name, so that case takes the delete-and-insert path.
+    data_id = str(existing[0]) if in_place else str(uuid.uuid4())
     filename = f"{title}.{artifact.extension}"
-    object_key = f"{tenant_id}/bronze/{data_id}/{filename}"
+    # The content hash in the key keeps the old object addressable until the row
+    # points at the new one; it is only removed after that commit.
+    object_key = (
+        f"{tenant_id}/bronze/{data_id}/{content_hash[:12]}/{filename}" if in_place
+        else f"{tenant_id}/bronze/{data_id}/{filename}"
+    )
 
     minio = _minio_client()
     if not minio.bucket_exists(cfg.MINIO_BUCKET):
@@ -223,20 +279,28 @@ def register_http_file_bronze(
         length=len(artifact.content_bytes), content_type=artifact.content_type,
     )
 
+    doc_metadata = {
+        "source_type": "doc", "doc_type": artifact.extension,
+        "file_size": len(artifact.content_bytes),
+        "source_id": source_id, "promotion_mode": promotion_mode,
+    }
     try:
         with conn.cursor() as cur:
-            _insert_kbdata(
-                cur, data_id=data_id, tenant_id=tenant_id, role_id=role_id, name=title,
-                extension=artifact.extension, source_type="doc", added_by=added_by, abstract="",
-                doc_metadata={
-                    "source_type": "doc", "doc_type": artifact.extension,
-                    "file_size": len(artifact.content_bytes),
-                    "source_id": source_id, "promotion_mode": promotion_mode,
-                },
-                path=object_key,
-                content_hash=content_hash,
-                purpose=purpose,
-            )
+            if in_place:
+                _update_existing_in_place(
+                    cur, data_id=data_id, tier=existing[2], added_by=added_by, name=title,
+                    extension=artifact.extension, path=object_key, content_hash=content_hash,
+                    purpose=purpose, doc_metadata=doc_metadata,
+                )
+            else:
+                _insert_kbdata(
+                    cur, data_id=data_id, tenant_id=tenant_id, role_id=role_id, name=title,
+                    extension=artifact.extension, source_type="doc", added_by=added_by, abstract="",
+                    doc_metadata=doc_metadata,
+                    path=object_key,
+                    content_hash=content_hash,
+                    purpose=purpose,
+                )
         conn.commit()
     except Exception:
         conn.rollback()
@@ -248,6 +312,12 @@ def register_http_file_bronze(
         except Exception:
             log.exception("register_http_file_bronze | failed to clean up orphaned object %s", object_key)
         raise
+    old_path = existing[4] if in_place else None
+    if old_path and old_path != object_key:
+        try:
+            minio.remove_object(cfg.MINIO_BUCKET, old_path)
+        except Exception:  # noqa: BLE001 — the new version is live; a leftover object is only wasted space
+            log.warning("register_http_file_bronze | could not remove superseded object %s", old_path)
     return data_id
 
 
@@ -259,17 +329,30 @@ def register_web_bronze(
     exactly (same doc_metadata shape, no MinIO object — a web source's
     content is fetched again at Silver-promotion time). `source_id`/
     `promotion_mode`: see `register_http_file_bronze`'s docstring."""
-    data_id = str(uuid.uuid4())
+    doc_metadata = {
+        "source_type": "web", "url": url, "web_name": title,
+        "source_id": source_id, "promotion_mode": promotion_mode,
+    }
     with conn.cursor() as cur:
-        _insert_kbdata(
-            cur, data_id=data_id, tenant_id=tenant_id, role_id=role_id, name=title, extension="html",
-            source_type="web", added_by=added_by, abstract="",
-            doc_metadata={
-                "source_type": "web", "url": url, "web_name": title,
-                "source_id": source_id, "promotion_mode": promotion_mode,
-            },
-            path=None,
-            purpose=purpose,
+        cur.execute(
+            'SELECT data_id, current_tier FROM "KBData" WHERE tenant_id = %s AND name = %s AND NOT is_deleted',
+            (tenant_id, title),
         )
+        existing = cur.fetchone()
+        if existing is not None:
+            # Nothing is stored for a web source (Silver fetches the page), so
+            # "new content" is just the next Silver run over the same document.
+            data_id = str(existing[0])
+            _update_existing_in_place(
+                cur, data_id=data_id, tier=existing[1], added_by=added_by, name=title, extension=None,
+                path=None, content_hash=None, purpose=purpose, doc_metadata=doc_metadata,
+            )
+        else:
+            data_id = str(uuid.uuid4())
+            _insert_kbdata(
+                cur, data_id=data_id, tenant_id=tenant_id, role_id=role_id, name=title, extension="html",
+                source_type="web", added_by=added_by, abstract="", doc_metadata=doc_metadata,
+                path=None, purpose=purpose,
+            )
     conn.commit()
     return data_id

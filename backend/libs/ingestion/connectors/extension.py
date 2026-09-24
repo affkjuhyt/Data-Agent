@@ -7,6 +7,7 @@ explicit rather than `mimetypes.guess_extension`.
 """
 from __future__ import annotations
 
+import json
 from urllib.parse import urlsplit
 
 _BY_CONTENT_TYPE = {
@@ -55,12 +56,32 @@ def extension_from_url(url: str) -> str | None:
     return suffix if suffix.isalnum() and 1 <= len(suffix) <= 5 else None
 
 
-def infer_extension(content_type: str, url: str, *, prefer_url: bool) -> str:
+def extension_from_content(content: bytes) -> str | None:
+    """Sniff a body whose declared type said nothing: some APIs (UN Comtrade)
+    answer JSON as application/octet-stream, and "bin" is not parseable by Silver."""
+    head = content[:4096].lstrip(b"\xef\xbb\xbf \t\r\n")
+    if head[:1] in (b"{", b"["):
+        try:
+            json.loads(content.decode("utf-8"))
+        except ValueError:
+            return None
+        return "json"
+    if head[:5] == b"<?xml" or head[:4] == b"<rss" or head[:5] == b"<feed":
+        return "xml"
+    return None
+
+
+def infer_extension(
+    content_type: str, url: str, *, prefer_url: bool, content: bytes | None = None,
+) -> str:
     """`prefer_url=True` for direct file downloads, where the URL names the file.
     `prefer_url=False` for APIs, whose path often ends in a dotted key
     (".../M.VN.VND.A") that is not an extension — the response type is the
-    only trustworthy signal there."""
+    only trustworthy signal there. `content` is the last resort before "bin"."""
     from_type = extension_from_content_type(content_type)
     from_url = extension_from_url(url)
     order = (from_url, from_type) if prefer_url else (from_type,)
-    return next((ext for ext in order if ext), "bin")
+    found = next((ext for ext in order if ext), None)
+    if found is None and content is not None:
+        found = extension_from_content(content)
+    return found or "bin"

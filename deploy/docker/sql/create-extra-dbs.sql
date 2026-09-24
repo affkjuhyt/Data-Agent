@@ -36,6 +36,21 @@ END
 $$;
 GRANT CONNECT ON DATABASE sandbox_dev TO sandbox_reader;
 
+-- crawler_ro: the schema-crawler worker's login for the demo warehouse
+-- (KBWarehouseConfig.connection.username). Read-only, same shape as
+-- sandbox_reader; separate so the crawler does not share the agents' SQL
+-- credential. The warehouse used to connect as "admin" with this password,
+-- which never matched and failed authentication every 5 seconds.
+-- Password set by the db-init Job from POSTGRES_CRAWLER_PASSWORD.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'crawler_ro') THEN
+    CREATE ROLE crawler_ro WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+  END IF;
+END
+$$;
+GRANT CONNECT ON DATABASE sandbox_dev TO crawler_ro;
+
 \connect sandbox_dev
 
 CREATE TABLE IF NOT EXISTS sample_orders (
@@ -56,3 +71,7 @@ WHERE NOT EXISTS (SELECT 1 FROM sample_orders);
 GRANT USAGE ON SCHEMA public TO sandbox_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO sandbox_reader;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO sandbox_reader;
+
+GRANT USAGE ON SCHEMA public TO crawler_ro;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO crawler_ro;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO crawler_ro;

@@ -181,12 +181,29 @@ def test_legacy_trigger_becomes_a_queued_row_only_when_none_is_active() -> None:
     assert insert and "'queued'" in insert[0][0] and "NOT EXISTS" in insert[0][0]
 
 
-class _FakeAutoPromoteProducer:
-    def __init__(self) -> None:
-        self.sent: list[tuple[str, dict[str, Any]]] = []
+class _FakeFuture:
+    """kafka-python's `send()` returns a FutureRecordMetadata; the real bug
+    was calling only `producer.flush(timeout=...)`, which does not raise on
+    timeout — it just returns, whether or not the send actually went through.
+    `future.get(timeout=...)` is what actually surfaces a failed send."""
 
-    def send(self, topic: str, value: dict[str, Any]) -> None:
+    def __init__(self, exc: Exception | None = None) -> None:
+        self._exc = exc
+
+    def get(self, timeout: float | None = None) -> Any:
+        if self._exc is not None:
+            raise self._exc
+        return object()
+
+
+class _FakeAutoPromoteProducer:
+    def __init__(self, send_exc: Exception | None = None) -> None:
+        self.sent: list[tuple[str, dict[str, Any]]] = []
+        self._send_exc = send_exc
+
+    def send(self, topic: str, value: dict[str, Any]) -> _FakeFuture:
         self.sent.append((topic, value))
+        return _FakeFuture(self._send_exc)
 
     def flush(self, timeout: float | None = None) -> None:
         return None
@@ -216,3 +233,23 @@ def test_publish_auto_promote_silver_swallows_a_send_failure() -> None:
 
     with patch.object(wc, "_get_promote_producer", return_value=_Boom()):
         wc.publish_auto_promote_silver("d1", "t1")  # must not raise
+
+
+def test_publish_auto_promote_silver_catches_a_failure_the_future_reports() -> None:
+    """Regression: a producer whose `send()` returns normally but whose
+    delivery actually fails (stale broker connection after a Kafka restart,
+    the exact live case that silently stranded RSS Kinh tế / Tỷ giá ngoại tệ
+    at Bronze with no error anywhere) must still be caught — not swallowed
+    by a bare `flush()` that returns regardless of outcome."""
+    producer = _FakeAutoPromoteProducer(send_exc=RuntimeError("stale broker connection"))
+    with patch.object(wc, "_get_promote_producer", return_value=producer):
+        wc.publish_auto_promote_silver("d1", "t1")  # must not raise
+
+
+def test_a_failed_publish_drops_the_cached_producer_so_the_next_call_rebuilds_it() -> None:
+    wc._promote_producer = _FakeAutoPromoteProducer(send_exc=RuntimeError("stale"))  # type: ignore[assignment]
+    try:
+        wc.publish_auto_promote_silver("d1", "t1")
+        assert wc._promote_producer is None
+    finally:
+        wc._promote_producer = None

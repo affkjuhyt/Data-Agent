@@ -209,6 +209,7 @@ kubectl -n dataagent-service create secret generic db-init-secrets \
   --from-literal=KB_BACKEND_PASSWORD="${KB_BACKEND_PASSWORD}" \
   --from-literal=PGBOUNCER_AUTH_PASSWORD="${PGBOUNCER_AUTH_PASSWORD}" \
   --from-literal=KB_INGESTION_WORKER_PASSWORD="${KB_INGESTION_WORKER_PASSWORD}" \
+  --from-literal=POSTGRES_CRAWLER_PASSWORD="${POSTGRES_CRAWLER_PASSWORD:-}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic seed-secrets \

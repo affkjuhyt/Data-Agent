@@ -53,3 +53,22 @@ def test_file_url_extension_wins_over_generic_type() -> None:
 
 def test_nothing_known_is_bin() -> None:
     assert infer_extension("", "https://x/download", prefer_url=True) == "bin"
+
+
+def test_a_json_body_with_an_opaque_content_type_is_json_not_bin() -> None:
+    """UN Comtrade answers JSON as application/octet-stream; "bin" made Silver
+    reject the document as "File format not allowed"."""
+    body = b'{"elapsedTime":"1.24 secs","count":5,"data":[]}'
+    assert infer_extension("application/octet-stream", "https://x/api/HS", prefer_url=False, content=body) == "json"
+
+
+def test_a_declared_type_beats_sniffing() -> None:
+    assert infer_extension("text/csv", "https://x/a", prefer_url=False, content=b'{"a": 1}') == "csv"
+
+
+def test_a_broken_json_prefix_is_not_sniffed_as_json() -> None:
+    assert infer_extension("application/octet-stream", "https://x/a", prefer_url=False, content=b"{not json") == "bin"
+
+
+def test_an_xml_body_is_sniffed() -> None:
+    assert infer_extension("application/octet-stream", "https://x/a", prefer_url=False, content=b"<?xml version='1.0'?><a/>") == "xml"

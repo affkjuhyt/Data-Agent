@@ -35,6 +35,7 @@ from libs.ingestion import config as cfg
 from libs.ingestion.graph_store import GraphStore
 from libs.ingestion.log_writer import IngestionLogger
 from libs.ingestion.pipeline_events import NULL_EMITTER, PipelineEventEmitter
+from libs.ingestion.pipeline_status import stamp_pipeline_status
 from libs.ingestion.stage_chain import StageChain
 
 log = logging.getLogger(__name__)
@@ -227,6 +228,7 @@ async def promote_to_gold(
     stage_record = StageChain()
 
     await logger.logging("Gold stage started — extracting entities", status="GRAPH_EXTRACTING", stage="gold")
+    await stamp_pipeline_status(postgres, data_id, stage="gold", status="running")
     try:
         embed_model_id = await _get_collection_embed_model_id(postgres, collection_name=cfg.QDRANT_COLLECTION)
         log.info("Gold: collection '%s' → embed_model_id=%s", cfg.QDRANT_COLLECTION, embed_model_id or "none")
@@ -367,6 +369,7 @@ async def promote_to_gold(
             )
     except Exception as exc:
         await logger.logging(f"Gold stage failed: {exc}", level="ERROR", status="FAILED")
+        await stamp_pipeline_status(postgres, data_id, stage="gold", status="failed", error=str(exc))
         await stage_record.unwind()
         await emitter.emit("pipeline.error", {"stage": "gold", "error": str(exc)[:300]})
         raise
@@ -375,6 +378,7 @@ async def promote_to_gold(
         f"Gold complete — {counts['committed']} blocks committed, {counts['conflicted']} conflicts detected",
         status="PUBLISHED",
     )
+    await stamp_pipeline_status(postgres, data_id, stage="gold", status="succeeded")
     await emitter.emit("pipeline.done", {})
 
     return {

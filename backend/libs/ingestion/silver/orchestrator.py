@@ -22,6 +22,7 @@ from libs.ingestion.silver.summarization import _summarize_chunks
 from libs.ingestion import config as cfg
 from libs.ingestion.log_writer import IngestionLogger
 from libs.ingestion.pipeline_events import NULL_EMITTER, PipelineEventEmitter
+from libs.ingestion.pipeline_status import stamp_pipeline_status
 from libs.ingestion.stage_chain import StageChain
 
 
@@ -71,6 +72,10 @@ async def promote_to_silver(
     stage_record = StageChain()
 
     await logger.logging("Silver stage started", status="RUNNING", stage="silver")
+    # Clears a previous attempt's "failed" stamp before this one runs, so a
+    # doc that failed last time and is retrying doesn't keep showing as
+    # failed while genuinely back in flight.
+    await stamp_pipeline_status(postgres, data_id, stage="silver", status="running")
     try:
         kb_data = await _load_kb_data(postgres, tenant_id=tenant_id, data_id=data_id)
         source_type = SourceType(kb_data["source_type"])
@@ -161,6 +166,7 @@ async def promote_to_silver(
             )
     except Exception as exc:
         await logger.logging(f"Silver stage failed: {exc}", level="ERROR", status="FAILED")
+        await stamp_pipeline_status(postgres, data_id, stage="silver", status="failed", error=str(exc))
         await stage_record.unwind()
         await emitter.emit("pipeline.error", {"stage": "silver", "error": str(exc)[:300]})
         raise
@@ -169,4 +175,5 @@ async def promote_to_silver(
         f"Silver complete — {len(accepted_chunks)} chunks accepted, queued for gold",
         status="EMBEDDING",
     )
+    await stamp_pipeline_status(postgres, data_id, stage="silver", status="succeeded")
     return {"data_id": data_id, "chunks_count": len(accepted_chunks), "layer": Tier.SILVER.value}

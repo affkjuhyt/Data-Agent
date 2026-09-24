@@ -5,7 +5,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
@@ -172,5 +172,12 @@ app.include_router(router)
 
 
 @app.get("/health", tags=["Health"])
-async def health() -> dict[str, str]:
+async def health(request: Request) -> dict[str, str]:
+    # Every /api route depends on Postgres (permissions, documents). After a
+    # Postgres restart the pool here stayed "not connected" and never recovered,
+    # so all routes returned 503 while this probe said "ok" and k8s never
+    # restarted the pod. Failing the probe lets the liveness check do that.
+    postgres = getattr(request.app.state, "postgres", None)
+    if postgres is not None and not postgres.is_healthy():
+        raise HTTPException(status_code=503, detail="Postgres not connected")
     return {"status": "ok"}

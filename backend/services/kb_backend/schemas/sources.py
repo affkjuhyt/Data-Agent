@@ -73,6 +73,15 @@ class SourceResponse(BaseModel):
     last_run_status: Optional[str] = None
     last_run_at: Optional[str] = None
     next_run_at: Optional[str] = None
+    # The crawl (above) can succeed while the resulting document's own
+    # Silver/Gold attempt fails outright — these three surface that real
+    # downstream outcome so the UI can tell the two apart and offer a
+    # targeted retry. See source_ops._to_response's docstring.
+    last_doc_id: Optional[str] = None
+    last_doc_current_tier: Optional[str] = None
+    last_doc_pipeline_stage: Optional[str] = None
+    last_doc_pipeline_status: Optional[str] = None
+    last_doc_pipeline_error: Optional[str] = None
 
 
 class SourceRunResponse(BaseModel):

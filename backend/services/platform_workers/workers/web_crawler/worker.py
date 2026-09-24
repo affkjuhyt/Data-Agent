@@ -116,7 +116,7 @@ def publish_auto_promote_silver(data_id: str, tenant_id: str) -> None:
     if producer is None:
         return
     try:
-        producer.send(
+        future = producer.send(
             _PROMOTE_SILVER_TOPIC,
             value={
                 "event": "promote_silver",
@@ -125,9 +125,27 @@ def publish_auto_promote_silver(data_id: str, tenant_id: str) -> None:
                 "approved_by": "web-crawler-worker",
             },
         )
+        # `producer.flush(timeout=...)` does NOT raise on timeout — it just
+        # returns once the deadline passes, whether or not the send actually
+        # went through. That silently dropped every auto-promote publish for
+        # RSS Kinh tế / Tỷ giá ngoại tệ after a Kafka broker restart left this
+        # module-cached producer holding stale metadata: no exception, no
+        # log, no Silver stage ever started, and the document sat at Bronze
+        # indefinitely with nothing in Data Layers/Source Registry showing
+        # why. `future.get(timeout=...)` blocks on the SAME send and raises
+        # the real error (KafkaTimeoutError, broker error, ...) so the
+        # except block below can actually catch and log it.
+        future.get(timeout=10)
         producer.flush(timeout=5)
     except Exception:  # noqa: BLE001 — a failed publish must not fail a crawl that already succeeded
         log.warning("auto-promote: failed to queue silver for data_id=%s", data_id, exc_info=True)
+        # The cached producer may be holding a connection to a broker
+        # identity that no longer exists (e.g. Kafka itself was restarted) —
+        # drop it so the next call builds a fresh one instead of retrying
+        # the same broken producer on every subsequent crawl forever.
+        global _promote_producer
+        with _promote_producer_lock:
+            _promote_producer = None
 
 
 def try_kafka_consumer(retries: int = 5, delay: int = 3) -> KafkaConsumer | None:

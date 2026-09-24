@@ -25,7 +25,14 @@ data:
   POSTGRES_POOL_RECYCLE: '1800'
   HF_HOME: /cache
   LLM_MODEL: agent-fast
-  SILVER_CONCURRENCY: '1'
+  # A single huge scanned PDF (heavy Docling+Tesseract OCR, tens of minutes)
+  # otherwise monopolizes the one processing slot and starves every other
+  # source behind it — hit for real: 15-minute-cadence RSS/REST sources kept
+  # having their queued Silver message superseded by their own next re-crawl
+  # before ever getting a turn, while a single yearbook PDF ran. Node has
+  # ample CPU/memory headroom (see the bumped limits below) for a few
+  # concurrent attempts; small documents finish in seconds regardless.
+  SILVER_CONCURRENCY: '3'
   SILVER_SUMMARY_CONCURRENCY: '4'
   USE_VLM: 'false'
 ---
@@ -85,10 +92,10 @@ spec:
         resources:
           requests:
             cpu: 500m
-            memory: 1Gi
+            memory: 2Gi
           limits:
-            cpu: '2'
-            memory: 4Gi
+            cpu: '4'
+            memory: 16Gi
         volumeMounts:
         - name: cache
           mountPath: /cache
