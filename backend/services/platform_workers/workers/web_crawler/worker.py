@@ -287,6 +287,7 @@ def run_source(
             data_id = bronze.register_web_bronze(
                 conn, tenant_id=tenant_id, role_id=role_id, title=title, url=config["url"], added_by=added_by,
                 source_id=source_id, promotion_mode=promotion_mode, purpose=purpose,
+                artifact=artifact, outcome=outcome,
             )
         quality_metrics = {**(artifact.extra or {}), **outcome} or None
 
@@ -403,15 +404,18 @@ def _run_queue_item(conn: Any, row: dict[str, Any]) -> None:
     purpose = config.get("purpose", "production")
     try:
         artifact = connector_fetch("web_crawl", config)
+        outcome: dict[str, Any] = {}
         data_id = bronze.register_web_bronze(
             conn, tenant_id=tenant_id, role_id=row["role_id"], title=title, url=url, added_by=added_by,
             source_id=source_id, promotion_mode=promotion_mode, purpose=purpose,
+            artifact=artifact, outcome=outcome,
         )
+        queue_metrics = {**(artifact.extra or {}), **outcome} or None
         with conn.cursor() as cur:
             cur.execute(
                 """UPDATE "KBSourceRun" SET status='success', data_ids=%s, quality_metrics=%s, finished_at=now()
                      WHERE run_id=%s""",
-                (json.dumps([data_id]), json.dumps(artifact.extra) if artifact.extra else None, run_id),
+                (json.dumps([data_id]), json.dumps(queue_metrics) if queue_metrics else None, run_id),
             )
             cur.execute("""UPDATE "KBSourceCrawlQueue" SET status = 'done' WHERE queue_id = %s""", (queue_id,))
             if depth < max_depth:
@@ -421,7 +425,7 @@ def _run_queue_item(conn: Any, row: dict[str, Any]) -> None:
                 )
         conn.commit()
         log.info("_run_queue_item | source=%s url=%s depth=%d -> data_id=%s", source_id, url, depth, data_id)
-        if promotion_mode == "auto":
+        if promotion_mode == "auto" and not outcome.get("unchanged"):
             publish_auto_promote_silver(data_id, tenant_id)
     except Exception as e:
         conn.rollback()

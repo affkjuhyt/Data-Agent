@@ -46,7 +46,7 @@ class _Cursor:
         if self._row is None:
             self._pending_projection = None
         elif "AND NOT is_deleted" in flat:
-            self._pending_projection = (self._row["data_id"], self._row["current_tier"])
+            self._pending_projection = (self._row["data_id"], self._row["current_tier"], self._row["content_hash"])
         elif "is_deleted" in flat:
             self._pending_projection = (
                 self._row["data_id"], self._row["content_hash"], self._row["current_tier"], self._row["is_deleted"],
@@ -320,3 +320,44 @@ def test_a_web_source_reuses_its_existing_document_instead_of_replacing_it() -> 
     assert 'DELETE FROM "KBData"' not in sql and 'INSERT INTO "KBData"' not in sql
     update = next(s for s in conn.cursor_.sql if s.startswith('UPDATE "KBData"'))
     assert "path = %s" not in update  # nothing stored for a web source
+
+
+def _web_artifact(text: bytes = b"# Page\n\nsame text") -> FetchedArtifact:
+    return FetchedArtifact(content_bytes=text, content_type="text/markdown", source_url="https://x", extension="md")
+
+
+def test_an_unchanged_web_page_is_not_reprocessed() -> None:
+    artifact = _web_artifact()
+    conn = _Conn({"data_id": "web-1", "current_tier": "gold", "content_hash": hashlib.sha256(artifact.content_bytes).hexdigest(), "is_deleted": False})
+    outcome: dict[str, Any] = {}
+    data_id = bronze.register_web_bronze(
+        conn, tenant_id="t", role_id="r", title="T", url="https://x", added_by="a", artifact=artifact, outcome=outcome,
+    )
+    assert data_id == "web-1"
+    assert outcome == {"unchanged": True, "existing_tier": "gold"}
+    assert len(conn.cursor_.sql) == 1 and conn.cursor_.sql[0].startswith("SELECT")  # nothing written
+
+
+def test_a_changed_web_page_is_updated_in_place_with_its_new_hash() -> None:
+    artifact = _web_artifact(b"# Page\n\nnew text")
+    conn = _Conn({"data_id": "web-1", "current_tier": "gold", "content_hash": "old-hash", "is_deleted": False})
+    outcome: dict[str, Any] = {}
+    bronze.register_web_bronze(
+        conn, tenant_id="t", role_id="r", title="T", url="https://x", added_by="a", artifact=artifact, outcome=outcome,
+    )
+    assert "unchanged" not in outcome
+    sql, params = next((s, p) for s, p in conn.cursor_.executions if s.startswith('UPDATE "KBData"'))
+    assert "content_hash = %s" in sql and "path = %s" not in sql
+    assert hashlib.sha256(artifact.content_bytes).hexdigest() in params
+
+
+def test_a_web_page_stored_before_hashing_existed_is_processed_once() -> None:
+    artifact = _web_artifact()
+    conn = _Conn({"data_id": "web-1", "current_tier": "gold", "content_hash": None, "is_deleted": False})
+    outcome: dict[str, Any] = {}
+    bronze.register_web_bronze(
+        conn, tenant_id="t", role_id="r", title="T", url="https://x", added_by="a", artifact=artifact, outcome=outcome,
+    )
+    assert "unchanged" not in outcome
+    assert any(s.startswith('UPDATE "KBData"') for s, _ in conn.cursor_.executions)
+

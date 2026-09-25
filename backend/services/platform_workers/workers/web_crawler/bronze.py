@@ -167,7 +167,8 @@ def _update_existing_in_place(
     points at the new object and the tier is left alone: whatever Silver/Gold
     already produced keeps serving until Gold's `_cleanup_previous_promotion`
     swaps it for the new version. Extension/path/hash are only rewritten for
-    documents that carry bytes (`extension is None` for a web source)."""
+    documents that carry bytes (`extension is None` for a web source); the hash is
+    written whenever there is one, web sources included."""
     stripped = "metadata"
     for key in _PIPELINE_STAMP_KEYS:
         stripped = f"({stripped} - '{key}')"
@@ -175,8 +176,11 @@ def _update_existing_in_place(
             "row_version = gen_random_uuid()", "updated_at = now()"]
     params: list[Any] = [json.dumps(doc_metadata), purpose]
     if extension is not None:
-        sets += ["extension = %s", "path = %s", "content_hash = %s"]
-        params += [extension, path, content_hash]
+        sets += ["extension = %s", "path = %s"]
+        params += [extension, path]
+    if content_hash is not None:
+        sets.append("content_hash = %s")
+        params.append(content_hash)
     params.append(data_id)
     cur.execute(f'UPDATE "KBData" SET {", ".join(sets)} WHERE data_id = %s', tuple(params))
     cur.execute(
@@ -324,35 +328,48 @@ def register_http_file_bronze(
 def register_web_bronze(
     conn: Any, *, tenant_id: str, role_id: str, title: str, url: str, added_by: str,
     source_id: str | None = None, promotion_mode: str = "manual", purpose: str = "production",
+    artifact: FetchedArtifact | None = None, outcome: dict[str, Any] | None = None,
 ) -> str:
     """Mirrors `register_web_bronze()` in kb_backend's bronze pipeline
     exactly (same doc_metadata shape, no MinIO object — a web source's
     content is fetched again at Silver-promotion time). `source_id`/
-    `promotion_mode`: see `register_http_file_bronze`'s docstring."""
+    `promotion_mode`: see `register_http_file_bronze`'s docstring.
+
+    `artifact` is what the connector just fetched; its hash is compared with
+    the one stored for this document so a page that has not changed does not
+    go through Silver (OCR/LLM summaries) and Gold again on every cron tick —
+    `outcome` then gets `unchanged=True` and the kept tier, exactly like
+    `register_http_file_bronze`. Nothing is compared without an artifact, and a
+    document with no stored hash yet (rows from before this check) is treated
+    as changed once so it gets one."""
     doc_metadata = {
         "source_type": "web", "url": url, "web_name": title,
         "source_id": source_id, "promotion_mode": promotion_mode,
     }
+    content_hash = hashlib.sha256(artifact.content_bytes).hexdigest() if artifact is not None else None
     with conn.cursor() as cur:
         cur.execute(
-            'SELECT data_id, current_tier FROM "KBData" WHERE tenant_id = %s AND name = %s AND NOT is_deleted',
+            'SELECT data_id, current_tier, content_hash FROM "KBData" WHERE tenant_id = %s AND name = %s AND NOT is_deleted',
             (tenant_id, title),
         )
         existing = cur.fetchone()
         if existing is not None:
-            # Nothing is stored for a web source (Silver fetches the page), so
-            # "new content" is just the next Silver run over the same document.
             data_id = str(existing[0])
+            if content_hash is not None and existing[2] == content_hash:
+                log.info("register_web_bronze | %r unchanged (content_hash match) — skipping re-ingest", title)
+                if outcome is not None:
+                    outcome.update(unchanged=True, existing_tier=existing[1])
+                return data_id
             _update_existing_in_place(
                 cur, data_id=data_id, tier=existing[1], added_by=added_by, name=title, extension=None,
-                path=None, content_hash=None, purpose=purpose, doc_metadata=doc_metadata,
+                path=None, content_hash=content_hash, purpose=purpose, doc_metadata=doc_metadata,
             )
         else:
             data_id = str(uuid.uuid4())
             _insert_kbdata(
                 cur, data_id=data_id, tenant_id=tenant_id, role_id=role_id, name=title, extension="html",
                 source_type="web", added_by=added_by, abstract="", doc_metadata=doc_metadata,
-                path=None, purpose=purpose,
+                path=None, content_hash=content_hash, purpose=purpose,
             )
     conn.commit()
     return data_id
