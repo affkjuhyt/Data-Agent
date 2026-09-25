@@ -11,6 +11,7 @@ from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm i
 from libs.database_connector.kafka_connector import KafkaProducerClient
 from libs.database_connector.postgres_connector import PostgresClient
 from libs.ingestion import config as cfg
+from libs.ingestion.purpose import reaches_gold
 
 log = logging.getLogger(__name__)
 
@@ -90,13 +91,17 @@ async def maybe_publish_auto_gold(
         return False
     async with postgres.get_client() as session:
         row = (await session.execute(
-            sa_select(KBDataORM.doc_metadata, KBDataORM.is_deleted).where(KBDataORM.data_id == uuid.UUID(data_id))
+            sa_select(KBDataORM.doc_metadata, KBDataORM.is_deleted, KBDataORM.purpose).where(
+                KBDataORM.data_id == uuid.UUID(data_id)
+            )
         )).first()
     if row is None or row[1]:
         # Deleted (moved to Trash) after Silver succeeded but before this
         # ran — a worker auto-promoting a document a steward just deleted
         # would resurrect it at Gold; nothing to do here instead.
         return False
+    if not reaches_gold(row[2]):
+        return False  # Training/Evaluation data ends at Silver, whatever the source's promotion mode
     metadata = row[0] or {}
     if metadata.get("promotion_mode") != "auto":
         return False

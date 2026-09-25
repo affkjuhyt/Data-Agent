@@ -61,7 +61,7 @@ const KnowledgeOpsCenter = () => {
   // steward's point of view an Auto source's journey is one continuous
   // "Source → Gold" run, not two hops — the SSE tracking underneath already
   // targets 'gold' from the moment Bronze lands, spanning Silver internally.
-  const crawl = useCrawlActivity((dataId, title) => startPromotion(dataId, title, 'source', 'gold'));
+  const crawl = useCrawlActivity((dataId, title, toTier) => startPromotion(dataId, title, 'source', toTier));
   // Knowledge's own tabs are independent of the module nav (which now lives under "Build").
   const [activeSubTab, setActiveSubTab] = useState<KnowledgeTabId>('FLEET');
 

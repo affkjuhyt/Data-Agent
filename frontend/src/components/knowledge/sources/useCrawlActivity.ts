@@ -11,8 +11,15 @@ interface CrawlRun {
   unchanged: boolean;
   existing_tier: string | null;
   promotion_mode: 'manual' | 'auto';
+  purpose?: string;
   data_ids: string[];
 }
+
+// Training/Evaluation data ends at Silver by design (it never enters the
+// knowledge base), so an auto run for it is tracked to Silver, not Gold —
+// otherwise its bar would wait for a Gold stage that never happens.
+const autoTargetTier = (run: CrawlRun): 'silver' | 'gold' =>
+  run.purpose && run.purpose !== 'production' ? 'silver' : 'gold';
 
 const isActive = (run: CrawlRun) => run.status === 'queued' || run.status === 'running';
 
@@ -30,7 +37,7 @@ const isActive = (run: CrawlRun) => run.status === 'queued' || run.status === 'r
 // and only reaches 100% when the document's tier is genuinely Gold.
 function toEntry(run: CrawlRun): PromotionEntry | null {
   const toGold = run.promotion_mode === 'auto';
-  const base = { data_id: run.run_id, name: run.title, from_tier: 'source', to_tier: toGold ? 'gold' : 'bronze' } as const;
+  const base = { data_id: run.run_id, name: run.title, from_tier: 'source', to_tier: toGold ? autoTargetTier(run) : 'bronze' } as const;
   switch (run.status) {
     case 'queued':  return { ...base, status: 'queued', progress: 0 };
     case 'running': return { ...base, status: 'processing', progress: 50, detail: 'Fetching source…' };
@@ -54,10 +61,10 @@ function toEntry(run: CrawlRun): PromotionEntry | null {
  * `onAutoPromoted(dataId, title)` is called exactly once per run, the first
  * time it's observed as a successful, changed, auto-promote crawl — the
  * caller wires this to usePromotionQueue's startPromotion(dataId, title,
- * 'bronze', 'gold') so the same real, SSE-tracked progress bar Data Layers
+ * 'source', toTier) so the same real, SSE-tracked progress bar Data Layers
  * uses takes over from here.
  */
-export function useCrawlActivity(onAutoPromoted?: (dataId: string, title: string) => void) {
+export function useCrawlActivity(onAutoPromoted?: (dataId: string, title: string, toTier: 'silver' | 'gold') => void) {
   const [runs, setRuns] = useState<CrawlRun[]>([]);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [tracked, setTracked] = useState<Set<string>>(new Set());
@@ -89,7 +96,7 @@ export function useCrawlActivity(onAutoPromoted?: (dataId: string, title: string
             && !handedOffRef.current.has(run.run_id)
           ) {
             handedOffRef.current.add(run.run_id);
-            for (const dataId of run.data_ids) onAutoPromoted(dataId, run.title);
+            for (const dataId of run.data_ids) onAutoPromoted(dataId, run.title, autoTargetTier(run));
           }
         }
       }

@@ -427,6 +427,7 @@ async def list_recent_activity(postgres: Any, tenant_id: str) -> list[dict[str, 
                 "unchanged": bool((r.quality_metrics or {}).get("unchanged")),
                 "existing_tier": (r.quality_metrics or {}).get("existing_tier"),
                 "promotion_mode": (r.config or {}).get("promotion_mode", "manual"),
+                "purpose": (r.config or {}).get("purpose", "production"),
                 "data_ids": r.data_ids or [],
             }
             for r in rows

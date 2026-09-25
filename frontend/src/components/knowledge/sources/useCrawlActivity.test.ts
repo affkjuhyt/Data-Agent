@@ -39,6 +39,19 @@ describe('useCrawlActivity hand-off', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(3500); });
     await act(async () => { await vi.advanceTimersByTimeAsync(3500); });
     expect(onAutoPromoted).toHaveBeenCalledTimes(1);
-    expect(onAutoPromoted).toHaveBeenCalledWith('d-2', 'Source 2');
+    expect(onAutoPromoted).toHaveBeenCalledWith('d-2', 'Source 2', 'gold');
+  });
+
+  it('tracks a Training source to Silver, since it never reaches Gold', async () => {
+    apiGet.mockResolvedValue([{ ...run('1', 'running'), purpose: 'training' }]);
+    const onAutoPromoted = vi.fn();
+    const { result } = renderHook(() => useCrawlActivity(onAutoPromoted));
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(result.current.entries[0].to_tier).toBe('silver');
+
+    apiGet.mockResolvedValue([{ ...run('1', 'success'), purpose: 'training' }]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(3500); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(3500); });
+    expect(onAutoPromoted).toHaveBeenCalledWith('d-1', 'Source 1', 'silver');
   });
 });

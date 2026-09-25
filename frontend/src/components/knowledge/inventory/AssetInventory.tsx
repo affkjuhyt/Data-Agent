@@ -398,6 +398,15 @@ export const AssetInventory = ({ onSelectAsset, onPromote, onReviewSchema, promo
                               <span className="w-3 h-3 rounded-full border-2 border-[#B88719] border-t-[#B88719] animate-spin" />
                               Processing...
                             </span>
+                          ) : doc.current_tier === 'silver' && doc.purpose && doc.purpose !== 'production' ? (
+                            // Training/Evaluation data is parsed at Silver and stays
+                            // there on purpose — no Gold, so nothing to click or wait for.
+                            <span
+                              className="text-[10px] font-mono font-bold text-[#5F5F5F] uppercase tracking-wide"
+                              title={`Marked for ${doc.purpose}: kept at Silver, never added to the knowledge base.`}
+                            >
+                              Ends at Silver · {doc.purpose}
+                            </span>
                           ) : doc.metadata?.promotion_mode === 'auto' && doc.current_tier !== 'gold' && doc.metadata?.last_pipeline_status === 'failed' ? (
                             // The last Silver/Gold attempt genuinely failed (bad file
                             // format, corrupt content, ...) — without this branch the

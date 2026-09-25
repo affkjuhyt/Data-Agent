@@ -51,6 +51,8 @@ export interface KnowledgeDocument {
   // migration: that column is a strictly-typed discriminated union and
   // would silently drop an unrecognized key).
   ingestion_mode?: string | null;
+  // production | training | evaluation — training/evaluation documents end at Silver and never reach Gold.
+  purpose?: string | null;
   metadata: {
     doc_type?: string | null;   // computed from source_type + extension
     language?: string | null;

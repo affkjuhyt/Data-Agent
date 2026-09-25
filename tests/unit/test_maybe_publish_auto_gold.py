@@ -26,20 +26,23 @@ class _Result:
 
 
 class _Session:
-    def __init__(self, metadata: dict[str, Any] | None) -> None:
+    def __init__(self, metadata: dict[str, Any] | None, purpose: str) -> None:
         self._metadata = metadata
+        self._purpose = purpose
 
     async def execute(self, *_: Any, **__: Any) -> _Result:
-        return _Result((self._metadata,) if self._metadata is not None else None)
+        # (doc_metadata, is_deleted, purpose) — the columns maybe_publish_auto_gold selects
+        return _Result((self._metadata, False, self._purpose) if self._metadata is not None else None)
 
 
 class _Postgres:
-    def __init__(self, metadata: dict[str, Any] | None) -> None:
+    def __init__(self, metadata: dict[str, Any] | None, purpose: str = "production") -> None:
         self._metadata = metadata
+        self._purpose = purpose
 
     @asynccontextmanager
     async def get_client(self) -> Any:
-        yield _Session(self._metadata)
+        yield _Session(self._metadata, self._purpose)
 
 
 class _FakeProducer:
@@ -103,3 +106,14 @@ def test_a_publish_failure_is_swallowed_not_raised() -> None:
     published = asyncio.run(maybe_publish_auto_gold(postgres, _Boom(), data_id="11111111-1111-1111-1111-111111111111", tenant_id="22222222-2222-2222-2222-222222222222"))
 
     assert published is False
+
+
+@pytest.mark.parametrize("purpose", ["training", "evaluation"])
+def test_training_and_evaluation_data_never_auto_promote_to_gold(purpose: str) -> None:
+    postgres = _Postgres({"promotion_mode": "auto"}, purpose=purpose)
+    producer = _FakeProducer()
+
+    published = asyncio.run(maybe_publish_auto_gold(postgres, producer, data_id="11111111-1111-1111-1111-111111111111", tenant_id="22222222-2222-2222-2222-222222222222"))
+
+    assert published is False
+    assert producer.produced == []

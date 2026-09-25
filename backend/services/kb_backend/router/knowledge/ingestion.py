@@ -16,6 +16,7 @@ from libs.basemodel.services_databaseconnector.postgres_model import (
     Language, SourceType, Document, Image, Video, Web, Warehouse,
 )
 from services.kb_backend.schemas import PromoteResponse, WebIngestRequest
+from libs.ingestion.purpose import reaches_gold
 from libs.shared.document_lock import DocumentBusy, document_lock
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
@@ -349,6 +350,12 @@ async def promote_to_gold(
         raise HTTPException(
             status_code=409,
             detail=f"Asset is not in SILVER tier (current: {record.get('current_tier')})",
+        )
+
+    if not reaches_gold(record.get("purpose")):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Documents marked for {record.get('purpose')} stay at Silver and never enter the knowledge base",
         )
 
     log.info("POST /ingestion/promote/%s/gold tenant=%s", data_id, ctx["tenant_id"])

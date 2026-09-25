@@ -36,6 +36,7 @@ from libs.ingestion.graph_store import GraphStore
 from libs.ingestion.log_writer import IngestionLogger
 from libs.ingestion.pipeline_events import NULL_EMITTER, PipelineEventEmitter
 from libs.ingestion.pipeline_status import stamp_pipeline_status
+from libs.ingestion.purpose import reaches_gold
 from libs.ingestion.stage_chain import StageChain
 
 log = logging.getLogger(__name__)
@@ -223,6 +224,14 @@ async def promote_to_gold(
     approved_by: str,
     emitter: PipelineEventEmitter = NULL_EMITTER,
 ) -> dict[str, Any]:
+    _, _, purpose = await _get_data_row(postgres, data_id)
+    if not reaches_gold(purpose):
+        # Whatever queued this (a stale button, an old Kafka event, a source
+        # switched to Training after its Silver run) must not put the document
+        # into the knowledge base.
+        log.info("Gold skipped: data_id=%s purpose=%s stays at Silver", data_id, purpose)
+        return {"data_id": data_id, "layer": Tier.SILVER.value, "skipped": f"purpose_{purpose}"}
+
     database = mongo.get_client()
     logger = IngestionLogger(db=database, data_id=data_id)
     stage_record = StageChain()
