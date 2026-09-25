@@ -9,6 +9,7 @@ from typing import Any, Awaitable, Callable
 from urllib.parse import urlparse
 
 from aiokafka import AIOKafkaProducer, AIOKafkaConsumer, TopicPartition
+from aiokafka.errors import OutOfOrderSequenceNumber, UnknownProducerId
 
 from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
 from libs.shared.logger import create_logger
@@ -116,7 +117,21 @@ class KafkaProducerClient:
     async def produce(self, topic: str, value: dict[str, Any], key: str | None = None) -> None:
         if self._producer is None:
             raise RuntimeError("KafkaProducerClient not open")
-        await self._producer.send_and_wait(topic, value=value, key=key)
+        try:
+            await self._producer.send_and_wait(topic, value=value, key=key)
+        except (OutOfOrderSequenceNumber, UnknownProducerId):
+            # The broker no longer agrees with this idempotent producer's
+            # id/sequence (seen after a broker restart: a new producer was
+            # handed an id whose sequence state a partition still held, and
+            # every send failed until the pod restarted — Silver finished but
+            # the auto-promote to Gold was never queued). Only a fresh
+            # producer gets a fresh id, and the health loop cannot notice this
+            # because flush() still succeeds, so rebuild here and retry once.
+            log.warning("Kafka producer state rejected for topic=%s — recreating the producer and retrying", topic)
+            await self._reconnect()
+            if self._producer is None:
+                raise
+            await self._producer.send_and_wait(topic, value=value, key=key)
         log.info("Kafka produced topic=%s key=%s", topic, key)
 
 
