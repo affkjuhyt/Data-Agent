@@ -291,6 +291,8 @@ suspecting the pipeline.
 | Every `/api` call returns `503` but Kong `/status` is `200` | Kong is not at fault: kb-backend's Postgres pool stayed "not connected" after Postgres restarted. `/health` now returns `503` in that state so liveness restarts the pod; to fix by hand `kubectl -n dataagent-service rollout restart deploy/kb-backend` |
 | A worker's Kafka producer times out on metadata ("Failed to update metadata after 60 secs") though SASL login succeeds | Kafka's ACLs are gone (ACLs live in the broker's metadata, lost with it). Re-run the topics/ACL Job: `kubectl apply -f deploy/k8s/dev/job/kafka-topics.yaml` (delete the old Job first if it still exists) |
 | litellm `429 No deployments available` for `embedder`, or `401 Incorrect API key ... platform.openai.com` | `EMBEDDING_V1_BASE_URL` missing from `litellm-env`, so the embedder calls OpenAI and goes into cooldown |
+| Silver finishes but an Auto source never reaches Gold; Kafka logs `OutOfOrderSequenceException` for a producer id | The broker no longer agrees with an idempotent producer's id/sequence. `KafkaProducerClient.produce` now rebuilds the producer and retries once; on an image without that fix, restart the pod or publish `kb.promote.gold` by hand |
+| A document stays at Silver and shows "Ends at Silver" | Intended: Training/Evaluation data (Data Purpose) is parsed but never promoted to Gold (`libs/ingestion/purpose.py`); change the purpose to Production to send it to the knowledge base |
 | `Dockerfile cannot be empty` | A Dockerfile was truncated by a bad edit → `git checkout HEAD -- <path>` |
 
 ## 13. Pre-release checklist
