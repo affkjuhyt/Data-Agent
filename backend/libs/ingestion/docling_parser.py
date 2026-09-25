@@ -179,6 +179,73 @@ def _table_row_chunks(name: str, headers: list[str], rows: list[list[str]], max_
     return chunks
 
 
+_NUMBER_CELL = re.compile(r"^[\d.,\s%()/\-\u2212PR]+$")
+_YEAR_CELL = re.compile(r"^(\d{1,2}/)?(\d{1,2}/)?(19|20)\d{2}(\s*\([PR]\))?$")  # 2024, 30/6/2023, 6/2023 (P)
+
+
+def _is_data_number(text: str) -> bool:
+    text = text.strip()
+    return bool(text) and any(ch.isdigit() for ch in text) and bool(_NUMBER_CELL.match(text)) \
+        and not _YEAR_CELL.match(text)
+
+
+def _dedupe_consecutive(parts: list[str]) -> list[str]:
+    return [part for i, part in enumerate(parts) if i == 0 or part != parts[i - 1]]
+
+
+def _split_header(grid: list[list[Any]]) -> tuple[list[str], int, list[str]]:
+    """(column names, number of header rows, table-wide labels).
+
+    Statistics tables carry a header spread over several rows with merged
+    cells (a unit label over every column, "By sex" over Male/Female, a year
+    under a period). Docling flags those rows with `column_header`, so the
+    column name is the top-to-bottom join of the labels above that column,
+    and a label that spans (almost) the whole table is a unit/title, kept out
+    of the column names. Taking `grid[0]` as the header instead left every
+    merged cell repeated in each column and the real column labels sitting in
+    the first "data" row.
+
+    When Docling flagged no header and the first row is mostly numbers, that
+    row is data, so columns get neutral names rather than a data row's values.
+    """
+    ncols = len(grid[0])
+    header_rows = 0
+    for row in grid:
+        texts = [cell.text.strip() for cell in row if cell.text.strip()]
+        # Docling sometimes flags the first row of figures as header too; a row
+        # of mostly numbers (years excluded) is data whatever the flag says.
+        mostly_figures = bool(texts) and sum(_is_data_number(t) for t in texts) * 2 >= len(texts)
+        if any(getattr(cell, "column_header", False) for cell in row) and not mostly_figures:
+            header_rows += 1
+        else:
+            break
+
+    if header_rows == 0:
+        first = [cell.text.strip() for cell in grid[0]]
+        numeric = sum(1 for text in first if _is_data_number(text))
+        if numeric * 2 >= max(len(first), 1):
+            return [f"Column {i + 1}" for i in range(ncols)], 0, []
+        return first, 1, []
+
+    parts: list[list[str]] = [[] for _ in range(ncols)]
+    labels: list[str] = []
+    for r in range(header_rows):
+        for c, cell in enumerate(grid[r]):
+            if cell.start_row_offset_idx != r or cell.start_col_offset_idx != c:
+                continue  # continuation of a merged cell, already handled at its origin
+            text = cell.text.strip()
+            if not text:
+                continue
+            first_col, last_col = cell.start_col_offset_idx, min(cell.end_col_offset_idx, ncols)
+            if ncols >= 3 and last_col - first_col >= ncols - 1:
+                if text not in labels:
+                    labels.append(text)
+                continue
+            for col in range(first_col, last_col):
+                parts[col].append(text)
+    return [" / ".join(_dedupe_consecutive(p)) for p in parts], header_rows, labels
+
+
 def _build_parsed_tables(doc: Any) -> list[dict[str, Any] | None]:
     result: list[dict[str, Any] | None] = []
     for idx, table_item in enumerate(doc.tables):
@@ -186,13 +253,15 @@ def _build_parsed_tables(doc: Any) -> list[dict[str, Any] | None]:
         if not data.grid:
             result.append(None)
             continue
-        headers = [cell.text.strip() for cell in data.grid[0]]
-        rows = [[cell.text.strip() for cell in row] for row in data.grid[1:]]
+        headers, header_rows, labels = _split_header(data.grid)
+        rows = [[cell.text.strip() for cell in row] for row in data.grid[header_rows:]]
         rows = [r for r in rows if any(r)]
         try:
             name = table_item.caption_text(doc).strip() or f"Table_{idx + 1}"
         except Exception:
             name = f"Table_{idx + 1}"
+        if labels:
+            name = f"{name} ({'; '.join(labels)})"
         last = next((r for r in reversed(result) if r is not None), None)
         if last is not None and last["data"]["headers"] == headers:
             last["data"]["rows"].extend(rows)

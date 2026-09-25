@@ -1,0 +1,10413 @@
+{
+"nien-giam-p104": {
+"source": "Niên giám thống kê.pdf",
+"page": 104,
+"table": {
+"nrows": 38,
+"ncols": 6,
+"cells": [
+{
+"text": "Tổng số Total",
+"r0": 0,
+"r1": 1,
+"c0": 1,
+"c1": 2,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "Phân theo giới tính By sex",
+"r0": 0,
+"r1": 1,
+"c0": 2,
+"c1": 4,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "Phân theo thành thị, nông thôn By residence",
+"r0": 0,
+"r1": 1,
+"c0": 4,
+"c1": 6,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "Nam Male",
+"r0": 1,
+"r1": 2,
+"c0": 2,
+"c1": 3,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "Nữ Female",
+"r0": 1,
+"r1": 2,
+"c0": 3,
+"c1": 4,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "Thành thị Urban",
+"r0": 1,
+"r1": 2,
+"c0": 4,
+"c1": 5,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "Nông thôn Rural",
+"r0": 1,
+"r1": 2,
+"c0": 5,
+"c1": 6,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "Nghìn người - Thous. persons",
+"r0": 2,
+"r1": 3,
+"c0": 1,
+"c1": 6,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2015",
+"r0": 3,
+"r1": 4,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "92228,6",
+"r0": 3,
+"r1": 4,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "45753,8",
+"r0": 3,
+"r1": 4,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "46474,8",
+"r0": 3,
+"r1": 4,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "30881,9",
+"r0": 3,
+"r1": 4,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "61346,7",
+"r0": 3,
+"r1": 4,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2016",
+"r0": 4,
+"r1": 5,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "93250,7",
+"r0": 4,
+"r1": 5,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "46294,7",
+"r0": 4,
+"r1": 5,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "46956,0",
+"r0": 4,
+"r1": 5,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "31397,0",
+"r0": 4,
+"r1": 5,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "61853,7",
+"r0": 4,
+"r1": 5,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2017",
+"r0": 5,
+"r1": 6,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "94286,0",
+"r0": 5,
+"r1": 6,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "46848,0",
+"r0": 5,
+"r1": 6,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "47438,0",
+"r0": 5,
+"r1": 6,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "31928,3",
+"r0": 5,
+"r1": 6,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "62357,7",
+"r0": 5,
+"r1": 6,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2018",
+"r0": 6,
+"r1": 7,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "95385,2",
+"r0": 6,
+"r1": 7,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "47427,1",
+"r0": 6,
+"r1": 7,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "47958,1",
+"r0": 6,
+"r1": 7,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "32636,9",
+"r0": 6,
+"r1": 7,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "62748,3",
+"r0": 6,
+"r1": 7,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2019",
+"r0": 7,
+"r1": 8,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "96484,0",
+"r0": 7,
+"r1": 8,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "48017,7",
+"r0": 7,
+"r1": 8,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "48466,3",
+"r0": 7,
+"r1": 8,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "33816,6",
+"r0": 7,
+"r1": 8,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "62667,4",
+"r0": 7,
+"r1": 8,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2020",
+"r0": 8,
+"r1": 9,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "97582,7",
+"r0": 8,
+"r1": 9,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "48625,4",
+"r0": 8,
+"r1": 9,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "48957,3",
+"r0": 8,
+"r1": 9,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "35906,4",
+"r0": 8,
+"r1": 9,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "61676,3",
+"r0": 8,
+"r1": 9,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2021",
+"r0": 9,
+"r1": 10,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "98504,4",
+"r0": 9,
+"r1": 10,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "49087,5",
+"r0": 9,
+"r1": 10,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "49416,9",
+"r0": 9,
+"r1": 10,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "36556,6",
+"r0": 9,
+"r1": 10,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "61947,8",
+"r0": 9,
+"r1": 10,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2022",
+"r0": 10,
+"r1": 11,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "99467,9",
+"r0": 10,
+"r1": 11,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "49584,6",
+"r0": 10,
+"r1": 11,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "49883,3 KÊ",
+"r0": 10,
+"r1": 11,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "37347,5",
+"r0": 10,
+"r1": 11,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "62120,4",
+"r0": 10,
+"r1": 11,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2023",
+"r0": 11,
+"r1": 12,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "100309,2",
+"r0": 11,
+"r1": 12,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "50040,0",
+"r0": 11,
+"r1": 12,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "50269,2",
+"r0": 11,
+"r1": 12,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "38219,7",
+"r0": 11,
+"r1": 12,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "62089,5",
+"r0": 11,
+"r1": 12,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2024",
+"r0": 12,
+"r1": 13,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "101343,8",
+"r0": 12,
+"r1": 13,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "50576,9",
+"r0": 12,
+"r1": 13,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "50766,9",
+"r0": 12,
+"r1": 13,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "39007,3",
+"r0": 12,
+"r1": 13,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "62336,5",
+"r0": 12,
+"r1": 13,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Sơ bộ - Prel. 2025",
+"r0": 13,
+"r1": 14,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "102345,3",
+"r0": 13,
+"r1": 14,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "51039,1",
+"r0": 13,
+"r1": 14,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "51306,2",
+"r0": 13,
+"r1": 14,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "39551,3",
+"r0": 13,
+"r1": 14,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "62794,0",
+"r0": 13,
+"r1": 14,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Tỷ lệ tăng - Growth rate (%) THỐNG",
+"r0": 14,
+"r1": 15,
+"c0": 1,
+"c1": 6,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2015",
+"r0": 15,
+"r1": 16,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1,12",
+"r0": 15,
+"r1": 16,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,20",
+"r0": 15,
+"r1": 16,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,05",
+"r0": 15,
+"r1": 16,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2,01",
+"r0": 15,
+"r1": 16,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,68",
+"r0": 15,
+"r1": 16,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2016",
+"r0": 16,
+"r1": 17,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1,11",
+"r0": 16,
+"r1": 17,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,18",
+"r0": 16,
+"r1": 17,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,04",
+"r0": 16,
+"r1": 17,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,67",
+"r0": 16,
+"r1": 17,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,83",
+"r0": 16,
+"r1": 17,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2017",
+"r0": 17,
+"r1": 18,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1,11",
+"r0": 17,
+"r1": 18,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,20",
+"r0": 17,
+"r1": 18,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,03",
+"r0": 17,
+"r1": 18,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,69",
+"r0": 17,
+"r1": 18,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,81",
+"r0": 17,
+"r1": 18,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2018",
+"r0": 18,
+"r1": 19,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1,17",
+"r0": 18,
+"r1": 19,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,24",
+"r0": 18,
+"r1": 19,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,10",
+"r0": 18,
+"r1": 19,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2,22",
+"r0": 18,
+"r1": 19,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,63",
+"r0": 18,
+"r1": 19,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2019",
+"r0": 19,
+"r1": 20,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1,15",
+"r0": 19,
+"r1": 20,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,25",
+"r0": 19,
+"r1": 20,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,06",
+"r0": 19,
+"r1": 20,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3,61",
+"r0": 19,
+"r1": 20,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "-0,13",
+"r0": 19,
+"r1": 20,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2020",
+"r0": 20,
+"r1": 21,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1,14",
+"r0": 20,
+"r1": 21,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,27",
+"r0": 20,
+"r1": 21,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,01",
+"r0": 20,
+"r1": 21,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "6,18",
+"r0": 20,
+"r1": 21,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "-1,58",
+"r0": 20,
+"r1": 21,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2021",
+"r0": 21,
+"r1": 22,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "0,94 CỤC",
+"r0": 21,
+"r1": 22,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,95",
+"r0": 21,
+"r1": 22,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,94",
+"r0": 21,
+"r1": 22,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,92",
+"r0": 21,
+"r1": 22,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,38",
+"r0": 21,
+"r1": 22,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2022",
+"r0": 22,
+"r1": 23,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "0,98",
+"r0": 22,
+"r1": 23,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,01",
+"r0": 22,
+"r1": 23,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,94",
+"r0": 22,
+"r1": 23,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2,16",
+"r0": 22,
+"r1": 23,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,28",
+"r0": 22,
+"r1": 23,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2023",
+"r0": 23,
+"r1": 24,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "0,85",
+"r0": 23,
+"r1": 24,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,92",
+"r0": 23,
+"r1": 24,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,77",
+"r0": 23,
+"r1": 24,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2,34",
+"r0": 23,
+"r1": 24,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "-0,05",
+"r0": 23,
+"r1": 24,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2024",
+"r0": 24,
+"r1": 25,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1,03",
+"r0": 24,
+"r1": 25,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,07",
+"r0": 24,
+"r1": 25,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,99",
+"r0": 24,
+"r1": 25,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2,06",
+"r0": 24,
+"r1": 25,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,40",
+"r0": 24,
+"r1": 25,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Sơ bộ - Prel. 2025",
+"r0": 25,
+"r1": 26,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "0,99",
+"r0": 25,
+"r1": 26,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,91",
+"r0": 25,
+"r1": 26,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,06",
+"r0": 25,
+"r1": 26,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,39",
+"r0": 25,
+"r1": 26,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,73",
+"r0": 25,
+"r1": 26,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Cơ cấu - Structure (%)",
+"r0": 26,
+"r1": 27,
+"c0": 1,
+"c1": 6,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2015",
+"r0": 27,
+"r1": 28,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "100,00",
+"r0": 27,
+"r1": 28,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "49,61",
+"r0": 27,
+"r1": 28,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "50,39",
+"r0": 27,
+"r1": 28,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "33,48",
+"r0": 27,
+"r1": 28,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "66,52",
+"r0": 27,
+"r1": 28,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2016",
+"r0": 28,
+"r1": 29,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "100,00",
+"r0": 28,
+"r1": 29,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "49,65",
+"r0": 28,
+"r1": 29,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "50,35",
+"r0": 28,
+"r1": 29,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "33,67",
+"r0": 28,
+"r1": 29,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "66,33",
+"r0": 28,
+"r1": 29,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2017",
+"r0": 29,
+"r1": 30,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "100,00",
+"r0": 29,
+"r1": 30,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "49,69",
+"r0": 29,
+"r1": 30,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "50,31",
+"r0": 29,
+"r1": 30,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "33,86",
+"r0": 29,
+"r1": 30,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "66,14",
+"r0": 29,
+"r1": 30,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2018",
+"r0": 30,
+"r1": 31,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "100,00",
+"r0": 30,
+"r1": 31,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "49,72",
+"r0": 30,
+"r1": 31,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "50,28",
+"r0": 30,
+"r1": 31,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "34,22",
+"r0": 30,
+"r1": 31,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "65,78",
+"r0": 30,
+"r1": 31,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2019",
+"r0": 31,
+"r1": 32,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "100,00",
+"r0": 31,
+"r1": 32,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "49,77",
+"r0": 31,
+"r1": 32,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "50,23",
+"r0": 31,
+"r1": 32,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "35,05",
+"r0": 31,
+"r1": 32,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "64,95",
+"r0": 31,
+"r1": 32,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2020",
+"r0": 32,
+"r1": 33,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "100,00",
+"r0": 32,
+"r1": 33,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "49,83",
+"r0": 32,
+"r1": 33,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "50,17",
+"r0": 32,
+"r1": 33,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "36,80",
+"r0": 32,
+"r1": 33,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "63,20",
+"r0": 32,
+"r1": 33,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2021",
+"r0": 33,
+"r1": 34,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "100,00",
+"r0": 33,
+"r1": 34,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "49,83",
+"r0": 33,
+"r1": 34,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "50,17",
+"r0": 33,
+"r1": 34,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "37,11",
+"r0": 33,
+"r1": 34,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "62,89",
+"r0": 33,
+"r1": 34,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2022",
+"r0": 34,
+"r1": 35,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "100,00",
+"r0": 34,
+"r1": 35,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "49,85",
+"r0": 34,
+"r1": 35,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "50,15",
+"r0": 34,
+"r1": 35,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "37,5",
+"r0": 34,
+"r1": 35,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "62,45",
+"r0": 34,
+"r1": 35,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2023",
+"r0": 35,
+"r1": 36,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "100,00",
+"r0": 35,
+"r1": 36,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "49,89",
+"r0": 35,
+"r1": 36,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "50,11",
+"r0": 35,
+"r1": 36,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "38,10",
+"r0": 35,
+"r1": 36,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "61,90",
+"r0": 35,
+"r1": 36,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2024",
+"r0": 36,
+"r1": 37,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "100,00",
+"r0": 36,
+"r1": 37,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "49,91",
+"r0": 36,
+"r1": 37,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "50,09",
+"r0": 36,
+"r1": 37,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "38,49",
+"r0": 36,
+"r1": 37,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "61,51",
+"r0": 36,
+"r1": 37,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Sơ bộ - Prel. 2025",
+"r0": 37,
+"r1": 38,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "100,00",
+"r0": 37,
+"r1": 38,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "49,87",
+"r0": 37,
+"r1": 38,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "50,13",
+"r0": 37,
+"r1": 38,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "38,64",
+"r0": 37,
+"r1": 38,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "61,36",
+"r0": 37,
+"r1": 38,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+}
+],
+"page": 104
+}
+},
+"nien-giam-p105": {
+"source": "Niên giám thống kê.pdf",
+"page": 105,
+"table": {
+"nrows": 39,
+"ncols": 6,
+"cells": [
+{
+"text": "Nghìn người - Thous. persons",
+"r0": 0,
+"r1": 1,
+"c0": 1,
+"c1": 6,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2020",
+"r0": 1,
+"r1": 2,
+"c0": 1,
+"c1": 2,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2022",
+"r0": 1,
+"r1": 2,
+"c0": 2,
+"c1": 3,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2023",
+"r0": 1,
+"r1": 2,
+"c0": 3,
+"c1": 4,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2024",
+"r0": 1,
+"r1": 2,
+"c0": 4,
+"c1": 5,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "Sơ bộ Prel. 2025",
+"r0": 1,
+"r1": 2,
+"c0": 5,
+"c1": 6,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "CẢ NƯỚC - WHOLE COUNTRY",
+"r0": 2,
+"r1": 3,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "97582,7",
+"r0": 2,
+"r1": 3,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "99467,9",
+"r0": 2,
+"r1": 3,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "100309,2",
+"r0": 2,
+"r1": 3,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "101343,8",
+"r0": 2,
+"r1": 3,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "102345,3",
+"r0": 2,
+"r1": 3,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Đồng bằng sông Hồng - Red River Delta",
+"r0": 3,
+"r1": 4,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "22920,2",
+"r0": 3,
+"r1": 4,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "23454,3",
+"r0": 3,
+"r1": 4,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "23732,4",
+"r0": 3,
+"r1": 4,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "24016,0",
+"r0": 3,
+"r1": 4,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "24311,1",
+"r0": 3,
+"r1": 4,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Hà Nội",
+"r0": 4,
+"r1": 5,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "8246,5",
+"r0": 4,
+"r1": 5,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "8435,7",
+"r0": 4,
+"r1": 5,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "8587,1",
+"r0": 4,
+"r1": 5,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "8717,6",
+"r0": 4,
+"r1": 5,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "8857,5",
+"r0": 4,
+"r1": 5,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Vĩnh Phúc",
+"r0": 5,
+"r1": 6,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1171,2",
+"r0": 5,
+"r1": 6,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1197,6",
+"r0": 5,
+"r1": 6,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1211,3",
+"r0": 5,
+"r1": 6,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1225,3",
+"r0": 5,
+"r1": 6,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1238,8",
+"r0": 5,
+"r1": 6,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Bắc Ninh",
+"r0": 6,
+"r1": 7,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1419,1",
+"r0": 6,
+"r1": 7,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1488,3",
+"r0": 6,
+"r1": 7,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1517,4",
+"r0": 6,
+"r1": 7,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1546,6",
+"r0": 6,
+"r1": 7,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1574,4",
+"r0": 6,
+"r1": 7,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Quảng Ninh",
+"r0": 7,
+"r1": 8,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1337,6",
+"r0": 7,
+"r1": 8,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1362,9",
+"r0": 7,
+"r1": 8,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1381,2",
+"r0": 7,
+"r1": 8,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1396,5",
+"r0": 7,
+"r1": 8,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1411,6",
+"r0": 7,
+"r1": 8,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Hải Dương",
+"r0": 8,
+"r1": 9,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1916,8",
+"r0": 8,
+"r1": 9,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1946,8",
+"r0": 8,
+"r1": 9,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1956,9",
+"r0": 8,
+"r1": 9,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1978,2",
+"r0": 8,
+"r1": 9,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1997,7",
+"r0": 8,
+"r1": 9,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Hải Phòng",
+"r0": 9,
+"r1": 10,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "2053,5",
+"r0": 9,
+"r1": 10,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2088,0",
+"r0": 9,
+"r1": 10,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2105,0",
+"r0": 9,
+"r1": 10,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2124,5",
+"r0": 9,
+"r1": 10,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2152,2",
+"r0": 9,
+"r1": 10,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Hưng Yên",
+"r0": 10,
+"r1": 11,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1269,1",
+"r0": 10,
+"r1": 11,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1290,9",
+"r0": 10,
+"r1": 11,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1301,0",
+"r0": 10,
+"r1": 11,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1318,1",
+"r0": 10,
+"r1": 11,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1333,4",
+"r0": 10,
+"r1": 11,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Thái Bình",
+"r0": 11,
+"r1": 12,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1870,2",
+"r0": 11,
+"r1": 12,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1878,5 KÊ",
+"r0": 11,
+"r1": 12,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1882,3",
+"r0": 11,
+"r1": 12,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1890,4",
+"r0": 11,
+"r1": 12,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1901,7",
+"r0": 11,
+"r1": 12,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Hà Nam",
+"r0": 12,
+"r1": 13,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "861,8",
+"r0": 12,
+"r1": 13,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "878,1",
+"r0": 12,
+"r1": 13,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "885,9",
+"r0": 12,
+"r1": 13,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "894,2",
+"r0": 12,
+"r1": 13,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "903,2",
+"r0": 12,
+"r1": 13,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Nam Định",
+"r0": 13,
+"r1": 14,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1780,3",
+"r0": 13,
+"r1": 14,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1876,9",
+"r0": 13,
+"r1": 14,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1887,1",
+"r0": 13,
+"r1": 14,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1894,2",
+"r0": 13,
+"r1": 14,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1898,0",
+"r0": 13,
+"r1": 14,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Ninh Bình",
+"r0": 14,
+"r1": 15,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "993,9",
+"r0": 14,
+"r1": 15,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1010,8",
+"r0": 14,
+"r1": 15,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1017,1",
+"r0": 14,
+"r1": 15,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1030,3",
+"r0": 14,
+"r1": 15,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1042,6",
+"r0": 14,
+"r1": 15,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Trung du và miền núi phía Bắc",
+"r0": 15,
+"r1": 16,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Northern midlands and mountain areas",
+"r0": 16,
+"r1": 17,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "12725,8",
+"r0": 16,
+"r1": 17,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "13023,2",
+"r0": 16,
+"r1": 17,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "13162,4",
+"r0": 16,
+"r1": 17,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "13338,9",
+"r0": 16,
+"r1": 17,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "13489,5",
+"r0": 16,
+"r1": 17,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Hà Giang",
+"r0": 17,
+"r1": 18,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "870,2",
+"r0": 17,
+"r1": 18,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "892,7",
+"r0": 17,
+"r1": 18,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "899,9",
+"r0": 17,
+"r1": 18,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "911,4",
+"r0": 17,
+"r1": 18,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "921,4",
+"r0": 17,
+"r1": 18,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Cao Bằng",
+"r0": 18,
+"r1": 19,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "533,1",
+"r0": 18,
+"r1": 19,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "543,1",
+"r0": 18,
+"r1": 19,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "547,9",
+"r0": 18,
+"r1": 19,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "558,5",
+"r0": 18,
+"r1": 19,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "562,9",
+"r0": 18,
+"r1": 19,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Bắc Kạn",
+"r0": 19,
+"r1": 20,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "316,5",
+"r0": 19,
+"r1": 20,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "324,4",
+"r0": 19,
+"r1": 20,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "326,5",
+"r0": 19,
+"r1": 20,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "329,3",
+"r0": 19,
+"r1": 20,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "331,5",
+"r0": 19,
+"r1": 20,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Tuyên Quang",
+"r0": 20,
+"r1": 21,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "792,9",
+"r0": 20,
+"r1": 21,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "805,8",
+"r0": 20,
+"r1": 21,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "812,2",
+"r0": 20,
+"r1": 21,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "820,3",
+"r0": 20,
+"r1": 21,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "826,9",
+"r0": 20,
+"r1": 21,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Lào Cai CỤC",
+"r0": 21,
+"r1": 22,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "746,4",
+"r0": 21,
+"r1": 22,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "770,6",
+"r0": 21,
+"r1": 22,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "779,9",
+"r0": 21,
+"r1": 22,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "792,2",
+"r0": 21,
+"r1": 22,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "801,5",
+"r0": 21,
+"r1": 22,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Yên Bái",
+"r0": 22,
+"r1": 23,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "831,6",
+"r0": 22,
+"r1": 23,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "847,2",
+"r0": 22,
+"r1": 23,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "855,5",
+"r0": 22,
+"r1": 23,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "864,4",
+"r0": 22,
+"r1": 23,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "874,2",
+"r0": 22,
+"r1": 23,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Thái Nguyên",
+"r0": 23,
+"r1": 24,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1307,9",
+"r0": 23,
+"r1": 24,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1336,0",
+"r0": 23,
+"r1": 24,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1350,3",
+"r0": 23,
+"r1": 24,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1365,2",
+"r0": 23,
+"r1": 24,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1380,1",
+"r0": 23,
+"r1": 24,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Lạng Sơn",
+"r0": 24,
+"r1": 25,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "788,7",
+"r0": 24,
+"r1": 25,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "802,1",
+"r0": 24,
+"r1": 25,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "807,3",
+"r0": 24,
+"r1": 25,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "814,0",
+"r0": 24,
+"r1": 25,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "820,6",
+"r0": 24,
+"r1": 25,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Bắc Giang",
+"r0": 25,
+"r1": 26,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1841,6",
+"r0": 25,
+"r1": 26,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1890,9",
+"r0": 25,
+"r1": 26,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1922,7",
+"r0": 25,
+"r1": 26,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1962,6",
+"r0": 25,
+"r1": 26,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1997,9",
+"r0": 25,
+"r1": 26,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Phú Thọ",
+"r0": 26,
+"r1": 27,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1481,9",
+"r0": 26,
+"r1": 27,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1516,9",
+"r0": 26,
+"r1": 27,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1530,8",
+"r0": 26,
+"r1": 27,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1543,9",
+"r0": 26,
+"r1": 27,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1559,3",
+"r0": 26,
+"r1": 27,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Điện Biên",
+"r0": 27,
+"r1": 28,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "613,5",
+"r0": 27,
+"r1": 28,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "635,9",
+"r0": 27,
+"r1": 28,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "646,2",
+"r0": 27,
+"r1": 28,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "656,7",
+"r0": 27,
+"r1": 28,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "667,4",
+"r0": 27,
+"r1": 28,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Lai Châu",
+"r0": 28,
+"r1": 29,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "469,8",
+"r0": 28,
+"r1": 29,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "482,1",
+"r0": 28,
+"r1": 29,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "489,3",
+"r0": 28,
+"r1": 29,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "495,5",
+"r0": 28,
+"r1": 29,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "501,2",
+"r0": 28,
+"r1": 29,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Sơn La",
+"r0": 29,
+"r1": 30,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1270,6",
+"r0": 29,
+"r1": 30,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1300,1",
+"r0": 29,
+"r1": 30,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1313,3",
+"r0": 29,
+"r1": 30,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1330,6",
+"r0": 29,
+"r1": 30,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1341,2",
+"r0": 29,
+"r1": 30,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Hòa Bình",
+"r0": 30,
+"r1": 31,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "861,2",
+"r0": 30,
+"r1": 31,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "875,4",
+"r0": 30,
+"r1": 31,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "880,5",
+"r0": 30,
+"r1": 31,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "894,5",
+"r0": 30,
+"r1": 31,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "903,4",
+"r0": 30,
+"r1": 31,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Bắc Trung Bộ và Duyên hải miền Trung",
+"r0": 31,
+"r1": 32,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "North Central and Central coastal areas",
+"r0": 32,
+"r1": 33,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "20343,2",
+"r0": 32,
+"r1": 33,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "20655,2",
+"r0": 32,
+"r1": 33,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "20768,7",
+"r0": 32,
+"r1": 33,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "20960,5",
+"r0": 32,
+"r1": 33,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "21102,6",
+"r0": 32,
+"r1": 33,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Thanh Hóa",
+"r0": 33,
+"r1": 34,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "3664,9",
+"r0": 33,
+"r1": 34,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3722,1",
+"r0": 33,
+"r1": 34,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3739,5",
+"r0": 33,
+"r1": 34,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3764,2",
+"r0": 33,
+"r1": 34,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3771,8",
+"r0": 33,
+"r1": 34,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Nghệ An",
+"r0": 34,
+"r1": 35,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "3365,2",
+"r0": 34,
+"r1": 35,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3420,0",
+"r0": 34,
+"r1": 35,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3442,0",
+"r0": 34,
+"r1": 35,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3472,3",
+"r0": 34,
+"r1": 35,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3497,8",
+"r0": 34,
+"r1": 35,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Hà Tĩnh",
+"r0": 35,
+"r1": 36,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1296,6",
+"r0": 35,
+"r1": 36,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1317,3",
+"r0": 35,
+"r1": 36,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1323,7",
+"r0": 35,
+"r1": 36,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1329,8",
+"r0": 35,
+"r1": 36,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1335,1",
+"r0": 35,
+"r1": 36,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Quảng Bình",
+"r0": 36,
+"r1": 37,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "902,0",
+"r0": 36,
+"r1": 37,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "913,9",
+"r0": 36,
+"r1": 37,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "918,7",
+"r0": 36,
+"r1": 37,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "924,8",
+"r0": 36,
+"r1": 37,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "931,9",
+"r0": 36,
+"r1": 37,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Quảng Trị",
+"r0": 37,
+"r1": 38,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "637,4",
+"r0": 37,
+"r1": 38,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "650,9",
+"r0": 37,
+"r1": 38,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "654,2",
+"r0": 37,
+"r1": 38,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "659,2",
+"r0": 37,
+"r1": 38,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "662,2",
+"r0": 37,
+"r1": 38,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Huế",
+"r0": 38,
+"r1": 39,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1133,6",
+"r0": 38,
+"r1": 39,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1160,2",
+"r0": 38,
+"r1": 39,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1166,5",
+"r0": 38,
+"r1": 39,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1178,6",
+"r0": 38,
+"r1": 39,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1190,3",
+"r0": 38,
+"r1": 39,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "THỐNG",
+"r0": 15,
+"r1": 16,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+}
+],
+"page": 105
+}
+},
+"nien-giam-p126": {
+"source": "Niên giám thống kê.pdf",
+"page": 126,
+"table": {
+"nrows": 13,
+"ncols": 4,
+"cells": [
+{
+"text": "Số con/phụ nữ - Children/woman Chia ra - Of which",
+"r0": 0,
+"r1": 1,
+"c0": 2,
+"c1": 4,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "Chung General",
+"r0": 0,
+"r1": 1,
+"c0": 1,
+"c1": 2,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "Thành thị Urban",
+"r0": 1,
+"r1": 2,
+"c0": 2,
+"c1": 3,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "Nông thôn Rural",
+"r0": 1,
+"r1": 2,
+"c0": 3,
+"c1": 4,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2015",
+"r0": 2,
+"r1": 3,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "2,10",
+"r0": 2,
+"r1": 3,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,82",
+"r0": 2,
+"r1": 3,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2,25",
+"r0": 2,
+"r1": 3,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2016",
+"r0": 3,
+"r1": 4,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "2,09",
+"r0": 3,
+"r1": 4,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,86",
+"r0": 3,
+"r1": 4,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2,21",
+"r0": 3,
+"r1": 4,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2017",
+"r0": 4,
+"r1": 5,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "2,04",
+"r0": 4,
+"r1": 5,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,77",
+"r0": 4,
+"r1": 5,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2,19",
+"r0": 4,
+"r1": 5,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2018",
+"r0": 5,
+"r1": 6,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "2,05",
+"r0": 5,
+"r1": 6,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,75",
+"r0": 5,
+"r1": 6,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2,22",
+"r0": 5,
+"r1": 6,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2019",
+"r0": 6,
+"r1": 7,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "2,09",
+"r0": 6,
+"r1": 7,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,83 KÊ",
+"r0": 6,
+"r1": 7,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2,26",
+"r0": 6,
+"r1": 7,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2020",
+"r0": 7,
+"r1": 8,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "2,12",
+"r0": 7,
+"r1": 8,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,88",
+"r0": 7,
+"r1": 8,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2,29",
+"r0": 7,
+"r1": 8,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2021",
+"r0": 8,
+"r1": 9,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "2,11",
+"r0": 8,
+"r1": 9,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,64",
+"r0": 8,
+"r1": 9,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2,40",
+"r0": 8,
+"r1": 9,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2022",
+"r0": 9,
+"r1": 10,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "2,01",
+"r0": 9,
+"r1": 10,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,72",
+"r0": 9,
+"r1": 10,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2,24",
+"r0": 9,
+"r1": 10,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2023",
+"r0": 10,
+"r1": 11,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1,96 THỐNG",
+"r0": 10,
+"r1": 11,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,70",
+"r0": 10,
+"r1": 11,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2,07",
+"r0": 10,
+"r1": 11,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2024",
+"r0": 11,
+"r1": 12,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1,91",
+"r0": 11,
+"r1": 12,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,67",
+"r0": 11,
+"r1": 12,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2,08",
+"r0": 11,
+"r1": 12,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Sơ bộ - Prel. 2025",
+"r0": 12,
+"r1": 13,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1,93",
+"r0": 12,
+"r1": 13,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,70",
+"r0": 12,
+"r1": 13,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2,13",
+"r0": 12,
+"r1": 13,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+}
+],
+"page": 126
+}
+},
+"nien-giam-p305": {
+"source": "Niên giám thống kê.pdf",
+"page": 305,
+"table": {
+"nrows": 18,
+"ncols": 7,
+"cells": [
+{
+"text": "Đơn vị tính Unit",
+"r0": 0,
+"r1": 1,
+"c0": 1,
+"c1": 2,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2020",
+"r0": 0,
+"r1": 1,
+"c0": 2,
+"c1": 3,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2022",
+"r0": 0,
+"r1": 1,
+"c0": 3,
+"c1": 4,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2023",
+"r0": 0,
+"r1": 1,
+"c0": 4,
+"c1": 5,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2024",
+"r0": 0,
+"r1": 1,
+"c0": 5,
+"c1": 6,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "Sơ bộ Prel. 2025",
+"r0": 0,
+"r1": 1,
+"c0": 6,
+"c1": 7,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "Vải Fabrics of all kinds",
+"r0": 1,
+"r1": 2,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "Triệu m 2 Mill. m 2",
+"r0": 1,
+"r1": 2,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2377,0",
+"r0": 1,
+"r1": 2,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2756,4",
+"r0": 1,
+"r1": 2,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3063,1",
+"r0": 1,
+"r1": 2,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3270,8",
+"r0": 1,
+"r1": 2,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3581,5",
+"r0": 1,
+"r1": 2,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Quần áo mặc thường Clothes",
+"r0": 2,
+"r1": 3,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "Triệu cái Mill. pieces",
+"r0": 2,
+"r1": 3,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "5406,8",
+"r0": 2,
+"r1": 3,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "5856,9",
+"r0": 2,
+"r1": 3,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "5729,3",
+"r0": 2,
+"r1": 3,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "6107,7",
+"r0": 2,
+"r1": 3,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "5973,3",
+"r0": 2,
+"r1": 3,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Giày, dép da Footwear",
+"r0": 3,
+"r1": 4,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "Triệu đôi Mill. pairs",
+"r0": 3,
+"r1": 4,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "287,2",
+"r0": 3,
+"r1": 4,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "346,5",
+"r0": 3,
+"r1": 4,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "333,2",
+"r0": 3,
+"r1": 4,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "341,3",
+"r0": 3,
+"r1": 4,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "360,0",
+"r0": 3,
+"r1": 4,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Giày vải Fabric shoes",
+"r0": 4,
+"r1": 5,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "Triệu đôi Mill. pairs",
+"r0": 4,
+"r1": 5,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "83,7",
+"r0": 4,
+"r1": 5,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "91,4",
+"r0": 4,
+"r1": 5,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "83,8",
+"r0": 4,
+"r1": 5,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "83,9",
+"r0": 4,
+"r1": 5,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "83,1",
+"r0": 4,
+"r1": 5,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Giày thể thao Sport shoes",
+"r0": 5,
+"r1": 6,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "Triệu đôi Mill. pairs",
+"r0": 5,
+"r1": 6,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "838,4",
+"r0": 5,
+"r1": 6,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "952,2 KÊ",
+"r0": 5,
+"r1": 6,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "986,8",
+"r0": 5,
+"r1": 6,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1013,2",
+"r0": 5,
+"r1": 6,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1085,1",
+"r0": 5,
+"r1": 6,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Gỗ xẻ Sawn wood",
+"r0": 6,
+"r1": 7,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "Nghìn m 3 Thous. m 3",
+"r0": 6,
+"r1": 7,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "5435,2",
+"r0": 6,
+"r1": 7,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "5507,3",
+"r0": 6,
+"r1": 7,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "5638,9",
+"r0": 6,
+"r1": 7,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "5657,1",
+"r0": 6,
+"r1": 7,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "5741,9",
+"r0": 6,
+"r1": 7,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Giấy, bìa Paper, cover",
+"r0": 7,
+"r1": 8,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "Nghìn tấn Thous. tons",
+"r0": 7,
+"r1": 8,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2674,2",
+"r0": 7,
+"r1": 8,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2866,8",
+"r0": 7,
+"r1": 8,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2954,4",
+"r0": 7,
+"r1": 8,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3174,4",
+"r0": 7,
+"r1": 8,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3095,1",
+"r0": 7,
+"r1": 8,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Báo in và các sản phẩm in khác Printed newspapers and other printed products",
+"r0": 8,
+"r1": 9,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "Tỷ trang Bill. pages THỐNG",
+"r0": 8,
+"r1": 9,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "956,9",
+"r0": 8,
+"r1": 9,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1033,7",
+"r0": 8,
+"r1": 9,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1202,9",
+"r0": 8,
+"r1": 9,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1296,9",
+"r0": 8,
+"r1": 9,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1405,8",
+"r0": 8,
+"r1": 9,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Phốt pho vàng Yellow phosphorus",
+"r0": 9,
+"r1": 10,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "Nghìn tấn Thous. tons CỤC",
+"r0": 9,
+"r1": 10,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "125,9",
+"r0": 9,
+"r1": 10,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "176,3",
+"r0": 9,
+"r1": 10,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "106,8",
+"r0": 9,
+"r1": 10,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "101,9",
+"r0": 9,
+"r1": 10,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "102,4",
+"r0": 9,
+"r1": 10,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Phân hóa học Chemical fertilizers",
+"r0": 10,
+"r1": 11,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "Nghìn tấn Thous. tons",
+"r0": 10,
+"r1": 11,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4155,3",
+"r0": 10,
+"r1": 11,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4322,7",
+"r0": 10,
+"r1": 11,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4188,4",
+"r0": 10,
+"r1": 11,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4448,1",
+"r0": 10,
+"r1": 11,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4772,8",
+"r0": 10,
+"r1": 11,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Phân NPK NPK fertilizers",
+"r0": 11,
+"r1": 12,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "Nghìn tấn Thous. tons",
+"r0": 11,
+"r1": 12,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3497,6",
+"r0": 11,
+"r1": 12,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3546,9",
+"r0": 11,
+"r1": 12,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2865,5",
+"r0": 11,
+"r1": 12,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3284,4",
+"r0": 11,
+"r1": 12,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3635,8",
+"r0": 11,
+"r1": 12,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Thuốc trừ sâu Insecticide",
+"r0": 12,
+"r1": 13,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "Nghìn tấn Thous. tons",
+"r0": 12,
+"r1": 13,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "172,3",
+"r0": 12,
+"r1": 13,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "234,3",
+"r0": 12,
+"r1": 13,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "232,5",
+"r0": 12,
+"r1": 13,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "243,9",
+"r0": 12,
+"r1": 13,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "256,6",
+"r0": 12,
+"r1": 13,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Thuốc diệt cỏ - Pesticide",
+"r0": 13,
+"r1": 14,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "Tấn - Ton",
+"r0": 13,
+"r1": 14,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "49502",
+"r0": 13,
+"r1": 14,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "52493",
+"r0": 13,
+"r1": 14,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "50067",
+"r0": 13,
+"r1": 14,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "47657",
+"r0": 13,
+"r1": 14,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "48705",
+"r0": 13,
+"r1": 14,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Dầu gội đầu, dầu xả",
+"r0": 14,
+"r1": 15,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Shampoo, conditioner",
+"r0": 15,
+"r1": 16,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "Tấn - Ton",
+"r0": 15,
+"r1": 16,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "63297",
+"r0": 15,
+"r1": 16,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "66905",
+"r0": 15,
+"r1": 16,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "70477",
+"r0": 15,
+"r1": 16,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "75823",
+"r0": 15,
+"r1": 16,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "77567",
+"r0": 15,
+"r1": 16,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Thuốc đánh răng - Toothpastes",
+"r0": 16,
+"r1": 17,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "Tấn - Ton",
+"r0": 16,
+"r1": 17,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "38604",
+"r0": 16,
+"r1": 17,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "40008",
+"r0": 16,
+"r1": 17,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "41428",
+"r0": 16,
+"r1": 17,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "41281",
+"r0": 16,
+"r1": 17,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "44419",
+"r0": 16,
+"r1": 17,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Sữa tắm, sữa rửa mặt Shower creame, cleansing foam",
+"r0": 17,
+"r1": 18,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "Tấn - Ton",
+"r0": 17,
+"r1": 18,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "53604",
+"r0": 17,
+"r1": 18,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "54320",
+"r0": 17,
+"r1": 18,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "58090",
+"r0": 17,
+"r1": 18,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "58791",
+"r0": 17,
+"r1": 18,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "63612",
+"r0": 17,
+"r1": 18,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+}
+],
+"page": 305
+}
+},
+"nien-giam-p600": {
+"source": "Niên giám thống kê.pdf",
+"page": 600,
+"table": {
+"nrows": 40,
+"ncols": 6,
+"cells": [
+{
+"text": "Tấn - Ton",
+"r0": 0,
+"r1": 1,
+"c0": 5,
+"c1": 6,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2020",
+"r0": 1,
+"r1": 2,
+"c0": 1,
+"c1": 2,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2022",
+"r0": 1,
+"r1": 2,
+"c0": 2,
+"c1": 3,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2023",
+"r0": 1,
+"r1": 2,
+"c0": 3,
+"c1": 4,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2024",
+"r0": 1,
+"r1": 2,
+"c0": 4,
+"c1": 5,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "Sơ bộ Prel.",
+"r0": 1,
+"r1": 2,
+"c0": 5,
+"c1": 6,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2025",
+"r0": 2,
+"r1": 3,
+"c0": 1,
+"c1": 6,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "CẢ NƯỚC - WHOLE COUNTRY",
+"r0": 3,
+"r1": 4,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1378014",
+"r0": 3,
+"r1": 4,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "976443",
+"r0": 3,
+"r1": 4,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "914713",
+"r0": 3,
+"r1": 4,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "972890",
+"r0": 3,
+"r1": 4,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "929082",
+"r0": 3,
+"r1": 4,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Đồng bằng sông Hồng - Red River Delta",
+"r0": 4,
+"r1": 5,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "156329",
+"r0": 4,
+"r1": 5,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "133147",
+"r0": 4,
+"r1": 5,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "130790",
+"r0": 4,
+"r1": 5,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "133065",
+"r0": 4,
+"r1": 5,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "133864",
+"r0": 4,
+"r1": 5,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Hà Nội",
+"r0": 5,
+"r1": 6,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "18526",
+"r0": 5,
+"r1": 6,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "14616",
+"r0": 5,
+"r1": 6,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "12189",
+"r0": 5,
+"r1": 6,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "12666",
+"r0": 5,
+"r1": 6,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "13347",
+"r0": 5,
+"r1": 6,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Vĩnh Phúc",
+"r0": 6,
+"r1": 7,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "23769",
+"r0": 6,
+"r1": 7,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "19722",
+"r0": 6,
+"r1": 7,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "19687",
+"r0": 6,
+"r1": 7,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "20167",
+"r0": 6,
+"r1": 7,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "22236",
+"r0": 6,
+"r1": 7,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Bắc Ninh",
+"r0": 7,
+"r1": 8,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1572",
+"r0": 7,
+"r1": 8,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1300",
+"r0": 7,
+"r1": 8,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1400",
+"r0": 7,
+"r1": 8,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2014",
+"r0": 7,
+"r1": 8,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1788",
+"r0": 7,
+"r1": 8,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Quảng Ninh",
+"r0": 8,
+"r1": 9,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "20533",
+"r0": 8,
+"r1": 9,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "19205",
+"r0": 8,
+"r1": 9,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "18716",
+"r0": 8,
+"r1": 9,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "18788",
+"r0": 8,
+"r1": 9,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "19536",
+"r0": 8,
+"r1": 9,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Hải Dương",
+"r0": 9,
+"r1": 10,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "8109",
+"r0": 9,
+"r1": 10,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "8608",
+"r0": 9,
+"r1": 10,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "8473",
+"r0": 9,
+"r1": 10,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "8800",
+"r0": 9,
+"r1": 10,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "8771",
+"r0": 9,
+"r1": 10,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Hải Phòng",
+"r0": 10,
+"r1": 11,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "7584",
+"r0": 10,
+"r1": 11,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "8297",
+"r0": 10,
+"r1": 11,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "8654",
+"r0": 10,
+"r1": 11,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "7706",
+"r0": 10,
+"r1": 11,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "7703",
+"r0": 10,
+"r1": 11,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Hưng Yên",
+"r0": 11,
+"r1": 12,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "6126",
+"r0": 11,
+"r1": 12,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3513",
+"r0": 11,
+"r1": 12,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3393",
+"r0": 11,
+"r1": 12,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3313",
+"r0": 11,
+"r1": 12,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3402",
+"r0": 11,
+"r1": 12,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Thái Bình",
+"r0": 12,
+"r1": 13,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "42504",
+"r0": 12,
+"r1": 13,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "33600 KÊ",
+"r0": 12,
+"r1": 13,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "34570",
+"r0": 12,
+"r1": 13,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "37918",
+"r0": 12,
+"r1": 13,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "36548",
+"r0": 12,
+"r1": 13,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Hà Nam",
+"r0": 13,
+"r1": 14,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "5306",
+"r0": 13,
+"r1": 14,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4838",
+"r0": 13,
+"r1": 14,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "5315",
+"r0": 13,
+"r1": 14,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4870",
+"r0": 13,
+"r1": 14,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4272",
+"r0": 13,
+"r1": 14,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Nam Định",
+"r0": 14,
+"r1": 15,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "14522",
+"r0": 14,
+"r1": 15,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "10652",
+"r0": 14,
+"r1": 15,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "10625",
+"r0": 14,
+"r1": 15,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "9850",
+"r0": 14,
+"r1": 15,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "10047",
+"r0": 14,
+"r1": 15,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Ninh Bình",
+"r0": 15,
+"r1": 16,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "7779",
+"r0": 15,
+"r1": 16,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "8796",
+"r0": 15,
+"r1": 16,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "7767",
+"r0": 15,
+"r1": 16,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "6973",
+"r0": 15,
+"r1": 16,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "6215",
+"r0": 15,
+"r1": 16,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Trung du và miền núi phía Bắc",
+"r0": 16,
+"r1": 17,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Northern midlands and mountain areas",
+"r0": 17,
+"r1": 18,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "183478",
+"r0": 17,
+"r1": 18,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "164686",
+"r0": 17,
+"r1": 18,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "156180",
+"r0": 17,
+"r1": 18,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "151623",
+"r0": 17,
+"r1": 18,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "151369",
+"r0": 17,
+"r1": 18,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Hà Giang",
+"r0": 18,
+"r1": 19,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "8404",
+"r0": 18,
+"r1": 19,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "11527",
+"r0": 18,
+"r1": 19,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "11154",
+"r0": 18,
+"r1": 19,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "11378",
+"r0": 18,
+"r1": 19,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "11031",
+"r0": 18,
+"r1": 19,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Cao Bằng",
+"r0": 19,
+"r1": 20,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "9522",
+"r0": 19,
+"r1": 20,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "7877",
+"r0": 19,
+"r1": 20,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "7220",
+"r0": 19,
+"r1": 20,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "6408",
+"r0": 19,
+"r1": 20,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "6505",
+"r0": 19,
+"r1": 20,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Bắc Kạn",
+"r0": 20,
+"r1": 21,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "2606",
+"r0": 20,
+"r1": 21,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2883",
+"r0": 20,
+"r1": 21,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2820",
+"r0": 20,
+"r1": 21,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2343",
+"r0": 20,
+"r1": 21,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2221",
+"r0": 20,
+"r1": 21,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Tuyên Quang",
+"r0": 21,
+"r1": 22,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "13350",
+"r0": 21,
+"r1": 22,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "12858",
+"r0": 21,
+"r1": 22,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "12308",
+"r0": 21,
+"r1": 22,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "10169",
+"r0": 21,
+"r1": 22,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "10572",
+"r0": 21,
+"r1": 22,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Lào Cai CỤC",
+"r0": 22,
+"r1": 23,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "7034",
+"r0": 22,
+"r1": 23,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "5043",
+"r0": 22,
+"r1": 23,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4463",
+"r0": 22,
+"r1": 23,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4410",
+"r0": 22,
+"r1": 23,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4587",
+"r0": 22,
+"r1": 23,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Yên Bái",
+"r0": 23,
+"r1": 24,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "18208",
+"r0": 23,
+"r1": 24,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "18307",
+"r0": 23,
+"r1": 24,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "18330",
+"r0": 23,
+"r1": 24,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "18250",
+"r0": 23,
+"r1": 24,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "17915",
+"r0": 23,
+"r1": 24,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Thái Nguyên",
+"r0": 24,
+"r1": 25,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "21970",
+"r0": 24,
+"r1": 25,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "19075",
+"r0": 24,
+"r1": 25,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "17008",
+"r0": 24,
+"r1": 25,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "15446",
+"r0": 24,
+"r1": 25,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "15090",
+"r0": 24,
+"r1": 25,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Lạng Sơn",
+"r0": 25,
+"r1": 26,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "9730",
+"r0": 25,
+"r1": 26,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "9816",
+"r0": 25,
+"r1": 26,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "9592",
+"r0": 25,
+"r1": 26,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "9765",
+"r0": 25,
+"r1": 26,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "9871",
+"r0": 25,
+"r1": 26,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Bắc Giang",
+"r0": 26,
+"r1": 27,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "50617",
+"r0": 26,
+"r1": 27,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "41538",
+"r0": 26,
+"r1": 27,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "39278",
+"r0": 26,
+"r1": 27,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "40222",
+"r0": 26,
+"r1": 27,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "40004",
+"r0": 26,
+"r1": 27,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Phú Thọ",
+"r0": 27,
+"r1": 28,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "8378",
+"r0": 27,
+"r1": 28,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "5586",
+"r0": 27,
+"r1": 28,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "5221",
+"r0": 27,
+"r1": 28,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4962",
+"r0": 27,
+"r1": 28,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "5111",
+"r0": 27,
+"r1": 28,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Điện Biên",
+"r0": 28,
+"r1": 29,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "4974",
+"r0": 28,
+"r1": 29,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4072",
+"r0": 28,
+"r1": 29,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4141",
+"r0": 28,
+"r1": 29,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4174",
+"r0": 28,
+"r1": 29,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4132",
+"r0": 28,
+"r1": 29,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Lai Châu",
+"r0": 29,
+"r1": 30,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "1435",
+"r0": 29,
+"r1": 30,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1840",
+"r0": 29,
+"r1": 30,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1265",
+"r0": 29,
+"r1": 30,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "986",
+"r0": 29,
+"r1": 30,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "939",
+"r0": 29,
+"r1": 30,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Sơn La",
+"r0": 30,
+"r1": 31,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "2695",
+"r0": 30,
+"r1": 31,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2322",
+"r0": 30,
+"r1": 31,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1924",
+"r0": 30,
+"r1": 31,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1783",
+"r0": 30,
+"r1": 31,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1975",
+"r0": 30,
+"r1": 31,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Hòa Bình",
+"r0": 31,
+"r1": 32,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "24555",
+"r0": 31,
+"r1": 32,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "21942",
+"r0": 31,
+"r1": 32,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "21456",
+"r0": 31,
+"r1": 32,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "21326",
+"r0": 31,
+"r1": 32,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "21415",
+"r0": 31,
+"r1": 32,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Bắc Trung Bộ và Duyên hải miền Trung",
+"r0": 32,
+"r1": 33,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "North Central and Central coastal areas",
+"r0": 33,
+"r1": 34,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "170074",
+"r0": 33,
+"r1": 34,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "158073",
+"r0": 33,
+"r1": 34,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "156898",
+"r0": 33,
+"r1": 34,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "149239",
+"r0": 33,
+"r1": 34,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "142129",
+"r0": 33,
+"r1": 34,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Thanh Hóa",
+"r0": 34,
+"r1": 35,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "47750",
+"r0": 34,
+"r1": 35,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "40581",
+"r0": 34,
+"r1": 35,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "38003",
+"r0": 34,
+"r1": 35,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "37668",
+"r0": 34,
+"r1": 35,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "35394",
+"r0": 34,
+"r1": 35,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Nghệ An",
+"r0": 35,
+"r1": 36,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "24984",
+"r0": 35,
+"r1": 36,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "24637",
+"r0": 35,
+"r1": 36,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "23419",
+"r0": 35,
+"r1": 36,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "24346",
+"r0": 35,
+"r1": 36,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "23077",
+"r0": 35,
+"r1": 36,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Hà Tĩnh",
+"r0": 36,
+"r1": 37,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "24401",
+"r0": 36,
+"r1": 37,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "27638",
+"r0": 36,
+"r1": 37,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "25746",
+"r0": 36,
+"r1": 37,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "25031",
+"r0": 36,
+"r1": 37,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "23914",
+"r0": 36,
+"r1": 37,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Quảng Bình",
+"r0": 37,
+"r1": 38,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "23066",
+"r0": 37,
+"r1": 38,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "23158",
+"r0": 37,
+"r1": 38,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "21032",
+"r0": 37,
+"r1": 38,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "21221",
+"r0": 37,
+"r1": 38,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "20416",
+"r0": 37,
+"r1": 38,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Quảng Trị",
+"r0": 38,
+"r1": 39,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "14329",
+"r0": 38,
+"r1": 39,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "8859",
+"r0": 38,
+"r1": 39,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "10736",
+"r0": 38,
+"r1": 39,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "10320",
+"r0": 38,
+"r1": 39,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "10350",
+"r0": 38,
+"r1": 39,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Huế",
+"r0": 39,
+"r1": 40,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "6629",
+"r0": 39,
+"r1": 40,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3504",
+"r0": 39,
+"r1": 40,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3540",
+"r0": 39,
+"r1": 40,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3684",
+"r0": 39,
+"r1": 40,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3806",
+"r0": 39,
+"r1": 40,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "THỐNG",
+"r0": 16,
+"r1": 17,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+}
+],
+"page": 600
+}
+},
+"ban-tin-no-cong-p11": {
+"source": "Bản tin nợ công.pdf",
+"page": 11,
+"table": {
+"nrows": 21,
+"ncols": 6,
+"cells": [
+{
+"text": "Loại tiền",
+"r0": 0,
+"r1": 2,
+"c0": 0,
+"c1": 1,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "Ngày",
+"r0": 0,
+"r1": 1,
+"c0": 1,
+"c1": 6,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "31/12/2019",
+"r0": 1,
+"r1": 2,
+"c0": 1,
+"c1": 2,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "31/12/2020",
+"r0": 1,
+"r1": 2,
+"c0": 2,
+"c1": 3,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "31/12/2021",
+"r0": 1,
+"r1": 2,
+"c0": 3,
+"c1": 4,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "31/12/2022",
+"r0": 1,
+"r1": 2,
+"c0": 4,
+"c1": 5,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "30/6/2023",
+"r0": 1,
+"r1": 2,
+"c0": 5,
+"c1": 6,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "AUD",
+"r0": 2,
+"r1": 3,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,48002",
+"r0": 2,
+"r1": 3,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,35001",
+"r0": 2,
+"r1": 3,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,35843",
+"r0": 2,
+"r1": 3,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,52318",
+"r0": 2,
+"r1": 3,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,50241",
+"r0": 2,
+"r1": 3,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "CAD",
+"r0": 3,
+"r1": 4,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,32998",
+"r0": 3,
+"r1": 4,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,29997",
+"r0": 3,
+"r1": 4,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,24910",
+"r0": 3,
+"r1": 4,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,34352",
+"r0": 3,
+"r1": 4,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,35230",
+"r0": 3,
+"r1": 4,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "CHF",
+"r0": 4,
+"r1": 5,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,00000",
+"r0": 4,
+"r1": 5,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,89999",
+"r0": 4,
+"r1": 5,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,92161",
+"r0": 4,
+"r1": 5,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,97132",
+"r0": 4,
+"r1": 5,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,89421",
+"r0": 4,
+"r1": 5,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "CNY",
+"r0": 5,
+"r1": 6,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "7,03007",
+"r0": 5,
+"r1": 6,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "6,57990",
+"r0": 5,
+"r1": 6,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "6,39016",
+"r0": 5,
+"r1": 6,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "7,19131",
+"r0": 5,
+"r1": 6,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "6,96702",
+"r0": 5,
+"r1": 6,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "DKK",
+"r0": 6,
+"r1": 7,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "6,79079",
+"r0": 6,
+"r1": 7,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "6,21975",
+"r0": 6,
+"r1": 7,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "6,48877",
+"r0": 6,
+"r1": 7,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "7,33384",
+"r0": 6,
+"r1": 7,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "6,82237",
+"r0": 6,
+"r1": 7,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "EUR",
+"r0": 7,
+"r1": 8,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,91000",
+"r0": 7,
+"r1": 8,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,84001",
+"r0": 7,
+"r1": 8,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,87261",
+"r0": 7,
+"r1": 8,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,98617",
+"r0": 7,
+"r1": 8,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,91616",
+"r0": 7,
+"r1": 8,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "GBP",
+"r0": 8,
+"r1": 9,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,77000",
+"r0": 8,
+"r1": 9,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,75000",
+"r0": 8,
+"r1": 9,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,73811",
+"r0": 8,
+"r1": 9,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,85772",
+"r0": 8,
+"r1": 9,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,80029",
+"r0": 8,
+"r1": 9,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "INR",
+"r0": 9,
+"r1": 10,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "71,42901",
+"r0": 9,
+"r1": 10,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "73,82484",
+"r0": 9,
+"r1": 10,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "74,36012",
+"r0": 9,
+"r1": 10,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "81,94117",
+"r0": 9,
+"r1": 10,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "82,15277",
+"r0": 9,
+"r1": 10,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "JPY",
+"r0": 10,
+"r1": 11,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "109,68246",
+"r0": 10,
+"r1": 11,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "103,95067",
+"r0": 10,
+"r1": 11,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "113,92118",
+"r0": 10,
+"r1": 11,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "143,52121",
+"r0": 10,
+"r1": 11,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "135,97701",
+"r0": 10,
+"r1": 11,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "KRW",
+"r0": 11,
+"r1": 12,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1.157,15000",
+"r0": 11,
+"r1": 12,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1.103,85714",
+"r0": 11,
+"r1": 12,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1.156,30000",
+"r0": 11,
+"r1": 12,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1.393,00000",
+"r0": 11,
+"r1": 12,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1.314,44444",
+"r0": 11,
+"r1": 12,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "KWD",
+"r0": 12,
+"r1": 13,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,30000",
+"r0": 12,
+"r1": 13,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,31000",
+"r0": 12,
+"r1": 13,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,29999",
+"r0": 12,
+"r1": 13,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,31000",
+"r0": 12,
+"r1": 13,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,30999",
+"r0": 12,
+"r1": 13,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "MYR",
+"r0": 13,
+"r1": 14,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4,16991",
+"r0": 13,
+"r1": 14,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4,06970",
+"r0": 13,
+"r1": 14,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4,16609",
+"r0": 13,
+"r1": 14,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4,64060",
+"r0": 13,
+"r1": 14,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4,49638",
+"r0": 13,
+"r1": 14,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "NOK",
+"r0": 14,
+"r1": 15,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "9,16918",
+"r0": 14,
+"r1": 15,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "8,83086",
+"r0": 14,
+"r1": 15,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "8,61624",
+"r0": 14,
+"r1": 15,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "10,18099",
+"r0": 14,
+"r1": 15,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "10,74965",
+"r0": 14,
+"r1": 15,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "NZD",
+"r0": 15,
+"r1": 16,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,56003",
+"r0": 15,
+"r1": 16,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,41997",
+"r0": 15,
+"r1": 16,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,41642",
+"r0": 15,
+"r1": 16,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,66556",
+"r0": 15,
+"r1": 16,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,60602",
+"r0": 15,
+"r1": 16,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "SDR",
+"r0": 16,
+"r1": 17,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,72839",
+"r0": 16,
+"r1": 17,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,69926",
+"r0": 16,
+"r1": 17,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,71388",
+"r0": 16,
+"r1": 17,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,76054",
+"r0": 16,
+"r1": 17,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,75331",
+"r0": 16,
+"r1": 17,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "SEK",
+"r0": 17,
+"r1": 18,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "9,55138",
+"r0": 17,
+"r1": 18,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "8,49121",
+"r0": 17,
+"r1": 18,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "8,73338",
+"r0": 17,
+"r1": 18,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "10,72995",
+"r0": 17,
+"r1": 18,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "10,36355",
+"r0": 17,
+"r1": 18,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "SGD",
+"r0": 18,
+"r1": 19,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,36998",
+"r0": 18,
+"r1": 19,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,34002",
+"r0": 18,
+"r1": 19,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,35350",
+"r0": 18,
+"r1": 19,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,39250",
+"r0": 18,
+"r1": 19,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1,33747",
+"r0": 18,
+"r1": 19,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "THB",
+"r0": 19,
+"r1": 20,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "30,21279",
+"r0": 19,
+"r1": 20,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "30,26240",
+"r0": 19,
+"r1": 20,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "33,03714",
+"r0": 19,
+"r1": 20,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "36,71472",
+"r0": 19,
+"r1": 20,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "34,14141",
+"r0": 19,
+"r1": 20,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "VND",
+"r0": 20,
+"r1": 21,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "23.143,00000",
+"r0": 20,
+"r1": 21,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "23.181,00000",
+"r0": 20,
+"r1": 21,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "23.126,00000",
+"r0": 20,
+"r1": 21,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "23.681,00000",
+"r0": 20,
+"r1": 21,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "23.660,00000",
+"r0": 20,
+"r1": 21,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+}
+],
+"page": 11
+}
+},
+"ban-tin-no-cong-p12": {
+"source": "Bản tin nợ công.pdf",
+"page": 12,
+"table": {
+"nrows": 8,
+"ncols": 6,
+"cells": [
+{
+"text": "Chỉ tiêu",
+"r0": 0,
+"r1": 1,
+"c0": 0,
+"c1": 1,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2018",
+"r0": 0,
+"r1": 1,
+"c0": 1,
+"c1": 2,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2019",
+"r0": 0,
+"r1": 1,
+"c0": 2,
+"c1": 3,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2020",
+"r0": 0,
+"r1": 1,
+"c0": 3,
+"c1": 4,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2021",
+"r0": 0,
+"r1": 1,
+"c0": 4,
+"c1": 5,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "2022 (P)",
+"r0": 0,
+"r1": 1,
+"c0": 5,
+"c1": 6,
+"col_header": true,
+"row_header": false
+},
+{
+"text": "1.Nợ công so với tổng sản phẩm quốc dân(GDP) (%)",
+"r0": 1,
+"r1": 2,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "58,3",
+"r0": 1,
+"r1": 2,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "55,0",
+"r0": 1,
+"r1": 2,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "55,9",
+"r0": 1,
+"r1": 2,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "42,7",
+"r0": 1,
+"r1": 2,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "37,4",
+"r0": 1,
+"r1": 2,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "a. Nợ Chính phủ so với tổng sản phẩm quốc dân (GDP) (%)",
+"r0": 2,
+"r1": 3,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "49,9",
+"r0": 2,
+"r1": 3,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "48,0",
+"r0": 2,
+"r1": 3,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "49,9",
+"r0": 2,
+"r1": 3,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "38,7",
+"r0": 2,
+"r1": 3,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "34,2",
+"r0": 2,
+"r1": 3,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "b. Nợ Chính phủ bảo lãnh so với tổng sản phẩm quốc dân (GDP) (%)",
+"r0": 3,
+"r1": 4,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "7,9",
+"r0": 3,
+"r1": 4,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "6,7",
+"r0": 3,
+"r1": 4,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "5,8",
+"r0": 3,
+"r1": 4,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3,8",
+"r0": 3,
+"r1": 4,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3,1",
+"r0": 3,
+"r1": 4,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "c. Nợ Chính quyền địa phương so với tổng sản phẩn quốc dân (GDP) (%)",
+"r0": 4,
+"r1": 5,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "0,9",
+"r0": 4,
+"r1": 5,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,7",
+"r0": 4,
+"r1": 5,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,7",
+"r0": 4,
+"r1": 5,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,6",
+"r0": 4,
+"r1": 5,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "0,6",
+"r0": 4,
+"r1": 5,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2. Nợ nước ngoài của quốc gia so với tổng sản phẩm quốc dân (GDP) (%)",
+"r0": 5,
+"r1": 6,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "46,0",
+"r0": 5,
+"r1": 6,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "47,1",
+"r0": 5,
+"r1": 6,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "47,9",
+"r0": 5,
+"r1": 6,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "38,1",
+"r0": 5,
+"r1": 6,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "36,1",
+"r0": 5,
+"r1": 6,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3. Nghĩa vụ trả nợ nước ngoài của quốc gia so với tổng kim ngạch xuất khẩu hàng hoá và dịch vụ (%)",
+"r0": 6,
+"r1": 7,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "7,0",
+"r0": 6,
+"r1": 7,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "5,9",
+"r0": 6,
+"r1": 7,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "5,7",
+"r0": 6,
+"r1": 7,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "6,2",
+"r0": 6,
+"r1": 7,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "6,9",
+"r0": 6,
+"r1": 7,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4. Nghĩa vụ trả nợ của Chính phủ so với thu ngân sách nhà nước (NSNN)(%)",
+"r0": 7,
+"r1": 8,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": true
+},
+{
+"text": "17,1",
+"r0": 7,
+"r1": 8,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "17,4",
+"r0": 7,
+"r1": 8,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "21,2",
+"r0": 7,
+"r1": 8,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "21,5",
+"r0": 7,
+"r1": 8,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "15,7",
+"r0": 7,
+"r1": 8,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+}
+],
+"page": 12
+}
+},
+"ban-tin-no-cong-p13": {
+"source": "Bản tin nợ công.pdf",
+"page": 13,
+"table": {
+"nrows": 11,
+"ncols": 16,
+"cells": [
+{
+"text": "2019 VND",
+"r0": 8,
+"r1": 9,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2020 VND",
+"r0": 6,
+"r1": 7,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2021 VND",
+"r0": 4,
+"r1": 5,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2022 USD",
+"r0": 3,
+"r1": 4,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "(P) VND",
+"r0": 2,
+"r1": 3,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "6/2023 (P)",
+"r0": 0,
+"r1": 2,
+"c0": 0,
+"c1": 1,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "USD",
+"r0": 9,
+"r1": 10,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "USD",
+"r0": 7,
+"r1": 8,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "USD",
+"r0": 5,
+"r1": 6,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "USD",
+"r0": 1,
+"r1": 2,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "VND",
+"r0": 0,
+"r1": 1,
+"c0": 1,
+"c1": 2,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "DƯ NỢ (1) Nợ nước ngoài",
+"r0": 10,
+"r1": 11,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "125.215,30 47.733,63",
+"r0": 9,
+"r1": 10,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2.897.857,78 1.104.699,34",
+"r0": 8,
+"r1": 9,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "135.396,27 49.008,24",
+"r0": 7,
+"r1": 8,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3.138.620,82 1.136.059,94",
+"r0": 6,
+"r1": 7,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "142.009,30 46.552,13",
+"r0": 5,
+"r1": 6,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3.284.107,17 1.076.564,56",
+"r0": 4,
+"r1": 5,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "137.176,15 41.171,97",
+"r0": 3,
+"r1": 4,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3.248.468,46 974.993,41",
+"r0": 2,
+"r1": 3,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "141.931,46 41.570,46",
+"r0": 1,
+"r1": 2,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3.358.098,36 983.556,99",
+"r0": 0,
+"r1": 1,
+"c0": 2,
+"c1": 3,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Nợ trong nước",
+"r0": 10,
+"r1": 11,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "77.481,68",
+"r0": 9,
+"r1": 10,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1.793.158,44",
+"r0": 8,
+"r1": 9,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "86.388,03",
+"r0": 7,
+"r1": 8,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2.002.560,88",
+"r0": 6,
+"r1": 7,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "95.457,17",
+"r0": 5,
+"r1": 6,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2.207.542,61",
+"r0": 4,
+"r1": 5,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "96.004,18",
+"r0": 3,
+"r1": 4,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2.273.475,05",
+"r0": 2,
+"r1": 3,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "100.361,01",
+"r0": 1,
+"r1": 2,
+"c0": 3,
+"c1": 4,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2.374.541,37 211.107,12",
+"r0": 0,
+"r1": 1,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "RÚT VỐN TRONG KỲ (2)",
+"r0": 10,
+"r1": 11,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "12.388,33",
+"r0": 9,
+"r1": 10,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "285.044,89",
+"r0": 8,
+"r1": 9,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "19.166,89",
+"r0": 7,
+"r1": 8,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "444.751,39",
+"r0": 6,
+"r1": 7,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "19.561,23",
+"r0": 5,
+"r1": 6,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "452.901,24",
+"r0": 4,
+"r1": 5,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "11.197,00",
+"r0": 3,
+"r1": 4,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "260.246,27",
+"r0": 2,
+"r1": 3,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "8.900,78",
+"r0": 1,
+"r1": 2,
+"c0": 4,
+"c1": 5,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Nợ nước ngoài",
+"r0": 10,
+"r1": 11,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2.285,81",
+"r0": 9,
+"r1": 10,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "52.515,11",
+"r0": 8,
+"r1": 9,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2.230,40",
+"r0": 7,
+"r1": 8,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "51.658,29",
+"r0": 6,
+"r1": 7,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1.933,36",
+"r0": 5,
+"r1": 6,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "44.688,24",
+"r0": 4,
+"r1": 5,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1.954,23",
+"r0": 3,
+"r1": 4,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "45.524,27",
+"r0": 2,
+"r1": 3,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "659,30",
+"r0": 1,
+"r1": 2,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "16.369,15",
+"r0": 0,
+"r1": 1,
+"c0": 5,
+"c1": 6,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Nợ trong nước",
+"r0": 10,
+"r1": 11,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "10.102,52",
+"r0": 9,
+"r1": 10,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "232.529,78",
+"r0": 8,
+"r1": 9,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "16.936,49",
+"r0": 7,
+"r1": 8,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "393.093,10",
+"r0": 6,
+"r1": 7,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "17.627,87",
+"r0": 5,
+"r1": 6,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "408.213,00",
+"r0": 4,
+"r1": 5,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "9.242,78",
+"r0": 3,
+"r1": 4,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "214.722,00",
+"r0": 2,
+"r1": 3,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "8.241,48",
+"r0": 1,
+"r1": 2,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "194.737,97",
+"r0": 0,
+"r1": 1,
+"c0": 6,
+"c1": 7,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "TỔNG TRẢ NỢ TRONG KỲ (2)",
+"r0": 10,
+"r1": 11,
+"c0": 7,
+"c1": 8,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "12.766,65",
+"r0": 9,
+"r1": 10,
+"c0": 7,
+"c1": 8,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "293.834,98",
+"r0": 8,
+"r1": 9,
+"c0": 7,
+"c1": 8,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "15.633,04",
+"r0": 7,
+"r1": 8,
+"c0": 7,
+"c1": 8,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "362.802,15",
+"r0": 6,
+"r1": 7,
+"c0": 7,
+"c1": 8,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "15.942,20",
+"r0": 5,
+"r1": 6,
+"c0": 7,
+"c1": 8,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "369.170,14",
+"r0": 4,
+"r1": 5,
+"c0": 7,
+"c1": 8,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "13.614,93",
+"r0": 3,
+"r1": 4,
+"c0": 7,
+"c1": 8,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "316.305,61",
+"r0": 2,
+"r1": 3,
+"c0": 7,
+"c1": 8,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "7.645,62",
+"r0": 1,
+"r1": 2,
+"c0": 7,
+"c1": 8,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "180.663,77",
+"r0": 0,
+"r1": 1,
+"c0": 7,
+"c1": 8,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Nợ nước ngoài",
+"r0": 10,
+"r1": 11,
+"c0": 8,
+"c1": 9,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2.556,14",
+"r0": 9,
+"r1": 10,
+"c0": 8,
+"c1": 9,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "58.819,63",
+"r0": 8,
+"r1": 9,
+"c0": 8,
+"c1": 9,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3.508,12",
+"r0": 7,
+"r1": 8,
+"c0": 8,
+"c1": 9,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "81.384,86",
+"r0": 6,
+"r1": 7,
+"c0": 8,
+"c1": 9,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3.156,35",
+"r0": 5,
+"r1": 6,
+"c0": 8,
+"c1": 9,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "73.084,91",
+"r0": 4,
+"r1": 5,
+"c0": 8,
+"c1": 9,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3.412,18",
+"r0": 3,
+"r1": 4,
+"c0": 8,
+"c1": 9,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "79.282,16",
+"r0": 2,
+"r1": 3,
+"c0": 8,
+"c1": 9,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1.702,74",
+"r0": 1,
+"r1": 2,
+"c0": 8,
+"c1": 9,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "40.239,50",
+"r0": 0,
+"r1": 1,
+"c0": 8,
+"c1": 9,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Nợ trong nước",
+"r0": 10,
+"r1": 11,
+"c0": 9,
+"c1": 10,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "10.210,51",
+"r0": 9,
+"r1": 10,
+"c0": 9,
+"c1": 10,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "235.015,35",
+"r0": 8,
+"r1": 9,
+"c0": 9,
+"c1": 10,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "12.124,92",
+"r0": 7,
+"r1": 8,
+"c0": 9,
+"c1": 10,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "281.417,29",
+"r0": 6,
+"r1": 7,
+"c0": 9,
+"c1": 10,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "12.785,85",
+"r0": 5,
+"r1": 6,
+"c0": 9,
+"c1": 10,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "296.085,23",
+"r0": 4,
+"r1": 5,
+"c0": 9,
+"c1": 10,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "10.202,75",
+"r0": 3,
+"r1": 4,
+"c0": 9,
+"c1": 10,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "237.023,45",
+"r0": 2,
+"r1": 3,
+"c0": 9,
+"c1": 10,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "5.942,88",
+"r0": 1,
+"r1": 2,
+"c0": 9,
+"c1": 10,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "140.424,27",
+"r0": 0,
+"r1": 1,
+"c0": 9,
+"c1": 10,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Trong đó: Tổng trả nợ gốc trong kỳ",
+"r0": 10,
+"r1": 11,
+"c0": 10,
+"c1": 11,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "7.898,96",
+"r0": 9,
+"r1": 10,
+"c0": 10,
+"c1": 11,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "181.795,89",
+"r0": 8,
+"r1": 9,
+"c0": 10,
+"c1": 11,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "10.705,86",
+"r0": 7,
+"r1": 8,
+"c0": 10,
+"c1": 11,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "248.444,16",
+"r0": 6,
+"r1": 7,
+"c0": 10,
+"c1": 11,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "11.301,31",
+"r0": 5,
+"r1": 6,
+"c0": 10,
+"c1": 11,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "261.698,83",
+"r0": 4,
+"r1": 5,
+"c0": 10,
+"c1": 11,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "9.219,39",
+"r0": 3,
+"r1": 4,
+"c0": 10,
+"c1": 11,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "214.183,91",
+"r0": 2,
+"r1": 3,
+"c0": 10,
+"c1": 11,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "5.294,76",
+"r0": 1,
+"r1": 2,
+"c0": 10,
+"c1": 11,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "125.114,42",
+"r0": 0,
+"r1": 1,
+"c0": 10,
+"c1": 11,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Nợ nước ngoài",
+"r0": 10,
+"r1": 11,
+"c0": 11,
+"c1": 12,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1.820,88",
+"r0": 9,
+"r1": 10,
+"c0": 11,
+"c1": 12,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "41.896,61",
+"r0": 8,
+"r1": 9,
+"c0": 11,
+"c1": 12,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2.785,97",
+"r0": 7,
+"r1": 8,
+"c0": 11,
+"c1": 12,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "64.624,86",
+"r0": 6,
+"r1": 7,
+"c0": 11,
+"c1": 12,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2.529,21",
+"r0": 5,
+"r1": 6,
+"c0": 11,
+"c1": 12,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "58.561,07",
+"r0": 4,
+"r1": 5,
+"c0": 11,
+"c1": 12,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2.790,81",
+"r0": 3,
+"r1": 4,
+"c0": 11,
+"c1": 12,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "64.839,41",
+"r0": 2,
+"r1": 3,
+"c0": 11,
+"c1": 12,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1.331,38",
+"r0": 1,
+"r1": 2,
+"c0": 11,
+"c1": 12,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "31.463,78",
+"r0": 0,
+"r1": 1,
+"c0": 11,
+"c1": 12,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Nợ trong nước",
+"r0": 10,
+"r1": 11,
+"c0": 12,
+"c1": 13,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "6.078,08",
+"r0": 9,
+"r1": 10,
+"c0": 12,
+"c1": 13,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "139.899,28",
+"r0": 8,
+"r1": 9,
+"c0": 12,
+"c1": 13,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "7.919,89",
+"r0": 7,
+"r1": 8,
+"c0": 12,
+"c1": 13,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "183.819,30",
+"r0": 6,
+"r1": 7,
+"c0": 12,
+"c1": 13,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "8.772,10",
+"r0": 5,
+"r1": 6,
+"c0": 12,
+"c1": 13,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "203.137,76",
+"r0": 4,
+"r1": 5,
+"c0": 12,
+"c1": 13,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "6.428,58",
+"r0": 3,
+"r1": 4,
+"c0": 12,
+"c1": 13,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "149.344,50",
+"r0": 2,
+"r1": 3,
+"c0": 12,
+"c1": 13,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3.963,38",
+"r0": 1,
+"r1": 2,
+"c0": 12,
+"c1": 13,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "93.650,64",
+"r0": 0,
+"r1": 1,
+"c0": 12,
+"c1": 13,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Tổng trả lãi và phí trong kỳ",
+"r0": 10,
+"r1": 11,
+"c0": 13,
+"c1": 14,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4.867,69",
+"r0": 9,
+"r1": 10,
+"c0": 13,
+"c1": 14,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "112.039,09",
+"r0": 8,
+"r1": 9,
+"c0": 13,
+"c1": 14,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4.927,18",
+"r0": 7,
+"r1": 8,
+"c0": 13,
+"c1": 14,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "114.357,99",
+"r0": 6,
+"r1": 7,
+"c0": 13,
+"c1": 14,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4.640,90",
+"r0": 5,
+"r1": 6,
+"c0": 13,
+"c1": 14,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "107.471,32",
+"r0": 4,
+"r1": 5,
+"c0": 13,
+"c1": 14,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4.395,54",
+"r0": 3,
+"r1": 4,
+"c0": 13,
+"c1": 14,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "102.121,70",
+"r0": 2,
+"r1": 3,
+"c0": 13,
+"c1": 14,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "2.350,87",
+"r0": 1,
+"r1": 2,
+"c0": 13,
+"c1": 14,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "55.549,36",
+"r0": 0,
+"r1": 1,
+"c0": 13,
+"c1": 14,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Nợ nước ngoài",
+"r0": 10,
+"r1": 11,
+"c0": 14,
+"c1": 15,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "735,26",
+"r0": 9,
+"r1": 10,
+"c0": 14,
+"c1": 15,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "16.923,02",
+"r0": 8,
+"r1": 9,
+"c0": 14,
+"c1": 15,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "722,15",
+"r0": 7,
+"r1": 8,
+"c0": 14,
+"c1": 15,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "16.760,00",
+"r0": 6,
+"r1": 7,
+"c0": 14,
+"c1": 15,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "627,15",
+"r0": 5,
+"r1": 6,
+"c0": 14,
+"c1": 15,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "14.523,84",
+"r0": 4,
+"r1": 5,
+"c0": 14,
+"c1": 15,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "621,37",
+"r0": 3,
+"r1": 4,
+"c0": 14,
+"c1": 15,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "14.442,75",
+"r0": 2,
+"r1": 3,
+"c0": 14,
+"c1": 15,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "371,37",
+"r0": 1,
+"r1": 2,
+"c0": 14,
+"c1": 15,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "8.775,73",
+"r0": 0,
+"r1": 1,
+"c0": 14,
+"c1": 15,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "Nợ trong nước",
+"r0": 10,
+"r1": 11,
+"c0": 15,
+"c1": 16,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4.132,43",
+"r0": 9,
+"r1": 10,
+"c0": 15,
+"c1": 16,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "95.116,07",
+"r0": 8,
+"r1": 9,
+"c0": 15,
+"c1": 16,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4.205,03",
+"r0": 7,
+"r1": 8,
+"c0": 15,
+"c1": 16,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "97.597,99",
+"r0": 6,
+"r1": 7,
+"c0": 15,
+"c1": 16,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "4.013,75",
+"r0": 5,
+"r1": 6,
+"c0": 15,
+"c1": 16,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "92.947,48",
+"r0": 4,
+"r1": 5,
+"c0": 15,
+"c1": 16,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "3.774,17",
+"r0": 3,
+"r1": 4,
+"c0": 15,
+"c1": 16,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "87.678,95",
+"r0": 2,
+"r1": 3,
+"c0": 15,
+"c1": 16,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "1.979,50",
+"r0": 1,
+"r1": 2,
+"c0": 15,
+"c1": 16,
+"col_header": false,
+"row_header": false
+},
+{
+"text": "46.773,63",
+"r0": 0,
+"r1": 1,
+"c0": 15,
+"c1": 16,
+"col_header": false,
+"row_header": false
+}
+],
+"page": 13
+}
+}
+}
