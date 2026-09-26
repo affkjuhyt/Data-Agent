@@ -232,6 +232,7 @@ kubectl -n dataagent-service create secret generic setup-secrets \
 kubectl -n dataagent-service create secret generic eval-secrets \
   --from-literal=LITELLM_API_KEY="${LITELLM_API_KEY}" \
   --from-literal=AGENT_ID="${EVAL_AGENT_ID}" \
+  --from-literal=GATEWAY_KEY="${GATEWAY_KEY}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic postgres-backup-secrets \
