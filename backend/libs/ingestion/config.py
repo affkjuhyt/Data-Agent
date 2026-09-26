@@ -30,6 +30,13 @@ KAFKA_TOPIC_STRUCTURED_PROPOSE = os.getenv("KAFKA_TOPIC_STRUCTURED_PROPOSE", "kb
 KAFKA_TOPIC_DLQ = os.getenv("KAFKA_TOPIC_DLQ", "kb.ingestion.dlq")
 INGESTION_MAX_ATTEMPTS = int(os.getenv("INGESTION_MAX_ATTEMPTS", "3"))
 
+# A hung Silver/Gold call (MinIO/Docling/LLM stall) previously occupied its
+# concurrency slot forever — no exception ever raised, so it never reached the
+# retry/DLQ path above either. A stage that runs past this ceiling is treated
+# as a normal failure (stamped FAILED, then retried like any other exception).
+SILVER_STAGE_TIMEOUT_SECONDS = int(os.getenv("SILVER_STAGE_TIMEOUT_SECONDS", "1800"))
+GOLD_STAGE_TIMEOUT_SECONDS = int(os.getenv("GOLD_STAGE_TIMEOUT_SECONDS", "1800"))
+
 # ── Consume concurrency ───────────────────────────────────────────────────────
 # The consume loop dispatches up to CONSUME_CONCURRENCY handlers in-flight at once
 # (bounded by a semaphore) instead of processing one Kafka message at a time.

@@ -8,6 +8,7 @@ from typing import Any, Awaitable, Callable
 from libs.database_connector.postgres_connector import set_current_tenant
 from libs.ingestion import config as cfg
 from libs.ingestion.consumer import (
+    GoldHandoffFailed,
     document_name,
     maybe_publish_auto_gold,
     requeue_busy_document,
@@ -15,6 +16,7 @@ from libs.ingestion.consumer import (
     route_ingestion_failure,
 )
 from libs.ingestion.pipeline_events import PipelineEventEmitter
+from libs.ingestion.pipeline_status import stamp_pipeline_status
 from libs.ingestion.runtime import WorkerRuntime
 from libs.ingestion.silver import promote_to_silver
 from libs.shared.document_lock import DocumentBusy, document_lock
@@ -51,21 +53,46 @@ def build_silver_handler(runtime: WorkerRuntime) -> Callable[[dict[str, Any]], A
                 async with document_lock(runtime.postgres, tenant_id, name):
                     await reset_events_for_new_run(db, data_id)
                     emitter = await PipelineEventEmitter.create(db, data_id)
-                    await promote_to_silver(
-                        minio=runtime.minio,
-                        postgres=runtime.postgres,
-                        docling=runtime.docling_parser,
-                        mongo=runtime.mongo,
-                        data_id=data_id,
-                        tenant_id=tenant_id,
-                        approved_by=approved_by,
-                        emitter=emitter,
-                    )
+                    try:
+                        await asyncio.wait_for(
+                            promote_to_silver(
+                                minio=runtime.minio,
+                                postgres=runtime.postgres,
+                                docling=runtime.docling_parser,
+                                mongo=runtime.mongo,
+                                data_id=data_id,
+                                tenant_id=tenant_id,
+                                approved_by=approved_by,
+                                emitter=emitter,
+                            ),
+                            timeout=cfg.SILVER_STAGE_TIMEOUT_SECONDS,
+                        )
+                    except TimeoutError:
+                        # wait_for cancels the stalled call; the cancellation
+                        # propagates as BaseException, past promote_to_silver's
+                        # own `except Exception` — so its usual FAILED stamp
+                        # never runs, and this is the only place that can stamp
+                        # it (a stuck MinIO/Docling/LLM call otherwise held its
+                        # concurrency slot forever with no visible failure).
+                        await stamp_pipeline_status(
+                            runtime.postgres, data_id, stage="silver", status="failed",
+                            error=f"timed out after {cfg.SILVER_STAGE_TIMEOUT_SECONDS}s",
+                        )
+                        raise
                     # A scheduled source with promotion_mode=auto needs no human
                     # click for Gold — see maybe_publish_auto_gold's docstring.
-                    await maybe_publish_auto_gold(
-                        runtime.postgres, runtime.producer, data_id=data_id, tenant_id=tenant_id,
-                    )
+                    try:
+                        await maybe_publish_auto_gold(
+                            runtime.postgres, runtime.producer, data_id=data_id, tenant_id=tenant_id,
+                        )
+                    except GoldHandoffFailed as exc:
+                        # Silver already succeeded — retry only the hand-off
+                        # (on the gold topic), never re-run Silver over this.
+                        await route_ingestion_failure(
+                            runtime.producer, stage="gold-handoff", source_topic=cfg.KAFKA_TOPIC_GOLD,
+                            event={"data_id": data_id, "tenant_id": tenant_id, "approved_by": "web-crawler-worker"},
+                            exc=exc,
+                        )
             except DocumentBusy:
                 await requeue_busy_document(
                     runtime.producer, stage="silver", source_topic=cfg.KAFKA_TOPIC_SILVER,

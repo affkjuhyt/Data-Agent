@@ -15,6 +15,7 @@ from libs.ingestion.consumer import (
 )
 from libs.ingestion.gold import promote_to_gold
 from libs.ingestion.pipeline_events import PipelineEventEmitter
+from libs.ingestion.pipeline_status import stamp_pipeline_status
 from libs.ingestion.runtime import WorkerRuntime
 from libs.shared.document_lock import DocumentBusy, document_lock
 
@@ -45,17 +46,30 @@ def build_gold_handler(runtime: WorkerRuntime) -> Callable[[dict[str, Any]], Awa
                 async with document_lock(runtime.postgres, tenant_id, name):
                     await reset_events_for_new_run(db, data_id)
                     emitter = await PipelineEventEmitter.create(db, data_id)
-                    await promote_to_gold(
-                        postgres=runtime.postgres,
-                        qdrant=runtime.qdrant.get_client(),
-                        graph=runtime.graph,
-                        mongo=runtime.mongo,
-                        model=runtime.model,
-                        data_id=data_id,
-                        tenant_id=tenant_id,
-                        approved_by=approved_by,
-                        emitter=emitter,
-                    )
+                    try:
+                        await asyncio.wait_for(
+                            promote_to_gold(
+                                postgres=runtime.postgres,
+                                qdrant=runtime.qdrant.get_client(),
+                                graph=runtime.graph,
+                                mongo=runtime.mongo,
+                                model=runtime.model,
+                                data_id=data_id,
+                                tenant_id=tenant_id,
+                                approved_by=approved_by,
+                                emitter=emitter,
+                            ),
+                            timeout=cfg.GOLD_STAGE_TIMEOUT_SECONDS,
+                        )
+                    except TimeoutError:
+                        # See the matching comment in kb_promote_silver's
+                        # handler.py — cancellation bypasses promote_to_gold's
+                        # own FAILED stamp, so this is the only place that can.
+                        await stamp_pipeline_status(
+                            runtime.postgres, data_id, stage="gold", status="failed",
+                            error=f"timed out after {cfg.GOLD_STAGE_TIMEOUT_SECONDS}s",
+                        )
+                        raise
                 if runtime.result_cache is not None:
                     await runtime.result_cache.invalidate(tenant_id)
             except DocumentBusy:

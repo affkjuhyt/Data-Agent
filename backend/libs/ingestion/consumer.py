@@ -75,6 +75,20 @@ async def document_name(postgres: PostgresClient, data_id: str) -> str:
     return name or ""
 
 
+class GoldHandoffFailed(Exception):
+    """The Gold hand-off publish itself failed (broker rejected the producer,
+    timeout, ...) — distinct from `maybe_publish_auto_gold` returning False for
+    a legitimate reason (not auto, deleted, wrong purpose). Silver already
+    succeeded, so the caller must not treat this as a Silver failure (that
+    would re-run Silver); it retries just the hand-off via
+    `route_ingestion_failure(source_topic=cfg.KAFKA_TOPIC_GOLD)` instead — see
+    `build_silver_handler`. Before this, a failed hand-off was logged and
+    silently dropped forever: nothing re-queued it, so a document sat at
+    Silver with no automatic way back (hit for real on 2026-09-25, see
+    RUNBOOK — a rejected idempotent Kafka producer that never got a fresh id
+    stalled every auto-promote source for ~11 hours)."""
+
+
 async def maybe_publish_auto_gold(
     postgres: PostgresClient, producer: KafkaProducerClient | None, *, data_id: str, tenant_id: str,
 ) -> bool:
@@ -83,10 +97,11 @@ async def maybe_publish_auto_gold(
     `platform_workers/workers/web_crawler/bronze.py`) needs no human click
     for Gold — a worker can't click a button. Called right after Silver
     succeeds; publishes the same `promote_gold` event kb_backend's own
-    `/promote/{id}/gold` route builds. Returns whether it published, purely
-    for logging — never raises, since a failed auto-promote must not fail
-    the Silver run that already succeeded (the document simply stays at
-    Silver until the next successful auto-eligible run, or a manual click)."""
+    `/promote/{id}/gold` route builds. Returns whether it published — `False`
+    for every legitimate no-op (no producer configured, not auto mode,
+    deleted, wrong purpose). Raises `GoldHandoffFailed` when the publish
+    itself fails, so the caller can retry just that step (see
+    `GoldHandoffFailed`'s docstring) instead of the failure vanishing."""
     if producer is None:
         return False
     async with postgres.get_client() as session:
@@ -116,9 +131,9 @@ async def maybe_publish_auto_gold(
                 "approved_by": "web-crawler-worker",
             },
         )
-    except Exception:  # noqa: BLE001 — a failed auto-promote must not fail the Silver run that already succeeded
+    except Exception as exc:
         log.warning("maybe_publish_auto_gold: failed to queue gold for data_id=%s", data_id, exc_info=True)
-        return False
+        raise GoldHandoffFailed(str(exc)) from exc
     return True
 
 

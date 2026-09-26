@@ -1,7 +1,8 @@
 """A promotion_mode="auto" source needs no human click for Gold either — Silver's
 handler calls this right after promote_to_silver succeeds (see
-kb_promote_silver/libs/handler.py). Never raises: a failed publish here must not
-fail a Silver run that already succeeded.
+kb_promote_silver/libs/handler.py). Returns False for every legitimate no-op;
+raises GoldHandoffFailed only when the publish itself fails, so the caller can
+retry that one step without re-running Silver.
 """
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from typing import Any
 import pytest
 
 from libs.ingestion import config as cfg
-from libs.ingestion.consumer import maybe_publish_auto_gold
+from libs.ingestion.consumer import GoldHandoffFailed, maybe_publish_auto_gold
 
 pytestmark = pytest.mark.unit
 
@@ -96,16 +97,15 @@ def test_a_missing_data_row_is_treated_as_manual() -> None:
     assert producer.produced == []
 
 
-def test_a_publish_failure_is_swallowed_not_raised() -> None:
+def test_a_publish_failure_raises_so_the_caller_can_retry_just_the_handoff() -> None:
     postgres = _Postgres({"promotion_mode": "auto"})
 
     class _Boom:
         async def produce(self, *_: Any, **__: Any) -> None:
             raise RuntimeError("kafka down")
 
-    published = asyncio.run(maybe_publish_auto_gold(postgres, _Boom(), data_id="11111111-1111-1111-1111-111111111111", tenant_id="22222222-2222-2222-2222-222222222222"))
-
-    assert published is False
+    with pytest.raises(GoldHandoffFailed):
+        asyncio.run(maybe_publish_auto_gold(postgres, _Boom(), data_id="11111111-1111-1111-1111-111111111111", tenant_id="22222222-2222-2222-2222-222222222222"))
 
 
 @pytest.mark.parametrize("purpose", ["training", "evaluation"])
