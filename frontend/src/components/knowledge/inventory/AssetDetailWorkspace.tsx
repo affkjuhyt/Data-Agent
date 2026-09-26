@@ -35,7 +35,7 @@ import { KnowledgeDocument, KnowledgeLayer, PagedResponse } from '../../../types
 import { apiGet, apiMutate, apiBlob } from '../../../lib/apiClient';
 import {
   ChunkVersion, Chunk, TableColumn, DocTable,
-  WarehouseConfigTable, WarehouseConfigVersion,
+  WarehouseConfigTable, WarehouseConfigVersion, pickHeaderRowIndex,
 } from './inventory.data';
 
 interface AssetDetailWorkspaceProps {
@@ -205,8 +205,10 @@ export const AssetDetailWorkspace = ({
           const workbook = XLSX.read(buf, { type: 'array' });
           const sheets = workbook.SheetNames.map(name => {
             const rows = XLSX.utils.sheet_to_json<(string | number)[]>(workbook.Sheets[name], { header: 1, blankrows: false });
-            const [headers, ...body] = rows;
-            return { name, headers: (headers ?? []).map(h => String(h ?? '')), rows: body };
+            const headerIndex = pickHeaderRowIndex(rows);
+            const headers = rows[headerIndex] ?? [];
+            const body = rows.slice(headerIndex + 1);
+            return { name, headers: headers.map(h => String(h ?? '')), rows: body };
           }).filter(s => s.headers.length > 0 || s.rows.length > 0);
           if (!cancelled) setPreviewSheets(sheets);
         } else {
