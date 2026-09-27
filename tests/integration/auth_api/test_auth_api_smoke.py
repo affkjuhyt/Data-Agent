@@ -12,7 +12,7 @@ specific message.
 
 Run:
     # a local Postgres on :5432 (optional; testcontainers otherwise)
-    pytest -m integration tests/integration/test_auth_api_smoke.py -v
+    pytest -m integration tests/integration/auth_api/test_auth_api_smoke.py -v
 """
 from __future__ import annotations
 

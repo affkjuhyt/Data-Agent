@@ -1,6 +1,6 @@
 """Integration tests for backend/services/workflow_runtime/schema_catalog.py (the
 agent-facing read side of the Schema Crawler Worker) and its wiring into
-_text_to_sql_handler — real Qdrant testcontainer, embedding stubbed to a
+_get_schema_text — real Qdrant testcontainer, embedding stubbed to a
 fixed-but-distinguishable vector (same technique as
 test_workflow_schema_memory.py's `wm` fixture). No real LLM/Snowflake
 contacted anywhere in this file.
@@ -8,17 +8,12 @@ contacted anywhere in this file.
 from __future__ import annotations
 
 import importlib
-import pathlib
-import sys
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 from qdrant_client.models import PointStruct
 
 pytestmark = pytest.mark.integration
-
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
 
 def _fake_vector(text: str, dim: int = 4) -> list[float]:
@@ -31,26 +26,24 @@ async def sc(qdrant_container, monkeypatch):
     monkeypatch.setenv("EMBEDDING_DIM", "4")
     monkeypatch.setenv("QDRANT_URL", qdrant_container["url"])
 
-    added = [p for p in (_SVC_DIR, str(REPO_ROOT)) if p not in sys.path]
-    sys.path[:0] = added
-    try:
-        import schema_catalog as sc_mod
-        importlib.reload(sc_mod)
+    # The package path, which is how the text_to_sql handler imports it; a
+    # bare `import schema_catalog` is a second module object whose Qdrant
+    # client the handler never sees.
+    import services.workflow_runtime.schema_catalog as sc_mod
+    importlib.reload(sc_mod)
 
-        async def _fake_embed(text: str):
-            return _fake_vector(text)
-        monkeypatch.setattr(sc_mod, "_embed", _fake_embed)
+    async def _fake_embed(text: str):
+        return _fake_vector(text)
+    monkeypatch.setattr(sc_mod, "_embed", _fake_embed)
 
-        await sc_mod.init_schema_catalog_qdrant()
-        yield sc_mod
-        await sc_mod.close_schema_catalog_qdrant()
-    finally:
-        for p in added:
-            if p in sys.path:
-                sys.path.remove(p)
+    await sc_mod.init_schema_catalog_qdrant()
+    yield sc_mod
+    await sc_mod.close_schema_catalog_qdrant()
 
 
-async def _seed_point(sc_mod, tenant_id: str, table_name: str, text: str, schema_name: str = "ANALYTICS"):
+async def _seed_point(
+    sc_mod, tenant_id: str, table_name: str, text: str, schema_name: str = "ANALYTICS", warehouse_id: str = "",
+):
     await sc_mod._qdrant.upsert(sc_mod._COLLECTION, points=[PointStruct(
         id=__import__("uuid").uuid4().hex,
         vector=_fake_vector(text),
@@ -58,6 +51,7 @@ async def _seed_point(sc_mod, tenant_id: str, table_name: str, text: str, schema
             "tenant_id": tenant_id, "schema_name": schema_name, "table_name": table_name,
             "text_description": text, "columns": ["ticker", "close"],
             "row_count": 100, "join_hints": ["dim_company.ticker"],
+            "warehouse_id": warehouse_id,
         },
     )])
 
@@ -105,42 +99,24 @@ async def test_format_catalog_context_empty_list_returns_empty_string(sc):
     assert sc.format_catalog_context([]) == ""
 
 
-# ─── _text_to_sql_handler puts Schema Catalog hits in the prompt ──────────
+# ─── text_to_sql takes its schema block from the catalog ──────────────────
 
-async def test_text_to_sql_handler_puts_schema_catalog_hits_in_prompt(sc, monkeypatch):
-    await _seed_point(sc, "tenant-1", "fact_stock_price", "OHLCV stock price daily")
+async def test_a_catalogued_connection_gets_its_schema_from_the_catalog(sc, monkeypatch):
+    """A connection naming its crawled warehouse is described by the catalog,
+    and information_schema is never introspected for it."""
+    warehouse = "b0000000-0000-0000-0000-000000000002"
+    await _seed_point(sc, "tenant-1", "fact_stock_price", "OHLCV stock price daily", warehouse_id=warehouse)
+    await _seed_point(sc, "tenant-1", "other_wh_table", "OHLCV stock price daily", warehouse_id="another-warehouse")
 
-    added = [p for p in (_SVC_DIR, str(REPO_ROOT)) if p not in sys.path]
-    sys.path[:0] = added
-    try:
-        import importlib as _il
-        data_mod = _il.import_module("nodes.sandbox.tool_executor.handlers.data")
-        _il.reload(data_mod)
+    from services.workflow_runtime.nodes.sandbox.tool_executor.handlers import data as data_mod
+    monkeypatch.setattr(data_mod, "_list_tables", AsyncMock(side_effect=AssertionError("introspected")))
 
-        captured = {}
+    text = await data_mod._get_schema_text(
+        "tenant-1",
+        {"type": "postgres", "host": "h", "database": "d", "catalog_warehouse_id": warehouse},
+        "OHLCV stock price daily",
+    )
 
-        def fake_completion(**kwargs):
-            captured["prompt"] = kwargs["messages"][0]["content"]
-            resp = MagicMock()
-            resp.choices = [MagicMock(message=MagicMock(content="SELECT 1"))]
-            return resp
-        monkeypatch.setattr(data_mod.litellm, "completion", fake_completion)
-
-        # asyncpg.connect would try a real network connection — short-circuit
-        # by giving a bogus db_url and accepting the eventual connection
-        # error; the prompt is captured before that point, which is what
-        # this test is verifying.
-        result, error = await data_mod._text_to_sql_handler(
-            call={"query": "OHLCV stock price daily"},
-            cfg={
-                "tool_config": {"text_to_sql": {"db_url": "postgresql://bad:bad@localhost:1/bad", "data_source": "snowflake"}},
-                "tenant_id": "tenant-1",
-            },
-        )
-
-        assert "fact_stock_price" in captured["prompt"]
-        assert "OHLCV" in captured["prompt"]
-    finally:
-        for p in added:
-            if p in sys.path:
-                sys.path.remove(p)
+    assert "fact_stock_price" in text
+    assert "OHLCV" in text
+    assert "other_wh_table" not in text

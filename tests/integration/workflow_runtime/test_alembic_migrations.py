@@ -37,9 +37,11 @@ import psycopg2
 import psycopg2.extras
 import pytest
 
+from tests.integration._db import alembic_head, reset_database
+
 pytestmark = pytest.mark.integration
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 ALEMBIC_INI = REPO_ROOT / "backend" / "alembic" / "alembic.ini"
 
 
@@ -94,18 +96,7 @@ def fresh_db(postgres_container) -> Iterator[dict[str, str]]:
     Cheaper than spinning a new container per test — TRUNCATE-style reset
     by dropping + recreating the schema.
     """
-    conn = psycopg2.connect(postgres_container["dsn"])
-    conn.autocommit = True
-    try:
-        with conn.cursor() as cur:
-            # Drop everything user-owned. Done as superuser so RLS doesn't fight us.
-            cur.execute("DROP SCHEMA IF EXISTS public CASCADE")
-            cur.execute("CREATE SCHEMA public")
-            cur.execute("GRANT ALL ON SCHEMA public TO public")
-            # `app_user` may persist from a previous test in the session.
-            cur.execute("DROP ROLE IF EXISTS app_user")
-    finally:
-        conn.close()
+    reset_database(postgres_container["dsn"])
     yield postgres_container
 
 
@@ -123,10 +114,11 @@ def test_alembic_upgrade_head_on_fresh_db(fresh_db):
         f"--- stderr ---\n{result.stderr}"
     )
 
-    # alembic_version row must be set to the head revision (currently
-    # auth_api_secrets_vault_schema — bump this when a new head lands).
+    # alembic_version must hold the head of the chain in the tree, read from
+    # the scripts rather than pinned here (a pinned id went stale with every
+    # new migration).
     rev = _current_revision(fresh_db["dsn"])
-    assert rev == "b8c9d0e1f2a3", f"expected head rev, got {rev}"
+    assert rev == alembic_head(), f"expected head rev {alembic_head()}, got {rev}"
 
 
 # ─── 2. RLS migration was actually applied (regression net for issue #3) ───

@@ -20,23 +20,12 @@ import sys
 import psycopg2
 import pytest
 
+from tests.integration._sandbox import SKIP_REASON, docker_and_image_available
+
 pytestmark = pytest.mark.integration
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SVC_DIR = str(REPO_ROOT / "backend" / "services" / "sandbox_executor")
-
-
-def _docker_and_image_available() -> bool:
-    if shutil.which("docker") is None:
-        return False
-    try:
-        import docker
-
-        client = docker.from_env()
-        client.images.get("sandbox-runner:latest")
-        return True
-    except Exception:
-        return False
 
 
 @pytest.fixture(autouse=True)
@@ -186,8 +175,8 @@ async def test_connection_is_reused_across_real_queries(seeded_db):
 
 
 @pytest.mark.skipif(
-    not _docker_and_image_available(),
-    reason="Docker daemon or sandbox-runner:latest image not available",
+    not docker_and_image_available(),
+    reason=SKIP_REASON,
 )
 def test_execute_sql_http_endpoint_serializes_decimal_rows(seeded_db, monkeypatch):
     """Drives /execute/sql through the real FastAPI app (not just

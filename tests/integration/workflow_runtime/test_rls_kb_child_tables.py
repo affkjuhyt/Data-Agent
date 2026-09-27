@@ -17,11 +17,13 @@ import pathlib
 
 import pytest
 
+from tests.integration._db import reset_database
+
 pytestmark = pytest.mark.integration
 
 psycopg2 = pytest.importorskip("psycopg2")
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _MIGRATION = REPO_ROOT / "backend" / "alembic" / "versions" / "f1a2b3c4d5e6_rls_kb_child_tables.py"
 
 TENANT_1 = "11111111-1111-1111-1111-111111111111"
@@ -56,6 +58,9 @@ def kb_child_rls(postgres_container):
     """Provision schema + app_user + parent/child RLS, seed two tenants. Returns
     {app_dsn, t1_block, t2_block, t1_data, t2_data}."""
     mig = _load_migration()
+    # CREATE TABLE IF NOT EXISTS would otherwise keep the real KBData an earlier
+    # test's migration left in the shared container (no data_id default).
+    reset_database(postgres_container["dsn"])
     child_predicate = mig._CHILD_PREDICATES["KBTextBlock"]
     child_policy = mig._POLICY
 

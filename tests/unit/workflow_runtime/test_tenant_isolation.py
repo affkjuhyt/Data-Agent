@@ -13,7 +13,7 @@ workflow_runtime connects as `runtime_writer`, which
 `deploy/docker/sql/grant-roles.sql` explicitly sets NOBYPASSRLS — so it is the
 one service where the policies do anything at all today.
 
-`tests/integration/test_rls_enforcement.py` proves the policy works, and proves
+`tests/integration/auth_api/test_rls_enforcement.py` proves the policy works, and proves
 it against `app_user` — a role no service connects as. Its
 `test_owner_role_bypasses_rls` even asserts that the DSN every other service
 uses returns all tenants' rows. Both tests pass. The deployment is unprotected.
@@ -290,7 +290,7 @@ class TestTheContractTestDoesNotProveTheDeployment:
         Secret generator, not in the manifests."""
         import re
 
-        suite = (REPO_ROOT / "tests" / "integration" / "test_rls_enforcement.py").read_text(encoding="utf-8")
+        suite = (REPO_ROOT / "tests" / "integration" / "auth_api" / "test_rls_enforcement.py").read_text(encoding="utf-8")
         assert "app_user" in suite
 
         gen = (REPO_ROOT / "deploy" / "k8s" / "create-secrets.sh").read_text(encoding="utf-8")

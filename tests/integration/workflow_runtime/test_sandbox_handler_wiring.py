@@ -22,30 +22,20 @@ import time
 import docker
 import httpx
 import pytest
+
+from tests.integration._sandbox import SKIP_REASON, docker_and_image_available
 import uvicorn
 
 pytestmark = pytest.mark.integration
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SANDBOX_DIR = str(REPO_ROOT / "backend" / "services" / "sandbox_executor")
-_RUNTIME_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 _PORT = 8599
-
-
-def _docker_and_image_available() -> bool:
-    if shutil.which("docker") is None:
-        return False
-    try:
-        client = docker.from_env()
-        client.images.get("sandbox-runner:latest")
-        return True
-    except Exception:
-        return False
 
 
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.skipif(not _docker_and_image_available(), reason="Docker daemon or sandbox-runner:latest image not available"),
+    pytest.mark.skipif(not docker_and_image_available(), reason=SKIP_REASON),
 ]
 
 
@@ -87,18 +77,13 @@ def live_sandbox_executor():
 
 @pytest.fixture
 def handler_mod(live_sandbox_executor, monkeypatch):
-    added = [p for p in (_RUNTIME_DIR,) if p not in sys.path]
-    sys.path[:0] = added
-    try:
-        import importlib
-        mod = importlib.import_module("nodes.sandbox.tool_executor.handlers.code_interpreter")
-        importlib.reload(mod)
-        monkeypatch.setattr(mod, "_SANDBOX_EXECUTOR_URL", live_sandbox_executor)
-        yield mod
-    finally:
-        for p in added:
-            if p in sys.path:
-                sys.path.remove(p)
+    # The HTTP transport (and the URL it posts to) moved out of the handler
+    # module into _sandbox_http, which reads SANDBOX_EXECUTOR_URL per call.
+    from services.workflow_runtime.nodes.sandbox.tool_executor import _sandbox_http
+    from services.workflow_runtime.nodes.sandbox.tool_executor.handlers import code_interpreter
+
+    monkeypatch.setattr(_sandbox_http, "SANDBOX_EXECUTOR_URL", live_sandbox_executor)
+    return code_interpreter
 
 
 async def test_execute_python_handler_runs_real_container_via_live_service(handler_mod):

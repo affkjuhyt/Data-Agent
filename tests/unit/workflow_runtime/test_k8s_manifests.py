@@ -1,6 +1,6 @@
 """The k8s manifests, checked the way the migrations are checked.
 
-`tests/integration/test_alembic_migrations.py` exists because a migration that
+`tests/integration/workflow_runtime/test_alembic_migrations.py` exists because a migration that
 only gets exercised by `docker compose up` is a migration whose failures land in
 production. The manifests had the same shape of problem and no equivalent test:
 a misspelled field is not an error to the API server, it is a field that

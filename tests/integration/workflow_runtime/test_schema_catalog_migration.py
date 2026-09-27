@@ -15,9 +15,11 @@ import psycopg2
 import psycopg2.errors
 import pytest
 
+from tests.integration._db import reset_database
+
 pytestmark = pytest.mark.integration
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 ALEMBIC_INI = REPO_ROOT / "backend" / "alembic" / "alembic.ini"
 
 
@@ -36,16 +38,7 @@ def _run_alembic(dsn: str, *args: str) -> subprocess.CompletedProcess:
 
 @pytest.fixture
 def fresh_db(postgres_container) -> Iterator[dict[str, str]]:
-    conn = psycopg2.connect(postgres_container["dsn"])
-    conn.autocommit = True
-    try:
-        with conn.cursor() as cur:
-            cur.execute("DROP SCHEMA IF EXISTS public CASCADE")
-            cur.execute("CREATE SCHEMA public")
-            cur.execute("GRANT ALL ON SCHEMA public TO public")
-            cur.execute("DROP ROLE IF EXISTS app_user")
-    finally:
-        conn.close()
+    reset_database(postgres_container["dsn"])
     yield postgres_container
 
 

@@ -4,7 +4,7 @@ automatic startup probe that falls the whole pool back to no network at
 all when default-deny isn't actually in effect. No real Docker daemon
 involved (fake client) so this stays fast/deterministic and covers both
 branches (probe passes / probe fails) without needing real iptables
-rules applied anywhere — tests/integration/test_sandbox_pool.py covers
+rules applied anywhere — tests/integration/sandbox_executor/test_sandbox_pool.py covers
 network creation against a real Docker daemon.
 """
 from __future__ import annotations

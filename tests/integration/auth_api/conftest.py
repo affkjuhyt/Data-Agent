@@ -12,36 +12,19 @@ tests don't need the patch.
 from __future__ import annotations
 
 import os
-import pathlib
-import sys
 from collections.abc import Iterator
 from typing import Callable
 
 import pytest
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+from tests.integration._db import reset_database
 
 
-# ─── sys.path so `import auth_core` + `from shared.auth import ...` resolve ─
-@pytest.fixture(scope="session", autouse=True)
-def _auth_api_sys_path() -> Iterator[None]:
-    """Mirror the auth_api Dockerfile WORKDIR layout for in-process tests.
-
-    Dockerfile copies `backend/services/auth_api/*` into /app and `backend/services/shared/`
-    into /app/shared. So `auth_core` is a top-level module and `shared.auth`
-    is a package import. Re-create that layout via sys.path here.
-    """
-    added = [
-        str(REPO_ROOT / "backend" / "services" / "auth_api"),
-        str(REPO_ROOT / "backend" / "services"),
-    ]
-    for p in added:
-        if p not in sys.path:
-            sys.path.insert(0, p)
-    yield
-    for p in added:
-        if p in sys.path:
-            sys.path.remove(p)
+# auth_api is imported as the image runs it — `services.auth_api.*` with
+# backend/ on the path (pyproject's pythonpath). This file used to put
+# backend/services/auth_api first on sys.path for the whole session, which made
+# auth_api's own `services/` package shadow the top-level `services` for every
+# other integration test collected after it.
 
 
 # ─── Minimal schema — just what the smoke tests exercise ───────────────────
@@ -184,9 +167,18 @@ $$;
 """
 
 
-@pytest.fixture(scope="session")
+def _app_user_dsn(postgres_container: dict[str, str]) -> str:
+    host, port, db = postgres_container["host"], postgres_container["port"], postgres_container["database"]
+    return f"postgresql://app_user:{_RLS_PASSWORD}@{host}:{port}/{db}"
+
+
+@pytest.fixture
 def auth_api_db(postgres_container) -> dict[str, str]:
-    """Apply minimal schema + RLS setup to the session Postgres container.
+    """Reset the shared container, then apply the minimal schema + RLS setup.
+
+    Per test, not per session: other fixtures reset the same container and
+    re-run migrations that recreate `app_user` without this password, so a
+    session-scoped setup left later tests with no tables or a failed login.
 
     Returns the container info dict extended with `app_user_dsn` — the
     DSN clients should use for RLS-enforced queries. The superuser dsn
@@ -195,6 +187,7 @@ def auth_api_db(postgres_container) -> dict[str, str]:
     """
     import psycopg2
 
+    reset_database(postgres_container["dsn"])
     conn = psycopg2.connect(postgres_container["dsn"])
     conn.autocommit = True
     try:
@@ -204,37 +197,26 @@ def auth_api_db(postgres_container) -> dict[str, str]:
     finally:
         conn.close()
 
-    host = postgres_container["host"]
-    port = postgres_container["port"]
-    db = postgres_container["database"]
-    return {
-        **postgres_container,
-        "app_user_dsn": f"postgresql://app_user:{_RLS_PASSWORD}@{host}:{port}/{db}",
-    }
+    return {**postgres_container, "app_user_dsn": _app_user_dsn(postgres_container)}
 
 
 # ─── App + client ──────────────────────────────────────────────────────────
 @pytest.fixture(scope="session")
-def auth_api_app(auth_api_db, _auth_api_sys_path):
-    """Construct the FastAPI app with PG_DSN pointing at the test container.
+def auth_api_app(postgres_container):
+    """Construct the FastAPI app with its DSNs pointing at the test container.
 
-    We patch PG_DSN BEFORE importing app/auth_core so the module-level
-    constants pick up the test DSN. Bypasses the startup() task that touches
-    Kong + spawns auto-rotation loop — we don't need either for smoke tests.
+    The env is set BEFORE importing the app so the module-level constants
+    (infrastructure/config.py reads DATABASE_URL at import) pick up the test
+    DSN. Bypasses the startup() task that touches Kong + spawns the
+    auto-rotation loop — we don't need either for smoke tests.
     """
-    os.environ["DATABASE_URL"] = auth_api_db["dsn"]
+    os.environ["DATABASE_URL"] = postgres_container["dsn"]
     # APP_DATABASE_URL is what shared.db_context.get_tenant_db connects to.
     # Must be the app_user role for RLS to apply (owner connections bypass
     # FORCE RLS via the superuser bit testcontainers sets on the owner role).
-    os.environ["APP_DATABASE_URL"] = auth_api_db["app_user_dsn"]
+    os.environ["APP_DATABASE_URL"] = _app_user_dsn(postgres_container)
 
-    # Late import — must happen after sys.path + env are set
-    import auth_core  # type: ignore[import-not-found]
-    from app import create_app  # type: ignore[import-not-found]
-
-    # Force the in-memory constant to match the patched env var.
-    # auth_core read it at import time, so re-assign now.
-    auth_core.PG_DSN = auth_api_db["dsn"]
+    from services.auth_api.app import create_app
 
     app = create_app()
     # Strip the startup hook — it schedules a Kong sync that talks to a
@@ -244,21 +226,9 @@ def auth_api_app(auth_api_db, _auth_api_sys_path):
 
 
 @pytest.fixture
-def client(auth_api_app) -> Iterator:
-    """Per-test TestClient. Cleans up auth_api state between tests."""
+def client(auth_api_app, auth_api_db) -> Iterator:
+    """Per-test TestClient over a freshly reset schema (see auth_api_db)."""
     from fastapi.testclient import TestClient
-
-    # Reset rows that smoke tests insert. Cheaper than dropping/recreating
-    # the schema and lets each test reason about an empty state.
-    import psycopg2
-
-    conn = psycopg2.connect(os.environ["DATABASE_URL"])
-    conn.autocommit = True
-    try:
-        with conn.cursor() as cur:
-            cur.execute("TRUNCATE api_keys, secrets_vault, ip_allowlists, key_rotations RESTART IDENTITY")
-    finally:
-        conn.close()
 
     with TestClient(auth_api_app) as c:
         yield c

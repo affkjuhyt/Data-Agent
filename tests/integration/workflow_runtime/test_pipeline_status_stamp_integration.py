@@ -12,37 +12,26 @@ from __future__ import annotations
 
 import asyncio
 import json
-import sys
 import uuid
 from collections.abc import Iterator
 
 import psycopg2
 import pytest
 
-from tests.integration.test_web_crawler_worker import REPO_ROOT, _run_alembic
+from tests.integration._db import reset_database, run_alembic
 
 pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
 def fresh_db(postgres_container) -> Iterator[dict[str, str]]:
-    conn = psycopg2.connect(postgres_container["dsn"])
-    conn.autocommit = True
-    try:
-        with conn.cursor() as cur:
-            cur.execute("DROP SCHEMA IF EXISTS kb_structured CASCADE")
-            cur.execute("DROP SCHEMA IF EXISTS public CASCADE")
-            cur.execute("CREATE SCHEMA public")
-            cur.execute("GRANT ALL ON SCHEMA public TO public")
-            cur.execute("DROP ROLE IF EXISTS app_user")
-    finally:
-        conn.close()
+    reset_database(postgres_container["dsn"])
     yield postgres_container
 
 
 @pytest.fixture
 def migrated_db(fresh_db) -> dict[str, str]:
-    result = _run_alembic(fresh_db["dsn"], "upgrade", "head")
+    result = run_alembic(fresh_db["dsn"], "upgrade", "head")
     assert result.returncode == 0, f"alembic upgrade failed:\n{result.stdout}\n{result.stderr}"
     return fresh_db
 
@@ -76,27 +65,9 @@ def _seed_kbdata(dsn: str, initial_metadata: dict) -> tuple[str, str]:
 
 @pytest.fixture
 def postgres_client_module():
-    """Same sys.path juggling as test_web_crawler_worker.py's worker_module
-    fixture: importing `libs.*` needs `backend` on the path without the
-    auth_api-polluted entries this repo's conftest otherwise leaves in place."""
-    polluting = [str(REPO_ROOT / "backend" / "services"), str(REPO_ROOT / "backend" / "services" / "auth_api")]
-    removed = [p for p in polluting if p in sys.path]
-    for p in removed:
-        sys.path.remove(p)
-    added = str(REPO_ROOT / "backend")
-    added_to_path = added not in sys.path
-    if added_to_path:
-        sys.path.insert(0, added)
-    try:
-        from libs.database_connector.postgres_connector import PostgresClient
-        from libs.ingestion.pipeline_status import stamp_pipeline_status
-        yield PostgresClient, stamp_pipeline_status
-    finally:
-        if added_to_path and added in sys.path:
-            sys.path.remove(added)
-        for p in removed:
-            if p not in sys.path:
-                sys.path.insert(0, p)
+    from libs.database_connector.postgres_connector import PostgresClient
+    from libs.ingestion.pipeline_status import stamp_pipeline_status
+    return PostgresClient, stamp_pipeline_status
 
 
 def _read_metadata(dsn: str, data_id: str) -> tuple[str, dict]:

@@ -9,9 +9,6 @@ Covers:
      actually runs migrations through.
   2. backend/services/workflow_runtime/workflow_memory.py — record/retrieve against
      a real Postgres + Qdrant testcontainer.
-  3. nodes/sandbox/tool_executor/handlers/data.py — _text_to_sql_handler's
-     wiring (prompt → real SQL execution → retry on error), with
-     litellm.completion monkeypatched.
 
 No real LLM/embedding provider is contacted anywhere in this file —
 `workflow_memory._embed` is monkeypatched to a fixed vector. That isolates
@@ -22,22 +19,22 @@ per the project's "don't test against a real LLM" convention.
 from __future__ import annotations
 
 import importlib
-import json
 import os
 import pathlib
 import subprocess
 import sys
 import uuid
 from typing import Iterator
-from unittest.mock import MagicMock
 
 import psycopg2
 import psycopg2.errors
 import pytest
 
+from tests.integration._db import reset_database
+
 pytestmark = pytest.mark.integration
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 ALEMBIC_INI = REPO_ROOT / "backend" / "alembic" / "alembic.ini"
 
 
@@ -59,16 +56,7 @@ def fresh_db(postgres_container) -> Iterator[dict[str, str]]:
     """Mirrors test_alembic_migrations.py's fixture of the same name —
     wipe public schema so each test gets a deterministic fresh DB without
     paying for a new container."""
-    conn = psycopg2.connect(postgres_container["dsn"])
-    conn.autocommit = True
-    try:
-        with conn.cursor() as cur:
-            cur.execute("DROP SCHEMA IF EXISTS public CASCADE")
-            cur.execute("CREATE SCHEMA public")
-            cur.execute("GRANT ALL ON SCHEMA public TO public")
-            cur.execute("DROP ROLE IF EXISTS app_user")
-    finally:
-        conn.close()
+    reset_database(postgres_container["dsn"])
     yield postgres_container
 
 
@@ -292,110 +280,3 @@ async def test_retrieve_workflow_memory_isolates_tenants(wm):
 def _dsn_from_client() -> str:
     from libs.database_connector.postgres_connector import client
     return client._url.replace("postgresql+asyncpg://", "postgresql://")
-
-
-# ─── 3. _text_to_sql_handler wiring — real Postgres, litellm.completion mocked ─
-#
-# The SQL-generation CALL is mocked (no real LLM) — what's under test is
-# everything around it: does the generated SQL actually execute against
-# a real database, does the retry-on-error path actually retry with the
-# previous error appended to the prompt.
-
-@pytest.fixture
-async def text_to_sql_env(migrated_db, monkeypatch):
-    svc_dir = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
-    added = [p for p in (svc_dir, str(REPO_ROOT)) if p not in sys.path]
-    sys.path[:0] = added
-    try:
-        import importlib as _il
-        from libs.database_connector.postgres_connector import client as pg_client
-
-        data_mod = _il.import_module("nodes.sandbox.tool_executor.handlers.data")
-        _il.reload(data_mod)
-
-        pg_client.set_url(migrated_db["dsn"])
-        await pg_client.open()
-
-        tenant_id, _ = _seed_tenant_and_agent(migrated_db["dsn"])
-
-        # The "data source" table text_to_sql will query — a plain table in
-        # the same throwaway Postgres, separate from the app's own schema.
-        conn = psycopg2.connect(migrated_db["dsn"])
-        conn.autocommit = True
-        with conn.cursor() as cur:
-            cur.execute("CREATE TABLE demo_orders (id serial PRIMARY KEY, total numeric NOT NULL)")
-            cur.execute("INSERT INTO demo_orders (total) VALUES (100), (250)")
-        conn.close()
-
-        yield data_mod, migrated_db["dsn"], tenant_id
-
-        await pg_client.close()
-    finally:
-        for p in added:
-            if p in sys.path:
-                sys.path.remove(p)
-
-
-def _fake_sql_response(sql: str):
-    resp = MagicMock()
-    resp.choices = [MagicMock(message=MagicMock(content=sql))]
-    return resp
-
-
-async def test_text_to_sql_executes_against_real_postgres(text_to_sql_env, monkeypatch):
-    data_mod, db_url, tenant_id = text_to_sql_env
-
-    monkeypatch.setattr(data_mod.litellm, "completion",
-                         lambda **kw: _fake_sql_response("SELECT total FROM demo_orders ORDER BY total"))
-
-    result, error = await data_mod._text_to_sql_handler(
-        call={"query": "lấy hết đơn hàng"},
-        cfg={"tool_config": {"text_to_sql": {"db_url": db_url, "data_source": "postgresql"}}, "tenant_id": tenant_id},
-    )
-
-    assert error is None, error
-    rows = json.loads(result["content"])
-    # numeric column -> Decimal via asyncpg -> not JSON-native -> serialized
-    # as string by the handler's json.dumps(default=str). Still proves the
-    # SQL actually ran against real Postgres and got the real row values.
-    assert [r["total"] for r in rows] == ["100", "250"]
-
-
-async def test_text_to_sql_retries_on_sql_error_with_previous_error_in_prompt(text_to_sql_env, monkeypatch):
-    data_mod, db_url, tenant_id = text_to_sql_env
-    attempts: list[str] = []
-
-    def fake_completion(**kwargs):
-        prompt = kwargs["messages"][0]["content"]
-        attempts.append(prompt)
-        if len(attempts) == 1:
-            return _fake_sql_response("SELECT * FROM table_that_does_not_exist")
-        return _fake_sql_response("SELECT total FROM demo_orders")
-
-    monkeypatch.setattr(data_mod.litellm, "completion", fake_completion)
-
-    result, error = await data_mod._text_to_sql_handler(
-        call={"query": "lấy hết đơn hàng"},
-        cfg={"tool_config": {"text_to_sql": {"db_url": db_url, "data_source": "postgresql"}}, "tenant_id": tenant_id},
-    )
-
-    assert error is None, error
-    assert len(attempts) == 2, "should succeed on the 2nd attempt, not exhaust all 3"
-    assert "SQL trước lỗi" in attempts[1]
-    assert "table_that_does_not_exist" in attempts[1]  # actual asyncpg error text fed back
-
-
-async def test_text_to_sql_fails_after_3_attempts_all_invalid(text_to_sql_env, monkeypatch):
-    data_mod, db_url, tenant_id = text_to_sql_env
-
-    monkeypatch.setattr(data_mod.litellm, "completion",
-                         lambda **kw: _fake_sql_response("SELECT * FROM table_that_does_not_exist"))
-
-    result, error = await data_mod._text_to_sql_handler(
-        call={"query": "lấy hết đơn hàng"},
-        cfg={"tool_config": {"text_to_sql": {"db_url": db_url, "data_source": "postgresql"}}, "tenant_id": tenant_id},
-    )
-
-    assert result is None
-    assert error["tool_name"] == "text_to_sql"
-    assert "failed after 3 attempts" in error["error"]

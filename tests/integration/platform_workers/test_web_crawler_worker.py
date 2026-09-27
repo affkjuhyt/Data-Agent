@@ -25,9 +25,11 @@ from unittest.mock import patch
 import psycopg2
 import pytest
 
+from tests.integration._db import reset_database
+
 pytestmark = pytest.mark.integration
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 ALEMBIC_INI = REPO_ROOT / "backend" / "alembic" / "alembic.ini"
 
 
@@ -45,23 +47,7 @@ def _run_alembic(dsn: str, *args: str) -> subprocess.CompletedProcess:
 
 @pytest.fixture
 def fresh_db(postgres_container) -> Iterator[dict[str, str]]:
-    conn = psycopg2.connect(postgres_container["dsn"])
-    conn.autocommit = True
-    try:
-        with conn.cursor() as cur:
-            # kb_structured is a second schema the migrations create (opt-in
-            # structured-table ingestion) with default privileges owned by
-            # app_user — dropping only `public` leaves those behind, and a
-            # session-scoped container shared by more than one test in this
-            # file then fails "role app_user cannot be dropped" on the second
-            # migration run.
-            cur.execute("DROP SCHEMA IF EXISTS kb_structured CASCADE")
-            cur.execute("DROP SCHEMA IF EXISTS public CASCADE")
-            cur.execute("CREATE SCHEMA public")
-            cur.execute("GRANT ALL ON SCHEMA public TO public")
-            cur.execute("DROP ROLE IF EXISTS app_user")
-    finally:
-        conn.close()
+    reset_database(postgres_container["dsn"])
     yield postgres_container
 
 
@@ -109,36 +95,8 @@ def _seed_tenant_and_source(
 
 @pytest.fixture
 def worker_module():
-    """`tests/integration/conftest.py`'s session-autouse `_auth_api_sys_path`
-    puts `backend/services` AND `backend/services/auth_api` on `sys.path` so
-    auth_api's own flat-WORKDIR-style imports resolve — but `auth_api` has
-    its OWN nested `services/` package
-    (`backend/services/auth_api/services/__init__.py`), and with
-    `.../auth_api` on the path, a fresh `import services` binds to THAT
-    nested package instead of the real top-level one at `backend/services`,
-    so `services.platform_workers` doesn't exist under it. Temporarily
-    removing both polluting entries and clearing any stale `services*`
-    sys.modules cache sidesteps this without touching the other fixture
-    (other integration tests may depend on its current behavior)."""
-    polluting = [str(REPO_ROOT / "backend" / "services"), str(REPO_ROOT / "backend" / "services" / "auth_api")]
-    removed = [p for p in polluting if p in sys.path]
-    for p in removed:
-        sys.path.remove(p)
-    stale = [name for name in sys.modules if name == "services" or name.startswith("services.")]
-    saved = {name: sys.modules.pop(name) for name in stale}
-    try:
-        from services.platform_workers.workers.web_crawler import worker as wc
-        yield wc
-    finally:
-        for p in removed:
-            if p not in sys.path:
-                sys.path.insert(0, p)
-        # Restore exactly what was cached before (a later auth_api test
-        # re-importing `services` should still get ITS nested package, not
-        # the top-level one we just bound for platform_workers).
-        for name in [n for n in sys.modules if n == "services" or n.startswith("services.")]:
-            del sys.modules[name]
-        sys.modules.update(saved)
+    from services.platform_workers.workers.web_crawler import worker as wc
+    return wc
 
 
 def _fake_artifact(url: str):
@@ -216,11 +174,16 @@ def test_a_failed_run_is_retried_before_its_next_cron_tick(migrated_db, worker_m
     )
     conn = psycopg2.connect(migrated_db["dsn"])
     try:
+        # A schedule starts with the first run, not at creation (a bulk import
+        # must not fire every source at once), so the first attempt is a Run
+        # Now; it fails.
+        with conn.cursor() as cur:
+            source = worker_module.get_active_sources(cur)[0]
         with patch(
             "services.platform_workers.workers.web_crawler.worker.connector_fetch",
             side_effect=RuntimeError("simulated fetch failure"),
         ):
-            worker_module.crawl_due_sources(conn)  # first attempt: cron-due (no prior run), fails
+            worker_module.run_source(conn, source, trigger="manual")
 
         with conn.cursor() as cur:
             cur.execute(

@@ -52,7 +52,7 @@ def _patch(stmt: Any) -> dict[str, Any]:
     # The value must be the raw Python dict, not a pre-`json.dumps`'d string —
     # passing a string here is exactly the bug that corrupted 7 live
     # KBData.metadata rows into `[old_object, "...", "..."]` (see
-    # tests/integration/test_pipeline_status_stamp_integration.py for the
+    # tests/integration/workflow_runtime/test_pipeline_status_stamp_integration.py for the
     # real-Postgres regression test that actually caught it; a mocked
     # session's `execute()` can only check what SQLAlchemy was ASKED to send,
     # not what asyncpg's JSONB codec does with it).

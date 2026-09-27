@@ -24,27 +24,18 @@ import sys
 import docker
 import pytest
 
+from tests.integration._sandbox import SANDBOX_RUNNER_IMAGE, SKIP_REASON, docker_and_image_available
+
 pytestmark = pytest.mark.integration
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SVC_DIR = str(REPO_ROOT / "backend" / "services" / "sandbox_executor")
-_IMAGE = "sandbox-runner:latest"
-
-
-def _docker_and_image_available() -> bool:
-    if shutil.which("docker") is None:
-        return False
-    try:
-        client = docker.from_env()
-        client.images.get(_IMAGE)
-        return True
-    except Exception:
-        return False
+_IMAGE = SANDBOX_RUNNER_IMAGE
 
 
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.skipif(not _docker_and_image_available(), reason="Docker daemon or sandbox-runner:latest image not available"),
+    pytest.mark.skipif(not docker_and_image_available(), reason=SKIP_REASON),
 ]
 
 

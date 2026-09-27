@@ -1,6 +1,6 @@
 """Integration test for SANDBOX_SQL_BACKEND=postgres (postgres_readonly.py)
 — end-to-end against a real Postgres (testcontainers `postgres_container`
-fixture, same one tests/integration/test_postgres_readonly_integration.py
+fixture, same one tests/integration/sandbox_executor/test_postgres_readonly_integration.py
 uses), exercising the whole /execute/sql wire path (submit -> queue ->
 postgres_readonly.py -> JSON response) the way a mocked connection cannot.
 
@@ -27,26 +27,15 @@ import time
 import psycopg2
 import pytest
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+from tests.integration._sandbox import SKIP_REASON, docker_and_image_available
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SVC_DIR = str(REPO_ROOT / "backend" / "services" / "sandbox_executor")
-
-
-def _docker_and_image_available() -> bool:
-    if shutil.which("docker") is None:
-        return False
-    try:
-        import docker
-
-        client = docker.from_env()
-        client.images.get("sandbox-runner:latest")
-        return True
-    except Exception:
-        return False
 
 
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.skipif(not _docker_and_image_available(), reason="Docker daemon or sandbox-runner:latest image not available"),
+    pytest.mark.skipif(not docker_and_image_available(), reason=SKIP_REASON),
 ]
 
 
@@ -97,10 +86,18 @@ def client(monkeypatch):
 
     added = [p for p in (_SVC_DIR,) if p not in sys.path]
     sys.path[:0] = added
+    # postgres_readonly caches asyncpg connections per process, which is right
+    # for the service (one event loop) and wrong across TestClients (one loop
+    # each): a connection an earlier test opened fails here with "attached to
+    # a different loop". Drop the module, and the functools.cache in
+    # load_backend that still holds its execute function, so this app gets a
+    # fresh cache.
+    sys.modules.pop("postgres_readonly", None)
     try:
         from fastapi.testclient import TestClient
         import main as sandbox_main
         importlib.reload(sandbox_main)
+        sandbox_main.load_backend.cache_clear()
         assert sandbox_main._SQL_BACKEND == "postgres"
         with TestClient(sandbox_main.app) as tc:
             yield tc
