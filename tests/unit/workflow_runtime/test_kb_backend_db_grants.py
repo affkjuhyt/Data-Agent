@@ -33,6 +33,7 @@ WRITE_TABLES = {
     "KBKnowledgeBase", "KBLifecycleHistory", "KBConflict", "KBConflictBatch",
     "KBFilterPolicy", "KBExtractionPolicy", "KBWarehouse", "KBWarehouseConfig",
     "KBStructuredImportJob", "KBQdrantCollection",
+    "KBSource", "KBSourceConfig", "KBSourceRun",
 }
 READ_TABLES = {
     "KBQdrantConnection", "KBNeo4jNode", "KBNeo4jRelationship",
