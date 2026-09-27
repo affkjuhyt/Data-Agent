@@ -12,6 +12,8 @@ test = [
     "pytest-asyncio>=0.24",
     "pytest-cov>=5.0",
     "pytest-xdist>=3.5",
+    # httpx mocking for the model_service / workflow_runtime HTTP clients.
+    "respx>=0.21",
     "testcontainers[postgres,redis,kafka]>=4.7",
     "httpx>=0.27",
     "requests>=2.31",
@@ -97,14 +99,13 @@ omit = [
 precision = 1
 show_missing = true
 skip_covered = false
-# Coverage gate — `pytest --cov` (CI: python-test job) exits non-zero below this.
-# Set to a conservative NON-BREAKING floor: it catches catastrophic drops (a
-# broken test-collection zeroing coverage) without failing on the current
-# baseline, which isn't measured here (the real number needs the full
-# unit+integration run with testcontainers, i.e. CI, not a dev laptop).
-# RATCHET: after the first green CI run, read the reported total and raise this
-# to (measured − 5). Target trajectory: 35 → 50 → 70. Never lower it.
-fail_under = 35
+# Coverage gate, applied to the COMBINED unit report (CI: python-coverage job,
+# which merges the per-suite data files). A single suite covers one service's
+# share of the tree, so its own run passes --cov-fail-under=0.
+# Measured 53.2% combined on 2026-09-27 (six unit suites, before the flow_builder,
+# release_worker and model_service suites existed); set to measured − 5.
+# RATCHET: raise it as the number rises. Target trajectory: 50 → 70. Never lower it.
+fail_under = 48
 exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.:",

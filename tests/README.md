@@ -16,11 +16,19 @@ tests/
 │   ├── platform_workers/    #   pure-library, manifest, deploy and grant tests go in
 │   ├── sandbox_executor/    #   workflow_runtime. There is no single image that can
 │   ├── auth_api/            #   import every service (their pins conflict: OTel,
-│   └── kb_promote_silver/   #   boto3), so the suites are never run together.
-├── integration/             # spins testcontainers OR drives live stack (e2e marker)
-│   ├── conftest.py          # per-service fixtures (auth_api app + DB schema)
-│   ├── test_auth_api_smoke.py
-│   └── test_tenant_isolation.py
+│   ├── kb_promote_silver/   #   boto3), so the suites are never run together.
+│   ├── flow_builder/
+│   ├── release_worker/
+│   └── model_service/
+├── integration/             # testcontainers; same per-service split as unit/
+│   ├── _db.py               # reset_database / run_alembic / alembic_head for the shared container
+│   ├── _sandbox.py          # sandbox-runner image gate (SANDBOX_RUNNER_IMAGE)
+│   ├── workflow_runtime/    # migrations, RLS on KB child tables, memory, schema catalog,
+│   │   └── requirements.txt #   handler→sandbox wiring (its extra sandbox imports)
+│   ├── auth_api/            # conftest.py: the auth_api app + minimal schema; smoke + RLS
+│   ├── platform_workers/    # schema crawler, web crawler
+│   ├── sandbox_executor/    # real sandbox-runner containers, read-only Postgres backend
+│   └── test_*.py            # e2e only (LIVE_STACK=1): agent answer, JWT audience, load, tenant isolation
 └── README.md
 ```
 
@@ -40,34 +48,42 @@ marker, don't bypass the guard.
 
 ## Running
 
-### Python — unit only (fast, no Docker)
+### Python — unit (no Docker inside the tests)
 
-```powershell
-pip install -e ".[test]"
-pytest -m unit
+```bash
+make test-unit                                   # every suite, each in its service image
+make test-unit UNIT_SUITES=kb_backend:kb-backend # one suite
+make test-unit PYTEST_ARGS="-k lock -x"          # extra pytest args
 ```
 
-### Python — unit + integration (testcontainers spins Docker)
+Each suite runs as `pytest -m unit tests/unit/<suite>` inside
+`localhost:5000/dataagent/<image>:latest` with `requirements-test.txt`
+installed on top. Outside Docker, the equivalent is a virtualenv holding that
+service's `requirements.txt` plus `requirements-test.txt` — which is what CI's
+`python-test` matrix does, one job per suite. The host interpreter (3.10) is
+too old for the code (3.11+).
 
-```powershell
-pytest -m "unit or integration"
+### Python — integration (testcontainers)
+
+```bash
+make test-integration
+make test-integration INTEGRATION_SUITES=auth_api:auth_api
 ```
 
-Requires Docker Desktop running. First run pulls postgres:16, redis:7,
-cp-kafka:7.5.0 (~500 MB total, cached afterward).
+The suite container gets the Docker socket and the host network, so
+testcontainers starts Postgres/Qdrant/MinIO next to it. `requirements-integration.txt`
+adds testcontainers, psycopg2 and alembic; a suite that needs more (the
+workflow_runtime handler-wiring test runs sandbox_executor's app) lists it in
+`tests/integration/<suite>/requirements.txt`. The sandbox tests start real
+sandbox-runner containers from `SANDBOX_RUNNER_IMAGE`
+(default `dataagent/sandbox-runner:latest`, the deploy build).
 
-**Per-service runtime deps**: integration tests import service code
-in-process, so you also need that service's runtime deps installed:
+Every suite shares one session-scoped Postgres container. A test that needs a
+clean database calls `tests.integration._db.reset_database`, which drops every
+schema and role the migrations created; never hand-roll a `DROP SCHEMA public`.
 
-```powershell
-# auth_api smoke tests need hvac, psycopg2-binary, bcrypt, structlog, ...
-pip install -r backend/services/auth_api/requirements.txt
-```
-
-CI does this in the `python-test` job; expand the install list as more
-service test suites land. We do NOT roll every service's deps into
-`pyproject.toml [test]` — that would create a meta-package that no single
-service really uses and slow installs for unit-only runs.
+`make test` runs both. We do NOT roll every service's deps into
+`pyproject.toml [test]` — no single environment can hold them all.
 
 ### Python — e2e (live stack)
 
@@ -133,20 +149,18 @@ transaction and roll back at the end.
 
 ## Service-scoped integration tests — the auth_api pattern
 
-`tests/integration/conftest.py` is the template for in-process integration
-testing of a FastAPI service. See [tests/integration/test_auth_api_smoke.py](integration/test_auth_api_smoke.py)
+`tests/integration/auth_api/conftest.py` is the template for in-process integration
+testing of a FastAPI service. See [tests/integration/auth_api/test_auth_api_smoke.py](integration/auth_api/test_auth_api_smoke.py)
 for the seven smoke tests built on top of it.
 
 The pattern, when cloning for a new service (workflow_runtime, kb-backend, ...):
 
-1. **Mirror the Dockerfile WORKDIR with `sys.path`**. Services use top-level
-   imports like `from auth_core import *`. Re-create that layout in conftest
-   so the test process can import the service as the container would:
-
-   ```python
-   sys.path.insert(0, str(REPO_ROOT / "services" / "<service-name>"))
-   sys.path.insert(0, str(REPO_ROOT / "services"))   # for shared/
-   ```
+1. **Import the service by its package path** — `from services.auth_api.app
+   import create_app` — the way the image runs it (PYTHONPATH=backend, which
+   pyproject's `pythonpath` already gives pytest). Do not put a service
+   directory on `sys.path`: auth_api has its own `services/` package, and with
+   its directory first every later `import services.…` in the session
+   resolved to it.
 
 2. **Apply a minimal SQL schema, not full alembic.** Hand-roll only the
    tables the routes under test touch. Faster, easier to read, and the
@@ -154,18 +168,20 @@ The pattern, when cloning for a new service (workflow_runtime, kb-backend, ...):
    test breaks loudly. Don't drift toward "test fixture = full prod schema"
    — that ratchet ends with tests blocked by every unrelated migration.
 
-3. **Patch env vars BEFORE importing the service module.** Module-level
-   constants (e.g. `PG_DSN = os.environ.get(...)`) read at import time. Set
-   `os.environ["DATABASE_URL"]` in the fixture, then `import auth_core`,
-   then re-assign `auth_core.PG_DSN` defensively in case anything pre-read.
+3. **Set env vars BEFORE importing the service module.** Module-level
+   constants (e.g. `PG_DSN = os.environ.get(...)`) read at import time, so
+   the session-scoped app fixture sets `DATABASE_URL`/`APP_DATABASE_URL`
+   first and imports second.
 
 4. **Strip the startup hook**. Most services have a `@app.on_event("startup")`
    that talks to Kong, OpenBao, or Kafka. None are appropriate in-process.
    `app.router.on_startup.clear()` after `create_app()`.
 
-5. **TRUNCATE per test, don't recreate the container.** Session-scoped
-   container, function-scoped truncate. Each test reasons about an empty
-   table without paying for `docker run` 50 times.
+5. **Reset per test, don't recreate the container.** Session-scoped
+   container, function-scoped `auth_api_db` that calls `reset_database` and
+   re-applies the minimal schema. Other suites migrate the same container,
+   so anything set up once per session (tables, the `app_user` password) is
+   gone by the time a later test runs.
 
 6. **Mock external services only where you must.** The smoke tests in
    `test_auth_api_smoke.py` deliberately stop at validation/auth so they
@@ -173,8 +189,9 @@ The pattern, when cloning for a new service (workflow_runtime, kb-backend, ...):
    `auth_core.get_vault` at test scope, not in conftest — keeps the global
    fixture clean.
 
-7. **Add service runtime deps to CI**. Update `.github/workflows/ci.yml`
-   `python-test` job to `pip install -r backend/services/<your-service>/requirements.txt`.
+7. **Add the suite to CI and make**. A new `tests/integration/<service>/`
+   directory goes into `INTEGRATION_SUITES` in the Makefile and the
+   `python-integration` matrix in `.github/workflows/ci.yml`.
 
 ## Row-Level Security (RLS) — the rollout pattern
 
@@ -230,12 +247,12 @@ release_worker, ...):
 4. Drop the `WHERE tenant_id = %s` from queries that the new dep covers.
    Keep them for now if you want belt-and-suspenders — RLS is the safety
    net, app-layer WHERE is the primary filter.
-5. Run `pytest -m integration tests/integration/test_rls_enforcement.py`
+5. Run `pytest -m integration tests/integration/auth_api/test_rls_enforcement.py`
    in CI to prove no regression.
 
 ### Testing the contract
 
-[test_rls_enforcement.py](integration/test_rls_enforcement.py) pins six
+[test_rls_enforcement.py](integration/auth_api/test_rls_enforcement.py) pins six
 properties of the migration. Don't delete tests when refactoring policies
 — update the assertions if the contract changes intentionally:
 

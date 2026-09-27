@@ -56,42 +56,151 @@ jobs:
             backend/services/kb_backend backend/services/workflow_runtime \
             backend/services/auth_api backend/services/flow_builder backend/services/model_service \
             backend/services/release_worker backend/services/sandbox_executor \
-            backend/services/kb-ingestion-worker backend/services/platform-workers; do
+            backend/services/platform_workers; do
             echo "== mypy strict: $target =="
             mypy --disallow-untyped-defs --disallow-any-generics \
                  --ignore-missing-imports --follow-imports=silent "$target"
           done
 
+  # One job per service suite, in that service's Python with only its own
+  # requirements.txt: no single environment can import every service (the
+  # OpenTelemetry and boto3 pins conflict), so there is no "whole tree" run.
+  # Mirrors `make test-unit`, which runs the same suites in the built images.
   python-test:
-    name: Python · pytest (unit + integration)
+    name: Python · unit (${{ matrix.suite }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: workflow_runtime
+            python: "3.11"
+            install: -r backend/services/workflow_runtime/requirements.txt
+          - suite: kb_backend
+            python: "3.13"
+            install: -r backend/services/kb_backend/requirements.txt
+            apt: libpq-dev
+          - suite: platform_workers
+            python: "3.12"
+            install: -r backend/services/platform_workers/requirements.txt
+          - suite: sandbox_executor
+            python: "3.11"
+            install: -r backend/services/sandbox_executor/requirements.txt
+          - suite: auth_api
+            python: "3.12"
+            install: -r backend/services/auth_api/requirements.txt
+          - suite: kb_promote_silver
+            python: "3.11"
+            # Same system libraries and CPU torch wheel as its Dockerfile;
+            # docling imports fail without them.
+            apt: libgl1 libglib2.0-0 poppler-utils tesseract-ocr
+            pre: torch torchvision --index-url https://download.pytorch.org/whl/cpu
+            install: -r backend/services/kb_promote_silver/requirements.txt
+          - suite: flow_builder
+            python: "3.11"
+            install: -r backend/services/flow_builder/requirements.txt
+          - suite: release_worker
+            python: "3.12"
+            install: -r backend/services/release_worker/requirements.txt
+          - suite: model_service
+            python: "3.11"
+            # No requirements.txt: its Dockerfile installs these four inline.
+            install: fastapi "uvicorn[standard]" pydantic asyncpg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: System libraries
+        if: matrix.apt
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ${{ matrix.apt }}
+      - name: Pre-install
+        if: matrix.pre
+        run: pip install ${{ matrix.pre }}
+      - name: Install the service and the test tooling
+        run: pip install ${{ matrix.install }} -r requirements-test.txt
+      - name: Run the suite
+        # Per-suite coverage is only one service's share of the tree, so the
+        # threshold is enforced on the combined report (coverage job below).
+        env:
+          OTEL_SDK_DISABLED: "true"
+          COVERAGE_FILE: .coverage.${{ matrix.suite }}
+        run: pytest -m unit tests/unit/${{ matrix.suite }} --cov --cov-report= --cov-fail-under=0
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-data-${{ matrix.suite }}
+          path: .coverage.${{ matrix.suite }}
+          include-hidden-files: true
+          if-no-files-found: ignore
+
+  python-coverage:
+    name: Python · coverage (combined)
+    needs: python-test
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
-      - name: Install test + service deps
-        # `[test]` covers pytest/testcontainers; service requirements.txt files
-        # bring the runtime deps the integration tests import in-process
-        # (hvac for auth_api, etc). Expand this list as more service tests land.
-        #
-        # alembic + asyncpg are needed for tests/integration/test_alembic_migrations.py
-        # which runs the migration chain through asyncpg (the same driver
-        # production migrate uses). Catches errors like "cannot insert
-        # multiple commands into a prepared statement" that psycopg2 hides.
+      - run: pip install "coverage[toml]>=7"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-data-*
+          merge-multiple: true
+      - name: Combine and gate
+        # fail_under lives in pyproject.toml [tool.coverage.report].
         run: |
-          pip install -e ".[test]"
-          pip install -r backend/services/auth_api/requirements.txt
-          pip install alembic sqlalchemy[asyncio] asyncpg pydantic
-      - name: Run pytest
-        run: pytest -m "unit or integration" --cov --cov-report=xml --cov-report=term -n auto
-      - name: Upload coverage
+          coverage combine .coverage.*
+          coverage xml -o coverage.xml
+          coverage report
+      - uses: actions/upload-artifact@v4
         if: always()
-        uses: actions/upload-artifact@v4
         with:
           name: python-coverage
           path: coverage.xml
+
+  # Testcontainers needs a Docker daemon, which GitHub's Ubuntu runners have.
+  # Same suites as `make test-integration`.
+  python-integration:
+    name: Python · integration (${{ matrix.suite }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: workflow_runtime
+            python: "3.11"
+            install: -r backend/services/workflow_runtime/requirements.txt -r tests/integration/workflow_runtime/requirements.txt
+            sandbox: true
+          - suite: auth_api
+            python: "3.12"
+            install: -r backend/services/auth_api/requirements.txt
+          - suite: platform_workers
+            python: "3.12"
+            install: -r backend/services/platform_workers/requirements.txt
+          - suite: sandbox_executor
+            python: "3.11"
+            install: -r backend/services/sandbox_executor/requirements.txt
+            sandbox: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Build the sandbox-runner image the sandbox tests start
+        if: matrix.sandbox
+        run: docker build -t sandbox-runner:latest backend/services/sandbox_executor/sandbox_runner
+      - name: Install the service and the integration tooling
+        run: pip install ${{ matrix.install }} -r requirements-integration.txt
+      - name: Run the suite
+        env:
+          OTEL_SDK_DISABLED: "true"
+          SANDBOX_RUNNER_IMAGE: sandbox-runner:latest
+        run: pytest -m integration tests/integration/${{ matrix.suite }}
 
   eval-gate:
     name: Eval · offline gate (policy + SQL)

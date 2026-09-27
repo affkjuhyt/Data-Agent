@@ -7,8 +7,8 @@ PY_IMAGE ?= localhost:5000/dataagent/workflow_runtime:latest
 PLANTUML_IMAGE ?= plantuml/plantuml:1.2024.8
 DOCKER_RUN_PY = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend:/src $(PY_IMAGE)
 
-.PHONY: help lint type test test-unit deadcode frontend-lint frontend-test ci e2e diagrams deploy fmt \
-        bench bench-gate bench-e2e
+.PHONY: help lint type test test-unit test-integration deadcode frontend-lint frontend-test ci e2e diagrams \
+        deploy fmt bench bench-gate bench-e2e
 
 help:  ## List targets
 	@grep -hE '^[a-z0-9-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -22,11 +22,48 @@ fmt:  ## ruff format + autofix
 type:  ## mypy strict on libs + services (same set as CI python-type)
 	$(DOCKER_RUN_PY) sh -c "pip install -q mypy && mypy backend/libs backend/services"
 
-test-unit:  ## pytest unit only
-	$(DOCKER_RUN_PY) sh -c "pip install -q pytest pytest-asyncio && python -m pytest -q -o addopts='' tests/unit"
+# One suite per service, each run in that service's own image: no single image
+# can import every service (their OTel/boto3 pins conflict). suite:image pairs;
+# tests/unit/<suite> and tests/integration/<suite> are the directories.
+IMAGE_REGISTRY ?= localhost:5000
+UNIT_SUITES ?= workflow_runtime:workflow_runtime kb_backend:kb-backend platform_workers:platform-workers \
+               sandbox_executor:sandbox_executor auth_api:auth_api kb_promote_silver:kb-promote-silver \
+               flow_builder:flow_builder release_worker:release_worker model_service:model_service
+INTEGRATION_SUITES ?= workflow_runtime:workflow_runtime auth_api:auth_api platform_workers:platform-workers \
+                      sandbox_executor:sandbox_executor
+# The integration sandbox tests start real sandbox-runner containers; the tag
+# differs between a compose build and a deploy build.
+SANDBOX_RUNNER_IMAGE ?= dataagent/sandbox-runner:latest
+PYTEST_ARGS ?=
+# --user 0 so pip can install the test tooling; no bytecode and no pytest cache,
+# or the run leaves root-owned files in the checkout.
+DOCKER_RUN_SUITE = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend:/src \
+                   -e PYTHONDONTWRITEBYTECODE=1 -e OTEL_SDK_DISABLED=true
 
-test:  ## pytest unit + integration with coverage (same as CI python-test)
-	$(DOCKER_RUN_PY) sh -c "pip install -q pytest pytest-asyncio pytest-cov && python -m pytest -m 'unit or integration' --cov"
+# Every suite runs even when an earlier one fails; the target fails if any did.
+test-unit:  ## pytest unit, one suite per service in that service's image
+	@failed=""; for pair in $(UNIT_SUITES); do suite=$${pair%%:*}; image=$${pair##*:}; \
+	  echo "== unit: $$suite ($(IMAGE_REGISTRY)/dataagent/$$image)"; \
+	  $(DOCKER_RUN_SUITE) $(IMAGE_REGISTRY)/dataagent/$$image:latest sh -c \
+	    "pip install -q -r requirements-test.txt && python -m pytest -q -p no:cacheprovider -m unit $(PYTEST_ARGS) tests/unit/$$suite" \
+	    || failed="$$failed $$suite"; \
+	done; if [ -n "$$failed" ]; then echo "failed unit suites:$$failed"; exit 1; fi
+
+# Testcontainers talks to the host daemon through the mounted socket and reaches
+# the containers it starts over the host network.
+test-integration:  ## pytest integration (testcontainers), one suite per service image
+	@failed=""; for pair in $(INTEGRATION_SUITES); do suite=$${pair%%:*}; image=$${pair##*:}; \
+	  extra=""; [ -f tests/integration/$$suite/requirements.txt ] && extra="-r tests/integration/$$suite/requirements.txt"; \
+	  echo "== integration: $$suite ($(IMAGE_REGISTRY)/dataagent/$$image)"; \
+	  $(DOCKER_RUN_SUITE) --network host -v /var/run/docker.sock:/var/run/docker.sock \
+	    -e TESTCONTAINERS_RYUK_DISABLED=true -e SANDBOX_RUNNER_IMAGE=$(SANDBOX_RUNNER_IMAGE) \
+	    $(IMAGE_REGISTRY)/dataagent/$$image:latest sh -c \
+	    "pip install -q -r requirements-integration.txt $$extra && python -m pytest -q -p no:cacheprovider -m integration $(PYTEST_ARGS) tests/integration/$$suite" \
+	    || failed="$$failed $$suite"; \
+	done; if [ -n "$$failed" ]; then echo "failed integration suites:$$failed"; exit 1; fi
+
+test:  ## unit suites then integration suites (same split as CI python-test / python-integration)
+	@$(MAKE) --no-print-directory test-unit && $(MAKE) --no-print-directory test-integration
 
 deadcode:  ## vulture (python) + knip (frontend)
 	$(DOCKER_RUN_PY) sh -c "pip install -q vulture && vulture"
