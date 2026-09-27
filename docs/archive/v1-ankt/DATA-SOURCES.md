@@ -2,7 +2,7 @@
 
 # Danh mục nguồn dữ liệu đầu vào cho POC ANKT \(chỉ số test: Nợ công/GDP\)
 
-> Khảo sát web ngày 15/09/2026 \(tìm kiếm \+ gọi thử trực tiếp từ server dự án\)\. Bản máy đọc: `[data/sources\\\.yaml](data/sources.yaml)`\.<br>**Trạng thái:** `V` = đã mở trang/tải file/gọi API thành công · `S` = chỉ thấy qua kết quả tìm kiếm hoặc trang chính thức không mở hết · `U` = chưa xác minh\.<br>**Giấy phép:** ghi theo điều khoản nguồn công bố; cần rà soát pháp lý trước khi dùng thương mại hoặc phân phối lại\.<br>**Cập nhật 16/09/2026:** bổ sung [mục 6 — nguồn dạng database / warehouse](#6-nguồn-dạng-database--warehouse--để-kiểm-thử-hệ-thống) \(14 nguồn, trạng thái mạng đo trực tiếp từ server dự án\)\.
+> Khảo sát web ngày 15/09/2026 \(tìm kiếm \+ gọi thử trực tiếp từ server dự án\)\. Bản máy đọc: `[data/sources\\\.yaml](../../v2/data/sources-public-debt.yaml)`\.<br>**Trạng thái:** `V` = đã mở trang/tải file/gọi API thành công · `S` = chỉ thấy qua kết quả tìm kiếm hoặc trang chính thức không mở hết · `U` = chưa xác minh\.<br>**Giấy phép:** ghi theo điều khoản nguồn công bố; cần rà soát pháp lý trước khi dùng thương mại hoặc phân phối lại\.<br>**Cập nhật 16/09/2026:** bổ sung [mục 6 — nguồn dạng database / warehouse](#6-nguồn-dạng-database--warehouse--để-kiểm-thử-hệ-thống) \(14 nguồn, trạng thái mạng đo trực tiếp từ server dự án\)\.
 
 ## 1\. Tổng quan độ phủ định dạng
 
@@ -211,7 +211,7 @@ Hai đường hoàn toàn khác nhau, đừng lẫn:
 | Dùng cho | Câu hỏi ad\-hoc trên dữ liệu nội bộ | Chỉ số ANKT cần tái lập đáp án |
 | Nguồn kiểm thử | DB1–DB14 ở trên | Chưa áp dụng |
 
-**Trường của một nguồn `db\-readonly`** \(đã thêm vào `[data/sources\\\.yaml](data/sources.yaml)` dưới khoá `test\_warehouses`, tách khỏi `sources` để không lẫn với nguồn ANKT\):
+**Trường của một nguồn `db\-readonly`** \(đã thêm vào `[data/sources\\\.yaml](../../v2/data/sources-public-debt.yaml)` dưới khoá `test\_warehouses`, tách khỏi `sources` để không lẫn với nguồn ANKT\):
 
 ```javascript
 - id: wh-clickhouse-play

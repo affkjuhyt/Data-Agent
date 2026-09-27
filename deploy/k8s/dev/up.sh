@@ -23,7 +23,7 @@ bash ../gen-kafka-jaas-secret.sh
 bash ../create-configmaps.sh
 
 kubectl apply -f database/
-for s in postgres mongo redis qdrant neo4j kafka minio clickhouse elasticsearch openbao; do
+for s in postgres mongo redis qdrant neo4j kafka minio clickhouse openbao; do
   kubectl -n "$DB" rollout status "statefulset/$s" --timeout=10m
 done
 kubectl -n "$DB" rollout status deployment/pgbouncer --timeout=5m

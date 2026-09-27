@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, ArrowRight, Database, Network, User, Layers, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { TEMPLATE_FLOWS } from '../workflow/BuilderTemplates';
+import { TEMPLATE_FLOWS } from '../workflow/Builder';
 import { apiMutate } from '../../../lib/apiClient';
 
 

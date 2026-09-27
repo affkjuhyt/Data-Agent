@@ -1,5 +1,5 @@
 # Seed nguồn cho POC V2 dầu/vàng. Kiểm tra từ máy chủ 10.10.55.101 ngày 27/09/2026.
-# Định dạng giống docs/ankt/data/sources.yaml để nhập qua Add Data → Bulk Import
+# Định dạng giống docs/v2/data/sources-public-debt.yaml để nhập qua Add Data → Bulk Import
 # (kb_backend/router/knowledge/sources.py: _parse_bulk_yaml). Giải thích từng nguồn: ../04-sources-oil-gold.md
 #
 # verified: V = tải được và đã đọc nội dung · S = tồn tại, cần key/đăng nhập · X = máy chủ bị chặn
@@ -405,5 +405,5 @@ sources:
     verified: V
     notes: Ứng dụng SPA, cần headless.
 
-  # vn-vcb-fx-xml (tỷ giá USD/VND) đã có trong docs/ankt/data/sources.yaml: dùng lại.
+  # vn-vcb-fx-xml (tỷ giá USD/VND) đã có trong docs/v2/data/sources-public-debt.yaml: dùng lại.
   # Lưu ý: số kiểu Mỹ '25,760.00', giới hạn 1 request/5 phút ⇒ lịch 'hourly' là đủ.

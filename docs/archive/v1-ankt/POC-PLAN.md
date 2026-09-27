@@ -2,7 +2,7 @@
 
 # Kế hoạch POC ANKT — dựng khung chạy được, test bằng chỉ số Nợ công/GDP
 
-> Phiên bản 15/09/2026 · Đối tượng: quản lý dự án, nhóm kỹ thuật, nhóm Data Research, người nghe báo cáo\.<br>Thời gian: **16/09 → 23/10/2026** \(tuần chuẩn bị \+ 3 sprint\)\. Gantt: [14\\\-poc\\\-gantt](diagrams/14-poc-gantt.puml)\. Kiến trúc POC: [13\\\-poc\\\-architecture](diagrams/13-poc-architecture.puml)\.<br>Nguồn dữ liệu: [DATA\\\-SOURCES\\\.md](DATA-SOURCES.md) · bản máy đọc [data/sources\\\.yaml](data/sources.yaml)\. Kiến trúc đích: [PLATFORM\\\-ARCHITECTURE\\\.md](PLATFORM-ARCHITECTURE.md)\.
+> Phiên bản 15/09/2026 · Đối tượng: quản lý dự án, nhóm kỹ thuật, nhóm Data Research, người nghe báo cáo\.<br>Thời gian: **16/09 → 23/10/2026** \(tuần chuẩn bị \+ 3 sprint\)\. Gantt: [14\\\-poc\\\-gantt](diagrams/14-poc-gantt.puml)\. Kiến trúc POC: [13\\\-poc\\\-architecture](diagrams/13-poc-architecture.puml)\.<br>Nguồn dữ liệu: [DATA\\\-SOURCES\\\.md](DATA-SOURCES.md) · bản máy đọc [data/sources\\\.yaml](../../v2/data/sources-public-debt.yaml)\. Kiến trúc đích: [PLATFORM\\\-ARCHITECTURE\\\.md](PLATFORM-ARCHITECTURE.md)\.
 
 ## 1\. Mục tiêu
 

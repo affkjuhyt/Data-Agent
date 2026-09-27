@@ -44,7 +44,7 @@ import { usePromotionQueue } from './inventory/usePromotionQueue';
 import { PromotionProgressOverlay } from './inventory/PromotionProgressOverlay';
 import { useCrawlActivity } from './sources/useCrawlActivity';
 
-type KnowledgeTabId = 'FLEET' | 'INGEST' | 'INVENTORY' | 'CONFLICTS' | 'KNOWLEDGE' | 'WAREHOUSE' | 'SOURCE_REGISTRY' | 'POLICY' | 'KNOWLEDGE_BASE' | 'TRASH';
+type KnowledgeTabId = 'FLEET' | 'INVENTORY' | 'CONFLICTS' | 'KNOWLEDGE' | 'WAREHOUSE' | 'SOURCE_REGISTRY' | 'POLICY' | 'KNOWLEDGE_BASE' | 'TRASH';
 
 const KnowledgeOpsCenter = () => {
   const { updateDocument } = useAppState();
@@ -123,15 +123,6 @@ const KnowledgeOpsCenter = () => {
   const renderContent = () => {
     switch (activeSubTab) {
       case 'FLEET':  return <FleetOverview />;
-      case 'INGEST':
-        return (
-          <div className="content-card content-card--static max-w-4xl mx-auto overflow-hidden animate-in fade-in duration-300">
-            <IngestionWizard
-              onCancel={() => setActiveSubTab('FLEET')}
-              onComplete={() => setActiveSubTab('INVENTORY')}
-            />
-          </div>
-        );
       case 'INVENTORY':  return (
         <AssetInventory
           key={inventoryRefreshKey}

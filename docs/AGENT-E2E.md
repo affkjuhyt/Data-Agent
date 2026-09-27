@@ -23,7 +23,7 @@ kubectl apply -f deploy/k8s/production/service/litellm.yaml \
   -f deploy/k8s/production/service/platform-workers-memory.yaml
 
 # (optional, only for SQL/code tools) sandbox-executor needs its runner image:
-#   docker build -t sandbox-runner:latest backend/services/sandbox-executor/sandbox_runner/
+#   docker build -t sandbox-runner:latest backend/services/sandbox_executor/sandbox_runner/
 #   kubectl apply -f deploy/k8s/production/service/sandbox-executor.yaml -f deploy/k8s/production/database/openbao.yaml
 ```
 
@@ -44,7 +44,7 @@ TOKEN=$(curl -s -X POST http://localhost:8110/realms/aeroflow/protocol/openid-co
 Requires `GATEWAY_KEY` and `SERVICE_AUTH_SECRET` set in `.env` (same value across
 services) and `kong-setup.sh` re-run after changing `GATEWAY_KEY`.
 
-## 2. APIs (Postman: `docs/postman/agent-e2e.postman_collection.json`)
+## 2. APIs
 
 Header on every call: `Authorization: Bearer $TOKEN`. Identity headers are
 **injected by Kong from the token** — sending your own is pointless (the plugin

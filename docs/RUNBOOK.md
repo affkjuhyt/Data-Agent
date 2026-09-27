@@ -35,7 +35,7 @@ any machine on the `10.10.55.x` network; no port-forwarding is needed.
 | Keycloak (realm `aeroflow`) | http://10.10.55.101:30110 |
 | Langfuse | http://10.10.55.101:30420 |
 | Grafana / Prometheus | http://10.10.55.101:30410 / :30400 |
-| Jaeger / Kibana | http://10.10.55.101:30430 / :30440 |
+| Jaeger | http://10.10.55.101:30430 |
 | LiteLLM | http://10.10.55.101:30500 |
 | MinIO console | http://10.10.55.101:30361 |
 | Kong admin (dev only — never expose beyond the LAN) | http://10.10.55.101:30101 |

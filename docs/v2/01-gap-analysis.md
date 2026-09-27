@@ -78,7 +78,7 @@ nên `tests/conftest.py` luôn bỏ qua nó, kể cả trong CI.
 | Năng lực | Trạng thái | Ghi chú |
 | --- | --- | --- |
 | Artifact bất biến + SHA-256 | Một phần | `KBData.content_hash` có index; nhưng **re-crawl thay thế và xoá vết tài liệu cũ** (Phase A, 22/09) → đi ngược "raw immutable" (00 bất biến 2, ADR-V2-21). Sửa ở S2-02 |
-| Nguồn dầu/vàng | Chưa có | `docs/ankt/data/sources.yaml` không có EIA, OPEC, JODI, WGC, LBMA; chỉ có FRED cho nợ công |
+| Nguồn dầu/vàng | Chưa có | `docs/v2/data/sources-public-debt.yaml` không có EIA, OPEC, JODI, WGC, LBMA; chỉ có FRED cho nợ công |
 | Observation store | Chưa có trên main | Thiết kế sẵn trên `feat/add-task` |
 | Tần suất ngày/tuần | Chưa có | `Period` chỉ A/Q/M; giá dầu/vàng là chuỗi ngày, tồn kho EIA là tuần |
 | Chuỗi dẫn xuất (spread, return, volatility) | Chưa có | Formula DAG có `Ratio/Sum/Difference/AsPercent/Scale`; thiếu `Lag`, `LogReturn`, cửa sổ trượt, `FxConvert` |

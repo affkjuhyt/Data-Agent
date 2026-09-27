@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import WorkflowBuilder from '../workflow/Builder';
-import { TEMPLATE_FLOWS } from '../workflow/BuilderTemplates';
+import { TEMPLATE_FLOWS } from '../workflow/Builder';
 import type { TemplateId } from '../workflow/Builder';
 import { apiGet, apiMutate } from '../../../lib/apiClient';
 

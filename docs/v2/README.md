@@ -1,7 +1,7 @@
 # Data Agent V2: POC dầu/vàng
 
 > Thư mục này là kế hoạch và thiết kế đang có hiệu lực cho V2. Thiết kế v1 (Nợ công/GDP) ở
-> [`../ankt/`](../ankt/), chỉ còn giá trị tham chiếu/regression.
+> [`../archive/v1-ankt/`](../archive/v1-ankt/), chỉ còn giá trị tham chiếu/regression.
 > Cập nhật lần cuối: 27/09/2026.
 
 ## Bắt đầu từ đâu (người mới và phiên Claude mới)

@@ -96,7 +96,6 @@ database_workloads:
   - qdrant
   - neo4j
   - clickhouse
-  - elasticsearch
 
 service_workloads:
   - litellm

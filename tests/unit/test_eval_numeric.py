@@ -1,5 +1,5 @@
 """Unit tests for libs/indicator/numeric.py and the grounding scorer's use of it
-(E2 in docs/ankt/TECH-DESIGN.md).
+(E2 in docs/archive/v1-ankt/TECH-DESIGN.md).
 
 The defect being pinned: the scorer compared figures as digit strings with
 separators deleted, so "128,4" and "1284" were one token. These tests assert

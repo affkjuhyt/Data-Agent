@@ -23,8 +23,6 @@ data:
   DB_PORT: '8300'
   MINIO_BUCKET: knowledge-base
   KAFKA_SASL_USERNAME: web-crawler-worker
-  KAFKA_WEB_CRAWL_TRIGGER_TOPIC: web-crawl.manual-trigger
-  KAFKA_GROUP_ID: web-crawler-worker-group
   POLL_INTERVAL_SECONDS: '5'
   MAX_PARALLEL_RUNS: '3'
 ---

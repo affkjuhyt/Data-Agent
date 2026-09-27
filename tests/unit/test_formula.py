@@ -1,4 +1,4 @@
-"""Unit tests for backend/libs/indicator/formula.py (T3 in docs/ankt/TECH-DESIGN.md).
+"""Unit tests for backend/libs/indicator/formula.py (T3 in docs/archive/v1-ankt/TECH-DESIGN.md).
 
 Two things carry the weight here. The first is that compiling happens without
 data, so an unusable formula is rejected when it is authored. The second is the

@@ -46,7 +46,7 @@ Phát hiện quan trọng nhất của đợt khảo sát này: **phần lớn n
 | Hội thoại lưu phía server: /api/conversations, /api/conversations/\{id\}/messages | routers/ | Ask vẫn lưu lịch sử ở localStorage |
 | Trace và chi phí: /api/traces/\{conv\_id\}, /api/orchestrate/traces/\{trace\_id\}, /api/billing/spend | orchestrator/routers/traces\.py | Chỉ có ở Playground |
 
-**Và đây là điểm nghẽn cụ thể** — payload gửi đi từ Ask \([api\\\.ts](../../frontend/src/features/ask/api.ts)\):
+**Và đây là điểm nghẽn cụ thể** — payload gửi đi từ Ask \([api\\\.ts](../../../frontend/src/features/ask/api.ts)\):
 
 ```typescript
 { query, agent_id?, user_id, messages, conversation_id?, clarification_answers? }
@@ -196,7 +196,7 @@ Backend trả preview bị cắt \(`rows\_capped`, `truncation\.reason` — đã
 - Nếu tổng số dòng vượt ngưỡng an toàn của trình duyệt \(đề xuất 50\.000\), **không gộp ở client** — chuyển sang re\-query và nói rõ lý do;
 - Mọi bảng pivot hiển thị dòng “tính trên N/N dòng”\.
 
-Đây đúng loại lỗi mà [CLAUDE\\\.md](../../CLAUDE.md) và `aggregation\_check` đã lo ở phía SQL; phía client cũng phải lo\.
+Đây đúng loại lỗi mà [CLAUDE\\\.md](../../../CLAUDE.md) và `aggregation\_check` đã lo ở phía SQL; phía client cũng phải lo\.
 
 ### 5\.3 Danh mục thao tác
 

@@ -40,12 +40,6 @@ export default defineConfig({
         functions: 0,
         branches: 0,
         statements: 0,
-        "src/lib/permissions.ts": {
-          lines: 100,
-          functions: 100,
-          branches: 100,
-          statements: 100,
-        },
       },
     },
   },

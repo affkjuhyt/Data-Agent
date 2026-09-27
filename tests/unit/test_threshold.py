@@ -1,4 +1,4 @@
-"""Unit tests for backend/libs/indicator/threshold.py (T4 in docs/ankt/TECH-DESIGN.md).
+"""Unit tests for backend/libs/indicator/threshold.py (T4 in docs/archive/v1-ankt/TECH-DESIGN.md).
 
 The trap under test is TECH-DESIGN R3: a 2025 figure judged against the
 2026-2030 resolution. It is graded above rounding errors in the risk list

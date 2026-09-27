@@ -96,5 +96,7 @@ e2e:  ## local end-to-end stack + suite (docker compose)
 deploy:  ## deploy to the k8s-local inventory (Ansible is the only deploy path)
 	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml
 
-diagrams:  ## render docs/ankt PlantUML diagrams to SVG (version pinned; see docs/ankt/README.md)
-	docker run --rm --user "$$(id -u):$$(id -g)" -v "$(PWD)/docs/ankt/diagrams:/data" -w /data $(PLANTUML_IMAGE) -tsvg -charset UTF-8 '*.puml'
+# HOME=/tmp: without it the non-root user has no home, so Java writes its font
+# cache into the mounted diagrams dir as `?/.java/` and it gets committed.
+diagrams:  ## render the archived v1 PlantUML diagrams to SVG (version pinned; see docs/archive/v1-ankt/README.md)
+	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -v "$(PWD)/docs/archive/v1-ankt/diagrams:/data" -w /data $(PLANTUML_IMAGE) -tsvg -charset UTF-8 '*.puml'

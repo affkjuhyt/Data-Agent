@@ -2,7 +2,7 @@
 //
 // Measures what the M3 laptop can actually serve concurrently: the USER-FACING
 // paths (retrieval + CRUD) with the LLM BYPASSED. It deliberately does NOT push
-// load through the local LLM (one GPU = one queue; see docs/M3-CAPACITY.md §4).
+// load through the local LLM (one GPU = one queue; see docs/archive/M3-CAPACITY.md §4).
 //
 // Retrieval bypasses the canonicalize-LLM by sending front-layer `entities`, so
 // each request exercises embed → Qdrant → rerank → gold-fetch (the real hot path)
