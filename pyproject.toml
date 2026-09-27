@@ -112,18 +112,36 @@ exclude_lines = [
 # ─── Vulture (dead code) ───────────────────────────────────────────────────
 # SRS §7.2: dead code must be removed without changing runtime behaviour.
 # Vulture finds unused functions/classes/vars (Ruff F401 only covers imports).
-# min_confidence=80 trims false positives; dynamic refs (FastAPI deps, pytest
-# fixtures, ORM attrs) may still flag — vet before deleting and add real
-# whitelist entries to .vulture_whitelist.py. Run: `vulture`.
+# 60 is where vulture reports unused functions and classes at all (80 only
+# reaches imports and unreachable code, so it said nothing useful). The noise
+# that comes with 60 is removed structurally rather than name by name:
+#   * route handlers, validators and REGISTRY entries are reached through a
+#     decorator, never by name — ignore_decorators;
+#   * Pydantic/ORM/TypedDict modules are field declarations read by the
+#     framework — excluded (a dead model class there is found by grepping for
+#     its name, as the 2026-09 sweep did);
+# What is left is either dead or a real dynamic reference; vet it, then delete
+# it or add it to backend/.vulture_whitelist.py with the reason. Run: `make deadcode`.
 [tool.vulture]
 paths = ["backend/services", "backend/libs", "backend/.vulture_whitelist.py"]
-min_confidence = 80
+min_confidence = 60
+ignore_decorators = [
+    "@router.*",
+    "@*_router.*",
+    "@app.*",
+    "@register",
+    "@*validator",
+]
 exclude = [
     "*/migrations/*",
     "*/alembic/*",
     "*/__pycache__/*",
     "*/tests/*",
     "*/node_modules/*",
+    "*/basemodel/*",
+    "*/schemas/*",
+    "*/schemas.py",
+    "*/state.py",
 ]
 
 # ─── Ruff (lint + format) ──────────────────────────────────────────────────
