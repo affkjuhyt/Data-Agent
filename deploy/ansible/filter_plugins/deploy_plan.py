@@ -1,7 +1,7 @@
 """Change detection for deploy.yml: what to rebuild, rerun and restart.
 
 Kept as pure functions over plain data (Dockerfile text, path lists, kubectl
-JSON) so tests/unit/test_deploy_plan.py can check the decisions without a
+JSON) so tests/unit/workflow_runtime/test_deploy_plan.py can check the decisions without a
 cluster or a Docker daemon. deploy.yml only gathers the inputs and acts on the
 answers.
 """

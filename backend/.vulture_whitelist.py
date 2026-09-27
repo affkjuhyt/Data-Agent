@@ -35,6 +35,6 @@ _.statement_sha256
 _.event_id
 _.occurred_at
 
-# Test hook: tests/unit/test_platform_routers.py clears the LiteLLM health cache
+# Test hook: tests/unit/workflow_runtime/test_platform_routers.py clears the LiteLLM health cache
 # between cases (kept on purpose in the 2026-09 dead-code sweep).
 _.reset_health_cache

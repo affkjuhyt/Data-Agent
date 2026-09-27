@@ -321,7 +321,7 @@ suspecting the pipeline.
 - [ ] `ruff check .` and `ruff format --check .` clean
 - [ ] `lint-imports` → contracts kept
 - [ ] `pytest -m "unit or integration"` green; coverage ≥ `fail_under` in `pyproject.toml`
-- [ ] `pytest tests/unit/test_k8s_manifests.py` green
+- [ ] `pytest tests/unit/workflow_runtime/test_k8s_manifests.py` green
 - [ ] `alembic upgrade head` applies cleanly on a fresh DB
 - [ ] `cd frontend && npx tsc --noEmit` clean (must run from `frontend/`)
 - [ ] CI `security-scan` reviewed (pip-audit + trivy) — no unexplained HIGH/CRITICAL

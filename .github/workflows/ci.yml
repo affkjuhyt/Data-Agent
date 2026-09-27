@@ -171,7 +171,7 @@ jobs:
       - name: Schema-validate every manifest against the k8s API
         run: kubeconform -strict -summary -ignore-missing-schemas deploy/k8s/
       - name: Structure, pod security and drift checks
-        run: pytest tests/unit/test_k8s_manifests.py -q
+        run: pytest tests/unit/workflow_runtime/test_k8s_manifests.py -q
 
   quality-gates:
     # Phase 0 guardrails for the SRS (architecture + dead code + strict types).

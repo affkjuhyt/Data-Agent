@@ -2,7 +2,7 @@
 (SANDBOX_SQL_BACKEND=postgres — local/dev/CI stand-in for Snowflake, see
 docs/sandbox_report.md).
 
-Unlike tests/unit/test_postgres_readonly.py (mocks asyncpg.connect
+Unlike tests/unit/sandbox_executor/test_postgres_readonly.py (mocks asyncpg.connect
 entirely), this drives execute_readonly_query() against a real ephemeral
 Postgres container (testcontainers, same postgres_container fixture as
 tests/conftest.py) — proving the wrapped SELECT/LIMIT SQL, row shape, and

@@ -10,7 +10,13 @@ is exercised; the next 100 should land here, not in `deploy/docker/scripts/`.
 tests/
 ├── conftest.py              # session fixtures: postgres / redis / kafka via testcontainers
 ├── unit/                    # pure Python, no Docker, no network — fast
-│   └── test_sanity.py
+│   ├── _loader.py           # load a service module by path, with stubs that do not leak
+│   ├── workflow_runtime/    # one suite per service, run in that service's image:
+│   ├── kb_backend/          #   a test goes in the suite of the code it exercises;
+│   ├── platform_workers/    #   pure-library, manifest, deploy and grant tests go in
+│   ├── sandbox_executor/    #   workflow_runtime. There is no single image that can
+│   ├── auth_api/            #   import every service (their pins conflict: OTel,
+│   └── kb_promote_silver/   #   boto3), so the suites are never run together.
 ├── integration/             # spins testcontainers OR drives live stack (e2e marker)
 │   ├── conftest.py          # per-service fixtures (auth_api app + DB schema)
 │   ├── test_auth_api_smoke.py
