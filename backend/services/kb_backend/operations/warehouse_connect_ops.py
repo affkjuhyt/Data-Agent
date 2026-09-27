@@ -1,49 +1,10 @@
 import logging
-from typing import Any, Optional, cast
+from typing import Any
 
-from libs.basemodel.services_databaseconnector.postgres_model import (
-    KBWarehouseDelete,
-    ReadJoinRequest, WhereFilter,
-)
+from libs.basemodel.services_databaseconnector.postgres_model import KBWarehouseDelete
 from fastapi import HTTPException
 
 log = logging.getLogger(__name__)
-
-
-async def get_warehouse_connection(postgres: Any, warehouse_id: str) -> Optional[dict[str, Any]]:
-    try:
-        resp = await postgres.read(ReadJoinRequest(
-            joins_table=["KBWarehouse"],
-            filters=[WhereFilter(
-                table_name="KBWarehouse",
-                column_name="warehouse_id",
-                value=warehouse_id,
-            )],
-            limit=1,
-        ))
-        if resp.code != 200 or not resp.data:
-            return None
-        return cast(dict[str, Any], resp.data[0])
-    except Exception as e:
-        log.error("Failed to fetch warehouse: %s", e)
-        return None
-
-
-async def list_warehouse_connections(
-        postgres: Any, tenant_id: str, limit: int = 50
-) -> list[Any]:
-    try:
-        resp = await postgres.read(ReadJoinRequest(
-            tenant_id=tenant_id,
-            joins_table=["KBWarehouse"],
-            limit=limit,
-        ))
-        if resp.code != 200:
-            return []
-        return resp.data or []
-    except Exception as e:
-        log.error("Failed to list warehouses: %s", e)
-        return []
 
 
 async def delete_warehouse_connection(postgres: Any, warehouse_id: str) -> None:

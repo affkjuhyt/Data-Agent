@@ -6,14 +6,6 @@ from typing import Any, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class KnowledgeConfigTable(BaseModel):
-    id: str
-    schema: str
-    table_name: str
-    row_count: int
-    columns: int
-
-
 class CreateWarehouseConfigRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     name: str
@@ -45,15 +37,3 @@ class SelectTablesRequest(BaseModel):
     schema: str
     selected_table_ids: list[str]
     role: str | None = None
-
-
-class WarehouseConfigResponse(BaseModel):
-    id: str
-    version: object | None
-    active: bool
-    host: str | None
-    database: str | None
-    selected_tables: list[str]
-    sync_schedule: str | None
-    schema_filter: list[str]
-    created_at: str

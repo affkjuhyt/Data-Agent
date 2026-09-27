@@ -22,18 +22,3 @@ class UpdateFilterPolicyRequest(BaseModel):
 
 class UpdateExtractionPolicyRequest(BaseModel):
     custom: str
-
-
-class FilterPolicyResponse(BaseModel):
-    id: str
-    name: str | None
-    type: str
-    content: str
-    added_by: str
-    added_when: str
-    active: bool
-
-
-class ExtractionPolicyResponse(BaseModel):
-    base: str
-    custom: str

@@ -3,7 +3,7 @@
 rest_api / sdmx connectors)."""
 from __future__ import annotations
 
-from typing import Any, Literal, Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel
 
@@ -51,51 +51,6 @@ class UpdateSourceConfigRequest(BaseModel):
     notes: Optional[str] = None
 
 
-class SourceResponse(BaseModel):
-    id: str
-    title: str
-    publisher: Optional[str]
-    connector_type: str
-    url: Optional[str]
-    cron: Optional[str]
-    render: bool
-    openbao_path: Optional[str] = None
-    query_params: Optional[dict[str, str]] = None
-    auth_style: Optional[str] = None
-    auth_param_name: Optional[str] = None
-    recursive: bool = False
-    max_depth: int = 1
-    same_domain_only: bool = True
-    promotion_mode: Literal["manual", "auto"] = "manual"
-    purpose: Literal["training", "production", "evaluation"] = "production"
-    created_by: Optional[str]
-    created_at: str
-    last_run_status: Optional[str] = None
-    last_run_at: Optional[str] = None
-    next_run_at: Optional[str] = None
-    # The crawl (above) can succeed while the resulting document's own
-    # Silver/Gold attempt fails outright — these three surface that real
-    # downstream outcome so the UI can tell the two apart and offer a
-    # targeted retry. See source_ops._to_response's docstring.
-    last_doc_id: Optional[str] = None
-    last_doc_current_tier: Optional[str] = None
-    last_doc_pipeline_stage: Optional[str] = None
-    last_doc_pipeline_status: Optional[str] = None
-    last_doc_pipeline_error: Optional[str] = None
-
-
-class SourceRunResponse(BaseModel):
-    run_id: str
-    status: str
-    trigger: str
-    retry_count: int = 0
-    started_at: str
-    finished_at: Optional[str]
-    data_ids: list[str]
-    error: Optional[str]
-    quality_metrics: Optional[dict[str, Any]]
-
-
 class BulkImportRequest(BaseModel):
     # Required for the yaml_text path; ignored (may be omitted) when `rows`
     # carries the already-parsed, steward-edited rows instead.
@@ -107,18 +62,3 @@ class BulkImportRequest(BaseModel):
     # parsing `yaml_text` — the wizard's Bulk Import review step sends back
     # whatever the steward edited from an earlier dry_run's preview.
     rows: Optional[list[CreateSourceRequest]] = None
-
-
-class BulkImportSkipped(BaseModel):
-    title: str
-    reason: str
-
-
-class BulkImportResponse(BaseModel):
-    created: list[SourceResponse]
-    skipped: list[BulkImportSkipped]
-
-
-class BulkImportPreviewResponse(BaseModel):
-    preview: list[CreateSourceRequest]
-    skipped: list[BulkImportSkipped]

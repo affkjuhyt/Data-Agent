@@ -100,9 +100,6 @@ class MongoClient:
         """Replace (or insert) the single document matching ``filter``."""
         await self.get_client()[collection].replace_one(filter, document, upsert=True)
 
-    async def set_fields(self, collection: str, filter: dict[str, Any], fields: dict[str, Any]) -> int:
-        result = await self.get_client()[collection].update_one(filter, {"$set": fields})
-        return cast(int, result.modified_count)
 
     async def find_one(self, collection: str, filter: dict[str, Any], projection: dict[str, Any] | None = None) -> dict[str, Any] | None:
         return cast(
@@ -110,10 +107,6 @@ class MongoClient:
             await self.get_client()[collection].find_one(filter, projection or {"_id": 0}),
         )
 
-    async def find_many(self, collection: str, filter: dict[str, Any], projection: dict[str, Any] | None = None,
-                        limit: int = 0) -> list[dict[str, Any]]:
-        cursor = self.get_client()[collection].find(filter, projection or {"_id": 0})
-        return cast("list[dict[str, Any]]", await cursor.to_list(length=limit or None))
 
     async def delete_one(self, collection: str, filter: dict[str, Any]) -> int:
         result = await self.get_client()[collection].delete_one(filter)

@@ -6,7 +6,7 @@ import mimetypes
 from typing import Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Query, Request, Header, Response
+from fastapi import APIRouter, Depends, Query, Request, Header
 from fastapi.responses import Response
 
 from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
@@ -223,4 +223,3 @@ async def get_document_file_route(doc_id: str, request: Request, ctx: dict[str, 
             )
         },
     )
-

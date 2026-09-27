@@ -181,34 +181,6 @@ class SnowflakeConnector:
         ]
         return {"table_name": table_name, "columns": columns}
 
-    async def query_table(
-        self, table_name: str, limit: int = 100, offset: int = 0
-    ) -> dict[str, Any]:
-        """Query table data with pagination."""
-        if not self.connection:
-            return {"rows": [], "total_rows": 0}
-
-        def _query() -> Any:
-            # Guaranteed non-None by the `if not self.connection` check above.
-            assert self.connection is not None
-            cursor = self.connection.cursor(DictCursor)
-            cursor.execute(f"SELECT COUNT(*) as cnt FROM {table_name}")
-            total = cursor.fetchone()["CNT"]
-            cursor.execute(f"SELECT * FROM {table_name} LIMIT {limit} OFFSET {offset}")
-            return total, cursor.fetchall()
-
-        try:
-            total_rows, rows = await asyncio.to_thread(_query)
-            return {
-                "table_name": table_name,
-                "rows": rows,
-                "total_rows": total_rows,
-                "limit": limit,
-                "offset": offset,
-            }
-        except Exception as e:
-            log.error("Query failed for table %s: %s", table_name, e)
-            return {"rows": [], "total_rows": 0}
 
     def close(self) -> None:
         """Close Snowflake connection."""

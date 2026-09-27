@@ -43,7 +43,7 @@ def resolve_tenant(caller: dict[str, Any]) -> str:
 
     Auth may hand back "" or a non-UUID placeholder outside Kong, and every
     query below casts to uuid. This is the single tenant-resolution helper for
-    the platform routers (catalog, schema_memory, schema_catalog included).
+    the platform routers (catalog included).
     """
     raw = caller.get("tenant_id") if caller else None
     if raw:
@@ -179,7 +179,7 @@ async def get_messages_with_traces(
 ) -> list[dict[str, Any]]:
     """Messages of one conversation with their AgentTraces attached.
 
-    Same tenant scoping as db.get_messages_ui, plus an explicit ownership check
+    Tenant-scoped session (RLS), plus an explicit ownership check
     on Conversations.tenant_id so a caller naming another tenant's conversation
     gets [] even where RLS is not enforced.
     """
@@ -229,7 +229,7 @@ async def get_messages_with_traces(
                         "status": t.status,
                         "latency_ms": t.latency_ms,
                     })
-    except Exception as e:  # noqa: BLE001 — same contract as db.get_messages_ui: a read error is an empty thread, not a 500
+    except Exception as e:  # noqa: BLE001 — a read error is an empty thread, not a 500
         logger.warning("get_messages_with_traces failed conv_id=%s: %s", conversation_id, e)
         return []
 

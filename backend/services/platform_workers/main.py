@@ -14,7 +14,6 @@ import importlib
 import sys
 
 from services.platform_workers.app import (
-    WORKERS,
     resolve_worker_module,
     unknown_worker_message,
     worker_name_from_env,

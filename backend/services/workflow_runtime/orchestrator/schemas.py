@@ -28,25 +28,6 @@ class OrchestrateRequest(BaseModel):
     clarification_answers: list[ClarificationAnswer] = Field(default_factory=list, max_length=8)
 
 
-class TaskSchema(BaseModel):
-    title: str
-    agent_id: str = ""
-    depend_on: list[int | str] = Field(default_factory=list)
-
-
-class TargetSchema(BaseModel):
-    node_id: str = ""
-    description: str
-    tasks: list[TaskSchema] = Field(default_factory=list)
-
-
-class PlanSchema(BaseModel):
-    plan_id: str
-    user_input: str
-    targets: list[TargetSchema] = Field(default_factory=list)
-    confidence: float = 0.0
-
-
 class TaskResult(BaseModel):
     task_index: int
     task_title: str

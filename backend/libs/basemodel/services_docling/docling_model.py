@@ -1,17 +1,6 @@
-from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field
-
-
-class SupportedExtension(str, Enum):
-    PDF = ".pdf"
-    DOCX = ".docx"
-    PPTX = ".pptx"
-    HTML = ".html"
-    HTM = ".htm"
-    TXT = ".txt"
-    MD = ".md"
 
 
 class PageRegion(BaseModel):

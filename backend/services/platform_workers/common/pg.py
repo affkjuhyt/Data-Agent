@@ -12,7 +12,6 @@ import logging
 from typing import Any
 
 import psycopg2
-import psycopg2.extras
 from tenacity import (
     RetryError,
     Retrying,
@@ -86,8 +85,3 @@ def dict_rows(cur: Any) -> list[dict[str, Any]]:
         return [dict(r) for r in rows]
     cols = [d.name for d in cur.description]
     return [dict(zip(cols, row, strict=True)) for row in rows]
-
-
-def dict_cursor(conn: Any) -> Any:
-    """A cursor whose rows are dicts (``psycopg2.extras.RealDictCursor``)."""
-    return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)

@@ -24,15 +24,6 @@ Usage (FastAPI route):
         with db.cursor() as cur:
             cur.execute("SELECT * FROM things")  # no WHERE — RLS scopes it
             return cur.fetchall()
-
-Usage (script / one-off):
-
-    from libs.shared.db_context import tenant_scoped_db
-
-    with tenant_scoped_db(tenant_id="<uuid>") as conn:
-        with conn.cursor() as cur:
-            cur.execute("INSERT INTO things (name) VALUES (%s)", ("hi",))
-        conn.commit()
 """
 from __future__ import annotations
 
@@ -41,7 +32,6 @@ import re
 import threading
 import uuid
 from collections.abc import Iterator
-from contextlib import contextmanager
 from typing import Any
 
 from psycopg2 import pool as pg_pool
@@ -131,29 +121,6 @@ def set_tenant_context(conn: Any, tenant_id: str) -> None:
     tenant_id = _validated_uuid(tenant_id)
     with conn.cursor() as cur:
         cur.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant_id,))
-
-
-@contextmanager
-def tenant_scoped_db(tenant_id: str) -> Iterator[Any]:
-    """Open an app_user connection, scope it to a tenant, yield it.
-
-    Commits on clean exit; rolls back on exception. Caller is responsible
-    for `conn.commit()` if they want to commit mid-block — but the safer
-    pattern is to let the context manager handle it on exit.
-    """
-    tenant_id = _validated_uuid(tenant_id)
-    pool = _get_app_pool()
-    conn = pool.getconn()
-    conn.autocommit = False
-    try:
-        set_tenant_context(conn, tenant_id)
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        _release(pool, conn)
 
 
 def get_tenant_db(

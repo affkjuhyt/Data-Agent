@@ -3,22 +3,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
-
-
-class Neo4jNode(BaseModel):
-    id: str
-    name: str | None
-    description: str | None
-
-
-class Neo4jEdge(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
-    source: str = Field(alias="from")
-    to: str
-    description: str | None
-    score: float | None
-
+from pydantic import BaseModel, Field
 
 # A node label as Neo4j would accept it unquoted. The server interpolates these
 # into Cypher, so this pattern is what keeps the query injection-free.
@@ -33,13 +18,3 @@ class Neo4jQueryRequest(BaseModel):
     `$tenant_id` predicate read other tenants' graphs."""
     start_label: Neo4jLabel
     step_labels: list[Neo4jLabel] = Field(default_factory=list, max_length=4)
-
-
-class Neo4jGraphResponse(BaseModel):
-    nodes: list[Neo4jNode]
-    edges: list[Neo4jEdge]
-
-
-class Neo4jSchemaResponse(BaseModel):
-    entities: list[str]
-    connections: dict[str, list[str]]

@@ -21,7 +21,6 @@ Pure — no I/O, no model calls. Feeds `compile_metric` directly.
 """
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -185,9 +184,6 @@ class AnalyticalSlots:
                 str(d).strip().lower() for d in (raw.get("remove_filters") or []) if str(d).strip()
             ),
         )
-
-    def to_json(self) -> str:
-        return json.dumps(self.to_dict(), ensure_ascii=False, sort_keys=True)
 
 
 def merge(previous: AnalyticalSlots | None, incoming: AnalyticalSlots) -> AnalyticalSlots:

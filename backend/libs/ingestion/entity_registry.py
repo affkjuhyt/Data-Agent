@@ -387,22 +387,6 @@ def _dedupe_by_canonical(
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
-async def normalize_entities(
-    qdrant: AsyncQdrantClient,
-    postgres: PostgresClient,
-    model: ModelServiceClient,
-    tenant_id: str,
-    raw_entities: list[dict[str, Any]],
-    verify_fn: Callable[[str, str, str, str], Awaitable[bool]] | None = None,
-    knowledge_base: str = "",
-    embed_model_id: str = "",
-) -> list[str]:
-    """Normalise raw entities — returns deduplicated canonical name list."""
-    canonicals, _ = await normalize_entities_detailed(
-        qdrant, postgres, model, tenant_id, raw_entities, verify_fn=verify_fn,
-        knowledge_base=knowledge_base, embed_model_id=embed_model_id)
-    return canonicals
-
 
 async def normalize_entities_detailed(
     qdrant: AsyncQdrantClient,
