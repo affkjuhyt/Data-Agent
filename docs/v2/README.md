@@ -39,6 +39,7 @@ Quy tắc repo (lint/type/test trong container, so baseline, không commit secre
 | [06-evaluation-plan.md](06-evaluation-plan.md) | Golden set, dung sai, metric, cách dựng kịch bản 27 bước |
 | [07-decisions-and-risks.md](07-decisions-and-risks.md) | Câu hỏi còn chờ, ADR-V2-09…21, rủi ro |
 | [08-use-cases.md](08-use-cases.md) | Đặc tả UC01–UC14 và bảng ánh xạ 27 bước → UC → ID |
+| [10-database-design.md](10-database-design.md) | Thiết kế database V2: hiện trạng các kho (đo 27/09), vấn đề theo bất biến, quy ước bắt buộc ADR-V2-26…35, bố cục schema và role, dọn dữ liệu cũ |
 | [data/sources-oil-gold.yaml](data/sources-oil-gold.yaml) | 24 nguồn, nhập qua Add Data → Bulk Import |
 | [data/brent-5d-drop-episodes.csv](data/brent-5d-drop-episodes.csv) | 32 đợt Brent giảm ≥5%/5 phiên (2023–2026), có SHA-256 của release EIA gốc |
 | [data/cross-source-reference-2026-08.csv](data/cross-source-reference-2026-08.csv) | Đối chiếu đa nguồn có lớp conflict kỳ vọng |
