@@ -14,6 +14,8 @@ from types import SimpleNamespace
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 pytest.importorskip("docling")
 
 from libs.ingestion.docling_parser import _build_parsed_tables

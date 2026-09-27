@@ -76,12 +76,20 @@ class _FakeS3:
         return {"Contents": contents} if contents else {}
 
 
-def _app(fake: Any) -> TestClient:
-    storage = _storage()
-    storage.s3_client = lambda: fake  # type: ignore[assignment]
-    app = FastAPI()
-    app.include_router(storage.router)
-    return TestClient(app)
+@pytest.fixture
+def app_for(monkeypatch):
+    """TestClient over the storage router with s3_client() returning `fake`.
+
+    Patched through monkeypatch so the stand-in is gone after the test; a plain
+    assignment outlived it and made the client-config test below call the
+    previous test's fake instead of boto3."""
+    def _make(fake: Any) -> TestClient:
+        storage = _storage()
+        monkeypatch.setattr(storage, "s3_client", lambda: fake)
+        app = FastAPI()
+        app.include_router(storage.router)
+        return TestClient(app)
+    return _make
 
 
 _TS = dt.datetime(2026, 8, 30, 12, 0, 0, tzinfo=dt.timezone.utc)
@@ -102,30 +110,30 @@ def fake() -> _FakeS3:
 
 
 class TestListBuckets:
-    def test_returns_names_only_under_buckets_key(self, fake):
-        client = _app(fake)
+    def test_returns_names_only_under_buckets_key(self, fake, app_for):
+        client = app_for(fake)
         r = client.get("/api/storage/buckets")
         assert r.status_code == 200
         assert r.json() == {"buckets": ["aeroflow-artifacts", "sandbox-code"]}
 
-    def test_empty_account_is_an_empty_list(self):
-        client = _app(_FakeS3(buckets=[], objects={}))
+    def test_empty_account_is_an_empty_list(self, app_for):
+        client = app_for(_FakeS3(buckets=[], objects={}))
         assert client.get("/api/storage/buckets").json() == {"buckets": []}
 
-    def test_unreachable_storage_is_503_not_500(self):
+    def test_unreachable_storage_is_503_not_500(self, app_for):
         class _Down:
             def list_buckets(self):
                 raise EndpointConnectionError(endpoint_url="http://minio:9000")
 
-        client = _app(_Down())
+        client = app_for(_Down())
         r = client.get("/api/storage/buckets")
         assert r.status_code == 503
         assert "unavailable" in r.json()["detail"]
 
 
 class TestListObjects:
-    def test_shape_matches_frontend_bucket_object_type(self, fake):
-        client = _app(fake)
+    def test_shape_matches_frontend_bucket_object_type(self, fake, app_for):
+        client = app_for(fake)
         r = client.get("/api/storage/buckets/aeroflow-artifacts/objects")
         assert r.status_code == 200
         body = r.json()
@@ -137,31 +145,31 @@ class TestListObjects:
         # Exactly the three fields the BucketObject interface declares.
         assert set(body["objects"][0]) == {"key", "size", "last_modified"}
 
-    def test_prefix_query_param_is_forwarded(self, fake):
-        client = _app(fake)
+    def test_prefix_query_param_is_forwarded(self, fake, app_for):
+        client = app_for(fake)
         r = client.get("/api/storage/buckets/aeroflow-artifacts/objects", params={"prefix": "t2/"})
         assert r.status_code == 200
         assert [o["key"] for o in r.json()["objects"]] == ["t2/chart.png"]
         assert fake.calls[-1] == ("list_objects_v2", {"Bucket": "aeroflow-artifacts", "Prefix": "t2/"})
 
-    def test_missing_prefix_sends_empty_string(self, fake):
-        client = _app(fake)
+    def test_missing_prefix_sends_empty_string(self, fake, app_for):
+        client = app_for(fake)
         client.get("/api/storage/buckets/sandbox-code/objects")
         assert fake.calls[-1][1]["Prefix"] == ""
 
-    def test_bucket_with_no_contents_is_an_empty_list(self, fake):
-        client = _app(fake)
+    def test_bucket_with_no_contents_is_an_empty_list(self, fake, app_for):
+        client = app_for(fake)
         r = client.get("/api/storage/buckets/sandbox-code/objects")
         assert r.json() == {"bucket": "sandbox-code", "objects": []}
 
-    def test_unknown_bucket_is_404(self, fake):
-        client = _app(fake)
+    def test_unknown_bucket_is_404(self, fake, app_for):
+        client = app_for(fake)
         r = client.get("/api/storage/buckets/nope/objects")
         assert r.status_code == 404
         assert "NoSuchBucket" in r.json()["detail"]
 
-    def test_bucket_name_is_url_decoded(self, fake):
-        client = _app(fake)
+    def test_bucket_name_is_url_decoded(self, fake, app_for):
+        client = app_for(fake)
         r = client.get("/api/storage/buckets/aeroflow%2Dartifacts/objects")
         assert r.status_code == 200
         assert r.json()["bucket"] == "aeroflow-artifacts"

@@ -58,6 +58,9 @@ def release_core() -> Iterator[types.ModuleType]:
     mp = pytest.MonkeyPatch()
     for key, value in _REQUIRED_ENV.items():
         mp.setenv(key, value)
+    # release_core wires a real OTLP exporter at import; without this every run
+    # spends its teardown retrying jaeger:4317 and logs export errors.
+    mp.setenv("OTEL_SDK_DISABLED", "true")
 
     stubs = {
         "kafka": {"KafkaConsumer": object, "KafkaProducer": object},

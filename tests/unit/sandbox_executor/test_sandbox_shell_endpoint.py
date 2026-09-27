@@ -28,15 +28,15 @@ pytest.importorskip("sqlparse", reason="sqlparse not installed in this environme
 
 
 def _load_main(monkeypatch, *, shell_result: dict | None = None):
-    from tests.unit._loader import load_module_from_path, stub_module
+    from tests.unit._loader import load_module_from_path, make_stub
 
     monkeypatch.setenv("SANDBOX_SQL_BACKEND", "snowflake")
 
-    stub_module(
+    monkeypatch.setitem(sys.modules, "minio_store", make_stub(
         "minio_store",
         ensure_bucket=MagicMock(), put_code=MagicMock(), delete_code=MagicMock(),
-    )
-    stub_module(
+    ))
+    monkeypatch.setitem(sys.modules, "docker_runner", make_stub(
         "docker_runner",
         run_python_sandboxed=MagicMock(),
         run_shell_sandboxed=MagicMock(return_value=shell_result or {
@@ -47,9 +47,16 @@ def _load_main(monkeypatch, *, shell_result: dict | None = None):
         SandboxCircuitOpenError=type("SandboxCircuitOpenError", (Exception,), {}),
         get_pool=MagicMock(),
         shutdown_pool=MagicMock(),
-    )
-    for name in ("main", "sql_guard", "output", "job_queue", "security_visitor"):
-        sys.modules.pop(name, None)
+    ))
+    # Everything main.py imports from its own directory is dropped so it is
+    # re-imported against this test's stubs. sandbox_runner_backend re-exports
+    # docker_runner's names, so a cached copy keeps whichever docker_runner
+    # (stub or real) the first importer saw.
+    for name in ("main", "sql_guard", "output", "job_queue", "security_visitor",
+                 "sandbox_runner_backend",
+                 "execution", "execution.code_executor", "execution.sql_executor",
+                 "api", "api.responses", "api.schemas"):
+        monkeypatch.delitem(sys.modules, name, raising=False)
 
     return load_module_from_path("main", _SVC_DIR / "main.py", extra_syspath=[_SVC_DIR])
 

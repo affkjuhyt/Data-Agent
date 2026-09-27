@@ -76,6 +76,10 @@ filterwarnings = [
     # Same story for `schema` fields on warehouse request/response models — the
     # name shadows BaseModel's deprecated `.schema()` classmethod, not a bug.
     "ignore:Field name .* shadows an attribute in parent:UserWarning",
+    # litellm's own pydantic models still use V1 config keys and warn at import.
+    # Whichever test imported litellm first used to decide whether collection
+    # died on it, so a file passed or failed depending on what ran before it.
+    "ignore:Valid config keys have changed in V2:UserWarning",
 ]
 
 # ─── Coverage ──────────────────────────────────────────────────────────────

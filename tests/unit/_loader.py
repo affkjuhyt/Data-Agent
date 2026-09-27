@@ -85,12 +85,25 @@ def load_module_from_path(
         if entry_str not in sys.path:
             sys.path.insert(0, entry_str)
 
+    # The stubs only have to satisfy the target's own import statements; once
+    # it has run, it holds references to them. Left in sys.modules they would
+    # shadow the real module of that name for every test collected afterwards
+    # (a stubbed `graph` or `db` broke 25 unrelated tests), so the previous
+    # entries are put back.
+    saved = {stub_name: sys.modules.get(stub_name) for stub_name in (stubs or {})}
     for stub_name, attrs in (stubs or {}).items():
         stub_module(stub_name, **attrs)
 
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec and spec.loader, f"cannot build import spec for {path}"
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    spec.loader.exec_module(module)
+    try:
+        spec = importlib.util.spec_from_file_location(name, path)
+        assert spec and spec.loader, f"cannot build import spec for {path}"
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    finally:
+        for stub_name, previous in saved.items():
+            if previous is None:
+                sys.modules.pop(stub_name, None)
+            else:
+                sys.modules[stub_name] = previous
     return module

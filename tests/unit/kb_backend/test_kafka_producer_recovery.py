@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+pytestmark = pytest.mark.unit
+
 pytest.importorskip("aiokafka")
 
 from aiokafka.errors import KafkaError, OutOfOrderSequenceNumber, UnknownProducerId
