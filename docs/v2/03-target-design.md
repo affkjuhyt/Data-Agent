@@ -24,6 +24,28 @@ Deployable mới trong POC: `indicator-api`, `forecast-worker`. Consumer mới c
 `platform_workers` (cùng quy ước loop + Kafka như `schema_crawler`). Không tách thêm microservice
 trong POC (Bảng 5.6 của thiết kế v1 vẫn đúng); ranh giới module giữ để tách sau.
 
+Bố cục mã của `indicator_api` (ADR-V2-36): một deployable, mã chia theo domain để tách sau không phải
+viết lại.
+
+```text
+backend/services/indicator_api/
+  api/            router FastAPI: observations, series, entities, query, governance, review, capabilities
+  domains/
+    registry/     entity, entity_relation, series, capability, operator (bảng registry.*)
+    observation/  effective version, truy vấn as-of
+    knowledge/    claim, event, evidence, relation
+    governance/   dq, conflict, review_case, correction/override/approval, authority
+    query/        QuerySpec, compiler (SQLGlot), operator (mục 9)
+    capability/   nạp YAML, thực thi, MCP Gateway (mục 10)
+  adapters/       postgres, clickhouse, kafka (envelope + outbox), minio
+  capabilities/   file YAML khai báo capability (mục 10.1)
+```
+
+`domains/` không import FastAPI hay client kho; chỉ `api/` và `adapters/` được. `libs/indicator` là thư
+viện tính toán thuần, không sở hữu I/O. Consumer trong `platform_workers` chỉ parse envelope rồi gọi
+handler của domain (ADR-V2-37). `.importlinter` chặn package V2 import `kb_structured_data` và
+MongoDB (ADR-V2-38).
+
 ## 2. Lưu trữ
 
 | Dữ liệu | Kho | Chủ sở hữu | Lý do |
@@ -31,7 +53,7 @@ trong POC (Bảng 5.6 của thiết kế v1 vẫn đúng); ranh giới module gi
 | Artifact gốc | MinIO, key `raw/{source_id}/{sha256}` | web_crawler | Bất biến, không bao giờ xoá |
 | Source, entity, series, operator, capability | Postgres `registry` | indicator-api | Cấu hình có duyệt |
 | Release, profile, mapping, candidate | Postgres `ingest` | series_extractor | Trạng thái quy trình |
-| DQ result, conflict, review_case, correction, override, approval | Postgres `governance` | indicator-api | Giao dịch, OCC, audit |
+| DQ result, observation_conflict, review_case, correction, override, approval | Postgres `governance` | indicator-api | Giao dịch, OCC, audit |
 | Claim, event, evidence, relation | Postgres `knowledge` (nguồn sự thật) → Neo4j (bản chiếu), Qdrant (index) | indicator-api | OCC, RLS trên Postgres |
 | **Effective observation (mọi version)** | ClickHouse database `obs` (tách khỏi database của Langfuse) | indicator-api | Chuỗi thời gian, truy vấn as-of |
 | Feature snapshot | MinIO Parquet theo SHA-256 | forecast-worker | Tái lập backtest |
@@ -190,6 +212,9 @@ công bố. Kết quả ∈ {`NO_CONFLICT`, `REVISION`, `TIME_DIFFERENCE`, `DEFI
 `UNIT_DIFFERENCE`, `SOURCE_CONFLICT`, `UNKNOWN`}. Chỉ `SOURCE_CONFLICT`, `UNKNOWN` mở ReviewCase mặc
 định; LLM chỉ được gọi để gợi ý cho `UNKNOWN`.
 
+Kết quả lưu ở `governance.observation_conflict`, tách khỏi `kb_conflict_resolution` (xung đột **tài
+liệu** trong KB: giữ bản cũ, bản mới hay gộp), là thuật toán và luồng duyệt khác (ADR-V2-41).
+
 ### 8.3 ReviewCase và effective version
 
 ```sql
@@ -236,8 +261,8 @@ QuerySpec: Pydantic/JSON Schema (`operation`, `series`, `aggregation`, `period`,
 
 ### 10.1 Capability registry
 
-Nguồn khai báo: file YAML trong `backend/services/indicator_api/capabilities/` được nạp vào bảng
-`registry.capability` (bảng là thứ runtime đọc). Ví dụ:
+Nguồn khai báo: file YAML trong `backend/services/indicator_api/capabilities/` được
+`domains/capability` nạp vào bảng `registry.capability` (bảng là thứ runtime đọc). Ví dụ:
 
 ```yaml
 capability_id: EXPLAIN_PRICE_MOVEMENT

@@ -88,7 +88,7 @@ Các ADR dưới đây bổ sung vào [07](07-decisions-and-risks.md) mục 2 kh
 Postgres dataagent
   registry     entity, entity_relation, series, capability, operator, dq_rule, authority_rule
   ingest       release, profile, mapping_version, observation_candidate, outbox
-  governance   dq_result, conflict, review_case, correction, override, approval
+  governance   dq_result, observation_conflict, review_case, correction, override, approval
   knowledge    claim, event, evidence, relation, document_region
   forecast     model_version, forecast_run            (ngoài POC)
   alert        alert, alert_member, notification

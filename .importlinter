@@ -1,13 +1,12 @@
 # Architecture contracts — enforces the SRS Dependency Rule (§3.5) where the
 # current package layout allows it. Run: `lint-imports`.
 #
-# NOTE (Phase 0): the hyphenated service dirs (backend/services/auth_api,
-# backend/services/workflow_runtime, backend/services/flow_builder, …) are NOT importable Python
-# packages, so import-linter/grimp can only analyse the underscore-named ones
-# (basemodel, libs.shared, services.kb_backend, services.database_connector).
-# These contracts capture the rules that ARE true today and guard against
-# regression. The full layered Dependency Rule contract (domain ← application ←
-# adapters ← infrastructure) lands in Phase 1 once those layers exist.
+# NOTE: only directories with an __init__.py are importable packages, so grimp
+# sees libs.* and the services that have one (kb_backend, kb_*, platform_workers).
+# workflow_runtime, auth_api, flow_builder, … have no __init__.py and cannot be
+# analysed here. These contracts capture the rules that ARE true today and guard
+# against regression. The full layered Dependency Rule contract (domain ←
+# application ← adapters ← infrastructure) lands once those layers exist.
 
 [importlinter]
 root_packages =
@@ -30,3 +29,29 @@ source_modules =
 forbidden_modules =
     services.kb_backend
     libs.database_connector
+
+# V2 (docs/v2/07 ADR-V2-38). libs.indicator is a pure calculation library:
+# no I/O, no storage client, no ingestion, no service code.
+[importlinter:contract:indicator-is-pure]
+name = libs.indicator (V2 numeric core) must not depend on storage, ingestion or services
+type = forbidden
+source_modules =
+    libs.indicator
+forbidden_modules =
+    services
+    libs.database_connector
+    libs.ingestion
+
+# V2 data boundary (ADR-V2-38): V2 numbers never go through the v1 structured-KB
+# path, and V2 business data never lands in MongoDB (ADR-V2-09, ADR-V2-34).
+# Every new V2 package (services.indicator_api, the series_extractor /
+# semantic_extractor / detector workers) is added to source_modules in the same
+# commit that creates it.
+[importlinter:contract:v2-data-boundary]
+name = V2 packages must not use the v1 structured-KB path or MongoDB
+type = forbidden
+source_modules =
+    libs.indicator
+forbidden_modules =
+    services.kb_structured_data
+    libs.database_connector.mongo_connector
