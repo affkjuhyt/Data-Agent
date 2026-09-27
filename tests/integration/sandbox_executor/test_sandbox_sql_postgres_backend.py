@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import importlib
 import pathlib
-import shutil
 import sys
 import time
 
@@ -94,8 +93,8 @@ def client(monkeypatch):
     # fresh cache.
     sys.modules.pop("postgres_readonly", None)
     try:
-        from fastapi.testclient import TestClient
         import main as sandbox_main
+        from fastapi.testclient import TestClient
         importlib.reload(sandbox_main)
         sandbox_main.load_backend.cache_clear()
         assert sandbox_main._SQL_BACKEND == "postgres"

@@ -14,7 +14,6 @@ Docker isn't reachable.
 from __future__ import annotations
 
 import pathlib
-import shutil
 import sys
 
 import psycopg2
@@ -189,8 +188,8 @@ def test_execute_sql_http_endpoint_serializes_decimal_rows(seeded_db, monkeypatc
     for mod in ("main", "postgres_readonly", "snowflake_readonly"):
         sys.modules.pop(mod, None)
     try:
-        from fastapi.testclient import TestClient
         import main as sandbox_main
+        from fastapi.testclient import TestClient
 
         with TestClient(sandbox_main.app) as client:
             resp = client.post(

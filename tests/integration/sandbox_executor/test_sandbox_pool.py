@@ -18,7 +18,6 @@ Python.
 from __future__ import annotations
 
 import pathlib
-import shutil
 import sys
 
 import docker
@@ -50,8 +49,8 @@ def one_container_pool():
     try:
         sys.modules.pop("pool", None)
         sys.modules.pop("docker_runner", None)
-        import pool as pool_mod
         import docker_runner as dr
+        import pool as pool_mod
 
         client = docker.from_env()
         pool = pool_mod.ContainerPool(

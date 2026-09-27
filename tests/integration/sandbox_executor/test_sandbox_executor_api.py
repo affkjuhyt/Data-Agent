@@ -21,11 +21,9 @@ from __future__ import annotations
 import importlib
 import json
 import pathlib
-import shutil
 import sys
 import time
 
-import docker
 import pytest
 
 from tests.integration._sandbox import SKIP_REASON, docker_and_image_available
@@ -47,8 +45,8 @@ def client():
     added = [p for p in (_SVC_DIR,) if p not in sys.path]
     sys.path[:0] = added
     try:
-        from fastapi.testclient import TestClient
         import main as sandbox_main
+        from fastapi.testclient import TestClient
         importlib.reload(sandbox_main)
         with TestClient(sandbox_main.app) as tc:
             yield tc

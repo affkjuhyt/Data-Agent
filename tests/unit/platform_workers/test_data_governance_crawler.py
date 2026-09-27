@@ -12,7 +12,7 @@ from __future__ import annotations
 import pathlib
 import sys
 import types
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -24,7 +24,7 @@ _CRAWLER_DIR = str(REPO_ROOT / "backend" / "services" / "platform_workers")
 
 pytestmark = pytest.mark.unit
 
-NOW = datetime(2026, 8, 28, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
 TENANT = "a0000000-0000-0000-0000-000000000001"
 WAREHOUSE = "b0000000-0000-0000-0000-000000000002"
 

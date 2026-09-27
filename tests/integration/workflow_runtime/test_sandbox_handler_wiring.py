@@ -14,17 +14,15 @@ from __future__ import annotations
 
 import json
 import pathlib
-import shutil
 import sys
 import threading
 import time
 
-import docker
 import httpx
 import pytest
+import uvicorn
 
 from tests.integration._sandbox import SKIP_REASON, docker_and_image_available
-import uvicorn
 
 pytestmark = pytest.mark.integration
 
