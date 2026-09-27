@@ -1,4 +1,4 @@
-"""/api/knowledge/neo4j — graph visualization and Cypher query runner."""
+"""/api/knowledge/neo4j — graph visualization and the query builder's path query."""
 from typing import Any
 from fastapi import APIRouter, Depends, Request
 
@@ -6,7 +6,7 @@ from libs.basemodel.services_databaseconnector.shared_model import ResponseModel
 from services.kb_backend.schemas import Neo4jQueryRequest
 from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.dependencies.services import svc
-from services.kb_backend.operations.neo4j_ops import get_graph, get_schema, run_cypher
+from services.kb_backend.operations.neo4j_ops import get_graph, get_schema, run_path_query
 
 router = APIRouter(prefix="/api/knowledge/neo4j", tags=["Knowledge-Neo4j"])
 
@@ -38,13 +38,14 @@ async def get_schema_route(
 
 
 @router.post("/query", response_model=ResponseModel)
-async def run_cypher_route(
+async def run_path_query_route(
         body: Neo4jQueryRequest,
         request: Request, ctx: dict[str, Any] = Depends(require_perm("runGraphQuery")),
 ) -> ResponseModel[Any]:
-    result = await run_cypher(
+    result = await run_path_query(
         neo4j=svc(request, "neo4j"),
-        cypher=body.cypher,
+        start_label=body.start_label,
+        step_labels=body.step_labels,
         tenant_id=ctx["tenant_id"],
     )
     return ResponseModel(code=200, data=result)

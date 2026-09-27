@@ -220,6 +220,12 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
+          app: postgres-backup
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
           app: platform-workers-schema-crawler
     - namespaceSelector:
         matchLabels:

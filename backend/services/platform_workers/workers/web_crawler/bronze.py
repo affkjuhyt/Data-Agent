@@ -119,8 +119,8 @@ def _purge_promoted_traces(cur: Any, data_id: str) -> None:
 
 def _replace_existing_by_name(cur: Any, tenant_id: str, name: str) -> None:
     """A re-crawl of the same source reuses its title as the KBData name, so
-    without this the second run of ANY source hard-crashes on
-    "KBData_name_key" (found by actually running two crawls back to back —
+    without this the second run of ANY source hard-crashes on the
+    (tenant_id, name) unique index idx_kbdata_tenant_name (found by actually running two crawls back to back —
     not caught by unit tests mocking the DB away). Mirrors kb_backend's
     `_replace_existing_document_if_any` (ingestion.py) — hard-delete, not
     soft-delete, to free the unique constraint. Unlike a fresh Bronze-only

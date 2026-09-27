@@ -321,13 +321,24 @@ async def _delete_document(session: Any, data_id: uuid.UUID) -> None:
     await session.execute(sa_delete(KBDataORM).where(KBDataORM.data_id == data_id))
 
 
-async def _purge_vectors_and_graph(qdrant: Any, neo4j: Any, level: str,
+async def _remove_document_from_graph(postgres: Any, neo4j: Any, tenant_id: str, data_id: str) -> None:
+    """RELATES edges are shared by every document that mentions the pair and
+    carry no data_id, so the per-document support lives in the
+    KBNeo4jRelationship mirror; GraphStore decrements or drops each edge from
+    it (the old `MATCH ()-[r {data_id: …}]-()` delete matched nothing)."""
+    # Imported here: graph_store pulls in the neo4j driver, which the shared
+    # unit-test image lacks; kb_backend itself always has it.
+    from libs.ingestion.graph_store import GraphStore
+
+    await GraphStore(neo4j.get_client(), postgres).remove_document_any_kb(tenant_id=tenant_id, data_id=data_id)
+
+
+async def _purge_vectors_and_graph(postgres: Any, qdrant: Any, neo4j: Any, level: str,
                                    item_id: str, tenant_id: str | None) -> None:
     if level == "document":
         await _qdrant_delete_by_data_id(qdrant, tenant_id, item_id)
-        async with neo4j.get_client().session() as graph:
-            await (await graph.run(
-                "MATCH ()-[r:RELATES {data_id: $did}]-() DELETE r", did=item_id)).consume()
+        if tenant_id:
+            await _remove_document_from_graph(postgres, neo4j, tenant_id, item_id)
     elif level == "chunk":
         await _qdrant_delete_block(qdrant, item_id)
 
@@ -364,7 +375,7 @@ async def flush(
         return
 
     # Vectors first: a deleted row with live vectors stays searchable.
-    await _purge_vectors_and_graph(qdrant, neo4j, level, item_id, tenant_id)
+    await _purge_vectors_and_graph(postgres, qdrant, neo4j, level, item_id, tenant_id)
 
     async with postgres.get_client() as session:
         try:

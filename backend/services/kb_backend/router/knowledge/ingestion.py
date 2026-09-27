@@ -441,6 +441,11 @@ async def stream_pipeline_events(
         request: Request,
         ctx: dict[str, Any] = Depends(require_perm("viewDocuments")),
 ) -> StreamingResponse:
+    # pipeline_events carries no tenant_id, so ownership has to be checked on
+    # the KBData row, as /logs does; otherwise any tenant with a data_id could
+    # watch another tenant's ingestion.
+    if not await _fetch_doc(svc(request, "postgres"), data_id, ctx["tenant_id"], ctx["role_id"]):
+        raise HTTPException(status_code=404, detail="Document not found")
     mongo = svc(request, "mongo")
     _TERMINAL = {"pipeline.done", "pipeline.error"}
 

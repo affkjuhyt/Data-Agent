@@ -255,7 +255,7 @@ class SourceConfigPayload(BaseModel):
     `http_file`/`rest_api`/`sdmx`/`rss`. `openbao_path`, when set, is a vault
     path (KV v2, e.g. `tenants/<tenant_id>/<key>`) resolved at run time by the
     web-crawler worker — never a raw secret, per the vault convention
-    (`SecretsVaultInsert.openbao_path`). `query_params`/`auth_style`/
+    (`secrets_vault.openbao_path`). `query_params`/`auth_style`/
     `auth_param_name` only apply to `rest_api`/`sdmx`. `recursive`/
     `max_depth`/`same_domain_only` only apply to `web_crawl`/
     `web_crawl_headless` — link-discovery crawl, see `KBSourceCrawlQueue`."""
@@ -738,27 +738,6 @@ class PIIAccessStatus(str, Enum):
     REDACTED = "REDACTED"
 
 
-class KeyType(str, Enum):
-    ENCRYPTION_KEY = "ENCRYPTION_KEY"
-    SIGNING_KEY = "SIGNING_KEY"
-    HMAC_KEY = "HMAC_KEY"
-    BEARER_TOKEN = "BEARER_TOKEN"
-    MCP_TOKEN = "MCP_TOKEN"
-    KB_API_KEY = "KB_API_KEY"
-
-
-class RotationTrigger(str, Enum):
-    SCHEDULED = "SCHEDULED"
-    MANUAL = "MANUAL"
-    PANIC = "PANIC"
-    REVEAL = "REVEAL"
-
-
-class RotationStatus(str, Enum):
-    SUCCESS = "SUCCESS"
-    FAILED = "FAILED"
-
-
 class PipelineTriggerType(str, Enum):
     MANUAL = "MANUAL"
     GIT_PUSH = "GIT_PUSH"
@@ -1038,45 +1017,6 @@ class AgentTracesInsert(InsertModel):
 
 
 @register("insert")
-class ApiKeyInsert(TenantModel):
-    created_by: str
-    name: str
-    key_hash: str
-    key_prefix: str
-    scope: str = "read_only"
-    expires_at: Optional[datetime.datetime] = None
-    rotated_from: Optional[str] = None
-
-
-@register("insert")
-class SecretsVaultInsert(TenantModel):
-    key_name: str
-    key_type: KeyType
-    algorithm: Optional[str] = None
-    realm: Optional[str] = None
-    openbao_path: str
-    version: int = 1
-    is_active: bool = True
-    rotation_due_at: Optional[datetime.datetime] = None
-    last_rotated_at: Optional[datetime.datetime] = None
-    created_by: Optional[str] = None
-    model_config = ConfigDict(use_enum_values=True)
-
-
-@register("insert")
-class KeyRotationInsert(BaseModel):
-    secret_id: str
-    triggered_by: RotationTrigger = RotationTrigger.MANUAL
-    actor_id: Optional[str] = None
-    old_version: Optional[int] = None
-    new_version: Optional[int] = None
-    status: RotationStatus = RotationStatus.SUCCESS
-    error: Optional[str] = None
-    access_reason: Optional[str] = None
-    model_config = ConfigDict(use_enum_values=True)
-
-
-@register("insert")
 class WebhookInsert(TenantModel):
     created_by: Optional[str] = None
     url: str
@@ -1289,17 +1229,7 @@ class ToolsDelete(BaseModel):
 
 
 @register("delete")
-class SecretsVaultDelete(TenantModel):
-    id: str
-
-
-@register("delete")
 class MCPDelete(TenantModel):
-    id: str
-
-
-@register("delete")
-class KeyRotationDelete(BaseModel):
     id: str
 
 

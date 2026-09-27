@@ -59,7 +59,11 @@ def _node_id(tenant_id: str, knowledge_base: str, canonical: str) -> uuid.UUID:
 
 
 class GraphStore:
-    def __init__(self, neo4j: AsyncDriver, postgres: PostgresClient, model: ModelServiceClient) -> None:
+    def __init__(
+        self, neo4j: AsyncDriver, postgres: PostgresClient, model: ModelServiceClient | None = None,
+    ) -> None:
+        # model is only needed to embed entities on add_chunk; a store built
+        # just to remove (kb_backend's trash flush) passes none.
         self._neo4j = neo4j
         self._postgres = postgres
         self._model = model
@@ -127,6 +131,22 @@ class GraphStore:
     async def remove_document(self, *, tenant_id: str, knowledge_base: str, data_id: str) -> None:
         await self._remove(tenant_id, knowledge_base, KBNeo4jRelationshipORM.data_id, data_id)
 
+    async def remove_document_any_kb(self, *, tenant_id: str, data_id: str) -> None:
+        """remove_document for a caller that does not know which knowledge base
+        the document fed (trash flush): read it off the mirror. A document
+        belongs to at most one knowledge base (KBData.knowledge_base_id)."""
+        target = _as_uuid(data_id)
+        if target is None:
+            return
+        async with self._postgres.get_client() as session:
+            knowledge_base = (await session.execute(
+                sa_select(KBNeo4jNodeORM.knowledge_base)
+                .join(KBNeo4jRelationshipORM, KBNeo4jRelationshipORM.from_node == KBNeo4jNodeORM.node_id)
+                .where(KBNeo4jRelationshipORM.data_id == target)
+                .limit(1)
+            )).scalar_one_or_none()
+        await self.remove_document(tenant_id=tenant_id, knowledge_base=knowledge_base or "", data_id=data_id)
+
 
     async def _embed_entities(
         self, connected_canonicals: list[str], entity_by_canonical: dict[str, dict[str, Any]],
@@ -138,6 +158,8 @@ class GraphStore:
              or canonical).replace("_", " ")
             for canonical in connected_canonicals
         ]
+        if self._model is None:
+            raise RuntimeError("GraphStore was built without a model client; it can remove but not add")
         try:
             vectors = await self._model.embed(embed_texts, model_id=embed_model_id)
         except Exception as exc:

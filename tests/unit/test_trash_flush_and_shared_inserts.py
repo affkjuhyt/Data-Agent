@@ -131,8 +131,14 @@ def _flush_document(monkeypatch, scalars: list[Any]) -> _Postgres:
     async def fake_qdrant_delete(*_a: Any, **_k: Any) -> None:
         postgres.timeline.append("qdrant")
 
+    # GraphStore's own mirror sessions are its business (they open and close
+    # before its Neo4j call); here it stands for "the graph was touched".
+    async def fake_graph_remove(*_a: Any, **_k: Any) -> None:
+        postgres.timeline.append("neo4j")
+
     monkeypatch.setattr(trash_ops, "_qdrant_delete_by_data_id", fake_qdrant_delete)
     monkeypatch.setattr(trash_ops, "_qdrant_delete_block", fake_qdrant_delete)
+    monkeypatch.setattr(trash_ops, "_remove_document_from_graph", fake_graph_remove)
 
     asyncio.run(trash_ops.flush(
         postgres, qdrant, neo4j, "document", DOCUMENT_ID, TENANT,
