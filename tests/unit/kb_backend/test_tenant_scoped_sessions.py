@@ -36,6 +36,10 @@ class _StubSession:
     async def rollback(self) -> None:
         pass
 
+    def expunge_all(self) -> None:
+        # _tenant_session detaches loaded instances before its rollback.
+        pass
+
     async def __aenter__(self) -> "_StubSession":
         return self
 

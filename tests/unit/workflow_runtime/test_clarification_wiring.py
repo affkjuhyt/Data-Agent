@@ -63,7 +63,6 @@ def _stub_check(monkeypatch, questions):
     import types
     mod = types.ModuleType("semantic_layer")
     mod.check_underspecified = AsyncMock(return_value=questions)
-    monkeypatch.setitem(sys.modules, "semantic_layer", mod)
     # The planner imports it by its package path; with the full service
     # importable, only this key reaches it (the short one alone left the real
     # checker running and these tests failing).
@@ -233,7 +232,7 @@ class TestFailureIsNotFatal:
         monkeypatch.setattr(planner.litellm, "acompletion", AsyncMock(return_value=_llm(_PLAN)))
         mod = types.ModuleType("semantic_layer")
         mod.check_underspecified = AsyncMock(side_effect=RuntimeError("registry down"))
-        monkeypatch.setitem(sys.modules, "semantic_layer", mod)
+        monkeypatch.setitem(sys.modules, "services.workflow_runtime.semantic_layer", mod)
 
         result = await planner.planner_node({"query": "doanh thu", "config": {"tenant_id": "t-1"}})
 

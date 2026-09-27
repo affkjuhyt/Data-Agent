@@ -829,6 +829,9 @@ class TestConfigComesFromConfigMapsAndSecrets:
                         "release-worker", "workflow-runtime"}
             if key == "GATEWAY_KEY":
                 expected |= {"setup"}   # kong-setup.sh writes it into the plugin
+                # The eval Job is a caller, not a verifier: model/eval's
+                # agent_client sends it so the runtime accepts the request.
+                expected |= {"eval"}
             assert holders == expected, (
                 f"{key} goes to {sorted(holders)}, expected {sorted(expected)}"
             )
@@ -841,9 +844,10 @@ class TestImageReferencesAreIntact:
     KNOWN = {
         "postgres:16-alpine", "mongo:7.0", "redis:7-alpine", "qdrant/qdrant:v1.13.6",
         "neo4j:5.20", "apache/kafka:3.7.0",
-        "minio/minio:RELEASE.2024-01-16T16-07-38Z", "minio/mc",
+        "quay.io/minio/minio:latest",
         "docker.io/clickhouse/clickhouse-server",
-        "openbao/openbao:latest", "edoburu/pgbouncer:latest",
+        # Pinned: 2.7 dropped the file storage backend this deployment uses.
+        "openbao/openbao:2.6.3", "edoburu/pgbouncer:latest",
         "quay.io/keycloak/keycloak:24.0", "ghcr.io/berriai/litellm:main-stable",
         "docker.io/langfuse/langfuse:3", "docker.io/langfuse/langfuse-worker:3",
         "jaegertracing/all-in-one:1.55", "prom/prometheus:v2.54.1",

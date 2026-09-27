@@ -378,7 +378,7 @@ class TestHandlerAttachesProvenance:
         data = self._data(runtime_path)
         stub = types.ModuleType("data_provenance")
         stub.provenance_for_sql = AsyncMock(return_value={"status": STALE, "tables": [{"table": "public.orders"}]})
-        monkeypatch.setitem(sys.modules, "data_provenance", stub)
+        monkeypatch.setitem(sys.modules, "services.workflow_runtime.data_provenance", stub)
         monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=([{"n": 1}], None, False, None)))
 
         result, error = await data._run_one_query(
@@ -395,7 +395,7 @@ class TestHandlerAttachesProvenance:
         data = self._data(runtime_path)
         stub = types.ModuleType("data_provenance")
         stub.provenance_for_sql = AsyncMock(return_value=None)
-        monkeypatch.setitem(sys.modules, "data_provenance", stub)
+        monkeypatch.setitem(sys.modules, "services.workflow_runtime.data_provenance", stub)
         monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(side_effect=[
             (None, "column does not exist", False, None),
             ([{"n": 1}], None, False, None),
@@ -418,7 +418,7 @@ class TestHandlerAttachesProvenance:
         data = self._data(runtime_path)
         stub = types.ModuleType("data_provenance")
         stub.provenance_for_sql = AsyncMock(side_effect=RuntimeError("catalog down"))
-        monkeypatch.setitem(sys.modules, "data_provenance", stub)
+        monkeypatch.setitem(sys.modules, "services.workflow_runtime.data_provenance", stub)
         monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=([{"n": 1}], None, False, None)))
 
         result, error = await data._run_one_query(
@@ -433,7 +433,7 @@ class TestHandlerAttachesProvenance:
         data = self._data(runtime_path)
         stub = types.ModuleType("data_provenance")
         stub.provenance_for_sql = AsyncMock()
-        monkeypatch.setitem(sys.modules, "data_provenance", stub)
+        monkeypatch.setitem(sys.modules, "services.workflow_runtime.data_provenance", stub)
 
         assert await data._provenance({"catalog_warehouse_id": WAREHOUSE}, "SELECT 1", audit_ctx={}) is None
         stub.provenance_for_sql.assert_not_awaited()

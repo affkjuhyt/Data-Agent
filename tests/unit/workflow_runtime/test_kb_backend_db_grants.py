@@ -17,6 +17,16 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 GRANTS = REPO_ROOT / "deploy" / "docker" / "sql" / "grant-roles.sql"
 SERVICE = REPO_ROOT / "backend" / "services" / "kb_backend"
 MIGRATIONS = REPO_ROOT / "backend" / "alembic" / "versions"
+# Each deployable manifest set carries its own db-init Job.
+DB_INITS = {
+    manifest_set: REPO_ROOT / "deploy" / "k8s" / manifest_set / "job" / "db-init.yaml"
+    for manifest_set in ("production", "dev")
+}
+
+
+@pytest.fixture(params=sorted(DB_INITS))
+def db_init(request) -> pathlib.Path:
+    return DB_INITS[request.param]
 
 WRITE_TABLES = {
     "KBData", "KBTextBlock", "KBTextBlockVersion", "KBTextTable", "KBTable",
@@ -117,11 +127,9 @@ class TestTheInitJobActuallyAppliesTheGrants:
     create-configmaps.sh -> ConfigMap -> Job volume -> mount -> psql loop, and a
     break anywhere leaves kb_backend with a role that has no privileges."""
 
-    def _job(self) -> dict:
+    def _job(self, db_init: pathlib.Path) -> dict:
         import yaml
-        documents = yaml.safe_load_all(
-            (REPO_ROOT / "deploy" / "k8s" / "job" / "db-init.yaml").read_text(encoding="utf-8")
-        )
+        documents = yaml.safe_load_all(db_init.read_text(encoding="utf-8"))
         return next(d for d in documents if d and d["kind"] == "Job")
 
     def test_the_sql_file_is_packaged_into_a_configmap(self):
@@ -141,28 +149,28 @@ class TestTheInitJobActuallyAppliesTheGrants:
         assert packaging, "grant-roles.sql is not added to any ConfigMap"
         assert re.match(r'cm\s+"?\$?\w+"?\s+db-init-sql\b', packaging[0]), packaging[0]
 
-    def test_the_job_mounts_that_configmap(self):
-        spec = self._job()["spec"]["template"]["spec"]
+    def test_the_job_mounts_that_configmap(self, db_init):
+        spec = self._job(db_init)["spec"]["template"]["spec"]
         volume = next(v for v in spec["volumes"] if v.get("configMap", {}).get("name") == "db-init-sql")
         mount = next(m for m in spec["containers"][0]["volumeMounts"] if m["name"] == volume["name"])
         assert mount["mountPath"] == "/sql"
 
-    def test_the_job_executes_every_sql_file_it_mounts(self):
-        command = self._job()["spec"]["template"]["spec"]["containers"][0]["command"][-1]
+    def test_the_job_executes_every_sql_file_it_mounts(self, db_init):
+        command = self._job(db_init)["spec"]["template"]["spec"]["containers"][0]["command"][-1]
         assert "/sql/*.sql" in command
         assert "psql" in command and "ON_ERROR_STOP=1" in command
 
-    def test_grants_run_before_the_role_passwords_are_set(self):
+    def test_grants_run_before_the_role_passwords_are_set(self, db_init):
         """ALTER ROLE would fail on a role grant-roles.sql has not created yet."""
-        command = self._job()["spec"]["template"]["spec"]["containers"][0]["command"][-1]
+        command = self._job(db_init)["spec"]["template"]["spec"]["containers"][0]["command"][-1]
         assert command.index("/sql/*.sql") < command.index("ALTER ROLE")
 
 
 class TestRolesTheInitJobExpects:
-    def test_every_role_given_a_password_is_also_created(self):
+    def test_every_role_given_a_password_is_also_created(self, db_init):
         """db-init runs ALTER ROLE under ON_ERROR_STOP=1, so a role it sets a
         password for must exist by then or the deploy stops."""
-        job = (REPO_ROOT / "deploy" / "k8s" / "job" / "db-init.yaml").read_text(encoding="utf-8")
+        job = db_init.read_text(encoding="utf-8")
         sql = GRANTS.read_text(encoding="utf-8")
 
         altered = set(re.findall(r"ALTER ROLE (\w+)\s+WITH LOGIN PASSWORD", job))

@@ -42,7 +42,7 @@ def _stub_redis_cache(monkeypatch, get_return=None) -> types.ModuleType:
     fake_module = types.ModuleType("redis_cache")
     fake_module.cache_get_schema = AsyncMock(return_value=get_return)
     fake_module.cache_set_schema = AsyncMock(return_value=None)
-    monkeypatch.setitem(sys.modules, "redis_cache", fake_module)
+    monkeypatch.setitem(sys.modules, "services.workflow_runtime.redis_cache", fake_module)
     return fake_module
 
 

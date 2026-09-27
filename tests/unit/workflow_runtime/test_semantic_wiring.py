@@ -72,10 +72,10 @@ def _data():
 
 
 def _stub_semantic(monkeypatch, match):
-    """Replace the semantic_layer module the handler imports lazily."""
+    """Replace the semantic_layer module the handler imports lazily, by its package path."""
     mod = types.ModuleType("semantic_layer")
     mod.match_question = AsyncMock(return_value=match)
-    monkeypatch.setitem(sys.modules, "semantic_layer", mod)
+    monkeypatch.setitem(sys.modules, "services.workflow_runtime.semantic_layer", mod)
     return mod
 
 
@@ -183,7 +183,7 @@ class TestFallback:
         data = _data()
         mod = types.ModuleType("semantic_layer")
         mod.match_question = AsyncMock(side_effect=RuntimeError("postgres down"))
-        monkeypatch.setitem(sys.modules, "semantic_layer", mod)
+        monkeypatch.setitem(sys.modules, "services.workflow_runtime.semantic_layer", mod)
         monkeypatch.setattr(data, "_get_schema_text", AsyncMock(return_value="orders(id int)"))
         monkeypatch.setattr(data.litellm, "acompletion", AsyncMock(
             return_value=type("R", (), {"choices": [type("C", (), {"message": type("M", (), {"content": "SELECT 1"})()})()]})(),

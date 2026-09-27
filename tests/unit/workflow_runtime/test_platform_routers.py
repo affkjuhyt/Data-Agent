@@ -292,21 +292,24 @@ class TestMetricsSeries:
 
     def test_error_rate_from_trace_counts(self, monkeypatch):
         q = _queries()
+        # The series window ends today (UTC); rows dated outside it are dropped,
+        # so a fixed date turned this into a test that failed once it aged out.
+        today = dt.datetime.now(dt.UTC).date()
         stub = _StubClient([
             _Result(one=(3, 1)),
             _Result(one=(10, 2, 4)),
             _Result(one=(40, 6, 5000, 700, 812.6, 1900.0)),
             _Result(one=(8, 2)),
-            _Result(rows=[(dt.date(2026, 8, 30), 3)]),
-            _Result(rows=[(dt.date(2026, 8, 30), 6, 700, 500.0)]),
-            _Result(rows=[(dt.date(2026, 8, 30), 2)]),
+            _Result(rows=[(today, 3)]),
+            _Result(rows=[(today, 6, 700, 500.0)]),
+            _Result(rows=[(today, 2)]),
         ])
         monkeypatch.setattr(q, "client", stub)
         out = asyncio.run(q.platform_metrics(TENANT, days=2))
         assert out["error_rate"] == 0.25
         assert out["latency_ms"] == {"avg": 812.6, "p95": 1900.0}
         assert out["series"][-1] == {
-            "date": dt.datetime.now(dt.UTC).date().isoformat(),
+            "date": today.isoformat(),
             "conversations": 3, "messages": 6, "tokens": 700, "avg_latency_ms": 500.0, "errors": 2,
         }
 

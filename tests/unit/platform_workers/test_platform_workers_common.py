@@ -45,7 +45,10 @@ class TestSettings:
         assert KafkaSettings().bootstrap_servers == "kafka:9092"
         assert KafkaSettings().sasl_kwargs() == {}
         pg = PostgresSettings()
-        assert (pg.host, pg.port, pg.name, pg.user, pg.password) == ("postgres", 5432, "dataagent", "admin", "dev123")
+        # 8300 is the Postgres port in every manifest set; the password has no
+        # default, so a worker without DB_PASSWORD fails to connect instead of
+        # trying a dev credential.
+        assert (pg.host, pg.port, pg.name, pg.user, pg.password) == ("postgres", 8300, "dataagent", "admin", "")
         assert QdrantSettings().url == "http://qdrant:6333"
         assert QdrantSettings().embedding_dim == 1024
         assert LiteLLMSettings().base_url == "http://litellm:4000"

@@ -307,9 +307,11 @@ class TestDialectsAreWiredToBackends:
                 assert call.args[1].value == dialect, f"{filename} names the wrong dialect"
 
     def test_the_dispatcher_passes_the_request_backend(self):
+        """The dispatch moved out of main.py into execution/sql_executor.py;
+        main.py hands it validate_select_only as a parameter of that name."""
         import ast
 
-        tree = ast.parse((pathlib.Path(_SVC_DIR) / "main.py").read_text(encoding="utf-8"))
+        tree = ast.parse((pathlib.Path(_SVC_DIR) / "execution" / "sql_executor.py").read_text(encoding="utf-8"))
         calls = [
             node for node in ast.walk(tree)
             if isinstance(node, ast.Call)
@@ -322,17 +324,17 @@ class TestDialectsAreWiredToBackends:
         assert calls[0].args[1].id == "backend"
 
     def test_backend_names_and_dialect_names_are_the_same_set(self):
-        """main.py dispatches on these strings and hands the same value to the
-        guard; if the two vocabularies drift, every query fails closed on an
+        """execution/sql_executor.py dispatches on these strings and hands the
+        same value to the guard; if the two vocabularies drift, every query fails closed on an
         unknown dialect."""
         import ast
 
         from sql_scan import DIALECTS
 
-        tree = ast.parse((pathlib.Path(_SVC_DIR) / "main.py").read_text(encoding="utf-8"))
+        tree = ast.parse((pathlib.Path(_SVC_DIR) / "execution" / "sql_executor.py").read_text(encoding="utf-8"))
         load_backend = next(
             n for n in ast.walk(tree)
-            if isinstance(n, ast.FunctionDef) and n.name == "_load_backend"
+            if isinstance(n, ast.FunctionDef) and n.name == "load_backend"
         )
         names = {
             node.value for node in ast.walk(load_backend)

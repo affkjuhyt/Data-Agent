@@ -289,7 +289,8 @@ class TestTruncationReachesTheAnswer:
     def test_the_dispatcher_returns_the_reason(self):
         import ast
 
-        tree = ast.parse((pathlib.Path(_SVC_DIR) / "main.py").read_text(encoding="utf-8"))
+        # The job body moved out of main.py into execution/sql_executor.py.
+        tree = ast.parse((pathlib.Path(_SVC_DIR) / "execution" / "sql_executor.py").read_text(encoding="utf-8"))
         keys = {
             node.value for node in ast.walk(tree)
             if isinstance(node, ast.Constant) and isinstance(node.value, str)

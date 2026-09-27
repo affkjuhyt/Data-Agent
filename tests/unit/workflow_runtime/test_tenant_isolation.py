@@ -86,9 +86,9 @@ _UNSCOPED_BUDGET = {
     "kb_promote_gold": 2,
     "kb_structured_data": 2,
     "kb_promote_silver": 1,
-    # Mongo/Qdrant client accessors and the advisory lock — no tenant_id column.
-    "shared": 1,
-    "database_connector": 17,
+    # libs/shared is at 0: the document advisory lock moved to
+    # get_platform_client(), the deliberate unscoped form.
+    "database_connector": 15,
     "flow_builder": 8,
     "workflow_runtime": 5,
     "sandbox_executor": 1,

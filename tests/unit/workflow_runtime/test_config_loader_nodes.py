@@ -138,8 +138,9 @@ class TestDbConnectorNodeConfig:
         db_connections = cfg["tool_config"]["db_connections"]
         assert set(db_connections) == {"Sales", "Warehouse"}
         assert db_connections["Sales"] == {
-            "host": "h1", "port": 5432, "database": "salesdb", "user": "u1",
-            "secret_id": "sec-1", "password": "", "note": "orders table",
+            "type": "postgres", "host": "h1", "port": 5432, "database": "salesdb",
+            "schema": "public", "user": "u1", "secret_id": "sec-1", "password": "",
+            "note": "orders table", "catalog_warehouse_id": "",
         }
         assert db_connections["Warehouse"]["port"] == 5432  # default when omitted
 
@@ -174,9 +175,10 @@ class TestResolveDbConnectorSecrets:
     (mocked via sys.modules, same pattern as TestResolveWarehouseSecret)."""
 
     def _stub_warehouse_secrets(self, monkeypatch, resolve_mock) -> None:
-        fake_module = types.ModuleType("warehouse_secrets")
+        # config_loader imports it lazily by its package path.
+        fake_module = types.ModuleType("services.workflow_runtime.warehouse_secrets")
         fake_module.resolve_db_connector_password = resolve_mock
-        monkeypatch.setitem(sys.modules, "warehouse_secrets", fake_module)
+        monkeypatch.setitem(sys.modules, "services.workflow_runtime.warehouse_secrets", fake_module)
 
     async def test_noop_when_no_db_connector_node(self) -> None:
         node_cfg: dict = {}
@@ -226,9 +228,10 @@ class TestResolveWarehouseSecret:
     test_warehouse_secrets.py for the resolution logic itself)."""
 
     def _stub_warehouse_secrets(self, monkeypatch, resolve_mock) -> None:
-        fake_module = types.ModuleType("warehouse_secrets")
+        # config_loader imports it lazily by its package path.
+        fake_module = types.ModuleType("services.workflow_runtime.warehouse_secrets")
         fake_module.resolve_snowflake_password = resolve_mock
-        monkeypatch.setitem(sys.modules, "warehouse_secrets", fake_module)
+        monkeypatch.setitem(sys.modules, "services.workflow_runtime.warehouse_secrets", fake_module)
 
     async def test_noop_when_no_execute_sql_node(self) -> None:
         node_cfg: dict = {}

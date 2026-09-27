@@ -26,7 +26,9 @@ import pytest
 import yaml
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
-K8S = REPO_ROOT / "deploy" / "k8s"
+# The production set. dev/ publishes every Service as a NodePort on purpose
+# (single-node debugging box, see deploy/k8s/dev/REPORT.md).
+K8S = REPO_ROOT / "deploy" / "k8s" / "production"
 SERVICES = REPO_ROOT / "backend" / "services"
 
 pytestmark = pytest.mark.unit
@@ -106,10 +108,14 @@ class TestNothingUnauthenticatedIsPublished:
 
     def test_only_kong_is_reachable_from_outside_the_cluster(self):
         """Kong is the only way in. Everything else is ClusterIP, so an Ingress
-        cannot accidentally be pointed at a service that trusts its caller."""
+        cannot accidentally be pointed at a service that trusts its caller.
+
+        Keycloak is the one exception: browsers follow the login redirect to it
+        directly (no ingress controller; see its Service in keycloak.yaml), and
+        it authenticates everything it serves itself."""
         offenders = [
             s["metadata"]["name"] for s in self._exposed_services()
-            if s["metadata"]["name"] != "kong"
+            if s["metadata"]["name"] not in ("kong", "keycloak")
         ]
         assert not offenders, (
             f"NodePort/LoadBalancer on {sorted(offenders)} — reachable without "

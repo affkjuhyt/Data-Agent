@@ -52,7 +52,7 @@ def _stub_redis(monkeypatch, get_return=None):
     mod = types.ModuleType("redis_cache")
     mod.cache_get_schema = AsyncMock(return_value=get_return)
     mod.cache_set_schema = AsyncMock(return_value=None)
-    monkeypatch.setitem(sys.modules, "redis_cache", mod)
+    monkeypatch.setitem(sys.modules, "services.workflow_runtime.redis_cache", mod)
     return mod
 
 
@@ -62,7 +62,7 @@ def _stub_catalog(monkeypatch, hits):
     mod.format_catalog_context = lambda tables: "\n".join(
         f"-- {t.get('text_description', '')}\nTABLE {t.get('table_name')}" for t in tables
     )
-    monkeypatch.setitem(sys.modules, "schema_catalog", mod)
+    monkeypatch.setitem(sys.modules, "services.workflow_runtime.schema_catalog", mod)
     return mod
 
 
@@ -268,7 +268,7 @@ class TestCatalogIsPreferred:
         mod = types.ModuleType("schema_catalog")
         mod.retrieve_schema_catalog = AsyncMock(side_effect=RuntimeError("qdrant down"))
         mod.format_catalog_context = lambda t: ""
-        monkeypatch.setitem(sys.modules, "schema_catalog", mod)
+        monkeypatch.setitem(sys.modules, "services.workflow_runtime.schema_catalog", mod)
         _stub_redis(monkeypatch, get_return=None)
         monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=(_rows(("orders", "id", "int")), None, False, None)))
 

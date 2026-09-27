@@ -187,45 +187,93 @@ class TestRowLevelSecurityIsGated:
         assert any("CREATE POLICY tenant_isolation" in s for s in statements)
 
 
+class _LockSession:
+    """The platform session document_lock takes: try-lock, unlock, close."""
+
+    def __init__(self, acquired: bool = True) -> None:
+        self.acquired = acquired
+        self.statements: list[tuple[str, Any]] = []
+        self.closed = False
+
+    async def scalar(self, statement: Any, params: Any = None) -> bool:
+        self.statements.append((str(statement), params))
+        return self.acquired
+
+    async def execute(self, statement: Any, params: Any = None) -> None:
+        self.statements.append((str(statement), params))
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class _LockPostgres:
+    def __init__(self, session: _LockSession) -> None:
+        self.session = session
+
+    def get_platform_client(self) -> _LockSession:
+        return self.session
+
+
 class TestDocumentNameLock:
+    """Uploads take the shared per-document lock (libs/shared/document_lock.py)
+    that promotion also takes, so a re-upload cannot replace a document a
+    promotion is still writing. kb-backend's wrapper turns "busy" into a 409
+    instead of a wait."""
+
     def test_the_lock_is_taken_and_released_on_the_same_key(self):
         import services.kb_backend.router.knowledge.ingestion as ingestion
-        session = _RecordingSession()
-        postgres = _StubPostgres(session)
+        session = _LockSession()
 
         async def run():
-            async with ingestion._document_name_lock(postgres, TENANT, "Sales"):
+            async with ingestion._document_name_lock(_LockPostgres(session), TENANT, "Sales"):
                 pass
 
         asyncio.run(run())
         locks = [(statement, params) for statement, params in session.statements if "advisory" in statement]
 
         assert len(locks) == 2
-        assert "pg_advisory_lock" in locks[0][0] and "pg_advisory_unlock" in locks[1][0]
+        assert "pg_try_advisory_lock" in locks[0][0] and "pg_advisory_unlock" in locks[1][0]
         assert locks[0][1] == locks[1][1]
+        assert session.closed
 
     def test_it_is_released_even_when_the_upload_fails(self):
         import services.kb_backend.router.knowledge.ingestion as ingestion
-        session = _RecordingSession()
-        postgres = _StubPostgres(session)
+        session = _LockSession()
 
         async def run():
-            async with ingestion._document_name_lock(postgres, TENANT, "Sales"):
+            async with ingestion._document_name_lock(_LockPostgres(session), TENANT, "Sales"):
                 raise RuntimeError("ingestion blew up")
 
         with pytest.raises(RuntimeError):
             asyncio.run(run())
         assert any("pg_advisory_unlock" in statement for statement, _ in session.statements)
+        assert session.closed
+
+    def test_a_document_already_being_processed_is_a_409_not_a_wait(self):
+        from fastapi import HTTPException
+
+        import services.kb_backend.router.knowledge.ingestion as ingestion
+        session = _LockSession(acquired=False)
+
+        async def run():
+            async with ingestion._document_name_lock(_LockPostgres(session), TENANT, "Sales"):
+                raise AssertionError("the body must not run without the lock")
+
+        with pytest.raises(HTTPException) as excinfo:
+            asyncio.run(run())
+        assert excinfo.value.status_code == 409
+        assert not any("pg_advisory_unlock" in statement for statement, _ in session.statements)
+        assert session.closed
 
     def test_different_documents_take_different_keys(self):
-        import services.kb_backend.router.knowledge.ingestion as ingestion
+        from libs.shared.document_lock import document_lock_key
 
-        assert ingestion._document_name_key(TENANT, "Sales") != ingestion._document_name_key(TENANT, "Costs")
-        assert ingestion._document_name_key(TENANT, "Sales") != ingestion._document_name_key(DATA_ID, "Sales")
-        assert ingestion._document_name_key(TENANT, "Sales") == ingestion._document_name_key(TENANT, "Sales")
+        assert document_lock_key(TENANT, "Sales") != document_lock_key(TENANT, "Costs")
+        assert document_lock_key(TENANT, "Sales") != document_lock_key(DATA_ID, "Sales")
+        assert document_lock_key(TENANT, "Sales") == document_lock_key(TENANT, "Sales")
 
     def test_the_key_fits_a_postgres_bigint(self):
-        import services.kb_backend.router.knowledge.ingestion as ingestion
-        key = ingestion._document_name_key(TENANT, "Sales")
+        from libs.shared.document_lock import document_lock_key
+        key = document_lock_key(TENANT, "Sales")
 
         assert -(2 ** 63) <= key < 2 ** 63

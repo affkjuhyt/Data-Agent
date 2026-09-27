@@ -84,9 +84,11 @@ _KB_CHUNK = {
 
 class TestEvidenceRunIsBuiltFromMetadata:
     def test_sql_chunk_becomes_a_run_with_columns_and_rows(self, runtime_path):
-        run = _responder()._evidence_run(_SQL_CHUNK)
+        result = _responder()._evidence_run(_SQL_CHUNK)
 
-        assert run is not None
+        assert result is not None
+        run, all_rows = result
+        assert all_rows == _ROWS
         assert run["kind"] == "sql"
         assert run["sql"].startswith("SELECT region")
         assert run["columns"] == ["region", "revenue"]
@@ -99,9 +101,9 @@ class TestEvidenceRunIsBuiltFromMetadata:
 
     def test_model_written_sql_is_labelled_llm_not_left_blank(self, runtime_path):
         chunk = {**_SQL_CHUNK, "metadata": {k: v for k, v in _SQL_CHUNK["metadata"].items() if k != "generated_by"}}
-        run = _responder()._evidence_run(chunk)
-        assert run is not None
-        assert run["generated_by"] == "llm"
+        result = _responder()._evidence_run(chunk)
+        assert result is not None
+        assert result[0]["generated_by"] == "llm"
 
     def test_kb_chunk_is_not_evidence_of_a_query(self, runtime_path):
         assert _responder()._evidence_run(_KB_CHUNK) is None
@@ -109,14 +111,18 @@ class TestEvidenceRunIsBuiltFromMetadata:
     def test_rows_are_capped_and_the_cap_is_declared(self, runtime_path):
         responder = _responder()
         many = [{"i": n} for n in range(responder._EVIDENCE_MAX_ROWS + 5)]
-        run = responder._evidence_run({**_SQL_CHUNK, "content": json.dumps(many)})
-        assert run is not None
+        result = responder._evidence_run({**_SQL_CHUNK, "content": json.dumps(many)})
+        assert result is not None
+        run, all_rows = result
         assert len(run["rows"]) == responder._EVIDENCE_MAX_ROWS
         assert run["rows_capped"] is True
+        # The preview is capped; the full set still comes back for the caller.
+        assert len(all_rows) == len(many)
 
     def test_unparseable_content_still_yields_the_sql(self, runtime_path):
-        run = _responder()._evidence_run({**_SQL_CHUNK, "content": "not json"})
-        assert run is not None
+        result = _responder()._evidence_run({**_SQL_CHUNK, "content": "not json"})
+        assert result is not None
+        run, _ = result
         assert run["rows"] == []
         assert run["columns"] == []
 

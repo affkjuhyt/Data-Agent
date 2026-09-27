@@ -212,7 +212,9 @@ class TestPortsAreClosed:
     def test_no_service_exposes_the_agent_tier_outside_the_cluster(self):
         import yaml
 
-        k8s = REPO_ROOT / "deploy" / "k8s"
+        # The production set. dev/ publishes every Service as a NodePort on
+        # purpose (single-node debugging box, see deploy/k8s/dev/REPORT.md).
+        k8s = REPO_ROOT / "deploy" / "k8s" / "production"
         services = [
             d
             for sub in ("", "database", "service", "job")
@@ -222,10 +224,12 @@ class TestPortsAreClosed:
         ]
         assert services, "no Services found — deploy/k8s moved again"
 
+        # Keycloak is published because browsers follow the login redirect to
+        # it directly (no ingress controller; see its Service in keycloak.yaml).
         exposed = [
             s["metadata"]["name"] for s in services
             if s["spec"].get("type") in ("NodePort", "LoadBalancer")
-            and s["metadata"]["name"] != "kong"
+            and s["metadata"]["name"] not in ("kong", "keycloak")
         ]
         assert not exposed, (
             f"{exposed} reachable without Kong — workflow-runtime (and the "
