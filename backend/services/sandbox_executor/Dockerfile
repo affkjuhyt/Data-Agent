@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # SECURITY NOTE: this image intentionally stays root for the SANDBOX_BACKEND=
 # docker path (default, docker-compose deployments) — sandbox_executor spawns
 # sandbox containers via the mounted Docker socket (docker_runner.py), and a
@@ -14,7 +15,7 @@
 FROM python:3.11.9-slim
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 # Every module, not a file list. The list version silently went stale twice:
 # clickhouse_readonly.py was added as a third SQL backend and never copied, so
 # the image kept building and failed only on the first ClickHouse query.

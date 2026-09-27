@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # ── Stage 1: compile Python wheels ───────────────────────────────────────────
 FROM python:3.13-slim AS builder
 
@@ -10,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/services/kb_backend/requirements.txt ./
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install --prefix=/install -r requirements.txt
 
 # ── Stage 2: runtime image ────────────────────────────────────────────────────
 FROM python:3.13-slim
