@@ -51,7 +51,7 @@ Số đo trên cụm dev: 76 bảng tên PascalCase có ngoặc kép, 8 bảng s
 | Có `tenant_id` mà không bật RLS: `KBKnowledgeBase`, `KBEntityLookup`, `KBNeo4jNode/Relationship`; không RLS: `KBSourceConfig/Run`, `KBStructuredImportJob`, `Messages`, `AgentTraces`, `Workflows*`; `kb_structured.*` mặc định tắt | `pg_class.relrowsecurity` |
 | `KBData` có `UNIQUE(name)` toàn bảng: hai tenant không thể có tài liệu trùng tên. ORM khai báo unique theo tenant nhưng không migration nào tạo | constraint `KBData_name_key`; `knowledge_base_orm.py:104` |
 | `POST /api/knowledge/neo4j/query` chạy Cypher tuỳ ý; kiểm tra chỉ theo tiền tố nên `MATCH … DETACH DELETE` lọt; query bỏ qua `$tenant_id` thì đọc được tenant khác | `kb_backend/operations/neo4j_ops.py:146` |
-| SSE `/documents/{data_id}/stream` không kiểm tra tài liệu thuộc tenant | `kb_backend` router ingestion, so với `/logs` |
+| SSE `/documents/{data_id}/stream` không kiểm tra tài liệu thuộc tenant (đã xoá route: frontend dùng `/progress`) | `kb_backend` router ingestion, so với `/logs` |
 
 ### 2.3 Hygiene
 
@@ -111,7 +111,7 @@ của KB (ADR-V2-21) và mang thêm `artifact_sha256` để nối về raw. Khô
 | --- | --- | --- |
 | Xoá 4 bảng PascalCase chết (`SecretsVault`, `APIKeys`, `IPAllowlists`, `KeyRotations`) | **Xong** (migration `2e2377872373`) | Đều 0 dòng; auth_api dùng bản snake_case; downgrade tạo lại cả RLS |
 | `KBData`: unique `(tenant_id, name)` thay `UNIQUE(name)` | **Xong** (migration `b3d9ac7ba0a4`) | Kèm hai index keyset ORM đã khai báo |
-| `/neo4j/query` nhận nhãn (đã kiểm tra), server tự dựng Cypher có lọc tenant, chạy session READ; SSE `/stream` kiểm tra quyền sở hữu tài liệu | **Xong** | Không còn nhận Cypher tuỳ ý từ client |
+| `/neo4j/query` nhận nhãn (đã kiểm tra), server tự dựng Cypher có lọc tenant, chạy session READ; route SSE `/stream` không ai gọi nên đã xoá | **Xong** | Không còn nhận Cypher tuỳ ý từ client |
 | Xoá cạnh Neo4j theo tài liệu dựa vào mirror `KBNeo4jRelationship` | **Xong** cho trash flush; re-crawl của web_crawler còn no-op, sửa cùng S2-02 | web_crawler là mã sync, `GraphStore` là async |
 | Bật RLS cho bảng mục 2.2 và chuyển service khỏi `admin` | Song song W1–W2 | Mỗi bảng phải kiểm service đọc nó đã đặt `app.tenant_id` chưa, nếu không sẽ trả rỗng |
 | MinIO raw theo SHA-256, không xoá | S2-02 | ADR-V2-21 |
