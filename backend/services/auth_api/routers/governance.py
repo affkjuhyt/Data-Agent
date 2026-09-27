@@ -250,12 +250,12 @@ def secrets_pii_log(
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
-                "SELECT kr.id, kr.actor_id, kr.old_version, kr.rotated_at, "
+                "SELECT kr.id, kr.actor_id, kr.old_version, kr.created_at, "
                 "       kr.access_reason, sv.key_name, sv.key_type "
                 "FROM key_rotations kr "
                 "JOIN secrets_vault sv ON sv.id = kr.secret_id "
                 "WHERE sv.tenant_id = %s AND kr.triggered_by = 'REVEAL' "
-                "ORDER BY kr.rotated_at DESC LIMIT 50",
+                "ORDER BY kr.created_at DESC LIMIT 50",
                 (x_tenant_id,),
             )
             rows = cur.fetchall()
@@ -267,7 +267,7 @@ def secrets_pii_log(
                 "actor_id":      r["actor_id"],
                 "version":       r["old_version"],
                 "access_reason": r["access_reason"],
-                "time":          r["rotated_at"].isoformat() if r["rotated_at"] else None,
+                "time":          r["created_at"].isoformat() if r["created_at"] else None,
             }
             for r in rows
         ]
@@ -285,11 +285,11 @@ def secrets_audit_log(
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 "SELECT kr.id, kr.triggered_by, kr.actor_id, kr.old_version, kr.new_version, "
-                "kr.status, kr.error, kr.rotated_at, sv.key_name "
+                "kr.status, kr.error, kr.created_at, sv.key_name "
                 "FROM key_rotations kr "
                 "JOIN secrets_vault sv ON sv.id = kr.secret_id "
                 "WHERE sv.tenant_id = %s "
-                "ORDER BY kr.rotated_at DESC LIMIT 20",
+                "ORDER BY kr.created_at DESC LIMIT 20",
                 (x_tenant_id,),
             )
             rows = cur.fetchall()
@@ -303,7 +303,7 @@ def secrets_audit_log(
                 "new_version":  r["new_version"],
                 "status":       r["status"],
                 "error":        r["error"],
-                "time":         r["rotated_at"].isoformat() if r["rotated_at"] else None,
+                "time":         r["created_at"].isoformat() if r["created_at"] else None,
             }
             for r in rows
         ]
