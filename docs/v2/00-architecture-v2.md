@@ -1,8 +1,8 @@
 # 00. Kiến trúc V2 chính thức (High-Level Architecture)
 
 > **Đây là nguồn chuẩn.** Được chốt ngày 27/09/2026 làm High-Level Architecture V2 cho POC dầu/vàng.
-> Khi một file khác trong `docs/v2/` hoặc `docs/archive/v1-ankt/` mâu thuẫn với file này, file này thắng; hãy
-> sửa file kia thay vì làm theo nó. Cách hiện thực từng phần trên repo nằm ở
+> Khi một file khác trong `docs/v2/` mâu thuẫn với file này, file này thắng; hãy sửa file kia thay
+> vì làm theo nó. Cách hiện thực từng phần trên repo nằm ở
 > [03-target-design.md](03-target-design.md), từng use case ở [08-use-cases.md](08-use-cases.md).
 
 ## 0. Mười hai bất biến

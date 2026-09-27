@@ -269,7 +269,7 @@ input_refine (có) → resolution: entity + metric + time + intent (alias regist
 → planner: task graph JSON chỉ gồm capability đã đăng ký (node_id, capability, inputs, depends_on,
   evidence_requirements)
 → hybrid executor (executor DAG có sẵn; gọi MCP)
-→ verifier (libs/indicator/verifier: numbers_grounded, tolerance_ok, vintage_consistent,
+→ verifier (libs/indicator/verifier: numbers_grounded, precision_supported, vintage_consistent,
   citations_resolved) + freshness + evidence sufficiency
    thiếu → replan tối đa 2 vòng → INSUFFICIENT_EVIDENCE
 → final action: answer | report | alert candidate

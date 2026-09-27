@@ -1,5 +1,5 @@
 """Unit tests for the page/bbox provenance the Docling parser now records
-(T7 in docs/archive/v1-ankt/TECH-DESIGN.md).
+(NC-T7 in docs/v2/12-numeric-core.md).
 
 Docling always reported `prov` (page_no + bbox); ParsedChunk simply dropped it,
 so a citation could name a document but never a place inside it. These tests

@@ -1,6 +1,10 @@
 # Source registry seed for the ANKT prototype (checked 2026-09-15).
 # verified: V = fetched/called successfully, S = seen via search/official page only, U = unverified.
-# tier: S (smoke) | M (functional) | L (load). See ../DATA-SOURCES.md for context and licenses.
+# tier: S (smoke, < 1 GB, end-to-end) | M (functional, ~10 GB) | L (load, 100 GB+; needs
+# extra storage on /data before use).
+# licence: as stated by each publisher's terms (the `license` field where one was found);
+# legal review is required before commercial use or redistribution. Kept for v1 regression
+# only; V2 sources live in sources-oil-gold.yaml.
 sources:
   # ── Vietnam official ────────────────────────────────────────────────
   - id: vn-mof-debt-bulletin

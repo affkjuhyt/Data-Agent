@@ -3,7 +3,7 @@
 > Đo ngày 27/09/2026 trên `main` (8a43577, sau đó thêm d116062), nhánh `feat/add-task` (e5f2aa5) và cụm dev
 > `10.10.55.101`. Mọi dòng "đã có" dưới đây đều có đường dẫn mã hoặc truy vấn đi kèm để kiểm
 > lại được. Trạng thái: **Có** · **Một phần** · **Chưa có** · **Thừa** (có nhưng trùng lặp hoặc
-> đi ngược quyết định đã chốt).
+> đi ngược quyết định đã chốt). Mã NC-… là mã lõi số ở [12-numeric-core.md](12-numeric-core.md).
 
 ## 1. Tài liệu thiết kế đang lạc hậu ở đâu
 
@@ -12,11 +12,11 @@ phải dựa trên cột bên phải.
 
 | Hạng mục | Tài liệu ghi (17/09) | Thực tế (27/09) | Căn cứ |
 | --- | --- | --- | --- |
-| E1. OCR tắt | Chưa sửa | **Đã sửa**: Docling bật OCR Tesseract vie+eng cho PDF scan và ảnh. Chưa có benchmark độ chính xác token số (ADR-T8) | `backend/libs/ingestion/docling_parser.py:66`, commit 5b1d72a |
-| P1. Driver GPU lệch phiên bản | Chưa xác nhận | **Đã chạy lại**: `nvidia-smi` trả 33,2/40 GB; `vllm-main`, `vllm-fast` chạy image `:latest` | `nvidia-smi`, `docker ps` |
+| NC-E1. OCR tắt | Chưa sửa | **Đã sửa**: Docling bật OCR Tesseract vie+eng cho PDF scan và ảnh. Chưa có benchmark độ chính xác token số (NC-ADR-T8) | `backend/libs/ingestion/docling_parser.py:66`, commit 5b1d72a |
+| Driver GPU lệch phiên bản | Chưa xác nhận | **Đã chạy lại**: `nvidia-smi` trả 33,2/40 GB; `vllm-main`, `vllm-fast` chạy image `:latest` | `nvidia-smi`, `docker ps` |
 | Connector tự động | "Chưa có connector tự động nào" | **Có**: 35 nguồn đã đăng ký, 18 có cron, 17 chạy tay (9 http_file, 5 web_crawl, 2 web_crawl_headless, 12 rest_api, 6 sdmx, 1 rss) | bảng `KBSource` trên cụm dev |
-| T18. Cờ LightRAG | Cả bốn tắt | `DOC_NARROWING=1`, `QUERY_ALIAS_RESOLVE=1` ở dev; `HYBRID_LEXICAL`, `DEGRADE_BUDGET_MS` vẫn tắt; chưa đo | `deploy/k8s/dev/service/kb-backend.yaml:29,32` |
-| K1. Kafka idempotence | Chưa sửa | **Một phần**: client dùng chung bật idempotence, producer của `platform_workers` chỉ đặt `acks=all` | `libs/database_connector/kafka_connector.py:49`, `platform_workers/common/kafka.py:117` |
+| NC-T18. Cờ LightRAG | Cả bốn tắt | `DOC_NARROWING=1`, `QUERY_ALIAS_RESOLVE=1` ở dev; `HYBRID_LEXICAL`, `DEGRADE_BUDGET_MS` vẫn tắt; chưa đo | `deploy/k8s/dev/service/kb-backend.yaml:29,32` |
+| Kafka idempotence (P0-03) | Chưa sửa | **Một phần**: client dùng chung bật idempotence, producer của `platform_workers` chỉ đặt `acks=all` | `libs/database_connector/kafka_connector.py:49`, `platform_workers/common/kafka.py:117` |
 | Ổ đĩa | 81%, ~31 GB trống | **83%, 28 GB trống**; kubelet tự đuổi pod khi còn dưới ~8,7 GB | `df -h /` |
 | Lõi chỉ số | "chưa có mắt xích nào" | **Viết xong nhưng chưa merge** (mục 2) | nhánh `feat/add-task` |
 
@@ -29,25 +29,25 @@ commit, và cụm dev **không có** schema `ankt` (truy vấn `information_sche
 
 | Thành phần trên `feat/add-task` | Dòng | Ứng với thiết kế | Đề xuất |
 | --- | --- | --- | --- |
-| `libs/indicator/quantity.py`: Decimal + đơn vị + bội số, % trừ % ra điểm % | 215 | T1, ADR-T1/T2 | Lấy nguyên |
-| `libs/indicator/numeric.py`: đọc số theo locale, giữ mọi cách đọc khi mơ hồ, dung sai theo độ chính xác công bố | 168 | E2, T5 | Lấy nguyên, dùng để sửa E2 |
-| `libs/indicator/formula.py`: formula DAG có kiểu, kiểm stock/flow lúc compile, `decompose_change` | 377 | T3, R2 | Lấy, mở rộng thêm phép chuỗi thời gian (mục 4 của 03) |
-| `libs/indicator/threshold.py`: chọn ngưỡng theo kỳ dữ liệu | 126 | T4, R3 | Lấy nguyên |
-| `libs/indicator/verifier.py`: 4 kiểm tra tất định, không gọi LLM | 227 | T5, ADR-T5 | Lấy, nối vào runtime |
-| `libs/indicator/period.py`: chỉ A/Q/M | 63 | T2 | Lấy, **bổ sung D và W** cho giá dầu/vàng |
-| `libs/indicator/observation.py`: đọc point-in-time theo `as_of` | 186 | T2 | Lấy |
-| `PageRegion` trong `docling_model.py`: page + bbox gốc toạ độ trên-trái | ~30 | T7, G3 | Lấy |
+| `libs/indicator/quantity.py`: Decimal + đơn vị + bội số, % trừ % ra điểm % | 215 | NC-T1, NC-ADR-T1/T2 | Lấy nguyên |
+| `libs/indicator/numeric.py`: đọc số theo locale, giữ mọi cách đọc khi mơ hồ, dung sai theo độ chính xác công bố | 168 | NC-E2, NC-T5 | Lấy nguyên, dùng để sửa NC-E2 |
+| `libs/indicator/formula.py`: formula DAG có kiểu, kiểm stock/flow lúc compile, `decompose_change` | 377 | NC-T3, NC-R2 | Lấy, mở rộng thêm phép chuỗi thời gian (mục 4 của 03) |
+| `libs/indicator/threshold.py`: chọn ngưỡng theo kỳ dữ liệu | 126 | NC-T4, NC-R3 | Lấy nguyên |
+| `libs/indicator/verifier.py`: 4 kiểm tra tất định, không gọi LLM | 227 | NC-T5, NC-ADR-T5 | Lấy, nối vào runtime |
+| `libs/indicator/period.py`: chỉ A/Q/M | 63 | NC-T2 | Lấy, **bổ sung D và W** cho giá dầu/vàng |
+| `libs/indicator/observation.py`: đọc point-in-time theo `as_of` | 186 | NC-T2 | Lấy |
+| `PageRegion` trong `docling_model.py`: page + bbox gốc toạ độ trên-trái | ~30 | NC-T7; trích dẫn tới trang/ô (khoảng trống G3 của v1) | Lấy |
 | 7 file test unit (`test_quantity`, `test_threshold`, `test_verifier`…) | ~900 | | Lấy |
-| Migration `ankt.variable/source_document/release/observation` (trigger chặn sửa giá trị, RLS) và `ankt.indicator/threshold` (EXCLUDE gist) | ~350 | G1, G2, T4 | Viết lại trên head alembic hiện tại, đổi tên schema (xem 03) |
-| Migration `ankt.source/source_binding/connector_run` | 127 | G4 | **Thừa**: trùng `KBSource`/`KBSourceRun` đã có UI. Bỏ |
-| `services/ankt_connectors/` (CLI, mỗi nhà công bố một hàm fetch) | ~1.100 | G4 | **Thừa**: đi ngược quyết định "connector theo giao thức, cấu hình được từ UI" (16/09). Bỏ, chỉ giữ ý tưởng `promote.py` (artifact → observation) |
+| Migration `ankt.variable/source_document/release/observation` (trigger chặn sửa giá trị, RLS) và `ankt.indicator/threshold` (EXCLUDE gist) | ~350 | Indicator registry (G1 v1), observation store point-in-time (G2 v1), NC-T4 | Viết lại trên head alembic hiện tại, đổi tên schema (xem 03) |
+| Migration `ankt.source/source_binding/connector_run` | 127 | Đấu nối nguồn chính thức (G4 v1) | **Thừa**: trùng `KBSource`/`KBSourceRun` đã có UI. Bỏ |
+| `services/ankt_connectors/` (CLI, mỗi nhà công bố một hàm fetch) | ~1.100 | Đấu nối nguồn chính thức (G4 v1) | **Thừa**: đi ngược quyết định "connector theo giao thức, cấu hình được từ UI" (16/09). Bỏ, chỉ giữ ý tưởng `promote.py` (artifact → observation) |
 
 Cứu phần này tiết kiệm khoảng 3–4 tuần-người so với viết lại, và code đã được viết đúng tinh
-thần thiết kế (comment giải thích R2, R3, ADR-T5).
+thần thiết kế (comment giải thích NC-R2, NC-R3, NC-ADR-T5).
 
 **Cập nhật 27/09/2026 (D4):** đã lấy sang nhánh `feat/remove-redundant-service` (working tree, chưa
 commit): `libs/indicator`, 8 file test unit, `PageRegion`, ghi page/bbox ở Silver/Gold và payload
-Qdrant, `page` trong citation (`kb_search`, `responder`), verifier tất định trong `judge`, sửa E2 ở
+Qdrant, `page` trong citation (`kb_search`, `responder`), verifier tất định trong `judge`, sửa NC-E2 ở
 `grounding.py`. Bốn file ingestion được ghép ba chiều với các sửa sau đó của `main` (OCR vie+eng,
 header bảng nhiều dòng); `sizes` của `_build_parsed_tables` thành tham số tuỳ chọn để test header
 bảng của `main` vẫn chạy. Kết quả trong container: 173 test unit và 33 test Docling đạt; ruff và
@@ -98,7 +98,7 @@ nên `tests/conftest.py` luôn bỏ qua nó, kể cả trong CI.
 | Năng lực | Trạng thái | Ghi chú |
 | --- | --- | --- |
 | Case set | Một phần | 123 case: grounding 22, intent 32, policy 44, sql 25. Không case nào về dầu/vàng |
-| E2. Scorer so chuỗi chữ số | Đã sửa trong working tree (P0-01) | `grounding.py` lấy từ `feat/add-task`, dùng `libs.indicator.numeric` |
+| NC-E2. Scorer so chuỗi chữ số | Đã sửa trong working tree (P0-01) | `grounding.py` lấy từ `feat/add-task`, dùng `libs.indicator.numeric` |
 | `unsupported_number_rate` cho case chạy agent thật | Sai phương pháp | So với `case["contexts"]`, case live không có contexts → mọi số đều bị tính là không có nguồn |
 | Ngưỡng online | Tạm | `model/eval/thresholds.json` ghi `provisional: true` cho cả 4 metric online |
 | Metric retrieval (Recall@K, MRR) | Chưa có | Cần nhãn evidence vàng |
@@ -107,7 +107,7 @@ nên `tests/conftest.py` luôn bỏ qua nó, kể cả trong CI.
 
 | Năng lực | Trạng thái | Ghi chú |
 | --- | --- | --- |
-| E3. `formatVN.ts` theo chuẩn Mỹ | **Chưa sửa** | Docstring dòng 2: "US number / currency / date formatting" |
+| NC-E3. `formatVN.ts` theo chuẩn Mỹ | **Chưa sửa** | Docstring dòng 2: "US number / currency / date formatting" |
 | Màn chuỗi/chỉ số/forecast/HITL tri thức | Chưa có | `frontend/src/features/` chỉ có `ask/` |
 | Source Registry, lịch, Bulk Import | Có | Tái dùng cho nguồn dầu/vàng, chỉ thêm trường licence và profile trích xuất |
 
@@ -115,9 +115,9 @@ nên `tests/conftest.py` luôn bỏ qua nó, kể cả trong CI.
 
 | Việc | Trạng thái | Vì sao chặn POC |
 | --- | --- | --- |
-| K3 `auto.create.topics.enable` | Còn `true` (`deploy/k8s/dev/database/kafka.yaml:30`) | Thêm 10+ topic v2; gõ sai tên topic sẽ tạo topic mới im lặng |
+| `auto.create.topics.enable` (P0-03) | Còn `true` (`deploy/k8s/dev/database/kafka.yaml:30`) | Thêm 10+ topic v2; gõ sai tên topic sẽ tạo topic mới im lặng |
 | Topic v2 | Chưa có | `kafka-topics` Job chỉ tạo `kb.promote.*`, `ddl.changes`, `audit.data.access`, `memory.*`, `release.*` |
-| Egress proxy | Chưa có | Worker đã gọi ra 35 nguồn ngoài mà không có allowlist tên miền (INFRA 11.2 coi đây là điều kiện bắt buộc) |
+| Egress proxy | Chưa có | Worker đã gọi ra 35 nguồn ngoài mà không có allowlist tên miền (điều kiện bắt buộc trước khi mở kết nối ra nguồn ngoài, [11-ops.md](11-ops.md), P0-08) |
 | Backup ngoài node | Chưa có | Observation và tri thức đã duyệt là dữ liệu không tái tạo được từ nguồn (công sức duyệt) |
 
 ## 5. Những gì **thừa** hoặc cần gộp
@@ -157,4 +157,4 @@ Chi tiết từng nguồn và cấu hình đề xuất: [04-sources-oil-gold.md]
 | HITL authority | 4 vai trò (`PLATFORM_ADMIN`, `AI_ENGINEER`, `BUSINESS_OPERATOR`, `EXECUTIVE`); không có maker/checker | S6-03 |
 | Cross-modal join | Entity graph Neo4j từ Gold nhưng không nối với series | S5-01 |
 | Evidence sufficiency | Verifier số tất định đã vào judge (P0-01); chưa có kiểm đủ bằng chứng | S10-01 |
-| Deterministic eval | Có khung `model/eval`, ngưỡng online `provisional`; E2 còn mở | P0-02, S10-02 |
+| Deterministic eval | Có khung `model/eval`, ngưỡng online `provisional`; NC-E2 đã sửa (P0-01), NC-E3 còn mở | P0-02, S10-02 |

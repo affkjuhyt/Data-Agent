@@ -17,7 +17,7 @@ backend/     Python import root: services/ (FastAPI/worker services), libs/ (sha
 frontend/    React 19 + Vite app (npm workspace): src/, index.html, vite/vitest/tsconfig, Dockerfile.dev
 deploy/      ansible/ (deploy pipeline: deploy.yml) · k8s/ (manifests: production/ and dev/) · docker/ (Dockerfiles + service config)
 tests/       unit/ · integration/ · e2e/ (real-stack runner, seed data + Playwright) · loadtest/ (k6)
-docs/        v2/ (current design) · RUNBOOK · SECURITY · AGENT-E2E · SILVER-FORMAT · KB-SCALE-10K · archive/
+docs/        v2/ (current design, diagrams in v2/diagrams/) · RUNBOOK · SECURITY · AGENT-E2E · SILVER-FORMAT · KB-SCALE-10K
 model/       LLM eval harness, RAGAS
 ```
 

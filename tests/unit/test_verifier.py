@@ -1,4 +1,4 @@
-"""Unit tests for backend/libs/indicator/verifier.py (T5 in docs/archive/v1-ankt/TECH-DESIGN.md).
+"""Unit tests for backend/libs/indicator/verifier.py (NC-T5 in docs/v2/12-numeric-core.md).
 
 The four checks are independent, and the tests are organised to show why that
 matters: each one is made to fail while the other three pass, because a single

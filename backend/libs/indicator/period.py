@@ -1,9 +1,10 @@
 """Reference periods, in the spellings the observation store uses.
 
-`period` is a string column — '2024', '2024-Q2', '2024-06' (SERVICE-DESIGN
-section 3.2). Parsing it into a type rather than passing the string around is
-what lets the formula layer refuse to divide an end-of-quarter stock by an
-annual flow: the frequency has to be visible for that check to exist at all.
+`period` is a string column — '2024', '2024-Q2', '2024-06' (the v1 observation
+schema; V2 adds D/W/I/P, P0-04 in docs/v2/05). Parsing it into a type rather
+than passing the string around is what lets the formula layer refuse to divide
+an end-of-quarter stock by an annual flow: the frequency has to be visible for
+that check to exist at all.
 """
 from __future__ import annotations
 

@@ -1,13 +1,13 @@
 """Four deterministic checks between an answer and the evidence behind it.
 
-The rule this enforces is UI-DESIGN P8: no figure reaches a reader that is not
-in the evidence. The existing judge (nodes/model_harness/judge.py) asks a model
+The rule this enforces is P8 of docs/v2/13-ui-principles.md: no figure reaches
+a reader that is not in the evidence. The existing judge (nodes/model_harness/judge.py) asks a model
 whether an answer looks grounded, which is the wrong instrument twice over — it
 compares digit strings, so "1284" passes against a source saying "128,4"; and it
 is a model, so the one place the system must be certain is the one place it
 guesses.
 
-Nothing here calls a model (ADR-T5). Each check either points at a specific
+Nothing here calls a model (NC-ADR-T5). Each check either points at a specific
 offending token or passes, so a failure is a thing to fix rather than an opinion
 to argue with, and the structured result is what the UI's VerifierBadge renders.
 
@@ -150,9 +150,10 @@ def precision_supported(answer: str, evidence: Sequence[EvidenceItem]) -> Check:
 
     Distinct from grounding: "34,7123%" matches a source's "34,7" within
     published precision and so is grounded, while still inventing three digits
-    the source never claimed. README section 6.3 wants the figure shown at the
-    precision it was published at, and overstating certainty about a fiscal
-    ratio is its own failure even when the value is right.
+    the source never claimed. docs/v2/13-ui-principles.md section 2 wants the
+    figure shown at the precision it was published at, and overstating
+    certainty about a fiscal ratio is its own failure even when the value is
+    right.
     """
     pool = _groundable(evidence)
     overstated = []

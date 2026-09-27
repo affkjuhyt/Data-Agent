@@ -97,7 +97,7 @@ def case_tolerance(case: dict[str, Any]) -> Tolerance:
     Cases that quote a figure need no declaration — the precision they were
     written at already says how exact the match must be. A case whose expected
     value is COMPUTED declares one, because rounding of the inputs propagates
-    into the result (README.md section 6.3).
+    into the result (docs/v2/06-evaluation-plan.md section 4).
     """
     declared = case.get("tolerance")
     if not declared:

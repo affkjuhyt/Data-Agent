@@ -58,7 +58,7 @@ class Observation:
 # Only approved figures are readable. A candidate is a number a machine
 # proposed and nobody has checked — using one would put an unreviewed OCR
 # reading into an answer that cites a document as its authority
-# (README section 3.3 principle 4).
+# (invariant 5 of docs/v2/00-architecture-v2.md; 08 UC02).
 _SELECT = """
 SELECT o.value, o.unit, o.unit_multiplier, o.currency, o.period, o.source_ref,
        r.release_id, r.release_date, r.vintage_label, r.revision_status

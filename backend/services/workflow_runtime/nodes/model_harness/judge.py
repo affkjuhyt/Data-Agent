@@ -75,7 +75,7 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
     # the responder into leaking, and it clears the way for the next.
     context_text = untrusted.wrap("\n".join(context_lines)) if context_lines else "(không có context)"
 
-    # Kiểm tra tất định TRƯỚC khi hỏi model (ADR-T5). Con số, trích dẫn và
+    # Kiểm tra tất định TRƯỚC khi hỏi model (NC-ADR-T5, docs/v2/12). Con số, trích dẫn và
     # vintage là chỗ hệ thống phải chắc chắn, mà hỏi một model thì lại là đưa
     # tính bất định vào đúng chỗ đó — judge_system.txt vẫn so khớp chuỗi nên
     # "1284" lọt qua khi nguồn ghi "128,4". Trượt ở đây là GROUNDING_ERROR

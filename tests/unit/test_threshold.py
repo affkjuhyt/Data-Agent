@@ -1,6 +1,6 @@
-"""Unit tests for backend/libs/indicator/threshold.py (T4 in docs/archive/v1-ankt/TECH-DESIGN.md).
+"""Unit tests for backend/libs/indicator/threshold.py (NC-T4 in docs/v2/12-numeric-core.md).
 
-The trap under test is TECH-DESIGN R3: a 2025 figure judged against the
+The trap under test is NC-R3: a 2025 figure judged against the
 2026-2030 resolution. It is graded above rounding errors in the risk list
 because it invalidates the conclusion rather than the last digit — "exceeded
 the ceiling" is either true or it destroys trust in everything else.

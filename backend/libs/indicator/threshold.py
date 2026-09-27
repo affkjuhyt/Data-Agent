@@ -5,8 +5,8 @@ chosen by the REFERENCE PERIOD of the data, never by the date of the question.
 NQ 23/2021/QH15 governs 2021-2025 and NQ 26/2026/QH16 governs 2026-2030, so a
 2025 figure is judged against the first one forever — including when it is
 asked about in 2027. Reading "exceeded the ceiling" off the wrong resolution is
-the failure TECH-DESIGN R3 ranks third, above rounding errors, because it
-invalidates the conclusion rather than the last digit.
+the failure NC-R3 (docs/v2/12-numeric-core.md) ranks third, above rounding
+errors, because it invalidates the conclusion rather than the last digit.
 
 Everything here is deterministic and unit-checked. The LLM is told the status;
 it does not derive it.

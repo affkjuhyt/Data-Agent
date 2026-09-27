@@ -1,10 +1,10 @@
 """Deterministic evaluation of an indicator's formula. The LLM never does this.
 
 An indicator is a formula over atomic variables, not an aggregate over a
-warehouse column (README section 1). This module holds the formula as a typed
-DAG, checks it BEFORE any data is fetched, and then evaluates it with every edge
-carrying a `Quantity`, so unit and scale errors surface as exceptions rather
-than as plausible numbers.
+warehouse column (docs/v2/12-numeric-core.md section 0). This module holds the
+formula as a typed DAG, checks it BEFORE any data is fetched, and then evaluates
+it with every edge carrying a `Quantity`, so unit and scale errors surface as
+exceptions rather than as plausible numbers.
 
 The split between `compile_formula` and `evaluate` is the point. Compiling
 needs only the variable declarations from the catalog, so a formula that could
@@ -12,16 +12,16 @@ never produce a meaningful figure — mismatched units, a stock silently divided
 by a flow, a cycle — is rejected when the indicator version is authored, not
 when a user asks a question.
 
-**The error this module exists to prevent** (TECH-DESIGN R2): end-of-period debt
-divided by a period's GDP is the standard debt-to-GDP ratio when the period is a
-year, and nonsense when it is a quarter — off by a factor of about four, in the
-direction that makes the number look reassuring. Nothing about the arithmetic
+**The error this module exists to prevent** (NC-R2 in docs/v2/12-numeric-core.md):
+end-of-period debt divided by a period's GDP is the standard debt-to-GDP ratio
+when the period is a year, and nonsense when it is a quarter — off by a factor
+of about four, in the direction that makes the number look reassuring. Nothing about the arithmetic
 objects. So a ratio mixing a stock and a flow must name its alignment rule, and
 that rule is checked against the period being evaluated.
 
 Deliberately NOT here: revaluation effects in `decompose_change`. Separating a
 GDP re-basing from real growth needs the vintage of each figure, which lives in
-the observation store (T2); inventing a third contribution without it would put
+the observation store (NC-T2); inventing a third contribution without it would put
 a number on something this module cannot see.
 """
 from __future__ import annotations

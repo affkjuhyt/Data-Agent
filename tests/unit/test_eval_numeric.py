@@ -1,5 +1,5 @@
 """Unit tests for libs/indicator/numeric.py and the grounding scorer's use of it
-(E2 in docs/archive/v1-ankt/TECH-DESIGN.md).
+(NC-E2 in docs/v2/12-numeric-core.md).
 
 The defect being pinned: the scorer compared figures as digit strings with
 separators deleted, so "128,4" and "1284" were one token. These tests assert
@@ -43,7 +43,7 @@ def test_parse_keeps_both_readings_when_genuinely_ambiguous():
 
 
 def test_parse_never_reads_a_one_digit_decimal_as_a_magnitude():
-    """The E2 defect itself: 128,4 must not be able to mean 1284."""
+    """The NC-E2 defect itself: 128,4 must not be able to mean 1284."""
     assert Decimal("1284") not in [r.value for r in parse("128,4")]
 
 

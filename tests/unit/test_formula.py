@@ -1,8 +1,8 @@
-"""Unit tests for backend/libs/indicator/formula.py (T3 in docs/archive/v1-ankt/TECH-DESIGN.md).
+"""Unit tests for backend/libs/indicator/formula.py (NC-T3 in docs/v2/12-numeric-core.md).
 
 Two things carry the weight here. The first is that compiling happens without
 data, so an unusable formula is rejected when it is authored. The second is the
-stock/flow trap of TECH-DESIGN R2: end-of-period debt over a period's GDP is
+stock/flow trap of NC-R2: end-of-period debt over a period's GDP is
 the standard ratio for a year and nonsense for a quarter, and the arithmetic
 never complains.
 """
@@ -103,7 +103,7 @@ def test_compiled_type_reports_unit_and_kind():
     )
 
 
-# ── the stock/flow trap (R2) ──────────────────────────────────────────────────
+# ── the stock/flow trap (NC-R2) ───────────────────────────────────────────────
 
 def test_a_stock_over_a_flow_must_declare_its_alignment():
     with pytest.raises(FormulaError, match="must name its alignment rule"):
@@ -122,7 +122,7 @@ def test_alignment_on_a_ratio_that_does_not_mix_is_rejected():
 
 
 def test_an_annual_alignment_refuses_a_quarterly_period():
-    """The R2 failure itself: the same formula, asked for a quarter, would
+    """The NC-R2 failure itself: the same formula, asked for a quarter, would
     divide an end-of-quarter stock by one quarter's GDP and read about four
     times too low — with nothing in the arithmetic to object."""
     with pytest.raises(FormulaError, match="aligns on A periods but was asked for 2024-Q2"):

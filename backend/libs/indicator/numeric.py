@@ -27,11 +27,11 @@ NOT ambiguous stay strict, which is the whole point: `128,4` has one digit
 after the separator, cannot be a thousands group, and so never reads as 1284.
 
 **Precision comes from the figures, not from a constant.** Comparing at the
-coarser of the two published precisions is what README.md section 6.3 calls for
-in its first row — an answer of "2,5%" against a computed 2,5157% is correct
-at the precision it was stated, while a single global epsilon is either too
-loose for `3.109,2` or too tight for `2,5`. Cases that compute a figure rather
-than quote one declare an explicit Tolerance instead.
+coarser of the two published precisions is what docs/v2/06-evaluation-plan.md
+section 4 calls for in its first row — an answer of "2,5%" against a computed
+2,5157% is correct at the precision it was stated, while a single global epsilon
+is either too loose for `3.109,2` or too tight for `2,5`. Cases that compute a
+figure rather than quote one declare an explicit Tolerance instead.
 """
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ class Tolerance:
     `published_precision` (the default) compares after rounding both sides to
     the coarser of their two written precisions. `absolute` and `relative` are
     for cases whose expected value is computed rather than quoted, where
-    rounding of the inputs propagates — README.md section 6.3, row 2.
+    rounding of the inputs propagates — docs/v2/06-evaluation-plan.md section 4, row 2.
     """
 
     kind: Literal["published_precision", "absolute", "relative"] = "published_precision"

@@ -14,13 +14,14 @@ spelling is not. The constructor refuses floats outright rather than converting
 them, because by the time a float arrives the digits are already gone.
 
 **The multiplier is an exponent, matching `unit_multiplier Int8` in the
-observation store (SERVICE-DESIGN section 3.2).** 3.109,2 nghìn tỷ đồng is
-`Decimal("3109.2")` at multiplier 12, not 3109200000000.0 — the figure stays as
-published, so it can be shown back the way the source wrote it.
+observation store (docs/v2/03-target-design.md section 3.2).** 3.109,2 nghìn
+tỷ đồng is `Decimal("3109.2")` at multiplier 12, not 3109200000000.0 — the
+figure stays as published, so it can be shown back the way the source wrote it.
 
 **Percent minus percent is percentage points.** 34,7% - 33,5% is 1,2 điểm %,
-not 1,2%, and UI-DESIGN section 3 requires the two to read differently. Getting
-this wrong produces a sentence that is grammatical, plausible and false.
+not 1,2%, and docs/v2/13-ui-principles.md section 2 requires the two to read
+differently. Getting this wrong produces a sentence that is grammatical,
+plausible and false.
 
 **Rounding happens once, at the end.** `round_to` is the only rounding in the
 module; intermediate steps keep full precision, so a ratio of two rounded inputs
@@ -28,8 +29,8 @@ is never rounded a second time on the way out.
 
 Deliberately NOT here: unit conversion between currencies. An exchange rate has
 a period and a source, which makes it an observation, not a constant this module
-could hold (TECH-DESIGN T1). Cross-currency arithmetic raises; the formula layer
-fetches the rate as a variable and converts explicitly.
+could hold (NC-T1 in docs/v2/12-numeric-core.md). Cross-currency arithmetic
+raises; the formula layer fetches the rate as a variable and converts explicitly.
 """
 from __future__ import annotations
 
@@ -49,7 +50,7 @@ class Unit(Enum):
     Business units, not physical ones — there is no metre or second in this
     domain, and a dimensional-analysis library (pint) would model dimensions
     this domain does not have while missing the one distinction that matters,
-    percent versus percentage point (ADR-T2).
+    percent versus percentage point (NC-ADR-T2).
     """
 
     MONEY = "money"
@@ -151,7 +152,7 @@ class Quantity:
         left, right = _align(self, other)
         difference = left.value - right.value
         if left.unit is Unit.PERCENT:
-            # The distinction UI-DESIGN section 3 insists on: a fall from 34,7%
+            # The distinction docs/v2/13-ui-principles.md section 2 insists on: a fall from 34,7%
             # to 33,5% is 1,2 percentage points. Calling it 1,2% would name a
             # relative change of about 3,5%, a different and much smaller thing.
             return Quantity(difference, Unit.PERCENTAGE_POINT, left.multiplier)
