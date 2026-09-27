@@ -125,8 +125,7 @@ def _governance_comment(t: dict[str, Any]) -> str:
 
 def format_catalog_context(tables: List[dict[str, Any]]) -> str:
     """Renders Schema Catalog payloads as abbreviated DDL + business
-    description for the SQL-generation prompt — same shape of output as
-    workflow_memory.format_schema_context(), different source."""
+    description for the SQL-generation prompt."""
     if not tables:
         return ""
     blocks = []

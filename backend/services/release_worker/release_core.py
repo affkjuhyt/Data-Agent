@@ -660,80 +660,6 @@ def _step3_redeploy_snapshot(environment: str, version: str) -> None:
     log.info("rollback.step3.done",
              environment=environment, version=version, snapshot_key=snapshot_key)
 
-# ═══════════════════════════════════════════════════════════════════════
-# DRIFT DETECTION
-# ═══════════════════════════════════════════════════════════════════════
-
-def _detect_config_drift_core() -> dict[str, Any]:
-    """
-    Core drift detection logic — gọi từ HTTP endpoint POST /api/release/drift/detect.
-    So sánh production vs staging config; nếu có drift → ghi DB + produce Kafka event.
-    Trả về dict với status, drift_keys, severity.
-    """
-    from deepdiff import DeepDiff
-
-    with tracer.start_as_current_span("drift.detect") as span:
-        prod_config = _get_env_config("production")
-        staging_config = _get_env_config("staging")
-        diff = DeepDiff(prod_config, staging_config, ignore_order=True)
-
-        if diff:
-            drift_keys = list(diff.keys())
-            span.set_attribute("drift.keys_count", len(drift_keys))
-            log.warning("drift.detected",
-                        env_pair="production vs staging",
-                        drift_keys=drift_keys)
-
-            # Ghi vào DB và lấy ID
-            drift_id = None
-            with get_pg_conn() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """INSERT INTO "DriftEvents"
-                           (env_pair, drift_keys, severity)
-                           VALUES (%s, %s, 'CRITICAL_DRIFT')
-                           RETURNING id""",
-                        ("production vs staging", json.dumps(drift_keys))
-                    )
-                    row = cur.fetchone()
-                    drift_id = row[0] if row else None
-
-            # Produce Kafka event
-            produce_event("release.drift.detected", {
-                "event": "drift.detected",
-                "drift_id": str(drift_id) if drift_id else None,
-                "detected_at": datetime.now(timezone.utc).isoformat(),
-                "environment_pair": ["production", "staging"],
-                "keys": drift_keys,
-                "severity": "CRITICAL_DRIFT",
-            })
-            return {
-                "status": "drift_detected",
-                "drift_id": drift_id,
-                "env_pair": "production vs staging",
-                "drift_keys": drift_keys,
-                "severity": "CRITICAL_DRIFT",
-                "detected_at": datetime.now(timezone.utc).isoformat(),
-            }
-        else:
-            log.info("drift.check.clean", env_pair="production vs staging")
-            return {
-                "status": "clean",
-                "env_pair": "production vs staging",
-                "drift_keys": [],
-                "severity": None,
-            }
-
-
-def _get_env_config(environment: str) -> dict[str, Any]:
-    with get_pg_conn() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """SELECT key, value FROM "EnvironmentConfigs"
-                   WHERE environment=%s AND is_active=true""",
-                (environment,)
-            )
-            return {row[0]: row[1] for row in cur.fetchall()}
 
 # ═══════════════════════════════════════════════════════════════════════
 # KAFKA CONSUMER (chạy song song với FastAPI)
@@ -882,8 +808,6 @@ __all__ = [
     "_step1_update_release_pointer",
     "_step2_reroute_kong",
     "_step3_redeploy_snapshot",
-    "_detect_config_drift_core",
-    "_get_env_config",
     "start_kafka_consumer",
     "_safe_json",
     "_consumer_supervisor",

@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, AsyncGenerator, cast
-import json
+from typing import Any, cast
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
 
-from services.kb_backend.dependencies.auth import authenticate, require_perm
+from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.schemas import RetrieveRequest, RetrieveResponse
 from libs.shared.auth import require_tenant
@@ -32,7 +30,6 @@ def _require_role_id(ctx: dict[str, Any]) -> str:
         log.warning("retrieve | caller %r has no document tier — refusing", ctx.get("user_id"))
         raise HTTPException(status_code=403, detail="No document role associated with this identity")
     return role_id
-
 
 
 @router.post("/retrieve", response_model=RetrieveResponse)
@@ -86,50 +83,3 @@ async def retrieve(
     except Exception as exc:
         log.exception("light_rag | unhandled error: %s", exc)
         raise HTTPException(status_code=500, detail="Retrieval failed")
-
-
-@router.post("/retrieve/stream")
-async def retrieve_stream(
-        body: RetrieveRequest,
-        request: Request,
-        ctx: dict[str, Any] = Depends(require_perm("retrieveKnowledge")),
-) -> StreamingResponse:
-    tenant_id = require_tenant(ctx)
-    knowledge_base = body.knowledge_base or None
-    # Same scope as /retrieve. The streaming variant runs the same pipeline, so
-    # leaving it unscoped would leave the whole bypass open through one route.
-    role_id = _require_role_id(ctx)
-    log.info("POST /retrieve/stream | query=%r tenant=%s kb=%s", body.query[:80], tenant_id, knowledge_base)
-
-    async def generate() -> AsyncGenerator[str, None]:
-        try:
-            async for event in svc(request, "light_rag").run_stream(
-                    query=body.query,
-                    tenant_id=tenant_id,
-                    qdrant=svc(request, "qdrant").get_client(),
-                    neo4j=svc(request, "neo4j").get_client(),
-                    model=svc(request, "model").get_client(),
-                    postgres=svc(request, "postgres"),
-                    collection=body.collection,
-                    knowledge_base=knowledge_base,
-                    entities=body.entities or None,
-                    intent=body.intent or None,
-                    entity_types=body.entity_types or None,
-                    role_id=role_id,
-            ):
-                yield f"data: {json.dumps(event)}\n\n"
-        except Exception as exc:
-            log.exception("retrieve_stream | generator error: %s", exc)
-            yield f"data: {json.dumps({'step': 'error', 'message': str(exc)[:300]})}\n\n"
-
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-
-
-@router.get("/health", response_model=None)
-async def health(request: Request, ctx: dict[str, Any] = Depends(authenticate)) -> Any:
-    pipeline = getattr(request.app.state, "light_rag", None)
-    return {"status": "ok" if pipeline else "not_initialised"}

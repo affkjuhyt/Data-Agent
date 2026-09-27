@@ -9,12 +9,9 @@ Covers:
      actually runs migrations through.
   2. backend/services/workflow_runtime/workflow_memory.py — record/retrieve against
      a real Postgres + Qdrant testcontainer.
-  3. routers/schema_memory.py — the Admin CRUD endpoints, via a bare FastAPI
-     TestClient (no app.py lifespan — that needs Mongo/Redis/Kafka/Qdrant
-     all up, which is unrelated to what this router does).
-  4. nodes/sandbox/tool_executor/handlers/data.py — _text_to_sql_handler's
-     wiring (Schema Memory retrieval → prompt → real SQL execution → retry
-     on error), with litellm.completion monkeypatched.
+  3. nodes/sandbox/tool_executor/handlers/data.py — _text_to_sql_handler's
+     wiring (prompt → real SQL execution → retry on error), with
+     litellm.completion monkeypatched.
 
 No real LLM/embedding provider is contacted anywhere in this file —
 `workflow_memory._embed` is monkeypatched to a fixed vector. That isolates
@@ -297,153 +294,10 @@ def _dsn_from_client() -> str:
     return client._url.replace("postgresql+asyncpg://", "postgresql://")
 
 
-async def test_retrieve_schema_memory_exact_match_and_format(wm):
-    wm_mod, tenant_id, _ = wm
-    from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import SchemaMemoryORM
-    from libs.database_connector.postgres_connector import client
-    from uuid import UUID
-
-    async with client.get_client(tenant_id=tenant_id) as session:
-        session.add(SchemaMemoryORM(
-            id=uuid.uuid4(), tenant_id=UUID(tenant_id), data_source="postgresql", table_name="orders",
-            column_metadata=[
-                {"name": "id", "type": "uuid", "is_nullable": False},
-                {"name": "total", "type": "numeric", "description": "order total", "is_nullable": False},
-            ],
-            business_description="Customer orders", access_roles=["finance_analyst"],
-        ))
-        session.add(SchemaMemoryORM(
-            id=uuid.uuid4(), tenant_id=UUID(tenant_id), data_source="snowflake", table_name="other_ds_table",
-            column_metadata=[], business_description="should not be returned",
-        ))
-        await session.commit()
-
-    tables = await wm_mod.retrieve_schema_memory(tenant_id, "postgresql")
-
-    assert [t["table_name"] for t in tables] == ["orders"]
-
-    ddl = wm_mod.format_schema_context(tables)
-    assert "TABLE orders" in ddl
-    assert "total numeric NOT NULL -- order total" in ddl
-    assert "Customer orders" in ddl
-
-
-# ─── 3. routers/schema_memory.py — Admin CRUD, bare FastAPI app ───────────
-
-@pytest.fixture
-def schema_memory_client(migrated_db):
-    """Bare FastAPI app with only schema_memory.router mounted — no app.py
-    lifespan (that needs Mongo/Redis/Kafka/Qdrant up, none of which this
-    router touches)."""
-    svc_dir = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
-    added = [p for p in (svc_dir, str(REPO_ROOT)) if p not in sys.path]
-    sys.path[:0] = added
-    try:
-        import importlib as _il
-        from fastapi import FastAPI
-        from fastapi.testclient import TestClient
-        from libs.database_connector.postgres_connector import client as pg_client
-
-        schema_memory_mod = _il.import_module("routers.schema_memory")
-        _il.reload(schema_memory_mod)
-
-        # The pg_client's AsyncEngine must be created on the SAME event loop
-        # that serves requests. TestClient runs requests through its own
-        # anyio portal loop, so opening pg_client via a separate
-        # run_until_complete() beforehand binds it to the wrong loop —
-        # asyncpg then raises "attached to a different loop". Using
-        # startup/shutdown events instead defers connection setup until
-        # TestClient's own loop is the one driving it.
-        app = FastAPI()
-        app.include_router(schema_memory_mod.router)
-
-        @app.on_event("startup")
-        async def _startup():
-            pg_client.set_url(migrated_db["dsn"])
-            await pg_client.open()
-
-        @app.on_event("shutdown")
-        async def _shutdown():
-            await pg_client.close()
-
-        tenant_id, _ = _seed_tenant_and_agent(migrated_db["dsn"])
-
-        with TestClient(app) as tc:
-            yield tc, tenant_id
-    finally:
-        for p in added:
-            if p in sys.path:
-                sys.path.remove(p)
-
-
-def test_schema_memory_router_upsert_then_list(schema_memory_client):
-    tc, tenant_id = schema_memory_client
-    headers = {"X-Tenant-ID": tenant_id}
-
-    resp = tc.put("/api/schema-memory", headers=headers, json={
-        "data_source": "postgresql",
-        "table_name": "orders",
-        "column_metadata": [{"name": "id", "type": "uuid", "is_nullable": False}],
-        "business_description": "Customer orders",
-        "access_roles": ["finance_analyst"],
-    })
-    assert resp.status_code == 200, resp.text
-    row_id = resp.json()["id"]
-
-    resp = tc.get("/api/schema-memory", headers=headers, params={"data_source": "postgresql"})
-    assert resp.status_code == 200
-    rows = resp.json()
-    assert len(rows) == 1
-    assert rows[0]["id"] == row_id
-    assert rows[0]["table_name"] == "orders"
-
-
-def test_schema_memory_router_upsert_is_idempotent_on_same_table(schema_memory_client):
-    """PUT twice for the same (data_source, table_name) must update in place,
-    not create a second row — this is how Admin re-syncs a changed schema."""
-    tc, tenant_id = schema_memory_client
-    headers = {"X-Tenant-ID": tenant_id}
-    body = {
-        "data_source": "postgresql", "table_name": "orders",
-        "column_metadata": [], "business_description": "v1", "access_roles": [],
-    }
-
-    first = tc.put("/api/schema-memory", headers=headers, json=body)
-    second = tc.put("/api/schema-memory", headers=headers, json={**body, "business_description": "v2"})
-    assert first.json()["id"] == second.json()["id"]
-
-    rows = tc.get("/api/schema-memory", headers=headers).json()
-    assert len(rows) == 1
-    assert rows[0]["business_description"] == "v2"
-
-
-def test_schema_memory_router_delete(schema_memory_client):
-    tc, tenant_id = schema_memory_client
-    headers = {"X-Tenant-ID": tenant_id}
-
-    row_id = tc.put("/api/schema-memory", headers=headers, json={
-        "data_source": "postgresql", "table_name": "orders",
-        "column_metadata": [], "business_description": "x", "access_roles": [],
-    }).json()["id"]
-
-    resp = tc.delete(f"/api/schema-memory/{row_id}", headers=headers)
-    assert resp.status_code == 200
-
-    rows = tc.get("/api/schema-memory", headers=headers).json()
-    assert rows == []
-
-
-def test_schema_memory_router_delete_unknown_id_returns_404(schema_memory_client):
-    tc, tenant_id = schema_memory_client
-    resp = tc.delete(f"/api/schema-memory/{uuid.uuid4()}", headers={"X-Tenant-ID": tenant_id})
-    assert resp.status_code == 404
-
-
-# ─── 4. _text_to_sql_handler wiring — real Postgres, litellm.completion mocked ─
+# ─── 3. _text_to_sql_handler wiring — real Postgres, litellm.completion mocked ─
 #
 # The SQL-generation CALL is mocked (no real LLM) — what's under test is
-# everything around it: does Schema Memory actually get retrieved and
-# rendered into the prompt, does the generated SQL actually execute against
+# everything around it: does the generated SQL actually execute against
 # a real database, does the retry-on-error path actually retry with the
 # previous error appended to the prompt.
 
@@ -473,19 +327,6 @@ async def text_to_sql_env(migrated_db, monkeypatch):
             cur.execute("INSERT INTO demo_orders (total) VALUES (100), (250)")
         conn.close()
 
-        from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import SchemaMemoryORM
-        from uuid import UUID
-        async with pg_client.get_client(tenant_id=tenant_id) as session:
-            session.add(SchemaMemoryORM(
-                id=uuid.uuid4(), tenant_id=UUID(tenant_id), data_source="postgresql", table_name="demo_orders",
-                column_metadata=[
-                    {"name": "id", "type": "int", "is_nullable": False},
-                    {"name": "total", "type": "numeric", "description": "order total", "is_nullable": False},
-                ],
-                business_description="Demo orders table",
-            ))
-            await session.commit()
-
         yield data_mod, migrated_db["dsn"], tenant_id
 
         await pg_client.close()
@@ -499,27 +340,6 @@ def _fake_sql_response(sql: str):
     resp = MagicMock()
     resp.choices = [MagicMock(message=MagicMock(content=sql))]
     return resp
-
-
-async def test_text_to_sql_includes_schema_memory_context_in_prompt(text_to_sql_env, monkeypatch):
-    data_mod, db_url, tenant_id = text_to_sql_env
-    captured = {}
-
-    def fake_completion(**kwargs):
-        captured["prompt"] = kwargs["messages"][0]["content"]
-        return _fake_sql_response("SELECT * FROM demo_orders")
-
-    monkeypatch.setattr(data_mod.litellm, "completion", fake_completion)
-
-    result, error = await data_mod._text_to_sql_handler(
-        call={"query": "lấy hết đơn hàng"},
-        cfg={"tool_config": {"text_to_sql": {"db_url": db_url, "data_source": "postgresql"}}, "tenant_id": tenant_id},
-    )
-
-    assert error is None, error
-    assert "demo_orders" in captured["prompt"]
-    assert "order total" in captured["prompt"]  # column description from Schema Memory
-    assert "Demo orders table" in captured["prompt"]  # business_description
 
 
 async def test_text_to_sql_executes_against_real_postgres(text_to_sql_env, monkeypatch):
@@ -579,45 +399,3 @@ async def test_text_to_sql_fails_after_3_attempts_all_invalid(text_to_sql_env, m
     assert result is None
     assert error["tool_name"] == "text_to_sql"
     assert "failed after 3 attempts" in error["error"]
-
-
-async def test_text_to_sql_falls_back_to_static_schema_hint_when_no_schema_memory_rows(monkeypatch, migrated_db):
-    """Different tenant, no Schema Memory rows registered — must fall back
-    to the canvas's static schema_hint instead of sending an empty Schema: block."""
-    svc_dir = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
-    added = [p for p in (svc_dir, str(REPO_ROOT)) if p not in sys.path]
-    sys.path[:0] = added
-    try:
-        import importlib as _il
-        from libs.database_connector.postgres_connector import client as pg_client
-
-        data_mod = _il.import_module("nodes.sandbox.tool_executor.handlers.data")
-        _il.reload(data_mod)
-        pg_client.set_url(migrated_db["dsn"])
-        await pg_client.open()
-        tenant_id, _ = _seed_tenant_and_agent(migrated_db["dsn"])
-
-        captured = {}
-
-        def fake_completion(**kwargs):
-            captured["prompt"] = kwargs["messages"][0]["content"]
-            return _fake_sql_response("SELECT 1")
-
-        monkeypatch.setattr(data_mod.litellm, "completion", fake_completion)
-
-        result, error = await data_mod._text_to_sql_handler(
-            call={"query": "test"},
-            cfg={"tool_config": {"text_to_sql": {
-                "db_url": migrated_db["dsn"], "data_source": "postgresql",
-                "schema_hint": "TABLE fallback_table (id INT)",
-            }}, "tenant_id": tenant_id},
-        )
-
-        assert error is None, error
-        assert "fallback_table" in captured["prompt"]
-
-        await pg_client.close()
-    finally:
-        for p in added:
-            if p in sys.path:
-                sys.path.remove(p)

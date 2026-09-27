@@ -1,17 +1,7 @@
-"""Ingestion schemas — request (web ingest), response (promote)."""
+"""Ingestion schemas — response (promote)."""
 from __future__ import annotations
 
 from pydantic import BaseModel
-
-
-class WebIngestRequest(BaseModel):
-    name: str
-    url: str
-    web_name: str | None = None
-    language: str = "english"
-    abstract: str | None = None
-    knowledge_base_id: str | None = None
-    purpose: str = "production"
 
 
 class PromoteResponse(BaseModel):

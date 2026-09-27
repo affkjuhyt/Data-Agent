@@ -85,22 +85,6 @@ def health() -> JSONResponse:
     return JSONResponse(body, status_code=200 if ready else 503)
 
 
-@router.get("/capabilities")
-def capabilities_endpoint() -> dict[str, Any]:
-    """What compute this server has and is using (CUDA GPU / Apple MPS / CPU),
-    plus the loaded models + embed cache/batch config. Lets a client/ops probe
-    the backend instead of assuming a GPU."""
-    embed_default = registry.default(Capability.EMBED)
-    rerank_default = registry.default(Capability.RERANK)
-    caps: dict[str, Any] = {
-        "device": "remote-api",  # all inference runs on the GPU server (vLLM + TEI)
-        "embed_model": embed_default.name if embed_default else None,
-        "rerank_model": rerank_default.name if rerank_default else None,
-    }
-    caps["embed_service"] = _embed_service.stats()
-    return caps
-
-
 @router.get("/metrics")
 def metrics_endpoint() -> PlainTextResponse:
     """Prometheus metrics — embed cache hit-rate + dynamic-batch efficiency +
@@ -169,12 +153,6 @@ async def embed(req: EmbedRequest) -> EmbedResponse:
     used_id = str(entry.model_id) if entry.model_id else req.model_id
     return EmbedResponse(embeddings=embeddings, model_id=used_id)
 
-
-@router.get("/embed/stats")
-async def embed_stats() -> dict[str, Any]:
-    """Cache hit-rate + batching stats — watch this under load to confirm the
-    embed bottleneck is being amortised (KB-SCALE-10K.md lever #1)."""
-    return _embed_service.stats()
 
 @router.post("/v1/embeddings", response_model=OAIEmbedResponse)
 async def openai_embeddings(req: OAIEmbedRequest) -> OAIEmbedResponse:

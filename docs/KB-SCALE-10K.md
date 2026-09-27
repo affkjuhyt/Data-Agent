@@ -132,7 +132,7 @@ likewise pooled per replica.
 
 **To build (in priority order):**
 1. [x] **Embedding cache** (LRU, hash→vector) + **dynamic batching** in
-   model-service (`backends/embed_service.py`, `/embed/stats`). Measured: repeated
+   model-service (`backends/embed_service.py`, exported on `/metrics`). Measured: repeated
    query embed **140 ms → 1.4 ms (100×)**; 20 concurrent unique embeds coalesced
    into **2 encode() calls (~10× fewer forward passes)**. L2 Redis drops in behind
    the same interface for multi-replica sharing.
@@ -171,7 +171,7 @@ likewise pooled per replica.
 7. [x] **HPA** — `deploy/k8s/` manifests: Deployment + Service + HorizontalPodAutoscaler
    for kb-gateway (2→10), kb-backend (3→12), model-service (2→8), CPU-target with a
    custom-RPS-metric note. **model-service auto-detects its device** (`device.py`:
-   CUDA > Apple MPS > CPU, surfaced at `GET /capabilities`) so the same image runs
+   CUDA > Apple MPS > CPU) so the same image runs
    GPU-less (here) or on a GPU node pool — the manifest only changes scheduling.
    Plus **DDoS/flood protection** at kb-gateway (global + per-IP rate + max-concurrent
    → 429/503, verified: 10 parallel @ max-concurrent=2 → 8×503+2×200).

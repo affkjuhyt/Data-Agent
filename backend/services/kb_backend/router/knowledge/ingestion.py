@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from libs.basemodel.services_databaseconnector.postgres_model import (
     Language, SourceType, Document, Image, Video, Web, Warehouse,
 )
-from services.kb_backend.schemas import PromoteResponse, WebIngestRequest
+from services.kb_backend.schemas import PromoteResponse
 from libs.ingestion.purpose import reaches_gold
 from libs.shared.document_lock import DocumentBusy, document_lock
 from services.kb_backend.dependencies.services import svc
@@ -26,7 +26,7 @@ from services.kb_backend.operations.document_ops import (
 from services.kb_backend.operations.source_ops import record_upload_as_source
 from services.kb_backend.operations.trash_ops import flush as _trash_flush
 from services.kb_backend.pipeline.ingestion import config as cfg
-from services.kb_backend.pipeline.ingestion.bronze import BronzeUploadRequest, WebBronzeRequest
+from services.kb_backend.pipeline.ingestion.bronze import BronzeUploadRequest
 
 log = logging.getLogger(__name__)
 
@@ -239,55 +239,6 @@ async def ingest_bronze(
         return result
 
 
-@router.post("/bronze/web", response_model=None)
-async def ingest_bronze_web(
-        request: Request,
-        body: WebIngestRequest,
-        ctx: dict[str, Any] = Depends(require_perm("addData")),
-) -> Any:
-    name = body.name.strip()
-    if not name:
-        raise HTTPException(status_code=422, detail="Knowledge Name is required")
-    url = body.url.strip()
-    if not (url.startswith("http://") or url.startswith("https://")):
-        raise HTTPException(status_code=422, detail="Web URL must start with http:// or https://")
-
-    try:
-        lang = Language(body.language)
-    except ValueError:
-        raise HTTPException(status_code=422, detail="Invalid language")
-    if body.purpose not in ("training", "production", "evaluation"):
-        raise HTTPException(status_code=422, detail="Invalid purpose")
-
-    postgres = svc(request, "postgres")
-
-    log.info("POST /ingestion/bronze/web tenant=%s url=%s", ctx["tenant_id"], url)
-    async with _document_name_lock(svc(request, "postgres"), ctx["tenant_id"], name):
-        await _replace_existing_document_if_any(request, ctx, name)
-        try:
-            return await svc(request, "ingestion").bronze_web(
-                WebBronzeRequest(
-                    tenant_id=ctx["tenant_id"],
-                    role_id=ctx["role_id"],
-                    name=name,
-                    url=url,
-                    web_name=(body.web_name or name),
-                    language=lang.value,
-                    added_by=ctx["user_name"],
-                    abstract=body.abstract or "",
-                    knowledge_base_id=body.knowledge_base_id or None,
-                    purpose=body.purpose,
-                ),
-                postgres,
-            )
-        except ValueError as e:
-            log.warning("Web bronze ValueError: %s", e)
-            raise HTTPException(status_code=400, detail="Invalid web ingestion parameters")
-        except Exception as e:
-            log.exception("Web bronze error: %s", e)
-            raise HTTPException(status_code=500, detail="Web ingestion failed")
-
-
 @router.post("/promote/{data_id}/silver", response_model=PromoteResponse)
 async def promote_to_silver(
         data_id: str,
@@ -433,64 +384,6 @@ async def get_ingestion_logs(
             for e in (rec.get("logs") or [])
         ],
     }
-
-
-@router.get("/documents/{data_id}/stream")
-async def stream_pipeline_events(
-        data_id: str,
-        request: Request,
-        ctx: dict[str, Any] = Depends(require_perm("viewDocuments")),
-) -> StreamingResponse:
-    # pipeline_events carries no tenant_id, so ownership has to be checked on
-    # the KBData row, as /logs does; otherwise any tenant with a data_id could
-    # watch another tenant's ingestion.
-    if not await _fetch_doc(svc(request, "postgres"), data_id, ctx["tenant_id"], ctx["role_id"]):
-        raise HTTPException(status_code=404, detail="Document not found")
-    mongo = svc(request, "mongo")
-    _TERMINAL = {"pipeline.done", "pipeline.error"}
-
-    async def generate() -> AsyncGenerator[str, None]:
-        db = mongo.get_client()
-        last_seq = 0
-        loop = asyncio.get_running_loop()
-        last_emit = loop.time()
-        HEARTBEAT_S = 15.0
-
-        while True:
-            if await request.is_disconnected():
-                return
-
-            docs = await db["pipeline_events"].find(
-                {"data_id": data_id, "seq": {"$gt": last_seq}},
-                sort=[("seq", 1)],
-                limit=50,
-            ).to_list(50)
-
-            for doc in docs:
-                last_seq = doc["seq"]
-                ts = doc["ts"]
-                payload = {
-                    "seq": doc["seq"],
-                    "event": doc["event"],
-                    "ts": ts.isoformat() if hasattr(ts, "isoformat") else str(ts),
-                    "payload": doc.get("payload", {}),
-                }
-                yield f"data: {json.dumps(payload)}\n\n"
-                last_emit = loop.time()
-                if doc["event"] in _TERMINAL:
-                    return
-
-            if not docs:
-                if loop.time() - last_emit >= HEARTBEAT_S:
-                    yield ": keepalive\n\n"
-                    last_emit = loop.time()
-                await asyncio.sleep(0.25)
-
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
 
 
 _STAGE_BAND = {

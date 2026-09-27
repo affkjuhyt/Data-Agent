@@ -1072,9 +1072,6 @@ class LightRAGPipeline:
             log.exception("_run_events | unhandled error: %s", exc)
             yield {"step": "error", "message": str(exc)[:300]}
 
-    async def run_stream(self, *args: Any, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
-        async for event in self._run_events(*args, **kwargs):
-            yield event
 
     async def run(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         final: dict[str, Any] = {}

@@ -48,11 +48,9 @@ from services.workflow_runtime.routers import (
     ask_exports,
     roi_use_cases,
     sandbox_ops,
-    schema_memory,
     storage,
     traces,
 )
-from services.workflow_runtime.routers import schema_catalog as schema_catalog_router
 from services.workflow_runtime.runtime_services.conversation_runner import invalidate_graph_version
 from services.workflow_runtime.runtime_services.roi_use_cases import scheduler_loop
 from services.workflow_runtime.schema_catalog import close_schema_catalog_qdrant, init_schema_catalog_qdrant
@@ -162,8 +160,6 @@ def create_app() -> FastAPI:
         conversations.router,
         traces.router,
         sandbox_ops.router,
-        schema_memory.router,
-        schema_catalog_router.router,
         reviews.router,
         db_connector.router,
         platform.router,

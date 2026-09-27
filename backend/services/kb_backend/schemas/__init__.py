@@ -27,5 +27,5 @@ from services.kb_backend.schemas.sources import (  # noqa: F401
 from services.kb_backend.schemas.qdrant import QdrantSearchRequest, ToggleQdrantCollectionRequest  # noqa: F401
 from services.kb_backend.schemas.neo4j import Neo4jQueryRequest  # noqa: F401
 from services.kb_backend.schemas.knowledge_base import CreateKnowledgeBaseRequest  # noqa: F401
-from services.kb_backend.schemas.ingestion import WebIngestRequest, PromoteResponse  # noqa: F401
+from services.kb_backend.schemas.ingestion import PromoteResponse  # noqa: F401
 from services.kb_backend.schemas.retrieval import RetrieveRequest, RetrieveResponse  # noqa: F401
