@@ -81,7 +81,9 @@ _AMBIENT_TENANT_SERVICES = {"kb_backend"}
 # added to a surface that already cannot isolate.
 _UNSCOPED_BUDGET = {
     # kb_ingestion_worker's 49 split across the four processes and libs/ingestion.
-    "ingestion": 33,
+    # 32: the Silver tier update/rollback, the auto-Gold hand-off read and the
+    # trash-flush graph lookup now pass the tenant they already had.
+    "ingestion": 32,
     "kb_conflict_resolution": 16,
     "kb_promote_gold": 2,
     "kb_structured_data": 2,
@@ -90,7 +92,11 @@ _UNSCOPED_BUDGET = {
     # get_platform_client(), the deliberate unscoped form.
     "database_connector": 15,
     "flow_builder": 8,
-    "workflow_runtime": 5,
+    # 5 + jobs/memory_cleanup.py's 3: a retention sweeper that has to see every
+    # tenant's expired memories, run as a role that bypasses RLS (see
+    # deploy/k8s/production/job/memory-cleanup.yaml). Scoping it would make it
+    # clean one tenant, or none.
+    "workflow_runtime": 8,
     "sandbox_executor": 1,
     "platform_workers": 1,
 }

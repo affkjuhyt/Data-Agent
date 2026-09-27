@@ -138,7 +138,7 @@ class GraphStore:
         target = _as_uuid(data_id)
         if target is None:
             return
-        async with self._postgres.get_client() as session:
+        async with self._postgres.get_client(tenant_id=tenant_id) as session:
             knowledge_base = (await session.execute(
                 sa_select(KBNeo4jNodeORM.knowledge_base)
                 .join(KBNeo4jRelationshipORM, KBNeo4jRelationshipORM.from_node == KBNeo4jNodeORM.node_id)

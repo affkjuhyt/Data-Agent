@@ -49,8 +49,8 @@ async def _rollback_silver_staging(mongo: MongoClient, data_id: str) -> None:
         pass
 
 
-async def _rollback_silver_tier(postgres: PostgresClient, data_id: str) -> None:
-    async with postgres.get_client() as session:
+async def _rollback_silver_tier(postgres: PostgresClient, data_id: str, tenant_id: str) -> None:
+    async with postgres.get_client(tenant_id=tenant_id) as session:
         try:
             await session.execute(
                 sa_update(KBDataORM)
@@ -97,7 +97,7 @@ async def _persist_silver(
         rollback_args=(mongo, data_id),
     )
 
-    async with postgres.get_client() as session:
+    async with postgres.get_client(tenant_id=tenant_id) as session:
         try:
             await session.execute(
                 sa_update(KBDataORM)
@@ -111,7 +111,7 @@ async def _persist_silver(
     stage_record.push(
         f"silver_tier_updated_{data_id}",
         rollback_func=_rollback_silver_tier,
-        rollback_args=(postgres, data_id),
+        rollback_args=(postgres, data_id, tenant_id),
     )
 
     try:

@@ -40,9 +40,11 @@ class _Postgres:
     def __init__(self, metadata: dict[str, Any] | None, purpose: str = "production") -> None:
         self._metadata = metadata
         self._purpose = purpose
+        self.scoped_to: list[str | None] = []
 
     @asynccontextmanager
-    async def get_client(self) -> Any:
+    async def get_client(self, tenant_id: str | None = None) -> Any:
+        self.scoped_to.append(tenant_id)
         yield _Session(self._metadata, self._purpose)
 
 
@@ -67,6 +69,9 @@ def test_publishes_gold_for_an_auto_promotion_source() -> None:
         "tenant_id": "22222222-2222-2222-2222-222222222222",
         "neo4j_connection_id": "n1", "approved_by": "web-crawler-worker",
     }]
+    # The KBData read is scoped to the event's tenant, not run on a session that
+    # can see every tenant's documents.
+    assert postgres.scoped_to == ["22222222-2222-2222-2222-222222222222"]
 
 
 def test_does_nothing_for_a_manual_promotion_source() -> None:
