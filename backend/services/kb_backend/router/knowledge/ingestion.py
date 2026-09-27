@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, AsyncGenerator, AsyncIterator
 import asyncio
 import datetime
+import hashlib
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -15,12 +16,14 @@ from libs.basemodel.services_databaseconnector.postgres_model import (
     Language, SourceType, Document, Image, Video, Web, Warehouse,
 )
 from services.kb_backend.schemas import PromoteResponse, WebIngestRequest
+from libs.ingestion.purpose import reaches_gold
 from libs.shared.document_lock import DocumentBusy, document_lock
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.operations.document_ops import (
     fetch_one as _fetch_doc, fetch_by_name as _fetch_doc_by_name, reprocess_gold_documents,
 )
+from services.kb_backend.operations.source_ops import record_upload_as_source
 from services.kb_backend.operations.trash_ops import flush as _trash_flush
 from services.kb_backend.pipeline.ingestion import config as cfg
 from services.kb_backend.pipeline.ingestion.bronze import BronzeUploadRequest, WebBronzeRequest
@@ -57,7 +60,14 @@ async def _active_stage(mongo: Any, data_id: str) -> str | None:
     )
     if not record:
         return None
-    if str(record.get("status", "")).upper() not in _ACTIVE_STAGES:
+    status = str(record.get("status", "")).upper()
+    if status not in _ACTIVE_STAGES:
+        return None
+    # Silver's terminal log line is written with status=EMBEDDING (the
+    # frontend's promotion queue keys off it too), while a real Gold run
+    # carries stage="gold". Without this, every document that finished Silver
+    # looked "in progress" and Process to Gold always failed with 409.
+    if status == "EMBEDDING" and record.get("stage") == "silver":
         return None
     return str(record.get("stage") or record.get("status") or "processing")
 
@@ -75,16 +85,22 @@ async def _document_name_lock(postgres: Any, tenant_id: str, name: str) -> Async
         )
 
 
-async def _replace_existing_document_if_any(request: Request, ctx: dict[str, Any], name: str) -> None:
+async def _replace_existing_document_if_any(
+    request: Request, ctx: dict[str, Any], name: str, existing: dict[str, Any] | None = None,
+) -> None:
     """Re-uploading under a Knowledge Name that already exists is treated as
     "this is an updated version of that same source" (e.g. a periodically
     revised statistics export or a re-crawled web portal) rather than a
     naming conflict: hard-delete the existing document first — this frees
     the (tenant_id, name) unique constraint, which a soft delete does not
     (see trash_ops.flush's docstring / idx_kbdata_tenant_name) — then the
-    caller's normal bronze insert proceeds with the new content."""
+    caller's normal bronze insert proceeds with the new content.
+
+    `existing` lets a caller that already fetched the row (ingest_bronze's
+    content_hash check) pass it through instead of looking it up twice."""
     postgres = svc(request, "postgres")
-    existing = await _fetch_doc_by_name(postgres, ctx["tenant_id"], name)
+    if existing is None:
+        existing = await _fetch_doc_by_name(postgres, ctx["tenant_id"], name)
     if existing is None:
         return
     log.info(
@@ -124,9 +140,11 @@ async def ingest_bronze(
         doc_metadata: str = Form("{}"),
         knowledge_base_id: str = Form(""),
         ingestion_mode: str = Form("document"),
+        purpose: str = Form("production"),
         ctx: dict[str, Any] = Depends(require_perm("addData")),
 ) -> Any:
     file_bytes = await file.read()
+    content_hash = hashlib.sha256(file_bytes).hexdigest()
     filename = file.filename or "upload"
     extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
@@ -141,6 +159,8 @@ async def ingest_bronze(
             status_code=422,
             detail="structured_table mode requires an .xlsx, .xls, or .csv file",
         )
+    if purpose not in ("training", "production", "evaluation"):
+        raise HTTPException(status_code=422, detail="Invalid purpose")
 
     try:
         src = SourceType(source_type)
@@ -160,9 +180,24 @@ async def ingest_bronze(
 
     log.info("POST /ingestion/bronze tenant=%s source=%s size=%d", ctx["tenant_id"], src, len(file_bytes))
     async with _document_name_lock(svc(request, "postgres"), ctx["tenant_id"], name):
-        await _replace_existing_document_if_any(request, ctx, name)
+        existing = await _fetch_doc_by_name(postgres, ctx["tenant_id"], name)
+        # A soft-deleted row still occupies the name (see fetch_by_name's
+        # docstring) but is NOT "still there" from the uploader's point of
+        # view — short-circuiting here would silently hand back a Trashed,
+        # invisible data_id and claim success, exactly the bug found live:
+        # re-uploading a name that used to exist and was deleted must go
+        # through the normal replace path below, not this shortcut.
+        if existing is not None and not existing.get("is_deleted") and existing.get("content_hash") == content_hash:
+            log.info("ingest_bronze: %r unchanged (content_hash match) — skipping re-ingest", name)
+            return {
+                "data_id": str(existing["data_id"]),
+                "path": existing.get("path"),
+                "name": name,
+                "layer": existing.get("current_tier", "bronze"),
+            }
+        await _replace_existing_document_if_any(request, ctx, name, existing=existing)
         try:
-            return await svc(request, "ingestion").bronze(
+            result = await svc(request, "ingestion").bronze(
                 BronzeUploadRequest(
                     tenant_id=ctx["tenant_id"],
                     role_id=ctx["role_id"],
@@ -178,6 +213,7 @@ async def ingest_bronze(
                     content_type=file.content_type or "application/octet-stream",
                     knowledge_base_id=knowledge_base_id or None,
                     ingestion_mode=ingestion_mode,
+                    purpose=purpose,
                 ),
                 svc(request, "minio").get_client(),
                 svc(request, "postgres"),
@@ -188,6 +224,19 @@ async def ingest_bronze(
         except Exception as e:
             log.exception("Bronze ingestion error: %s", e)
             raise HTTPException(status_code=500, detail="Ingestion failed")
+
+        # Bookkeeping only, best-effort — gives this upload a row in Source
+        # Registry for list/run-history parity with every other source type
+        # (Phase C addendum). Must never fail an upload that already
+        # succeeded.
+        try:
+            await record_upload_as_source(
+                postgres, tenant_id=ctx["tenant_id"], role_id=ctx["role_id"],
+                title=name, created_by=ctx["user_name"], data_id=str(result["data_id"]),
+            )
+        except Exception:  # noqa: BLE001 — the upload already succeeded, don't fail the request over this
+            log.warning("record_upload_as_source failed for name=%r", name, exc_info=True)
+        return result
 
 
 @router.post("/bronze/web", response_model=None)
@@ -207,6 +256,8 @@ async def ingest_bronze_web(
         lang = Language(body.language)
     except ValueError:
         raise HTTPException(status_code=422, detail="Invalid language")
+    if body.purpose not in ("training", "production", "evaluation"):
+        raise HTTPException(status_code=422, detail="Invalid purpose")
 
     postgres = svc(request, "postgres")
 
@@ -225,6 +276,7 @@ async def ingest_bronze_web(
                     added_by=ctx["user_name"],
                     abstract=body.abstract or "",
                     knowledge_base_id=body.knowledge_base_id or None,
+                    purpose=body.purpose,
                 ),
                 postgres,
             )
@@ -298,6 +350,12 @@ async def promote_to_gold(
         raise HTTPException(
             status_code=409,
             detail=f"Asset is not in SILVER tier (current: {record.get('current_tier')})",
+        )
+
+    if not reaches_gold(record.get("purpose")):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Documents marked for {record.get('purpose')} stay at Silver and never enter the knowledge base",
         )
 
     log.info("POST /ingestion/promote/%s/gold tenant=%s", data_id, ctx["tenant_id"])
@@ -454,12 +512,15 @@ def _progress_pct(status: str, stage: str, processed: int, total: int) -> float:
 async def stream_progress(
         data_id: str,
         request: Request,
+        name: str | None = None,
         ctx: dict[str, Any] = Depends(require_perm("viewDocuments"))) -> StreamingResponse:
     mongo = svc(request, "mongo")
+    postgres = svc(request, "postgres")
 
     async def generate() -> AsyncGenerator[str, None]:
         db = mongo.get_client()
         last_count = 0
+        tick = 0
 
         loop = asyncio.get_running_loop()
         last_emit = loop.time()
@@ -468,6 +529,19 @@ async def stream_progress(
         while True:
             if await request.is_disconnected():
                 return
+
+            # A re-crawl replaces the document under a new data_id and deletes
+            # the old row, so a client still following the old id would get
+            # "Waiting for worker..." forever (its queue entry stuck at 85%, and
+            # the open stream holding one of the browser's few connections).
+            if tick % 5 == 0 and await _fetch_doc(postgres, data_id, ctx["tenant_id"], ctx["role_id"]) is None:
+                # If a document with the same name now exists, this run was replaced
+                # by a newer one: tell the client to follow that one.
+                successor = await _fetch_doc_by_name(postgres, ctx["tenant_id"], name) if name else None
+                replaced_by = str(successor["data_id"]) if successor and not successor.get("is_deleted") else None
+                yield f"data: {json.dumps({'status': 'FAILED', 'done': True, 'message': 'Document was replaced or deleted', 'superseded': True, 'replaced_by': replaced_by, 'progress_pct': 0})}\n\n"
+                return
+            tick += 1
 
             emitted = False
             doc = await db["kb_ingestion_logs"].find_one({"data_id": data_id})

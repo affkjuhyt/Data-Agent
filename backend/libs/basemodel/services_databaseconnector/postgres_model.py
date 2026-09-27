@@ -231,6 +231,73 @@ class WarehouseConfigPayload(BaseModel):
     extra: Optional[dict[str, Any]] = None
 
 
+class SourceConnectorType(str, Enum):
+    """V1 connectors (http_file/web_crawl/web_crawl_headless) land in the same
+    Bronze pipeline a manual Document Hub / Web Portal upload does. V2 adds
+    `rss` (same fit — a feed is just another document-ish artifact) and,
+    as an accepted interim tradeoff, `rest_api`/`sdmx`: their eventual home is
+    the not-yet-built Indicator Service warehouse, but until that exists they
+    land raw response bytes in Bronze the same way `http_file` does, rather
+    than blocking on that schema. `bulk_parquet` stays out of this enum on
+    purpose — it's a one-off dataset import (see `model/eval`), never a
+    scheduled `KBSource`."""
+    HTTP_FILE = "http_file"
+    WEB_CRAWL = "web_crawl"
+    WEB_CRAWL_HEADLESS = "web_crawl_headless"
+    RSS = "rss"
+    REST_API = "rest_api"
+    SDMX = "sdmx"
+
+
+class SourceConfigPayload(BaseModel):
+    """`KBSourceConfig.config` JSONB shape. `render` only matters for
+    `web_crawl`/`web_crawl_headless` (Playwright vs static httpx); ignored by
+    `http_file`/`rest_api`/`sdmx`/`rss`. `openbao_path`, when set, is a vault
+    path (KV v2, e.g. `tenants/<tenant_id>/<key>`) resolved at run time by the
+    web-crawler worker — never a raw secret, per the vault convention
+    (`SecretsVaultInsert.openbao_path`). `query_params`/`auth_style`/
+    `auth_param_name` only apply to `rest_api`/`sdmx`. `recursive`/
+    `max_depth`/`same_domain_only` only apply to `web_crawl`/
+    `web_crawl_headless` — link-discovery crawl, see `KBSourceCrawlQueue`."""
+    url: str
+    format: Optional[str] = None
+    cron: str
+    render: bool = False
+    variables: Optional[list[str]] = None
+    openbao_path: Optional[str] = None
+    query_params: Optional[dict[str, str]] = None
+    auth_style: Optional[str] = None  # "bearer" (default when openbao_path is set) | "query_param"
+    auth_param_name: Optional[str] = None  # required when auth_style == "query_param" (e.g. "api_key")
+    recursive: bool = False
+    max_depth: int = 1
+    same_domain_only: bool = True
+    # "auto": the worker itself queues Silver then Gold after a successful,
+    # changed crawl — a scheduled source has no one to click the button.
+    # "manual": promotion stays a human action, as it always has been.
+    # create_source defaults this to "auto" for any source with a cron,
+    # "manual" otherwise (see source_ops.py).
+    promotion_mode: Literal["manual", "auto"] = "manual"
+    # Stamped onto every KBData row this source's runs produce (see
+    # KBDataInsert.purpose) — a scheduled source keeps tagging the same
+    # purpose on each re-crawl without a steward re-choosing it every time.
+    purpose: Literal["training", "production", "evaluation"] = "production"
+    notes: Optional[str] = None
+
+
+class SourceRunStatus(str, Enum):
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
+class SourceRunTrigger(str, Enum):
+    SCHEDULED = "scheduled"
+    MANUAL = "manual"
+    # A link discovered by a recursive web_crawl source's own earlier run,
+    # dispatched from KBSourceCrawlQueue rather than the source's own cron.
+    RECURSIVE = "recursive"
+
+
 class ModelConfig(BaseModel):
     vector_size: Optional[int] = None
     max_tokens: Optional[int] = None
@@ -289,7 +356,9 @@ class KBDataInsert(TenantModel):
     doc_metadata: MetadataType
     current_tier: Tier = Tier.BRONZE
     ingestion_mode: str = "document"
+    purpose: str = "production"
     path: Optional[str] = None
+    content_hash: Optional[str] = None
     model_config = ConfigDict(use_enum_values=True)
 
 
@@ -373,6 +442,37 @@ class KBWarehouseConfigInsert(BaseModel):
     is_active: bool = False
     config: Optional[WarehouseConfigPayload] = None
     created_by: Optional[str] = None
+
+
+@register("insert")
+class KBSourceInsert(BaseModel):
+    tenant_id: str
+    role_id: str
+    connector_type: SourceConnectorType
+    title: str
+    publisher: Optional[str] = None
+    created_by: Optional[str] = None
+    model_config = ConfigDict(use_enum_values=True)
+
+
+@register("insert")
+class KBSourceConfigInsert(BaseModel):
+    source_id: str
+    version_number: int
+    is_active: bool = False
+    config: Optional[SourceConfigPayload] = None
+    created_by: Optional[str] = None
+
+
+@register("insert")
+class KBSourceRunInsert(BaseModel):
+    source_id: str
+    status: SourceRunStatus = SourceRunStatus.RUNNING
+    trigger: SourceRunTrigger = SourceRunTrigger.SCHEDULED
+    data_ids: Optional[list[str]] = None
+    error: Optional[str] = None
+    quality_metrics: Optional[dict[str, Any]] = None
+    model_config = ConfigDict(use_enum_values=True)
 
 
 @register("insert")
@@ -535,6 +635,16 @@ class KBWarehouseDelete(BaseModel):
 
 @register("delete")
 class KBWarehouseConfigDelete(BaseModel):
+    config_id: str
+
+
+@register("delete")
+class KBSourceDelete(BaseModel):
+    source_id: str
+
+
+@register("delete")
+class KBSourceConfigDelete(BaseModel):
     config_id: str
 
 

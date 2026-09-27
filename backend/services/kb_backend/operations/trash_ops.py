@@ -216,11 +216,39 @@ async def set_postgres_deleted(
             result = await session.execute(
                 sa_update(orm).where(*conditions).values(is_deleted=is_deleted)
             )
+            if level == "document" and result.rowcount:
+                await _sync_conflicts_with_document(session, item_id, is_deleted)
             await session.commit()
         except Exception:
             await session.rollback()
             raise
     return result.rowcount or 0
+
+
+async def _sync_conflicts_with_document(session: Any, data_id: uuid.UUID, is_deleted: bool) -> None:
+    """A trashed document's conflicts must leave the Conflict Resolution
+    screen with it (and come back on restore); only a permanent delete used to
+    clear them, so deleted data kept showing as "pending". The reads exclude
+    is_deleted rows, so flagging is enough. A batch follows its conflicts: it is
+    hidden only once none of its conflicts is still visible."""
+    batch_ids = set((await session.execute(
+        sa_select(KBConflictORM.batch_id)
+        .where(KBConflictORM.data_id == data_id, KBConflictORM.batch_id.is_not(None))
+    )).scalars().all())
+    await session.execute(
+        sa_update(KBConflictORM).where(KBConflictORM.data_id == data_id).values(is_deleted=is_deleted)
+    )
+    if batch_ids:
+        has_visible_conflict = (
+            sa_select(KBConflictORM.conflict_id)
+            .where(KBConflictORM.batch_id == KBConflictBatchORM.batch_id, KBConflictORM.is_deleted.is_(False))
+            .exists()
+        )
+        await session.execute(
+            sa_update(KBConflictBatchORM)
+            .where(KBConflictBatchORM.batch_id.in_(batch_ids))
+            .values(is_deleted=~has_visible_conflict)
+        )
 
 
 async def restore(postgres: Any, qdrant: Any, level: str, item_id: str, tenant_id: str | None) -> None:

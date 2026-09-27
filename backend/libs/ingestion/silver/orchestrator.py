@@ -10,8 +10,10 @@ from libs.database_connector.mongo_connector import MongoClient
 from libs.database_connector.postgres_connector import PostgresClient
 from libs.ingestion.silver.filtering import _filter_chunks
 from libs.ingestion.silver.parsing import (
+    STRUCTURED_TEXT_EXTENSIONS,
     _parse_doc,
     _parse_image,
+    _parse_structured_text,
     _parse_video,
     _parse_web,
 )
@@ -20,6 +22,7 @@ from libs.ingestion.silver.summarization import _summarize_chunks
 from libs.ingestion import config as cfg
 from libs.ingestion.log_writer import IngestionLogger
 from libs.ingestion.pipeline_events import NULL_EMITTER, PipelineEventEmitter
+from libs.ingestion.pipeline_status import stamp_pipeline_status
 from libs.ingestion.stage_chain import StageChain
 
 
@@ -33,6 +36,9 @@ async def _parse_source(
     emitter: PipelineEventEmitter,
 ) -> list[dict[str, Any]]:
     if source_type == SourceType.DOC:
+        if extension.lower().lstrip(".") in STRUCTURED_TEXT_EXTENSIONS:
+            file_bytes = await minio.download(cfg.MINIO_BUCKET, path)
+            return await _parse_structured_text(file_bytes, extension)
         return await _parse_doc(docling, cfg.MINIO_BUCKET, path, extension)
     if source_type == SourceType.WEB:
         document_metadata = kb_data.get("metadata") or kb_data.get("doc_metadata") or {}
@@ -66,6 +72,10 @@ async def promote_to_silver(
     stage_record = StageChain()
 
     await logger.logging("Silver stage started", status="RUNNING", stage="silver")
+    # Clears a previous attempt's "failed" stamp before this one runs, so a
+    # doc that failed last time and is retrying doesn't keep showing as
+    # failed while genuinely back in flight.
+    await stamp_pipeline_status(postgres, data_id, stage="silver", status="running")
     try:
         kb_data = await _load_kb_data(postgres, tenant_id=tenant_id, data_id=data_id)
         source_type = SourceType(kb_data["source_type"])
@@ -113,12 +123,29 @@ async def promote_to_silver(
                     accepted_chunks,
                     logger=logger,
                     emitter=emitter,
+                    postgres=postgres,
+                    tenant_id=tenant_id,
                 )
                 summary_scope.set(kept=len(accepted_chunks))
             stage_record.push("summarized")
 
             for new_index, chunk in enumerate(accepted_chunks):
                 chunk["block_index"] = new_index
+
+            # A steward can move this document to Trash at any point during
+            # the (sometimes minutes-long) parse/filter/summarize work above
+            # — re-check right before the point of no return (writing chunks
+            # and flipping current_tier) rather than silently overriding a
+            # delete that already happened. _load_kb_data's read already
+            # filters is_deleted=False, so a deleted document raises here.
+            try:
+                await _load_kb_data(postgres, tenant_id=tenant_id, data_id=data_id)
+            except ValueError:
+                await logger.logging(
+                    "Silver stage skipped — document was deleted while processing",
+                    status="FAILED",
+                )
+                return {"data_id": data_id, "chunks_count": 0, "layer": Tier.BRONZE.value, "skipped": "document_deleted"}
 
             await _persist_silver(
                 postgres,
@@ -139,6 +166,7 @@ async def promote_to_silver(
             )
     except Exception as exc:
         await logger.logging(f"Silver stage failed: {exc}", level="ERROR", status="FAILED")
+        await stamp_pipeline_status(postgres, data_id, stage="silver", status="failed", error=str(exc))
         await stage_record.unwind()
         await emitter.emit("pipeline.error", {"stage": "silver", "error": str(exc)[:300]})
         raise
@@ -147,4 +175,5 @@ async def promote_to_silver(
         f"Silver complete — {len(accepted_chunks)} chunks accepted, queued for gold",
         status="EMBEDDING",
     )
+    await stamp_pipeline_status(postgres, data_id, stage="silver", status="succeeded")
     return {"data_id": data_id, "chunks_count": len(accepted_chunks), "layer": Tier.SILVER.value}

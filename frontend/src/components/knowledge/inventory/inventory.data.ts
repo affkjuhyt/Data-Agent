@@ -67,3 +67,22 @@ export interface WarehouseConfigVersion {
   tables: WarehouseConfigTable[];
   row_version: string;
 }
+
+/** Non-blank cells in a raw spreadsheet row (`sheet_to_json({ header: 1 })` output). */
+export const nonEmptyCellCount = (row: (string | number)[] | undefined): number =>
+  (row ?? []).filter(cell => cell !== undefined && cell !== null && String(cell).trim() !== '').length;
+
+/**
+ * Row index to treat as the header for a raw XLSX preview (Preview tab —
+ * SheetJS, client-side, no Docling involved). A statistics-report sheet often
+ * opens with a title row ("1. Sản xuất nông nghiệp...") that has text in only
+ * one cell, with the real (often multi-row/merged) column labels several rows
+ * further down. Row 0 alone left the title as the sheet's only "header" and
+ * rendered a table of mostly-empty rows above the real data. Picks the first
+ * row with 2+ non-empty cells; a sheet with no such row (e.g. a single real
+ * column) falls back to row 0 unchanged.
+ */
+export const pickHeaderRowIndex = (rows: (string | number)[][]): number => {
+  const index = rows.findIndex(row => nonEmptyCellCount(row) >= 2);
+  return index === -1 ? 0 : index;
+};

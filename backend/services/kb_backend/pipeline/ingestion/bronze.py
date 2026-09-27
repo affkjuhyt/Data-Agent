@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+import hashlib
 import logging
 import uuid
 
@@ -34,6 +35,7 @@ class BronzeUploadRequest(BaseModel):
     content_type: str = "application/octet-stream"
     knowledge_base_id: str | None = None
     ingestion_mode: str = "document"
+    purpose: str = "production"
 
 
 class WebBronzeRequest(BaseModel):
@@ -46,6 +48,7 @@ class WebBronzeRequest(BaseModel):
     added_by:     str
     abstract:     str = ""
     knowledge_base_id: str | None = None
+    purpose: str = "production"
 
 log = logging.getLogger(__name__)
 
@@ -74,6 +77,7 @@ async def upload_to_bronze(
     doc_metadata: Any,
     knowledge_base_id: str | None = None,
     ingestion_mode: str = "document",
+    purpose: str = "production",
 ) -> dict[str, Any]:
     if len(file_data) > cfg.MAX_FILE_SIZE_BYTES:
         raise ValueError(
@@ -102,7 +106,14 @@ async def upload_to_bronze(
         doc_metadata=doc_metadata,
         current_tier=Tier.BRONZE,
         ingestion_mode=ingestion_mode,
+        purpose=purpose,
         path=object_key,
+        # Same dedup column the scheduled-source worker uses (web_crawler/bronze.py)
+        # — router/knowledge/ingestion.py's ingest_bronze checks it against the
+        # existing row BEFORE calling this function, so re-uploading byte-identical
+        # content never reaches here at all; still stored on every insert so a
+        # future re-upload has something to compare against.
+        content_hash=hashlib.sha256(file_data).hexdigest(),
     )
     # Document and its first lifecycle row share one transaction: a document
     # with no history was previously possible whenever the second insert failed.
@@ -154,6 +165,7 @@ async def register_web_bronze(
     abstract: str,
     language: Language,
     knowledge_base_id: str | None = None,
+    purpose: str = "production",
 ) -> dict[str, Any]:
     metadata_obj = Web(source_type=SourceType.WEB, url=url, web_name=web_name or name)
 
@@ -169,6 +181,7 @@ async def register_web_bronze(
         abstract=abstract,
         doc_metadata=metadata_obj,
         current_tier=Tier.BRONZE,
+        purpose=purpose,
         path=None,
     )
     async with postgres.get_client(tenant_id=tenant_id) as session:

@@ -30,6 +30,13 @@ KAFKA_TOPIC_STRUCTURED_PROPOSE = os.getenv("KAFKA_TOPIC_STRUCTURED_PROPOSE", "kb
 KAFKA_TOPIC_DLQ = os.getenv("KAFKA_TOPIC_DLQ", "kb.ingestion.dlq")
 INGESTION_MAX_ATTEMPTS = int(os.getenv("INGESTION_MAX_ATTEMPTS", "3"))
 
+# A hung Silver/Gold call (MinIO/Docling/LLM stall) previously occupied its
+# concurrency slot forever — no exception ever raised, so it never reached the
+# retry/DLQ path above either. A stage that runs past this ceiling is treated
+# as a normal failure (stamped FAILED, then retried like any other exception).
+SILVER_STAGE_TIMEOUT_SECONDS = int(os.getenv("SILVER_STAGE_TIMEOUT_SECONDS", "1800"))
+GOLD_STAGE_TIMEOUT_SECONDS = int(os.getenv("GOLD_STAGE_TIMEOUT_SECONDS", "1800"))
+
 # ── Consume concurrency ───────────────────────────────────────────────────────
 # The consume loop dispatches up to CONSUME_CONCURRENCY handlers in-flight at once
 # (bounded by a semaphore) instead of processing one Kafka message at a time.
@@ -91,6 +98,11 @@ ALIAS_VERIFY = os.getenv("ALIAS_VERIFY", "1") == "1"
 
 # Bounded parallelism for the per-chunk summary LLM calls in the silver stage.
 SILVER_SUMMARY_CONCURRENCY = int(os.getenv("SILVER_SUMMARY_CONCURRENCY", "4"))
+
+# Shared by libs/ingestion/connectors/* — both kb_backend's manual upload
+# path and the platform_workers web-crawler worker enforce the same cap so a
+# scheduled source can't silently accept something a human upload would reject.
+MAX_FILE_SIZE_BYTES = int(os.getenv("MAX_FILE_SIZE_MB", "200")) * 1024 * 1024
 
 # Web portal fetch timeout (seconds) for the bronze→silver web path.
 WEB_FETCH_TIMEOUT = float(os.getenv("WEB_FETCH_TIMEOUT", "30"))

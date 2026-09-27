@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 import asyncio
+import io
 import os
 import re
 import tempfile
@@ -15,6 +16,7 @@ from collections.abc import Generator
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import (
     PdfPipelineOptions,
+    TesseractCliOcrOptions,
     smolvlm_picture_description,
 )
 from docling.document_converter import DocumentConverter, PdfFormatOption
@@ -45,25 +47,33 @@ TABLE_MAX_CHUNK_CHARS: int = 30000
 
 _converter: DocumentConverter | None = None
 
+# Named explicitly instead of leaving docling on its `auto` OCR default, which
+# probes for whichever backend happens to be importable — a rebuild that
+# changes the installed set would then silently change extracted text.
+# Tesseract ships its language data as an apt package (tesseract-ocr-vie/-eng
+# in this service's Dockerfile), so nothing is downloaded at runtime and the
+# same image always extracts the same text. Docling only runs OCR on regions
+# with no existing text layer, so a born-digital PDF keeps its embedded text
+# instead of being re-recognized at a loss — this was previously off entirely
+# (do_ocr=False), which made a scanned PDF ingest as a silent empty document.
+_OCR_OPTIONS = TesseractCliOcrOptions(lang=["vie", "eng"])
+
 
 def load_converter(use_vlm: bool = False) -> None:
     global _converter
     if use_vlm:
         pipeline_options = PdfPipelineOptions(
+            do_ocr=True,
+            ocr_options=_OCR_OPTIONS,
             do_picture_description=True,
             picture_description_options=smolvlm_picture_description,
             generate_picture_images=True,
         )
-        _converter = DocumentConverter(
-            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
-        )
     else:
-        # Disable OCR — text-based PDFs don't need it, and the available OCR
-        # backends (torch.PP-OCRv6) are unsupported in this environment.
-        pipeline_options = PdfPipelineOptions(do_ocr=False)
-        _converter = DocumentConverter(
-            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
-        )
+        pipeline_options = PdfPipelineOptions(do_ocr=True, ocr_options=_OCR_OPTIONS)
+    _converter = DocumentConverter(
+        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
+    )
 
 
 # ── Internal parse helpers ────────────────────────────────────────────────────
@@ -169,6 +179,73 @@ def _table_row_chunks(name: str, headers: list[str], rows: list[list[str]], max_
     return chunks
 
 
+_NUMBER_CELL = re.compile(r"^[\d.,\s%()/\-\u2212PR]+$")
+_YEAR_CELL = re.compile(r"^(\d{1,2}/)?(\d{1,2}/)?(19|20)\d{2}(\s*\([PR]\))?$")  # 2024, 30/6/2023, 6/2023 (P)
+
+
+def _is_data_number(text: str) -> bool:
+    text = text.strip()
+    return bool(text) and any(ch.isdigit() for ch in text) and bool(_NUMBER_CELL.match(text)) \
+        and not _YEAR_CELL.match(text)
+
+
+def _dedupe_consecutive(parts: list[str]) -> list[str]:
+    return [part for i, part in enumerate(parts) if i == 0 or part != parts[i - 1]]
+
+
+def _split_header(grid: list[list[Any]]) -> tuple[list[str], int, list[str]]:
+    """(column names, number of header rows, table-wide labels).
+
+    Statistics tables carry a header spread over several rows with merged
+    cells (a unit label over every column, "By sex" over Male/Female, a year
+    under a period). Docling flags those rows with `column_header`, so the
+    column name is the top-to-bottom join of the labels above that column,
+    and a label that spans (almost) the whole table is a unit/title, kept out
+    of the column names. Taking `grid[0]` as the header instead left every
+    merged cell repeated in each column and the real column labels sitting in
+    the first "data" row.
+
+    When Docling flagged no header and the first row is mostly numbers, that
+    row is data, so columns get neutral names rather than a data row's values.
+    """
+    ncols = len(grid[0])
+    header_rows = 0
+    for row in grid:
+        texts = [cell.text.strip() for cell in row if cell.text.strip()]
+        # Docling sometimes flags the first row of figures as header too; a row
+        # of mostly numbers (years excluded) is data whatever the flag says.
+        mostly_figures = bool(texts) and sum(_is_data_number(t) for t in texts) * 2 >= len(texts)
+        if any(getattr(cell, "column_header", False) for cell in row) and not mostly_figures:
+            header_rows += 1
+        else:
+            break
+
+    if header_rows == 0:
+        first = [cell.text.strip() for cell in grid[0]]
+        numeric = sum(1 for text in first if _is_data_number(text))
+        if numeric * 2 >= max(len(first), 1):
+            return [f"Column {i + 1}" for i in range(ncols)], 0, []
+        return first, 1, []
+
+    parts: list[list[str]] = [[] for _ in range(ncols)]
+    labels: list[str] = []
+    for r in range(header_rows):
+        for c, cell in enumerate(grid[r]):
+            if cell.start_row_offset_idx != r or cell.start_col_offset_idx != c:
+                continue  # continuation of a merged cell, already handled at its origin
+            text = cell.text.strip()
+            if not text:
+                continue
+            first_col, last_col = cell.start_col_offset_idx, min(cell.end_col_offset_idx, ncols)
+            if ncols >= 3 and last_col - first_col >= ncols - 1:
+                if text not in labels:
+                    labels.append(text)
+                continue
+            for col in range(first_col, last_col):
+                parts[col].append(text)
+    return [" / ".join(_dedupe_consecutive(p)) for p in parts], header_rows, labels
+
+
 def _build_parsed_tables(doc: Any) -> list[dict[str, Any] | None]:
     result: list[dict[str, Any] | None] = []
     for idx, table_item in enumerate(doc.tables):
@@ -176,13 +253,15 @@ def _build_parsed_tables(doc: Any) -> list[dict[str, Any] | None]:
         if not data.grid:
             result.append(None)
             continue
-        headers = [cell.text.strip() for cell in data.grid[0]]
-        rows = [[cell.text.strip() for cell in row] for row in data.grid[1:]]
+        headers, header_rows, labels = _split_header(data.grid)
+        rows = [[cell.text.strip() for cell in row] for row in data.grid[header_rows:]]
         rows = [r for r in rows if any(r)]
         try:
             name = table_item.caption_text(doc).strip() or f"Table_{idx + 1}"
         except Exception:
             name = f"Table_{idx + 1}"
+        if labels:
+            name = f"{name} ({'; '.join(labels)})"
         last = next((r for r in reversed(result) if r is not None), None)
         if last is not None and last["data"]["headers"] == headers:
             last["data"]["rows"].extend(rows)
@@ -282,6 +361,20 @@ def _run_parse_sync(file_bytes: bytes, extension: str, max_chunk_chars: int = MA
         os.unlink(tmp_path)
 
 
+def _xls_to_xlsx(file_bytes: bytes) -> bytes:
+    """Docling reads OOXML only; the legacy binary .xls (still what statistics
+    offices publish) fails with "unexpected error occurred while opening the
+    document". Cell values carry over, cell formatting does not."""
+    import pandas as pd
+
+    sheets = pd.read_excel(io.BytesIO(file_bytes), sheet_name=None, header=None, engine="xlrd")
+    out = io.BytesIO()
+    with pd.ExcelWriter(out, engine="openpyxl") as writer:
+        for name, frame in sheets.items():
+            frame.to_excel(writer, sheet_name=str(name)[:31] or "Sheet", header=False, index=False)
+    return out.getvalue()
+
+
 # ── Public interface ──────────────────────────────────────────────────────────
 
 class InlineDoclingParser:
@@ -309,6 +402,9 @@ class InlineDoclingParser:
         """Parse in-memory bytes (no MinIO download). Used by the web path, which
         fetches + cleans HTML→markdown before handing it to Docling."""
         loop = asyncio.get_event_loop()
+        if extension.lower().lstrip(".") == "xls":
+            file_bytes = await loop.run_in_executor(None, _xls_to_xlsx, file_bytes)
+            extension = "xlsx"
         result = await loop.run_in_executor(
             None, _run_parse_sync, file_bytes, extension, max_chunk_chars
         )

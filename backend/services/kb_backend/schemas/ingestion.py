@@ -11,6 +11,7 @@ class WebIngestRequest(BaseModel):
     language: str = "english"
     abstract: str | None = None
     knowledge_base_id: str | None = None
+    purpose: str = "production"
 
 
 class PromoteResponse(BaseModel):

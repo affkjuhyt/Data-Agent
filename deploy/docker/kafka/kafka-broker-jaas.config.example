@@ -17,7 +17,8 @@ KafkaServer {
     user_release_worker="REPLACE_WITH_RELEASE_WORKER_PASSWORD"
     user_workflow_runtime="REPLACE_WITH_WORKFLOW_RUNTIME_PASSWORD"
     user_memory-consumer="REPLACE_WITH_MEMORY_CONSUMER_PASSWORD"
-    user_schema-crawler-worker="REPLACE_WITH_SCHEMA_CRAWLER_WORKER_PASSWORD";
+    user_schema-crawler-worker="REPLACE_WITH_SCHEMA_CRAWLER_WORKER_PASSWORD"
+    user_web-crawler-worker="REPLACE_WITH_WEB_CRAWLER_WORKER_PASSWORD";
 };
 
 // KafkaClient uses the same admin account — create a dedicated management

@@ -45,6 +45,11 @@ CATALOG: dict[str, str] = {
     "addWarehouse":            "warehouses",
     "addWarehouseConfig":      "warehouses",
     "editWarehouseConfig":     "warehouses",
+    "viewSources":             "sources",
+    "addSource":               "sources",
+    "editSource":              "sources",
+    "deleteSource":            "sources",
+    "runSource":               "sources",
 }
 
 PERMISSIONS: frozenset[str] = frozenset(CATALOG)

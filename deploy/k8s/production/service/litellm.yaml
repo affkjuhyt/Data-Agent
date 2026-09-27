@@ -35,6 +35,7 @@ data:
   # containers-to-host-network.sh), reachable at the node's real IP.
   LLM_MAIN_BASE_URL: http://10.10.55.101:8001/v1
   LLM_FAST_BASE_URL: http://10.10.55.101:8002/v1
+  EMBEDDING_V1_BASE_URL: http://10.10.55.101:8003/v1
 
 ---
 apiVersion: apps/v1

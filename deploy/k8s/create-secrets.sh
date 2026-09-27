@@ -102,6 +102,14 @@ kubectl -n dataagent-service create secret generic platform-workers-schema-crawl
   --from-literal=CLICKHOUSE_CRAWLER_PASSWORD="${CLICKHOUSE_CRAWLER_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+kubectl -n dataagent-service create secret generic platform-workers-web-crawler-secrets \
+  --from-literal=DB_PASSWORD="${POSTGRES_PASSWORD}" \
+  --from-literal=MINIO_URL="${MINIO_URL}" \
+  --from-literal=KAFKA_SASL_PASSWORD="${WEB_CRAWLER_WORKER_KAFKA_PASSWORD}" \
+  --from-literal=OPENBAO_ROLE_ID="${OPENBAO_ROLE_ID}" \
+  --from-literal=OPENBAO_SECRET_ID="${OPENBAO_SECRET_ID}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 kubectl -n dataagent-service create secret generic frontend-secrets \
   --from-literal=VITE_KEYCLOAK_URL="${KEYCLOAK_PUBLIC_URL}" \
   --from-literal=VITE_API_BASE_URL="${PUBLIC_API_URL}" \
@@ -201,6 +209,7 @@ kubectl -n dataagent-service create secret generic db-init-secrets \
   --from-literal=KB_BACKEND_PASSWORD="${KB_BACKEND_PASSWORD}" \
   --from-literal=PGBOUNCER_AUTH_PASSWORD="${PGBOUNCER_AUTH_PASSWORD}" \
   --from-literal=KB_INGESTION_WORKER_PASSWORD="${KB_INGESTION_WORKER_PASSWORD}" \
+  --from-literal=POSTGRES_CRAWLER_PASSWORD="${POSTGRES_CRAWLER_PASSWORD:-}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic seed-secrets \
@@ -223,6 +232,7 @@ kubectl -n dataagent-service create secret generic setup-secrets \
 kubectl -n dataagent-service create secret generic eval-secrets \
   --from-literal=LITELLM_API_KEY="${LITELLM_API_KEY}" \
   --from-literal=AGENT_ID="${EVAL_AGENT_ID}" \
+  --from-literal=GATEWAY_KEY="${GATEWAY_KEY}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic postgres-backup-secrets \

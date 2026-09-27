@@ -37,6 +37,11 @@ data:
   KAFKA_SUPER_USERS: User:admin;User:ANONYMOUS
   KAFKA_OPTS: -Djava.security.auth.login.config=/etc/kafka/jaas/kafka-broker-jaas.config
   KAFKA_HEAP_OPTS: -Xmx512m -Xms512m
+  # The image's log.dirs defaults to /tmp/kafka-logs, not the PVC mounted at
+  # /var/lib/kafka/data, so every pod restart wiped topics, ACLs, offsets and
+  # messages (the ACLs live in the KRaft metadata log, so a restart also
+  # silently cut off every SASL client until kafka-topics was re-run).
+  KAFKA_LOG_DIRS: /var/lib/kafka/data
 ---
 apiVersion: apps/v1
 kind: StatefulSet

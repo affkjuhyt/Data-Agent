@@ -11,6 +11,7 @@ from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm i
 from libs.database_connector.kafka_connector import KafkaProducerClient
 from libs.database_connector.postgres_connector import PostgresClient
 from libs.ingestion import config as cfg
+from libs.ingestion.purpose import reaches_gold
 
 log = logging.getLogger(__name__)
 
@@ -72,6 +73,68 @@ async def document_name(postgres: PostgresClient, data_id: str) -> str:
             sa_select(KBDataORM.name).where(KBDataORM.data_id == uuid.UUID(data_id))
         )
     return name or ""
+
+
+class GoldHandoffFailed(Exception):
+    """The Gold hand-off publish itself failed (broker rejected the producer,
+    timeout, ...) — distinct from `maybe_publish_auto_gold` returning False for
+    a legitimate reason (not auto, deleted, wrong purpose). Silver already
+    succeeded, so the caller must not treat this as a Silver failure (that
+    would re-run Silver); it retries just the hand-off via
+    `route_ingestion_failure(source_topic=cfg.KAFKA_TOPIC_GOLD)` instead — see
+    `build_silver_handler`. Before this, a failed hand-off was logged and
+    silently dropped forever: nothing re-queued it, so a document sat at
+    Silver with no automatic way back (hit for real on 2026-09-25, see
+    RUNBOOK — a rejected idempotent Kafka producer that never got a fresh id
+    stalled every auto-promote source for ~11 hours)."""
+
+
+async def maybe_publish_auto_gold(
+    postgres: PostgresClient, producer: KafkaProducerClient | None, *, data_id: str, tenant_id: str,
+) -> bool:
+    """A scheduled source with `promotion_mode: "auto"` (stamped into
+    `KBData.metadata` by the crawler worker at Bronze time, see
+    `platform_workers/workers/web_crawler/bronze.py`) needs no human click
+    for Gold — a worker can't click a button. Called right after Silver
+    succeeds; publishes the same `promote_gold` event kb_backend's own
+    `/promote/{id}/gold` route builds. Returns whether it published — `False`
+    for every legitimate no-op (no producer configured, not auto mode,
+    deleted, wrong purpose). Raises `GoldHandoffFailed` when the publish
+    itself fails, so the caller can retry just that step (see
+    `GoldHandoffFailed`'s docstring) instead of the failure vanishing."""
+    if producer is None:
+        return False
+    async with postgres.get_client() as session:
+        row = (await session.execute(
+            sa_select(KBDataORM.doc_metadata, KBDataORM.is_deleted, KBDataORM.purpose).where(
+                KBDataORM.data_id == uuid.UUID(data_id)
+            )
+        )).first()
+    if row is None or row[1]:
+        # Deleted (moved to Trash) after Silver succeeded but before this
+        # ran — a worker auto-promoting a document a steward just deleted
+        # would resurrect it at Gold; nothing to do here instead.
+        return False
+    if not reaches_gold(row[2]):
+        return False  # Training/Evaluation data ends at Silver, whatever the source's promotion mode
+    metadata = row[0] or {}
+    if metadata.get("promotion_mode") != "auto":
+        return False
+    try:
+        await producer.produce(
+            topic=cfg.KAFKA_TOPIC_GOLD,
+            value={
+                "event": "promote_gold",
+                "data_id": data_id,
+                "tenant_id": tenant_id,
+                "neo4j_connection_id": metadata.get("neo4j_connection_id", ""),
+                "approved_by": "web-crawler-worker",
+            },
+        )
+    except Exception as exc:
+        log.warning("maybe_publish_auto_gold: failed to queue gold for data_id=%s", data_id, exc_info=True)
+        raise GoldHandoffFailed(str(exc)) from exc
+    return True
 
 
 async def reset_events_for_new_run(db: Any, data_id: str) -> None:

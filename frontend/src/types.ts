@@ -51,6 +51,8 @@ export interface KnowledgeDocument {
   // migration: that column is a strictly-typed discriminated union and
   // would silently drop an unrecognized key).
   ingestion_mode?: string | null;
+  // production | training | evaluation — training/evaluation documents end at Silver and never reach Gold.
+  purpose?: string | null;
   metadata: {
     doc_type?: string | null;   // computed from source_type + extension
     language?: string | null;
@@ -65,6 +67,17 @@ export interface KnowledgeDocument {
     file_size?: number | null;
     total_frame?: number | null;
     intents?: string[] | null;  // document-level content-purpose intents (Gold)
+    // Set only for a web-crawler-created document (absent for a manual
+    // upload, which is always manual) — 'auto' means a background source is
+    // already driving this document to Gold; see AssetInventory's action column.
+    promotion_mode?: string | null;
+    // Real outcome of the last Silver/Gold attempt — distinguishes a
+    // document genuinely still in flight from one whose auto-promotion
+    // failed outright (bad file format, corrupt content) and is stuck at
+    // its current tier for good, not "still processing".
+    last_pipeline_stage?: string | null;
+    last_pipeline_status?: string | null;
+    last_pipeline_error?: string | null;
   };
   score?: number;
   conflicts?: boolean;

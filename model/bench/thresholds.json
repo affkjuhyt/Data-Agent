@@ -1,0 +1,78 @@
+{
+  "_comment": [
+    "Serving budgets. Derived from four repeated baseline runs on 22-09-2026 (A100 40GB,",
+    "Qwen3-14B-AWQ + Qwen3-4B-AWQ behind vLLM), not from targets — model/bench/baselines/",
+    "holds two of those runs.",
+    "",
+    "What is NOT gated here matters as much as what is. The same four runs measured",
+    "time-to-first-token at concurrency 8 anywhere between 62ms and 4025ms for one profile,",
+    "because this GPU also serves the deployed stack. A bound wide enough to survive that",
+    "would catch nothing; a bound tight enough to be useful would fail on other people's",
+    "traffic. So latency-under-load is measured, reported, and deliberately left unjudged.",
+    "",
+    "Three things ARE stable enough to gate, and each catches a regression that is",
+    "otherwise silent:",
+    "",
+    "  prompt_tokens_max  — deterministic. Fails when a system prompt grows. This is the",
+    "                       cheapest regression to introduce (edit a .txt) and the one",
+    "                       nothing else in the repo notices.",
+    "  decode_tps_min     — varied under 1% run to run at concurrency 1. Fails when a model,",
+    "                       a quantisation or a kernel got slower. Only set where the forced",
+    "                       output is long enough to measure: guardrail generates 64 tokens",
+    "                       and its decode rate came back bimodal (84 or 220 tok/s across",
+    "                       four runs), so it has no floor rather than a floor that lies.",
+    "  prefix_cache_hit_rate_min — fails when something per-request gets placed ahead of the",
+    "                       stable prefix, which costs a full prefill and shows up nowhere",
+    "                       else. Held loose where the baseline itself is loose.",
+    "",
+    "Judged at concurrency 1 only — the quiet, reproducible scenario. decode_tps is judged",
+    "only on a --force-output report, because a judge that naturally emits twelve tokens has",
+    "no decode rate worth comparing."
+  ],
+  "profiles": {
+    "guardrail": {
+      "prompt_tokens_max": 560,
+      "prefix_cache_hit_rate_min": 0.90,
+      "_why_no_decode_floor": "64 forced tokens measured 84 or 220 tok/s across four runs — the window is too short to be a measurement."
+    },
+    "planner": {
+      "prompt_tokens_max": 2000,
+      "decode_tps_min": 190,
+      "prefix_cache_hit_rate_min": 0.95,
+      "_why": "The largest fixed prefix in the product (~1.9k tokens) on every request. Its cache hit rate sat at 99-100% across every run; anything lower means the prefix stopped being shared."
+    },
+    "judge": {
+      "prompt_tokens_max": 520,
+      "decode_tps_min": 195,
+      "prefix_cache_hit_rate_min": 0.70,
+      "_why": "Hit rate baselines at 78-84%, not higher, because the judge's user turn is most of its prompt. Held at the measured floor rather than an aspiration."
+    },
+    "text_to_sql": {
+      "prompt_tokens_max": 2520,
+      "decode_tps_min": 98,
+      "prefix_cache_hit_rate_min": 0.95,
+      "_why": "The schema block is capped at 6000 chars by handlers/data.py. If prompt_tokens goes over this bound, that cap stopped holding."
+    },
+    "responder": {
+      "prompt_tokens_max": 1950,
+      "decode_tps_min": 96,
+      "prefix_cache_hit_rate_min": 0.0,
+      "_why_hit_rate_is_zero": "Measured at 6%. responder_system.txt is 26 bytes, so there is no shared prefix to cache and the whole 1.8k-token context is prefilled every request — this is the finding the baseline produced, recorded as a bound of zero so it is impossible to mistake for a healthy number. Raise it the day the prompt is restructured; do not lower anything else to match it."
+    },
+    "orchestrator-planner": {
+      "prompt_tokens_max": 760,
+      "decode_tps_min": 100,
+      "prefix_cache_hit_rate_min": 0.90
+    }
+  },
+  "every_scenario": {
+    "errors_max": 0,
+    "preemptions_max": 0,
+    "_why": [
+      "Errors are absolute: a benchmark that measured six of eight requests measured a",
+      "different workload. Preemption means vLLM ran out of KV room and evicted running",
+      "requests — every latency in that scenario belongs to a saturated server, so the",
+      "report should be rejected rather than read."
+    ]
+  }
+}

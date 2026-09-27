@@ -35,7 +35,7 @@ import { KnowledgeDocument, KnowledgeLayer, PagedResponse } from '../../../types
 import { apiGet, apiMutate, apiBlob } from '../../../lib/apiClient';
 import {
   ChunkVersion, Chunk, TableColumn, DocTable,
-  WarehouseConfigTable, WarehouseConfigVersion,
+  WarehouseConfigTable, WarehouseConfigVersion, pickHeaderRowIndex,
 } from './inventory.data';
 
 interface AssetDetailWorkspaceProps {
@@ -121,15 +121,24 @@ export const AssetDetailWorkspace = ({
   // Spreadsheet uploads (.xlsx/.xls/.csv) have no native browser renderer —
   // PREVIEW shows the same parsed table data as the TABLES tab instead of a
   // file viewer, so it needs this fetch too, not just when TABLES is active.
-  const isSpreadsheetDoc = /^Doc\/(XLSX|XLS|CSV)$/i.test(document.metadata?.doc_type || '');
+  // Documents fetched by a scheduled source carry the bare extension as doc_type
+  // ("csv"), not the "Doc/CSV" form a manual upload writes, so the extension is
+  // what decides the viewer for both.
   const docExtension = (document.extension || '').toLowerCase();
+  const isPlainDoc = document.source_type === 'doc';
+  const isSpreadsheetDoc =
+    /^Doc\/(XLSX|XLS|CSV)$/i.test(document.metadata?.doc_type || '')
+    || (isPlainDoc && ['xlsx', 'xls', 'csv'].includes(docExtension));
   // PDF, image and video all have a real, native browser renderer — no
   // processing needed to view them, so these work at ANY tier (bronze
   // included), unlike the tabs/branches below that depend on pipeline output.
-  const isPdfDoc = document.source_type === 'doc' && docExtension === 'pdf';
-  const isPlainTextDoc = document.source_type === 'doc' && (docExtension === 'txt' || docExtension === 'md');
-  const isImageDoc = document.source_type === 'image';
-  const isVideoDoc = document.source_type === 'video';
+  const isPdfDoc = isPlainDoc && docExtension === 'pdf';
+  const isPlainTextDoc = isPlainDoc && ['txt', 'md', 'json', 'xml'].includes(docExtension);
+  // Ingested through a scheduled source, an image or video is typed "doc".
+  const isImageDoc = document.source_type === 'image'
+    || (isPlainDoc && ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'].includes(docExtension));
+  const isVideoDoc = document.source_type === 'video'
+    || (isPlainDoc && ['mp4', 'webm'].includes(docExtension));
   const isWebDoc = document.source_type === 'web';
   // Everything else with no native renderer (docx, pptx, ...) and no
   // structured-table extraction — the closest real preview is the parsed
@@ -184,15 +193,22 @@ export const AssetDetailWorkspace = ({
       .then(async blob => {
         if (cancelled) return;
         if (isPlainTextDoc) {
-          setPreviewText(await blob.text());
+          const text = await blob.text();
+          if (docExtension === 'json') {
+            try { setPreviewText(JSON.stringify(JSON.parse(text), null, 2)); } catch { setPreviewText(text); }
+          } else {
+            setPreviewText(text);
+          }
         } else if (isSpreadsheetDoc) {
           const XLSX = await import('xlsx');
           const buf = await blob.arrayBuffer();
           const workbook = XLSX.read(buf, { type: 'array' });
           const sheets = workbook.SheetNames.map(name => {
             const rows = XLSX.utils.sheet_to_json<(string | number)[]>(workbook.Sheets[name], { header: 1, blankrows: false });
-            const [headers, ...body] = rows;
-            return { name, headers: (headers ?? []).map(h => String(h ?? '')), rows: body };
+            const headerIndex = pickHeaderRowIndex(rows);
+            const headers = rows[headerIndex] ?? [];
+            const body = rows.slice(headerIndex + 1);
+            return { name, headers: headers.map(h => String(h ?? '')), rows: body };
           }).filter(s => s.headers.length > 0 || s.rows.length > 0);
           if (!cancelled) setPreviewSheets(sheets);
         } else {
@@ -209,7 +225,7 @@ export const AssetDetailWorkspace = ({
       setPreviewSheets(null);
       setPreviewText(null);
     };
-  }, [activeTab, document.data_id, needsRawFilePreview, isPlainTextDoc, isSpreadsheetDoc]);
+  }, [activeTab, document.data_id, needsRawFilePreview, isPlainTextDoc, isSpreadsheetDoc, docExtension]);
 
   // Fetch tables when tab is TABLES, doc changes, or page changes
   useEffect(() => {
@@ -455,7 +471,7 @@ export const AssetDetailWorkspace = ({
     setCellSaveStatus('idle');
   };
 
-  const extension = document.name.split('.').pop() || 'N/A';
+  const extension = document.extension || document.name.split('.').pop() || 'N/A';
   const language = document.metadata.language || 'English';
   const sourceType = document.metadata.doc_type || 'Raw Data';
   const isWarehouse = sourceType.startsWith('Warehouse/');
@@ -777,7 +793,10 @@ export const AssetDetailWorkspace = ({
                                    <p className="text-xs text-[#5A5A5A]">No text has been extracted from this document yet.</p>
                                 </div>
                              ) : (
-                                <div className="w-full max-w-3xl content-card content-card--static p-8">
+                                // self-start: the scroll container is a fixed-height flex row, so the
+                                // default stretch clamped this card to the viewport height and long
+                                // text overflowed past its border.
+                                <div className="w-full max-w-3xl content-card content-card--static p-8 self-start">
                                    <pre className="whitespace-pre-wrap break-words text-xs font-mono text-[#2A2A2A] leading-relaxed">
                                      {chunks.map(c => c.text).join('\n\n---\n\n')}
                                    </pre>

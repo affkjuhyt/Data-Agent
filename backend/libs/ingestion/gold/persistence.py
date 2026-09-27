@@ -46,21 +46,21 @@ async def _get_collection_embed_model_id(postgres: PostgresClient, collection_na
     return str(row) if row else cfg.EMBED_MODEL_ID
 
 
-async def _get_data_row(postgres: PostgresClient, data_id: str) -> tuple[str, str]:
+async def _get_data_row(postgres: PostgresClient, data_id: str) -> tuple[str, str, str]:
     try:
         async with postgres.get_client() as session:
             row = (
                 await session.execute(
-                    sa_select(KBDataORM.name, KBDataORM.knowledge_base_id)
+                    sa_select(KBDataORM.name, KBDataORM.knowledge_base_id, KBDataORM.purpose)
                     .where(KBDataORM.data_id == uuid.UUID(data_id))
                     .limit(1)
                 )
             ).first()
         if row:
-            return str(row[0] or ""), (str(row[1]) if row[1] else DEFAULT_KNOWLEDGE_BASE)
+            return str(row[0] or ""), (str(row[1]) if row[1] else DEFAULT_KNOWLEDGE_BASE), str(row[2] or "production")
     except Exception:
         pass
-    return "", DEFAULT_KNOWLEDGE_BASE
+    return "", DEFAULT_KNOWLEDGE_BASE, "production"
 
 
 async def _clear_open_conflicts(
@@ -198,6 +198,7 @@ async def _commit_chunk_atomic(
     embed_model_id: str,
     stage_record: StageChain,
     knowledge_base: str = "",
+    purpose: str = "production",
     entities: list[str] | None = None,
     entity_type_fields: dict[str, Any] | None = None,
     emitter: PipelineEventEmitter = NULL_EMITTER,
@@ -253,6 +254,7 @@ async def _commit_chunk_atomic(
                                 **(entity_type_fields or {}),
                                 "embedding_model_id": embed_model_id,
                                 "knowledge_base": knowledge_base,
+                                "purpose": purpose,
                                 "is_deleted": False,
                             },
                         )
@@ -330,6 +332,7 @@ async def _write_doc_summary_point(
     committed_count: int,
     emitter: PipelineEventEmitter,
     stage_record: StageChain,
+    purpose: str = "production",
 ) -> None:
     await logger.progress(status="GOLD_GRAPH")
     async with emitter.step("gold.doc.commit", data_id=data_id) as doc_scope:
@@ -348,6 +351,7 @@ async def _write_doc_summary_point(
                         "chunk_count": committed_count,
                         "embedding_model_id": embed_model_id,
                         "knowledge_base": knowledge_base,
+                        "purpose": purpose,
                         "is_deleted": False,
                     },
                 )

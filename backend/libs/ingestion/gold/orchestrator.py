@@ -35,6 +35,8 @@ from libs.ingestion import config as cfg
 from libs.ingestion.graph_store import GraphStore
 from libs.ingestion.log_writer import IngestionLogger
 from libs.ingestion.pipeline_events import NULL_EMITTER, PipelineEventEmitter
+from libs.ingestion.pipeline_status import stamp_pipeline_status
+from libs.ingestion.purpose import reaches_gold
 from libs.ingestion.stage_chain import StageChain
 
 log = logging.getLogger(__name__)
@@ -93,6 +95,7 @@ async def _process_chunk(
     emitter,
     stage_record: StageChain,
     pii_mask_types: list[str] | None = None,
+    purpose: str = "production",
 ) -> dict:
     block_index = chunk["block_index"]
     if pii_mask_types:
@@ -177,6 +180,7 @@ async def _process_chunk(
         approved_by=approved_by,
         embed_model_id=embed_model_id,
         knowledge_base=knowledge_base,
+        purpose=purpose,
         entities=entities.canonicals,
         entity_type_fields=entities.qdrant_type_fields(),
         emitter=emitter,
@@ -220,15 +224,24 @@ async def promote_to_gold(
     approved_by: str,
     emitter: PipelineEventEmitter = NULL_EMITTER,
 ) -> dict[str, Any]:
+    _, _, purpose = await _get_data_row(postgres, data_id)
+    if not reaches_gold(purpose):
+        # Whatever queued this (a stale button, an old Kafka event, a source
+        # switched to Training after its Silver run) must not put the document
+        # into the knowledge base.
+        log.info("Gold skipped: data_id=%s purpose=%s stays at Silver", data_id, purpose)
+        return {"data_id": data_id, "layer": Tier.SILVER.value, "skipped": f"purpose_{purpose}"}
+
     database = mongo.get_client()
     logger = IngestionLogger(db=database, data_id=data_id)
     stage_record = StageChain()
 
     await logger.logging("Gold stage started — extracting entities", status="GRAPH_EXTRACTING", stage="gold")
+    await stamp_pipeline_status(postgres, data_id, stage="gold", status="running")
     try:
         embed_model_id = await _get_collection_embed_model_id(postgres, collection_name=cfg.QDRANT_COLLECTION)
         log.info("Gold: collection '%s' → embed_model_id=%s", cfg.QDRANT_COLLECTION, embed_model_id or "none")
-        doc_name, knowledge_base = await _get_data_row(postgres, data_id)
+        doc_name, knowledge_base, purpose = await _get_data_row(postgres, data_id)
         log.info("Gold: data_id=%s → knowledge_base=%s", data_id, knowledge_base or "none")
 
         pii_mask_types = await _load_pii_policy(postgres, tenant_id)
@@ -282,6 +295,7 @@ async def promote_to_gold(
                             emitter=emitter,
                             stage_record=stage_record,
                             pii_mask_types=pii_mask_types,
+                            purpose=purpose,
                         )
                 except Exception as exc:
                     counts["failed"] += 1
@@ -331,6 +345,7 @@ async def promote_to_gold(
                     data_id=data_id,
                     tenant_id=tenant_id,
                     knowledge_base=knowledge_base,
+                    purpose=purpose,
                     embed_model_id=embed_model_id,
                     doc_summary=doc_summary,
                     top_intents=top_intents,
@@ -363,6 +378,7 @@ async def promote_to_gold(
             )
     except Exception as exc:
         await logger.logging(f"Gold stage failed: {exc}", level="ERROR", status="FAILED")
+        await stamp_pipeline_status(postgres, data_id, stage="gold", status="failed", error=str(exc))
         await stage_record.unwind()
         await emitter.emit("pipeline.error", {"stage": "gold", "error": str(exc)[:300]})
         raise
@@ -371,6 +387,7 @@ async def promote_to_gold(
         f"Gold complete — {counts['committed']} blocks committed, {counts['conflicted']} conflicts detected",
         status="PUBLISHED",
     )
+    await stamp_pipeline_status(postgres, data_id, stage="gold", status="succeeded")
     await emitter.emit("pipeline.done", {})
 
     return {

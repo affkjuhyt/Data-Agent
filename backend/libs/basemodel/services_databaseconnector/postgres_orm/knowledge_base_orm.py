@@ -100,6 +100,15 @@ class KBDataORM(Base):
         # Document name is unique PER TENANT, not globally — two tenants may each
         # have a document with the same name.
         Index("idx_kbdata_tenant_name", "tenant_id", "name", unique=True),
+        # NOT unique: a per-tenant lookup so a re-crawl can compare "is this
+        # byte-identical to what's already stored" before paying for a
+        # delete+reinsert — see content_hash's own comment.
+        Index("idx_kbdata_tenant_content_hash", "tenant_id", "content_hash"),
+        # A steward's Training/Evaluation tag is queried on every RAG/search
+        # request (the qdrant filter's own purpose column mirrors this one,
+        # but Postgres-side listings — Data Layers, Source Registry — filter
+        # here too).
+        Index("idx_kbdata_tenant_purpose", "tenant_id", "purpose"),
     )
 
     data_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -127,7 +136,18 @@ class KBDataORM(Base):
     # postgres_model.py) and silently drops any key its Pydantic model
     # doesn't declare.
     ingestion_mode: Mapped[str] = mapped_column(String(32), default="document", server_default="document", nullable=False)
+    # 'training' | 'production' | 'evaluation' — a steward tags data at
+    # ingestion time (Phase D). Non-production data is fully hidden from
+    # RAG/search by default (see qdrant_connector.py's _build_qdrant_filters)
+    # — visible only through Data Layers/Source Registry directly.
+    purpose: Mapped[str] = mapped_column(String(16), default="production", server_default="production", nullable=False)
     path: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    # sha256 hex digest of the raw content bytes (or extracted text, for
+    # web/rss sources with no stable raw bytes). Lets a re-crawl short-circuit
+    # the existing same-name replace when the content genuinely hasn't
+    # changed — see `_replace_existing_by_name` in the web-crawler worker's
+    # bronze.py. Nullable: not every ingestion path back-fills it.
+    content_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     added_on: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -319,6 +339,120 @@ class KBWarehouseConfigORM(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     warehouse: Mapped["KBWarehouseORM"] = relationship(back_populates="configs")
+
+
+@register("orm")
+class KBSourceORM(Base):
+    """A registered, schedulable ingest source (V1: http_file / web_crawl /
+    web_crawl_headless — see SourceConnectorType). Mirrors KBWarehouseORM's
+    shape: this table is the identity, KBSourceConfigORM below carries the
+    versioned, editable config (url/cron/etc)."""
+    __tablename__ = "KBSource"
+
+    __table_args__ = (
+        Index("idx_kbsource_tenant", "tenant_id"),
+        Index("idx_kbsource_inserted_at_desc", text("inserted_at DESC")),
+    )
+
+    source_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    # The steward's role_id at registration time — reused by the worker for every
+    # scheduled run of this source, since a cron tick has no human request context
+    # to pull a role_id from (KBData.role_id is NOT NULL).
+    role_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("RolePermissions.id"), nullable=False)
+    connector_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    publisher: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+
+    configs: Mapped[list["KBSourceConfigORM"]] = relationship(back_populates="source", cascade="all, delete-orphan")
+    runs: Mapped[list["KBSourceRunORM"]] = relationship(back_populates="source", cascade="all, delete-orphan")
+
+
+@register("orm")
+class KBSourceConfigORM(Base):
+    __tablename__ = "KBSourceConfig"
+    __table_args__ = (
+        Index("idx_kbsourceconfig_source_version", "source_id", "version_number"),
+        Index("idx_kbsourceconfig_source_active", "source_id", postgresql_where=text("is_active = true")),
+    )
+
+    config_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBSource.source_id"), nullable=False, index=True)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    row_version: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), server_default=text("gen_random_uuid()"), default=uuid.uuid4, nullable=False)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    source: Mapped["KBSourceORM"] = relationship(back_populates="configs")
+
+
+@register("orm")
+class KBSourceRunORM(Base):
+    """One row per crawl attempt — read by the worker (bulk 'last run per
+    source' query, mirroring schema_crawler's _last_crawled_by_warehouse) and
+    by the Source Registry UI's run-history view."""
+    __tablename__ = "KBSourceRun"
+    __table_args__ = (
+        Index("idx_kbsourcerun_source_started_desc", "source_id", text("started_at DESC")),
+    )
+
+    run_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBSource.source_id"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    trigger: Mapped[str] = mapped_column(String(16), nullable=False)
+    data_ids: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    quality_metrics: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    # Retry/backoff for a failed run: the worker's due-check picks up
+    # status='failed' rows again once next_retry_at passes, up to
+    # MAX_RETRIES — see web_crawler/worker.py's _is_due_for_retry.
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    next_retry_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    finished_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    source: Mapped["KBSourceORM"] = relationship(back_populates="runs")
+
+
+@register("orm")
+class KBSourceCrawlQueueORM(Base):
+    """Link-discovery queue for a `recursive` web_crawl/web_crawl_headless
+    source (Quân's controller/queue idea) — the worker seeds this with the
+    source's own URL at depth 0, then enqueues each fetched page's discovered
+    links at depth+1 until `KBSourceConfig.config.max_depth` is reached.
+    Queried standalone by the worker every tick (not always joined through
+    KBSource), so it carries its own tenant_id rather than relying on a join.
+    """
+    __tablename__ = "KBSourceCrawlQueue"
+    __table_args__ = (
+        # A source never enqueues the same URL twice, however many pages
+        # link to it.
+        Index("idx_kbsourcecrawlqueue_source_url", "source_id", "url", unique=True),
+        Index("idx_kbsourcecrawlqueue_tenant_status", "tenant_id", "status"),
+        Index("idx_kbsourcecrawlqueue_inserted_at_desc", text("inserted_at DESC")),
+    )
+
+    queue_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBSource.source_id"), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    depth: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    discovered_from: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", server_default="pending")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    source: Mapped["KBSourceORM"] = relationship()
 
 
 @register("orm")

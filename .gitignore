@@ -106,3 +106,11 @@ deploy/k8s/dev/secrets.env
 deploy/k8s/dev/.openbao-keys.json
 deploy/k8s/dev/.openbao-env.yml
 /tmp/
+
+# Serving-benchmark artifacts. Same rule as the eval reports above: an ad-hoc
+# run is derived data and goes stale immediately. A baseline someone deliberately
+# recorded is different — it is the evidence a later optimisation is judged
+# against — and lives versioned in model/bench/baselines/.
+bench-report.json
+bench-baseline*.json
+e2e-report.json

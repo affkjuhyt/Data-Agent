@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from libs.basemodel.services_databaseconnector.postgres_model import ConflictStatus
 from libs.database_connector.model_connector import ModelServiceClient
-from libs.database_connector.postgres_connector import PostgresClient
+from libs.database_connector.postgres_connector import PostgresClient, set_current_tenant
 from libs.database_connector.qdrant_connector import QdrantClient as QdrantService
 from services.kb_conflict_resolution.libs.keep_existing import _apply_keep_existing
 from services.kb_conflict_resolution.libs.keep_incoming import _apply_keep_incoming
@@ -71,6 +71,12 @@ async def resolve_batch(
             resolved_by=resolved_by,
             conflicts=conflicts,
         )
+        # See kb_promote_silver/libs/handler.py's identical fix — RLS-scoped
+        # reads (postgres.read(ReadJoinRequest(tenant_id=...))) rely on this
+        # ContextVar, which nothing else in a Kafka consumer ever sets. Known
+        # only once ctx.tenant_id is loaded, so set from here on.
+        if ctx.tenant_id:
+            set_current_tenant(ctx.tenant_id)
         stage_record.push("batch_loaded")
 
         mode = _classify_batch_resolution(ctx.conflicts)

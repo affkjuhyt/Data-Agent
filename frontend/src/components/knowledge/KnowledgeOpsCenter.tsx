@@ -18,6 +18,7 @@ import {
   Boxes,
   Plus,
   Trash2,
+  Globe,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { OperationalHeader } from '../shared/OperationalHeader';
@@ -33,6 +34,7 @@ import { PolicyCenter } from './policy/PolicyCenter';
 import { KnowledgeBaseCenter } from './knowledge-base/KnowledgeBaseCenter';
 import { WarehouseWizard } from './warehouse/WarehouseWizard';
 import { WarehouseCenter } from './warehouse/WarehouseCenter';
+import { SourceRegistry } from './sources/SourceRegistry';
 import { KnowledgeHubView } from './knowledge-hub/KnowledgeHub';
 import { TrashCenter } from './trash/TrashCenter';
 import { KnowledgeDocument } from '../../types';
@@ -40,8 +42,9 @@ import { useAppState } from '../../AppStateContext';
 import { apiGet, apiMutate } from '../../lib/apiClient';
 import { usePromotionQueue } from './inventory/usePromotionQueue';
 import { PromotionProgressOverlay } from './inventory/PromotionProgressOverlay';
+import { useCrawlActivity } from './sources/useCrawlActivity';
 
-type KnowledgeTabId = 'FLEET' | 'INGEST' | 'INVENTORY' | 'CONFLICTS' | 'KNOWLEDGE' | 'WAREHOUSE' | 'POLICY' | 'KNOWLEDGE_BASE' | 'TRASH';
+type KnowledgeTabId = 'FLEET' | 'INGEST' | 'INVENTORY' | 'CONFLICTS' | 'KNOWLEDGE' | 'WAREHOUSE' | 'SOURCE_REGISTRY' | 'POLICY' | 'KNOWLEDGE_BASE' | 'TRASH';
 
 const KnowledgeOpsCenter = () => {
   const { updateDocument } = useAppState();
@@ -49,6 +52,16 @@ const KnowledgeOpsCenter = () => {
   const promotingIds = new Set(
     promotionQueue.filter(e => e.status === 'queued' || e.status === 'processing').map(e => e.data_id),
   );
+  // Crawl runs share the Pipeline Activity panel with promotions. An
+  // auto-promote source's successful crawl hands off here to the same real,
+  // SSE-tracked Bronze->Gold progress Data Layers' manual promote uses —
+  // see useCrawlActivity's toEntry docstring for why the crawl's own entry
+  // never claims "done" at Bronze for these.
+  // 'source' (not 'bronze') here is purely a display choice: from the
+  // steward's point of view an Auto source's journey is one continuous
+  // "Source → Gold" run, not two hops — the SSE tracking underneath already
+  // targets 'gold' from the moment Bronze lands, spanning Silver internally.
+  const crawl = useCrawlActivity((dataId, title, toTier) => startPromotion(dataId, title, 'source', toTier));
   // Knowledge's own tabs are independent of the module nav (which now lives under "Build").
   const [activeSubTab, setActiveSubTab] = useState<KnowledgeTabId>('FLEET');
 
@@ -100,6 +113,7 @@ const KnowledgeOpsCenter = () => {
     { id: 'INVENTORY', label: 'Data Layers',    icon: Layers },
     { id: 'KNOWLEDGE', label: 'Knowledge Hub',  icon: Network },
     { id: 'WAREHOUSE', label: 'Warehouses',     icon: ServerCog },
+    { id: 'SOURCE_REGISTRY', label: 'Source Registry', icon: Globe },
     { id: 'CONFLICTS', label: 'Conflicts',      icon: ShieldAlert, count: conflictCount ?? undefined },
     { id: 'POLICY',    label: 'Policies',       icon: ShieldCheck },
     { id: 'KNOWLEDGE_BASE', label: 'Knowledge Groups', icon: Boxes },
@@ -131,6 +145,8 @@ const KnowledgeOpsCenter = () => {
         return <KnowledgeHubView />;
       case 'WAREHOUSE':
         return <WarehouseCenter onAddWarehouse={() => setShowWarehouseWizard(true)} />;
+      case 'SOURCE_REGISTRY':
+        return <SourceRegistry activeSourceIds={crawl.activeSourceIds} onRunQueued={crawl.onRunsQueued} />;
       case 'CONFLICTS':  return <ConflictWorkspace />;
       case 'POLICY':     return <PolicyCenter />;
       case 'KNOWLEDGE_BASE': return <KnowledgeBaseCenter />;
@@ -339,7 +355,10 @@ const KnowledgeOpsCenter = () => {
         {renderContent()}
       </div>
 
-      <PromotionProgressOverlay queue={promotionQueue} onDismiss={dismissEntry} />
+      <PromotionProgressOverlay
+        queue={[...crawl.entries, ...promotionQueue]}
+        onDismiss={(id) => (crawl.runIds.has(id) ? crawl.dismiss(id) : dismissEntry(id))}
+      />
     </div>
   );
 };

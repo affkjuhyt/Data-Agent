@@ -53,6 +53,7 @@ async def _filter_chunks(
     ))
 
     exact_phrases: list[str] = []
+    nlp_rules: list[str] = []
     if policies_response.code == 200:
         for policy in policies_response.data or []:
             policy_config = policy.get("config") or {}
@@ -63,6 +64,8 @@ async def _filter_chunks(
             ]
             if policy.get("configformat") == PolicyFilteringType.EXACT_MATCH.value:
                 exact_phrases.extend(rule_values)
+            elif policy.get("configformat") == PolicyFilteringType.NATURAL_LANG.value:
+                nlp_rules.extend(rule_values)
 
     accepted_chunks: list[dict[str, Any]] = []
     for chunk in chunks:
@@ -75,6 +78,17 @@ async def _filter_chunks(
                 "method": "exact_match",
                 "reason": f"Matched banned phrase: '{matched_phrase}'",
                 "phrase": matched_phrase,
+                "preview": content[:200],
+                "length": len(content),
+                "table_involved": chunk.get("table_involved", False),
+            })
+            continue
+
+        if nlp_rules and await _llm_policy_blocked(content, nlp_rules):
+            await emitter.emit("silver.filter.blocked", {
+                "index": block_index,
+                "method": "natural_language",
+                "reason": "Blocked by a natural-language filter policy",
                 "preview": content[:200],
                 "length": len(content),
                 "table_involved": chunk.get("table_involved", False),

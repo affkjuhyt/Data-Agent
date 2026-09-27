@@ -80,9 +80,32 @@ async def answer_with_contexts(question: str, contexts: list[str], analysis_type
 
 
 async def ask_live_agent(agent_url: str, agent_id: str, tenant_id: str, question: str) -> str:
-    """The whole pipeline, over the same SSE endpoint the product uses."""
+    """The whole pipeline, over the same SSE endpoint the product uses.
+
+    workflow_runtime's `/api/conversations/run` only trusts a caller Kong itself
+    verified (`backend/libs/shared/auth.py`'s `resolve_caller`) — a bare
+    `X-Tenant-ID` header is not enough and gets a 401. Calling it directly (as
+    this harness does, bypassing Kong) needs the same three headers
+    `model/bench/e2e.py`'s `_headers()` already sends for the same reason.
+    """
+    gateway_key = os.environ.get("GATEWAY_KEY") or os.environ.get("KB_GATEWAY_KEY")
+    if not gateway_key:
+        raise RuntimeError(
+            "set GATEWAY_KEY (or KB_GATEWAY_KEY) — the runtime rejects a request "
+            "the gateway did not verify (backend/libs/shared/auth.py)"
+        )
     payload = {"query": question, "agent_id": agent_id}
-    headers = {"X-Tenant-ID": tenant_id, "Content-Type": "application/json"}
+    headers = {
+        "X-Kong-Verified": "true",
+        "X-Gateway-Key": gateway_key,
+        "X-User-Id": os.environ.get("EVAL_USER_ID", "eval"),
+        # A role kb-backend's RolePermissions catalog actually grants
+        # retrieveKnowledge to (dependencies/permissions.py) — "admin" canonicalises
+        # to "ADMIN", which is not one of the four seeded roles and gets a bare 403.
+        "X-User-Roles": os.environ.get("EVAL_USER_ROLES", "platform-admin"),
+        "X-Tenant-Id": tenant_id,
+        "Content-Type": "application/json",
+    }
     chunks: list[str] = []
 
     async with (

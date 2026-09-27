@@ -59,6 +59,20 @@ class DocumentMetadata(BaseModel):
     file_size: int | None = None
     total_frame: int | None = None
     intents: list[str] = []
+    # Set only for documents the web-crawler worker created (register_http_file_bronze
+    # / register_web_bronze stamp it into doc_metadata) — absent for a manual upload,
+    # which is always manual. Lets Data Layers hide "Process to Silver/Gold" for a
+    # document an auto-promote source is already driving, for ANY viewer, not just
+    # the browser tab that happened to trigger the crawl.
+    promotion_mode: str | None = None
+    # Stamped by `libs.ingestion.pipeline_status.stamp_pipeline_status` at the
+    # start/end of each Silver or Gold attempt. Without this, "Auto-processing
+    # to Silver/Gold..." (AssetInventory.tsx) only checks promotion_mode +
+    # current_tier, so a document whose attempt genuinely failed (unsupported
+    # extension, corrupt file) looked exactly like one still in flight forever.
+    last_pipeline_stage: str | None = None
+    last_pipeline_status: str | None = None
+    last_pipeline_error: str | None = None
 
 
 class UpdateDocumentRequest(BaseModel):

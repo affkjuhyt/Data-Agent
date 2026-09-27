@@ -1,9 +1,29 @@
 # platform-workers — union of memory-consumer, schema-crawler-worker,
-# audit-bridge and audit-consumer, pinned once.
+# audit-bridge, audit-consumer and web-crawler-worker, pinned once.
 kafka-python-ng==2.2.3
 psycopg2-binary==2.9.9
 httpx==0.27.2
+# web-crawler-worker's tls.py AIA-fetch fallback (works around sources that
+# send an incomplete cert chain, e.g. hnx.vn) imports both directly — were
+# previously transitive-only, pin explicitly so an unrelated dep bump can't
+# silently drop them.
+cryptography==44.0.3
+certifi==2026.7.22
 qdrant-client>=1.13,<1.14
+# web-crawler-worker: scheduling + fetch + extraction + Bronze object storage.
+croniter==2.0.5
+playwright==1.44.0
+trafilatura==1.12.2
+minio==7.2.9
+# web-crawler-worker V2: rss connector's item-count quality metric, and
+# rest_api/sdmx's openbao_path credential resolution (see secrets.py — same
+# AppRole pattern as workflow_runtime/warehouse_secrets.py).
+feedparser==6.0.11
+hvac==2.3.0
+# web-crawler-worker: purge a superseded document's Silver/Gold traces on
+# re-crawl (neo4j sync driver, pymongo — qdrant-client is already pinned above).
+neo4j==6.3.1
+pymongo==4.18.1
 snowflake-connector-python==3.12.2
 # clickhouse_metadata.py imports it lazily — a build without it still starts
 # and still crawls Snowflake and Postgres warehouses.

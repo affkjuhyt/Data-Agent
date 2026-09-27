@@ -197,20 +197,29 @@ async def get_document_file_route(doc_id: str, request: Request, ctx: dict[str, 
     doc_id không thuộc tenant hiện tại) thay vì tự dựng check riêng."""
     record = await fetch_one_or_404(svc(request, "postgres"), doc_id, ctx["tenant_id"])
     data = await svc(request, "minio").download(MINIO_BUCKET, record["path"])
-    content_type = mimetypes.guess_type(record["name"])[0] or "application/octet-stream"
+    # Scheduled-source documents are named after the source title (no file
+    # extension), so the name alone can't tell PDF from DOCX — the KBData
+    # `extension` column can. Guessing from the bare name gave
+    # application/octet-stream: PDF preview stayed blank and downloads had
+    # no ".pdf" suffix.
+    ext = (record.get("extension") or "").lstrip(".").lower()
+    file_name = record["name"]
+    if ext and not file_name.lower().endswith(f".{ext}"):
+        file_name = f"{file_name}.{ext}"
+    content_type = mimetypes.guess_type(file_name)[0] or "application/octet-stream"
     # HTTP header values are Latin-1 only — a Vietnamese-diacritic name (the
     # common case in this KB) would otherwise raise UnicodeEncodeError deep in
     # Starlette's header encoding and surface as a bare 500. RFC 5987's
     # filename* carries the real UTF-8 name; the plain filename is an
     # ASCII-safe fallback for clients that ignore filename*.
-    ascii_name = record["name"].encode("ascii", "ignore").decode() or "file"
+    ascii_name = file_name.encode("ascii", "ignore").decode() or (f"file.{ext}" if ext else "file")
     return Response(
         content=data,
         media_type=content_type,
         headers={
             "Content-Disposition": (
                 f'inline; filename="{ascii_name}"; '
-                f"filename*=UTF-8''{quote(record['name'])}"
+                f"filename*=UTF-8''{quote(file_name)}"
             )
         },
     )

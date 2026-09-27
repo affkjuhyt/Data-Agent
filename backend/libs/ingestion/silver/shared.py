@@ -1,6 +1,7 @@
 """Shared LLM and chunk-normalization helpers for the silver pipeline."""
 from __future__ import annotations
 
+import io
 import json
 import re
 from typing import Any, cast
@@ -12,10 +13,22 @@ _JSON_FENCE = re.compile(r"```(?:json)?\\s*([\\s\\S]*?)```", re.IGNORECASE)
 _JSON_OBJ = re.compile(r"\\{[\\s\\S]*\\}", re.DOTALL)
 
 
-async def _llm_generate_json(system_type: str, user: str, max_tokens: int = 512) -> dict[str, Any]:
+async def _llm_generate_json(
+    system_type: str, user: str, max_tokens: int = 512, extra_instructions: str = "",
+) -> dict[str, Any]:
+    """`extra_instructions`, when set, is the tenant's Policy Center
+    "Custom Extraction Addendum" (`KBExtractionPolicy.custom_override`) —
+    appended after the base system prompt so a steward's rule augments, never
+    replaces, the built-in extraction behavior."""
+    system_prompt = SYSTEM_PROMPTS[system_type]
+    if extra_instructions:
+        system_prompt = (
+            f"{system_prompt}\n\nAdditional instructions from this tenant's "
+            f"extraction policy:\n{extra_instructions}"
+        )
     raw = await llm_client.generate_json(
         user,
-        system_prompt=SYSTEM_PROMPTS[system_type],
+        system_prompt=system_prompt,
         system_type=system_type,
         max_tokens=max_tokens,
         temperature=0.1,
@@ -34,13 +47,24 @@ async def _llm_generate_json(system_type: str, user: str, max_tokens: int = 512)
         return {}
 
 
-async def _vlm_describe(_image_bytes: bytes, _content_type: str = "image/jpeg") -> str:
-    # Both parameters are part of the caller interface (silver_pipeline/parsing.py
-    # passes them positionally) but unused until a real VLM endpoint exists.
-    raise NotImplementedError(
-        "VLM describe requires USE_VLM=true and a dedicated VLM endpoint. "
-        "Set USE_VLM=false to skip image/video processing."
-    )
+def _ocr_image_bytes(image_bytes: bytes) -> str:
+    """Extract embedded/printed text from an image via Tesseract — the same
+    engine `docling_parser.py` uses for scanned PDFs (vie+eng), so a photo of
+    a Vietnamese document reads the same whether it's uploaded as a PDF or as
+    a standalone image. Sync (pytesseract shells out to the `tesseract`
+    binary and blocks) — callers run this through `asyncio.to_thread`.
+
+    This recognizes TEXT in the image, not general scene/object content —
+    there is no VLM captioning model in this deployment (`VLM_MODEL`/
+    `agent-main` is a text-only LLM, not vision-capable). An image with no
+    readable text returns "", which callers treat as a legitimate zero-chunk
+    result, not an error.
+    """
+    import pytesseract
+    from PIL import Image
+
+    image = Image.open(io.BytesIO(image_bytes))
+    return cast(str, pytesseract.image_to_string(image, lang="vie+eng")).strip()
 
 
 def _strip_surrogates(text: str) -> str:
@@ -101,13 +125,14 @@ def _fallback_chunk_summary(content: str) -> dict[str, Any]:
     }
 
 
-async def summarize_chunk(content: str) -> dict[str, Any]:
+async def summarize_chunk(content: str, extraction_addendum: str = "") -> dict[str, Any]:
     for _ in range(2):
         try:
             summary_result = await _llm_generate_json(
                 system_type="chunk-summary",
                 user=content[:3000],
                 max_tokens=512,
+                extra_instructions=extraction_addendum,
             )
             summary = _strip_surrogates(str(summary_result.get("summary") or "").strip())
             intents = [

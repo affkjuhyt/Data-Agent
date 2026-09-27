@@ -1,0 +1,83 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: platform-workers-web-crawler
+  namespace: dataagent-service
+  labels:
+    app: platform-workers-web-crawler
+    app.kubernetes.io/part-of: dataagent
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-workers-web-crawler-env
+  namespace: dataagent-service
+  labels:
+    app: platform-workers-web-crawler
+    app.kubernetes.io/part-of: dataagent
+data:
+  WORKER: web-crawler
+  OTEL_SERVICE_NAME: platform-workers-web-crawler
+  DB_HOST: postgres.dataagent-database.svc.cluster.local
+  DB_PORT: '8300'
+  MINIO_BUCKET: knowledge-base
+  KAFKA_SASL_USERNAME: web-crawler-worker
+  KAFKA_WEB_CRAWL_TRIGGER_TOPIC: web-crawl.manual-trigger
+  KAFKA_GROUP_ID: web-crawler-worker-group
+  POLL_INTERVAL_SECONDS: '5'
+  MAX_PARALLEL_RUNS: '3'
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-workers-web-crawler
+  namespace: dataagent-service
+  labels:
+    app: platform-workers-web-crawler
+    app.kubernetes.io/part-of: dataagent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: platform-workers-web-crawler
+  template:
+    metadata:
+      labels:
+        app: platform-workers-web-crawler
+        app.kubernetes.io/part-of: dataagent
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+      - name: platform-workers-web-crawler
+        image: localhost:5000/dataagent/platform-workers:latest
+        envFrom:
+        - configMapRef:
+            name: dataagent-config
+        - configMapRef:
+            name: platform-workers-web-crawler-env
+        - secretRef:
+            name: platform-workers-web-crawler-secrets
+        resources:
+          requests:
+            cpu: 200m
+            memory: 768Mi
+          limits:
+            cpu: 2000m
+            memory: 3Gi
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        command:
+        - python
+        - -u
+        - -m
+        - services.platform_workers
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+      enableServiceLinks: false
+      serviceAccountName: platform-workers-web-crawler
