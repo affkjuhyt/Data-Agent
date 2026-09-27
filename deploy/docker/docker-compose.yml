@@ -44,7 +44,7 @@ services:
       # repo, so Docker bind-mounted an empty DIRECTORY, psql failed with "Is a
       # directory" and the entrypoint stopped before 03-app-schema.sql — on
       # every fresh volume the `keycloak` schema was never created and Keycloak
-      # crash-looped. KB tables live in the kb-e2e stack's own postgres.
+      # crash-looped. KB tables are created by the alembic migrations (backend/alembic).
       - ./sql/init.sql:/docker-entrypoint-initdb.d/03-app-schema.sql:ro
     ports:
       - "5432:5432"
@@ -242,7 +242,7 @@ services:
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       # INTERNAL://:9094 is a PLAINTEXT listener for in-cluster clients that don't
-      # speak SASL (kb-backend, kb-ingestion-worker). Principal = ANONYMOUS, which
+      # speak SASL (kb-backend, kb-promote-silver/gold). Principal = ANONYMOUS, which
       # is a super-user (KAFKA_SUPER_USERS) so it bypasses ACLs. SASL stays on :9092
       # for the platform-workers containers/release_worker.
       KAFKA_LISTENERS: SASL_PLAINTEXT://:9092,CONTROLLER://:9093,INTERNAL://:9094
@@ -359,7 +359,8 @@ services:
   # Openbao
   openbao:
     profiles: [iam, runtime]
-    image: openbao/openbao:latest
+    # Pinned: 2.7.0 removed the `file` storage backend (config.hcl uses it).
+    image: openbao/openbao:2.6.3
     container_name: dataagent-openbao
     restart: unless-stopped
     ports:
@@ -565,36 +566,3 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
-
-  kb-ingestion-worker:
-    profiles: [kb]
-    build:
-      context: ../..
-      dockerfile: backend/services/kb_ingestion_worker/Dockerfile
-    container_name: dataagent-kb-ingestion-worker
-    restart: unless-stopped
-    environment:
-      POSTGRES_URL: postgresql+asyncpg://${POSTGRES_USER:-admin}:${POSTGRES_PASSWORD:-dev123}@postgres/${POSTGRES_DB:-dataagent}
-      MONGO_URL: mongodb://mongo:27017/dataagent
-      MINIO_URL: http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-minio_secret}@minio:9000
-      KAFKA_URL: kafka:9094
-      QDRANT_URL: http://qdrant:6333
-      NEO4J_URI: bolt://neo4j:7687
-      MODEL_SERVICE_URL: http://model_service:8230
-      LITELLM_BASE_URL: http://litellm:4000
-      USE_VLM: "false"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      mongo:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-      qdrant:
-        condition: service_started
-      neo4j:
-        condition: service_healthy
-      model_service:
-        condition: service_healthy

@@ -20,7 +20,7 @@ so a green `make ci` is a green pipeline.
 | Serving gate | `make bench-gate` | judges a bench report against `model/bench/thresholds.json`. Exit 0 pass / 1 fail / **2 inconclusive** — 2 means a budget could not be judged (shared GPU, missing metrics), re-run rather than widen |
 | Agent e2e latency | `make bench-e2e` | per-stage breakdown of one real question against a deployed agent. Needs `BENCH_AGENT_URL`, `BENCH_AGENT_ID`, `BENCH_TENANT_ID`, `GATEWAY_KEY` exported — never read from `.env` |
 | Deploy | `make deploy` | Ansible is the only deploy path; it deploys **committed** changes only |
-| Diagrams | `make diagrams` | PlantUML pinned to 1.2024.8 (see `docs/ankt/README.md`) |
+| Diagrams | `make diagrams` | renders `docs/v2/diagrams/*.puml`; PlantUML pinned to 1.2024.8 and how to check the SVGs for errors: `docs/v2/diagrams/README.md` |
 
 ### Gates that are currently red
 
@@ -114,7 +114,7 @@ deploy/k8s          manifests: dev/ and production/
 deploy/docker       image build contexts, ConfigMap sources, compose stack for local E2E
 model/eval          release gate: cases, scorers, thresholds
 tests/{unit,integration,e2e,loadtest}
-docs                RUNBOOK, SECURITY, ankt/ (indicator platform design)
+docs                RUNBOOK, SECURITY, SILVER-FORMAT, v2/ (current design; v2/diagrams/ PlantUML sources + SVG)
 ```
 
 ## 8. Definition of done
@@ -124,3 +124,12 @@ docs                RUNBOOK, SECURITY, ankt/ (indicator platform design)
 - No new `# TODO` without an owner and a follow-up issue.
 - Docs updated in the same commit when behaviour, commands or layout change.
 - Deleted code is deleted, not commented out.
+
+## 9. V2 work (Data Agent POC, oil/gold)
+
+Any work on the V2 data/knowledge/agent platform starts at `docs/v2/README.md`.
+`docs/v2/00-architecture-v2.md` is the source of truth; its twelve invariants (immutable raw,
+structured data never goes through chunk/embedding, LLM proposes and deterministic checks plus a
+human decide, point-in-time by `available_at`, OCC instead of last-write-wins, …) are not
+negotiable per task. Pick the next item from `docs/v2/05-implementation-plan.md` in STEP order and
+update its `TT` column in the same commit that finishes it.

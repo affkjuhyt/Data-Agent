@@ -17,7 +17,7 @@ backend/     Python import root: services/ (FastAPI/worker services), libs/ (sha
 frontend/    React 19 + Vite app (npm workspace): src/, index.html, vite/vitest/tsconfig, Dockerfile.dev
 deploy/      ansible/ (deploy pipeline: deploy.yml) · k8s/ (manifests: production/ and dev/) · docker/ (Dockerfiles + service config)
 tests/       unit/ · integration/ · e2e/ (real-stack runner, seed data + Playwright) · loadtest/ (k6)
-docs/        RUNBOOK · SECURITY · AGENT-E2E · KB-SCALE-10K · M3-CAPACITY
+docs/        v2/ (current design, diagrams in v2/diagrams/) · RUNBOOK · SECURITY · AGENT-E2E · SILVER-FORMAT · KB-SCALE-10K
 model/       LLM eval harness, RAGAS
 ```
 
@@ -105,8 +105,6 @@ fail-closed — call them through Kong with a Keycloak bearer token, not `kb-bac
 | Method & path | Purpose |
 |---|---|
 | `POST /api/pipeline/light-rag/retrieve` | Run the full pipeline, return ranked chunks (JSON) |
-| `POST /api/pipeline/light-rag/retrieve/stream` | Same, streamed as SSE — one event per step (progress UIs) |
-| `GET  /api/pipeline/light-rag/health` | `{"status":"ok"}` when the pipeline is wired (also auth-gated) |
 
 ### Request
 
@@ -182,11 +180,6 @@ curl -X POST $API/api/pipeline/light-rag/retrieve \
 `results` is `[]` when nothing relevant is found (e.g. an empty knowledge base) — treat that as
 "no answer in the knowledge base." Repeated near-identical queries return `"source":"cache"` with the
 same shape (no LLM re-run).
-
-For a progress UI, call `/retrieve/stream`: it returns `text/event-stream` with one
-`data: {"step":"…","ms":…}` line per stage (`embed_query`, `cache_lookup`, `canonicalize`,
-`qdrant_pass1`, `graph_expand`, `qdrant_pass2`, `rrf_merge`, `rerank`, `hydrate`, …) and a final
-`data: {"step":"done", …same fields as the JSON response…}`.
 
 ---
 

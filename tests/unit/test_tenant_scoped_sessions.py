@@ -9,7 +9,6 @@ is the difference between RLS protecting the data and RLS emptying it.
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest

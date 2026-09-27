@@ -1,0 +1,83 @@
+@startuml 18-use-cases
+title Mười bốn use case POC theo vai trò — Hiện trạng + đích (tô màu theo mức đã có)\n00 §11 · 08
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam wrapWidth 200
+skinparam usecase<<reuse>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam usecase<<extend>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam usecase<<new>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có (chạy hôm nay) |
+  |<#E6F0FF> | Có một phần / cần mở rộng |
+  |<#FFF4D6> | Chưa có (đích V2) |
+  Viền nét đứt = **ngoài POC** (05 §6).
+  DATA_STEWARD, REVIEWER chưa có trong Keycloak (UC07).
+endlegend
+
+left to right direction
+
+actor "Data Steward" as STE
+actor "Reviewer / Checker" as REV
+actor "Analyst" as ANA
+actor "Executive" as EXEC
+actor "Platform admin" as ADM
+actor "Hệ thống (chủ động)" as SYS
+
+rectangle "Data Agent V2" {
+  usecase "UC01 Onboard structured source\n(web_crawler có; chưa ra observation)" as U1 <<extend>>
+  usecase "UC02 Onboard unstructured source\n(KB · OCR · page/bbox có)" as U2 <<extend>>
+  usecase "UC03 Reverse schema\n(kb_structured_data chỉ đề xuất\nschema bảng lớn nhất)" as U3 <<extend>>
+  usecase "UC04 Semantic extraction\nclaim · event · evidence" as U4 <<new>>
+  usecase "UC05 Data Quality 5 tầng" as U5 <<new>>
+  usecase "UC06 Conflict resolution\n(kb_conflict_resolution chỉ cho văn bản)" as U6 <<extend>>
+  usecase "UC07 HITL: ReviewCase ·\nmaker ≠ checker · OCC 409\n(StructuredTableReview làm nền)" as U7 <<extend>>
+  usecase "UC08 Structured analytics\n(text-to-SQL warehouse có;\nQuerySpec trên obs chưa)" as U8 <<extend>>
+  usecase "UC09 Knowledge investigation\n(LightRAG; citation mang page)" as U9 <<extend>>
+  usecase "UC10 Hybrid investigation\n(golden use case)" as U10 <<new>>
+  usecase "UC11 Forecast\n(ngoài POC)" as U11 <<new>> #FFF4D6;line.dashed;line:C08A00
+  usecase "UC12 Proactive anomaly / alert" as U12 <<new>>
+  usecase "UC13 Historical / as-of" as U13 <<new>>
+  usecase "UC14 Skill improvement\n(ngoài POC)" as U14 <<new>> #FFF4D6;line.dashed;line:C08A00
+}
+
+STE --> U1
+STE --> U2
+STE --> U3
+STE --> U5
+STE --> U6
+
+REV --> U7
+REV --> U4
+REV --> U3
+
+ANA --> U8
+ANA --> U9
+ANA --> U10
+ANA --> U13
+ANA --> U12
+ANA --> U11
+
+EXEC --> U8
+EXEC --> U10
+
+ADM --> U14
+
+SYS --> U12
+SYS --> U4
+
+note as NSUM
+  **27/09/2026**: 0/14 đã đủ · 7/14 có một phần · 7/14 chưa có.
+  Phần có một phần đều nằm ở hạ tầng nạp và truy xuất; lõi V2
+  (observation, governance, capability, chủ động) còn trống.
+end note
+@enduml

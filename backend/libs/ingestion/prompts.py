@@ -533,19 +533,6 @@ _GOLD_PROMPTS_BY_LANG: dict[str, dict[str, str]] = {
 GOLD_SYSTEM_PROMPTS: dict[str, str] = _GOLD_PROMPTS_BY_LANG.get(
     cfg.PROMPT_LANG, _GOLD_PROMPTS_BY_LANG["vi"])
 
-RECONCILE_RELATIONSHIPS_SYSTEM = """\
-You reconcile the relationships of a knowledge graph for ONE document. You are given the
-document's ENTITIES, a list of CANDIDATE relationships already extracted from the source
-chunks (this is the evidence), and the DOCUMENT SUMMARY. Produce the final, clean set.
-
-RULES:
-- Use ONLY entity names from ENTITIES for "from" and "to".
-- You MAY merge duplicate / near-duplicate edges, DROP edges that are spurious or that the
-  summary contradicts, and FIX the direction or type when the summary makes it clear.
-- Do NOT invent relationships that are absent from CANDIDATES.
-- "type" is a short snake_case verb phrase; "score" is 0.0-1.0.
-Output JSON only: {"relationships":[{"from":"…","to":"…","type":"…","score":0.0}]}"""
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CONFLICT RESOLVER — LLM merge of two conflicting chunks

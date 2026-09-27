@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Build context is the repo root (set in compose) so backend/libs is reachable:
 # the governance vocabulary (libs/shared/freshness.py), the embeddings client
 # and the observability bootstrap are shared with the other services.
@@ -12,7 +13,7 @@
 FROM python:3.12-slim-bookworm
 WORKDIR /app
 COPY backend/services/platform_workers/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 # web-crawler-worker's web_crawl connector needs a real Chromium — same
 # install step as kb_promote_silver's Dockerfile, which already depends on
 # Playwright for the identical fetch.

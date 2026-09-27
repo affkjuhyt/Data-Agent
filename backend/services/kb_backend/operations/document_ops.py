@@ -47,16 +47,6 @@ async def fetch_one_or_404(postgres: Any, data_id: str, tenant_id: str | None, r
     return record
 
 
-async def name_exists(postgres: Any, tenant_id: str, name: str) -> bool:
-    resp = await postgres.read(ReadJoinRequest(
-        tenant_id=tenant_id,
-        joins_table=["KBData"],
-        filters=[WhereFilter(table_name="KBData", column_name="name", value=name)],
-        limit=1,
-    ))
-    return resp.code == 200 and bool(resp.data)
-
-
 async def fetch_by_name(postgres: Any, tenant_id: str, name: str) -> dict[str, Any] | None:
     """The existing KBData row with this exact (tenant_id, name), if any.
 

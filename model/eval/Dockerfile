@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Image for the ONLINE evaluation tier — the one that needs a model.
 #
 # The offline tier deliberately does not need this: it is pure Python over the
@@ -17,9 +18,9 @@ COPY model/ragas/requirements.txt ./ragas-requirements.txt
 COPY backend/services/workflow_runtime/requirements.txt ./runtime-requirements.txt
 # ragas + judge model client, then the runtime's own deps (litellm, pydantic)
 # so the intent scorer can call the planner node itself.
-RUN pip install --no-cache-dir -r ragas-requirements.txt \
-    && pip install --no-cache-dir -r runtime-requirements.txt \
-    && pip install --no-cache-dir sqlparse
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r ragas-requirements.txt \
+    && pip install -r runtime-requirements.txt \
+    && pip install sqlparse
 
 # Same layout as the checkout (backend/…) so model/eval/_paths.py resolves
 # the service trees identically in CI and in this image.

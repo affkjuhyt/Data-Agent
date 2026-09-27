@@ -31,39 +31,6 @@ class ChildThought:
     target: dict[str, Any] = field(default_factory=dict)
 
 
-STEP_SCHEMA = {
-    "type": "object",
-    "required": ["thought", "confidence", "is_terminal", "target"],
-    "additionalProperties": False,
-    "properties": {
-        "thought": {"type": "string"},
-        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-        "is_terminal": {"type": "boolean"},
-        "target": {
-            "type": "object",
-            "required": ["description", "tasks"],
-            "additionalProperties": False,
-            "properties": {
-                "description": {"type": "string"},
-                "tasks": {
-                    "type": "array", "minItems": 1,
-                    "items": {
-                        "type": "object",
-                        "required": ["title", "input", "agent_id", "depend_on"],
-                        "additionalProperties": False,
-                        "properties": {
-                            "title": {"type": "string"},
-                            "input": {"type": "string"},
-                            "agent_id": {"type": "string"},
-                            "depend_on": {"type": "array", "items": {"type": ["integer", "string"]}},
-                        },
-                    },
-                },
-            },
-        },
-    },
-}
-
 _INSTRUCTION = (
     "Propose the next step now. Decide is_terminal: true if this step completes the GOAL, "
     "otherwise false."

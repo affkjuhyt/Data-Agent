@@ -1,17 +1,7 @@
 import os
-import json
 import logging
-from datetime import datetime, date
-from decimal import Decimal
-from enum import Enum
 from typing import Any, Optional, cast
 from uuid import UUID
-
-try:
-    import numpy as np
-    _NUMPY = True
-except ImportError:
-    _NUMPY = False
 
 from sqlalchemy import select
 
@@ -21,33 +11,6 @@ from libs.basemodel.services_databaseconnector.postgres_orm.auth_release_orm imp
 from libs.basemodel.services_databaseconnector.postgres_model import (
     ConversationsInsert, MessagesInsert, AgentTracesInsert,
 )
-
-
-def _json_fallback(obj: Any) -> Any:
-    if isinstance(obj, (datetime, date)):
-        return obj.isoformat()
-    if isinstance(obj, UUID):
-        return str(obj)
-    if isinstance(obj, Decimal):
-        return float(obj)
-    if isinstance(obj, bytes):
-        return obj.decode("utf-8", errors="replace")
-    if isinstance(obj, Enum):
-        return obj.value
-    if isinstance(obj, set):
-        return list(obj)
-    if _NUMPY:
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        if isinstance(obj, (np.floating,)):
-            return float(obj)
-        if isinstance(obj, (np.integer,)):
-            return int(obj)
-    return repr(obj)
-
-
-def _json_dumps(obj: Any) -> str:
-    return json.dumps(obj, default=_json_fallback)
 
 
 _SENSITIVE_KEYS = frozenset({
@@ -247,34 +210,6 @@ async def get_last_slots(conversation_id: str, tenant_id: str = _DEV_TENANT_ID) 
         return None
     slots = (row.msg_metadata or {}).get("slots")
     return slots if isinstance(slots, dict) else None
-
-
-async def get_messages_ui(conversation_id: str, tenant_id: str = _DEV_TENANT_ID, limit: int = 50) -> list[dict[str, Any]]:
-    """Load messages với metadata cho UI restoration."""
-    if not client.is_connected():
-        return []
-    try:
-        async with client.get_client(tenant_id=tenant_id) as session:
-            result = await session.execute(
-                select(MessagesORM.id, MessagesORM.role, MessagesORM.content, MessagesORM.msg_metadata)
-                .where(MessagesORM.conversation_id == UUID(conversation_id))
-                .order_by(MessagesORM.created_at.asc())
-                .limit(limit)
-            )
-            rows = result.fetchall()
-            return [
-                {
-                    "id":       str(row.id),
-                    "role":     row.role,
-                    "content":  (row.content or {}).get("text", ""),
-                    "metadata": row.msg_metadata or {},
-                }
-                for row in rows
-                if row.role in ("user", "assistant")
-            ]
-    except Exception as e:
-        logger.warning("get_messages_ui failed conv_id=%s: %s", conversation_id, e)
-        return []
 
 
 async def save_message(

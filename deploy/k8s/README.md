@@ -32,7 +32,7 @@ Two, both labelled `app.kubernetes.io/part-of: dataagent`:
 
 | Namespace | Holds |
 | --- | --- |
-| `dataagent-database` | Postgres, Mongo, Redis, Qdrant, Neo4j, Kafka, MinIO, ClickHouse, Elasticsearch, OpenBao, PgBouncer, and the restore job |
+| `dataagent-database` | Postgres, Mongo, Redis, Qdrant, Neo4j, Kafka, MinIO, ClickHouse, OpenBao, PgBouncer, and the restore job |
 | `dataagent-service` | the gateway, identity, application, worker and observability Deployments, and every Job except the restore |
 
 Both carry a `name:` label as well, because the NetworkPolicies select namespaces
@@ -109,8 +109,7 @@ field against the API server's own OpenAPI models.
 
 `sandbox-executor` runs user-submitted code and additionally sets
 `runtimeClassName: gvisor`. The cluster needs a `RuntimeClass` named `gvisor`;
-drop the field if you have not installed it, and read
-`docs/Sandbox_SchemaCrawler_Implementation.md` §8.7 before you do.
+drop the field if you have not installed it (RUNBOOK: "sandbox-executor Pending").
 
 ## Configuration and secrets
 
@@ -341,7 +340,6 @@ band. Nothing in `deploy/k8s/` may use it.
 | minio (console) | database | 9001 | **8361** | `--console-address` |
 | clickhouse (http) | database | 8123 | **8370** | `--http_port` |
 | clickhouse (native) | database | 9000 | **8371** | `--tcp_port` |
-| elasticsearch | database | 9200 | **8380** | `http.port` |
 | pgbouncer | database | 6432 | **8390** | `LISTEN_PORT` |
 | prometheus | service | 9090 | **8400** | `--web.listen-address` |
 | grafana | service | 3000 | **8410** | `GF_SERVER_HTTP_PORT` |
@@ -349,7 +347,6 @@ band. Nothing in `deploy/k8s/` may use it.
 | langfuse-worker | service | 3030 | **8421** | `PORT` (no Service — queue consumer) |
 | jaeger (ui) | service | 16686 | **8430** | `QUERY_HTTP_SERVER_HOST_PORT` |
 | jaeger (otlp) | service | 4317 | **8431** | `COLLECTOR_OTLP_GRPC_HOST_PORT` |
-| kibana | service | 5601 | **8440** | `SERVER_PORT` |
 | litellm | service | 4000 | **8500** | `--port` |
 
 ### Consistency
@@ -382,6 +379,6 @@ ClusterIP Service and must never be exposed.
 | Compose service | Why |
 | --- | --- |
 | `sandbox-dockerd` | Rootless Docker-in-Docker needs `privileged`, unconfined seccomp/AppArmor and `/dev/fuse` — it cannot exist in a restricted namespace. `runtimeClassName: gvisor` on `sandbox-executor` is the cluster-native replacement. |
-| `filebeat` | Reads `/var/log/containers` via `hostPath` as root. Node log collection is a cluster add-on, not an application workload. |
+| `filebeat`, `elasticsearch`, `kibana` | Filebeat reads `/var/log/containers` via `hostPath` as root; node log collection is a cluster add-on, not an application workload. Without it nothing writes to Elasticsearch, so ES and Kibana were removed from k8s too (27/09/2026: 0 indices after 16 days). They remain the log sink in compose. |
 | `postgres-test` | A pytest fixture, never deployed. |
 | `overlay-*.yml` | Compose-only patches; `overlay-kong-admin` is the `kong-admin` Service here. |

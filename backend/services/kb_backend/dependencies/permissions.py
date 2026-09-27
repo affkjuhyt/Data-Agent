@@ -155,9 +155,5 @@ class PermissionStore:
         granted = await self.granted_to(postgres, role)
         return any(name in granted for name in permission_names)
 
-    async def permissions_for(self, postgres: Any, role: str) -> dict[str, bool]:
-        granted = await self.granted_to(postgres, role)
-        return {name: (name in granted) for name in sorted(PERMISSIONS)}
-
 
 store = PermissionStore()

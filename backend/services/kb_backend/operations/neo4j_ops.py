@@ -1,7 +1,8 @@
 import logging
 import os
-from fastapi import HTTPException
 from typing import Any, LiteralString
+
+import neo4j as neo4j_driver
 
 from libs.basemodel.services_databaseconnector.postgres_model import (
     ReadJoinRequest, WhereFilter,
@@ -9,8 +10,6 @@ from libs.basemodel.services_databaseconnector.postgres_model import (
 from services.kb_backend.schemas import to_string
 
 log = logging.getLogger(__name__)
-
-_READONLY_PREFIXES = ("CREATE", "MERGE", "DELETE", "SET", "REMOVE", "DROP")
 
 _MAX_NODES = int(os.getenv("NEO4J_MAX_GRAPH_NODES", "200"))
 
@@ -143,22 +142,50 @@ async def get_schema(neo4j: Any, postgres: Any = None, tenant_id: str | None = N
     return {"entities": [], "connections": {}}
 
 
-async def run_cypher(neo4j: Any, cypher: str, tenant_id: str | None = None) -> dict[str, Any]:
-    if any(cypher.strip().upper().startswith(kw) for kw in _READONLY_PREFIXES):
-        raise HTTPException(status_code=400, detail="Only read-only Cypher queries are allowed")
+def build_path_query(start_label: str, step_labels: list[str]) -> str:
+    """Same shape as the frontend's buildCypher (knowledgeHub.data.ts), with the
+    tenant predicate on every node. Labels are pattern-validated by
+    Neo4jQueryRequest before they get here."""
+    if not step_labels:
+        return (
+            f"MATCH (a:{start_label}) WHERE a.tenant_id = $tenant_id "
+            "OPTIONAL MATCH (a)-[r]-(b) WHERE b.tenant_id = $tenant_id "
+            "RETURN a, r, b LIMIT $max"
+        )
+    pattern, names, preds = f"(a:{start_label})", ["a"], ["a.tenant_id = $tenant_id"]
+    for i, label in enumerate(step_labels):
+        node = chr(ord("b") + i)
+        pattern += f"-[r{i}]-({node}:{label})"
+        names += [f"r{i}", node]
+        preds.append(f"{node}.tenant_id = $tenant_id")
+    return f"MATCH {pattern} WHERE {' AND '.join(preds)} RETURN {', '.join(names)} LIMIT $max"
+
+
+async def run_path_query(
+    neo4j: Any, start_label: str, step_labels: list[str], tenant_id: str | None,
+) -> dict[str, Any]:
+    if not tenant_id:
+        return {"nodes": [], "edges": []}
+    # Labels are validated identifiers (see build_path_query), so the f-string
+    # query is safe to hand to the driver.
+    cypher = build_path_query(start_label, step_labels)
+
+    async def _read(tx: Any) -> Any:
+        result = await tx.run(cypher, tenant_id=tenant_id, max=_MAX_NODES)
+        return await result.graph()
 
     def _nid(n: Any) -> str:
         return str(getattr(n, "element_id", None) or n.id)
 
     try:
-        async with neo4j.get_client().session() as session:
-            result = await session.run(cypher, tenant_id=tenant_id)
-            graph = await result.graph()
+        # READ access: the server refuses any write even if one got into the query.
+        async with neo4j.get_client().session(default_access_mode=neo4j_driver.READ_ACCESS) as session:
+            graph = await session.execute_read(_read)
 
         nodes = [
             {
                 "id":          _nid(n),
-                "name":        n.get("name", ""),
+                "name":        n.get("display_name") or n.get("canonical_name") or n.get("name", ""),
                 "description": n.get("description"),
                 "type":        _pick_type(list(n.labels)),
             }

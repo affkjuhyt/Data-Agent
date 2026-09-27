@@ -1,21 +1,9 @@
 """Chunk / version schemas — domain, request, response."""
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel
-
-from services.kb_backend.schemas.enums import Status
-
-
-class ChunkVersionDetail(BaseModel):
-    version_number: str
-    create_at: str
-    status: Status
-    embedding_models: str
-    entities: List[str]
-    intent: str
-    text: str
 
 
 class ChunkVersion(BaseModel):

@@ -1,0 +1,40 @@
+---
+# Dry run of deploy.yml's decisions: which images a diff rebuilds and which
+# Jobs it reruns. Touches no cluster and builds nothing.
+#
+#   ansible-playbook plan.yml                                   # checkpoint..HEAD, as deploy.yml would
+#   ansible-playbook plan.yml -e plan_from=HEAD~3
+#   ansible-playbook plan.yml -e '{"changed_paths": ["backend/libs/shared/x.py"]}'
+- name: Plan a deploy without running it
+  hosts: all
+  gather_facts: false
+
+  tasks:
+    - name: Load the settings
+      ansible.builtin.import_role:
+        name: k8s_common
+
+    - name: Diff the range
+      ansible.builtin.command:
+        cmd: "git diff --name-only {{ diff_from }} HEAD"
+        chdir: "{{ project_dir }}"
+      vars:
+        diff_from: >-
+          {{ plan_from | default(lookup('ansible.builtin.file', checkpoint_file, errors='ignore')
+             | default('HEAD~1', true) | trim, true) }}
+      register: plan_diff
+      changed_when: false
+      when: changed_paths is not defined
+
+    - name: Set what changed
+      ansible.builtin.set_fact:
+        changed_paths: "{{ plan_diff.stdout_lines }}"
+      when: changed_paths is not defined
+
+    - name: Default to an incremental deploy
+      ansible.builtin.set_fact:
+        full_deploy: "{{ deploy_full | bool }}"
+
+    - name: Plan the images and Jobs
+      ansible.builtin.import_role:
+        name: k8s_plan

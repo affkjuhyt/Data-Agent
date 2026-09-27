@@ -1,6 +1,7 @@
 from typing import Any
 from datetime import datetime, timezone
 
+import psycopg2.extras
 from fastapi import APIRouter, Depends, Header, HTTPException, Path
 
 from libs.shared.db_context import get_tenant_db

@@ -3,8 +3,7 @@ mục 7 (comparison against docs/STM_LTM_Memory_Architecture.docx):
 
   1. Catch-all fact_key ("general_note") no longer overwrites unrelated
      facts — novelty-detected by similarity instead of a single shared slot.
-  2. Schema Memory access_roles is actually enforced on read.
-  3. Episodic Future reminders transition out of "pending" after being
+  2. Episodic Future reminders transition out of "pending" after being
      surfaced — recurring ones get a new row at the next cron occurrence.
 
 Real Postgres + Qdrant via testcontainers. embed() is monkeypatched to
@@ -372,73 +371,3 @@ async def test_bad_cron_expression_does_not_crash_and_still_marks_executed(mm_en
     rows = _future_memory_rows(dsn, tenant_id)
     assert len(rows) == 1, "no next-occurrence row should be created from a bad cron expr"
     assert rows[0][1] == "executed"
-
-
-# ─── 3. Schema Memory access_roles enforcement (workflow_memory.py) ───────
-
-@pytest.fixture
-async def wm_rbac_env(migrated_db):
-    svc_dir = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
-    added = [p for p in (svc_dir, str(REPO_ROOT)) if p not in sys.path]
-    sys.path[:0] = added
-    try:
-        import importlib
-        import workflow_memory as wm
-        importlib.reload(wm)
-
-        from libs.database_connector.postgres_connector import client
-        client.set_url(migrated_db["dsn"])
-        await client.open()
-
-        from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import SchemaMemoryORM
-        tenant_id, _ = _seed_tenant_and_agent(migrated_db["dsn"])
-
-        async with client.get_client(tenant_id=tenant_id) as session:
-            session.add(SchemaMemoryORM(
-                id=uuid.uuid4(), tenant_id=uuid.UUID(tenant_id), data_source="postgresql", table_name="public_table",
-                column_metadata=[], business_description="visible to everyone", access_roles=[],
-            ))
-            session.add(SchemaMemoryORM(
-                id=uuid.uuid4(), tenant_id=uuid.UUID(tenant_id), data_source="postgresql", table_name="finance_table",
-                column_metadata=[], business_description="restricted", access_roles=["finance_analyst", "admin"],
-            ))
-            await session.commit()
-
-        yield wm, tenant_id
-        await client.close()
-    finally:
-        for p in added:
-            if p in sys.path:
-                sys.path.remove(p)
-
-
-async def test_unrestricted_table_visible_regardless_of_caller_roles(wm_rbac_env):
-    wm, tenant_id = wm_rbac_env
-    tables = await wm.retrieve_schema_memory(tenant_id, "postgresql", user_roles=["random_role"])
-    names = {t["table_name"] for t in tables}
-    assert "public_table" in names
-    assert "finance_table" not in names
-
-
-async def test_restricted_table_visible_when_caller_has_matching_role(wm_rbac_env):
-    wm, tenant_id = wm_rbac_env
-    tables = await wm.retrieve_schema_memory(tenant_id, "postgresql", user_roles=["finance_analyst"])
-    names = {t["table_name"] for t in tables}
-    assert names == {"public_table", "finance_table"}
-
-
-async def test_no_user_roles_param_skips_filter_entirely(wm_rbac_env):
-    """user_roles=None (default) — caller identity unknown/internal — must
-    not silently hide anything; that would be a behavior change for every
-    existing caller that doesn't pass this new param."""
-    wm, tenant_id = wm_rbac_env
-    tables = await wm.retrieve_schema_memory(tenant_id, "postgresql")
-    names = {t["table_name"] for t in tables}
-    assert names == {"public_table", "finance_table"}
-
-
-async def test_empty_user_roles_hides_all_restricted_tables(wm_rbac_env):
-    wm, tenant_id = wm_rbac_env
-    tables = await wm.retrieve_schema_memory(tenant_id, "postgresql", user_roles=[])
-    names = {t["table_name"] for t in tables}
-    assert names == {"public_table"}

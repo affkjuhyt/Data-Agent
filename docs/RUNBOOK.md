@@ -35,7 +35,7 @@ any machine on the `10.10.55.x` network; no port-forwarding is needed.
 | Keycloak (realm `aeroflow`) | http://10.10.55.101:30110 |
 | Langfuse | http://10.10.55.101:30420 |
 | Grafana / Prometheus | http://10.10.55.101:30410 / :30400 |
-| Jaeger / Kibana | http://10.10.55.101:30430 / :30440 |
+| Jaeger | http://10.10.55.101:30430 |
 | LiteLLM | http://10.10.55.101:30500 |
 | MinIO console | http://10.10.55.101:30361 |
 | Kong admin (dev only — never expose beyond the LAN) | http://10.10.55.101:30101 |
@@ -67,14 +67,19 @@ kubectl -n dataagent-service get secret grafana-secrets \
    ansible-playbook deploy.yml
    ```
 3. Read the report near the top — `changed: N file(s)`, `secrets: … configmaps: …`,
-   `building: …` — to confirm it picked up what you expected.
+   then `k8s_plan : Report the plan` (each image and Job with the path that
+   triggered it) — to confirm it picked up what you expected. To see that
+   before deploying: `ansible-playbook plan.yml` (builds nothing, no cluster).
+   Images build 6 at a time; an image that comes out identical is not pushed
+   and nothing running it restarts. Build logs: `/data/logs/dataagent-deploy/k8s-local/`.
 
 | Change | Extra flags |
 | --- | --- |
-| Code in `backend/services/<svc>/` or `frontend/` | none — that image is rebuilt and its workload restarted |
-| `backend/libs/`, `pyproject.toml`, `uv.lock` | none, but **every** image rebuilds — check disk first (§9) |
-| New Alembic revision | `-e apply_jobs=true` (the rebuilt `migrate` image triggers the Jobs) |
-| A Job manifest under `deploy/k8s/dev/job/` | `-e apply_jobs=true` |
+| Code in `backend/services/<svc>/` or `frontend/` | none — that image is rebuilt and its workload restarted. A `backend/services/` change also rebuilds `auth_api`, `kb-backend`, `workflow_runtime` and `migrate` (their Dockerfiles copy all of `backend/services/`) |
+| `backend/libs/` | none — every image that copies `backend/libs` rebuilds (12 of 20) — check disk first (§9) |
+| `pyproject.toml`, `uv.lock` | none — no image copies them, so nothing rebuilds |
+| New Alembic revision | `-e apply_jobs=true` (reruns `migrate`, then `db-init` for the grants) |
+| A Job manifest under `deploy/k8s/dev/job/`, a seed file, `deploy/docker/sql/` | `-e apply_jobs=true` (reruns only the Jobs that read it; `-e jobs_force=true` reruns all) |
 | `deploy/docker/kong/kong-setup.sh`, Keycloak mappers | `-e apply_setup=true` |
 | A value in the vault | `-e secrets_changed=true` (§7) |
 | Only one image, skip the rest | `-e images_only=kb-backend` |
@@ -169,8 +174,8 @@ Needed when the server's IP or hostname changes, or when putting an ingress in f
    ```bash
    ansible-playbook deploy.yml -e apply_setup=true
    ```
-   The `group_vars` change reapplies the Secrets and restarts the service tier
-   (new `KC_HOSTNAME_URL`, `VITE_*`, `NEXTAUTH_URL`); `apply_setup` updates Kong's
+   The `group_vars` change reapplies the Secrets and restarts the Deployments
+   that read one that changed (new `KC_HOSTNAME_URL`, `VITE_*`, `NEXTAUTH_URL`); `apply_setup` updates Kong's
    JWT issuer and CORS.
 4. Check with §4. Everyone has to log in again: existing tokens carry the old issuer.
 
@@ -219,20 +224,36 @@ it the vault can never be unsealed again.
 
 ## 9. Disk
 
-The root filesystem is the real limit: PVC sizes are not enforced by
-`local-path-provisioner`. kubelet starts garbage-collecting images at **85 %**
-and evicts pods at **95 %**. On 2026-09-11 image rebuilds pushed it to 99 %,
+Since 2026-09-27 all heavy state lives on the 1 TB data disk (`/dev/sdb1` on
+`/data`), bind-mounted back onto the original paths so PVs, the registry
+container and scripts are unchanged (entries in `/etc/fstab`):
+
+| Path | Backed by | Holds |
+| --- | --- | --- |
+| `/var/lib/rancher` | `/data/rancher` | k3s images + every local-path PV |
+| `/var/lib/kubelet` | `/data/kubelet` | pod emptyDirs |
+| `/var/lib/containerd` | `/data/containerd` | Docker images (Docker 29 uses the containerd image store) |
+| `/var/lib/docker` | `/data/docker` | Docker container state |
+| `/home/ndip/data-agent-registry` | `/data/registry` | the `localhost:5000` registry |
+
+systemd drop-ins (`/etc/systemd/system/{k3s,docker,containerd}.service.d/data-disk.conf`)
+keep those services from starting if `/data` did not mount. `/` now only holds
+the OS and home directories.
+
+PVC sizes are not enforced by `local-path-provisioner`, so `/data` is the
+limit that matters. kubelet starts garbage-collecting images at **85 %**
+and evicts pods at **95 %**. On 2026-09-11 image rebuilds pushed `/` to 99 %,
 the whole stack was evicted twice, and the evictions deleted the images the
 pods needed to come back.
 
 ```bash
-df -h /
+df -h / /data
 docker system df
-du -sh ~/data-agent-registry-backups
+du -sh /data/registry-backups
 ```
 
-- Before `deploy_full=true` or a `backend/libs` change (which rebuilds every
-  image), make sure usage is under ~70 %.
+- Before `deploy_full=true` (rebuilds every image) or a `backend/libs` change
+  (rebuilds the 12 images that copy it), make sure usage is under ~70 %.
 - Reclaim space with `docker image prune` (dangling images). Don't delete
   `localhost:5000/dataagent/*` images unless they are in the registry.
 - Host cron scripts in `deploy/k8s/ops/`: `disk-alert.sh` (alerts above 80 %,

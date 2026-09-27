@@ -16,7 +16,7 @@ from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, 
 from pydantic import BaseModel
 from libs.basemodel.services_databaseconnector.postgres_model import (
     REGISTRY, MODEL_TO_TABLE, ReadJoinRequest, SelectInLoadRequest, DMLPreparation, DQLPreparation,
-    FilterOperator, TransactionOp, TransactionJobResult,
+    FilterOperator,
 )
 import libs.basemodel.services_databaseconnector.postgres_orm  # noqa: F401 — registers ORM classes into REGISTRY
 
@@ -40,11 +40,6 @@ def _engine_kwargs(pool: PoolConfig) -> dict[str, Any]:
     if connect_args:
         kwargs["connect_args"] = connect_args
     return kwargs
-
-
-# Helpers
-def _orm_to_dict(instance: Any) -> dict[str, Any]:
-    return {c.name: getattr(instance, c.name) for c in instance.__table__.columns}
 
 
 def _orm_to_dict_deep(instance: Any) -> dict[str, Any]:
@@ -315,65 +310,6 @@ def _prepare_count(data: ReadJoinRequest) -> DQLPreparation:
     return DQLPreparation(compiled_query=stmt)
 
 
-class PostgresTransaction:
-    __slots__ = ("_session_factory", "_jobs")
-
-    def __init__(self, session_factory: async_sessionmaker):
-        self._session_factory = session_factory
-        self._jobs: list[tuple[TransactionOp, BaseModel]] = []
-
-    def add(self, op: TransactionOp, data: BaseModel) -> "PostgresTransaction":
-        table_name = MODEL_TO_TABLE.get(type(data))
-        if table_name is None:
-            raise ValueError(f"Unregistered model: {type(data).__name__}")
-        schema = REGISTRY[table_name]
-        expected = schema.insert if op == TransactionOp.INSERT else schema.delete
-        if expected is not type(data):
-            raise ValueError(
-                f"{type(data).__name__} is not a valid {op.value} model "
-                f"for table '{table_name}' — expected {expected.__name__}"
-            )
-        self._jobs.append((op, data))
-        return self
-
-    async def commit(self) -> ResponseModel[Any]:
-        # Phase 1 — compile all jobs before touching the DB
-        preps: list[tuple[TransactionOp, Any]] = []
-        for op, data in self._jobs:
-            try:
-                if op == TransactionOp.INSERT:
-                    preps.append((op, _prepare_insert(data)))
-                elif op == TransactionOp.SOFT_DELETE:
-                    preps.append((op, _prepare_soft_delete(data)))
-                elif op == TransactionOp.DELETE:
-                    preps.append((op, _prepare_delete(data)))
-            except AttributeError as e:
-                return ResponseModel(code=400, error=f"Validation failed: {e}")
-
-        # Phase 2 — execute atomically
-        async with self._session_factory() as session:
-            try:
-                jobs: list[TransactionJobResult] = []
-                for op, prep in preps:
-                    if op == TransactionOp.INSERT:
-                        session.add(prep.instance)
-                        await session.flush()
-                        jobs.append(TransactionJobResult(method=op, table=prep.table_name, success=True))
-                    elif op == TransactionOp.SOFT_DELETE:
-                        result: Any = await session.execute(prep.compiled_query)
-                        if result.rowcount == 0:
-                            raise ValueError("Record not found or already deleted")
-                        jobs.append(TransactionJobResult(method=op, table=prep.table_name, success=True))
-                    elif op == TransactionOp.DELETE:
-                        await session.execute(prep.compiled_query)
-                        jobs.append(TransactionJobResult(method=op, table=prep.table_name, success=True))
-                await session.commit()
-                return ResponseModel(code=200, data=jobs)
-            except Exception as e:
-                await session.rollback()
-                return ResponseModel(code=400, error=f"Transaction rolled back: {e}")
-
-
 from contextlib import asynccontextmanager
 
 # Set once per request; get_client() scopes every session to it.
@@ -499,9 +435,6 @@ class PostgresClient:
         else:
             log.info("Postgres role %r is subject to row-level security", row.current_user)
 
-    def bypasses_rls(self) -> bool | None:
-        """True / False / None when it could not be determined."""
-        return self._bypasses_rls
 
     async def close(self) -> None:
         if self._engine:
@@ -600,11 +533,6 @@ class PostgresClient:
         except ConnectionError as e:
             log.warning(f"Postgres reconnect failed: {e}")
 
-    # Operations
-    def create_transaction(self) -> PostgresTransaction:
-        if self._session_factory is None:
-            raise RuntimeError("PostgresClient is not open — call open() first")
-        return PostgresTransaction(self._session_factory)
 
     @staticmethod
     def _integrity_response(error: IntegrityError, table_name: str) -> ResponseModel[Any]:

@@ -22,7 +22,12 @@ from docling.datamodel.pipeline_options import (
 from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling_core.types.doc import PictureItem, SectionHeaderItem, TableItem, TextItem
 
-from libs.basemodel.services_docling.docling_model import DoclingResult, ParsedChunk, ParsedTable
+from libs.basemodel.services_docling.docling_model import (
+    DoclingResult,
+    PageRegion,
+    ParsedChunk,
+    ParsedTable,
+)
 from libs.database_connector.minio_connector import MinIOClient
 
 # Hard upper bound on chunk size (chars). Soft lower bound below which a section
@@ -109,6 +114,61 @@ def _split_oversized(text: str, max_chars: int) -> list[str]:
     if cur:
         segments.append(cur)
     return segments
+
+
+def _page_heights(doc: Any) -> dict[int, tuple[float, float]]:
+    sizes = {}
+    for page_no, page in getattr(doc, "pages", {}).items():
+        size = getattr(page, "size", None)
+        if size is not None:
+            sizes[page_no] = (float(size.width), float(size.height))
+    return sizes
+
+
+def _regions(item: Any, sizes: dict[int, tuple[float, float]]) -> list[dict[str, Any]]:
+    """Top-left-origin boxes for one document item, one per page it touches."""
+    out = []
+    for prov in getattr(item, "prov", None) or []:
+        page_no = getattr(prov, "page_no", None)
+        bbox = getattr(prov, "bbox", None)
+        if page_no is None or bbox is None or page_no not in sizes:
+            continue
+        width, height = sizes[page_no]
+        try:
+            box = bbox.to_top_left_origin(page_height=height)
+        # A backend that reports a malformed box should cost the citation its
+        # coordinates, not cost the document its text.
+        except Exception:  # noqa: BLE001
+            continue
+        out.append({
+            "page_no": page_no,
+            "left": float(box.l), "top": float(box.t),
+            "right": float(box.r), "bottom": float(box.b),
+            "page_width": width, "page_height": height,
+        })
+    return out
+
+
+def _merge_regions(regions: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """One box for a chunk assembled from several items.
+
+    A chunk can span pages; the citation anchors to the FIRST one and unions
+    only the boxes there. Anchoring to where the chunk starts is the honest
+    choice — a box spanning two pages is not a place a reader can be sent to.
+    """
+    if not regions:
+        return None
+    first = min(r["page_no"] for r in regions)
+    on_page = [r for r in regions if r["page_no"] == first]
+    return {
+        "page_no": first,
+        "left": min(r["left"] for r in on_page),
+        "top": min(r["top"] for r in on_page),
+        "right": max(r["right"] for r in on_page),
+        "bottom": max(r["bottom"] for r in on_page),
+        "page_width": on_page[0]["page_width"],
+        "page_height": on_page[0]["page_height"],
+    }
 
 
 def _table_description(name: str, headers: list[str], rows: list[list[str]]) -> str:
@@ -246,7 +306,9 @@ def _split_header(grid: list[list[Any]]) -> tuple[list[str], int, list[str]]:
     return [" / ".join(_dedupe_consecutive(p)) for p in parts], header_rows, labels
 
 
-def _build_parsed_tables(doc: Any) -> list[dict[str, Any] | None]:
+def _build_parsed_tables(
+    doc: Any, sizes: dict[int, tuple[float, float]] | None = None
+) -> list[dict[str, Any] | None]:
     result: list[dict[str, Any] | None] = []
     for idx, table_item in enumerate(doc.tables):
         data = table_item.data
@@ -262,31 +324,46 @@ def _build_parsed_tables(doc: Any) -> list[dict[str, Any] | None]:
             name = f"Table_{idx + 1}"
         if labels:
             name = f"{name} ({'; '.join(labels)})"
+        # No page sizes (callers that only need the table grid) means no region,
+        # the same outcome as a format without page geometry.
+        region = _merge_regions(_regions(table_item, sizes or {}))
         last = next((r for r in reversed(result) if r is not None), None)
         if last is not None and last["data"]["headers"] == headers:
             last["data"]["rows"].extend(rows)
             last["description"] = _table_description(last["table_name"], headers, last["data"]["rows"])
+            # A continuation keeps the first fragment's anchor: the table is
+            # cited where a reader starts reading it, not where it ends.
             result.append(None)
         else:
             result.append({
                 "table_name": name,
                 "description": _table_description(name, headers, rows),
                 "data": {"headers": headers, "rows": rows},
+                "region": region,
             })
     return result
 
 
-def _iter_chunks(doc: Any, parsed_tables: list[dict[str, Any] | None], max_chars: int) -> Generator[dict[str, Any], None, None]:
+def _iter_chunks(
+    doc: Any,
+    parsed_tables: list[dict[str, Any] | None],
+    max_chars: int,
+    sizes: dict[int, tuple[float, float]],
+) -> Generator[dict[str, Any], None, None]:
     doc_idx = 0
     chunk_idx = 0
     buf: list[str] = []
+    buf_regions: list[dict[str, Any]] = []
 
     def flush() -> dict[str, Any] | None:
         nonlocal chunk_idx
         text = "\n\n".join(buf).strip()
+        region = _merge_regions(buf_regions)
         buf.clear()
+        buf_regions.clear()
         if text:
-            c = {"block_index": chunk_idx, "content": text, "table_involved": False, "table": None}
+            c = {"block_index": chunk_idx, "content": text, "table_involved": False,
+                 "table": None, "region": region}
             chunk_idx += 1
             return c
         return None
@@ -313,6 +390,7 @@ def _iter_chunks(doc: Any, parsed_tables: list[dict[str, Any] | None], max_chars
                             # it to each would persist the same rows N times into
                             # KBTextTable for no benefit (the Tables tab reads it once).
                             "table": pt if i == 0 else None,
+                            "region": pt.get("region"),
                         }
                         chunk_idx += 1
         elif isinstance(item, SectionHeaderItem):
@@ -326,18 +404,25 @@ def _iter_chunks(doc: Any, parsed_tables: list[dict[str, Any] | None], max_chars
                 if chunk:
                     yield chunk
             buf.append(header)
+            buf_regions.extend(_regions(item, sizes))
         elif isinstance(item, (TextItem, PictureItem)):
             text = getattr(item, "text", "").strip()
             if not text:
                 continue
             # A single item longer than max_chars is split so no chunk exceeds the
             # ceiling; each segment then flows through the normal accumulation guard.
+            item_regions = _regions(item, sizes)
             for seg in _split_oversized(text, max_chars):
                 if buf and len("\n\n".join(buf)) + 2 + len(seg) > max_chars:
                     chunk = flush()
                     if chunk:
                         yield chunk
                 buf.append(seg)
+                # Every segment of a split item carries the whole item's boxes:
+                # _split_oversized cuts on sentences, which Docling's geometry
+                # does not track, so claiming a narrower box per segment would
+                # be a coordinate nobody measured.
+                buf_regions.extend(item_regions)
 
     chunk = flush()
     if chunk:
@@ -354,8 +439,9 @@ def _run_parse_sync(file_bytes: bytes, extension: str, max_chunk_chars: int = MA
     try:
         conversion = _converter.convert(tmp_path)
         doc = conversion.document
-        parsed_tables = _build_parsed_tables(doc)
-        chunks = list(_iter_chunks(doc, parsed_tables, max_chunk_chars))
+        sizes = _page_heights(doc)
+        parsed_tables = _build_parsed_tables(doc, sizes)
+        chunks = list(_iter_chunks(doc, parsed_tables, max_chunk_chars, sizes))
         return {"has_figures": bool(list(doc.pictures)), "chunks": chunks}
     finally:
         os.unlink(tmp_path)
@@ -415,6 +501,7 @@ class InlineDoclingParser:
                 content=c["content"],
                 table_involved=c["table_involved"],
                 table=ParsedTable(**c["table"]) if c.get("table") else None,
+                region=PageRegion(**c["region"]) if c.get("region") else None,
             )
             for c in result["chunks"]
         ]

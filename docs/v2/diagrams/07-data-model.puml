@@ -1,0 +1,195 @@
+@startuml 07-data-model
+title Mô hình dữ liệu chuẩn V2 (00 §4, §6; 03 §3, §8) — Hiện trạng + đích (tô màu theo mức đã có)
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam linetype ortho
+hide circle
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có (chạy hôm nay) |
+  |<#E6F0FF> | Có một phần (bảng cũ mở rộng) |
+  |<#FFF4D6> | Chưa có (đích V2) |
+  Mọi bảng V2: ""tenant_id"" + RLS (ADR-V2-28), bảng sửa được có ""version"" (OCC, 409),
+  correction/override/approval/release chỉ ghi thêm (ADR-V2-30).
+  Ví dụ: EIA Brent 15/09/2026 = 130,80 USD/thùng, event_time 15/09,
+  publication_time = available_at = 16/09 (release thứ Tư).
+endlegend
+
+entity "KBSource / KBSourceConfig\n(public)" as src #E6F0FF {
+  * source_id
+  --
+  connector_type · schedule
+  thêm vào config: entity · licence · use_rights ·
+  release_info · locale · freshness_sla ·
+  extraction_profile (có version)
+}
+
+entity "raw artifact\n(MinIO raw/{source_id}/{sha256})" as art #FFF4D6 {
+  * artifact_sha256
+  --
+  bất biến, không xoá
+  KBData (bản tìm kiếm KB) trỏ về qua artifact_sha256
+}
+
+entity "ingest.release" as rel #FFF4D6 {
+  * release_id
+  --
+  source_id · artifact_sha256
+  publication_time · available_at · system_time
+}
+
+entity "registry.entity" as ent #FFF4D6 {
+  * entity_id : text
+  --
+  kind · name_vi · name_en · aliases[]
+  attributes
+  BRENT_SPOT · BRENT_FUTURES_M1 ·
+  GOLD_SJC_BAR · VN_FUEL_E10RON95_III
+}
+
+entity "registry.entity_relation" as er #FFF4D6 {
+  * from_id · predicate · to_id
+  --
+  SAME_UNDERLYING | SUCCEEDS |
+  COMPONENT_OF | NOT_EQUIVALENT
+  valid_from · valid_to
+}
+
+entity "registry.series" as ser #FFF4D6 {
+  * series_key (vd EIA:RBRTE:D)
+  --
+  entity_id · source_id · measure
+  unit · unit_multiplier · currency
+  grain · frequency · price_side
+  decimal_precision · locale
+  derived_formula · status · version
+}
+
+entity "ingest.mapping_version\n+ ingest.profile" as map #FFF4D6 {
+  * mapping_version
+  --
+  fingerprint · MappingProposal
+  status (đã duyệt | đề xuất)
+}
+
+entity "ingest.observation_candidate" as cand #FFF4D6 {
+  * source_id · series_key · event_time ·
+    release_id · content_hash
+  --
+  value · unit · obs_status · source_ref
+  (máy trích, chưa duyệt)
+}
+
+entity "obs.observation (ClickHouse)" as obs #FFF4D6 {
+  * tenant_id · series_key · event_time_start ·
+    available_at · effective_version
+  --
+  event_time_end · market_timezone
+  value Decimal(38,10) · unit · obs_status
+  publication_time · system_time
+  release_id · artifact_sha256
+  version_kind: machine | correction |
+    override | revision
+  review_case_id · source_ref
+  đọc as-of: argMax(value, (available_at,
+    effective_version))
+}
+
+entity "governance.dq_result · conflict" as dq #FFF4D6 {
+  * dq_result_id · conflict_id
+  --
+  tầng: schema | semantic | numeric |
+    temporal | cross-source
+  conflict: NO_CONFLICT · REVISION ·
+    TIME_DIFFERENCE · DEFINITION_DIFFERENCE ·
+    UNIT_DIFFERENCE · SOURCE_CONFLICT · UNKNOWN
+}
+
+entity "governance.review_case" as rc #FFF4D6 {
+  * case_id
+  --
+  kind: SCHEMA_DRIFT | DQ_BLOCK |
+    CONFLICT | EXTRACTION_LOW_CONF
+  subject_ref · status · authority_role
+  assignee · version
+}
+
+entity "governance.correction · override" as corr #FFF4D6 {
+  * correction_id | override_id
+  --
+  case_id · target_ref
+  new_value | new_mapping_version | rule
+  reason_code · author (append-only)
+}
+
+entity "governance.approval" as appr #FFF4D6 {
+  * approval_id
+  --
+  case_id · checker (≠ maker)
+  decision · expected_version
+}
+
+entity "knowledge.claim" as claim #FFF4D6 {
+  * claim_id
+  --
+  subject → entity_id
+  modality: fact | expectation |
+    conditional | reported
+  attributed_to · event_time
+  publication_time · valid_from · valid_to
+}
+
+entity "knowledge.event" as ev #FFF4D6 {
+  * event_id
+  --
+  affects → entity_id[]
+  event_time_start · event_time_end
+  publication_time
+}
+
+entity "knowledge.evidence" as evi #FFF4D6 {
+  * evidence_id
+  --
+  artifact_sha256 · page · bbox
+  quote (khớp nguyên văn passage)
+}
+
+entity "chunk KB (Silver/Gold · Qdrant)" as chunk #EEF7EE {
+  * chunk_id
+  --
+  PageRegion (page · bbox)
+  chỉ phục vụ retrieval, không phải knowledge
+}
+
+entity "alert.alert" as al #FFF4D6 {
+  * alert_id
+  --
+  rule_id · entity_id · window (khoá dedup)
+  cooldown · investigation · evidence
+}
+
+src ||--o{ rel
+art ||--o{ rel
+src ||--o{ ser
+ent ||--o{ ser
+ent ||--o{ er
+rel ||--o{ cand
+map ||--o{ cand
+ser ||--o{ cand
+cand ||--o{ dq
+dq |o--o| rc : ISSUE
+rc ||--o{ corr
+rc ||--o{ appr
+cand ||--o| obs : PASS → machine
+appr ||--o| obs : approved → effective_version mới
+ser ||--o{ obs
+rel ||--o{ obs
+ent ||--o{ claim : subject
+ent }o--o{ ev : affects
+claim }o--o{ ev : relates_to
+claim ||--o{ evi : supported_by
+ev ||--o{ evi : supported_by
+art ||--o{ evi
+art ||--o{ chunk
+ent ||--o{ al
+@enduml

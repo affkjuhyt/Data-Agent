@@ -174,13 +174,6 @@ def test_after_its_first_run_a_scheduled_source_runs_when_the_cron_is_due() -> N
     assert pool.submitted == [("s1", "scheduled", None)]
 
 
-def test_legacy_trigger_becomes_a_queued_row_only_when_none_is_active() -> None:
-    conn = _Conn()
-    wc.enqueue_manual_run(conn, "s1")
-    insert = _sql(conn, "INSERT INTO")
-    assert insert and "'queued'" in insert[0][0] and "NOT EXISTS" in insert[0][0]
-
-
 class _FakeFuture:
     """kafka-python's `send()` returns a FutureRecordMetadata; the real bug
     was calling only `producer.flush(timeout=...)`, which does not raise on

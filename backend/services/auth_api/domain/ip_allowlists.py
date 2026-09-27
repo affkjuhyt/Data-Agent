@@ -1,9 +1,4 @@
-import ipaddress
 from typing import Any
-
-
-def validate_cidr(cidr: str) -> None:
-    ipaddress.ip_network(cidr, strict=False)
 
 
 def format_ip_allowlist(row: dict[str, Any]) -> dict[str, Any]:

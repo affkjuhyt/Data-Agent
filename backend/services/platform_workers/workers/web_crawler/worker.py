@@ -7,9 +7,7 @@ psycopg2, no asyncio in the loop itself. Three trigger paths per tick:
 - a per-source cron schedule (no single global interval —
   `libs.shared.cron.cron_due` decides per source, off `KBSourceRun.started_at`);
 - the UI's "Run Now": kb_backend inserts a `queued` KBSourceRun row and this
-  worker claims queued rows each tick, so it works with Kafka down. The old
-  'web-crawl.manual-trigger' topic is still consumed (best-effort) and turned
-  into a queued row for any producer that still uses it;
+  worker claims queued rows each tick, so it works with Kafka down;
 - a bounded retry for a recently-failed run (MAX_RETRIES, exponential
   backoff), and `KBSourceCrawlQueue` draining for a `recursive` web_crawl
   source's discovered links (see drain_crawl_queue).
@@ -34,7 +32,7 @@ from datetime import UTC, datetime
 from typing import Any, TypedDict
 
 import psycopg2
-from kafka import KafkaConsumer, KafkaProducer
+from kafka import KafkaProducer
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -63,25 +61,16 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(extra="ignore")
 
-    manual_trigger_topic: str = Field(default="web-crawl.manual-trigger", validation_alias="KAFKA_WEB_CRAWL_TRIGGER_TOPIC")
-    group_id: str = Field(default="web-crawler-worker-group", validation_alias="KAFKA_GROUP_ID")
     poll_interval_seconds: int = Field(default=5, validation_alias="POLL_INTERVAL_SECONDS")
     max_parallel_runs: int = Field(default=3, validation_alias="MAX_PARALLEL_RUNS")
     stale_run_minutes: int = Field(default=30, validation_alias="STALE_RUN_MINUTES")
-    kafka_reconnect_interval_seconds: int = Field(
-        default=300, validation_alias="KAFKA_RECONNECT_INTERVAL_SECONDS",
-    )
 
 
 _settings = Settings()
 
-MANUAL_TRIGGER_TOPIC = _settings.manual_trigger_topic
-GROUP_ID = _settings.group_id
 POLL_INTERVAL_SECONDS = _settings.poll_interval_seconds
 MAX_PARALLEL_RUNS = max(1, _settings.max_parallel_runs)
 STALE_RUN_MINUTES = _settings.stale_run_minutes
-
-KAFKA_RECONNECT_INTERVAL_SECONDS = _settings.kafka_reconnect_interval_seconds
 
 # promotion_mode="auto": queue Silver ourselves after a changed crawl, same
 # topic/payload kb_backend's own POST /promote/{id}/silver route publishes
@@ -146,19 +135,6 @@ def publish_auto_promote_silver(data_id: str, tenant_id: str) -> None:
         global _promote_producer
         with _promote_producer_lock:
             _promote_producer = None
-
-
-def try_kafka_consumer(retries: int = 5, delay: int = 3) -> KafkaConsumer | None:
-    """Best-effort, like schema_crawler's DDL-change consumer — "Run Now" is
-    an addition on top of cron scheduling, not a hard dependency."""
-    consumer = kafka_factory.consumer(
-        [MANUAL_TRIGGER_TOPIC], GROUP_ID,
-        auto_offset_reset="latest", settings=KafkaSettings(),
-        required=False, attempts=retries, wait_seconds=delay,
-    )
-    if consumer is None:
-        log.warning("Kafka unavailable after %d retries — running in cron-only mode", retries)
-    return consumer
 
 
 # ─── Source registry (KBSource / KBSourceConfig) ───────────────────────────
@@ -357,7 +333,7 @@ def crawl_due_sources(conn: Any, pool: "RunPool | None" = None) -> None:
 
 def drain_crawl_queue(conn: Any, batch_size: int = 10) -> None:
     """One tick's worth of a `recursive` web_crawl source's discovered-link
-    backlog — same loop slot as crawl_due_sources/drain_manual_triggers, see
+    backlog — same loop slot as crawl_due_sources, see
     run()."""
     with conn.cursor() as cur:
         cur.execute(
@@ -496,20 +472,6 @@ def _finish_run(conn: Any, run_id: Any, status: str, error: str) -> None:
     conn.commit()
 
 
-def enqueue_manual_run(conn: Any, source_id: str) -> None:
-    """Turns a legacy Kafka trigger into a queued row (none if one is already
-    queued or running for that source)."""
-    with conn.cursor() as cur:
-        cur.execute(
-            """INSERT INTO "KBSourceRun" (run_id, source_id, status, trigger, retry_count)
-               SELECT %s, %s, 'queued', 'manual', 0
-                WHERE NOT EXISTS (SELECT 1 FROM "KBSourceRun"
-                                   WHERE source_id = %s AND status IN ('queued', 'running'))""",
-            (str(uuid.uuid4()), source_id, source_id),
-        )
-    conn.commit()
-
-
 def dispatch_queued_runs(conn: Any, pool: RunPool) -> None:
     """Claims queued runs (oldest first) into free pool slots. A run whose
     source is busy simply stays queued until that source finishes."""
@@ -570,42 +532,6 @@ def abandon_running_runs(conn: Any) -> None:
     conn.commit()
 
 
-def drain_manual_triggers(conn: Any, consumer: KafkaConsumer) -> None:
-    """Legacy trigger: turn each 'web-crawl.manual-trigger' message into a
-    queued run, which dispatch_queued_runs then picks up like any other."""
-    records = consumer.poll(timeout_ms=200)
-    source_ids: set[str] = set()
-    for messages in records.values():
-        for message in messages:
-            source_id = (message.value or {}).get("source_id")
-            if source_id:
-                source_ids.add(str(source_id))
-    if not source_ids:
-        return
-
-    with conn.cursor() as cur:
-        known = {str(s["source_id"]) for s in get_active_sources(cur)}
-    for source_id in source_ids:
-        if source_id in known:
-            enqueue_manual_run(conn, source_id)
-        else:
-            log.warning("drain_manual_triggers | source=%s not found or inactive, skipping", source_id)
-
-    with contextlib.suppress(Exception):
-        consumer.commit()
-
-
-def maybe_reconnect_kafka(
-    consumer: KafkaConsumer | None, now: float, last_attempt: float,
-) -> tuple[KafkaConsumer | None, float]:
-    if consumer is not None or now - last_attempt < KAFKA_RECONNECT_INTERVAL_SECONDS:
-        return consumer, last_attempt
-    consumer = try_kafka_consumer(retries=1, delay=0)
-    if consumer is not None:
-        log.info("Kafka consumer recovered — Run Now trigger path restored")
-    return consumer, now
-
-
 def run() -> None:
     from libs.shared.observability import setup_observability
 
@@ -615,24 +541,10 @@ def run() -> None:
     conn = pg.connect(pg_settings)
     abandon_running_runs(conn)
     pool = RunPool(pg_settings, MAX_PARALLEL_RUNS)
-    consumer = try_kafka_consumer()
-    last_kafka_attempt = time.time()
 
-    log.info("web-crawler started. kafka=%s parallel=%d", bool(consumer), MAX_PARALLEL_RUNS)
+    log.info("web-crawler started. parallel=%d", MAX_PARALLEL_RUNS)
     while True:
         try:
-            consumer, last_kafka_attempt = maybe_reconnect_kafka(consumer, time.time(), last_kafka_attempt)
-
-            if consumer is not None:
-                try:
-                    drain_manual_triggers(conn, consumer)
-                except Exception:
-                    log.exception("Kafka consumer failed — falling back to cron-only until next retry")
-                    with contextlib.suppress(Exception):
-                        consumer.close()
-                    consumer = None
-                    last_kafka_attempt = time.time()
-
             reset_stale_runs(conn)
             dispatch_queued_runs(conn, pool)
             # No global interval gate — each source tracks its own next-due

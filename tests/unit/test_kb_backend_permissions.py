@@ -126,41 +126,11 @@ class TestGrants:
         assert asyncio.run(store.can(pg, "PLATFORM_ADMIN")) is False
 
 
-class TestPermissionsFor:
-    def test_reports_the_whole_catalogue_not_just_the_grants(self):
-        """/whoami's consumers switch UI off a False as much as on a True, so
-        an ungranted permission has to be present-and-false, not absent."""
-        pg, store = _StubPostgres(), PermissionStore()
-        perms = asyncio.run(store.permissions_for(pg, "BUSINESS_OPERATOR"))
-
-        assert set(perms) == PERMISSIONS
-        assert perms["viewDocuments"] is True
-        assert perms["deleteData"] is False
-        assert perms["toggleQdrant"] is False
-
-    def test_the_catalogue_is_what_is_reported_not_what_the_table_holds(self):
-        """A permission no row mentions still has to appear as False — keying
-        the response off the table would hide a control instead of disabling
-        it, and the frontend cannot tell those apart."""
-        pg, store = _StubPostgres(rows=[("PLATFORM_ADMIN", "documents", "viewDocuments")]), PermissionStore()
-        perms = asyncio.run(store.permissions_for(pg, "PLATFORM_ADMIN"))
-
-        assert set(perms) == PERMISSIONS
-        assert perms["addWarehouse"] is False
-
-    def test_unknown_role_gets_every_permission_false(self):
-        pg, store = _StubPostgres(), PermissionStore()
-        perms = asyncio.run(store.permissions_for(pg, "DATA_ANALYST"))
-
-        assert set(perms) == PERMISSIONS
-        assert all(v is False for v in perms.values())
-
-
 class TestTheCatalogueGatesTheTable:
     def test_a_row_naming_an_uncatalogued_permission_is_ignored(self):
         """The trace a misspelt seed row leaves. It cannot authorise anything
         either way — no route asks for it — but it must not be reported as a
-        grant, or someone reads /whoami and believes it applied."""
+        grant, or someone reads the grant set and believes it applied."""
         pg = _StubPostgres(rows=ROWS + [("BUSINESS_OPERATOR", "data", "deleteDatum")])
         store = PermissionStore()
 
@@ -279,7 +249,6 @@ class TestUnavailable:
         """An empty RolePermissions denies everything, quietly and correctly.
         The failure mode to avoid is the reverse, covered above."""
         pg, store = _StubPostgres(rows=[]), PermissionStore()
-        perms = asyncio.run(store.permissions_for(pg, "PLATFORM_ADMIN"))
 
         assert asyncio.run(store.granted_to(pg, "PLATFORM_ADMIN")) == frozenset()
-        assert set(perms) == PERMISSIONS and not any(perms.values())
+        assert asyncio.run(store.can(pg, "PLATFORM_ADMIN", *PERMISSIONS)) is False

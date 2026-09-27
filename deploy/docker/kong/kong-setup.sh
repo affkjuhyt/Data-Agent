@@ -168,7 +168,7 @@ curl -sf -X PUT "$KONG_ADMIN/services/workflow_runtime/routes/runtime-route" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "runtime-route",
-    "paths": ["/api/conversations", "/api/traces", "/api/nodes", "/api/llm-providers", "/api/kb-connections", "/api/system-prompts", "/api/catalog", "/api/sandbox", "/api/runtime-config", "/api/db-connector", "/api/reviews", "/api/platform", "/api/billing", "/api/orchestrate", "/api/storage", "/api/schema-memory", "/api/schema-catalog", "/api/ask/results"],
+    "paths": ["/api/conversations", "/api/traces", "/api/nodes", "/api/llm-providers", "/api/kb-connections", "/api/system-prompts", "/api/catalog", "/api/sandbox", "/api/runtime-config", "/api/db-connector", "/api/reviews", "/api/platform", "/api/billing", "/api/orchestrate", "/api/storage", "/api/ask/results"],
     "strip_path": false,
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"

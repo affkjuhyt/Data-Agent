@@ -8,7 +8,6 @@ guarantees differ from the Docker one.
 import logging
 import os
 import threading
-import time
 from collections.abc import Callable
 from typing import Any
 

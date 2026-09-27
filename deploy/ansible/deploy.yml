@@ -186,10 +186,6 @@
           {{ (full_deploy | bool) or (git_diff.stdout_lines | default([])
              | select('match', '^(' ~ (config_paths | map('regex_escape') | join('|')) ~ ')')
              | list | length) > 0 }}
-        shared_changed: >-
-          {{ (git_diff.stdout_lines | default([])
-             | select('match', '^(' ~ (shared_paths | map('regex_escape') | join('|')) ~ ')')
-             | list | length) > 0 }}
 
     - name: Report what changed
       ansible.builtin.debug:
@@ -199,135 +195,13 @@
           - "changed: {{ 'everything' if (full_deploy | bool) else (changed_paths | length | string) ~ ' file(s)' }}"
           - "secrets: {{ secrets_changed }}   configmaps: {{ config_changed }}"
 
-    - name: List every directory the change touched
-      ansible.builtin.shell:
-        cmd: |
-          set -euo pipefail
-          printf '%s\n' {{ changed_paths | map('quote') | join(' ') }} | while read -r f; do
-            d=$(dirname "$f")
-            while [ "$d" != "." ] && [ "$d" != "/" ]; do
-              printf '%s\n' "$d"
-              d=$(dirname "$d")
-            done
-          done | sort -u
-        executable: /bin/bash
-      register: touched_dirs
-      when: (changed_paths | length) > 0 and not (full_deploy | bool)
-      changed_when: false
+    - name: Plan the images and Jobs
+      ansible.builtin.import_role:
+        name: k8s_plan
 
-    - name: Look for a Dockerfile in each
-      ansible.builtin.stat:
-        path: "{{ project_dir }}/{{ item }}/Dockerfile"
-      loop: "{{ touched_dirs.stdout_lines | default([]) }}"
-      loop_control:
-        label: "{{ item }}"
-      register: dockerfiles
-
-    - name: List every image directory in the repo
-      ansible.builtin.shell:
-        cmd: |
-          set -euo pipefail
-          git ls-files | grep -E '(^|/)Dockerfile$' | while read -r f; do
-            [ -f "$f" ] && dirname "$f"
-          done | sort -u
-        chdir: "{{ project_dir }}"
-        executable: /bin/bash
-      register: all_image_dirs
-      when: (full_deploy | bool) or (shared_changed | bool)
-      changed_when: false
-
-    - name: Select the directories to build
-      ansible.builtin.set_fact:
-        build_dirs: >-
-          {{ all_image_dirs.stdout_lines if ((full_deploy | bool) or (shared_changed | bool))
-             else (dockerfiles.results | selectattr('stat.exists') | map(attribute='item') | list) }}
-
-    - name: List the image names the manifests ask for
-      ansible.builtin.shell:
-        cmd: |
-          set -euo pipefail
-          grep -rhoE '{{ image_prefix }}/[A-Za-z0-9._-]+:' {{ k8s_manifests }} | cut -d/ -f2 | tr -d ':' | sort -u
-        executable: /bin/bash
-      register: manifest_images
-      changed_when: false
-
-    - name: Name the images to build
-      ansible.builtin.set_fact:
-        images: "{{ images | default([]) + [{'dir': item, 'name': img_name, 'context': img_context}] }}"
-      loop: "{{ build_dirs }}"
-      loop_control:
-        label: "{{ img_name }}"
-      vars:
-        base: "{{ item | basename }}"
-        img_name: >-
-          {{ image_name_overrides[item]
-             | default(base if base in manifest_images.stdout_lines else base | replace('_', '-')) }}
-        img_context: "{{ item if item in image_self_context else '.' }}"
-
-    - name: Narrow the build list to images_only
-      ansible.builtin.set_fact:
-        images: >-
-          {{ images | default([])
-             | selectattr('name', 'in', images_only.split(',') | map('trim') | reject('equalto', '') | list)
-             | list }}
-      when: (images_only | length) > 0
-
-    - name: Check images_only matched something
-      ansible.builtin.assert:
-        that: (images | default([])) | length > 0
-        fail_msg: >-
-          images_only={{ images_only }} matched nothing buildable.
-          Known: {{ (build_dirs | default([])) | map('basename') | join(', ') }}
-      when: (images_only | length) > 0
-
-    - name: Report the build list
-      ansible.builtin.debug:
-        msg: "building: {{ (images | default([])) | map(attribute='name') | join(', ') | default('nothing', true) }}"
-
-    - name: Build the images
-      ansible.builtin.command:
-        cmd: >-
-          docker build
-          -f {{ project_dir }}/{{ item.dir }}/{{ image_dockerfile_overrides[item.dir] | default('Dockerfile') }}
-          -t {{ image_prefix }}/{{ item.name }}:{{ image_tag }}
-          {{ project_dir }}/{{ item.context }}
-      loop: "{{ images | default([]) }}"
-      loop_control:
-        label: "{{ image_prefix }}/{{ item.name }}:{{ image_tag }}"
-      changed_when: true
-
-    - name: Tag the images for the registry
-      ansible.builtin.command:
-        cmd: >-
-          docker tag {{ image_prefix }}/{{ item.name }}:{{ image_tag }}
-          {{ image_registry }}/{{ image_prefix }}/{{ item.name }}:{{ image_tag }}
-      loop: "{{ images | default([]) }}"
-      loop_control:
-        label: "{{ item.name }}"
-      when: (image_registry | length) > 0
-      changed_when: true
-
-    - name: Push the images
-      ansible.builtin.command:
-        cmd: >-
-          docker push
-          {{ (image_registry ~ '/') if (image_registry | length) > 0 else '' }}{{ image_prefix }}/{{ item.name }}:{{ image_tag }}
-      loop: "{{ images | default([]) }}"
-      loop_control:
-        label: "{{ item.name }}"
-      when: image_push | bool
-      changed_when: true
-
-    - name: Import the images into the node's own store
-      ansible.builtin.shell:
-        cmd: |
-          set -euo pipefail
-          docker save {{ (images | default([])) | map(attribute='name')
-                         | map('regex_replace', '^', image_prefix ~ '/')
-                         | map('regex_replace', '$', ':' ~ image_tag) | join(' ') }} | {{ image_import }}
-        executable: /bin/bash
-      when: (image_import | length) > 0 and (images | default([]) | length) > 0
-      changed_when: true
+    - name: Build, push and import the images
+      ansible.builtin.import_role:
+        name: k8s_build
 
     - name: Check the vault exists
       ansible.builtin.stat:
@@ -384,6 +258,19 @@
         mode: "0600"
       no_log: true
 
+    # Snapshot before anything is reapplied, so that the restart step further
+    # down can restart only the Deployments whose Secrets/ConfigMaps really moved.
+    - name: Snapshot the service tier's Secrets and ConfigMaps before
+      ansible.builtin.command:
+        cmd: "{{ kubectl }} -n {{ ns_service }} get secrets,configmaps -o json"
+      register: config_before_raw
+      changed_when: false
+      no_log: true
+
+    - name: Hash the snapshot
+      ansible.builtin.set_fact:
+        config_before: "{{ config_before_raw.stdout | from_json | config_hashes }}"
+      no_log: true
 
     - name: Reapply the Secrets
       ansible.builtin.shell:
@@ -501,39 +388,59 @@
       changed_when: "'created' in svc_apply.stdout or 'configured' in svc_apply.stdout"
       when: apply_services | bool
 
-    - name: Wait for the gateway
+    # After the service tier, whose manifests carry per-workload env ConfigMaps
+    # of their own, so a change there is seen too.
+    - name: Snapshot the service tier's Secrets and ConfigMaps after
       ansible.builtin.command:
-        cmd: >-
-          {{ kubectl }} -n {{ ns_service }} rollout status deployment/{{ item }}
-          --timeout={{ wait_rollout }}s
-      loop: [keycloak, kong]
+        cmd: "{{ kubectl }} -n {{ ns_service }} get secrets,configmaps -o json"
+      register: config_after_raw
+      changed_when: false
+      no_log: true
+
+    - name: Work out which Secrets and ConfigMaps changed
+      ansible.builtin.set_fact:
+        config_changed_keys: >-
+          {{ config_before | changed_keys(config_after_raw.stdout | from_json | config_hashes) }}
+      # Only names come out, but a templating error would echo the Secret data.
+      no_log: true
+
+    - name: Report the Secrets and ConfigMaps that changed
+      ansible.builtin.debug:
+        msg: "changed in {{ ns_service }}: {{ config_changed_keys | join(', ') | default('nothing', true) }}"
+
+    - name: Wait for the gateway
+      ansible.builtin.shell:
+        cmd: |
+          set -uo pipefail
+          for d in keycloak kong; do
+            {{ kubectl }} -n {{ ns_service }} rollout status deployment/$d \
+              --timeout={{ wait_rollout }}s >/dev/null 2>&1 || echo "$d" &
+          done
+          wait
+        executable: /bin/bash
       register: gateway_rollout
       changed_when: false
-      failed_when: false
       when: apply_services | bool
 
     - name: Report the gateway
       ansible.builtin.debug:
-        msg: >-
-          Gateway not ready in {{ wait_rollout }}s:
-          {{ gateway_rollout.results | selectattr('rc', 'defined')
-             | rejectattr('rc', 'equalto', 0) | map(attribute='item') | join(', ') }}
-      when:
-        - gateway_rollout.results is defined
-        - gateway_rollout.results | selectattr('rc', 'defined') | rejectattr('rc', 'equalto', 0) | list | length > 0
+        msg: "Gateway not ready in {{ wait_rollout }}s: {{ gateway_rollout.stdout_lines | join(', ') }}"
+      when: (gateway_rollout.stdout_lines | default([]) | length) > 0
 
     - name: Rerun the migration and init Jobs
       when:
         - apply_jobs | bool
-        - (full_deploy | bool)
-          or ('migrate' in ((images | default([])) | map(attribute='name') | list))
-          or ((changed_paths | select('match', '^deploy/k8s/(production|dev)/job/') | list | length) > 0)
+        - jobs_rerun | length > 0
+      vars:
+        rerun_names: "{{ jobs_rerun | map(attribute='name') | list }}"
+        rerun_migrations: "{{ migration_jobs | select('in', rerun_names) | list }}"
+        rerun_inits: "{{ job_workloads | select('in', rerun_names) | list }}"
       block:
         - name: Delete the Jobs
           ansible.builtin.command:
             cmd: >-
               {{ kubectl }} -n {{ ns_service }} delete job
-              {{ (migration_jobs + job_workloads) | join(' ') }} --ignore-not-found
+              {{ rerun_names | join(' ') }} --ignore-not-found
           changed_when: true
 
         - name: Apply the migration Jobs
@@ -541,49 +448,64 @@
             cmd: |
               set -euo pipefail
               stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
-              for j in {{ migration_jobs | join(' ') }}; do
+              for j in {{ rerun_migrations | join(' ') }}; do
                 {{ manifest_sed }} "{{ k8s_manifests }}/job/$j.yaml" > "$stage/$j.yaml"
               done
               {{ kubectl }} apply -f "$stage/"
             executable: /bin/bash
+          when: rerun_migrations | length > 0
           changed_when: true
 
+        # Polls for Complete *or* Failed. `kubectl wait --for=condition=complete`
+        # cannot see a failure, so a Job that had given up still held the run for
+        # the whole wait_job (15 min) before the logs were shown.
         - name: Wait for the migration Jobs
           ansible.builtin.command:
             cmd: >-
-              {{ kubectl }} -n {{ ns_service }} wait --for=condition=complete job/{{ item }}
-              --timeout={{ wait_job }}s
-          loop: "{{ migration_jobs }}"
+              {{ kubectl }} -n {{ ns_service }} get job/{{ item }}
+              -o jsonpath={% raw %}'{.status.conditions[?(@.status=="True")].type}'{% endraw %}
+          loop: "{{ rerun_migrations }}"
+          register: job_state
+          until: ('Complete' in job_state.stdout) or ('Failed' in job_state.stdout)
+          retries: "{{ (wait_job | int) // (job_poll | int) }}"
+          delay: "{{ job_poll | int }}"
           changed_when: false
+          failed_when: "'Complete' not in job_state.stdout"
 
         - name: Apply the init Jobs
           ansible.builtin.shell:
             cmd: |
               set -euo pipefail
               stage=$(mktemp -d); trap 'rm -rf "$stage"' EXIT
-              for j in {{ job_workloads | join(' ') }}; do
+              for j in {{ rerun_inits | join(' ') }}; do
                 {{ manifest_sed }} "{{ k8s_manifests }}/job/$j.yaml" \
                   | sed "s|SEED_DEMO: '0'|SEED_DEMO: '{{ 1 if (seed_demo | bool) else 0 }}'|" \
                   > "$stage/$j.yaml"
               done
               {{ kubectl }} apply -f "$stage/"
             executable: /bin/bash
+          when: rerun_inits | length > 0
           changed_when: true
 
         - name: Wait for the init Jobs
           ansible.builtin.command:
             cmd: >-
-              {{ kubectl }} -n {{ ns_service }} wait --for=condition=complete job/{{ item }}
-              --timeout={{ wait_job }}s
-          loop: "{{ job_workloads }}"
+              {{ kubectl }} -n {{ ns_service }} get job/{{ item }}
+              -o jsonpath={% raw %}'{.status.conditions[?(@.status=="True")].type}'{% endraw %}
+          loop: "{{ rerun_inits }}"
+          register: job_state
+          until: ('Complete' in job_state.stdout) or ('Failed' in job_state.stdout)
+          retries: "{{ (wait_job | int) // (job_poll | int) }}"
+          delay: "{{ job_poll | int }}"
           changed_when: false
+          failed_when: "'Complete' not in job_state.stdout"
 
       rescue:
         - name: Get the Job logs
           ansible.builtin.shell:
             cmd: "{{ kubectl }} -n {{ ns_service }} logs job/{{ item }} --tail=40 2>&1 || true"
             executable: /bin/bash
-          loop: "{{ migration_jobs + job_workloads }}"
+          loop: "{{ rerun_names }}"
           register: job_logs
           changed_when: false
 
@@ -595,51 +517,106 @@
           ansible.builtin.fail:
             msg: "See the logs above. The checkpoint was not advanced, so the next run retries this commit."
 
-    - name: Restart the workloads running a rebuilt image
-      ansible.builtin.shell:
-        cmd: |
-          set -euo pipefail
-          running=$({{ kubectl }} get deployments,statefulsets -A \
-            -o jsonpath='{range .items[*]}{.kind}/{.metadata.name} {.metadata.namespace} {.spec.template.spec.containers[*].image}{"\n"}{end}')
-          for ref in {{ (images | default([])) | map(attribute='name')
-                        | map('regex_replace', '^', image_deploy_prefix ~ '/')
-                        | map('regex_replace', '$', ':' ~ image_tag) | join(' ') }}; do
-            printf '%s\n' "$running" | grep -F " $ref" || true
-          done | sort -u | while read -r workload ns _; do
-            {{ kubectl }} -n "$ns" rollout restart "$workload"
-          done
-        executable: /bin/bash
-      when: (images | default([]) | length) > 0
-      changed_when: true
-
-    - name: Restart the service tier after a Secret or ConfigMap change
-      ansible.builtin.command:
-        cmd: "{{ kubectl }} -n {{ ns_service }} rollout restart deployment"
-      when:
-        - apply_services | bool
-        - (secrets_changed | bool) or (config_changed | bool)
-      changed_when: true
-
-    - name: Wait for the service tier
+    # A rebuilt image keeps its :latest reference, so apply changes nothing and
+    # the pods have to be restarted. Only those actually running a different
+    # digest are: a rebuild that came out identical restarts nothing. Finished
+    # pods are left out: after a node reboot old ReplicaSets' pods linger as
+    # Completed with the digest they ran, and would look stale forever.
+    - name: List the images the pods are running
       ansible.builtin.command:
         cmd: >-
-          {{ kubectl }} -n {{ ns_service }} rollout status deployment/{{ item }}
-          --timeout={{ wait_rollout }}s
-      loop: "{{ service_workloads }}"
+          {{ kubectl }} get pods -A
+          --field-selector=status.phase!=Succeeded,status.phase!=Failed -o
+          jsonpath={% raw %}'{range .items[*]}{range .status.containerStatuses[*]}{.image} {.imageID}{"\n"}{end}{end}'{% endraw %}
+      register: pod_images
+      changed_when: false
+      when: built | length > 0 and (image_registry | length) > 0
+
+    - name: List the workloads and their images
+      ansible.builtin.command:
+        cmd: >-
+          {{ kubectl }} get deployments,statefulsets -A -o
+          jsonpath={% raw %}'{range .items[*]}{.kind}/{.metadata.name} {.metadata.namespace} {.spec.template.spec.containers[*].image}{"\n"}{end}'{% endraw %}
+      register: workload_images
+      changed_when: false
+      when: built | length > 0
+
+    # Without a registry there is no digest to compare with the pods (an
+    # imported image is referenced by tag), so every rebuilt image counts.
+    - name: Pick the workloads running an outdated image
+      ansible.builtin.set_fact:
+        restart_for_images: >-
+          {{ workload_images.stdout_lines | workloads_running(
+               outdated | map('regex_replace', '^', image_deploy_prefix ~ '/')
+                        | map('regex_replace', '$', ':' ~ image_tag) | list) }}
+      vars:
+        outdated: >-
+          {{ (built | stale_images(pod_images.stdout_lines, image_deploy_prefix, image_tag))
+             if (image_registry | length) > 0 else (built.keys() | list) }}
+      when: built | length > 0
+
+    - name: List the service tier Deployments
+      ansible.builtin.command:
+        cmd: "{{ kubectl }} -n {{ ns_service }} get deployments -o json"
+      register: svc_deployments
+      changed_when: false
+      when:
+        - apply_services | bool
+        - config_changed_keys | length > 0
+
+    # Only the Deployments that read a Secret or ConfigMap whose content moved.
+    # Before, any Secret/ConfigMap change restarted all ~25 of them — including a
+    # seed file, which only the seed Job reads.
+    - name: Pick the Deployments reading a changed Secret or ConfigMap
+      ansible.builtin.set_fact:
+        restart_for_config: >-
+          {{ (svc_deployments.stdout | from_json) | workloads_reading(config_changed_keys)
+             | map('regex_replace', '$', ' ' ~ ns_service) | list }}
+      when: svc_deployments.stdout is defined
+
+    - name: Restart the workloads
+      ansible.builtin.command:
+        cmd: "{{ kubectl }} -n {{ item.split(' ')[1] }} rollout restart {{ item.split(' ')[0] }}"
+      # One list, each workload once: restarting the same one twice within a
+      # second fails with "restart has already been triggered".
+      loop: "{{ restart_workloads }}"
+      vars:
+        restart_workloads: "{{ (restart_for_images | default([]) + restart_for_config | default([])) | unique | sort }}"
+      changed_when: true
+
+    - name: Report the restarts
+      ansible.builtin.debug:
+        msg:
+          - "for images:  {{ restart_for_images | default([]) | map('regex_replace', ' .*$', '') | join(', ') | default('none', true) }}"
+          - "for config:  {{ restart_for_config | default([]) | map('regex_replace', ' .*$', '') | join(', ') | default('none', true) }}"
+
+    # Every wait runs at once: the run takes as long as the slowest rollout,
+    # not their sum (up to wait_rollout for each, one after another, before).
+    - name: Wait for the service tier and every restarted workload
+      ansible.builtin.shell:
+        cmd: |
+          set -uo pipefail
+          printf '%s\n' {{ wait_list | map('quote') | join(' ') }} | {
+            while read -r ref ns; do
+              {{ kubectl }} -n "$ns" rollout status "$ref" --timeout={{ wait_rollout }}s \
+                >/dev/null 2>&1 || echo "$ns/$ref" &
+            done
+            wait
+          }
+        executable: /bin/bash
+      vars:
+        wait_list: >-
+          {{ (((service_workloads | map('regex_replace', '^', 'Deployment/')
+                 | map('regex_replace', '$', ' ' ~ ns_service) | list) if (apply_services | bool) else [])
+              + (restart_for_images | default([])) + (restart_for_config | default([]))) | unique }}
       register: svc_rollout
       changed_when: false
-      failed_when: false
-      when: apply_services | bool
+      when: wait_list | length > 0
 
     - name: Report the workloads that did not come back
       ansible.builtin.debug:
-        msg: >-
-          Not ready in {{ wait_rollout }}s:
-          {{ svc_rollout.results | selectattr('rc', 'defined')
-             | rejectattr('rc', 'equalto', 0) | map(attribute='item') | join(', ') }}
-      when:
-        - svc_rollout.results is defined
-        - svc_rollout.results | selectattr('rc', 'defined') | rejectattr('rc', 'equalto', 0) | list | length > 0
+        msg: "Not ready in {{ wait_rollout }}s: {{ svc_rollout.stdout_lines | join(', ') }}"
+      when: (svc_rollout.stdout_lines | default([]) | length) > 0
 
     - name: Run the gateway setup Job
       ansible.builtin.import_role:

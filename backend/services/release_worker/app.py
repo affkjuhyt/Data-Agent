@@ -2,7 +2,7 @@ from fastapi import FastAPI
 
 from libs.shared.observability import instrument_fastapi
 from services.release_worker.release_core import enforce_internal_origin
-from services.release_worker.routers import admin, drift, health, pipelines
+from services.release_worker.routers import health, pipelines
 
 
 def create_app() -> FastAPI:
@@ -13,7 +13,5 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(pipelines.router)
-    app.include_router(drift.router)
-    app.include_router(admin.router)
 
     return app

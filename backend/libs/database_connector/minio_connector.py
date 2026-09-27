@@ -1,7 +1,7 @@
 """
 MinIO connector — follows the DatabaseConnector protocol.
 URL format: http://access_key:secret_key@host:port
-            or http://host:port (credentials via env / set_credentials)
+            or http://host:port (credentials from boto3's default chain, e.g. AWS_* env)
 """
 import asyncio
 from typing import Any, BinaryIO, cast
@@ -45,9 +45,6 @@ class MinIOClient:
         else:
             self._endpoint = url
 
-    def set_credentials(self, access_key: str, secret_key: str) -> None:
-        self._access_key = access_key
-        self._secret_key = secret_key
 
     def _make_session(self) -> aioboto3.Session:
         return aioboto3.Session()

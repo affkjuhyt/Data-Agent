@@ -250,13 +250,3 @@ def scan(sql: str, dialect: str = POSTGRES) -> ScanResult:
         unbalanced_parens=unbalanced,
         unterminated=unterminated,
     )
-
-
-def scan_all_dialects(sql: str) -> dict[str, ScanResult]:
-    """Every dialect's reading of the same text.
-
-    Used when the caller has not said which engine the SQL is bound for. The
-    readings genuinely differ — that is the whole reason this module exists — so
-    an unknown dialect must satisfy all of them rather than pick one.
-    """
-    return {d: scan(sql, d) for d in DIALECTS}

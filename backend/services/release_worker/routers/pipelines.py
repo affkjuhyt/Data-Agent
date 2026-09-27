@@ -240,8 +240,3 @@ def get_pipeline(pipeline_id: str, user: dict[str, Any] = Depends(get_current_us
             )
             steps = [dict(s) for s in cur.fetchall()]
     return {"pipeline": pipeline, "steps": steps}
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# DRIFT DETECTION ENDPOINTS
-# ═══════════════════════════════════════════════════════════════════════

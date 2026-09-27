@@ -6,6 +6,8 @@ import time
 
 import litellm
 
+from libs.indicator.numeric import readings
+from libs.indicator.verifier import EvidenceItem, Verdict, verify
 from libs.shared import untrusted
 from services.workflow_runtime.runtime_services import llm_call
 from services.workflow_runtime.state import AgentState
@@ -52,9 +54,13 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
     # truncated, 0/3 with the responder's context.
     max_chunks = cfg.get("context_max_chunks", 5)
     max_chars  = cfg.get("context_max_chars", 4000)
+    # Đúng lát cắt responder.py đã đánh số, KHÔNG lọc chunk rỗng: citation [n]
+    # của câu trả lời trỏ theo vị trí trong lát này, nên bỏ một phần tử ở đây
+    # sẽ làm mọi trích dẫn lệch đi một tài liệu.
+    chunks_for_judge = reranked[:max_chunks]
     context_lines = []
     total_chars = 0
-    for i, c in enumerate(reranked[:max_chunks], 1):
+    for i, c in enumerate(chunks_for_judge, 1):
         content = c.get("content", "")
         if not content:
             continue
@@ -68,6 +74,21 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
     # that talks the judge into PASS is a cheaper attack than one that talks
     # the responder into leaking, and it clears the way for the next.
     context_text = untrusted.wrap("\n".join(context_lines)) if context_lines else "(không có context)"
+
+    # Kiểm tra tất định TRƯỚC khi hỏi model (NC-ADR-T5, docs/v2/12). Con số, trích dẫn và
+    # vintage là chỗ hệ thống phải chắc chắn, mà hỏi một model thì lại là đưa
+    # tính bất định vào đúng chỗ đó — judge_system.txt vẫn so khớp chuỗi nên
+    # "1284" lọt qua khi nguồn ghi "128,4". Trượt ở đây là GROUNDING_ERROR
+    # ngay, không tốn một lượt gọi LLM và không thể tranh cãi.
+    numeric_verdict = verify(response, _evidence(chunks_for_judge))
+    verifier_report = {"verifier": _report(numeric_verdict)}
+    if not numeric_verdict.passed:
+        detail = "; ".join(
+            f"{c.name}: {c.detail}" + (f" ({', '.join(c.offending)})" if c.offending else "")
+            for c in numeric_verdict.failures
+        )
+        logger.info("judge | deterministic verifier failed: %s", detail)
+        return _fail(iteration, "GROUNDING_ERROR", detail) | verifier_report
 
     tool_err_text = json.dumps(tool_errs, ensure_ascii=False) if tool_errs else "(không có lỗi)"
 
@@ -99,7 +120,7 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
         data = json.loads(raw)
     except Exception as e:
         logger.warning("judge | LLM call failed: %s → PASS fallback", e)
-        return _pass(iteration, reason=f"judge_error:{e}")
+        return _pass(iteration, reason=f"judge_error:{e}") | verifier_report
 
     verdict    = data.get("verdict", _VERDICT_PASS)
     error_type = data.get("error_type") if verdict == _VERDICT_FAIL else None
@@ -115,9 +136,41 @@ async def judge_node(state: AgentState) -> dict[str, Any]:
                 iteration, verdict, error_type, latency)
 
     if verdict == _VERDICT_FAIL:
-        return _fail(iteration, error_type, reason)
+        return _fail(iteration, error_type, reason) | verifier_report
 
-    return _pass(iteration, reason=reason)
+    return _pass(iteration, reason=reason) | verifier_report
+
+
+def _evidence(chunks: list[dict[str, Any]]) -> list[EvidenceItem]:
+    """The figures each retrieved chunk entitles the answer to state.
+
+    One item per chunk, in the order the responder numbered them, so `[n]` in
+    the answer indexes the same document the reader will be sent to.
+    """
+    return [
+        EvidenceItem(
+            readings=tuple(
+                reading
+                for _, candidates in readings(chunk.get("content", ""))
+                for reading in candidates
+            ),
+            doc_id=chunk.get("doc_id") or "",
+            page=chunk.get("page"),
+        )
+        for chunk in chunks
+    ]
+
+
+def _report(verdict: Verdict) -> dict[str, Any]:
+    """Structured result for the UI's VerifierBadge — one entry per check."""
+    return {
+        "passed": verdict.passed,
+        "checks": [
+            {"name": c.name, "passed": c.passed, "detail": c.detail,
+             "offending": list(c.offending)}
+            for c in verdict.checks
+        ],
+    }
 
 
 def _pass(iteration: int, reason: str = "") -> dict[str, Any]:

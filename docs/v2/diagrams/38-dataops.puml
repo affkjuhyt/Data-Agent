@@ -1,0 +1,80 @@
+@startuml 38-dataops
+title DataOps V2 — sức khoẻ dữ liệu và pipeline — Hiện trạng + đích (tô màu theo mức đã có)\n03 §4, §5, §8, §13 · 06 §5 · 08 UC06
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam wrapWidth 240
+skinparam ArrowColor #555555
+skinparam component<<reuse>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam component<<extend>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam component<<new>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có (chạy hôm nay) |
+  |<#E6F0FF> | Có một phần / cần mở rộng |
+  |<#FFF4D6> | Chưa có (đích V2) |
+endlegend
+
+package "Tín hiệu hôm nay" {
+  component "KBSourceRun: status · retry_count · next_retry_at\n(web_crawler: retry backoff 5 phút → ~5 giờ)" <<reuse>> as RUN
+  component "pipeline_events (Mongo) → SSE\ntiến độ Silver/Gold từng tài liệu" <<reuse>> as PEV
+  component "data_as_of bảng warehouse\n(libs/shared/freshness.py · schema_crawler)\nchỉ cho warehouse, không cho nguồn" <<extend>> as FRESH
+  component "memory.extraction.dlq\n(DLQ duy nhất hôm nay)" <<extend>> as DLQ0
+}
+
+package "Tín hiệu V2 (web_crawler · series_extractor · governance)" {
+  component "freshness_sla trong KBSourceConfig.config\nquá hạn không có release → source.sla.breached\n(EIA futures dừng từ 04/2024)" <<new>> as SLA
+  component "Fingerprint profile ≠ bản đã duyệt\n→ CHẶN nạp · ReviewCase SCHEMA_DRIFT" <<new>> as DRIFT
+  component "DQ năm tầng (libs/dq · governance.dq_rule block|warn|info)\n→ governance.dq_result → validation.completed" <<new>> as DQ
+  component "Conflict: chỉ SOURCE_CONFLICT · UNKNOWN\nmở ReviewCase CONFLICT" <<new>> as CONF
+  component "governance.review_case\nsố mở · tuổi · theo kind" <<new>> as RC
+  component "Topic *.dlq cho mọi consumer mới\n(series_extractor · semantic_extractor · detector)" <<new>> as DLQ
+  component "Consumer lag Kafka" <<new>> as LAG
+}
+
+package "Chỉ số (06 §5)" {
+  component "ReviewCase / 1.000 observation mỗi tuần\nbáo cáo; cảnh báo nếu > 5 (UC06)" <<new>> as KPI1
+  component "Release → effective p95 ≤ 30 phút ·\nnguồn nạp đúng lịch 7 ngày ≥ 8 · drift lọt 0 dòng" <<new>> as KPI2
+  component "Prometheus\n(hôm nay: model-service, llm-exporter)" <<extend>> as PROM
+}
+
+package "Hiển thị & cảnh báo" {
+  component "Source Registry (tab Knowledge)\nlịch sử run · run-now" <<extend>> as SR
+  component "Data Studio → Nguồn\nSLA · release gần nhất · profile · drift" <<new>> as DSN
+  component "Data Studio → Data Quality" <<new>> as DSQ
+  component "Review Inbox (toàn cục)" <<new>> as RI
+  component "detector → alert.raised → hộp thư Alert" <<new>> as DET
+  component "Rule Alertmanager (37)" <<new>> as AM
+  component "Grafana" <<reuse>> as GRAF
+}
+
+RUN --> SR
+PEV --> SR
+SR ..> DSN : thay thế
+SLA --> DET
+SLA --> DSN
+DRIFT --> RC
+DQ --> RC : DQ_BLOCK
+CONF --> RC
+DQ --> DSQ
+RC --> RI
+RC --> KPI1
+DLQ0 ..> DLQ : mở rộng
+DLQ --> PROM
+LAG --> PROM
+FRESH ..> SLA : cùng ý, khác đối tượng
+KPI1 --> PROM
+KPI2 --> PROM
+PROM --> GRAF
+PROM --> AM
+@enduml

@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -6,7 +7,7 @@ WORKDIR /app
 # (TEI embed/rerank + vLLM chat via REMOTE_*_URL). No torch, no local weights —
 # the image went from ~3GB (CPU torch + sentence-transformers + downloaded
 # models) to a few tens of MB, and startup no longer needs the network for HF.
-RUN pip install --no-cache-dir \
+RUN --mount=type=cache,target=/root/.cache/pip pip install \
         fastapi \
         "uvicorn[standard]" \
         pydantic \

@@ -1,0 +1,58 @@
+@startmindmap 20-ui-ia
+title Bản đồ điều hướng giao diện — Hiện trạng + đích V2 (tô màu theo mức đã có)
+caption Nav hôm nay: routes.tsx + constants.ts (5 module; panel Kong trong Cài đặt đã bỏ ở edf56a7). Màn đích: 03 §14. Nguyên tắc giao diện: 13. (A) chuyên viên · (S) steward · (R) reviewer · (X) quản trị
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có (chạy hôm nay) |
+  |<#E6F0FF> | Có một phần / cần mở rộng |
+  |<#FFF4D6> | Chưa có (đích V2) |
+endlegend
+
+*[#E6F0FF] Data Agent
+
+**[#E6F0FF] Hỏi dữ liệu · ask (A)\nAskDataPage → Ask / Analyst Workspace
+***[#EEF7EE] Hội thoại stream · làm rõ · dừng · giọng nói
+***[#EEF7EE] Bảng (DataGrid) · chart 8 loại · xuất CSV / Excel + Nguồn
+***[#EEF7EE] Panel "Where is the number": metric · SQL · độ tươi · nguồn
+***[#EEF7EE] Câu đã lưu · lịch sử (localStorage)
+***[#E6F0FF] Trích dẫn mở đúng trang #page=N\n(backend có page, FE chưa dùng)
+***[#FFF4D6] Khối trả lời V2: bảng · chart · evidence ·\nlineage · VerifierBadge · task graph
+
+**[#E6F0FF] Tri thức · knowledge (S)\nKnowledgeOpsCenter → Data Studio
+***[#EEF7EE] Fleet Overview · Data Layers · Knowledge Hub · Warehouses
+***[#E6F0FF] Source Registry → màn **Nguồn**\n+ licence · entity · SLA · release · profile · drift
+***[#EEF7EE] Conflicts (mâu thuẫn văn bản)
+***[#EEF7EE] Policies · Knowledge Groups · Trash
+***[#FFF4D6] Entity & Series
+***[#FFF4D6] Series Explorer (as-of hai chế độ · version · provenance)
+***[#FFF4D6] Data Quality (5 tầng · conflict 7 lớp)
+
+**[#FFF4D6] Review Inbox — toàn cục (S·R)
+***[#FFF4D6] ReviewCase theo authority · diff · ảnh trang + bbox
+***[#FFF4D6] Correction / override · checker · 409 VERSION_CONFLICT
+***[#E6F0FF] Dùng lại StructuredTableReview (hôm nay: duyệt schema bảng xlsx/csv)
+
+**[#FFF4D6] Alert — toàn cục (A)
+***[#FFF4D6] Alert đã gom nhóm (Brent · WTI · spread cùng sự kiện)
+***[#FFF4D6] Investigation · task graph · "Hỏi tiếp" mở Ask kèm ngữ cảnh
+
+left side
+
+**[#EEF7EE] Xây dựng · build (X)
+***[#EEF7EE] Agents · Workflows · Versions · Thử nghiệm
+
+**[#EEF7EE] Vận hành · ops (X)
+***[#EEF7EE] Hội thoại · Trace · Phân tích (ExecutiveDashboard)
+***[#EEF7EE] Chờ duyệt (ReviewCenter: HITL của agent, không phải ReviewCase)
+
+**[#E6F0FF] Cài đặt · settings (X)
+***[#EEF7EE] Overview · Organization · IAM · Auth · Secrets · Security
+***[#EEF7EE] AI Providers · Infrastructure · Storage · Billing · API · Advanced
+***[#FFF4D6] Vai trò DATA_STEWARD · REVIEWER (Keycloak + RolePermissions)
+
+**[#FFF4D6] Xuyên suốt
+***[#FFF4D6] Hộp thư SSE: ReviewCase · alert
+***[#FFF4D6] Link giữ series · as_of · case · alert (hôm nay URL chỉ /module/tab)
+***[#E6F0FF] formatVN.ts: đang kiểu Mỹ, sửa E3 (P0-02)
+***[#FFF4D6] Màn Việt Nam: giá xăng kỳ điều hành · vàng SJC (VN-05)
+@endmindmap

@@ -1,4 +1,4 @@
-"""Web crawler worker — ``run()`` runs the cron + manual-trigger crawl loop."""
+"""Web crawler worker — ``run()`` runs the cron + Run Now crawl loop."""
 from __future__ import annotations
 
 

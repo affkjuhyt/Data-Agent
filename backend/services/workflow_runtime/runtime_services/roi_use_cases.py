@@ -13,7 +13,6 @@ import logging
 import math
 import os
 from typing import Any
-from uuid import UUID
 
 import httpx
 try:

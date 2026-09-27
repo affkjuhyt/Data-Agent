@@ -1583,11 +1583,14 @@ export const KnowledgeHubView = () => {
                   setQueryRan(true);
                   setQueryRunning(true);
 
-                  // 1) Ask the backend to run the Cypher and return the matched subgraph.
+                  // 1) Ask the backend for the matched subgraph. It builds the same
+                  //    Cypher server-side from the labels (with the tenant filter);
+                  //    `generated` is only shown to the user.
                   let sub: { nodes?: GraphNode[]; edges?: GraphEdge[] } | null = null;
                   try {
                     sub = await apiMutate<{ nodes?: GraphNode[]; edges?: GraphEdge[] }>(
-                      'POST', '/api/knowledge/neo4j/query', { cypher: generated },
+                      'POST', '/api/knowledge/neo4j/query',
+                      { start_label: startNode, step_labels: steps.map(s => s.nodeType) },
                     );
                   } catch { /* Neo4j offline — fall back to a local traversal below */ }
                   finally { setQueryRunning(false); }

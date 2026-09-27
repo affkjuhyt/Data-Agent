@@ -1,28 +1,32 @@
+# A bare name only matches at the context root; `**/` makes it match at any
+# depth. Without it every service's own .venv, __pycache__ and node_modules
+# rode along into the context of each image built from the repo root.
 .git
 .gitignore
 .idea
 .claude
-.venv
-venv
-node_modules
-dist
-build
-coverage
-logs
+**/.venv
+**/venv
+**/node_modules
+**/dist
+**/build
+**/coverage
+**/logs
 archive
 docs
-__pycache__
-.pytest_cache
-*.pyc
-*.pyo
-*.log
-.env
-.env.local
-.env.*
-!.env.example
-data_agent.egg-info
-*.egg-info
-.DS_Store
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/*.pyc
+**/*.pyo
+**/*.log
+**/.env
+**/.env.local
+**/.env.*
+!**/.env.example
+**/*.egg-info
+**/.DS_Store
 model/ollama/weights
 # Downloaded model weights (HF cache, ~2.4 GB) — not needed by any image build and
 # its snapshot symlinks make BuildKit reject the context ("invalid file request").

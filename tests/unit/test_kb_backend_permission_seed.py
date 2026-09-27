@@ -197,7 +197,7 @@ class TestAnchorRows:
         assert {role: uuid for uuid, role in anchors.items()} == ROLE_PERMISSION_IDS
 
     def test_anchors_are_not_grants(self):
-        """`label` must never reach the permission universe — /whoami would
-        report a permission no route defines."""
+        """`label` must never reach the permission universe — it would be
+        a grant for a permission no route defines."""
         seeded = set().union(*_seed_grants().values())
         assert "label" not in seeded

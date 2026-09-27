@@ -19,7 +19,6 @@ import httpx
 from libs.ingestion import config as cfg
 from libs.ingestion.llm_schemas import SCHEMAS_BY_SYSTEM_TYPE
 
-BACKEND = "gateway"
 _BASE = cfg.MODEL_SERVICE_URL.rstrip("/")
 _DEFAULT_TIMEOUT = 300.0
 
@@ -56,16 +55,6 @@ async def generate_json(
     if schema is not None:
         payload["json_schema"] = schema
     return await _generate(payload, timeout)
-
-
-async def generate_plain(
-    prompt: str, *, system_prompt: str = "", system_type: str = "",
-    max_tokens: int = 1024, temperature: float = 0.3, timeout: float = _DEFAULT_TIMEOUT,
-) -> str:
-    return await _generate({
-        "prompt": prompt, "system_prompt": system_prompt, "json_mode": False,
-        "max_tokens": max_tokens, "temperature": temperature,
-    }, timeout)
 
 
 async def chat_plain(

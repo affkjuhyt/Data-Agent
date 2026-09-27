@@ -96,10 +96,11 @@ services:
   # silver/gold topics >= N partitions so N workers in group `kb-ingestion` each
   # own one, then scale the worker. Idempotent — `--alter` only ever increases.
   #
-  #   docker compose -f deploy/docker/docker-compose.kb-e2e.yml -f deploy/docker/docker-compose.scale.yml \
+  #   docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.scale.yml \
   #     --profile kb run --rm kafka-topic-scale
-  #   docker compose -f deploy/docker/docker-compose.kb-e2e.yml up -d --scale kb-ingestion-worker=3
   #
+  # The consumers are kb-promote-silver / kb-promote-gold, which only run in k8s
+  # (scale their Deployments; k8s' kafka-topics Job reads INGEST_PARTITIONS too).
   # (INGEST_PARTITIONS must be >= the worker replica count or extra workers idle.)
   kafka-topic-scale:
     image: infra-kafka

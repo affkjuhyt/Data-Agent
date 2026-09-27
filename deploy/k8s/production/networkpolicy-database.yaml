@@ -214,6 +214,18 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
+          app: memory-cleanup
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
+          app: postgres-backup
+    - namespaceSelector:
+        matchLabels:
+          name: dataagent-service
+      podSelector:
+        matchLabels:
           app: platform-workers-schema-crawler
     - namespaceSelector:
         matchLabels:
@@ -239,12 +251,6 @@ spec:
       podSelector:
         matchLabels:
           app: prometheus
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: kibana
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -444,12 +450,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: kibana
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: grafana
     ports:
     - protocol: TCP
@@ -644,12 +644,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: kibana
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: grafana
     ports:
     - protocol: TCP
@@ -839,12 +833,6 @@ spec:
       podSelector:
         matchLabels:
           app: prometheus
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: kibana
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -1046,12 +1034,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: kibana
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: grafana
     ports:
     - protocol: TCP
@@ -1243,12 +1225,6 @@ spec:
       podSelector:
         matchLabels:
           app: prometheus
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: kibana
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -1450,218 +1426,12 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: kibana
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: grafana
     ports:
     - protocol: TCP
       port: 8370
     - protocol: TCP
       port: 8371
-
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-elasticsearch
-  namespace: dataagent-database
-  labels:
-    app.kubernetes.io/part-of: dataagent
-spec:
-  podSelector:
-    matchLabels:
-      app: elasticsearch
-  policyTypes:
-  - Ingress
-  ingress:
-  - from:
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: workflow-runtime
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: kb-backend
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: kb-promote-silver
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: kb-promote-gold
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: kb-conflict-resolution
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: kb-structured-data
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: auth-api
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: release-worker
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: flow-builder
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: model-service
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: langfuse
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: langfuse-worker
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: litellm
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: keycloak
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: kong
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-database
-      podSelector:
-        matchLabels:
-          app: pgbouncer
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: migrate
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: db-init
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: seed
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: kong-migration
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: eval
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-audit
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-memory
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: platform-workers-schema-crawler
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: sandbox-executor
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: minio-init
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: kafka-topics
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: prometheus
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: kibana
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: grafana
-    ports:
-    - protocol: TCP
-      port: 8380
 
 ---
 apiVersion: networking.k8s.io/v1
@@ -1847,12 +1617,6 @@ spec:
       podSelector:
         matchLabels:
           app: prometheus
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: kibana
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -2052,12 +1816,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: kibana
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: grafana
     ports:
     - protocol: TCP
@@ -2247,12 +2005,6 @@ spec:
       podSelector:
         matchLabels:
           app: prometheus
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: kibana
     - namespaceSelector:
         matchLabels:
           name: dataagent-service

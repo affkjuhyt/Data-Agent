@@ -1,0 +1,116 @@
+---
+# Builds the images k8s_plan selected, build_parallelism at a time, then pushes
+# only what the registry does not already serve.
+
+- name: Create the build log directory
+  ansible.builtin.file:
+    path: "{{ build_log_dir }}"
+    state: directory
+    mode: "0750"
+  when: images | length > 0
+
+# One task, not a loop: a loop builds one image at a time, and a cold run
+# was ~25 min end to end with the torch images alone taking ~4 min each.
+# xargs keeps build_parallelism builds going; each writes its own log and
+# prints one `built <name> <id before> <id after> <seconds>` line.
+- name: Build the images, {{ build_parallelism }} at a time
+  ansible.builtin.shell:
+    cmd: |
+      set -uo pipefail
+      export BUILD_LOGS={{ build_log_dir | quote }}
+      build_one() {
+        local name=$1 dockerfile=$2 context=$3 before after start=$SECONDS
+        local ref={{ image_prefix }}/$name:{{ image_tag }}
+        before=$(docker image inspect -f {% raw %}'{{.Id}}'{% endraw %} "$ref" 2>/dev/null) || before=none
+        if docker build {{ image_build_flags }} -f "$dockerfile" -t "$ref" "$context" \
+             >"$BUILD_LOGS/$name.log" 2>&1; then
+          after=$(docker image inspect -f {% raw %}'{{.Id}}'{% endraw %} "$ref")
+          echo "built $name $before $after $((SECONDS - start))"
+        else
+          echo "failed $name $((SECONDS - start))"
+          return 1
+        fi
+      }
+      export -f build_one
+      printf '%s %s %s\n' {% for i in images %}{{ i.name | quote }} {{ (project_dir ~ '/' ~ i.dir ~ '/' ~ i.dockerfile) | quote }} {{ (project_dir ~ '/' ~ i.context) | quote }} {% endfor %} \
+        | xargs -P {{ build_parallelism | int }} -L 1 bash -c 'build_one "$@"' _ \
+        | tee "$BUILD_LOGS/results.txt"
+      rc=$?
+      if [ "$rc" -ne 0 ]; then
+        grep '^failed ' "$BUILD_LOGS/results.txt" | while read -r _ name _; do
+          echo "=== $name — last 40 lines of $BUILD_LOGS/$name.log" >&2
+          tail -n 40 "$BUILD_LOGS/$name.log" >&2
+        done
+        exit 1
+      fi
+    executable: /bin/bash
+  register: build
+  when: images | length > 0
+  changed_when: true
+
+- name: Record the image IDs
+  ansible.builtin.set_fact:
+    built: "{{ build.stdout_lines | default([]) | parse_build_results }}"
+
+- name: Tag the images for the registry
+  ansible.builtin.command:
+    cmd: >-
+      docker tag {{ image_prefix }}/{{ item }}:{{ image_tag }}
+      {{ image_registry }}/{{ image_prefix }}/{{ item }}:{{ image_tag }}
+  loop: "{{ built.keys() | list }}"
+  when: (image_registry | length) > 0
+  changed_when: true
+
+# The registry is asked, rather than comparing with the ID before the build,
+# so a run that built but failed to push still pushes on the retry.
+- name: Push the images the registry does not already serve
+  ansible.builtin.shell:
+    cmd: |
+      set -uo pipefail
+      push_one() {
+        local name=$1 id=$2 served
+        local ref={{ image_deploy_prefix }}/$name:{{ image_tag }}
+        {% if image_registry | length > 0 %}
+        served=$(curl -fsSI \
+            -H 'Accept: application/vnd.oci.image.index.v1+json' \
+            -H 'Accept: application/vnd.oci.image.manifest.v1+json' \
+            -H 'Accept: application/vnd.docker.distribution.manifest.list.v2+json' \
+            -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
+            "{{ image_registry_url }}/v2/{{ image_prefix }}/$name/manifests/{{ image_tag }}" 2>/dev/null \
+          | tr -d '\r' | awk 'tolower($1) == "docker-content-digest:" { print $2 }')
+        if [ "$served" = "$id" ]; then echo "current $name"; return 0; fi
+        {% endif %}
+        if docker push "$ref" >"$BUILD_LOGS/$name.push.log" 2>&1; then
+          echo "pushed $name"
+        else
+          echo "failed $name"; tail -n 20 "$BUILD_LOGS/$name.push.log" >&2; return 1
+        fi
+      }
+      export -f push_one
+      export BUILD_LOGS={{ build_log_dir | quote }}
+      printf '%s %s\n' {% for name, r in built.items() %}{{ name | quote }} {{ r.after | quote }} {% endfor %} \
+        | xargs -P {{ build_parallelism | int }} -L 1 bash -c 'push_one "$@"' _
+    executable: /bin/bash
+  register: push
+  when: (image_push | bool) and (built | length) > 0
+  changed_when: push.stdout_lines | select('match', '^pushed ') | list | length > 0
+
+- name: Report the build
+  ansible.builtin.debug:
+    msg:
+      - "took:      {{ built | dict2items | map(attribute='key') | zip(built | dict2items | map(attribute='value.took'))
+                       | map('join', ' ') | join('s, ') }}s"
+      - "new image: {{ built | dict2items | selectattr('value.changed') | map(attribute='key') | join(', ') | default('none', true) }}"
+      - "pushed:    {{ push.stdout_lines | default([]) | select('match', '^pushed ')
+                       | map('regex_replace', '^pushed ', '') | join(', ') | default('nothing', true) }}"
+  when: built | length > 0
+
+- name: Import the images into the node's own store
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      docker save {{ built.keys() | map('regex_replace', '^', image_prefix ~ '/')
+                     | map('regex_replace', '$', ':' ~ image_tag) | join(' ') }} | {{ image_import }}
+    executable: /bin/bash
+  when: (image_import | length) > 0 and (built | length) > 0
+  changed_when: true

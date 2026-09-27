@@ -12,16 +12,28 @@
       register: setup_apply
       changed_when: "'created' in setup_apply.stdout or 'configured' in setup_apply.stdout"
 
+    # Complete or Failed, as deploy.yml waits for its Jobs: `kubectl wait
+    # --for=condition=complete` sat out the whole wait_job on a failed Job.
     - name: Wait for setup
       ansible.builtin.command: >
-        {{ kubectl }} -n {{ ns_service }} wait --for=condition=complete job/setup
-        --timeout={{ wait_job }}s
+        {{ kubectl }} -n {{ ns_service }} get job/setup
+        -o jsonpath={% raw %}'{.status.conditions[?(@.status=="True")].type}'{% endraw %}
+      register: setup_state
+      until: ('Complete' in setup_state.stdout) or ('Failed' in setup_state.stdout)
+      retries: "{{ (wait_job | int) // (job_poll | int) }}"
+      delay: "{{ job_poll | int }}"
       changed_when: false
+      failed_when: "'Complete' not in setup_state.stdout"
 
     - name: Create backup cronjob
       ansible.builtin.command: "{{ kubectl }} apply -f {{ k8s_manifests }}/job/postgres-backup.yaml"
       register: backup_apply
       changed_when: "'created' in backup_apply.stdout or 'configured' in backup_apply.stdout"
+
+- name: Apply memory cleanup cronjob
+  ansible.builtin.command: "{{ kubectl }} apply -f {{ k8s_manifests }}/job/memory-cleanup.yaml"
+  register: memory_cleanup_apply
+  changed_when: "'created' in memory_cleanup_apply.stdout or 'configured' in memory_cleanup_apply.stdout"
 
 - name: Get restore suspend flag
   ansible.builtin.command: >

@@ -1,0 +1,13 @@
+# The frontend images build with frontend/ as their context, so the repo-root
+# .dockerignore does not apply here. Dockerfile.dev ends in `COPY . .`: without
+# this file it shipped the host's node_modules (~350 MB, glibc-native binaries)
+# over the one `npm install` had just built inside the alpine image.
+**/node_modules
+dist
+coverage
+.vite
+**/*.log
+**/.env
+**/.env.*
+!**/.env.example
+**/.DS_Store

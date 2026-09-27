@@ -26,17 +26,26 @@ from __future__ import annotations
 
 import re
 from collections.abc import Awaitable, Callable
+from decimal import Decimal
 from typing import Any
+
+from model.eval import _paths
+
+_paths.ensure()
+
+from libs.indicator.numeric import (  # noqa: E402
+    DEFAULT_TOLERANCE,
+    Reading,
+    Tolerance,
+    matches,
+    parse,
+    readings,
+)
 
 # Below this, RAGAS considers the answer's claims unsupported by its contexts.
 # 0.7 rather than 0.5: a "half-supported" answer about a number is a wrong
 # answer, not a partially right one.
 FAITHFULNESS_FLOOR = 0.7
-
-# Digit groups, tolerating both separators used across the corpus (1.240 and
-# 12,400). Percentages and years are numbers too — a wrong year is as
-# fabricated as a wrong total.
-_NUMBER_RE = re.compile(r"\d[\d.,]*")
 
 # The shipped responder prompt cites sources as "[1]", "[2]"… (see
 # nodes/model_harness's system prompt). That index is structural markup, not a
@@ -47,34 +56,53 @@ _CITATION_RE = re.compile(r"\[\d+\]")
 Answerer = Callable[[dict[str, Any]], Awaitable[str]]
 
 
-def _numbers(text: str) -> list[str]:
-    """Digit groups, normalised so 128,4 and 128.4 compare equal.
-
-    Separators are stripped rather than parsed: the question is whether the
-    figure was taken from the source, and 1.240 in a Vietnamese source is the
-    same figure as 1240 in an answer that dropped the separator.
-    """
-    out = []
-    text = _CITATION_RE.sub(" ", text)
-    for raw in _NUMBER_RE.findall(text):
-        cleaned = raw.strip(".,").replace(".", "").replace(",", "")
-        if cleaned:
-            out.append(cleaned)
-    return out
+def _supported(contexts: list[str], allowed: list[str] | None) -> list[Reading]:
+    pool: list[Reading] = []
+    for context in contexts:
+        for _, candidates in readings(_CITATION_RE.sub(" ", context)):
+            pool.extend(candidates)
+    for token in allowed or []:
+        pool.extend(parse(token))
+    return pool
 
 
-def unsupported_numbers(answer: str, contexts: list[str], allowed: list[str] | None = None) -> list[str]:
+def unsupported_numbers(
+    answer: str,
+    contexts: list[str],
+    allowed: list[str] | None = None,
+    tolerance: Tolerance = DEFAULT_TOLERANCE,
+) -> list[str]:
     """Figures in `answer` that are in neither the contexts nor `allowed`.
 
     `allowed` is the case's declared derivations — a percentage computed from
     two figures that ARE in the source is grounded, and refusing to say so would
     push the metric to reward answers that never compute anything.
+
+    Comparison is by value at the coarser of the two written precisions, not by
+    digit string, so an answer may round a source figure ("2,5%" for a derived
+    2,5157%) but may not restate it at a different magnitude ("1284" for
+    "128,4"). Tokens are returned exactly as the answer wrote them.
     """
-    supported = set()
-    for context in contexts:
-        supported.update(_numbers(context))
-    supported.update(_numbers(" ".join(allowed or [])))
-    return [n for n in _numbers(answer) if n not in supported]
+    pool = _supported(contexts, allowed)
+    return [
+        token
+        for token, candidates in readings(_CITATION_RE.sub(" ", answer))
+        if not matches(candidates, pool, tolerance)
+    ]
+
+
+def case_tolerance(case: dict[str, Any]) -> Tolerance:
+    """The case's declared tolerance, or comparison at published precision.
+
+    Cases that quote a figure need no declaration — the precision they were
+    written at already says how exact the match must be. A case whose expected
+    value is COMPUTED declares one, because rounding of the inputs propagates
+    into the result (docs/v2/06-evaluation-plan.md section 4).
+    """
+    declared = case.get("tolerance")
+    if not declared:
+        return DEFAULT_TOLERANCE
+    return Tolerance(kind=declared["type"], value=Decimal(str(declared["value"])))
 
 
 async def score(
@@ -107,7 +135,9 @@ async def score(
 
     unsupported_cases = 0
     for case, text, result in zip(cases, answers, results, strict=True):
-        stray = unsupported_numbers(text, case.get("contexts", []), case.get("allowed_numbers"))
+        stray = unsupported_numbers(
+            text, case.get("contexts", []), case.get("allowed_numbers"), case_tolerance(case),
+        )
         # An errored answer counts as a failure, not as a skip: a corpus that
         # drops the cases it could not run reports a rate for the easy half.
         failed = bool(stray) or bool(result["error"])

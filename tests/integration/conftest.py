@@ -47,8 +47,8 @@ def _auth_api_sys_path() -> Iterator[None]:
 # ─── Minimal schema — just what the smoke tests exercise ───────────────────
 # Source of truth for prod is backend/alembic/versions/b8c9d0e1f2a3_auth_api_secrets_vault_schema.py
 # (NOT ff9ae8dcd7f7_initial_schema.py's "SecretsVault"/PascalCase tables —
-# those are dead code unrelated to this feature; see b8c9d0e1f2a3's docstring
-# for how that drift was found). We intentionally inline a subset here so
+# never used, dropped by 2e2377872373; see b8c9d0e1f2a3's docstring for how
+# that drift was found). We intentionally inline a subset here so
 # tests don't depend on the full migration chain (slow + drift risk). When
 # the schema for these tables changes, update this fixture in lockstep.
 _MINIMAL_SCHEMA = """

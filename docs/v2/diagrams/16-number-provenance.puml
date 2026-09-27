@@ -1,0 +1,76 @@
+@startuml 16-number-provenance
+title Đường đi của một con số (Brent 22/09/2026 = 114,89) — Hiện trạng + đích (tô màu theo mức đã có)\nbất biến 8 · 03 §3–§10
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam wrapWidth 260
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có (chạy hôm nay) |
+  |<#E6F0FF> | Có một phần / cần mở rộng |
+  |<#FFF4D6> | Chưa có (đích V2) |
+  **Một mắt xích vàng làm hỏng con số ở đầu ra**,
+  dù mọi mắt xích khác đã xanh.
+endlegend
+
+|Nguồn|
+start
+#EEF7EE:Ô trong ""RBRTEd.xls"" (sheet ""Data 1"") do web_crawler tải,
+hoặc trang PDF (OPEC MOMR) nạp qua KB;
+#E6F0FF:**SHA-256** nội dung, bỏ qua bản trùng
+—— //có; nhưng key MinIO theo data_id và re-crawl xoá bản cũ (S2-02)//;
+#FFF4D6:Raw bất biến ""raw/{source_id}/{sha256}"" + ""ingest.release""
+(publication_time từ ""Release Date"");
+
+|Trích xuất|
+#EEF7EE:**OCR** Tesseract vie+eng cho PDF scan
+(""libs/ingestion/docling_parser.py"");
+#EEF7EE:**PageRegion** (page, bbox gốc trên-trái) lưu ở Silver/Gold;
+#FFF4D6:series_extractor: candidate có ""source_ref""
+{artifact, sheet, row, col | page, bbox} → ""ingest.observation_candidate"";
+note right
+  Rủi ro cao nhất: OCR đọc ""72.34"" thành ""7234"".
+  Candidate từ OCR mang confidence và luôn qua DQ numeric (UC02).
+end note
+
+|Chuẩn hoá|
+#E6F0FF:**Quantity** Decimal + đơn vị + bội số (""libs/indicator/quantity.py"")
+—— //thiếu ""money_per(barrel | troy_oz | luong …)"", Period D/W (P0-04)//;
+#E6F0FF:Đọc số theo locale, giữ mọi cách đọc khi mơ hồ
+(""libs/indicator/numeric.py"") —— //chưa nối vào pipeline nạp//;
+
+|Kiểm soát|
+#FFF4D6:DQ 5 tầng + conflict (""libs/dq"");
+#FFF4D6:ReviewCase: correction / override, maker ≠ checker, OCC 409;
+
+|Lưu trữ|
+#FFF4D6:Effective observation ClickHouse ""obs.observation""
+event_time · publication_time · available_at · system_time
++ release_id · artifact_sha256 · source_ref · effective_version;
+#E6F0FF:Đọc as-of (""libs/indicator/observation.py"")
+—— //có mã; bảng nó đọc chưa có, chuyển sang ClickHouse ở S1-02//;
+
+|Tính toán|
+#FFF4D6:Operator (""compare_period"" …): QuerySpec → SQLGlot →
+argMax(value, (available_at, effective_version)) → Quantity + input_refs;
+#E6F0FF:Formula DAG · threshold (""libs/indicator/formula.py"", ""threshold.py"")
+—— //có, chưa có operator gọi//;
+
+|Trả lời|
+#EEF7EE:**Verifier** trong judge: numbers_grounded · precision_supported ·
+vintage_consistent · citations_resolved (""libs/indicator/verifier.py"");
+#EEF7EE:Citation mang **page** (kb_search);
+if (Số có trong evidence, đủ bằng chứng, nguồn còn tươi?) then (đạt)
+  #FFF4D6:Khối trả lời: ""__indicator_value"" · ""__verification"" · ""__lineage""
+  (release_id, artifact, ô/trang);
+else (không đạt)
+  #FFF4D6:""__refusal"" INSUFFICIENT_EVIDENCE, nêu lý do có cấu trúc;
+  kill
+endif
+
+|Giao diện|
+#E6F0FF:Định dạng vi-VN ""114,89"" · dd/MM/yyyy
+—— //""formatVN.ts"" vẫn theo chuẩn Mỹ (E3 chưa sửa)//;
+#FFF4D6:Bấm số → mở artifact đúng ô / ""#page=N"" + khung bbox (S4-01);
+#EEF7EE:Xuất Excel kèm sheet "Nguồn" (""answer_exports.build_xlsx"");
+stop
+@enduml

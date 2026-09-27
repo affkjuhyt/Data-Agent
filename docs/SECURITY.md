@@ -95,11 +95,9 @@ release-hardening pass:
 
 | Runs as non-root (`USER app`) | Intentionally root — documented |
 |---|---|
-| kb-backend, kb-ingestion-worker, workflow-runtime, flow-builder, orchestrator, auth-api, model-service, release-worker, platform-workers (memory / schema-crawler / audit) | **sandbox-executor** — spawns sandbox containers via the mounted Docker socket; a non-root user would need the host docker group (root-equivalent). Proper fix: rootless Docker / gVisor. |
+| kb-backend, kb-promote-silver/gold, workflow-runtime, flow-builder, orchestrator, auth-api, model-service, release-worker, platform-workers (memory / schema-crawler / audit) | **sandbox-executor** — spawns sandbox containers via the mounted Docker socket; a non-root user would need the host docker group (root-equivalent). Proper fix: rootless Docker / gVisor. |
 
-`deploy/docker/Dockerfile`, `deploy/docker/Dockerfile.frontend` (both **LEGACY**, not in the supported
-entrypoint set) and `deploy/docker/Dockerfile.dev` (dev-only) are out of scope for the prod
-non-root requirement.
+`frontend/Dockerfile.dev` (dev-only) is out of scope for the prod non-root requirement.
 
 Notes on the two special cases:
 - **model-service** downloads model weights at runtime into `/app/models`, which is
@@ -120,7 +118,7 @@ docker buildx imagetools inspect python:3.11-slim --format '{{.Manifest.Digest}}
 # FROM python:3.11-slim@sha256:<manifest-list-digest>
 ```
 
-`backend/services/workflow-runtime/Dockerfile` carries the reference `TODO(production)` comment
+`backend/services/workflow_runtime/Dockerfile` carries the reference `TODO(production)` comment
 for the pattern.
 
 ## 4. Supply-chain / CI security gates
@@ -154,18 +152,14 @@ with an existing baseline to burn down. Ratchet plan:
   | Surface group | strict errors | note |
   | --- | --- | --- |
   | `backend/libs/{basemodel,database_connector,shared}` | **0** ✅ | enforced — innermost layers |
-  | `backend/services/{orchestrator,kb_backend,workflow-runtime}` | **0** ✅ | enforced — the 3 largest (~670 fixed) |
-  | `backend/services/{auth-api,flow-builder,model-service}` | **0** ✅ | enforced |
-  | `backend/services/{release-worker,sandbox-executor,kb-ingestion-worker}` | **0** ✅ | enforced |
-  | `backend/services/platform-workers` (ex schema-crawler-worker, memory-consumer, audit-bridge, audit-consumer) | **0** ✅ | enforced |
+  | `backend/services/{kb_backend,workflow_runtime}` (incl. `workflow_runtime/orchestrator`) | **0** ✅ | enforced — the 3 largest (~670 fixed) |
+  | `backend/services/{auth_api,flow_builder,model_service}` | **0** ✅ | enforced |
+  | `backend/services/{release_worker,sandbox_executor}` | **0** ✅ | enforced |
+  | `backend/services/platform_workers` (ex schema-crawler-worker, memory-consumer, audit-bridge, audit-consumer) | **0** ✅ | enforced |
 
   Two services (`auth-api`, `release-worker`) had a dynamic `__all__ = [n for n in
   globals() ...]` that defeated mypy's `import *` resolution in their routers; both were
   converted to the exact static list the comprehension produced (behaviour-identical).
-
-  > Only globs matching real importable packages work in the `pyproject` override;
-  > hyphenated service dirs (`backend/services/auth-api`, …) must be enforced by invoking mypy
-  > on the directory directly in CI.
 
 ## 6. Reporting a vulnerability
 

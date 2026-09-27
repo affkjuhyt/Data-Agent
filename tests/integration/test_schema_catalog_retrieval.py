@@ -105,9 +105,9 @@ async def test_format_catalog_context_empty_list_returns_empty_string(sc):
     assert sc.format_catalog_context([]) == ""
 
 
-# ─── _text_to_sql_handler prefers Schema Catalog over Schema Memory ────────
+# ─── _text_to_sql_handler puts Schema Catalog hits in the prompt ──────────
 
-async def test_text_to_sql_handler_prefers_schema_catalog_over_schema_memory(sc, monkeypatch):
+async def test_text_to_sql_handler_puts_schema_catalog_hits_in_prompt(sc, monkeypatch):
     await _seed_point(sc, "tenant-1", "fact_stock_price", "OHLCV stock price daily")
 
     added = [p for p in (_SVC_DIR, str(REPO_ROOT)) if p not in sys.path]
@@ -116,14 +116,6 @@ async def test_text_to_sql_handler_prefers_schema_catalog_over_schema_memory(sc,
         import importlib as _il
         data_mod = _il.import_module("nodes.sandbox.tool_executor.handlers.data")
         _il.reload(data_mod)
-
-        # Schema Memory must NOT even be queried when Schema Catalog has a hit.
-        memory_spy = MagicMock(return_value=[])
-
-        async def _fake_retrieve_schema_memory(*a, **k):
-            memory_spy()
-            return []
-        monkeypatch.setattr(data_mod, "retrieve_schema_memory", _fake_retrieve_schema_memory)
 
         captured = {}
 
@@ -148,7 +140,6 @@ async def test_text_to_sql_handler_prefers_schema_catalog_over_schema_memory(sc,
 
         assert "fact_stock_price" in captured["prompt"]
         assert "OHLCV" in captured["prompt"]
-        memory_spy.assert_not_called()
     finally:
         for p in added:
             if p in sys.path:

@@ -483,10 +483,11 @@ class WorkflowMemoryORM(Base):
 
 @register("orm")
 class SchemaMemoryORM(Base):
-    """LTM Schema Memory (doc §3.7) — catalog of tables/columns the agent is
-    allowed to query. Admin-managed; the agent only ever reads this. Used to
-    inject DDL-like context before SQL generation instead of a static,
-    hand-typed schema_hint."""
+    """LTM Schema Memory (doc §3.7) — hand-written catalog of tables/columns.
+
+    Unused: its Admin CRUD API and its reader were removed (the text_to_sql
+    handler reads SchemaCatalogORM or introspects instead). The mapping stays
+    only because the table does, until a migration drops it."""
     __tablename__ = "SchemaMemory"
     __table_args__ = (
         Index("idx_schemamemory_lookup", "tenant_id", "data_source"),

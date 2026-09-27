@@ -22,6 +22,12 @@ apply_setup: false
 
 wait_statefulset: 600
 wait_job: 900
+# The rollout wait only reports (it never fails the run), so on this one node
+# a longer wait just holds the run behind a crash-looping or unpullable pod.
+wait_rollout: 180
+
+# Everything but the OS lives on the /data disk on this host.
+build_log_dir: /data/logs/dataagent-deploy/k8s-local
 
 seed_demo: true
 

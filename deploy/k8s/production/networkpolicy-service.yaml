@@ -483,29 +483,6 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-kibana
-  namespace: dataagent-service
-  labels:
-    app.kubernetes.io/part-of: dataagent
-spec:
-  podSelector:
-    matchLabels:
-      app: kibana
-  policyTypes:
-  - Ingress
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: kong
-    ports:
-    - protocol: TCP
-      port: 8440
-
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
   name: allow-llm-exporter
   namespace: dataagent-service
   labels:

@@ -21,7 +21,3 @@ class RollbackRequest(BaseModel):
     to_version: str
     environment: str
     reason: Optional[str] = None
-
-
-class DriftResolveRequest(BaseModel):
-    notes: Optional[str] = None

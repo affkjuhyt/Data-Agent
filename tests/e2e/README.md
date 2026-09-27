@@ -11,7 +11,7 @@ tests/e2e/e2e.sh all        # lần đầu ~5 phút (không build lại image �
 ## Chế độ chạy & cách ly
 
 * **`E2E_MODE=dev` (mặc định)** — dùng image đã có (`infra-*`) và **bind-mount source** hiện tại vào
-  `/app` (overlay `deploy/docker/overlay-dev.yml`); chỉ build image nào thiếu. Đổi code Python →
+  `/app` (overlay `deploy/docker/docker-compose.e2e-dev.yml`); chỉ build image nào thiếu. Đổi code Python →
   `docker restart dataagent-workflow_runtime` là đủ, không cần rebuild (pip install qua mạng chậm mất 30–40 phút).
   `E2E_MODE=build` rebuild toàn bộ như CI.
 * **Project compose riêng `dataagent-e2e`** (`E2E_PROJECT`) — volume Postgres/Keycloak/OpenBao **mới** mỗi lần
@@ -57,7 +57,6 @@ Mọi lượt được ghi ra `tests/e2e/out/turn-*.json` (toàn bộ frame) đ�
 | `E2E_STRICT` | `0` | `1` → ca hành vi thành hard fail |
 | `E2E_TURN_TIMEOUT` | `240` | giây chờ một lượt (GPU dùng chung: 1 lượt ≈ 10–40 s) |
 | `E2E_PYTHON` | `python3` | interpreter có `pytest`, `httpx` (venv của bạn) |
-| `OLLAMA_MODEL` | `qwen2.5:3b` | phải trùng `deploy/docker/litellm/config.agent-local.yaml` |
 | `E2E_HEADED` | `0` | `1` → xem Playwright chạy |
 
 ## Kết quả lần chạy 30-08-2026 (ollama `qwen2.5:3b`, M-series)

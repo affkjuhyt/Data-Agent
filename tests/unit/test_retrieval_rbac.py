@@ -128,9 +128,10 @@ class TestTheFilterReachesTheQuery:
             passed = [a.id for a in call.args if isinstance(a, ast.Name)]
             assert "role_id" in passed, "a retrieval path fetches chunks without a role"
 
-    @pytest.mark.parametrize("route", ["retrieve", "retrieve_stream"])
-    def test_both_routes_take_the_role_from_the_verified_identity(self, route):
+    def test_the_route_takes_the_role_from_the_verified_identity(self):
         import ast
+
+        route = "retrieve"
 
         tree = ast.parse((KB / "router" / "knowledge" / "light_rag.py").read_text(encoding="utf-8"))
         fn = next(

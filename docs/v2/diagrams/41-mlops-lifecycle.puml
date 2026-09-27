@@ -1,0 +1,77 @@
+@startuml 41-mlops-lifecycle
+title Vòng đời thay đổi model / prompt / routing / forecast / skill — Hiện trạng + đích (tô màu theo mức đã có)\n00 bất biến 6, 12 · 03 §12 · 06 §5
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam wrapWidth 280
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có (chạy hôm nay) |
+  |<#E6F0FF> | Có một phần / cần mở rộng |
+  |<#FFF4D6> | Chưa có (đích V2) |
+  Forecast và skill ngoài POC 1 tháng (05 §6); giữ thiết kế.
+endlegend
+
+|Kỹ sư AI / Data|
+start
+if (Loại thay đổi?) then (model · prompt · routing)
+  #E6F0FF:Đổi model vLLM · prompt (""workflow_runtime/prompts/*.txt"") ·
+  alias LiteLLM (""deploy/docker/litellm/config.yaml"") · TEI
+  —— //có trong git, chưa có registry phiên bản//;
+  note left
+    Đổi model embedding = re-index:
+    hôm nay re-ingest (RUNBOOK §11);
+    V2: ""embed_model"" lưu ở Postgres,
+    Qdrant dựng lại qua outbox (ADR-V2-34).
+  end note
+  |CI (mỗi PR)|
+  #EEF7EE:eval-gate offline: policy · SQL
+  (0 vi phạm, ""sql_accuracy"" = 1,0) —— chặn;
+  #FFF4D6:Tier ""commodity"" (""cases/commodity.jsonl""):
+  ""value_correct"", ""as_of_correct"" ≥ 0,95 · ""unsupported_number_rate"" = 0;
+  |GPU host (chạy tay)|
+  #EEF7EE:""make bench"" → ""make bench-gate""
+  (""model/bench/thresholds.json"": prompt_tokens · decode_tps · prefix-cache)
+  —— //không trong CI; GPU dùng chung//;
+  if (bench-gate?) then (0 đạt)
+  else (1 trượt / 2 không kết luận)
+    #EEF7EE:1 → sửa · 2 → chạy lại khi GPU rảnh, không nới ngưỡng;
+    stop
+  endif
+  |Release (môi trường đã deploy)|
+  #E6F0FF:""release-gate.yml"": offline + online
+  (intent · unsupported_recall · RAGAS faithfulness · unsupported_number)
+  —— //ngưỡng online provisional, chưa có baseline; môi trường "staging" chưa có//;
+  if (Gate?) then (đạt)
+  else (trượt)
+    #EEF7EE:Report giữ 90 ngày, không phát hành;
+    stop
+  endif
+  |Production|
+  #FFF4D6:Canary / shadow qua trọng số LiteLLM
+  —— //hiện: đổi ConfigMap hoặc ""docker run"" → 100 % traffic ngay//;
+  #E6F0FF:Giám sát: llm-exporter (TTFT, tok/s) · Langfuse trace ·
+  AgentTraces (""make bench-e2e"") —— //chưa có score, feedback người dùng//;
+  if (Hồi quy?) then (có)
+    #E6F0FF:Rollback = revert commit + deploy lại (Ansible);
+  else (không)
+  endif
+elseif (model dự báo) then
+  |Kỹ sư AI / Data|
+  #FFF4D6:Feature snapshot ""available_at ≤ as_of"" (Parquet MinIO theo SHA-256);
+  #FFF4D6:Backtest rolling origin: baseline random walk · drift · ETS
+  vs LightGBM trên log-return, khoảng conformal 80 %;
+  |Người duyệt|
+  #FFF4D6:Duyệt → ""forecast.model_version"" (MLflow nếu kịp)
+  Kết quả = knowledge object ""FORECAST"", không bao giờ ""verified"";
+else (skill)
+  |Kỹ sư AI / Data|
+  #FFF4D6:Trace Langfuse + ""task_run"" → ""experience_entry""
+  → skill candidate (file có version trong git);
+  |CI (mỗi PR)|
+  #FFF4D6:Offline eval của skill;
+  |Người duyệt|
+  #FFF4D6:Người duyệt → registry
+  (bất biến 12: agent không tự sửa production);
+endif
+stop
+@enduml

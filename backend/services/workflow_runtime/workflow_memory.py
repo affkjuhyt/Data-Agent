@@ -10,10 +10,9 @@ generic conversational memory in memory_middleware.py:
     PostgreSQL holds structured metadata, Qdrant (collection
     "workflow_memory") holds the task_description embedding.
 
-  * Schema Memory — read-only catalog of tables the agent may query. Admin
-    writes it (see routers/schema_memory.py); the agent only ever reads it,
-    via exact match (tenant_id, data_source, table_name) — no embeddings,
-    no Qdrant.
+  * Schema Memory — the SchemaMemory table is still migrated, but nothing
+    reads or writes it any more: the text_to_sql handler takes its schema from
+    the Schema Catalog (schema_catalog.py) or live introspection instead.
 """
 import math
 import os
@@ -29,7 +28,7 @@ from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, Fi
 from libs.database_connector.postgres_connector import client
 from libs.shared.embeddings import aembed_one
 from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
-    WorkflowMemoryORM, SchemaMemoryORM,
+    WorkflowMemoryORM,
 )
 
 logger = logging.getLogger(__name__)
@@ -206,70 +205,3 @@ async def retrieve_workflow_memory(
     except Exception as e:
         logger.warning("workflow_memory | retrieve failed: %s", e)
         return []
-
-
-# ─── Schema Memory (read-only to the agent, Admin-managed) ────────────────
-
-async def retrieve_schema_memory(
-    tenant_id: str,
-    data_source: str,
-    table_names: Optional[list[str]] = None,
-    user_roles: Optional[list[str]] = None,
-) -> List[dict[str, Any]]:
-    """doc §IV: NOT semantic search — exact match on (tenant_id, data_source,
-    table_name[]). Result is injected directly into the SQL-generation
-    prompt. table_names=None loads every table registered for the
-    data_source (no table-selection planning step exists yet — see
-    docs/STM_LTM_Memory_Implementation.md).
-
-    doc §3.7: access_roles gates which tables the caller may see. A table
-    with an empty access_roles list is unrestricted (visible to everyone).
-    user_roles=None means "caller identity unknown" (e.g. internal/admin
-    callers) and skips the filter entirely — pass the caller's actual roles
-    (e.g. from the X-User-Roles header) to enforce it."""
-    if not client.is_connected():
-        return []
-    try:
-        async with client.get_client(tenant_id=tenant_id) as session:
-            q = (
-                select(
-                    SchemaMemoryORM.table_name, SchemaMemoryORM.column_metadata,
-                    SchemaMemoryORM.business_description, SchemaMemoryORM.access_roles,
-                )
-                .where(SchemaMemoryORM.tenant_id == UUID(tenant_id))
-                .where(SchemaMemoryORM.data_source == data_source)
-            )
-            if table_names:
-                q = q.where(SchemaMemoryORM.table_name.in_(table_names))
-            rows = [r._asdict() for r in (await session.execute(q)).fetchall()]
-
-            if user_roles is not None:
-                allowed_roles = set(user_roles)
-                hidden = [r["table_name"] for r in rows if r["access_roles"] and not (set(r["access_roles"]) & allowed_roles)]
-                if hidden:
-                    logger.info("schema_memory | hid %d table(s) — caller roles %s don't match: %s",
-                                len(hidden), user_roles, hidden)
-                rows = [r for r in rows if not r["access_roles"] or (set(r["access_roles"]) & allowed_roles)]
-
-            return rows
-    except Exception as e:
-        logger.warning("schema_memory | retrieve failed: %s", e)
-        return []
-
-
-def format_schema_context(tables: List[dict[str, Any]]) -> str:
-    """Renders Schema Memory rows as abbreviated DDL for the SQL-generation prompt."""
-    if not tables:
-        return ""
-    blocks = []
-    for t in tables:
-        cols = t.get("column_metadata") or []
-        col_lines = "\n".join(
-            f"  {c.get('name')} {c.get('type', '')}"
-            f"{' NULL' if c.get('is_nullable') else ' NOT NULL'}"
-            f"{' -- ' + c['description'] if c.get('description') else ''}"
-            for c in cols
-        )
-        desc = t.get("business_description") or ""
-        blocks.append(f"-- {desc}\nTABLE {t['table_name']} (\n{col_lines}\n)")
-    return "\n\n".join(blocks)

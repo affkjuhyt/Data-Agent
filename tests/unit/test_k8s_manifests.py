@@ -542,7 +542,7 @@ class TestPortsFollowThePlan:
     def test_no_env_value_points_at_a_pre_migration_port(self):
         legacy = re.compile(
             r"\b(?:postgres|mongo|redis|qdrant|neo4j|kafka|minio|clickhouse|"
-            r"elasticsearch|openbao|keycloak|kong|kong-admin|litellm|langfuse|jaeger)"
+            r"openbao|keycloak|kong|kong-admin|litellm|langfuse|jaeger)"
             r":(?!8[1-5]\d\d\b)\d{4,5}\b"
         )
         bad = []
@@ -592,7 +592,7 @@ class TestTheNamespaces:
 
     def test_the_stores_are_in_the_database_namespace(self):
         stores = {"postgres", "mongo", "redis", "qdrant", "neo4j", "kafka", "minio",
-                  "clickhouse", "elasticsearch", "openbao", "pgbouncer"}
+                  "clickhouse", "openbao", "pgbouncer"}
         bad = [
             n for n, d in WORKLOADS.items()
             if n in stores and d["metadata"]["namespace"] != DB_NS
@@ -733,9 +733,9 @@ class TestCrossNamespaceHostnamesAreQualified:
         """`postgres:8300` resolves only inside the namespace that owns it.
         Across the two namespaces every hostname has to be an FQDN."""
         hosts = ["postgres", "mongo", "redis", "qdrant", "neo4j", "kafka", "minio",
-                 "clickhouse", "elasticsearch", "openbao", "pgbouncer", "kong-admin",
+                 "clickhouse", "openbao", "pgbouncer", "kong-admin",
                  "kong", "keycloak", "litellm", "langfuse", "jaeger", "prometheus",
-                 "grafana", "kibana", "auth-api", "release-worker", "kb-backend",
+                 "grafana", "auth-api", "release-worker", "kb-backend",
                  "model-service", "workflow-runtime", "flow-builder",
                  "sandbox-executor", "llm-exporter", "frontend"]
         pattern = re.compile(
@@ -842,12 +842,12 @@ class TestImageReferencesAreIntact:
         "postgres:16-alpine", "mongo:7.0", "redis:7-alpine", "qdrant/qdrant:v1.13.6",
         "neo4j:5.20", "apache/kafka:3.7.0",
         "minio/minio:RELEASE.2024-01-16T16-07-38Z", "minio/mc",
-        "docker.io/clickhouse/clickhouse-server", "elasticsearch:8.12.0",
+        "docker.io/clickhouse/clickhouse-server",
         "openbao/openbao:latest", "edoburu/pgbouncer:latest",
         "quay.io/keycloak/keycloak:24.0", "ghcr.io/berriai/litellm:main-stable",
         "docker.io/langfuse/langfuse:3", "docker.io/langfuse/langfuse-worker:3",
         "jaegertracing/all-in-one:1.55", "prom/prometheus:v2.54.1",
-        "grafana/grafana:11.2.0", "kibana:8.12.0", "python:3.12-alpine",
+        "grafana/grafana:11.2.0", "python:3.12-alpine",
     }
 
     @staticmethod

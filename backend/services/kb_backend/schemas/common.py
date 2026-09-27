@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 from typing import Any, cast
 
-from pydantic import BaseModel
-
 
 def to_string(v: Any) -> str:
     return str(v) if v is not None else ""
@@ -35,31 +33,3 @@ def coerce_jsonb_dict(v: Any) -> dict[str, Any]:
             except (ValueError, TypeError):
                 pass
     return recovered
-
-
-class StatusResponse(BaseModel):
-    status: str
-
-
-class ConfigActivateResponse(BaseModel):
-    status: str
-    config_id: str
-
-
-class VersionCreatedResponse(BaseModel):
-    version_id: str | None = None
-    version_number: int
-
-
-class ConfigCreatedResponse(BaseModel):
-    config_id: str | None = None
-    version_number: int
-
-
-class PolicyCreatedResponse(BaseModel):
-    policy_id: str | None = None
-
-
-class RowUpdateResponse(BaseModel):
-    status: str
-    row: dict[str, Any]

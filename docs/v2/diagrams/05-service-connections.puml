@@ -1,0 +1,97 @@
+@startuml 05-service-connections
+title Kết nối giữa các service — REST · Kafka · MCP · SSE (00 §7, 03 §13) — Hiện trạng + đích (tô màu theo mức đã có)
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam wrapWidth 200
+skinparam ArrowColor #555555
+skinparam component<<reuse>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam component<<extend>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam component<<new>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+
+component "frontend" <<extend>> as FE
+component "kong + keycloak" <<extend>> as KONG
+
+package "Agent" {
+  component "workflow-runtime" <<extend>> as WR
+  component "sandbox-executor" <<reuse>> as SBX
+}
+
+package "indicator-api" {
+  component "MCP Gateway" <<new>> as MCPG
+  component "analytics · registry" <<new>> as ANA
+  component "governance\n(DQ · conflict · review · publisher)" <<new>> as GOV
+  component "knowledge · alert · lineage" <<new>> as KAL
+}
+
+package "Ingestion · Tri thức" {
+  component "kb-backend" <<extend>> as KB
+  component "kb-promote-silver / gold" <<extend>> as KBP
+  component "kb-structured-data" <<reuse>> as KBS
+  component "kb-conflict-resolution" <<reuse>> as KBC
+  component "Neo4j projector · indexer\n(nơi chạy chưa chốt)" <<new>> as PROJ
+}
+
+package "platform_workers" {
+  component "web_crawler" <<extend>> as WEB
+  component "series_extractor" <<new>> as SX
+  component "semantic_extractor" <<new>> as SEX
+  component "detector" <<new>> as DET
+  component "audit · memory · schema_crawler" <<reuse>> as PW
+}
+
+' REST / SSE
+FE --> KONG : HTTPS REST · SSE
+KONG --> WR : hội thoại (SSE)
+KONG --> KB : /api/knowledge
+KONG -[#C08A00]-> KAL : REST · hộp thư SSE (mới)
+KONG -[#C08A00]-> GOV : Review Inbox (mới)
+WR --> KB : kb_search (REST)
+WR --> SBX : SQL · Python (REST)
+WR -[#C08A00]-> MCPG : MCP (Streamable HTTP)
+MCPG -[#C08A00]-> ANA
+MCPG -[#C08A00]-> KAL
+MCPG -[#C08A00]-> KB : retrieval
+
+' Kafka — đã có
+WEB ..> KBP : kb.promote.silver
+KB ..> KBP : kb.promote.silver / gold
+KB ..> KBS : kb.structured.propose
+KB ..> KBC : kb.resolve.conflict\n(chỉ có nhờ auto-create)
+WR ..> PW : audit.data.access ·\nmemory.extraction.requested
+
+' Kafka — đích V2
+WEB .[#C08A00].> SX : artifact.stored
+WEB .[#C08A00].> KBP : artifact.stored (đường KB)
+WEB .[#C08A00].> DET : source.sla.breached
+KBP .[#C08A00].> SEX : sau Gold (nguồn bật extract_knowledge)
+SX .[#C08A00].> GOV : extraction.completed ·\nmapping.proposed
+SEX .[#C08A00].> GOV : extraction.completed ·\nknowledge.proposal.created
+GOV .[#C08A00].> KAL : review.case.created →\nhộp thư
+GOV .[#C08A00].> PROJ : knowledge.verified
+GOV .[#C08A00].> DET : observation.published
+ANA .[#C08A00].> DET : indicator.recomputed
+DET .[#C08A00].> WR : mở điều tra EXPLAIN_PRICE_MOVEMENT\n(kênh gọi chưa chốt, 03 §11)
+DET .[#C08A00].> KAL : alert.raised
+
+legend bottom
+  |= Màu |= Ý nghĩa |
+  |<#EEF7EE> | Đã có (chạy hôm nay) |
+  |<#E6F0FF> | Có một phần / cần mở rộng |
+  |<#FFF4D6> | Chưa có (đích V2) |
+  Nét liền = REST/SSE/MCP (nội bộ ký X-Service-Assertion HMAC) · nét đứt = Kafka.
+  Mũi tên xám = chạy hôm nay; mũi tên vàng = đích V2. MCP chỉ giữa workflow-runtime và MCP Gateway.
+  Topic V2 phải khai báo trong Job kafka-topics + ACL trước khi dùng; auto.create.topics.enable → false (P0-03).
+  Không vẽ: release.pipeline.* (release-worker), ddl.changes (schema_crawler), forecast.* (ngoài POC), *.dlq.
+endlegend
+@enduml

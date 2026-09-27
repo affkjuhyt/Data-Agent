@@ -3,7 +3,8 @@
 Distinct from the two schema systems already here, and the distinction is the
 point:
 
-  * SchemaMemoryORM is hand-written table notes, read by exact match.
+  * SchemaMemoryORM was hand-written table notes; nothing reads or writes it
+    any more (the table is kept until a migration drops it).
   * SchemaCatalogORM is crawled *physical* structure — which tables and columns
     exist — enriched with a description.
   * These tables hold *business* meaning: what "doanh thu thuần" means, which

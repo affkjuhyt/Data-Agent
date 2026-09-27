@@ -1,0 +1,441 @@
+# Seed nguồn cho POC V2 dầu/vàng. Kiểm tra từ máy chủ 10.10.55.101 ngày 27/09/2026.
+# Định dạng giống docs/v2/data/sources-public-debt.yaml để nhập qua Add Data → Bulk Import
+# (kb_backend/router/knowledge/sources.py: _parse_bulk_yaml). Giải thích từng nguồn: ../04-sources-oil-gold.md
+#
+# verified: V = tải được và đã đọc nội dung · S = tồn tại, cần key/đăng nhập · X = máy chủ bị chặn
+#           U = chưa thử
+# Các trường Bulk Import CHƯA đọc (việc A-02/A-05 trong 05-implementation-plan.md), để sẵn:
+#   licence, use_rights, entity, release_info, follow_link_pattern, locale, rate_limit, extraction_profile
+# Lịch "weekly" của Bulk Import là thứ Hai 03:00; nguồn công bố thứ Tư/thứ Sáu phải chỉnh cron ở tab Edit.
+# connector: manual-upload bị Bulk Import bỏ qua có lý do (đúng ý đồ): nguồn đó tải tay qua Document Hub.
+sources:
+  # ── Dầu: giá spot ngày (công bố theo TUẦN) ─────────────────────────────
+  - id: eia-brent-spot-daily
+    publisher: U.S. Energy Information Administration
+    title: Europe Brent Spot Price FOB (daily)
+    connector: http-file
+    format: xls
+    sample_urls:
+      - https://www.eia.gov/dnav/pet/hist_xls/RBRTEd.xls
+    entity: BRENT_SPOT
+    variables: [EIA:RBRTE:D]
+    schedule: daily
+    purpose: production
+    promotion_mode: auto
+    licence: "US government data (EIA), ghi nguồn"
+    use_rights: internal_analysis
+    release_info: "Sheet Contents: 'Release Date' và 'Next Release Date'; công bố thứ Tư hằng tuần"
+    locale: en-US
+    verified: V
+    notes: >-
+      Toàn bộ lịch sử từ 20/05/1987 trong một file; chỉ ghi giá trị mới/đổi.
+      Sheet 'Data 1', dòng 3 là header, cột A là ngày Excel. Mã thiếu '-', '--', 'NA', 'W'.
+      Crawl hằng ngày nhưng hash chỉ đổi khi EIA công bố (thứ Tư).
+
+  - id: eia-wti-spot-daily
+    publisher: U.S. Energy Information Administration
+    title: Cushing OK WTI Spot Price FOB (daily)
+    connector: http-file
+    format: xls
+    sample_urls:
+      - https://www.eia.gov/dnav/pet/hist_xls/RWTCd.xls
+    entity: WTI_SPOT
+    variables: [EIA:RWTC:D]
+    schedule: daily
+    purpose: production
+    promotion_mode: auto
+    licence: "US government data (EIA), ghi nguồn"
+    use_rights: internal_analysis
+    release_info: "như eia-brent-spot-daily"
+    locale: en-US
+    verified: V
+
+  - id: eia-wti-futures-m1-terminated
+    publisher: U.S. Energy Information Administration
+    title: Cushing OK Crude Oil Future Contract 1 (đã ngừng từ 05/04/2024)
+    connector: manual-upload
+    format: xls
+    sample_urls:
+      - https://www.eia.gov/dnav/pet/hist_xls/RCLC1d.xls
+    entity: WTI_FUTURES_M1
+    variables: [EIA:RCLC1:D]
+    licence: "US government data (EIA)"
+    use_rights: internal_analysis
+    verified: V
+    notes: >-
+      Dữ liệu dừng ở 05/04/2024 (86,91). Giữ làm lịch sử và làm test 'nguồn ngừng cập nhật'
+      (freshness SLA), không lập lịch.
+
+  # ── Dầu: cơ bản ───────────────────────────────────────────────────────
+  - id: eia-us-crude-stocks-weekly
+    publisher: U.S. Energy Information Administration
+    title: Weekly U.S. Ending Stocks excluding SPR of Crude Oil
+    connector: http-file
+    format: xls
+    sample_urls:
+      - https://www.eia.gov/dnav/pet/hist_xls/WCESTUS1w.xls
+    entity: US_CRUDE_STOCKS
+    variables: [EIA:WCESTUS1:W]
+    schedule: weekly
+    purpose: production
+    promotion_mode: auto
+    licence: "US government data (EIA), ghi nguồn"
+    use_rights: internal_analysis
+    release_info: "tuần kết thúc thứ Sáu, công bố thứ Tư kế tiếp 10:30 ET; chỉnh cron sang thứ Tư/thứ Năm"
+    verified: V
+    notes: Đơn vị nghìn thùng.
+
+  - id: eia-wpsr-report
+    publisher: U.S. Energy Information Administration
+    title: Weekly Petroleum Status Report (văn bản)
+    connector: web-crawl
+    format: html
+    landing_url: https://www.eia.gov/petroleum/supply/weekly/
+    schedule: weekly
+    purpose: production
+    licence: "US government data (EIA)"
+    use_rights: internal_analysis
+    verified: V
+    notes: Nguồn claim/event cho UC04. Số lấy từ file xls, không từ văn bản.
+
+  - id: eia-steo
+    publisher: U.S. Energy Information Administration
+    title: Short-Term Energy Outlook
+    connector: web-crawl
+    format: html
+    landing_url: https://www.eia.gov/outlooks/steo/
+    schedule: monthly
+    purpose: production
+    licence: "US government data (EIA)"
+    use_rights: internal_analysis
+    verified: U
+    notes: Dự báo của EIA là CLAIM (ASSERTED, về tương lai), không phải FORECAST của hệ thống.
+
+  - id: jodi-oil-world-primary
+    publisher: Joint Organisations Data Initiative
+    title: JODI Oil World Database — primary products
+    connector: http-file
+    format: zip
+    sample_urls:
+      - https://www.jodidata.org/_resources/files/downloads/oil-data/world_primary_csv.zip
+    entity: OIL_FUNDAMENTALS
+    schedule: monthly
+    purpose: production
+    licence: cần đọc điều khoản JODI trước production
+    use_rights: pending_review
+    verified: V
+    notes: >-
+      23 MB zip, 1 file NewProcedure_Primary_CSV.csv. Cột REF_AREA, TIME_PERIOD, ENERGY_PRODUCT,
+      FLOW_BREAKDOWN, UNIT_MEASURE, OBS_VALUE, ASSESSMENT_CODE. Thiếu '-', bảo mật 'x'.
+
+  - id: cftc-cot-disaggregated
+    publisher: U.S. Commodity Futures Trading Commission
+    title: Commitments of Traders — Disaggregated (tuần hiện tại)
+    connector: http-file
+    format: txt
+    sample_urls:
+      - https://www.cftc.gov/dea/newcot/f_disagg.txt
+    entity: POSITIONING
+    schedule: weekly
+    purpose: production
+    promotion_mode: auto
+    licence: "US government data (CFTC)"
+    use_rights: internal_analysis
+    release_info: "vị thế thứ Ba, công bố thứ Sáu 15:30 ET; chỉnh cron sang thứ Bảy"
+    verified: V
+    notes: >-
+      Có 'CRUDE OIL, LIGHT SWEET-WTI', 'BRENT LAST DAY - NEW YORK MERCANTILE EXCHANGE',
+      'GOLD - COMMODITY EXCHANGE INC.'. Lịch sử năm: files/dea/history/fut_disagg_txt_2026.zip.
+
+  - id: gpr-daily
+    publisher: Caldara & Iacoviello (Federal Reserve Board)
+    title: Geopolitical Risk Index — daily
+    connector: http-file
+    format: xls
+    sample_urls:
+      - https://www.matteoiacoviello.com/gpr_files/data_gpr_daily_recent.xls
+    entity: GEOPOLITICAL_RISK
+    variables: [GPR:GPRD:D]
+    schedule: weekly
+    purpose: production
+    licence: "chỉ số nghiên cứu; trích Caldara & Iacoviello (2022), AER"
+    use_rights: pending_review
+    verified: V
+    notes: Cột DAY, N10D, GPRD, GPRD_ACT, GPRD_THREAT, date, GPRD_MA30, GPRD_MA7; mới nhất 21/09/2026.
+
+  - id: opec-press-releases
+    publisher: OPEC
+    title: OPEC press releases / quyết định sản lượng
+    connector: web-crawl-headless
+    format: html
+    landing_url: https://www.opec.org/
+    schedule: daily
+    purpose: production
+    licence: cần đọc điều khoản OPEC
+    use_rights: pending_review
+    verified: X
+    notes: Nguồn EVENT (quyết định OPEC+, ngày hiệu lực). basketDayArchives.xml và MOMR trả 403.
+
+  - id: opec-momr
+    publisher: OPEC
+    title: Monthly Oil Market Report
+    connector: manual-upload
+    format: pdf
+    landing_url: https://publications.opec.org/momr
+    licence: cần đọc điều khoản OPEC
+    use_rights: pending_review
+    verified: X
+    notes: 403 từ máy chủ; tải tay qua Document Hub.
+
+  # ── Dầu + vàng: tháng, licence rõ hơn ─────────────────────────────────
+  - id: wb-pink-sheet-monthly
+    publisher: World Bank
+    title: Commodity Price Data (Pink Sheet) — monthly
+    connector: web-crawl
+    format: xlsx
+    landing_url: https://www.worldbank.org/en/research/commodity-markets
+    follow_link_pattern: 'CMO-Historical-Data-Monthly\.xlsx$'
+    schedule: weekly
+    purpose: production
+    promotion_mode: auto
+    licence: "World Bank open data (CC BY 4.0), xác nhận cho file này"
+    use_rights: internal_analysis
+    release_info: "dòng 'Updated on …' trong sheet Monthly Prices; thường ngày làm việc thứ 2 của tháng"
+    verified: V
+    notes: >-
+      URL file đổi mỗi bản; URL tháng 1/2025 vẫn trả 200 với dữ liệu tới 2024M12.
+      Bản 02/09/2026 (URL .../74e8be41ceb20fa0da750cda2f6b9e4e-0050012026/...) có tới 2026M08.
+      Sheet 'Monthly Prices': dòng 5 tên cột, dòng 6 đơn vị, kỳ '2026M08', thiếu '…'.
+      Cột 'Crude oil, Brent', 'Crude oil, WTI', 'Crude oil, Dubai', 'Gold', 'Rice, Viet Namese 5%'.
+
+  - id: imf-pcps-oil-gold
+    publisher: International Monetary Fund
+    title: Primary Commodity Price System (PCPS) — Brent, WTI, Dubai, gold, silver
+    connector: sdmx
+    format: xml
+    examples:
+      - https://api.imf.org/external/sdmx/2.1/data/PCPS/G001.POILBRE+POILWTI+POILDUB+PGOLD+PSILVER.USD.M?startPeriod=2000-01
+    entity: COMMODITY_MONTHLY
+    variables: [IMF:PCPS:POILBRE:M, IMF:PCPS:POILWTI:M, IMF:PCPS:POILDUB:M, IMF:PCPS:PGOLD:M]
+    schedule: weekly
+    purpose: production
+    promotion_mode: auto
+    licence: "© IMF, All Rights Reserved; trích dẫn theo SUGGESTED_CITATION trong message"
+    use_rights: pending_review
+    release_info: "PUBLICATION_DATE trong message SDMX (bản tháng 8/2026: 2026-09-08)"
+    verified: V
+    notes: >-
+      Khoá COUNTRY.INDICATOR.DATA_TRANSFORMATION.FREQUENCY; kỳ dạng '2026-M08'.
+      Đã gọi thử G001.PGOLD.USD.M (tháng 8/2026 = 4418.5445). Cú pháp '+' nhiều indicator chưa thử.
+
+  # ── Vàng ──────────────────────────────────────────────────────────────
+  - id: wgc-goldhub
+    publisher: World Gold Council
+    title: Goldhub data (cầu vàng, NHTW, ETF)
+    connector: manual-upload
+    format: xlsx
+    landing_url: https://www.gold.org/goldhub/data
+    licence: "điều khoản Goldhub; dữ liệu giá chịu điều khoản ICE; từ 18/03/2025 chỉ còn giới hạn dữ liệu LBMA"
+    use_rights: pending_review
+    verified: S
+    notes: Cần đăng nhập. Số mua ròng của NHTW có thể bị sửa; giữ mọi release.
+
+  - id: spdr-gld-holdings
+    publisher: State Street / World Gold Trust Services
+    title: SPDR Gold Shares — lịch sử lượng vàng nắm giữ
+    connector: http-file
+    format: pdf
+    sample_urls:
+      - https://www.spdrgoldshares.com/assets/dynamic/GLD/GLD_US_archive_EN.csv
+    entity: GOLD_ETF_HOLDINGS
+    schedule: weekly
+    licence: cần đọc điều khoản
+    use_rights: pending_review
+    verified: V
+    notes: URL đuôi .csv nhưng trả PDF 120 trang; đi pipeline unstructured, bảng → observation candidate.
+
+  - id: lbma-gold-pm-json
+    publisher: LBMA (benchmark do ICE Benchmark Administration quản trị)
+    title: LBMA Gold Price PM theo ngày (JSON công khai trên website LBMA)
+    connector: http-file
+    format: json
+    sample_urls:
+      - https://prices.lbma.org.uk/json/gold_pm.json
+    entity: GOLD_LBMA_PM
+    variables: [LBMA:GOLD_PM:USD:D, LBMA:GOLD_PM:GBP:D, LBMA:GOLD_PM:EUR:D]
+    schedule: daily
+    purpose: production
+    promotion_mode: auto
+    licence: "Website LBMA: lấy/dùng/phân phối lại dữ liệu benchmark cần licence IBA. POC: phân tích nội bộ, ghi rõ trong báo cáo (ADR-V2-25)"
+    use_rights: internal_analysis
+    release_info: "phiên 15h00 London; công bố công khai trễ tới nửa đêm London"
+    verified: V
+    notes: >-
+      200, 915 KB, 14.691 ngày từ 1968-04-01 tới 2026-09-25; dòng {"is_cms_locked", "d", "v": [USD, GBP, EUR]}.
+      Toàn bộ lịch sử mỗi lần tải, chỉ ghi giá trị mới/đổi. Dự phòng: lbma-gold-price-manual.
+
+  - id: giavang-org-world
+    publisher: giavang.org (tổng hợp)
+    title: Giá vàng thế giới XAU/USD trong ngày
+    connector: web-crawl
+    format: html
+    landing_url: https://giavang.org/the-gioi/
+    entity: GOLD_SPOT_WEB
+    schedule: every 2 hours
+    purpose: production
+    licence: cần xác nhận; trang tổng hợp, không phải nguồn gốc
+    use_rights: pending_review
+    locale: en-US
+    verified: V
+    notes: Tuỳ chọn cho câu hỏi "giá vàng thế giới lúc này"; không dùng làm bằng chứng chính thức.
+
+  - id: lbma-gold-price-manual
+    publisher: LBMA / ICE Benchmark Administration
+    title: LBMA Gold Price (tải tay, dự phòng khi crawl JSON hỏng)
+    connector: manual-upload
+    landing_url: https://www.lbma.org.uk/prices-and-data/lbma-gold-price
+    licence: "như lbma-gold-pm-json (ADR-V2-25)"
+    use_rights: internal_analysis
+    verified: V
+    notes: FRED đã xoá chuỗi LBMA từ 31/01/2022. Dùng khi lbma-gold-pm-json vi phạm SLA.
+
+  # ── Vĩ mô (FRED, cần key trong OpenBao) ───────────────────────────────
+  - id: fred-real-yield-10y
+    publisher: "Federal Reserve Bank of St. Louis (nguồn gốc: Board of Governors)"
+    title: 10-Year Treasury Inflation-Indexed Security, Constant Maturity (DFII10)
+    connector: rest-api
+    format: json
+    example: https://api.stlouisfed.org/fred/series/observations?series_id=DFII10&api_key=${FRED_API_KEY}&file_type=json
+    entity: US_REAL_YIELD_10Y
+    variables: [FRED:DFII10:D]
+    schedule: daily
+    purpose: production
+    promotion_mode: auto
+    licence: theo nguồn gốc series
+    use_rights: internal_analysis
+    verified: S
+    notes: API trả 400 khi không có key; fredgraph.csv timeout từ máy chủ.
+
+  - id: fred-usd-broad-index
+    publisher: "Federal Reserve Bank of St. Louis (nguồn gốc: Board of Governors)"
+    title: Nominal Broad U.S. Dollar Index (DTWEXBGS)
+    connector: rest-api
+    format: json
+    example: https://api.stlouisfed.org/fred/series/observations?series_id=DTWEXBGS&api_key=${FRED_API_KEY}&file_type=json
+    entity: USD_BROAD
+    variables: [FRED:DTWEXBGS:D]
+    schedule: daily
+    purpose: production
+    promotion_mode: auto
+    licence: theo nguồn gốc series
+    use_rights: internal_analysis
+    verified: S
+
+  - id: fred-vix
+    publisher: "Federal Reserve Bank of St. Louis (nguồn gốc: Cboe)"
+    title: CBOE Volatility Index (VIXCLS)
+    connector: rest-api
+    format: json
+    example: https://api.stlouisfed.org/fred/series/observations?series_id=VIXCLS&api_key=${FRED_API_KEY}&file_type=json
+    entity: VIX
+    variables: [FRED:VIXCLS:D]
+    schedule: daily
+    purpose: production
+    promotion_mode: auto
+    licence: Cboe giữ bản quyền
+    use_rights: pending_review
+    verified: S
+
+  # ── Việt Nam ──────────────────────────────────────────────────────────
+  - id: vn-moit-fuel-price-announcements
+    publisher: Bộ Công Thương
+    title: Thông tin điều hành giá xăng dầu (từng kỳ)
+    connector: web-crawl
+    format: html
+    landing_url: https://moit.gov.vn/tin-tuc/thong-bao
+    follow_link_pattern: 'dieu-hanh-gia-(ban-)?xang-dau'
+    schedule: daily
+    purpose: production
+    licence: văn bản công khai của cơ quan nhà nước
+    use_rights: internal_analysis
+    locale: vi-VN
+    verified: V
+    notes: >-
+      Mỗi bài có: giá thế giới bình quân theo sản phẩm + cửa sổ bình quân, quỹ bình ổn, giá bán tối đa,
+      thời điểm hiệu lực, số quyết định (ví dụ 2398/QĐ-BCT ngày 24/9/2026). Thường thứ Năm 15h00,
+      có kỳ ngoài lịch (07/3/2026, thứ Bảy). E10RON95-III thay RON95-III từ 16/6/2026.
+      Landing tin tức cụ thể cần kiểm lại; bài 24/9 và 7/3 đã đọc được.
+
+  - id: vn-petrolimex-retail
+    publisher: Petrolimex
+    title: Giá bán lẻ xăng dầu
+    connector: web-crawl
+    format: html
+    landing_url: https://www.petrolimex.com.vn/
+    schedule: daily
+    purpose: production
+    licence: cần xác nhận
+    use_rights: pending_review
+    locale: vi-VN
+    verified: V
+    notes: Đối chiếu với thông cáo Bộ Công Thương (vùng 1/vùng 2).
+
+  - id: vn-sjc-gold-price
+    publisher: Công ty Vàng bạc Đá quý Sài Gòn (SJC)
+    title: Giá vàng miếng và nhẫn SJC
+    connector: web-crawl-headless
+    format: html
+    landing_url: https://sjc.com.vn/
+    schedule: every 2 hours
+    purpose: production
+    licence: cần xác nhận
+    use_rights: pending_review
+    locale: vi-VN
+    verified: X
+    notes: Trang chủ, PriceService.ashx, xml/tygiavang.xml đều 403 với client thường. Giá có phía mua/bán.
+
+  - id: vn-pnj-gold-price
+    publisher: PNJ
+    title: Giá vàng PNJ (gồm SJC, nhẫn 9999)
+    connector: web-crawl-headless
+    format: html
+    landing_url: https://www.pnj.com.vn/blog/gia-vang/
+    schedule: every 2 hours
+    purpose: production
+    licence: cần xác nhận
+    use_rights: pending_review
+    locale: vi-VN
+    verified: V
+    notes: HTML tĩnh tải được nhưng bảng giá render bằng JavaScript; dùng headless. Nguồn thứ hai cho giá SJC.
+
+  - id: vn-doji-gold-price
+    publisher: DOJI
+    title: Giá vàng DOJI
+    connector: web-crawl-headless
+    format: html
+    landing_url: https://giavang.doji.vn/
+    schedule: every 2 hours
+    purpose: production
+    licence: cần xác nhận
+    use_rights: pending_review
+    locale: vi-VN
+    verified: V
+    notes: Ứng dụng SPA, cần headless.
+
+  - id: vn-24h-gold-fx
+    publisher: 24h.com.vn (tổng hợp từ giavang.net, pnj.com.vn, baotinmanhhai.vn)
+    title: Giá vàng SJC và tỷ giá (HTML tĩnh)
+    connector: web-crawl
+    format: html
+    landing_url: https://www.24h.com.vn/gia-vang-hom-nay-c425.html
+    entity: GOLD_SJC_BAR
+    schedule: every 2 hours
+    purpose: production
+    licence: cần xác nhận; trang tổng hợp
+    use_rights: pending_review
+    locale: vi-VN
+    verified: V
+    notes: SJC mua 141,400 / bán 144,400 (nghìn đồng/lượng) có ngay trong HTML tĩnh; nguồn phụ khi SJC/PNJ headless hỏng.
+
+  # vn-vcb-fx-xml (tỷ giá USD/VND) đã có trong docs/v2/data/sources-public-debt.yaml: dùng lại.
+  # Lưu ý: số kiểu Mỹ '25,760.00', giới hạn 1 request/5 phút ⇒ lịch 'hourly' là đủ.

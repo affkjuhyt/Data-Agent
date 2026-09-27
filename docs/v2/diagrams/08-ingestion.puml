@@ -1,0 +1,108 @@
+@startuml 08-ingestion
+title Ingestion V2: nguồn → raw bất biến → hai pipeline → DQ/governance → obs (03 §4–§6, §8) — Hiện trạng + đích (tô màu theo mức đã có)
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam wrapWidth 240
+skinparam ArrowColor #555555
+skinparam component<<reuse>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam component<<extend>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam component<<new>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+skinparam database<<reuse>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam database<<extend>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam database<<new>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+
+package "1. Điều khiển" {
+  component "Source Registry\n(KBSource* + kb-backend API + màn Nguồn;\n+ licence · use_rights · release_info ·\nfreshness_sla · extraction_profile)" <<extend>> as SR
+}
+
+package "2. Thu thập — platform_workers/web_crawler (chỉ deploy ở dev)" {
+  component "Connector: http_file · web_crawl(+headless) ·\nrss · rest_api/sdmx; cron theo nguồn,\nRun Now, retry, KBSourceCrawlQueue" <<extend>> as CR
+  component "Raw bất biến: SHA-256, không ghi đè/xoá\n+ ingest.release khi hash đổi" <<new>> as RAW
+  component "Freshness: quá freshness_sla\n→ source.sla.breached" <<new>> as SLA
+}
+
+package "3a. Structured — series_extractor" {
+  component "profile (cột · kiểu · locale · đơn vị · fingerprint)\nfingerprint lệch → CHẶN, ReviewCase SCHEMA_DRIFT" <<new>> as PROF
+  component "reverse schema: LLM → MappingProposal\n→ validator tất định (NOT_EQUIVALENT:\nspot ≠ futures, settle ≠ close)" <<new>> as REV
+  component "normalize (locale · đơn vị · múi giờ · mã thiếu)\n→ observation_candidate (khoá idempotency)" <<new>> as NORM
+}
+
+package "3b. Unstructured — đường KB" {
+  component "kb-promote-silver\n(Docling · OCR vie+eng · PageRegion page/bbox)" <<extend>> as SIL
+  component "kb-promote-gold\n(chunk · embed · entity graph — chỉ retrieval)" <<reuse>> as GOLD
+  component "semantic_extractor\n(claim · event · observation candidate;\nquote + page + bbox, bỏ nếu quote không khớp)" <<new>> as SEX
+}
+
+package "4. Governance — indicator-api + libs/dq" {
+  component "DQ 5 tầng\n(schema · semantic · numeric · temporal · cross-source)" <<new>> as DQ
+  component "Conflict (7 lớp; chỉ SOURCE_CONFLICT,\nUNKNOWN mở ReviewCase)" <<new>> as CONF
+  component "ReviewCase → reviewer → checker\n(maker ≠ checker, expected_version → 409)" <<new>> as RC
+  component "publisher: effective version\n(version_kind machine | correction | override)" <<new>> as PUB
+}
+
+component "Consumer: tính lại chuỗi dẫn xuất ·\ndetector · lineage (sơ đồ 09)" <<new>> as DOWN
+
+database "MinIO raw/{source_id}/{sha256}" <<new>> as S3RAW
+database "MinIO knowledge-base bronze + KBData\n(hôm nay: re-crawl xoá bản cũ)" <<extend>> as S3KB
+database "Postgres ingest\n(release · profile · mapping_version · candidate)" <<new>> as PGI
+database "Postgres governance · knowledge" <<new>> as PGG
+database "ClickHouse obs.observation" <<new>> as CH
+database "Qdrant · Neo4j · Mongo\n(chunk, entity graph)" <<reuse>> as VEC
+
+SR --> CR : cấu hình · lịch
+CR --> RAW
+RAW --> S3RAW
+RAW --> PGI
+CR --> S3KB : Bronze (hôm nay)
+CR ..> SIL : kb.promote.silver (hôm nay, promotion_mode=auto)
+CR --> SLA
+RAW .[#C08A00].> PROF : artifact.stored
+RAW .[#C08A00].> SIL : artifact.stored (đường KB)
+PROF --> REV : chỉ khi thêm nguồn / drift
+PROF --> NORM : mapping đã duyệt
+REV --> RC : SCHEMA_DRIFT
+NORM --> PGI
+NORM .[#C08A00].> DQ : extraction.completed
+SIL ..> GOLD : kb.promote.gold
+GOLD --> VEC
+GOLD .[#C08A00].> SEX : sau Gold (extract_knowledge)
+SEX .[#C08A00].> DQ : observation candidate từ tài liệu
+SEX .[#C08A00].> RC : knowledge.proposal.created
+DQ --> CONF
+CONF --> RC : ISSUE
+CONF --> PUB : PASS
+RC --> PUB : review.approved
+RC --> PGG
+PUB --> CH
+PUB .[#C08A00].> DOWN : observation.published
+
+legend bottom
+  |= Màu |= Ý nghĩa |
+  |<#EEF7EE> | Đã có (chạy hôm nay) |
+  |<#E6F0FF> | Có một phần / cần mở rộng |
+  |<#FFF4D6> | Chưa có (đích V2) |
+  Nét đứt = Kafka (mang source_id · release_id · artifact_sha256); xám = topic có hôm nay, vàng = topic V2 (03 §13).
+  Số không bao giờ đi chunk → embedding (bất biến 3); chỉ bản đã duyệt (PASS hoặc qua ReviewCase) vào ClickHouse.
+  Ví dụ: Pink Sheet ""extraction_profile"" kind xlsx_table, sheet Monthly Prices, series WB:PINK:BRENT:M, WB:PINK:GOLD:M.
+endlegend
+@enduml

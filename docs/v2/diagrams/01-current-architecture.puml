@@ -1,0 +1,143 @@
+@startuml 01-current-architecture
+title Data Agent — Hiện trạng kiến trúc (27/09/2026, cụm k3s 10.10.55.101)
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam wrapWidth 260
+skinparam ArrowColor #555555
+skinparam component<<reuse>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam component<<extend>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam component<<new>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+skinparam database<<reuse>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam database<<extend>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam queue<<extend>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+
+legend top right
+  |= Màu |= Ý nghĩa |
+  |<#EEF7EE> | Đã có (chạy hôm nay) |
+  |<#E6F0FF> | Có một phần / có nhưng lệch yêu cầu V2 |
+  |<#FFF4D6> | Chưa có (đích V2) — chỉ ô khoảng trống |
+  Sơ đồ **hiện trạng**: chỉ vẽ cái đang chạy trong
+  deploy/k8s; đích V2 ở sơ đồ 03-layers và 04-service-landscape.
+endlegend
+
+actor "Người dùng nghiệp vụ" as User
+actor "Data / AI engineer" as Eng
+
+package "frontend (React, hash routes)" {
+  component "Ask\n(bảng · chart · evidence · trích dẫn có trang · xlsx)" <<reuse>> as Ask
+  component "Knowledge\n(Data Layers · Knowledge Hub · Warehouses ·\nSource Registry · Conflicts · Policies · Trash)" <<reuse>> as KOps
+  component "Build · Ops · Settings\n(Agents · Workflows · Playground ·\nConversations · Traces · Reviews · IAM)" <<reuse>> as Builder
+}
+
+component "Kong\n(aeroflow-jwks: JWT Keycloak)" <<reuse>> as Kong
+component "Keycloak\n(4 vai trò: PLATFORM_ADMIN · AI_ENGINEER ·\nBUSINESS_OPERATOR · EXECUTIVE)" <<reuse>> as KC
+
+package "workflow-runtime (LangGraph)" {
+  component "Orchestrator\ninput_refine → route → single_agent |\nfetch_agents → tot_planner → execute (DAG) →\nsummary → suggestion; checkpointer Postgres" <<reuse>> as Orch
+  component "Agent graph\nplanner → kb_search | db_connector | mcp | tool\n→ rrf/rerank → responder → judge → visualization" <<reuse>> as AgentG
+  component "judge: verifier số tất định\n(libs/indicator/verifier)" <<extend>> as Judge
+  component "mcp node: POST JSON {url}/execute\n(không phải MCP chuẩn)" <<extend>> as MCPn
+  component "Semantic layer (1 bảng · 1 cột) ·\ntext-to-SQL + schema catalog" <<extend>> as Sem
+}
+
+package "kb-backend + worker KB" {
+  component "kb-backend\n(KB API · Source Registry API ·\nLightRAG: vector + FTS + Neo4j + RRF + rerank)" <<reuse>> as KBB
+  component "kb-promote-silver / gold\n(Docling, OCR vie+eng, page/bbox →\nchunk · embed · entity graph)" <<reuse>> as Prom
+  component "kb-structured-data\n(xlsx/csv, chỉ bảng lớn nhất; KBTable 0 dòng)" <<extend>> as Struct
+  component "kb-conflict-resolution\n(mâu thuẫn văn bản)" <<reuse>> as Conf
+}
+
+package "platform-workers" {
+  component "web_crawler\n(cron KBSource: http_file · web_crawl ·\nrss · rest_api/sdmx) — **chỉ deploy ở dev**;\nre-crawl xoá bản cũ" <<extend>> as Web
+  component "schema_crawler · audit · memory" <<reuse>> as PW
+}
+
+component "auth-api · flow-builder · release-worker" <<reuse>> as Plat
+component "sandbox-executor + runner\n(SQL guard · AST guard; pandas/numpy/plotly/matplotlib)" <<reuse>> as Sandbox
+component "model-service\n(embed/rerank, batching)" <<reuse>> as MS
+component "LiteLLM\n(planner · responder · judge · text_to_sql …)" <<reuse>> as LLM
+component "Langfuse · Prometheus · Grafana ·\nJaeger · llm-exporter" <<reuse>> as Obsv
+
+package "GPU host 10.10.55.101 (docker, ngoài k8s)" {
+  component "vllm-main :8001 · vllm-fast :8002" <<reuse>> as VLLM
+  component "TEI embed :8003 · TEI rerank :8004" <<reuse>> as TEI
+}
+
+database "Postgres 16 + pgbouncer\n(public 84 bảng · langgraph · kb_structured;\ndịch vụ nối bằng superuser → RLS vô hiệu)" <<extend>> as PG
+database "Qdrant 1.13.6" <<reuse>> as QD
+database "Neo4j 5.20" <<reuse>> as N4
+database "MinIO\n(knowledge-base · langfuse · sandbox-audit)" <<reuse>> as S3
+queue "Kafka 3.7 (KRaft, 1 broker, RF=1,\nauto.create = true)" <<extend>> as KF
+database "Mongo 7\n(canvas · silver staging · conflict)" <<reuse>> as MG
+database "Redis 7" <<reuse>> as RD
+database "OpenBao 2.6.3" <<reuse>> as Bao
+database "ClickHouse\n(chỉ Langfuse)" <<reuse>> as CH
+database "Warehouse ngoài\nPostgres · Snowflake · ClickHouse" <<reuse>> as DW
+
+component "CHƯA CÓ (đích V2)\nindicator-api · MCP Gateway · ClickHouse obs ·\nschema registry/ingest/governance/knowledge/alert ·\nseries_extractor · semantic_extractor · detector ·\nraw bất biến theo SHA-256 · release · ReviewCase maker–checker ·\nmàn Series/Review Inbox/Alert · topic V2 ·\nlog tập trung trong k8s (ES/Kibana chỉ còn ở compose) ·\nbackup ngoài node · egress allowlist" <<new>> as Gap
+
+User --> Ask
+Eng --> KOps
+Eng --> Builder
+Ask --> Kong
+KOps --> Kong
+Builder --> Kong
+Kong --> KC
+Kong --> Orch : SSE
+Kong --> KBB
+Kong --> Plat
+Orch --> AgentG
+AgentG --> Judge
+AgentG --> MCPn
+AgentG --> Sem
+Sem --> Sandbox
+Sandbox --> DW
+Sandbox --> Bao
+AgentG --> KBB : kb_search (REST)
+KBB --> MS : rerank
+Orch --> LLM
+AgentG --> LLM
+LLM --> VLLM
+MS --> TEI
+KBB ..> KF : kb.promote.* · kb.structured.propose ·\nkb.resolve.conflict
+Web --> S3 : Bronze
+Web ..> KF : kb.promote.silver
+KF ..> Prom
+KF ..> Struct
+KF ..> Conf
+Prom --> S3
+Prom --> QD
+Prom --> N4
+Prom --> MG
+Prom --> PG
+Struct --> PG
+PW --> QD : schema_catalog · memory
+Orch ..> KF : audit.data.access ·\nmemory.extraction.requested
+KF ..> PW
+Orch --> PG
+Orch --> RD
+Orch --> Obsv
+Plat --> PG
+Plat --> MG : canvas (flow-builder)
+Obsv --> CH
+@enduml

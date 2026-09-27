@@ -38,31 +38,6 @@ def build_nodes(tasks: list[dict[str, Any]]) -> list[TaskNode]:
     ]
 
 
-def build_rounds(tasks: list[dict[str, Any]]) -> tuple[list[list[TaskNode]], list[dict[str, Any]]]:
-    """
-    Nhận tasks[] từ 1 target, trả về (rounds, stuck_tasks).
-    stuck_tasks không rỗng khi phát hiện circular/broken dependency.
-    """
-    nodes = build_nodes(tasks)
-
-    done_set: set[int] = set()
-    rounds: list[list[TaskNode]] = []
-    stuck_tasks: list[dict[str, Any]] = []
-
-    remaining = list(range(len(nodes)))
-    while remaining:
-        ready = [i for i in remaining if all(d in done_set for d in nodes[i].depend_on)]
-        if not ready:
-            stuck_tasks = [{"index": nodes[i].index, "title": nodes[i].title, "depend_on": nodes[i].depend_on} for i in remaining]
-            logger.warning("task_queue | dependency cycle or broken deps, forcing remaining tasks: %s", stuck_tasks)
-            ready = remaining
-        rounds.append([nodes[i] for i in ready])
-        done_set.update(ready)
-        remaining = [i for i in remaining if i not in done_set]
-
-    return rounds, stuck_tasks
-
-
 def collect_context(nodes: list[TaskNode]) -> str:
     """Gom output của các task đã xong thành context string để inject vào task tiếp theo."""
     parts = []

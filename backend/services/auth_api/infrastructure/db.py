@@ -4,9 +4,9 @@ from typing import Any
 from psycopg2 import pool as pg_pool
 
 try:
-    from services.auth_api.infrastructure.config import OWNER_POOL_MAX, PG_DSN, POOL_MAX, POOL_MIN, log
+    from services.auth_api.infrastructure.config import OWNER_POOL_MAX, PG_DSN, POOL_MIN, log
 except ModuleNotFoundError:
-    from auth_api.infrastructure.config import OWNER_POOL_MAX, PG_DSN, POOL_MAX, POOL_MIN, log
+    from auth_api.infrastructure.config import OWNER_POOL_MAX, PG_DSN, POOL_MIN, log
 
 owner_pool: pg_pool.ThreadedConnectionPool | None = None
 owner_pool_lock = threading.Lock()

@@ -4,8 +4,11 @@ Workers call ``await emitter.emit(event, payload)`` at each processing step, or 
 a whole step in ``async with emitter.step("silver.parse") as event_scope:`` — the
 context manager emits ``<name>.start`` on entry, ``<name>.complete`` on success, and
 ``<name>.error`` on exception, so step functions never write start/complete emits by
-hand. The SSE endpoint in the backend polls ``pipeline_events`` sorted by sequence so
-the browser can display every detail in real time.
+hand.
+
+Nothing reads these events back yet: the SSE endpoint that replayed them
+(``GET /api/pipeline/ingestion/documents/{id}/stream``) had no caller and was removed —
+the UI follows ``kb_ingestion_logs`` through ``/progress`` instead.
 
 Collection schema:
     pipeline_events:  {data_id, sequence, event, ts, payload}

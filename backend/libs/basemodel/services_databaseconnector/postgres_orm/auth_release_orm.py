@@ -52,9 +52,6 @@ class TenantsORM(Base):
 
     plan: Mapped[Optional["PlansORM"]] = relationship(back_populates="tenants")
     keycloak_config: Mapped[Optional["KeycloakRealmConfigsORM"]] = relationship(back_populates="tenant", uselist=False)
-    ip_allowlists: Mapped[list["IPAllowlistsORM"]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
-    api_keys: Mapped[list["APIKeysORM"]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
-    secrets: Mapped[list["SecretsVaultORM"]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
     webhooks: Mapped[list["WebhooksORM"]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
     audit_logs: Mapped[list["AuditLogsORM"]] = relationship(back_populates="tenant")
     pii_access_logs: Mapped[list["PIIAccessLogsORM"]] = relationship(back_populates="tenant")
@@ -125,102 +122,6 @@ class KeycloakRealmConfigsORM(Base):
 
 
 # ─── Auth & Security ──────────────────────────────────────────────────────────
-
-@register("orm")
-class IPAllowlistsORM(Base):
-    __tablename__ = "IPAllowlists"
-    __table_args__ = (
-        Index("idx_ip_allowlists_tenant", "tenant_id"),
-        Index("idx_ip_allowlists_inserted_at_desc", text("inserted_at DESC")),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
-    cidr: Mapped[str] = mapped_column(String(50), nullable=False)
-    label: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
-    created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-    tenant: Mapped["TenantsORM"] = relationship(back_populates="ip_allowlists")
-
-
-@register("orm")
-class APIKeysORM(Base):
-    __tablename__ = "APIKeys"
-    __table_args__ = (
-        Index("idx_api_keys_tenant", "tenant_id"),
-        Index("idx_api_keys_key_hash", "key_hash"),
-        UniqueConstraint("tenant_id", "key_prefix", name="uq_api_keys_tenant_prefix"),
-        Index("idx_api_keys_inserted_at_desc", text("inserted_at DESC")),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
-    created_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    key_hash: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
-    key_prefix: Mapped[str] = mapped_column(String(20), nullable=False)
-    scope: Mapped[str] = mapped_column(String(30), default="read_only", nullable=False)
-    last_used_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    expires_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    revoked_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    rotated_from: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("APIKeys.id"), nullable=True)
-    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-    tenant: Mapped["TenantsORM"] = relationship(back_populates="api_keys")
-
-
-@register("orm")
-class SecretsVaultORM(Base):
-    __tablename__ = "SecretsVault"
-    __table_args__ = (
-        UniqueConstraint("tenant_id", "key_name", "version", name="uq_secrets_vault_tenant_name"),
-        Index("idx_secrets_vault_inserted_at_desc", text("inserted_at DESC")),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
-    key_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    key_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    algorithm: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    realm: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    openbao_path: Mapped[str] = mapped_column(Text, nullable=False)
-    version: Mapped[int] = mapped_column(SmallInteger, default=1, nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
-    rotation_due_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    last_rotated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-    tenant: Mapped["TenantsORM"] = relationship(back_populates="secrets")
-    rotations: Mapped[list["KeyRotationsORM"]] = relationship(back_populates="secret", cascade="all, delete-orphan")
-
-
-@register("orm")
-class KeyRotationsORM(Base):
-    __tablename__ = "KeyRotations"
-    __table_args__ = (
-        Index("idx_key_rotations_secret", "secret_id"),
-        Index("idx_key_rotations_inserted_at_desc", text("inserted_at DESC")),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    secret_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("SecretsVault.id"), nullable=False, index=True)
-    triggered_by: Mapped[str] = mapped_column(String(20), default="MANUAL", nullable=False)
-    actor_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    old_version: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
-    new_version: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
-    status: Mapped[str] = mapped_column(String(10), default="SUCCESS", nullable=False)
-    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    rotated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-    secret: Mapped["SecretsVaultORM"] = relationship(back_populates="rotations")
-
 
 @register("orm")
 class WebhooksORM(Base):

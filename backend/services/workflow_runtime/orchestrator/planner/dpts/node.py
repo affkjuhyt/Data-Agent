@@ -40,7 +40,3 @@ class Node:
     goal: str = ""
     path_steps: list[str] = field(default_factory=list)
     blocked_attempts: list[str] = field(default_factory=list)  # failed next-steps -> LLM negative constraint
-
-    @property
-    def is_root(self) -> bool:
-        return self.parent_id is None

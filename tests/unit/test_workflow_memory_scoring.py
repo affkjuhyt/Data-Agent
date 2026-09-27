@@ -1,7 +1,6 @@
 """Pure-function tests for backend/services/workflow_runtime/workflow_memory.py —
 no Docker, no network, no LLM. Covers the recency*duration scoring formula
-(doc §3.7/§IV) and the Schema Memory -> DDL rendering, both of which are
-plain Python with no I/O.
+(doc §3.7/§IV), which is plain Python with no I/O.
 """
 from __future__ import annotations
 
@@ -74,31 +73,3 @@ def test_workflow_score_missing_duration_means_no_penalty():
     assert score_no_duration == pytest.approx(score_zero_duration)
     assert score_no_duration > score_at_halflife
     assert score_at_halflife == pytest.approx(score_no_duration * 0.5)
-
-
-@pytest.mark.unit
-def test_format_schema_context_renders_nullable_and_description():
-    import workflow_memory as wm
-
-    tables = [{
-        "table_name": "orders",
-        "business_description": "Customer orders",
-        "column_metadata": [
-            {"name": "id", "type": "uuid", "is_nullable": False},
-            {"name": "note", "type": "text", "is_nullable": True, "description": "free-text note"},
-        ],
-    }]
-
-    ddl = wm.format_schema_context(tables)
-
-    assert "-- Customer orders" in ddl
-    assert "TABLE orders (" in ddl
-    assert "id uuid NOT NULL" in ddl
-    assert "note text NULL -- free-text note" in ddl
-
-
-@pytest.mark.unit
-def test_format_schema_context_empty_input_returns_empty_string():
-    import workflow_memory as wm
-
-    assert wm.format_schema_context([]) == ""

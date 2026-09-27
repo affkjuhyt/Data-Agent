@@ -308,6 +308,10 @@ async def responder_node(state: AgentState) -> dict[str, Any]:
                 "snippet": content[:200],
                 "url":     c.get("url") or None,
                 "doc_id":  c.get("doc_id") or None if ctype == "kb" else None,
+                # Trang chứa đoạn được trích, để bấm vào citation là mở đúng
+                # chỗ (#page=N) thay vì mở trang đầu của một bản tin 60 trang.
+                # None với tài liệu nạp trước khi toạ độ được lưu.
+                "page":    c.get("page") if ctype == "kb" else None,
                 # Surfaced on the citation so the UI can badge a stale answer
                 # without re-deriving anything the model said.
                 "provenance": (c.get("metadata") or {}).get("provenance") or None,

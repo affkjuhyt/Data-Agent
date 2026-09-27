@@ -41,10 +41,6 @@ class CandidatePool:
         self._open_members.discard(node_id)
         return node_id
 
-    def best_open(self) -> Optional[str]:
-        while self._open and self._open[0][2] not in self._open_members:
-            heapq.heappop(self._open)
-        return self._open[0][2] if self._open else None
 
     # pop terminal node : highest-confidence terminal candidate plan
     def pop_terminal(self, exclude: set[str] | None = None) -> Optional[str]:

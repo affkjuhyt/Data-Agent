@@ -13,7 +13,6 @@ from libs.basemodel.services_databaseconnector.postgres_model import (
     Language,
     SourceType,
     Tier,
-    Web,
 )
 from libs.database_connector.minio_connector import MinIOClient
 from libs.database_connector.postgres_connector import PostgresClient
@@ -37,18 +36,6 @@ class BronzeUploadRequest(BaseModel):
     ingestion_mode: str = "document"
     purpose: str = "production"
 
-
-class WebBronzeRequest(BaseModel):
-    tenant_id:    str
-    role_id:      str
-    name:         str
-    url:          str
-    web_name:     str = ""
-    language:     str = "english"
-    added_by:     str
-    abstract:     str = ""
-    knowledge_base_id: str | None = None
-    purpose: str = "production"
 
 log = logging.getLogger(__name__)
 
@@ -150,64 +137,5 @@ async def upload_to_bronze(
         "data_id": actual_data_id,
         "path": object_key,
         "name": name,
-        "layer": Tier.BRONZE.value,
-    }
-
-
-async def register_web_bronze(
-    postgres: PostgresClient,
-    name: str,
-    url: str,
-    web_name: str,
-    tenant_id: str,
-    role_id: str,
-    added_by: str,
-    abstract: str,
-    language: Language,
-    knowledge_base_id: str | None = None,
-    purpose: str = "production",
-) -> dict[str, Any]:
-    metadata_obj = Web(source_type=SourceType.WEB, url=url, web_name=web_name or name)
-
-    kb_insert = KBDataInsert(
-        tenant_id=tenant_id,
-        role_id=role_id,
-        knowledge_base_id=knowledge_base_id or None,
-        name=name,
-        extension="html",
-        language=language,
-        source_type=SourceType.WEB,
-        added_by=added_by,
-        abstract=abstract,
-        doc_metadata=metadata_obj,
-        current_tier=Tier.BRONZE,
-        purpose=purpose,
-        path=None,
-    )
-    async with postgres.get_client(tenant_id=tenant_id) as session:
-        data_res = await postgres.insert(kb_insert, session=session)
-        if data_res.code != 200:
-            raise RuntimeError(f"Postgres KBData insert failed: {data_res.error}")
-
-        assert data_res.data is not None
-        actual_data_id: str = data_res.data["data_id"]
-
-        hist_res = await postgres.insert(KBLifecycleHistoryInsert(
-            data_id=actual_data_id,
-            to_tier=Tier.BRONZE,
-            from_tier=None,
-            approved_by=added_by,
-            notes=f"Ingested web portal as bronze: {url}",
-            pipeline_metadata={"stage": "bronze", "source_type": SourceType.WEB.value, "url": url},
-        ), session=session)
-        if hist_res.code != 200:
-            raise RuntimeError(f"Postgres lifecycle history insert failed: {hist_res.error}")
-        await session.commit()
-
-    log.info("Bronze registered web data_id=%s url=%s tenant=%s", actual_data_id, url, tenant_id)
-    return {
-        "data_id": actual_data_id,
-        "name": name,
-        "url": url,
         "layer": Tier.BRONZE.value,
     }

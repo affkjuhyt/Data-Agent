@@ -231,7 +231,7 @@ class TestContainerPoolBreakerWiring:
         import pool
         p = self._pool(threshold=1, window_s=60, cooldown_s=0.05, half_open_trials=1)
         try:
-            pc = p.acquire()  # holds the pool's only container busy for the rest of this test
+            p.acquire()  # holds the pool's only container busy for the rest of this test
             p.breaker.record_abnormal()
             assert p.breaker.is_open is True
             time.sleep(0.15)  # cooldown elapses -> the next acquire() is admitted as a HALF_OPEN probe

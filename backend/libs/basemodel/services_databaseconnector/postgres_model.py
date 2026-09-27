@@ -132,13 +132,6 @@ class APIType(str, Enum):
     RETRIEVE = "RETRIEVE"
 
 
-
-class TransactionOp(str, Enum):
-    INSERT      = "insert"
-    SOFT_DELETE = "soft_delete"
-    DELETE      = "delete"
-
-
 class FilterOperator(str, Enum):
     EQ  = "eq"
     NE  = "ne"
@@ -255,7 +248,7 @@ class SourceConfigPayload(BaseModel):
     `http_file`/`rest_api`/`sdmx`/`rss`. `openbao_path`, when set, is a vault
     path (KV v2, e.g. `tenants/<tenant_id>/<key>`) resolved at run time by the
     web-crawler worker — never a raw secret, per the vault convention
-    (`SecretsVaultInsert.openbao_path`). `query_params`/`auth_style`/
+    (`secrets_vault.openbao_path`). `query_params`/`auth_style`/
     `auth_param_name` only apply to `rest_api`/`sdmx`. `recursive`/
     `max_depth`/`same_domain_only` only apply to `web_crawl`/
     `web_crawl_headless` — link-discovery crawl, see `KBSourceCrawlQueue`."""
@@ -710,110 +703,14 @@ class KBPublishAPIDelete(TenantModel):
 
 
 """
-Agent Platform — Insert Models
+Release Enums
 """
-
-
-"""
-Auth & Release Enums
-"""
-
-
-class ActorType(str, Enum):
-    USER = "USER"
-    AGENT = "AGENT"
-    SERVICE_ACCOUNT = "SERVICE_ACCOUNT"
-    SYSTEM = "SYSTEM"
-
-
-class AuditStatus(str, Enum):
-    SUCCESS = "SUCCESS"
-    WARNING = "WARNING"
-    FAILED = "FAILED"
-
-
-class PIIAccessStatus(str, Enum):
-    GRANTED = "GRANTED"
-    DENIED = "DENIED"
-    REDACTED = "REDACTED"
-
-
-class KeyType(str, Enum):
-    ENCRYPTION_KEY = "ENCRYPTION_KEY"
-    SIGNING_KEY = "SIGNING_KEY"
-    HMAC_KEY = "HMAC_KEY"
-    BEARER_TOKEN = "BEARER_TOKEN"
-    MCP_TOKEN = "MCP_TOKEN"
-    KB_API_KEY = "KB_API_KEY"
-
-
-class RotationTrigger(str, Enum):
-    SCHEDULED = "SCHEDULED"
-    MANUAL = "MANUAL"
-    PANIC = "PANIC"
-    REVEAL = "REVEAL"
-
-
-class RotationStatus(str, Enum):
-    SUCCESS = "SUCCESS"
-    FAILED = "FAILED"
-
-
-class PipelineTriggerType(str, Enum):
-    MANUAL = "MANUAL"
-    GIT_PUSH = "GIT_PUSH"
-    SCHEDULED = "SCHEDULED"
-
-
-class PipelineStatus(str, Enum):
-    PENDING = "PENDING"
-    RUNNING = "RUNNING"
-    BUILDING = "BUILDING"
-    SCANNING = "SCANNING"
-    AWAITING_APPROVAL = "AWAITING_APPROVAL"
-    DEPLOYING = "DEPLOYING"
-    SUCCESS = "SUCCESS"
-    FAILED = "FAILED"
-    ROLLED_BACK = "ROLLED_BACK"
-
-
-class StepStatus(str, Enum):
-    PENDING = "PENDING"
-    RUNNING = "RUNNING"
-    SUCCESS = "SUCCESS"
-    FAILED = "FAILED"
-    SKIPPED = "SKIPPED"
-
-
-class PackageStatus(str, Enum):
-    BUILDING = "BUILDING"
-    SCAN_PENDING = "SCAN_PENDING"
-    SCAN_FAILED = "SCAN_FAILED"
-    VALIDATED = "VALIDATED"
-    PROMOTING = "PROMOTING"
-    PROMOTED = "PROMOTED"
-    REJECTED = "REJECTED"
 
 
 class ReleaseStatus(str, Enum):
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
     ROLLED_BACK = "ROLLED_BACK"
-
-
-class RollbackStatus(str, Enum):
-    INITIATED = "INITIATED"
-    STEP1_DB = "STEP1_DB"
-    STEP2_KONG = "STEP2_KONG"
-    STEP3_DEPLOY = "STEP3_DEPLOY"
-    SUCCESS = "SUCCESS"
-    PARTIAL_ROLLBACK = "PARTIAL_ROLLBACK"
-    FAILED = "FAILED"
-
-
-class ApprovalDecision(str, Enum):
-    APPROVED = "APPROVED"
-    REJECTED = "REJECTED"
 
 
 """
@@ -832,59 +729,11 @@ class LLMProvidersInsert(InsertModel):
 
 
 @register("insert")
-class PlanInsert(BaseModel):
-    name: str
-    max_users: Optional[int] = None
-    max_envs: Optional[int] = None
-    max_secrets: Optional[int] = None
-    max_deploy_daily: Optional[int] = None
-    max_api_keys: Optional[int] = None
-    features: Optional[dict[str, Any]] = None
-
-
-@register("insert")
-class TenantInsert(BaseModel):
-    name: str
-    slug: str
-    plan_id: Optional[int] = None
-    data_residency: str = "Asia-SE1"
-    is_active: bool = True
-
-
-@register("insert")
 class KBConnectionsInsert(TenantInsertModel):
     name: str
     endpoint_url: str
     api_key_ref: Optional[str] = None
     status: str = "disconnected"
-    created_by: Optional[str] = None
-
-
-@register("insert")
-class RolePermissionInsert(BaseModel):
-    role_id: str
-    resource: str
-    action: str
-
-
-@register("insert")
-class KeycloakRealmConfigInsert(BaseModel):
-    tenant_id: str
-    realm_name: str
-    keycloak_base_url: str
-    client_id: str
-    client_secret_ref: str
-    jwks_url: str
-    token_endpoint: str
-    token_ttl_seconds: int = 900
-    is_active: bool = True
-
-
-@register("insert")
-class IpAllowlistInsert(TenantModel):
-    cidr: str
-    label: Optional[str] = None
-    is_active: bool = True
     created_by: Optional[str] = None
 
 
@@ -1037,148 +886,9 @@ class AgentTracesInsert(InsertModel):
     latency_ms: Optional[int] = None
 
 
-@register("insert")
-class ApiKeyInsert(TenantModel):
-    created_by: str
-    name: str
-    key_hash: str
-    key_prefix: str
-    scope: str = "read_only"
-    expires_at: Optional[datetime.datetime] = None
-    rotated_from: Optional[str] = None
-
-
-@register("insert")
-class SecretsVaultInsert(TenantModel):
-    key_name: str
-    key_type: KeyType
-    algorithm: Optional[str] = None
-    realm: Optional[str] = None
-    openbao_path: str
-    version: int = 1
-    is_active: bool = True
-    rotation_due_at: Optional[datetime.datetime] = None
-    last_rotated_at: Optional[datetime.datetime] = None
-    created_by: Optional[str] = None
-    model_config = ConfigDict(use_enum_values=True)
-
-
-@register("insert")
-class KeyRotationInsert(BaseModel):
-    secret_id: str
-    triggered_by: RotationTrigger = RotationTrigger.MANUAL
-    actor_id: Optional[str] = None
-    old_version: Optional[int] = None
-    new_version: Optional[int] = None
-    status: RotationStatus = RotationStatus.SUCCESS
-    error: Optional[str] = None
-    access_reason: Optional[str] = None
-    model_config = ConfigDict(use_enum_values=True)
-
-
-@register("insert")
-class WebhookInsert(TenantModel):
-    created_by: Optional[str] = None
-    url: str
-    secret_ref: Optional[str] = None
-    events: list[str] = []
-    is_active: bool = True
-    failure_count: int = 0
-
-
-@register("insert")
-class AuditLogInsert(TenantModel):
-    actor: str
-    actor_type: ActorType = ActorType.USER
-    action: str
-    resource_type: Optional[str] = None
-    resource_id: Optional[str] = None
-    status: AuditStatus = AuditStatus.SUCCESS
-    metadata: Optional[dict[str, Any]] = None
-    ip_address: Optional[str] = None
-    source_event_id: Optional[str] = None
-    model_config = ConfigDict(use_enum_values=True)
-
-
-@register("insert")
-class PiiAccessLogInsert(TenantModel):
-    accessor_id: Optional[str] = None
-    accessor_type: ActorType = ActorType.USER
-    data_subject: Optional[str] = None
-    field_accessed: Optional[str] = None
-    access_reason: Optional[str] = None
-    scrubbed: bool = False
-    status: PIIAccessStatus = PIIAccessStatus.GRANTED
-    model_config = ConfigDict(use_enum_values=True)
-
-
 """
 Release Insert Models
 """
-
-
-@register("insert")
-class PipelineInsert(BaseModel):
-    id: str
-    pipeline_name: Optional[str] = None
-    triggered_by: str
-    trigger_type: PipelineTriggerType = PipelineTriggerType.MANUAL
-    commit_sha: Optional[str] = None
-    branch: Optional[str] = None
-    package_version: Optional[str] = None
-    target_env: Optional[str] = None
-    status: PipelineStatus = PipelineStatus.PENDING
-    risk_score: Optional[int] = None
-    error_message: Optional[str] = None
-    model_config = ConfigDict(use_enum_values=True)
-
-
-@register("insert")
-class PipelineStepInsert(BaseModel):
-    pipeline_id: str
-    step_name: str
-    status: StepStatus = StepStatus.PENDING
-    started_at: Optional[datetime.datetime] = None
-    completed_at: Optional[datetime.datetime] = None
-    duration_ms: Optional[int] = None
-    output: Optional[dict[str, Any]] = None
-    error: Optional[str] = None
-    model_config = ConfigDict(use_enum_values=True)
-
-
-@register("insert")
-class ReleasePackageInsert(BaseModel):
-    id: str
-    pipeline_id: Optional[str] = None
-    artifact_paths: list[str] = []
-    validation_score: Optional[int] = None
-    status: PackageStatus = PackageStatus.BUILDING
-    created_by: str
-    environment_targets: list[str] = []
-    scan_result: Optional[dict[str, Any]] = None
-    promoted_to_s3_at: Optional[datetime.datetime] = None
-    model_config = ConfigDict(use_enum_values=True)
-
-
-@register("insert")
-class ReleaseApprovalInsert(BaseModel):
-    package_id: str
-    environment: str
-    decision: ApprovalDecision
-    approved_by: str
-    comment: Optional[str] = None
-    model_config = ConfigDict(use_enum_values=True)
-
-
-@register("insert")
-class EnvironmentConfigInsert(BaseModel):
-    environment: str
-    key: str
-    value: str
-    is_secret: bool = False
-    version: int = 1
-    is_active: bool = True
-    updated_by: Optional[str] = None
 
 
 @register("insert")
@@ -1194,40 +904,6 @@ class ReleaseHistoryInsert(BaseModel):
     model_config = ConfigDict(use_enum_values=True)
 
 
-@register("insert")
-class RollbackOperationInsert(BaseModel):
-    id: str
-    pipeline_id: Optional[str] = None
-    from_version: str
-    to_version: str
-    environment: str
-    triggered_by: str
-    reason: Optional[str] = None
-    status: RollbackStatus = RollbackStatus.INITIATED
-    current_step: int = 0
-    steps_result: list[dict[str, Any]] = []
-    started_at: Optional[datetime.datetime] = None
-    completed_at: Optional[datetime.datetime] = None
-    alert_sent: bool = False
-    model_config = ConfigDict(use_enum_values=True)
-
-
-@register("insert")
-class DriftEventInsert(BaseModel):
-    env_pair: str
-    drift_keys: list[str] = []
-    severity: str = "CRITICAL_DRIFT"
-    resolved: bool = False
-    resolved_by: Optional[str] = None
-    resolved_at: Optional[datetime.datetime] = None
-    resolution: Optional[str] = None
-
-
-"""
-Agent Platform — Delete Models
-"""
-
-
 """
 Auth Delete Models
 """
@@ -1239,22 +915,7 @@ class LLMProvidersDelete(BaseModel):
 
 
 @register("delete")
-class PlanDelete(BaseModel):
-    id: int
-
-
-@register("delete")
-class TenantDelete(BaseModel):
-    id: str
-
-
-@register("delete")
 class KBConnectionsDelete(TenantModel):
-    id: str
-
-
-@register("delete")
-class RolePermissionDelete(BaseModel):
     id: str
 
 
@@ -1264,22 +925,7 @@ class SystemPromptsDelete(TenantModel):
 
 
 @register("delete")
-class KeycloakRealmConfigDelete(BaseModel):
-    tenant_id: str
-
-
-@register("delete")
-class IpAllowlistDelete(TenantModel):
-    id: str
-
-
-@register("delete")
 class GuardrailsDelete(BaseModel):
-    id: str
-
-
-@register("delete")
-class ApiKeyDelete(TenantModel):
     id: str
 
 
@@ -1289,17 +935,7 @@ class ToolsDelete(BaseModel):
 
 
 @register("delete")
-class SecretsVaultDelete(TenantModel):
-    id: str
-
-
-@register("delete")
 class MCPDelete(TenantModel):
-    id: str
-
-
-@register("delete")
-class KeyRotationDelete(BaseModel):
     id: str
 
 
@@ -1309,27 +945,12 @@ class AgentsDelete(TenantModel):
 
 
 @register("delete")
-class WebhookDelete(TenantModel):
-    id: str
-
-
-@register("delete")
 class WorkflowsDelete(BaseModel):
     id: str
 
 
 @register("delete")
-class AuditLogDelete(TenantModel):
-    id: str
-
-
-@register("delete")
 class WorkflowVersionsDelete(BaseModel):
-    id: str
-
-
-@register("delete")
-class PiiAccessLogDelete(TenantModel):
     id: str
 
 
@@ -1339,22 +960,7 @@ Release Delete Models
 
 
 @register("delete")
-class PipelineDelete(BaseModel):
-    id: str
-
-
-@register("delete")
 class AgentVersionsDelete(BaseModel):
-    id: str
-
-
-@register("delete")
-class PipelineStepDelete(BaseModel):
-    id: int
-
-
-@register("delete")
-class ReleasePackageDelete(BaseModel):
     id: str
 
 
@@ -1382,23 +988,8 @@ class AgentMemoriesDelete(BaseModel):
 
 
 @register("delete")
-class ReleaseApprovalDelete(BaseModel):
-    id: int
-
-
-@register("delete")
-class EnvironmentConfigDelete(BaseModel):
-    id: int
-
-
-@register("delete")
 class ReleaseHistoryDelete(BaseModel):
     id: int
-
-
-@register("delete")
-class RollbackOperationDelete(BaseModel):
-    id: str
 
 
 @register("delete")
@@ -1419,22 +1010,6 @@ class MessagesDelete(BaseModel):
 @register("delete")
 class AgentTracesDelete(BaseModel):
     id: str
-
-
-@register("delete")
-class DriftEventDelete(BaseModel):
-    id: int
-
-
-"""
-Transaction
-"""
-
-
-class TransactionJobResult(BaseModel):
-    method: TransactionOp
-    table: str
-    success: bool
 
 
 """

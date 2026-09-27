@@ -1,16 +1,9 @@
-from typing import Any
-import re
-import uuid
 import asyncio
 
 from neo4j import AsyncGraphDatabase
 from neo4j._async.driver import AsyncDriver
 import logging
-from libs.basemodel.services_databaseconnector.shared_model import ResponseModel, RetryConfig, HealthCheckLoopConfig, PoolConfig
-from libs.basemodel.services_databaseconnector.neo4j_model import (
-    AddNodeRequest, AddRelationshipRequest, GraphExpandRequest,
-    RelationshipDirection
-)
+from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig, PoolConfig
 
 log = logging.getLogger(__name__)
 
@@ -120,109 +113,3 @@ class Neo4jClient:
             max_connection_pool_size=self._pool.max_connections,
         )
         return self._client
-
-
-def _validate_node_name(value: str) -> str:
-    if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', value):
-        raise ValueError(f"Invalid identifier '{value}': only letters, digits and underscores allowed")
-    return value
-
-
-async def add_node(driver: AsyncDriver, item: AddNodeRequest) -> ResponseModel[Any]:
-    try:
-        label = _validate_node_name(item.node.label)
-    except ValueError as e:
-        return ResponseModel(code=400, error=str(e))
-
-    node_id = str(uuid.uuid4())
-    props = {**item.node.properties.model_dump(mode="json"), "id": node_id}
-    if item.node.embedding:
-        props["embedding"] = item.node.embedding
-
-    async with driver.session() as session:
-        result = await session.run(
-            f"CREATE (n:`{label}` $props) RETURN n.id AS id",
-            props=props,
-        )
-        record = await result.single()
-    return ResponseModel(code=200, data={"id": record["id"]})
-
-
-async def add_relationship(driver: AsyncDriver, item: AddRelationshipRequest) -> ResponseModel[Any]:
-    props = {**(item.relationship.properties or {}), "type": item.relationship.type}
-    direction = item.relationship.direction
-
-    if direction == RelationshipDirection.OUTGOING.value:
-        pattern = "(a)-[r:RELATED_TO $props]->(b)"
-    elif direction == RelationshipDirection.INCOMING.value:
-        pattern = "(a)<-[r:RELATED_TO $props]-(b)"
-    else:
-        pattern = "(a)-[r:RELATED_TO $props]-(b)"
-
-    async with driver.session() as session:
-        result = await session.run(
-            f"""
-            MATCH (a {{id: $from_id}}), (b {{id: $to_id}})
-            CREATE {pattern}
-            RETURN r.type AS type
-            """,
-            from_id=item.from_node_id,
-            to_id=item.to_node_id,
-            props=props,
-        )
-        record = await result.single()
-
-    if record is None:
-        return ResponseModel(code=404, error="One or both nodes not found")
-    return ResponseModel(code=200, data={"type": record["type"]})
-
-
-_WRITE_KEYWORDS = re.compile(
-    r'\b(DELETE|DETACH|CREATE|MERGE|SET|REMOVE|DROP|LOAD\s+CSV|CALL\s+apoc\.)\b',
-    re.IGNORECASE,
-)
-
-
-async def run_query(driver: AsyncDriver, cypher: str, params: dict[str, Any] | None = None) -> ResponseModel[Any]:
-    normalized = cypher.strip()
-    if not normalized.upper().startswith("MATCH"):
-        return ResponseModel(code=400, error="Only MATCH queries are permitted")
-    match = _WRITE_KEYWORDS.search(normalized)
-    if match:
-        return ResponseModel(code=400, error=f"Forbidden keyword in query: {match.group().upper()}")
-    async with driver.session() as session:
-        result = await session.run(normalized, **(params or {}))
-        data = await result.data()
-    return ResponseModel(code=200, data=data)
-
-
-async def graph_expand(driver: AsyncDriver, item: GraphExpandRequest) -> ResponseModel[Any]:
-    similarity_expr = (
-        """
-        CASE WHEN neighbour.embedding IS NOT NULL
-             THEN vector.similarity.cosine(neighbour.embedding, $query_vector)
-             ELSE 0.0 END
-        """
-        if item.query_vector
-        else "0.0"
-    )
-
-    query = f"""
-        MATCH (start {{id: $start_id}})-[*1..{item.max_hops}]-(neighbour)
-        WHERE neighbour.id <> $start_id
-        WITH DISTINCT neighbour, {similarity_expr} AS similarity
-        ORDER BY similarity DESC
-        LIMIT $max_neighbours
-        RETURN neighbour{{.*}} AS node, similarity
-    """
-
-    async with driver.session() as session:
-        result = await session.run(
-            query,
-            start_id=item.start_node_id,
-            max_neighbours=item.max_neighbours,
-            query_vector=item.query_vector or [],
-        )
-        records = await result.data()
-
-    return ResponseModel(code=200, data=records)

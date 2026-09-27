@@ -1,0 +1,66 @@
+@startuml 25-uf-analyst
+title Luồng giao diện — Chuyên viên phân tích dầu/vàng (bước 24–27 của kịch bản 08) — Hiện trạng + đích V2 (tô màu theo mức đã có)
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có (chạy hôm nay) |
+  |<#E6F0FF> | Có một phần / cần mở rộng |
+  |<#FFF4D6> | Chưa có (đích V2) |
+endlegend
+
+|Hệ thống|
+start
+#FFF4D6:Replay release EIA 23/09/2026: Brent 130,80 → 114,89 (−12,16 %)
+→ detector: luật → MAD → significance → investigation
+EXPLAIN_PRICE_MOVEMENT không cần ai hỏi (bước 17–22);
+#FFF4D6:**Một** alert gom Brent · WTI · spread cùng sự kiện
+(dedup · cooldown) → alert.raised → hộp thư SSE (bước 23);
+
+|Chuyên viên|
+split
+  #FFF4D6:Nhận thông báo → mở **Alert** (bước 24):
+  luật đã kích hoạt · TaskGraphView của investigation ·
+  evidence · VerifierBadge;
+  #FFF4D6:Bấm "Hỏi tiếp" → mở Ask kèm ngữ cảnh
+  (BRENT_SPOT · cửa sổ · alert_id);
+split again
+  #EEF7EE:Vào thẳng **Hỏi dữ liệu** (AskDataPage);
+end split
+#E6F0FF:Hỏi "So với 3 lần gần nhất?" (bước 25)
+(composer + stream có; ngữ cảnh alert chưa có);
+if (Tham số mơ hồ? vd ngưỡng giảm) then (có)
+  #EEF7EE:ClarificationCard: chọn phương án hoặc gõ thêm;
+else (không: lấy 5 %/5 phiên từ alert)
+endif
+
+|Hệ thống|
+#FFF4D6:Resolution → planner chọn COMPARE_EPISODES → task graph:
+detect_drop_episodes · event_window ±3 ngày · tìm event/claim ·
+verify (bước 26); TaskGraphView cập nhật qua ~__progress;
+if (Verifier: số · độ tươi · bằng chứng đủ?) then (đủ)
+else (thiếu sau 2 lần replan)
+  #FFF4D6:RefusalCard INSUFFICIENT_EVIDENCE
+  (nói rõ đợt nào thiếu tài liệu);
+endif
+
+|Chuyên viên|
+#E6F0FF:Bảng 3 đợt (DataGrid có): 22/09/2026 −12,16 % ·
+25/08/2026 −7,40 % · 28/07/2026 −12,73 % (bước 27);
+#E6F0FF:Chart (ChartRenderer có; marker đợt / release chưa);
+#E6F0FF:Evidence: event/claim có available_at trong cửa sổ,
+trích dẫn mở đúng trang (hôm nay: mở file, chưa #page=N);
+#FFF4D6:Lineage: RBRTEd.xls → artifact sha256 → release 23/09 →
+observation → detect_drop_episodes; VerifierBadge;
+if (Thấy số đáng ngờ?) then (có)
+  #FFF4D6:Mở Series Explorer tại điểm đó (as-of, provenance)
+  → báo sai → ReviewCase;
+else (không)
+endif
+split
+  #EEF7EE:Xuất Excel + sheet Nguồn;
+split again
+  #EEF7EE:Lưu câu hỏi (localStorage);
+end split
+stop
+@enduml

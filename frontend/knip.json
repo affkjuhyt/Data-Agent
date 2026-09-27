@@ -4,13 +4,6 @@
     "scripts/**"
   ],
   "ignoreDependencies": [
-    "@typescript-eslint/eslint-plugin",
-    "@typescript-eslint/parser",
-    "eslint",
-    "eslint-plugin-react",
-    "eslint-plugin-react-hooks",
-    "prettier",
-    "tsx",
     "vite"
   ]
 }

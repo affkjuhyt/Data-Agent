@@ -96,5 +96,8 @@ e2e:  ## local end-to-end stack + suite (docker compose)
 deploy:  ## deploy to the k8s-local inventory (Ansible is the only deploy path)
 	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml
 
-diagrams:  ## render docs/ankt PlantUML diagrams to SVG (version pinned; see docs/ankt/README.md)
-	docker run --rm --user "$$(id -u):$$(id -g)" -v "$(PWD)/docs/ankt/diagrams:/data" -w /data $(PLANTUML_IMAGE) -tsvg -charset UTF-8 '*.puml'
+# HOME=/tmp + user.home=/tmp: the non-root uid has no passwd entry, so Java's user.home
+# is "?" and it writes its font cache into the mounted diagrams dir as `?/.java/`, which
+# then gets committed. HOME alone does not change user.home; the -D flag does.
+diagrams:  ## render docs/v2/diagrams/*.puml to SVG (PlantUML pinned; see docs/v2/diagrams/README.md)
+	docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp -e JAVA_TOOL_OPTIONS=-Duser.home=/tmp -v "$(PWD)/docs/v2/diagrams:/data" -w /data $(PLANTUML_IMAGE) -tsvg -charset UTF-8 '*.puml'
