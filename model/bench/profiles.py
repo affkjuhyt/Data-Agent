@@ -54,6 +54,19 @@ def _cases(name: str) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def _cases_with_contexts() -> list[dict[str, Any]]:
+    """Grounding cases that carry their source passages.
+
+    The `live-kb-lookup` cases (gnd-020..022) have none: their context is
+    whatever the deployed agent retrieves, so there is nothing to put in a
+    prompt offline. Taking them anyway raised KeyError for every profile.
+    """
+    corpus = [case for case in _cases("grounding") if case.get("contexts")]
+    if not corpus:
+        raise ProfileError("no grounding case carries contexts to build prompts from")
+    return corpus
+
+
 # The caps handlers/data.py enforces on the schema block it pastes into the
 # text-to-SQL prompt, and the caps responder.py enforces on the retrieved
 # context. Benchmarking at the cap is deliberate: the cap is the latency budget
@@ -188,7 +201,7 @@ def _judge_turns() -> tuple[str, ...]:
     near-misses together, so a variant built from only the gold context would
     be an easier and shorter prompt than the real one.
     """
-    corpus = _cases("grounding")
+    corpus = _cases_with_contexts()
     passages = [c for case in corpus for c in case["contexts"]]
     turns = []
     for index in range(VARIANTS):
@@ -225,7 +238,7 @@ def _responder_turns() -> tuple[str, ...]:
     Each variant starts its window at a different passage, so no two requests
     in a sweep send the same context.
     """
-    corpus = _cases("grounding")
+    corpus = _cases_with_contexts()
     passages = [c for case in corpus for c in case["contexts"]]
     per_chunk = CONTEXT_MAX_CHARS // CONTEXT_MAX_CHUNKS
     turns = []
