@@ -1,0 +1,84 @@
+---
+# Decides what this run rebuilds and which Jobs it reruns, from changed_paths
+# and full_deploy alone — no cluster, no Docker. That is what lets it run on
+# its own against a sample diff (deploy/ansible/README.md → Checking a plan).
+# The decisions themselves are in filter_plugins/deploy_plan.py.
+
+- name: List every image directory in the repo
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      git ls-files | grep -E '(^|/)Dockerfile$' | while read -r f; do
+        [ -f "$f" ] && dirname "$f"
+      done | sort -u
+    chdir: "{{ project_dir }}"
+    executable: /bin/bash
+  register: all_image_dirs
+  changed_when: false
+
+- name: List the image names the manifests ask for
+  ansible.builtin.shell:
+    cmd: |
+      set -euo pipefail
+      grep -rhoE '{{ image_prefix }}/[A-Za-z0-9._-]+:' {{ k8s_manifests }} | cut -d/ -f2 | tr -d ':' | sort -u
+    executable: /bin/bash
+  register: manifest_images
+  changed_when: false
+
+- name: Read what each image is built from
+  ansible.builtin.set_fact:
+    image_catalog: >-
+      {{ image_catalog | default([]) + [{'dir': item, 'name': img_name, 'context': img_context,
+                                         'dockerfile': img_dockerfile, 'inputs': img_inputs}] }}
+  loop: "{{ all_image_dirs.stdout_lines }}"
+  loop_control:
+    label: "{{ img_name }}"
+  vars:
+    base: "{{ item | basename }}"
+    img_name: >-
+      {{ image_name_overrides[item]
+         | default(base if base in manifest_images.stdout_lines else base | replace('_', '-')) }}
+    img_context: "{{ item if item in image_self_context else '.' }}"
+    img_dockerfile: "{{ image_dockerfile_overrides[item] | default('Dockerfile') }}"
+    img_inputs: >-
+      {{ lookup('ansible.builtin.file', project_dir ~ '/' ~ item ~ '/' ~ img_dockerfile)
+         | dockerfile_inputs(item, img_context, img_dockerfile) }}
+
+- name: Select the images whose inputs changed
+  ansible.builtin.set_fact:
+    images: "{{ image_catalog | images_to_build(changed_paths, full_deploy | bool) }}"
+
+- name: Narrow the build list to images_only
+  ansible.builtin.set_fact:
+    images: >-
+      {{ images
+         | selectattr('name', 'in', images_only.split(',') | map('trim') | reject('equalto', '') | list)
+         | list }}
+  when: (images_only | length) > 0
+
+- name: Check images_only matched something
+  ansible.builtin.assert:
+    that: images | length > 0
+    fail_msg: >-
+      images_only={{ images_only }} matched nothing that needs building.
+      Known: {{ image_catalog | map(attribute='name') | join(', ') }}
+  when: (images_only | length) > 0
+
+- name: Choose the Jobs to rerun
+  ansible.builtin.set_fact:
+    jobs_rerun: >-
+      {{ (migration_jobs + job_workloads)
+         | jobs_to_rerun(job_inputs, changed_paths, images | map(attribute='name') | list,
+                         'deploy/k8s/' ~ k8s_env ~ '/job',
+                         (full_deploy | bool) or (jobs_force | bool)) }}
+
+- name: Report the plan
+  ansible.builtin.debug:
+    msg:
+      building: >-
+        {{ images | map(attribute='name')
+           | zip(images | map(attribute='because') | map('first')) | map('join', '  <- ') | list }}
+      jobs: >-
+        {{ jobs_rerun | map(attribute='name')
+           | zip(jobs_rerun | map(attribute='because') | map('join', ', ')) | map('join', '  <- ') | list }}
+      jobs_run: "{{ (apply_jobs | bool) | ternary('yes', 'no (apply_jobs=false)') }}"

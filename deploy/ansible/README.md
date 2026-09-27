@@ -40,21 +40,38 @@ overridden by the inventory's `group_vars/all/`.
 | 1 | **Preflight** (`k8s_preflight`): kubectl, API server, nodes Ready, required files, reports whether RuntimeClass `gvisor` exists | always |
 | 2 | **Git sync**: `git switch <git_branch>` then `git pull <git_remote> <git_branch>`. On failure it aborts the merge, writes `~/.dataagent-deploy/<env>/last-pull-failure.log`, and stops before touching anything | `git_sync_enabled` |
 | 3 | **Diff** against the checkpoint `~/.dataagent-deploy/<env>/last_deployed_sha.txt`. No checkpoint, or a sha no longer in history, means a full deploy | always |
-| 4 | **Build**: every changed directory, or a parent of one, that holds a `Dockerfile`. A change under `shared_paths` (`backend/libs`, `pyproject.toml`, `uv.lock`) rebuilds **every** image. Tagged `dataagent/<name>:latest`, re-tagged and pushed to `image_registry` | something to build |
+| 4 | **Plan** (`k8s_plan`): an image is rebuilt when a changed path falls under one of its inputs — its Dockerfile, every `COPY`/`ADD` source resolved against its build context, and that context's `.dockerignore`. So a `backend/libs` change rebuilds the images that copy `backend/libs` (not keycloak, kong, setup, frontend, the sandbox images, model_service or llm_exporter), and an edit anywhere in `backend/services/` also rebuilds `auth_api`, `kb-backend`, `workflow_runtime` and `migrate`, which copy all of it. Also picks the Jobs step 10 would rerun. Prints both with the path that triggered each | always |
+| 4b | **Build** (`k8s_build`): `build_parallelism` images at a time (default 6), one log per image in `build_log_dir`; a failure prints the tail of that image's log. Tagged `dataagent/<name>:latest`, re-tagged for `image_registry` and pushed **only if the registry does not already serve that digest** | something to build |
 | 5 | **Secrets**: render `secrets.env` from the vault (every run), then reapply every Secret and `kafka-jaas` | reapply only when a path in `secret_paths` changed |
 | 6 | **Base manifests**: namespaces, RBAC, NetworkPolicies, `configmap.yaml` (every run); rerun `create-configmaps.sh` | file-backed ConfigMaps only when a path in `config_paths` changed |
 | 7 | **Database tier**: apply `database/`, wait for every store and pgbouncer | `apply_databases` |
 | 8 | **OpenBao** (`k8s_openbao`): unseal, KV v2 + transit, read policy, demo warehouse password (if `seed_demo`), AppRole. A secret-id is minted only on the first run or with `openbao_rotate_approle` | `apply_databases` |
 | 9 | **Service tier**: apply `service/`, wait for Keycloak and Kong | `apply_services` |
-| 10 | **Jobs**: delete, run `kong-migration` + `migrate`, then `db-init`, `minio-init`, `kafka-topics`, `seed` | `apply_jobs` **and** one of: full deploy, the `migrate` image was rebuilt, a file under `deploy/k8s/<env>/job/` changed |
-| 11 | **Restart** every Deployment/StatefulSet running a rebuilt image | an image was built |
-| 12 | **Restart the service tier** (`rollout restart` every Deployment in `dataagent-service`) | `apply_services` and Secrets or ConfigMaps were reapplied |
+| 10 | **Jobs**: delete and rerun, migrations (`kong-migration`, `migrate`) first, then the init Jobs (`db-init`, `minio-init`, `kafka-topics`, `seed`) — **only the ones whose inputs changed**: the Job's own manifest or an entry in `job_inputs` (e.g. `migrate` ← `backend/alembic`, `seed` ← the seed files, `kong-migration` ← the kong image, `db-init` ← its SQL and a `migrate` rerun). Each wait ends at `Complete` **or** `Failed` (polled every `job_poll` s), so a failing Job shows its logs within seconds instead of after `wait_job` | `apply_jobs` **and** (a Job's inputs changed, a full deploy, or `jobs_force`) |
+| 11 | **Restart** every Deployment/StatefulSet running a rebuilt image **whose running pods are on a different digest** — a rebuild that came out identical restarts nothing | an image was built |
+| 12 | **Restart for config**: the service tier's Secrets and ConfigMaps are hashed before step 5 and after step 9; only the Deployments that read one whose content changed (`envFrom`, `env.valueFrom`, volumes) are restarted | `apply_services` and some content changed |
+| 12b | **Wait** for the service tier and every restarted workload, all at once (each up to `wait_rollout`); reports, never fails | `apply_services` or something restarted |
 | 13 | **Gateway setup** (`k8s_setup`): rerun the `setup` Job — Kong services/routes/plugins/CORS, the JWT issuer, Keycloak audience mappers, dev user passwords — and apply the backup CronJob | `apply_setup` |
 | 14 | **Verify** (`k8s_verify`), then write the checkpoint | always; the checkpoint only advances if every step above succeeded |
 
 Why restarts are explicit: a rebuilt image keeps the same `:latest` reference,
 so `kubectl apply` sees an identical spec and changes nothing; and a Secret or
 ConfigMap is only read when a pod starts.
+
+Why the push and the restart compare digests rather than "was it rebuilt":
+images are built with `--provenance=false --sbom=false` (`image_build_flags`).
+With the default provenance attestation every build — even a fully cached one —
+got a new digest, so every rebuild was pushed and restarted everything running
+it. Now identical inputs give an identical digest; the registry's digest decides
+the push and the running pods' digest decides the restart, which also means a
+run that failed after pushing still restarts on the retry. The first run after
+this change restarts every workload once (the digests move from the attested
+index to the plain manifest).
+
+Every Python Dockerfile installs with `RUN --mount=type=cache,target=/root/.cache/pip`
+(and so without `--no-cache-dir`/`PIP_NO_CACHE_DIR`): a changed `requirements.txt`
+re-installs from BuildKit's cache instead of downloading torch and docling again.
+The cache is not part of the image.
 
 When `image_registry` is set, manifests are piped through a `sed` that prefixes
 `image: dataagent/<name>:latest` with the registry and turns
@@ -76,6 +93,8 @@ The only inventory. It deploys the single-node dev server from
 | `apply_databases` / `apply_services` | `true` | |
 | `apply_jobs` / `apply_setup` | `false` | Jobs rerun migrations, reset role passwords and rebuild demo tables; setup rewrites Kong config. Opt in per run with `-e` |
 | `seed_demo` | `true` | the `seed` Job loads demo data (see RUNBOOK) |
+| `wait_rollout` | `180` | the rollout wait only reports; on one node a longer wait just holds the run behind a stuck pod |
+| `build_log_dir` | `/data/logs/dataagent-deploy/k8s-local` | per-image build/push logs, on the `/data` disk |
 | `public_api_url`, `keycloak_public_url`, `langfuse_public_url` | `http://10.10.55.101:30100`, `:30110`, `:30420` | the URLs **browsers** use — see below |
 
 The three public URLs must be reachable from a user's browser. They end up in
@@ -90,10 +109,12 @@ outside the server fail with "Connecting to Keycloak…" and
 
 | Flag | Effect |
 | --- | --- |
-| `apply_jobs=true` | allow step 10. It still needs a trigger (full deploy, `migrate` rebuilt, or a changed Job file) |
+| `apply_jobs=true` | allow step 10. Reruns only the Jobs whose inputs changed (see `job_inputs` in the role defaults) |
+| `jobs_force=true` | with `apply_jobs=true`, rerun all six Jobs whatever changed — e.g. after a vault change to the app-role passwords that `db-init` sets |
+| `build_parallelism=N` | how many images build (and push) at once; default 6 |
 | `apply_setup=true` | run step 13. Needed after changing the public URLs, `kong-setup.sh` or the Keycloak mappers |
 | `images_only=kb-backend,frontend` | narrow the build list to these image names |
-| `deploy_full=true` | treat everything as changed: rebuild **all** images, reapply all Secrets and ConfigMaps, rerun Jobs (with `apply_jobs`). Needs tens of GB of free disk — check `df -h /` first |
+| `deploy_full=true` | treat everything as changed: rebuild **all** images, reapply all Secrets and ConfigMaps, rerun Jobs (with `apply_jobs`). Images whose digest comes out unchanged are neither pushed nor restarted. Needs tens of GB of free disk — check `df -h /data` first |
 | `seed_demo=false` | run the `seed` Job without demo data |
 | `openbao_rotate_approle=true` | mint a new AppRole secret-id and reapply the Secrets that carry it; restart `workflow-runtime` and `auth-api` afterwards |
 | `openbao_allow_reset=true` | allow re-initialising OpenBao when the keys file is missing. **Destroys every secret in the vault** — throwaway clusters only |
@@ -142,6 +163,8 @@ None of this is in git. Losing the first three means losing the stack's secrets.
 | `deploy/k8s/dev/secrets.env` | rendered Secrets source | regenerated on every run |
 | `~/.dataagent-deploy/k8s-local/last_deployed_sha.txt` | checkpoint | next run is a full deploy |
 | `~/.dataagent-deploy/k8s-local/last-pull-failure.log` | last failed git sync | — |
+| `/data/logs/dataagent-deploy/k8s-local/<image>.log`, `<image>.push.log`, `results.txt` | the last build/push of each image (`build_log_dir`) | — |
+| `/data/logs/ansible-deploy.log` | every run's output with timestamps (`log_path` in `ansible.cfg`) | — |
 
 The checkpoint lives in `$HOME`, keyed by `env_name` — **not** by checkout. Two
 checkouts using this inventory share it, and share the cluster.
@@ -153,12 +176,37 @@ Commit, then run. If you cannot commit yet:
 | Option | Cost |
 | --- | --- |
 | `-e deploy_full=true` | rebuilds every image — slow and disk-heavy |
-| `-e secrets_changed=true -e config_changed=true` | reapplies every Secret and file-backed ConfigMap, restarts the service tier; builds nothing |
+| `-e secrets_changed=true -e config_changed=true` | reapplies every Secret and file-backed ConfigMap, restarts the Deployments whose Secret/ConfigMap content changed; builds nothing |
 | add `-e '{"changed_paths": ["deploy/k8s/dev/job/seed.yaml"]}'` (with `apply_jobs=true`) | also lets the Jobs rerun |
 
 These overrides work because `-e` outranks the diff result. The checkpoint
 still advances to `HEAD`, so the next run will not see those files as changed
 either: commit them before relying on the pipeline again.
+
+## Checking a plan
+
+[`plan.yml`](plan.yml) runs only the decision step: which images a diff would
+rebuild and which Jobs it would rerun, each with the path that triggered it. It
+builds nothing and never talks to the cluster.
+
+```bash
+ansible-playbook plan.yml                                    # checkpoint..HEAD, as deploy.yml would
+ansible-playbook plan.yml -e plan_from=HEAD~3
+ansible-playbook plan.yml -e '{"changed_paths": ["backend/alembic/versions/x.py"]}'
+```
+
+The logic lives in [`filter_plugins/deploy_plan.py`](filter_plugins/deploy_plan.py)
+and is unit-tested in `tests/unit/test_deploy_plan.py`.
+
+## Logs and timings
+
+`ansible.cfg` writes every run, timestamped, to `/data/logs/ansible-deploy.log`
+(Ansible warns and skips logging if `/data/logs` is missing) and enables the
+`ansible.posix.profile_tasks` callback, which prints how long each task took.
+That callback is not part of ansible-core; install it once per user with
+`ansible-galaxy collection install -r requirements.yml` (goes to
+`~/.ansible/collections`). Until then Ansible prints "Skipping callback plugin
+'ansible.posix.profile_tasks'" and runs as before.
 
 ## Moving the deploy to another checkout
 
@@ -171,7 +219,7 @@ Done once, when the stack moved from `~/Data-Agent-k8s` to `~/Data-Agent`:
    `deploy/k8s/dev/{secrets.env,.openbao-keys.json,.openbao-env.yml}` — with
    `cp -p`, then check that `git status --ignored` lists each as ignored (`!!`).
 3. Run `ansible-playbook deploy.yml` with no overrides. Expect
-   `changed: 0 file(s)` and `building: nothing` when both checkouts are at the
+   `changed: 0 file(s)` and `building: []` when both checkouts are at the
    same commit. Compare the freshly rendered `deploy/k8s/dev/secrets.env` with
    the old one (`cmp`); they must be identical.
 4. Stop deploying from the old checkout.
@@ -182,7 +230,9 @@ Done once, when the stack moved from `~/Data-Agent-k8s` to `~/Data-Agent`:
 | --- | --- |
 | A run failed — were those changes skipped? | No. The checkpoint only advances on success; fix the cause and rerun |
 | Run succeeded but nothing changed in the cluster | The change isn't committed — see [Uncommitted changes](#uncommitted-changes) |
-| `Wait for the init Jobs` times out | `kubectl -n dataagent-service get pods -l job-name=<job>`; `ImagePullBackOff` means the image is gone (e.g. `minio/mc`, now replaced by the pinned MinIO server image) |
+| `Wait for the … Jobs` fails | The Job reached `Failed` (after `backoffLimit: 2` retries); its logs are printed right after. If it times out instead, the pod never ran: `kubectl -n dataagent-service get pods -l job-name=<job>`; `ImagePullBackOff` means the image is gone (e.g. `minio/mc`, now replaced by the pinned MinIO server image) |
+| `Build the images` fails | The task prints the last 40 lines of each failed image's log; the full log is `<build_log_dir>/<image>.log`. The other images finished building, so the rerun is mostly cache hits |
+| A Job did not rerun though you expected it to | It reruns only when its inputs changed (`ansible-playbook plan.yml` shows why). Force all with `-e apply_jobs=true -e jobs_force=true` |
 | `field is immutable` on a Job | A Job's pod template can't change; the pipeline deletes Jobs before applying. By hand: `kubectl -n dataagent-service delete job <name>` first |
 | `Pull failed` | Read `~/.dataagent-deploy/k8s-local/last-pull-failure.log`, reconcile the tree by hand, rerun |
 | Everything rebuilt unexpectedly | The checkpoint sha isn't in this checkout's history (new checkout, force-push). Expected once |

@@ -55,10 +55,19 @@ image_name_overrides:
 image_dockerfile_overrides:
   frontend: Dockerfile.dev
 
-shared_paths:
-  - backend/libs
-  - pyproject.toml
-  - uv.lock
+# What an image is rebuilt for is read from its Dockerfile (k8s_plan): the
+# Dockerfile itself, every COPY/ADD source resolved against its build context,
+# and that context's .dockerignore. There is no "shared" list any more — a
+# backend/libs change rebuilds the images that COPY backend/libs, not keycloak.
+build_parallelism: 6
+build_log_dir: "{{ deploy_state_dir }}/build-logs"
+# Without these BuildKit attaches a provenance attestation stamped with the
+# build time, so a fully cached rebuild still gets a new digest, gets pushed,
+# and restarts every pod running it. Off, identical inputs give an identical
+# digest and the push/restart steps can skip it.
+image_build_flags: "--provenance=false --sbom=false"
+# Where deploy.yml asks which digest the registry already serves for a tag.
+image_registry_url: "http://{{ image_registry }}"
 
 vault_file: "{{ inventory_dir }}/.secrets/vault.yml"
 secrets_env_file: "{{ k8s_dir }}/secrets.env"
@@ -77,6 +86,9 @@ config_paths:
   - deploy/docker/kong
   - deploy/docker/litellm
   - deploy/docker/monitoring
+  # The seed files only feed the seed-sql / seed-mongo ConfigMaps, which only
+  # the seed Job mounts. They stay here so those ConfigMaps are refreshed; no
+  # Deployment reads them, so changing one no longer restarts anything.
   - backend/services/workflow_runtime/migrations/seed.sql
   - tests/e2e/seed.sql
   - tests/e2e/seed-governance.sql
@@ -110,12 +122,32 @@ service_workloads:
 
 migration_jobs: [kong-migration, migrate]
 job_workloads: [db-init, minio-init, kafka-topics, seed]
+# With apply_jobs, a Job reruns only when its own manifest
+# (deploy/k8s/<env>/job/<name>.yaml) or one of these changed: a path prefix,
+# `image:<name>` (that image is being rebuilt) or `job:<name>` (that Job
+# reruns). A full deploy, or jobs_force=true, reruns all of them.
+job_inputs:
+  kong-migration: ["image:kong"]
+  # Not image:migrate: that image COPYs all of backend/, so it is rebuilt for
+  # any backend change, while only a new revision needs the Job.
+  migrate: [backend/alembic]
+  # grant-roles.sql grants on ALL TABLES, so tables a migration adds need it again.
+  db-init: [deploy/docker/sql/grant-roles.sql, deploy/docker/sql/kb-seed.sql, "job:migrate"]
+  minio-init: []
+  kafka-topics: []
+  seed:
+    - backend/services/workflow_runtime/migrations/seed.sql
+    - tests/e2e/seed.sql
+    - tests/e2e/seed-governance.sql
+    - tests/e2e/seed-flow.js
+jobs_force: false
 seed_demo: false
 seed_demo_tenant: a0000000-0000-0000-0000-000000000001
 
 wait_namespace: 60
 wait_statefulset: 600
 wait_job: 900
+job_poll: 5
 wait_rollout: 600
 
 openbao_allow_reset: false

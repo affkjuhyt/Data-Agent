@@ -1,0 +1,5 @@
+---
+# Only for ansible.cfg's profile_tasks callback (per-task timings). deploy.yml
+# itself uses ansible.builtin only.
+collections:
+  - name: ansible.posix
