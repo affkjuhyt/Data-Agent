@@ -1,0 +1,14 @@
+# Đối chiếu đa nguồn đo ngày 27/09/2026 từ máy chủ 10.10.55.101. Dùng cho golden case UC06/UC13 và luật conflict.
+# classification theo docs/v2/08-use-cases.md UC06 (NO_CONFLICT, REVISION, TIME_DIFFERENCE, DEFINITION_DIFFERENCE, UNIT_DIFFERENCE, SOURCE_CONFLICT, UNKNOWN)
+entity,period,source,series_key,value,unit,how_obtained,expected_classification,note
+BRENT,2026-08,EIA,EIA:RBRTE:D (mean of daily),91.08,USD/bbl,mean of RBRTEd.xls daily closes (release 2026-09-23),,physical spot FOB
+BRENT,2026-08,WorldBank,WB:PINK:BRENT:M,90.9,USD/bbl,CMO-Historical-Data-Monthly.xlsx updated 2026-09-02,DEFINITION_DIFFERENCE,vs EIA: different benchmark basket/averaging
+BRENT,2026-08,IMF,IMF:PCPS:POILBRE:M,88.002,USD/bbl,SDMX PCPS G001.POILBRE.USD.M published 2026-09-08,DEFINITION_DIFFERENCE,vs EIA: -3.5%
+WTI,2026-08,EIA,EIA:RWTC:D (mean of daily),83.90,USD/bbl,mean of RWTCd.xls daily closes,,
+WTI,2026-08,IMF,IMF:PCPS:POILWTI:M,83.741,USD/bbl,SDMX PCPS,NO_CONFLICT,within 0.2%
+GOLD,2026-08,WorldBank,WB:PINK:GOLD:M,4411,USD/troy oz,Pink Sheet 2026-09-02,,
+GOLD,2026-08,IMF,IMF:PCPS:PGOLD:M,4418.5445,USD/troy oz,SDMX PCPS,NO_CONFLICT,within 0.2%
+BRENT,2026-09-15,EIA,EIA:RBRTE:D,130.80,USD/bbl,RBRTEd.xls,,spot
+BRENT,2026-09-15,Convex (futures),BRENT_FUTURES_M1,107.46,USD/bbl,convextrade.com/metrics/brent (web page; not a licensed feed),DEFINITION_DIFFERENCE,spot vs futures; scenario step 12
+VN_GOLD_GAP,2026-09-26,derived,VN_GOLD_GAP_SELL_FX,8.79,million VND/luong,SJC 144.4 - 4298.01*1.20565*26170/1e6,DEFINITION_DIFFERENCE,FX leg = VCB sell
+VN_GOLD_GAP,2026-09-26,derived,VN_GOLD_GAP_BUY_FX,10.91,million VND/luong,SJC 144.4 - 4298.01*1.20565*25760/1e6,DEFINITION_DIFFERENCE,FX leg = VCB buy

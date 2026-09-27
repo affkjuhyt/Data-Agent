@@ -19,12 +19,19 @@ def _docling_chunks_to_dicts(docling_result: Any) -> list[dict[str, Any]]:
             "content": parsed_chunk.content,
             "table_involved": parsed_chunk.table_involved,
             "table": None,
+            # Page and box travel with the text from here on; a projection that
+            # enumerates fields by hand is where provenance gets dropped
+            # without anything failing.
+            "region": parsed_chunk.region.model_dump() if parsed_chunk.region else None,
         }
         if parsed_chunk.table is not None:
             chunk["table"] = {
                 "table_name": parsed_chunk.table.table_name,
                 "description": parsed_chunk.table.description,
                 "data": parsed_chunk.table.data,
+                "region": (
+                    parsed_chunk.table.region.model_dump() if parsed_chunk.table.region else None
+                ),
             }
         chunks.append(chunk)
     return chunks

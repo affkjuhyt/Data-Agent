@@ -8,11 +8,11 @@
 # this is possible without stopping the container.
 #
 # Install once:  crontab -e
-#   0 3 * * * /home/ndip/Data-Agent/deploy/k8s/ops/backup-registry.sh >> /home/ndip/data-agent-registry-backups/backup.log 2>&1
+#   0 3 * * * /home/ndip/Data-Agent/deploy/k8s/ops/backup-registry.sh >> /data/registry-backups/backup.log 2>&1
 set -euo pipefail
 
 SRC=/home/ndip/data-agent-registry
-DEST_DIR=/home/ndip/data-agent-registry-backups
+DEST_DIR=/data/registry-backups   # on the 1 TB data disk, never on / (docs/RUNBOOK.md §9)
 KEEP=3
 
 mkdir -p "$DEST_DIR"

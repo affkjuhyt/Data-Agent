@@ -286,7 +286,7 @@ services:
              bash /scripts/kong-setup.sh"
 
   openbao:
-    image: ${OPENBAO_IMAGE:-openbao/openbao:latest}
+    image: ${OPENBAO_IMAGE:-openbao/openbao:2.6.3}
     container_name: dataagent-openbao
     restart: unless-stopped
     ports:

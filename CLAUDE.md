@@ -124,3 +124,13 @@ docs                RUNBOOK, SECURITY, ankt/ (indicator platform design)
 - No new `# TODO` without an owner and a follow-up issue.
 - Docs updated in the same commit when behaviour, commands or layout change.
 - Deleted code is deleted, not commented out.
+
+## 9. V2 work (Data Agent POC, oil/gold)
+
+Any work on the V2 data/knowledge/agent platform starts at `docs/v2/README.md`.
+`docs/v2/00-architecture-v2.md` is the source of truth; its twelve invariants (immutable raw,
+structured data never goes through chunk/embedding, LLM proposes and deterministic checks plus a
+human decide, point-in-time by `available_at`, OCC instead of last-write-wins, …) are not
+negotiable per task. Pick the next item from `docs/v2/05-implementation-plan.md` in STEP order and
+update its `TT` column in the same commit that finishes it. `docs/ankt/` is the v1 design and is
+reference only where it disagrees with `docs/v2/`.

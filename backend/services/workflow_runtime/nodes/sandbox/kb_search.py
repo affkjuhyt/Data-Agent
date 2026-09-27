@@ -64,6 +64,10 @@ class KBChunk(BaseModel):
     score: float
     source: str = ""    # doc_name — tên tài liệu hiển thị cho citation
     doc_id: str = ""     # để FE build link mở file gốc: /api/knowledge/documents/{doc_id}/file
+    # Trang chứa đoạn này, để citation mở đúng chỗ (#page=N) thay vì mở đầu
+    # tài liệu. None với tài liệu nạp trước khi toạ độ được lưu, và với định
+    # dạng không có hình học trang (HTML, TXT, MD).
+    page: int | None = None
 
 
 async def kb_search_node(state: AgentState, config: RunnableConfig | None = None) -> dict[str, Any]:
@@ -141,6 +145,7 @@ async def search_knowledge_base(cfg: dict[str, Any], search_query: str) -> dict[
                                 score   = item.get("chunk_score", 0.0),
                                 source  = item.get("source", {}).get("doc_name", ""),
                                 doc_id  = item.get("source", {}).get("doc_id", ""),
+                                page    = ((item.get("source", {}) or {}).get("region") or {}).get("page_no"),
                             ).model_dump())
                         except ValidationError:
                             skipped += 1

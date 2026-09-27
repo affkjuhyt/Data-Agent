@@ -60,6 +60,10 @@ class AgentState(TypedDict):
     judge_verdict: Optional[str]      # "PASS" | "FAIL"
     judge_error_type: Optional[str]   # "PLANNING_ERROR" | "DATA_QUALITY" | "GROUNDING_ERROR"
     judge_reason: Optional[str]
+    # Kết quả 4 kiểm tra tất định (libs.indicator.verifier) — mỗi kiểm tra một
+    # dòng, để UI hiện VerifierBadge và để đo được, thay vì gộp thành một điểm
+    # không nói được cái nào đã sai.
+    verifier: dict[str, Any] | None
     judge_phase1_error: Optional[str]  # "RETRIEVAL_ERROR" | "TOOL_ERROR" | None — set bởi judge_phase1_node
     # Signatures of tool plans judge_phase1 already sent back to the planner. A
     # repeat would return the same nothing, so it stops the loop (graph.py).

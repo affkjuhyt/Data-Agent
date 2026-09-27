@@ -606,15 +606,25 @@
                         | map('regex_replace', '$', ':' ~ image_tag) | join(' ') }}; do
             printf '%s\n' "$running" | grep -F " $ref" || true
           done | sort -u | while read -r workload ns _; do
+            # The service-tier restart below restarts these anyway; hitting one twice
+            # within the same second fails ("restart has already been triggered").
+            if [ "{{ tier_restart | bool | lower }}" = true ] && [ "$ns" = "{{ ns_service }}" ] \
+               && [[ $workload == Deployment/* ]]; then
+              continue
+            fi
             {{ kubectl }} -n "$ns" rollout restart "$workload"
           done
         executable: /bin/bash
+      vars:
+        tier_restart: "{{ (apply_services | bool) and ((secrets_changed | bool) or (config_changed | bool)) }}"
       when: (images | default([]) | length) > 0
       changed_when: true
 
     - name: Restart the service tier after a Secret or ConfigMap change
       ansible.builtin.command:
         cmd: "{{ kubectl }} -n {{ ns_service }} rollout restart deployment"
+      # Keep in sync with tier_restart in the task above, which skips this tier's
+      # Deployments when this runs.
       when:
         - apply_services | bool
         - (secrets_changed | bool) or (config_changed | bool)

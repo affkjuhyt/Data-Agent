@@ -359,7 +359,8 @@ services:
   # Openbao
   openbao:
     profiles: [iam, runtime]
-    image: openbao/openbao:latest
+    # Pinned: 2.7.0 removed the `file` storage backend (config.hcl uses it).
+    image: openbao/openbao:2.6.3
     container_name: dataagent-openbao
     restart: unless-stopped
     ports:

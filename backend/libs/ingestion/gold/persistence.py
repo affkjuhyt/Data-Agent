@@ -255,6 +255,11 @@ async def _commit_chunk_atomic(
                                 "embedding_model_id": embed_model_id,
                                 "knowledge_base": knowledge_base,
                                 "purpose": purpose,
+                                # Retrieval returns Qdrant payloads directly, so
+                                # the page/box rides along with the hit — a
+                                # citation should not need a second lookup to
+                                # know where it points.
+                                "region": payload_meta.get("region"),
                                 "is_deleted": False,
                             },
                         )

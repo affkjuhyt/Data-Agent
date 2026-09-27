@@ -219,16 +219,32 @@ it the vault can never be unsealed again.
 
 ## 9. Disk
 
-The root filesystem is the real limit: PVC sizes are not enforced by
-`local-path-provisioner`. kubelet starts garbage-collecting images at **85 %**
-and evicts pods at **95 %**. On 2026-09-11 image rebuilds pushed it to 99 %,
+Since 2026-09-27 all heavy state lives on the 1 TB data disk (`/dev/sdb1` on
+`/data`), bind-mounted back onto the original paths so PVs, the registry
+container and scripts are unchanged (entries in `/etc/fstab`):
+
+| Path | Backed by | Holds |
+| --- | --- | --- |
+| `/var/lib/rancher` | `/data/rancher` | k3s images + every local-path PV |
+| `/var/lib/kubelet` | `/data/kubelet` | pod emptyDirs |
+| `/var/lib/containerd` | `/data/containerd` | Docker images (Docker 29 uses the containerd image store) |
+| `/var/lib/docker` | `/data/docker` | Docker container state |
+| `/home/ndip/data-agent-registry` | `/data/registry` | the `localhost:5000` registry |
+
+systemd drop-ins (`/etc/systemd/system/{k3s,docker,containerd}.service.d/data-disk.conf`)
+keep those services from starting if `/data` did not mount. `/` now only holds
+the OS and home directories.
+
+PVC sizes are not enforced by `local-path-provisioner`, so `/data` is the
+limit that matters. kubelet starts garbage-collecting images at **85 %**
+and evicts pods at **95 %**. On 2026-09-11 image rebuilds pushed `/` to 99 %,
 the whole stack was evicted twice, and the evictions deleted the images the
 pods needed to come back.
 
 ```bash
-df -h /
+df -h / /data
 docker system df
-du -sh ~/data-agent-registry-backups
+du -sh /data/registry-backups
 ```
 
 - Before `deploy_full=true` or a `backend/libs` change (which rebuilds every

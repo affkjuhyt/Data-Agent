@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Alerts when / crosses 80% used. Host-level, not a k8s/Prometheus rule —
+# Alerts when /data crosses 80% used (/data holds k3s, containerd, kubelet and the
+# registry since 2026-09-27, see docs/RUNBOOK.md §9). Host-level, not a k8s/Prometheus rule —
 # see the note this was introduced with: local-path-provisioner doesn't
 # enforce PVC size as a real quota (deploy/k8s/production/database/*.yaml's `storage:`
-# values are advisory), so the actual risk is /, not any one PVC, and node
+# values are advisory), so the actual risk is the disk under them, not any one PVC, and node
 # disk metrics aren't in Prometheus here (no node-exporter/cadvisor scrape
 # target — adding one needs either a hostPath volume, which the
 # `restricted` PodSecurity namespaces forbid, or kubelet's own cadvisor
@@ -20,8 +21,8 @@
 set -euo pipefail
 
 THRESHOLD=80
-MOUNT=/
-LOG=/home/ndip/data-agent-registry-backups/disk-alert.log
+MOUNT=/data
+LOG=/data/logs/disk-alert.log
 STATE=/tmp/.disk-alert-last-state   # avoids re-logging every 15 min once already over threshold
 
 mkdir -p "$(dirname "$LOG")"
@@ -39,7 +40,7 @@ was_over=0
 
 if [ "$usage" -ge "$THRESHOLD" ]; then
   if [ "$was_over" -eq 0 ]; then
-    notify "ALERT: $MOUNT is ${usage}% full (threshold ${THRESHOLD}%). df -h / ; docker system df ; du -sh /var/lib/rancher/k3s/storage/* 2>/dev/null | sort -rh | head to find what to reclaim."
+    notify "ALERT: $MOUNT is ${usage}% full (threshold ${THRESHOLD}%). df -h / /data ; docker system df ; du -sh /var/lib/rancher/k3s/storage/* 2>/dev/null | sort -rh | head to find what to reclaim."
   fi
   echo 1 > "$STATE"
 else
