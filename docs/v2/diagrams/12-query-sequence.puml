@@ -1,0 +1,76 @@
+@startuml 12-query-sequence
+title "Brent giảm bao nhiêu tuần này, tại sao và 5 ngày tới thế nào?" — Hiện trạng + đích (tô màu theo mức đã có)\n00 §8 · 03 §9–§10 · hỏi ngày 27/09/2026
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+autonumber
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có (chạy hôm nay) |
+  |<#E6F0FF> | Có một phần / cần mở rộng |
+  |<#FFF4D6> | Chưa có (đích V2) |
+  Hôm nay câu này đi input_refine → route → agent (kb_search / SQL);
+  không có observation Brent nào để tính.
+endlegend
+
+actor "Analyst" as U
+participant "frontend\nAsk (features/ask)" as FE #EEF7EE
+participant "kong\n(aeroflow-jwks)" as K #EEF7EE
+box "workflow_runtime (LangGraph)" #FAFAFA
+participant "input_refine" as IR #EEF7EE
+participant "resolution\nentity·metric·time·intent" as RES #FFF4D6
+participant "planner\n(task graph)" as P #E6F0FF
+participant "hybrid executor\n(executor DAG)" as EX #E6F0FF
+participant "responder\n(LiteLLM)" as RS #EEF7EE
+participant "verifier\n(judge + libs/indicator)" as V #E6F0FF
+end box
+box "indicator-api" #FAFAFA
+participant "MCP Gateway" as GW #FFF4D6
+participant "operators\n(analytics)" as OP #FFF4D6
+end box
+database "ClickHouse\nobs.observation" as CH #FFF4D6
+database "Postgres\nknowledge.*" as KN #FFF4D6
+participant "kb-backend\n(LightRAG retrieve)" as KB #EEF7EE
+
+U -> FE : đặt câu hỏi
+FE -> K : POST /api/orchestrate/stream (Bearer JWT)
+K -> IR : JWT hợp lệ, X-* của client bị gỡ
+IR -> RES : câu đã refine
+RES -> RES : alias registry: "Brent" → BRENT_SPOT ·\nperiod = current_week · intent = explain_change · forecast = 5d
+RES --> FE : SSE ""__intent""
+note right of RES #FFF4D6
+  Forecast 5 ngày **ngoài POC** (UC11): trả lời nói rõ
+  không dự báo; LLM không đoán giá (bất biến 6).
+end note
+RES -> P : QuerySpec
+P -> P : chọn composite **EXPLAIN_PRICE_MOVEMENT**\ntừ ""registry.capability"", điền tham số (S9-02)
+P --> FE : SSE ""__task_graph""
+P -> EX : task graph (node_id · capability · depends_on)
+EX -> GW : FETCH_SERIES + COMPARE_PERIOD\n(as_of = 27/09/2026)
+note right of GW
+  MCP chuẩn là Tier B (S9-01b);
+  POC gọi capability trực tiếp (S9-01).
+end note
+GW -> OP : fetch_series · compare_period
+OP -> CH : argMax(value, (available_at, effective_version))\nWHERE available_at <= as_of
+CH --> OP : 15/09 130,80 · 22/09 114,89\n(release 23/09 · source_ref ô xls)
+OP --> EX : Quantity −15,91 USD/bbl · −12,16 % + input_refs
+par bằng chứng
+  EX -> GW : FIND_EVENTS (BRENT_SPOT, event_window)
+  GW -> KN : event/claim đã verified, available_at trong cửa sổ
+  KN --> EX : event + evidence (trang, quote)
+else
+  EX -> KB : POST /api/pipeline/light-rag/retrieve\n(X-Service-Assertion)
+  KB --> EX : passage + page (vector · Neo4j · RRF · rerank)
+end
+EX -> RS : context có cấu trúc (số đã tính sẵn)
+RS -> V : bản trả lời
+V -> V : numbers_grounded · precision_supported ·\nvintage_consistent · citations_resolved
+V -> V : + độ tươi nguồn · đủ bằng chứng
+alt Đạt
+  V --> FE : ""__indicator_value"" · ""__verification"" · ""__lineage""\n+ ""__evidence"" · ""__citations"" · ""__chart"" (đã có)
+else Thiếu bằng chứng
+  V -> P : replan (tối đa 2 vòng)
+  V --> FE : ""__refusal"" INSUFFICIENT_EVIDENCE
+end
+FE --> U : bảng + chart + evidence + lineage + VerifierBadge
+@enduml

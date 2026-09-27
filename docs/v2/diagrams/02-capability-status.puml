@@ -1,0 +1,107 @@
+@startuml 02-capability-status
+title Trạng thái năng lực theo lớp V2 (00 §2) — Hiện trạng + đích (tô màu theo mức đã có, 27/09/2026)
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam wrapWidth 200
+skinparam component<<reuse>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam component<<extend>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam component<<new>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có (chạy hôm nay) |
+  |<#E6F0FF> | Có một phần / cần mở rộng |
+  |<#FFF4D6> | Chưa có (đích V2) |
+  Căn cứ: 01 (gap analysis) mục 3–4, 7; việc tương ứng ở 05.
+endlegend
+
+package "Experience" {
+  component "Ask\n(bảng · chart · evidence · trích dẫn có trang)" <<reuse>>
+  component "Analyst Workspace\n(task graph · lineage · VerifierBadge)" <<new>>
+  component "Data Studio · Nguồn\n(Source Registry, lịch, Bulk Import;\nthiếu licence · profile)" <<extend>>
+  component "Entity & Series · Series Explorer ·\nData Quality" <<new>>
+  component "Review Inbox\n(StructuredTableReview; chưa có\nmaker–checker)" <<extend>>
+  component "Alert · hộp thư" <<new>>
+  component "Report (xlsx export)" <<extend>>
+  component "formatVN\n(còn chuẩn Mỹ, E3)" <<extend>>
+}
+
+package "Data Agent Core" {
+  component "Query understanding\n(input_refine)" <<reuse>>
+  component "Entity + Metric + Time + Intent\nresolution (alias registry)" <<new>>
+  component "Capability Graph\n(hôm nay TOOL_REGISTRY tĩnh)" <<new>>
+  component "Planner → Task Graph\n(tot_planner + executor DAG có;\ncapability/depends_on chưa)" <<extend>>
+  component "Hybrid executor\n(SQL · RAG có; Graph · API · ML chưa)" <<extend>>
+  component "Verifier\n(số tất định trong judge; thiếu độ tươi,\nđủ bằng chứng)" <<extend>>
+  component "MCP chuẩn\n(mcp node là POST /execute tự chế)" <<new>>
+  component "Resume sau restart\n(checkpointer có; runtime.task_run chưa)" <<extend>>
+  component "Luồng chủ động (không cần hỏi)" <<new>>
+}
+
+package "Intelligence / Data API" {
+  component "Observation API (as-of)" <<new>>
+  component "Semantic Query / QuerySpec\n(hôm nay: semantic layer 1 bảng · 1 cột)" <<extend>>
+  component "Semantic operators\n(compare_period · returns ·\ndetect_drop_episodes)" <<new>>
+  component "Lõi số libs/indicator\n(Quantity · numeric · formula · verifier;\nPeriod chỉ A/Q/M)" <<extend>>
+  component "Knowledge retrieval\n(LightRAG: vector + FTS + Neo4j + rerank)" <<reuse>>
+  component "Lineage · Alert API" <<new>>
+  component "Forecast (ngoài POC)" <<new>>
+}
+
+package "Semantic & Knowledge Fabric" {
+  component "Entity registry + alias\n(registry.entity)" <<new>>
+  component "Series · đơn vị · kỳ · phía giá" <<new>>
+  component "Claim · Event · Evidence" <<new>>
+  component "Document structure\n(OCR vie+eng · PageRegion page/bbox;\nchưa nối bảng qua trang)" <<extend>>
+  component "Vector index (Qdrant)" <<reuse>>
+  component "Entity graph Neo4j từ Gold\n(chưa phải bản chiếu qua outbox)" <<extend>>
+  component "Cross-modal join\n(series ↔ claim/event qua entity_id)" <<new>>
+}
+
+package "Governance / Effective Data" {
+  component "DQ 5 tầng (libs/dq)" <<new>>
+  component "Conflict số (7 lớp phân loại)" <<new>>
+  component "Mâu thuẫn văn bản\n(kb-conflict-resolution · màn Conflicts)" <<reuse>>
+  component "ReviewCase · authority ·\nmaker–checker · DATA_STEWARD/REVIEWER" <<new>>
+  component "HITL hiện có\n(human_approval · router reviews)" <<extend>>
+  component "OCC expected_version → 409\n(hôm nay row_version, không kiểm)" <<extend>>
+  component "Effective version\n(correction/override append)" <<new>>
+  component "4 trục thời gian · vintage" <<new>>
+  component "Audit (audit.data.access;\nappend-only chưa cưỡng chế)" <<extend>>
+  component "RLS theo tenant\n(dịch vụ chạy superuser)" <<extend>>
+}
+
+package "Ingestion Plane" {
+  component "Source Registry (KBSource*, 35 nguồn)" <<extend>>
+  component "Connector runtime web_crawler\n(http_file · web_crawl · rss · rest_api/sdmx;\nchỉ deploy ở dev)" <<extend>>
+  component "Raw bất biến theo SHA-256\n(re-crawl đang xoá bản cũ)" <<extend>>
+  component "Release · freshness SLA" <<new>>
+  component "Profile · reverse schema · mapping ·\nnormalize (series_extractor)" <<new>>
+  component "Import xlsx/csv (kb-structured-data,\nbảng lớn nhất; không dùng cho số V2)" <<extend>>
+  component "Layout/OCR (Docling)" <<reuse>>
+  component "Chunk + embed cho retrieval" <<reuse>>
+  component "Entity/Claim/Event extraction\n(semantic_extractor)" <<new>>
+}
+
+package "Nền" {
+  component "Kafka (1 broker, RF=1,\nauto.create = true, chưa có topic V2)" <<extend>>
+  component "ClickHouse (chỉ Langfuse, chưa có obs)" <<extend>>
+  component "Postgres · MinIO · Qdrant · Neo4j ·\nRedis · Keycloak · OpenBao" <<reuse>>
+  component "Langfuse · OTel → Jaeger ·\nPrometheus · Grafana" <<reuse>>
+  component "Log tập trung k8s · Alertmanager" <<new>>
+  component "Backup (chỉ pg_dump cùng node)" <<extend>>
+  component "Egress allowlist cho crawler" <<new>>
+  component "Eval gate model/eval\n(ngưỡng online tạm; 0 case dầu/vàng)" <<extend>>
+  component "CI · Ansible deploy" <<reuse>>
+}
+@enduml

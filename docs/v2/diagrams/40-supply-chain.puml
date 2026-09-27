@@ -1,0 +1,54 @@
+@startuml 40-supply-chain
+title Chuỗi cung ứng phần mềm — cổng từ commit tới cụm — Hiện trạng + đích (tô màu theo mức đã có)\n11 · P0-08
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam wrapWidth 280
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có (chạy hôm nay) |
+  |<#E6F0FF> | Có một phần / cần mở rộng |
+  |<#FFF4D6> | Chưa có (đích V2) |
+  Cụm đang chạy dùng bộ manifest ""dev"" (inventory ""k8s_env: dev"").
+endlegend
+
+|Máy developer|
+start
+#E6F0FF:pre-commit (ruff · gitleaks)
+—— //gói có trong dev deps, chưa có "".pre-commit-config.yaml""//;
+|CI · mã nguồn (ci.yml)|
+fork
+  #EEF7EE:mypy strict theo bề mặt · import-linter ·
+  kubeconform + ""test_k8s_manifests.py"" (chặn);
+fork again
+  #E6F0FF:ruff check / format (job chặn nhưng đỏ sẵn trên main);
+fork again
+  #E6F0FF:pip-audit theo từng requirements.txt
+  (""|| true"", chỉ báo cáo) · npm audit chưa có;
+fork again
+  #E6F0FF:trivy fs: vuln · secret · misconfig HIGH/CRITICAL
+  (""exit-code 0"", chỉ báo cáo);
+fork again
+  #E6F0FF:SAST: bandit chỉ chạy trong release_worker
+  (pipeline agent), không có trong CI;
+end fork
+|CI · image|
+#E6F0FF:Base image ghim tag, chưa ghim digest (SECURITY.md TODO) ·
+image bên thứ ba: ""clickhouse"" không tag, ""minio"" · ""pgbouncer"" "":latest"";
+#E6F0FF:Hiện: ""build-push-images.sh"" trên server (qua Ansible)
+→ ""localhost:5000/dataagent/*:latest"" —— ghi đè tag, CI không build image;
+#FFF4D6:Build image trong CI, tag bất biến (git sha) + SBOM (syft);
+#FFF4D6:trivy image (chặn CRITICAL);
+#FFF4D6:cosign ký image + attest SBOM;
+|Repo|
+#FFF4D6:Dependabot/Renovate · CODEOWNERS (chưa có trong "".github/"");
+|Cụm|
+#FFF4D6:Admission (Kyverno): chỉ nhận image đã ký,
+cấm "":latest"", bắt buộc resources/probes;
+#E6F0FF:PSA restricted · NetworkPolicy default-deny theo luồng · gVisor
+—— //có trong bộ production; bộ dev đang chạy: privileged, allow-all//;
+#FFF4D6:Egress allowlist theo tên miền cho web_crawler (P0-08)
+—— //production chỉ mở ""allow-egress-remote-llm""; web_crawler chỉ chạy ở dev (allow-all)//;
+#EEF7EE:OpenBao cho secret ứng dụng · ansible-vault cho secret deploy;
+#EEF7EE:Audit truy cập dữ liệu (""audit.data.access"" → platform_workers audit);
+stop
+@enduml

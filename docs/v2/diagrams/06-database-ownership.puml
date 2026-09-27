@@ -1,0 +1,109 @@
+@startuml 06-database-ownership
+title Kho dữ liệu và quyền sở hữu (10 §1, §4; 03 §2) — Hiện trạng + đích (tô màu theo mức đã có)
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam wrapWidth 250
+skinparam ArrowColor #555555
+skinparam component<<reuse>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam component<<extend>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam component<<new>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+skinparam database<<reuse>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam database<<extend>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam database<<new>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+legend top right
+  |= Màu |= Ý nghĩa |
+  |<#EEF7EE> | Đã có (chạy hôm nay) |
+  |<#E6F0FF> | Có, đổi vai trò / cần mở rộng |
+  |<#FFF4D6> | Chưa có (đích V2) |
+  Nguồn sự thật: Postgres · MinIO raw · ClickHouse obs (ADR-V2-34).
+  Mũi tên = service sở hữu (ghi). Mỗi service một role NOBYPASSRLS
+  chỉ trên schema của mình (ADR-V2-33); hôm nay mọi service nối
+  bằng superuser ""admin"" nên RLS vô hiệu (10 §2.2).
+endlegend
+
+left to right direction
+
+package "Service" {
+  component "workflow-runtime" <<extend>> as WR
+  component "auth-api · flow-builder · release-worker" <<reuse>> as PLAT
+  component "kb-backend + kb-promote-* ·\nkb-structured-data · kb-conflict-resolution" <<reuse>> as KB
+  component "web_crawler" <<extend>> as WEB
+  component "series_extractor" <<new>> as SX
+  component "indicator-api\n(registry · governance · knowledge · alert)" <<new>> as IA
+  component "forecast-worker (ngoài POC)" <<new>> as FCW
+  component "Neo4j projector · indexer" <<new>> as PROJ
+  component "langfuse (+ worker)" <<reuse>> as LF
+}
+
+package "Postgres dataagent" {
+  database "public — bảng cũ\n(KB* · agent · auth · release; 84 bảng)\ngiữ, không mở rộng" <<reuse>> as PG_PUB
+  database "langgraph (checkpointer) ·\nkb_structured (bảng tạo lúc chạy)" <<reuse>> as PG_LG
+  database "registry\n(entity · entity_relation · series · capability ·\noperator · dq_rule · authority_rule)" <<new>> as PG_REG
+  database "ingest\n(release · profile · mapping_version ·\nobservation_candidate · outbox)" <<new>> as PG_ING
+  database "governance\n(dq_result · conflict · review_case ·\ncorrection · override · approval)" <<new>> as PG_GOV
+  database "knowledge\n(claim · event · evidence · relation ·\ndocument_region)" <<new>> as PG_KN
+  database "alert\n(alert · alert_member · notification)" <<new>> as PG_AL
+  database "forecast\n(model_version · forecast_run)" <<new>> as PG_FC
+}
+
+package "Nguồn sự thật khác" {
+  database "ClickHouse obs.observation\n(mọi effective version, chỉ ghi thêm;\nobs_writer INSERT · obs_reader SELECT)" <<new>> as CH
+  database "MinIO raw/{source_id}/{sha256}\n(không ghi đè, không xoá)" <<new>> as S3_RAW
+}
+
+package "Bản chiếu · kho phụ" {
+  database "Qdrant\n(index; V2 chỉ ghi qua outbox)" <<extend>> as QD
+  database "Neo4j\n(bản chiếu knowledge.*, dựng lại được)" <<extend>> as N4
+  database "MinIO knowledge-base/{tenant}/bronze/…\n(bản tìm kiếm KB; re-crawl đang xoá)" <<extend>> as S3_KB
+  database "Mongo\n(canvas · silver staging · conflict payload)\nkhông nhận dữ liệu V2" <<reuse>> as MG
+  database "Redis\n(cache · plan_session · pub/sub hộp thư SSE)" <<reuse>> as RD
+  database "OpenBao\n(credential nguồn/warehouse)" <<reuse>> as BAO
+  database "ClickHouse (Langfuse)" <<reuse>> as CH_LF
+}
+
+WR --> PG_LG
+WR --> RD
+WR --> PG_PUB
+PLAT --> PG_PUB
+PLAT --> MG
+KB --> PG_PUB
+KB --> S3_KB
+KB --> QD
+KB --> N4
+KB --> MG
+WEB --> S3_RAW
+WEB --> S3_KB
+WEB --> BAO
+SX --> PG_ING
+IA --> PG_REG
+IA --> PG_GOV
+IA --> PG_KN
+IA --> PG_AL
+IA --> CH
+FCW --> PG_FC
+PG_ING ..> PROJ : outbox → Kafka
+PG_KN ..> PROJ : outbox → Kafka
+PROJ --> QD
+PROJ --> N4
+LF --> CH_LF
+@enduml

@@ -1,0 +1,48 @@
+@startmindmap 21-data-studio
+title Data Studio — chức năng giao diện lớp dữ liệu — Hiện trạng + đích V2 (tô màu theo mức đã có)
+caption Hôm nay là module "Tri thức" (KnowledgeOpsCenter, 9 tab). Màn đích: 03 §14; Nguồn + Series Explorer gộp một màn (05 S3-05).
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có (chạy hôm nay) |
+  |<#E6F0FF> | Có một phần / cần mở rộng |
+  |<#FFF4D6> | Chưa có (đích V2) |
+endlegend
+
+*[#E6F0FF] Data Studio
+**[#E6F0FF] Nguồn (Source Registry)
+***[#EEF7EE] Connector: HTTP file · web crawl (+ headless) · RSS · REST · SDMX · upload
+***[#EEF7EE] Lịch cron · chạy ngay · sửa · xoá · Add Data đơn lẻ / bulk
+***[#EEF7EE] Promote tự động · Pipeline Activity (SSE)
+***[#FFF4D6] licence · use_rights · entity · release_info · locale · SLA (S2-01)
+***[#FFF4D6] Release gần nhất · vi phạm SLA (source.sla.breached)
+***[#FFF4D6] Profile · fingerprint · drift (diff cột) · chạy thử profile
+**[#E6F0FF] Duyệt mapping / drift
+***[#E6F0FF] LLM đề xuất (hôm nay: schema bảng lớn nhất của xlsx/csv, StructuredTableReview)
+***[#FFF4D6] MappingProposal + validator NOT_EQUIVALENT (settle ≠ close, spot ≠ futures)
+***[#FFF4D6] Drift chặn nạp → ReviewCase SCHEMA_DRIFT (Review Inbox)
+***[#FFF4D6] mapping_version có version, áp lại cho release đang chặn
+**[#E6F0FF] Data Layers
+***[#EEF7EE] Bronze · Silver · Gold · promote · tiến độ SSE
+***[#EEF7EE] Chi tiết asset: Preview (iframe) · Chunks · Tables · Logs · Timeline
+***[#E6F0FF] Artifact raw/{source_id}/{sha256} không xoá\n(hôm nay re-crawl xoá bản cũ, ADR-V2-21)
+**[#FFF4D6] Entity & Series
+***[#FFF4D6] Entity · alias (BRENT_SPOT: "Brent", "dầu Brent")
+***[#FFF4D6] Quan hệ SAME_UNDERLYING · SUCCEEDS · NOT_EQUIVALENT
+***[#FFF4D6] Series: đơn vị · bội số · phía giá · tần suất · số lẻ
+left side
+**[#FFF4D6] Series Explorer
+***[#FFF4D6] Chuỗi BRENT_SPOT · GOLD_SJC_BAR (mua/bán) · VN_FUEL_E10RON95_III
+***[#FFF4D6] As-of hai chế độ: "thế giới biết" (available_at) · "hệ thống biết" (system_time)
+***[#FFF4D6] Version: machine · correction · override · revision
+***[#FFF4D6] Provenance từng điểm: artifact · release · ô | trang + bbox
+***[#FFF4D6] Marker release · điều chỉnh (EIA release thứ Tư)
+**[#E6F0FF] Data Quality
+***[#FFF4D6] 5 tầng: Schema · Semantic · Numeric · Temporal · Cross-source
+***[#FFF4D6] Conflict: NO_CONFLICT · REVISION · TIME_DIFFERENCE · DEFINITION_DIFFERENCE ·\nUNIT_DIFFERENCE · SOURCE_CONFLICT · UNKNOWN (2 lớp cuối mở ReviewCase)
+***[#FFF4D6] Tỷ lệ ReviewCase / 1.000 observation mỗi tuần
+***[#EEF7EE] Conflicts: mâu thuẫn văn bản (kb_conflict_resolution)
+**[#EEF7EE] Tri thức văn bản · vận hành
+***[#EEF7EE] Knowledge Hub (đồ thị Neo4j) · Knowledge Groups · Policies
+***[#EEF7EE] Warehouses (Snowflake · Databricks) · Fleet Overview
+***[#EEF7EE] Trash 3 mức
+@endmindmap

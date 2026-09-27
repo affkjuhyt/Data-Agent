@@ -1,0 +1,78 @@
+@startuml 23-frontend-arch
+title Kiến trúc frontend (frontend/src) — Hiện trạng + đích V2 (tô màu theo mức đã có)
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam wrapWidth 200
+skinparam component<<reuse>> {
+  BackgroundColor #EEF7EE
+  BorderColor #4E8A4E
+}
+skinparam component<<extend>> {
+  BackgroundColor #E6F0FF
+  BorderColor #2F6FB3
+}
+skinparam component<<new>> {
+  BackgroundColor #FFF4D6
+  BorderColor #C08A00
+}
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có (chạy hôm nay) |
+  |<#E6F0FF> | Có một phần / cần mở rộng |
+  |<#FFF4D6> | Chưa có (đích V2) |
+  React 19 · Vite 6 · Recharts · @xyflow/react · vitest; không có router:
+  routes.tsx (ROUTE_MAP module → tab) + AppStateContext ghi /module/tab.
+endlegend
+
+package "features/ — màn V2 mỗi màn một thư mục" as FEAT {
+  component "ask/\nAskDataPage · AnswerBlock · DataGrid · ChartRenderer ·\nEvidencePanel · ClarificationCard · sse.ts · useAgentStream" as FA <<extend>>
+  component "nguồn + series explorer (S3-05)\nentity & series (S1-03) · data quality" as FS <<new>>
+  component "review inbox (S6-03)\ntừ StructuredTableReview" as FR <<new>>
+  component "alert inbox (S11-02) · Việt Nam (VN-05)" as FL <<new>>
+}
+
+package "components/ — màn hiện có" as COMP {
+  component "knowledge/\nKnowledgeOpsCenter + 9 tab: sources · inventory ·\nconflicts · ingest · knowledge-hub · fleet ·\npolicy · knowledge-base · trash · warehouse" as CK <<reuse>>
+  component "agent-builder/\nagents · workflow · Conversations ·\nReviewCenter · AgentPlayground" as CB <<reuse>>
+  component "Settings/ (12 mục + Auth/)\nExecutiveDashboard · ReleaseManagementCenter · Layout" as CS <<reuse>>
+}
+
+package "Primitive dùng chung" as PRIM {
+  component "shared/: DataTable · DetailDrawer · FilterPopover ·\nStatusBadge · Pagination · OperationalHeader" as P1 <<reuse>>
+  component "ui/index.tsx: Button · Card · Badge · StatTile ·\nTable · EmptyState · LoadingState · ErrorState" as P2 <<reuse>>
+  component "Primitive số (đích): ValueCard · SeriesChart · AsOfControl ·\nSourceRefChip · VerifierBadge · RefusalCard · LicenceBadge ·\nTaskGraphView · LineagePanel · ReviewCaseCard · AlertCard" as P3 <<new>>
+}
+
+package "lib/ — hạ tầng client" as LIB {
+  component "apiClient.ts (fetch + token Keycloak)\nAuthProvider · keycloak.ts · config.ts" as L1 <<reuse>>
+  component "platformApi · releaseApi · use*.ts\n(kiểu viết tay)" as L2 <<reuse>>
+  component "formatVN.ts — **đang kiểu Mỹ**\n1,284.56 · MM/dd/yyyy; E3 chưa sửa (P0-02)" as L3 <<extend>>
+  component "Kiểu sinh từ OpenAPI indicator-api" as L4 <<new>>
+  component "urlState: series · as_of · case · alert" as L5 <<new>>
+  component "Hộp thư SSE: ReviewCase · alert" as L6 <<new>>
+}
+
+cloud "Kong" as K #EEF7EE
+
+node "Backend" as API {
+  component "workflow_runtime (SSE /api/orchestrate) ·\nkb_backend (/api/knowledge) · auth_api · flow_builder" as A1 <<reuse>>
+  component "indicator-api: registry · governance ·\nanalytics · knowledge · alert" as A2 <<new>>
+}
+
+FEAT --> PRIM
+COMP --> PRIM
+FS ..> CK : dùng lại SourceRegistry · SourceConfigFields
+FEAT --> LIB
+COMP --> LIB
+LIB --> K
+K --> A1
+K --> A2
+
+note bottom of P3
+  Một primitive cho mọi bề mặt (Ask, Series Explorer,
+  Review Inbox, Alert): đổi cách hiện as-of hay licence
+  là sửa một chỗ. Mọi số qua formatVN đã sửa (13).
+end note
+@enduml

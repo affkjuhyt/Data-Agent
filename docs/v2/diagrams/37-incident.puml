@@ -1,0 +1,72 @@
+@startuml 37-incident
+title Cảnh báo vận hành và xử lý sự cố — Hiện trạng + đích (tô màu theo mức đã có)\n11 · 03 §11, §13 · 06 §5
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam wrapWidth 280
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có (chạy hôm nay) |
+  |<#E6F0FF> | Có một phần / cần mở rộng |
+  |<#FFF4D6> | Chưa có (đích V2) |
+  Hôm nay không có Alertmanager, không rule Prometheus,
+  không node-exporter: cảnh báo duy nhất là ""disk-alert.sh"".
+endlegend
+
+|Tín hiệu|
+start
+fork
+  #EEF7EE:""disk-alert.sh"" (cron host, 15 phút): ""/data"" ≥ 80 %
+  → syslog ""journalctl -t disk-alert"" + ""/data/logs/disk-alert.log""
+  —— //không gửi tới ai, phải tự đọc//;
+fork again
+  #E6F0FF:Prometheus chỉ scrape ""model-service"", ""llm-exporter""
+  (TTFT, tok/s của agent-main); không rule, không exporter Kafka/node;
+fork again
+  #FFF4D6:Sự kiện dữ liệu V2: ""source.sla.breached"" ·
+  ReviewCase tồn đọng · DQ ""block"" · ""SCHEMA_DRIFT"" (xem 38);
+end fork
+|Prometheus + Alertmanager|
+#FFF4D6:Rule: **DiskFillingUp** (""/data"", kubelet GC 85 %, evict 95 %) ·
+**KafkaConsumerLag** · pod CrashLoop · LLM 5xx / TTFT ·
+**SourceSlaBreached** · **ReviewCaseBacklog** (ReviewCase/1.000 obs > 5/tuần) ·
+**DqBlock** / **SchemaDrift**;
+#FFF4D6:Alertmanager: gom nhóm · khử trùng · ức chế · silence;
+if (Mức độ?) then (P1)
+  #FFF4D6:Gọi on-call;
+elseif (P2) then
+  #FFF4D6:Kênh chat của đội;
+else (P3)
+  #FFF4D6:Ticket;
+endif
+|On-call|
+#FFF4D6:Xác nhận (ack);
+#E6F0FF:Mở ""docs/RUNBOOK.md"" (§9 đĩa, §12 lỗi thường gặp)
+—— //có, chưa gắn link trong alert//;
+#E6F0FF:Điều tra: Grafana (1 dashboard ""kb-ccu"") → Jaeger (OTEL)
+→ Langfuse (cùng trace_id) · log: chỉ ""kubectl logs""
+(Elasticsearch/Kibana đã gỡ khỏi k8s);
+if (Nguyên nhân?) then (bản deploy)
+  #E6F0FF:Rollback = revert commit + ""ansible-playbook deploy.yml""
+  (Ansible chỉ deploy commit; image ""*:latest"" bị ghi đè);
+elseif (quá tải) then
+  #E6F0FF:HPA có cho kong · kb-backend · model-service · workflow-runtime ·
+  GPU: 1 A100 dùng chung → giảm tải, không scale được;
+elseif (LLM / GPU) then
+  #FFF4D6:Route LiteLLM sang model dự phòng
+  (config chưa có ""fallbacks"" · hiện: restart container vLLM tay);
+elseif (nguồn dữ liệu) then
+  #E6F0FF:Tắt nguồn (""KBSourceConfig.is_active = false"");
+  #FFF4D6:Release nghi vấn → ReviewCase, không sửa raw (bất biến 2);
+else (đĩa)
+  #EEF7EE:Dọn image (""docker image prune""), RUNBOOK §9;
+endif
+|Prometheus + Alertmanager|
+#FFF4D6:Rule hết đúng → resolved;
+|Đội kỹ thuật|
+if (P1?) then (có)
+  #FFF4D6:Postmortem không đổ lỗi ≤ 3 ngày
+  → cập nhật RUNBOOK + rule;
+else (không)
+endif
+stop
+@enduml

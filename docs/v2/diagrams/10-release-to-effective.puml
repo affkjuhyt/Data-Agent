@@ -1,0 +1,80 @@
+@startuml 10-release-to-effective
+title Release EIA RBRTEd.xls mới → effective observation — Hiện trạng + đích (tô màu theo mức đã có)\n00 §5 · 03 §4–§8
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam wrapWidth 260
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có (chạy hôm nay) |
+  |<#E6F0FF> | Có một phần / cần mở rộng |
+  |<#FFF4D6> | Chưa có (đích V2) |
+  Không bước nào sửa raw hay candidate: người chỉ
+  //append// correction/override/approval (bất biến 2, 10).
+endlegend
+
+|web_crawler (platform_workers)|
+start
+#EEF7EE:Cron theo nguồn (KBSourceConfig, http_file)
+tải ""RBRTEd.xls"" — EIA công bố thứ Tư;
+#E6F0FF:SHA-256 nội dung; trùng hash bản trước → bỏ qua
+—— //có, nhưng khoá theo KBData và re-crawl xoá bản cũ (S2-02)//;
+#FFF4D6:Raw bất biến MinIO ""raw/{source_id}/{sha256}""
++ ""ingest.release"" (publication_time = ""Release Date"" sheet ""Contents"");
+#FFF4D6:phát ""artifact.stored"";
+note right
+  Bản tìm kiếm KB (""kb.promote.silver"" → gold)
+  vẫn chạy như hôm nay (ADR-V2-21) nhưng
+  **không** dùng để trả lời số (bất biến 3).
+end note
+
+|series_extractor|
+#FFF4D6:profile: cột · kiểu · locale · đơn vị · **fingerprint**;
+if (fingerprint = bản đã duyệt?) then (khớp)
+  #FFF4D6:chạy ""mapping_version"" hiện hành (tất định, không LLM);
+else (drift)
+  #FFF4D6:**chặn nạp** · ReviewCase ""SCHEMA_DRIFT""
+  reverse_schema (LLM) đề xuất ""MappingProposal""
+  → validator: kiểu · miền · ""NOT_EQUIVALENT"" (spot ≠ futures);
+  |Reviewer / Checker|
+  #FFF4D6:duyệt ""mapping_version"" mới (maker ≠ checker);
+  |series_extractor|
+endif
+#FFF4D6:normalize: locale · đơn vị · múi giờ America/New_York · mã thiếu → ""obs_status"";
+#FFF4D6:candidate → ""ingest.observation_candidate""
+khoá (source_id, series_key, event_time, release_id, content_hash) ·
+chỉ dòng khác effective hiện hành (03 §3.3)
+→ ""extraction.completed"";
+
+|governance (indicator-api)|
+#FFF4D6:DQ 5 tầng (""libs/dq"", ""governance.dq_rule""):
+schema · semantic · numeric (MAD) · temporal · cross-source;
+#FFF4D6:Conflict: NO_CONFLICT · REVISION · TIME_DIFFERENCE ·
+DEFINITION_DIFFERENCE · UNIT_DIFFERENCE · SOURCE_CONFLICT · UNKNOWN
+→ ""validation.completed"";
+if (DQ block, hoặc SOURCE_CONFLICT / UNKNOWN?) then (có)
+  #FFF4D6:ReviewCase (DQ_BLOCK | CONFLICT) · authority resolver
+  (entity, nguồn, loại case) → ""review.case.created"" → hộp thư;
+  |Reviewer / Checker|
+  #FFF4D6:Maker: correction / override + reason_code
+  (vd. DEFINITION_DIFFERENCE: sửa mapping, không sửa raw);
+  #E6F0FF:Checker ≠ maker duyệt, gửi ""expected_version""
+  —— //màn duyệt dựa trên StructuredTableReview.tsx//;
+  if (version khớp và đồng ý?) then (có)
+  else (lệch / từ chối)
+    #FFF4D6:""409 VERSION_CONFLICT"" hoặc trả lại maker kèm ghi chú;
+    stop
+  endif
+  |governance (indicator-api)|
+  #FFF4D6:""review.approved"";
+else (PASS)
+endif
+
+|indicator-api|
+#FFF4D6:Ghi **effective version** vào ClickHouse ""obs.observation""
+(version_kind machine | correction | override | revision ·
+event_time · publication_time · available_at · system_time);
+#FFF4D6:phát ""observation.published"";
+#FFF4D6:Tính lại chuỗi dẫn xuất (return · spread · basis spot–futures)
+→ ""indicator.recomputed"" → detector (sơ đồ 14);
+stop
+@enduml

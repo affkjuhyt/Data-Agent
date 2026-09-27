@@ -1,0 +1,76 @@
+@startuml 09-dataflow-proactive
+title Luồng chủ động (00 §10, UC12): dữ liệu mới → DQ → ReviewCase → effective → tính lại → detector → điều tra → alert\nHiện trạng + đích (tô màu theo mức đã có) — không ai hỏi mà luồng vẫn chạy (bất biến 1)
+skinparam shadowing false
+skinparam defaultFontName "Arial"
+skinparam wrapWidth 260
+legend top right
+  |= Màu |= Trạng thái |
+  |<#EEF7EE> | Đã có (chạy hôm nay) |
+  |<#E6F0FF> | Có một phần / cần mở rộng |
+  |<#FFF4D6> | Chưa có (đích V2) |
+  Ví dụ nghiệm thu: replay release EIA 23/09/2026,
+  Brent 130,80 → 114,89 (−12,16 %) → đúng **một** alert,
+  không alert trùng cho WTI/spread cùng sự kiện.
+  Không gọi LLM trước bước significance (bất biến 11).
+endlegend
+
+|Thu thập (web_crawler)|
+start
+#E6F0FF:Cron theo nguồn tải ""RBRTEd.xls"" (EIA)
+—— //chạy hôm nay nhưng chỉ ở dev, nguồn dầu/vàng chưa đăng ký//;
+if (Hash đổi so với bản trước?) then (có)
+  #FFF4D6:Raw bất biến MinIO ""raw/{source_id}/{sha256}""
+  + ""ingest.release"" → ""artifact.stored"";
+else (không)
+  #FFF4D6:Quá ""freshness_sla""? → ""source.sla.breached""
+  (EIA futures dừng từ 04/2024 = case kiểm thử);
+  stop
+endif
+
+|Mapping · DQ (series_extractor, governance)|
+#FFF4D6:Profile + mapping_version đã duyệt → normalize
+→ ""observation_candidate"" (chỉ ghi phần khác effective hiện hành);
+#FFF4D6:DQ 5 tầng + conflict với series ""SAME_UNDERLYING""
+(Pink Sheet, IMF PCPS);
+if (DQ_BLOCK · SOURCE_CONFLICT · UNKNOWN?) then (có)
+  |Duyệt (Review Inbox)|
+  #FFF4D6:""review.case.created"" → authority resolver
+  → hộp thư SSE của reviewer;
+  #FFF4D6:Reviewer: correction/override (vd DEFINITION_DIFFERENCE:
+  spot ≠ futures) — không sửa raw, không sửa candidate;
+  #FFF4D6:Checker duyệt (maker ≠ checker, ""expected_version"",
+  409 khi lệch) → ""review.approved"";
+else (PASS)
+endif
+
+|Effective data (indicator-api)|
+#FFF4D6:Ghi ""obs.observation"" version mới
+(version_kind machine | correction | override) → ""observation.published"";
+#FFF4D6:Dependency graph (""series.derived_formula""): tính lại return,
+basis spot–futures → ""indicator.recomputed"";
+
+|Phát hiện (detector)|
+#FFF4D6:Luật rẻ: giảm ≥ 5 % trong 5 phiên, bước nhảy;
+#FFF4D6:Thống kê: MAD theo cửa sổ, có khai báo regime;
+if (Đáng kể? (regime · độ tươi · trùng lặp)) then (không)
+  #FFF4D6:Ghi kết quả, dừng — không gọi LLM;
+  stop
+else (có)
+endif
+
+|Điều tra (workflow-runtime)|
+#E6F0FF:Chạy capability EXPLAIN_PRICE_MOVEMENT không cần người hỏi
+—— //planner + executor DAG có; capability registry, MCP chưa//;
+#FFF4D6:Operators qua MCP Gateway: ""detect_drop_episodes"" ·
+""event_window"" · claim/event cùng entity BRENT_SPOT · xếp hạng evidence;
+#E6F0FF:Verifier: số (libs/indicator/verifier, có) + độ tươi
++ đủ bằng chứng (chưa); thiếu → replan ≤ 2 → INSUFFICIENT_EVIDENCE;
+
+|Alert · Analyst|
+#FFF4D6:Alert candidate → dedup ""(rule_id, entity_id, window)"" ·
+gom Brent/WTI/spread cùng sự kiện · cooldown → ""alert.raised"";
+#FFF4D6:Hộp thư Analyst (màn Alert) → "hỏi tiếp" mở Ask với ngữ cảnh;
+#E6F0FF:Ask trả bảng + chart + evidence (có)
++ lineage · task graph (chưa);
+stop
+@enduml
