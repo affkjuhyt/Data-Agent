@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Shield, Server, Key, Globe, LayoutGrid, ScrollText } from 'lucide-react';
+import { Shield, Key, Globe, LayoutGrid, ScrollText } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../../lib/AuthProvider';
@@ -7,19 +7,17 @@ import { OperationalHeader } from '../shared/OperationalHeader';
 import { StatusBadge } from '../shared/StatusBadge';
 import { AuthOverviewPanel } from './Auth/AuthOverviewPanel';
 import { KeycloakPanel } from './Auth/KeycloakPanel';
-import { KongGatewayPanel } from './Auth/KongGatewayPanel';
 import { IPAllowlistPanel } from './Auth/IPAllowlistPanel';
 import { APIKeysPanel } from './Auth/APIKeysPanel';
 import { AuthAuditPanel } from './Auth/AuthAuditPanel';
 import { MicrosoftSSOPanel } from './Auth/MicrosoftSSOPanel';
 
-type AuthTab = 'OVERVIEW' | 'KEYCLOAK' | 'KONG' | 'IP' | 'APIKEYS' | 'AUDIT' | 'MSAPP';
+type AuthTab = 'OVERVIEW' | 'KEYCLOAK' | 'IP' | 'APIKEYS' | 'AUDIT' | 'MSAPP';
 
 const ALL_TABS: { id: AuthTab; label: string; icon: React.ElementType; desc: string; adminOnly?: boolean; approvalAdmin?: boolean }[] = [
   { id: 'OVERVIEW', label: 'Overview',      icon: LayoutGrid,  desc: 'Health, stack & audit stream' },
   { id: 'KEYCLOAK', label: 'Keycloak',      icon: Shield,      desc: 'Realms, SSO bridges, MFA, role mappings',          adminOnly: true },
   { id: 'MSAPP',    label: 'MS Approvals',  icon: Shield,      desc: 'Microsoft SSO — first-login admin approval queue',  approvalAdmin: true },
-  { id: 'KONG',     label: 'Kong Gateway',  icon: Server,      desc: 'JWT verify, JWKS, injected headers',               adminOnly: true },
   { id: 'IP',       label: 'IP Allowlist',  icon: Globe,       desc: 'CIDR whitelist via Kong IP plugin',                adminOnly: true },
   { id: 'APIKEYS',  label: 'API Keys',      icon: Key,         desc: 'Programmatic access, rotate & revoke' },
   { id: 'AUDIT',    label: 'Audit Log',     icon: ScrollText,  desc: 'Full Keycloak auth event stream — admin only',     adminOnly: true },
@@ -42,7 +40,7 @@ export const AuthSection = ({ initialTab }: { initialTab?: AuthTab } = {}) => {
     <div className="space-y-6 lg:space-y-8 pb-20">
       <OperationalHeader
         title="Auth & SSO"
-        subtitle="Keycloak SSO · Kong JWT Gateway · API Keys · IP Allowlist · Audit"
+        subtitle="Keycloak SSO · API Keys · IP Allowlist · Audit"
         breadcrumbs={[{ label: 'Settings' }, { label: 'Auth & SSO' }]}
         status={<StatusBadge status="ACTIVE" size="lg" />}
       />
@@ -88,7 +86,6 @@ export const AuthSection = ({ initialTab }: { initialTab?: AuthTab } = {}) => {
           {tab === 'OVERVIEW' && <AuthOverviewPanel onViewAudit={() => setTab('AUDIT')} />}
           {tab === 'KEYCLOAK' && <KeycloakPanel />}
           {tab === 'MSAPP'    && <MicrosoftSSOPanel />}
-          {tab === 'KONG'     && <KongGatewayPanel />}
           {tab === 'IP'       && <IPAllowlistPanel />}
           {tab === 'APIKEYS'  && <APIKeysPanel />}
           {tab === 'AUDIT'    && <AuthAuditPanel />}

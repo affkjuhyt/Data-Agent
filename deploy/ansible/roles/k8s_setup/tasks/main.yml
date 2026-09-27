@@ -23,6 +23,11 @@
       register: backup_apply
       changed_when: "'created' in backup_apply.stdout or 'configured' in backup_apply.stdout"
 
+- name: Apply memory cleanup cronjob
+  ansible.builtin.command: "{{ kubectl }} apply -f {{ k8s_manifests }}/job/memory-cleanup.yaml"
+  register: memory_cleanup_apply
+  changed_when: "'created' in memory_cleanup_apply.stdout or 'configured' in memory_cleanup_apply.stdout"
+
 - name: Get restore suspend flag
   ansible.builtin.command: >
     {{ kubectl }} -n {{ ns_database }} get job postgres-restore

@@ -239,6 +239,12 @@ kubectl -n dataagent-service create secret generic postgres-backup-secrets \
   --from-literal=PGPASSWORD="${POSTGRES_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+# Admin role on purpose: the memory tables FORCE row-level security per tenant
+# and this job cleans every tenant (see job/memory-cleanup.yaml).
+kubectl -n dataagent-service create secret generic memory-cleanup-secrets \
+  --from-literal=DATABASE_URL="${DATABASE_URL}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 kubectl -n dataagent-database create secret generic postgres-restore-secrets \
   --from-literal=PGPASSWORD="${POSTGRES_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f -
