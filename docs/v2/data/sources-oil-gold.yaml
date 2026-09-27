@@ -254,33 +254,50 @@ sources:
     verified: V
     notes: URL đuôi .csv nhưng trả PDF 120 trang; đi pipeline unstructured, bảng → observation candidate.
 
-  - id: gold-spot-commercial-api
-    publisher: MetalpriceAPI (hoặc vendor khác chọn ở D3)
-    title: Giá vàng spot XAU/USD theo ngày (nguồn thương mại, không phải benchmark)
-    connector: rest-api
+  - id: lbma-gold-pm-json
+    publisher: LBMA (benchmark do ICE Benchmark Administration quản trị)
+    title: LBMA Gold Price PM theo ngày (JSON công khai trên website LBMA)
+    connector: http-file
     format: json
-    example: https://api.metalpriceapi.com/v1/latest?api_key=${GOLD_API_KEY}&base=USD&currencies=XAU
-    entity: GOLD_SPOT_VENDOR
-    variables: [VENDOR:XAUUSD:D]
-    schedule: every 6 hours
+    sample_urls:
+      - https://prices.lbma.org.uk/json/gold_pm.json
+    entity: GOLD_LBMA_PM
+    variables: [LBMA:GOLD_PM:USD:D, LBMA:GOLD_PM:GBP:D, LBMA:GOLD_PM:EUR:D]
+    schedule: daily
     purpose: production
-    licence: "điều khoản vendor; gói trả phí mới dùng thương mại; quyền dùng hết khi ngừng thuê bao"
-    use_rights: blocked
-    verified: U
+    promotion_mode: auto
+    licence: "Website LBMA: lấy/dùng/phân phối lại dữ liệu benchmark cần licence IBA. POC: phân tích nội bộ, ghi rõ trong báo cáo (ADR-V2-25)"
+    use_rights: internal_analysis
+    release_info: "phiên 15h00 London; công bố công khai trễ tới nửa đêm London"
+    verified: V
     notes: >-
-      Chỉ bật (use_rights → internal_analysis) sau khi chốt D3 và đọc điều khoản về lưu trữ.
-      Giá trả về dạng 1/XAU theo base USD, cần đảo thành USD/oz trong profile.
-      DQ: trung bình tháng lệch IMF PGOLD > 1% → ReviewCase. Xem 04 mục 7.
+      200, 915 KB, 14.691 ngày từ 1968-04-01 tới 2026-09-25; dòng {"is_cms_locked", "d", "v": [USD, GBP, EUR]}.
+      Toàn bộ lịch sử mỗi lần tải, chỉ ghi giá trị mới/đổi. Dự phòng: lbma-gold-price-manual.
 
-  - id: lbma-gold-price
+  - id: giavang-org-world
+    publisher: giavang.org (tổng hợp)
+    title: Giá vàng thế giới XAU/USD trong ngày
+    connector: web-crawl
+    format: html
+    landing_url: https://giavang.org/the-gioi/
+    entity: GOLD_SPOT_WEB
+    schedule: every 2 hours
+    purpose: production
+    licence: cần xác nhận; trang tổng hợp, không phải nguồn gốc
+    use_rights: pending_review
+    locale: en-US
+    verified: V
+    notes: Tuỳ chọn cho câu hỏi "giá vàng thế giới lúc này"; không dùng làm bằng chứng chính thức.
+
+  - id: lbma-gold-price-manual
     publisher: LBMA / ICE Benchmark Administration
-    title: LBMA Gold Price
+    title: LBMA Gold Price (tải tay, dự phòng khi crawl JSON hỏng)
     connector: manual-upload
     landing_url: https://www.lbma.org.uk/prices-and-data/lbma-gold-price
-    licence: "IBA licence (Usage, Redistribution, Historical Access)"
-    use_rights: blocked
-    verified: U
-    notes: FRED đã xoá chuỗi LBMA từ 31/01/2022. Quyết định D3 trong 07-decisions-and-risks.md.
+    licence: "như lbma-gold-pm-json (ADR-V2-25)"
+    use_rights: internal_analysis
+    verified: V
+    notes: FRED đã xoá chuỗi LBMA từ 31/01/2022. Dùng khi lbma-gold-pm-json vi phạm SLA.
 
   # ── Vĩ mô (FRED, cần key trong OpenBao) ───────────────────────────────
   - id: fred-real-yield-10y
@@ -404,6 +421,21 @@ sources:
     locale: vi-VN
     verified: V
     notes: Ứng dụng SPA, cần headless.
+
+  - id: vn-24h-gold-fx
+    publisher: 24h.com.vn (tổng hợp từ giavang.net, pnj.com.vn, baotinmanhhai.vn)
+    title: Giá vàng SJC và tỷ giá (HTML tĩnh)
+    connector: web-crawl
+    format: html
+    landing_url: https://www.24h.com.vn/gia-vang-hom-nay-c425.html
+    entity: GOLD_SJC_BAR
+    schedule: every 2 hours
+    purpose: production
+    licence: cần xác nhận; trang tổng hợp
+    use_rights: pending_review
+    locale: vi-VN
+    verified: V
+    notes: SJC mua 141,400 / bán 144,400 (nghìn đồng/lượng) có ngay trong HTML tĩnh; nguồn phụ khi SJC/PNJ headless hỏng.
 
   # vn-vcb-fx-xml (tỷ giá USD/VND) đã có trong docs/v2/data/sources-public-debt.yaml: dùng lại.
   # Lưu ý: số kiểu Mỹ '25,760.00', giới hạn 1 request/5 phút ⇒ lịch 'hourly' là đủ.

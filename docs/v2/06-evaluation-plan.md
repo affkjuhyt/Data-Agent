@@ -62,7 +62,7 @@ Forecast (UC11) và regression Nợ công/GDP ngoài POC 1 tháng (05 mục 6). 
 | Đợt giảm | "3 lần gần nhất Brent giảm >5% trong 5 phiên?" | 22/09/2026 (−12,16%), 25/08/2026 (−7,40%), 28/07–07/08/2026 (−12,73%) | `data/brent-5d-drop-episodes.csv` |
 | Đếm đợt | "Bao nhiêu lần trong 3 năm?" | 32 theo quy tắc gộp ≤7 ngày; nêu quy tắc | Tham số operator |
 | Spread | "Spread Brent–WTI ngày 22/9?" | 18,48 | T12 (bất thường nhưng đúng) |
-| Chênh vàng | "Vàng SJC cao hơn thế giới bao nhiêu (26/9)?" | 8,8 hoặc 10,9 triệu tuỳ phía tỷ giá; nêu giả định | T8 |
+| Chênh vàng | "Vàng SJC cao hơn thế giới bao nhiêu (26/9)?" | Theo LBMA PM 25/9 (4.261,05): 9,96 triệu (tỷ giá bán Vietcombank) hoặc 12,06 triệu (tỷ giá mua); nêu phiên LBMA và phía tỷ giá. Báo chí đưa 9–10 triệu vì dùng giá spot (~4.298) | T8 |
 | E10 | "Giá RON95-III kỳ 24/9/2026?" | Từ 16/6/2026 là E10RON95-III 27.087 đồng/lít; không nối chuỗi | T5 |
 | Kỳ ngoài lịch | "Kỳ điều hành 7/3/2026 bình quân từ ngày nào?" | 05/3–06/3/2026 | T6 |
 | Giá xăng kỳ 24/9 | "Kỳ điều hành 24/9/2026 xăng E10RON95-III bao nhiêu, tăng bao nhiêu?" | 27.087 đồng/lít, +1.451; hiệu lực 15h00 24/9; Quyết định 2398/QĐ-BCT | Giá trần, không phải giá bình quân |
@@ -139,14 +139,29 @@ artifact đã lưu để lặp lại được.
 | 4 | DQ: locale Việt Nam; E10RON95-III là series mới `SUCCEEDS` RON95-III, không nối chuỗi | T5, T7 | UC05, UC03 | S6-01, S1-03 |
 | 5 | Số trích từ văn bản luôn qua ReviewCase; research duyệt, checker duyệt → effective | | UC07 | S6-03, S7-01 |
 | 6 | Detector: giá bán thay đổi vượt ngưỡng → alert "giá xăng E10RON95-III tăng 1.451 đồng/lít (+5,7%)" kèm giá thế giới bình quân kỳ và Brent cùng cửa sổ | 25.636 → 27.087 | UC12 | S11-01 |
-| 7 | Hỏi "Vàng SJC hôm nay cao hơn thế giới bao nhiêu?" → chênh theo hai phía tỷ giá, nêu giả định, nguồn, as-of | 26/9: 8,79 / 10,91 triệu/lượng (`data/cross-source-reference-2026-08.csv`) | UC08, UC06 | VN-02, VN-03, VN-04 |
+| 7 | Hỏi "Vàng SJC hôm nay cao hơn thế giới bao nhiêu?" → chênh theo hai phía tỷ giá, nêu giả định, nguồn, as-of | 26/9: 9,96 / 12,06 triệu/lượng theo LBMA PM 25/9 (`data/cross-source-reference-2026-08.csv`) | UC08, UC06 | VN-02, VN-03, VN-04 |
 | 8 | Hỏi "Giá xăng kỳ này vì sao tăng?" → bảng + evidence (thông cáo, trang/đoạn) + lineage | Kỳ 24/9/2026 | UC10 | S9-01, E-01, VN-05 |
 
-Chênh vàng theo ngày ở bước 7 cần D3 = B (API vàng thương mại). Nếu không, bước 7 dùng chênh theo
-tháng (IMF `PGOLD` + trung bình tháng SJC) và nói rõ.
+Chênh vàng theo ngày ở bước 7 dùng LBMA Gold Price PM (crawl JSON website LBMA, ADR-V2-25) của phiên
+London gần nhất đã công bố, tỷ giá Vietcombank và giá SJC cùng ngày; câu trả lời ghi rõ phiên LBMA,
+phía tỷ giá, phía giá SJC và nhãn nguồn LBMA.
 
 ## 8. Kiểm thử "mở rộng bằng cấu hình"
 
 Tier B, tuần 4 nếu kịp (không thì ngay sau nghiệm thu): thêm gạo Việt Nam 5% (cột "Rice, Viet Namese 5%" trong Pink Sheet) chỉ bằng cấu hình
 (entity, series trong profile Pink Sheet, 5 case). Đạt khi 5 case trả đúng và `git diff` không có
 file `.py`, `.ts`, `.tsx` nào đổi.
+
+## 9. Báo cáo nghiệm thu
+
+Nộp cùng buổi nghiệm thu 27/10, sinh từ harness và `model/eval`, gồm:
+
+1. Kết quả từng bước của hai kịch bản (đạt/không đạt, thời gian, ảnh màn hình).
+2. Bảng điểm golden set so với baseline tuần 1 (mục 5).
+3. **Phụ lục "Nguồn dữ liệu và điều kiện sử dụng"**, sinh tự động từ Source Registry: mỗi nguồn ghi
+   cơ quan công bố, URL, cách lấy (API, tải file, crawl web, headless, tải tay), `licence`,
+   `use_rights`, lần lấy gần nhất, và giới hạn. Bắt buộc nêu rõ: giá vàng LBMA lấy bằng crawl website
+   LBMA, chưa có licence IBA, chỉ dùng phân tích nội bộ (ADR-V2-25); nguồn fixture của bước 1–7 là
+   dữ liệu thử (D12); các nguồn `pending_review`.
+4. Danh sách việc Tier B và ngoài POC còn lại (05 mục 6).
+

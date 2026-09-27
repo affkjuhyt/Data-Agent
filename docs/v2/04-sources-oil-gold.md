@@ -25,7 +25,8 @@
 5. **Không có giá vàng thế giới theo ngày vừa miễn phí vừa sạch licence.** FRED xoá toàn bộ chuỗi
    LBMA ngày 31/01/2022; IBA yêu cầu licence cho cả dùng để định giá lẫn phân phối lại; WGC từ
    18/03/2025 chỉ còn cung cấp giới hạn dữ liệu LBMA theo điều khoản ICE. Nguồn sạch nhất là theo
-   **tháng** (IMF PCPS `PGOLD`, World Bank Pink Sheet).
+   **tháng** (IMF PCPS `PGOLD`, World Bank Pink Sheet). Đã chốt: crawl file JSON công khai trên
+   website LBMA, ghi rõ trong báo cáo (mục 7).
 6. **Drift ngữ nghĩa thật trong dữ liệu Việt Nam**: từ 16/06/2026 xăng E10RON95-III thay RON95-III
    trong điều hành giá (E10 bắt buộc từ 01/06/2026). Nối hai chuỗi thành một là sai định nghĩa.
 7. **Chu kỳ điều hành giá xăng không cố định**: bình thường thứ Năm 15h00 (ví dụ Quyết định
@@ -68,7 +69,7 @@ trùng khớp.
 
 | Benchmark | Bản chất | Đơn vị | Mốc thời gian | Nguồn miễn phí | Licence |
 | --- | --- | --- | --- | --- | --- |
-| LBMA Gold Price AM/PM | Phiên đấu giá do IBA quản trị | USD/troy oz | 10h30 / 15h00 London | Không (FRED xoá 2022) | IBA licence, 8.000 USD/năm cho tổ chức phi tài chính (2026) |
+| LBMA Gold Price AM/PM | Phiên đấu giá do IBA quản trị | USD/troy oz | 10h30 / 15h00 London | JSON công khai trên website LBMA (crawl; FRED đã xoá 2022) | IBA licence, 8.000 USD/năm cho tổ chức phi tài chính (2026) |
 | Spot XAU/USD | OTC, liên tục | USD/troy oz | Mọi lúc | Không có nguồn sạch (Stooq chặn bot) | Nhà cung cấp dữ liệu |
 | COMEX GC futures | Hợp đồng | USD/troy oz | Settlement New York | Không | CME licence |
 | Shanghai Gold Benchmark | Đấu giá SGE | CNY/gram | AM/PM Thượng Hải | en.sge.com.cn (render JS) | Chưa rõ |
@@ -208,13 +209,29 @@ Các bước nếu chọn:
    hết quyền với dữ liệu đã lưu khi ngừng thuê bao. MetalpriceAPI không ghi rõ ba điểm này; cần hỏi
    bằng văn bản hoặc chọn vendor khác ghi rõ.
 2. Mua gói trả phí thấp (khoảng 12–32 USD/tháng đủ cho lịch crawl vài lần/ngày).
-3. Thêm nguồn `rest_api` (seed `gold-spot-commercial-api` trong `data/sources-oil-gold.yaml`), entity
+3. Thêm nguồn `rest_api` (không có trong seed vì B không được chọn), entity
    **`GOLD_SPOT_VENDOR`**, không phải `GOLD_LBMA_PM` (hai entity khác nhau, ADR-V2-19).
 4. Luật DQ cross-source: trung bình tháng của vendor lệch IMF `PGOLD` > 1% → ReviewCase.
 5. Mọi màn và câu trả lời ghi nhãn "nguồn thương mại, không phải benchmark".
 
-Đề xuất: **B ngay cho POC** để có chênh vàng theo ngày trong kịch bản Việt Nam (06 mục 7), **A song
-song** nếu hội đồng cần số benchmark để trích dẫn chính thức.
+**Đã chốt 27/09/2026 (D3, ADR-V2-25): crawl web, dự phòng tải tay, ghi vào báo cáo.** Kiểm tra từ
+máy chủ cùng ngày:
+
+| Trang | Kết quả | Dùng |
+| --- | --- | --- |
+| `https://prices.lbma.org.uk/json/gold_pm.json` (và `gold_am.json`) | 200, JSON 915 KB, 14.691 ngày từ 01/04/1968 tới 25/09/2026; mỗi dòng `{"d": ngày, "v": [USD, GBP, EUR]}`; 25/09/2026 = 4.261,05 USD/oz | **Nguồn chính**: `http_file`, entity `GOLD_LBMA_PM`, series `LBMA:GOLD_PM:USD:D`. Là số benchmark thật, không phải giá tổng hợp |
+| `giavang.org/the-gioi/` | 200, XAU/USD cập nhật trong ngày (4.285,29 lúc 00:45 28/09) | Tuỳ chọn: giá trong ngày, entity `GOLD_SPOT_WEB` |
+| `data-asg.goldprice.org`, `investing.com`, `tygia.com` | 403 | Không dùng |
+| `24h.com.vn/gia-vang-hom-nay-c425.html` | 200, HTML tĩnh có giá SJC mua 141.400 / bán 144.400 (nghìn đồng/lượng) và tỷ giá, ghi nguồn giavang.net, pnj.com.vn | Nguồn phụ cho SJC, không cần headless |
+
+Điều kiện: website LBMA ghi rằng lấy, dùng hoặc phân phối lại dữ liệu benchmark cần licence của IBA.
+POC dùng để phân tích nội bộ, `use_rights: internal_analysis`. **Báo cáo POC phải có phụ lục "Nguồn dữ
+liệu và điều kiện sử dụng"** (06 mục 9), và mọi màn có giá LBMA hiển thị nhãn nguồn. Production mua
+Usage Licence (phương án A). Phương án B (API thương mại) không dùng.
+
+Thời điểm: LBMA PM chốt 15h00 London, công bố công khai trễ tới nửa đêm London. Chênh vàng trong
+nước – thế giới "hôm nay" tại Việt Nam dùng LBMA PM của phiên London gần nhất đã công bố; câu trả lời
+ghi rõ phiên nào (UC13).
 
 Futures dầu theo ngày: không cần cho POC; bước 12 của kịch bản dùng nguồn fixture (06 mục 6).
 Production cần licence ICE/CME hoặc vendor.
@@ -248,6 +265,7 @@ bằng thông tin chưa công bố.
 | OIL_PRODUCTION_{area} | `JODI:CRUDEOIL:INDPROD:{area}:M` | JODI | KBD | 0 | M |
 | COT_WTI_MM_NET, COT_GOLD_MM_NET | `CFTC:DISAGG:{code}:MM_NET:W` | CFTC | hợp đồng | 0 | W / W |
 | GPR_DAILY | `GPR:GPRD:D` | Caldara & Iacoviello | chỉ số | 2 | D |
+| GOLD_LBMA_PM | `LBMA:GOLD_PM:USD:D` | website LBMA (crawl, ADR-V2-25) | USD/troy oz | 2 | D / D (trễ tới nửa đêm London) |
 | GOLD_MONTHLY | `IMF:PCPS:PGOLD:M`, `WB:PINK:GOLD:M` | IMF, WB | USD/troy oz | 2 | M |
 | USDVND_VCB_{BUY,SELL} | `VCB:USDVND:{BUY,SELL}:I` | Vietcombank | VND/USD | 0 | nhiều lần/ngày |
 | SJC_BAR_{BUY,SELL} | `SJC:BAR:HCM:{BUY,SELL}:I` | SJC | triệu VND/lượng | 1 | nhiều lần/ngày |

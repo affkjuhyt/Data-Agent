@@ -1,7 +1,7 @@
 # Data Agent V2: POC dầu/vàng
 
-> Thư mục này là kế hoạch và thiết kế đang có hiệu lực cho V2. Thiết kế v1 (Nợ công/GDP) ở
-> [`../archive/v1-ankt/`](../archive/v1-ankt/), chỉ còn giá trị tham chiếu/regression.
+> Thư mục này là kế hoạch và thiết kế đang có hiệu lực cho V2. Thiết kế v1 (Nợ công/GDP) đã xoá khỏi
+> cây (còn trong lịch sử git); phần còn dùng được nằm ở 11, 12, 13 và `diagrams/`.
 > Cập nhật lần cuối: 27/09/2026.
 
 ## Bắt đầu từ đâu (người mới và phiên Claude mới)
@@ -39,7 +39,12 @@ Quy tắc repo (lint/type/test trong container, so baseline, không commit secre
 | [06-evaluation-plan.md](06-evaluation-plan.md) | Golden set, dung sai, metric, cách dựng kịch bản 27 bước |
 | [07-decisions-and-risks.md](07-decisions-and-risks.md) | Câu hỏi còn chờ, ADR-V2-09…21, rủi ro |
 | [08-use-cases.md](08-use-cases.md) | Đặc tả UC01–UC14 và bảng ánh xạ 27 bước → UC → ID |
+| [09-frontend.md](09-frontend.md) | Frontend V2: hiện trạng, nghiên cứu (AG-UI, A2UI, MCP Apps, WaitGPT, trust và duyệt), kiến trúc, catalog khối, đặc tả màn, kế hoạch 2 frontend |
 | [10-database-design.md](10-database-design.md) | Thiết kế database V2: hiện trạng các kho (đo 27/09), vấn đề theo bất biến, quy ước bắt buộc ADR-V2-26…35, bố cục schema và role, dọn dữ liệu cũ |
+| [11-ops.md](11-ops.md) | Vận hành: hiện trạng, GitOps, hạ tầng, backup/DR (P0-07), Kafka (P0-03), egress (P0-08), alert, MLOps |
+| [12-numeric-core.md](12-numeric-core.md) | Lõi số: NC-E1..E3, NC-T1..T18, rủi ro NC-R, NC-ADR-T |
+| [13-ui-principles.md](13-ui-principles.md) | Nguyên tắc P1–P8, quy ước số/ngày formatVN, lỗi có cấu trúc, deep link |
+| [diagrams/](diagrams/README.md) | 39 sơ đồ PlantUML: kiến trúc 00–18, giao diện 20–26, vận hành 30–42 |
 | [data/sources-oil-gold.yaml](data/sources-oil-gold.yaml) | 24 nguồn, nhập qua Add Data → Bulk Import |
 | [data/brent-5d-drop-episodes.csv](data/brent-5d-drop-episodes.csv) | 32 đợt Brent giảm ≥5%/5 phiên (2023–2026), có SHA-256 của release EIA gốc |
 | [data/cross-source-reference-2026-08.csv](data/cross-source-reference-2026-08.csv) | Đối chiếu đa nguồn có lớp conflict kỳ vọng |
@@ -59,8 +64,10 @@ Quy tắc repo (lint/type/test trong container, so baseline, không commit secre
   conflict, alert và as-of.
 - **Đội, hạn, phạm vi (chốt 27/09):** tuyển thêm 2 senior; POC trong 1 tháng, nghiệm thu thứ Ba
   27/10/2026; giá trong nước (xăng dầu, vàng, tỷ giá) **trong** POC để trình diễn cho người dùng
-  Việt Nam. Thiếu ~3 tuần-người (07 D14). Forecast, skill, tin tức ngoài POC.
-- **Còn chờ:** D3 (nguồn vàng thế giới theo ngày, phương án ở 04 mục 7), D14 (thêm người).
+  Việt Nam; thêm 1 frontend từ 05/10; giá vàng thế giới theo ngày crawl từ website LBMA, ghi trong
+  báo cáo (ADR-V2-25). Kế hoạch vẫn thiếu ~2,9 tuần-người, bù bằng thứ tự cắt. Forecast, skill, tin
+  tức ngoài POC.
+- **Câu hỏi còn chờ:** không còn.
 
 ## Mốc
 
@@ -78,7 +85,7 @@ Quy tắc repo (lint/type/test trong container, so baseline, không commit secre
 2. P0-09: hai senior chốt hợp đồng dữ liệu trong 3 ngày đầu.
 3. S1-01, S1-02: schema Postgres và ClickHouse `obs`; S2-02: artifact bất biến.
 4. P0-02 (E3), P0-03 (Kafka), P0-04 (kỳ và đơn vị).
-5. P0-05: 30 case hạt giống, đo baseline; chốt D3 và D14.
+5. P0-05: 30 case hạt giống, đo baseline. FE-00: nền frontend (kiểu sinh từ OpenAPI, URL state, stream V2).
 
 ## Lịch sử thay đổi
 
@@ -88,3 +95,4 @@ Quy tắc repo (lint/type/test trong container, so baseline, không commit secre
 | 27/09/2026 | Chốt [00-architecture-v2.md](00-architecture-v2.md) làm kiến trúc chính thức; viết lại 03, 05, 06, 07 theo STEP 1–13 và kịch bản 27 bước; thêm 08; nghiên cứu sâu dữ liệu dầu/vàng (04, `data/`); cập nhật bằng chứng retrieval sau d116062 |
 | 27/09/2026 | Chốt đội (+2 senior) và hạn 1 tháng: 05 viết lại thành kế hoạch 4 tuần, nghiệm thu 27/10; forecast, skill, giá trong nước ra ngoài POC; xoá các câu đã chốt khỏi 07 (D1, D5, D8, D9, D11) |
 | 27/09/2026 | Chốt D2 (giá trong nước trong POC), D4, D6, D7, D10, D12, D13; lấy lõi số từ `feat/add-task` sang nhánh hiện tại; thêm kịch bản Việt Nam 8 bước (06 mục 7); nghiên cứu phương án giá vàng ngày (04 mục 7) |
+| 27/09/2026 | Chốt D3 (crawl JSON LBMA, dự phòng tải tay, phụ lục nguồn trong báo cáo nghiệm thu) và D14 (+1 frontend); thêm 09-frontend.md; 05 phân công FE1/FE2, thêm FE-00, FE-01, D3-01 |

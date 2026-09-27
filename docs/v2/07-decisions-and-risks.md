@@ -7,10 +7,7 @@ làm theo nó: kết quả là quyết định kỹ thuật thì ghi thành ADR 
 phạm vi) thì ghi vào [05](05-implementation-plan.md). Số hiệu D không đánh lại để các file khác
 không trỏ nhầm.
 
-| # | Câu hỏi | Đề xuất |
-| --- | --- | --- |
-| D3 | Nguồn giá vàng thế giới theo ngày: chọn phương án nào (04 mục 7)? | POC: mua gói API thương mại (~12–32 USD/tháng), gắn nhãn "nguồn thương mại, không phải benchmark"; song song gửi email IBA hỏi loại licence cho mục đích phân tích nội bộ, chuẩn bị ngân sách Usage Licence 8.000 USD/năm cho production |
-| D14 | Thêm phạm vi Việt Nam (D2) làm thiếu ~3 tuần-người, nhiều nhất ở frontend (05 mục 7): xử lý thế nào? | Thêm 1 frontend (thuê ngắn hạn hoặc điều động) từ W2; nếu không, một senior nhận frontend từ W3 và kịch bản Việt Nam rút còn 6 bước |
+Hiện không còn câu nào chờ.
 
 Đã chốt và xoá khỏi bảng:
 
@@ -20,6 +17,8 @@ không trỏ nhầm.
   06 mục 7); D4 (lấy lõi số và các sửa liên quan từ `feat/add-task` sang nhánh hiện tại: P0-01);
   D6 (tên deployable: ADR-V2-22); D7 (authority và maker/checker: ADR-V2-23); D10 (chưa cần tin
   tức: 05 mục 6); D12 (nguồn fixture cho bước 1–7: 06 mục 6); D13 (chính sách licence: ADR-V2-24).
+- 27/09/2026 (lần 3): D3 (giá vàng thế giới theo ngày: crawl web, dự phòng tải tay, ghi vào báo cáo:
+  ADR-V2-25, 04 mục 7); D14 (thêm 1 frontend từ W2: 05 mục 1).
 
 ## 2. ADR
 
@@ -42,6 +41,7 @@ Tiếp nối ADR-V2-01…08 của thiết kế gốc. ADR mâu thuẫn với 00 
 | ADR-V2-21 | Re-crawl chỉ thay **bản tìm kiếm** của KB; artifact (MinIO theo SHA-256), release, observation không bao giờ bị xoá | Bất biến 2 của 00; Phase A (22/09) đang xoá vết tài liệu cũ, sửa ở S2-02 |
 | ADR-V2-22 | Tên: deployable `indicator-api` (Observation/Knowledge/Governance API, sau này thêm MCP Gateway), `forecast-worker`; consumer trong `platform_workers`: `series_extractor`, `semantic_extractor`, `detector` | Chung mọi miền (ADR-V2-11); chốt D6 |
 | ADR-V2-23 | Authority: người duyệt được chọn theo (entity, nguồn, loại case); research là maker, người mang vai trò `REVIEWER` là checker; hệ thống chặn tự duyệt | Chốt D7 |
+| ADR-V2-25 | Giá vàng thế giới theo ngày lấy bằng crawl web: nguồn chính là file JSON công khai trên website LBMA (`prices.lbma.org.uk/json/gold_pm.json`, LBMA Gold Price PM, USD/GBP/EUR, từ 1968); nếu crawl hỏng thì tải tay qua Document Hub. `use_rights = internal_analysis`; báo cáo POC và mọi màn hiển thị ghi rõ nguồn và điều kiện sử dụng (licence IBA bắt buộc khi dùng để định giá hoặc phân phối lại) | Chốt D3; không có nguồn miễn phí sạch licence (04 mục 7) |
 | ADR-V2-24 | Nguồn chưa đọc điều khoản ở `use_rights = pending_review` (IMF, JODI, GPR, WGC, Cboe, SJC/PNJ/DOJI, API vàng thương mại): nạp và dùng trong hệ thống, không đưa vào báo cáo/tài liệu gửi ra ngoài tới khi đọc xong điều khoản | Chốt D13 |
 | ADR-V2-36 | `indicator_api` là một deployable nhưng mã chia theo domain: `api/` (router FastAPI), `domains/{registry, observation, knowledge, governance, query, capability}` (model và luật, không import FastAPI hay client kho), `adapters/{postgres, clickhouse, kafka, minio}`. Không thêm lớp `application/` riêng trong POC. `libs/indicator` là thư viện tính toán thuần (Quantity, Period, formula, threshold, verifier), không sở hữu I/O, lưu trữ hay governance | Review cấu trúc 27/09: một deployable là đúng cho 1 tháng, nhưng viết phẳng thì thành monolith; chia domain từ đầu để tách deployable sau POC mà không viết lại |
 | ADR-V2-37 | Consumer V2 trong `platform_workers` chỉ làm: đọc message → parse envelope → gọi handler của domain → commit offset. Logic nằm ở `libs/` hoặc `indicator_api/domains`. Không thêm consumer ngoài ba consumer của ADR-V2-22; DQ và conflict chạy trong module governance của `indicator-api` | Mỗi consumer kéo theo topic, ACL, manifest; tách container sau POC không phải sửa logic |
@@ -55,14 +55,15 @@ Tiếp nối ADR-V2-01…08 của thiết kế gốc. ADR mâu thuẫn với 00 
 
 | Rủi ro | Dấu hiệu sớm | Giảm thiểu | Theo dõi |
 | --- | --- | --- | --- |
-| Hạn 1 tháng không có đệm; thiếu ~3 tuần-người sau khi thêm phạm vi Việt Nam | Mốc C1 (09/10) hoặc C2 (16/10) trễ quá 2 ngày | D14; thứ tự cắt 05 mục 5 | PM |
+| Hạn 1 tháng không có đệm; thiếu ~2,9 tuần-người kể cả khi đã thêm 1 frontend | Mốc C1 (09/10) hoặc C2 (16/10) trễ quá 2 ngày | Thứ tự cắt 05 mục 5 và 09 mục 7 | PM |
+| Frontend thứ hai vào muộn hơn 05/10 | Chưa có người ngày 05/10 | FE1 giữ FE-00 và Review Inbox; màn Việt Nam dựng tối giản từ ValueCard/SeriesChart | PM |
 | Senior vào muộn hoặc cần thời gian làm quen dài | Sau 05/10 chưa có người, hoặc P0-09 chưa xong 02/10 | Hợp đồng dữ liệu P0-09 do BE hiện có viết trước nếu cần; cắt theo 05 mục 5 | PM |
 | ClickHouse mới cho đội | S1-02 chưa xong 02/10 | Test as-of với bản ghi chưa gộp ngay tuần 1; tách database khỏi Langfuse | SR2 |
 | Xung đột giả tràn hộp duyệt | > 5 ReviewCase/1.000 observation/tuần | ADR-V2-17; quan hệ `SAME_UNDERLYING`; khai báo regime | BE |
 | Bão alert | > 1 alert/sự kiện gốc khi replay | ADR-V2-18; test replay release 23/09 | BE |
 | Nguồn chặn bot (OPEC, SJC) | Headless cũng 403 | Tải tay có metadata; nguồn thứ hai (PNJ, DOJI); không để bước demo phụ thuộc | DE |
 | Thông cáo Bộ Công Thương đổi cách trình bày | Extractor không tìm thấy giá thế giới bình quân | Proposal thiếu trường → ReviewCase, research nhập tay; theo dõi tỷ lệ bài trích đủ trường | BE1 |
-| API vàng thương mại: không rõ nguồn gốc giá, không cam kết độ chính xác, quyền dùng hết khi ngừng thuê bao | Giá lệch IMF/World Bank tháng > 1% | Nhãn nguồn thương mại trên mọi màn; so với trung bình tháng IMF mỗi tháng; lưu điều khoản cùng nguồn (D3) | DE |
+| Giá vàng LBMA lấy bằng crawl website, chưa có licence IBA | LBMA đổi/chặn endpoint JSON; hoặc cần dùng số để định giá/phân phối | Tải tay qua Document Hub (ADR-V2-25); báo cáo POC có phụ lục nguồn và điều kiện sử dụng; production mua Usage Licence (8.000 USD/năm) | DE, PM |
 | Nguồn ngừng hoặc đổi địa chỉ | Không có release quá SLA | `source.sla.breached`; `follow_link_pattern` | DE |
 | EIA chỉ công bố tuần | Người dùng hỏi "hôm nay" | Luôn trả kèm as-of và ngày công bố; không nội suy | BE |
 | Licence chưa rõ | `pending_review` tới W6 | D13; không đưa vào tài liệu gửi hội đồng | RS |
