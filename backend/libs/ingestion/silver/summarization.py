@@ -40,7 +40,7 @@ async def _summarize_chunks(
     async def _summarize_one(chunk: dict[str, Any]) -> dict[str, Any]:
         nonlocal completed_count
         async with summary_semaphore:
-            result = await summarize_chunk(chunk["content"], extraction_addendum)
+            result = await summarize_chunk(chunk["content"], extraction_addendum, chunk.get("table"))
         completed_count += 1
         await logger.progress(processed=completed_count)
         return result

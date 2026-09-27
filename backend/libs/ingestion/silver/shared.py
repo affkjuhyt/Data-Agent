@@ -3,11 +3,14 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import re
 from typing import Any, cast
 
 from libs.ingestion import llm_client
 from libs.ingestion.prompts import SILVER_SYSTEM_PROMPTS as SYSTEM_PROMPTS
+
+log = logging.getLogger(__name__)
 
 _JSON_FENCE = re.compile(r"```(?:json)?\\s*([\\s\\S]*?)```", re.IGNORECASE)
 _JSON_OBJ = re.compile(r"\\{[\\s\\S]*\\}", re.DOTALL)
@@ -113,9 +116,33 @@ def _clean_chunk_relationships(raw_relationships: Any, entity_names: list[str]) 
     return cleaned_relationships
 
 
-def _fallback_chunk_summary(content: str) -> dict[str, Any]:
-    first_sentence = re.split(r"[.!?…]", content, maxsplit=1)[0].strip()
-    summary = " ".join((first_sentence or content).split()[:40])
+def _fallback_table_summary(table: dict[str, Any]) -> str:
+    """A table-aware fallback: naive first-sentence truncation (below) cuts a
+    markdown table at its first literal '.', which for a row label like
+    "1.Nợ công..." lands right after the header — the summary that then
+    drives reranking (see light_rag/pipeline.py's rerank()) ends up as just
+    the table's own caption, indistinguishable from every other table's.
+    Built from the table's own row labels instead, so it says what the table
+    is actually about even when the LLM call below failed."""
+    name = str(table.get("table_name") or "").strip()
+    data = table.get("data") or {}
+    headers = [str(h).strip() for h in (data.get("headers") or []) if str(h).strip()]
+    rows = data.get("rows") or []
+    row_labels = [str(row[0]).strip() for row in rows[:3] if row and str(row[0]).strip()]
+    parts = [f"Bảng: {name}"] if name else ["Bảng dữ liệu"]
+    if row_labels:
+        parts.append("gồm " + "; ".join(row_labels))
+    if headers:
+        parts.append(f"({len(headers)} cột: {', '.join(headers[:6])})")
+    return " ".join(parts)
+
+
+def _fallback_chunk_summary(content: str, table: dict[str, Any] | None = None) -> dict[str, Any]:
+    if table:
+        summary = _fallback_table_summary(table)
+    else:
+        first_sentence = re.split(r"[.!?…]", content, maxsplit=1)[0].strip()
+        summary = " ".join((first_sentence or content).split()[:40])
     return {
         "summary": summary,
         "intents": ["document_content"],
@@ -125,7 +152,10 @@ def _fallback_chunk_summary(content: str) -> dict[str, Any]:
     }
 
 
-async def summarize_chunk(content: str, extraction_addendum: str = "") -> dict[str, Any]:
+async def summarize_chunk(
+    content: str, extraction_addendum: str = "", table: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    last_exc: Exception | None = None
     for _ in range(2):
         try:
             summary_result = await _llm_generate_json(
@@ -151,6 +181,15 @@ async def summarize_chunk(content: str, extraction_addendum: str = "") -> dict[s
                     ),
                     "skip": bool(summary_result.get("skip", False)),
                 }
-        except Exception:
-            pass
-    return _fallback_chunk_summary(content)
+        except Exception as exc:  # noqa: BLE001 — any failure here falls through to the fallback below
+            last_exc = exc
+    # Previously silent (`except Exception: pass`): a chunk's rerank-driving
+    # summary silently degraded to noise with no trace anywhere. 480 of 1504
+    # chunks in one tenant's KB were found carrying this fallback (2026-09-27)
+    # — retrying right after fixed nearly all of them, so this is a real,
+    # frequent failure mode (summarization concurrency saturating the LLM
+    # gateway), not a one-off.
+    log.warning(
+        "summarize_chunk | LLM summarization failed twice, using the fallback — last error: %s", last_exc,
+    )
+    return _fallback_chunk_summary(content, table)
