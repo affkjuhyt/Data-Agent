@@ -1,8 +1,9 @@
 # Tests
 
-Foundation set up Jun 2026. The goal of this directory is to make it cheap to
-write the **next** test — the first 10 tests are placeholders so the harness
-is exercised; the next 100 should land here, not in `deploy/docker/scripts/`.
+Every Python test lives here, split by kind (unit / integration / e2e) and, for
+unit and integration, by the service whose image runs it. `make test-unit`,
+`make test-integration` and `make e2e` are the entry points; CI runs the same
+per-service suites.
 
 ## Layout
 
@@ -18,7 +19,6 @@ tests/
 │   ├── auth_api/            #   import every service (their pins conflict: OTel,
 │   ├── kb_promote_silver/   #   boto3), so the suites are never run together.
 │   ├── flow_builder/
-│   ├── release_worker/
 │   └── model_service/
 ├── integration/             # testcontainers; same per-service split as unit/
 │   ├── _db.py               # reset_database / run_alembic / alembic_head for the shared container
@@ -29,11 +29,18 @@ tests/
 │   ├── platform_workers/    # schema crawler, web crawler
 │   ├── sandbox_executor/    # real sandbox-runner containers, read-only Postgres backend
 │   └── test_*.py            # e2e only (LIVE_STACK=1): agent answer, JWT audience, load, tenant isolation
+├── e2e/                     # seed data for the demo agent + non-pytest harnesses
+│   ├── seed.sql             # demo agent, metrics, fact_sales warehouse
+│   ├── seed-governance.sql  # schema-crawler warehouse, owners, lineage, freshness SLAs
+│   ├── seed-flow.js         # the demo agent's canvas in Mongo
+│   ├── agent_eval.py        # 10-case behavioural eval through /api/orchestrate/stream
+│   └── ui.e2e.mjs           # Playwright: real Keycloak login → ask → check the answer block
+├── loadtest/                # k6 scripts and an ingestion throughput probe
 └── README.md
 ```
 
 Frontend tests live next to source in `frontend/src/**/__tests__/` or `frontend/src/**/*.test.tsx`
-and are run by [vitest.config.ts](../vitest.config.ts).
+and are run by [frontend/vitest.config.ts](../frontend/vitest.config.ts).
 
 ## Markers (enforced)
 
@@ -41,7 +48,7 @@ Every test must declare one of:
 
 - **`unit`** — No external services. SQLite/in-memory only. Runs every PR.
 - **`integration`** — testcontainers (PG, Kafka, Redis) come up per session. Runs every PR.
-- **`e2e`** — Drives a fully-running docker-compose stack. Needs `LIVE_STACK=1`. Runs only on push to `main`.
+- **`e2e`** — Drives the deployed dev cluster. Needs `LIVE_STACK=1` (set by `make e2e`). Not run in CI.
 
 The unmarked-test guard in `conftest.py` will skip tests that forget. Add the
 marker, don't bypass the guard.
@@ -85,18 +92,34 @@ schema and role the migrations created; never hand-roll a `DROP SCHEMA public`.
 `make test` runs both. We do NOT roll every service's deps into
 `pyproject.toml [test]` — no single environment can hold them all.
 
-### Python — e2e (live stack)
+### Python — e2e (deployed dev cluster)
 
-```powershell
-kubectl apply -f deploy/k8s/production/database/ && kubectl apply -f deploy/k8s/production/service/
-bash deploy/docker/kong/kong-setup.sh
-$env:LIVE_STACK = "1"
-pytest -m e2e tests/integration -v
+```bash
+export E2E_USER=helios-engineer; read -rsp 'password: ' E2E_PASS; export E2E_PASS
+make e2e                                                    # every tests/integration/test_*.py
+make e2e E2E_TESTS=tests/integration/test_agent_answer_e2e.py PYTEST_ARGS="-v -s"
 ```
+
+`make e2e` runs `pytest -m e2e` in the `workflow_runtime` image against the dev
+cluster's LAN NodePorts (Kong 30100, Keycloak 30110, workflow-runtime 30240);
+override `E2E_KONG_URL` / `E2E_KEYCLOAK_URL` / `E2E_RUNTIME_URL` to target
+another cluster. Credentials come from the environment (`E2E_USER`, `E2E_PASS`),
+never from a file. `E2E_STRICT=1` turns the model-dependent behaviour checks
+from xfail into failures; each turn's frames land in `tests/e2e/out/`.
+
+**These tests write data.** The agent-answer test runs real turns (new
+conversations every run) and the tenant-isolation test deletes, revokes and
+rotates API keys. Point them only at a cluster where that is acceptable.
+
+They need the demo data: the `seed` Job loads `tests/e2e/seed.sql`,
+`seed-governance.sql` and `seed-flow.js` when the inventory has `seed_demo: true`.
+The Job reads them from the `seed-sql` / `seed-mongo` ConfigMaps that
+`deploy/k8s/create-configmaps.sh` builds, so after editing a seed file rerun the
+pipeline with `-e apply_jobs=true` (RUNBOOK §5).
 
 ### Frontend
 
-```powershell
+```bash
 npm install
 npm run test               # vitest run
 npm run test:watch         # vitest watch
@@ -105,20 +128,16 @@ npm run test:coverage      # vitest + v8 coverage
 
 ## Coverage targets
 
-Coverage thresholds in `vitest.config.ts` and `pyproject.toml` are currently
-**0**. This is deliberate — failing day-one CI on a 60% target would block
-every PR. The intended ratchet:
+Python: `fail_under = 48` in `pyproject.toml` `[tool.coverage.report]`, applied
+to the combined unit report (CI's `python-coverage` job merges the per-suite
+data files; a single suite passes `--cov-fail-under=0`). It was set to the
+measured 53.2 % minus 5 and only ever goes up.
 
-| Date        | Python `backend/services/` | Python `basemodel/` | Frontend `frontend/src/` |
-| ----------- | ------------------ | ------------------- | --------------- |
-| Day 0 (now) | 0%                 | 0%                  | 0%              |
-| +30d        | 20%                | 30%                 | 15%             |
-| +60d        | 40%                | 50%                 | 30%             |
-| +90d        | 60%                | 65%                 | 45%             |
+Frontend: the global thresholds in `frontend/vitest.config.ts` are still **0**;
+modules get a per-file threshold there once they have real tests.
 
-Update the threshold in `[tool.coverage.report]` and `vitest.config.ts` ->
-`coverage.thresholds` at each ratchet point. Coverage that doesn't ratchet
-silently rots; coverage that ratchets too fast blocks shipping.
+Coverage that doesn't ratchet silently rots; coverage that ratchets too fast
+blocks shipping.
 
 ## Writing a new unit test
 
@@ -211,7 +230,7 @@ After the migration, services have two ways to query the DB:
 
 ### How to wire a route — the auth_api PoC
 
-[backend/services/auth_api/routers/api_keys.py](../services/auth_api/routers/api_keys.py)
+[backend/services/auth_api/routers/api_keys.py](../backend/services/auth_api/routers/api_keys.py)
 shows the pattern as a sibling route:
 
 ```python
@@ -234,13 +253,12 @@ The `get_tenant_db` dependency:
 
 ### Rollout checklist for each service
 
-When migrating a service (workflow_runtime, flow_builder, kb-backend,
-release_worker, ...):
+When migrating a service (workflow_runtime, flow_builder, kb-backend, ...):
 
-1. Set `APP_DATABASE_URL` env var in its compose entry. Format:
-   `postgresql://app_user:<password>@postgres:5432/<db>`. The password is
-   set out-of-band (vault, k8s secret) — the migration creates the role
-   without one.
+1. Give it `APP_DATABASE_URL` in its `<workload>-secrets` (Ansible
+   `secrets.yml` → `create-secrets.sh`). Format:
+   `postgresql://app_user:<password>@<pg-host>:<port>/<db>`. The password
+   comes from the vault — the migration creates the role without one.
 2. Add `from shared.db_context import get_tenant_db` to the routers.
 3. Replace `def handler(... = Depends(get_db))` with
    `def handler(db = Depends(get_tenant_db))`.
@@ -286,12 +304,10 @@ properties of the migration. Don't delete tests when refactoring policies
 
 ## Promoting a script to a test
 
-The previous `deploy/docker/scripts/test_tenant_isolation.py` was a standalone runner.
-It's now [tests/integration/test_tenant_isolation.py](integration/test_tenant_isolation.py),
-split into one pytest case per scenario so CI shows failures individually.
-
-The original path is now a shim that delegates to pytest, so existing runbooks
-or hooks pointing at the old location keep working during the transition.
+The old standalone tenant-isolation runner is now
+[tests/integration/test_tenant_isolation.py](integration/test_tenant_isolation.py),
+split into one pytest case per scenario so failures show individually. New
+checks go here as tests, not as scripts.
 
 ## What's intentionally NOT here yet
 
@@ -299,8 +315,6 @@ These need product decisions, not just code — left for the next milestone:
 
 - **Mock Keycloak/JWT issuer for unit tests** — decide: stub the JWKS endpoint
   with `pytest-httpx`, or use `python-keycloak` with a fixture realm?
-- **Alembic fixture for schema setup** — needs to be deterministic across the
-  72 migrations; today applying them all per session is too slow.
 - **Frontend MSW (Mock Service Worker)** — once the OpenAPI client lands,
   generate handlers from the spec rather than hand-mocking.
 

@@ -4,7 +4,8 @@
 # deliberately drives the LLM extraction + embedding path, so it measures the
 # ingestion tier's real capacity — which is gated by the single Kafka worker +
 # model_service /generate, NOT by HTTP (promote returns instantly; the worker does
-# the work asynchronously). See docs/KB-SCALE-10K.md §6.
+# the work asynchronously). Adding workers does not help while they share one
+# LLM: last measured, 3 workers sat idle waiting on the same GPU queue.
 #
 # Stages per doc: POST /bronze (sync) → POST /promote/{id}/silver (async, wait for
 # "queued for gold") → POST /promote/{id}/gold (async, wait for status PUBLISHED).

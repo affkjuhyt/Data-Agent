@@ -74,8 +74,6 @@ deploy/docker/kafka/kafka-broker-jaas.config
 .kong-bringup.log
 deploy/docker/.*-up.log
 
-.gitnexus
-
 # Evaluation artifacts. The CORPUS is versioned (model/eval/cases/*.jsonl); these
 # are derived from it per run — a committed report goes stale the moment the code
 # it graded changes, and a stale one is worse than none.

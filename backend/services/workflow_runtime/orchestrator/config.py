@@ -14,8 +14,11 @@ MAX_SYNTHESIS_RETRY = int(os.environ.get("ORCHESTRATOR_MAX_SYNTHESIS_RETRY", "2"
 
 # ── Admission control ────────────────────────────────────────────────────────
 # Cap concurrent agent turns so a slow/abandoned turn can't pile onto the LLM/GPU
-# and wedge everything (see AGENT-E2E.md §5). Over the cap → 429 (shed, retry).
-# 0 = unlimited. Size it to the LLM tier's real parallelism (one small GPU ≈ 4–8).
+# and wedge everything. Over the cap → 429 (shed, retry). Seen on a single GPU:
+# timed-out clients left their LLM calls running, retries queued more behind them
+# (27 queued calls, 40–80 s each) and every new turn looked hung; queueing turns
+# here would only move that backlog. 0 = unlimited. Size it to the LLM tier's real
+# parallelism (one small GPU ≈ 4–8; 2 was needed on a shared laptop GPU).
 MAX_CONCURRENT_TURNS = int(os.environ.get("ORCHESTRATOR_MAX_CONCURRENT_TURNS", "8"))
 
 # ── Database ─────────────────────────────────────────────────────────────────

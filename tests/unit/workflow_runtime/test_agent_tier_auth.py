@@ -213,7 +213,7 @@ class TestPortsAreClosed:
         import yaml
 
         # The production set. dev/ publishes every Service as a NodePort on
-        # purpose (single-node debugging box, see deploy/k8s/dev/REPORT.md).
+        # purpose (single-node debugging box, see the "Dev set" section of deploy/k8s/README.md).
         k8s = REPO_ROOT / "deploy" / "k8s" / "production"
         services = [
             d

@@ -27,7 +27,7 @@ import yaml
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 # The production set. dev/ publishes every Service as a NodePort on purpose
-# (single-node debugging box, see deploy/k8s/dev/REPORT.md).
+# (single-node debugging box, see the "Dev set" section of deploy/k8s/README.md).
 K8S = REPO_ROOT / "deploy" / "k8s" / "production"
 SERVICES = REPO_ROOT / "backend" / "services"
 

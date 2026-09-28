@@ -1,4 +1,4 @@
-"""Redis exact-key result cache for KB retrieval (KB-SCALE-10K.md lever #2).
+"""Redis exact-key result cache for KB retrieval.
 
 An L0 cache that sits BEFORE embedding: an exact repeat of a query (the bulk of
 search-box traffic) returns instantly without touching the model, Qdrant, Neo4j,

@@ -88,7 +88,7 @@ def health() -> JSONResponse:
 @router.get("/metrics")
 def metrics_endpoint() -> PlainTextResponse:
     """Prometheus metrics — embed cache hit-rate + dynamic-batch efficiency +
-    the detected compute device (KB-SCALE-10K.md #8)."""
+    the compute device (always remote-api: this service runs no local model)."""
     s = _embed_service.stats()
     cache = s.get("cache", {})
     batch = s.get("batcher", {})

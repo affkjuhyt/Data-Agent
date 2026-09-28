@@ -20,7 +20,7 @@ How to run, check and fix the Data Agent stack on the dev server. Start here.
 | Manifests applied | `deploy/k8s/dev/` |
 | Image registry | `localhost:5000` (Docker container `registry` on the server) |
 | Namespaces | `dataagent-database` (stores), `dataagent-service` (everything else), `dataagent-sandbox` (sandbox runner pods) |
-| LLM / embed / rerank | GPU services on `10.10.55.101`: vLLM `:8002`, TEI embed `:8003`, TEI rerank `:8004` |
+| LLM / embed / rerank | GPU services on `10.10.55.101`: vLLM main `:8001` (Qwen3-14B), vLLM fast `:8002` (Qwen3-4B), TEI embed `:8003`, TEI rerank `:8004` |
 | Server-only secrets | `deploy/ansible/inventories/k8s-local/.secrets/`, `deploy/k8s/dev/{secrets.env,.openbao-keys.json,.openbao-env.yml}` — git-ignored, back them up |
 
 ## 2. URLs and logins
@@ -76,8 +76,8 @@ kubectl -n dataagent-service get secret grafana-secrets \
 | Change | Extra flags |
 | --- | --- |
 | Code in `backend/services/<svc>/` or `frontend/` | none — that image is rebuilt and its workload restarted. A `backend/services/` change also rebuilds `auth_api`, `kb-backend`, `workflow_runtime` and `migrate` (their Dockerfiles copy all of `backend/services/`) |
-| `backend/libs/` | none — every image that copies `backend/libs` rebuilds (12 of 20) — check disk first (§9) |
-| `pyproject.toml`, `uv.lock` | none — no image copies them, so nothing rebuilds |
+| `backend/libs/` | none — every image that copies `backend/libs` rebuilds (11 of 19) — check disk first (§9) |
+| `pyproject.toml`, `requirements-test.txt` | none — no image copies them, so nothing rebuilds |
 | New Alembic revision | `-e apply_jobs=true` (reruns `migrate`, then `db-init` for the grants) |
 | A Job manifest under `deploy/k8s/dev/job/`, a seed file, `deploy/docker/sql/` | `-e apply_jobs=true` (reruns only the Jobs that read it; `-e jobs_force=true` reruns all) |
 | `deploy/docker/kong/kong-setup.sh`, Keycloak mappers | `-e apply_setup=true` |
@@ -122,6 +122,21 @@ curl -s "http://10.10.55.101:30101/plugins?size=1000" \
 
 `kb-backend` is **fail-closed**: calling it directly on `:30220` returns `401`.
 That is expected; application traffic goes through Kong.
+
+**Agent turn routes.** The orchestrator runs inside `workflow-runtime`; every
+path goes through Kong (`$API`) with `Authorization: Bearer $TOKEN`. Kong clears
+and re-injects the identity headers from the token, so sending your own is
+pointless.
+
+| Method + path | Purpose |
+| --- | --- |
+| `GET /api/orchestrate/health` | liveness, no token needed |
+| `POST /api/orchestrate/stream` | the agent turn, as SSE. Body `{query, agent_id?, session_id?, conversation_id?}`: with `agent_id` one agent answers, without it the multi-agent planner splits the question. Frames: `{"__session_id":…}`, text tokens, `{"__suggestions":…}` / `{"__chart":…}` / `{"__clarification":…}`, then `[DONE]`. Over `ORCHESTRATOR_MAX_CONCURRENT_TURNS` it answers `429` + `Retry-After` |
+| `POST /api/orchestrate/resume/stream` | answer a `{"__clarification":…}` frame, streamed like `/stream` (what the UI uses). Body `{session_id, clarification}`. `POST /api/orchestrate/resume` is the same as one JSON body |
+| `GET /api/orchestrate/traces/{trace_id}` | the turn's trace |
+| `POST /api/conversations/run` | one agent's turn without the orchestrator layer, to separate agent latency from orchestration |
+
+`make bench-e2e` breaks one real turn down per stage (`model/bench/e2e.py`).
 
 ## 5. Demo data
 
@@ -253,7 +268,7 @@ du -sh /data/registry-backups
 ```
 
 - Before `deploy_full=true` (rebuilds every image) or a `backend/libs` change
-  (rebuilds the 12 images that copy it), make sure usage is under ~70 %.
+  (rebuilds the 11 images that copy it), make sure usage is under ~70 %.
 - Reclaim space with `docker image prune` (dangling images). Don't delete
   `localhost:5000/dataagent/*` images unless they are in the registry.
 - Host cron scripts in `deploy/k8s/ops/`: `disk-alert.sh` (alerts above 80 %,
@@ -281,13 +296,17 @@ Before adding a revision, check its id is unique:
 
 ## 11. LLM and model backend
 
+The GPU services on `10.10.55.101` run outside k8s: vLLM main `:8001`
+(Qwen3-14B-AWQ, LiteLLM role `agent-main`), vLLM fast `:8002` (Qwen3-4B-AWQ,
+`agent-fast`), TEI embed `:8003`, TEI rerank `:8004`.
+
 `model-service` (`:8230`) runs no local models. It proxies embed, rerank and
-generate to the GPU services on `10.10.55.101` (vLLM `:8002`, TEI embed `:8003`,
-TEI rerank `:8004`) through `REMOTE_EMBED_URL` / `REMOTE_RERANK_URL` /
-`REMOTE_LLM_URL` in the shared ConfigMap `dataagent-config`
-(`deploy/k8s/dev/configmap.yaml`; restart the workloads after changing it).
-LiteLLM's model routing is `deploy/docker/litellm/config.yaml` (ConfigMap
-`litellm-config`). Embeddings are `bge-m3` (1024-dim): a knowledge base
+generate to them (generate goes to the fast tier, `:8002`) through
+`REMOTE_EMBED_URL` / `REMOTE_RERANK_URL` / `REMOTE_LLM_URL` in the shared
+ConfigMap `dataagent-config` (`deploy/k8s/dev/configmap.yaml`; restart the
+workloads after changing it). LiteLLM reaches both vLLM tiers through
+`LLM_MAIN_BASE_URL` / `LLM_FAST_BASE_URL` (`litellm-env`); its model routing is
+`deploy/docker/litellm/config.yaml` (ConfigMap `litellm-config`). Embeddings are `bge-m3` (1024-dim): a knowledge base
 ingested against another embedding model must be re-ingested.
 
 If retrieval quality is poor, first check the GPU services answer, before
@@ -318,11 +337,10 @@ suspecting the pipeline.
 
 ## 13. Pre-release checklist
 
-- [ ] `ruff check .` and `ruff format --check .` clean
+- [ ] `make lint`: no new ruff findings in the files you touched (the tree is not clean yet, `CLAUDE.md` §1)
 - [ ] `lint-imports` → contracts kept
-- [ ] `pytest -m "unit or integration"` green; coverage ≥ `fail_under` in `pyproject.toml`
-- [ ] `pytest tests/unit/workflow_runtime/test_k8s_manifests.py` green
-- [ ] `alembic upgrade head` applies cleanly on a fresh DB
-- [ ] `cd frontend && npx tsc --noEmit` clean (must run from `frontend/`)
+- [ ] `make test` (unit then integration, one suite per service image) green; CI's combined coverage ≥ `fail_under` in `pyproject.toml`
+- [ ] `make e2e` against the dev cluster after deploying (it writes data — see `tests/README.md`)
+- [ ] `make frontend-lint` and `make frontend-test` clean
 - [ ] CI `security-scan` reviewed (pip-audit + trivy) — no unexplained HIGH/CRITICAL
 - [ ] Changes committed, `ansible-playbook deploy.yml` green, §4 checks pass

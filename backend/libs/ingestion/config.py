@@ -10,7 +10,7 @@ NEO4J_URI = os.getenv("NEO4J_URI", "bolt://neo4j:7687")
 # only knows this URL and never which backend (local vs Colab) serves a call.
 MODEL_SERVICE_URL = os.getenv("MODEL_SERVICE_URL", "http://model_service:8230")
 # Result-cache invalidation: after gold completes, bump the tenant's retrieval-cache
-# version in Redis so searches reflect the new content (KB-SCALE-10K.md §2).
+# version in Redis so searches reflect the new content (libs/shared/kb_result_cache.py).
 REDIS_URL            = os.getenv("REDIS_URL", "redis://redis:6379/0")
 RESULT_CACHE_ENABLED = os.getenv("RESULT_CACHE_ENABLED", "true").lower() in {"1", "true", "yes"}
 
@@ -53,7 +53,9 @@ GOLD_CONCURRENCY      = int(os.getenv("GOLD_CONCURRENCY",      "6"))
 # Chunks within ONE gold doc: 1 = strictly sequential (default; exact legacy
 # behaviour + maximal cross-chunk entity dedup). > 1 overlaps the per-chunk
 # LLM+embed waits (bounded by the LLM gateway's parallelism) at the cost of slightly weaker
-# same-batch dedup (registry upserts keep it correct). KB-SCALE-10K.md §6.
+# same-batch dedup (registry upserts keep it correct). Measured on one shared GPU
+# it gave no throughput gain: concurrent calls only split the same GPU, so raise it
+# only when the LLM tier has spare parallelism.
 GOLD_CHUNK_CONCURRENCY = int(os.getenv("GOLD_CHUNK_CONCURRENCY", "1"))
 # Conflict resolution is I/O-bound (DB reads + LLM merge + Qdrant/Neo4j writes).
 # Keep it below GOLD_CONCURRENCY to avoid starving gold tasks of LLM/embed capacity.
