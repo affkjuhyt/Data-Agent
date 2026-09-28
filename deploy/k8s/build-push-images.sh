@@ -14,7 +14,7 @@
 #
 # Image name : Dockerfile : build context — kept exactly as deploy/k8s/*.yaml
 # spells "dataagent/<name>" after REGISTRY/, since a couple of services use a
-# hyphen (kb-backend, kb-ingestion-worker, platform-workers) while most use
+# hyphen (kb-backend, kb-promote-silver, platform-workers) while most use
 # the underscored Python package name.
 set -euo pipefail
 cd "$(dirname "$0")/../.."

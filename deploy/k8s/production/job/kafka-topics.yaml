@@ -71,9 +71,8 @@ spec:
             $KT --bootstrap-server "$B" --alter --topic "$t" --partitions "$INGEST_PARTITIONS" || true
           done
 
-          # Ported from deploy/docker/kafka/kafka-setup.sh — same topics +
-          # ACLs the docker-compose deployment sets up, missing here until
-          # now (workflow_runtime's audit.data.access WRITE has no ACL grant
+          # Every SASL principal needs an explicit ACL per topic
+          # (workflow_runtime's audit.data.access WRITE has no grant
           # otherwise: KAFKA_ALLOW_EVERYONE_IF_NO_ACL_FOUND is 'false', so
           # the produce silently stalls — metadata refresh keeps retrying
           # the authorization failure instead of raising it — until the

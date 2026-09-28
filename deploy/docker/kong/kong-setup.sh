@@ -4,15 +4,11 @@
 # (deploy/docker/kong/plugins/aeroflow-jwks), which fetches and caches the
 # Keycloak JWKS itself — no public-key registration in Kong is needed.
 #
-# Run after the stack is healthy. Kong's admin API is not published unless
-# deploy/docker/overlay-kong-admin.yml is in the file list (and then only on
-# loopback), so the in-cluster runner is the portable way:
-#
-#   docker compose -f deploy/docker/job-setup.yml up setup
-#
-# Or, with Phase 3 key-auth enabled:
-#
-#   ENABLE_ADMIN_KEY_AUTH=1 docker compose -f deploy/docker/job-setup.yml up setup
+# Runs as the `setup` Job (deploy/k8s/<env>/job/setup.yaml), which mounts this
+# file from the kong-scripts ConfigMap; the deploy pipeline reruns it with
+# `-e apply_setup=true`. Kong's admin API is the ClusterIP Service kong-admin
+# (8101), reachable only from auth-api and the setup Job (allow-kong-admin).
+# Phase 3 key-auth is opt-in with ENABLE_ADMIN_KEY_AUTH=1 in the Job's env.
 #
 # Requires: curl, python3 (baked into the runner image — see
 # deploy/docker/setup/Dockerfile).
@@ -23,12 +19,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KONG_ADMIN="${KONG_ADMIN_URL:-http://localhost:8101}"
 KC_BASE="${KEYCLOAK_URL:-http://localhost:8110}"
 
-# Upstream hostnames below default to the docker-compose container names
-# (underscores, matching the backend/services/<name> directory names). k8s
-# Service objects can't contain underscores at all (DNS-1035 label rule),
-# so deploy/k8s/production/service/*.yaml names them with hyphens instead
-# (workflow-runtime, flow-builder, auth-api) — the k8s
-# ConfigMap (deploy/k8s/production/configmap.yaml) overrides these three to match.
+# Upstream hostnames below default to the backend/services/<name> directory
+# names (underscores). k8s Service objects can't contain underscores at all
+# (DNS-1035 label rule), so the Services are named with hyphens
+# (workflow-runtime, flow-builder, auth-api) and dataagent-config
+# (deploy/k8s/{dev,production}/configmap.yaml) sets these three to match.
 # Without the override, Kong's upstream DNS lookup 503s with "name error"
 # the moment a route actually gets proxied (JWT/CORS checks can pass fine
 # before that point, which is what made this easy to miss).
@@ -116,7 +111,8 @@ fi
 PYTHON=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || echo "")
 if [ -z "$PYTHON" ] || ! "$PYTHON" -c "import sys; assert sys.version_info >= (3,6)" 2>/dev/null; then
   echo "  → Python not found on host; using docker python:3-alpine"
-  # Compose network name is pinned in every per-service file (data-agent-network)
+  # Only reached outside the setup image (which bakes python3 in): a
+  # developer's host whose Docker network is named data-agent-network.
   DOCKER_NET=$(docker network ls --filter name=data-agent-network --format '{{.Name}}' | head -1)
   PY_RUN="docker run --rm -i --network ${DOCKER_NET} python:3-alpine python3"
 else
@@ -232,8 +228,8 @@ curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/release_worker" || true
 # and /api/storage are on runtime-route above.)
 
 # ── 3e. Create kb-backend service + route ──────────────────────────────
-# kb-backend is a compose service on the shared network, so Kong reaches it by
-# its service DNS name (NOT host.docker.internal like aeroflow-backend).
+# Kong reaches kb-backend by its Service short name: both run in
+# dataagent-service, so it resolves without the FQDN.
 echo "📡 Creating kb-backend service..."
 curl -sf -X PUT "$KONG_ADMIN/services/kb-backend" \
   -H "Content-Type: application/json" \
@@ -510,7 +506,7 @@ if [ "${ENABLE_ADMIN_KEY_AUTH:-0}" = "1" ]; then
   echo "🔒 Phase 3: registering Kong-fronting-Kong admin proxy with key-auth..."
 
   # Upstream to the `kong-admin` network alias rather than a hardcoded address,
-  # so this keeps working wherever Kong lands (compose alias or k8s Service).
+  # so this keeps working wherever Kong lands (the k8s Service name).
   ADMIN_UPSTREAM="${KONG_ADMIN_UPSTREAM:-http://kong-admin:8001}"
 
   curl -sf -X PUT "$KONG_ADMIN/services/kong-admin-proxy" \

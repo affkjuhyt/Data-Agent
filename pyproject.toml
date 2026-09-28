@@ -102,8 +102,8 @@ skip_covered = false
 # Coverage gate, applied to the COMBINED unit report (CI: python-coverage job,
 # which merges the per-suite data files). A single suite covers one service's
 # share of the tree, so its own run passes --cov-fail-under=0.
-# Measured 53.2% combined on 2026-09-27 (six unit suites, before the flow_builder,
-# release_worker and model_service suites existed); set to measured − 5.
+# Measured 53.2% combined on 2026-09-27 (six unit suites, before the flow_builder
+# and model_service suites existed); set to measured − 5.
 # RATCHET: raise it as the number rises. Target trajectory: 50 → 70. Never lower it.
 fail_under = 48
 exclude_lines = [
