@@ -4,6 +4,9 @@ datasources:
     uid: prometheus
     type: prometheus
     access: proxy
-    url: http://prometheus:9090
+    # The k8s Service (deploy/k8s/*/service/prometheus.yaml), which listens on
+    # 8400 per the port plan. This file used to say prometheus:9090 — the compose
+    # container's port — so in the cluster every panel showed "no data".
+    url: http://prometheus.dataagent-service.svc.cluster.local:8400
     isDefault: true
     editable: true
