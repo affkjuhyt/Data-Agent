@@ -86,16 +86,3 @@ export const MODULE_SUB_ITEMS: Record<string, SubNavItem[]> = {
     { id: 'ADVANCED',       label: 'Advanced Platform',      icon: Settings,    group: 'Operations' },
   ],
 };
-
-export const ROLES = [
-  { id: 'PLATFORM_ADMIN', label: 'Platform Admin' },
-  { id: 'AI_ENGINEER',    label: 'AI Engineer' },
-  { id: 'EXECUTIVE',      label: 'Executive' },
-];
-
-export const ENVIRONMENTS: { id: string }[] = [
-  { id: 'DEV' },
-  { id: 'UAT' },
-  { id: 'STAGING' },
-  { id: 'PROD' },
-];
