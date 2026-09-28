@@ -32,7 +32,7 @@ UNIT_SUITES ?= workflow_runtime:workflow_runtime kb_backend:kb-backend platform_
 INTEGRATION_SUITES ?= workflow_runtime:workflow_runtime auth_api:auth_api platform_workers:platform-workers \
                       sandbox_executor:sandbox_executor
 # The integration sandbox tests start real sandbox-runner containers; the tag
-# differs between a compose build and a deploy build.
+# differs per host (tests/integration/_sandbox.py), override it to match.
 SANDBOX_RUNNER_IMAGE ?= dataagent/sandbox-runner:latest
 PYTEST_ARGS ?=
 # --user 0 so pip can install the test tooling; no bytecode and no pytest cache,
@@ -91,9 +91,9 @@ BENCH_URL_VARS = LLM_MAIN_BASE_URL LLM_FAST_BASE_URL LITELLM_BASE_URL
 BENCH_SECRET_VARS = LITELLM_API_KEY LITELLM_MASTER_KEY REMOTE_LLM_KEY
 BENCH_ENV = $(shell sed -n 's/^\(LLM_MAIN_BASE_URL\|LLM_FAST_BASE_URL\|LITELLM_BASE_URL\)=/-e \1=/p' .env 2>/dev/null)
 # Anything exported or passed on the command line wins over .env: docker takes
-# the last -e for a name. .env describes the compose stack; the deployed cluster
-# answers on other ports with another key, and benchmarking it must not mean
-# editing .env.
+# the last -e for a name. .env holds a developer's local endpoints; the deployed
+# cluster answers on other ports with another key, and benchmarking it must not
+# mean editing .env.
 BENCH_OVERRIDE = $(foreach v,$(BENCH_URL_VARS),$(if $($(v)),-e $(v)=$($(v)))) \
                  $(foreach v,$(BENCH_SECRET_VARS),$(if $($(v)),-e $(v)))
 
@@ -127,8 +127,28 @@ bench-e2e:  ## per-stage latency of one real question against a deployed agent (
 	  -e PYTHONPATH=/src/backend:/src $(E2E_ENV) $(PY_IMAGE) \
 	  python -m model.bench.e2e $(E2E_ARGS)
 
-e2e:  ## local end-to-end stack + suite (docker compose)
-	bash tests/e2e/e2e.sh
+# The e2e suite (pytest -m e2e) drives the deployed dev cluster through its LAN
+# NodePorts (deploy/k8s/dev: Kong 30100, Keycloak 30110, workflow-runtime 30240),
+# so it needs the cluster up and seeded with seed_demo, not testcontainers. It
+# logs in and runs real agent turns: every run writes conversations, so point it
+# only at a cluster where that is acceptable. Override a URL to target another
+# cluster. E2E_USER / E2E_PASS are forwarded by name, like bench-e2e's secrets.
+E2E_KONG_URL ?= http://10.10.55.101:30100
+E2E_KEYCLOAK_URL ?= http://10.10.55.101:30110
+E2E_RUNTIME_URL ?= http://10.10.55.101:30240
+E2E_TESTS ?= $(wildcard tests/integration/test_*.py)
+E2E_FORWARD_VARS = E2E_USER E2E_PASS E2E_AGENT_ID E2E_STRICT E2E_TURN_TIMEOUT
+E2E_FORWARD = $(foreach v,$(E2E_FORWARD_VARS),$(if $($(v)),-e $(v)))
+
+export $(E2E_FORWARD_VARS)
+
+# The turn test writes its frames to tests/e2e/out/ as root; hand them back.
+e2e:  ## pytest -m e2e against the deployed dev cluster (LAN NodePorts; URLs overridable, credentials from env)
+	@$(DOCKER_RUN_SUITE) --network host -e LIVE_STACK=1 -e LIVE_KONG_URL=$(E2E_KONG_URL) \
+	  -e LIVE_KEYCLOAK_URL=$(E2E_KEYCLOAK_URL) -e WORKFLOW_RUNTIME_URL=$(E2E_RUNTIME_URL) $(E2E_FORWARD) \
+	  $(IMAGE_REGISTRY)/dataagent/workflow_runtime:latest sh -c \
+	  "pip install -q -r requirements-test.txt && python -m pytest -q -p no:cacheprovider -m e2e $(PYTEST_ARGS) $(E2E_TESTS); \
+	   rc=\$$?; chown -R $$(id -u):$$(id -g) tests/e2e/out 2>/dev/null; exit \$$rc"
 
 deploy:  ## deploy to the k8s-local inventory (Ansible is the only deploy path)
 	cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml

@@ -1,8 +1,8 @@
 """E2E — one real agent turn through Kong, orchestrator, workflow_runtime,
 sandbox_executor and the semantic layer, judged on the wire it produces.
 
-    tests/e2e/e2e.sh all              # brings the stack up, seeds, runs this
-    LIVE_STACK=1 pytest -m e2e tests/integration/test_agent_answer_e2e.py -v -s
+    make e2e                          # against the deployed dev cluster (seed_demo)
+    make e2e E2E_TESTS=tests/integration/test_agent_answer_e2e.py PYTEST_ARGS="-v -s"
 
 Two kinds of assertion, on purpose:
 

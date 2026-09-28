@@ -9,8 +9,8 @@
 // NOT here — only secretId, resolved through secrets_vault + OpenBao.
 const WV = "0000000e-2e00-4000-8000-000000000004";
 
-// DW_HOST / DW_PORT: the warehouse as workflow_runtime reaches it. The defaults
-// are the compose service; the k8s seed Job passes the in-cluster FQDN.
+// DW_HOST / DW_PORT: the warehouse as workflow_runtime reaches it. The k8s seed
+// Job passes the in-cluster FQDN; the defaults only serve a run by hand.
 const dbConnections = JSON.stringify([
   {
     name: "dw",

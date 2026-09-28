@@ -50,7 +50,7 @@ ON CONFLICT (id) DO NOTHING;
 UPDATE "Agents" SET published_version_id = '0000000e-2e00-4000-8000-000000000002'
 WHERE id = '0000000e-2e00-4000-8000-000000000001';
 
--- ── DB connector password: metadata row here, value in OpenBao (e2e.sh setup) ─
+-- ── DB connector password: metadata row here, value in OpenBao (k8s_openbao) ──
 -- workflow_runtime resolves dbConnections[].secretId → secrets_vault → OpenBao
 -- KV at secret/data/tenants/<tenant>/<key_name>. Never plaintext in the flow.
 INSERT INTO secrets_vault(id, tenant_id, key_name, key_type, algorithm, realm,
