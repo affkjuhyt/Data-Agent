@@ -2,7 +2,7 @@
 Docker socket (doc §1.2 hub-and-spoke isolation: one controlled gate, no
 direct access from workflow_runtime). Exposes the endpoints that
 workflow_runtime's execute_python / execute_sql tool handlers call over
-HTTP; never reachable from outside the docker-compose network.
+HTTP; not routed through the gateway — workflow_runtime is its only caller.
 
 backend/services/sandbox_executor/ops/ "Kế hoạch 1" mục i: POST /execute/python and /execute/sql no
 longer run the request inline and hold the HTTP connection open for the

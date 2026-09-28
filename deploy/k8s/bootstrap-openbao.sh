@@ -2,10 +2,9 @@
 # Init/unseal OpenBao and mint the workflow_runtime AppRole, then patch the
 # three OPENBAO_* lines in deploy/k8s/secrets.env in place.
 #
-# Ported from deploy/ansible/roles/openbao/tasks/main.yml (the Docker Compose
-# version, which talks to the container over the compose network) — same
-# steps, just addressed at the openbao Service's ClusterIP instead of a
-# container name, and the result lands in secrets.env instead of .env.
+# The manual counterpart of deploy/ansible/roles/k8s_openbao (the deploy path)
+# — same steps, addressed at the openbao Service's ClusterIP, and the result
+# lands in secrets.env.
 # There is no k8s Job for this on purpose: it would need RBAC to write
 # Secrets, and deploy/k8s/README.md's identity model gives every workload
 # (openbao excepted, for a narrower reason) zero API-server access. This is a

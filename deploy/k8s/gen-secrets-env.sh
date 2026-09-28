@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fills deploy/k8s/secrets.env (git-ignored) from deploy/k8s/secrets.env.example
 # with random values, once. Re-running never rotates an existing value — same
-# "generate once, persist" pattern as deploy/ansible/roles/common for compose.
+# "generate once, persist" pattern.
 #
 # OPENBAO_TOKEN / OPENBAO_ROLE_ID / OPENBAO_SECRET_ID are left blank here —
 # bootstrap-openbao.sh mints them after OpenBao is actually running and

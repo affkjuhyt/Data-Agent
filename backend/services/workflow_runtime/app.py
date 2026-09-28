@@ -142,7 +142,7 @@ def create_app() -> FastAPI:
         expose_headers=["X-Conversation-Id"],
     )
 
-    # /health stays open — Kong's upstream probe and the compose healthcheck
+    # /health stays open — Kong's upstream probe and the kubelet's probes
     # both run before any token exists, and it returns nothing but a literal.
     app.include_router(health.router)
     app.include_router(orch_stream.health_router)

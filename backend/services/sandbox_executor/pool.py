@@ -323,7 +323,7 @@ class ContainerPool:
         self.stuck_exec_s = stuck_exec_s
         self.mem_drift_factor = mem_drift_factor
         # backend/services/sandbox_executor/ops/ Kế hoạch 1 mục (a): dedicated bridge network (never the
-        # default Docker/compose bridge) instead of network_disabled=True —
+        # default Docker bridge) instead of network_disabled=True —
         # OFF by default. Nothing in this codebase's AST whitelist
         # (security_visitor.py) currently permits importing a DB driver or
         # raw socket/urllib/requests inside agent code, so there is no
@@ -430,7 +430,7 @@ class ContainerPool:
 
     def _ensure_egress_network(self) -> None:
         """Dedicated bridge network for the pool — never the default
-        Docker/compose bridge — with inter-container communication
+        Docker bridge — with inter-container communication
         disabled (enable_icc=false) so one compromised pool container
         can't pivot straight to another tenant's container sitting idle
         in the same pool. Idempotent: reuses the network if it already

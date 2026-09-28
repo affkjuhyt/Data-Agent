@@ -55,9 +55,9 @@ class TestSettings:
         assert LiteLLMSettings().api_key == "sk-dev"
         assert KeycloakSettings().realm == "aeroflow"
 
-    def test_env_names_are_the_compose_contract(self, monkeypatch):
-        """The compose blocks were carried over verbatim; every name they set
-        must land on a field."""
+    def test_env_names_are_the_deployment_contract(self, monkeypatch):
+        """The env names were carried over verbatim from the replaced services;
+        every name the deployment sets must land on a field."""
         monkeypatch.setenv("KAFKA_BOOTSTRAP_SERVERS", "broker:19092")
         monkeypatch.setenv("KAFKA_SASL_USERNAME", "memory-consumer")
         monkeypatch.setenv("KAFKA_SASL_PASSWORD", "pw")

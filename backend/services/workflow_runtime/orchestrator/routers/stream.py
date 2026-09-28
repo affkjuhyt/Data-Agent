@@ -25,8 +25,8 @@ from services.workflow_runtime.orchestrator.schemas import ClarificationResume, 
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-# Included WITHOUT auth by app.py (like /health): the compose/Kong probes for
-# the old orchestrator service still hit this path.
+# Included WITHOUT auth by app.py (like /health): Kong's probes for the old
+# orchestrator service still hit this path.
 health_router = APIRouter()
 
 # Admission control: one slot per in-flight agent turn. Guards the shared

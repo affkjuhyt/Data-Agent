@@ -10,10 +10,9 @@
 # code silently does.
 #
 # Run this ON whatever Docker engine actually backs the sandbox pool
-# containers (the host, or inside the rootless Docker-in-Docker sidecar —
-# deploy/docker/service_sandbox-dockerd.yml's sandbox-dockerd, in this repo's compose
-# setup — NOT on sandbox_executor itself, which never runs containers
-# directly, only talks to the Docker API).
+# containers (the host, or inside a Docker-in-Docker sidecar if one is used —
+# NOT on sandbox_executor itself, which never runs containers directly, only
+# talks to the Docker API).
 #
 # This script only installs + registers the runtime. It does NOT set
 # SANDBOX_RUNTIME=runsc for you, and you should not set it until you've
@@ -63,8 +62,7 @@ cat <<'EOF'
 
 runsc installed and registered. Restart the Docker daemon to pick it up:
   systemctl restart docker                     # host dockerd
-  # or, if using the rootless DinD sidecar (deploy/docker/service_sandbox-dockerd.yml):
-  docker compose -f deploy/docker/service_sandbox-dockerd.yml restart sandbox-dockerd
+  # or restart the DinD sidecar's daemon, if the pool runs on one
 
 Before setting SANDBOX_RUNTIME=runsc on sandbox_executor, run the two
 remaining steps backend/services/sandbox_executor/ops/ mục g requires (see this script's header):

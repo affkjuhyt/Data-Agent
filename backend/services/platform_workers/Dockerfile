@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Build context is the repo root (set in compose) so backend/libs is reachable:
+# Build context is the repo root (the deploy's default) so backend/libs is reachable:
 # the governance vocabulary (libs/shared/freshness.py), the embeddings client
 # and the observability bootstrap are shared with the other services.
 #

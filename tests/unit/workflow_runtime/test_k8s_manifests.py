@@ -1,7 +1,7 @@
 """The k8s manifests, checked the way the migrations are checked.
 
 `tests/integration/workflow_runtime/test_alembic_migrations.py` exists because a migration that
-only gets exercised by `docker compose up` is a migration whose failures land in
+only gets exercised by a deploy is a migration whose failures land in
 production. The manifests had the same shape of problem and no equivalent test:
 a misspelled field is not an error to the API server, it is a field that
 silently does not exist, and the first symptom is a pod that starts without the
@@ -13,8 +13,7 @@ Three classes of drift are caught here:
     itself validates against, so `terminationGracePeriodSecond` fails here
     instead of being quietly dropped at apply time.
   * **The migration gate.** The runtime tier must not start before the schema is
-    at head. Compose gets that from `depends_on: service_completed_successfully`;
-    here it is an initContainer, and an initContainer is easy to forget when
+    at head. That is an initContainer, and an initContainer is easy to forget when
     copying a manifest for a new service.
   * **A destructive job in the directory apply.** `kubectl apply -f deploy/k8s/` is the
     documented routine. Anything that drops a database must therefore not be in
@@ -210,7 +209,7 @@ class TestNamesAreValidDns1123:
         return bad
 
     def test_every_object_and_container_name_is_a_dns_label(self):
-        """Underscores in a name are the compose→k8s port's classic bug: valid
+        """Underscores in a name (copied from a Python package name) are the classic bug: valid
         YAML, valid schema, rejected by the API server at apply time."""
         bad = self._bad_names()
         assert not bad, "not DNS-1123 (^[a-z0-9]([-a-z0-9]*[a-z0-9])?$):\n" + "\n".join(bad)
@@ -284,7 +283,7 @@ class TestInlineScriptsAreValidShell:
     """A manifest carries shell as a string, so nothing checks it until the pod
     runs — and a backup or restore job is the worst place to learn that.
 
-    This caught a real one: the compose backup sidecar is a single-quoted
+    This caught a real one: a backup sidecar's loop was a single-quoted
     `sh -c '...'` argument, and a comment containing an apostrophe ("pg_dump's")
     closed the quote and turned the rest of the loop into a syntax error.
     """
