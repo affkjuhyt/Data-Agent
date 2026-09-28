@@ -18,6 +18,7 @@ import contextlib
 import logging
 import threading
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -79,12 +80,37 @@ def poll_events(admin: KeycloakAdmin, since_ms: int) -> list[dict[str, Any]]:
     return sorted(fresh, key=lambda e: e.get("time", 0))
 
 
-def write_events(conn: Any, events: list[dict[str, Any]]) -> int:
+def user_tenant(admin: KeycloakAdmin, user_id: str) -> str | None:
+    """The platform tenant of a Keycloak user: its ``tenant_id`` attribute,
+    which is what the token's tenant claim is mapped from. None for an event
+    with no user, or a user that no longer exists or has no tenant.
+
+    Any other Keycloak failure propagates: the batch is then retried on the
+    next tick instead of being written without its tenant."""
+    if not user_id:
+        return None
+    try:
+        user = admin.get_user(user_id)
+    except KeycloakError as e:
+        if getattr(e, "response_code", None) != 404:
+            raise
+        return None
+    values = (user.get("attributes") or {}).get("tenant_id") or []
+    return str(values[0]) if values else None
+
+
+def write_events(
+    conn: Any, events: list[dict[str, Any]], tenant_of: Callable[[str], str | None],
+) -> int:
     """Insert a batch in one transaction; returns how many were new."""
     inserted = 0
+    tenants: dict[str, str | None] = {}
     with conn.cursor() as cur:
         for event in events:
-            if auth_events.insert_event(cur, event):
+            user_id = event.get("userId") or ""
+            if user_id not in tenants:
+                tenants[user_id] = tenant_of(user_id)
+            if auth_events.insert_event(cur, event, tenants[user_id]):
                 inserted += 1
                 log.info(
                     "auth event type=%-30s user=%s",
@@ -138,8 +164,11 @@ class Bridge:
         if not new_events:
             return 0
 
+        admin = self._get_admin()
         try:
-            inserted = write_events(self._get_conn(), new_events)
+            inserted = write_events(
+                self._get_conn(), new_events, lambda user_id: user_tenant(admin, user_id),
+            )
         except Exception:
             conn, self._conn = self._conn, None
             if conn is not None:
