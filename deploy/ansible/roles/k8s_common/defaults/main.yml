@@ -49,9 +49,9 @@ image_name_overrides:
 # full-source layout Dockerfile.dev provides, not plain Dockerfile's
 # `vite preview`/dist-only production build. Unconditional (not k8s_env-
 # gated): both manifests currently need it. Mirrors what
-# deploy/k8s/build-push-images.sh and docker-compose.app.yml's `authoring`
-# profile already do — this dict is what let deploy.yml's generic build task
-# catch up to them instead of silently rebuilding a broken frontend image.
+# deploy/k8s/build-push-images.sh already does — this dict is what let
+# deploy.yml's generic build task catch up to it instead of silently
+# rebuilding a broken frontend image.
 image_dockerfile_overrides:
   frontend: Dockerfile.dev
 

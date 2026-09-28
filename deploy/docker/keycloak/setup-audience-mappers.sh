@@ -11,10 +11,9 @@
 # Run after Keycloak is up + realm imported. Idempotent — re-running just
 # updates the existing mappers.
 #
-# Usage:
-#   docker compose -f deploy/docker/job-setup.yml up setup
-# OR from host (when Keycloak is exposed on :8080):
-#   bash deploy/docker/keycloak/setup-audience-mappers.sh
+# Usage: the setup Job runs it (deploy/k8s/<env>/job/setup.yaml, mounted from
+# the keycloak-scripts ConfigMap). From a host that reaches Keycloak:
+#   KEYCLOAK_URL=http://<node>:30110 bash deploy/docker/keycloak/setup-audience-mappers.sh
 set -euo pipefail
 
 KC_BASE="${KEYCLOAK_URL:-http://localhost:8110}"
