@@ -277,7 +277,7 @@ Before adding a revision, check its id is unique:
 - RLS is enforced via `enable_tenant_rls` + `rls_kb_child_tables` (FK-chain
   EXISTS policies for child tables without their own `tenant_id`). Never disable
   RLS on a tenant table to "fix" a query — scope the query by tenant.
-- The chain is covered by `tests/integration/test_alembic_migrations.py`.
+- The chain is covered by `tests/integration/workflow_runtime/test_alembic_migrations.py`.
 
 ## 11. LLM and model backend
 
@@ -321,7 +321,7 @@ suspecting the pipeline.
 - [ ] `ruff check .` and `ruff format --check .` clean
 - [ ] `lint-imports` → contracts kept
 - [ ] `pytest -m "unit or integration"` green; coverage ≥ `fail_under` in `pyproject.toml`
-- [ ] `pytest tests/unit/test_k8s_manifests.py` green
+- [ ] `pytest tests/unit/workflow_runtime/test_k8s_manifests.py` green
 - [ ] `alembic upgrade head` applies cleanly on a fresh DB
 - [ ] `cd frontend && npx tsc --noEmit` clean (must run from `frontend/`)
 - [ ] CI `security-scan` reviewed (pip-audit + trivy) — no unexplained HIGH/CRITICAL

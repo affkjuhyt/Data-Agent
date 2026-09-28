@@ -1,0 +1,13 @@
+# What tests/integration needs on top of requirements-test.txt and the suite's
+# own service requirements.txt (make test-integration, CI python-integration).
+-r requirements-test.txt
+# Every suite starts Postgres from tests/conftest.py; the web-crawler suite
+# also starts MinIO.
+testcontainers[postgres,minio]>=4.7
+# The fixtures seed and inspect the database with psycopg2 whatever driver the
+# service itself uses.
+psycopg2-binary>=2.9
+# Suites that migrate a fresh database run the alembic CLI the way the migrate
+# Job does (backend/alembic/env.py: SQLAlchemy async engine over asyncpg).
+alembic>=1.13
+asyncpg>=0.29

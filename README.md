@@ -201,7 +201,7 @@ table is in [`deploy/k8s/README.md`](./deploy/k8s/README.md#ports).
 ```bash
 pytest -m unit
 pytest -m integration                        # spins Postgres up through testcontainers
-pytest tests/unit/test_k8s_manifests.py      # manifest invariants (security, ports, ConfigMaps)
+pytest tests/unit/workflow_runtime/test_k8s_manifests.py      # manifest invariants (security, ports, ConfigMaps)
 ```
 
 ## Docker Compose (legacy)

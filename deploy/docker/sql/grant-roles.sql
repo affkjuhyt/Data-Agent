@@ -85,6 +85,19 @@ BEGIN
 END
 $$;
 
+-- ── crawler_ro ───────────────────────────────────────────────────────────────
+-- Same situation as sandbox_reader: create-extra-dbs.sql creates it and grants
+-- it sandbox_dev, but only on a fresh volume, while db-init sets its password
+-- on every deploy under ON_ERROR_STOP. On a volume initialised before the role
+-- existed, that ALTER ROLE stopped the Job.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'crawler_ro') THEN
+    CREATE ROLE crawler_ro WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+  END IF;
+END
+$$;
+
 -- ── kb_backend ───────────────────────────────────────────────────────────────
 -- Table-scoped role for the kb-backend service. Unlike app_user it is NOT
 -- granted ALL TABLES and gets no ALTER DEFAULT PRIVILEGES in public: a new
@@ -123,7 +136,13 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON
   "KBWarehouse",
   "KBWarehouseConfig",
   "KBStructuredImportJob",
-  "KBQdrantCollection"
+  "KBQdrantCollection",
+  -- Source Registry (operations/source_ops.py): sources, their versioned
+  -- config and the run queue Run Now writes to. Deleting a source is a soft
+  -- delete (UPDATE).
+  "KBSource",
+  "KBSourceConfig",
+  "KBSourceRun"
 TO kb_backend;
 
 GRANT SELECT ON

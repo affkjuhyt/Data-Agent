@@ -32,14 +32,19 @@ async def _gold_source_counts(postgres: Any, tenant_id: str | None) -> dict[str,
     return counts
 
 
-async def _warehouse_count(postgres: Any) -> int:
+async def _warehouse_count(postgres: Any, tenant_id: str | None) -> int:
+    # Filtered here like the gold counts beside it rather than left to RLS,
+    # which only applies when the connecting role does not bypass it.
     try:
         async with postgres.get_client() as session:
-            return int(await session.scalar(
+            stmt = (
                 sa_select(sa_func.count())
                 .select_from(KBWarehouseORM)
                 .where(KBWarehouseORM.is_deleted.is_(False))
-            ) or 0)
+            )
+            if tenant_id:
+                stmt = stmt.where(KBWarehouseORM.tenant_id == uuid.UUID(tenant_id))
+            return int(await session.scalar(stmt) or 0)
     except Exception as e:
         log.warning("fleet_ops: warehouse count failed: %s", e)
         return 0
@@ -67,7 +72,7 @@ async def _neo4j_counts(neo4j: Any, tenant_id: str | None) -> tuple[int, int]:
 
 async def get_fleet_stats(postgres: Any, qdrant: Any, neo4j: Any, tenant_id: str | None) -> dict[str, Any]:
     counts = await _gold_source_counts(postgres, tenant_id)
-    wh_count = await _warehouse_count(postgres)
+    wh_count = await _warehouse_count(postgres, tenant_id)
 
     qdrant_rows: list[Any] = []
     try:

@@ -104,7 +104,7 @@ async def maybe_publish_auto_gold(
     `GoldHandoffFailed`'s docstring) instead of the failure vanishing."""
     if producer is None:
         return False
-    async with postgres.get_client() as session:
+    async with postgres.get_client(tenant_id=tenant_id) as session:
         row = (await session.execute(
             sa_select(KBDataORM.doc_metadata, KBDataORM.is_deleted, KBDataORM.purpose).where(
                 KBDataORM.data_id == uuid.UUID(data_id)

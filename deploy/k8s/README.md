@@ -104,7 +104,7 @@ directory therefore sets:
 | `capabilities.drop` | `["ALL"]` |
 
 No pod uses `hostNetwork`, `hostPID`, `hostIPC`, a `hostPath` volume, or
-`privileged`. `tests/unit/test_k8s_manifests.py` asserts all of it, plus every
+`privileged`. `tests/unit/workflow_runtime/test_k8s_manifests.py` asserts all of it, plus every
 field against the API server's own OpenAPI models.
 
 `sandbox-executor` runs user-submitted code and additionally sets
@@ -362,7 +362,7 @@ Service DNS names are DNS-1123, so an underscore is not legal in a hostname:
 over whatever default the image ships, so the underscored defaults compiled into
 the Python services never apply in-cluster.
 
-`tests/unit/test_k8s_manifests.py` asserts the range, that no two Services share
+`tests/unit/workflow_runtime/test_k8s_manifests.py` asserts the range, that no two Services share
 a port, that `8000–8099` stays empty, and that `port == targetPort ==
 containerPort` for every workload.
 
