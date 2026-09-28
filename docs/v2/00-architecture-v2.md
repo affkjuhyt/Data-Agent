@@ -282,7 +282,7 @@ Chi tiết, vấn đề cần xử lý và cách hiện thực từng UC: [08-us
 | Monitoring | Prometheus/Grafana |
 | IAM, secret | Keycloak, OpenBao |
 
-Không đổi stack hàng loạt: phần lớn đã chạy trong cụm (01, mục 3–4).
+Không đổi stack hàng loạt: phần lớn đã chạy trong cụm ([README](README.md), "Tình trạng tóm tắt"; [11](11-ops.md) mục 1).
 
 ## 13. Mười vấn đề phải giải trước khi tăng độ phức tạp
 

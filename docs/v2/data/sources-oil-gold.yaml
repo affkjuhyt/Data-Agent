@@ -1,6 +1,5 @@
 # Seed nguồn cho POC V2 dầu/vàng. Kiểm tra từ máy chủ 10.10.55.101 ngày 27/09/2026.
-# Định dạng giống docs/v2/data/sources-public-debt.yaml để nhập qua Add Data → Bulk Import
-# (kb_backend/router/knowledge/sources.py: _parse_bulk_yaml). Giải thích từng nguồn: ../04-sources-oil-gold.md
+# Nhập qua Add Data → Bulk Import (kb_backend/router/knowledge/sources.py: _parse_bulk_yaml). Giải thích từng nguồn: ../04-sources-oil-gold.md
 #
 # verified: V = tải được và đã đọc nội dung · S = tồn tại, cần key/đăng nhập · X = máy chủ bị chặn
 #           U = chưa thử
@@ -437,5 +436,23 @@ sources:
     verified: V
     notes: SJC mua 141,400 / bán 144,400 (nghìn đồng/lượng) có ngay trong HTML tĩnh; nguồn phụ khi SJC/PNJ headless hỏng.
 
-  # vn-vcb-fx-xml (tỷ giá USD/VND) đã có trong docs/v2/data/sources-public-debt.yaml: dùng lại.
-  # Lưu ý: số kiểu Mỹ '25,760.00', giới hạn 1 request/5 phút ⇒ lịch 'hourly' là đủ.
+  # ── Tỷ giá ─────────────────────────────────────────────────────────────
+  - id: vn-vcb-fx-xml
+    publisher: Vietcombank
+    title: Tỷ giá ngoại tệ (XML, USD/VND mua tiền mặt, mua chuyển khoản, bán)
+    connector: rest-api
+    format: xml
+    api_base: https://portal.vietcombank.com.vn/Usercontrols/TVPortal.TyGia/pXML.aspx
+    entity: USDVND_VCB
+    variables: [VCB:USDVND:BUY:I, VCB:USDVND:SELL:I]
+    schedule: hourly
+    purpose: production
+    licence: cần xác nhận; tỷ giá niêm yết công khai
+    use_rights: pending_review
+    locale: en-US
+    rate_limit: 1 request / 5 phút
+    verified: V
+    notes: >-
+      Số kiểu Mỹ '25,760.00' dù là nguồn Việt Nam (locale en-US, bẫy T7). Giới hạn 1 request/5 phút
+      nên lịch 'hourly' là đủ. Nhiều lần công bố trong ngày: chênh vàng lấy tỷ giá đúng thời điểm và
+      đúng phía (mua hoặc bán), VN-03.

@@ -46,8 +46,9 @@ khi duyệt case.
 | Abstain | 4 | 5 | 7 | mã từ chối đúng (gồm câu hỏi dự báo: không trả số) |
 | Việt Nam: xăng dầu, vàng, tỷ giá | 4 | 8 | 12 | kỳ điều hành, phía giá, phía tỷ giá, không nối chuỗi E10 |
 
-Forecast (UC11) và regression Nợ công/GDP ngoài POC 1 tháng (05 mục 6). Case chỉ
-được dùng khi research đã duyệt (`reviewer`, `approved_at`).
+Forecast (UC11) ngoài POC 1 tháng (05 mục 6). Không còn regression Nợ công/GDP: 6 case grounding v1
+về Nợ công đã xoá khỏi `model/eval/cases/grounding.jsonl` ngày 28/09 (22 → 16 case). Case chỉ được
+dùng khi research đã duyệt (`reviewer`, `approved_at`).
 
 ## 3. Case hạt giống từ số liệu thật (04, `data/`)
 
@@ -85,6 +86,16 @@ Forecast (UC11) và regression Nợ công/GDP ngoài POC 1 tháng (05 mục 6). 
 ## 5. Metric và ngưỡng
 
 Mục tiêu cột phải là cho ngày nghiệm thu 27/10.
+
+Hiện trạng `model/eval` (đo 28/09/2026), điểm xuất phát của các metric dưới đây:
+
+| Hạng mục | Hiện trạng | Hệ quả cho POC |
+| --- | --- | --- |
+| Case set | 117 case: grounding 16, intent 32, policy 44, sql 25 (`model/eval/cases/*.jsonl`). **Không case nào về dầu/vàng** | Golden set `commodity.jsonl` viết mới từ P0-05 |
+| `unsupported_number_rate` | **Sai phương pháp với case chạy agent thật**: scorer so số trong câu trả lời với `case["contexts"]` (`model/eval/scorers/grounding.py`); case live không có `contexts` nên mọi số đều bị tính là không có nguồn | Metric V2 so với evidence trong trace (dòng Agent bên dưới), sửa ở S10-02 |
+| NC-E2 (so chuỗi chữ số) | Đã sửa (P0-01): scorer dùng `libs.indicator.numeric` | Dùng chung với verifier runtime |
+| Ngưỡng online | `model/eval/thresholds.json`: cả 4 metric online `provisional: true` | Tier `commodity` cũng bắt đầu ở `provisional` |
+| Metric retrieval (Recall@K, MRR) | Chưa có | Cần nhãn evidence vàng trong case |
 
 Tier `commodity` trong `model/eval/thresholds.json`, `provisional` tới khi có hai lần chạy ổn định.
 

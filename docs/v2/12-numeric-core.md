@@ -14,9 +14,9 @@
    *một observation đã công bố trong một release cụ thể, có bốn trục thời gian* (00 bất biến 8).
    Mọi kỹ thuật dưới đây phục vụ việc chuyển trục đó.
 2. Ba lỗi cùng một họ, "hệ thống coi con số là chuỗi ký tự" (mục 1): E1, E2 đã sửa; **E3 còn mở** (P0-02).
-3. Lõi số đã nằm trong repo: `backend/libs/indicator/` (1.362 dòng) và test unit; verifier tất định
+3. Lõi số đã nằm trong repo: `backend/libs/indicator/` (1.179 dòng) và test unit; verifier tất định
    đã nối vào `judge`. Còn thiếu: kỳ D/W/I/P và đơn vị giá hàng hoá (P0-04), đọc as-of trên ClickHouse
-   `obs` (S1-02; `observation.py` hiện vẫn đọc schema Postgres `ankt.*` không tồn tại), operator chuỗi
+   `obs` (S1-02 viết mới; `observation.py` cũ đọc schema `ankt.*` không tồn tại, đã xoá 28/09), operator chuỗi
    thời gian (S8-01), freshness và đủ bằng chứng trong verifier (S10-01).
 4. LLM không tính số, không so ngưỡng, không chấm số (00 bất biến 6). Mọi chỗ cần chắc chắn là mã tất
    định có test.
@@ -26,7 +26,7 @@
 | Mã | Lỗi | Trạng thái 27/09 | Bằng chứng |
 | --- | --- | --- | --- |
 | NC-E1 | Docling chạy `do_ocr=False`: PDF scan vào hệ thống như tài liệu rỗng, không lỗi, không cảnh báo | **Đã sửa**: OCR Tesseract `vie+eng`, cấu hình cố định để cùng ảnh luôn ra cùng chữ. Chưa có benchmark độ chính xác token số (NC-ADR-T8) | `backend/libs/ingestion/docling_parser.py:55-71` |
-| NC-E2 | Scorer `_numbers()` xoá dấu phân cách, nên `128,4` và `1284` là cùng một số | **Đã sửa**: `grounding.py` dùng `libs.indicator.numeric` (đọc theo locale, giữ mọi cách đọc khi mơ hồ, so ở độ chính xác công bố) | `model/eval/scorers/grounding.py:36`, `tests/unit/test_eval_numeric.py` |
+| NC-E2 | Scorer `_numbers()` xoá dấu phân cách, nên `128,4` và `1284` là cùng một số | **Đã sửa**: `grounding.py` dùng `libs.indicator.numeric` (đọc theo locale, giữ mọi cách đọc khi mơ hồ, so ở độ chính xác công bố) | `model/eval/scorers/grounding.py:36`, `tests/unit/workflow_runtime/test_eval_numeric.py` |
 | NC-E3 | `formatVN.ts` định dạng theo chuẩn Mỹ (`1,284,560`, `MM/dd/yyyy`) dù tên gợi ý ngược lại | **Còn mở** (P0-02). Quy ước đích ở [13](13-ui-principles.md) mục 2 | `frontend/src/lib/formatVN.ts:2` |
 
 ## 2. Kỹ thuật lõi số
@@ -35,7 +35,7 @@
 
 | | |
 | --- | --- |
-| Trạng thái | **Có**: `libs/indicator/quantity.py`, `tests/unit/test_quantity.py` |
+| Trạng thái | **Có**: `libs/indicator/quantity.py`, `tests/unit/workflow_runtime/test_quantity.py` |
 | Hợp đồng | `Quantity` bất biến `{value: Decimal, unit, multiplier (số mũ), currency}`. Constructor từ chối float. Cộng/trừ đòi cùng đơn vị và bội số; tỷ lệ cùng đơn vị ra không thứ nguyên; `%` trừ `%` ra **điểm %**. Làm tròn một lần, ở cuối, theo `decimal_precision` |
 | Không làm | Không quy đổi tiền tệ bên trong: tỷ giá có kỳ, nguồn và **phía** (mua/bán/chuyển khoản, bẫy T8 ở 04 mục 6) nên là observation, không phải hằng số. Không dùng `pint`: đơn vị ở đây là đơn vị nghiệp vụ |
 | Mở rộng V2 (P0-04) | `money_per(barrel \| troy_oz \| luong \| litre \| kg \| tonne \| gallon)`; 1 lượng = 1,20565 troy oz (03 mục 3.4) |
@@ -45,7 +45,7 @@
 
 | | |
 | --- | --- |
-| Trạng thái | **Chưa có trên ClickHouse.** `libs/indicator/observation.py` có đọc as-of nhưng trên schema `ankt.*` của v1 (không tồn tại trên cụm); viết lại ở S1-02 |
+| Trạng thái | **Chưa có.** Bộ đọc as-of cũ `libs/indicator/observation.py` đọc schema `ankt.*` của v1 (không tồn tại trên cụm) và không ai import, đã xoá 28/09. S1-02 viết mới trên ClickHouse trong `indicator_api` (ADR-V2-36: `libs/indicator` không sở hữu I/O) |
 | Thiết kế V2 | ClickHouse `obs.observation` (03 mục 3.2): chỉ ghi thêm, mỗi version effective là một dòng, bốn trục `event_time_*`, `publication_time`, `available_at`, `system_time`, cùng `effective_version`, `version_kind` |
 | Truy vấn | `argMax(value, (available_at, effective_version))` với `available_at <= :as_of AND system_time <= :as_of_system`. Hai chế độ: "thế giới biết gì" và "hệ thống biết gì" (08 UC13) |
 | Bẫy | NC-R4: ReplacingMergeTree gộp bất đồng bộ, không được giả định đã gộp |
@@ -55,16 +55,16 @@
 
 | | |
 | --- | --- |
-| Trạng thái | **Có**: `libs/indicator/formula.py` (`Ratio`, `Sum`, `Difference`, `AsPercent`, `Scale`, `compile_formula`, `evaluate`, `decompose_change`), `tests/unit/test_formula.py` |
+| Trạng thái | **Có**: `libs/indicator/formula.py` (`Ratio`, `Sum`, `Difference`, `AsPercent`, `Scale`, `compile_formula`, `evaluate`, `decompose_change`), `tests/unit/workflow_runtime/test_formula.py` |
 | Nguyên tắc | Kiểm kiểu **lúc khai báo** công thức (chỉ cần khai báo biến), không phải lúc người dùng hỏi. Mỗi cạnh mang `Quantity`. Stock/flow phải khai báo quy tắc căn kỳ (NC-R2) |
-| Mở rộng V2 | `Lag`, `LogReturn`, cửa sổ trượt, `FxConvert` (01 mục 4.1); chuỗi dẫn xuất khai báo ở `registry.series.derived_formula` và tính lại khi `observation.published` (03 mục 8.4): spread Brent–WTI, return, volatility, basis spot–futures, chênh vàng trong nước |
+| Mở rộng V2 | `Lag`, `LogReturn`, cửa sổ trượt, `FxConvert` (hôm nay chỉ có `Ratio/Sum/Difference/AsPercent/Scale`); chuỗi dẫn xuất khai báo ở `registry.series.derived_formula` và tính lại khi `observation.published` (03 mục 8.4): spread Brent–WTI, return, volatility, basis spot–futures, chênh vàng trong nước |
 | Test | Tính lại cả chuỗi lịch sử, so với số công bố; lệch quá dung sai ([06](06-evaluation-plan.md) mục 4) thì không publish |
 
 ### NC-T4. Ngưỡng theo khoảng hiệu lực
 
 | | |
 | --- | --- |
-| Trạng thái | **Có** phần chọn: `libs/indicator/threshold.py` chọn ngưỡng theo **kỳ của dữ liệu**, không theo ngày hỏi; `tests/unit/test_threshold.py`. Chưa có bảng |
+| Trạng thái | **Có** phần chọn: `libs/indicator/threshold.py` chọn ngưỡng theo **kỳ của dữ liệu**, không theo ngày hỏi; `tests/unit/workflow_runtime/test_threshold.py`. Chưa có bảng |
 | Dùng trong V2 | Ngưỡng luật DQ và alert có `valid_from/valid_to` (03 mục 3.1); regime thị trường (spread Brent–WTI 2026, 08 UC05) là ngưỡng có hiệu lực, không phải z-score toàn lịch sử |
 | Ràng buộc | Hai ngưỡng cùng mức không chồng khoảng: `EXCLUDE USING gist` ở Postgres (NC-ADR-T4), không kiểm ở ứng dụng |
 | Test | Case ở ranh giới hai khoảng hiệu lực |
@@ -89,7 +89,7 @@
 
 | | |
 | --- | --- |
-| Trạng thái | **Một phần**: OCR bật (NC-E1); `PageRegion` (page, bbox gốc trên-trái, kích thước trang) ở `libs/basemodel/services_docling/docling_model.py:17`; Silver/Gold và payload Qdrant ghi page/bbox; citation có `page`; `tests/unit/test_docling_regions.py` |
+| Trạng thái | **Một phần**: OCR bật (NC-E1); `PageRegion` (page, bbox gốc trên-trái, kích thước trang) ở `libs/basemodel/services_docling/docling_model.py:17`; Silver/Gold và payload Qdrant ghi page/bbox; citation có `page`; `tests/unit/kb_promote_silver/test_docling_regions.py` |
 | Còn thiếu | Link `#page=N` trên citation và re-ingest tài liệu demo (S4-01); khung bbox trên UI, heading "(continued)", bảng qua trang, bảng → observation candidate có `source_ref` trang/ô (S4-01b, Tier B) |
 | Quy tắc | Số trích từ OCR/VLM mang `confidence`, luôn qua DQ numeric; dưới ngưỡng thì ReviewCase `EXTRACTION_LOW_CONF` (08 UC02) |
 | Đo | Độ chính xác **token số** (từng chữ số và dấu phân cách), không phải CER/WER: CER thấp vẫn có thể sai đúng chữ số quan trọng. Bảng: Cell F1, TEDS |
@@ -108,7 +108,7 @@
 | NC-T15 | Kết xuất báo cáo PDF/DOCX | Ngoài POC; khối trả lời E-01 xuất CSV/XLSX có sẵn |
 | NC-T16 | Thông báo realtime | SSE + Redis pub/sub (cùng kỹ thuật `cache_invalidation`), 08 UC07 |
 | NC-T17 | Gói chuỗi thời gian trong sandbox (scipy, statsmodels) | Không mở sandbox; thống kê chạy trong operator và `forecast-worker` (03 mục 12) |
-| NC-T18 | Bật và đo cờ LightRAG | `DOC_NARROWING=1`, `QUERY_ALIAS_RESOLVE=1`; `HYBRID_LEXICAL`, `DEGRADE_BUDGET_MS` vẫn tắt, chưa đo (`deploy/k8s/*/service/kb-backend.yaml`, 01 mục 1) |
+| NC-T18 | Bật và đo cờ LightRAG | `DOC_NARROWING=1`, `QUERY_ALIAS_RESOLVE=1`; `HYBRID_LEXICAL`, `DEGRADE_BUDGET_MS` vẫn tắt, chưa đo (`deploy/k8s/*/service/kb-backend.yaml`) |
 
 ## 4. Rủi ro, xếp theo mức nguy hiểm
 
