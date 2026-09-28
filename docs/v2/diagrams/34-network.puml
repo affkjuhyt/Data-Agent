@@ -37,7 +37,7 @@ package "Biên" {
 package "ns dataagent-service" {
   component "workflow-runtime (SSE)" <<reuse>> as WR
   component "kb-backend" <<reuse>> as KB
-  component "auth-api · flow-builder · release-worker" <<reuse>> as SVC
+  component "auth-api · flow-builder" <<reuse>> as SVC
   component "indicator-api (+ MCP Gateway, Streamable HTTP)" <<new>> as IA
   component "sandbox-executor\n(gVisor chỉ ở bộ production)" <<extend>> as SB
   component "litellm · model-service" <<reuse>> as LL

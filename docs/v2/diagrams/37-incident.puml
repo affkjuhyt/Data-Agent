@@ -44,7 +44,7 @@ endif
 —— //có, chưa gắn link trong alert//;
 #E6F0FF:Điều tra: Grafana (1 dashboard ""kb-ccu"") → Jaeger (OTEL)
 → Langfuse (cùng trace_id) · log: chỉ ""kubectl logs""
-(Elasticsearch/Kibana đã gỡ khỏi k8s);
+(kho log tập trung đã gỡ);
 if (Nguyên nhân?) then (bản deploy)
   #E6F0FF:Rollback = revert commit + ""ansible-playbook deploy.yml""
   (Ansible chỉ deploy commit; image ""*:latest"" bị ghi đè);

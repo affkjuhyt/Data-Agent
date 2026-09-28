@@ -72,7 +72,7 @@ package "platform-workers" {
   component "schema_crawler · audit · memory" <<reuse>> as PW
 }
 
-component "auth-api · flow-builder · release-worker" <<reuse>> as Plat
+component "auth-api · flow-builder" <<reuse>> as Plat
 component "sandbox-executor + runner\n(SQL guard · AST guard; pandas/numpy/plotly/matplotlib)" <<reuse>> as Sandbox
 component "model-service\n(embed/rerank, batching)" <<reuse>> as MS
 component "LiteLLM\n(planner · responder · judge · text_to_sql …)" <<reuse>> as LLM
@@ -94,7 +94,7 @@ database "OpenBao 2.6.3" <<reuse>> as Bao
 database "ClickHouse\n(chỉ Langfuse)" <<reuse>> as CH
 database "Warehouse ngoài\nPostgres · Snowflake · ClickHouse" <<reuse>> as DW
 
-component "CHƯA CÓ (đích V2)\nindicator-api · MCP Gateway · ClickHouse obs ·\nschema registry/ingest/governance/knowledge/alert ·\nseries_extractor · semantic_extractor · detector ·\nraw bất biến theo SHA-256 · release · ReviewCase maker–checker ·\nmàn Series/Review Inbox/Alert · topic V2 ·\nlog tập trung trong k8s (ES/Kibana chỉ còn ở compose) ·\nbackup ngoài node · egress allowlist" <<new>> as Gap
+component "CHƯA CÓ (đích V2)\nindicator-api · MCP Gateway · ClickHouse obs ·\nschema registry/ingest/governance/knowledge/alert ·\nseries_extractor · semantic_extractor · detector ·\nraw bất biến theo SHA-256 · release · ReviewCase maker–checker ·\nmàn Series/Review Inbox/Alert · topic V2 ·\nlog tập trung (hôm nay chỉ kubectl logs) ·\nbackup ngoài node · egress allowlist" <<new>> as Gap
 
 User --> Ask
 Eng --> KOps

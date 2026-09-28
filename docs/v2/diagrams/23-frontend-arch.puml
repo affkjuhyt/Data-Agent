@@ -36,7 +36,7 @@ package "features/ — màn V2 mỗi màn một thư mục" as FEAT {
 package "components/ — màn hiện có" as COMP {
   component "knowledge/\nKnowledgeOpsCenter + 9 tab: sources · inventory ·\nconflicts · ingest · knowledge-hub · fleet ·\npolicy · knowledge-base · trash · warehouse" as CK <<reuse>>
   component "agent-builder/\nagents · workflow · Conversations ·\nReviewCenter · AgentPlayground" as CB <<reuse>>
-  component "Settings/ (12 mục + Auth/)\nExecutiveDashboard · ReleaseManagementCenter · Layout" as CS <<reuse>>
+  component "Settings/ (12 mục + Auth/)\nExecutiveDashboard · Layout" as CS <<reuse>>
 }
 
 package "Primitive dùng chung" as PRIM {
@@ -47,7 +47,7 @@ package "Primitive dùng chung" as PRIM {
 
 package "lib/ — hạ tầng client" as LIB {
   component "apiClient.ts (fetch + token Keycloak)\nAuthProvider · keycloak.ts · config.ts" as L1 <<reuse>>
-  component "platformApi · releaseApi · use*.ts\n(kiểu viết tay)" as L2 <<reuse>>
+  component "platformApi · use*.ts\n(kiểu viết tay)" as L2 <<reuse>>
   component "formatVN.ts — **đang kiểu Mỹ**\n1,284.56 · MM/dd/yyyy; E3 chưa sửa (P0-02)" as L3 <<extend>>
   component "Kiểu sinh từ OpenAPI indicator-api" as L4 <<new>>
   component "urlState: series · as_of · case · alert" as L5 <<new>>
