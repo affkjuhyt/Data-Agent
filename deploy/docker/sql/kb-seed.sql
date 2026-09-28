@@ -169,14 +169,6 @@ INSERT INTO "KBQdrantCollection"
      'aeroflow_kb_archive', false, 'cosine', 0, 1024, '00000000-0000-0000-0000-000000000001')
 ON CONFLICT (collection_id) DO NOTHING;
 
--- ── KBNeo4jConnection + entity schema ────────────────────────────────────────
-
-INSERT INTO "KBNeo4jConnection"
-    (connection_id, tenant_id, is_connected, total_node, total_edge, embedding_model_id) VALUES
-    ('00000000-0000-0002-0000-000000000001', 'a0000000-0000-0000-0000-000000000001',
-     true, 0, 0, '00000000-0000-0000-0000-000000000001')
-ON CONFLICT (connection_id) DO NOTHING;
-
 -- ── KBWarehouse ───────────────────────────────────────────────────────────────
 
 INSERT INTO "KBWarehouse" (warehouse_id, tenant_id, service, description) VALUES

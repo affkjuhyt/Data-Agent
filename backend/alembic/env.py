@@ -65,7 +65,7 @@ async def _stamp_if_init_scripts_ran(conn) -> None:
 
     Logic:
       - alembic_version table exists AND has a row → normal upgrade
-      - alembic_version missing/empty + DriftEvents (init-scripts marker) exists
+      - alembic_version missing/empty + Tenants (init-scripts marker) exists
         → stamp initial, then upgrade head (which only runs later revisions)
       - Fresh DB → normal upgrade (will create everything from scratch)
     """
@@ -85,15 +85,17 @@ async def _stamp_if_init_scripts_ran(conn) -> None:
             return
 
     # No alembic version. Did the SQL init scripts populate the schema?
-    # DriftEvents is in the initial alembic revision; if it exists, init ran.
-    # Marker MUST be a table only the ORM initial migration creates (PascalCase).
-    # The lowercase `drift_events` comes from deploy/docker/sql/*.sql and does NOT imply
-    # the ORM tables (Agents, …) exist — keying on it wrongly stamps the initial
-    # revision and skips creating the ORM schema.
+    # Tenants is in the initial alembic revision; if it exists, init ran.
+    # Marker MUST be a table only the ORM initial migration creates (PascalCase)
+    # and that no later revision drops: it used to be DriftEvents, which the
+    # release-management removal dropped. A lowercase table from
+    # deploy/docker/sql/*.sql does NOT imply the ORM tables (Agents, …) exist —
+    # keying on one wrongly stamps the initial revision and skips creating the
+    # ORM schema.
     has_init_schema = await conn.scalar(text("""
         SELECT EXISTS (
             SELECT 1 FROM information_schema.tables
-            WHERE table_schema = 'public' AND table_name = 'DriftEvents'
+            WHERE table_schema = 'public' AND table_name = 'Tenants'
         )
     """))
 

@@ -1,11 +1,7 @@
 -- Idempotent seed data for dev environment
 
-INSERT INTO "Plans" (id, name)
-VALUES (1, 'dev')
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO "Tenants" (id, name, slug, plan_id, data_residency, is_active)
-VALUES ('a0000000-0000-0000-0000-000000000001', 'Dev Tenant', 'dev', 1, 'Asia-SE1', true)
+INSERT INTO "Tenants" (id, name, slug, data_residency, is_active)
+VALUES ('a0000000-0000-0000-0000-000000000001', 'Dev Tenant', 'dev', 'Asia-SE1', true)
 ON CONFLICT (id) DO NOTHING;
 
 -- model_id cần tiền tố provider ("openai/") vì litellm SDK gọi trực tiếp

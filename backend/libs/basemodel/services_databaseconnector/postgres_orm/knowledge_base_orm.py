@@ -30,7 +30,6 @@ class KBModelORM(Base):
     versions: Mapped[list["KBModelVersionORM"]] = relationship(back_populates="model", cascade="all, delete-orphan")
     text_block_versions: Mapped[list["KBTextBlockVersionORM"]] = relationship(back_populates="embedding_model")
     qdrant_collections: Mapped[list["KBQdrantCollectionORM"]] = relationship(back_populates="embedding_model")
-    neo4j_connections: Mapped[list["KBNeo4jConnectionORM"]] = relationship(back_populates="embedding_model")
 
 
 @register("orm")
@@ -622,29 +621,6 @@ class KBQdrantCollectionORM(Base):
 
 
 @register("orm")
-class KBNeo4jConnectionORM(Base):
-    __tablename__ = "KBNeo4jConnection"
-    __table_args__ = (
-        Index("idx_kbneo4jconn_tenant_connected", "tenant_id", postgresql_where=text("is_connected = true")),
-        Index("idx_kbneo4jconnection_inserted_at_desc", text("inserted_at DESC")),
-    )
-
-    connection_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
-    is_connected: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
-    total_node: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
-    total_edge: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
-    embedding_model_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBModel.model_id"), nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
-    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
-
-    tenant: Mapped["TenantsORM"] = relationship(back_populates="kb_neo4j_connections")
-    embedding_model: Mapped[Optional["KBModelORM"]] = relationship(back_populates="neo4j_connections")
-    nodes: Mapped[list["KBNeo4jNodeORM"]] = relationship(back_populates="connection", cascade="all, delete-orphan")
-
-
-@register("orm")
 class KBNeo4jNodeORM(Base):
     __tablename__ = "KBNeo4jNode"
 
@@ -653,7 +629,6 @@ class KBNeo4jNodeORM(Base):
     )
 
     node_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    connection_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBNeo4jConnection.connection_id"), nullable=True, index=True)
     tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True, index=True)
     knowledge_base: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     node_name: Mapped[str] = mapped_column(String(512), nullable=False)
@@ -662,7 +637,6 @@ class KBNeo4jNodeORM(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
 
-    connection: Mapped["KBNeo4jConnectionORM"] = relationship(back_populates="nodes")
     outgoing_relationships: Mapped[list["KBNeo4jRelationshipORM"]] = relationship(
         back_populates="from_node_obj",
         foreign_keys="KBNeo4jRelationshipORM.from_node",
@@ -724,25 +698,3 @@ class KBEntityLookupORM(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
-
-
-@register("orm")
-class KBPublishAPIORM(Base):
-    __tablename__ = "KBPublishAPI"
-    __table_args__ = (
-        Index("idx_kbpublishapi_tenant_published", "tenant_id", postgresql_where=text("is_published = true")),
-        Index("idx_kbpublishapi_inserted_at_desc", text("inserted_at DESC")),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    type: Mapped[str] = mapped_column(String(32), nullable=False)
-    endpoint_url: Mapped[str] = mapped_column(String(1024), nullable=False)
-    http_method: Mapped[str] = mapped_column(String(8), nullable=False)
-    is_published: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
-    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
-
-    tenant: Mapped["TenantsORM"] = relationship(back_populates="kb_publish_apis")
