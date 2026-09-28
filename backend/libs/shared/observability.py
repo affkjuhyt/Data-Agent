@@ -18,7 +18,7 @@ logs JSON — it just does not export spans. Observability must never crash a se
 
 Import path differs per service build (same file, different sys.path root):
     from libs.shared.observability import setup_observability   # kb / flow_builder / workflow_runtime
-    from shared.observability import setup_observability            # auth_api / minio / release_worker / workers
+    from shared.observability import setup_observability            # auth_api / minio / workers
 """
 from __future__ import annotations
 

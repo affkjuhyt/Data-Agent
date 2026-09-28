@@ -1,7 +1,8 @@
 # 11. Vận hành V2: hạ tầng, GitOps, backup, Kafka, alert, MLOps
 
 > Đối tượng: Ops (0,5 người trong POC), DevOps/SRE, trưởng nhóm backend, hai senior làm S1-02.
-> Đo ngày 27/09/2026 trên d63d896 (nhánh `feat/remove-redundant-service`) và cụm dev `10.10.55.101`.
+> Đo ngày 27/09/2026 trên d63d896 (nhánh `feat/remove-redundant-service`) và cụm dev `10.10.55.101`;
+> cập nhật 28/09 sau khi gỡ release management và stack Docker Compose.
 > File này **thay phần vận hành và hạ tầng của thiết kế v1**; phần nào mâu thuẫn với
 > [00](00-architecture-v2.md) thì 00 thắng. Việc có ID nằm ở [05](05-implementation-plan.md) (P0-03,
 > P0-07, P0-08); quy ước database ở [10](10-database-design.md).
@@ -39,15 +40,15 @@
 
 | Hạng mục | Hiện trạng | Căn cứ |
 | --- | --- | --- |
-| Cụm | k3s 1 node `10.10.55.101`; namespace `dataagent-service`, `dataagent-database` + namespace sandbox | `deploy/k8s/README.md:31-36`, `networkpolicy-sandbox.yaml` |
+| Cụm | k3s 1 node `10.10.55.101`; namespace `dataagent-service`, `dataagent-database`, `dataagent-sandbox` | `deploy/k8s/README.md` mục Namespaces, `networkpolicy-sandbox.yaml` |
 | Bộ đang chạy | `dev`: inventory duy nhất `k8s-local` đặt `k8s_env: dev` | `deploy/ansible/inventories/k8s-local/group_vars/all/main.yml:4` |
-| dev khác production | PSA privileged thay restricted; một `allow-all` mỗi namespace thay default-deny; NodePort (`port + 22000`) thay ClusterIP; 1 replica; không gVisor | `deploy/k8s/README.md:261-268`, `production/service/sandbox-executor.yaml:123` |
+| dev khác production | PSA privileged thay restricted; một `allow-all` mỗi namespace thay default-deny; NodePort (`port + 22000`) thay ClusterIP; 1 replica; không gVisor | `deploy/k8s/README.md` mục Dev set, `production/service/sandbox-executor.yaml` (`runtimeClassName`) |
 | Egress production | Chỉ `allow-egress-to-platform`, `allow-egress-remote-llm` (GPU `:8001-8004`), `allow-egress-k8s-api`; không có đường ra Internet | `production/networkpolicy-service.yaml:41,586-617,629` |
 | Crawler | `platform-workers-web-crawler` chỉ có ở `dev/service/`, không có ở `production/service/` | `ls deploy/k8s/*/service` |
 | Probe | 8 workload production không có `livenessProbe`: `kb-promote-silver/gold`, `kb-structured-data`, `kb-conflict-resolution`, `platform-workers-{audit,memory,schema-crawler}`, `sandbox-runner`; `web-crawler` (dev) cũng không | `grep -L livenessProbe production/service/*.yaml` |
 | PDB / HPA | Không PDB nào; HPA theo CPU ở `kb-backend`, `workflow-runtime`, `model-service`, `kong` | `grep PodDisruptionBudget` rỗng |
 | Image bên thứ ba trôi | `minio:latest`, `pgbouncer:latest`, `clickhouse-server` không tag | `production/database/minio.yaml:45`, `pgbouncer.yaml:76`, `clickhouse.yaml:57` |
-| OpenBao | 2.6.3, storage `file`; khoá unseal là file trên server; tự seal khi pod restart | `openbao.yaml:35,82`, `docs/RUNBOOK.md:195-218` |
+| OpenBao | 2.6.3, storage `file`; khoá unseal là file trên server; tự seal khi pod restart | `openbao.yaml:35,82`, `docs/RUNBOOK.md` mục 8 |
 
 ### 1.2 Triển khai và CI
 
@@ -55,10 +56,11 @@
 | --- | --- | --- |
 | Deploy | Ansible `deploy.yml` kéo git, so checkpoint, chỉ triển khai mã **đã commit** | `deploy/ansible/deploy.yml:30-152`, CLAUDE.md mục 1 |
 | Image | Build trên server, đẩy `localhost:5000`, tag `:latest`; kiểm tag chỉ chạy khi tag khác `latest` | `roles/k8s_common/defaults/main.yml:26`, `inventories/.../main.yml:10`, `roles/k8s_verify/tasks/main.yml:78` |
-| Secret | ansible-vault → `secrets.env` → `create-secrets.sh` → Secret theo workload; OpenBao giữ secret ứng dụng (mật khẩu warehouse, connector) | `deploy/k8s/README.md:133-162`, `docs/RUNBOOK.md:195-198` |
-| CI (`ci.yml`) | `python-lint`, `python-type`, `python-test`, `eval-gate`, `frontend-lint` (tsc), `frontend-test` (vitest), `k8s-validate` (kubeconform), `quality-gates`, `security-scan` | `.github/workflows/ci.yml:13,26,65,96,128,140,157,176,208` |
-| Quét bảo mật | pip-audit `\|\| true`, trivy `exit-code: "0"`: chỉ báo cáo | `ci.yml:229,239` |
+| Secret | ansible-vault → `secrets.env` → `create-secrets.sh` → Secret theo workload; OpenBao giữ secret ứng dụng (mật khẩu warehouse, connector) | `deploy/k8s/README.md` mục "Secrets are scoped per workload", `docs/RUNBOOK.md` mục 7–8 |
+| CI (`ci.yml`) | `python-lint` (ruff, đỏ trên `main`), `python-type` (mypy strict theo danh sách surface), `python-test` (ma trận một job mỗi suite service), `python-coverage` (gộp, `fail_under`), `python-integration` (ma trận testcontainers), `eval-gate`, `frontend-lint` (tsc), `frontend-test` (vitest), `k8s-validate` (kubeconform), `quality-gates`, `security-scan` | `.github/workflows/ci.yml` (tên job) |
+| Quét bảo mật | pip-audit `\|\| true`, trivy `exit-code: "0"`: chỉ báo cáo | `ci.yml` job `security-scan` |
 | Release gate | Eval offline + online, chặn; chạy khi publish release hoặc tay | `.github/workflows/release-gate.yml:16-18,35` |
+| E2E | `make e2e` chạy `pytest -m e2e` với cụm dev qua NodePort LAN, chạy tay, không ở CI; test có ghi dữ liệu (lượt agent, xoá/thu hồi/xoay API key) | `Makefile` target `e2e`, `tests/README.md` |
 | Chưa có | Build/quét/ký image trong CI, E2E trong CI, staging, Argo CD | |
 
 ### 1.3 Observability, backup, GPU
@@ -66,13 +68,13 @@
 | Hạng mục | Hiện trạng | Căn cứ |
 | --- | --- | --- |
 | Metrics | Prometheus scrape 3 target (`model-service`, `llm-exporter`, chính nó), giữ 15 ngày, không `rule_files` | `deploy/docker/monitoring/prometheus.yml:5-16`, `production/service/prometheus.yaml:53` |
-| Dashboard | Grafana 1 dashboard (`kb-ccu.json`) | `deploy/docker/monitoring/grafana/dashboards/` |
+| Dashboard | Grafana 1 dashboard (`kb-ccu.json`). Datasource trỏ `prometheus.dataagent-service.svc.cluster.local:8400` (sửa 28/09: trước đó là `prometheus:9090` của compose nên mọi panel trống); test manifest kiểm URL datasource khớp cổng Service | `deploy/docker/monitoring/grafana/`, commit 190cda1 |
 | Trace | OTLP → Jaeger all-in-one 1.55; Langfuse v3 (ClickHouse + MinIO bucket `langfuse`) cho trace agent | `production/configmap.yaml:89`, `jaeger.yaml:58`, `langfuse.yaml:22-23,79` |
-| Log | **Chưa có trong k8s**: Filebeat/Elasticsearch/Kibana đã gỡ (0 index sau 16 ngày), chỉ còn ở compose; xem log bằng `kubectl logs` | `deploy/k8s/README.md:382` |
+| Log | **Chưa có**: Filebeat và kho log đã gỡ (0 index sau 16 ngày), stack compose cũng đã xoá; xem log bằng `kubectl logs` | `deploy/k8s/README.md` mục "Deliberately absent" |
 | Cảnh báo | Không Alertmanager, không node-exporter/kube-state-metrics/kafka-exporter. Duy nhất: cron `disk-alert.sh`, `/data` > 80 % → syslog + file | `deploy/k8s/ops/disk-alert.sh:7-10,23-36` |
-| Backup Postgres | CronJob `pg_dump` mỗi 6 giờ, kiểm dump hoàn chỉnh, giữ 7 ngày, vào PVC `postgres-backups` 15Gi **cùng node** (local-path); Job restore có sẵn, `suspend: true` | `production/job/postgres-backup.yaml:29,46,58,92-97,126`, `deploy/k8s/README.md:241-245` |
+| Backup Postgres | CronJob `pg_dump` mỗi 6 giờ, kiểm dump hoàn chỉnh, giữ 7 ngày, vào PVC `postgres-backups` 15Gi **cùng node** (local-path); Job restore có sẵn, `suspend: true` | `production/job/postgres-backup.yaml:29,46,58,92-97,126`, `deploy/k8s/README.md` mục Apply |
 | Backup khác | Registry: cron hằng ngày giữ 3 bản trên `/data` (cùng máy). MinIO (không versioning), Mongo, Neo4j, Qdrant, ClickHouse, OpenBao: **không** | `ops/backup-registry.sh:14-16`, `production/job/minio-init.yaml:21,63` |
-| Ổ đĩa | Mọi state nằm trên `/data` 1 TB; kubelet dọn image ở 85 %, đuổi pod ở 95 % | `docs/RUNBOOK.md:220-245` |
+| Ổ đĩa | Mọi state nằm trên `/data` 1 TB; kubelet dọn image ở 85 %, đuổi pod ở 95 % | `docs/RUNBOOK.md` mục 9 |
 | GPU | Ngoài k8s, `docker run --gpus all` trên `10.10.55.101`: `vllm-main` Qwen3-14B-AWQ `:8001`, `vllm-fast` Qwen3-4B-AWQ `:8002` (cả hai `vllm/vllm-openai:latest`), TEI `bge-m3` `:8003`, reranker `:8004`; một A100 40 GB dùng chung | `deploy/k8s/switch-gpu-containers-to-host-network.sh:36-60`, `dev/service/litellm.yaml:23-24` |
 
 ## 2. GitOps đích (sau POC)
@@ -110,8 +112,8 @@ bằng Kustomize, Argo CD app-of-apps.
 | | Hôm nay | Đích |
 | --- | --- | --- |
 | Nguồn | ansible-vault → `secrets.env` trên server | OpenBao là nơi duy nhất giữ secret ứng dụng và hạ tầng |
-| Đưa vào pod | `create-secrets.sh`, `gen-secrets-env.sh`, `gen-kafka-jaas-secret.sh` ghi đè mọi Secret | ESO: một `ClusterSecretStore` xác thực bằng Kubernetes auth của OpenBao (đã có, `deploy/k8s/README.md:76-88`); mỗi workload một `ExternalSecret` sinh đúng `<workload>-secrets` với tập khoá như hôm nay |
-| Rủi ro hôm nay | File env khác thế hệ thay âm thầm mật khẩu DB/Kafka (`deploy/k8s/README.md:157-159`) | Secret có version trong OpenBao, ESO refresh định kỳ |
+| Đưa vào pod | `create-secrets.sh`, `gen-secrets-env.sh`, `gen-kafka-jaas-secret.sh` ghi đè mọi Secret | ESO: một `ClusterSecretStore` xác thực bằng Kubernetes auth của OpenBao (đã có, `deploy/k8s/README.md` mục Identity); mỗi workload một `ExternalSecret` sinh đúng `<workload>-secrets` với tập khoá như hôm nay |
+| Rủi ro hôm nay | File env khác thế hệ thay âm thầm mật khẩu DB/Kafka (`deploy/k8s/README.md` mục "Secrets are scoped per workload") | Secret có version trong OpenBao, ESO refresh định kỳ |
 | Bootstrap | Unseal bằng Ansible, khoá trong `.openbao-keys.json` | Ansible vẫn init/unseal (chạy trước mọi công cụ); khoá unseal tách Shamir cho nhiều người giữ |
 | Điều kiện | | OpenBao chuyển storage `file` → `raft` (bản 2.7 bỏ `file`, nên đây cũng là điều kiện nâng version) |
 
@@ -135,7 +137,7 @@ Ba script secret bị xoá khi ESO chạy ở dev. Trước đó, bước trung 
 | 1 (POC) | `image_tag` = SHA ngắn (biến đã có, `k8s_verify` tự kiểm); dọn tag cũ trong registry có kiểm soát | Toàn bộ |
 | 2 | Cài Argo CD + ESO bằng Ansible; tạo repo cấu hình từ `deploy/k8s/production` | Bootstrap node, OpenBao unseal |
 | 3 | Argo CD quản service ở dev | Datastore, GPU |
-| 4 | Staging riêng; `release_worker` chuyển thành "mở PR promote" hoặc bỏ | Bootstrap, driver GPU |
+| 4 | Staging riêng; promote giữa môi trường bằng PR (`release_worker` đã gỡ 28/09) | Bootstrap, driver GPU |
 
 ## 3. Hạ tầng đích
 
@@ -161,7 +163,7 @@ Ansible và ngoài k8s; `vllm-main`/`vllm-fast` dùng `:latest` nên mỗi lần
 | Việc | Đích | Khi nào |
 | --- | --- | --- |
 | Ghim version | `vllm/vllm-openai:<tag cố định>` + `--revision <HF commit>`; TEI giữ tag đã ghim (`1.9`, `cuda-1.9`) | **POC**: sửa trong script + ghi vào RUNBOOK |
-| Đưa vào k8s | NVIDIA GPU Operator + device plugin; vLLM, TEI thành Deployment trong namespace riêng, Service giữ cổng `8001-8004` (dải `8000-8099` đã dành, `deploy/k8s/README.md:295-307`) | Sau POC |
+| Đưa vào k8s | NVIDIA GPU Operator + device plugin; vLLM, TEI thành Deployment trong namespace riêng, Service giữ cổng `8001-8004` (dải `8000-8099` đã dành, `deploy/k8s/README.md` mục Ports) | Sau POC |
 | Chia GPU | MIG trên A100 (chat cần độ trễ ổn định) hoặc time-slicing; chọn bằng `make bench` | Sau POC |
 | Hàng đợi batch | OCR/VLM/embedding hàng loạt chạy ưu tiên thấp, ngoài giờ | Sau POC |
 | Dự phòng | LiteLLM fallback vai trò chính → vai trò nhanh, kèm alert | Sau POC |
@@ -206,10 +208,10 @@ bản chiếu chỉ cần dựng lại được. `/data` là ổ của cùng má
 
 | Kho | Giữ gì cho V2 | Tái tạo được? | Hôm nay | Đích POC | Đích sau POC | RPO | RTO |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| MinIO `raw/{source_id}/{sha256}` | Raw bất biến (bất biến 2) | **Không**: nguồn đổi hoặc gỡ file (Pink Sheet, 01 mục 6) | Không backup, không versioning | Versioning; object lock nếu `raw/` ở bucket riêng (chỉ bật được lúc tạo bucket, chốt ở S2-02); `mc mirror` hằng ngày ra ngoài node (khoá theo hash nên chỉ chép phần mới) | Replication liên tục sang site 2 | 24 h → 1 h | 4 h |
+| MinIO `raw/{source_id}/{sha256}` | Raw bất biến (bất biến 2) | **Không**: nguồn đổi hoặc gỡ file (Pink Sheet, 04 bẫy T4) | Không backup, không versioning | Versioning; object lock nếu `raw/` ở bucket riêng (chỉ bật được lúc tạo bucket, chốt ở S2-02); `mc mirror` hằng ngày ra ngoài node (khoá theo hash nên chỉ chép phần mới) | Replication liên tục sang site 2 | 24 h → 1 h | 4 h |
 | ClickHouse `obs` | Effective observation mọi version | **Không trọn**: dựng lại từ raw + `governance` sẽ đổi `system_time`, as-of theo trục hệ thống không còn tái lập (bất biến 9) | Chưa có DB | `BACKUP DATABASE obs TO S3(...)` hằng ngày + incremental | + mỗi giờ | 24 h → 1 h | 4 h |
 | Postgres `registry`, `ingest`, `governance`, `knowledge`, `alert` (+ `public`, Keycloak, Kong) | Cấu hình đã duyệt, ReviewCase, correction/override/approval, outbox | **Không**: quyết định của người | `pg_dump` 6 h, cùng node | Chép dump ra ngoài node sau mỗi lần chạy; alert tuổi backup (mục 7) | WAL-G/pgBackRest PITR | 6 h → 15 phút | 4 h → 1 h |
-| OpenBao | Secret ứng dụng | Không | Không; khoá unseal là file trên server | Bản sao mã hoá của PVC + khoá unseal ngoài server (`docs/RUNBOOK.md:217`) | Raft snapshot mỗi giờ, Shamir | 24 h | 2 h |
+| OpenBao | Secret ứng dụng | Không | Không; khoá unseal là file trên server | Bản sao mã hoá của PVC + khoá unseal ngoài server (`docs/RUNBOOK.md` mục 8) | Raft snapshot mỗi giờ, Shamir | 24 h | 2 h |
 | Qdrant | Index (bản chiếu) | Có, qua outbox; nhưng embedding hôm nay chỉ nằm ở Qdrant (10 mục 1) → dựng lại = embed lại trên GPU | Không | Snapshot API hằng tuần (rẻ, tránh embed lại) | Không cần khi vector lưu ở Postgres (10, DB1) | — | thời gian dựng lại, phải đo |
 | Neo4j | Bản chiếu `knowledge.*` | Có, từ Postgres (ADR-V2-34) | Không | Không | Không | — | thời gian dựng lại, phải đo |
 | MongoDB | **Không có dữ liệu V2**; vẫn là nguồn sự thật của canvas agent v1, silver staging (10 mục 1) | Không | Không | `mongodump` hằng ngày cho tới khi chuyển sang Postgres | Bỏ | 24 h | 4 h |
@@ -233,12 +235,12 @@ Sơ đồ [35](diagrams/35-kafka.puml). Thứ tự rẻ trước.
 
 | # | Việc | Hôm nay | Đích | Khi nào |
 | --- | --- | --- | --- | --- |
-| K1 | Idempotent producer ở mọi nơi | Chỉ client dùng chung bật (`libs/database_connector/kafka_connector.py:49`); `platform_workers/common/kafka.py:114-119` và `workflow_runtime/kafka_producer.py:39-44` chỉ `acks=all`; `release_worker/release_core.py:156-160` để mặc định | `enable_idempotence=True` + `acks=all`; một factory producer dùng chung | POC |
-| K2 | Khoá phân vùng | `platform_workers` không có `key_serializer`; `release_worker` gửi không key (`release_core.py:166`) | Khoá theo 03 mục 13 (`source_id`, `release_id`, `series_key`, `case_id`, `entity_id`) nằm trong envelope P0-09 | POC, cho topic V2 |
+| K1 | Idempotent producer ở mọi nơi | Chỉ client dùng chung bật (`libs/database_connector/kafka_connector.py:49`); `platform_workers/common/kafka.py:114-119` và `workflow_runtime/kafka_producer.py:39-44` chỉ `acks=all` | `enable_idempotence=True` + `acks=all`; một factory producer dùng chung | POC |
+| K2 | Khoá phân vùng | `platform_workers` không có `key_serializer` | Khoá theo 03 mục 13 (`source_id`, `release_id`, `series_key`, `case_id`, `entity_id`) nằm trong envelope P0-09 | POC, cho topic V2 |
 | K3 | Tắt auto-create | `KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'` (`dev/database/kafka.yaml:30`, `production/.../kafka.yaml:31`); `kb.resolve.conflict` chỉ tồn tại nhờ auto-create (`libs/ingestion/config.py:20`) | `false`; thêm `kb.resolve.conflict` vào Job **trước** khi tắt | POC |
-| K4 | Topic + ACL khai báo trước khi dùng | Job `kafka-topics` tạo 10 topic cũ (`dev/job/kafka-topics.yaml:47`, `production/job/kafka-topics.yaml:69`) | Thêm topic 03 mục 13 (12 topic trong POC; `forecast.*` sau) + `<topic>.dlq`; ACL theo principal cho `series_extractor`, `semantic_extractor`, `detector`, `indicator-api`. Sau POC: spec YAML thay script trong Job (`docs/SCRIPTS.md`) | POC |
+| K4 | Topic + ACL khai báo trước khi dùng | Job `kafka-topics` (`deploy/k8s/{dev,production}/job/kafka-topics.yaml`) tạo 7 topic cũ (`kb.promote.silver/gold`, `kb.structured.propose`, `audit.data.access`, `memory.extraction.requested/dlq`, `ddl.changes`) và xoá 3 topic `release.*` đã bỏ | Thêm topic 03 mục 13 (12 topic trong POC; `forecast.*` sau) + `<topic>.dlq`; ACL theo principal cho `series_extractor`, `semantic_extractor`, `detector`, `indicator-api`. Sau POC: spec YAML thay script trong Job (phụ lục A) | POC |
 | K5 | DLQ mọi consumer | Chỉ `memory.extraction.dlq` | `<topic>.dlq`, retention 30 ngày, retry có backoff trước khi đẩy DLQ; alert khi có bản ghi mới (mục 7) | POC cho consumer V2 |
-| K6 | Retention tường minh | `release.pipeline.*` không đặt (mặc định 7 ngày) | Mọi topic V2 khai báo `retention.ms`, `cleanup.policy` trong Job | POC |
+| K6 | Retention tường minh | Topic `kb.promote.*`, `kb.structured.propose` không đặt `retention.ms` (mặc định 7 ngày) | Mọi topic V2 khai báo `retention.ms`, `cleanup.policy` trong Job | POC |
 | K7 | Listener INTERNAL | `INTERNAL:8352` PLAINTEXT, `KAFKA_SUPER_USERS: User:admin;User:ANONYMOUS` (`kafka.yaml:25,37`): ai tới được cổng 8352 là superuser. Pipeline KB (`kb-backend`, `kb-promote-*`) dùng nó qua `KAFKA_URL` (`production/configmap.yaml:39`, `libs/ingestion/runtime.py:74-75`); Job `kafka-topics` cũng dựa vào đó | Consumer V2 **chỉ** dùng SASL `:8350` với principal riêng. Gỡ `ANONYMOUS` khi pipeline KB và Job đã chuyển sang SASL | Quy tắc: POC; gỡ: sau POC |
 | K8 | RF và phân vùng trên 1 node | RF=1 mọi topic (`kafka.yaml:31-33`, `--replication-factor 1`); `acks=all` không thêm bảo đảm khi chỉ có 1 replica | Giữ RF=1 tới HA (mục 3.5 bước 5). `observation.published` 6 phân vùng, topic quy trình 3; thứ tự theo khoá vẫn giữ | POC (phân vùng), sau HA (RF=3) |
 
@@ -278,7 +280,7 @@ drift, SLA nguồn) do `indicator-api` phơi ở `/metrics`, tính từ bảng `
 | Rule | Điều kiện | Mức | Hành động | Nguồn số liệu |
 | --- | --- | --- | --- | --- |
 | ServiceDown | `up == 0` hoặc blackbox `/health` lỗi 5 phút | P1 | Xem pod, rollout restart; mục RUNBOOK tương ứng | Prometheus, blackbox |
-| OpenBaoSealed | blackbox `/v1/sys/health` khác 200 trong 2 phút | P1 | Unseal (`docs/RUNBOOK.md:204-214`) | blackbox |
+| OpenBaoSealed | blackbox `/v1/sys/health` khác 200 trong 2 phút | P1 | Unseal (`docs/RUNBOOK.md` mục 8) | blackbox |
 | LLMBackendDown | `kb_llm_up == 0` 5 phút | P1 | Kiểm container GPU, `nvidia-smi` | `llm_exporter` (`exporter.py:169-171`), có sẵn |
 | DiskFillingUp | `predict_linear(node_filesystem_avail_bytes{mountpoint="/data"}[6h], 24*3600) < 0` hoặc dùng > 80 %; > 90 % là P1 | P2 / P1 | Dọn image theo RUNBOOK mục 9, không `--delete-untagged` trên registry. **Thay `deploy/k8s/ops/disk-alert.sh`**, xoá script khi rule chạy | node-exporter |
 | PodRestartsHigh | `increase(kube_pod_container_status_restarts_total[30m]) > 3` hoặc `OOMKilled` | P2 | Xem log, limit | kube-state-metrics |
@@ -303,7 +305,7 @@ Sơ đồ [41](diagrams/41-mlops-lifecycle.puml), [42](diagrams/42-mlops-arch.pu
 
 | Hạng mục | Hiện trạng | Căn cứ |
 | --- | --- | --- |
-| Eval gate | Offline chặn merge; offline + online chặn release; ngưỡng online còn `provisional` | `ci.yml:96`, `release-gate.yml:35`, `model/eval/thresholds.json:23-24` |
+| Eval gate | Offline chặn merge; offline + online chặn release; ngưỡng online còn `provisional` | `ci.yml` job `eval-gate`, `release-gate.yml:35`, `model/eval/thresholds.json:23-24` |
 | Benchmark serving | `make bench` (TTFT, decode, throughput theo vai trò), `make bench-gate` (0 đạt / 1 trượt / 2 không kết luận), `make bench-e2e` | `Makefile:68,75,88`, `model/bench/thresholds.json` |
 | Định tuyến LLM | LiteLLM theo vai trò: `planner`, `responder`, `judge`, `text_to_sql`, `orchestrator-planner`, … `embedder` | `deploy/docker/litellm/config.yaml:25-157` |
 
@@ -356,3 +358,39 @@ Câu hỏi vận hành cần chốt (chuyển sang 07 mục 1 khi nhóm duyệt 
 | OPS1 | Đích backup "ngoài node" là gì: máy thứ hai, NAS hay S3 ngoài? | Một bucket S3-compatible trên máy khác trong LAN cho POC; site 2 sau POC |
 | OPS2 | Kênh nhận alert vận hành | Email nhóm + một kênh chat; P1 gửi cả hai |
 | OPS3 | Log tập trung | Loki sau POC (đề xuất, mục 7) |
+
+## Phụ lục A. Kế hoạch bỏ script
+
+Quy tắc ở `CLAUDE.md` mục 5: không thêm `.sh` mới để điều phối. Bảng dưới là kế hoạch cho từng script
+còn lại (18 file `.sh` được theo dõi trong repo, số dòng đo 28/09/2026) và ba script đã xoá.
+
+| Script | Dòng | Làm gì | Kế hoạch |
+| --- | ---: | --- | --- |
+| `deploy/docker/kong/kong-setup.sh` | 611 | Tạo service, route, consumer, plugin JWT/ACL của Kong qua Admin API; chạy trong Job `setup` | **Thay bằng decK**: xuất cấu hình đang chạy, commit `kong.yaml`, `deck sync` từ Job. Khai báo, diff được, idempotent |
+| `deploy/k8s/create-secrets.sh` | 241 | Từ `secrets.env` tạo Secret theo workload; Ansible gọi | **External Secrets Operator** đọc OpenBao (mục 2.3); trước đó là task `kubernetes.core.k8s` của Ansible |
+| `deploy/docker/keycloak/setup-audience-mappers.sh` | 158 | Thêm audience mapper cho client của realm | Gộp vào `realm-export.json` để realm nhập vào đã đúng |
+| `deploy/docker/certs/gen-certs.sh` | 128 | Sinh CA và chứng chỉ mTLS cho dev | Giữ: chỉ dùng ở dev, không phụ thuộc cụm |
+| `tests/loadtest/ingestion_throughput.sh` | 116 | Đo thông lượng ingestion Bronze → Silver → Gold | Chuyển vào bộ k6 cạnh `ccu-10k.js` để mọi load test dùng một công cụ |
+| `deploy/k8s/gen-secrets-env.sh` | 108 | Sinh `secrets.env` cho `dev/up.sh` | Như `create-secrets.sh`: template Ansible, rồi ESO |
+| `backend/services/sandbox_executor/ops/setup_sandbox_egress_iptables.sh` | 102 | Firewall host cho sandbox dạng Docker | Giữ, nhưng gọi từ một role Ansible để áp dụng lặp lại được |
+| `deploy/k8s/bootstrap-openbao.sh` | 90 | Init/unseal OpenBao cho `dev/up.sh` | Role `k8s_openbao` của Ansible đã làm việc này khi deploy; giữ làm bootstrap tay, đưa khoá unseal ra khỏi file (mục 2.3) |
+| `deploy/k8s/switch-gpu-containers-to-host-network.sh` | 82 | Chạy container vLLM/TEI với `--gpus all` | **Manifest**: GPU Operator + Deployment ghim tag (mục 3.2). Hôm nay là định nghĩa duy nhất của cách model chạy, nên thay trước |
+| `backend/services/sandbox_executor/ops/install_gvisor.sh` | 82 | Cài gVisor lên host | Role Ansible: đây là bootstrap host, không phải mã ứng dụng |
+| `deploy/k8s/build-push-images.sh` | 67 | Build và push image | `deploy.yml` đã build (song song, theo input của từng image); giữ làm đường tay tới khi CI build image |
+| `deploy/k8s/fix-docker-userland-proxy.sh` | 60 | Sửa một lần daemon Docker trên host | Task Ansible + một dòng trong RUNBOOK; xoá khi đã áp dụng ở mọi host |
+| `deploy/k8s/create-configmaps.sh` | 59 | Tạo ConfigMap từ `deploy/docker/**` và file seed `tests/e2e/` | Giữ (Ansible gọi); thành `configMapGenerator` của Kustomize khi có GitOps |
+| `deploy/k8s/dev/up.sh` | 51 | Dựng dev lần đầu (legacy) | Gộp vào `make deploy`, rồi xoá |
+| `deploy/k8s/ops/disk-alert.sh` | 51 | Cron kiểm `/data`, chỉ ghi syslog | **Xoá** khi có Prometheus + Alertmanager (rule `DiskFillingUp`, mục 7) |
+| `deploy/k8s/fix-pod-to-host-docker-networking.sh` | 42 | Sửa một lần mạng pod → container Docker trên host | Như các `fix-*` khác: Ansible + RUNBOOK |
+| `deploy/k8s/ops/backup-registry.sh` | 26 | Cron backup registry | Giữ tới khi có Harbor replication |
+| `deploy/k8s/gen-kafka-jaas-secret.sh` | 23 | Tạo Secret JAAS của Kafka bằng tay | `deploy.yml` đã tự tạo Secret này; gộp vào đường secret ở trên |
+| `tests/e2e/e2e.sh` | — | Dựng stack compose, seed, chạy test API + UI | **Đã xoá** (28/09) cùng stack compose: `make e2e` chạy `pytest -m e2e` với cụm dev; seed do Job `seed` nạp |
+| `deploy/docker/kafka/kafka-setup.sh` | — | Tạo topic + ACL cho compose | **Đã xoá** (28/09): Job `kafka-topics` là nơi duy nhất; bước sau là spec YAML cho topic/ACL (K4) |
+| `deploy/docker/openbao/openbao-approle-setup.sh` | — | Bootstrap AppRole cho compose | **Đã xoá** (28/09): role `k8s_openbao` của Ansible làm việc này cho cụm |
+
+Thứ tự làm:
+
+1. `switch-gpu-containers-to-host-network.sh` → manifest (bỏ runtime cuối cùng chưa được khai báo).
+2. `kong-setup.sh` → decK (script lớn nhất, rủi ro lệch cao nhất).
+3. Bộ ba secret (`create-secrets`, `gen-secrets-env`, `gen-kafka-jaas-secret`) → ESO.
+4. Xoá các `fix-*.sh` và `disk-alert.sh` khi phần thay thế đã chạy.

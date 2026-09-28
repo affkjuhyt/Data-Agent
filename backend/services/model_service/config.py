@@ -11,7 +11,7 @@ REMOTE_LLM_URL    = os.getenv("REMOTE_LLM_URL", "").rstrip("/")
 REMOTE_LLM_KEY    = os.getenv("REMOTE_LLM_KEY", "")
 REMOTE_LLM_MODEL  = os.getenv("REMOTE_LLM_MODEL", "")
 
-# ── Embedding cache + dynamic batching (KB-SCALE-10K.md lever #1) ──────────────
+# ── Embedding cache + dynamic batching (backends/embed_service.py) ─────────────
 def _flag(name: str, default: str = "true") -> bool:
     return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
 

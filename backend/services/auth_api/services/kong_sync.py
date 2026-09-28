@@ -9,7 +9,7 @@ except ModuleNotFoundError:
     from auth_api.infrastructure.config import KONG_ADMIN, PRIVATE_FALLBACK_CIDRS, log
     from auth_api.infrastructure.db import get_db
 
-IP_PROTECTED_SERVICES = ["aeroflow-backend", "release_worker"]
+IP_PROTECTED_SERVICES = ["aeroflow-backend"]
 IP_PROTECTED_ROUTES = ["auth_api-keys-route", "auth_api-secrets-route"]
 
 

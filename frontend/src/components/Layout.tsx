@@ -22,7 +22,6 @@ const PALETTE_GROUPS = [
   { category: 'Xây dựng', items: [
     { label: 'Agents',     module: 'build', sub: 'AGENTS' },
     { label: 'Workflows',  module: 'build', sub: 'WORKFLOWS' },
-    { label: 'Versions',   module: 'build', sub: 'VERSIONS' },
     { label: 'Thử nghiệm (Playground)', module: 'build', sub: 'PLAYGROUND' },
   ]},
   { category: 'Vận hành', items: [
@@ -37,7 +36,7 @@ const PALETTE_GROUPS = [
     { label: 'Secrets Vault',         module: 'settings', sub: 'SECRETS' },
     { label: 'Security & Compliance', module: 'settings', sub: 'SECURITY' },
     { label: 'AI Providers & Models', module: 'settings', sub: 'AI_PROVIDERS' },
-    { label: 'Billing & Quotas',      module: 'settings', sub: 'BILLING' },
+    { label: 'Billing',               module: 'settings', sub: 'BILLING' },
   ]},
 ];
 

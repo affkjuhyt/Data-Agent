@@ -60,27 +60,24 @@ data:
   KEYCLOAK_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
   KC_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
   # kong-setup.sh builds the aeroflow-jwks plugin's jwks_uri from this var,
-  # separately from KEYCLOAK_URL above — its fallback default is
-  # http://keycloak :8080 (correct for the old docker-compose Keycloak,
-  # which listens on 8080). This k8s Service exposes Keycloak on 8110/8111
-  # only (deploy/k8s/service/keycloak.yaml), no 8080 at all — without this
+  # separately from KEYCLOAK_URL above — its fallback default is the short
+  # name keycloak on 8080, Keycloak's stock port. The Service exposes Keycloak
+  # on 8110/8111 only (service/keycloak.yaml), no 8080 at all — without this
   # override every JWT-verified route 503s with "JWKS unavailable:
   # connection refused" the moment Kong's cached JWKS entry expires.
   KEYCLOAK_NETWORK_URL: http://keycloak.dataagent-service.svc.cluster.local:8110
   KEYCLOAK_REALM: aeroflow
   KC_REALM: aeroflow
 
-  # kong-setup.sh's Kong-upstream host/url fields for these 4 services
-  # default to the docker-compose container names (underscores, matching
-  # backend/services/<name>). k8s Service objects can't contain
-  # underscores (DNS-1035), so deploy/k8s/service/*.yaml names them with
-  # hyphens instead — override here so Kong's upstream DNS lookup resolves.
+  # kong-setup.sh's Kong-upstream host fields for these 3 services default
+  # to the backend/services/<name> directory names (underscores). k8s
+  # Service objects can't contain underscores (DNS-1035), so the Services
+  # are named with hyphens — override here so Kong's upstream DNS lookup resolves.
   # Without this, JWT/CORS checks can pass fine (they don't touch the
   # upstream) but the request 503s the moment Kong actually proxies it.
   WORKFLOW_RUNTIME_HOST: workflow-runtime
   FLOW_BUILDER_HOST: flow-builder
   AUTH_API_HOST: auth-api
-  RELEASE_WORKER_HOST: release-worker
 
   #Langfuse
   LANGFUSE_HOST: http://langfuse.dataagent-service.svc.cluster.local:8420

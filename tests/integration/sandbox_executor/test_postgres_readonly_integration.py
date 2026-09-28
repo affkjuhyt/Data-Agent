@@ -42,9 +42,9 @@ def _sys_path():
 @pytest.fixture
 def seeded_db(postgres_container) -> dict[str, str]:
     """Fresh `sample_orders` table per test (mirrors the seed data
-    deploy/docker/sql/create-extra-dbs.sql plants for the docker-compose `postgres`
-    service), against the ephemeral testcontainer instead of that shared
-    service — no docker-compose stack needs to be up for this test."""
+    deploy/docker/sql/create-extra-dbs.sql plants in the cluster's Postgres),
+    against the ephemeral testcontainer instead of that shared database —
+    nothing needs to be deployed for this test."""
     conn = psycopg2.connect(postgres_container["dsn"])
     conn.autocommit = True
     try:

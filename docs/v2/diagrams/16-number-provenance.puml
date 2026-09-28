@@ -46,8 +46,8 @@ end note
 #FFF4D6:Effective observation ClickHouse ""obs.observation""
 event_time · publication_time · available_at · system_time
 + release_id · artifact_sha256 · source_ref · effective_version;
-#E6F0FF:Đọc as-of (""libs/indicator/observation.py"")
-—— //có mã; bảng nó đọc chưa có, chuyển sang ClickHouse ở S1-02//;
+#FFF4D6:Đọc as-of trên ClickHouse ""obs"" (S1-02 viết mới
+trong ""indicator_api""; bộ đọc ""ankt.*"" cũ đã xoá 28/09);
 
 |Tính toán|
 #FFF4D6:Operator (""compare_period"" …): QuerySpec → SQLGlot →

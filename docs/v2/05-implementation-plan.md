@@ -28,7 +28,8 @@ Phạm vi đã chốt ngày 27/09/2026:
 - Nguồn fixture cho bước 1–7 được chấp nhận (D12). Chưa làm tin tức (D10).
 - Giá vàng thế giới theo ngày: crawl JSON website LBMA, dự phòng tải tay, ghi trong báo cáo (D3,
   ADR-V2-25). Thêm 1 frontend từ 05/10 (D14).
-- Ngoài POC: forecast (UC11), skill (UC14), regression Nợ công/GDP (chỉ bảo đảm không hỏng).
+- Ngoài POC: forecast (UC11), skill (UC14). Nợ công/GDP không làm tiếp: 6 case regression Nợ công đã
+  xoá khỏi `model/eval` ngày 28/09 (R-01).
 
 Giả định (sai thì sửa mục 7): hai senior vào không muộn hơn thứ Hai 05/10, tuần đầu 50% năng suất;
 toàn đội làm toàn thời gian cho POC trong 4 tuần + 2 ngày.
@@ -90,7 +91,7 @@ TN = tuần-người còn lại (đã trừ phần lấy từ `feat/add-task` ng
 | P0-06 | Chốt câu còn chờ | D2–D14 đã chốt 27/09; câu mới phát sinh ghi vào 07 mục 1 | PM | | Xoá khỏi 07 | done (27/09) |
 | P0-09 | Hợp đồng dữ liệu | Pydantic + OpenAPI skeleton `indicator-api` + envelope Kafka | SR1, SR2 | 1 | Các nhánh W2 build được trên stub | todo |
 | S1-01 | Schema Postgres | `registry`, `ingest`, `governance`, `knowledge`; RLS; `version` cho OCC | BE2 | 1 | Migration lên/xuống sạch | todo |
-| S1-02 | ClickHouse `obs` | Bảng 03 mục 3.2, row policy, as-of trong `libs/indicator/observation.py` | SR2, Ops | 1 + 0,5 | Test hai version chưa gộp | todo |
+| S1-02 | ClickHouse `obs` | Bảng 03 mục 3.2, row policy; bộ đọc as-of viết mới trong `indicator_api` (`domains/observation` + `adapters/clickhouse`, ADR-V2-36); bản cũ `libs/indicator/observation.py` đọc schema `ankt.*` không tồn tại, đã xoá 28/09 | SR2, Ops | 1 + 0,5 | Test hai version chưa gộp | todo |
 | FE-00 | Nền frontend | Sinh kiểu từ OpenAPI (script: SR1), TanStack Query, `urlState`, `streamReducer` + frame V2, SSE hộp thư (09 mục 4) | FE1, SR1 | 0,75 + 0,25 | Màn V2 đầu tiên dùng kiểu sinh ra | todo |
 | S2-02 | Artifact bất biến | MinIO theo SHA-256; `_purge_promoted_traces` không đụng artifact/release | DE | 1 | Re-crawl: artifact cũ còn | todo |
 
@@ -168,7 +169,22 @@ research nhập.
 | S12-01, S12-02 | Forecast (UC11) | Ngoài POC | cut |
 | S13-01 | Skill (UC14) | Ngoài POC | cut |
 | NEWS-01 | Tin tức | Ngoài POC (D10) | cut |
-| R-01 | Regression Nợ công/GDP | Chỉ bảo đảm không hỏng | cut |
+| R-01 | Regression Nợ công/GDP | 6 case grounding Nợ công đã xoá khỏi `model/eval` (28/09, 22 → 16 case) | cut |
+
+Không làm, vì thừa hoặc đi ngược quyết định đã chốt (rà repo và bản PDF v2.0 ngày 27/09):
+
+1. **Source registry thứ hai.** `ankt.source` trên nhánh `feat/add-task` trùng `KBSource`/`KBSourceRun`
+   đang chạy và có UI; giữ `KBSource`. Cùng lý do bỏ `services/ankt_connectors/` (mỗi nhà công bố một
+   hàm fetch, ~1.100 dòng): đi ngược "connector theo giao thức, cấu hình được từ UI" (16/09).
+2. **YAML làm registry** (V2-001 "sources-v2.yaml + DB migration"): registry nằm trong DB để màn hình
+   liệt kê, sửa, lập lịch được; YAML chỉ là file seed nhập qua Bulk Import (`data/sources-oil-gold.yaml`).
+3. **Deployable đặt tên theo miền** (`commodity-api`, `commodity-connectors`,
+   `commodity-forecast-worker`, Bảng 17.2): dầu/vàng là cấu hình trên service chung (ADR-V2-11, ADR-V2-22).
+4. **Hai lộ trình song song** (POC Nợ công/GDP hạn 23/10 và kế hoạch 8 tuần dầu/vàng trên cùng một đội):
+   đã gộp thành một lộ trình dầu/vàng (mục 1).
+5. **Dagster, MLflow đầy đủ, Neo4j lineage đầy đủ, mcp-gateway deployable riêng** trong POC: dữ liệu
+   dầu/vàng dưới 200 nghìn dòng (Brent ngày từ 1987 ≈ 9 nghìn dòng); K8s CronJob đủ, MCP Gateway chạy
+   trong `indicator-api`. ClickHouse cho effective observation thì giữ (00, ADR-V2-16).
 
 ## 7. Năng lực so với khối lượng Tier A
 
@@ -193,3 +209,23 @@ kế hoạch **không có đệm**. Mỗi thứ Sáu rà cột TT, trễ thì c�
 
 Forecast (UC11), skill (UC14), tin tức, MCP chuẩn nếu chưa làm, Neo4j projection, Dagster, MLflow,
 licence LBMA (D3 phương án A) và futures, tách `indicator-api` theo Bảng 5.1 thiết kế v1.
+
+### 8.1 Phương pháp forecast (S12-01/02)
+
+Forecast đi **sau** Truth plane, không làm song song: feature snapshot phải dựng bằng truy vấn
+point-in-time theo `available_at ≤ as_of` (ADR-V2-14), không theo kỳ dữ liệu. Ví dụ forecast lập thứ
+Hai không được dùng số tồn kho EIA của tuần kết thúc thứ Sáu trước đó, vì số này công bố thứ Tư. Không
+có observation store có vintage thì backtest đẹp hơn thực tế.
+
+| Hạng mục | Chọn |
+| --- | --- |
+| Baseline bắt buộc | Random walk (giá trị cuối), drift, ETS; với vàng thêm random walk trên log |
+| Candidate | LightGBM trên log-return với lag, volatility, feature vĩ mô, cờ sự kiện |
+| Backtest | Rolling origin, cửa sổ mở rộng, ≥ 100 điểm gốc cho mỗi horizon |
+| Khoảng dự báo | Conformal theo phần dư backtest (không giả định phân phối) |
+| Tiêu chí validated | MASE < 1 so với random walk ở ít nhất 2/3 horizon, và độ phủ khoảng 80% nằm trong 75–85% |
+| Thư viện | `statsmodels`, `lightgbm`, `scikit-learn` trong image `forecast-worker` riêng, không thêm vào whitelist sandbox |
+
+Kỳ vọng phải nói trước với hội đồng: giá dầu và vàng ở tầm 1–30 ngày gần với bước ngẫu nhiên, dự báo
+"không đổi" rất khó bị vượt (Alquist, Kilian, Vigfusson, "Forecasting the Price of Oil", 2013). Một
+pipeline từ chối model yếu có bằng chứng (candidate `rejected`) là kết quả đạt, không phải thất bại.

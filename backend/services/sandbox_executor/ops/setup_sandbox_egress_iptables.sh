@@ -8,11 +8,9 @@
 # containers:
 #   - if sandbox_executor talks to the host's own /var/run/docker.sock
 #     (SANDBOX_DOCKER_HOST unset): run directly on the host.
-#   - if using the rootless Docker-in-Docker sidecar
-#     (deploy/docker/service_sandbox-dockerd.yml's sandbox-dockerd,
-#     SANDBOX_DOCKER_HOST=tcp://sandbox-dockerd:2375, the default in this
-#     repo's compose setup): run INSIDE that sidecar's own network
-#     namespace, e.g. `docker exec -it dataagent-sandbox-dockerd sh -c '...'`
+#   - if using a rootless Docker-in-Docker sidecar
+#     (SANDBOX_DOCKER_HOST=tcp://<sidecar>:2375): run INSIDE that sidecar's
+#     own network namespace, e.g. `docker exec -it <sidecar> sh -c '...'`
 #     (needs iptables available in that image) or via `nsenter` into its
 #     netns from the host — DOCKER-USER on the outer host's dockerd does
 #     NOT see traffic from containers running inside the inner rootless

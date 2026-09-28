@@ -21,8 +21,8 @@
 \set tenant '''a0000000-0000-0000-0000-000000000001'''
 \set warehouse '''0000000e-2e00-4000-8000-00000000000a'''
 \set cfg '''0000000e-2e00-4000-8000-00000000000b'''
--- Kho demo nhìn từ crawler: mặc định là service compose; job seed trên k8s truyền
--- DW_HOST / DW_PORT. \getenv giữ nguyên giá trị mặc định khi biến môi trường không có.
+-- Kho demo nhìn từ crawler: job seed trên k8s truyền DW_HOST / DW_PORT (FQDN trong
+-- cluster); mặc định chỉ dùng khi chạy tay. \getenv giữ nguyên giá trị mặc định khi biến môi trường không có.
 \set dw_host postgres
 \set dw_port 5432
 \getenv dw_host DW_HOST

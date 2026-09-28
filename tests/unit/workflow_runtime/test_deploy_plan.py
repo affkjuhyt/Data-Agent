@@ -97,7 +97,7 @@ class TestRealImages:
             "backend/services/workflow_runtime",
         ):
             assert plan.paths_touching(
-                ["backend/services/release_worker/main.py"], _inputs(image_dir)
+                ["backend/services/flow_builder/main.py"], _inputs(image_dir)
             )
 
     def test_images_that_never_copy_libs_ignore_a_libs_change(self):

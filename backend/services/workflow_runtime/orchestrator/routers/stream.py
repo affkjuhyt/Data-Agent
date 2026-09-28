@@ -25,13 +25,16 @@ from services.workflow_runtime.orchestrator.schemas import ClarificationResume, 
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-# Included WITHOUT auth by app.py (like /health): the compose/Kong probes for
-# the old orchestrator service still hit this path.
+# Included WITHOUT auth by app.py (like /health): Kong's probes for the old
+# orchestrator service still hit this path.
 health_router = APIRouter()
 
 # Admission control: one slot per in-flight agent turn. Guards the shared
-# LLM/GPU from a pile-up of slow/abandoned turns (AGENT-E2E.md §5). None when
-# MAX_CONCURRENT_TURNS == 0 (unlimited).
+# LLM/GPU from a pile-up of slow/abandoned turns: an abandoned turn's LLM calls
+# keep running, so retries snowball into a queue every new turn waits behind
+# (see config.MAX_CONCURRENT_TURNS). Paired with cancel-on-disconnect below,
+# which frees the slot and the in-flight LLM call when the client goes away.
+# None when MAX_CONCURRENT_TURNS == 0 (unlimited).
 _turn_slots: asyncio.Semaphore | None = (
     asyncio.Semaphore(config.MAX_CONCURRENT_TURNS) if config.MAX_CONCURRENT_TURNS > 0 else None
 )

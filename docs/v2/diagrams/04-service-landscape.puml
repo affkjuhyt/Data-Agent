@@ -40,7 +40,6 @@ package "Agent" {
   component "workflow-runtime\n(+ resolution · capability · task graph ·\nverifier đủ bằng chứng · MCP client ·\nđiều tra không cần người hỏi)" <<extend>> as WR
   component "flow-builder" <<reuse>> as FB
   component "sandbox-executor · sandbox-runner" <<reuse>> as SBX
-  component "release-worker" <<reuse>> as RW
 }
 
 package "indicator-api (FastAPI, mới)" {

@@ -32,7 +32,7 @@ package "Repo ứng dụng · Data-Agent" {
 
 package "CI · GitHub Actions" {
   component "ci.yml: lint · type · unit · eval offline ·\nkubeconform (lint/type đang đỏ trên main)" <<extend>> as CI1
-  component "E2E smoke (tests/e2e/e2e.sh chạy trên compose,\nchưa ở CI)" <<extend>> as CI2
+  component "E2E: make e2e (pytest -m e2e) với cụm dev,\nchạy tay, chưa ở CI" <<extend>> as CI2
   component "buildx + cache · tag = git SHA" <<new>> as CI3
   component "SBOM (syft) · trivy image (chặn CRITICAL)" <<new>> as CI4
   component "cosign ký image" <<new>> as CI5

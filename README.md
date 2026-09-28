@@ -6,7 +6,11 @@ and observability tooling.
 
 The active focus of this repository is the **Knowledge Operations Center** frontend under
 [`frontend/src/components/knowledge/`](./frontend/src/components/knowledge), backed by the `kb-backend` service and
-the `kb_ingestion_worker`.
+the Kafka-driven KB workers (`kb_promote_silver`, `kb_promote_gold`, `kb_structured_data`,
+`kb_conflict_resolution`).
+
+The V2 plan (oil/gold data agent POC) starts at [`docs/v2/README.md`](./docs/v2/README.md);
+[`docs/v2/00-architecture-v2.md`](./docs/v2/00-architecture-v2.md) is its source of truth.
 
 ## Repository Layout
 
@@ -16,21 +20,21 @@ One top-level folder per concern — a team edits its own tree without touching 
 backend/     Python import root: services/ (FastAPI/worker services), libs/ (shared layer), alembic/ (migrations)
 frontend/    React 19 + Vite app (npm workspace): src/, index.html, vite/vitest/tsconfig, Dockerfile.dev
 deploy/      ansible/ (deploy pipeline: deploy.yml) · k8s/ (manifests: production/ and dev/) · docker/ (Dockerfiles + service config)
-tests/       unit/ · integration/ · e2e/ (real-stack runner, seed data + Playwright) · loadtest/ (k6)
-docs/        v2/ (current design, diagrams in v2/diagrams/) · RUNBOOK · SECURITY · AGENT-E2E · SILVER-FORMAT · KB-SCALE-10K
-model/       LLM eval harness, RAGAS
+tests/       unit/<service> · integration/<service> · e2e/ (demo seed data, eval + Playwright harnesses) · loadtest/ (k6)
+docs/        v2/ (current design, diagrams in v2/diagrams/) · RUNBOOK · SECURITY · SILVER-FORMAT
+model/       eval/ (release gate: cases, scorers incl. RAGAS faithfulness, thresholds) · bench/ (serving latency)
 ```
 
 | Path | Contents |
 |---|---|
 | [`frontend/src/`](./frontend/src) | React 19 + TypeScript + Vite frontend (Knowledge Base UI + Ask). `frontend/src/lib/apiClient.ts` is the FastAPI client (bearer-only — Kong injects identity). Root `package.json` is an npm workspace that forwards `npm run dev/test/typecheck` here |
-| [`backend/services/`](./backend/services) | Backend microservices: `kb_backend`, `kb_ingestion_worker`, `auth_api`, `flow_builder`, `workflow_runtime` (which also hosts the multi-agent orchestrator at `/api/orchestrate`), `model_service`, `sandbox_executor`, `release_worker`, `platform_workers` (one image; `WORKER=memory\|schema-crawler\|audit`). Each owns its `Dockerfile` (build context = repo root) |
-| [`backend/libs/`](./backend/libs) | Shared cross-service layer: `libs/basemodel` (domain models/ORM), `libs/database_connector` (infra clients), `libs/shared` (logger, auth, observability), `libs/semantic` (metric contracts). Innermost architecture layer |
+| [`backend/services/`](./backend/services) | Backend microservices: `kb_backend`; the KB workers `kb_promote_silver`, `kb_promote_gold`, `kb_structured_data`, `kb_conflict_resolution`; `auth_api`, `flow_builder`, `workflow_runtime` (which also hosts the multi-agent orchestrator at `/api/orchestrate`), `model_service`, `sandbox_executor`, `llm_exporter` (LLM-tier probe for Prometheus), `platform_workers` (one image; `WORKER=memory\|schema-crawler\|audit\|web-crawler`). Each owns its `Dockerfile` (build context = repo root) |
+| [`backend/libs/`](./backend/libs) | Shared cross-service layer: `libs/basemodel` (domain models/ORM), `libs/database_connector` (infra clients), `libs/shared` (logger, auth, observability), `libs/ingestion` (Bronze→Silver→Gold pipeline the KB workers run), `libs/semantic` (metric contracts), `libs/indicator` (numeric core). Innermost architecture layer |
 | [`backend/alembic/`](./backend/alembic) | Database migrations (`alembic -c backend/alembic/alembic.ini upgrade head`) |
 | [`deploy/ansible/`](./deploy/ansible) | The deploy pipeline — `deploy.yml` builds what changed, renders Secrets from the vault, applies the manifests, reruns Jobs, restarts what changed |
 | [`deploy/k8s/`](./deploy/k8s) | Kubernetes manifests: `production/` (hardened) and `dev/` (the single-node dev server) |
-| [`deploy/docker/`](./deploy/docker) | Dockerfiles and service config (`kong`, `keycloak`, `sql`, `litellm`, `monitoring`…) — build contexts and ConfigMap sources |
-| [`tests/`](./tests) | `pytest` unit/integration (`pythonpath = [".", "backend"]`), `tests/e2e/` seed data + runner + Playwright UI test, `tests/loadtest` k6 |
+| [`deploy/docker/`](./deploy/docker) | Image build contexts (`keycloak`, `setup`) and the files the k8s ConfigMaps and Jobs read (`kong`, `sql`, `litellm`, `monitoring`…) |
+| [`tests/`](./tests) | `pytest` unit/integration, one suite per service (`pythonpath = [".", "backend"]`), e2e tests against the dev cluster, `tests/e2e/` demo seed data + eval/Playwright harnesses, `tests/loadtest` k6 — see [`tests/README.md`](./tests/README.md) |
 | [`docs/RUNBOOK.md`](./docs/RUNBOOK.md) · [`docs/SECURITY.md`](./docs/SECURITY.md) | Operating the stack · security posture & release hardening |
 
 ---
@@ -186,26 +190,25 @@ same shape (no LLM re-run).
 ## Runtime shape
 
 - **Storage:** PostgreSQL (+ PgBouncer), MongoDB, Redis, MinIO
-- **Search and graph:** Qdrant, Neo4j, Elasticsearch, ClickHouse
+- **Search and graph:** Qdrant, Neo4j, ClickHouse
 - **Security and gateway:** Keycloak, Kong (`aeroflow-jwks` plugin verifies JWTs at the edge), OpenBao
 - **Messaging:** Kafka
-- **Observability and AI tooling:** LiteLLM, Langfuse, Prometheus, Grafana, Jaeger, Kibana
-- **Application services:** workflow_runtime, flow_builder, kb-backend, kb_ingestion_worker (+ KB workers), model_service, auth_api, release_worker, sandbox_executor, platform_workers (memory / schema-crawler / audit)
-- **LLM tier:** GPU services on `10.10.55.101` — vLLM `:8002`, TEI embed `:8003`, TEI rerank `:8004`
+- **Observability and AI tooling:** LiteLLM, Langfuse, Prometheus, Grafana, Jaeger (no central log store: `kubectl logs`)
+- **Application services:** workflow_runtime, flow_builder, kb-backend, kb-promote-silver, kb-promote-gold, kb-structured-data, kb-conflict-resolution, model_service, auth_api, sandbox_executor, llm-exporter, platform_workers (memory / schema-crawler / audit / web-crawler)
+- **LLM tier:** GPU services on `10.10.55.101` — vLLM main `:8001` (`agent-main`), vLLM fast `:8002` (`agent-fast`), TEI embed `:8003`, TEI rerank `:8004`
 
 Every workload listens on an `8xxx` port; `8000–8099` is reserved for the LLM tier. The full port
 table is in [`deploy/k8s/README.md`](./deploy/k8s/README.md#ports).
 
 ## Tests
 
+Tests run inside the service images, never with the host Python (3.10; the code targets 3.11):
+
 ```bash
-pytest -m unit
-pytest -m integration                        # spins Postgres up through testcontainers
-pytest tests/unit/workflow_runtime/test_k8s_manifests.py      # manifest invariants (security, ports, ConfigMaps)
+make test-unit          # one pytest suite per service, each in that service's image
+make test-integration   # testcontainers suites (Postgres, Qdrant, MinIO…)
+make e2e                # pytest -m e2e against the deployed dev cluster — writes data, see tests/README.md
+make frontend-test      # vitest
 ```
 
-## Docker Compose (legacy)
-
-The Compose files under [`deploy/docker/`](./deploy/docker) (`docker-compose*.yml`) predate the
-Kubernetes deployment. `tests/e2e/e2e.sh` still drives them; they are not a supported way to run the
-platform in production.
+`make help` lists the rest; [`CLAUDE.md`](./CLAUDE.md) has the command surface and repo rules.

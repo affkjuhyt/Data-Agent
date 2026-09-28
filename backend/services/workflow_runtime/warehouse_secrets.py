@@ -14,7 +14,7 @@ KBWarehouse instead of inventing a parallel registry) to find which vault
 path a given secret_id maps to, then reads the value from OpenBao via a
 read-only AppRole — deliberately NOT auth_api's root token, so a
 compromised workflow_runtime can only read secrets, never create/rotate/
-delete them. See deploy/docker/openbao/openbao-approle-setup.sh.
+delete them. The AppRole is minted by deploy/ansible/roles/k8s_openbao.
 """
 import asyncio
 import logging

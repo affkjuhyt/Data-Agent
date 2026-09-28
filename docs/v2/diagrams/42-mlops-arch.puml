@@ -42,7 +42,7 @@ package "Tài sản có version (git)" {
   component "Prompt ""prompts/*.txt"" + bảng SystemPrompts" <<extend>> as PR
   component "litellm config.yaml → ConfigMap litellm-config" <<reuse>> as LLC
   component "Golden set ""model/eval/cases/*.jsonl""\n(chưa có commodity.jsonl)" <<extend>> as GS
-  component "Agent/workflow version (flow-builder) ·\nrelease_worker: scan · duyệt; deploy còn giả lập" <<extend>> as AGV
+  component "Agent/workflow version (flow-builder)" <<extend>> as AGV
 }
 
 package "Đánh giá & gate" {

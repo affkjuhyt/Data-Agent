@@ -45,13 +45,14 @@ image_name_overrides:
   backend/alembic: migrate
 
 # frontend's k8s Deployment runs `npm run dev` (both dev/ and production/
-# manifests today — see deploy/k8s/dev/REPORT.md's bug log), which needs the
-# full-source layout Dockerfile.dev provides, not plain Dockerfile's
-# `vite preview`/dist-only production build. Unconditional (not k8s_env-
+# manifests today), which needs the full-source layout Dockerfile.dev provides,
+# not plain Dockerfile's `vite preview`/dist-only production build: built from
+# the plain Dockerfile, the pod fails its readiness probe with 404 because the
+# image has only dist/. Unconditional (not k8s_env-
 # gated): both manifests currently need it. Mirrors what
-# deploy/k8s/build-push-images.sh and docker-compose.app.yml's `authoring`
-# profile already do — this dict is what let deploy.yml's generic build task
-# catch up to them instead of silently rebuilding a broken frontend image.
+# deploy/k8s/build-push-images.sh already does — this dict is what let
+# deploy.yml's generic build task catch up to it instead of silently
+# rebuilding a broken frontend image.
 image_dockerfile_overrides:
   frontend: Dockerfile.dev
 
@@ -116,7 +117,6 @@ service_workloads:
   - workflow-runtime
   - kb-backend
   - model-service
-  - release-worker
   - sandbox-executor
   - frontend
 

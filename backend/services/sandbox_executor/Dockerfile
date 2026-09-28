@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # SECURITY NOTE: this image intentionally stays root for the SANDBOX_BACKEND=
-# docker path (default, docker-compose deployments) — sandbox_executor spawns
+# docker path (the default outside k8s) — sandbox_executor spawns
 # sandbox containers via the mounted Docker socket (docker_runner.py), and a
 # non-root user would need to join the host's docker group (GID varies per
 # host) which is itself root-equivalent. Proper hardening for that path is

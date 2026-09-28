@@ -7,7 +7,7 @@ SQL patterns work on one and fail on the other — most notably asyncpg's
 semicolon-separated statements in a single `op.execute()`.
 
 This file runs the actual migrations through asyncpg, so the dev loop
-catches that class of failure on `pytest`, not on `docker compose up`.
+catches that class of failure on `pytest`, not in the deploy's migrate Job.
 
 Scenarios:
 
@@ -52,7 +52,7 @@ def _async_dsn(libpq_dsn: str) -> str:
 
 
 def _run_alembic_upgrade(dsn: str) -> subprocess.CompletedProcess:
-    """Invoke alembic the same way the migrate compose service does."""
+    """Invoke alembic the same way the migrate Job does."""
     env = {
         **os.environ,
         "DATABASE_URL": _async_dsn(dsn),

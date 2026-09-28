@@ -27,14 +27,14 @@ import yaml
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 # The production set. dev/ publishes every Service as a NodePort on purpose
-# (single-node debugging box, see deploy/k8s/dev/REPORT.md).
+# (single-node debugging box, see the "Dev set" section of deploy/k8s/README.md).
 K8S = REPO_ROOT / "deploy" / "k8s" / "production"
 SERVICES = REPO_ROOT / "backend" / "services"
 
 pytestmark = pytest.mark.unit
 
-# Reached before any token exists — Kong's upstream probe and the compose
-# healthcheck both run at startup, and it returns a literal.
+# Reached before any token exists — Kong's upstream probe and the kubelet's
+# probes both run at startup, and it returns a literal.
 _OPEN_ROUTERS = {"health"}
 
 # Not Python application services: the gateway itself, datastores, and the
@@ -95,9 +95,9 @@ def _authenticating_services() -> set[str]:
 
 
 class TestNothingUnauthenticatedIsPublished:
-    """Compose published host ports; a cluster publishes a Service type. The
-    decision is the same one — making a service reachable without the gateway —
-    so it is still the decision that has to come with an identity check."""
+    """A cluster publishes a workload through its Service type. That is the
+    decision to make a service reachable without the gateway, so it is the
+    decision that has to come with an identity check."""
 
     def _exposed_services(self) -> list[dict]:
         return [

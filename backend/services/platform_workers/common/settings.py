@@ -1,7 +1,7 @@
 """Typed settings for every platform worker (pydantic-settings).
 
 Env names are unchanged from the four services this package replaced, so the
-compose blocks and the Kafka/Postgres credentials keep working: ``KAFKA_*``,
+workload env blocks and the Kafka/Postgres credentials keep working: ``KAFKA_*``,
 ``DB_*``, ``QDRANT_URL`` / ``EMBEDDING_DIM``, ``LITELLM_*``, ``KEYCLOAK_*``.
 Worker-specific knobs (topics, group ids, intervals) live in a ``Settings``
 class inside each worker package, next to the loop that reads them.

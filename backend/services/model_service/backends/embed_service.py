@@ -1,6 +1,7 @@
-"""Embedding cache + dynamic batching — lever #1 of KB-SCALE-10K.md.
+"""Embedding cache + dynamic batching.
 
-The measured retrieval cost is 66% query-embedding (594 ms cold). Two cheap wins:
+Query embedding was the largest share of a cold retrieval when last measured
+(594 of 897 ms, 2026-07, CPU embed). Two cheap wins:
 
 * **Cache** repeated query embeddings (search traffic is Zipfian — the same
   queries recur) so most requests skip the model entirely.

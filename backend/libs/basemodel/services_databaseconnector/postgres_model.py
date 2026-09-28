@@ -118,20 +118,6 @@ class SimilarityMetric(str, Enum):
     DOT = "dot"
 
 
-class HttpMethod(str, Enum):
-    GET = "GET"
-    POST = "POST"
-    PUT = "PUT"
-    PATCH = "PATCH"
-    DELETE = "DELETE"
-
-
-class APIType(str, Enum):
-    NEO4J = "NEO4J"
-    QDRANT = "QDRANT"
-    RETRIEVE = "RETRIEVE"
-
-
 class FilterOperator(str, Enum):
     EQ  = "eq"
     NE  = "ne"
@@ -536,16 +522,7 @@ class KBQdrantCollectionInsert(BaseModel):
 
 
 @register("insert")
-class KBNeo4jConnectionInsert(TenantModel):
-    is_connected: bool = False
-    total_node: int = 0
-    total_edge: int = 0
-    embedding_model_id: Optional[str] = None
-
-
-@register("insert")
 class KBNeo4jNodeInsert(BaseModel):
-    connection_id: str
     node_name: str
     node_description: Optional[str] = None
 
@@ -564,16 +541,6 @@ class KBEntityLookupInsert(BaseModel):
     canonical_name: str
     # NULL = global seed alias shared by all tenants
     tenant_id: Optional[uuid.UUID] = None
-
-
-@register("insert")
-class KBPublishAPIInsert(TenantModel):
-    name: str
-    type: APIType
-    endpoint_url: str
-    http_method: HttpMethod
-    is_published: bool = False
-    model_config = ConfigDict(use_enum_values=True)
 
 
 """
@@ -677,11 +644,6 @@ class KBQdrantCollectionDelete(BaseModel):
 
 
 @register("delete")
-class KBNeo4jConnectionDelete(TenantModel):
-    connection_id: str
-
-
-@register("delete")
 class KBNeo4jNodeDelete(BaseModel):
     node_id: str
 
@@ -695,22 +657,6 @@ class KBNeo4jRelationshipDelete(BaseModel):
 @register("delete")
 class KBEntityLookupDelete(BaseModel):
     lookup_id: str
-
-
-@register("delete")
-class KBPublishAPIDelete(TenantModel):
-    id: str
-
-
-"""
-Release Enums
-"""
-
-
-class ReleaseStatus(str, Enum):
-    SUCCESS = "SUCCESS"
-    FAILED = "FAILED"
-    ROLLED_BACK = "ROLLED_BACK"
 
 
 """
@@ -887,24 +833,6 @@ class AgentTracesInsert(InsertModel):
 
 
 """
-Release Insert Models
-"""
-
-
-@register("insert")
-class ReleaseHistoryInsert(BaseModel):
-    pipeline_id: str
-    package_id: Optional[str] = None
-    environment: str
-    status: ReleaseStatus
-    triggered_by: str
-    deployed_at: Optional[datetime.datetime] = None
-    duration_ms: Optional[int] = None
-    metadata: Optional[dict[str, Any]] = None
-    model_config = ConfigDict(use_enum_values=True)
-
-
-"""
 Auth Delete Models
 """
 
@@ -985,11 +913,6 @@ class AgentMCPDelete(BaseModel):
 @register("delete")
 class AgentMemoriesDelete(BaseModel):
     id: str
-
-
-@register("delete")
-class ReleaseHistoryDelete(BaseModel):
-    id: int
 
 
 @register("delete")

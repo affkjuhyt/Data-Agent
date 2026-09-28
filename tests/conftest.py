@@ -17,8 +17,8 @@ from collections.abc import Iterator
 import pytest
 
 # Several services call `load_dotenv(find_dotenv())` at import time. Under pytest
-# that would pull the developer's ./.env or deploy/docker/.env (GATEWAY_KEY, secrets, DB
-# URLs) into every test and make results depend on the machine. Neutralise it
+# that would pull the developer's ./.env (GATEWAY_KEY, secrets, DB URLs) into
+# every test and make results depend on the machine. Neutralise it
 # before any service module is imported; tests set what they need via
 # monkeypatch.setenv.
 try:
@@ -169,6 +169,7 @@ def live_stack() -> dict[str, str]:
             "deploy/k8s manifests applied to a cluster before running."
         )
     return {
-        "keycloak": os.environ.get("LIVE_KEYCLOAK_URL", "http://localhost:8110"),
-        "kong": os.environ.get("LIVE_KONG_URL", "http://localhost:8100"),
+        # The dev cluster's LAN NodePorts; `make e2e` passes the same defaults.
+        "keycloak": os.environ.get("LIVE_KEYCLOAK_URL", "http://10.10.55.101:30110"),
+        "kong": os.environ.get("LIVE_KONG_URL", "http://10.10.55.101:30100"),
     }

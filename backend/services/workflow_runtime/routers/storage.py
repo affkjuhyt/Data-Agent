@@ -31,7 +31,7 @@ def s3_client() -> Any:
     """Build an S3 client from MINIO_ENDPOINT / MINIO_ACCESS_KEY / MINIO_SECRET_KEY.
 
     Same variable names the former minio_service and sandbox_executor use, so
-    the compose block is a copy, not a translation. Read at call time so a test
+    a workload's env block is a copy, not a translation. Read at call time so a test
     can monkeypatch the environment (or this function) without reloading.
     """
     return boto3.client(

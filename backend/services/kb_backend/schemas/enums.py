@@ -13,8 +13,6 @@ from libs.basemodel.services_databaseconnector.postgres_model import (  # noqa: 
     ConflictStatus,
     TaskType,
     SimilarityMetric,
-    HttpMethod,
-    APIType,
 )
 
 # Alias used in inventory models.

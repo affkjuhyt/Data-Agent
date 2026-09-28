@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fills deploy/k8s/secrets.env (git-ignored) from deploy/k8s/secrets.env.example
 # with random values, once. Re-running never rotates an existing value — same
-# "generate once, persist" pattern as deploy/ansible/roles/common for compose.
+# "generate once, persist" pattern.
 #
 # OPENBAO_TOKEN / OPENBAO_ROLE_ID / OPENBAO_SECRET_ID are left blank here —
 # bootstrap-openbao.sh mints them after OpenBao is actually running and
@@ -35,7 +35,6 @@ GATEWAY_KEY="$(rand)"
 SERVICE_AUTH_SECRET="$(rand)"
 KAFKA_ADMIN_PASSWORD="$(rand)"
 AUDIT_CONSUMER_KAFKA_PASSWORD="$(rand)"
-RELEASE_WORKER_KAFKA_PASSWORD="$(rand)"
 WORKFLOW_RUNTIME_KAFKA_PASSWORD="$(rand)"
 MEMORY_CONSUMER_KAFKA_PASSWORD="$(rand)"
 SCHEMA_CRAWLER_WORKER_KAFKA_PASSWORD="$(rand)"
@@ -97,7 +96,6 @@ POSTGRES_DSN=postgresql://admin:$POSTGRES_PASSWORD@postgres.dataagent-database.s
 POSTGRES_PASSWORD=$POSTGRES_PASSWORD
 POSTGRES_URL_ASYNC=postgresql+asyncpg://admin:$POSTGRES_PASSWORD@postgres.dataagent-database.svc.cluster.local:8300/dataagent
 PUBLIC_API_URL=$PUBLIC_API_URL
-RELEASE_WORKER_KAFKA_PASSWORD=$RELEASE_WORKER_KAFKA_PASSWORD
 REMOTE_API_KEY=
 REMOTE_LLM_KEY=
 RUNTIME_DB_URL=postgresql+asyncpg://runtime_writer:runtime_dev_pw@postgres.dataagent-database.svc.cluster.local:8300/dataagent

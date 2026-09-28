@@ -4,15 +4,11 @@
 # (deploy/docker/kong/plugins/aeroflow-jwks), which fetches and caches the
 # Keycloak JWKS itself — no public-key registration in Kong is needed.
 #
-# Run after the stack is healthy. Kong's admin API is not published unless
-# deploy/docker/overlay-kong-admin.yml is in the file list (and then only on
-# loopback), so the in-cluster runner is the portable way:
-#
-#   docker compose -f deploy/docker/job-setup.yml up setup
-#
-# Or, with Phase 3 key-auth enabled:
-#
-#   ENABLE_ADMIN_KEY_AUTH=1 docker compose -f deploy/docker/job-setup.yml up setup
+# Runs as the `setup` Job (deploy/k8s/<env>/job/setup.yaml), which mounts this
+# file from the kong-scripts ConfigMap; the deploy pipeline reruns it with
+# `-e apply_setup=true`. Kong's admin API is the ClusterIP Service kong-admin
+# (8101), reachable only from auth-api and the setup Job (allow-kong-admin).
+# Phase 3 key-auth is opt-in with ENABLE_ADMIN_KEY_AUTH=1 in the Job's env.
 #
 # Requires: curl, python3 (baked into the runner image — see
 # deploy/docker/setup/Dockerfile).
@@ -23,19 +19,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KONG_ADMIN="${KONG_ADMIN_URL:-http://localhost:8101}"
 KC_BASE="${KEYCLOAK_URL:-http://localhost:8110}"
 
-# Upstream hostnames below default to the docker-compose container names
-# (underscores, matching the backend/services/<name> directory names). k8s
-# Service objects can't contain underscores at all (DNS-1035 label rule),
-# so deploy/k8s/production/service/*.yaml names them with hyphens instead
-# (workflow-runtime, flow-builder, auth-api, release-worker) — the k8s
-# ConfigMap (deploy/k8s/production/configmap.yaml) overrides these four to match.
+# Upstream hostnames below default to the backend/services/<name> directory
+# names (underscores). k8s Service objects can't contain underscores at all
+# (DNS-1035 label rule), so the Services are named with hyphens
+# (workflow-runtime, flow-builder, auth-api) and dataagent-config
+# (deploy/k8s/{dev,production}/configmap.yaml) sets these three to match.
 # Without the override, Kong's upstream DNS lookup 503s with "name error"
 # the moment a route actually gets proxied (JWT/CORS checks can pass fine
 # before that point, which is what made this easy to miss).
 WORKFLOW_RUNTIME_HOST="${WORKFLOW_RUNTIME_HOST:-workflow_runtime}"
 FLOW_BUILDER_HOST="${FLOW_BUILDER_HOST:-flow_builder}"
 AUTH_API_HOST="${AUTH_API_HOST:-auth_api}"
-RELEASE_WORKER_HOST="${RELEASE_WORKER_HOST:-release_worker}"
 REALM="${KEYCLOAK_REALM:-aeroflow}"
 # Set SKIP_JWT=1 to skip JWT plugin registration (useful for dev with VITE_MOCK_AUTH=true)
 SKIP_JWT="${SKIP_JWT:-0}"
@@ -117,7 +111,8 @@ fi
 PYTHON=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || echo "")
 if [ -z "$PYTHON" ] || ! "$PYTHON" -c "import sys; assert sys.version_info >= (3,6)" 2>/dev/null; then
   echo "  → Python not found on host; using docker python:3-alpine"
-  # Compose network name is pinned in every per-service file (data-agent-network)
+  # Only reached outside the setup image (which bakes python3 in): a
+  # developer's host whose Docker network is named data-agent-network.
   DOCKER_NET=$(docker network ls --filter name=data-agent-network --format '{{.Name}}' | head -1)
   PY_RUN="docker run --rm -i --network ${DOCKER_NET} python:3-alpine python3"
 else
@@ -219,34 +214,22 @@ curl -sf -X PUT "$KONG_ADMIN/services/auth_api/routes/auth_api-secrets-route" \
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
 
-# ── 3c. Create release_worker service + route ──────────────────────────
-echo "📡 Creating release_worker service..."
-curl -sf -X PUT "$KONG_ADMIN/services/release_worker" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "release_worker",
-    "url": "http://'"$RELEASE_WORKER_HOST"':8210",
-    "connect_timeout": 5000,
-    "read_timeout": 60000
-  }' | json_field name | xargs -I{} echo "  → service: {}"
-
-echo "🛣️  Creating release route..."
-curl -sf -X PUT "$KONG_ADMIN/services/release_worker/routes/release-route" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "release-route",
-    "paths": ["/api/release"],
-    "strip_path": false,
-    "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
-  }' | json_field name | xargs -I{} echo "  → route: {}"
+# ── 3c. Retired release_worker service + route ─────────────────────────
+# Release management (/api/release) was removed. Every step here is an
+# idempotent PUT, so nothing deletes what an earlier run created: drop the
+# route first (Kong refuses to delete a service a route still references), then
+# the service, whose plugins go with it. A 404 on a clean gateway is fine.
+echo "🧹 Removing the retired release_worker service..."
+curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/release_worker/routes/release-route" || true
+curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/release_worker" || true
 
 # (3d used to create an `orchestrator` service + route here, and 3d-2 a
 # `minio_service` one. Both now live inside workflow_runtime — /api/orchestrate
 # and /api/storage are on runtime-route above.)
 
 # ── 3e. Create kb-backend service + route ──────────────────────────────
-# kb-backend is a compose service on the shared network, so Kong reaches it by
-# its service DNS name (NOT host.docker.internal like aeroflow-backend).
+# Kong reaches kb-backend by its Service short name: both run in
+# dataagent-service, so it resolves without the FQDN.
 echo "📡 Creating kb-backend service..."
 curl -sf -X PUT "$KONG_ADMIN/services/kb-backend" \
   -H "Content-Type: application/json" \
@@ -364,12 +347,6 @@ else
     "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"flow_builder\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE$GATEWAY_KEY_JSON_FIELD}}" \
     "aeroflow-jwks"
 
-  # ── 4b. aeroflow-jwks on release_worker ────────────────────────────────
-  echo "🔐 Enabling aeroflow-jwks plugin on release_worker (aud=release_worker)..."
-  upsert_plugin "$KONG_ADMIN/services/release_worker/plugins" \
-    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"release_worker\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE$GATEWAY_KEY_JSON_FIELD}}" \
-    "aeroflow-jwks"
-
   # ── 4c. aeroflow-jwks on auth_api ──────────────────────────────────────
   echo "🔐 Enabling aeroflow-jwks plugin on auth_api (aud=auth_api)..."
   upsert_plugin "$KONG_ADMIN/services/auth_api/plugins" \
@@ -404,7 +381,7 @@ upsert_plugin "$KONG_ADMIN/routes/kb-backend-route/plugins" \
   "cors"
 
 # ── 5. IP restriction ─────────────────────────────────────────────────
-# Applied to: aeroflow-backend (data API), release_worker, auth_api-keys-route.
+# Applied to: workflow_runtime, flow_builder, auth_api-keys-route, auth_api-secrets-route.
 # auth_api ip-allowlist routes are intentionally EXCLUDED so admin can always
 # manage the allowlist regardless of the current IP policy.
 # Default: allow_all — auth_api syncs Kong to the DB mode on startup.
@@ -416,9 +393,6 @@ upsert_plugin "$KONG_ADMIN/services/workflow_runtime/plugins" "$_IP_DEFAULT" "ip
 
 echo "🛡️  Enabling IP restriction on flow_builder..."
 upsert_plugin "$KONG_ADMIN/services/flow_builder/plugins" "$_IP_DEFAULT" "ip-restriction"
-
-echo "🛡️  Enabling IP restriction on release_worker..."
-upsert_plugin "$KONG_ADMIN/services/release_worker/plugins" "$_IP_DEFAULT" "ip-restriction"
 
 echo "🛡️  Enabling IP restriction on auth_api-keys-route..."
 upsert_plugin "$KONG_ADMIN/routes/auth_api-keys-route/plugins" "$_IP_DEFAULT" "ip-restriction"
@@ -532,7 +506,7 @@ if [ "${ENABLE_ADMIN_KEY_AUTH:-0}" = "1" ]; then
   echo "🔒 Phase 3: registering Kong-fronting-Kong admin proxy with key-auth..."
 
   # Upstream to the `kong-admin` network alias rather than a hardcoded address,
-  # so this keeps working wherever Kong lands (compose alias or k8s Service).
+  # so this keeps working wherever Kong lands (the k8s Service name).
   ADMIN_UPSTREAM="${KONG_ADMIN_UPSTREAM:-http://kong-admin:8001}"
 
   curl -sf -X PUT "$KONG_ADMIN/services/kong-admin-proxy" \
@@ -566,7 +540,7 @@ if [ "${ENABLE_ADMIN_KEY_AUTH:-0}" = "1" ]; then
   : > "$KEYS_FILE"
   chmod 600 "$KEYS_FILE"
 
-  for consumer in auth_api release_worker; do
+  for consumer in auth_api; do
     # Create consumer if not exists (PUT is idempotent)
     curl -sf -X PUT "$KONG_ADMIN/consumers/$consumer-admin" \
       -H "Content-Type: application/json" \

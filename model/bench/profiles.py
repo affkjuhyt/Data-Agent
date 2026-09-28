@@ -57,9 +57,9 @@ def _cases(name: str) -> list[dict[str, Any]]:
 def _cases_with_contexts() -> list[dict[str, Any]]:
     """Grounding cases that carry their source passages.
 
-    The `live-kb-lookup` cases (gnd-020..022) have none: their context is
+    The `live-kb-lookup` case (gnd-021) has none: its context is
     whatever the deployed agent retrieves, so there is nothing to put in a
-    prompt offline. Taking them anyway raised KeyError for every profile.
+    prompt offline. Taking it anyway raised KeyError for every profile.
     """
     corpus = [case for case in _cases("grounding") if case.get("contexts")]
     if not corpus:

@@ -4,20 +4,21 @@
  *   users        useKeycloakUsers(isAdmin)             Keycloak Admin API (real)
  *   roles        PLATFORM_ROLES = config mirroring Keycloak realm roles
  *                + current user's roles (useAuth) + GET /api/auth/me/roles
- *   permissions  usePlatformSetting('rbac_matrix')     {roles[], capabilities[], grants{role: cap[]}}
+ *
+ * No editable permissions matrix: enforcement is Keycloak roles + Kong, and
+ * nothing server-side read the matrix it saved.
  */
-import React, { useEffect, useState } from 'react';
-import { Users, Shield, Lock, ShieldCheck, Bot, Eye, CheckCircle2, XCircle, AlertCircle, RefreshCw, Plus, Save, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import { Users, Shield, ShieldCheck, Bot, Eye, CheckCircle2, XCircle, AlertCircle, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../../lib/utils';
 import { OperationalHeader } from '../shared/OperationalHeader';
 import { StatusBadge } from '../shared/StatusBadge';
 import { DataTable } from '../shared/DataTable';
-import { Badge, Button, Card, EmptyState, ErrorState, Input, LoadingState } from '../ui';
+import { Badge, Button, Card, EmptyState, ErrorState, LoadingState } from '../ui';
 import { useAuth } from '../../lib/AuthProvider';
 import { useKeycloakUsers, KcUser } from '../../lib/useKeycloakUsers';
 import { usePlatformRoles } from '../../lib/usePlatformData';
-import { usePlatformSetting } from '../../lib/usePlatformSettings';
 import keycloak from '../../lib/keycloak';
 
 /** Mirrors the Keycloak realm roles the platform recognises (see Auth → Keycloak role mappings). */
@@ -27,15 +28,12 @@ const PLATFORM_ROLES = [
   { kc: 'executive-viewer', label: 'Executive',      desc: 'Chỉ đọc dashboard điều hành và báo cáo tuân thủ.', icon: Eye },
 ];
 
-interface RbacMatrix { roles: string[]; capabilities: string[]; grants: Record<string, string[]> }
-const EMPTY_MATRIX: RbacMatrix = { roles: [], capabilities: [], grants: {} };
-
 const displayName = (u: KcUser) => [u.firstName, u.lastName].filter(Boolean).join(' ') || u.username || u.email;
 const formatDate = (ts: number) => (ts ? new Date(ts).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 
 export const IAMSection = () => {
   const { user: authUser } = useAuth();
-  const [tab, setTab] = useState<'USERS' | 'ROLES' | 'PERMISSIONS'>('USERS');
+  const [tab, setTab] = useState<'USERS' | 'ROLES'>('USERS');
   const isAdmin = authUser?.roles.some(r => r.toUpperCase().replace(/-/g, '_') === 'PLATFORM_ADMIN') ?? false;
   const { users, loading, error, refetch } = useKeycloakUsers(isAdmin);
 
@@ -93,7 +91,6 @@ export const IAMSection = () => {
         {[
           { id: 'USERS', label: 'Users', icon: Users },
           { id: 'ROLES', label: 'Roles', icon: Shield },
-          { id: 'PERMISSIONS', label: 'Permissions', icon: Lock },
         ].map(item => (
           <button key={item.id} type="button" onClick={() => setTab(item.id as any)} className={cn('flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all', tab === item.id ? 'bg-white text-[#111111] shadow-sm border border-[#BFA66A]' : 'text-[#3F3F3F] hover:text-[#111111]')}>
             <item.icon className={cn('w-3.5 h-3.5', tab === item.id ? 'text-[#8A5A00]' : 'text-[#5F5F5F]')} />
@@ -127,7 +124,6 @@ export const IAMSection = () => {
           )}
 
           {tab === 'ROLES' && <RolesTab userRoles={authUser?.roles ?? []} />}
-          {tab === 'PERMISSIONS' && <PermissionsTab canEdit={isAdmin} />}
         </motion.div>
       </AnimatePresence>
     </div>
@@ -173,96 +169,5 @@ const RolesTab = ({ userRoles }: { userRoles: string[] }) => {
         </Card>
       </div>
     </div>
-  );
-};
-
-/* ─── Permissions matrix (persisted) ─────────────────────── */
-const PermissionsTab = ({ canEdit }: { canEdit: boolean }) => {
-  const setting = usePlatformSetting<RbacMatrix>('rbac_matrix', EMPTY_MATRIX);
-  const [m, setM] = useState<RbacMatrix>(EMPTY_MATRIX);
-  const [dirty, setDirty] = useState(false);
-  const [newRole, setNewRole] = useState('');
-  const [newCap, setNewCap] = useState('');
-  useEffect(() => { if (!setting.loading) { setM({ ...EMPTY_MATRIX, ...setting.value, grants: setting.value?.grants ?? {} }); setDirty(false); } }, [setting.loading, setting.value]);
-
-  const update = (fn: (prev: RbacMatrix) => RbacMatrix) => { setM(fn); setDirty(true); };
-  const has = (role: string, cap: string) => (m.grants[role] ?? []).includes(cap);
-  const toggle = (role: string, cap: string) => update(prev => {
-    const cur = prev.grants[role] ?? [];
-    return { ...prev, grants: { ...prev.grants, [role]: cur.includes(cap) ? cur.filter(c => c !== cap) : [...cur, cap] } };
-  });
-  const addRole = (name: string) => { const r = name.trim(); if (!r || m.roles.includes(r)) return; update(prev => ({ ...prev, roles: [...prev.roles, r], grants: { ...prev.grants, [r]: prev.grants[r] ?? [] } })); setNewRole(''); };
-  const addCap = () => { const c = newCap.trim(); if (!c || m.capabilities.includes(c)) return; update(prev => ({ ...prev, capabilities: [...prev.capabilities, c] })); setNewCap(''); };
-  const removeRole = (r: string) => update(prev => { const g = { ...prev.grants }; delete g[r]; return { ...prev, roles: prev.roles.filter(x => x !== r), grants: g }; });
-  const removeCap = (c: string) => update(prev => ({ ...prev, capabilities: prev.capabilities.filter(x => x !== c), grants: Object.fromEntries(Object.entries(prev.grants).map(([k, v]) => [k, v.filter(x => x !== c)])) }));
-  const seedRoles = () => PLATFORM_ROLES.forEach(p => addRole(p.kc));
-  const save = () => setting.save(m).then(() => setDirty(false)).catch(() => {});
-
-  const empty = m.roles.length === 0 && m.capabilities.length === 0;
-
-  return (
-    <Card
-      title="Permissions matrix"
-      subtitle={<>Lưu tại <code className="font-mono">platform/settings/rbac_matrix</code>{setting.updatedAt ? ` · ${new Date(setting.updatedAt).toLocaleString('vi-VN')}` : ' · chưa lưu lần nào'}. Ma trận này là tài liệu cấu hình; việc thực thi nằm ở Keycloak/Kong.</>}
-      actions={canEdit && <Button size="sm" variant="primary" icon={Save} loading={setting.saving} disabled={!dirty} onClick={save}>Lưu</Button>}
-    >
-      {setting.error && <div className="mb-4"><ErrorState message={setting.error} onRetry={setting.reload} /></div>}
-      {setting.loading ? <LoadingState /> : empty && !dirty ? (
-        <EmptyState
-          icon={Lock}
-          title="Chưa có ma trận phân quyền"
-          description="Thêm role và capability, tick các ô cấp quyền rồi lưu."
-          action={canEdit && <Button size="sm" icon={Plus} onClick={seedRoles}>Bắt đầu với 3 platform roles</Button>}
-        />
-      ) : (
-        <div className="space-y-4">
-          {canEdit && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <form onSubmit={e => { e.preventDefault(); addRole(newRole); }} className="flex gap-2">
-                <Input value={newRole} onChange={e => setNewRole(e.target.value)} placeholder="Thêm role (vd. tenant-admin)" className="font-mono" />
-                <Button type="submit" size="sm" icon={Plus}>Role</Button>
-              </form>
-              <form onSubmit={e => { e.preventDefault(); addCap(); }} className="flex gap-2">
-                <Input value={newCap} onChange={e => setNewCap(e.target.value)} placeholder="Thêm capability (vd. secrets:rotate)" className="font-mono" />
-                <Button type="submit" size="sm" icon={Plus}>Capability</Button>
-              </form>
-            </div>
-          )}
-          <div className="overflow-x-auto">
-            <table className="ui-table">
-              <thead>
-                <tr>
-                  <th>Capability</th>
-                  {m.roles.map(r => (
-                    <th key={r} className="text-center">
-                      <span className="inline-flex items-center gap-1 font-mono">{r}{canEdit && <button type="button" onClick={() => removeRole(r)} className="text-[#5F5F5F] hover:text-[#A83A32]" aria-label={`Xoá role ${r}`}><Trash2 className="w-3 h-3" /></button>}</span>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {m.capabilities.length === 0 ? (
-                  <tr><td colSpan={m.roles.length + 1} className="text-center text-[#5F5F5F]">Chưa có capability.</td></tr>
-                ) : m.capabilities.map(cap => (
-                  <tr key={cap}>
-                    <td>
-                      <span className="inline-flex items-center gap-1.5 font-mono text-xs">{cap}{canEdit && <button type="button" onClick={() => removeCap(cap)} className="text-[#5F5F5F] hover:text-[#A83A32]" aria-label={`Xoá capability ${cap}`}><Trash2 className="w-3 h-3" /></button>}</span>
-                    </td>
-                    {m.roles.map(r => (
-                      <td key={r} className="text-center">
-                        <button type="button" disabled={!canEdit} onClick={() => toggle(r, cap)} aria-pressed={has(r, cap)} aria-label={`${r} · ${cap}`} className="disabled:cursor-not-allowed">
-                          {has(r, cap) ? <CheckCircle2 className="w-4 h-4 text-[#1D6F4C] mx-auto" /> : <XCircle className="w-4 h-4 text-[#BFA66A] mx-auto" />}
-                        </button>
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {m.roles.length === 0 && <p className="text-[11px] text-[#5F5F5F]">Chưa có role. {canEdit && <button type="button" className="underline" onClick={seedRoles}>Thêm 3 platform roles</button>}</p>}
-        </div>
-      )}
-    </Card>
   );
 };

@@ -102,8 +102,7 @@ $$;
 -- Table-scoped role for the kb-backend service. Unlike app_user it is NOT
 -- granted ALL TABLES and gets no ALTER DEFAULT PRIVILEGES in public: a new
 -- table reaches this service only by being added to a list below. That is the
--- point — kb-backend cannot read secrets_vault, api_keys, Members or the release
--- tables at all.
+-- point — kb-backend cannot read secrets_vault, api_keys or Members at all.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'kb_backend') THEN

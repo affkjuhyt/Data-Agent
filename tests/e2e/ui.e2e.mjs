@@ -1,6 +1,7 @@
 // UI end-to-end — real Keycloak login, real gateway, real agent turn.
 //
-//   tests/e2e/e2e.sh ui          (or: node tests/e2e/ui.e2e.mjs)
+//   npm run e2e:ui               (or: node tests/e2e/ui.e2e.mjs)
+//   E2E_KONG=… to target another gateway (default: the dev cluster's Kong NodePort)
 //   E2E_STRICT=1 … to make the evidence assertions hard failures
 //   E2E_HEADED=1 … to watch it
 //
@@ -19,7 +20,7 @@ const require = createRequire(resolve(ROOT, 'package.json'));
 const { chromium } = require('playwright');
 
 const APP = process.env.E2E_APP ?? 'http://localhost:3000';
-const KONG = process.env.E2E_KONG ?? 'http://localhost:8100';
+const KONG = process.env.E2E_KONG ?? 'http://10.10.55.101:30100';
 const USER = process.env.E2E_USER ?? 'helios-engineer';
 const PASS = process.env.E2E_PASS ?? 'H3lios@Eng001!';
 const STRICT = process.env.E2E_STRICT === '1';

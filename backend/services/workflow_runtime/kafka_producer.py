@@ -70,7 +70,7 @@ async def close_kafka_producer() -> None:
 
 
 def produce_event(topic: str, key: Optional[str], value: dict[str, Any]) -> None:
-    """Fire-and-forget — does not block on broker ack, matches release_worker's produce_event()."""
+    """Fire-and-forget — does not block on broker ack."""
     if not _producer:
         logger.warning("kafka producer | not connected, dropping event for topic=%s", topic)
         return

@@ -1,7 +1,7 @@
 """Helpers to import service modules into unit tests.
 
 Several services live in hyphenated directories (``backend/services/auth_api``,
-``backend/services/release_worker``, ``backend/services/workflow_runtime``) which are NOT valid
+``backend/services/workflow_runtime``) which are NOT valid
 Python package names, and some use bare imports (``from shared.auth import ...``,
 ``import llm_client``) that assume the service's own directory is on ``sys.path``.
 

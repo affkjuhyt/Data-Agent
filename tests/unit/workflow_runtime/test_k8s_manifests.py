@@ -1,7 +1,7 @@
 """The k8s manifests, checked the way the migrations are checked.
 
 `tests/integration/workflow_runtime/test_alembic_migrations.py` exists because a migration that
-only gets exercised by `docker compose up` is a migration whose failures land in
+only gets exercised by a deploy is a migration whose failures land in
 production. The manifests had the same shape of problem and no equivalent test:
 a misspelled field is not an error to the API server, it is a field that
 silently does not exist, and the first symptom is a pod that starts without the
@@ -13,8 +13,7 @@ Three classes of drift are caught here:
     itself validates against, so `terminationGracePeriodSecond` fails here
     instead of being quietly dropped at apply time.
   * **The migration gate.** The runtime tier must not start before the schema is
-    at head. Compose gets that from `depends_on: service_completed_successfully`;
-    here it is an initContainer, and an initContainer is easy to forget when
+    at head. That is an initContainer, and an initContainer is easy to forget when
     copying a manifest for a new service.
   * **A destructive job in the directory apply.** `kubectl apply -f deploy/k8s/` is the
     documented routine. Anything that drops a database must therefore not be in
@@ -210,7 +209,7 @@ class TestNamesAreValidDns1123:
         return bad
 
     def test_every_object_and_container_name_is_a_dns_label(self):
-        """Underscores in a name are the compose→k8s port's classic bug: valid
+        """Underscores in a name (copied from a Python package name) are the classic bug: valid
         YAML, valid schema, rejected by the API server at apply time."""
         bad = self._bad_names()
         assert not bad, "not DNS-1123 (^[a-z0-9]([-a-z0-9]*[a-z0-9])?$):\n" + "\n".join(bad)
@@ -284,7 +283,7 @@ class TestInlineScriptsAreValidShell:
     """A manifest carries shell as a string, so nothing checks it until the pod
     runs — and a backup or restore job is the worst place to learn that.
 
-    This caught a real one: the compose backup sidecar is a single-quoted
+    This caught a real one: a backup sidecar's loop was a single-quoted
     `sh -c '...'` argument, and a comment containing an apostrophe ("pg_dump's")
     closed the quote and turned the rest of the loop into a syntax error.
     """
@@ -561,6 +560,32 @@ class TestPortsFollowThePlan:
                         bad.append(f"{path.name}:{k}={v}")
         assert not bad, f"env still on a pre-migration port: {bad}"
 
+    def test_grafana_datasources_point_at_a_real_service_port(self):
+        """The datasource files become the grafana-datasources ConfigMap
+        (create-configmaps.sh), so nothing in the manifests would flag a wrong
+        port: Grafana starts fine and every panel just shows "no data"."""
+        ports = {
+            (s["metadata"]["name"], s["metadata"]["namespace"]): {p["port"] for p in s["spec"]["ports"]}
+            for s in self._services()
+        }
+        url = re.compile(r"url:\s*https?://([a-z0-9-]+)\.([a-z0-9-]+)\.svc\.cluster\.local:(\d+)")
+        datasources = REPO_ROOT / "deploy" / "docker" / "monitoring" / "grafana" / "provisioning" / "datasources"
+        bad, checked = [], 0
+        for path in sorted(datasources.glob("*.y*ml")):
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if not line.strip().startswith("url:"):
+                    continue
+                m = url.search(line)
+                if not m:
+                    bad.append(f"{path.name}: {line.strip()} is not a Service FQDN")
+                    continue
+                checked += 1
+                name, namespace, port = m.group(1), m.group(2), int(m.group(3))
+                if port not in ports.get((name, namespace), set()):
+                    bad.append(f"{path.name}: {name}.{namespace}:{port} is not a Service port")
+        assert checked, "no datasource URL found"
+        assert not bad, bad
+
 
 # ── namespaces, identity and network isolation ─────────────────────────────
 
@@ -735,7 +760,7 @@ class TestCrossNamespaceHostnamesAreQualified:
         hosts = ["postgres", "mongo", "redis", "qdrant", "neo4j", "kafka", "minio",
                  "clickhouse", "openbao", "pgbouncer", "kong-admin",
                  "kong", "keycloak", "litellm", "langfuse", "jaeger", "prometheus",
-                 "grafana", "auth-api", "release-worker", "kb-backend",
+                 "grafana", "auth-api", "kb-backend",
                  "model-service", "workflow-runtime", "flow-builder",
                  "sandbox-executor", "llm-exporter", "frontend"]
         pattern = re.compile(
@@ -826,7 +851,7 @@ class TestConfigComesFromConfigMapsAndSecrets:
                 for m in script.split("kubectl -n ")[1:] if key in m
             }
             expected = {"auth-api", "flow-builder", "kb-backend",
-                        "release-worker", "workflow-runtime"}
+                        "workflow-runtime"}
             if key == "GATEWAY_KEY":
                 expected |= {"setup"}   # kong-setup.sh writes it into the plugin
                 # The eval Job is a caller, not a verifier: model/eval's

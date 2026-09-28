@@ -38,7 +38,6 @@ vault_minio_root_password: ""
 vault_kafka_admin_password: ""
 vault_audit_consumer_kafka_password: ""
 vault_memory_consumer_kafka_password: ""
-vault_release_worker_kafka_password: ""
 vault_schema_crawler_worker_kafka_password: ""
 vault_workflow_runtime_kafka_password: ""
 

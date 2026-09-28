@@ -45,7 +45,7 @@ left to right direction
 
 package "Service" {
   component "workflow-runtime" <<extend>> as WR
-  component "auth-api · flow-builder · release-worker" <<reuse>> as PLAT
+  component "auth-api · flow-builder" <<reuse>> as PLAT
   component "kb-backend + kb-promote-* ·\nkb-structured-data · kb-conflict-resolution" <<reuse>> as KB
   component "web_crawler" <<extend>> as WEB
   component "series_extractor" <<new>> as SX
@@ -56,7 +56,7 @@ package "Service" {
 }
 
 package "Postgres dataagent" {
-  database "public — bảng cũ\n(KB* · agent · auth · release; 84 bảng)\ngiữ, không mở rộng" <<reuse>> as PG_PUB
+  database "public — bảng cũ\n(KB* · agent · auth; 13 bảng chết đã xoá 28/09)\ngiữ, không mở rộng" <<reuse>> as PG_PUB
   database "langgraph (checkpointer) ·\nkb_structured (bảng tạo lúc chạy)" <<reuse>> as PG_LG
   database "registry\n(entity · entity_relation · series · capability ·\noperator · dq_rule · authority_rule)" <<new>> as PG_REG
   database "ingest\n(release · profile · mapping_version ·\nobservation_candidate · outbox)" <<new>> as PG_ING

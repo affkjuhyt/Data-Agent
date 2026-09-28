@@ -48,7 +48,7 @@ class _ServiceFilter(logging.Filter):
         record.labels = labels
 
         # opentelemetry-instrumentation-logging gắn otelTraceID/otelSpanID vào record
-        # — đưa vào ECS field trace.id/span.id để nhảy Kibana <-> Jaeger
+        # — đưa vào ECS field trace.id/span.id để từ một dòng log nhảy sang trace Jaeger
         trace_id = getattr(record, "otelTraceID", None)
         span_id = getattr(record, "otelSpanID", None)
         if trace_id and trace_id != "0":

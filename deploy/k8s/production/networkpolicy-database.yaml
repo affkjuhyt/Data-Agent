@@ -118,12 +118,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: release-worker
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: flow-builder
     - namespaceSelector:
         matchLabels:
@@ -324,12 +318,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: release-worker
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: flow-builder
     - namespaceSelector:
         matchLabels:
@@ -518,12 +506,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: release-worker
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: flow-builder
     - namespaceSelector:
         matchLabels:
@@ -707,12 +689,6 @@ spec:
       podSelector:
         matchLabels:
           app: auth-api
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: release-worker
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -908,12 +884,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: release-worker
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: flow-builder
     - namespaceSelector:
         matchLabels:
@@ -1099,12 +1069,6 @@ spec:
       podSelector:
         matchLabels:
           app: auth-api
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: release-worker
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -1300,12 +1264,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: release-worker
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: flow-builder
     - namespaceSelector:
         matchLabels:
@@ -1491,12 +1449,6 @@ spec:
       podSelector:
         matchLabels:
           app: auth-api
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: release-worker
     - namespaceSelector:
         matchLabels:
           name: dataagent-service
@@ -1690,12 +1642,6 @@ spec:
           name: dataagent-service
       podSelector:
         matchLabels:
-          app: release-worker
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
           app: flow-builder
     - namespaceSelector:
         matchLabels:
@@ -1879,12 +1825,6 @@ spec:
       podSelector:
         matchLabels:
           app: auth-api
-    - namespaceSelector:
-        matchLabels:
-          name: dataagent-service
-      podSelector:
-        matchLabels:
-          app: release-worker
     - namespaceSelector:
         matchLabels:
           name: dataagent-service

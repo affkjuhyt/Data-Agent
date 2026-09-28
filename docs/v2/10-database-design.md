@@ -9,7 +9,8 @@
 
 1. Không bảng hiện có nào chứa được dữ liệu V2: thiếu bốn trục thời gian, raw bị xoá/ghi đè, không có
    bảng append-only thật, OCC khác dạng. V2 dựng **schema mới** cạnh `public`, không sửa dần bảng cũ.
-2. Bảng cũ (`KB*`, agent, auth, release) giữ nguyên cho POC, **không xây thêm tính năng V2 lên chúng**.
+2. Bảng cũ (`KB*`, agent, auth) giữ nguyên cho POC, **không xây thêm tính năng V2 lên chúng**. Bảng
+   release management đã xoá cùng `release_worker` (migration `e4a6c8b0d2f1`, 28/09).
 3. Ba lỗi tách tenant phải sửa trước STEP 1 vì V2 dựa vào RLS: dịch vụ chạy bằng superuser, bảng có
    `tenant_id` mà không bật RLS, `KBData` unique `name` trên toàn bảng (mục 2.2).
 4. Nguồn sự thật chỉ gồm Postgres, MinIO (raw theo SHA-256) và ClickHouse `obs`. Qdrant, Neo4j là bản
@@ -29,7 +30,8 @@
 | Backup | `pg_dump` 6 giờ/lần vào PVC cùng node | MinIO, Mongo, Neo4j, Qdrant không có backup |
 
 Số đo trên cụm dev: 76 bảng tên PascalCase có ngoặc kép, 8 bảng snake_case; 77/84 bảng gần như rỗng
-(dữ liệu dev ít, không phải bằng chứng bảng chết); 28 migration, một head `c2d4e6f8a0b1`.
+(dữ liệu dev ít, không phải bằng chứng bảng chết). Sau đó 13 bảng chết đã xoá (mục 5). Ngày 28/09:
+31 migration, một head `e4a6c8b0d2f1`.
 
 ## 2. Vấn đề
 
@@ -47,7 +49,7 @@ Số đo trên cụm dev: 76 bảng tên PascalCase có ngoặc kép, 8 bảng s
 
 | Vấn đề | Bằng chứng |
 | --- | --- |
-| Superuser `admin` (`rolsuper`, `rolbypassrls`) là tài khoản của auth_api, flow_builder, release_worker, bốn platform_workers (kể cả web_crawler ghi `KBData`), model-service, CronJob memory-cleanup → RLS không có tác dụng | `pg_stat_activity`; `deploy/k8s/create-secrets.sh`; `platform_workers/common/settings.py:52` |
+| Superuser `admin` (`rolsuper`, `rolbypassrls`) là tài khoản của auth_api, flow_builder, bốn platform_workers (kể cả web_crawler ghi `KBData`), model-service, CronJob memory-cleanup → RLS không có tác dụng | `pg_stat_activity`; `deploy/k8s/create-secrets.sh`; `platform_workers/common/settings.py:52` |
 | Có `tenant_id` mà không bật RLS: `KBKnowledgeBase`, `KBEntityLookup`, `KBNeo4jNode/Relationship`; không RLS: `KBSourceConfig/Run`, `KBStructuredImportJob`, `Messages`, `AgentTraces`, `Workflows*`; `kb_structured.*` mặc định tắt | `pg_class.relrowsecurity` |
 | `KBData` có `UNIQUE(name)` toàn bảng: hai tenant không thể có tài liệu trùng tên. ORM khai báo unique theo tenant nhưng không migration nào tạo | constraint `KBData_name_key`; `knowledge_base_orm.py:104` |
 | `POST /api/knowledge/neo4j/query` chạy Cypher tuỳ ý; kiểm tra chỉ theo tiền tố nên `MATCH … DETACH DELETE` lọt; query bỏ qua `$tenant_id` thì đọc được tenant khác | `kb_backend/operations/neo4j_ops.py:146` |
@@ -60,8 +62,8 @@ Số đo trên cụm dev: 76 bảng tên PascalCase có ngoặc kép, 8 bảng s
 - `created_at` và `inserted_at` cùng có trên hầu hết bảng; hai kiểu xoá mềm (`is_deleted`, `deleted_at`);
   status là chuỗi tự do, không CHECK, không enum.
 - ORM và migration lệch: 6 migration chỉ để vá bảng ORM đã khai báo; DDL lúc chạy (auth_api tự tạo
-  `platform_settings`, `compliance_settings`, `key_rotations`; release_worker tạo partition cho bảng
-  `release_history` không tồn tại); CI không có `alembic check`.
+  `platform_settings`, `compliance_settings`, `key_rotations`; `release_worker` từng tạo partition cho
+  bảng `release_history` không tồn tại, nay đã gỡ cùng các bảng release); CI không có `alembic check`.
 - Xoá cạnh Neo4j theo `data_id` không xoá gì (cạnh `RELATES` không có thuộc tính `data_id`), để lại node
   và cạnh mồ côi; `KBTextBlockVersion` không unique `(block_id, version_number)`.
 
@@ -92,7 +94,7 @@ Postgres dataagent
   knowledge    claim, event, evidence, relation, document_region
   forecast     model_version, forecast_run            (ngoài POC)
   alert        alert, alert_member, notification
-  public       bảng cũ: KB*, agent, auth, release — giữ, không mở rộng
+  public       bảng cũ: KB*, agent, auth — giữ, không mở rộng
 ClickHouse obs observation (mọi effective version, chỉ ghi thêm)
 MinIO          raw/{source_id}/{sha256}                (không ghi đè, không xoá)
 Qdrant, Neo4j  bản chiếu từ knowledge.* và chunk KB, dựng lại qua outbox
@@ -111,6 +113,7 @@ của KB (ADR-V2-21) và mang thêm `artifact_sha256` để nối về raw. Khô
 | --- | --- | --- |
 | Xoá 4 bảng PascalCase chết (`SecretsVault`, `APIKeys`, `IPAllowlists`, `KeyRotations`) | **Xong** (migration `2e2377872373`) | Đều 0 dòng; auth_api dùng bản snake_case; downgrade tạo lại cả RLS |
 | `KBData`: unique `(tenant_id, name)` thay `UNIQUE(name)` | **Xong** (migration `b3d9ac7ba0a4`) | Kèm hai index keyset ORM đã khai báo |
+| Xoá 13 bảng chết: release management (`Pipelines`, `PipelineSteps`, `ReleasePackages`, `ReleaseApprovals`, `EnvironmentConfigs`, `ReleaseHistory`, `RollbackOperations`, `DriftEvents`), `Webhooks`, `PIIAccessLogs`, `KBPublishAPI`, `KBNeo4jConnection`, `Plans`; cùng cột `Tenants.plan_id`, `KBNeo4jNode.connection_id` | **Xong** (migration `e4a6c8b0d2f1`, 28/09) | 0 dòng trên cụm dev trừ dòng seed; chỉ `release_worker` (gỡ cùng lúc) đọc/ghi bảng release. Cùng migration: `AuditLogs.id` có default `gen_random_uuid()` để audit worker ghi lại được |
 | `/neo4j/query` nhận nhãn (đã kiểm tra), server tự dựng Cypher có lọc tenant, chạy session READ; route SSE `/stream` không ai gọi nên đã xoá | **Xong** | Không còn nhận Cypher tuỳ ý từ client |
 | Xoá cạnh Neo4j theo tài liệu dựa vào mirror `KBNeo4jRelationship` | **Xong** cho trash flush; re-crawl của web_crawler còn no-op, sửa cùng S2-02 | web_crawler là mã sync, `GraphStore` là async |
 | Bật RLS cho bảng mục 2.2 và chuyển service khỏi `admin` | Song song W1–W2 | Mỗi bảng phải kiểm service đọc nó đã đặt `app.tenant_id` chưa, nếu không sẽ trả rỗng |

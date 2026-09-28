@@ -16,7 +16,7 @@ type AuthTab = 'OVERVIEW' | 'KEYCLOAK' | 'IP' | 'APIKEYS' | 'AUDIT' | 'MSAPP';
 
 const ALL_TABS: { id: AuthTab; label: string; icon: React.ElementType; desc: string; adminOnly?: boolean; approvalAdmin?: boolean }[] = [
   { id: 'OVERVIEW', label: 'Overview',      icon: LayoutGrid,  desc: 'Health, stack & audit stream' },
-  { id: 'KEYCLOAK', label: 'Keycloak',      icon: Shield,      desc: 'Realms, SSO bridges, MFA, role mappings',          adminOnly: true },
+  { id: 'KEYCLOAK', label: 'Keycloak',      icon: Shield,      desc: 'Realms, SSO bridges, role mappings',               adminOnly: true },
   { id: 'MSAPP',    label: 'MS Approvals',  icon: Shield,      desc: 'Microsoft SSO — first-login admin approval queue',  approvalAdmin: true },
   { id: 'IP',       label: 'IP Allowlist',  icon: Globe,       desc: 'CIDR whitelist via Kong IP plugin',                adminOnly: true },
   { id: 'APIKEYS',  label: 'API Keys',      icon: Key,         desc: 'Programmatic access, rotate & revoke' },

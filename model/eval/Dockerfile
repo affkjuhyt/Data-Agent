@@ -14,11 +14,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY model/ragas/requirements.txt ./ragas-requirements.txt
+COPY model/eval/requirements.txt ./eval-requirements.txt
 COPY backend/services/workflow_runtime/requirements.txt ./runtime-requirements.txt
 # ragas + judge model client, then the runtime's own deps (litellm, pydantic)
 # so the intent scorer can call the planner node itself.
-RUN --mount=type=cache,target=/root/.cache/pip pip install -r ragas-requirements.txt \
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r eval-requirements.txt \
     && pip install -r runtime-requirements.txt \
     && pip install sqlparse
 

@@ -36,7 +36,6 @@ test-results/
 
 .env*
 !.env.example
-!deploy/docker/.env.kb-testing.example
 .env.local
 
 .claude/
@@ -75,15 +74,11 @@ deploy/docker/kafka/kafka-broker-jaas.config
 .kong-bringup.log
 deploy/docker/.*-up.log
 
-.gitnexus
-
 # Evaluation artifacts. The CORPUS is versioned (model/eval/cases/*.jsonl); these
 # are derived from it per run — a committed report goes stale the moment the code
 # it graded changes, and a stale one is worse than none.
 eval-report.json
 .eval-reports/
-model/ragas/test_cases.json
-model/ragas/results.csv
 frontend/scripts/ui-demo-shots/
 tests/e2e/out/
 

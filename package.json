@@ -18,7 +18,6 @@
     "test": "npm --workspace frontend run test",
     "test:watch": "npm --workspace frontend run test:watch",
     "test:coverage": "npm --workspace frontend run test:coverage",
-    "e2e": "bash tests/e2e/e2e.sh",
     "e2e:ui": "node tests/e2e/ui.e2e.mjs",
     "ui-demo": "node frontend/scripts/ui-demo.mjs"
   },

@@ -54,8 +54,8 @@ from pool import CircuitBreaker, CircuitBreakerOpenError, ContainerPool, memory_
 
 logger = logging.getLogger(__name__)
 
-# Same variable k8s_runner reads. Compose builds `sandbox-runner:latest`; a host
-# whose images come from the deploy has `dataagent/sandbox-runner:latest`.
+# Same variable k8s_runner reads. A plain `docker build` gives `sandbox-runner:latest`;
+# a host whose images come from the deploy has `dataagent/sandbox-runner:latest`.
 SANDBOX_IMAGE = os.environ.get("SANDBOX_RUNNER_IMAGE", "sandbox-runner:latest")
 # Where `files` are staged. The container's tmpfs — the one writable path in a
 # --read-only container, and the one _KILL_AND_CLEAN_SCRIPT wipes after every

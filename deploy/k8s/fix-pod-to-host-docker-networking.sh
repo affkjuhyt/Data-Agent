@@ -10,7 +10,7 @@
 # rejecting forwarded traffic from networks it doesn't recognise — the pod
 # CIDR is exactly that.
 #
-# model-service, litellm, llm-exporter and kb-ingestion-worker all call out
+# model-service, litellm, llm-exporter and the KB workers all call out
 # to 10.10.55.101 directly (see deploy/k8s/production/configmap.yaml's *_BASE_URL /
 # REMOTE_*_URL values) — this blocks all of them.
 #

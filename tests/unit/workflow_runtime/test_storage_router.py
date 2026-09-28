@@ -176,7 +176,7 @@ class TestListObjects:
 
 
 class TestClientConfig:
-    def test_reads_the_minio_env_names_the_compose_block_sets(self, monkeypatch):
+    def test_reads_the_minio_env_names_the_workloads_set(self, monkeypatch):
         storage = _storage()
         seen: dict[str, Any] = {}
 

@@ -2,7 +2,7 @@
 
 > Thư mục này là kế hoạch và thiết kế đang có hiệu lực cho V2. Thiết kế v1 (Nợ công/GDP) đã xoá khỏi
 > cây (còn trong lịch sử git); phần còn dùng được nằm ở 11, 12, 13 và `diagrams/`.
-> Cập nhật lần cuối: 27/09/2026.
+> Cập nhật lần cuối: 28/09/2026.
 
 ## Bắt đầu từ đâu (người mới và phiên Claude mới)
 
@@ -31,31 +31,30 @@ Quy tắc repo (lint/type/test trong container, so baseline, không commit secre
 | File | Nội dung |
 | --- | --- |
 | [00-architecture-v2.md](00-architecture-v2.md) | **Nguồn chuẩn.** Bất biến, các lớp, hai pipeline, object model, effective data, query path, capability, luồng chủ động, 14 UC, stack, 10 vấn đề, STEP 1–13, kịch bản 27 bước |
-| [01-gap-analysis.md](01-gap-analysis.md) | Đã có / chưa có / thừa trong repo, có đường dẫn mã và truy vấn |
-| [02-design-review.md](02-design-review.md) | Đánh giá bản PDF v2.0 và các paper (LLM-Wiki, WFM, WikiSkill, Graph Engineering) |
 | [03-target-design.md](03-target-design.md) | Hiện thực 00 trên repo: bảng, topic, service, màn hình |
 | [04-sources-oil-gold.md](04-sources-oil-gold.md) | Nghiên cứu dữ liệu dầu/vàng: benchmark, nguồn đã kiểm tra, trục thời gian, bối cảnh 2026, bẫy dữ liệu, licence |
-| [05-implementation-plan.md](05-implementation-plan.md) | Kế hoạch POC 1 tháng: đội, lịch, backlog Tier A/B có ID và trạng thái, thứ tự cắt, năng lực |
-| [06-evaluation-plan.md](06-evaluation-plan.md) | Golden set, dung sai, metric, cách dựng kịch bản 27 bước |
-| [07-decisions-and-risks.md](07-decisions-and-risks.md) | Câu hỏi còn chờ, ADR-V2-09…21, rủi ro |
+| [05-implementation-plan.md](05-implementation-plan.md) | Kế hoạch POC 1 tháng: đội, lịch, backlog Tier A/B có ID và trạng thái, thứ tự cắt, những gì không làm, năng lực, phương pháp forecast sau POC |
+| [06-evaluation-plan.md](06-evaluation-plan.md) | Golden set, dung sai, hiện trạng `model/eval`, metric, cách dựng kịch bản 27 bước |
+| [07-decisions-and-risks.md](07-decisions-and-risks.md) | Câu hỏi còn chờ, ADR-V2-09…42, đầu vào nghiên cứu (LLM-Wiki, WFM, WikiSkill, Graph Engineering), rủi ro |
 | [08-use-cases.md](08-use-cases.md) | Đặc tả UC01–UC14 và bảng ánh xạ 27 bước → UC → ID |
 | [09-frontend.md](09-frontend.md) | Frontend V2: hiện trạng, nghiên cứu (AG-UI, A2UI, MCP Apps, WaitGPT, trust và duyệt), kiến trúc, catalog khối, đặc tả màn, kế hoạch 2 frontend |
 | [10-database-design.md](10-database-design.md) | Thiết kế database V2: hiện trạng các kho (đo 27/09), vấn đề theo bất biến, quy ước bắt buộc ADR-V2-26…35, bố cục schema và role, dọn dữ liệu cũ |
-| [11-ops.md](11-ops.md) | Vận hành: hiện trạng, GitOps, hạ tầng, backup/DR (P0-07), Kafka (P0-03), egress (P0-08), alert, MLOps |
+| [11-ops.md](11-ops.md) | Vận hành: hiện trạng, GitOps, hạ tầng, backup/DR (P0-07), Kafka (P0-03), egress (P0-08), alert, MLOps, kế hoạch bỏ script |
 | [12-numeric-core.md](12-numeric-core.md) | Lõi số: NC-E1..E3, NC-T1..T18, rủi ro NC-R, NC-ADR-T |
 | [13-ui-principles.md](13-ui-principles.md) | Nguyên tắc P1–P8, quy ước số/ngày formatVN, lỗi có cấu trúc, deep link |
 | [diagrams/](diagrams/README.md) | 39 sơ đồ PlantUML: kiến trúc 00–18, giao diện 20–26, vận hành 30–42 |
-| [data/sources-oil-gold.yaml](data/sources-oil-gold.yaml) | 24 nguồn, nhập qua Add Data → Bulk Import |
+| [data/sources-oil-gold.yaml](data/sources-oil-gold.yaml) | 28 nguồn: 24 nhập qua Add Data → Bulk Import, 4 tải tay qua Document Hub |
 | [data/brent-5d-drop-episodes.csv](data/brent-5d-drop-episodes.csv) | 32 đợt Brent giảm ≥5%/5 phiên (2023–2026), có SHA-256 của release EIA gốc |
 | [data/cross-source-reference-2026-08.csv](data/cross-source-reference-2026-08.csv) | Đối chiếu đa nguồn có lớp conflict kỳ vọng |
 
 ## Tình trạng tóm tắt
 
-- **Đã có và dùng lại:** Source Registry + crawl theo lịch (35 nguồn, 18 có cron), pipeline KB
+- **Đã có và dùng lại:** Source Registry + crawl theo lịch (35 nguồn, 18 có cron, đo 27/09), pipeline KB
   Bronze→Silver→Gold qua Kafka, OCR, LightRAG (vector + FTS + Neo4j + rerank), LangGraph với
   checkpointer Postgres, sandbox SQL an toàn, `model/eval` tier online, ClickHouse đang chạy.
-- **Đã lấy từ `feat/add-task` (27/09, chưa commit):** lõi số `libs/indicator`, page/bbox trong
-  citation, verifier tất định trong judge, sửa E2 (P0-01, xem 01 mục 2).
+- **Đã lấy từ `feat/add-task` (P0-01, commit 3c3ad53):** lõi số `libs/indicator`, page/bbox trong
+  citation, verifier tất định trong judge, sửa E2. Không lấy `ankt_connectors/` và migration `ankt.*`
+  (05 mục 6); bộ đọc as-of cũ `observation.py` đã xoá, S1-02 viết mới trên ClickHouse.
 - **Chưa có:** entity registry, release và bốn trục thời gian, profile/reverse schema/drift, DQ/conflict
   cho số, ReviewCase/correction/effective, operator + QuerySpec, capability registry + MCP, kiểm đủ bằng
   chứng, luồng chủ động, forecast, nguồn Việt Nam có cấu trúc.
@@ -81,11 +80,10 @@ Quy tắc repo (lint/type/test trong container, so baseline, không commit secre
 
 ## Việc tuần này (28/09–02/10)
 
-1. P0-01: review và commit phần đã lấy từ `feat/add-task` (đang ở working tree).
-2. P0-09: hai senior chốt hợp đồng dữ liệu trong 3 ngày đầu.
-3. S1-01, S1-02: schema Postgres và ClickHouse `obs`; S2-02: artifact bất biến.
-4. P0-02 (E3), P0-03 (Kafka), P0-04 (kỳ và đơn vị).
-5. P0-05: 30 case hạt giống, đo baseline. FE-00: nền frontend (kiểu sinh từ OpenAPI, URL state, stream V2).
+1. P0-09: hai senior chốt hợp đồng dữ liệu trong 3 ngày đầu.
+2. S1-01, S1-02: schema Postgres và ClickHouse `obs`; S2-02: artifact bất biến.
+3. P0-02 (E3), P0-03 (Kafka), P0-04 (kỳ và đơn vị).
+4. P0-05: 30 case hạt giống, đo baseline. FE-00: nền frontend (kiểu sinh từ OpenAPI, URL state, stream V2).
 
 ## Lịch sử thay đổi
 
@@ -96,3 +94,4 @@ Quy tắc repo (lint/type/test trong container, so baseline, không commit secre
 | 27/09/2026 | Chốt đội (+2 senior) và hạn 1 tháng: 05 viết lại thành kế hoạch 4 tuần, nghiệm thu 27/10; forecast, skill, giá trong nước ra ngoài POC; xoá các câu đã chốt khỏi 07 (D1, D5, D8, D9, D11) |
 | 27/09/2026 | Chốt D2 (giá trong nước trong POC), D4, D6, D7, D10, D12, D13; lấy lõi số từ `feat/add-task` sang nhánh hiện tại; thêm kịch bản Việt Nam 8 bước (06 mục 7); nghiên cứu phương án giá vàng ngày (04 mục 7) |
 | 27/09/2026 | Chốt D3 (crawl JSON LBMA, dự phòng tải tay, phụ lục nguồn trong báo cáo nghiệm thu) và D14 (+1 frontend); thêm 09-frontend.md; 05 phân công FE1/FE2, thêm FE-00, FE-01, D3-01 |
+| 28/09/2026 | Xoá 01-gap-analysis và 02-design-review (đã lỗi thời sau P0-01): bằng chứng eval còn đúng chuyển vào 06 mục 5, danh sách "thừa" vào 05 mục 6, phương pháp forecast vào 05 mục 8.1, phần nghiên cứu paper vào phụ lục 07 mục 2; nguồn Vietcombank chuyển vào `sources-oil-gold.yaml`, xoá `sources-public-debt.yaml`; kế hoạch bỏ script vào phụ lục 11. Cập nhật theo việc gỡ release management, compose, `observation.py` và case Nợ công |

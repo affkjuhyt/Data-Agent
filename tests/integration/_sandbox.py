@@ -2,7 +2,7 @@
 
 The image name comes from SANDBOX_RUNNER_IMAGE, the variable sandbox_executor
 itself reads (docker_runner.py, k8s_runner.py), because the tag differs per
-host: compose builds `sandbox-runner:latest`, the deploy builds
+host: a plain `docker build` gives `sandbox-runner:latest`, the deploy builds
 `dataagent/sandbox-runner:latest`. The gate used to hardcode the first and also
 required the docker CLI on PATH, which the SDK never uses — so inside a service
 image these tests always skipped, however the daemon was reachable.

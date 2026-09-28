@@ -92,6 +92,6 @@ legend bottom
   Nét liền = REST/SSE/MCP (nội bộ ký X-Service-Assertion HMAC) · nét đứt = Kafka.
   Mũi tên xám = chạy hôm nay; mũi tên vàng = đích V2. MCP chỉ giữa workflow-runtime và MCP Gateway.
   Topic V2 phải khai báo trong Job kafka-topics + ACL trước khi dùng; auto.create.topics.enable → false (P0-03).
-  Không vẽ: release.pipeline.* (release-worker), ddl.changes (schema_crawler), forecast.* (ngoài POC), *.dlq.
+  Không vẽ: ddl.changes (schema_crawler), forecast.* (ngoài POC), *.dlq.
 endlegend
 @enduml

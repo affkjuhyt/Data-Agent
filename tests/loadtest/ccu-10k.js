@@ -1,12 +1,12 @@
 // 10,000-CCU load test — k6. Models 10k concurrent USERS with think-time
-// (Little's Law: 10k users × 1 req / 15 s ≈ 670 req/s — see docs/KB-SCALE-10K.md §0),
+// (Little's Law: arrival rate = users / think time, so 10k users × 1 req / 15 s ≈ 670 req/s),
 // NOT 10k simultaneous requests. Drives retrieval + CRUD through Kong (kb-backend
 // behind it; kb-gateway removed 30-08-2026 — Kong rate-limiting plugin replaces it)
 // with the LLM bypassed (front-layer entities).
 //
 // A tunable share of queries are UNIQUE (exercise the embed path / cache miss);
 // the rest repeat a hot set (hit the result + embed caches) — the realistic
-// Zipfian search pattern that makes 10k CCU tractable on one laptop.
+// Zipfian search pattern that makes 10k CCU tractable.
 //
 // Run (install: brew install k6). Start small, then scale:
 //   VUS=1000  DURATION=1m THINK=15 k6 run tests/loadtest/ccu-10k.js

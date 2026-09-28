@@ -43,7 +43,8 @@ describe('navigation', () => {
 
   it('keeps old bookmarks working', () => {
     expect(resolveRoute('test', 'PLAYGROUND')).toEqual({ module: 'build', sub: 'PLAYGROUND' });
-    expect(resolveRoute('release')).toEqual({ module: 'build', sub: 'VERSIONS' });
+    expect(resolveRoute('release')).toEqual({ module: 'build', sub: 'AGENTS' });
+    expect(resolveRoute('build', 'VERSIONS')).toEqual({ module: 'build', sub: 'AGENTS' });
     expect(resolveRoute('monitor', 'TRACES')).toEqual({ module: 'ops', sub: 'TRACES' });
     expect(resolveRoute('monitor')).toEqual({ module: 'ops', sub: 'CONVERSATIONS' });
     expect(resolveRoute('build', 'KNOWLEDGE')).toEqual({ module: 'knowledge' });

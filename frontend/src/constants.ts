@@ -10,7 +10,6 @@ import {
   Cpu,
   Users,
   Package,
-  GitBranch,
   Coins,
   Key,
   MessageSquare,
@@ -61,7 +60,6 @@ export const MODULE_SUB_ITEMS: Record<string, SubNavItem[]> = {
   'build': [
     { id: 'AGENTS',     label: 'Agents',     icon: Bot },
     { id: 'WORKFLOWS',  label: 'Workflows',  icon: Workflow },
-    { id: 'VERSIONS',   label: 'Versions',   icon: GitBranch },
     { id: 'PLAYGROUND', label: 'Thử nghiệm', icon: FlaskConical },
   ],
 
@@ -75,29 +73,16 @@ export const MODULE_SUB_ITEMS: Record<string, SubNavItem[]> = {
   // IDs = SettingsSection (components/Settings/Overview.tsx) = routes.tsx keys.
   'settings': [
     { id: 'OVERVIEW',       label: 'Overview',               icon: Monitor,     group: 'General' },
-    { id: 'ORGANIZATION',   label: 'Organization & Brand',   icon: Building2,   group: 'General' },
+    { id: 'ORGANIZATION',   label: 'Organization',           icon: Building2,   group: 'General' },
     { id: 'IAM',            label: 'Users & Permissions',    icon: Users,       group: 'Security' },
     { id: 'AUTH',           label: 'Auth & SSO',             icon: Lock,        group: 'Security' },
     { id: 'SECRETS',        label: 'Secrets Vault',          icon: Key,         group: 'Security' },
     { id: 'SECURITY',       label: 'Security & Compliance',  icon: ShieldCheck, group: 'Security' },
     { id: 'AI_PROVIDERS',   label: 'AI Providers & Models',  icon: Cpu,         group: 'Platform' },
     { id: 'INFRASTRUCTURE', label: 'Runtime Infrastructure', icon: Zap,         group: 'Platform' },
-    { id: 'STORAGE',        label: 'Storage & Retention',    icon: Database,    group: 'Platform' },
-    { id: 'BILLING',        label: 'Billing & Quotas',       icon: Coins,       group: 'Operations' },
+    { id: 'STORAGE',        label: 'Storage',                icon: Database,    group: 'Platform' },
+    { id: 'BILLING',        label: 'Billing',                icon: Coins,       group: 'Operations' },
     { id: 'API',            label: 'API & Developers',       icon: Code,        group: 'Operations' },
     { id: 'ADVANCED',       label: 'Advanced Platform',      icon: Settings,    group: 'Operations' },
   ],
 };
-
-export const ROLES = [
-  { id: 'PLATFORM_ADMIN', label: 'Platform Admin' },
-  { id: 'AI_ENGINEER',    label: 'AI Engineer' },
-  { id: 'EXECUTIVE',      label: 'Executive' },
-];
-
-export const ENVIRONMENTS: { id: string }[] = [
-  { id: 'DEV' },
-  { id: 'UAT' },
-  { id: 'STAGING' },
-  { id: 'PROD' },
-];

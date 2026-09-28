@@ -22,7 +22,7 @@ opentelemetry-instrumentation-httpx==0.45b0
 opentelemetry-instrumentation-requests==0.45b0
 opentelemetry-instrumentation-logging==0.45b0
 
-redis>=5.0  # L0 result cache + gold-complete invalidation (KB-SCALE-10K §2)
+redis>=5.0  # L0 result cache + gold-complete invalidation (libs/shared/kb_result_cache.py)
 python-dateutil>=2.8  # structured-table ingestion: best-effort date/timestamp coercion from spreadsheet cells
 PyYAML>=6.0  # source registry bulk-import (a YAML list of sources, e.g. the ANKT registry)
 croniter==2.0.5

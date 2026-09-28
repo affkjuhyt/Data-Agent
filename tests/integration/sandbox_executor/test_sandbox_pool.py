@@ -380,7 +380,7 @@ def egress_pool():
 
 def test_egress_network_is_created_with_expected_spec(egress_pool):
     """docs/1.md mục a: dedicated bridge network, never the default
-    Docker/compose bridge, with inter-container communication disabled
+    Docker bridge, with inter-container communication disabled
     (enable_icc=false) so one compromised pool container can't pivot
     straight to another tenant's container sitting idle in the same
     pool."""
