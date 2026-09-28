@@ -5,7 +5,7 @@ against the Kubernetes API instead of the Docker socket.
 Why this exists: docker_runner.py/pool.py talk to a Docker daemon
 (docker.from_env() or SANDBOX_DOCKER_HOST) that does not exist in the k8s
 deployment — there is no sandbox-dockerd sidecar there (deploy/k8s/README.md
-"Not ported from compose": rootless DinD needs privileged/unconfined
+"Deliberately absent": rootless DinD needs privileged/unconfined
 seccomp, which the restricted namespace forbids). This pool creates and
 execs into Pods in a dedicated, fully network-isolated namespace
 (dataagent-sandbox) instead of containers on a shared daemon.

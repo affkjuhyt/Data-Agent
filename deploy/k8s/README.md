@@ -10,11 +10,11 @@ dev server is in [`docs/RUNBOOK.md`](../../docs/RUNBOOK.md).
 ```
 deploy/k8s/
   production/                    hardened set (the sections below describe it)
-    namespace.yaml               dataagent-service + dataagent-database (restricted PSA)
+    namespace.yaml               dataagent-service, dataagent-database, dataagent-sandbox (restricted PSA)
     configmap.yaml               dataagent-config, one copy per namespace
-    rbac.yaml                    the single RBAC exception (OpenBao)
+    rbac.yaml                    the two RBAC exceptions (OpenBao, sandbox-executor)
     networkpolicy-*.yaml         deny-all + the allow matrices
-    database/                    StatefulSets for the stores (11)
+    database/                    StatefulSets for the stores (10)
     service/                     Deployments
     job/                         Jobs + the backup CronJob + the restore job
   dev/                           the same stack relaxed for the single-node dev server — see "Dev set"
@@ -28,14 +28,15 @@ deploy/k8s/
 
 ## Namespaces
 
-Two, both labelled `app.kubernetes.io/part-of: dataagent`:
+Three, all labelled `app.kubernetes.io/part-of: dataagent`:
 
 | Namespace | Holds |
 | --- | --- |
 | `dataagent-database` | Postgres, Mongo, Redis, Qdrant, Neo4j, Kafka, MinIO, ClickHouse, OpenBao, PgBouncer, and the restore job |
 | `dataagent-service` | the gateway, identity, application, worker and observability Deployments, and every Job except the restore |
+| `dataagent-sandbox` | only the sandbox runner pods `sandbox-executor` spawns; its default-deny has no allow rules at all |
 
-Both carry a `name:` label as well, because the NetworkPolicies select namespaces
+All carry a `name:` label as well, because the NetworkPolicies select namespaces
 by it.
 
 Splitting namespaces breaks short-name DNS: `postgres:8300` resolves only inside
@@ -58,9 +59,9 @@ flow at a time:
 | `allow-egress-to-platform` | egress may reach only the two `dataagent-*` namespaces |
 | `allow-<store>` (database ns) | ingress to one store, from the named service-namespace apps, on that store's port |
 | `allow-<service>` (service ns) | ingress to one service, from the named callers only |
-| `allow-kong-admin` | port 8101 only from `auth-api`, `release-worker`, `setup` |
+| `allow-kong-admin` | port 8101 only from `auth-api` and `setup` |
 | `allow-ingress-controller-to-kong` | the only ingress from outside the platform |
-| `allow-egress-remote-llm` | `10.10.55.101` on 8002–8004, from the four workloads that use the GPU box |
+| `allow-egress-remote-llm` | `10.10.55.101` on 8001–8004, from the workloads that call the GPU box: `model-service`, `litellm`, `llm-exporter` and the four KB workers |
 
 Because egress is coarse (platform-only) and ingress is per-caller, a flow has to
 be allowed at both ends to work. Adding a service means adding its ingress
@@ -73,7 +74,9 @@ policy — it will not talk to anything until you do.
 RoleBinding is created for any of them, so the account can call essentially
 nothing on the API server. That is the default and it is deliberate.
 
-`openbao` is the one exception. It calls the API server for the Kubernetes auth
+There are two exceptions. `sandbox-executor` holds a Role in `dataagent-sandbox`
+only (create/delete/get/list/watch on pods, `pods/exec`, `pods/log`) to run its
+warm pool of runner pods. `openbao` calls the API server for the Kubernetes auth
 method, so it mounts its token and holds exactly three verbs:
 
 | Scope | Resource | Verb |
@@ -137,10 +140,10 @@ There is no shared Secret mounted everywhere. Each workload gets a
 names the code expects — so `kb-backend` gets four keys and never sees
 `GRAFANA_ADMIN_PASSWORD` or the Snowflake crawler password.
 
-`GATEWAY_KEY` and `SERVICE_AUTH_SECRET` go to the five services that import
+`GATEWAY_KEY` and `SERVICE_AUTH_SECRET` go to the four services that import
 `libs.shared.auth` (which imports `service_identity`): `auth-api`,
-`flow-builder`, `kb-backend`, `release-worker`, `workflow-runtime`. Nothing else
-needs them, and both fail *silently* when absent — an unset `GATEWAY_KEY` makes
+`flow-builder`, `kb-backend`, `workflow-runtime` (`GATEWAY_KEY` also to the
+`setup` and `eval` Jobs). Nothing else needs them, and both fail *silently* when absent — an unset `GATEWAY_KEY` makes
 `X-Kong-Verified` trusted on its own, and a mismatched `SERVICE_AUTH_SECRET`
 makes `kb_search` return no chunks. Check those two first if retrieval goes quiet.
 
@@ -161,20 +164,18 @@ Kafka and gateway credentials the stores were initialised with.
 [`create-secrets.sh`](create-secrets.sh) is generated from the same table the
 manifests use, so it cannot drift from what the pods reference.
 
-Kafka's JAAS file is a separate Secret — six passwords that must never sit in an
-image layer:
+Kafka's JAAS file is a separate Secret — six passwords (admin, audit, workflow
+runtime, memory, schema crawler, web crawler) that must never sit in an image
+layer. The deploy pipeline fills them into
+`deploy/docker/kafka/kafka-broker-jaas.config.example` and creates the
+`kafka-jaas` Secret itself. By hand,
+[`gen-kafka-jaas-secret.sh`](gen-kafka-jaas-secret.sh) does the same from the
+sourced `secrets.env`, piping the result straight into the Secret so no rendered
+file touches the disk:
 
 ```bash
-sed -e "s/REPLACE_WITH_KAFKA_ADMIN_PASSWORD/$KAFKA_ADMIN_PASSWORD/g" \
-    -e "s/REPLACE_WITH_AUDIT_CONSUMER_PASSWORD/$AUDIT_CONSUMER_KAFKA_PASSWORD/g" \
-    -e "s/REPLACE_WITH_RELEASE_WORKER_PASSWORD/$RELEASE_WORKER_KAFKA_PASSWORD/g" \
-    -e "s/REPLACE_WITH_WORKFLOW_RUNTIME_PASSWORD/$WORKFLOW_RUNTIME_KAFKA_PASSWORD/g" \
-    -e "s/REPLACE_WITH_MEMORY_CONSUMER_PASSWORD/$MEMORY_CONSUMER_KAFKA_PASSWORD/g" \
-    -e "s/REPLACE_WITH_SCHEMA_CRAWLER_WORKER_PASSWORD/$SCHEMA_CRAWLER_WORKER_KAFKA_PASSWORD/g" \
-    deploy/docker/kafka/kafka-broker-jaas.config.example > /tmp/jaas.conf
-kubectl -n dataagent-database create secret generic kafka-jaas \
-  --from-file=kafka-broker-jaas.config=/tmp/jaas.conf
-rm -f /tmp/jaas.conf
+set -a; . deploy/k8s/dev/secrets.env; set +a
+(cd deploy/k8s && bash gen-kafka-jaas-secret.sh)
 ```
 
 Pods stay in `CreateContainerConfigError` until their Secret exists, which is the
@@ -246,8 +247,10 @@ A test fails the build if that flag is ever flipped in the manifest. Our images
 are named `dataagent/<service_name>:latest`, which resolves against a node's
 local image store; prefix a registry at apply time if you push somewhere. They
 are built from `backend/services/<name>/Dockerfile` (plus `backend/alembic/`,
-`model/eval/`, `frontend/Dockerfile.dev`). `deploy/docker/kong/Dockerfile` is the
-only image built under `deploy/` — everything else pulls a public image directly.
+`model/eval/`, `frontend/Dockerfile.dev`). Three images are built under `deploy/`:
+`deploy/docker/kong/`, `deploy/docker/keycloak/` and `deploy/docker/setup/` (the
+Job that runs `kong-setup.sh` and the Keycloak mapper script). Everything else
+pulls a public image directly.
 
 A Job's pod template is immutable, so re-applying a completed Job fails. Delete
 it first: `kubectl -n dataagent-service delete job migrate --ignore-not-found`.
@@ -293,8 +296,8 @@ For the images we build the port appears exactly once, in the manifest's
 `command`: the Dockerfiles carry no `EXPOSE` and no `CMD`.
 
 **`8000–8099` is reserved and must stay unallocated.** It belongs to the LLM
-tier: the GPU server already serves vLLM on `:8002`, TEI embed on `:8003` and
-TEI rerank on `:8004`, and in-cluster LLM workloads will take the rest of the
+tier: the GPU server already serves vLLM main on `:8001`, vLLM fast on `:8002`,
+TEI embed on `:8003` and TEI rerank on `:8004`, and in-cluster LLM workloads will take the rest of the
 band. Nothing in `deploy/k8s/` may use it.
 
 | Band | Range | Tier |
@@ -318,7 +321,6 @@ band. Nothing in `deploy/k8s/` may use it.
 | keycloak (health) | service | 9000 | **8111** | `KC_HTTP_MANAGEMENT_PORT` |
 | openbao | database | 8200 | **8120** | `config.hcl` listener |
 | auth-api | service | 8200 | **8200** | manifest `command` (unchanged) |
-| release-worker | service | 8100 | **8210** | manifest `command` |
 | kb-backend | service | 8000 | **8220** | manifest `command` |
 | model-service | service | 8001 | **8230** | manifest `command` |
 | workflow-runtime | service | 8001 | **8240** | manifest `command` |
@@ -358,7 +360,7 @@ numbers above — `postgres:8300`, `redis://redis:8320`, `bolt://neo4j:8341`,
 
 Service DNS names are DNS-1123, so an underscore is not legal in a hostname:
 `model-service`, `workflow-runtime`, `kb-backend`, `auth-api`, `flow-builder`,
-`sandbox-executor`, `release-worker`, `llm-exporter`. `env` in the manifest wins
+`sandbox-executor`, `llm-exporter`. `env` in the manifest wins
 over whatever default the image ships, so the underscored defaults compiled into
 the Python services never apply in-cluster.
 
@@ -374,11 +376,13 @@ use the NodePorts (frontend `30280`, Kong `30100`, Keycloak `30110`), and those
 URLs must match `public_api_url` / `keycloak_public_url` in the Ansible inventory. `kong-admin:8101` is a separate
 ClusterIP Service and must never be exposed.
 
-## Not ported from compose
+## Deliberately absent
 
-| Compose service | Why |
+The Docker Compose stack these manifests were first ported from has been deleted;
+Kubernetes is the only way the platform runs. Two things it had are intentionally
+not here:
+
+| Component | Why |
 | --- | --- |
-| `sandbox-dockerd` | Rootless Docker-in-Docker needs `privileged`, unconfined seccomp/AppArmor and `/dev/fuse` — it cannot exist in a restricted namespace. `runtimeClassName: gvisor` on `sandbox-executor` is the cluster-native replacement. |
-| `filebeat`, `elasticsearch`, `kibana` | Filebeat reads `/var/log/containers` via `hostPath` as root; node log collection is a cluster add-on, not an application workload. Without it nothing writes to Elasticsearch, so ES and Kibana were removed from k8s too (27/09/2026: 0 indices after 16 days). They remain the log sink in compose. |
-| `postgres-test` | A pytest fixture, never deployed. |
-| `overlay-*.yml` | Compose-only patches; `overlay-kong-admin` is the `kong-admin` Service here. |
+| Docker-in-Docker sandbox | Rootless Docker-in-Docker needs `privileged`, unconfined seccomp/AppArmor and `/dev/fuse` — it cannot exist in a restricted namespace. `sandbox-executor` spawns runner pods in `dataagent-sandbox` (`SANDBOX_BACKEND=kubernetes`), under `runtimeClassName: gvisor` in the production set. |
+| Central log store | Node log collection needs a `hostPath` agent running as root, a cluster add-on rather than an application workload. The Elasticsearch/Kibana pair was removed after it held 0 indices for 16 days (27/09/2026). Read logs with `kubectl logs`; the target (Loki, after the POC) is in `docs/v2/11-ops.md` §7. |

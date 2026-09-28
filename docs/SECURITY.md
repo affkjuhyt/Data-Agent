@@ -11,14 +11,15 @@ production release. Operational procedures are in [`RUNBOOK.md`](./RUNBOOK.md).
   Keycloak identity (`X-Kong-Verified`, realm `aeroflow`, `aeroflow-jwks` plugin). Any
   request without it gets `401`. Services never trust a raw bearer token directly —
   identity is injected by Kong.
-- **The agent tier is behind the gateway too.** `orchestrator` and
-  `workflow-runtime` are no longer published on host ports (`8003`/`8001`); Kong's
-  `orchestrator-route` and `runtime-route` are the only way in, and both services
-  now enforce the shared caller check instead of reading raw headers. Previously
-  neither verified anything and the orchestrator fell back to `DEV_TENANT_ID`, so
-  any caller reaching those ports could act as any tenant. The Vite dev proxy,
-  which used to inject a hardcoded `platform-admin` identity straight to them, now
-  routes through Kong like everything else.
+- **The agent tier is behind the gateway too.** The orchestrator runs inside
+  `workflow-runtime` (`/api/orchestrate/*`), which is a ClusterIP Service on `8240`
+  in the production set; Kong's workflow_runtime route is the only way in, and the
+  service enforces the shared caller check instead of reading raw headers.
+  Previously nothing verified the caller and the orchestrator fell back to
+  `DEV_TENANT_ID`, so any caller reaching its port could act as any tenant. The
+  Vite dev proxy, which used to inject a hardcoded `platform-admin` identity, now
+  routes through Kong like everything else. (The dev set publishes every Service
+  as a NodePort for debugging; the caller check still applies there.)
 - **Gateway proof (`X-Gateway-Key`).** `X-Kong-Verified` is only a header: a caller that
   reaches a service port directly can send it and be believed. The plugin now also injects
   a shared secret (`gateway_key` ↔ `GATEWAY_KEY`) that every upstream compares in constant
@@ -32,8 +33,9 @@ production release. Operational procedures are in [`RUNBOOK.md`](./RUNBOOK.md).
   tenant, user and roles, with a 120 s expiry; `kb-backend` verifies it and takes identity
   **only** from the token, ignoring accompanying `X-User-*` headers. Services permitted to
   assert an identity are allowlisted per service: `KB_ALLOWED_SERVICES`
-  (kb-backend ← workflow-runtime), `RUNTIME_ALLOWED_SERVICES` (workflow-runtime ←
-  orchestrator), `ORCHESTRATOR_ALLOWED_SERVICES` (empty — nothing calls it).
+  (kb-backend ← `workflow_runtime`) and `RUNTIME_ALLOWED_SERVICES` (empty: the
+  orchestrator is in-process now, so nothing calls workflow-runtime with an
+  assertion).
   The trust decision itself lives once in `backend/libs/shared/auth.resolve_caller`, so
   every service makes it identically.
   - Previously this call forged `X-Kong-Verified: true` plus a fixed
@@ -68,12 +70,14 @@ production release. Operational procedures are in [`RUNBOOK.md`](./RUNBOOK.md).
     grant in `enable_tenant_rls`. Tamper-evidence needs an INSERT-only writer role
     for the consumer plus revoking `UPDATE`/`DELETE` from everything else.
   - **Action for prod — retention.** The topic is provisioned at 90 days
-    (`deploy/docker/kafka/kafka-setup.sh`); align it and the table's retention with the
-    policy covering the data being queried.
+    (`deploy/k8s/<env>/job/kafka-topics.yaml`); align it and the table's retention
+    with the policy covering the data being queried.
 - **Multi-tenant isolation via Postgres RLS.** Tenant tables carry `tenant_id` with
   row-level-security policies; child tables without their own `tenant_id` are covered by
   FK-chain `EXISTS` policies (`enable_tenant_rls` + `rls_kb_child_tables` migrations).
-  Isolation is asserted by an e2e test (`e2e-tenant-isolation` CI job).
+  Isolation is asserted by the e2e test `tests/integration/test_tenant_isolation.py`,
+  run by `make e2e` against the dev cluster (not in CI), and in-process by the
+  RLS integration tests (`tests/integration/auth_api/test_rls_enforcement.py`).
 - **DB RBAC.** `runtime_writer` is scoped to `INSERT/SELECT` on the conversation tables
   only — least privilege for the runtime path.
 
@@ -93,18 +97,18 @@ production release. Operational procedures are in [`RUNBOOK.md`](./RUNBOOK.md).
 Application images drop root and run as an unprivileged `app` user. Status after the
 release-hardening pass:
 
-| Runs as non-root (`USER app`) | Intentionally root — documented |
+| Runs as non-root (`USER` in the image) | Root in the image — documented |
 |---|---|
-| kb-backend, kb-promote-silver/gold, workflow-runtime, flow-builder, orchestrator, auth-api, model-service, release-worker, platform-workers (memory / schema-crawler / audit) | **sandbox-executor** — spawns sandbox containers via the mounted Docker socket; a non-root user would need the host docker group (root-equivalent). Proper fix: rootless Docker / gVisor. |
+| kb-backend, kb-promote-silver/gold, kb-structured-data, kb-conflict-resolution, workflow-runtime (incl. the orchestrator), flow-builder, auth-api, model-service, llm-exporter, platform-workers (memory / schema-crawler / audit / web-crawler) | **sandbox-executor** — the image stays root for `SANDBOX_BACKEND=docker`, which spawns containers through the host Docker socket. On k8s it runs `SANDBOX_BACKEND=kubernetes` (runner pods in `dataagent-sandbox` via its ServiceAccount), and the production manifest sets `runAsNonRoot` / `runAsUser: 10001`. |
 
 `frontend/Dockerfile.dev` (dev-only) is out of scope for the prod non-root requirement.
 
-Notes on the two special cases:
-- **model-service** downloads model weights at runtime into `/app/models`, which is
-  `chown`ed to `app` so the mounted volume stays writable.
-- **kb-ingestion-worker** installs Chromium to a world-readable `PLAYWRIGHT_BROWSERS_PATH`
-  (`/ms-playwright`) so the non-root user can still launch the browser; the app user has a
-  writable `$HOME` for Chromium's profile/cache.
+Notes on special cases:
+- **model-service** downloads no weights: it runs no local model and proxies embed,
+  rerank and generate to the GPU services (`REMOTE_*_URL`).
+- **kb-promote-silver** and **platform-workers** install Chromium to a world-readable
+  `PLAYWRIGHT_BROWSERS_PATH` (`/ms-playwright`) so the non-root user can still launch the
+  browser; the app user has a writable `$HOME` for Chromium's profile/cache.
 
 ### Base-image digest pinning — TODO (tracked)
 
@@ -138,28 +142,27 @@ with an existing baseline to burn down. Ratchet plan:
 
 - **import-linter** (`lint-imports`) is **blocking** — enforces the layered dependency
   rule (`libs.basemodel` innermost; no `libs.database_connector` leakage).
-- **ruff** (incl. `BLE` blind-except, `ASYNC` blocking-call lints) is blocking.
-- **Coverage gate** (`fail_under` in `pyproject.toml`) fails the test job on a coverage
-  collapse; ratchet upward (35 → 50 → 70) after each measured CI run.
-- **Strict typing** (`mypy --disallow-untyped-defs --disallow-any-generics`): the
-  **entire Python codebase** — all 3 `backend/libs/` layers and all 15 `backend/services/` — is now
-  **strict-clean and enforced BLOCKING** in CI ("Strict typecheck · core libs +
-  services"). ~1,750 strict errors were driven to zero across the campaign. The CI step
-  runs one mypy invocation **per surface** (services aren't importable packages and share
-  top-level basenames like `config.py`/`app.py`, which collide when checked together);
-  `set -e` fails the job on the first surface that regresses.
+- **ruff** (incl. `BLE` blind-except, `ASYNC` blocking-call lints) runs in CI
+  (`python-lint`) but does **not** gate anything yet: the tree has ~1,500 findings and was
+  never formatted, so the job is red on `main`. Until the repo-wide cleanup lands, a change
+  is judged by "no new findings in the files it touches" (`CLAUDE.md` §1).
+- **Coverage gate**: `fail_under = 48` in `pyproject.toml`, applied to the combined unit
+  report (CI `python-coverage` job); it only ratchets up (target 50 → 70).
+- **Strict typing** (`mypy --disallow-untyped-defs --disallow-any-generics`) is
+  **BLOCKING** in CI ("Strict typecheck · core libs + services") on exactly these surfaces,
+  each in its own mypy invocation (services aren't importable packages and share top-level
+  basenames like `config.py`/`app.py`, which collide when checked together); `set -e` fails
+  the job on the first surface that regresses:
 
-  | Surface group | strict errors | note |
-  | --- | --- | --- |
-  | `backend/libs/{basemodel,database_connector,shared}` | **0** ✅ | enforced — innermost layers |
-  | `backend/services/{kb_backend,workflow_runtime}` (incl. `workflow_runtime/orchestrator`) | **0** ✅ | enforced — the 3 largest (~670 fixed) |
-  | `backend/services/{auth_api,flow_builder,model_service}` | **0** ✅ | enforced |
-  | `backend/services/{release_worker,sandbox_executor}` | **0** ✅ | enforced |
-  | `backend/services/platform_workers` (ex schema-crawler-worker, memory-consumer, audit-bridge, audit-consumer) | **0** ✅ | enforced |
+  | Surface | strict errors |
+  | --- | --- |
+  | `backend/libs/{basemodel,database_connector,shared}` | **0**, enforced |
+  | `backend/services/{kb_backend,workflow_runtime}` (incl. `workflow_runtime/orchestrator`) | **0**, enforced |
+  | `backend/services/{auth_api,flow_builder,model_service,sandbox_executor,platform_workers}` | **0**, enforced |
 
-  Two services (`auth-api`, `release-worker`) had a dynamic `__all__ = [n for n in
-  globals() ...]` that defeated mypy's `import *` resolution in their routers; both were
-  converted to the exact static list the comprehension produced (behaviour-identical).
+  Not on the strict list: `backend/libs/{ingestion,semantic,indicator}` and the services
+  `kb_promote_silver`, `kb_promote_gold`, `kb_structured_data`, `kb_conflict_resolution`,
+  `llm_exporter`. The whole-tree run is report-only (`|| true`).
 
 ## 6. Reporting a vulnerability
 
