@@ -116,7 +116,6 @@ service_workloads:
   - workflow-runtime
   - kb-backend
   - model-service
-  - release-worker
   - sandbox-executor
   - frontend
 

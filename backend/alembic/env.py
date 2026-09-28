@@ -21,8 +21,8 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 if _db_url := os.environ.get("DATABASE_URL"):
-    # DATABASE_URL is the plain "postgresql://" scheme project-wide (release_worker
-    # connects with it via psycopg2 directly) — create_async_engine below needs the
+    # DATABASE_URL is the plain "postgresql://" scheme project-wide (psycopg2
+    # services connect with it directly) — create_async_engine below needs the
     # asyncpg dialect, so normalise it the same way
     # libs/database_connector/postgres_connector.py does for its own async engine.
     if _db_url.startswith("postgresql://"):

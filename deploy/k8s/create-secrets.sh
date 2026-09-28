@@ -28,15 +28,6 @@ kubectl -n dataagent-service create secret generic kb-backend-secrets \
   --from-literal=SERVICE_AUTH_SECRET="${SERVICE_AUTH_SECRET}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl -n dataagent-service create secret generic release-worker-secrets \
-  --from-literal=DATABASE_URL="${DATABASE_URL}" \
-  --from-literal=KAFKA_PASSWORD="${RELEASE_WORKER_KAFKA_PASSWORD}" \
-  --from-literal=MINIO_ACCESS_KEY="${MINIO_ROOT_USER}" \
-  --from-literal=MINIO_SECRET_KEY="${MINIO_ROOT_PASSWORD}" \
-  --from-literal=GATEWAY_KEY="${GATEWAY_KEY}" \
-  --from-literal=SERVICE_AUTH_SECRET="${SERVICE_AUTH_SECRET}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
 kubectl -n dataagent-service create secret generic workflow-runtime-secrets \
   --from-literal=DATABASE_URL="${DATABASE_URL}" \
   --from-literal=RUNTIME_DB_URL="${RUNTIME_DB_URL}" \

@@ -734,7 +734,7 @@ class TestCrossNamespaceHostnamesAreQualified:
         hosts = ["postgres", "mongo", "redis", "qdrant", "neo4j", "kafka", "minio",
                  "clickhouse", "openbao", "pgbouncer", "kong-admin",
                  "kong", "keycloak", "litellm", "langfuse", "jaeger", "prometheus",
-                 "grafana", "auth-api", "release-worker", "kb-backend",
+                 "grafana", "auth-api", "kb-backend",
                  "model-service", "workflow-runtime", "flow-builder",
                  "sandbox-executor", "llm-exporter", "frontend"]
         pattern = re.compile(
@@ -825,7 +825,7 @@ class TestConfigComesFromConfigMapsAndSecrets:
                 for m in script.split("kubectl -n ")[1:] if key in m
             }
             expected = {"auth-api", "flow-builder", "kb-backend",
-                        "release-worker", "workflow-runtime"}
+                        "workflow-runtime"}
             if key == "GATEWAY_KEY":
                 expected |= {"setup"}   # kong-setup.sh writes it into the plugin
                 # The eval Job is a caller, not a verifier: model/eval's

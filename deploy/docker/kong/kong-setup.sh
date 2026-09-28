@@ -27,15 +27,14 @@ KC_BASE="${KEYCLOAK_URL:-http://localhost:8110}"
 # (underscores, matching the backend/services/<name> directory names). k8s
 # Service objects can't contain underscores at all (DNS-1035 label rule),
 # so deploy/k8s/production/service/*.yaml names them with hyphens instead
-# (workflow-runtime, flow-builder, auth-api, release-worker) — the k8s
-# ConfigMap (deploy/k8s/production/configmap.yaml) overrides these four to match.
+# (workflow-runtime, flow-builder, auth-api) — the k8s
+# ConfigMap (deploy/k8s/production/configmap.yaml) overrides these three to match.
 # Without the override, Kong's upstream DNS lookup 503s with "name error"
 # the moment a route actually gets proxied (JWT/CORS checks can pass fine
 # before that point, which is what made this easy to miss).
 WORKFLOW_RUNTIME_HOST="${WORKFLOW_RUNTIME_HOST:-workflow_runtime}"
 FLOW_BUILDER_HOST="${FLOW_BUILDER_HOST:-flow_builder}"
 AUTH_API_HOST="${AUTH_API_HOST:-auth_api}"
-RELEASE_WORKER_HOST="${RELEASE_WORKER_HOST:-release_worker}"
 REALM="${KEYCLOAK_REALM:-aeroflow}"
 # Set SKIP_JWT=1 to skip JWT plugin registration (useful for dev with VITE_MOCK_AUTH=true)
 SKIP_JWT="${SKIP_JWT:-0}"
@@ -219,26 +218,14 @@ curl -sf -X PUT "$KONG_ADMIN/services/auth_api/routes/auth_api-secrets-route" \
     "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
   }' | json_field name | xargs -I{} echo "  → route: {}"
 
-# ── 3c. Create release_worker service + route ──────────────────────────
-echo "📡 Creating release_worker service..."
-curl -sf -X PUT "$KONG_ADMIN/services/release_worker" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "release_worker",
-    "url": "http://'"$RELEASE_WORKER_HOST"':8210",
-    "connect_timeout": 5000,
-    "read_timeout": 60000
-  }' | json_field name | xargs -I{} echo "  → service: {}"
-
-echo "🛣️  Creating release route..."
-curl -sf -X PUT "$KONG_ADMIN/services/release_worker/routes/release-route" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "release-route",
-    "paths": ["/api/release"],
-    "strip_path": false,
-    "methods": ["GET","POST","PUT","PATCH","DELETE","OPTIONS"]
-  }' | json_field name | xargs -I{} echo "  → route: {}"
+# ── 3c. Retired release_worker service + route ─────────────────────────
+# Release management (/api/release) was removed. Every step here is an
+# idempotent PUT, so nothing deletes what an earlier run created: drop the
+# route first (Kong refuses to delete a service a route still references), then
+# the service, whose plugins go with it. A 404 on a clean gateway is fine.
+echo "🧹 Removing the retired release_worker service..."
+curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/release_worker/routes/release-route" || true
+curl -s -o /dev/null -X DELETE "$KONG_ADMIN/services/release_worker" || true
 
 # (3d used to create an `orchestrator` service + route here, and 3d-2 a
 # `minio_service` one. Both now live inside workflow_runtime — /api/orchestrate
@@ -364,12 +351,6 @@ else
     "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"flow_builder\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE$GATEWAY_KEY_JSON_FIELD}}" \
     "aeroflow-jwks"
 
-  # ── 4b. aeroflow-jwks on release_worker ────────────────────────────────
-  echo "🔐 Enabling aeroflow-jwks plugin on release_worker (aud=release_worker)..."
-  upsert_plugin "$KONG_ADMIN/services/release_worker/plugins" \
-    "{\"name\":\"aeroflow-jwks\",\"config\":{\"jwks_uri\":\"$JWKS_URI\",\"issuer\":\"$ISSUER\",\"audience\":\"release_worker\",\"jwks_refresh_interval\":$KONG_REFRESH,\"grace_period\":$KONG_GRACE$GATEWAY_KEY_JSON_FIELD}}" \
-    "aeroflow-jwks"
-
   # ── 4c. aeroflow-jwks on auth_api ──────────────────────────────────────
   echo "🔐 Enabling aeroflow-jwks plugin on auth_api (aud=auth_api)..."
   upsert_plugin "$KONG_ADMIN/services/auth_api/plugins" \
@@ -404,7 +385,7 @@ upsert_plugin "$KONG_ADMIN/routes/kb-backend-route/plugins" \
   "cors"
 
 # ── 5. IP restriction ─────────────────────────────────────────────────
-# Applied to: aeroflow-backend (data API), release_worker, auth_api-keys-route.
+# Applied to: workflow_runtime, flow_builder, auth_api-keys-route, auth_api-secrets-route.
 # auth_api ip-allowlist routes are intentionally EXCLUDED so admin can always
 # manage the allowlist regardless of the current IP policy.
 # Default: allow_all — auth_api syncs Kong to the DB mode on startup.
@@ -416,9 +397,6 @@ upsert_plugin "$KONG_ADMIN/services/workflow_runtime/plugins" "$_IP_DEFAULT" "ip
 
 echo "🛡️  Enabling IP restriction on flow_builder..."
 upsert_plugin "$KONG_ADMIN/services/flow_builder/plugins" "$_IP_DEFAULT" "ip-restriction"
-
-echo "🛡️  Enabling IP restriction on release_worker..."
-upsert_plugin "$KONG_ADMIN/services/release_worker/plugins" "$_IP_DEFAULT" "ip-restriction"
 
 echo "🛡️  Enabling IP restriction on auth_api-keys-route..."
 upsert_plugin "$KONG_ADMIN/routes/auth_api-keys-route/plugins" "$_IP_DEFAULT" "ip-restriction"
@@ -566,7 +544,7 @@ if [ "${ENABLE_ADMIN_KEY_AUTH:-0}" = "1" ]; then
   : > "$KEYS_FILE"
   chmod 600 "$KEYS_FILE"
 
-  for consumer in auth_api release_worker; do
+  for consumer in auth_api; do
     # Create consumer if not exists (PUT is idempotent)
     curl -sf -X PUT "$KONG_ADMIN/consumers/$consumer-admin" \
       -H "Content-Type: application/json" \

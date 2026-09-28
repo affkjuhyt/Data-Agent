@@ -178,7 +178,7 @@ def make_get_current_user(
 
 
 # Default dependency for services with no service-to-service callers
-# (auth_api, release_worker). X-User-Id / X-User-Roles were `Header(...)`
+# (auth_api). X-User-Id / X-User-Roles were `Header(...)`
 # (required) here before; they are optional now because the assertion path
 # supplies them from the token instead, and a missing header must produce 401
 # from the trust check rather than 422 from FastAPI validation.

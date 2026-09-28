@@ -924,17 +924,6 @@
           }
         },
         {
-          "name": "release_worker-audience",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-audience-mapper",
-          "consentRequired": false,
-          "config": {
-            "included.custom.audience": "release_worker",
-            "id.token.claim": "false",
-            "access.token.claim": "true"
-          }
-        },
-        {
           "name": "auth_api-audience",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",

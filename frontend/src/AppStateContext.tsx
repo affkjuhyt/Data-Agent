@@ -53,17 +53,19 @@ const REDIRECT_MAP: Record<string, { module: string; sub: string; subs?: Record<
   'knowledge-ops':       { module: 'knowledge', sub: '' },
   'ai-runtime':          { module: 'build',    sub: 'AGENTS' },
   'operations-center':   { module: 'ops',      sub: 'TRACES' },
-  'release-management':  { module: 'build',    sub: 'VERSIONS' },
+  'release-management':  { module: 'build',    sub: 'AGENTS' },
   'governance':          { module: 'settings', sub: 'SECURITY' },
   'national-ops':        { module: 'ops',      sub: 'ANALYTICS' },
   // previous 5-module IA
   'test':                { module: 'build',    sub: 'PLAYGROUND', subs: { PLAYGROUND: 'PLAYGROUND' } },
-  'release':             { module: 'build',    sub: 'VERSIONS',   subs: { VERSIONS: 'VERSIONS' } },
+  'release':             { module: 'build',    sub: 'AGENTS' },
   'monitor':             { module: 'ops',      sub: 'CONVERSATIONS', subs: { CONVERSATIONS: 'CONVERSATIONS', TRACES: 'TRACES', ANALYTICS: 'ANALYTICS' } },
 };
-// "#build/KNOWLEDGE" (old) → the knowledge module
+// "#build/KNOWLEDGE" (old) → the knowledge module. The Versions screen (release
+// management) was removed with its backend; its links land on Agents.
 const BUILD_SUB_REDIRECTS: Record<string, { module: string; sub?: string }> = {
   KNOWLEDGE: { module: 'knowledge' },
+  VERSIONS: { module: 'build', sub: 'AGENTS' },
 };
 // Settings sub-tabs before the nested sidebar was folded into the module nav.
 const SETTINGS_SUB_REDIRECTS: Record<string, string> = {

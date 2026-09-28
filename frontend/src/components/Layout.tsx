@@ -22,7 +22,6 @@ const PALETTE_GROUPS = [
   { category: 'Xây dựng', items: [
     { label: 'Agents',     module: 'build', sub: 'AGENTS' },
     { label: 'Workflows',  module: 'build', sub: 'WORKFLOWS' },
-    { label: 'Versions',   module: 'build', sub: 'VERSIONS' },
     { label: 'Thử nghiệm (Playground)', module: 'build', sub: 'PLAYGROUND' },
   ]},
   { category: 'Vận hành', items: [

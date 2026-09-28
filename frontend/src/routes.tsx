@@ -4,7 +4,6 @@ import AskDataPage from './features/ask/AskDataPage';
 import KnowledgeOpsCenter from './components/knowledge/KnowledgeOpsCenter';
 import AgentPlayground from './components/agent-builder/AgentPlayground';
 import Conversations from './components/agent-builder/Conversations';
-import ReleaseManagementCenter from './components/ReleaseManagementCenter';
 import ReviewCenter from './components/agent-builder/ReviewCenter';
 import SettingsView from './components/Settings/Overview';
 import { AgentRuntimeView } from './components/agent-builder/agents/AgentRuntime';
@@ -49,7 +48,6 @@ export const ROUTE_MAP: Record<string, Record<string, RouteEntry>> = {
   build: {
     AGENTS:     { render: () => <AgentRuntimeView /> },
     WORKFLOWS:  { render: () => <WorkflowEngine /> },
-    VERSIONS:   { render: () => <ReleaseManagementCenter /> },
     PLAYGROUND: { render: () => <AgentPlayground /> },
   },
 

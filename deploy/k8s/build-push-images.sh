@@ -32,7 +32,6 @@ declare -A IMAGES=(
   [llm_exporter]="backend/services/llm_exporter/Dockerfile|."
   [model_service]="backend/services/model_service/Dockerfile|backend/services/model_service"
   [platform-workers]="backend/services/platform_workers/Dockerfile|."
-  [release_worker]="backend/services/release_worker/Dockerfile|."
   [sandbox_executor]="backend/services/sandbox_executor/Dockerfile|backend/services/sandbox_executor"
   [workflow_runtime]="backend/services/workflow_runtime/Dockerfile|."
   [migrate]="backend/alembic/Dockerfile|."

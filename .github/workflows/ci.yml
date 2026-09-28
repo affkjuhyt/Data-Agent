@@ -55,7 +55,7 @@ jobs:
             backend/libs/basemodel backend/libs/database_connector backend/libs/shared \
             backend/services/kb_backend backend/services/workflow_runtime \
             backend/services/auth_api backend/services/flow_builder backend/services/model_service \
-            backend/services/release_worker backend/services/sandbox_executor \
+            backend/services/sandbox_executor \
             backend/services/platform_workers; do
             echo "== mypy strict: $target =="
             mypy --disallow-untyped-defs --disallow-any-generics \
@@ -99,9 +99,6 @@ jobs:
           - suite: flow_builder
             python: "3.11"
             install: -r backend/services/flow_builder/requirements.txt
-          - suite: release_worker
-            python: "3.12"
-            install: -r backend/services/release_worker/requirements.txt
           - suite: model_service
             python: "3.11"
             # No requirements.txt: its Dockerfile installs these four inline.

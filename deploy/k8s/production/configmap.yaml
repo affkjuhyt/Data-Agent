@@ -80,7 +80,6 @@ data:
   WORKFLOW_RUNTIME_HOST: workflow-runtime
   FLOW_BUILDER_HOST: flow-builder
   AUTH_API_HOST: auth-api
-  RELEASE_WORKER_HOST: release-worker
 
   #Langfuse
   LANGFUSE_HOST: http://langfuse.dataagent-service.svc.cluster.local:8420

@@ -10,7 +10,6 @@ import {
   Cpu,
   Users,
   Package,
-  GitBranch,
   Coins,
   Key,
   MessageSquare,
@@ -61,7 +60,6 @@ export const MODULE_SUB_ITEMS: Record<string, SubNavItem[]> = {
   'build': [
     { id: 'AGENTS',     label: 'Agents',     icon: Bot },
     { id: 'WORKFLOWS',  label: 'Workflows',  icon: Workflow },
-    { id: 'VERSIONS',   label: 'Versions',   icon: GitBranch },
     { id: 'PLAYGROUND', label: 'Thử nghiệm', icon: FlaskConical },
   ],
 

@@ -295,29 +295,6 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-release-worker
-  namespace: dataagent-service
-  labels:
-    app.kubernetes.io/part-of: dataagent
-spec:
-  podSelector:
-    matchLabels:
-      app: release-worker
-  policyTypes:
-  - Ingress
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: kong
-    ports:
-    - protocol: TCP
-      port: 8210
-
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
   name: allow-litellm
   namespace: dataagent-service
   labels:
@@ -412,9 +389,6 @@ spec:
     - podSelector:
         matchLabels:
           app: auth-api
-    - podSelector:
-        matchLabels:
-          app: release-worker
     - podSelector:
         matchLabels:
           app: sandbox-executor
@@ -550,9 +524,6 @@ spec:
     - podSelector:
         matchLabels:
           app: auth-api
-    - podSelector:
-        matchLabels:
-          app: release-worker
     - podSelector:
         matchLabels:
           app: setup
