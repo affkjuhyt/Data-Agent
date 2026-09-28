@@ -1,15 +1,15 @@
 /**
  * Auth → Keycloak. There is no backend for realm inventory, federation bridges
  * or HA topology, so this panel shows only what is derived from the connected
- * realm (env) plus a persisted MFA policy record:
+ * realm (env):
  *   live realm    VITE_KEYCLOAK_URL / _REALM / _CLIENT
- *   mfa policy    usePlatformSetting('mfa_policy')  Record<policyKey, boolean>
  *   role mappings documentation of the platform ↔ realm role contract
+ * MFA / session policy is set in Keycloak Authentication; the toggles that
+ * used to sit here saved a record nothing read.
  */
 import React from 'react';
-import { Shield, ShieldCheck, ExternalLink, Copy, Check, Save, Server } from 'lucide-react';
-import { Badge, Button, Card, EmptyState, ErrorState, LoadingState } from '../../ui';
-import { usePlatformSetting } from '../../../lib/usePlatformSettings';
+import { Shield, ShieldCheck, ExternalLink, Copy, Check, Server } from 'lucide-react';
+import { Badge, Card, EmptyState } from '../../ui';
 
 const KC_URL    = import.meta.env.VITE_KEYCLOAK_URL    ?? 'http://localhost:8110';
 const KC_REALM  = import.meta.env.VITE_KEYCLOAK_REALM  ?? 'aeroflow';
@@ -32,16 +32,6 @@ const ROLE_MAPPINGS = [
   { platform_role: 'EXECUTIVE',      kc_role: 'executive-viewer' },
 ];
 
-/** MFA / session policies the platform expects in Keycloak. Enforcement lives in Keycloak; this records the intended policy. */
-const MFA_POLICY_DEFS = [
-  { key: 'totp',               label: 'TOTP (Authenticator App)', keycloak: 'Required Action: CONFIGURE_TOTP' },
-  { key: 'webauthn',           label: 'WebAuthn / Passkey',       keycloak: 'Required Action: webauthn-register' },
-  { key: 'session_limit',      label: 'Concurrent session limit', keycloak: 'Authentication → Session Limits' },
-  { key: 'sso_idle',           label: 'SSO session idle timeout', keycloak: 'Realm settings → Sessions' },
-  { key: 'backchannel_logout', label: 'Backchannel logout',       keycloak: 'Client → Backchannel logout URL' },
-];
-type MfaPolicy = Record<string, boolean>;
-
 const CopyField = ({ label, value }: { label: string; value: string }) => {
   const [copied, setCopied] = React.useState(false);
   const copy = () => navigator.clipboard.writeText(value).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
@@ -63,14 +53,6 @@ const AdminLink = ({ path = '', children }: { path?: string; children: React.Rea
 );
 
 export const KeycloakPanel = () => {
-  const mfa = usePlatformSetting<MfaPolicy>('mfa_policy', {});
-  const [draft, setDraft] = React.useState<MfaPolicy>({});
-  const [dirty, setDirty] = React.useState(false);
-  React.useEffect(() => { if (!mfa.loading) { setDraft(mfa.value ?? {}); setDirty(false); } }, [mfa.loading, mfa.value]);
-
-  const toggle = (k: string) => { setDraft(d => ({ ...d, [k]: !d[k] })); setDirty(true); };
-  const save = () => mfa.save(draft).then(() => setDirty(false)).catch(() => {});
-
   return (
     <div className="space-y-6">
       <Card
@@ -106,32 +88,6 @@ export const KeycloakPanel = () => {
           />
         </Card>
       </div>
-
-      <Card
-        title="MFA & session policy"
-        subtitle={<>Bản ghi chính sách mong muốn, lưu tại <code className="font-mono">platform/settings/mfa_policy</code>. Thực thi thực tế nằm trong Keycloak Authentication.</>}
-        actions={<div className="flex gap-2"><AdminLink path="/authentication">Authentication</AdminLink><Button size="sm" variant="primary" icon={Save} loading={mfa.saving} disabled={!dirty} onClick={save}>Lưu</Button></div>}
-      >
-        {mfa.error && <div className="mb-4"><ErrorState message={mfa.error} onRetry={mfa.reload} /></div>}
-        {mfa.loading ? <LoadingState /> : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {MFA_POLICY_DEFS.map(p => {
-              const on = !!draft[p.key];
-              return (
-                <div key={p.key} className="flex items-center justify-between gap-3 p-3.5 bg-white border border-[#BFA66A] rounded-xl">
-                  <div className="min-w-0">
-                    <div className="text-sm font-bold text-[#111111]">{p.label}</div>
-                    <div className="text-[10px] text-[#5F5F5F] font-mono truncate">{p.keycloak}</div>
-                  </div>
-                  <button type="button" onClick={() => toggle(p.key)} aria-pressed={on} className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${on ? 'bg-[#B88719]' : 'bg-[#E4D6AE]'}`} aria-label={p.label}>
-                    <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${on ? 'translate-x-5' : ''}`} />
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Card>
 
       <Card title="Role mappings" subtitle="Platform role ↔ Keycloak realm role (hợp đồng cố định)" padding="none" actions={<AdminLink path="/roles">Realm roles</AdminLink>}>
         <table className="ui-table">

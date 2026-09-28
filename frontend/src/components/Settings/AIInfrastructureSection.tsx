@@ -2,32 +2,22 @@
  * Settings → AI Providers & Models.
  *
  *   providers tab   useLlmProviders()  GET /api/llm-providers + /health + /models
- *   failover        usePlatformSetting('failover_policies')  GET/PUT /api/platform/settings/failover_policies
  *   model registry  /api/llm-providers/models
  *   embeddings      models with mode == "embedding" + GET /api/knowledge/qdrant/collections
+ *
+ * No failover-policy editor: nothing server-side read the policies it saved,
+ * so it configured nothing.
  */
-import React, { useMemo, useState } from 'react';
-import { Cpu, Database, Globe, Plus, RefreshCw, Search, Trash2, Pencil, Check, X, Layers } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Cpu, Database, Globe, RefreshCw, Search, Layers } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import {
-  Badge, Button, Card, EmptyState, ErrorState, Field, Input, LoadingState, SectionTitle, Select, StatTile, Table, toneFor,
+  Badge, Button, Card, EmptyState, ErrorState, Input, LoadingState, SectionTitle, StatTile, Table, toneFor,
 } from '../ui';
 import { useLlmProviders, type LlmModel } from '../../lib/useLlmProviders';
-import { usePlatformSetting, newSettingId } from '../../lib/usePlatformSettings';
 import { usePlatformVectorCollections } from '../../lib/usePlatformData';
 
 type Tab = 'PROVIDERS' | 'MODEL_REGISTRY' | 'EMBEDDINGS';
-
-interface FailoverPolicy {
-  id: string;
-  name: string;
-  trigger: string;
-  from_model: string;
-  to_model: string;
-  enabled: boolean;
-}
-
-const EMPTY_POLICY: Omit<FailoverPolicy, 'id'> = { name: '', trigger: '', from_model: '', to_model: '', enabled: true };
 
 const costPerM = (v: number | null | undefined) =>
   v === null || v === undefined ? '—' : `$${(v * 1_000_000).toFixed(2)} / 1M`;
@@ -117,94 +107,7 @@ const ProvidersTab = ({ llm }: { llm: ReturnType<typeof useLlmProviders> }) => {
           })}
         </div>
       )}
-
-      <FailoverPolicies modelNames={[...new Set([...llm.providers.map(p => p.model_id), ...llm.models.map(m => m.model_name)])]} />
     </div>
-  );
-};
-
-/* ─── Failover policies (persisted) ──────────────────────── */
-const FailoverPolicies = ({ modelNames }: { modelNames: string[] }) => {
-  const setting = usePlatformSetting<FailoverPolicy[]>('failover_policies', []);
-  const [editing, setEditing] = useState<FailoverPolicy | null>(null);
-  const [draft, setDraft] = useState<Omit<FailoverPolicy, 'id'>>(EMPTY_POLICY);
-  const [showForm, setShowForm] = useState(false);
-
-  const policies = Array.isArray(setting.value) ? setting.value : [];
-
-  const startAdd = () => { setEditing(null); setDraft(EMPTY_POLICY); setShowForm(true); };
-  const startEdit = (p: FailoverPolicy) => { setEditing(p); setDraft({ name: p.name, trigger: p.trigger, from_model: p.from_model, to_model: p.to_model, enabled: p.enabled }); setShowForm(true); };
-  const cancel = () => { setShowForm(false); setEditing(null); };
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!draft.name.trim() || !draft.trigger.trim()) return;
-    const next = editing
-      ? policies.map(p => (p.id === editing.id ? { ...editing, ...draft } : p))
-      : [...policies, { id: newSettingId('fo'), ...draft }];
-    await setting.save(next).then(cancel).catch(() => {});
-  };
-  const toggle = (p: FailoverPolicy) => setting.save(policies.map(x => (x.id === p.id ? { ...x, enabled: !x.enabled } : x))).catch(() => {});
-  const remove = (p: FailoverPolicy) => {
-    if (!window.confirm(`Xoá policy "${p.name}"?`)) return;
-    setting.save(policies.filter(x => x.id !== p.id)).catch(() => {});
-  };
-
-  return (
-    <Card
-      title="Failover policies"
-      subtitle={<>Lưu tại <code className="font-mono">platform/settings/failover_policies</code>{setting.updatedAt ? ` · cập nhật ${new Date(setting.updatedAt).toLocaleString('vi-VN')}` : ''}</>}
-      actions={<Button size="sm" variant="primary" icon={Plus} onClick={startAdd} disabled={setting.loading}>Thêm policy</Button>}
-    >
-      {setting.error && <div className="mb-4"><ErrorState message={setting.error} onRetry={setting.reload} /></div>}
-
-      {showForm && (
-        <form onSubmit={submit} className="mb-5 p-4 rounded-xl border border-[#BFA66A] bg-[#FFF9E8] grid grid-cols-1 md:grid-cols-2 gap-3">
-          <Field label="Tên"><Input value={draft.name} onChange={e => setDraft({ ...draft, name: e.target.value })} placeholder="vd. latency-fallback" required /></Field>
-          <Field label="Trigger" hint="Điều kiện kích hoạt, vd. latency_ms > 2000 hoặc error_rate > 0.01">
-            <Input value={draft.trigger} onChange={e => setDraft({ ...draft, trigger: e.target.value })} placeholder="latency_ms > 2000" required />
-          </Field>
-          <Field label="Từ model">
-            <Input list="failover-models" value={draft.from_model} onChange={e => setDraft({ ...draft, from_model: e.target.value })} placeholder="model_id" />
-          </Field>
-          <Field label="Sang model">
-            <Input list="failover-models" value={draft.to_model} onChange={e => setDraft({ ...draft, to_model: e.target.value })} placeholder="model_id" />
-          </Field>
-          <datalist id="failover-models">{modelNames.map(n => <option key={n} value={n} />)}</datalist>
-          <label className="flex items-center gap-2 text-xs font-semibold text-[#3F3F3F]">
-            <input type="checkbox" checked={draft.enabled} onChange={e => setDraft({ ...draft, enabled: e.target.checked })} /> Bật ngay
-          </label>
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" size="sm" icon={X} onClick={cancel}>Huỷ</Button>
-            <Button type="submit" variant="primary" size="sm" icon={Check} loading={setting.saving}>{editing ? 'Lưu' : 'Thêm'}</Button>
-          </div>
-        </form>
-      )}
-
-      {setting.loading ? <LoadingState /> : policies.length === 0 ? (
-        <EmptyState icon={Layers} title="Chưa có failover policy" description="Thêm policy để định nghĩa model dự phòng khi provider chính lỗi hoặc chậm." />
-      ) : (
-        <Table<FailoverPolicy>
-          rows={policies}
-          rowKey={p => p.id}
-          columns={[
-            { header: 'Policy', cell: p => <span className="font-bold">{p.name}</span> },
-            { header: 'Trigger', cell: p => <code className="font-mono text-[11px]">{p.trigger}</code> },
-            { header: 'Route', cell: p => <span className="font-mono text-[11px]">{p.from_model || '—'} → {p.to_model || '—'}</span> },
-            { header: 'Trạng thái', cell: p => <Badge tone={p.enabled ? 'healthy' : 'draft'}>{p.enabled ? 'enabled' : 'disabled'}</Badge> },
-            {
-              header: '', align: 'right', cell: p => (
-                <div className="flex justify-end gap-1">
-                  <Button size="sm" variant="ghost" onClick={() => toggle(p)} disabled={setting.saving}>{p.enabled ? 'Tắt' : 'Bật'}</Button>
-                  <Button size="sm" variant="ghost" icon={Pencil} onClick={() => startEdit(p)} aria-label="Sửa" />
-                  <Button size="sm" variant="danger" icon={Trash2} onClick={() => remove(p)} aria-label="Xoá" />
-                </div>
-              ),
-            },
-          ]}
-        />
-      )}
-    </Card>
   );
 };
 

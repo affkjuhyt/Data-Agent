@@ -37,7 +37,7 @@ const PALETTE_GROUPS = [
     { label: 'Secrets Vault',         module: 'settings', sub: 'SECRETS' },
     { label: 'Security & Compliance', module: 'settings', sub: 'SECURITY' },
     { label: 'AI Providers & Models', module: 'settings', sub: 'AI_PROVIDERS' },
-    { label: 'Billing & Quotas',      module: 'settings', sub: 'BILLING' },
+    { label: 'Billing',               module: 'settings', sub: 'BILLING' },
   ]},
 ];
 

@@ -75,15 +75,15 @@ export const MODULE_SUB_ITEMS: Record<string, SubNavItem[]> = {
   // IDs = SettingsSection (components/Settings/Overview.tsx) = routes.tsx keys.
   'settings': [
     { id: 'OVERVIEW',       label: 'Overview',               icon: Monitor,     group: 'General' },
-    { id: 'ORGANIZATION',   label: 'Organization & Brand',   icon: Building2,   group: 'General' },
+    { id: 'ORGANIZATION',   label: 'Organization',           icon: Building2,   group: 'General' },
     { id: 'IAM',            label: 'Users & Permissions',    icon: Users,       group: 'Security' },
     { id: 'AUTH',           label: 'Auth & SSO',             icon: Lock,        group: 'Security' },
     { id: 'SECRETS',        label: 'Secrets Vault',          icon: Key,         group: 'Security' },
     { id: 'SECURITY',       label: 'Security & Compliance',  icon: ShieldCheck, group: 'Security' },
     { id: 'AI_PROVIDERS',   label: 'AI Providers & Models',  icon: Cpu,         group: 'Platform' },
     { id: 'INFRASTRUCTURE', label: 'Runtime Infrastructure', icon: Zap,         group: 'Platform' },
-    { id: 'STORAGE',        label: 'Storage & Retention',    icon: Database,    group: 'Platform' },
-    { id: 'BILLING',        label: 'Billing & Quotas',       icon: Coins,       group: 'Operations' },
+    { id: 'STORAGE',        label: 'Storage',                icon: Database,    group: 'Platform' },
+    { id: 'BILLING',        label: 'Billing',                icon: Coins,       group: 'Operations' },
     { id: 'API',            label: 'API & Developers',       icon: Code,        group: 'Operations' },
     { id: 'ADVANCED',       label: 'Advanced Platform',      icon: Settings,    group: 'Operations' },
   ],
