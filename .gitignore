@@ -81,8 +81,6 @@ deploy/docker/.*-up.log
 # it graded changes, and a stale one is worse than none.
 eval-report.json
 .eval-reports/
-model/ragas/test_cases.json
-model/ragas/results.csv
 frontend/scripts/ui-demo-shots/
 tests/e2e/out/
 
