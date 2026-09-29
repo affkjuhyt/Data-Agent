@@ -111,4 +111,4 @@ bench-baseline*.json
 e2e-report.json
 
 # Personal notes, never committed.
-mydocs/
+myDocs/

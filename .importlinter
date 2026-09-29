@@ -56,6 +56,7 @@ type = forbidden
 source_modules =
     libs.indicator
     services.indicator_api
+    libs.shared.event_envelope
 forbidden_modules =
     services.kb_structured_data
     libs.database_connector.mongo_connector
