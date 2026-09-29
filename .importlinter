@@ -52,6 +52,7 @@ name = V2 packages must not use the v1 structured-KB path or MongoDB
 type = forbidden
 source_modules =
     libs.indicator
+    libs.shared.event_envelope
 forbidden_modules =
     services.kb_structured_data
     libs.database_connector.mongo_connector

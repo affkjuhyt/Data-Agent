@@ -342,12 +342,19 @@ trước bước significance.
 | `review.case.created` / `review.approved` | governance | notification / publisher | case_id |
 | `observation.published` | indicator-api | recompute, detector, lineage, eval | series_key |
 | `indicator.recomputed` | indicator-api | detector | series_key |
-| `knowledge.proposal.created` / `knowledge.verified` | semantic_extractor / governance | Neo4j projector, indexer | object_id |
+| `knowledge.proposal.created` / `knowledge.verified` | semantic_extractor / governance | Neo4j projector, indexer | entity_id |
 | `alert.raised` | detector/runtime | notification | entity_id |
 | `forecast.requested` / `forecast.completed` | runtime / forecast-worker | forecast-worker / runtime | spec_id |
 | `*.dlq` | mọi consumer | vận hành | |
 
 Topic phải khai báo trong `kafka-topics` Job và ACL trước khi dùng; `auto.create.topics.enable=false` (P0-03).
+
+Mọi sự kiện đi trong một envelope chung (P0-09, `backend/libs/shared/event_envelope.py`; đặt ở `libs/`
+vì image `platform_workers` không chứa `services/indicator_api`): `event_id`, `event_type` (một trong 12
+topic trên, trừ `forecast.*` và `*.dlq`), `schema_version` của payload, `tenant_id`, `occurred_at` (có múi
+giờ), `partition_key`, `trace_id` (tuỳ chọn), `payload`. `partition_key` luôn lấy từ trường khoá của
+payload theo cột "Khoá" ở bảng trên; envelope có khoá lệch với payload, thiếu trường, trường lạ hoặc
+`event_type` lạ đều bị từ chối. Trường của từng payload do task tạo ra topic đó định nghĩa.
 
 ## 14. Giao diện
 
