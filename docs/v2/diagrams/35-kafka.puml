@@ -48,7 +48,7 @@ package "Topic chỉ có nhờ auto-create" {
 
 package "Topic V2 (03 §13) — khai báo trong kafka-topics + ACL trước khi dùng" {
   component "artifact.stored · source.sla.breached (key source_id)\nextraction.completed · validation.completed (key release_id)\nmapping.proposed" <<new>> as N1
-  component "review.case.created · review.approved (key case_id)\nobservation.published · indicator.recomputed (key series_key)\nknowledge.proposal.created · knowledge.verified (key entity_id)\nalert.raised (key entity_id)" <<new>> as N2
+  component "review.case.created · review.approved (key case_id)\nobservation.published · indicator.recomputed (key series_key)\nknowledge.proposal.created · knowledge.verified (key object_id)\nalert.raised (key entity_id)" <<new>> as N2
   component "forecast.requested/completed (ngoài POC)\nDLQ `*.dlq` cho **mọi** consumer" <<new>> as N3
 }
 
