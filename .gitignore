@@ -109,3 +109,6 @@ deploy/k8s/dev/.openbao-env.yml
 bench-report.json
 bench-baseline*.json
 e2e-report.json
+
+# Personal notes, never committed.
+mydocs/

@@ -12,6 +12,9 @@
 root_packages =
     libs
     services
+# Needed so a contract can forbid a third-party package (fastapi below);
+# external packages are recorded by name only, they need not be installed.
+include_external_packages = True
 
 [importlinter:contract:basemodel-is-independent]
 name = basemodel (shared data models) must not depend on services
@@ -52,6 +55,21 @@ name = V2 packages must not use the v1 structured-KB path or MongoDB
 type = forbidden
 source_modules =
     libs.indicator
+    services.indicator_api
 forbidden_modules =
     services.kb_structured_data
     libs.database_connector.mongo_connector
+
+# P0-09 BR-5: the business definitions do not depend on how they are stored or
+# transported. Only api/ and adapters/ may use FastAPI or a storage client.
+[importlinter:contract:indicator-domains-are-pure]
+name = indicator_api domains must not import FastAPI, storage clients, api/ or adapters/
+type = forbidden
+source_modules =
+    services.indicator_api.domains
+forbidden_modules =
+    fastapi
+    starlette
+    services.indicator_api.api
+    services.indicator_api.adapters
+    libs.database_connector

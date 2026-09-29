@@ -56,7 +56,7 @@ jobs:
             backend/services/kb_backend backend/services/workflow_runtime \
             backend/services/auth_api backend/services/flow_builder backend/services/model_service \
             backend/services/sandbox_executor \
-            backend/services/platform_workers; do
+            backend/services/platform_workers backend/services/indicator_api; do
             echo "== mypy strict: $target =="
             mypy --disallow-untyped-defs --disallow-any-generics \
                  --ignore-missing-imports --follow-imports=silent "$target"
@@ -99,6 +99,9 @@ jobs:
           - suite: flow_builder
             python: "3.11"
             install: -r backend/services/flow_builder/requirements.txt
+          - suite: indicator_api
+            python: "3.11"
+            install: -r backend/services/indicator_api/requirements.txt
           - suite: model_service
             python: "3.11"
             # No requirements.txt: its Dockerfile installs these four inline.

@@ -1,0 +1,5 @@
+# Same FastAPI / Pydantic pins as kb_backend and workflow_runtime (P0-09): the
+# contract is read by several services and must validate identically in each.
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
