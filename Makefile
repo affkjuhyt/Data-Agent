@@ -65,6 +65,21 @@ test-integration:  ## pytest integration (testcontainers), one suite per service
 test:  ## unit suites then integration suites (same split as CI python-test / python-integration)
 	@$(MAKE) --no-print-directory test-unit && $(MAKE) --no-print-directory test-integration
 
+# indicator-api contract (P0-09): openapi.json is current, and every definition
+# that changed since CONTRACT_BASE carries a new version (same as CI `contract`).
+# Plain python:3.11 rather than the service image, which exists only once deployed.
+CONTRACT_BASE ?= origin/main
+CONTRACT_OPENAPI = backend/services/indicator_api/openapi.json
+test-contract:  ## indicator-api contract tests + version check against CONTRACT_BASE
+	@base=$$(mktemp); git show $(CONTRACT_BASE):$(CONTRACT_OPENAPI) > $$base 2>/dev/null || : > $$base; \
+	$(DOCKER_RUN_SUITE) -v "$$base:/tmp/openapi.base.json:ro" python:3.11.9-slim sh -c \
+	  "pip install -q -r backend/services/indicator_api/requirements.txt -r requirements-test.txt \
+	   && python -m pytest -q -p no:cacheprovider -m unit tests/contract \
+	   && python -m services.indicator_api.export_openapi --check \
+	   && if [ -s /tmp/openapi.base.json ]; then python -m services.indicator_api.contract_check --baseline /tmp/openapi.base.json; \
+	      else echo 'no openapi.json on $(CONTRACT_BASE): first version of the contract'; fi"; \
+	status=$$?; rm -f $$base; exit $$status
+
 deadcode:  ## vulture (python) + knip (frontend)
 	$(DOCKER_RUN_PY) sh -c "pip install -q vulture && vulture"
 	npm --workspace frontend run deadcode
@@ -75,7 +90,7 @@ frontend-lint:  ## tsc --noEmit
 frontend-test:  ## vitest
 	npm --workspace frontend run test
 
-ci: lint type test frontend-lint frontend-test  ## everything CI runs, locally
+ci: lint type test test-contract frontend-lint frontend-test  ## everything CI runs, locally
 
 # The serving benchmark talks to the GPU host over the LAN and, for
 # --target litellm, to a proxy that may be on localhost — hence --network host

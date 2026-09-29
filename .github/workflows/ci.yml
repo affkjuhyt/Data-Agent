@@ -202,6 +202,43 @@ jobs:
           SANDBOX_RUNNER_IMAGE: sandbox-runner:latest
         run: pytest -m integration tests/integration/${{ matrix.suite }}
 
+  # P0-09: the committed openapi.json is the agreed definition of every business
+  # object. Same checks as `make test-contract`.
+  contract:
+    name: Contract · indicator-api (BLOCKING)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the version check reads the base branch's openapi.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: pip install -r backend/services/indicator_api/requirements.txt -r requirements-test.txt
+      - name: Contract tests
+        run: pytest -m unit tests/contract
+      - name: openapi.json is current
+        env:
+          PYTHONPATH: backend
+        run: python -m services.indicator_api.export_openapi --check
+      - name: Changed definitions carry a new version
+        # Compared with the branch being merged into, never with the PR's own
+        # openapi.json: a PR that edits a field and regenerates the file would
+        # otherwise compare the new definition with itself.
+        env:
+          PYTHONPATH: backend
+          BASE: origin/${{ github.base_ref || 'main' }}
+        run: |
+          file=backend/services/indicator_api/openapi.json
+          if git cat-file -e "$BASE:$file" 2>/dev/null; then
+            git show "$BASE:$file" > "$RUNNER_TEMP/openapi.base.json"
+            python -m services.indicator_api.contract_check --baseline "$RUNNER_TEMP/openapi.base.json"
+          else
+            echo "::notice::no $file on $BASE yet: this is the first version of the contract"
+          fi
+
   eval-gate:
     name: Eval · offline gate (policy + SQL)
     runs-on: ubuntu-latest

@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import AwareDatetime, Field
 
 from services.indicator_api.domains.contract import ContractModel
+from services.indicator_api.domains.observation.models import Observation
 
 
 class AsOfMode(StrEnum):
@@ -26,3 +27,10 @@ class QuerySpec(ContractModel):
     as_of: AwareDatetime | None = None
     as_of_mode: AsOfMode = AsOfMode.WORLD
     filters: dict[str, Any] = Field(default_factory=dict)
+
+
+class QueryResult(ContractModel):
+    """The observations a QuerySpec was answered from; every number keeps its provenance."""
+
+    spec: QuerySpec
+    observations: list[Observation]

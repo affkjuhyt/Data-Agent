@@ -7,8 +7,6 @@ whose schema does not say which definition version it is.
 
 from __future__ import annotations
 
-import importlib
-import pkgutil
 from decimal import Decimal
 from typing import Any
 from uuid import uuid4
@@ -16,7 +14,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-import services.indicator_api.domains as domains
+from services.indicator_api.domains.catalog import contract_models
 from services.indicator_api.domains.contract import ContractModel
 from services.indicator_api.domains.errors import HTTP_STATUS, DomainError, ErrorCode
 from services.indicator_api.domains.governance import Correction
@@ -60,18 +58,6 @@ def brent_15_09() -> dict[str, Any]:
         "effective_version": 1,
         "source_ref": {"artifact": f"raw/eia/{SHA}", "sheet": "Data 1", "row": 9000, "col": "B"},
     }
-
-
-def all_contract_models() -> list[type[ContractModel]]:
-    for module in pkgutil.walk_packages(domains.__path__, prefix=f"{domains.__name__}."):
-        importlib.import_module(module.name)
-    found: list[type[ContractModel]] = []
-    stack = list(ContractModel.__subclasses__())
-    while stack:
-        model = stack.pop()
-        found.append(model)
-        stack.extend(model.__subclasses__())
-    return found
 
 
 # ── Required fields (BR-2, AC-3) ──────────────────────────────────────────────
@@ -161,7 +147,7 @@ def test_decimal_survives_a_json_round_trip():
 
 
 def test_every_contract_model_stamps_its_schema_version():
-    models = all_contract_models()
+    models = contract_models()
     assert len(models) >= 15
     for model in models:
         assert model.model_json_schema()["x-schema-version"] == model.SCHEMA_VERSION, model.__name__

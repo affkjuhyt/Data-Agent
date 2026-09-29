@@ -356,6 +356,28 @@ giờ), `partition_key`, `trace_id` (tuỳ chọn), `payload`. `partition_key` l
 payload theo cột "Khoá" ở bảng trên; envelope có khoá lệch với payload, thiếu trường, trường lạ hoặc
 `event_type` lạ đều bị từ chối. Trường của từng payload do task tạo ra topic đó định nghĩa.
 
+### 13.1 REST của `indicator-api` (P0-09)
+
+Nguồn sự thật là `backend/services/indicator_api/openapi.json` (commit trong repo, màn hình sinh kiểu
+từ đó); bảng dưới chỉ để đọc nhanh. Mọi route qua Kong, cần tenant; tiền tố `/api/indicator`.
+
+| Route | Việc |
+| --- | --- |
+| `GET /entities`, `/entities/{entity_id}`, `/entities/{entity_id}/relations` | Mặt hàng và quan hệ |
+| `GET /series`, `/series/{series_key}` | Chuỗi và trạng thái duyệt |
+| `GET /series/{series_key}/observations?start&end&as_of&as_of_mode` | Số liệu, bản mới nhất theo as-of (`world`: `available_at`, `system`: `system_time`) |
+| `POST /observations` | Nhận số liệu; thiếu trường bắt buộc thì 422 nêu tên trường |
+| `POST /query` | QuerySpec → QueryResult |
+| `GET`/`PATCH /governance/mapping-proposals/{id}` | Đề xuất ánh xạ; PATCH mang `expected_version` |
+| `GET /review/cases`, `/review/cases/{id}`, `POST /review/cases/{id}/decision` | Hồ sơ duyệt; quyết định mang `expected_version` |
+| `GET /capabilities` | Capability đã đăng ký |
+
+Lỗi nghiệp vụ trả `{"error": {"code", "message", "current_version"?}}` với `code` thuộc danh sách chung:
+404 `NO_DATA_FOR_PERIOD`, `UNRESOLVED_ENTITY`; 403 `ACCESS_DENIED`; 409 `VERSION_CONFLICT` (kèm
+`current_version`); 400 cho các mã còn lại. 422 chỉ dùng cho request sai định dạng (body mặc định của
+FastAPI). Đổi một model trong `domains/` phải tăng `SCHEMA_VERSION` của nó; CI (`contract`) so với
+`openapi.json` của nhánh đích và chặn nếu quên.
+
 ## 14. Giao diện
 
 | Màn | Nav | Nội dung | Dùng lại |

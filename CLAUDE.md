@@ -13,6 +13,7 @@ so a green `make ci` is a green pipeline.
 | Lint / format | `make lint`, `make fmt` | ruff, run inside the service image. Import sorting (`I001`) is on and `combine-as-imports` is off, so ruff writes one `from x import (y as z,)` statement per alias — that is its output, not churn; do not hand-collapse it |
 | Types | `make type` | mypy (`pyproject.toml` config, not strict) on the whole of `backend/libs` + `backend/services` — red, see below. CI's blocking step is the strict per-surface list in `.github/workflows/ci.yml` |
 | Tests | `make test-unit`, `make test-integration`, `make test` | one pytest suite per service (`tests/unit/<service>/`, `tests/integration/<service>/`), each run in **that service's image** — no single image can import every service. **Host Python is 3.10, the code targets 3.11**: never run tests with the host interpreter. One suite: `make test-unit UNIT_SUITES=kb_backend:kb-backend` |
+| Contract | `make test-contract` | indicator-api (P0-09): `tests/contract`, `openapi.json` is current, and every definition changed since `CONTRACT_BASE` (default `origin/main`) bumped its `SCHEMA_VERSION`. After changing a model in `services/indicator_api/domains/`: bump its `SCHEMA_VERSION`, run `python -m services.indicator_api.export_openapi` (with `PYTHONPATH=backend`) and commit `openapi.json` |
 | Dead code | `make deadcode` | vulture (python, `min_confidence = 60`, vetted exceptions in `backend/.vulture_whitelist.py`, both set in `pyproject.toml`) + knip (frontend) |
 | Frontend | `make frontend-lint`, `make frontend-test` | tsc + vitest. There is **no ESLint**: the config was v8-format, unreferenced and never ran, so it and its five devDeps were removed. Correctness is tsc's job, style is prettier's, unused code is knip's. Reintroducing ESLint means a flat `eslint.config.js`, an npm script and a CI step — all three or none |
 | End-to-end | `make e2e` | `pytest -m e2e` against the **deployed dev cluster** over its LAN NodePorts (override with `E2E_KONG_URL` / `E2E_KEYCLOAK_URL` / `E2E_RUNTIME_URL`); `E2E_USER` / `E2E_PASS` from the environment. It **writes data**: agent turns create conversations, the tenant-isolation test deletes, revokes and rotates API keys. Needs the `seed_demo` data. See `tests/README.md` |
@@ -121,6 +122,7 @@ deploy/docker       build contexts for the keycloak, kong and setup images; file
 model/eval          release gate: cases, scorers, thresholds
 model/bench         serving benchmark + gate, agent e2e latency breakdown
 tests/unit/<service>/, tests/integration/<service>/   one suite per service image
+tests/contract      indicator-api contract tests (make test-contract)
 tests/integration/test_*.py                         e2e tests (make e2e)
 tests/e2e           demo seed data (k8s seed Job), eval and Playwright harnesses
 tests/loadtest      k6

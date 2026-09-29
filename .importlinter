@@ -73,4 +73,5 @@ forbidden_modules =
     starlette
     services.indicator_api.api
     services.indicator_api.adapters
+    services.indicator_api.stub
     libs.database_connector

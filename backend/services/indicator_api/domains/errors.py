@@ -23,15 +23,17 @@ class ErrorCode(StrEnum):
 
 
 # Only 409 for VERSION_CONFLICT is fixed by the story (and invariant 10); the
-# rest follow HTTP meaning: 404 for "not there", 403 for permission, 422 for a
-# request that is well-formed but cannot be answered as asked.
+# rest follow HTTP meaning: 404 for "not there", 403 for permission, 400 for a
+# request that is valid but cannot be answered as asked. Not 422: FastAPI answers
+# a malformed request (a missing field, AC-3) with 422 and its own body, and one
+# status must map to one body shape for the screens' generated types.
 HTTP_STATUS: dict[ErrorCode, int] = {
     ErrorCode.NO_DATA_FOR_PERIOD: 404,
-    ErrorCode.FREQUENCY_NOT_AVAILABLE: 422,
-    ErrorCode.SERIES_NOT_APPROVED: 422,
-    ErrorCode.STALE_SOURCE: 422,
+    ErrorCode.FREQUENCY_NOT_AVAILABLE: 400,
+    ErrorCode.SERIES_NOT_APPROVED: 400,
+    ErrorCode.STALE_SOURCE: 400,
     ErrorCode.ACCESS_DENIED: 403,
-    ErrorCode.INSUFFICIENT_EVIDENCE: 422,
+    ErrorCode.INSUFFICIENT_EVIDENCE: 400,
     ErrorCode.UNRESOLVED_ENTITY: 404,
     ErrorCode.VERSION_CONFLICT: 409,
 }
