@@ -25,6 +25,7 @@ class FakeAgentStore:
     def __init__(self) -> None:
         self.agents: dict[str, dict[str, Any]] = {}
         self.cleared_canvases: list[str] = []
+        self.canvas_cleanup_fails = False
         self.versions_by_agent: dict[str, list[str]] = {}
 
     def add(self, agent_id: str, tenant_id: str, name: str = "agent") -> None:
@@ -61,9 +62,11 @@ class FakeAgentStore:
         del self.agents[agent_id]
         return self.versions_by_agent.get(agent_id, [])
 
-    async def save_canvas(self, version_id: str, nodes: list[Any], edges: list[Any]) -> None:
-        assert nodes == [] and edges == []
-        self.cleared_canvases.append(version_id)
+    async def clear_canvases(self, version_ids: list[str]) -> list[str]:
+        if self.canvas_cleanup_fails:
+            return list(version_ids)
+        self.cleared_canvases.extend(version_ids)
+        return []
 
     async def update_agent_draft(
         self, agent_id: str, fields: dict[str, Any], tenant_id: str | None = None
@@ -89,7 +92,7 @@ def store(fb: types.SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> FakeAge
     fake = FakeAgentStore()
     patch_router_store(monkeypatch, fb.agents, fake, (
         "create_agent", "list_agents", "get_agent", "list_workflows", "delete_agent",
-        "save_canvas", "update_agent_draft", "publish_agent", "unpublish_agent"))
+        "clear_canvases", "update_agent_draft", "publish_agent", "unpublish_agent"))
     return fake
 
 
@@ -162,6 +165,18 @@ class TestHappyPath:
         assert resp.status_code == 204
         assert AGENT_ID not in store.agents
         assert store.cleared_canvases == ["v1", "v2"]
+
+    def test_a_failed_canvas_cleanup_does_not_fail_a_committed_delete(
+        self, client: Any, store: FakeAgentStore
+    ) -> None:
+        """The rows are gone once delete_agent returns; a Mongo hiccup afterwards
+        must not read as "delete failed" (the client would retry a no-op)."""
+        store.add(AGENT_ID, TENANT_A)
+        store.versions_by_agent[AGENT_ID] = ["v1"]
+        store.canvas_cleanup_fails = True
+        resp = client.delete(f"/api/agents/{AGENT_ID}", headers=kong_headers(TENANT_A))
+        assert resp.status_code == 204
+        assert AGENT_ID not in store.agents
 
     def test_patch_passes_only_set_fields(self, client: Any, store: FakeAgentStore) -> None:
         resp = client.patch(

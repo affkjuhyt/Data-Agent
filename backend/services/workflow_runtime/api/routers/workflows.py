@@ -11,6 +11,7 @@ from services.workflow_runtime.domain.authoring_schemas import (
     PublishVersionRequest,
 )
 from services.workflow_runtime.infrastructure.authoring_repository import (
+    ConflictError,
     create_draft_version,
     create_workflow,
     delete_workflow,
@@ -26,7 +27,7 @@ from services.workflow_runtime.infrastructure.authoring_repository import (
 )
 from services.workflow_runtime.infrastructure.config import REDIS_URL
 from services.workflow_runtime.infrastructure.db import ensure_db_available
-from services.workflow_runtime.infrastructure.mongo_client import save_canvas
+from services.workflow_runtime.infrastructure.mongo_client import clear_canvases
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -62,6 +63,8 @@ async def api_create_workflow(
         raise HTTPException(404, "Agent not found")
     try:
         return await create_workflow(agent_id, body.name, body.description or "", tenant_id=tenant_id)
+    except ConflictError as e:
+        raise HTTPException(409, str(e))
     except Exception as e:
         logger.exception("create_workflow failed")
         raise HTTPException(500, str(e))
@@ -97,6 +100,8 @@ async def api_create_draft_version(
     tenant_id = await _require_workflow(workflow_id, caller)
     try:
         return await create_draft_version(workflow_id, tenant_id=tenant_id)
+    except ConflictError as e:
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:
@@ -110,6 +115,8 @@ async def api_delete_workflow_version(version_id: str, caller: dict[str, Any] = 
     tenant_id = require_tenant(caller)
     try:
         await delete_workflow_version(version_id, tenant_id=tenant_id)
+    except ConflictError as e:
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:
@@ -123,8 +130,9 @@ async def api_delete_workflow(workflow_id: str, caller: dict[str, Any] = Depends
     tenant_id = require_tenant(caller)
     try:
         version_ids = await delete_workflow(workflow_id, tenant_id=tenant_id)
-        for version_id in version_ids:
-            await save_canvas(version_id, [], [])
+        await clear_canvases(version_ids)
+    except ConflictError as e:
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:
@@ -146,6 +154,8 @@ async def api_publish_workflow_version(
         # belt-and-suspenders nudge so any stale same-id entry is dropped too.
         await publish_graph_invalidation(REDIS_URL, workflow_version_id)
         return result
+    except ConflictError as e:
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:
@@ -165,6 +175,8 @@ async def api_republish_workflow_version(
         # unchanged — this broadcast is what actually forces the rebuild.
         await publish_graph_invalidation(REDIS_URL, workflow_version_id)
         return result
+    except ConflictError as e:
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:

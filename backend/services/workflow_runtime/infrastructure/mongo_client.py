@@ -70,3 +70,21 @@ async def load_canvas(workflow_version_id: str) -> dict[str, Any]:
         {"workflow_version_id": workflow_version_id}, {"_id": 0}
     ).to_list(None)
     return {"nodes": nodes, "edges": edges}
+
+
+async def clear_canvases(workflow_version_ids: list[str]) -> list[str]:
+    """Best-effort canvas cleanup after the relational rows are already gone.
+
+    Postgres and Mongo cannot share a transaction, and the delete has committed by
+    the time this runs, so a Mongo failure must not turn a successful delete into a
+    500 (the client would retry a delete that already happened). Returns the ids
+    whose canvas could not be removed; they are logged as orphans.
+    """
+    failed: list[str] = []
+    for version_id in workflow_version_ids:
+        try:
+            await save_canvas(version_id, [], [])
+        except Exception:
+            logger.exception("canvas cleanup failed for workflow_version=%s (orphan canvas)", version_id)
+            failed.append(version_id)
+    return failed

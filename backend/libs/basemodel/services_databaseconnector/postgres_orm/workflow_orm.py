@@ -236,6 +236,8 @@ class WorkflowVersionsORM(Base):
     __table_args__ = (
         UniqueConstraint("workflow_id", "version", name="uq_workflow_versions_workflow_version"),
         Index("idx_workflowversions_workflow_status", "workflow_id", "status"),
+        Index("uq_workflowversions_one_published", "workflow_id", unique=True, postgresql_where=text("status = 'published'")),
+        Index("uq_workflowversions_one_draft", "workflow_id", unique=True, postgresql_where=text("status = 'draft'")),
         Index("idx_workflowversions_inserted_at_desc", text("inserted_at DESC")),
     )
 

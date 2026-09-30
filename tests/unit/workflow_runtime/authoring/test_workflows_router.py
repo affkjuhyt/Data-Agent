@@ -79,8 +79,9 @@ class FakeWorkflowStore:
         del self.workflow_agent[workflow_id]
         return versions
 
-    async def save_canvas(self, version_id: str, nodes: list[Any], edges: list[Any]) -> None:
-        self.cleared_canvases.append(version_id)
+    async def clear_canvases(self, version_ids: list[str]) -> list[str]:
+        self.cleared_canvases.extend(version_ids)
+        return []
 
     async def publish_workflow_version(self, version_id: str, changelog: str | None = None, *, tenant_id: str) -> dict[str, Any]:
         if self.status.get(version_id) != "draft":
@@ -101,7 +102,7 @@ class FakeWorkflowStore:
 
 _PATCHED = (
     "get_agent", "create_workflow", "list_workflows", "list_workflow_versions",
-    "create_draft_version", "delete_workflow_version", "delete_workflow", "save_canvas",
+    "create_draft_version", "delete_workflow_version", "delete_workflow", "clear_canvases",
     "publish_workflow_version", "republish_workflow_version", "publish_graph_invalidation",
     "workflow_belongs_to", "workflow_version_belongs_to",
 )
@@ -183,6 +184,34 @@ class TestHappyPath:
         resp = client.delete(f"/api/workflows/{WORKFLOW_ID}", headers=kong_headers(TENANT_A))
         assert resp.status_code == 204
         assert sorted(store.cleared_canvases) == sorted([VERSION_ID, ARCHIVED_ID])
+
+
+class TestConcurrentWriters:
+    """A unique constraint refusing a racing write is a 409 the caller can retry,
+    not a 500 (repository turns IntegrityError into ConflictError)."""
+
+    def test_publish_race_is_409(
+        self, client: Any, store: FakeWorkflowStore, fb: types.SimpleNamespace,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        async def racing(*_a: Any, **_k: Any) -> dict[str, Any]:
+            raise fb.workflows.ConflictError("concurrent update, retry")
+
+        monkeypatch.setattr(fb.workflows, "publish_workflow_version", racing)
+        resp = client.post(f"/api/workflow-versions/{VERSION_ID}/publish", headers=kong_headers())
+        assert resp.status_code == 409
+        assert store.invalidated == []
+
+    def test_draft_race_is_409(
+        self, client: Any, store: FakeWorkflowStore, fb: types.SimpleNamespace,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        async def racing(*_a: Any, **_k: Any) -> dict[str, Any]:
+            raise fb.workflows.ConflictError("concurrent update, retry")
+
+        monkeypatch.setattr(fb.workflows, "create_draft_version", racing)
+        resp = client.post(f"/api/workflows/{WORKFLOW_ID}/versions", headers=kong_headers())
+        assert resp.status_code == 409
 
 
 class TestErrors:

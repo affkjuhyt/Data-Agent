@@ -8,6 +8,7 @@ from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy import update as sa_update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -39,6 +40,25 @@ _DEV_TENANT_ID          = os.environ.get("DEV_TENANT_ID",          "00000000-000
 _DEV_RESPONDER_MODEL_ID = os.environ.get("DEV_RESPONDER_MODEL_ID", "00000000-0000-0000-0000-000000000011")
 
 
+class ConflictError(Exception):
+    """A concurrent writer got there first (a unique constraint refused the write).
+    Routers answer 409: the caller can re-read and retry, unlike a 400 or 500."""
+
+
+async def _lock_workflow(session: AsyncSession, workflow_id: UUID) -> None:
+    """Serialise writers of one workflow's versions (publish, republish, new draft).
+
+    A row lock on the parent, held to the end of the transaction; the partial
+    unique indexes on WorkflowVersions are the backstop if anything skips it.
+    """
+    await session.execute(select(WorkflowsORM.id).where(WorkflowsORM.id == workflow_id).with_for_update())
+
+
+async def _lock_agent(session: AsyncSession, agent_id: UUID) -> None:
+    """Serialise writers of one agent's versions (publish_agent's max(version)+1)."""
+    await session.execute(select(AgentsORM.id).where(AgentsORM.id == agent_id).with_for_update())
+
+
 @asynccontextmanager
 async def _txn(session: AsyncSession) -> AsyncGenerator[None, None]:
     """client.get_client(tenant_id=...) already autobegins a transaction (the
@@ -48,6 +68,9 @@ async def _txn(session: AsyncSession) -> AsyncGenerator[None, None]:
     try:
         yield
         await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise ConflictError("concurrent update, retry") from exc
     except Exception:
         await session.rollback()
         raise
@@ -270,6 +293,8 @@ async def publish_workflow_version(workflow_version_id: str, changelog: str | No
             wv = await session.get(WorkflowVersionsORM, UUID(workflow_version_id))
             if not wv:
                 raise ValueError("workflow_version not found")
+            await _lock_workflow(session, wv.workflow_id)
+            await session.refresh(wv)  # status may have changed while waiting for the lock
             if wv.status == "published":
                 raise ValueError("already published")
             if wv.status == "archived":
@@ -296,6 +321,8 @@ async def republish_workflow_version(workflow_version_id: str, *, tenant_id: str
             wv = await session.get(WorkflowVersionsORM, UUID(workflow_version_id))
             if not wv:
                 raise ValueError("workflow_version not found")
+            await _lock_workflow(session, wv.workflow_id)
+            await session.refresh(wv)
             if wv.status != "archived":
                 raise ValueError("can only republish archived versions")
 
@@ -336,6 +363,7 @@ async def list_workflow_versions(workflow_id: str, *, tenant_id: str) -> list[di
 async def create_draft_version(workflow_id: str, *, tenant_id: str) -> dict[str, Any]:
     async with client.get_client(tenant_id=tenant_id) as session:
         async with _txn(session):
+            await _lock_workflow(session, UUID(workflow_id))
             # Lấy max version hiện tại
             result = await session.execute(
                 select(func.max(WorkflowVersionsORM.version))
@@ -480,6 +508,8 @@ async def publish_agent(agent_id: str, workflow_id: str, kb_connection_id: str |
             wf = await session.get(WorkflowsORM, UUID(workflow_id))
             if not wf or str(wf.agent_id) != agent_id:
                 raise ValueError("workflow does not belong to agent")
+            # Serialise concurrent publishes of this agent (max(version)+1 below).
+            await _lock_agent(session, UUID(agent_id))
 
             # 2. Find published version (not draft)
             wv_result = await session.execute(

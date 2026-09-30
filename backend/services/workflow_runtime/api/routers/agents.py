@@ -11,6 +11,7 @@ from services.workflow_runtime.domain.authoring_schemas import (
     UpdateDraftRequest,
 )
 from services.workflow_runtime.infrastructure.authoring_repository import (
+    ConflictError,
     create_agent,
     delete_agent,
     get_agent,
@@ -22,7 +23,7 @@ from services.workflow_runtime.infrastructure.authoring_repository import (
     update_agent_draft,
 )
 from services.workflow_runtime.infrastructure.db import ensure_db_available
-from services.workflow_runtime.infrastructure.mongo_client import save_canvas
+from services.workflow_runtime.infrastructure.mongo_client import clear_canvases
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -37,6 +38,8 @@ async def api_create_agent(
     ensure_db_available()
     try:
         return await create_agent(body.name, body.description or "", tenant_id)
+    except ConflictError as e:
+        raise HTTPException(409, str(e))
     except Exception as e:
         logger.exception("create_agent failed")
         raise HTTPException(500, str(e))
@@ -67,8 +70,9 @@ async def api_delete_agent(agent_id: str, caller: dict[str, Any] = Depends(get_c
     ensure_db_available()
     try:
         version_ids = await delete_agent(agent_id, tenant_id=tenant_id)
-        for version_id in version_ids:
-            await save_canvas(version_id, [], [])
+        await clear_canvases(version_ids)
+    except ConflictError as e:
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(404, str(e))
     except Exception as e:
@@ -82,6 +86,8 @@ async def api_update_agent(agent_id: str, body: UpdateDraftRequest, caller: dict
     ensure_db_available()
     try:
         return await update_agent_draft(agent_id, body.model_dump(exclude_none=True), tenant_id=tenant_id)
+    except ConflictError as e:
+        raise HTTPException(409, str(e))
     except Exception as e:
         logger.exception("update_agent_draft failed")
         raise HTTPException(500, str(e))
@@ -93,6 +99,8 @@ async def api_publish_agent(agent_id: str, body: PublishRequest, caller: dict[st
     ensure_db_available()
     try:
         return await publish_agent(agent_id, body.workflow_id, body.kb_connection_id, tenant_id=tenant_id)
+    except ConflictError as e:
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:
@@ -106,6 +114,8 @@ async def api_unpublish_agent(agent_id: str, caller: dict[str, Any] = Depends(ge
     ensure_db_available()
     try:
         return await unpublish_agent(agent_id, tenant_id=tenant_id)
+    except ConflictError as e:
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:
