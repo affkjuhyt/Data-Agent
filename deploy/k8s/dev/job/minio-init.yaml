@@ -45,8 +45,10 @@ spec:
         # (database/minio.yaml) ships the same mc client. quay.io now answers
         # 401 to anonymous pulls, and `:latest` defaults to pullPolicy Always,
         # so reuse the copy the MinIO server already pulled onto the node.
+        # Never, not IfNotPresent: deploy.yml's manifest_sed rewrites every
+        # IfNotPresent to Always (k8s_common defaults) before applying.
         image: quay.io/minio/minio:latest
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Never
         command:
         - sh
         - -c
