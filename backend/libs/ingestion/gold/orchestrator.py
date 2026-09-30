@@ -38,6 +38,7 @@ from libs.ingestion.pipeline_events import NULL_EMITTER, PipelineEventEmitter
 from libs.ingestion.pipeline_status import stamp_pipeline_status
 from libs.ingestion.purpose import reaches_gold
 from libs.ingestion.stage_chain import StageChain
+from libs.ingestion.storage_boundary import is_v2_structured_document
 
 log = logging.getLogger(__name__)
 
@@ -232,6 +233,11 @@ async def promote_to_gold(
         # into the knowledge base.
         log.info("Gold skipped: data_id=%s purpose=%s stays at Silver", data_id, purpose)
         return {"data_id": data_id, "layer": Tier.SILVER.value, "skipped": f"purpose_{purpose}"}
+    if await is_v2_structured_document(postgres, data_id):
+        # Same boundary as the Silver consumer: a V2 structured source never
+        # reaches embeddings, whichever path queued this.
+        log.info("Gold skipped: data_id=%s belongs to a V2 structured source", data_id)
+        return {"data_id": data_id, "layer": Tier.SILVER.value, "skipped": "v2_structured_source"}
 
     database = mongo.get_client()
     logger = IngestionLogger(db=database, data_id=data_id)

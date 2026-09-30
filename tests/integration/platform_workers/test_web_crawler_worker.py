@@ -351,3 +351,83 @@ def test_changed_content_updates_a_promoted_document_in_place(migrated_db, worke
         assert first_path in minio.removed, "the superseded object is removed after the swap"
     finally:
         conn.close()
+
+
+def test_a_v2_structured_source_stays_in_bronze_and_off_the_legacy_paths(migrated_db, worker_module):
+    """NOP-163 on a real Postgres: an http_file source with an
+    `extraction_profile` (the Pink Sheet shape from docs/v2/03 §5) and
+    promotion_mode=auto lands its raw file in Bronze, linked to its source, and
+    is never queued for Silver; a document source next to it still is. No
+    `kb_structured` table appears. Mongo is only reachable through Silver, so
+    "not queued for Silver" is also "nothing written to Mongo"."""
+    from libs.ingestion.connectors.base import FetchedArtifact
+
+    profile = {
+        "kind": "xlsx_table", "sheet": "Monthly Prices", "header_row": 5, "period_column": 0, "frequency": "M",
+        "series": [{"column": "Crude oil, Brent", "series_key": "WB:PINK:BRENT:M", "unit": "usd_per_barrel"}],
+    }
+    tenant_id, role_id, v2_source = _seed_tenant_and_source(
+        migrated_db["dsn"], "Pink Sheet", connector_type="http_file",
+        extra_config={"url": "https://example.invalid/pink.xlsx", "promotion_mode": "auto", "extraction_profile": profile},
+    )
+    # A plain document source in the same tenant (the seed helper creates a
+    # tenant + role per call, and the role anchor row is unique).
+    doc_source = str(uuid.uuid4())
+    seed = psycopg2.connect(migrated_db["dsn"])
+    seed.autocommit = True
+    try:
+        with seed.cursor() as cur:
+            cur.execute(
+                """INSERT INTO "KBSource" (source_id, tenant_id, role_id, connector_type, title, created_by)
+                   VALUES (%s, %s, %s, 'http_file', 'Oil report', 'tester')""",
+                (doc_source, tenant_id, role_id),
+            )
+            cur.execute(
+                """INSERT INTO "KBSourceConfig" (source_id, version_number, is_active, config, created_by)
+                   VALUES (%s, 1, true, %s::jsonb, 'tester')""",
+                (doc_source, '{"url": "https://example.invalid/report.pdf", "cron": "0 3 * * *", "promotion_mode": "auto"}'),
+            )
+    finally:
+        seed.close()
+
+    def fetch(_connector_type, config):
+        ext = config["url"].rsplit(".", 1)[-1]
+        return FetchedArtifact(
+            content_bytes=f"bytes of {config['url']}".encode(), content_type="application/octet-stream",
+            source_url=config["url"], extension=ext,
+        )
+
+    conn = psycopg2.connect(migrated_db["dsn"])
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'kb_structured'")
+            kb_structured_before = cur.fetchone()[0]
+        with patch("services.platform_workers.workers.web_crawler.worker.connector_fetch", side_effect=fetch), \
+             patch("services.platform_workers.workers.web_crawler.bronze._minio_client", return_value=_NoopMinio()), \
+             patch("services.platform_workers.workers.web_crawler.worker.publish_auto_promote_silver") as publish:
+            with conn.cursor() as cur:
+                sources = {str(s["source_id"]): s for s in worker_module.get_active_sources(cur)}
+            worker_module.run_source(conn, sources[v2_source], trigger="scheduled")
+            worker_module.run_source(conn, sources[doc_source], trigger="scheduled")
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT data_id, current_tier, metadata FROM "KBData" WHERE metadata->>'source_id' = %s""",
+                (v2_source,),
+            )
+            rows = cur.fetchall()
+            assert len(rows) == 1, "the raw file still lands in Bronze"
+            v2_data_id, tier, metadata = rows[0]
+            assert tier == "bronze"
+            assert metadata["promotion_mode"] == "manual"
+
+            cur.execute("""SELECT data_id FROM "KBData" WHERE metadata->>'source_id' = %s""", (doc_source,))
+            doc_data_id = cur.fetchone()[0]
+
+            cur.execute("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'kb_structured'")
+            assert cur.fetchone()[0] == kb_structured_before
+        queued = [c.args[0] for c in publish.call_args_list]
+        assert str(v2_data_id) not in queued
+        assert queued == [str(doc_data_id)], "the legacy document pipeline is unchanged"
+    finally:
+        conn.close()

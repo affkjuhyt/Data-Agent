@@ -38,6 +38,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from libs.ingestion.connectors.registry import fetch as connector_fetch
 from libs.shared.cron import cron_due
+from libs.shared.storage_ownership import is_v2_structured_source
 from services.platform_workers.common import kafka as kafka_factory
 from services.platform_workers.common import pg
 from services.platform_workers.common.settings import KafkaSettings, PostgresSettings
@@ -135,6 +136,20 @@ def publish_auto_promote_silver(data_id: str, tenant_id: str) -> None:
         global _promote_producer
         with _promote_producer_lock:
             _promote_producer = None
+
+
+def _promotion_mode(source_id: str, config: dict[str, Any]) -> str:
+    """A V2 structured source (one with an `extraction_profile`) never
+    auto-promotes: its numbers go to series_extractor, not through Silver/Gold
+    chunking (docs/v2/00 invariant 4, NOP-163). Stamping "manual" rather than
+    only skipping the publish keeps Data Layers from showing the document as
+    "auto-processing" forever; a manual promote is then refused by kb_backend
+    and by the Silver consumer itself."""
+    if is_v2_structured_source(config):
+        if config.get("promotion_mode") == "auto":
+            log.info("source=%s has an extraction_profile: auto-promote to Silver disabled", source_id)
+        return "manual"
+    return str(config.get("promotion_mode", "manual"))
 
 
 # ─── Source registry (KBSource / KBSourceConfig) ───────────────────────────
@@ -249,7 +264,7 @@ def run_source(
         if secret:
             fetch_config = {**config, "_resolved_secret": secret}
 
-    promotion_mode = config.get("promotion_mode", "manual")
+    promotion_mode = _promotion_mode(source_id, config)
     purpose = config.get("purpose", "production")
     try:
         artifact = connector_fetch(connector_type, fetch_config)
@@ -376,7 +391,7 @@ def _run_queue_item(conn: Any, row: dict[str, Any]) -> None:
         cur.execute("""UPDATE "KBSourceCrawlQueue" SET status = 'running' WHERE queue_id = %s""", (queue_id,))
     conn.commit()
 
-    promotion_mode = config.get("promotion_mode", "manual")
+    promotion_mode = _promotion_mode(source_id, config)
     purpose = config.get("purpose", "production")
     try:
         artifact = connector_fetch("web_crawl", config)

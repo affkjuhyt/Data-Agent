@@ -22,6 +22,7 @@ from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
 from services.kb_backend.operations.document_ops import (
     fetch_one as _fetch_doc, fetch_by_name as _fetch_doc_by_name, reprocess_gold_documents,
+    reject_v2_structured_document,
 )
 from services.kb_backend.operations.source_ops import record_upload_as_source
 from services.kb_backend.operations.trash_ops import flush as _trash_flush
@@ -251,6 +252,7 @@ async def promote_to_silver(
 
     record = await _fetch_kbdata_or_404(postgres, ctx["tenant_id"], ctx["role_id"], data_id)
     log.info("POST /ingestion/promote/%s/silver tenant=%s", data_id, ctx["tenant_id"])
+    await reject_v2_structured_document(postgres, data_id)
 
     stage = await _active_stage(mongo, data_id)
     if stage:
@@ -310,6 +312,7 @@ async def promote_to_gold(
         )
 
     log.info("POST /ingestion/promote/%s/gold tenant=%s", data_id, ctx["tenant_id"])
+    await reject_v2_structured_document(postgres, data_id)
 
     stage = await _active_stage(mongo, data_id)
     if stage:

@@ -19,8 +19,26 @@ from services.kb_backend.operations.trash_ops import (
     set_postgres_deleted,
 )
 from services.kb_backend.operations.access import assert_document_access, document_role_filter
+from libs.ingestion.storage_boundary import is_v2_structured_document
+from libs.shared.storage_ownership import V2_STRUCTURED_SOURCE_ERROR
 
 log = logging.getLogger(__name__)
+
+
+async def reject_v2_structured_document(postgres: Any, data_id: str) -> None:
+    """409 before anything is queued when the document belongs to a V2
+    structured source — the Silver/Gold consumers refuse it too, but a
+    silently skipped job reads as "stuck" in Data Layers, while a 409 tells the
+    steward why (NOP-163)."""
+    if await is_v2_structured_document(postgres, data_id):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This document comes from a structured source with an extraction profile: its numbers are "
+                "loaded by the structured pipeline, not processed into Silver/Gold or structured tables "
+                f"[{V2_STRUCTURED_SOURCE_ERROR}]"
+            ),
+        )
 
 
 async def fetch_one(postgres: Any, data_id: str, tenant_id: str | None, role_id: str | None = None) -> dict[
@@ -199,6 +217,8 @@ async def promote_document(
         ctx: dict[str, Any], record: dict[str, Any],
 ) -> dict[str, Any]:
     tenant_id = ctx["tenant_id"]
+    if target in ("silver", "gold"):
+        await reject_v2_structured_document(postgres, data_id)
     if target == "silver":
         await kafka_producer.produce(
             topic=ing_cfg.KAFKA_TOPIC_SILVER,
