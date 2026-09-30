@@ -99,14 +99,14 @@ release-hardening pass:
 
 | Runs as non-root (`USER` in the image) | Root in the image — documented |
 |---|---|
-| kb-backend, kb-promote-silver/gold, kb-structured-data, kb-conflict-resolution, workflow-runtime (incl. the orchestrator), flow-builder, auth-api, model-service, llm-exporter, platform-workers (memory / schema-crawler / audit / web-crawler) | **sandbox-executor** — the image stays root for `SANDBOX_BACKEND=docker`, which spawns containers through the host Docker socket. On k8s it runs `SANDBOX_BACKEND=kubernetes` (runner pods in `dataagent-sandbox` via its ServiceAccount), and the production manifest sets `runAsNonRoot` / `runAsUser: 10001`. |
+| kb-backend, kb-promote-silver/gold, kb-structured-data, kb-conflict-resolution, workflow-runtime (incl. the orchestrator and agent/workflow authoring), auth-api, model-service, llm-exporter, platform-workers (memory / schema-crawler / audit / web-crawler) | **sandbox-executor** — the image stays root for `SANDBOX_BACKEND=docker`, which spawns containers through the host Docker socket. On k8s it runs `SANDBOX_BACKEND=kubernetes` (runner pods in `dataagent-sandbox` via its ServiceAccount), and the production manifest sets `runAsNonRoot` / `runAsUser: 10001`. |
 
 `frontend/Dockerfile.dev` (dev-only) is out of scope for the prod non-root requirement.
 
 Notes on special cases:
 - **model-service** downloads no weights: it runs no local model and proxies embed,
   rerank and generate to the GPU services (`REMOTE_*_URL`).
-- **kb-promote-silver** and **platform-workers** install Chromium to a world-readable
+- **kb-worker** (the KB workers' image) and **platform-workers** install Chromium to a world-readable
   `PLAYWRIGHT_BROWSERS_PATH` (`/ms-playwright`) so the non-root user can still launch the
   browser; the app user has a writable `$HOME` for Chromium's profile/cache.
 
@@ -157,12 +157,11 @@ with an existing baseline to burn down. Ratchet plan:
   | Surface | strict errors |
   | --- | --- |
   | `backend/libs/{basemodel,database_connector,shared}` | **0**, enforced |
-  | `backend/services/{kb_backend,workflow_runtime}` (incl. `workflow_runtime/orchestrator`) | **0**, enforced |
-  | `backend/services/{auth_api,flow_builder,model_service,sandbox_executor,platform_workers}` | **0**, enforced |
+  | `backend/services/{kb_backend,workflow_runtime}` (incl. `workflow_runtime/application/orchestrator`) | **0**, enforced |
+  | `backend/services/{auth_api,model_service,sandbox_executor,platform_workers}` | **0**, enforced |
 
-  Not on the strict list: `backend/libs/{ingestion,semantic,indicator}` and the services
-  `kb_promote_silver`, `kb_promote_gold`, `kb_structured_data`, `kb_conflict_resolution`,
-  `llm_exporter`. The whole-tree run is report-only (`|| true`).
+  Not on the strict list: `backend/libs/{ingestion,semantic,indicator}`. The KB workers
+  (`kb_backend/workers/*`) are strict as part of the `kb_backend` entry. The whole-tree run is report-only (`|| true`).
 
 ## 6. Reporting a vulnerability
 

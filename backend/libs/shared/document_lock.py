@@ -44,7 +44,7 @@ async def document_lock(postgres: Any, tenant_id: str, name: str) -> AsyncIterat
     # caller sets that, it returns an unentered async-context-manager object
     # here rather than the plain AsyncSession this code calls .scalar()/
     # .close() on directly — dormant until something started setting that
-    # ContextVar, which nothing did until kb_promote_silver's handler fix.
+    # ContextVar, which nothing did until the promote_silver worker handler fix.
     session = postgres.get_platform_client()
     acquired = await session.scalar(text("SELECT pg_try_advisory_lock(:key)"), {"key": key})
     if not acquired:

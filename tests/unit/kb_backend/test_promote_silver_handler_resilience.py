@@ -1,4 +1,4 @@
-"""kb_promote_silver's handler: a stalled promote_to_silver call must not hold
+"""the promote_silver worker handler: a stalled promote_to_silver call must not hold
 its concurrency slot forever, and a failed Gold hand-off must retry only the
 hand-off, never re-run Silver over a document that already succeeded there.
 
@@ -18,7 +18,7 @@ import pytest
 from libs.ingestion import config as cfg
 from libs.ingestion.consumer import GoldHandoffFailed
 from libs.ingestion.runtime import WorkerRuntime
-from services.kb_promote_silver.libs import handler as handler_module
+from services.kb_backend.workers.promote_silver import handler as handler_module
 
 pytestmark = pytest.mark.unit
 

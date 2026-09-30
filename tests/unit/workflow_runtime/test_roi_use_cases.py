@@ -8,6 +8,8 @@ from typing import Any
 
 import pytest
 
+from ._paths import RUNTIME_LAYER_DIRS
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
@@ -16,7 +18,7 @@ pytestmark = pytest.mark.unit
 
 @pytest.fixture(autouse=True)
 def _sys_path():
-    added = [p for p in (_SVC_DIR,) if p not in sys.path]
+    added = [p for p in (*RUNTIME_LAYER_DIRS,) if p not in sys.path]
     sys.path[:0] = added
     yield
     for p in added:
@@ -25,7 +27,7 @@ def _sys_path():
 
 
 def _mod():
-    import services.workflow_runtime.runtime_services.roi_use_cases as m
+    import services.workflow_runtime.application.runtime_services.roi_use_cases as m
     return m
 
 

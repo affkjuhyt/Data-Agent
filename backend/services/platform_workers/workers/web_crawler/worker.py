@@ -37,6 +37,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from libs.ingestion.connectors.registry import fetch as connector_fetch
+from libs.shared import outbox
 from libs.shared.cron import cron_due
 from libs.shared.storage_ownership import is_v2_structured_source
 from services.platform_workers.common import kafka as kafka_factory
@@ -75,7 +76,7 @@ STALE_RUN_MINUTES = _settings.stale_run_minutes
 
 # promotion_mode="auto": queue Silver ourselves after a changed crawl, same
 # topic/payload kb_backend's own POST /promote/{id}/silver route publishes
-# (kb_promote_silver then chains Gold itself — see libs/ingestion/consumer.py's
+# (the promote_silver worker then chains Gold itself — see libs/ingestion/consumer.py's
 # maybe_publish_auto_gold). Hardcoded, not imported from kb_backend: workers
 # only import libs.* and their own package, never another service's code
 # (see bronze.py's module docstring).
@@ -101,41 +102,58 @@ def _get_promote_producer() -> KafkaProducer | None:
     return _promote_producer
 
 
-def publish_auto_promote_silver(data_id: str, tenant_id: str) -> None:
+# Owner tag of this worker's OutboxEvents rows (its relay drains only these).
+_OUTBOX_PRODUCER = "web-crawler"
+
+
+def queue_auto_promote_silver(cur: Any, data_id: str, tenant_id: str) -> None:
+    """Record "queue Silver for this document" in the SAME transaction that registers its
+    Bronze copy and marks the run successful (the caller commits). The publish used to
+    happen after the commit and was best-effort: a Kafka outage or a crash in between
+    left the document at Bronze, and the "unchanged" dedupe then never re-sent it
+    (hit for real on 2026-09-25). Now the event commits with the state it describes and
+    `relay_outbox` delivers it, retrying until the broker accepts it."""
+    outbox.enqueue_sync(
+        cur,
+        producer=_OUTBOX_PRODUCER,
+        topic=_PROMOTE_SILVER_TOPIC,
+        value={
+            "event": "promote_silver",
+            "data_id": data_id,
+            "tenant_id": tenant_id,
+            "approved_by": "web-crawler-worker",
+        },
+        key=data_id,
+    )
+
+
+def _publish_outbox_event(topic: str, value: dict[str, Any], key: str | None) -> None:
+    """Relay callback: send one event and raise unless the broker acknowledged it, so the
+    outbox row stays pending and is retried on the next pass."""
     producer = _get_promote_producer()
     if producer is None:
-        return
+        raise RuntimeError("Kafka producer unavailable")
     try:
-        future = producer.send(
-            _PROMOTE_SILVER_TOPIC,
-            value={
-                "event": "promote_silver",
-                "data_id": data_id,
-                "tenant_id": tenant_id,
-                "approved_by": "web-crawler-worker",
-            },
-        )
-        # `producer.flush(timeout=...)` does NOT raise on timeout — it just
-        # returns once the deadline passes, whether or not the send actually
-        # went through. That silently dropped every auto-promote publish for
-        # RSS Kinh tế / Tỷ giá ngoại tệ after a Kafka broker restart left this
-        # module-cached producer holding stale metadata: no exception, no
-        # log, no Silver stage ever started, and the document sat at Bronze
-        # indefinitely with nothing in Data Layers/Source Registry showing
-        # why. `future.get(timeout=...)` blocks on the SAME send and raises
-        # the real error (KafkaTimeoutError, broker error, ...) so the
-        # except block below can actually catch and log it.
+        future = producer.send(topic, value=value, key=key.encode() if key else None)
+        # `producer.flush(timeout=...)` does NOT raise on timeout — it just returns once
+        # the deadline passes, whether or not the send went through (that silently dropped
+        # every auto-promote after a broker restart left this cached producer with stale
+        # metadata). `future.get(timeout=...)` blocks on the SAME send and raises the real
+        # error.
         future.get(timeout=10)
         producer.flush(timeout=5)
-    except Exception:  # noqa: BLE001 — a failed publish must not fail a crawl that already succeeded
-        log.warning("auto-promote: failed to queue silver for data_id=%s", data_id, exc_info=True)
-        # The cached producer may be holding a connection to a broker
-        # identity that no longer exists (e.g. Kafka itself was restarted) —
-        # drop it so the next call builds a fresh one instead of retrying
-        # the same broken producer on every subsequent crawl forever.
+    except Exception:
+        # The cached producer may hold a connection to a broker identity that no longer
+        # exists (Kafka itself restarted): drop it so the next pass builds a fresh one.
         global _promote_producer
         with _promote_producer_lock:
             _promote_producer = None
+        raise
+
+
+def relay_outbox(conn: Any) -> int:
+    """Publish this worker's pending outbox events. Called every tick of the main loop."""
+    return outbox.drain_sync(conn, _publish_outbox_event, producer=_OUTBOX_PRODUCER)
 
 
 def _promotion_mode(source_id: str, config: dict[str, Any]) -> str:
@@ -294,12 +312,13 @@ def run_source(
                     cur, source_id, tenant_id, (artifact.extra or {}).get("discovered_links", []),
                     depth=1, max_depth=int(config.get("max_depth", 1)), discovered_from=config["url"],
                 )
+            # A worker can't click "Process to Silver" — for an auto-promote source
+            # with a real change (not the dedup short-circuit), queue it ourselves,
+            # atomically with the state it follows.
+            if promotion_mode == "auto" and not outcome.get("unchanged"):
+                queue_auto_promote_silver(cur, data_id, tenant_id)
         conn.commit()
         log.info("run_source | source=%s (%r) connector=%s -> data_id=%s", source_id, title, connector_type, data_id)
-        # A worker can't click "Process to Silver" — for an auto-promote source
-        # with a real change (not the dedup short-circuit), queue it ourselves.
-        if promotion_mode == "auto" and not outcome.get("unchanged"):
-            publish_auto_promote_silver(data_id, tenant_id)
     except Exception as e:
         conn.rollback()
         log.exception("run_source | source=%s (%r) connector=%s failed", source_id, title, connector_type)
@@ -414,10 +433,10 @@ def _run_queue_item(conn: Any, row: dict[str, Any]) -> None:
                     cur, source_id, tenant_id, (artifact.extra or {}).get("discovered_links", []),
                     depth=depth + 1, max_depth=max_depth, discovered_from=url,
                 )
+            if promotion_mode == "auto" and not outcome.get("unchanged"):
+                queue_auto_promote_silver(cur, data_id, tenant_id)
         conn.commit()
         log.info("_run_queue_item | source=%s url=%s depth=%d -> data_id=%s", source_id, url, depth, data_id)
-        if promotion_mode == "auto" and not outcome.get("unchanged"):
-            publish_auto_promote_silver(data_id, tenant_id)
     except Exception as e:
         conn.rollback()
         log.exception("_run_queue_item | source=%s url=%s failed", source_id, url)
@@ -567,6 +586,7 @@ def run() -> None:
             # every tick is cheap and naturally staggers load across sources.
             crawl_due_sources(conn, pool)
             drain_crawl_queue(conn)
+            relay_outbox(conn)
 
             time.sleep(POLL_INTERVAL_SECONDS)
         except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:

@@ -17,8 +17,7 @@ tests/
 │   ├── platform_workers/    #   pure-library, manifest, deploy and grant tests go in
 │   ├── sandbox_executor/    #   workflow_runtime. There is no single image that can
 │   ├── auth_api/            #   import every service (their pins conflict: OTel,
-│   ├── kb_promote_silver/   #   boto3), so the suites are never run together.
-│   ├── flow_builder/
+│   ├── kb_worker/         #   boto3), so the suites are never run together.
 │   └── model_service/
 ├── integration/             # testcontainers; same per-service split as unit/
 │   ├── _db.py               # reset_database / run_alembic / alembic_head for the shared container
@@ -52,6 +51,13 @@ Every test must declare one of:
 
 The unmarked-test guard in `conftest.py` will skip tests that forget. Add the
 marker, don't bypass the guard.
+
+On top of the level, a test may carry kinds — `contract`, `security`, `resilience`,
+`performance`, `ai_eval` — and `@pytest.mark.req("NOP-148", "UC07")`, the requirements
+it proves. A malformed req ID fails collection. `--req-report-dir DIR` writes one JSON
+per run and `python3 tests/req_coverage.py DIR/*.json` merges them into coverage per
+requirement. Which issue needs which level, and the V2 rules behind the tags:
+[docs/v2/15-test-strategy.md](../docs/v2/15-test-strategy.md).
 
 ## Running
 
@@ -253,7 +259,7 @@ The `get_tenant_db` dependency:
 
 ### Rollout checklist for each service
 
-When migrating a service (workflow_runtime, flow_builder, kb-backend, ...):
+When migrating a service (workflow_runtime, kb-backend, ...):
 
 1. Give it `APP_DATABASE_URL` in its `<workload>-secrets` (Ansible
    `secrets.yml` → `create-secrets.sh`). Format:

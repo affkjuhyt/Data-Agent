@@ -6,7 +6,7 @@ completed to — or a reset when it cannot.
 """
 import pytest
 
-from services.workflow_runtime.runtime_services.conversation_runner import (
+from services.workflow_runtime.application.runtime_services.conversation_runner import (
     _LiveAnswer,
     _remaining,
     _strip_think_and_options,

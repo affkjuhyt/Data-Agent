@@ -1,11 +1,12 @@
-from typing import Any
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import psycopg2
 import psycopg2.extras
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query
 
 from libs.shared.auth import get_current_user, require_role
+
 try:
     from services.auth_api.domain.secrets import (
         TENANT_MANAGEABLE_KEY_TYPES,
@@ -241,7 +242,8 @@ def rotate_secret(
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 "SELECT id, key_name, key_type, algorithm, realm, version, rotation_due_at "
-                "FROM secrets_vault WHERE id = %s AND tenant_id = %s AND is_active = true",
+                "FROM secrets_vault WHERE id = %s AND tenant_id = %s AND is_active = true "
+                "FOR UPDATE",
                 (secret_id, x_tenant_id),
             )
             old = cur.fetchone()

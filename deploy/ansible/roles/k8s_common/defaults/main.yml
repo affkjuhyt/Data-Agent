@@ -113,7 +113,6 @@ database_workloads:
 service_workloads:
   - litellm
   - auth-api
-  - flow-builder
   - workflow-runtime
   - kb-backend
   - model-service

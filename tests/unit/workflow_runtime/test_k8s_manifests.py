@@ -761,7 +761,7 @@ class TestCrossNamespaceHostnamesAreQualified:
                  "clickhouse", "openbao", "pgbouncer", "kong-admin",
                  "kong", "keycloak", "litellm", "langfuse", "jaeger", "prometheus",
                  "grafana", "auth-api", "kb-backend",
-                 "model-service", "workflow-runtime", "flow-builder",
+                 "model-service", "workflow-runtime",
                  "sandbox-executor", "llm-exporter", "frontend"]
         pattern = re.compile(
             r"(?<![\w.-])(" + "|".join(sorted(hosts, key=len, reverse=True)) + r"):\d{4}"
@@ -850,7 +850,7 @@ class TestConfigComesFromConfigMapsAndSecrets:
                 m.split("create secret generic ")[1].split("-secrets")[0]
                 for m in script.split("kubectl -n ")[1:] if key in m
             }
-            expected = {"auth-api", "flow-builder", "kb-backend",
+            expected = {"auth-api", "kb-backend",
                         "workflow-runtime"}
             if key == "GATEWAY_KEY":
                 expected |= {"setup"}   # kong-setup.sh writes it into the plugin
@@ -1019,7 +1019,8 @@ class TestDockerfilesCarryNoDeploymentConfig:
 
     DOCKERFILES = sorted(
         list((REPO_ROOT / "backend" / "services").glob("*/Dockerfile"))
-        + [REPO_ROOT / "backend" / "alembic" / "Dockerfile",
+        + [REPO_ROOT / "deploy" / "docker" / "kb-worker" / "Dockerfile",
+           REPO_ROOT / "backend" / "alembic" / "Dockerfile",
            REPO_ROOT / "model" / "eval" / "Dockerfile",
            REPO_ROOT / "frontend" / "Dockerfile.dev"]
     )
@@ -1031,7 +1032,7 @@ class TestDockerfilesCarryNoDeploymentConfig:
     }
 
     def test_the_set_is_not_empty(self):
-        assert len(self.DOCKERFILES) >= 12, "Dockerfile discovery broke"
+        assert len(self.DOCKERFILES) >= 10, "Dockerfile discovery broke"
 
     @pytest.mark.parametrize("path", DOCKERFILES, ids=lambda p: p.parent.name)
     def test_no_expose_or_start_command(self, path):

@@ -296,6 +296,7 @@ def test_changed_content_updates_a_promoted_document_in_place(migrated_db, worke
     bytes must keep the row's data_id and tier, strip the previous run's
     pipeline stamps, keep unrelated metadata, and log the change."""
     import json
+
     from libs.ingestion.connectors.base import FetchedArtifact
 
     tenant_id, _role, source_id = _seed_tenant_and_source(
@@ -404,7 +405,7 @@ def test_a_v2_structured_source_stays_in_bronze_and_off_the_legacy_paths(migrate
             kb_structured_before = cur.fetchone()[0]
         with patch("services.platform_workers.workers.web_crawler.worker.connector_fetch", side_effect=fetch), \
              patch("services.platform_workers.workers.web_crawler.bronze._minio_client", return_value=_NoopMinio()), \
-             patch("services.platform_workers.workers.web_crawler.worker.publish_auto_promote_silver") as publish:
+             patch("services.platform_workers.workers.web_crawler.worker.queue_auto_promote_silver") as publish:
             with conn.cursor() as cur:
                 sources = {str(s["source_id"]): s for s in worker_module.get_active_sources(cur)}
             worker_module.run_source(conn, sources[v2_source], trigger="scheduled")
@@ -426,7 +427,7 @@ def test_a_v2_structured_source_stays_in_bronze_and_off_the_legacy_paths(migrate
 
             cur.execute("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'kb_structured'")
             assert cur.fetchone()[0] == kb_structured_before
-        queued = [c.args[0] for c in publish.call_args_list]
+        queued = [c.args[1] for c in publish.call_args_list]
         assert str(v2_data_id) not in queued
         assert queued == [str(doc_data_id)], "the legacy document pipeline is unchanged"
     finally:

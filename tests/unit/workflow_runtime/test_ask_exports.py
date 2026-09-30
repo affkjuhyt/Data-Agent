@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import io
 import asyncio
+import io
 import json
 import pathlib
 import sys
@@ -36,7 +36,7 @@ class _FakeS3:
 
 
 def test_create_answer_export_stores_rows_payload_and_xlsx(monkeypatch):
-    from services.workflow_runtime import answer_exports as mod
+    from services.workflow_runtime.application import answer_exports as mod
 
     fake = _FakeS3()
     monkeypatch.setattr(mod, "BUCKET", "answer-exports")
@@ -68,7 +68,7 @@ def test_create_answer_export_stores_rows_payload_and_xlsx(monkeypatch):
 
 def test_build_xlsx_contains_data_and_source_sheets():
     openpyxl = pytest.importorskip("openpyxl")
-    from services.workflow_runtime import answer_exports as mod
+    from services.workflow_runtime.application import answer_exports as mod
 
     wb = openpyxl.load_workbook(io.BytesIO(mod.build_xlsx({
         "id": "sql_1",
@@ -85,8 +85,9 @@ def test_result_rows_route_pages_by_authenticated_tenant(monkeypatch):
     pytest.importorskip("fastapi")
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from services.workflow_runtime.auth import get_current_user
-    from services.workflow_runtime.routers import ask_exports
+
+    from services.workflow_runtime.api.auth import get_current_user
+    from services.workflow_runtime.api.routers import ask_exports
 
     async def fake_payload(tenant_id: str, result_id: str) -> dict[str, Any]:
         assert tenant_id == "tenant_1"

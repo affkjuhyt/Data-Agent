@@ -14,7 +14,7 @@
 #
 # Image name : Dockerfile : build context — kept exactly as deploy/k8s/*.yaml
 # spells "dataagent/<name>" after REGISTRY/, since a couple of services use a
-# hyphen (kb-backend, kb-promote-silver, platform-workers) while most use
+# hyphen (kb-backend, kb-worker, platform-workers) while most use
 # the underscored Python package name.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -23,12 +23,8 @@ REGISTRY="${REGISTRY:-}"
 
 declare -A IMAGES=(
   [auth_api]="backend/services/auth_api/Dockerfile|."
-  [flow_builder]="backend/services/flow_builder/Dockerfile|."
   [kb-backend]="backend/services/kb_backend/Dockerfile|."
-  [kb-promote-silver]="backend/services/kb_promote_silver/Dockerfile|."
-  [kb-promote-gold]="backend/services/kb_promote_gold/Dockerfile|."
-  [kb-conflict-resolution]="backend/services/kb_conflict_resolution/Dockerfile|."
-  [kb-structured-data]="backend/services/kb_structured_data/Dockerfile|."
+  [kb-worker]="deploy/docker/kb-worker/Dockerfile|."
   [llm_exporter]="backend/services/llm_exporter/Dockerfile|."
   [model_service]="backend/services/model_service/Dockerfile|backend/services/model_service"
   [platform-workers]="backend/services/platform_workers/Dockerfile|."

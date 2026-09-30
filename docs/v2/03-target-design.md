@@ -11,7 +11,7 @@
 | Ingestion | Source Registry, Connector Runtime | `KBSource*`, `platform_workers/workers/web_crawler` | Có, mở rộng |
 | Ingestion | Immutable Raw | MinIO + `KBData` Bronze, khoá theo SHA-256 | Một phần (re-crawl đang xoá; sửa ở S2-02, ADR-V2-21) |
 | Ingestion | Profile, Reverse Schema, Mapping, Normalize | Consumer mới `platform_workers/workers/series_extractor` | Mới |
-| Ingestion | Layout/OCR, Document Structure | `kb_promote_silver/gold`, `libs/ingestion/docling_parser.py`, `PageRegion` | Có, mở rộng |
+| Ingestion | Layout/OCR, Document Structure | `kb_backend/workers/promote_{silver,gold}`, `libs/ingestion/docling_parser.py`, `PageRegion` | Có, mở rộng |
 | Ingestion | Entity/Claim/Event extraction | Consumer mới `semantic_extractor` | Mới |
 | Governance | DQ, Conflict, ReviewCase, HITL, Effective | Module `governance` trong `indicator-api` + `libs/dq` | Mới |
 | Semantic & Knowledge Fabric | Entity, Series, Claim, Event, Evidence | Postgres schema `registry`, `knowledge`; Qdrant; Neo4j (bản chiếu) | Mới |
@@ -43,7 +43,7 @@ backend/services/indicator_api/
 
 `domains/` không import FastAPI hay client kho; chỉ `api/` và `adapters/` được. `libs/indicator` là thư
 viện tính toán thuần, không sở hữu I/O. Consumer trong `platform_workers` chỉ parse envelope rồi gọi
-handler của domain (ADR-V2-37). `.importlinter` chặn package V2 import `kb_structured_data` và
+handler của domain (ADR-V2-37). `.importlinter` chặn package V2 import `kb_backend.workers.structured_data` và
 MongoDB (ADR-V2-38).
 
 ## 2. Lưu trữ
@@ -120,6 +120,7 @@ CREATE TABLE obs.observation (
   event_time_start DateTime64(3), event_time_end DateTime64(3), market_timezone LowCardinality(String),
   value Decimal(38,10), unit LowCardinality(String), obs_status LowCardinality(String),
   publication_time DateTime64(3), available_at DateTime64(3), system_time DateTime64(3),
+  time_basis LowCardinality(String),     -- release_declared | calendar_inferred | first_seen | document_stated (ADR-V2-43)
   release_id UUID, artifact_sha256 FixedString(64),
   version_kind LowCardinality(String),  -- machine | correction | override | revision
   effective_version UInt32, review_case_id Nullable(UUID),
@@ -154,9 +155,13 @@ Mở rộng: `Period` thêm D, W, I (intraday), P (kỳ điều hành, lấy t�
 - Artifact: key MinIO theo SHA-256, không ghi đè, không xoá. Re-crawl vẫn được thay **bản tìm kiếm**
   của KB (hành vi hiện tại) nhưng artifact, release, observation cũ giữ nguyên (ADR-V2-21). Chỉ tài
   liệu mới có bản tìm kiếm; nguồn có `extraction_profile` không có (mục 2.1).
-- Release: một dòng `ingest.release` khi hash đổi; `publication_time` đọc theo `release_info`
-  (EIA sheet `Contents` → `Release Date`; Pink Sheet "Updated on"; SDMX `PUBLICATION_DATE`; Bộ
-  Công Thương: thời điểm hiệu lực trong bài).
+- Release: một dòng `ingest.release` khi hash đổi, bất biến; `publication_time` đọc theo `release_info`
+  có cấu trúc (EIA sheet `Contents` → `Release Date`; Pink Sheet "Updated on"; SDMX `PUBLICATION_DATE`;
+  Bộ Công Thương: giờ đăng bài). Trạng thái xử lý và báo cáo lần chạy ở `ingest.release_processing`
+  (ADR-V2-45).
+- Số lịch sử đến trong lần nạp đầu (EIA từ 1987, LBMA từ 1968) lấy `available_at` suy từ
+  `release_calendar` của nguồn, `time_basis = calendar_inferred` (ADR-V2-43).
+- Bảng, cột, khoá của toàn luồng đầu vào: [14](14-input-data-db.md).
 - Theo link từ landing (`follow_link_pattern`) dùng `KBSourceCrawlQueue` có sẵn.
 - Freshness: quá `freshness_sla` không có release mới → `source.sla.breached` (EIA futures dừng từ
   04/2024 là case kiểm thử).
@@ -165,8 +170,8 @@ Mở rộng: `Period` thêm D, W, I (intraday), P (kỳ điều hành, lấy t�
 
 ```text
 artifact.stored → series_extractor:
-  profile (cột, kiểu, locale, đơn vị suy luận, fingerprint)
-    ├ fingerprint = bản đã duyệt → chạy mapping_version hiện hành
+  profile (cột, kiểu, đơn vị suy luận; fingerprint gồm cột + locale + mã thiếu khai báo)
+    ├ fingerprint = của mapping_version đã duyệt → chạy mapping đó
     └ khác → CHẶN nạp, ReviewCase SCHEMA_DRIFT, gọi reverse_schema đề xuất mapping mới
   normalize (locale, đơn vị, múi giờ, mã thiếu → obs_status)
   candidate (khoá idempotency: source_id, series_key, event_time, release_id, content_hash)
@@ -178,23 +183,32 @@ giá trị theo đơn vị, tính đơn điệu thời gian, và danh sách khá
 `registry.entity_relation(NOT_EQUIVALENT)` (settle ≠ close, spot ≠ futures, bid ≠ ask ≠ mid). LLM chỉ
 chạy khi thêm nguồn hoặc khi drift; release thường chạy mapping tất định.
 
-Extraction profile (lưu trong config, có version) cho năm loại: `csv`, `xlsx_table`, `json_path`,
-`sdmx`, `html_table`. Ví dụ Pink Sheet:
+**Cách đọc tách khỏi nghĩa (ADR-V2-44).** `extraction_profile` (trong config, sửa tự do) chỉ nói đọc
+file thế nào; `ingest.mapping_version` (có version, phải duyệt) nói cột nào là thời gian, cột nào
+thành series nào. Sửa profile làm đổi cách đọc số thì fingerprint đổi và nạp bị chặn; đổi nghĩa chỉ
+qua duyệt. Sáu loại profile: `csv`, `xlsx_table` (cả `.xls` và `.xlsx`), `json_path`, `sdmx`,
+`html_table`, `xml_path`; thêm `archive_member` để đọc một file trong zip (JODI). Ví dụ Pink Sheet:
 
 ```yaml
+# KBSourceConfig.config — cách đọc
 extraction_profile:
   kind: xlsx_table
   sheet: Monthly Prices
   header_row: 5
   unit_row: 6
-  period_column: 0
-  period_format: "%YM%m"      # '2026M08'
-  frequency: M
-  missing_markers: ["…"]
-  series:
-    - {column: "Crude oil, Brent", series_key: "WB:PINK:BRENT:M", unit: usd_per_barrel, decimal_precision: 2}
-    - {column: "Gold", series_key: "WB:PINK:GOLD:M", unit: usd_per_troy_oz, decimal_precision: 2}
+  locale: en-US
+  missing_markers: {"…": missing}
 ```
+
+```yaml
+# ingest.mapping_version.rules — nghĩa (v1 tạo từ seed, proposed_by = seed)
+time:   {column: 0, format: "%YM%m", frequency: M, market_timezone: UTC}   # '2026M08'
+values:
+  - {column: "Crude oil, Brent", series_key: "WB:PINK:BRENT:M", measure: value}
+  - {column: "Gold", series_key: "WB:PINK:GOLD:M", measure: value}
+```
+
+Đơn vị và độ chính xác thuộc `registry.series`, không nằm trong mapping.
 
 ## 6. STEP 4: Unstructured pipeline
 

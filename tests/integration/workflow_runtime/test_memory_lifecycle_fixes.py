@@ -99,6 +99,7 @@ def mc_env(migrated_db, qdrant_container, monkeypatch):
     sys.path[:0] = added
     try:
         import importlib
+
         from workers.memory import worker as mc_main
         importlib.reload(mc_main)
 
@@ -259,11 +260,16 @@ def test_controlled_vocab_fact_key_keeps_single_slot_behavior(mc_env, monkeypatc
 
 @pytest.fixture
 async def mm_env(migrated_db):
-    svc_dir = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
-    added = [p for p in (svc_dir, str(REPO_ROOT)) if p not in sys.path]
+    # Bare `import memory_middleware` / `workflow_memory`: their layer dirs go on the path.
+    svc_dirs = [
+        str(REPO_ROOT / "backend" / "services" / "workflow_runtime" / layer)
+        for layer in ("api", "application", "domain", "infrastructure")
+    ]
+    added = [p for p in (*svc_dirs, str(REPO_ROOT)) if p not in sys.path]
     sys.path[:0] = added
     try:
         import importlib
+
         import memory_middleware as mm
         importlib.reload(mm)
 

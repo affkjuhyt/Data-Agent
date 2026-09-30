@@ -18,7 +18,7 @@ from typing import Any
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime" / "api")  # bare `routers` lives in the api layer
 
 pytestmark = pytest.mark.unit
 

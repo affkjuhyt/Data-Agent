@@ -1,4 +1,4 @@
-"""Integration tests for backend/services/workflow_runtime/schema_catalog.py (the
+"""Integration tests for backend/services/workflow_runtime/infrastructure/schema_catalog.py (the
 agent-facing read side of the Schema Crawler Worker) and its wiring into
 _get_schema_text — real Qdrant testcontainer, embedding stubbed to a
 fixed-but-distinguishable vector (same technique as
@@ -29,7 +29,7 @@ async def sc(qdrant_container, monkeypatch):
     # The package path, which is how the text_to_sql handler imports it; a
     # bare `import schema_catalog` is a second module object whose Qdrant
     # client the handler never sees.
-    import services.workflow_runtime.schema_catalog as sc_mod
+    import services.workflow_runtime.infrastructure.schema_catalog as sc_mod
     importlib.reload(sc_mod)
 
     async def _fake_embed(text: str):
@@ -108,7 +108,9 @@ async def test_a_catalogued_connection_gets_its_schema_from_the_catalog(sc, monk
     await _seed_point(sc, "tenant-1", "fact_stock_price", "OHLCV stock price daily", warehouse_id=warehouse)
     await _seed_point(sc, "tenant-1", "other_wh_table", "OHLCV stock price daily", warehouse_id="another-warehouse")
 
-    from services.workflow_runtime.nodes.sandbox.tool_executor.handlers import data as data_mod
+    from services.workflow_runtime.application.nodes.sandbox.tool_executor.handlers import (
+        data as data_mod,
+    )
     monkeypatch.setattr(data_mod, "_list_tables", AsyncMock(side_effect=AssertionError("introspected")))
 
     text = await data_mod._get_schema_text(

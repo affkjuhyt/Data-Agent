@@ -34,6 +34,8 @@ from libs.semantic import (
     build_catalog,
 )
 
+from ._paths import RUNTIME_LAYER_DIRS
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
@@ -58,7 +60,7 @@ REVENUE_NET = MetricDefinition(
 
 @pytest.fixture(autouse=True)
 def _sys_path():
-    added = [p for p in (_SVC_DIR,) if p not in sys.path]
+    added = [p for p in (*RUNTIME_LAYER_DIRS,) if p not in sys.path]
     sys.path[:0] = added
     yield
     for p in added:
@@ -75,7 +77,7 @@ def _stub_semantic(monkeypatch, match):
     """Replace the semantic_layer module the handler imports lazily, by its package path."""
     mod = types.ModuleType("semantic_layer")
     mod.match_question = AsyncMock(return_value=match)
-    monkeypatch.setitem(sys.modules, "services.workflow_runtime.semantic_layer", mod)
+    monkeypatch.setitem(sys.modules, "services.workflow_runtime.domain.semantic_layer", mod)
     return mod
 
 
@@ -183,7 +185,7 @@ class TestFallback:
         data = _data()
         mod = types.ModuleType("semantic_layer")
         mod.match_question = AsyncMock(side_effect=RuntimeError("postgres down"))
-        monkeypatch.setitem(sys.modules, "services.workflow_runtime.semantic_layer", mod)
+        monkeypatch.setitem(sys.modules, "services.workflow_runtime.domain.semantic_layer", mod)
         monkeypatch.setattr(data, "_get_schema_text", AsyncMock(return_value="orders(id int)"))
         monkeypatch.setattr(data.litellm, "acompletion", AsyncMock(
             return_value=type("R", (), {"choices": [type("C", (), {"message": type("M", (), {"content": "SELECT 1"})()})()]})(),

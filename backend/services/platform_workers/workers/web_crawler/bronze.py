@@ -239,7 +239,7 @@ def register_http_file_bronze(
     document is at, so the run can say why nothing new reached Bronze.
 
     `source_id`/`promotion_mode` are stamped into `doc_metadata` so
-    `kb_promote_silver` (a different service, with no notion of `KBSource`)
+    the promote_silver worker (a different process, with no notion of `KBSource`)
     can decide whether to auto-queue Gold after Silver succeeds — see
     `libs/ingestion/consumer.py`'s `maybe_publish_auto_gold`."""
     if len(artifact.content_bytes) > cfg.MAX_FILE_SIZE_BYTES:

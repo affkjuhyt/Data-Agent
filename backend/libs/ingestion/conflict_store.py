@@ -100,7 +100,7 @@ async def load_payload(database, tenant_id, conflict_id) -> dict | None:
     return await _payloads(database).find_one({"tenant_id": tenant_id, "conflict_id": conflict_id})
 
 
-async def mark_payload_committed(database, tenant_id, conflict_id, block_id: str) -> None:
+async def mark_payload_committed(database, tenant_id, conflict_id, block_id: str | None) -> None:
     """Record the block a conflict's chunk was committed as, so a retry re-uses it."""
     await _payloads(database).update_one(
         {"tenant_id": tenant_id, "conflict_id": conflict_id},

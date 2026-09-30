@@ -1,22 +1,41 @@
-from typing import Any
 import logging
 import uuid
+from typing import Any
+
 from fastapi import HTTPException
+from sqlalchemy import select as sa_select
 from sqlalchemy import update as sa_update
 
 from libs.basemodel.services_databaseconnector.postgres_model import (
-    ReadJoinRequest, SelectInLoadRequest, WhereFilter, OrderBy, OrderDirection,
-    KBTextBlockDelete, KBTextBlockVersionDelete, KBTextBlockVersionInsert,
+    KBTextBlockDelete,
+    KBTextBlockVersionDelete,
+    KBTextBlockVersionInsert,
+    OrderBy,
+    OrderDirection,
+    ReadJoinRequest,
+    SelectInLoadRequest,
+    WhereFilter,
+)
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+    KBTextBlockORM,
+    KBTextBlockVersionORM,
+)
+from services.kb_backend.operations.access import (
+    assert_child_scoped,
+    assert_document_access,
+    document_tier,
 )
 from services.kb_backend.operations.pagination import (
-    PAGE_SIZE, get_cursor, advance, build_page,
-)
-from services.kb_backend.operations.access import assert_child_scoped, assert_document_access, document_tier
-from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
-    KBTextBlockORM, KBTextBlockVersionORM,
+    PAGE_SIZE,
+    advance,
+    build_page,
+    get_cursor,
 )
 from services.kb_backend.schemas import (
-    ChunkResponse, ChunkVersion, to_string, coerce_jsonb_dict,
+    ChunkResponse,
+    ChunkVersion,
+    coerce_jsonb_dict,
+    to_string,
 )
 
 log = logging.getLogger(__name__)
@@ -141,7 +160,8 @@ async def delete_chunk(postgres: Any, chunk_id: str, doc_id: str, tenant_id: str
         return
 
     from services.kb_backend.operations.trash_ops import (
-        qdrant_set_deleted_by_block, set_postgres_deleted,
+        qdrant_set_deleted_by_block,
+        set_postgres_deleted,
     )
     try:
         await qdrant_set_deleted_by_block(qdrant, chunk_id, True)
@@ -165,6 +185,14 @@ async def activate_chunk_version(postgres: Any, chunk_id: str, version_number: A
     block_uuid = uuid.UUID(chunk_id) if isinstance(chunk_id, str) else chunk_id
     async with postgres.get_client() as session:
         try:
+            existing = (await session.execute(
+                sa_select(KBTextBlockVersionORM.version_number)
+                .where(KBTextBlockVersionORM.block_id == block_uuid)
+                .with_for_update()
+            )).scalars().all()
+            if version_number is not None and int(version_number) not in existing:
+                await session.rollback()
+                raise HTTPException(status_code=404, detail="Chunk version not found")
             await session.execute(
                 sa_update(KBTextBlockVersionORM)
                 .where(KBTextBlockVersionORM.block_id == block_uuid)

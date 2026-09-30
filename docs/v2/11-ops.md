@@ -235,7 +235,7 @@ Sơ đồ [35](diagrams/35-kafka.puml). Thứ tự rẻ trước.
 
 | # | Việc | Hôm nay | Đích | Khi nào |
 | --- | --- | --- | --- | --- |
-| K1 | Idempotent producer ở mọi nơi | Chỉ client dùng chung bật (`libs/database_connector/kafka_connector.py:49`); `platform_workers/common/kafka.py:114-119` và `workflow_runtime/kafka_producer.py:39-44` chỉ `acks=all` | `enable_idempotence=True` + `acks=all`; một factory producer dùng chung | POC |
+| K1 | Idempotent producer ở mọi nơi | Chỉ client dùng chung bật (`libs/database_connector/kafka_connector.py:49`); `platform_workers/common/kafka.py:114-119` và `workflow_runtime/infrastructure/kafka_producer.py:39-44` chỉ `acks=all` | `enable_idempotence=True` + `acks=all`; một factory producer dùng chung | POC |
 | K2 | Khoá phân vùng | `platform_workers` không có `key_serializer` | Khoá theo 03 mục 13 (`source_id`, `release_id`, `series_key`, `case_id`, `entity_id`) nằm trong envelope P0-09 | POC, cho topic V2 |
 | K3 | Tắt auto-create | `KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'` (`dev/database/kafka.yaml:30`, `production/.../kafka.yaml:31`); `kb.resolve.conflict` chỉ tồn tại nhờ auto-create (`libs/ingestion/config.py:20`) | `false`; thêm `kb.resolve.conflict` vào Job **trước** khi tắt | POC |
 | K4 | Topic + ACL khai báo trước khi dùng | Job `kafka-topics` (`deploy/k8s/{dev,production}/job/kafka-topics.yaml`) tạo 7 topic cũ (`kb.promote.silver/gold`, `kb.structured.propose`, `audit.data.access`, `memory.extraction.requested/dlq`, `ddl.changes`) và xoá 3 topic `release.*` đã bỏ | Thêm topic 03 mục 13 (12 topic trong POC; `forecast.*` sau) + `<topic>.dlq`; ACL theo principal cho `series_extractor`, `semantic_extractor`, `detector`, `indicator-api`. Sau POC: spec YAML thay script trong Job (phụ lục A) | POC |

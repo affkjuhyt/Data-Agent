@@ -1,6 +1,6 @@
 """A promotion_mode="auto" source needs no human click for Gold either — Silver's
 handler calls this right after promote_to_silver succeeds (see
-kb_promote_silver/libs/handler.py). Returns False for every legitimate no-op;
+kb_backend/workers/promote_silver/handler.py). Returns False for every legitimate no-op;
 raises GoldHandoffFailed only when the publish itself fails, so the caller can
 retry that one step without re-running Silver.
 """

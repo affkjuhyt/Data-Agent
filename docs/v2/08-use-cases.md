@@ -23,7 +23,7 @@
 ## UC02. Onboard unstructured source
 
 - **Luồng:** PDF → trang → layout → heading → đoạn → bảng → hình → trích xuất ngữ nghĩa.
-- **Repo:** pipeline KB có sẵn (`kb_promote_silver`, `kb_promote_gold`, `libs/ingestion/docling_parser.py`) + `PageRegion` (cứu từ `feat/add-task`) + worker `semantic_extractor`.
+- **Repo:** pipeline KB có sẵn (`kb_backend/workers/promote_silver`, `promote_gold`, `libs/ingestion/docling_parser.py`) + `PageRegion` (cứu từ `feat/add-task`) + worker `semantic_extractor`.
 - **Phải xử lý:**
   - Heading "3.1 Supply (continued)" không phải mục mới: gộp theo số hiệu mục và chuỗi tiêu đề.
   - Bảng tách qua hai trang: nối khi trang sau không có header mới và số cột khớp.

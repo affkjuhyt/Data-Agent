@@ -27,8 +27,8 @@ with warnings.catch_warnings():
     warnings.filterwarnings("ignore", message="Valid config keys have changed in V2", category=UserWarning)
     cr = load_module_from_path(
         "conversation_runner",
-        _runtime_dir / "runtime_services" / "conversation_runner.py",
-        extra_syspath=[_runtime_dir, _runtime_dir / "runtime_services"],
+        _runtime_dir / "application" / "runtime_services" / "conversation_runner.py",
+        extra_syspath=[_runtime_dir, _runtime_dir / "application" / "runtime_services"],
         stubs={
             # graph.build_graph() is called at import for the default graph.
             "graph": {"build_graph": lambda *a, **k: object()},

@@ -14,6 +14,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from ._paths import RUNTIME_LAYER_DIRS
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
@@ -22,7 +24,7 @@ pytestmark = pytest.mark.unit
 
 @pytest.fixture(autouse=True)
 def _sys_path():
-    added = [p for p in (_SVC_DIR,) if p not in sys.path]
+    added = [p for p in (*RUNTIME_LAYER_DIRS,) if p not in sys.path]
     sys.path[:0] = added
     yield
     for p in added:
@@ -133,7 +135,7 @@ async def test_the_judge_sees_the_rows_the_responder_answered_from(monkeypatch):
         return _canned({"verdict": "PASS"})
 
     monkeypatch.setattr(judge_mod.litellm, "acompletion", fake_completion, raising=False)
-    from services.workflow_runtime.runtime_services import llm_call
+    from services.workflow_runtime.application.runtime_services import llm_call
     monkeypatch.setattr(llm_call, "get_langfuse_client", lambda: None)
     rows = "".join(f'{{"month": {m}, "net": {m}000000}}' for m in range(1, 80))
     assert len(rows) > 1500

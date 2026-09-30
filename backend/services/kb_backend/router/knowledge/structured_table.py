@@ -1,23 +1,30 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+import datetime
 import logging
 import os
 import uuid
-import datetime
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import select as sa_select, update as sa_update, text
+from sqlalchemy import select as sa_select
+from sqlalchemy import text
+from sqlalchemy import update as sa_update
 
-from libs.shared.row_version import with_new_version
-from libs.basemodel.services_databaseconnector.postgres_model import KBStructuredImportJobInsert, Tier
-from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
-    KBStructuredImportJobORM, KBDataORM, KBTableORM,
+from libs.basemodel.services_databaseconnector.postgres_model import (
+    KBStructuredImportJobInsert,
+    Tier,
 )
-from libs.shared.sql_identifiers import safe_identifier, quote_identifier, UnsafeIdentifier
-from services.kb_backend.dependencies.services import svc
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+    KBDataORM,
+    KBStructuredImportJobORM,
+    KBTableORM,
+)
+from libs.shared.row_version import with_new_version
+from libs.shared.sql_identifiers import UnsafeIdentifier, quote_identifier, safe_identifier
 from services.kb_backend.dependencies.auth import require_perm
+from services.kb_backend.dependencies.services import svc
 from services.kb_backend.operations.document_ops import reject_v2_structured_document
 from services.kb_backend.pipeline.ingestion import config as cfg
 from services.kb_backend.router.knowledge.ingestion import _fetch_kbdata_or_404
@@ -33,7 +40,7 @@ _MAX_IMPORT_ROWS = int(os.getenv("KB_STRUCTURED_MAX_ROWS", "200000"))
 # that never sets app.tenant_id empties these tables instead of scoping them.
 _ENFORCE_ROW_LEVEL_SECURITY = os.getenv("KB_STRUCTURED_RLS", "").lower() in ("1", "true", "yes")
 
-# Closed vocabulary — matches kb_structured_data's "table-schema-proposal"
+# Closed vocabulary — matches structured_data worker's "table-schema-proposal"
 # LLM schema and the columns() TYPE_MAP below one-for-one. Never let a
 # caller-supplied type string reach SQL directly.
 _TYPE_MAP: dict[str, str] = {
@@ -318,6 +325,14 @@ async def approve_structured_table(
     # DDL, rows and the catalogue row share one transaction: the whole import
     # lands or none of it does.
     async with postgres.get_client() as session:
+        current_status = (await session.execute(
+            sa_select(KBStructuredImportJobORM.status)
+            .where(KBStructuredImportJobORM.job_id == job.job_id)
+            .with_for_update()
+        )).scalar_one_or_none()
+        if current_status != "proposed":
+            await session.rollback()
+            raise HTTPException(status_code=409, detail="No proposal is ready for review on this document")
         preferred_name = safe_identifier(final_schema.table_name, "table_name")
         table_name = await _unused_table_name(session, preferred_name)
         await _create_import_table(session, table_name, columns)

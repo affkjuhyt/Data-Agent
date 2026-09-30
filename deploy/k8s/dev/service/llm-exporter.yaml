@@ -17,6 +17,8 @@ metadata:
     app: llm-exporter
     app.kubernetes.io/part-of: dataagent
 data:
+  WORKER: llm-exporter
+  LISTEN_PORT: '8270'
   LLM_MODEL: agent-main
   PROBE_INTERVAL: '30'
   PROBE_CONCURRENCY: '3'
@@ -43,7 +45,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: llm-exporter
-        image: localhost:5000/dataagent/llm_exporter:latest
+        image: localhost:5000/dataagent/platform-workers:latest
         ports:
         - containerPort: 8270
           name: http
@@ -75,12 +77,10 @@ spec:
         - configMapRef:
             name: llm-exporter-env
         command:
-        - uvicorn
-        - exporter:app
-        - --host
-        - 0.0.0.0
-        - --port
-        - '8270'
+        - python
+        - -u
+        - -m
+        - services.platform_workers
       volumes:
       - name: tmp
         emptyDir: {}

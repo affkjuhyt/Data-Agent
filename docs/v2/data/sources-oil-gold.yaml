@@ -3,8 +3,22 @@
 #
 # verified: V = tải được và đã đọc nội dung · S = tồn tại, cần key/đăng nhập · X = máy chủ bị chặn
 #           U = chưa thử
-# Các trường Bulk Import CHƯA đọc (việc A-02/A-05 trong 05-implementation-plan.md), để sẵn:
-#   licence, use_rights, entity, release_info, follow_link_pattern, locale, rate_limit, extraction_profile
+# Khoá V2 (Pydantic SourceConfigV2, NOP-122; Bulk Import hiện chưa đọc, bỏ qua mà không lỗi):
+#   licence, use_rights, entity, follow_link_pattern, freshness_sla, rate_limit {min_interval_s},
+#   release_info (có cấu trúc), release_calendar, extraction_profile, mapping. `id` là source_key.
+# Tách cách đọc khỏi nghĩa (ADR-V2-44, ../14-input-data-db.md mục 3, 6):
+#   extraction_profile = đọc file thế nào (vật lý) → lưu vào KBSourceConfig.config
+#   mapping            = cột nào là thời gian, cột nào thành series nào → Bulk Import tạo
+#                        ingest.mapping_version v1 (proposed_by = seed), không lưu vào config
+# release_calendar suy ngày công bố cho số lịch sử của lần nạp đầu (ADR-V2-43).
+# `locale` ở cấp nguồn chỉ còn cho nguồn chưa có profile (văn bản, HTML); có profile thì nằm trong profile.
+# Nguồn có profile + mapping (cấu trúc đã đọc từ file/trang thật trên máy chủ ngày 30/09/2026): EIA x4,
+# GPR, IMF PCPS, LBMA (crawl trang), Vietcombank, Pink Sheet (theo 04 mục 3), PNJ, DOJI, 24h.com.vn, nguồn
+# thử Brent feed B. Còn lại: CFTC, JODI (NOP-127); SJC trực tiếp bị Cloudflare chặn; FRED cần key;
+# LBMA tải tay khai báo cách đọc khi chọn file đầu tiên.
+# Giá vàng Việt Nam: mỗi nguồn một chuỗi riêng (PNJ:…, DOJI:…, 24H:…) cùng mặt hàng GOLD_SJC_BAR; đơn vị gốc
+# (nghìn đồng/chỉ hay /lượng) khai báo ở `source_unit` + `source_multiplier`, chuẩn hoá sang đơn vị của chuỗi.
+# `capture_response` (LBMA) và `series_role: backfill` là khoá mới, chưa có trong connector/registry (NOP-14, NOP-117).
 # Lịch "weekly" của Bulk Import là thứ Hai 03:00; nguồn công bố thứ Tư/thứ Sáu phải chỉnh cron ở tab Edit.
 # connector: manual-upload bị Bulk Import bỏ qua có lý do (đúng ý đồ): nguồn đó tải tay qua Document Hub.
 sources:
@@ -23,13 +37,27 @@ sources:
     promotion_mode: auto
     licence: "US government data (EIA), ghi nguồn"
     use_rights: internal_analysis
-    release_info: "Sheet Contents: 'Release Date' và 'Next Release Date'; công bố thứ Tư hằng tuần"
-    locale: en-US
+    release_info:
+      publication_time: {from: xls_cell, sheet: Contents, label: "Release Date:", time: "10:30", tz: America/New_York}
+      next_release_time: {from: xls_cell, sheet: Contents, label: "Next Release Date:", time: "10:30", tz: America/New_York}
+    release_calendar: {kind: weekly_after, weekday: WED, time: "10:30", tz: America/New_York}
+    freshness_sla: P8D
+    extraction_profile:
+      kind: xlsx_table
+      sheet: "Data 1"
+      header_row: 3
+      locale: en-US
+      missing_markers: {"-": missing, "--": missing, "NA": not_published, "W": withheld}
+    mapping:
+      time: {column: "Date", format: excel_serial, frequency: D, market_timezone: America/New_York}
+      values:
+        - {column: "Europe Brent Spot Price FOB (Dollars per Barrel)", series_key: "EIA:RBRTE:D", measure: value}
     verified: V
     notes: >-
       Toàn bộ lịch sử từ 20/05/1987 trong một file; chỉ ghi giá trị mới/đổi.
-      Sheet 'Data 1', dòng 3 là header, cột A là ngày Excel. Mã thiếu '-', '--', 'NA', 'W'.
-      Crawl hằng ngày nhưng hash chỉ đổi khi EIA công bố (thứ Tư).
+      Sheet 'Data 1', dòng 3 là header ('Date', 'Europe Brent Spot Price FOB (Dollars per Barrel)'),
+      cột A là ngày Excel. Sheet 'Contents': 'Release Date:' 9/23/2026, 'Next Release Date:' 9/30/2026
+      (đọc lại 30/09/2026). Crawl hằng ngày nhưng hash chỉ đổi khi EIA công bố (thứ Tư).
 
   - id: eia-wti-spot-daily
     publisher: U.S. Energy Information Administration
@@ -45,8 +73,21 @@ sources:
     promotion_mode: auto
     licence: "US government data (EIA), ghi nguồn"
     use_rights: internal_analysis
-    release_info: "như eia-brent-spot-daily"
-    locale: en-US
+    release_info:
+      publication_time: {from: xls_cell, sheet: Contents, label: "Release Date:", time: "10:30", tz: America/New_York}
+      next_release_time: {from: xls_cell, sheet: Contents, label: "Next Release Date:", time: "10:30", tz: America/New_York}
+    release_calendar: {kind: weekly_after, weekday: WED, time: "10:30", tz: America/New_York}
+    freshness_sla: P8D
+    extraction_profile:
+      kind: xlsx_table
+      sheet: "Data 1"
+      header_row: 3
+      locale: en-US
+      missing_markers: {"-": missing, "--": missing, "NA": not_published, "W": withheld}
+    mapping:
+      time: {column: "Date", format: excel_serial, frequency: D, market_timezone: America/New_York}
+      values:
+        - {column: "Cushing, OK WTI Spot Price FOB (Dollars per Barrel)", series_key: "EIA:RWTC:D", measure: value}
     verified: V
 
   - id: eia-wti-futures-m1-terminated
@@ -60,6 +101,21 @@ sources:
     variables: [EIA:RCLC1:D]
     licence: "US government data (EIA)"
     use_rights: internal_analysis
+    release_info:
+      publication_time: {from: xls_cell, sheet: Contents, label: "Release Date:", time: "10:30", tz: America/New_York}
+      next_release_time: {from: xls_cell, sheet: Contents, label: "Next Release Date:", time: "10:30", tz: America/New_York}
+    release_calendar: {kind: weekly_after, weekday: WED, time: "10:30", tz: America/New_York}
+    freshness_sla: P8D
+    extraction_profile:
+      kind: xlsx_table
+      sheet: "Data 1"
+      header_row: 3
+      locale: en-US
+      missing_markers: {"-": missing, "--": missing, "NA": not_published, "W": withheld}
+    mapping:
+      time: {column: "Date", format: excel_serial, frequency: D, market_timezone: America/New_York}
+      values:
+        - {column: "Cushing, OK Crude Oil Future Contract 1 (Dollars per Barrel)", series_key: "EIA:RCLC1:D", measure: value}
     verified: V
     notes: >-
       Dữ liệu dừng ở 05/04/2024 (86,91). Giữ làm lịch sử và làm test 'nguồn ngừng cập nhật'
@@ -80,7 +136,22 @@ sources:
     promotion_mode: auto
     licence: "US government data (EIA), ghi nguồn"
     use_rights: internal_analysis
-    release_info: "tuần kết thúc thứ Sáu, công bố thứ Tư kế tiếp 10:30 ET; chỉnh cron sang thứ Tư/thứ Năm"
+    release_info:
+      publication_time: {from: xls_cell, sheet: Contents, label: "Release Date:", time: "10:30", tz: America/New_York}
+      next_release_time: {from: xls_cell, sheet: Contents, label: "Next Release Date:", time: "10:30", tz: America/New_York}
+    release_calendar: {kind: weekly_after, weekday: WED, time: "10:30", tz: America/New_York}
+    freshness_sla: P8D
+    extraction_profile:
+      kind: xlsx_table
+      sheet: "Data 1"
+      header_row: 3
+      locale: en-US
+      missing_markers: {"-": missing, "--": missing, "NA": not_published, "W": withheld}
+    mapping:
+      # ngày trong file là ngày cuối tuần (thứ Sáu); kỳ = 7 ngày kết thúc ở ngày đó
+      time: {column: "Date", format: excel_serial, frequency: W, anchor: period_end, market_timezone: America/New_York}
+      values:
+        - {column: "Weekly U.S. Ending Stocks excluding SPR of Crude Oil  (Thousand Barrels)", series_key: "EIA:WCESTUS1:W", measure: value}
     verified: V
     notes: Đơn vị nghìn thùng.
 
@@ -140,11 +211,17 @@ sources:
     promotion_mode: auto
     licence: "US government data (CFTC)"
     use_rights: internal_analysis
-    release_info: "vị thế thứ Ba, công bố thứ Sáu 15:30 ET; chỉnh cron sang thứ Bảy"
+    # file không ghi ngày công bố; vị thế thứ Ba, công bố thứ Sáu 15:30 ET (chỉnh cron sang thứ Bảy)
+    release_info:
+      publication_time: {from: fetch_time}
+    release_calendar: {kind: weekly_after, weekday: FRI, time: "15:30", tz: America/New_York}
+    freshness_sla: P8D
     verified: V
     notes: >-
       Có 'CRUDE OIL, LIGHT SWEET-WTI', 'BRENT LAST DAY - NEW YORK MERCANTILE EXCHANGE',
-      'GOLD - COMMODITY EXCHANGE INC.'. Lịch sử năm: files/dea/history/fut_disagg_txt_2026.zip.
+      'GOLD - COMMODITY EXCHANGE INC.' (mã 088691). Lịch sử năm: files/dea/history/fut_disagg_txt_2026.zip.
+      f_disagg.txt KHÔNG có dòng tên cột (đọc lại 30/09/2026: 191–193 trường, tên thị trường có dấu phẩy
+      trong ngoặc kép); profile phải khai báo danh sách cột theo tài liệu định dạng của CFTC (NOP-127).
 
   - id: gpr-daily
     publisher: Caldara & Iacoviello (Federal Reserve Board)
@@ -154,13 +231,31 @@ sources:
     sample_urls:
       - https://www.matteoiacoviello.com/gpr_files/data_gpr_daily_recent.xls
     entity: GEOPOLITICAL_RISK
-    variables: [GPR:GPRD:D]
+    variables: [GPR:GPRD:D, GPR:GPRD_ACT:D, GPR:GPRD_THREAT:D]
     schedule: weekly
     purpose: production
     licence: "chỉ số nghiên cứu; trích Caldara & Iacoviello (2022), AER"
     use_rights: pending_review
+    release_info:
+      publication_time: {from: fetch_time}
+    release_calendar: {kind: none}   # cập nhật không theo lịch công bố → số lịch sử là first_seen
+    freshness_sla: P14D
+    extraction_profile:
+      kind: xlsx_table
+      sheet: Sheet1
+      header_row: 1
+      locale: en-US
+      missing_markers: {}
+    mapping:
+      time: {column: "DAY", format: "%Y%m%d", frequency: D, market_timezone: UTC}
+      values:
+        - {column: "GPRD", series_key: "GPR:GPRD:D", measure: value}
+        - {column: "GPRD_ACT", series_key: "GPR:GPRD_ACT:D", measure: value}
+        - {column: "GPRD_THREAT", series_key: "GPR:GPRD_THREAT:D", measure: value}
     verified: V
-    notes: Cột DAY, N10D, GPRD, GPRD_ACT, GPRD_THREAT, date, GPRD_MA30, GPRD_MA7; mới nhất 21/09/2026.
+    notes: >-
+      Cột DAY (chuỗi '20260928'), N10D, GPRD, GPRD_ACT, GPRD_THREAT, date (ngày Excel), GPRD_MA30, GPRD_MA7;
+      đọc lại 30/09/2026: 15.246 ngày, mới nhất 28/09/2026.
 
   - id: opec-press-releases
     publisher: OPEC
@@ -199,7 +294,24 @@ sources:
     promotion_mode: auto
     licence: "World Bank open data (CC BY 4.0), xác nhận cho file này"
     use_rights: internal_analysis
-    release_info: "dòng 'Updated on …' trong sheet Monthly Prices; thường ngày làm việc thứ 2 của tháng"
+    release_info:
+      publication_time: {from: xls_cell, sheet: "Monthly Prices", label_prefix: "Updated on"}
+    release_calendar: {kind: monthly_day, day: 5, time: "12:00", tz: America/New_York}   # ~ngày làm việc thứ 2
+    freshness_sla: P40D
+    extraction_profile:
+      kind: xlsx_table
+      sheet: "Monthly Prices"
+      header_row: 5
+      unit_row: 6
+      locale: en-US
+      missing_markers: {"…": missing}
+    mapping:
+      time: {column: 0, format: "%YM%m", frequency: M, market_timezone: UTC}   # '2026M08'
+      values:
+        - {column: "Crude oil, Brent", series_key: "WB:PINK:BRENT:M", measure: value}
+        - {column: "Crude oil, WTI", series_key: "WB:PINK:WTI:M", measure: value}
+        - {column: "Crude oil, Dubai", series_key: "WB:PINK:DUBAI:M", measure: value}
+        - {column: "Gold", series_key: "WB:PINK:GOLD:M", measure: value}
     verified: V
     notes: >-
       URL file đổi mỗi bản; URL tháng 1/2025 vẫn trả 200 với dữ liệu tới 2024M12.
@@ -215,17 +327,34 @@ sources:
     examples:
       - https://api.imf.org/external/sdmx/2.1/data/PCPS/G001.POILBRE+POILWTI+POILDUB+PGOLD+PSILVER.USD.M?startPeriod=2000-01
     entity: COMMODITY_MONTHLY
-    variables: [IMF:PCPS:POILBRE:M, IMF:PCPS:POILWTI:M, IMF:PCPS:POILDUB:M, IMF:PCPS:PGOLD:M]
+    variables: [IMF:PCPS:POILBRE:M, IMF:PCPS:POILWTI:M, IMF:PCPS:POILDUB:M, IMF:PCPS:PGOLD:M, IMF:PCPS:PSILVER:M]
     schedule: weekly
     purpose: production
     promotion_mode: auto
     licence: "© IMF, All Rights Reserved; trích dẫn theo SUGGESTED_CITATION trong message"
     use_rights: pending_review
-    release_info: "PUBLICATION_DATE trong message SDMX (bản tháng 8/2026: 2026-09-08)"
+    release_info:
+      publication_time: {from: sdmx_dataset_attr, attr: PUBLICATION_DATE}
+    release_calendar: {kind: monthly_day, day: 10, time: "00:00", tz: UTC}
+    freshness_sla: P40D
+    extraction_profile:
+      kind: sdmx
+      message: structure_specific     # Series mang chiều là thuộc tính, Obs có TIME_PERIOD, OBS_VALUE
+      locale: en-US
+      missing_markers: {"NaN": missing}
+    mapping:
+      time: {field: TIME_PERIOD, format: "%Y-M%m", frequency: M, market_timezone: UTC}
+      values:
+        - {select: {INDICATOR: POILBRE}, series_key: "IMF:PCPS:POILBRE:M", measure: value}
+        - {select: {INDICATOR: POILWTI}, series_key: "IMF:PCPS:POILWTI:M", measure: value}
+        - {select: {INDICATOR: POILDUB}, series_key: "IMF:PCPS:POILDUB:M", measure: value}
+        - {select: {INDICATOR: PGOLD}, series_key: "IMF:PCPS:PGOLD:M", measure: value}
+        - {select: {INDICATOR: PSILVER}, series_key: "IMF:PCPS:PSILVER:M", measure: value}
     verified: V
     notes: >-
       Khoá COUNTRY.INDICATOR.DATA_TRANSFORMATION.FREQUENCY; kỳ dạng '2026-M08'.
-      Đã gọi thử G001.PGOLD.USD.M (tháng 8/2026 = 4418.5445). Cú pháp '+' nhiều indicator chưa thử.
+      Đã gọi thử G001.PGOLD.USD.M (tháng 8/2026 = 4418.5445). Đọc lại 30/09/2026: cú pháp '+' chạy,
+      trả đủ 5 indicator; PUBLICATION_DATE = 2026-09-08T18:42:56Z là thuộc tính của DataSet (không phải Header).
 
   # ── Vàng ──────────────────────────────────────────────────────────────
   - id: wgc-goldhub
@@ -255,23 +384,41 @@ sources:
 
   - id: lbma-gold-pm-json
     publisher: LBMA (benchmark do ICE Benchmark Administration quản trị)
-    title: LBMA Gold Price PM theo ngày (JSON công khai trên website LBMA)
-    connector: http-file
+    title: LBMA Gold Price PM theo ngày (crawl trang giá LBMA bằng trình duyệt)
+    connector: web-crawl-headless
     format: json
-    sample_urls:
-      - https://prices.lbma.org.uk/json/gold_pm.json
+    landing_url: https://www.lbma.org.uk/prices-and-data/precious-metal-prices
+    # trang tự gọi json/today.json khi render; connector lưu phản hồi đó làm bản gốc (NOP-14, NOP-215)
+    capture_response: "https://prices.lbma.org.uk/json/today.json"
     entity: GOLD_LBMA_PM
-    variables: [LBMA:GOLD_PM:USD:D, LBMA:GOLD_PM:GBP:D, LBMA:GOLD_PM:EUR:D]
+    variables: [LBMA:GOLD_PM:USD:D]
     schedule: daily
     purpose: production
     promotion_mode: auto
     licence: "Website LBMA: lấy/dùng/phân phối lại dữ liệu benchmark cần licence IBA. POC: phân tích nội bộ, ghi rõ trong báo cáo (ADR-V2-25)"
     use_rights: internal_analysis
-    release_info: "phiên 15h00 London; công bố công khai trễ tới nửa đêm London"
-    verified: V
+    release_info:
+      publication_time: {from: fetch_time}     # today.json không có năm và giờ PM không tin được
+    release_calendar: {kind: none}             # chỉ có phiên gần nhất; lịch sử từ lbma-gold-price-manual
+    freshness_sla: P4D
+    extraction_profile:
+      kind: json_path
+      rows: "$.gold.pm"               # {"usd","gbp","eur","timestamp","date": "29/09"}
+      locale: en-US
+      missing_markers: {}
+    mapping:
+      # 'date' không có năm → năm lấy theo thời điểm tải (tháng 12 tải ngày 01/01 thì lùi một năm);
+      # 'timestamp' của PM ghi 11:00 giống AM nên không dùng; phiên PM chốt 15:00 London
+      time: {field: date, format: "%d/%m", year_from: fetch_time, session_time: "15:00", frequency: D, market_timezone: Europe/London}
+      values:
+        - {field: usd, series_key: "LBMA:GOLD_PM:USD:D", measure: value}
+    verified: X
     notes: >-
-      200, 915 KB, 14.691 ngày từ 1968-04-01 tới 2026-09-25; dòng {"is_cms_locked", "d", "v": [USD, GBP, EUR]}.
-      Toàn bộ lịch sử mỗi lần tải, chỉ ghi giá trị mới/đổi. Dự phòng: lbma-gold-price-manual.
+      27/09/2026: json/gold_pm.json trả 200, 915 KB, 14.691 ngày từ 1968-04-01 tới 2026-09-25.
+      30/09/2026 từ máy chủ 10.10.55.101: json/gold_pm.json bị Cloudflare chặn, gửi kèm header của trang thì
+      Apache của LBMA trả 403 Forbidden (file lịch sử đầy đủ không còn công khai). Trang giá mở được bằng
+      trình duyệt headless và tự gọi json/today.json, json/limited/gold_am.json (200). Chốt 30/09/2026:
+      crawl web lấy phiên gần nhất + tải tay lịch sử (lbma-gold-price-manual). Chỉ lấy USD.
 
   - id: giavang-org-world
     publisher: giavang.org (tổng hợp)
@@ -296,7 +443,16 @@ sources:
     licence: "như lbma-gold-pm-json (ADR-V2-25)"
     use_rights: internal_analysis
     verified: V
-    notes: FRED đã xoá chuỗi LBMA từ 31/01/2022. Dùng khi lbma-gold-pm-json vi phạm SLA.
+    entity: GOLD_LBMA_PM
+    variables: [LBMA:GOLD_PM:USD:D]
+    series_role: backfill             # nạp lịch sử trước release đầu của lbma-gold-pm-json; không ghi đè số crawl
+    release_info:
+      publication_time: {from: fetch_time}
+    release_calendar: {kind: daily_lag, lag: PT0S, tz: Europe/London}   # lịch sử: công bố trễ nhất nửa đêm London
+    notes: >-
+      FRED đã xoá chuỗi LBMA từ 31/01/2022. Nguồn lịch sử (file đầy đủ không còn công khai từ 30/09/2026)
+      và dự phòng khi lbma-gold-pm-json vi phạm SLA. Cách đọc khai báo khi chọn file đầu tiên: nếu là bản
+      json/gold_pm.json đã tải ngày 27/09/2026 thì dòng {"d": ngày, "v": [USD, GBP, EUR]}, lấy v[0].
 
   # ── Vĩ mô (FRED, cần key trong OpenBao) ───────────────────────────────
   - id: fred-real-yield-10y
@@ -401,11 +557,29 @@ sources:
     landing_url: https://www.pnj.com.vn/blog/gia-vang/
     schedule: every 2 hours
     purpose: production
+    entity: GOLD_SJC_BAR
+    variables: [PNJ:SJC_BAR:HCM:BUY:I, PNJ:SJC_BAR:HCM:SELL:I]
     licence: cần xác nhận
     use_rights: pending_review
-    locale: vi-VN
+    release_info:
+      publication_time: {from: fetch_time}     # ô 'Cập nhật ngày' (#time-now) rỗng cả khi đã render
+    release_calendar: {kind: none}
+    freshness_sla: P2D
+    extraction_profile:
+      kind: html_table
+      rows: "div.bang-gia-vang-outer tbody#content-price tr"   # vùng mặc định: Hồ Chí Minh (zone=00)
+      cells: {product: "td:nth-child(1)", buy: "td:nth-child(2)", sell: "td:nth-child(3)"}
+      locale: en-US                   # '14,110' là mười bốn nghìn (dấu phẩy ngăn nghìn), bẫy T7
+      missing_markers: {"-": missing}
+    mapping:
+      time: {from: release_publication_time, frequency: I, market_timezone: Asia/Ho_Chi_Minh}
+      values:
+        - {select: {product: "Vàng miếng SJC 999.9"}, field: buy, series_key: "PNJ:SJC_BAR:HCM:BUY:I", source_unit: vnd_per_chi, source_multiplier: 3, measure: value}
+        - {select: {product: "Vàng miếng SJC 999.9"}, field: sell, series_key: "PNJ:SJC_BAR:HCM:SELL:I", source_unit: vnd_per_chi, source_multiplier: 3, measure: value}
     verified: V
-    notes: HTML tĩnh tải được nhưng bảng giá render bằng JavaScript; dùng headless. Nguồn thứ hai cho giá SJC.
+    notes: >-
+      Bảng giá render bằng JavaScript; dùng headless. Đọc lại 30/09/2026: 'Vàng miếng SJC 999.9' mua 14,110
+      bán 14,410, ĐVT 1.000đ/Chỉ (= 141,1 / 144,1 triệu đồng/lượng). Nguồn thứ hai cho giá SJC.
 
   - id: vn-doji-gold-price
     publisher: DOJI
@@ -415,11 +589,32 @@ sources:
     landing_url: https://giavang.doji.vn/
     schedule: every 2 hours
     purpose: production
+    entity: GOLD_SJC_BAR
+    variables: [DOJI:SJC_BAR:BUY:I, DOJI:SJC_BAR:SELL:I]
     licence: cần xác nhận
     use_rights: pending_review
-    locale: vi-VN
+    release_info:
+      publication_time: {from: html_regex, selector: "span.live-badge", pattern: "Cập nhật (?P<time>\\d{2}:\\d{2}) ngày (?P<date>\\d{2}/\\d{2}/\\d{4})", format: "%d/%m/%Y %H:%M", tz: Asia/Ho_Chi_Minh}
+    release_calendar: {kind: none}
+    freshness_sla: P2D
+    extraction_profile:
+      kind: html_table
+      table: "div.price-block:has(.block-heading:-soup-contains('BẢNG GIÁ VÀNG DOJI')) table.price-table"
+      rows: "tbody tr"
+      cells: {product: "td.td-product", buy: "td.td-buy", sell: "td.td-sell"}
+      unit_text: "div.block-unit"     # 'Đơn vị: Nghìn VND/chỉ'; đổi đơn vị → fingerprint đổi → chặn nạp
+      locale: en-US
+      missing_markers: {"-": missing}
+    mapping:
+      time: {from: release_publication_time, frequency: I, market_timezone: Asia/Ho_Chi_Minh}
+      values:
+        - {select: {product: "VÀNG MIẾNG SJC"}, field: buy, series_key: "DOJI:SJC_BAR:BUY:I", source_unit: vnd_per_chi, source_multiplier: 3, measure: value}
+        - {select: {product: "VÀNG MIẾNG SJC"}, field: sell, series_key: "DOJI:SJC_BAR:SELL:I", source_unit: vnd_per_chi, source_multiplier: 3, measure: value}
     verified: V
-    notes: Ứng dụng SPA, cần headless.
+    notes: >-
+      Ứng dụng SPA, cần headless. Đọc lại 30/09/2026: ba bảng (giá thế giới, bạc, vàng DOJI), bảng vàng có
+      'VÀNG MIẾNG SJC' mua 14,110 bán 14,410, 'Đơn vị: Nghìn VND/chỉ', 'Cập nhật 17:08 ngày 30/09/2026'.
+      Bảng bạc cùng trang có đơn vị Nghìn VND/lượng: không được lấy nhầm bảng.
 
   - id: vn-24h-gold-fx
     publisher: 24h.com.vn (tổng hợp từ giavang.net, pnj.com.vn, baotinmanhhai.vn)
@@ -428,13 +623,32 @@ sources:
     format: html
     landing_url: https://www.24h.com.vn/gia-vang-hom-nay-c425.html
     entity: GOLD_SJC_BAR
+    variables: [24H:SJC_BAR:BUY:I, 24H:SJC_BAR:SELL:I, 24H:USDVND:BUY:I, 24H:USDVND:SELL:I]
     schedule: every 2 hours
     purpose: production
     licence: cần xác nhận; trang tổng hợp
     use_rights: pending_review
-    locale: vi-VN
+    release_info:
+      publication_time: {from: fetch_time}     # khối giá không ghi giờ cập nhật
+    release_calendar: {kind: none}
+    freshness_sla: P2D
+    extraction_profile:
+      kind: html_table                # khối div dạng thẻ, không phải <table>: khai báo bộ chọn dòng và ô
+      rows: "div.cate-24h-kd-ex-rate__items div.cate-24h-kd-ex-rate__slide-items > div"
+      cells: {box: "xpath:ancestor::div[contains(@class,'cate-24h-kd-ex-rate__items')]//h2", label: "span.title", buy: "span.buy:not(.sell) strong", sell: "span.sell strong"}
+      locale: en-US                   # '141,100' dấu phẩy ngăn nghìn
+      missing_markers: {"-": missing}
+    mapping:
+      time: {from: release_publication_time, frequency: I, market_timezone: Asia/Ho_Chi_Minh}
+      values:
+        - {select: {box: "Giá vàng", label: "SJC"}, field: buy, series_key: "24H:SJC_BAR:BUY:I", source_unit: vnd_per_luong, source_multiplier: 3, measure: value}
+        - {select: {box: "Giá vàng", label: "SJC"}, field: sell, series_key: "24H:SJC_BAR:SELL:I", source_unit: vnd_per_luong, source_multiplier: 3, measure: value}
+        - {select: {box: "Tỷ giá", label: "USD"}, field: buy, series_key: "24H:USDVND:BUY:I", source_unit: vnd_per_usd, source_multiplier: 0, measure: value}
+        - {select: {box: "Tỷ giá", label: "USD"}, field: sell, series_key: "24H:USDVND:SELL:I", source_unit: vnd_per_usd, source_multiplier: 0, measure: value}
     verified: V
-    notes: SJC mua 141,400 / bán 144,400 (nghìn đồng/lượng) có ngay trong HTML tĩnh; nguồn phụ khi SJC/PNJ headless hỏng.
+    notes: >-
+      Có ngay trong HTML tĩnh; nguồn phụ khi PNJ/DOJI headless hỏng. Đọc lại 30/09/2026: khối 'Giá vàng'
+      SJC mua 141,100 bán 144,100 (nghìn đồng/lượng), khối 'Tỷ giá' USD mua 25,750 bán 26,160; ghi nguồn giavang.net.
 
   # ── Tỷ giá ─────────────────────────────────────────────────────────────
   - id: vn-vcb-fx-xml
@@ -449,10 +663,60 @@ sources:
     purpose: production
     licence: cần xác nhận; tỷ giá niêm yết công khai
     use_rights: pending_review
-    locale: en-US
-    rate_limit: 1 request / 5 phút
+    rate_limit: {min_interval_s: 300}
+    release_info:
+      publication_time: {from: xml_text, path: "/ExrateList/DateTime", format: "%m/%d/%Y %I:%M:%S %p", tz: Asia/Ho_Chi_Minh}
+    release_calendar: {kind: none}
+    freshness_sla: P2D
+    extraction_profile:
+      kind: xml_path
+      rows: "/ExrateList/Exrate[@CurrencyCode='USD']"
+      locale: en-US                   # '25,760.00' (T7)
+      missing_markers: {"-": missing}
+    mapping:
+      time: {from: release_publication_time, frequency: I, market_timezone: Asia/Ho_Chi_Minh}
+      values:
+        - {attr: Buy, series_key: "VCB:USDVND:BUY:I", measure: value}
+        - {attr: Sell, series_key: "VCB:USDVND:SELL:I", measure: value}
+      side_columns: [Transfer]
     verified: V
     notes: >-
       Số kiểu Mỹ '25,760.00' dù là nguồn Việt Nam (locale en-US, bẫy T7). Giới hạn 1 request/5 phút
       nên lịch 'hourly' là đủ. Nhiều lần công bố trong ngày: chênh vàng lấy tỷ giá đúng thời điểm và
       đúng phía (mua hoặc bán), VN-03.
+
+  # ── Nguồn thử cho kịch bản nghiệm thu 27 bước (06 mục 6), KHÔNG phải dữ liệu thật ──────
+  - id: eval-brent-feed-b
+    publisher: Đội Data Agent (nguồn thử có kiểm soát)
+    title: Brent feed B (dữ liệu thử)
+    connector: http-file
+    format: csv
+    sample_urls:
+      # bucket eval-fixtures cho phép đọc ẩn danh trong cụm (NOP-99); v1 rồi thay bằng v2 ở bước 4
+      - http://minio:9000/eval-fixtures/brent-feed-b.csv
+    entity: BRENT_SPOT
+    variables: [FIXTURE:BRENT_FEED_B:D]
+    schedule: daily
+    purpose: evaluation
+    promotion_mode: manual
+    licence: "dữ liệu thử do đội tạo; giá v1 lấy từ EIA RBRTE 01–14/09/2026"
+    use_rights: internal_analysis
+    release_info:
+      publication_time: {from: fetch_time}
+    release_calendar: {kind: none}
+    freshness_sla: P30D
+    extraction_profile:
+      kind: csv
+      delimiter: ","
+      header_row: 1
+      locale: en-US
+      missing_markers: {}
+    mapping:
+      time: {column: "date", format: "%Y-%m-%d", frequency: D, market_timezone: America/New_York}
+      values:
+        - {column: "price", series_key: "FIXTURE:BRENT_FEED_B:D", measure: value}
+    verified: U
+    notes: >-
+      v1: cột date, price (giá EIA spot 01–14/09/2026). v2 (bước 4): period, settle, chg, pct; 15/09 settle = 107,46.
+      Kỳ vọng: v2 đổi dấu hiệu cấu trúc → chặn nạp → đề xuất mapping → người sửa thành
+      settle → FIXTURE:BRENT_FEED_B:FUT_M1:D (settlement_price). Mọi màn hiện nhãn "dữ liệu thử".

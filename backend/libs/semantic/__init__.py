@@ -10,8 +10,10 @@ Two halves, deliberately separate:
 
 Pure — no database driver, no network, no service imports — so `libs/` stays a
 leaf layer under .importlinter. Storage and caching live in the service that
-uses it (backend/services/workflow_runtime/semantic_layer.py).
+uses it (backend/services/workflow_runtime/domain/semantic_layer.py).
 """
+from libs.semantic import ambiguity
+from libs.semantic.ambiguity import Question, Reason
 from libs.semantic.compiler import (
     DEFAULT_LIMIT,
     CompiledMetric,
@@ -32,8 +34,6 @@ from libs.semantic.models import (
     TimeGrain,
     UnsupportedRequest,
 )
-from libs.semantic import ambiguity
-from libs.semantic.ambiguity import Question, Reason
 from libs.semantic.resolver import MetricResolver, Resolution, build_catalog, normalize
 from libs.semantic.slots import (
     COMPARE_PREVIOUS_PERIOD,

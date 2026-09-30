@@ -141,8 +141,10 @@ TN = tuần-người còn lại (đã trừ phần lấy từ `feat/add-task` ng
 | S10-02 | Eval + harness | 60 case; `model/eval/scenario_27.py` và `scenario_vn.py` | BE2, QA, RS | 0,5 + 1 | Bảng điểm so baseline | todo |
 | H-01 | Tổng duyệt + nghiệm thu | Video dự phòng, runbook demo, **báo cáo nghiệm thu có phụ lục "Nguồn dữ liệu và điều kiện sử dụng"** (06 mục 9) | Tất cả | | 26–27/10 | todo |
 
-**D3-01** (DE, 0,25, W2): nguồn `lbma-gold-pm-json` (profile JSON `d`, `v[0..2]`), entity `GOLD_LBMA_PM`,
-nguồn dự phòng tải tay; luật DQ so trung bình tháng với IMF `PGOLD` (lệch > 1% → ReviewCase).
+**D3-01** (DE, 0,25, **W3, lùi từ W2 ngày 30/09**): nguồn `lbma-gold-pm-json` crawl trang giá LBMA bằng
+trình duyệt headless (bắt phản hồi `today.json`, chỉ phiên gần nhất) + nguồn `lbma-gold-price-manual` nạp
+lịch sử; entity `GOLD_LBMA_PM`; luật DQ so trung bình tháng với IMF `PGOLD` (lệch > 1% → ReviewCase). Lý do
+lùi: từ 30/09/2026 LBMA không còn công khai file lịch sử đầy đủ (04 mục 7).
 
 ## 5. Thứ tự cắt khi trễ
 
@@ -155,6 +157,18 @@ research nhập.
 4. S5-01: bảng quan hệ, không vẽ đồ thị.
 5. Nếu vẫn trễ: nghiệm thu bước 1–24 và kịch bản Việt Nam ngày 27/10, bước 25–27 muộn hơn một tuần
    (cần anh Linh đồng ý trước).
+
+### 5.1 Điều chỉnh ngày 30/09/2026 (luồng dữ liệu đầu vào)
+
+Việc của luồng đầu vào mang nhãn `input-data` trên Linear (62 issue). Thiết kế: [14](14-input-data-db.md).
+
+- **Lùi từ C1 sang C2** (không cần cho bước 1–6): chạy thử cách đọc nguồn BE/FE (NOP-263, NOP-264),
+  secrets và network policy V2 (NOP-214), ghim phiên bản model (NOP-74, AI-01), LBMA (NOP-14, D3-01).
+- **Chia lại người:** cụm kho số hiệu lực ClickHouse (NOP-153, 108, 110, 164), Kafka (NOP-96, 98), kỳ và
+  đơn vị (NOP-39, P0-04) và kho tri thức (NOP-137) chuyển sang Quân; QA pipeline C1 (NOP-168) giao Hải
+  Long. Đức Long giữ lõi đường nạp: schema, RLS, bản gốc, bản công bố, series_extractor, ánh xạ.
+- **Còn thiếu:** ước lượng thô C1 của luồng đầu vào khoảng 51 ngày-người, sức chứa tới 09/10 khoảng 28
+  (4 người, 7 ngày). Cần thêm người hoặc dời C1; chờ anh Linh quyết.
 
 ## 6. Tier B và ngoài POC
 

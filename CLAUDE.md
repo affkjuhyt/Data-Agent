@@ -111,7 +111,23 @@ from a literal.
 ```
 backend/libs        shared libraries (basemodel, database_connector, shared, ingestion,
                     semantic, indicator)
-backend/services    one deployable per directory, Dockerfile inside
+backend/services    one deployable per directory, Dockerfile inside. kb_backend also holds the four KB
+                    Kafka workers (workers/*), built as the `kb-worker` image (deploy/docker/kb-worker);
+                    llm-exporter is a platform_workers worker. Add a worker, not a service, for a new
+                    queue consumer
+
+                    workflow_runtime is layered: api/ (routers, auth, app factory) > application/
+                    (nodes, orchestrator, runtime_services, graph) > infrastructure/ (db, mongo,
+                    redis, kafka, qdrant clients, repositories) > domain/ (state, schemas). A lower
+                    layer never imports a higher one — .importlinter enforces it. main.py and jobs/
+                    are entrypoints outside the layers; prompts/ holds the templates (PROMPTS_DIR).
+                    It also serves agent/workflow/canvas authoring (ex flow_builder)
+
+                    Kafka events go through the outbox (libs/shared/outbox.py, docs/RUNBOOK.md §10b):
+                    a service writes the event to OutboxEvents — in its own transaction when it has
+                    one — and its relay publishes it. Do not add a direct publish after a commit.
+                    Concurrent writers of one aggregate lock the parent row (FOR UPDATE) and the
+                    "at most one active/published" rules are partial unique indexes
 backend/alembic     Postgres migrations (the `migrate` image)
 frontend/src        React app (features/, components/, lib/)
 deploy/ansible      the deploy path (k8s-local inventory)

@@ -60,7 +60,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: kb-structured-data
-        image: localhost:5000/dataagent/kb-structured-data:latest
+        image: localhost:5000/dataagent/kb-worker:latest
         envFrom:
         - configMapRef:
             name: dataagent-config
@@ -83,7 +83,7 @@ spec:
         command:
         - python
         - -m
-        - services.kb_structured_data.structured_data
+        - services.kb_backend.workers.structured_data.main
       volumes:
       - name: cache
         persistentVolumeClaim:

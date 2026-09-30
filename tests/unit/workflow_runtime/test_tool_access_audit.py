@@ -39,7 +39,7 @@ import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 RUNTIME = REPO_ROOT / "backend" / "services" / "workflow_runtime"
-HANDLERS = RUNTIME / "nodes" / "sandbox" / "tool_executor" / "handlers"
+HANDLERS = RUNTIME / "application" / "nodes" / "sandbox" / "tool_executor" / "handlers"
 
 pytestmark = pytest.mark.unit
 
@@ -207,7 +207,7 @@ class TestRefusalsAreRecorded:
     def _filesystem(self):
         pytest.importorskip("libs.shared.audit")
         sys.path.insert(0, str(RUNTIME))
-        sys.path.insert(0, str(RUNTIME / "nodes" / "sandbox" / "tool_executor"))
+        sys.path.insert(0, str(RUNTIME / "application" / "nodes" / "sandbox" / "tool_executor"))
         import nodes.sandbox.tool_executor.handlers.filesystem as fs
         return fs
 

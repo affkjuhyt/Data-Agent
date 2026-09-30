@@ -61,7 +61,13 @@ def _get_client_calls() -> tuple[collections.Counter, collections.Counter, dict]
                     continue
                 if node.func.attr != "get_client":
                     continue
-                service = path.relative_to(REPO_ROOT).parts[2]   # backend/<services|libs>/<name>
+                parts = path.relative_to(REPO_ROOT).parts
+                service = parts[2]   # backend/<services|libs>/<name>
+                # The KB Kafka workers live inside kb_backend but, unlike its API,
+                # do not set the tenant per request: keep them a separate unit so
+                # kb_backend's ambient-tenant exemption does not hide them.
+                if parts[2] == "kb_backend" and parts[3] == "workers":
+                    service = f"kb_worker_{parts[4]}"
                 if any(k.arg == "tenant_id" for k in node.keywords) or node.args:
                     scoped[service] += 1
                 else:
@@ -84,19 +90,21 @@ _UNSCOPED_BUDGET = {
     # 32: the Silver tier update/rollback, the auto-Gold hand-off read and the
     # trash-flush graph lookup now pass the tenant they already had.
     "ingestion": 32,
-    "kb_conflict_resolution": 16,
-    "kb_promote_gold": 2,
-    "kb_structured_data": 2,
-    "kb_promote_silver": 1,
+    "kb_worker_conflict_resolution": 16,
+    "kb_worker_promote_gold": 2,
+    "kb_worker_structured_data": 2,
+    "kb_worker_promote_silver": 1,
     # libs/shared is at 0: the document advisory lock moved to
     # get_platform_client(), the deliberate unscoped form.
     "database_connector": 15,
-    "flow_builder": 8,
     # 5 + jobs/memory_cleanup.py's 3: a retention sweeper that has to see every
     # tenant's expired memories, run as a role that bypasses RLS (see
     # deploy/k8s/production/job/memory-cleanup.yaml). Scoping it would make it
     # clean one tenant, or none.
-    "workflow_runtime": 8,
+    # + mongo_client's save_canvas/load_canvas (ex flow_builder): Mongo has no
+    # tenant scoping to pass, the canvas routes gate them on
+    # workflow_version_belongs_to instead.
+    "workflow_runtime": 10,
     "sandbox_executor": 1,
     "platform_workers": 1,
 }

@@ -73,7 +73,7 @@
 
 | | |
 | --- | --- |
-| Trạng thái | **Có và đã nối**: `libs/indicator/verifier.py:99-111` chạy bốn kiểm tra độc lập; `workflow_runtime/nodes/model_harness/judge.py:78-90` chạy chúng **trước** khi hỏi LLM, trượt là `GROUNDING_ERROR` |
+| Trạng thái | **Có và đã nối**: `libs/indicator/verifier.py:99-111` chạy bốn kiểm tra độc lập; `workflow_runtime/application/nodes/model_harness/judge.py:78-90` chạy chúng **trước** khi hỏi LLM, trượt là `GROUNDING_ERROR` |
 | Bốn kiểm tra | `numbers_grounded` (mọi số trong câu trả lời có trong evidence, theo dung sai) · `precision_supported` (không nêu số chính xác hơn nguồn công bố) · `vintage_consistent` (một câu trả lời không trộn hai release) · `citations_resolved` (mọi `[n]` trỏ tới evidence có thật) |
 | Mở rộng V2 (S10-01) | Freshness (nguồn quá `freshness_sla`), đủ bằng chứng theo `evidence_requirements` của task graph, replan tối đa 2 vòng rồi `INSUFFICIENT_EVIDENCE` (03 mục 10.3). Kết quả đi qua frame `__verification` tới VerifierBadge ([13](13-ui-principles.md) P8) |
 | Không làm | Không chấm số bằng LLM (NC-ADR-T5) |

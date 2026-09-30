@@ -33,8 +33,8 @@ from libs.shared.storage_ownership import (
     is_v2_structured_source,
 )
 from services.kb_backend.operations import document_ops
-from services.kb_promote_silver.libs import handler as silver_handler
-from services.kb_structured_data.libs import propose
+from services.kb_backend.workers.promote_silver import handler as silver_handler
+from services.kb_backend.workers.structured_data import propose
 
 pytestmark = pytest.mark.unit
 
@@ -400,7 +400,7 @@ def test_v2_packages_import_no_legacy_adapter_and_name_no_legacy_topic() -> None
     [
         "from libs.database_connector.mongo_connector import MongoClient\n",
         "import pymongo\n",
-        "from services.kb_structured_data.libs.propose import propose_structured_table\n",
+        "from services.kb_backend.workers.structured_data.propose import propose_structured_table\n",
         "from libs.ingestion.silver.orchestrator import promote_to_silver\n",
         "TOPIC = 'kb.promote.silver'\n",
         "producer.send('kb.structured.propose', {})\n",

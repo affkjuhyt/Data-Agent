@@ -1,5 +1,5 @@
-"""kb_promote_gold's handler: a stalled promote_to_gold call must not hold its
-concurrency slot forever — same fix as kb_promote_silver's handler, see
+"""promote_gold worker's handler: a stalled promote_to_gold call must not hold its
+concurrency slot forever — same fix as the promote_silver worker handler, see
 test_promote_silver_handler_resilience.py.
 """
 from __future__ import annotations
@@ -13,7 +13,7 @@ import pytest
 
 from libs.ingestion import config as cfg
 from libs.ingestion.runtime import WorkerRuntime
-from services.kb_promote_gold.libs import handler as handler_module
+from services.kb_backend.workers.promote_gold import handler as handler_module
 
 pytestmark = pytest.mark.unit
 
@@ -25,6 +25,7 @@ def _runtime() -> WorkerRuntime:
     runtime = WorkerRuntime(logger=AsyncMock(), stage_record=AsyncMock())
     runtime.mongo = MagicMock(get_client=MagicMock(return_value=MagicMock()))
     runtime.qdrant = MagicMock(get_client=MagicMock(return_value=MagicMock()))
+    runtime.graph = MagicMock()
     return runtime
 
 

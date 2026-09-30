@@ -28,10 +28,10 @@ import pytest
 
 pytestmark = pytest.mark.unit
 
-_PKG = "services.workflow_runtime.nodes.sandbox.tool_executor"
+_PKG = "services.workflow_runtime.application.nodes.sandbox.tool_executor"
 _PKG_DIR = (
     pathlib.Path(__file__).resolve().parents[3]
-    / "backend" / "services" / "workflow_runtime" / "nodes" / "sandbox" / "tool_executor"
+    / "backend" / "services" / "workflow_runtime" / "application" / "nodes" / "sandbox" / "tool_executor"
 )
 
 CFG = {
@@ -53,7 +53,7 @@ def handler(monkeypatch):
     monkeypatch.setitem(sys.modules, _PKG, stub_pkg)
     for name in (f"{_PKG}._utils", f"{_PKG}.handlers", f"{_PKG}.handlers.agent"):
         monkeypatch.delitem(sys.modules, name, raising=False)
-    from services.workflow_runtime.nodes.sandbox.tool_executor.handlers.agent import (
+    from services.workflow_runtime.application.nodes.sandbox.tool_executor.handlers.agent import (
         _delegate_to_agent_handler,
     )
     return _delegate_to_agent_handler
@@ -62,12 +62,12 @@ def handler(monkeypatch):
 def _stub_agent_client(monkeypatch, call_agent: Any) -> None:
     """Install a fake orchestrator.executor.agent_client before the handler's
     lazy import resolves it."""
-    mod = types.ModuleType("services.workflow_runtime.orchestrator.executor.agent_client")
+    mod = types.ModuleType("services.workflow_runtime.application.orchestrator.executor.agent_client")
     mod.call_agent = call_agent
-    pkg = types.ModuleType("services.workflow_runtime.orchestrator.executor")
+    pkg = types.ModuleType("services.workflow_runtime.application.orchestrator.executor")
     pkg.agent_client = mod
-    monkeypatch.setitem(sys.modules, "services.workflow_runtime.orchestrator.executor", pkg)
-    monkeypatch.setitem(sys.modules, "services.workflow_runtime.orchestrator.executor.agent_client", mod)
+    monkeypatch.setitem(sys.modules, "services.workflow_runtime.application.orchestrator.executor", pkg)
+    monkeypatch.setitem(sys.modules, "services.workflow_runtime.application.orchestrator.executor.agent_client", mod)
 
 
 class TestDelegateToAgent:

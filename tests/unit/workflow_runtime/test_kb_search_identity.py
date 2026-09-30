@@ -1,5 +1,5 @@
 """Caller identity on the kb_search -> kb-backend call
-(backend/services/workflow_runtime/nodes/sandbox/kb_search.py).
+(backend/services/workflow_runtime/application/nodes/sandbox/kb_search.py).
 
 This node used to send `X-Kong-Verified: true` plus a fixed
 `platform-admin,tenant-admin,kb-admin,engineer` role set on every agent
@@ -14,6 +14,8 @@ import sys
 
 import pytest
 
+from ._paths import RUNTIME_LAYER_DIRS
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
@@ -25,7 +27,7 @@ TENANT = "a0000000-0000-0000-0000-000000000001"
 
 @pytest.fixture(autouse=True)
 def _sys_path():
-    added = [p for p in (_SVC_DIR,) if p not in sys.path]
+    added = [p for p in (*RUNTIME_LAYER_DIRS,) if p not in sys.path]
     sys.path[:0] = added
     yield
     for p in added:

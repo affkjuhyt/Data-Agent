@@ -7,7 +7,7 @@
 # trixie): Playwright's `--with-deps` doesn't recognise trixie yet and falls
 # back to an ubuntu20.04 dependency list that references packages trixie
 # dropped (ttf-unifont, ttf-ubuntu-font-family), so `playwright install
-# --with-deps chromium` below hard-fails on a floating tag. kb_promote_silver
+# --with-deps chromium` below hard-fails on a floating tag. the kb-worker image
 # hasn't hit this yet only because `python:3.11-slim` happens to still
 # resolve to bookworm today — an unpinned coincidence, not a fix.
 FROM python:3.12-slim-bookworm
@@ -15,8 +15,8 @@ WORKDIR /app
 COPY backend/services/platform_workers/requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 # web-crawler-worker's web_crawl connector needs a real Chromium — same
-# install step as kb_promote_silver's Dockerfile, which already depends on
-# Playwright for the identical fetch.
+# install step as the kb-worker Dockerfile, whose promote_silver worker already
+# depends on Playwright for the identical fetch.
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN apt-get update && python -m playwright install --with-deps chromium && rm -rf /var/lib/apt/lists/*
 # /app mirrors backend/: `libs.*` and `services.platform_workers.*` resolve as

@@ -16,8 +16,6 @@ from sqlalchemy import func as sa_func
 from sqlalchemy import or_ as sa_or
 from sqlalchemy import select as sa_select
 
-from libs.shared.cron import next_run_after
-
 from libs.basemodel.services_databaseconnector.postgres_model import (
     KBSourceConfigInsert,
     KBSourceDelete,
@@ -30,6 +28,7 @@ from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm i
     KBSourceORM,
     KBSourceRunORM,
 )
+from libs.shared.cron import next_run_after
 from services.kb_backend.operations.pagination import PAGE_SIZE, build_cursor_page
 
 # "upload" is bookkeeping-only (see record_upload_as_source) — never something
@@ -261,14 +260,12 @@ async def create_source(postgres: Any, body: dict[str, Any], created_by: str, te
         title=body["title"], publisher=body.get("publisher"), created_by=created_by,
     ))
     if src_ins.code != 200:
+        if "uq_kbsource_tenant_title_live" in str(src_ins.error):
+            raise HTTPException(status_code=409, detail=f"A source titled {body['title']!r} already exists.")
         raise HTTPException(status_code=500, detail=f"Failed to create source: {src_ins.error}")
     source_id = src_ins.data["source_id"]
 
     cron = body.get("cron") or ""
-    # A worker can't click a button: a source with a real schedule defaults to
-    # promoting itself straight through to Gold after a changed crawl, while a
-    # manual-only (no-schedule) source keeps the human-click flow — the
-    # caller can still override either way via `promotion_mode`.
     promotion_mode: Literal["manual", "auto"] = body.get("promotion_mode") or ("auto" if cron.strip() else "manual")
     config_payload = SourceConfigPayload(
         url=body["url"], format=body.get("format"), cron=cron,
@@ -286,6 +283,7 @@ async def create_source(postgres: Any, body: dict[str, Any], created_by: str, te
         config=config_payload,
     ))
     if cfg_ins.code != 200:
+        await postgres.soft_delete(KBSourceDelete(source_id=source_id))
         raise HTTPException(status_code=500, detail=f"Failed to create source config: {cfg_ins.error}")
 
     row = await _source_row(postgres, source_id, tenant_id)
@@ -299,6 +297,9 @@ async def update_source_config(
     source_uuid = src["source_id"]
 
     async with postgres.get_client() as session:
+        await session.execute(
+            sa_select(KBSourceORM.source_id).where(KBSourceORM.source_id == source_uuid).with_for_update()
+        )
         current = await session.scalar(
             sa_select(KBSourceConfigORM).where(
                 KBSourceConfigORM.source_id == source_uuid,
@@ -322,6 +323,9 @@ async def update_source_config(
 
         if current is not None:
             current.is_active = False
+            # Emit the deactivation before the insert below: the unit of work inserts
+            # first, and two active rows would violate the one-active-config index.
+            await session.flush()
         session.add(KBSourceConfigORM(
             source_id=source_uuid, version_number=max_v + 1, is_active=True,
             config=base_cfg, created_by=updated_by,

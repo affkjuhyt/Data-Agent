@@ -48,7 +48,7 @@ Images are named `dataagent/<service_name>`; push them as
 Ports are not in the Dockerfiles. Each image has no `EXPOSE` and no `CMD` — the
 start command and the port live in the workload's manifest, so there is one place
 to change them: auth-api 8200, kb-backend 8220, model-service
-8230, workflow-runtime 8240, flow-builder 8250, sandbox-executor 8260,
+8230, workflow-runtime 8240 (also the agent/workflow authoring API, ex flow-builder), sandbox-executor 8260,
 llm-exporter 8270. `8000–8099` stays reserved for the LLM tier. Third-party
 images keep their native port.
 

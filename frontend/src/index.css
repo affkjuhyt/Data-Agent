@@ -1093,58 +1093,6 @@
 .answer-theme-dark .ab-chip-btn:hover:not(:disabled) { color: #111111; }
 .ab-chip-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-.release-context-panel {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 8px;
-  background: #FFFFFF;
-  border: 1.5px solid #BFA66A;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-}
-.release-context-label {
-  margin-bottom: 5px;
-  color: #5F5F5F;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.release-context-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.release-context-chip {
-  min-width: 32px;
-  height: 24px;
-  padding: 0 8px;
-  border: 1px solid #BFA66A;
-  border-radius: 8px;
-  background: #FFFFFF;
-  color: #3F3F3F;
-  font-size: 10px;
-  font-weight: 800;
-  line-height: 1;
-  transition: all 0.12s ease;
-}
-.release-context-chip:hover {
-  border-color: #8A5A00;
-  background: #FFF9E8;
-  color: #111111;
-}
-.release-context-chip.active {
-  border-color: #8A5A00;
-  background: #111111;
-  color: #FFFFFF;
-}
-.release-context-divider {
-  width: 1px;
-  align-self: stretch;
-  background: #D6C79F;
-}
-
 .ask-workspace {
   display: flex;
   flex-direction: column;

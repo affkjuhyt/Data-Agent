@@ -46,6 +46,7 @@ from libs.shared.freshness import (
 )
 
 from .._loader import stub_if_missing
+from ._paths import RUNTIME_LAYER_DIRS
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _RUNTIME_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
@@ -83,7 +84,8 @@ def runtime_path(monkeypatch):
             "FieldCondition": MagicMock, "MatchValue": MagicMock, "PointStruct": MagicMock,
         }),
     )
-    monkeypatch.syspath_prepend(_RUNTIME_DIR)
+    for _d in RUNTIME_LAYER_DIRS:
+        monkeypatch.syspath_prepend(_d)
     for name in _AMBIGUOUS_MODULES:
         module = sys.modules.get(name)
         if module is not None and getattr(module, "__file__", None) is None:
@@ -378,7 +380,7 @@ class TestHandlerAttachesProvenance:
         data = self._data(runtime_path)
         stub = types.ModuleType("data_provenance")
         stub.provenance_for_sql = AsyncMock(return_value={"status": STALE, "tables": [{"table": "public.orders"}]})
-        monkeypatch.setitem(sys.modules, "services.workflow_runtime.data_provenance", stub)
+        monkeypatch.setitem(sys.modules, "services.workflow_runtime.domain.data_provenance", stub)
         monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=([{"n": 1}], None, False, None)))
 
         result, error = await data._run_one_query(
@@ -395,7 +397,7 @@ class TestHandlerAttachesProvenance:
         data = self._data(runtime_path)
         stub = types.ModuleType("data_provenance")
         stub.provenance_for_sql = AsyncMock(return_value=None)
-        monkeypatch.setitem(sys.modules, "services.workflow_runtime.data_provenance", stub)
+        monkeypatch.setitem(sys.modules, "services.workflow_runtime.domain.data_provenance", stub)
         monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(side_effect=[
             (None, "column does not exist", False, None),
             ([{"n": 1}], None, False, None),
@@ -418,7 +420,7 @@ class TestHandlerAttachesProvenance:
         data = self._data(runtime_path)
         stub = types.ModuleType("data_provenance")
         stub.provenance_for_sql = AsyncMock(side_effect=RuntimeError("catalog down"))
-        monkeypatch.setitem(sys.modules, "services.workflow_runtime.data_provenance", stub)
+        monkeypatch.setitem(sys.modules, "services.workflow_runtime.domain.data_provenance", stub)
         monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=([{"n": 1}], None, False, None)))
 
         result, error = await data._run_one_query(
@@ -433,7 +435,7 @@ class TestHandlerAttachesProvenance:
         data = self._data(runtime_path)
         stub = types.ModuleType("data_provenance")
         stub.provenance_for_sql = AsyncMock()
-        monkeypatch.setitem(sys.modules, "services.workflow_runtime.data_provenance", stub)
+        monkeypatch.setitem(sys.modules, "services.workflow_runtime.domain.data_provenance", stub)
 
         assert await data._provenance({"catalog_warehouse_id": WAREHOUSE}, "SELECT 1", audit_ctx={}) is None
         stub.provenance_for_sql.assert_not_awaited()
@@ -497,7 +499,7 @@ class TestResponderDisclosure:
             )
 
         monkeypatch.setattr(responder.litellm, "acompletion", fake_completion)
-        from services.workflow_runtime.runtime_services import llm_call
+        from services.workflow_runtime.application.runtime_services import llm_call
         monkeypatch.setattr(llm_call, "get_langfuse_client", lambda: None)
         out = await responder.responder_node(self._state(chunks))
         return captured["messages"][0]["content"], out
@@ -537,7 +539,7 @@ class TestResponderDisclosure:
             )
 
         monkeypatch.setattr(responder.litellm, "acompletion", fake_completion)
-        from services.workflow_runtime.runtime_services import llm_call
+        from services.workflow_runtime.application.runtime_services import llm_call
         monkeypatch.setattr(llm_call, "get_langfuse_client", lambda: None)
 
         out = await responder.responder_node(self._state([self._chunk(prov)]))

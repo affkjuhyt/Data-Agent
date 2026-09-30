@@ -1,4 +1,4 @@
-"""_text_to_sql_handler (backend/services/workflow_runtime/nodes/sandbox/tool_executor/handlers/data.py)
+"""_text_to_sql_handler (backend/services/workflow_runtime/application/nodes/sandbox/tool_executor/handlers/data.py)
 — DB Connector's core logic: schema introspection (cached through Redis), 1 LLM
 call that both picks relevant DB(s) and writes SQL (or a simpler direct-SQL
 prompt when there's only 1 connection), and parallel execution across DBs via
@@ -22,6 +22,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from ._paths import RUNTIME_LAYER_DIRS
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
@@ -30,7 +32,7 @@ pytestmark = pytest.mark.unit
 
 @pytest.fixture(autouse=True)
 def _sys_path():
-    added = [p for p in (_SVC_DIR,) if p not in sys.path]
+    added = [p for p in (*RUNTIME_LAYER_DIRS,) if p not in sys.path]
     sys.path[:0] = added
     yield
     for p in added:
@@ -42,7 +44,7 @@ def _stub_redis_cache(monkeypatch, get_return=None) -> types.ModuleType:
     fake_module = types.ModuleType("redis_cache")
     fake_module.cache_get_schema = AsyncMock(return_value=get_return)
     fake_module.cache_set_schema = AsyncMock(return_value=None)
-    monkeypatch.setitem(sys.modules, "services.workflow_runtime.redis_cache", fake_module)
+    monkeypatch.setitem(sys.modules, "services.workflow_runtime.infrastructure.redis_cache", fake_module)
     return fake_module
 
 

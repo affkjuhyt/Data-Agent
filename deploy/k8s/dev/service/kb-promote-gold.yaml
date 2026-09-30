@@ -55,7 +55,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: kb-promote-gold
-        image: localhost:5000/dataagent/kb-promote-gold:latest
+        image: localhost:5000/dataagent/kb-worker:latest
         imagePullPolicy: Always
         envFrom:
         - configMapRef:
@@ -77,7 +77,7 @@ spec:
         command:
         - python
         - -m
-        - services.kb_promote_gold.promote_gold
+        - services.kb_backend.workers.promote_gold.main
       volumes:
       - name: tmp
         emptyDir: {}

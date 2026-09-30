@@ -79,6 +79,10 @@ deploy/docker/.*-up.log
 # it graded changes, and a stale one is worse than none.
 eval-report.json
 .eval-reports/
+# Requirement-coverage runs and bug evidence bundles (docs/v2/15-test-strategy.md §7, §10):
+# attached to the Linear issue, not committed.
+.req-reports/
+.evidence/
 frontend/scripts/ui-demo-shots/
 tests/e2e/out/
 

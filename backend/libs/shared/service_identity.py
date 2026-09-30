@@ -70,7 +70,7 @@ def get_secret() -> str:
 
     Both minting and verifying services must be given the same value (in
     production out of OpenBao, like every other credential here — see
-    backend/services/workflow_runtime/warehouse_secrets.py). Returns "" when unset;
+    backend/services/workflow_runtime/infrastructure/warehouse_secrets.py). Returns "" when unset;
     callers decide what that means, because the two sides want opposite
     defaults: a minter with no secret should skip the header and let the
     request be rejected downstream, while a verifier with no secret must not

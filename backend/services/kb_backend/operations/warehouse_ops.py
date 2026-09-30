@@ -1,25 +1,30 @@
-from typing import Any
 import base64
 import datetime
 import logging
 import uuid
-from fastapi import HTTPException
-from sqlalchemy import select as sa_select, update as sa_update, func as sa_func
+from typing import Any
 
-from libs.shared.row_version import with_new_version
+from fastapi import HTTPException
+from sqlalchemy import func as sa_func
+from sqlalchemy import select as sa_select
+from sqlalchemy import update as sa_update
+
 from libs.basemodel.services_databaseconnector.postgres_model import (
-    ReadJoinRequest, WhereFilter,
-    KBWarehouseConfigInsert, KBWarehouseConfigDelete,
+    KBWarehouseConfigDelete,
+    KBWarehouseConfigInsert,
+    ReadJoinRequest,
     WarehouseConfigPayload,
+    WhereFilter,
 )
 from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
-    KBWarehouseConfigORM, KBWarehouseORM,
+    KBWarehouseConfigORM,
+    KBWarehouseORM,
 )
+from libs.shared.row_version import with_new_version
 from services.kb_backend.operations.access import assert_child_scoped, kbdata_row_exists
+from services.kb_backend.operations.locking import update_locked
 from services.kb_backend.operations.pagination import PAGE_SIZE, build_cursor_page
 from services.kb_backend.schemas import to_string
-
-from services.kb_backend.operations.locking import update_locked
 
 log = logging.getLogger(__name__)
 
@@ -230,6 +235,14 @@ async def activate_warehouse_config(
     warehouse_uuid = uuid.UUID(warehouse_id) if isinstance(warehouse_id, str) else warehouse_id
     config_uuid = uuid.UUID(config_id) if isinstance(config_id, str) else config_id
     async with postgres.get_client() as session:
+        owned = (await session.execute(
+            sa_select(KBWarehouseConfigORM.config_id)
+            .where(KBWarehouseConfigORM.warehouse_id == warehouse_uuid)
+            .with_for_update()
+        )).scalars().all()
+        if config_uuid not in owned:
+            await session.rollback()
+            raise HTTPException(status_code=404, detail="Config not found")
         await session.execute(
             sa_update(KBWarehouseConfigORM)
             .where(KBWarehouseConfigORM.warehouse_id == warehouse_uuid)

@@ -7,11 +7,19 @@ from typing import Any
 
 from qdrant_client import models as qmodels
 from qdrant_client.async_qdrant_client import AsyncQdrantClient
-from sqlalchemy import cast as sa_cast, delete as sa_delete, func as sa_func, select as sa_select, text as sa_text, update as sa_update
+from sqlalchemy import cast as sa_cast
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import func as sa_func
+from sqlalchemy import select as sa_select
+from sqlalchemy import text as sa_text
+from sqlalchemy import update as sa_update
 from sqlalchemy.dialects.postgresql import JSONB
 
-from libs.shared.row_version import with_new_version
-from libs.basemodel.services_databaseconnector.postgres_model import ConflictStatus, KBLifecycleHistoryInsert, Tier
+from libs.basemodel.services_databaseconnector.postgres_model import (
+    ConflictStatus,
+    KBLifecycleHistoryInsert,
+    Tier,
+)
 from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBConflictBatchORM,
     KBConflictORM,
@@ -23,13 +31,14 @@ from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm i
 )
 from libs.database_connector.model_connector import ModelServiceClient
 from libs.database_connector.postgres_connector import PostgresClient
-from libs.ingestion.gold.summarization import _reduce_summaries
 from libs.ingestion import config as cfg
 from libs.ingestion import conflict_store
+from libs.ingestion.gold.summarization import _reduce_summaries
 from libs.ingestion.graph_store import GraphStore
 from libs.ingestion.log_writer import IngestionLogger
 from libs.ingestion.pipeline_events import NULL_EMITTER, PipelineEventEmitter
 from libs.ingestion.stage_chain import StageChain
+from libs.shared.row_version import with_new_version
 
 log = logging.getLogger(__name__)
 
@@ -167,19 +176,36 @@ async def _cleanup_previous_promotion(
 
 
 async def _rollback_committed_chunk(postgres: PostgresClient, qdrant: AsyncQdrantClient, block_id: str) -> None:
+    """Undo a chunk committed to Qdrant + Postgres when a later step of the same Gold run fails.
+
+    The text tables and versions hang off the block with NO ACTION foreign keys, so
+    deleting the block alone raises a foreign-key violation; the old version swallowed
+    it and left an orphan block (with its versions) behind whose vector was already
+    deleted. Children go first, and a failure is logged loudly rather than swallowed.
+    """
     try:
         await qdrant.delete(
             collection_name=cfg.QDRANT_COLLECTION,
             points_selector=qmodels.PointIdsList(points=[block_id]),
         )
     except Exception:
-        pass
+        log.exception("gold rollback: could not delete the Qdrant point for block_id=%s", block_id)
+    block_uuid = uuid.UUID(block_id)
     async with postgres.get_client() as session:
         try:
-            await session.execute(sa_delete(KBTextBlockORM).where(KBTextBlockORM.block_id == uuid.UUID(block_id)))
+            version_ids = (await session.execute(
+                sa_select(KBTextBlockVersionORM.version_id).where(KBTextBlockVersionORM.block_id == block_uuid)
+            )).scalars().all()
+            if version_ids:
+                await session.execute(sa_delete(KBTextTableORM).where(KBTextTableORM.version_id.in_(version_ids)))
+                await session.execute(
+                    sa_delete(KBTextBlockVersionORM).where(KBTextBlockVersionORM.block_id == block_uuid)
+                )
+            await session.execute(sa_delete(KBTextBlockORM).where(KBTextBlockORM.block_id == block_uuid))
             await session.commit()
         except Exception:
             await session.rollback()
+            log.exception("gold rollback: block_id=%s is still in Postgres (orphan, needs cleanup)", block_id)
 
 
 async def _commit_chunk_atomic(

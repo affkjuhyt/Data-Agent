@@ -1,7 +1,7 @@
 """Memory extraction worker (ex memory-consumer).
 
 Reads memory.extraction.requested (emitted by workflow_runtime after each turn
-— see backend/services/workflow_runtime/memory_middleware.py:apply_memory_policy),
+— see backend/services/workflow_runtime/infrastructure/memory_middleware.py:apply_memory_policy),
 re-reads the turn text from Postgres "Messages", calls the extraction LLM, and
 writes Semantic LTM (AgentMemories + Qdrant), Episodic Past, and Episodic
 Future memories. Implements the doc's 4-decision lifecycle
@@ -22,16 +22,6 @@ import time
 import uuid
 from typing import Any
 
-from services.platform_workers.common import kafka as kafka_factory
-from services.platform_workers.common import llm as llm_client
-from services.platform_workers.common import pg
-from services.platform_workers.common import qdrant as qdrant_factory
-from services.platform_workers.common.settings import (
-    KafkaSettings,
-    LiteLLMSettings,
-    PostgresSettings,
-    QdrantSettings,
-)
 from kafka import KafkaProducer
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -46,6 +36,16 @@ from qdrant_client.models import (
 from tenacity import RetryError, Retrying, stop_after_attempt, wait_chain, wait_fixed
 
 from libs.shared.embeddings import embed_one
+from services.platform_workers.common import kafka as kafka_factory
+from services.platform_workers.common import llm as llm_client
+from services.platform_workers.common import pg
+from services.platform_workers.common import qdrant as qdrant_factory
+from services.platform_workers.common.settings import (
+    KafkaSettings,
+    LiteLLMSettings,
+    PostgresSettings,
+    QdrantSettings,
+)
 
 log = logging.getLogger("platform-workers.memory")
 

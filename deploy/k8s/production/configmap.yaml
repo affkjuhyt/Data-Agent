@@ -76,7 +76,6 @@ data:
   # Without this, JWT/CORS checks can pass fine (they don't touch the
   # upstream) but the request 503s the moment Kong actually proxies it.
   WORKFLOW_RUNTIME_HOST: workflow-runtime
-  FLOW_BUILDER_HOST: flow-builder
   AUTH_API_HOST: auth-api
 
   #Langfuse

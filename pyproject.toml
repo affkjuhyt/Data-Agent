@@ -53,6 +53,13 @@ markers = [
     "unit: fast pure-Python tests, no external services or Docker",
     "integration: tests that spin up Docker containers via testcontainers",
     "e2e: tests that drive the deployed cluster through its gateway (LIVE_STACK=1, `make e2e`)",
+    # Kinds and requirement IDs sit on top of exactly one level above (docs/v2/15-test-strategy.md §4).
+    "contract: pins a published contract (OpenAPI, event envelope, agent frames, ObservationStore port)",
+    "security: authorization, tenant isolation or untrusted input",
+    "resilience: behaviour under a failing dependency (retry, redelivery, restart, timeout)",
+    "performance: measures latency or throughput against a budget",
+    "ai_eval: scores model output against a labelled set",
+    "req(*ids): requirements this test proves: UCnn, NOP-n, plan ID (S6-03), SC27-nn, SCVN-n",
 ]
 filterwarnings = [
     "error",

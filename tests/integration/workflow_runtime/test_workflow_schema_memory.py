@@ -7,7 +7,7 @@ Covers:
      downgrade/re-upgrade. Same asyncpg-subprocess pattern as
      test_alembic_migrations.py, because that's the driver production
      actually runs migrations through.
-  2. backend/services/workflow_runtime/workflow_memory.py — record/retrieve against
+  2. backend/services/workflow_runtime/infrastructure/workflow_memory.py — record/retrieve against
      a real Postgres + Qdrant testcontainer.
 
 No real LLM/embedding provider is contacted anywhere in this file —
@@ -175,8 +175,12 @@ async def wm(migrated_db, qdrant_container, monkeypatch):
     monkeypatch.setenv("EMBEDDING_DIM", "8")
     monkeypatch.setenv("QDRANT_URL", qdrant_container["url"])
 
-    svc_dir = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
-    added = [p for p in (svc_dir, str(REPO_ROOT)) if p not in sys.path]
+    # Bare `import memory_middleware` / `workflow_memory`: their layer dirs go on the path.
+    svc_dirs = [
+        str(REPO_ROOT / "backend" / "services" / "workflow_runtime" / layer)
+        for layer in ("api", "application", "domain", "infrastructure")
+    ]
+    added = [p for p in (*svc_dirs, str(REPO_ROOT)) if p not in sys.path]
     sys.path[:0] = added
     try:
         import workflow_memory as wm_mod

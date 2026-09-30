@@ -17,7 +17,7 @@ trafilatura==1.12.2
 minio==7.2.9
 # web-crawler-worker V2: rss connector's item-count quality metric, and
 # rest_api/sdmx's openbao_path credential resolution (see secrets.py — same
-# AppRole pattern as workflow_runtime/warehouse_secrets.py).
+# AppRole pattern as workflow_runtime/infrastructure/warehouse_secrets.py).
 feedparser==6.0.11
 hvac==2.3.0
 # web-crawler-worker: purge a superseded document's Silver/Gold traces on
@@ -33,6 +33,10 @@ python-keycloak==7.1.1
 tenacity>=8.2
 pydantic>=2
 pydantic-settings>=2
+
+# llm-exporter worker (Prometheus /metrics + /health)
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
 
 # ── Observability (libs/shared/observability.py) ──
 structlog==24.2.0
