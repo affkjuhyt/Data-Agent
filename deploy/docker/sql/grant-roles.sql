@@ -236,7 +236,11 @@ GRANT SELECT ON
   "KBQdrantConnection",
   -- Gold reads the tenant's PII-masking setting here; when the read fails it only
   -- logs a warning and silently runs with masking disabled.
-  compliance_settings
+  compliance_settings,
+  -- Silver, Gold and kb-structured-data read the document's source config
+  -- (storage_boundary.is_v2_structured_document) to keep V2 structured sources
+  -- off the legacy paths; without it every promotion fails at "permission denied".
+  "KBSourceConfig"
 TO kb_ingestion_worker;
 
 -- Gold registers entity aliases (entity_registry.py _register_aliases inserts
