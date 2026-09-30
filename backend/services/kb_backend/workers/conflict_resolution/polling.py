@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 from sqlalchemy import select
 
@@ -37,7 +38,7 @@ async def conflict_resolve_loop(
     qdrant_svc: QdrantService,
     graph: GraphStore,
     model: ModelServiceClient,
-    mongo,
+    mongo: Any,
 ) -> None:
     """Poll for AWAITING conflict batches and resolve them serially."""
     database = mongo.get_client()

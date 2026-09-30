@@ -63,6 +63,12 @@ class WorkerRuntime:
     graph: GraphStore | None = None
     health_check_tasks: list[asyncio.Task[Any]] = field(default_factory=list)
 
+    def require_graph(self) -> GraphStore:
+        """The graph store, for workers that started with Component.GRAPH."""
+        if self.graph is None:
+            raise RuntimeError("graph store not initialised: start the runtime with Component.GRAPH")
+        return self.graph
+
     def configure_urls(self) -> None:
         self.consumer.set_group_id(cfg.KAFKA_CONSUMER_GROUP)
         self.postgres.set_url(cfg.POSTGRES_URL)

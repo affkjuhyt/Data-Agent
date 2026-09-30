@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime
 import uuid
+from typing import Any
 
 from sqlalchemy import func as sa_func, select, update as sa_update
 
@@ -179,7 +180,7 @@ async def _return_batch_to_user(postgres: PostgresClient, batch_id: str) -> None
     await set_conflict_batch_status(postgres, batch_id, ConflictStatus.PENDING.value)
 
 
-async def _fetch_block_point(qdrant, block_id: str):
+async def _fetch_block_point(qdrant: Any, block_id: str) -> Any:
     points = await qdrant.retrieve(
         collection_name=cfg.QDRANT_COLLECTION,
         ids=[block_id],

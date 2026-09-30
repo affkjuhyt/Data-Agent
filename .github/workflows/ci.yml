@@ -58,11 +58,9 @@ jobs:
             backend/services/sandbox_executor \
             backend/services/platform_workers; do
             echo "== mypy strict: $target =="
-            # kb_backend/workers/ (the KB Kafka workers) came from services that were
-            # never on this list and are not strict-clean; keep them out until they are.
             mypy --disallow-untyped-defs --disallow-any-generics \
                  --ignore-missing-imports --follow-imports=silent \
-                 --exclude 'kb_backend/workers/' "$target"
+                 "$target"
           done
 
   # One job per service suite, in that service's Python with only its own

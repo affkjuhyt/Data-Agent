@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from sqlalchemy import update as sa_update
 
+from libs.database_connector.postgres_connector import PostgresClient
 from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import KBTextBlockORM
 from services.kb_backend.workers.conflict_resolution.models import (
     KEEP_INCOMING,
@@ -26,7 +28,7 @@ from libs.ingestion import conflict_store
 from libs.ingestion.stage_chain import StageChain
 
 
-async def _rollback_mark_payload_committed(mongo, tenant_id: str, conflict_id: str) -> None:
+async def _rollback_mark_payload_committed(mongo: Any, tenant_id: str, conflict_id: str) -> None:
     try:
         await conflict_store.mark_payload_committed(mongo, tenant_id, conflict_id, None)
     except Exception:
@@ -36,7 +38,7 @@ async def _rollback_mark_payload_committed(mongo, tenant_id: str, conflict_id: s
 async def _commit_incoming_chunk(
     stores: ResolverStores,
     ctx: BatchContext,
-    payload: dict,
+    payload: dict[str, Any],
     stage_record: StageChain,
 ) -> str:
     embed_model_id = payload.get("embed_model_id") or cfg.EMBED_MODEL_ID
@@ -113,7 +115,7 @@ async def _commit_incoming_chunk(
     return block_id
 
 
-async def _set_block_deleted(postgres, block_id: str, is_deleted: bool) -> None:
+async def _set_block_deleted(postgres: PostgresClient, block_id: str, is_deleted: bool) -> None:
     async with postgres.get_client() as session:
         try:
             await session.execute(
@@ -127,7 +129,7 @@ async def _set_block_deleted(postgres, block_id: str, is_deleted: bool) -> None:
             raise
 
 
-async def _rollback_soft_delete_block(postgres, qdrant, block_id: str) -> None:
+async def _rollback_soft_delete_block(postgres: PostgresClient, qdrant: Any, block_id: str) -> None:
     try:
         await _set_block_deleted(postgres, block_id, False)
     except Exception:

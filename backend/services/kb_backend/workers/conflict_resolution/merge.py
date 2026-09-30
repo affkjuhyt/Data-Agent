@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from qdrant_client import models as qmodels
 from sqlalchemy import delete as sa_delete, select, update as sa_update
 
+from libs.database_connector.postgres_connector import PostgresClient
 from libs.basemodel.services_databaseconnector.postgres_model import ConflictStatus
 from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBConflictORM,
@@ -65,7 +67,7 @@ async def _merge_contents(existing_content: str, incoming_content: str, instruct
     )
 
 
-async def _fetch_active_block_table(postgres, block_id: str) -> dict | None:
+async def _fetch_active_block_table(postgres: PostgresClient, block_id: str) -> dict[str, Any] | None:
     async with postgres.get_client() as session:
         result = await session.execute(
             select(KBTextTableORM)
@@ -86,7 +88,7 @@ async def _reopen_conflict_after_recheck(
     ctx: BatchContext,
     *,
     conflict_id: str,
-    scores: dict,
+    scores: dict[str, Any],
     dominant_criterion: str,
     stage_record: StageChain,
 ) -> None:
@@ -122,7 +124,7 @@ async def _build_merged_block(
     *,
     merged_content: str,
     embed_model_id: str,
-    existing_table: dict | None,
+    existing_table: dict[str, Any] | None,
     data_id: str,
 ) -> MergedBlock:
     extraction = await summarize_chunk(merged_content)
@@ -163,7 +165,7 @@ async def _build_merged_block(
 
 
 async def _write_merged_version(
-    postgres,
+    postgres: PostgresClient,
     ctx: BatchContext,
     merged: MergedBlock,
     current_version: int,
@@ -200,7 +202,7 @@ async def _write_merged_version(
             raise
 
 
-async def _revert_merged_version(postgres, ctx: BatchContext, current_version: int) -> None:
+async def _revert_merged_version(postgres: PostgresClient, ctx: BatchContext, current_version: int) -> None:
     async with postgres.get_client() as session:
         try:
             merged_version_id = (await session.execute(
@@ -232,7 +234,7 @@ async def _rollback_published_merged_block(
     stores: ResolverStores,
     ctx: BatchContext,
     current_version: int,
-    previous_point,
+    previous_point: Any,
 ) -> None:
     try:
         await _revert_merged_version(stores.postgres, ctx, current_version)
@@ -320,7 +322,7 @@ async def _merge_into_working_content(
     stores: ResolverStores,
     ctx: BatchContext,
     working_content: str,
-    payload_by_conflict_id: dict[str, dict],
+    payload_by_conflict_id: dict[str, dict[str, Any]],
     stage_record: StageChain,
 ) -> tuple[str, bool]:
     pending_merges = [

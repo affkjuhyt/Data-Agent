@@ -61,8 +61,8 @@ class MergedBlock:
     content: str
     summary: str
     embedding: list[float]
-    payload: dict
-    graph_entities: list[dict]
-    relationships: list[dict]
+    payload: dict[str, Any]
+    graph_entities: list[dict[str, Any]]
+    relationships: list[dict[str, Any]]
     keep_table: bool
-    table: dict | None
+    table: dict[str, Any] | None

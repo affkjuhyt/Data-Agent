@@ -51,7 +51,7 @@ def build_gold_handler(runtime: WorkerRuntime) -> Callable[[dict[str, Any]], Awa
                             promote_to_gold(
                                 postgres=runtime.postgres,
                                 qdrant=runtime.qdrant.get_client(),
-                                graph=runtime.graph,
+                                graph=runtime.require_graph(),
                                 mongo=runtime.mongo,
                                 model=runtime.model,
                                 data_id=data_id,

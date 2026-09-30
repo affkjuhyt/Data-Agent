@@ -10,7 +10,7 @@ spreadsheet with several independent tables needs a follow-up (a
 table-selection review step), not built here."""
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Optional, cast
 import json
 import logging
 import re
@@ -79,12 +79,12 @@ def _extract_json(raw: str) -> Optional[dict[str, Any]]:
     match = _JSON_FENCE.search(raw)
     cleaned = match.group(1).strip() if match else raw.strip()
     try:
-        return json.loads(cleaned)
+        return cast(dict[str, Any], json.loads(cleaned))
     except json.JSONDecodeError:
         obj_match = _JSON_OBJ.search(cleaned)
         if obj_match:
             try:
-                return json.loads(obj_match.group(0))
+                return cast(dict[str, Any], json.loads(obj_match.group(0)))
             except json.JSONDecodeError:
                 return None
         return None

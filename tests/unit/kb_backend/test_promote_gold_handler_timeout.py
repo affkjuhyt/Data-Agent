@@ -25,6 +25,7 @@ def _runtime() -> WorkerRuntime:
     runtime = WorkerRuntime(logger=AsyncMock(), stage_record=AsyncMock())
     runtime.mongo = MagicMock(get_client=MagicMock(return_value=MagicMock()))
     runtime.qdrant = MagicMock(get_client=MagicMock(return_value=MagicMock()))
+    runtime.graph = MagicMock()
     return runtime
 
 

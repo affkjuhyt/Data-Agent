@@ -160,8 +160,8 @@ with an existing baseline to burn down. Ratchet plan:
   | `backend/services/{kb_backend,workflow_runtime}` (incl. `workflow_runtime/orchestrator`) | **0**, enforced |
   | `backend/services/{auth_api,flow_builder,model_service,sandbox_executor,platform_workers}` | **0**, enforced |
 
-  Not on the strict list: `backend/libs/{ingestion,semantic,indicator}` and the services
-  `kb_backend/workers/*` (excluded from the `kb_backend` strict entry in ci.yml). The whole-tree run is report-only (`|| true`).
+  Not on the strict list: `backend/libs/{ingestion,semantic,indicator}`. The KB workers
+  (`kb_backend/workers/*`) are strict as part of the `kb_backend` entry. The whole-tree run is report-only (`|| true`).
 
 ## 6. Reporting a vulnerability
 

@@ -25,7 +25,7 @@ def build_conflict_handler(runtime: WorkerRuntime) -> Callable[[dict[str, Any]],
         async with stage_limit:
             try:
                 await resolve_batch(
-                    batch_id, runtime.postgres, runtime.qdrant, runtime.graph, runtime.model, db
+                    batch_id, runtime.postgres, runtime.qdrant, runtime.require_graph(), runtime.model, db
                 )
             except Exception as exc:
                 log.error("conflict batch %s failed: %s", batch_id, exc, exc_info=exc)

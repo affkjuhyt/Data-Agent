@@ -35,7 +35,7 @@ async def main() -> None:
         conflict_resolve_loop(
             postgres=runtime.postgres,
             qdrant_svc=runtime.qdrant,
-            graph=runtime.graph,
+            graph=runtime.require_graph(),
             model=runtime.model,
             mongo=runtime.mongo,
         ),

@@ -1,6 +1,8 @@
 """Batch-level conflict resolution orchestration."""
 from __future__ import annotations
 
+from typing import Any
+
 from libs.basemodel.services_databaseconnector.postgres_model import ConflictStatus
 from libs.database_connector.model_connector import ModelServiceClient
 from libs.database_connector.postgres_connector import PostgresClient, set_current_tenant
@@ -35,7 +37,7 @@ async def resolve_batch(
     qdrant_svc: QdrantService,
     graph: GraphStore,
     model: ModelServiceClient,
-    database,
+    database: Any,
 ) -> None:
     """Execute one batch's user-chosen resolution as a whole."""
     logger = IngestionLogger(db=database)
