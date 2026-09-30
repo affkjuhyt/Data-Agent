@@ -4,7 +4,11 @@ from datetime import datetime, timedelta, timezone
 import psycopg2.extras
 
 try:
-    from services.auth_api.domain.secrets import TRANSIT_KEY_TYPES, TRANSIT_MOUNT, build_transit_key_name
+    from services.auth_api.domain.secrets import (
+        TRANSIT_KEY_TYPES,
+        TRANSIT_MOUNT,
+        build_transit_key_name,
+    )
     from services.auth_api.infrastructure.config import log
     from services.auth_api.infrastructure.db import get_db
     from services.auth_api.infrastructure.vault import get_vault

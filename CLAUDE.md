@@ -122,6 +122,12 @@ backend/services    one deployable per directory, Dockerfile inside. kb_backend 
                     layer never imports a higher one — .importlinter enforces it. main.py and jobs/
                     are entrypoints outside the layers; prompts/ holds the templates (PROMPTS_DIR).
                     It also serves agent/workflow/canvas authoring (ex flow_builder)
+
+                    Kafka events go through the outbox (libs/shared/outbox.py, docs/RUNBOOK.md §10b):
+                    a service writes the event to OutboxEvents — in its own transaction when it has
+                    one — and its relay publishes it. Do not add a direct publish after a commit.
+                    Concurrent writers of one aggregate lock the parent row (FOR UPDATE) and the
+                    "at most one active/published" rules are partial unique indexes
 backend/alembic     Postgres migrations (the `migrate` image)
 frontend/src        React app (features/, components/, lib/)
 deploy/ansible      the deploy path (k8s-local inventory)

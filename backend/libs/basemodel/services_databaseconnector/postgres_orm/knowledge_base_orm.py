@@ -2,12 +2,27 @@ import datetime
 import uuid
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, func, text
-from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    func,
+    text,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from libs.basemodel.services_databaseconnector.postgres_model import (
-    register, ConflictStatus, SimilarityMetric, Tier,
+    ConflictStatus,
+    SimilarityMetric,
+    Tier,
+    register,
 )
 from libs.basemodel.services_databaseconnector.postgres_orm.base import Base
 
@@ -321,7 +336,7 @@ class KBWarehouseConfigORM(Base):
     __tablename__ = "KBWarehouseConfig"
     __table_args__ = (
         Index("idx_kbwarehouseconfig_wh_version", "warehouse_id", "version_number"),
-        Index("idx_kbwarehouseconfig_wh_active", "warehouse_id", postgresql_where=text("is_active = true")),
+        Index("idx_kbwarehouseconfig_wh_active", "warehouse_id", unique=True, postgresql_where=text("is_active = true")),
         Index("idx_kbwarehouseconfig_inserted_at_desc", text("inserted_at DESC")),
     )
 
@@ -351,6 +366,7 @@ class KBSourceORM(Base):
     __table_args__ = (
         Index("idx_kbsource_tenant", "tenant_id"),
         Index("idx_kbsource_inserted_at_desc", text("inserted_at DESC")),
+        Index("uq_kbsource_tenant_title_live", "tenant_id", "title", unique=True, postgresql_where=text("is_deleted = false")),
     )
 
     source_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -376,7 +392,7 @@ class KBSourceConfigORM(Base):
     __tablename__ = "KBSourceConfig"
     __table_args__ = (
         Index("idx_kbsourceconfig_source_version", "source_id", "version_number"),
-        Index("idx_kbsourceconfig_source_active", "source_id", postgresql_where=text("is_active = true")),
+        Index("idx_kbsourceconfig_source_active", "source_id", unique=True, postgresql_where=text("is_active = true")),
     )
 
     config_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

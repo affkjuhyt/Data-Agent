@@ -294,6 +294,33 @@ Before adding a revision, check its id is unique:
   RLS on a tenant table to "fix" a query — scope the query by tenant.
 - The chain is covered by `tests/integration/workflow_runtime/test_alembic_migrations.py`.
 
+## 10b. Kafka outbox (`OutboxEvents`)
+
+Services do not publish Kafka events directly any more: they insert a row into `OutboxEvents`
+(in the same transaction as their own change where they have one) and a relay in that service
+publishes it (`libs/shared/outbox.py`). A broker outage or a crash between "commit" and "publish"
+therefore delays an event instead of losing it. Delivery is at-least-once; consumers are idempotent.
+
+| `producer` | Service | Topics |
+| --- | --- | --- |
+| `kb-backend` | kb-backend API relay | `kb.promote.silver/gold`, `kb.resolve.conflict`, `kb.structured.propose` |
+| `kb-promote-silver`, `kb-promote-gold` | the two workers | retries, DLQ, Gold hand-off |
+| `web-crawler` | platform-workers-web-crawler | `kb.promote.silver` (auto-promote, inserted with the Bronze registration) |
+| `workflow-runtime` | workflow-runtime | `memory.extraction.requested` |
+
+Not on the outbox: `audit.data.access` (best-effort `produce_event`, delivery errors are logged).
+
+```sql
+-- what is waiting, per service (should be ~0 and drain within seconds)
+SELECT producer, count(*), min(created_at) FROM "OutboxEvents"
+ WHERE published_at IS NULL AND dead_at IS NULL GROUP BY 1;
+-- parked after 20 failed publishes: fix the cause (broker ACL, payload size), then re-queue
+SELECT id, producer, topic, attempts, last_error FROM "OutboxEvents" WHERE dead_at IS NOT NULL;
+UPDATE "OutboxEvents" SET dead_at = NULL, attempts = 0 WHERE id = :id;
+-- housekeeping: sent rows are kept for inspection; trim them by hand when they get large
+DELETE FROM "OutboxEvents" WHERE published_at < now() - interval '7 days';
+```
+
 ## 11. LLM and model backend
 
 The GPU services on `10.10.55.101` run outside k8s: vLLM main `:8001`

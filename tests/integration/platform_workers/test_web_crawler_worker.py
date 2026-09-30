@@ -296,6 +296,7 @@ def test_changed_content_updates_a_promoted_document_in_place(migrated_db, worke
     bytes must keep the row's data_id and tier, strip the previous run's
     pipeline stamps, keep unrelated metadata, and log the change."""
     import json
+
     from libs.ingestion.connectors.base import FetchedArtifact
 
     tenant_id, _role, source_id = _seed_tenant_and_source(

@@ -325,6 +325,14 @@ async def approve_structured_table(
     # DDL, rows and the catalogue row share one transaction: the whole import
     # lands or none of it does.
     async with postgres.get_client() as session:
+        current_status = (await session.execute(
+            sa_select(KBStructuredImportJobORM.status)
+            .where(KBStructuredImportJobORM.job_id == job.job_id)
+            .with_for_update()
+        )).scalar_one_or_none()
+        if current_status != "proposed":
+            await session.rollback()
+            raise HTTPException(status_code=409, detail="No proposal is ready for review on this document")
         preferred_name = safe_identifier(final_schema.table_name, "table_name")
         table_name = await _unused_table_name(session, preferred_name)
         await _create_import_table(session, table_name, columns)

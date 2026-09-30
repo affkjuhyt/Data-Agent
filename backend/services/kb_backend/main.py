@@ -1,30 +1,32 @@
-from typing import Any
-from collections.abc import AsyncIterator
 import asyncio
 import logging
 import os
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from libs.basemodel.services_databaseconnector.shared_model import RetryConfig, HealthCheckLoopConfig
+from libs.basemodel.services_databaseconnector.shared_model import (
+    HealthCheckLoopConfig,
+    RetryConfig,
+)
+from libs.database_connector.kafka_connector import KafkaProducerClient
+from libs.database_connector.minio_connector import MinIOClient
+from libs.database_connector.model_connector import ModelServiceClient
+from libs.database_connector.mongo_connector import MongoClient
+from libs.database_connector.neo4j_connector import Neo4jClient
 from libs.database_connector.postgres_connector import PostgresClient
 from libs.database_connector.qdrant_connector import QdrantClient as QdrantService
-from libs.database_connector.neo4j_connector import Neo4jClient
-from libs.database_connector.mongo_connector import MongoClient
-from libs.database_connector.minio_connector import MinIOClient
 from libs.database_connector.redis_connector import RedisClient
 from libs.shared.kb_result_cache import ResultCache
-from libs.shared.outbox import OutboxProducer, relay_loop
-from libs.database_connector.kafka_connector import KafkaProducerClient
-from libs.database_connector.model_connector import ModelServiceClient
 from libs.shared.observability import setup_observability
-
-from services.kb_backend.pipeline.light_rag.pipeline import LightRAGPipeline, cache_sweep_loop
-from services.kb_backend.pipeline.light_rag import config as cfg
+from libs.shared.outbox import OutboxProducer, relay_loop
 from services.kb_backend.pipeline.ingestion.pipeline import IngestionPipeline
+from services.kb_backend.pipeline.light_rag import config as cfg
+from services.kb_backend.pipeline.light_rag.pipeline import LightRAGPipeline, cache_sweep_loop
 
 log = logging.getLogger(__name__)
 

@@ -3,15 +3,26 @@ import uuid
 from typing import Optional
 
 from sqlalchemy import (
-    BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, SmallInteger,
-    String, Text, UniqueConstraint, func, text,
+    BigInteger,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    SmallInteger,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
 )
-from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB, ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from libs.basemodel.services_databaseconnector.postgres_model import register
 from libs.basemodel.services_databaseconnector.postgres_orm.base import Base
-
 
 # ─── Agent Platform ───────────────────────────────────────────────────────────
 

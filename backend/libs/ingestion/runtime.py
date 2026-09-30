@@ -27,10 +27,10 @@ from libs.database_connector.redis_connector import RedisClient
 from libs.ingestion import config as cfg
 from libs.ingestion import conflict_store
 from libs.ingestion.graph_store import GraphStore
-from libs.shared.outbox import OutboxProducer, relay_loop
 from libs.ingestion.log_writer import IngestionLogger
 from libs.ingestion.stage_chain import StageChain
 from libs.shared.kb_result_cache import ResultCache
+from libs.shared.outbox import OutboxProducer, relay_loop
 
 if TYPE_CHECKING:
     from libs.ingestion.docling_parser import InlineDoclingParser

@@ -23,6 +23,9 @@ class _Result:
     def first(self) -> None:
         return None
 
+    def scalar_one_or_none(self) -> str:
+        return "proposed"  # the job-claim SELECT ... FOR UPDATE in approve_structured_table
+
 
 class _RecordingSession:
     def __init__(self) -> None:

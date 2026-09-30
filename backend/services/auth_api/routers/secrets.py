@@ -1,11 +1,12 @@
-from typing import Any
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import psycopg2
 import psycopg2.extras
 from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query
 
 from libs.shared.auth import get_current_user, require_role
+
 try:
     from services.auth_api.domain.secrets import (
         TENANT_MANAGEABLE_KEY_TYPES,

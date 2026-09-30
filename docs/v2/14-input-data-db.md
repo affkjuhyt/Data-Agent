@@ -43,8 +43,8 @@ Ngoài phạm vi: bảng governance chi tiết (NOP-90, 104, 109), alert, capabi
 | IN-7 | **Kỳ lưu là khoảng `[event_time_start, event_time_end)` theo UTC**, ranh giới tính theo `market_timezone`. Số tức thời (tỷ giá, SJC, giá bán lẻ hiệu lực 15h00) có `start = end`. Kèm `period_code` dễ đọc (`2026-09-15`, `2026-M08`, `2026-W38`, `P:2398/QĐ-BCT`) | Một quy tắc cho D/W/M/I/P; ClickHouse không nhận NULL ở `event_time_end` |
 | IN-8 | **Mọi sự kiện Kafka của luồng đầu vào đi qua `ingest.outbox`**, cùng transaction với dòng dữ liệu | ADR-V2-34; crash giữa "ghi DB" và "gửi Kafka" hiện là cách mất sự kiện |
 
-Đã chốt ngày 30/09/2026: IN-5 = ADR-V2-43, IN-2 = ADR-V2-44, IN-4 = ADR-V2-45 (xem
-[07](07-decisions-and-risks.md)). IN-1, IN-3, IN-6, IN-7, IN-8 là thiết kế đề xuất, chốt thành ADR khi
+Đã chốt ngày 30/09/2026: IN-5 = ADR-V2-43, IN-2 = ADR-V2-44, IN-4 = ADR-V2-45, role `crawler_svc` =
+ADR-V2-46 (xem [07](07-decisions-and-risks.md)). IN-1, IN-3, IN-6, IN-7, IN-8 là thiết kế đề xuất, chốt thành ADR khi
 nhóm duyệt.
 
 ## 2. Sơ đồ quan hệ
@@ -84,7 +84,7 @@ Bulk Import và form đều ghi qua cùng model đó.
 
 ```yaml
 # định danh và quyền
-source_key: eia-brent-spot-daily       # slug duy nhất theo tenant; Bulk Import dùng để nhập lại không tạo trùng
+source_key: eia-brent-spot-daily       # slug duy nhất theo tenant (= `id` trong seed YAML); nhập lại không tạo trùng
 licence: "US government data (EIA), ghi nguồn"
 use_rights: internal_analysis          # internal_analysis | pending_review | blocked  (blocked → worker không chạy)
 purpose: production                    # production | evaluation  (evaluation → nhãn "dữ liệu thử")
@@ -95,8 +95,8 @@ follow_link_pattern: null              # regex; Bộ Công Thương: bài "đi�
 freshness_sla: P8D                     # ISO 8601; hết hạn mà không có release mới → source.sla.breached
 # thời gian
 release_info:                          # đọc publication_time CỦA RELEASE (có cấu trúc, không còn là câu mô tả)
-  publication_time: {from: xls_cell, sheet: Contents, label: "Release Date", time: "10:30", tz: America/New_York}
-  next_release_time: {from: xls_cell, sheet: Contents, label: "Next Release Date"}
+  publication_time: {from: xls_cell, sheet: Contents, label: "Release Date:", time: "10:30", tz: America/New_York}
+  next_release_time: {from: xls_cell, sheet: Contents, label: "Next Release Date:", time: "10:30", tz: America/New_York}
 release_calendar:                      # suy ngày công bố cho SỐ LỊCH SỬ (IN-5)
   kind: weekly_after                   # weekly_after | daily_lag | monthly_day | none
   weekday: WED
@@ -113,9 +113,15 @@ extraction_profile:
   row_filter: null                     # JODI: {REF_AREA: [...], ENERGY_PRODUCT: CRUDEOIL, FLOW_BREAKDOWN: INDPROD}
 ```
 
-Các loại nguồn gốc cho `release_info.*.from`: `xls_cell`, `sdmx_header` (`PUBLICATION_DATE`),
-`html_regex`, `json_max_date` (LBMA: ngày `d` lớn nhất), `xml_attr` (Vietcombank `DateTime`),
+Các loại nguồn gốc cho `release_info.*.from` (đã đối chiếu với file thật ngày 30/09/2026):
+`xls_cell` (`label` khớp đúng hoặc `label_prefix`; EIA `Contents`, Pink Sheet "Updated on"),
+`sdmx_dataset_attr` (IMF: `PUBLICATION_DATE` là thuộc tính của `DataSet`, không nằm trong `Header`),
+`html_regex`, `json_max_date` (LBMA: ngày `d` lớn nhất), `xml_text` (Vietcombank `/ExrateList/DateTime`),
 `fetch_time`.
+
+`mapping` trong seed (Bulk Import tạo mapping v1 `seed`, không lưu vào config) chọn giá trị theo loại
+profile: `column` (bảng), `field` (JSON), `select` theo chiều (SDMX), `attr` (XML). Seed
+[data/sources-oil-gold.yaml](data/sources-oil-gold.yaml) đã theo dạng này cho 9 nguồn.
 
 Các loại `release_calendar.kind`:
 
@@ -534,24 +540,31 @@ EV-01). Candidate số từ văn bản nằm ở `ingest.observation_candidate` 
 
 ### 9.1 `ingest.outbox`
 
+Cùng dạng với `public."OutboxEvents"` đã có (migration `a9c2e4f6b8d1`, relay `libs/shared/outbox.py`:
+`FOR UPDATE SKIP LOCKED`, theo thứ tự `id`, dừng sau 20 lần lỗi), thêm `tenant_id` và nằm ở schema
+`ingest` vì bảng V2 không ở `public` (ADR-V2-26). `libs/shared/outbox.py` nhận tên bảng làm tham số,
+không viết relay thứ hai.
+
 ```sql
 CREATE TABLE ingest.outbox (
-  outbox_id    uuid PRIMARY KEY,
+  id           bigserial PRIMARY KEY,               -- thứ tự phát; không dùng uuid
   tenant_id    uuid NOT NULL,
+  producer     text NOT NULL,                        -- 'web_crawler' | 'series_extractor' | 'semantic_extractor'
   topic        text NOT NULL CHECK (topic IN ('artifact.stored','source.sla.breached',
                  'extraction.completed','mapping.proposed')),
-  msg_key      text NOT NULL,                       -- source_id | release_id (03 mục 13)
-  payload      jsonb NOT NULL,                      -- envelope Pydantic (ADR-V2-40)
+  event_key    text NOT NULL,                        -- source_id | release_id (03 mục 13)
+  payload      jsonb NOT NULL,                       -- envelope Pydantic (ADR-V2-40)
   created_at   timestamptz NOT NULL DEFAULT now(),
   published_at timestamptz,
-  attempts     int NOT NULL DEFAULT 0
+  attempts     int NOT NULL DEFAULT 0,
+  last_error   text,
+  dead_at      timestamptz
 );
-CREATE INDEX ON ingest.outbox (created_at) WHERE published_at IS NULL;
+CREATE INDEX ON ingest.outbox (producer, id) WHERE published_at IS NULL AND dead_at IS NULL;
 ```
 
-Relay (vòng lặp trong `platform_workers`) dùng role `outbox_relay`, có policy RLS riêng `USING
-(true)` chỉ trên bảng outbox và chỉ được `UPDATE (published_at, attempts)`. Không role nào có
-`BYPASSRLS`.
+Relay dùng role `outbox_relay`: có policy RLS riêng `USING (true)` chỉ trên bảng này và chỉ được
+`UPDATE (published_at, attempts, last_error, dead_at)`. Không role nào có `BYPASSRLS`.
 
 ### 9.2 ClickHouse `obs.observation` (NOP-108, thêm 4 cột)
 
@@ -584,8 +597,8 @@ kiện này (bất biến 11).
 | `outbox` | INSERT | INSERT | INSERT | UPDATE `published_at` |
 | ClickHouse `obs` | | | `obs_writer` INSERT, `obs_reader` SELECT | |
 
-Đề xuất thêm role **`crawler_svc`**, tách khỏi `ingest_svc` mà NOP-124 định dùng chung. Web_crawler
-có Internet (bề mặt tấn công lớn nhất) nên không được ghi candidate hay mapping. Worker xử lý nhiều
+Role **`crawler_svc`** tách khỏi `ingest_svc` (ADR-V2-46, chốt 30/09/2026). Web_crawler có Internet
+(bề mặt tấn công lớn nhất) nên không được ghi candidate hay mapping. Worker xử lý nhiều
 tenant đặt `app.tenant_id` theo `tenant_id` của nguồn (lấy từ envelope hoặc `KBSource`) trước mỗi
 transaction.
 
@@ -635,6 +648,7 @@ lên sạch; UPDATE/DELETE vào bảng append-only bị từ chối **bằng rol
 | # | Câu hỏi | Đề xuất |
 | --- | --- | --- |
 | Q1 | Chấp nhận `available_at` suy từ lịch cho số lịch sử (IN-5)? Phương án khác là chỉ trả lời as-of từ ngày hệ thống bắt đầu nạp, nhưng như vậy mất UC13 trên dữ liệu thật và mất 32 đợt giảm | Chấp nhận, gắn nhãn `calendar_inferred` trên UI và trong câu trả lời |
-| Q2 | Thêm role `crawler_svc` riêng? | Có (10 DB2: role rẻ, sửa quyền về sau mới đắt) |
-| Q3 | LBMA nạp cả GBP/EUR hay chỉ USD? | Chỉ USD cho POC; GBP/EUR là hai series `draft` |
-| Q4 | Tách `series:` khỏi `extraction_profile` (IN-2) nghĩa là seed YAML và 03 mục 5 đổi dạng | Đồng ý; Bulk Import tạo mapping v1 `seed` từ phần `series:` |
+| Q3 | LBMA nạp gì ngoài Gold PM USD? JSON công khai có `gold_am`, `gold_pm`, `silver`, `platinum_am/pm`, `palladium_am/pm`, mỗi dòng `[USD, GBP, EUR]`. **Ngày 30/09/2026 máy chủ bị Cloudflare chặn (403) cho mọi file**, đang dựa vào tải tay | Chỉ Gold PM USD cho POC; mapping seed đã chỉ lấy `v[0]` |
+
+Đã chốt 30/09/2026: Q2 → ADR-V2-46; Q4 → seed YAML đã đổi dạng (Bulk Import parser cho kết quả y
+như cũ: 24 tạo, 4 bỏ qua, chỉ khác `notes`/`variables`).

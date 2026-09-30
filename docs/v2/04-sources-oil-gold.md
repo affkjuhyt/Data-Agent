@@ -219,7 +219,7 @@ máy chủ cùng ngày:
 
 | Trang | Kết quả | Dùng |
 | --- | --- | --- |
-| `https://prices.lbma.org.uk/json/gold_pm.json` (và `gold_am.json`) | 200, JSON 915 KB, 14.691 ngày từ 01/04/1968 tới 25/09/2026; mỗi dòng `{"d": ngày, "v": [USD, GBP, EUR]}`; 25/09/2026 = 4.261,05 USD/oz | **Nguồn chính**: `http_file`, entity `GOLD_LBMA_PM`, series `LBMA:GOLD_PM:USD:D`. Là số benchmark thật, không phải giá tổng hợp |
+| `https://prices.lbma.org.uk/json/gold_pm.json` (và `gold_am.json`) | 200, JSON 915 KB, 14.691 ngày từ 01/04/1968 tới 25/09/2026; mỗi dòng `{"d": ngày, "v": [USD, GBP, EUR]}`; 25/09/2026 = 4.261,05 USD/oz | **Nguồn chính**: `http_file`, entity `GOLD_LBMA_PM`, series `LBMA:GOLD_PM:USD:D`. Là số benchmark thật, không phải giá tổng hợp. **30/09/2026: từ máy chủ trả 403 Cloudflare** (mọi file JSON; `www.lbma.org.uk` 503), đang dựa vào tải tay |
 | `giavang.org/the-gioi/` | 200, XAU/USD cập nhật trong ngày (4.285,29 lúc 00:45 28/09) | Tuỳ chọn: giá trong ngày, entity `GOLD_SPOT_WEB` |
 | `data-asg.goldprice.org`, `investing.com`, `tygia.com` | 403 | Không dùng |
 | `24h.com.vn/gia-vang-hom-nay-c425.html` | 200, HTML tĩnh có giá SJC mua 141.400 / bán 144.400 (nghìn đồng/lượng) và tỷ giá, ghi nguồn giavang.net, pnj.com.vn | Nguồn phụ cho SJC, không cần headless |

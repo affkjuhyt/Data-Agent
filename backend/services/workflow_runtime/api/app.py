@@ -32,8 +32,8 @@ from libs.database_connector.mongo_connector import client as mongo_client
 from libs.database_connector.postgres_connector import client as pg_client
 from libs.database_connector.redis_connector import RedisClient
 from libs.shared.cache_invalidation import run_graph_invalidation_listener
-from libs.shared.outbox import relay_loop
 from libs.shared.observability import setup_observability
+from libs.shared.outbox import relay_loop
 from services.workflow_runtime.api.auth import get_current_user
 from services.workflow_runtime.api.routers import (
     agents,
@@ -68,7 +68,11 @@ from services.workflow_runtime.infrastructure.kafka_producer import (
     produce_event,
     publish_acked,
 )
-from services.workflow_runtime.infrastructure.memory_middleware import OUTBOX_PRODUCER, close_qdrant, init_qdrant
+from services.workflow_runtime.infrastructure.memory_middleware import (
+    OUTBOX_PRODUCER,
+    close_qdrant,
+    init_qdrant,
+)
 from services.workflow_runtime.infrastructure.mongo_client import close_mongo, init_mongo
 from services.workflow_runtime.infrastructure.redis_cache import close_redis, init_redis
 from services.workflow_runtime.infrastructure.schema_catalog import (
