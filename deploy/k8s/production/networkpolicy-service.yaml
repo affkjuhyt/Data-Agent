@@ -226,29 +226,6 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-flow-builder
-  namespace: dataagent-service
-  labels:
-    app.kubernetes.io/part-of: dataagent
-spec:
-  podSelector:
-    matchLabels:
-      app: flow-builder
-  policyTypes:
-  - Ingress
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: kong
-    ports:
-    - protocol: TCP
-      port: 8250
-
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
   name: allow-sandbox-executor
   namespace: dataagent-service
   labels:
@@ -383,9 +360,6 @@ spec:
     - podSelector:
         matchLabels:
           app: kb-backend
-    - podSelector:
-        matchLabels:
-          app: flow-builder
     - podSelector:
         matchLabels:
           app: auth-api

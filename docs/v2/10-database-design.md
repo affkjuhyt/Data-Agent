@@ -49,7 +49,7 @@ Số đo trên cụm dev: 76 bảng tên PascalCase có ngoặc kép, 8 bảng s
 
 | Vấn đề | Bằng chứng |
 | --- | --- |
-| Superuser `admin` (`rolsuper`, `rolbypassrls`) là tài khoản của auth_api, flow_builder, bốn platform_workers (kể cả web_crawler ghi `KBData`), model-service, CronJob memory-cleanup → RLS không có tác dụng | `pg_stat_activity`; `deploy/k8s/create-secrets.sh`; `platform_workers/common/settings.py:52` |
+| Superuser `admin` (`rolsuper`, `rolbypassrls`) là tài khoản của auth_api, bốn platform_workers (kể cả web_crawler ghi `KBData`), model-service, CronJob memory-cleanup → RLS không có tác dụng | `pg_stat_activity`; `deploy/k8s/create-secrets.sh`; `platform_workers/common/settings.py:52` |
 | Có `tenant_id` mà không bật RLS: `KBKnowledgeBase`, `KBEntityLookup`, `KBNeo4jNode/Relationship`; không RLS: `KBSourceConfig/Run`, `KBStructuredImportJob`, `Messages`, `AgentTraces`, `Workflows*`; `kb_structured.*` mặc định tắt | `pg_class.relrowsecurity` |
 | `KBData` có `UNIQUE(name)` toàn bảng: hai tenant không thể có tài liệu trùng tên. ORM khai báo unique theo tenant nhưng không migration nào tạo | constraint `KBData_name_key`; `knowledge_base_orm.py:104` |
 | `POST /api/knowledge/neo4j/query` chạy Cypher tuỳ ý; kiểm tra chỉ theo tiền tố nên `MATCH … DETACH DELETE` lọt; query bỏ qua `$tenant_id` thì đọc được tenant khác | `kb_backend/operations/neo4j_ops.py:146` |

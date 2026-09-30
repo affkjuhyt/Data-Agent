@@ -23,7 +23,6 @@ REGISTRY="${REGISTRY:-}"
 
 declare -A IMAGES=(
   [auth_api]="backend/services/auth_api/Dockerfile|."
-  [flow_builder]="backend/services/flow_builder/Dockerfile|."
   [kb-backend]="backend/services/kb_backend/Dockerfile|."
   [kb-worker]="deploy/docker/kb-worker/Dockerfile|."
   [llm_exporter]="backend/services/llm_exporter/Dockerfile|."

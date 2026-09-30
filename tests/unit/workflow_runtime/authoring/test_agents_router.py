@@ -1,6 +1,6 @@
-"""flow_builder routers/agents.py: route table, gateway auth, tenant scoping.
+"""workflow_runtime routers/agents.py: route table, gateway auth, tenant scoping.
 
-The Postgres layer (db_pg) is replaced by an in-memory store that models what
+The Postgres layer (authoring_repository) is replaced by an in-memory store that models what
 row-level security gives the real one: a lookup scoped to tenant B does not see
 tenant A's agent. What the tests pin is the router's side of that contract —
 the tenant it passes down comes from the verified caller and nowhere else.

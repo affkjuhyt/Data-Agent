@@ -3,11 +3,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from auth import get_current_user
-from db_mongo import load_canvas, save_canvas
-from db_pg import workflow_version_belongs_to
+from services.workflow_runtime.auth import get_current_user
+from services.workflow_runtime.mongo_client import load_canvas, save_canvas
+from services.workflow_runtime.authoring_repository import workflow_version_belongs_to
 from libs.shared.auth import require_tenant
-from schemas import CanvasPayload
+from services.workflow_runtime.authoring_schemas import CanvasPayload
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

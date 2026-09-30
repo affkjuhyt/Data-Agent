@@ -35,7 +35,8 @@ pytestmark = pytest.mark.unit
 
 # Reached before any token exists — Kong's upstream probe and the kubelet's
 # probes both run at startup, and it returns a literal.
-_OPEN_ROUTERS = {"health"}
+# The two liveness routers: they answer before any token exists (kubelet, Kong).
+_OPEN_ROUTERS = {"health", "orch_stream"}
 
 # Not Python application services: the gateway itself, datastores, and the
 # frontend, none of which resolve a caller identity in this codebase.
@@ -163,7 +164,7 @@ class TestNoTenantComesFromAClientHeader:
                 hits.append(" or ".join(sorted(names)))
         return hits
 
-    @pytest.mark.parametrize("service", ["flow_builder", "workflow_runtime"])
+    @pytest.mark.parametrize("service", ["workflow_runtime"])
     def test_no_router_falls_back_to_the_dev_tenant(self, service):
         directory = _service_dir(service)
         assert directory is not None
@@ -175,11 +176,12 @@ class TestNoTenantComesFromAClientHeader:
                 offenders[str(path.relative_to(REPO_ROOT))] = hits
         assert not offenders, f"dev-tenant fallback still reachable: {offenders}"
 
-    def test_flow_builder_routes_take_no_tenant_header_at_all(self):
+    def test_authoring_routes_take_no_tenant_header_at_all(self):
         """Not merely "the header is checked" — the parameter is gone, so a new
         route cannot reintroduce it by copying a neighbour."""
-        directory = _service_dir("flow_builder")
-        for path in _python_files(directory / "routers"):
+        directory = _service_dir("workflow_runtime")
+        for name in ("agents", "workflows", "canvas"):
+            path = directory / "routers" / f"{name}.py"
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -211,7 +213,7 @@ class TestRoutersAreAuthenticatedAtIncludeTime:
                 out.setdefault("_loop", has_deps)
         return out
 
-    @pytest.mark.parametrize("service", ["flow_builder"])
+    @pytest.mark.parametrize("service", ["workflow_runtime"])
     def test_only_health_is_included_without_authentication(self, service):
         directory = _service_dir(service)
         includes = self._include_calls(directory / "app.py")
@@ -220,7 +222,7 @@ class TestRoutersAreAuthenticatedAtIncludeTime:
             f"{service} includes {sorted(unguarded - _OPEN_ROUTERS)} without authentication"
         )
 
-    @pytest.mark.parametrize("service", ["flow_builder"])
+    @pytest.mark.parametrize("service", ["workflow_runtime"])
     def test_the_loop_that_carries_the_dependency_exists(self, service):
         """The routers are included through a loop with `dependencies=`; if
         someone unrolls it, the previous test still passes only if each call
@@ -265,7 +267,7 @@ class TestCanvasIsScopedToItsOwner:
     workflow_version_id, with no row-level security to fall back on."""
 
     def test_both_canvas_routes_check_ownership(self):
-        path = _service_dir("flow_builder") / "routers" / "canvas.py"
+        path = _service_dir("workflow_runtime") / "routers" / "canvas.py"
         tree = ast.parse(path.read_text(encoding="utf-8"))
 
         routes = [
@@ -289,7 +291,7 @@ class TestCanvasIsScopedToItsOwner:
     def test_a_foreign_version_is_indistinguishable_from_a_missing_one(self):
         """404 rather than 403: 403 would confirm that the id exists, which is
         itself a fact about another tenant."""
-        source = (_service_dir("flow_builder") / "routers" / "canvas.py").read_text(encoding="utf-8")
+        source = (_service_dir("workflow_runtime") / "routers" / "canvas.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         helper = next(
             n for n in ast.walk(tree)

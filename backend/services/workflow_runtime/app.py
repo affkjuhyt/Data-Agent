@@ -37,8 +37,10 @@ from services.workflow_runtime.orchestrator.routers import stream as orch_stream
 from services.workflow_runtime.orchestrator.routers import traces as orch_traces
 from services.workflow_runtime.redis_cache import close_redis, init_redis
 from services.workflow_runtime.routers import (
+    agents,
     billing,
     catalog,
+    canvas,
     conversations,
     db_connector,
     health,
@@ -50,6 +52,7 @@ from services.workflow_runtime.routers import (
     sandbox_ops,
     storage,
     traces,
+    workflows,
 )
 from services.workflow_runtime.runtime_services.conversation_runner import invalidate_graph_version
 from services.workflow_runtime.runtime_services.roi_use_cases import scheduler_loop
@@ -168,6 +171,11 @@ def create_app() -> FastAPI:
         roi_use_cases.router,
         # Object-storage browsing for Settings (/api/storage, ex minio_service).
         storage.router,
+        # Agent / workflow / canvas authoring (ex flow_builder). Kong still
+        # routes these paths through its `flow_builder` service entry.
+        agents.router,
+        workflows.router,
+        canvas.router,
         # Orchestrator (multi-agent front door, /api/orchestrate/*) — same
         # process since the merge; its agent calls are in-process too.
         orch_stream.router,

@@ -1,4 +1,4 @@
-"""flow_builder routers/canvas.py: canvas load/save guarded by version ownership.
+"""workflow_runtime routers/canvas.py: canvas load/save guarded by version ownership.
 
 The canvas lives in Mongo, which has no row-level security, so the router's own
 ownership check (`workflow_version_belongs_to`) is the only thing keeping one

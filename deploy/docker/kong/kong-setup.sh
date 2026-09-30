@@ -28,7 +28,9 @@ KC_BASE="${KEYCLOAK_URL:-http://localhost:8110}"
 # the moment a route actually gets proxied (JWT/CORS checks can pass fine
 # before that point, which is what made this easy to miss).
 WORKFLOW_RUNTIME_HOST="${WORKFLOW_RUNTIME_HOST:-workflow_runtime}"
-FLOW_BUILDER_HOST="${FLOW_BUILDER_HOST:-flow_builder}"
+# Agent/workflow/canvas authoring (ex flow_builder) is served by workflow_runtime. The Kong
+# service keeps the name `flow_builder`: its JWT audience, IP restriction and rate limit
+# are keyed on it (Keycloak audience mappers included), so only the upstream moved.
 AUTH_API_HOST="${AUTH_API_HOST:-auth_api}"
 REALM="${KEYCLOAK_REALM:-aeroflow}"
 # Set SKIP_JWT=1 to skip JWT plugin registration (useful for dev with VITE_MOCK_AUTH=true)
@@ -140,8 +142,8 @@ curl -sf -X PUT "$KONG_ADMIN/services/flow_builder" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "flow_builder",
-    "host": "'"$FLOW_BUILDER_HOST"'",
-    "port": 8250,
+    "host": "'"$WORKFLOW_RUNTIME_HOST"'",
+    "port": 8240,
     "protocol": "http",
     "connect_timeout": 5000,
     "read_timeout": 30000
@@ -595,7 +597,7 @@ echo "  Proxy :  http://localhost:8000"
 echo "  Admin :  in-network only (kong-admin:8001)"
 echo ""
 echo "  JWT:    RS256, issuer=$ISSUER"
-echo "  Routes: /api/agents|workflows|workflow-versions  -> flow_builder:8250"
+echo "  Routes: /api/agents|workflows|workflow-versions  -> workflow_runtime:8240 (Kong service flow_builder)"
 echo "          /api/conversations|traces|nodes|catalog|platform|billing -> workflow_runtime:8240"
 echo "  CORS:   localhost:3000, localhost:8150"
 MTLS_STATUS="NOT configured (run deploy/docker/certs/gen-certs.sh first)"

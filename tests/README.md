@@ -18,7 +18,6 @@ tests/
 │   ├── sandbox_executor/    #   workflow_runtime. There is no single image that can
 │   ├── auth_api/            #   import every service (their pins conflict: OTel,
 │   ├── kb_worker/         #   boto3), so the suites are never run together.
-│   ├── flow_builder/
 │   └── model_service/
 ├── integration/             # testcontainers; same per-service split as unit/
 │   ├── _db.py               # reset_database / run_alembic / alembic_head for the shared container
@@ -253,7 +252,7 @@ The `get_tenant_db` dependency:
 
 ### Rollout checklist for each service
 
-When migrating a service (workflow_runtime, flow_builder, kb-backend, ...):
+When migrating a service (workflow_runtime, kb-backend, ...):
 
 1. Give it `APP_DATABASE_URL` in its `<workload>-secrets` (Ansible
    `secrets.yml` → `create-secrets.sh`). Format:

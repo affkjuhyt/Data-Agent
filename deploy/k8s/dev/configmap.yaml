@@ -35,7 +35,6 @@ data:
   KEYCLOAK_REALM: aeroflow
   KC_REALM: aeroflow
   WORKFLOW_RUNTIME_HOST: workflow-runtime
-  FLOW_BUILDER_HOST: flow-builder
   AUTH_API_HOST: auth-api
   LANGFUSE_HOST: http://langfuse.dataagent-service.svc.cluster.local:8420
   OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger.dataagent-service.svc.cluster.local:8431

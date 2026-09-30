@@ -3,11 +3,11 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from auth import get_current_user
+from services.workflow_runtime.auth import get_current_user
 from libs.shared.auth import require_tenant
 
-from db_mongo import save_canvas
-from db_pg import (
+from services.workflow_runtime.mongo_client import save_canvas
+from services.workflow_runtime.authoring_repository import (
     create_agent,
     delete_agent,
     get_agent,
@@ -17,9 +17,9 @@ from db_pg import (
     unpublish_agent,
     update_agent_draft,
 )
-from dependencies import ensure_db_available
-from schemas import CreateAgentRequest, PublishRequest, UpdateDraftRequest
-from utils import serialize
+from services.workflow_runtime.db import ensure_db_available
+from services.workflow_runtime.authoring_schemas import CreateAgentRequest, PublishRequest, UpdateDraftRequest
+from services.workflow_runtime.authoring_repository import serialize
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

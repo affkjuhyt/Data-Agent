@@ -42,3 +42,30 @@ async def load_flow_edges(workflow_version_id: str) -> list[dict[str, Any]]:
     except Exception as e:
         logger.warning("mongo load_flow_edges failed: %s", e)
         return []
+
+
+async def save_canvas(workflow_version_id: str, nodes: list[Any], edges: list[Any]) -> None:
+    """Replace the canvas of one workflow version (authoring side of flow_nodes/flow_edges)."""
+    db = client.get_client()
+    await db.flow_nodes.delete_many({"workflow_version_id": workflow_version_id})
+    await db.flow_edges.delete_many({"workflow_version_id": workflow_version_id})
+
+    if nodes:
+        await db.flow_nodes.insert_many([
+            {**n, "workflow_version_id": workflow_version_id} for n in nodes
+        ])
+    if edges:
+        await db.flow_edges.insert_many([
+            {**e, "workflow_version_id": workflow_version_id} for e in edges
+        ])
+
+
+async def load_canvas(workflow_version_id: str) -> dict[str, Any]:
+    db = client.get_client()
+    nodes = await db.flow_nodes.find(
+        {"workflow_version_id": workflow_version_id}, {"_id": 0}
+    ).to_list(None)
+    edges = await db.flow_edges.find(
+        {"workflow_version_id": workflow_version_id}, {"_id": 0}
+    ).to_list(None)
+    return {"nodes": nodes, "edges": edges}

@@ -14,12 +14,6 @@ kubectl -n dataagent-service create secret generic auth-api-secrets \
   --from-literal=SERVICE_AUTH_SECRET="${SERVICE_AUTH_SECRET}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-kubectl -n dataagent-service create secret generic flow-builder-secrets \
-  --from-literal=DATABASE_URL="${DATABASE_URL}" \
-  --from-literal=GATEWAY_KEY="${GATEWAY_KEY}" \
-  --from-literal=SERVICE_AUTH_SECRET="${SERVICE_AUTH_SECRET}" \
-  --dry-run=client -o yaml | kubectl apply -f -
-
 kubectl -n dataagent-service create secret generic kb-backend-secrets \
   --from-literal=POSTGRES_URL="${POSTGRES_URL_ASYNC}" \
   --from-literal=KB_BACKEND_URL_ASYNC="${KB_BACKEND_URL_ASYNC}" \

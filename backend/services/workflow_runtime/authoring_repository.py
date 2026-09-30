@@ -1,5 +1,7 @@
-import os
 import logging
+import os
+import uuid
+from datetime import datetime
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Optional
 from uuid import UUID
@@ -14,6 +16,19 @@ from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import 
 )
 
 logger = logging.getLogger(__name__)
+
+
+def serialize(row: dict[str, Any]) -> dict[str, Any]:
+    """JSON-safe copy of a repository row: UUIDs and datetimes become strings."""
+    out: dict[str, Any] = {}
+    for key, value in row.items():
+        if isinstance(value, uuid.UUID):
+            out[key] = str(value)
+        elif isinstance(value, datetime):
+            out[key] = value.isoformat()
+        else:
+            out[key] = value
+    return out
 
 _DEV_TENANT_ID          = os.environ.get("DEV_TENANT_ID",          "00000000-0000-0000-0000-000000000001")
 _DEV_RESPONDER_MODEL_ID = os.environ.get("DEV_RESPONDER_MODEL_ID", "00000000-0000-0000-0000-000000000011")
@@ -31,20 +46,6 @@ async def _txn(session: AsyncSession) -> AsyncGenerator[None, None]:
     except Exception:
         await session.rollback()
         raise
-
-
-async def init_db() -> None:
-    url = os.environ.get("DATABASE_URL", "")
-    if not url:
-        logger.warning("DATABASE_URL not set")
-        return
-    client.set_url(url)
-    await client.open()
-    logger.info("db pool ready")
-
-
-async def close_db() -> None:
-    await client.close()
 
 
 async def create_agent(name: str, description: str, tenant_id: str) -> dict[str, Any]:
@@ -159,8 +160,8 @@ async def get_agent(agent_id: str, tenant_id: str | None = None) -> Optional[dic
         }
 
 
-async def create_workflow(agent_id: str, name: str, description: str = "") -> dict[str, Any]:
-    async with client.get_client() as session:
+async def create_workflow(agent_id: str, name: str, description: str = "", *, tenant_id: str) -> dict[str, Any]:
+    async with client.get_client(tenant_id=tenant_id) as session:
         async with _txn(session):
             wf = WorkflowsORM(
                 agent_id=UUID(agent_id),
@@ -181,8 +182,8 @@ async def create_workflow(agent_id: str, name: str, description: str = "") -> di
             return {"workflow_id": str(wf.id), "workflow_version_id": str(wv.id)}
 
 
-async def list_workflows(agent_id: str) -> list[dict[str, Any]]:
-    async with client.get_client() as session:
+async def list_workflows(agent_id: str, *, tenant_id: str) -> list[dict[str, Any]]:
+    async with client.get_client(tenant_id=tenant_id) as session:
         result = await session.execute(
             select(WorkflowsORM)
             .options(selectinload(WorkflowsORM.workflow_versions))
@@ -258,8 +259,8 @@ async def unpublish_agent(agent_id: str, tenant_id: str | None = None) -> dict[s
     return {"agent_id": agent_id, "published": False}
 
 
-async def publish_workflow_version(workflow_version_id: str, changelog: str | None = None) -> dict[str, Any]:
-    async with client.get_client() as session:
+async def publish_workflow_version(workflow_version_id: str, changelog: str | None = None, *, tenant_id: str) -> dict[str, Any]:
+    async with client.get_client(tenant_id=tenant_id) as session:
         async with _txn(session):
             wv = await session.get(WorkflowVersionsORM, UUID(workflow_version_id))
             if not wv:
@@ -283,9 +284,9 @@ async def publish_workflow_version(workflow_version_id: str, changelog: str | No
     return {"workflow_version_id": workflow_version_id, "status": "published"}
 
 
-async def republish_workflow_version(workflow_version_id: str) -> dict[str, Any]:
+async def republish_workflow_version(workflow_version_id: str, *, tenant_id: str) -> dict[str, Any]:
     """Re-publish an archived version — archives current published atomically."""
-    async with client.get_client() as session:
+    async with client.get_client(tenant_id=tenant_id) as session:
         async with _txn(session):
             wv = await session.get(WorkflowVersionsORM, UUID(workflow_version_id))
             if not wv:
@@ -305,8 +306,8 @@ async def republish_workflow_version(workflow_version_id: str) -> dict[str, Any]
     return {"workflow_version_id": workflow_version_id, "status": "published"}
 
 
-async def list_workflow_versions(workflow_id: str) -> list[dict[str, Any]]:
-    async with client.get_client() as session:
+async def list_workflow_versions(workflow_id: str, *, tenant_id: str) -> list[dict[str, Any]]:
+    async with client.get_client(tenant_id=tenant_id) as session:
         result = await session.execute(
             select(WorkflowVersionsORM)
             .where(WorkflowVersionsORM.workflow_id == UUID(workflow_id))
@@ -327,8 +328,8 @@ async def list_workflow_versions(workflow_id: str) -> list[dict[str, Any]]:
         ]
 
 
-async def create_draft_version(workflow_id: str) -> dict[str, Any]:
-    async with client.get_client() as session:
+async def create_draft_version(workflow_id: str, *, tenant_id: str) -> dict[str, Any]:
+    async with client.get_client(tenant_id=tenant_id) as session:
         async with _txn(session):
             # Lấy max version hiện tại
             result = await session.execute(
@@ -574,4 +575,28 @@ async def workflow_version_belongs_to(workflow_version_id: str, tenant_id: str) 
     # A version that does not exist and one owned by another tenant both return
     # False, and the caller turns both into the same 404. Distinguishing them
     # would confirm the existence of another tenant's workflow ids.
+    return owner is not None and owner == tenant_uuid
+
+
+async def workflow_belongs_to(workflow_id: str, tenant_id: str) -> bool:
+    """Does this workflow belong to `tenant_id`? (workflow -> agent -> tenant)
+
+    Workflows carry no tenant column, so RLS cannot scope them; ownership is read
+    off the agent, which does. Unknown, malformed and foreign ids all return False
+    so the caller answers the same 404 for each.
+    """
+    try:
+        workflow_uuid = UUID(workflow_id)
+        tenant_uuid = UUID(tenant_id)
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+    async with client.get_client(tenant_id=tenant_id) as session:
+        result = await session.execute(
+            select(AgentsORM.tenant_id)
+            .select_from(WorkflowsORM)
+            .join(AgentsORM, AgentsORM.id == WorkflowsORM.agent_id)
+            .where(WorkflowsORM.id == workflow_uuid)
+        )
+        owner = result.scalar_one_or_none()
     return owner is not None and owner == tenant_uuid

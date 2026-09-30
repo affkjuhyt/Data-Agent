@@ -3,6 +3,7 @@ import logging
 from typing import Any, Optional, cast
 from uuid import UUID
 
+from fastapi import HTTPException
 from sqlalchemy import select
 
 from libs.database_connector.postgres_connector import client
@@ -69,6 +70,11 @@ async def init_db() -> None:
     client.set_url(url)
     await client.open()
     logger.info("db engine ready")
+
+
+def ensure_db_available() -> None:
+    if not client.is_connected():
+        raise HTTPException(503, "DB not available")
 
 
 async def close_db() -> None:

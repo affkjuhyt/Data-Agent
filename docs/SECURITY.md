@@ -99,7 +99,7 @@ release-hardening pass:
 
 | Runs as non-root (`USER` in the image) | Root in the image — documented |
 |---|---|
-| kb-backend, kb-promote-silver/gold, kb-structured-data, kb-conflict-resolution, workflow-runtime (incl. the orchestrator), flow-builder, auth-api, model-service, llm-exporter, platform-workers (memory / schema-crawler / audit / web-crawler) | **sandbox-executor** — the image stays root for `SANDBOX_BACKEND=docker`, which spawns containers through the host Docker socket. On k8s it runs `SANDBOX_BACKEND=kubernetes` (runner pods in `dataagent-sandbox` via its ServiceAccount), and the production manifest sets `runAsNonRoot` / `runAsUser: 10001`. |
+| kb-backend, kb-promote-silver/gold, kb-structured-data, kb-conflict-resolution, workflow-runtime (incl. the orchestrator and agent/workflow authoring), auth-api, model-service, llm-exporter, platform-workers (memory / schema-crawler / audit / web-crawler) | **sandbox-executor** — the image stays root for `SANDBOX_BACKEND=docker`, which spawns containers through the host Docker socket. On k8s it runs `SANDBOX_BACKEND=kubernetes` (runner pods in `dataagent-sandbox` via its ServiceAccount), and the production manifest sets `runAsNonRoot` / `runAsUser: 10001`. |
 
 `frontend/Dockerfile.dev` (dev-only) is out of scope for the prod non-root requirement.
 
@@ -158,7 +158,7 @@ with an existing baseline to burn down. Ratchet plan:
   | --- | --- |
   | `backend/libs/{basemodel,database_connector,shared}` | **0**, enforced |
   | `backend/services/{kb_backend,workflow_runtime}` (incl. `workflow_runtime/orchestrator`) | **0**, enforced |
-  | `backend/services/{auth_api,flow_builder,model_service,sandbox_executor,platform_workers}` | **0**, enforced |
+  | `backend/services/{auth_api,model_service,sandbox_executor,platform_workers}` | **0**, enforced |
 
   Not on the strict list: `backend/libs/{ingestion,semantic,indicator}`. The KB workers
   (`kb_backend/workers/*`) are strict as part of the `kb_backend` entry. The whole-tree run is report-only (`|| true`).

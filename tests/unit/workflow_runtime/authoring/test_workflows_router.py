@@ -1,10 +1,10 @@
-"""flow_builder routers/workflows.py: route table, auth, happy paths, error mapping.
+"""workflow_runtime routers/workflows.py: route table, auth, happy paths, error mapping.
 
 Most routes here declare no auth dependency of their own; create_app() attaches
 `get_current_user` at include time. The first test class pins that, since a
 router-only test app would silently report those routes as open.
 
-The fake store mirrors db_pg's real signatures. Workflows and WorkflowVersions
+The fake store mirrors authoring_repository's real signatures. Workflows and WorkflowVersions
 have no tenant_id column (backend/libs/basemodel/.../workflow_orm.py), so RLS
 cannot scope them: whatever tenant check exists has to happen in the router.
 """
@@ -44,18 +44,24 @@ class FakeWorkflowStore:
             return None
         return {"id": agent_id, "tenant_id": owner}
 
-    async def create_workflow(self, agent_id: str, name: str, description: str = "") -> dict[str, Any]:
+    async def workflow_belongs_to(self, workflow_id: str, tenant_id: str) -> bool:
+        return self._tenant_of_workflow(workflow_id) == tenant_id
+
+    async def workflow_version_belongs_to(self, version_id: str, tenant_id: str) -> bool:
+        return self._tenant_of_workflow(self.version_workflow.get(version_id, "")) == tenant_id
+
+    async def create_workflow(self, agent_id: str, name: str, description: str = "", *, tenant_id: str) -> dict[str, Any]:
         self.created.append((agent_id, name, description))
         return {"workflow_id": "new-wf", "workflow_version_id": "new-wv"}
 
-    async def list_workflows(self, agent_id: str) -> list[dict[str, Any]]:
+    async def list_workflows(self, agent_id: str, *, tenant_id: str) -> list[dict[str, Any]]:
         return [{"id": w, "name": "main"} for w, a in self.workflow_agent.items() if a == agent_id]
 
-    async def list_workflow_versions(self, workflow_id: str) -> list[dict[str, Any]]:
+    async def list_workflow_versions(self, workflow_id: str, *, tenant_id: str) -> list[dict[str, Any]]:
         return [{"id": v, "status": self.status[v]}
                 for v, w in self.version_workflow.items() if w == workflow_id]
 
-    async def create_draft_version(self, workflow_id: str) -> dict[str, Any]:
+    async def create_draft_version(self, workflow_id: str, *, tenant_id: str) -> dict[str, Any]:
         if workflow_id not in self.workflow_agent:
             raise ValueError("workflow not found")
         return {"workflow_version_id": "new-draft", "version": 2}
@@ -76,13 +82,13 @@ class FakeWorkflowStore:
     async def save_canvas(self, version_id: str, nodes: list[Any], edges: list[Any]) -> None:
         self.cleared_canvases.append(version_id)
 
-    async def publish_workflow_version(self, version_id: str, changelog: str | None = None) -> dict[str, Any]:
+    async def publish_workflow_version(self, version_id: str, changelog: str | None = None, *, tenant_id: str) -> dict[str, Any]:
         if self.status.get(version_id) != "draft":
             raise ValueError("already published")
         self.status[version_id] = "published"
         return {"workflow_version_id": version_id, "status": "published", "changelog": changelog}
 
-    async def republish_workflow_version(self, version_id: str) -> dict[str, Any]:
+    async def republish_workflow_version(self, version_id: str, *, tenant_id: str) -> dict[str, Any]:
         if self.status.get(version_id) != "archived":
             raise ValueError("can only republish archived versions")
         self.status[version_id] = "published"
@@ -97,6 +103,7 @@ _PATCHED = (
     "get_agent", "create_workflow", "list_workflows", "list_workflow_versions",
     "create_draft_version", "delete_workflow_version", "delete_workflow", "save_canvas",
     "publish_workflow_version", "republish_workflow_version", "publish_graph_invalidation",
+    "workflow_belongs_to", "workflow_version_belongs_to",
 )
 
 
@@ -195,9 +202,9 @@ class TestErrors:
         assert resp.status_code == 400
         assert store.invalidated == []
 
-    def test_draft_for_unknown_workflow_is_400(self, client: Any, store: FakeWorkflowStore) -> None:
+    def test_draft_for_unknown_workflow_is_404(self, client: Any, store: FakeWorkflowStore) -> None:
         resp = client.post("/api/workflows/unknown/versions", headers=kong_headers())
-        assert resp.status_code == 400
+        assert resp.status_code == 404
 
     def test_delete_other_tenants_workflow_is_400(self, client: Any, store: FakeWorkflowStore) -> None:
         resp = client.delete(f"/api/workflows/{WORKFLOW_ID}", headers=kong_headers(TENANT_B))
@@ -205,16 +212,9 @@ class TestErrors:
         assert WORKFLOW_ID in store.workflow_agent
 
 
-# Tenant B reaching tenant A's workflow objects by id. The agents and canvas
-# routers answer 404 for that; these routes never look at the caller's tenant
-# (no `caller` parameter, db_pg calls without tenant_id, and the tables have no
-# tenant column for RLS to filter on), so any authenticated user of any tenant
-# can list, draft, publish or republish another tenant's workflows.
-@pytest.mark.xfail(strict=True, reason=(
-    "BUG: backend/services/flow_builder/routers/workflows.py routes other than the two "
-    "DELETEs never check that the caller's tenant owns the agent/workflow/version "
-    "(api_create_workflow calls get_agent without tenant_id)"
-))
+# Tenant B reaching tenant A's workflow objects by id. Workflows and versions have
+# no tenant column for RLS to filter on, so each route asks the agent's owner and
+# answers 404 for unknown and foreign ids alike.
 @pytest.mark.parametrize(("method", "path", "body"), [
     ("POST", f"/api/agents/{AGENT_ID}/workflows", {"name": "planted"}),
     ("GET", f"/api/agents/{AGENT_ID}/workflows", None),

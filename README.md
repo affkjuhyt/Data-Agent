@@ -28,7 +28,7 @@ model/       eval/ (release gate: cases, scorers incl. RAGAS faithfulness, thres
 | Path | Contents |
 |---|---|
 | [`frontend/src/`](./frontend/src) | React 19 + TypeScript + Vite frontend (Knowledge Base UI + Ask). `frontend/src/lib/apiClient.ts` is the FastAPI client (bearer-only — Kong injects identity). Root `package.json` is an npm workspace that forwards `npm run dev/test/typecheck` here |
-| [`backend/services/`](./backend/services) | Backend microservices: `kb_backend` (API + the four KB Kafka workers under `workers/`, built as the separate `kb-worker` image from `deploy/docker/kb-worker`); `auth_api`, `flow_builder`, `workflow_runtime` (which also hosts the multi-agent orchestrator at `/api/orchestrate`), `model_service`, `sandbox_executor`, `platform_workers` (one image; `WORKER=memory\|schema-crawler\|audit\|web-crawler`). Each owns its `Dockerfile` (build context = repo root) |
+| [`backend/services/`](./backend/services) | Backend microservices: `kb_backend` (API + the four KB Kafka workers under `workers/`, built as the separate `kb-worker` image from `deploy/docker/kb-worker`); `auth_api`, `workflow_runtime` (which also hosts the agent/workflow/canvas authoring API, ex flow_builder, and the multi-agent orchestrator at `/api/orchestrate`), `model_service`, `sandbox_executor`, `platform_workers` (one image; `WORKER=memory\|schema-crawler\|audit\|web-crawler`). Each owns its `Dockerfile` (build context = repo root) |
 | [`backend/libs/`](./backend/libs) | Shared cross-service layer: `libs/basemodel` (domain models/ORM), `libs/database_connector` (infra clients), `libs/shared` (logger, auth, observability), `libs/ingestion` (Bronze→Silver→Gold pipeline the KB workers run), `libs/semantic` (metric contracts), `libs/indicator` (numeric core). Innermost architecture layer |
 | [`backend/alembic/`](./backend/alembic) | Database migrations (`alembic -c backend/alembic/alembic.ini upgrade head`) |
 | [`deploy/ansible/`](./deploy/ansible) | The deploy pipeline — `deploy.yml` builds what changed, renders Secrets from the vault, applies the manifests, reruns Jobs, restarts what changed |
@@ -194,7 +194,7 @@ same shape (no LLM re-run).
 - **Security and gateway:** Keycloak, Kong (`aeroflow-jwks` plugin verifies JWTs at the edge), OpenBao
 - **Messaging:** Kafka
 - **Observability and AI tooling:** LiteLLM, Langfuse, Prometheus, Grafana, Jaeger (no central log store: `kubectl logs`)
-- **Application services:** workflow_runtime, flow_builder, kb-backend, kb-promote-silver / kb-promote-gold / kb-structured-data / kb-conflict-resolution (four Deployments of the one kb-worker image), model_service, auth_api, sandbox_executor, platform_workers (memory / schema-crawler / audit / web-crawler / llm-exporter)
+- **Application services:** workflow_runtime, kb-backend, kb-promote-silver / kb-promote-gold / kb-structured-data / kb-conflict-resolution (four Deployments of the one kb-worker image), model_service, auth_api, sandbox_executor, platform_workers (memory / schema-crawler / audit / web-crawler / llm-exporter)
 - **LLM tier:** GPU services on `10.10.55.101` — vLLM main `:8001` (`agent-main`), vLLM fast `:8002` (`agent-fast`), TEI embed `:8003`, TEI rerank `:8004`
 
 Every workload listens on an `8xxx` port; `8000–8099` is reserved for the LLM tier. The full port

@@ -54,7 +54,7 @@ jobs:
           for target in \
             backend/libs/basemodel backend/libs/database_connector backend/libs/shared \
             backend/services/kb_backend backend/services/workflow_runtime \
-            backend/services/auth_api backend/services/flow_builder backend/services/model_service \
+            backend/services/auth_api backend/services/model_service \
             backend/services/sandbox_executor \
             backend/services/platform_workers; do
             echo "== mypy strict: $target =="
@@ -97,9 +97,6 @@ jobs:
             apt: libgl1 libglib2.0-0 poppler-utils tesseract-ocr
             pre: torch torchvision --index-url https://download.pytorch.org/whl/cpu
             install: -r deploy/docker/kb-worker/requirements.txt
-          - suite: flow_builder
-            python: "3.11"
-            install: -r backend/services/flow_builder/requirements.txt
           - suite: model_service
             python: "3.11"
             # No requirements.txt: its Dockerfile installs these four inline.
