@@ -1,4 +1,4 @@
-"""db_connector_node (backend/services/workflow_runtime/nodes/sandbox/db_connector.py)
+"""db_connector_node (backend/services/workflow_runtime/application/nodes/sandbox/db_connector.py)
 — very thin: all real logic (schema introspection, DB selection, parallel
 SQL execution) lives in _text_to_sql_handler (see
 test_text_to_sql_handler.py). This node just extracts the query from
@@ -12,6 +12,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from ._paths import RUNTIME_LAYER_DIRS
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
@@ -20,7 +22,7 @@ pytestmark = pytest.mark.unit
 
 @pytest.fixture(autouse=True)
 def _sys_path():
-    added = [p for p in (_SVC_DIR,) if p not in sys.path]
+    added = [p for p in (*RUNTIME_LAYER_DIRS,) if p not in sys.path]
     sys.path[:0] = added
     yield
     for p in added:

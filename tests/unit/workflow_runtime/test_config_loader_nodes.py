@@ -21,7 +21,7 @@ pytestmark = pytest.mark.unit
 # sqlalchemy at module scope (its DB/Mongo imports are lazy, inside functions).
 config_loader = load_module_from_path(
     "config_loader",
-    SERVICES / "workflow_runtime" / "config_loader.py",
+    SERVICES / "workflow_runtime" / "application" / "config_loader.py",
     extra_syspath=[SERVICES / "workflow_runtime"],
 )
 
@@ -176,9 +176,9 @@ class TestResolveDbConnectorSecrets:
 
     def _stub_warehouse_secrets(self, monkeypatch, resolve_mock) -> None:
         # config_loader imports it lazily by its package path.
-        fake_module = types.ModuleType("services.workflow_runtime.warehouse_secrets")
+        fake_module = types.ModuleType("services.workflow_runtime.infrastructure.warehouse_secrets")
         fake_module.resolve_db_connector_password = resolve_mock
-        monkeypatch.setitem(sys.modules, "services.workflow_runtime.warehouse_secrets", fake_module)
+        monkeypatch.setitem(sys.modules, "services.workflow_runtime.infrastructure.warehouse_secrets", fake_module)
 
     async def test_noop_when_no_db_connector_node(self) -> None:
         node_cfg: dict = {}
@@ -229,9 +229,9 @@ class TestResolveWarehouseSecret:
 
     def _stub_warehouse_secrets(self, monkeypatch, resolve_mock) -> None:
         # config_loader imports it lazily by its package path.
-        fake_module = types.ModuleType("services.workflow_runtime.warehouse_secrets")
+        fake_module = types.ModuleType("services.workflow_runtime.infrastructure.warehouse_secrets")
         fake_module.resolve_snowflake_password = resolve_mock
-        monkeypatch.setitem(sys.modules, "services.workflow_runtime.warehouse_secrets", fake_module)
+        monkeypatch.setitem(sys.modules, "services.workflow_runtime.infrastructure.warehouse_secrets", fake_module)
 
     async def test_noop_when_no_execute_sql_node(self) -> None:
         node_cfg: dict = {}

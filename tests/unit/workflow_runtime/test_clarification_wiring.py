@@ -18,6 +18,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from ._paths import RUNTIME_LAYER_DIRS
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
@@ -26,7 +28,7 @@ pytestmark = pytest.mark.unit
 
 @pytest.fixture(autouse=True)
 def _sys_path(monkeypatch):
-    added = [p for p in (_SVC_DIR,) if p not in sys.path]
+    added = [p for p in (*RUNTIME_LAYER_DIRS,) if p not in sys.path]
     sys.path[:0] = added
     fake_litellm = types.ModuleType("litellm")
     fake_litellm.acompletion = AsyncMock()
@@ -66,7 +68,7 @@ def _stub_check(monkeypatch, questions):
     # The planner imports it by its package path; with the full service
     # importable, only this key reaches it (the short one alone left the real
     # checker running and these tests failing).
-    monkeypatch.setitem(sys.modules, "services.workflow_runtime.semantic_layer", mod)
+    monkeypatch.setitem(sys.modules, "services.workflow_runtime.domain.semantic_layer", mod)
     return mod
 
 
@@ -232,7 +234,7 @@ class TestFailureIsNotFatal:
         monkeypatch.setattr(planner.litellm, "acompletion", AsyncMock(return_value=_llm(_PLAN)))
         mod = types.ModuleType("semantic_layer")
         mod.check_underspecified = AsyncMock(side_effect=RuntimeError("registry down"))
-        monkeypatch.setitem(sys.modules, "services.workflow_runtime.semantic_layer", mod)
+        monkeypatch.setitem(sys.modules, "services.workflow_runtime.domain.semantic_layer", mod)
 
         result = await planner.planner_node({"query": "doanh thu", "config": {"tenant_id": "t-1"}})
 

@@ -30,7 +30,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 _WR_PROMPTS = REPO_ROOT / "backend" / "services" / "workflow_runtime" / "prompts"
-_ORCH_PROMPTS = REPO_ROOT / "backend" / "services" / "workflow_runtime" / "orchestrator" / "prompts"
+_ORCH_PROMPTS = REPO_ROOT / "backend" / "services" / "workflow_runtime" / "application" / "orchestrator" / "prompts"
 _SHARED_PROMPTS = REPO_ROOT / "backend" / "libs" / "shared" / "prompts"
 _EVAL_CASES = REPO_ROOT / "model" / "eval" / "cases"
 

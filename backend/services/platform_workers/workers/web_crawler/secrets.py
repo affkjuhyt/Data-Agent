@@ -1,6 +1,6 @@
 """Resolves a `KBSourceConfig.config.openbao_path` reference to a plaintext
 credential for the `rest_api`/`sdmx` connector — modeled on
-`workflow_runtime/warehouse_secrets.py`'s read-only AppRole pattern (NOT
+`workflow_runtime/infrastructure/warehouse_secrets.py`'s read-only AppRole pattern (NOT
 `schema_crawler/metadata.py`'s env-var `_password`, which predates the
 OpenBao migration). Unlike `warehouse_secrets.py`, there's no `secrets_vault`
 row indirection here: `openbao_path` already holds the vault path directly, a

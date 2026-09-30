@@ -39,9 +39,9 @@ from libs.shared.aggregation_check import (
 )
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
-RESPONDER = REPO_ROOT / "backend" / "services" / "workflow_runtime" / "nodes" / "model_harness" / "responder.py"
+RESPONDER = REPO_ROOT / "backend" / "services" / "workflow_runtime" / "application" / "nodes" / "model_harness" / "responder.py"
 DATA_HANDLER = (
-    REPO_ROOT / "backend" / "services" / "workflow_runtime" / "nodes" / "sandbox"
+    REPO_ROOT / "backend" / "services" / "workflow_runtime" / "application" / "nodes" / "sandbox"
     / "tool_executor" / "handlers" / "data.py"
 )
 

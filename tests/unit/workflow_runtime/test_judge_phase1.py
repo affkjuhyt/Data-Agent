@@ -1,4 +1,4 @@
-"""Unit tests for Judge Pha 1 (backend/services/workflow_runtime/graph.py:judge_phase1_node)
+"""Unit tests for Judge Pha 1 (backend/services/workflow_runtime/application/graph.py:judge_phase1_node)
 — check thuần state, KHÔNG gọi LLM. Bắt RETRIEVAL_ERROR (rỗng toàn bộ) và
 TOOL_ERROR (tool_errors không rỗng — tool như text_to_sql đã tự sửa lỗi kỹ
 thuật nội bộ tối đa 3 lần trước khi báo lỗi ra đây) — nhưng CHỈ khi planner
@@ -23,6 +23,8 @@ import sys
 
 import pytest
 
+from ._paths import RUNTIME_LAYER_DIRS
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
@@ -31,7 +33,7 @@ pytestmark = pytest.mark.unit
 
 @pytest.fixture(autouse=True)
 def _sys_path():
-    added = [p for p in (_SVC_DIR,) if p not in sys.path]
+    added = [p for p in (*RUNTIME_LAYER_DIRS,) if p not in sys.path]
     sys.path[:0] = added
     yield
     for p in added:

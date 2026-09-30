@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
+_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime" / "api")  # bare `routers` lives in the api layer
 
 pytestmark = pytest.mark.unit
 
@@ -62,7 +62,7 @@ def _sys_path():
 
 
 def _queries():
-    import services.workflow_runtime.runtime_services.platform_queries as m
+    import services.workflow_runtime.application.runtime_services.platform_queries as m
     return m
 
 
@@ -318,7 +318,7 @@ class TestMetricsSeries:
 
 class TestServiceProbes:
     def test_probe_all_never_raises(self, monkeypatch):
-        import services.workflow_runtime.runtime_services.service_probes as sp
+        import services.workflow_runtime.application.runtime_services.service_probes as sp
 
         async def ok():
             return "fine"
@@ -352,7 +352,7 @@ class TestServiceProbes:
         assert all(set(i) == {"name", "kind", "status", "latency_ms", "detail"} for i in items)
 
     def test_http_probe_reports_unknown_without_env(self, monkeypatch):
-        import services.workflow_runtime.runtime_services.service_probes as sp
+        import services.workflow_runtime.application.runtime_services.service_probes as sp
         monkeypatch.delenv("KB_BACKEND_URL", raising=False)
         res = asyncio.run(sp._timed("kb-backend", sp._PROBES["kb-backend"]))
         assert res["status"] == "unknown" and "KB_BACKEND_URL" in res["detail"]
@@ -360,12 +360,12 @@ class TestServiceProbes:
     def test_orchestrator_is_not_probed(self):
         """The orchestrator runs inside this process (orchestrator/ package) —
         an HTTP probe of it would only ever report on ourselves."""
-        import services.workflow_runtime.runtime_services.service_probes as sp
+        import services.workflow_runtime.application.runtime_services.service_probes as sp
         assert "orchestrator" not in sp._PROBES
 
     def test_real_probes_against_nothing_do_not_raise(self, monkeypatch):
         """With no DB/Redis/Mongo/Kafka open and no URLs set, every probe still answers."""
-        import services.workflow_runtime.runtime_services.service_probes as sp
+        import services.workflow_runtime.application.runtime_services.service_probes as sp
         for var in ("REDIS_URL", "REDIS_HOST", "KAFKA_BOOTSTRAP_SERVERS", "LITELLM_BASE_URL",
                     "SANDBOX_EXECUTOR_URL", "KB_BACKEND_URL"):
             monkeypatch.delenv(var, raising=False)
@@ -384,7 +384,7 @@ class TestServiceProbes:
 
 class TestLiteLLMProxy:
     def test_spend_unavailable_without_base_url(self, monkeypatch):
-        import services.workflow_runtime.runtime_services.litellm_proxy as lp
+        import services.workflow_runtime.application.runtime_services.litellm_proxy as lp
         monkeypatch.delenv("LITELLM_BASE_URL", raising=False)
         out = asyncio.run(lp.spend(30))
         assert out["available"] is False
@@ -392,7 +392,7 @@ class TestLiteLLMProxy:
         assert out["currency"] == "USD" and "LITELLM_BASE_URL" in out["note"]
 
     def test_spend_unavailable_when_both_endpoints_fail(self, monkeypatch):
-        import services.workflow_runtime.runtime_services.litellm_proxy as lp
+        import services.workflow_runtime.application.runtime_services.litellm_proxy as lp
         monkeypatch.setenv("LITELLM_BASE_URL", "http://litellm.test:4000")
         monkeypatch.setenv("LITELLM_MASTER_KEY", "sk-master")
         calls: list[str] = []
@@ -408,7 +408,7 @@ class TestLiteLLMProxy:
         assert "Database not connected" in out["note"]
 
     def test_spend_aggregates_logs_per_day_and_model(self, monkeypatch):
-        import services.workflow_runtime.runtime_services.litellm_proxy as lp
+        import services.workflow_runtime.application.runtime_services.litellm_proxy as lp
         monkeypatch.setenv("LITELLM_BASE_URL", "http://litellm.test:4000")
         monkeypatch.setenv("LITELLM_API_KEY", "sk-virtual")
         today = dt.datetime.now(dt.UTC).date()
@@ -433,13 +433,13 @@ class TestLiteLLMProxy:
         ]
 
     def test_models_unavailable_on_failure(self, monkeypatch):
-        import services.workflow_runtime.runtime_services.litellm_proxy as lp
+        import services.workflow_runtime.application.runtime_services.litellm_proxy as lp
         monkeypatch.delenv("LITELLM_BASE_URL", raising=False)
         out = asyncio.run(lp.list_models())
         assert out == {"items": [], "available": False, "error": "RuntimeError: LITELLM_BASE_URL not set"}
 
     def test_models_row_mapping(self, monkeypatch):
-        import services.workflow_runtime.runtime_services.litellm_proxy as lp
+        import services.workflow_runtime.application.runtime_services.litellm_proxy as lp
 
         async def fake_get(path, *, params=None, timeout_s):
             return {"data": [{
@@ -457,7 +457,7 @@ class TestLiteLLMProxy:
         }]
 
     def test_health_is_cached_for_a_minute(self, monkeypatch):
-        import services.workflow_runtime.runtime_services.litellm_proxy as lp
+        import services.workflow_runtime.application.runtime_services.litellm_proxy as lp
         lp.reset_health_cache()
         calls = []
 
@@ -492,12 +492,12 @@ def api(monkeypatch):
     # conversations.py imports the streaming runner (LangGraph et al.) — not
     # needed here. Must be registered before routers.conversations is first
     # imported; modules are then cached and shared with the tests' monkeypatches.
-    if "services.workflow_runtime.routers.conversations" not in sys.modules:
+    if "services.workflow_runtime.api.routers.conversations" not in sys.modules:
         stub = types.SimpleNamespace(run_conversation_stream=None)
         monkeypatch.setitem(sys.modules, "runtime_services.conversation_runner", stub)
-        monkeypatch.setitem(sys.modules, "services.workflow_runtime.runtime_services.conversation_runner", stub)
-    from services.workflow_runtime.auth import get_current_user
-    from services.workflow_runtime.routers import billing, conversations, llm, platform, traces
+        monkeypatch.setitem(sys.modules, "services.workflow_runtime.application.runtime_services.conversation_runner", stub)
+    from services.workflow_runtime.api.auth import get_current_user
+    from services.workflow_runtime.api.routers import billing, conversations, llm, platform, traces
 
     app = FastAPI()
     authed = [Depends(get_current_user)]
@@ -586,7 +586,7 @@ class TestListingRoutes:
         assert resp.status_code == 200 and resp.json() == {"items": [{"id": "t1"}], "total": 1}
 
         # The Langfuse-backed per-conversation route is untouched.
-        import services.workflow_runtime.routers.traces as tr
+        import services.workflow_runtime.api.routers.traces as tr
 
         async def fake_obs(conv_id, trace_id=None):
             return {"observations": [], "conv": conv_id}
@@ -628,7 +628,7 @@ class TestListingRoutes:
         assert "connection reset" in body["error"]
 
     def test_services_route(self, api, monkeypatch):
-        import services.workflow_runtime.runtime_services.service_probes as sp
+        import services.workflow_runtime.application.runtime_services.service_probes as sp
 
         async def fake_probe_all():
             return [{"name": "postgres", "kind": "database", "status": "ok", "latency_ms": 1.0, "detail": ""}]
@@ -639,7 +639,7 @@ class TestListingRoutes:
         ]}
 
     def test_billing_and_llm_routes(self, api, monkeypatch):
-        import services.workflow_runtime.runtime_services.litellm_proxy as lp
+        import services.workflow_runtime.application.runtime_services.litellm_proxy as lp
         monkeypatch.delenv("LITELLM_BASE_URL", raising=False)
         lp.reset_health_cache()
         assert api.get("/api/billing/spend", params={"days": 30}).json()["available"] is False

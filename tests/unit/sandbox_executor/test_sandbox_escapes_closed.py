@@ -33,15 +33,18 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
-_TOOL_EXECUTOR = REPO_ROOT / "backend" / "services" / "workflow_runtime" / "nodes" / "sandbox" / "tool_executor"
+_SVC_DIRS = [
+    str(REPO_ROOT / "backend" / "services" / "workflow_runtime" / layer)
+    for layer in ("api", "application", "domain", "infrastructure")
+]
+_TOOL_EXECUTOR = REPO_ROOT / "backend" / "services" / "workflow_runtime" / "application" / "nodes" / "sandbox" / "tool_executor"
 
 pytestmark = pytest.mark.unit
 
 
 @pytest.fixture(autouse=True)
 def _sys_path(monkeypatch):
-    added = [p for p in (_SVC_DIR,) if p not in sys.path]
+    added = [p for p in tuple(_SVC_DIRS) if p not in sys.path]
     sys.path[:0] = added
 
     try:

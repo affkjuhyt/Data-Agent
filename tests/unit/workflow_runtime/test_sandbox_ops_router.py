@@ -18,14 +18,14 @@ import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from services.workflow_runtime.auth import get_current_user
-from services.workflow_runtime.routers import sandbox_ops
-from services.workflow_runtime.runtime_services import sandbox_proxy
+from services.workflow_runtime.api.auth import get_current_user
+from services.workflow_runtime.api.routers import sandbox_ops
+from services.workflow_runtime.application.runtime_services import sandbox_proxy
 
 pytestmark = pytest.mark.unit
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
-APP_PY = REPO_ROOT / "backend" / "services" / "workflow_runtime" / "app.py"
+APP_PY = REPO_ROOT / "backend" / "services" / "workflow_runtime" / "api" / "app.py"
 GATEWAY_KEY = "sandbox-test-gateway-key"
 HEADERS = {
     "X-Kong-Verified": "true",

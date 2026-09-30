@@ -60,17 +60,17 @@ def _caller_for():
     import) so the test does not drag in `orchestrator.executor`'s package
     __init__ — and with it the planner, litellm and langfuse."""
     svc = REPO_ROOT / "backend" / "services" / "workflow_runtime"
-    sys.path.insert(0, str(svc))
+    sys.path.insert(0, str(svc / "application"))
     try:
         spec = importlib.util.spec_from_file_location(
-            "orch_agent_client_under_test", svc / "orchestrator" / "executor" / "agent_client.py",
+            "orch_agent_client_under_test", svc / "application" / "orchestrator" / "executor" / "agent_client.py",
         )
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         return module._caller_for
     finally:
-        if str(svc) in sys.path:
-            sys.path.remove(str(svc))
+        if str(svc / "application") in sys.path:
+            sys.path.remove(str(svc / "application"))
 
 
 class TestSharedTrustDecision:

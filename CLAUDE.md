@@ -115,6 +115,13 @@ backend/services    one deployable per directory, Dockerfile inside. kb_backend 
                     Kafka workers (workers/*), built as the `kb-worker` image (deploy/docker/kb-worker);
                     llm-exporter is a platform_workers worker. Add a worker, not a service, for a new
                     queue consumer
+
+                    workflow_runtime is layered: api/ (routers, auth, app factory) > application/
+                    (nodes, orchestrator, runtime_services, graph) > infrastructure/ (db, mongo,
+                    redis, kafka, qdrant clients, repositories) > domain/ (state, schemas). A lower
+                    layer never imports a higher one — .importlinter enforces it. main.py and jobs/
+                    are entrypoints outside the layers; prompts/ holds the templates (PROMPTS_DIR).
+                    It also serves agent/workflow/canvas authoring (ex flow_builder)
 backend/alembic     Postgres migrations (the `migrate` image)
 frontend/src        React app (features/, components/, lib/)
 deploy/ansible      the deploy path (k8s-local inventory)

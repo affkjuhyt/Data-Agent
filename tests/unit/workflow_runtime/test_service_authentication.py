@@ -181,7 +181,7 @@ class TestNoTenantComesFromAClientHeader:
         route cannot reintroduce it by copying a neighbour."""
         directory = _service_dir("workflow_runtime")
         for name in ("agents", "workflows", "canvas"):
-            path = directory / "routers" / f"{name}.py"
+            path = directory / "api" / "routers" / f"{name}.py"
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -216,7 +216,7 @@ class TestRoutersAreAuthenticatedAtIncludeTime:
     @pytest.mark.parametrize("service", ["workflow_runtime"])
     def test_only_health_is_included_without_authentication(self, service):
         directory = _service_dir(service)
-        includes = self._include_calls(directory / "app.py")
+        includes = self._include_calls(directory / "api" / "app.py")
         unguarded = {name for name, guarded in includes.items() if not guarded}
         assert unguarded <= _OPEN_ROUTERS, (
             f"{service} includes {sorted(unguarded - _OPEN_ROUTERS)} without authentication"
@@ -228,8 +228,8 @@ class TestRoutersAreAuthenticatedAtIncludeTime:
         someone unrolls it, the previous test still passes only if each call
         keeps the argument."""
         directory = _service_dir(service)
-        includes = self._include_calls(directory / "app.py")
-        assert includes, f"{service}/app.py includes no routers"
+        includes = self._include_calls(directory / "api" / "app.py")
+        assert includes, f"{service}/api/app.py includes no routers"
         assert any(guarded for guarded in includes.values())
 
 
@@ -252,7 +252,7 @@ class TestFailClosedOnAMissingTenant:
     def test_the_orchestrator_stream_uses_it(self):
         import ast
 
-        source = (SERVICES / "workflow_runtime" / "orchestrator" / "routers" / "stream.py").read_text(encoding="utf-8")
+        source = (SERVICES / "workflow_runtime" / "api" / "routers" / "orchestrator" / "stream.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         called = {
             node.func.id for node in ast.walk(tree)
@@ -267,7 +267,7 @@ class TestCanvasIsScopedToItsOwner:
     workflow_version_id, with no row-level security to fall back on."""
 
     def test_both_canvas_routes_check_ownership(self):
-        path = _service_dir("workflow_runtime") / "routers" / "canvas.py"
+        path = _service_dir("workflow_runtime") / "api" / "routers" / "canvas.py"
         tree = ast.parse(path.read_text(encoding="utf-8"))
 
         routes = [
@@ -291,7 +291,7 @@ class TestCanvasIsScopedToItsOwner:
     def test_a_foreign_version_is_indistinguishable_from_a_missing_one(self):
         """404 rather than 403: 403 would confirm that the id exists, which is
         itself a fact about another tenant."""
-        source = (_service_dir("workflow_runtime") / "routers" / "canvas.py").read_text(encoding="utf-8")
+        source = (_service_dir("workflow_runtime") / "api" / "routers" / "canvas.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
         helper = next(
             n for n in ast.walk(tree)

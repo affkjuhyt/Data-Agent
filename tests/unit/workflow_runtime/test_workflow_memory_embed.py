@@ -13,6 +13,8 @@ import sys
 
 import httpx
 import pytest
+
+from ._paths import RUNTIME_LAYER_DIRS
 import respx
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -21,7 +23,7 @@ _SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
 @pytest.fixture(autouse=True)
 def _sys_path():
-    added = [p for p in (_SVC_DIR, str(REPO_ROOT)) if p not in sys.path]
+    added = [p for p in (*RUNTIME_LAYER_DIRS, str(REPO_ROOT)) if p not in sys.path]
     sys.path[:0] = added
     yield
     for p in added:

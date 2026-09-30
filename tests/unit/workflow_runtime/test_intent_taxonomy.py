@@ -1,4 +1,4 @@
-"""Analysis-type taxonomy (backend/services/workflow_runtime/nodes/model_harness/intent.py).
+"""Analysis-type taxonomy (backend/services/workflow_runtime/application/nodes/model_harness/intent.py).
 
 The planner classified everything as `question` or `task`, which only ever drove
 whether the responder appended an options block. It could not tell a one-fact
@@ -18,6 +18,8 @@ import sys
 
 import pytest
 
+from ._paths import RUNTIME_LAYER_DIRS
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
@@ -26,7 +28,7 @@ pytestmark = pytest.mark.unit
 
 @pytest.fixture(autouse=True)
 def _sys_path():
-    added = [p for p in (_SVC_DIR,) if p not in sys.path]
+    added = [p for p in (*RUNTIME_LAYER_DIRS,) if p not in sys.path]
     sys.path[:0] = added
     yield
     for p in added:
@@ -157,7 +159,7 @@ class TestOrthogonalityToIntent:
 
 class TestPlannerContract:
     def test_planner_output_model_accepts_and_defaults_analysis_type(self):
-        source = (REPO_ROOT / "backend" / "services" / "workflow_runtime" / "nodes" / "model_harness" / "planner.py").read_text(
+        source = (REPO_ROOT / "backend" / "services" / "workflow_runtime" / "application" / "nodes" / "model_harness" / "planner.py").read_text(
             encoding="utf-8"
         )
 
@@ -192,7 +194,7 @@ class TestResponderConsumesIt:
     def test_responder_reads_analysis_type_from_state(self):
         """Pins the wiring: if the responder stops reading the field, the gate
         silently stops applying and forecasts start being invented again."""
-        source = (REPO_ROOT / "backend" / "services" / "workflow_runtime" / "nodes" / "model_harness" / "responder.py").read_text(
+        source = (REPO_ROOT / "backend" / "services" / "workflow_runtime" / "application" / "nodes" / "model_harness" / "responder.py").read_text(
             encoding="utf-8"
         )
 

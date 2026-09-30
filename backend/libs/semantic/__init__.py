@@ -10,7 +10,7 @@ Two halves, deliberately separate:
 
 Pure — no database driver, no network, no service imports — so `libs/` stays a
 leaf layer under .importlinter. Storage and caching live in the service that
-uses it (backend/services/workflow_runtime/semantic_layer.py).
+uses it (backend/services/workflow_runtime/domain/semantic_layer.py).
 """
 from libs.semantic.compiler import (
     DEFAULT_LIMIT,

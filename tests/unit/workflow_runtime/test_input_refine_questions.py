@@ -33,7 +33,7 @@ def refine():
     # UserWarning at import (see test_graph_cache.py).
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message="Valid config keys have changed in V2", category=UserWarning)
-        from services.workflow_runtime.orchestrator.nodes import input_refine
+        from services.workflow_runtime.application.orchestrator.nodes import input_refine
     return input_refine
 
 

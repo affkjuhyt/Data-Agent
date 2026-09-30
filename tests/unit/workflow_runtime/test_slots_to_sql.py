@@ -16,6 +16,8 @@ import sys
 
 import pytest
 
+from ._paths import RUNTIME_LAYER_DIRS
+
 from libs.semantic import (
     Aggregation,
     AnalyticalSlots,
@@ -57,7 +59,7 @@ REVENUE_NET = MetricDefinition(
 
 @pytest.fixture(autouse=True)
 def _sys_path():
-    added = [p for p in (_SVC_DIR,) if p not in sys.path]
+    added = [p for p in (*RUNTIME_LAYER_DIRS,) if p not in sys.path]
     sys.path[:0] = added
     yield
     for p in added:

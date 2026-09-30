@@ -157,7 +157,7 @@ with an existing baseline to burn down. Ratchet plan:
   | Surface | strict errors |
   | --- | --- |
   | `backend/libs/{basemodel,database_connector,shared}` | **0**, enforced |
-  | `backend/services/{kb_backend,workflow_runtime}` (incl. `workflow_runtime/orchestrator`) | **0**, enforced |
+  | `backend/services/{kb_backend,workflow_runtime}` (incl. `workflow_runtime/application/orchestrator`) | **0**, enforced |
   | `backend/services/{auth_api,model_service,sandbox_executor,platform_workers}` | **0**, enforced |
 
   Not on the strict list: `backend/libs/{ingestion,semantic,indicator}`. The KB workers

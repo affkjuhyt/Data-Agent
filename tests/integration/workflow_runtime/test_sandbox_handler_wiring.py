@@ -77,8 +77,8 @@ def live_sandbox_executor():
 def handler_mod(live_sandbox_executor, monkeypatch):
     # The HTTP transport (and the URL it posts to) moved out of the handler
     # module into _sandbox_http, which reads SANDBOX_EXECUTOR_URL per call.
-    from services.workflow_runtime.nodes.sandbox.tool_executor import _sandbox_http
-    from services.workflow_runtime.nodes.sandbox.tool_executor.handlers import code_interpreter
+    from services.workflow_runtime.application.nodes.sandbox.tool_executor import _sandbox_http
+    from services.workflow_runtime.application.nodes.sandbox.tool_executor.handlers import code_interpreter
 
     monkeypatch.setattr(_sandbox_http, "SANDBOX_EXECUTOR_URL", live_sandbox_executor)
     return code_interpreter

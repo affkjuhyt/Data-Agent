@@ -24,16 +24,18 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from ._paths import RUNTIME_LAYER_DIRS
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _RUNTIME_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
-_ORCH_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime" / "orchestrator")
+_ORCH_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime" / "application" / "orchestrator")
 
 pytestmark = pytest.mark.unit
 
 
 @pytest.fixture
 def runtime_path():
-    added = [p for p in (_RUNTIME_DIR,) if p not in sys.path]
+    added = [p for p in (*RUNTIME_LAYER_DIRS,) if p not in sys.path]
     sys.path[:0] = added
     yield
     for p in added:
@@ -162,7 +164,7 @@ class TestResponderReturnsEvidence:
 
 class TestRuntimeStreamEmitsEvidence:
     def test_conversation_runner_emits_evidence_only_on_a_delivered_answer(self):
-        src = (REPO_ROOT / "backend" / "services" / "workflow_runtime" / "runtime_services" / "conversation_runner.py").read_text(encoding="utf-8")
+        src = (REPO_ROOT / "backend" / "services" / "workflow_runtime" / "application" / "runtime_services" / "conversation_runner.py").read_text(encoding="utf-8")
         assert "'__evidence'" in src
         # captured from the responder node output ...
         assert 'out.get("evidence")' in src
@@ -251,7 +253,7 @@ class TestOrchestratorForwardsEvidenceAndOptions:
 
     def test_single_agent_node_and_sse_route_pass_them_through(self):
         graph_src = (pathlib.Path(_ORCH_DIR) / "graph.py").read_text(encoding="utf-8")
-        stream_src = (pathlib.Path(_ORCH_DIR) / "routers" / "stream.py").read_text(encoding="utf-8")
+        stream_src = (pathlib.Path(_ORCH_DIR).parents[1] / "api" / "routers" / "orchestrator" / "stream.py").read_text(encoding="utf-8")
         for name in ("options", "evidence"):
             assert f'adispatch_custom_event("{name}", data)' in graph_src
             assert f'"__{name}": event["data"]' in stream_src

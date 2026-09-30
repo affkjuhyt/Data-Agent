@@ -26,10 +26,10 @@ def fb() -> types.SimpleNamespace:
     """The workflow_runtime app module and the authoring routers."""
     pkg = "services.workflow_runtime"
     return types.SimpleNamespace(
-        app_module=importlib.import_module(f"{pkg}.app"),
-        agents=importlib.import_module(f"{pkg}.routers.agents"),
-        canvas=importlib.import_module(f"{pkg}.routers.canvas"),
-        workflows=importlib.import_module(f"{pkg}.routers.workflows"),
+        app_module=importlib.import_module(f"{pkg}.api.app"),
+        agents=importlib.import_module(f"{pkg}.api.routers.agents"),
+        canvas=importlib.import_module(f"{pkg}.api.routers.canvas"),
+        workflows=importlib.import_module(f"{pkg}.api.routers.workflows"),
         pg_client=importlib.import_module(
             "libs.database_connector.postgres_connector"
         ).client,

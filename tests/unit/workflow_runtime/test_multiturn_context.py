@@ -50,12 +50,12 @@ def _import(name: str):
 
 @pytest.fixture
 def refine():
-    return _import("services.workflow_runtime.orchestrator.nodes.input_refine")
+    return _import("services.workflow_runtime.application.orchestrator.nodes.input_refine")
 
 
 @pytest.fixture
 def graph_mod(monkeypatch):
-    module = _import("services.workflow_runtime.orchestrator.graph")
+    module = _import("services.workflow_runtime.application.orchestrator.graph")
     monkeypatch.setattr(module, "adispatch_custom_event", AsyncMock())
     monkeypatch.setattr(module, "get_langfuse_client", lambda: None)
     monkeypatch.setattr(module, "run_suggestion", AsyncMock(return_value=[]))

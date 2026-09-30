@@ -61,3 +61,16 @@ forbidden_modules =
     libs.database_connector.mongo_connector
     libs.ingestion.silver
     libs.ingestion.gold
+
+# workflow_runtime is layered (api > application > infrastructure > domain): a lower
+# layer never imports a higher one. application may use infrastructure directly (no
+# ports/adapters yet: that is the remaining distance to a strict clean architecture).
+# main.py and jobs/ are entrypoints and sit outside the layers.
+[importlinter:contract:workflow-runtime-layers]
+name = workflow_runtime layers: api > application > infrastructure > domain
+type = layers
+layers =
+    services.workflow_runtime.api
+    services.workflow_runtime.application
+    services.workflow_runtime.infrastructure
+    services.workflow_runtime.domain

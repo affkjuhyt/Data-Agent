@@ -1,5 +1,5 @@
 """Which schema reaches the SQL-generation prompt
-(backend/services/workflow_runtime/nodes/sandbox/tool_executor/handlers/data.py).
+(backend/services/workflow_runtime/application/nodes/sandbox/tool_executor/handlers/data.py).
 
 Two defects are pinned here:
 
@@ -25,6 +25,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from ._paths import RUNTIME_LAYER_DIRS
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")
 
@@ -35,7 +37,7 @@ TENANT = "a0000000-0000-0000-0000-000000000001"
 
 @pytest.fixture(autouse=True)
 def _sys_path():
-    added = [p for p in (_SVC_DIR,) if p not in sys.path]
+    added = [p for p in (*RUNTIME_LAYER_DIRS,) if p not in sys.path]
     sys.path[:0] = added
     yield
     for p in added:
@@ -52,7 +54,7 @@ def _stub_redis(monkeypatch, get_return=None):
     mod = types.ModuleType("redis_cache")
     mod.cache_get_schema = AsyncMock(return_value=get_return)
     mod.cache_set_schema = AsyncMock(return_value=None)
-    monkeypatch.setitem(sys.modules, "services.workflow_runtime.redis_cache", mod)
+    monkeypatch.setitem(sys.modules, "services.workflow_runtime.infrastructure.redis_cache", mod)
     return mod
 
 
@@ -62,7 +64,7 @@ def _stub_catalog(monkeypatch, hits):
     mod.format_catalog_context = lambda tables: "\n".join(
         f"-- {t.get('text_description', '')}\nTABLE {t.get('table_name')}" for t in tables
     )
-    monkeypatch.setitem(sys.modules, "services.workflow_runtime.schema_catalog", mod)
+    monkeypatch.setitem(sys.modules, "services.workflow_runtime.infrastructure.schema_catalog", mod)
     return mod
 
 
@@ -268,7 +270,7 @@ class TestCatalogIsPreferred:
         mod = types.ModuleType("schema_catalog")
         mod.retrieve_schema_catalog = AsyncMock(side_effect=RuntimeError("qdrant down"))
         mod.format_catalog_context = lambda t: ""
-        monkeypatch.setitem(sys.modules, "services.workflow_runtime.schema_catalog", mod)
+        monkeypatch.setitem(sys.modules, "services.workflow_runtime.infrastructure.schema_catalog", mod)
         _stub_redis(monkeypatch, get_return=None)
         monkeypatch.setattr(data, "_sandbox_sql", AsyncMock(return_value=(_rows(("orders", "id", "int")), None, False, None)))
 

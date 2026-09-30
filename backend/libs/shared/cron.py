@@ -1,5 +1,5 @@
 """Shared 5-field cron due-check, promoted out of
-`workflow_runtime/runtime_services/roi_use_cases.py`'s private `_cron_due` so
+`workflow_runtime/application/runtime_services/roi_use_cases.py`'s private `_cron_due` so
 `platform_workers`' new `web-crawler` worker can use the same logic instead
 of a second hand-rolled copy — both services already resolve `libs.shared.*`
 (see e.g. `platform_workers/workers/schema_crawler/worker.py`'s
