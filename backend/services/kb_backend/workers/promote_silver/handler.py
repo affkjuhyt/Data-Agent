@@ -88,25 +88,25 @@ def build_silver_handler(runtime: WorkerRuntime) -> Callable[[dict[str, Any]], A
                     # click for Gold — see maybe_publish_auto_gold's docstring.
                     try:
                         await maybe_publish_auto_gold(
-                            runtime.postgres, runtime.producer, data_id=data_id, tenant_id=tenant_id,
+                            runtime.postgres, runtime.event_producer, data_id=data_id, tenant_id=tenant_id,
                         )
                     except GoldHandoffFailed as exc:
                         # Silver already succeeded — retry only the hand-off
                         # (on the gold topic), never re-run Silver over this.
                         await route_ingestion_failure(
-                            runtime.producer, stage="gold-handoff", source_topic=cfg.KAFKA_TOPIC_GOLD,
+                            runtime.event_producer, stage="gold-handoff", source_topic=cfg.KAFKA_TOPIC_GOLD,
                             event={"data_id": data_id, "tenant_id": tenant_id, "approved_by": "web-crawler-worker"},
                             exc=exc,
                         )
             except DocumentBusy:
                 await requeue_busy_document(
-                    runtime.producer, stage="silver", source_topic=cfg.KAFKA_TOPIC_SILVER,
+                    runtime.event_producer, stage="silver", source_topic=cfg.KAFKA_TOPIC_SILVER,
                     event=event, data_id=data_id,
                 )
             except Exception as exc:
                 failure = exc
                 await route_ingestion_failure(
-                    runtime.producer, stage="silver", source_topic=cfg.KAFKA_TOPIC_SILVER,
+                    runtime.event_producer, stage="silver", source_topic=cfg.KAFKA_TOPIC_SILVER,
                     event=event, exc=exc,
                 )
             finally:

@@ -32,6 +32,7 @@ from libs.database_connector.mongo_connector import client as mongo_client
 from libs.database_connector.postgres_connector import client as pg_client
 from libs.database_connector.redis_connector import RedisClient
 from libs.shared.cache_invalidation import run_graph_invalidation_listener
+from libs.shared.outbox import relay_loop
 from libs.shared.observability import setup_observability
 from services.workflow_runtime.api.auth import get_current_user
 from services.workflow_runtime.api.routers import (
@@ -65,8 +66,9 @@ from services.workflow_runtime.infrastructure.kafka_producer import (
     close_kafka_producer,
     init_kafka_producer,
     produce_event,
+    publish_acked,
 )
-from services.workflow_runtime.infrastructure.memory_middleware import close_qdrant, init_qdrant
+from services.workflow_runtime.infrastructure.memory_middleware import OUTBOX_PRODUCER, close_qdrant, init_qdrant
 from services.workflow_runtime.infrastructure.mongo_client import close_mongo, init_mongo
 from services.workflow_runtime.infrastructure.redis_cache import close_redis, init_redis
 from services.workflow_runtime.infrastructure.schema_catalog import (
@@ -117,6 +119,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         asyncio.create_task(mongo_client.health_check_loop()),
         asyncio.create_task(orch_redis.health_check_loop()),
         asyncio.create_task(scheduler_loop(scheduler_stop)),
+        # Delivers the events recorded in OutboxEvents (memory extraction requests).
+        asyncio.create_task(relay_loop(pg_client.get_platform_client, publish_acked, producer=OUTBOX_PRODUCER)),
         # Evict locally-cached graphs when another replica/flow_builder signals a
         # republished version. No-op if REDIS_URL is unset.
         asyncio.create_task(

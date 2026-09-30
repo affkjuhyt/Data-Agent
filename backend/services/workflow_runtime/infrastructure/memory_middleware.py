@@ -18,10 +18,14 @@ from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import 
     MemoryPolicyORM,
 )
 from libs.database_connector.postgres_connector import client
+from libs.shared import outbox
 from libs.shared.embeddings import aembed_one
 from services.workflow_runtime.infrastructure.kafka_producer import produce_event
 
 logger = logging.getLogger(__name__)
+
+# Owner tag of this service's OutboxEvents rows; its relay (api/app.py) drains only these.
+OUTBOX_PRODUCER = "workflow-runtime"
 
 _DEV_AGENT_ID  = os.getenv("DEV_AGENT_ID",  "00000000-0000-0000-0000-000000000030")
 _DEV_TENANT_ID = os.getenv("DEV_TENANT_ID", "00000000-0000-0000-0000-000000000001")
@@ -330,14 +334,23 @@ async def apply_memory_policy(
         logger.warning("memory | apply_policy policy lookup failed: %s", e)
         return
 
-    produce_event(
-        "memory.extraction.requested",
-        key=conversation_id,
-        value={
-            "tenant_id": tenant_id,
-            "agent_id": agent_id,
-            "user_ref": user_ref,
-            "conversation_id": conversation_id,
-            "message_id": message_id,
-        },
-    )
+    event = {
+        "tenant_id": tenant_id,
+        "agent_id": agent_id,
+        "user_ref": user_ref,
+        "conversation_id": conversation_id,
+        "message_id": message_id,
+    }
+    try:
+        # Durable: the message is already committed, so record the extraction request
+        # in Postgres and let the relay deliver it (retries while Kafka is down)
+        # instead of a fire-and-forget send that is gone if the broker is unreachable.
+        async with client.get_client(tenant_id=tenant_id) as session:
+            await outbox.enqueue(
+                session, producer=OUTBOX_PRODUCER, topic="memory.extraction.requested",
+                value=event, key=conversation_id,
+            )
+            await session.commit()
+    except Exception as e:
+        logger.warning("memory | outbox enqueue failed, sending directly: %s", e)
+        produce_event("memory.extraction.requested", key=conversation_id, value=event)

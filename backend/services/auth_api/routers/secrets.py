@@ -241,7 +241,8 @@ def rotate_secret(
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 "SELECT id, key_name, key_type, algorithm, realm, version, rotation_due_at "
-                "FROM secrets_vault WHERE id = %s AND tenant_id = %s AND is_active = true",
+                "FROM secrets_vault WHERE id = %s AND tenant_id = %s AND is_active = true "
+                "FOR UPDATE",
                 (secret_id, x_tenant_id),
             )
             old = cur.fetchone()

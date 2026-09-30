@@ -7,7 +7,7 @@
 > [04](04-sources-oil-gold.md) đến lúc số vào ClickHouse `obs` hoặc vào hồ sơ duyệt.
 >
 > Các task DB trên Linear (NOP-114, 117, 124, 126, 131, 108, 137) mỗi task mô tả một mảnh. Chỗ nào
-> file này khác mô tả task, mục 9 ghi rõ phần cần sửa trong task.
+> file này khác mô tả task, mục 11 ghi rõ phần cần sửa trong task.
 
 ## 0. Phạm vi
 
@@ -43,7 +43,9 @@ Ngoài phạm vi: bảng governance chi tiết (NOP-90, 104, 109), alert, capabi
 | IN-7 | **Kỳ lưu là khoảng `[event_time_start, event_time_end)` theo UTC**, ranh giới tính theo `market_timezone`. Số tức thời (tỷ giá, SJC, giá bán lẻ hiệu lực 15h00) có `start = end`. Kèm `period_code` dễ đọc (`2026-09-15`, `2026-M08`, `2026-W38`, `P:2398/QĐ-BCT`) | Một quy tắc cho D/W/M/I/P; ClickHouse không nhận NULL ở `event_time_end` |
 | IN-8 | **Mọi sự kiện Kafka của luồng đầu vào đi qua `ingest.outbox`**, cùng transaction với dòng dữ liệu | ADR-V2-34; crash giữa "ghi DB" và "gửi Kafka" hiện là cách mất sự kiện |
 
-Khi nhóm duyệt, IN-1…IN-8 được đánh số tiếp thành ADR-V2-43…50 trong [07](07-decisions-and-risks.md).
+Đã chốt ngày 30/09/2026: IN-5 = ADR-V2-43, IN-2 = ADR-V2-44, IN-4 = ADR-V2-45 (xem
+[07](07-decisions-and-risks.md)). IN-1, IN-3, IN-6, IN-7, IN-8 là thiết kế đề xuất, chốt thành ADR khi
+nhóm duyệt.
 
 ## 2. Sơ đồ quan hệ
 
@@ -293,9 +295,12 @@ CREATE TABLE ingest.profile (
 CREATE INDEX ON ingest.profile (source_id, created_at DESC);
 ```
 
-`fingerprint = sha256(json.dumps(sorted([(name_norm, dtype, unit_guess, locale_guess)])))`. Sắp theo
-tên nên đổi thứ tự cột không bị coi là drift, vì mapping đọc theo tên. Đổi `price` → `settle` là
-drift.
+`fingerprint = sha256(json.dumps({cols: sorted([(name_norm, dtype, unit_guess)]), locale,
+missing_markers}))`, trong đó `locale` và `missing_markers` là giá trị **khai báo** trong
+`extraction_profile`. Cột được sắp theo tên, nên đổi thứ tự cột không bị coi là drift (mapping đọc
+theo tên). Đổi `price` → `settle` là drift. Sửa locale trong config (`en-US` → `vi-VN` biến
+`25,760.00` thành `25,76`) cũng là drift. Nhờ vậy mọi thay đổi config làm đổi cách đọc số đều phải
+qua cổng duyệt, dù config không cần duyệt (IN-2).
 
 ### 6.2 `ingest.mapping_version` (có `version`, nội dung bất biến, NOP-126)
 
@@ -607,7 +612,7 @@ transaction.
 | NOP-108 | Thêm `time_basis`, `source_id`, `candidate_id`, `period_code` |
 | NOP-137 | Thêm `knowledge.extraction_run` và `extraction_run_id` trên event/claim |
 | NOP-122 | Pydantic `SourceConfigV2` gồm `source_key`, `release_info` có cấu trúc, `release_calendar`, `extraction_profile` (mục 3) |
-| Mới | ADR-V2-43…50 (IN-1…IN-8); sửa 03 mục 3.2 (entity PK) và mục 5 (tách profile/mapping, thêm `xml_path`, `archive_member`) |
+| Đã làm 30/09 | ADR-V2-43/44/45; 03 mục 3.2 (`time_basis`), 4, 5 (tách profile/mapping, `xml_path`, `archive_member`). Còn: 03 mục 3.2 entity PK uuid (theo Q của NOP-117) |
 
 ## 12. Thứ tự migration
 

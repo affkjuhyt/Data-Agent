@@ -42,6 +42,7 @@ Quy tắc repo (lint/type/test trong container, so baseline, không commit secre
 | [11-ops.md](11-ops.md) | Vận hành: hiện trạng, GitOps, hạ tầng, backup/DR (P0-07), Kafka (P0-03), egress (P0-08), alert, MLOps, kế hoạch bỏ script |
 | [12-numeric-core.md](12-numeric-core.md) | Lõi số: NC-E1..E3, NC-T1..T18, rủi ro NC-R, NC-ADR-T |
 | [13-ui-principles.md](13-ui-principles.md) | Nguyên tắc P1–P8, quy ước số/ngày formatVN, lỗi có cấu trúc, deep link |
+| [14-input-data-db.md](14-input-data-db.md) | Thiết kế DB cho luồng đầu vào: cấu hình nguồn V2, artifact/fetch/release, profile/mapping, candidate, `available_at` cho số lịch sử, outbox, quyền, thứ tự migration, phần cần sửa trong task Linear |
 | [diagrams/](diagrams/README.md) | 39 sơ đồ PlantUML: kiến trúc 00–18, giao diện 20–26, vận hành 30–42 |
 | [data/sources-oil-gold.yaml](data/sources-oil-gold.yaml) | 28 nguồn: 24 nhập qua Add Data → Bulk Import, 4 tải tay qua Document Hub |
 | [data/brent-5d-drop-episodes.csv](data/brent-5d-drop-episodes.csv) | 32 đợt Brent giảm ≥5%/5 phiên (2023–2026), có SHA-256 của release EIA gốc |

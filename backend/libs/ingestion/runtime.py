@@ -27,6 +27,7 @@ from libs.database_connector.redis_connector import RedisClient
 from libs.ingestion import config as cfg
 from libs.ingestion import conflict_store
 from libs.ingestion.graph_store import GraphStore
+from libs.shared.outbox import OutboxProducer, relay_loop
 from libs.ingestion.log_writer import IngestionLogger
 from libs.ingestion.stage_chain import StageChain
 from libs.shared.kb_result_cache import ResultCache
@@ -62,11 +63,20 @@ class WorkerRuntime:
     model: ModelServiceClient = field(default_factory=ModelServiceClient)
     consumer: KafkaConsumerClient = field(default_factory=KafkaConsumerClient)
     producer: KafkaProducerClient = field(default_factory=KafkaProducerClient)
+    # Where handlers publish follow-up events (retry, DLQ, Gold hand-off). The raw
+    # producer until `outbox_name` is set before startup(), then a Postgres-backed
+    # OutboxProducer whose relay publishes through `producer` (libs/shared/outbox.py).
+    event_producer: Any = None
+    outbox_name: str | None = None
     redis: RedisClient = field(default_factory=RedisClient)
     result_cache: ResultCache | None = None
     docling_parser: InlineDoclingParser | None = None
     graph: GraphStore | None = None
     health_check_tasks: list[asyncio.Task[Any]] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if self.event_producer is None:
+            self.event_producer = self.producer
 
     def require_graph(self) -> GraphStore:
         """The graph store, for workers that started with Component.GRAPH."""
@@ -265,6 +275,13 @@ async def startup(runtime: WorkerRuntime, components: set[Component]) -> None:
         for component, client in health_checked.items()
         if component in components
     ]
+    runtime.event_producer = runtime.producer
+    if runtime.outbox_name and Component.KAFKA in components and Component.POSTGRES in components:
+        runtime.event_producer = OutboxProducer(runtime.postgres.get_platform_client, producer=runtime.outbox_name)
+        runtime.health_check_tasks.append(asyncio.create_task(
+            relay_loop(runtime.postgres.get_platform_client, runtime.producer.produce, producer=runtime.outbox_name),
+            name="outbox-relay",
+        ))
     runtime.stage_record.push(
         "health_check_tasks_started",
         rollback_func=cancel_tasks,

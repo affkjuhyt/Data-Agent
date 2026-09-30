@@ -152,6 +152,11 @@ GRANT SELECT ON
   "RolePermissions"
 TO kb_backend;
 
+-- Kafka outbox (libs/shared/outbox.py): routes enqueue events, the relay marks them sent.
+-- No tenant column, so no RLS; the sequence is needed for the id default.
+GRANT SELECT, INSERT, UPDATE ON "OutboxEvents" TO kb_backend;
+GRANT USAGE, SELECT ON SEQUENCE "OutboxEvents_id_seq" TO kb_backend;
+
 -- Structured imports: kb-backend creates the physical tables, so it owns them.
 CREATE SCHEMA IF NOT EXISTS kb_structured;
 GRANT USAGE, CREATE ON SCHEMA kb_structured TO kb_backend;
@@ -246,3 +251,8 @@ TO kb_ingestion_worker;
 -- Gold registers entity aliases (entity_registry.py _register_aliases inserts
 -- KBEntityLookup rows); without INSERT every chunk with entities fails.
 GRANT INSERT ON "KBEntityLookup" TO kb_ingestion_worker;
+
+-- Kafka outbox: the silver/gold handlers enqueue retries, DLQ entries and the Gold
+-- hand-off; their relay marks them sent (libs/shared/outbox.py).
+GRANT SELECT, INSERT, UPDATE ON "OutboxEvents" TO kb_ingestion_worker;
+GRANT USAGE, SELECT ON SEQUENCE "OutboxEvents_id_seq" TO kb_ingestion_worker;

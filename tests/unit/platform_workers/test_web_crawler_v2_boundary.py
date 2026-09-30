@@ -61,7 +61,7 @@ def _run(config: dict[str, Any]) -> tuple[MagicMock, MagicMock]:
     with (
         patch.object(wc, "connector_fetch", return_value=MagicMock(extra={})),
         patch.object(wc.bronze, "register_http_file_bronze", return_value="d1") as register,
-        patch.object(wc, "publish_auto_promote_silver") as publish,
+        patch.object(wc, "queue_auto_promote_silver") as publish,
     ):
         wc.run_source(_Conn(), source, trigger="scheduled", run_id="run-1")
     return register, publish
@@ -81,4 +81,5 @@ def test_a_document_source_still_auto_promotes() -> None:
     register, publish = _run({"promotion_mode": "auto"})
 
     assert register.call_args.kwargs["promotion_mode"] == "auto"
-    publish.assert_called_once_with("d1", "t1")
+    publish.assert_called_once()
+    assert publish.call_args.args[1:] == ("d1", "t1")

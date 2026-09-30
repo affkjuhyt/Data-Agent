@@ -17,6 +17,7 @@ from libs.database_connector.mongo_connector import MongoClient
 from libs.database_connector.minio_connector import MinIOClient
 from libs.database_connector.redis_connector import RedisClient
 from libs.shared.kb_result_cache import ResultCache
+from libs.shared.outbox import OutboxProducer, relay_loop
 from libs.database_connector.kafka_connector import KafkaProducerClient
 from libs.database_connector.model_connector import ModelServiceClient
 from libs.shared.observability import setup_observability
@@ -26,6 +27,9 @@ from services.kb_backend.pipeline.light_rag import config as cfg
 from services.kb_backend.pipeline.ingestion.pipeline import IngestionPipeline
 
 log = logging.getLogger(__name__)
+
+# Owner tag of the OutboxEvents rows this service publishes (its relay drains only these).
+OUTBOX_PRODUCER = "kb-backend"
 
 # KB_BACKEND_URL_ASYNC is the table-scoped, NOBYPASSRLS role. Falling back to
 # POSTGRES_URL keeps an un-migrated deployment working; setting it is what
@@ -119,7 +123,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.mongo = _mongo
     app.state.minio = _minio
     app.state.model = _model
-    app.state.kafka_producer = _kafka_producer
+    # Routes call `kafka_producer.produce(...)`; it records the event in Postgres and the
+    # relay below publishes it, so a broker outage or a crash after the route committed
+    # its state delays the event instead of losing it (libs/shared/outbox.py).
+    # OutboxEvents has no tenant column: the unscoped client is the right one for it.
+    app.state.kafka_producer = OutboxProducer(_postgres.get_platform_client, producer=OUTBOX_PRODUCER)
     app.state.redis = _redis
     app.state.result_cache = _result_cache
     app.state.light_rag = _light_rag
@@ -138,6 +146,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             _supervise(asyncio.create_task(_model.health_check_loop(hc), name="hc-model")),
             _supervise(asyncio.create_task(_kafka_producer.health_check_loop(hc), name="hc-kafka-producer")),
             _supervise(asyncio.create_task(cache_sweep_loop(_qdrant), name="cache-sweep")),
+            _supervise(asyncio.create_task(
+                relay_loop(_postgres.get_platform_client, _kafka_producer.produce, producer=OUTBOX_PRODUCER),
+                name="outbox-relay",
+            )),
         ]
 
     yield

@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import json
 import logging
@@ -70,12 +71,28 @@ async def close_kafka_producer() -> None:
 
 
 def produce_event(topic: str, key: Optional[str], value: dict[str, Any]) -> None:
-    """Fire-and-forget — does not block on broker ack."""
+    """Fire-and-forget — does not block on broker ack. Best-effort: an event that must
+    not be lost goes through the outbox (libs/shared/outbox.py, `publish_acked` below)."""
     if not _producer:
         logger.warning("kafka producer | not connected, dropping event for topic=%s", topic)
         return
     try:
-        _producer.send(topic, key=key, value=value)
+        future = _producer.send(topic, key=key, value=value)
+        # send() only queues the record; without an errback a broker rejection after
+        # retries vanishes without a trace.
+        future.add_errback(lambda exc: logger.error("kafka producer | delivery failed topic=%s key=%s: %s", topic, key, exc))
         logger.info("kafka producer | sent topic=%s key=%s", topic, key)
     except Exception as e:
         logger.error("kafka producer | send failed topic=%s: %s", topic, e)
+
+
+async def publish_acked(topic: str, value: dict[str, Any], key: Optional[str]) -> None:
+    """Send one event and return only once the broker acknowledged it (raises otherwise).
+
+    The outbox relay's publish callback: an exception leaves the row pending for the
+    next pass.
+    """
+    producer = _producer
+    if producer is None:
+        raise RuntimeError("kafka producer not connected")
+    await asyncio.to_thread(lambda: producer.send(topic, key=key, value=value).get(timeout=10))

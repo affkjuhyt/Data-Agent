@@ -3,7 +3,8 @@
 > Đối tượng: hai senior viết hợp đồng dữ liệu (P0-09), BE làm S1-01/S1-02, trưởng nhóm. Đo ngày
 > 27/09/2026 trên nhánh `feat/remove-redundant-service` và Postgres của cụm dev (truy vấn chỉ đọc).
 > Bảng và cột cụ thể của từng object nằm ở [03](03-target-design.md) mục 2–3; file này chốt **quy
-> ước chung** mà mọi bảng V2 phải theo và **những gì của hệ hiện tại không được mang sang**.
+> ước chung** mà mọi bảng V2 phải theo và **những gì của hệ hiện tại không được mang sang**. Bảng
+> chi tiết của luồng đầu vào (nguồn → release → candidate → `obs`): [14](14-input-data-db.md).
 
 ## 0. Kết luận
 

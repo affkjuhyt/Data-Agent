@@ -74,13 +74,13 @@ def build_gold_handler(runtime: WorkerRuntime) -> Callable[[dict[str, Any]], Awa
                     await runtime.result_cache.invalidate(tenant_id)
             except DocumentBusy:
                 await requeue_busy_document(
-                    runtime.producer, stage="gold", source_topic=cfg.KAFKA_TOPIC_GOLD,
+                    runtime.event_producer, stage="gold", source_topic=cfg.KAFKA_TOPIC_GOLD,
                     event=event, data_id=data_id,
                 )
             except Exception as exc:
                 failure = exc
                 await route_ingestion_failure(
-                    runtime.producer, stage="gold", source_topic=cfg.KAFKA_TOPIC_GOLD,
+                    runtime.event_producer, stage="gold", source_topic=cfg.KAFKA_TOPIC_GOLD,
                     event=event, exc=exc,
                 )
             finally:

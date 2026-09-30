@@ -22,6 +22,7 @@ COMPONENTS = {
 
 async def main() -> None:
     runtime: WorkerRuntime = build_runtime()
+    runtime.outbox_name = "kb-promote-silver"
     try:
         await startup(runtime, COMPONENTS)
     except Exception as exc:

@@ -6,6 +6,7 @@ small thread pool.
 """
 from __future__ import annotations
 
+import json
 import threading
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -194,7 +195,7 @@ class _FakeAutoPromoteProducer:
         self.sent: list[tuple[str, dict[str, Any]]] = []
         self._send_exc = send_exc
 
-    def send(self, topic: str, value: dict[str, Any]) -> _FakeFuture:
+    def send(self, topic: str, value: dict[str, Any], key: bytes | None = None) -> _FakeFuture:
         self.sent.append((topic, value))
         return _FakeFuture(self._send_exc)
 
@@ -202,47 +203,56 @@ class _FakeAutoPromoteProducer:
         return None
 
 
-def test_publish_auto_promote_silver_sends_the_expected_payload() -> None:
+class _RecordingCursor:
+    def __init__(self) -> None:
+        self.executed: list[tuple[str, Any]] = []
+
+    def execute(self, sql: str, params: Any = None) -> None:
+        self.executed.append((" ".join(sql.split()), params))
+
+
+def test_queue_auto_promote_silver_writes_the_event_into_the_callers_transaction() -> None:
+    """The event is an INSERT on the crawler's own cursor — committed (or rolled back)
+    with the Bronze registration — not a publish after the fact."""
+    cur = _RecordingCursor()
+    wc.queue_auto_promote_silver(cur, "d1", "t1")
+    [(sql, params)] = cur.executed
+    assert sql.startswith('INSERT INTO "OutboxEvents"')
+    producer, topic, key, payload = params
+    assert (producer, topic, key) == ("web-crawler", wc._PROMOTE_SILVER_TOPIC, "d1")
+    assert json.loads(payload) == {
+        "event": "promote_silver", "data_id": "d1", "tenant_id": "t1",
+        "approved_by": "web-crawler-worker",
+    }
+
+
+def test_the_relay_sends_the_expected_payload() -> None:
     producer = _FakeAutoPromoteProducer()
     with patch.object(wc, "_get_promote_producer", return_value=producer):
-        wc.publish_auto_promote_silver("d1", "t1")
-    assert producer.sent == [
-        (wc._PROMOTE_SILVER_TOPIC, {
-            "event": "promote_silver", "data_id": "d1", "tenant_id": "t1",
-            "approved_by": "web-crawler-worker",
-        }),
-    ]
+        wc._publish_outbox_event(wc._PROMOTE_SILVER_TOPIC, {"data_id": "d1"}, "d1")
+    assert producer.sent == [(wc._PROMOTE_SILVER_TOPIC, {"data_id": "d1"})]
 
 
-def test_publish_auto_promote_silver_is_a_noop_when_kafka_is_unavailable() -> None:
-    with patch.object(wc, "_get_promote_producer", return_value=None):
-        wc.publish_auto_promote_silver("d1", "t1")  # must not raise
+def test_the_relay_raises_when_kafka_is_unavailable_so_the_event_stays_queued() -> None:
+    """The old best-effort publish returned silently here and the event was gone."""
+    with patch.object(wc, "_get_promote_producer", return_value=None), pytest.raises(RuntimeError):
+        wc._publish_outbox_event(wc._PROMOTE_SILVER_TOPIC, {}, "d1")
 
 
-def test_publish_auto_promote_silver_swallows_a_send_failure() -> None:
-    class _Boom:
-        def send(self, *_: Any, **__: Any) -> None:
-            raise RuntimeError("kafka down")
-
-    with patch.object(wc, "_get_promote_producer", return_value=_Boom()):
-        wc.publish_auto_promote_silver("d1", "t1")  # must not raise
-
-
-def test_publish_auto_promote_silver_catches_a_failure_the_future_reports() -> None:
-    """Regression: a producer whose `send()` returns normally but whose
-    delivery actually fails (stale broker connection after a Kafka restart,
-    the exact live case that silently stranded RSS Kinh tế / Tỷ giá ngoại tệ
-    at Bronze with no error anywhere) must still be caught — not swallowed
-    by a bare `flush()` that returns regardless of outcome."""
+def test_the_relay_raises_on_a_failure_the_future_reports() -> None:
+    """Regression: a producer whose `send()` returns normally but whose delivery fails
+    (stale broker connection after a Kafka restart) must surface, not be swallowed by a
+    bare `flush()` that returns regardless of outcome."""
     producer = _FakeAutoPromoteProducer(send_exc=RuntimeError("stale broker connection"))
-    with patch.object(wc, "_get_promote_producer", return_value=producer):
-        wc.publish_auto_promote_silver("d1", "t1")  # must not raise
+    with patch.object(wc, "_get_promote_producer", return_value=producer), pytest.raises(RuntimeError):
+        wc._publish_outbox_event(wc._PROMOTE_SILVER_TOPIC, {}, "d1")
 
 
 def test_a_failed_publish_drops_the_cached_producer_so_the_next_call_rebuilds_it() -> None:
     wc._promote_producer = _FakeAutoPromoteProducer(send_exc=RuntimeError("stale"))  # type: ignore[assignment]
     try:
-        wc.publish_auto_promote_silver("d1", "t1")
+        with pytest.raises(RuntimeError):
+            wc._publish_outbox_event(wc._PROMOTE_SILVER_TOPIC, {}, "d1")
         assert wc._promote_producer is None
     finally:
         wc._promote_producer = None
