@@ -56,7 +56,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: kb-conflict-resolution
-        image: localhost:5000/dataagent/kb-conflict-resolution:latest
+        image: localhost:5000/dataagent/kb-worker:latest
         imagePullPolicy: Always
         envFrom:
         - configMapRef:
@@ -78,7 +78,7 @@ spec:
         command:
         - python
         - -m
-        - services.kb_conflict_resolution.conflict_resolution
+        - services.kb_backend.workers.conflict_resolution.main
       volumes:
       - name: tmp
         emptyDir: {}

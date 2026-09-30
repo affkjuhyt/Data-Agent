@@ -10,7 +10,7 @@ from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm i
 from libs.database_connector.model_connector import ModelServiceClient
 from libs.database_connector.postgres_connector import PostgresClient
 from libs.database_connector.qdrant_connector import QdrantClient as QdrantService
-from services.kb_conflict_resolution.libs.orchestrator import resolve_batch
+from services.kb_backend.workers.conflict_resolution.orchestrator import resolve_batch
 from libs.ingestion import config as cfg
 from libs.ingestion.graph_store import GraphStore
 

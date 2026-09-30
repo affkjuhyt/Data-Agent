@@ -3,7 +3,7 @@ The implementation is organized under ``conflict_resolution`` by responsibility.
 Keep this module so existing worker/bootstrap imports continue to work unchanged.
 """
 
-from services.kb_conflict_resolution.libs.models import (
+from services.kb_backend.workers.conflict_resolution.models import (
     MODE_ALL_KEEP_EXISTING,
     MODE_INVALID,
     MODE_MERGE,
@@ -14,8 +14,8 @@ from services.kb_conflict_resolution.libs.models import (
     MergedBlock,
     ResolverStores,
 )
-from services.kb_conflict_resolution.libs.orchestrator import resolve_batch
-from services.kb_conflict_resolution.libs.polling import (
+from services.kb_backend.workers.conflict_resolution.orchestrator import resolve_batch
+from services.kb_backend.workers.conflict_resolution.polling import (
     AWAITING_BATCH_SCAN_LIMIT,
     POLL_INTERVAL,
     conflict_resolve_loop,

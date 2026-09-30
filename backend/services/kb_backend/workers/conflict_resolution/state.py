@@ -12,7 +12,7 @@ from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm i
     KBConflictORM,
 )
 from libs.database_connector.postgres_connector import PostgresClient
-from services.kb_conflict_resolution.libs.models import (
+from services.kb_backend.workers.conflict_resolution.models import (
     KEEP_EXISTING,
     KEEP_INCOMING,
     MERGE,

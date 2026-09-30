@@ -326,7 +326,7 @@ band. Nothing in `deploy/k8s/` may use it.
 | workflow-runtime | service | 8001 | **8240** | manifest `command` |
 | flow-builder | service | 8002 | **8250** | manifest `command` |
 | sandbox-executor | service | 8500 | **8260** | manifest `command` |
-| llm-exporter | service | 9200 | **8270** | manifest `command` |
+| llm-exporter | service | 9200 | **8270** | `LISTEN_PORT` in its ConfigMap (runs as `WORKER=llm-exporter` of the platform-workers image) |
 | frontend | service | 3000 | **8280** | manifest `command` (vite `--port`) |
 | postgres | database | 5432 | **8300** | `PGPORT` |
 | mongo | database | 27017 | **8310** | `mongod --port` |

@@ -111,7 +111,10 @@ from a literal.
 ```
 backend/libs        shared libraries (basemodel, database_connector, shared, ingestion,
                     semantic, indicator)
-backend/services    one deployable per directory, Dockerfile inside
+backend/services    one deployable per directory, Dockerfile inside. kb_backend also holds the four KB
+                    Kafka workers (workers/*), built as the `kb-worker` image (deploy/docker/kb-worker);
+                    llm-exporter is a platform_workers worker. Add a worker, not a service, for a new
+                    queue consumer
 backend/alembic     Postgres migrations (the `migrate` image)
 frontend/src        React app (features/, components/, lib/)
 deploy/ansible      the deploy path (k8s-local inventory)

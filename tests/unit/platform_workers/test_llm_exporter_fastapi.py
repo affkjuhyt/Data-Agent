@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib
-import pathlib
 import sys
 
 import pytest
@@ -10,17 +9,15 @@ pytestmark = pytest.mark.unit
 
 pytest.importorskip("fastapi", reason="fastapi not installed in this environment")
 
-REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
-_SVC_DIR = str(REPO_ROOT / "backend" / "services" / "llm_exporter")
+MODULE = "services.platform_workers.workers.llm_exporter.exporter"
 
 
 @pytest.fixture
-def exporter(monkeypatch):
-    monkeypatch.syspath_prepend(_SVC_DIR)
-    sys.modules.pop("exporter", None)
-    module = importlib.import_module("exporter")
+def exporter():
+    sys.modules.pop(MODULE, None)
+    module = importlib.import_module(MODULE)
     yield module
-    sys.modules.pop("exporter", None)
+    sys.modules.pop(MODULE, None)
 
 
 def test_health_and_metrics_are_served_by_fastapi(exporter, monkeypatch):

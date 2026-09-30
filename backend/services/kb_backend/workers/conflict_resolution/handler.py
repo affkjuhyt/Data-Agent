@@ -7,7 +7,7 @@ from typing import Any, Awaitable, Callable
 
 from libs.ingestion import config as cfg
 from libs.ingestion.runtime import WorkerRuntime
-from services.kb_conflict_resolution.libs.orchestrator import resolve_batch
+from services.kb_backend.workers.conflict_resolution.orchestrator import resolve_batch
 
 log = logging.getLogger(__name__)
 

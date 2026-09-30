@@ -11,7 +11,7 @@
 | Ingestion | Source Registry, Connector Runtime | `KBSource*`, `platform_workers/workers/web_crawler` | Có, mở rộng |
 | Ingestion | Immutable Raw | MinIO + `KBData` Bronze, khoá theo SHA-256 | Một phần (re-crawl đang xoá; sửa ở S2-02, ADR-V2-21) |
 | Ingestion | Profile, Reverse Schema, Mapping, Normalize | Consumer mới `platform_workers/workers/series_extractor` | Mới |
-| Ingestion | Layout/OCR, Document Structure | `kb_promote_silver/gold`, `libs/ingestion/docling_parser.py`, `PageRegion` | Có, mở rộng |
+| Ingestion | Layout/OCR, Document Structure | `kb_backend/workers/promote_{silver,gold}`, `libs/ingestion/docling_parser.py`, `PageRegion` | Có, mở rộng |
 | Ingestion | Entity/Claim/Event extraction | Consumer mới `semantic_extractor` | Mới |
 | Governance | DQ, Conflict, ReviewCase, HITL, Effective | Module `governance` trong `indicator-api` + `libs/dq` | Mới |
 | Semantic & Knowledge Fabric | Entity, Series, Claim, Event, Evidence | Postgres schema `registry`, `knowledge`; Qdrant; Neo4j (bản chiếu) | Mới |
@@ -43,7 +43,7 @@ backend/services/indicator_api/
 
 `domains/` không import FastAPI hay client kho; chỉ `api/` và `adapters/` được. `libs/indicator` là thư
 viện tính toán thuần, không sở hữu I/O. Consumer trong `platform_workers` chỉ parse envelope rồi gọi
-handler của domain (ADR-V2-37). `.importlinter` chặn package V2 import `kb_structured_data` và
+handler của domain (ADR-V2-37). `.importlinter` chặn package V2 import `kb_backend.workers.structured_data` và
 MongoDB (ADR-V2-38).
 
 ## 2. Lưu trữ

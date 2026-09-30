@@ -63,7 +63,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: kb-promote-gold
-        image: dataagent/kb-promote-gold:latest
+        image: dataagent/kb-worker:latest
         imagePullPolicy: IfNotPresent
         envFrom:
         - configMapRef:
@@ -92,7 +92,7 @@ spec:
         command:
         - python
         - -m
-        - services.kb_promote_gold.promote_gold
+        - services.kb_backend.workers.promote_gold.main
       volumes:
       - name: tmp
         emptyDir: {}

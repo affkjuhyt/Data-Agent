@@ -80,7 +80,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: kb-promote-silver
-        image: localhost:5000/dataagent/kb-promote-silver:latest
+        image: localhost:5000/dataagent/kb-worker:latest
         imagePullPolicy: Always
         envFrom:
         - configMapRef:
@@ -104,7 +104,7 @@ spec:
         command:
         - python
         - -m
-        - services.kb_promote_silver.promote_silver
+        - services.kb_backend.workers.promote_silver.main
       volumes:
       - name: cache
         persistentVolumeClaim:

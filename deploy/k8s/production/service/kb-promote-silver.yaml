@@ -82,7 +82,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
       - name: kb-promote-silver
-        image: dataagent/kb-promote-silver:latest
+        image: dataagent/kb-worker:latest
         imagePullPolicy: IfNotPresent
         envFrom:
         - configMapRef:
@@ -113,7 +113,7 @@ spec:
         command:
         - python
         - -m
-        - services.kb_promote_silver.promote_silver
+        - services.kb_backend.workers.promote_silver.main
       volumes:
       - name: cache
         persistentVolumeClaim:

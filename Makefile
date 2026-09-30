@@ -27,7 +27,7 @@ type:  ## mypy strict on libs + services (same set as CI python-type)
 # tests/unit/<suite> and tests/integration/<suite> are the directories.
 IMAGE_REGISTRY ?= localhost:5000
 UNIT_SUITES ?= workflow_runtime:workflow_runtime kb_backend:kb-backend platform_workers:platform-workers \
-               sandbox_executor:sandbox_executor auth_api:auth_api kb_promote_silver:kb-promote-silver \
+               sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker \
                flow_builder:flow_builder model_service:model_service
 INTEGRATION_SUITES ?= workflow_runtime:workflow_runtime auth_api:auth_api platform_workers:platform-workers \
                       sandbox_executor:sandbox_executor

@@ -106,7 +106,7 @@ release-hardening pass:
 Notes on special cases:
 - **model-service** downloads no weights: it runs no local model and proxies embed,
   rerank and generate to the GPU services (`REMOTE_*_URL`).
-- **kb-promote-silver** and **platform-workers** install Chromium to a world-readable
+- **kb-worker** (the KB workers' image) and **platform-workers** install Chromium to a world-readable
   `PLAYWRIGHT_BROWSERS_PATH` (`/ms-playwright`) so the non-root user can still launch the
   browser; the app user has a writable `$HOME` for Chromium's profile/cache.
 
@@ -161,8 +161,7 @@ with an existing baseline to burn down. Ratchet plan:
   | `backend/services/{auth_api,flow_builder,model_service,sandbox_executor,platform_workers}` | **0**, enforced |
 
   Not on the strict list: `backend/libs/{ingestion,semantic,indicator}` and the services
-  `kb_promote_silver`, `kb_promote_gold`, `kb_structured_data`, `kb_conflict_resolution`,
-  `llm_exporter`. The whole-tree run is report-only (`|| true`).
+  `kb_backend/workers/*` (excluded from the `kb_backend` strict entry in ci.yml). The whole-tree run is report-only (`|| true`).
 
 ## 6. Reporting a vulnerability
 

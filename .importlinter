@@ -57,7 +57,7 @@ source_modules =
     libs.shared.storage_ownership
     libs.ingestion.storage_boundary
 forbidden_modules =
-    services.kb_structured_data
+    services.kb_backend.workers.structured_data
     libs.database_connector.mongo_connector
     libs.ingestion.silver
     libs.ingestion.gold

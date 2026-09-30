@@ -5,17 +5,17 @@ from libs.basemodel.services_databaseconnector.postgres_model import ConflictSta
 from libs.database_connector.model_connector import ModelServiceClient
 from libs.database_connector.postgres_connector import PostgresClient, set_current_tenant
 from libs.database_connector.qdrant_connector import QdrantClient as QdrantService
-from services.kb_conflict_resolution.libs.keep_existing import _apply_keep_existing
-from services.kb_conflict_resolution.libs.keep_incoming import _apply_keep_incoming
-from services.kb_conflict_resolution.libs.merge import _apply_merge
-from services.kb_conflict_resolution.libs.models import (
+from services.kb_backend.workers.conflict_resolution.keep_existing import _apply_keep_existing
+from services.kb_backend.workers.conflict_resolution.keep_incoming import _apply_keep_incoming
+from services.kb_backend.workers.conflict_resolution.merge import _apply_merge
+from services.kb_backend.workers.conflict_resolution.models import (
     MODE_ALL_KEEP_EXISTING,
     MODE_MERGE,
     MODE_SINGLE_KEEP_INCOMING,
     BatchContext,
     ResolverStores,
 )
-from services.kb_conflict_resolution.libs.state import (
+from services.kb_backend.workers.conflict_resolution.state import (
     _claim_batch,
     _classify_batch_resolution,
     _load_batch_anchor,
@@ -71,7 +71,7 @@ async def resolve_batch(
             resolved_by=resolved_by,
             conflicts=conflicts,
         )
-        # See kb_promote_silver/libs/handler.py's identical fix — RLS-scoped
+        # See kb_backend/workers/promote_silver/handler.py's identical fix — RLS-scoped
         # reads (postgres.read(ReadJoinRequest(tenant_id=...))) rely on this
         # ContextVar, which nothing else in a Kafka consumer ever sets. Known
         # only once ctx.tenant_id is loaded, so set from here on.

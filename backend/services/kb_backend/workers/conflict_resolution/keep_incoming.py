@@ -6,12 +6,12 @@ import uuid
 from sqlalchemy import update as sa_update
 
 from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import KBTextBlockORM
-from services.kb_conflict_resolution.libs.models import (
+from services.kb_backend.workers.conflict_resolution.models import (
     KEEP_INCOMING,
     BatchContext,
     ResolverStores,
 )
-from services.kb_conflict_resolution.libs.state import (
+from services.kb_backend.workers.conflict_resolution.state import (
     _close_out_conflicts,
     _conflict_ids,
     _mark_batch_resolved,

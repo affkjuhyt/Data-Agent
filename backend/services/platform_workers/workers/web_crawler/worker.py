@@ -75,7 +75,7 @@ STALE_RUN_MINUTES = _settings.stale_run_minutes
 
 # promotion_mode="auto": queue Silver ourselves after a changed crawl, same
 # topic/payload kb_backend's own POST /promote/{id}/silver route publishes
-# (kb_promote_silver then chains Gold itself — see libs/ingestion/consumer.py's
+# (the promote_silver worker then chains Gold itself — see libs/ingestion/consumer.py's
 # maybe_publish_auto_gold). Hardcoded, not imported from kb_backend: workers
 # only import libs.* and their own package, never another service's code
 # (see bronze.py's module docstring).

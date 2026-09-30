@@ -61,7 +61,13 @@ def _get_client_calls() -> tuple[collections.Counter, collections.Counter, dict]
                     continue
                 if node.func.attr != "get_client":
                     continue
-                service = path.relative_to(REPO_ROOT).parts[2]   # backend/<services|libs>/<name>
+                parts = path.relative_to(REPO_ROOT).parts
+                service = parts[2]   # backend/<services|libs>/<name>
+                # The KB Kafka workers live inside kb_backend but, unlike its API,
+                # do not set the tenant per request: keep them a separate unit so
+                # kb_backend's ambient-tenant exemption does not hide them.
+                if parts[2] == "kb_backend" and parts[3] == "workers":
+                    service = f"kb_worker_{parts[4]}"
                 if any(k.arg == "tenant_id" for k in node.keywords) or node.args:
                     scoped[service] += 1
                 else:
@@ -84,10 +90,10 @@ _UNSCOPED_BUDGET = {
     # 32: the Silver tier update/rollback, the auto-Gold hand-off read and the
     # trash-flush graph lookup now pass the tenant they already had.
     "ingestion": 32,
-    "kb_conflict_resolution": 16,
-    "kb_promote_gold": 2,
-    "kb_structured_data": 2,
-    "kb_promote_silver": 1,
+    "kb_worker_conflict_resolution": 16,
+    "kb_worker_promote_gold": 2,
+    "kb_worker_structured_data": 2,
+    "kb_worker_promote_silver": 1,
     # libs/shared is at 0: the document advisory lock moved to
     # get_platform_client(), the deliberate unscoped form.
     "database_connector": 15,

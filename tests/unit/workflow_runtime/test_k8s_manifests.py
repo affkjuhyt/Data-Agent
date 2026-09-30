@@ -1019,7 +1019,8 @@ class TestDockerfilesCarryNoDeploymentConfig:
 
     DOCKERFILES = sorted(
         list((REPO_ROOT / "backend" / "services").glob("*/Dockerfile"))
-        + [REPO_ROOT / "backend" / "alembic" / "Dockerfile",
+        + [REPO_ROOT / "deploy" / "docker" / "kb-worker" / "Dockerfile",
+           REPO_ROOT / "backend" / "alembic" / "Dockerfile",
            REPO_ROOT / "model" / "eval" / "Dockerfile",
            REPO_ROOT / "frontend" / "Dockerfile.dev"]
     )
@@ -1031,7 +1032,7 @@ class TestDockerfilesCarryNoDeploymentConfig:
     }
 
     def test_the_set_is_not_empty(self):
-        assert len(self.DOCKERFILES) >= 12, "Dockerfile discovery broke"
+        assert len(self.DOCKERFILES) >= 11, "Dockerfile discovery broke"
 
     @pytest.mark.parametrize("path", DOCKERFILES, ids=lambda p: p.parent.name)
     def test_no_expose_or_start_command(self, path):

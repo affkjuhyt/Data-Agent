@@ -58,8 +58,11 @@ jobs:
             backend/services/sandbox_executor \
             backend/services/platform_workers; do
             echo "== mypy strict: $target =="
+            # kb_backend/workers/ (the KB Kafka workers) came from services that were
+            # never on this list and are not strict-clean; keep them out until they are.
             mypy --disallow-untyped-defs --disallow-any-generics \
-                 --ignore-missing-imports --follow-imports=silent "$target"
+                 --ignore-missing-imports --follow-imports=silent \
+                 --exclude 'kb_backend/workers/' "$target"
           done
 
   # One job per service suite, in that service's Python with only its own
@@ -89,13 +92,13 @@ jobs:
           - suite: auth_api
             python: "3.12"
             install: -r backend/services/auth_api/requirements.txt
-          - suite: kb_promote_silver
+          - suite: kb_worker
             python: "3.11"
             # Same system libraries and CPU torch wheel as its Dockerfile;
             # docling imports fail without them.
             apt: libgl1 libglib2.0-0 poppler-utils tesseract-ocr
             pre: torch torchvision --index-url https://download.pytorch.org/whl/cpu
-            install: -r backend/services/kb_promote_silver/requirements.txt
+            install: -r deploy/docker/kb-worker/requirements.txt
           - suite: flow_builder
             python: "3.11"
             install: -r backend/services/flow_builder/requirements.txt

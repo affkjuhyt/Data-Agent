@@ -6,8 +6,8 @@ import logging
 
 from libs.ingestion import config as cfg
 from libs.ingestion.runtime import Component, WorkerRuntime, build_runtime, startup
-from services.kb_conflict_resolution.libs.handler import build_conflict_handler
-from services.kb_conflict_resolution.libs.polling_loop import conflict_resolve_loop
+from services.kb_backend.workers.conflict_resolution.handler import build_conflict_handler
+from services.kb_backend.workers.conflict_resolution.polling_loop import conflict_resolve_loop
 
 log = logging.getLogger(__name__)
 

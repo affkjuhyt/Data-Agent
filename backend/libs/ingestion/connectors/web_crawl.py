@@ -4,7 +4,7 @@ ingest path (`register_web_bronze`) already does.
 
 This is the single place Playwright/trafilatura fetch logic lives. It used
 to be duplicated inside `libs/ingestion/silver/parsing.py` (async, for the
-kb_promote_silver service's own event loop) — that module now delegates
+promote_silver worker's own event loop) — that module now delegates
 here via `loop.run_in_executor(...)` instead of keeping its own copy, so a
 behavior change (timeout, render-wait, extraction library) only has one
 place to land, whether the caller is a human's one-shot upload or the

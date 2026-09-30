@@ -33,7 +33,7 @@ _MAX_IMPORT_ROWS = int(os.getenv("KB_STRUCTURED_MAX_ROWS", "200000"))
 # that never sets app.tenant_id empties these tables instead of scoping them.
 _ENFORCE_ROW_LEVEL_SECURITY = os.getenv("KB_STRUCTURED_RLS", "").lower() in ("1", "true", "yes")
 
-# Closed vocabulary — matches kb_structured_data's "table-schema-proposal"
+# Closed vocabulary — matches structured_data worker's "table-schema-proposal"
 # LLM schema and the columns() TYPE_MAP below one-for-one. Never let a
 # caller-supplied type string reach SQL directly.
 _TYPE_MAP: dict[str, str] = {

@@ -106,7 +106,6 @@ class TestRealImages:
             ("deploy/docker/kong", "Dockerfile"),
             ("deploy/docker/setup", "Dockerfile"),
             ("frontend", "Dockerfile.dev"),
-            ("backend/services/llm_exporter", "Dockerfile"),
             ("backend/services/model_service", "Dockerfile"),
             ("backend/services/sandbox_executor", "Dockerfile"),
             ("backend/services/sandbox_executor/sandbox_runner", "Dockerfile"),

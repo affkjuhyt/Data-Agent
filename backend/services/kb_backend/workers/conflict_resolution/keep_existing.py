@@ -1,8 +1,8 @@
 """Keep-existing conflict resolution strategy."""
 from __future__ import annotations
 
-from services.kb_conflict_resolution.libs.models import BatchContext, ResolverStores
-from services.kb_conflict_resolution.libs.state import (
+from services.kb_backend.workers.conflict_resolution.models import BatchContext, ResolverStores
+from services.kb_backend.workers.conflict_resolution.state import (
     _close_out_conflicts,
     _conflict_ids,
     _mark_batch_resolved,

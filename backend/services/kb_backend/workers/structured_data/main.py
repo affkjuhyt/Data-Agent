@@ -6,7 +6,7 @@ import logging
 
 from libs.ingestion import config as cfg
 from libs.ingestion.runtime import Component, WorkerRuntime, build_runtime, startup
-from services.kb_structured_data.libs.handler import build_structured_handler
+from services.kb_backend.workers.structured_data.handler import build_structured_handler
 
 log = logging.getLogger(__name__)
 

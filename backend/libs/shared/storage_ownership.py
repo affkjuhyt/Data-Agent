@@ -3,7 +3,7 @@
 Which store owns which data is docs/v2/03-target-design.md §2 and §2.1.
 
 Why this exists: V2 numbers (ObservationCandidate / Observation) and V2 business
-decisions must never land in the v1 structured-KB path (`kb_structured_data`,
+decisions must never land in the v1 structured-KB path (the structured_data worker,
 schema `kb_structured`), in MongoDB, or in the Silver/Gold chunk + embedding path
 (docs/v2/00 invariant 4, ADR-V2-09, ADR-V2-34, ADR-V2-38). A crawled source with
 an `extraction_profile` in its `KBSourceConfig.config` is read cell by cell by
@@ -39,7 +39,7 @@ EXTRACTION_PROFILE_KEY = "extraction_profile"
 V2_STRUCTURED_SOURCE_ERROR = "V2_STRUCTURED_SOURCE_LEGACY_PATH"
 
 # Topics of the legacy document / structured-KB path. Silver and Gold are the
-# chunk + embedding path; `kb.structured.propose` feeds `kb_structured_data`.
+# chunk + embedding path; `kb.structured.propose` feeds the structured_data worker.
 LEGACY_TOPICS: frozenset[str] = frozenset(
     {"kb.promote.silver", "kb.promote.gold", "kb.structured.propose"}
 )
@@ -47,7 +47,7 @@ LEGACY_TOPICS: frozenset[str] = frozenset(
 # Module prefixes a V2 package must not import: the v1 structured-KB service,
 # every MongoDB client, and the Silver/Gold ingestion stages.
 LEGACY_IMPORTS: tuple[str, ...] = (
-    "services.kb_structured_data",
+    "services.kb_backend.workers.structured_data",
     "libs.database_connector.mongo_connector",
     "pymongo",
     "motor",

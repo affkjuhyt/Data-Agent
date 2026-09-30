@@ -34,7 +34,7 @@ def build_gold_handler(runtime: WorkerRuntime) -> Callable[[dict[str, Any]], Awa
             log.warning("promote_gold: event missing data_id/tenant_id — skipped")
             return
 
-        # See the same fix in kb_promote_silver's handler.py — RLS-scoped
+        # See the same fix in the promote_silver worker handler.py — RLS-scoped
         # reads (postgres.read(ReadJoinRequest(tenant_id=...))) rely on this
         # ContextVar, which nothing else in a Kafka consumer ever sets.
         set_current_tenant(tenant_id)
@@ -62,7 +62,7 @@ def build_gold_handler(runtime: WorkerRuntime) -> Callable[[dict[str, Any]], Awa
                             timeout=cfg.GOLD_STAGE_TIMEOUT_SECONDS,
                         )
                     except TimeoutError:
-                        # See the matching comment in kb_promote_silver's
+                        # See the matching comment in promote_silver worker's
                         # handler.py — cancellation bypasses promote_to_gold's
                         # own FAILED stamp, so this is the only place that can.
                         await stamp_pipeline_status(

@@ -12,7 +12,7 @@ from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm i
     KBTextBlockVersionORM,
     KBTextTableORM,
 )
-from services.kb_conflict_resolution.libs.models import (
+from services.kb_backend.workers.conflict_resolution.models import (
     KEEP_EXISTING,
     MERGE,
     RESOLVED,
@@ -21,7 +21,7 @@ from services.kb_conflict_resolution.libs.models import (
     MergedBlock,
     ResolverStores,
 )
-from services.kb_conflict_resolution.libs.state import (
+from services.kb_backend.workers.conflict_resolution.state import (
     _batch_has_open_conflicts,
     _close_out_conflicts,
     _fetch_block_point,

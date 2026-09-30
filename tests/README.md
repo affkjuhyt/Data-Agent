@@ -17,7 +17,7 @@ tests/
 │   ├── platform_workers/    #   pure-library, manifest, deploy and grant tests go in
 │   ├── sandbox_executor/    #   workflow_runtime. There is no single image that can
 │   ├── auth_api/            #   import every service (their pins conflict: OTel,
-│   ├── kb_promote_silver/   #   boto3), so the suites are never run together.
+│   ├── kb_worker/         #   boto3), so the suites are never run together.
 │   ├── flow_builder/
 │   └── model_service/
 ├── integration/             # testcontainers; same per-service split as unit/
