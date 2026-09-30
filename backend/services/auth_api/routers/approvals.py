@@ -119,13 +119,13 @@ def _is_microsoft_sso_user(user_id: str) -> tuple[bool, str, str]:
 
 
 def _set_kc_user_enabled(user_id: str, enabled: bool) -> None:
-    try:
-        user_rep = _kc_get(f"/admin/realms/{KC_REALM}/users/{user_id}")
-        if isinstance(user_rep, dict):
-            user_rep["enabled"] = enabled
-            _kc_put(f"/admin/realms/{KC_REALM}/users/{user_id}", user_rep)
-    except Exception:
-        pass
+    """Raises when Keycloak cannot be updated: the account's enabled flag is the real
+    gate, so a silent failure would leave a user "pending" in the DB but still able to
+    log in."""
+    user_rep = _kc_get(f"/admin/realms/{KC_REALM}/users/{user_id}")
+    if isinstance(user_rep, dict):
+        user_rep["enabled"] = enabled
+        _kc_put(f"/admin/realms/{KC_REALM}/users/{user_id}", user_rep)
 
 
 def _assign_kc_user_role_tenant(user_id: str, role: str, tenant_id: str) -> None:
@@ -239,6 +239,7 @@ def submit_profile(body: ProfileBody, user: dict[str, Any] = Depends(get_current
                   SET requested_role      = EXCLUDED.requested_role,
                       requested_tenant_id = EXCLUDED.requested_tenant_id,
                       status              = 'pending'
+                  WHERE microsoft_sso_approvals.status <> 'approved'
                 RETURNING status, created_at
                 """,
                 (user_id, email, name,
@@ -249,7 +250,16 @@ def submit_profile(body: ProfileBody, user: dict[str, Any] = Depends(get_current
     finally:
         conn.close()
 
-    _set_kc_user_enabled(user_id, False)
+    # No row back: the conflict guard refused, because the user is already approved.
+    # Re-submitting must not flip an approved account back to pending and disable it.
+    if inserted is None:
+        raise HTTPException(status_code=409, detail="Profile already approved")
+
+    try:
+        _set_kc_user_enabled(user_id, False)
+    except Exception as exc:
+        # The pending row is committed, so a retry of this call finishes the job.
+        raise HTTPException(status_code=502, detail="Could not disable the account; retry") from exc
 
     since = inserted["created_at"].isoformat() if inserted else datetime.now(timezone.utc).isoformat()
     return {"status": "pending_approval", "since": since}
@@ -342,7 +352,7 @@ def approve_user(
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
-                "SELECT * FROM microsoft_sso_approvals WHERE keycloak_user_id = %s AND status = 'pending'",
+                "SELECT * FROM microsoft_sso_approvals WHERE keycloak_user_id = %s AND status = 'pending' FOR UPDATE",
                 (user_id,),
             )
             row = cur.fetchone()
@@ -390,7 +400,7 @@ def reject_user(
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
-                "SELECT requested_tenant_id FROM microsoft_sso_approvals WHERE keycloak_user_id = %s AND status = 'pending'",
+                "SELECT requested_tenant_id FROM microsoft_sso_approvals WHERE keycloak_user_id = %s AND status = 'pending' FOR UPDATE",
                 (user_id,),
             )
             row = cur.fetchone()

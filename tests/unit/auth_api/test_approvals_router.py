@@ -108,6 +108,7 @@ class _Keycloak:
     def __init__(self, *, is_ms_user: bool = True, assign_error: Exception | None = None) -> None:
         self.is_ms_user = is_ms_user
         self.assign_error = assign_error
+        self.disable_error: Exception | None = None
         self.enabled: list[tuple[str, bool]] = []
         self.assigned: list[tuple[str, str, str]] = []
 
@@ -117,6 +118,8 @@ class _Keycloak:
         return False, "", ""
 
     def set_enabled(self, user_id: str, enabled: bool) -> None:
+        if self.disable_error is not None:
+            raise self.disable_error
         self.enabled.append((user_id, enabled))
 
     def assign(self, user_id: str, role: str, tenant_id: str) -> None:
@@ -261,6 +264,41 @@ class TestSubmitProfile:
         assert conn.commits == 1
         assert kc.enabled == [("sso-user", False)]
 
+    def test_resubmitting_an_approved_profile_is_refused_and_disables_nothing(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The upsert only touches a row that is not approved; no row back means the
+        user is already approved, and flipping them to pending (and disabling the
+        account) on a repeat call would lock a legitimate user out."""
+        conn = _Conn([])  # RETURNING yields nothing
+        kc = _install(monkeypatch, conn)
+
+        resp = client.post(
+            "/api/auth/me/profile",
+            json={"requested_role": "data-analyst", "requested_tenant_id": _TENANT},
+            headers=_headers(roles="", **{"X-User-Id": "sso-user"}),
+        )
+
+        assert resp.status_code == 409
+        assert "<> 'approved'" in conn.executed[0][0]
+        assert kc.enabled == []
+
+    def test_a_failed_account_disable_is_reported_not_swallowed(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        conn = _Conn([{"status": "pending", "created_at": _NOW}])
+        kc = _install(monkeypatch, conn)
+        kc.disable_error = RuntimeError("keycloak down")
+
+        resp = client.post(
+            "/api/auth/me/profile",
+            json={"requested_role": "data-analyst", "requested_tenant_id": _TENANT},
+            headers=_headers(roles="", **{"X-User-Id": "sso-user"}),
+        )
+
+        assert resp.status_code == 502
+        assert conn.commits == 1  # the pending row stays, so a retry finishes the job
+
     def test_platform_admin_role_cannot_be_requested(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -330,6 +368,18 @@ class TestListApprovals:
 
 
 class TestApproveReject:
+    def test_the_pending_row_is_locked_for_the_whole_decision(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """approve/reject read, call Keycloak, then update; without FOR UPDATE a racing
+        approve and reject both pass the read and Keycloak ends up enabled while the
+        row says rejected."""
+        for action in ("approve", "reject"):
+            conn = _Conn([_pending()])
+            _install(monkeypatch, conn)
+            client.post(f"/api/auth/approvals/sso-user/{action}", headers=_headers())
+            assert conn.executed[0][0].endswith("FOR UPDATE"), action
+
     def test_platform_admin_approves_and_keycloak_gets_requested_role(
         self, client: TestClient, monkeypatch: pytest.MonkeyPatch,
     ) -> None:
