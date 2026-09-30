@@ -43,10 +43,12 @@ Quy tắc repo (lint/type/test trong container, so baseline, không commit secre
 | [12-numeric-core.md](12-numeric-core.md) | Lõi số: NC-E1..E3, NC-T1..T18, rủi ro NC-R, NC-ADR-T |
 | [13-ui-principles.md](13-ui-principles.md) | Nguyên tắc P1–P8, quy ước số/ngày formatVN, lỗi có cấu trúc, deep link |
 | [14-input-data-db.md](14-input-data-db.md) | Thiết kế DB cho luồng đầu vào: cấu hình nguồn V2, artifact/fetch/release, profile/mapping, candidate, `available_at` cho số lịch sử, outbox, quyền, thứ tự migration, phần cần sửa trong task Linear |
+| [15-test-strategy.md](15-test-strategy.md) | Kiểm thử V2: ba cổng merge/story/mốc, DoD theo vai trò, level/kind/`req` tag, assertion tất định, coverage theo requirement, catalog fixture, traceability UC → issue, owner suite QA, mẫu báo lỗi + evidence bundle |
 | [diagrams/](diagrams/README.md) | 39 sơ đồ PlantUML: kiến trúc 00–18, giao diện 20–26, vận hành 30–42 |
 | [data/sources-oil-gold.yaml](data/sources-oil-gold.yaml) | 28 nguồn: 24 nhập qua Add Data → Bulk Import, 4 tải tay qua Document Hub |
 | [data/brent-5d-drop-episodes.csv](data/brent-5d-drop-episodes.csv) | 32 đợt Brent giảm ≥5%/5 phiên (2023–2026), có SHA-256 của release EIA gốc |
 | [data/cross-source-reference-2026-08.csv](data/cross-source-reference-2026-08.csv) | Đối chiếu đa nguồn có lớp conflict kỳ vọng |
+| [data/test-traceability.csv](data/test-traceability.csv) | Traceability 219 issue C1/C2/C3: UC, test level bắt buộc, suite QA, fixture, kết quả kỳ vọng, owner (15 mục 9) |
 
 ## Tình trạng tóm tắt
 

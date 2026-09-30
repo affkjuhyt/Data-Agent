@@ -52,6 +52,13 @@ Every test must declare one of:
 The unmarked-test guard in `conftest.py` will skip tests that forget. Add the
 marker, don't bypass the guard.
 
+On top of the level, a test may carry kinds — `contract`, `security`, `resilience`,
+`performance`, `ai_eval` — and `@pytest.mark.req("NOP-148", "UC07")`, the requirements
+it proves. A malformed req ID fails collection. `--req-report-dir DIR` writes one JSON
+per run and `python3 tests/req_coverage.py DIR/*.json` merges them into coverage per
+requirement. Which issue needs which level, and the V2 rules behind the tags:
+[docs/v2/15-test-strategy.md](../docs/v2/15-test-strategy.md).
+
 ## Running
 
 ### Python — unit (no Docker inside the tests)

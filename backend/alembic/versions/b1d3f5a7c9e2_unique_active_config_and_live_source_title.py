@@ -25,6 +25,11 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    # DDL on these tables waits behind any open transaction that touched them, and every
+    # query that arrives after the DDL then queues behind IT (seen on dev: a worker's
+    # idle-in-transaction read stalled the whole KB API for 30 minutes). Fail fast instead
+    # and let the deploy be retried.
+    op.execute("SET LOCAL lock_timeout = '10s'")
     op.execute("DROP INDEX IF EXISTS idx_kbsourceconfig_source_active")
     op.execute(
         "CREATE UNIQUE INDEX idx_kbsourceconfig_source_active "

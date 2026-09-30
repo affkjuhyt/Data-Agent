@@ -105,6 +105,8 @@ release_calendar:                      # suy ngày công bố cho SỐ LỊCH S�
 # đọc vật lý (IN-2)
 extraction_profile:
   kind: xlsx_table                     # csv | xlsx_table (.xls và .xlsx) | json_path | sdmx | html_table | xml_path
+                                       # html_table: bộ chọn CSS cho bảng (`table`), dòng (`rows`) và ô (`cells`),
+                                       # dùng cả cho khối div dạng thẻ (24h.com.vn), không chỉ thẻ <table>
   archive_member: null                 # đọc một file trong zip (JODI: "world_primary.csv")
   sheet: "Data 1"
   header_row: 3
@@ -349,6 +351,12 @@ values:
 side_columns: []          # cột giữ lại trong source_ref nhưng không thành số (chg, pct của fixture)
 ```
 
+Khi đơn vị ở nguồn khác đơn vị của chuỗi, mỗi giá trị khai báo `source_unit` + `source_multiplier` và
+bước chuẩn hoá quy đổi bằng `libs/indicator` (không quy đổi trong mapping bằng tay). Ví dụ đọc thật ngày
+30/09/2026: PNJ và DOJI niêm yết vàng miếng SJC theo **nghìn đồng/chỉ** (`14,110`), 24h.com.vn theo **nghìn
+đồng/lượng** (`141,100`); chuỗi lưu triệu đồng/lượng (141,1). Cần đơn vị `chỉ` (1 lượng = 10 chỉ) trong thư
+viện. Chọn dòng theo giá trị ô dùng `select` (`{product: "VÀNG MIẾNG SJC"}`), như chọn theo chiều của SDMX.
+
 Bước 6 → 13 của kịch bản 27 bước chính là ba dòng: v1 `seed` `price → FIXTURE:BRENT_FEED_B:D` (approved) ·
 v2 `llm` `settle → FIXTURE:BRENT_FEED_B:D` (proposed, hoặc `validator_rejected` nếu validator bắt được) ·
 v3 `human` `settle → FIXTURE:BRENT_FEED_B:FUT_M1:D` measure `settlement_price` (approved bởi checker
@@ -480,7 +488,7 @@ CREATE TABLE registry.series (
   tenant_id        uuid NOT NULL,
   series_key       text NOT NULL,                   -- EIA:RBRTE:D; ClickHouse dùng khoá này
   entity_id        uuid NOT NULL REFERENCES registry.entity ON DELETE RESTRICT,
-  source_id        uuid NOT NULL,                   -- một series một nguồn
+  source_id        uuid NOT NULL,                   -- nguồn chính; nguồn nạp lịch sử ở registry.series_source
   measure          text NOT NULL CHECK (measure IN ('price','stock','production','position','index','rate','spread','return','gap')),
   price_type       text CHECK (price_type IN ('spot','futures_settlement','close','fixing','period_average','retail_cap','quote')),
   contract         text,                            -- M1
@@ -512,6 +520,25 @@ Ba điểm khác NOP-117:
 2. Alias là bảng riêng. Mảng `aliases text[]` không ràng buộc được "một alias chỉ thuộc một mặt hàng".
 3. Series thêm `measure`, `price_type`, `contract`, `market_timezone`, `purpose`. Không lưu `locale`:
    locale là thuộc tính của nguồn, nằm trong `extraction_profile`.
+
+**Nguồn nạp lịch sử (thêm 30/09/2026).** Một chuỗi có đúng một nguồn chính (`series.source_id`) và có
+thể có thêm một nguồn `backfill` chỉ để nạp lịch sử. Trường hợp thật: LBMA đóng file lịch sử đầy đủ
+ngày 30/09/2026, nên crawl web chỉ lấy được phiên gần nhất, còn lịch sử phải tải tay:
+
+```sql
+CREATE TABLE registry.series_source (
+  series_id  uuid NOT NULL REFERENCES registry.series,
+  tenant_id  uuid NOT NULL,
+  source_id  uuid NOT NULL,
+  role       text NOT NULL CHECK (role IN ('primary','backfill')),
+  PRIMARY KEY (series_id, source_id)
+);
+CREATE UNIQUE INDEX ON registry.series_source (series_id) WHERE role = 'primary';
+```
+
+Candidate từ nguồn `backfill` chỉ được nhận cho kỳ **trước** release đầu tiên của nguồn chính. Kỳ trùng
+với số của nguồn chính thì bị bỏ, kèm lý do trong `parse_error` (`BACKFILL_OVERLAP`). Không có cơ chế
+"nguồn nào ghi sau thắng".
 
 Mã đơn vị: `libs/indicator` là nguồn duy nhất. API validate `unit` với danh sách của thư viện, DB
 không giữ bảng đơn vị thứ hai.
@@ -627,11 +654,29 @@ transaction.
 | NOP-122 | Pydantic `SourceConfigV2` gồm `source_key`, `release_info` có cấu trúc, `release_calendar`, `extraction_profile` (mục 3) |
 | Đã làm 30/09 | ADR-V2-43/44/45; 03 mục 3.2 (`time_basis`), 4, 5 (tách profile/mapping, `xml_path`, `archive_member`). Còn: 03 mục 3.2 entity PK uuid (theo Q của NOP-117) |
 
-## 12. Thứ tự migration
+## 12. Thứ tự nạp lần đầu (runbook)
+
+Nạp sai thứ tự thì hoặc số vào mà không có chuỗi để gắn, hoặc detector nhận hàng chục nghìn sự kiện
+"mới". Mỗi bước có điều kiện kiểm trước khi sang bước sau.
+
+| Bước | Làm gì | Kiểm |
+| --- | --- | --- |
+| 1 | Migration M0–M5 (mục 13) | `alembic check` sạch; DDL `obs` áp hai lần không đổi |
+| 2 | Danh mục khởi tạo: mặt hàng, tên gọi khác, quan hệ, chuỗi (kể cả `series_source`) | Mọi `series_key` trong seed YAML có trong `registry.series` |
+| 3 | Bulk Import `sources-oil-gold.yaml` với **lịch tắt** (chỉ tạo nguồn + mapping v1 `seed`) | 25 nguồn tạo, 4 bỏ qua; mỗi nguồn có profile có mapping v1 `approved` |
+| 4 | Tắt phát sự kiện `observation.published` từng điểm cho lần nạp đầu (cờ `backfill` của publisher) | Detector không nhận sự kiện nào trong bước 5–7 |
+| 5 | Chạy tay từng nguồn một lần, theo thứ tự: EIA → IMF → Pink Sheet (tải tay) → LBMA tải tay (lịch sử) → LBMA crawl → Vietcombank → PNJ/DOJI/24h → GPR | Mỗi release `candidates_written`; `time_basis = calendar_inferred` cho số lịch sử EIA/IMF/LBMA |
+| 6 | DQ chạy trên candidate; hồ sơ duyệt phát sinh được xử lý | Không còn candidate `pending_dq`; số hồ sơ duyệt được ghi lại làm mốc |
+| 7 | Publish lịch sử vào `obs` | As-of 21/09/2026 trả Brent 15/09 = 130,80; as-of 22/09 18:00 ET trả Brent 22/09 chưa có (công bố 23/09) |
+| 8 | Bật lại phát sự kiện, bật lịch cho các nguồn | Release kế tiếp của EIA chỉ phát sự kiện cho các ngày mới |
+
+Nguồn thử Brent feed B **không** nạp ở đây; nó đi theo kịch bản nghiệm thu trên tenant đánh giá riêng.
+
+## 13. Thứ tự migration
 
 ```text
 M0 NOP-147/148   schema, role, RLS helper, btree_gist
-M1 NOP-117       registry.entity, entity_alias, entity_relation, series, catalog_change + seed 6 mặt hàng
+M1 NOP-117       registry.entity, entity_alias, entity_relation, series, series_source, catalog_change + seed
 M2 NOP-114/124   ingest.artifact, fetch, release, source_state, sla_event, outbox;  KBData.artifact_sha256
 M3 NOP-126       ingest.profile, mapping_version, release_processing
 M4 NOP-131       ingest.observation_candidate, parse_error
@@ -643,12 +688,12 @@ M1 và M2 chạy song song được. M3 cần M2. M4 cần M1–M3. Test chung c
 lên sạch; UPDATE/DELETE vào bảng append-only bị từ chối **bằng role service thật**; tenant A không
 đọc được B.
 
-## 13. Cần chốt
+## 14. Cần chốt
 
 | # | Câu hỏi | Đề xuất |
 | --- | --- | --- |
 | Q1 | Chấp nhận `available_at` suy từ lịch cho số lịch sử (IN-5)? Phương án khác là chỉ trả lời as-of từ ngày hệ thống bắt đầu nạp, nhưng như vậy mất UC13 trên dữ liệu thật và mất 32 đợt giảm | Chấp nhận, gắn nhãn `calendar_inferred` trên UI và trong câu trả lời |
-| Q3 | LBMA nạp gì ngoài Gold PM USD? JSON công khai có `gold_am`, `gold_pm`, `silver`, `platinum_am/pm`, `palladium_am/pm`, mỗi dòng `[USD, GBP, EUR]`. **Ngày 30/09/2026 máy chủ bị Cloudflare chặn (403) cho mọi file**, đang dựa vào tải tay | Chỉ Gold PM USD cho POC; mapping seed đã chỉ lấy `v[0]` |
+| Q3 | LBMA | **Chốt 30/09/2026:** chỉ Gold PM USD. File lịch sử đầy đủ không còn công khai (Apache 403); phiên gần nhất lấy bằng crawl trang giá qua trình duyệt headless (bắt phản hồi `today.json`), lịch sử tải tay qua nguồn `backfill` (mục 8.1) |
 
 Đã chốt 30/09/2026: Q2 → ADR-V2-46; Q4 → seed YAML đã đổi dạng (Bulk Import parser cho kết quả y
 như cũ: 24 tạo, 4 bỏ qua, chỉ khác `notes`/`variables`).

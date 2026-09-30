@@ -11,8 +11,11 @@ Convention:
 """
 from __future__ import annotations
 
+import json
 import os
+import re
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
@@ -40,6 +43,7 @@ except ImportError:  # pragma: no cover - python-dotenv is optional for pure-uni
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     for item in items:
         markers = {m.name for m in item.iter_markers()}
+        _check_req_ids(item)
         if not markers & {"unit", "integration", "e2e"}:
             item.add_marker(
                 pytest.mark.skip(
@@ -49,6 +53,73 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
                     )
                 )
             )
+
+
+# ─── Requirement coverage (docs/v2/15-test-strategy.md §7) ─────────────────
+# `@pytest.mark.req("UC07", "NOP-234")` names what a test proves. A typo'd ID
+# would silently drop the test out of the coverage report, so a bad ID fails
+# collection instead. `--req-report-dir DIR` writes one JSON per run (the
+# suites run in separate images); tests/req_coverage.py merges them.
+_LEVELS = ("unit", "integration", "e2e")
+_KINDS = ("contract", "security", "resilience", "performance", "ai_eval")
+_REQ_ID = re.compile(r"UC\d{2}|NOP-\d+|SC27-\d{2}|SCVN-\d|[A-Z][A-Z0-9]*-\d{2}[a-z]?")
+_REQ_ROWS = pytest.StashKey[dict[str, dict]]()
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--req-report-dir",
+        metavar="DIR",
+        default=None,
+        help="write requirement coverage JSON for this run into DIR",
+    )
+
+
+def _check_req_ids(item: pytest.Item) -> list[str]:
+    ids = [i for m in item.iter_markers("req") for i in m.args]
+    bad = [i for i in ids if not (isinstance(i, str) and _REQ_ID.fullmatch(i))]
+    if bad:
+        raise pytest.UsageError(f"{item.nodeid}: invalid req id {bad!r}")
+    return ids
+
+
+def pytest_collection_finish(session: pytest.Session) -> None:
+    if not session.config.getoption("--req-report-dir"):
+        return
+    rows = {}
+    for item in session.items:
+        names = {m.name for m in item.iter_markers()}
+        rows[item.nodeid] = {
+            "nodeid": item.nodeid,
+            "level": next((n for n in _LEVELS if n in names), None),
+            "kinds": [k for k in _KINDS if k in names],
+            "reqs": sorted(set(_check_req_ids(item))),
+            "outcome": "not_run",
+        }
+    session.config.stash[_REQ_ROWS] = rows
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo) -> Iterator[pytest.TestReport]:
+    report = yield
+    rows = item.config.stash.get(_REQ_ROWS, None)
+    # Setup/teardown only overwrite the outcome when they fail or skip; the
+    # call phase decides otherwise.
+    if rows is not None and item.nodeid in rows and (report.when == "call" or report.outcome != "passed"):
+        rows[item.nodeid]["outcome"] = report.outcome
+    return report
+
+
+def pytest_sessionfinish(session: pytest.Session) -> None:
+    out_dir = session.config.getoption("--req-report-dir")
+    rows = session.config.stash.get(_REQ_ROWS, None)
+    if not out_dir or rows is None:
+        return
+    # One file per suite: name it after the paths pytest was given.
+    label = re.sub(r"[^A-Za-z0-9]+", "_", "-".join(session.config.args)).strip("_") or "all"
+    path = Path(out_dir) / f"{label}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"source": "pytest", "tests": list(rows.values())}, indent=1))
 
 
 # ─── Container fixtures (lazy — only imported when integration tests run) ──

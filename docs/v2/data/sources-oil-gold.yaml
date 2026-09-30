@@ -12,9 +12,13 @@
 #                        ingest.mapping_version v1 (proposed_by = seed), không lưu vào config
 # release_calendar suy ngày công bố cho số lịch sử của lần nạp đầu (ADR-V2-43).
 # `locale` ở cấp nguồn chỉ còn cho nguồn chưa có profile (văn bản, HTML); có profile thì nằm trong profile.
-# Nguồn có profile + mapping (cấu trúc đã đọc từ file thật trên máy chủ ngày 30/09/2026): EIA x4, GPR,
-# IMF PCPS, LBMA, Vietcombank, Pink Sheet (theo 04 mục 3). Còn lại: CFTC, JODI (NOP-127),
-# HTML vàng/tỷ giá Việt Nam (NOP-47, NOP-68), FRED (cần key).
+# Nguồn có profile + mapping (cấu trúc đã đọc từ file/trang thật trên máy chủ ngày 30/09/2026): EIA x4,
+# GPR, IMF PCPS, LBMA (crawl trang), Vietcombank, Pink Sheet (theo 04 mục 3), PNJ, DOJI, 24h.com.vn, nguồn
+# thử Brent feed B. Còn lại: CFTC, JODI (NOP-127); SJC trực tiếp bị Cloudflare chặn; FRED cần key;
+# LBMA tải tay khai báo cách đọc khi chọn file đầu tiên.
+# Giá vàng Việt Nam: mỗi nguồn một chuỗi riêng (PNJ:…, DOJI:…, 24H:…) cùng mặt hàng GOLD_SJC_BAR; đơn vị gốc
+# (nghìn đồng/chỉ hay /lượng) khai báo ở `source_unit` + `source_multiplier`, chuẩn hoá sang đơn vị của chuỗi.
+# `capture_response` (LBMA) và `series_role: backfill` là khoá mới, chưa có trong connector/registry (NOP-14, NOP-117).
 # Lịch "weekly" của Bulk Import là thứ Hai 03:00; nguồn công bố thứ Tư/thứ Sáu phải chỉnh cron ở tab Edit.
 # connector: manual-upload bị Bulk Import bỏ qua có lý do (đúng ý đồ): nguồn đó tải tay qua Document Hub.
 sources:
@@ -380,37 +384,41 @@ sources:
 
   - id: lbma-gold-pm-json
     publisher: LBMA (benchmark do ICE Benchmark Administration quản trị)
-    title: LBMA Gold Price PM theo ngày (JSON công khai trên website LBMA)
-    connector: http-file
+    title: LBMA Gold Price PM theo ngày (crawl trang giá LBMA bằng trình duyệt)
+    connector: web-crawl-headless
     format: json
-    sample_urls:
-      - https://prices.lbma.org.uk/json/gold_pm.json
+    landing_url: https://www.lbma.org.uk/prices-and-data/precious-metal-prices
+    # trang tự gọi json/today.json khi render; connector lưu phản hồi đó làm bản gốc (NOP-14, NOP-215)
+    capture_response: "https://prices.lbma.org.uk/json/today.json"
     entity: GOLD_LBMA_PM
-    variables: [LBMA:GOLD_PM:USD:D, LBMA:GOLD_PM:GBP:D, LBMA:GOLD_PM:EUR:D]
+    variables: [LBMA:GOLD_PM:USD:D]
     schedule: daily
     purpose: production
     promotion_mode: auto
     licence: "Website LBMA: lấy/dùng/phân phối lại dữ liệu benchmark cần licence IBA. POC: phân tích nội bộ, ghi rõ trong báo cáo (ADR-V2-25)"
     use_rights: internal_analysis
     release_info:
-      publication_time: {from: json_max_date, field: d, time: "23:59", tz: Europe/London}
-    release_calendar: {kind: daily_lag, lag: PT0S, tz: Europe/London}   # kỳ kết thúc = nửa đêm London
+      publication_time: {from: fetch_time}     # today.json không có năm và giờ PM không tin được
+    release_calendar: {kind: none}             # chỉ có phiên gần nhất; lịch sử từ lbma-gold-price-manual
     freshness_sla: P4D
     extraction_profile:
       kind: json_path
-      rows: "$[*]"
+      rows: "$.gold.pm"               # {"usd","gbp","eur","timestamp","date": "29/09"}
       locale: en-US
       missing_markers: {}
     mapping:
-      time: {field: d, format: "%Y-%m-%d", frequency: D, market_timezone: Europe/London}
+      # 'date' không có năm → năm lấy theo thời điểm tải (tháng 12 tải ngày 01/01 thì lùi một năm);
+      # 'timestamp' của PM ghi 11:00 giống AM nên không dùng; phiên PM chốt 15:00 London
+      time: {field: date, format: "%d/%m", year_from: fetch_time, session_time: "15:00", frequency: D, market_timezone: Europe/London}
       values:
-        - {field: "v[0]", series_key: "LBMA:GOLD_PM:USD:D", measure: value}
+        - {field: usd, series_key: "LBMA:GOLD_PM:USD:D", measure: value}
     verified: X
     notes: >-
-      27/09/2026: 200, 915 KB, 14.691 ngày từ 1968-04-01 tới 2026-09-25; dòng {"is_cms_locked", "d", "v": [USD, GBP, EUR]}.
-      30/09/2026: từ máy chủ 10.10.55.101 trả 403 Cloudflare "Attention Required" (cả gold_am, silver,
-      platinum, palladium; www.lbma.org.uk 503) → đang dùng dự phòng lbma-gold-price-manual.
-      Toàn bộ lịch sử mỗi lần tải, chỉ ghi giá trị mới/đổi. Mapping chỉ lấy USD; GBP/EUR (v[1], v[2]) chờ chốt.
+      27/09/2026: json/gold_pm.json trả 200, 915 KB, 14.691 ngày từ 1968-04-01 tới 2026-09-25.
+      30/09/2026 từ máy chủ 10.10.55.101: json/gold_pm.json bị Cloudflare chặn, gửi kèm header của trang thì
+      Apache của LBMA trả 403 Forbidden (file lịch sử đầy đủ không còn công khai). Trang giá mở được bằng
+      trình duyệt headless và tự gọi json/today.json, json/limited/gold_am.json (200). Chốt 30/09/2026:
+      crawl web lấy phiên gần nhất + tải tay lịch sử (lbma-gold-price-manual). Chỉ lấy USD.
 
   - id: giavang-org-world
     publisher: giavang.org (tổng hợp)
@@ -435,7 +443,16 @@ sources:
     licence: "như lbma-gold-pm-json (ADR-V2-25)"
     use_rights: internal_analysis
     verified: V
-    notes: FRED đã xoá chuỗi LBMA từ 31/01/2022. Dùng khi lbma-gold-pm-json vi phạm SLA.
+    entity: GOLD_LBMA_PM
+    variables: [LBMA:GOLD_PM:USD:D]
+    series_role: backfill             # nạp lịch sử trước release đầu của lbma-gold-pm-json; không ghi đè số crawl
+    release_info:
+      publication_time: {from: fetch_time}
+    release_calendar: {kind: daily_lag, lag: PT0S, tz: Europe/London}   # lịch sử: công bố trễ nhất nửa đêm London
+    notes: >-
+      FRED đã xoá chuỗi LBMA từ 31/01/2022. Nguồn lịch sử (file đầy đủ không còn công khai từ 30/09/2026)
+      và dự phòng khi lbma-gold-pm-json vi phạm SLA. Cách đọc khai báo khi chọn file đầu tiên: nếu là bản
+      json/gold_pm.json đã tải ngày 27/09/2026 thì dòng {"d": ngày, "v": [USD, GBP, EUR]}, lấy v[0].
 
   # ── Vĩ mô (FRED, cần key trong OpenBao) ───────────────────────────────
   - id: fred-real-yield-10y
@@ -540,11 +557,29 @@ sources:
     landing_url: https://www.pnj.com.vn/blog/gia-vang/
     schedule: every 2 hours
     purpose: production
+    entity: GOLD_SJC_BAR
+    variables: [PNJ:SJC_BAR:HCM:BUY:I, PNJ:SJC_BAR:HCM:SELL:I]
     licence: cần xác nhận
     use_rights: pending_review
-    locale: vi-VN
+    release_info:
+      publication_time: {from: fetch_time}     # ô 'Cập nhật ngày' (#time-now) rỗng cả khi đã render
+    release_calendar: {kind: none}
+    freshness_sla: P2D
+    extraction_profile:
+      kind: html_table
+      rows: "div.bang-gia-vang-outer tbody#content-price tr"   # vùng mặc định: Hồ Chí Minh (zone=00)
+      cells: {product: "td:nth-child(1)", buy: "td:nth-child(2)", sell: "td:nth-child(3)"}
+      locale: en-US                   # '14,110' là mười bốn nghìn (dấu phẩy ngăn nghìn), bẫy T7
+      missing_markers: {"-": missing}
+    mapping:
+      time: {from: release_publication_time, frequency: I, market_timezone: Asia/Ho_Chi_Minh}
+      values:
+        - {select: {product: "Vàng miếng SJC 999.9"}, field: buy, series_key: "PNJ:SJC_BAR:HCM:BUY:I", source_unit: vnd_per_chi, source_multiplier: 3, measure: value}
+        - {select: {product: "Vàng miếng SJC 999.9"}, field: sell, series_key: "PNJ:SJC_BAR:HCM:SELL:I", source_unit: vnd_per_chi, source_multiplier: 3, measure: value}
     verified: V
-    notes: HTML tĩnh tải được nhưng bảng giá render bằng JavaScript; dùng headless. Nguồn thứ hai cho giá SJC.
+    notes: >-
+      Bảng giá render bằng JavaScript; dùng headless. Đọc lại 30/09/2026: 'Vàng miếng SJC 999.9' mua 14,110
+      bán 14,410, ĐVT 1.000đ/Chỉ (= 141,1 / 144,1 triệu đồng/lượng). Nguồn thứ hai cho giá SJC.
 
   - id: vn-doji-gold-price
     publisher: DOJI
@@ -554,11 +589,32 @@ sources:
     landing_url: https://giavang.doji.vn/
     schedule: every 2 hours
     purpose: production
+    entity: GOLD_SJC_BAR
+    variables: [DOJI:SJC_BAR:BUY:I, DOJI:SJC_BAR:SELL:I]
     licence: cần xác nhận
     use_rights: pending_review
-    locale: vi-VN
+    release_info:
+      publication_time: {from: html_regex, selector: "span.live-badge", pattern: "Cập nhật (?P<time>\\d{2}:\\d{2}) ngày (?P<date>\\d{2}/\\d{2}/\\d{4})", format: "%d/%m/%Y %H:%M", tz: Asia/Ho_Chi_Minh}
+    release_calendar: {kind: none}
+    freshness_sla: P2D
+    extraction_profile:
+      kind: html_table
+      table: "div.price-block:has(.block-heading:-soup-contains('BẢNG GIÁ VÀNG DOJI')) table.price-table"
+      rows: "tbody tr"
+      cells: {product: "td.td-product", buy: "td.td-buy", sell: "td.td-sell"}
+      unit_text: "div.block-unit"     # 'Đơn vị: Nghìn VND/chỉ'; đổi đơn vị → fingerprint đổi → chặn nạp
+      locale: en-US
+      missing_markers: {"-": missing}
+    mapping:
+      time: {from: release_publication_time, frequency: I, market_timezone: Asia/Ho_Chi_Minh}
+      values:
+        - {select: {product: "VÀNG MIẾNG SJC"}, field: buy, series_key: "DOJI:SJC_BAR:BUY:I", source_unit: vnd_per_chi, source_multiplier: 3, measure: value}
+        - {select: {product: "VÀNG MIẾNG SJC"}, field: sell, series_key: "DOJI:SJC_BAR:SELL:I", source_unit: vnd_per_chi, source_multiplier: 3, measure: value}
     verified: V
-    notes: Ứng dụng SPA, cần headless.
+    notes: >-
+      Ứng dụng SPA, cần headless. Đọc lại 30/09/2026: ba bảng (giá thế giới, bạc, vàng DOJI), bảng vàng có
+      'VÀNG MIẾNG SJC' mua 14,110 bán 14,410, 'Đơn vị: Nghìn VND/chỉ', 'Cập nhật 17:08 ngày 30/09/2026'.
+      Bảng bạc cùng trang có đơn vị Nghìn VND/lượng: không được lấy nhầm bảng.
 
   - id: vn-24h-gold-fx
     publisher: 24h.com.vn (tổng hợp từ giavang.net, pnj.com.vn, baotinmanhhai.vn)
@@ -567,13 +623,32 @@ sources:
     format: html
     landing_url: https://www.24h.com.vn/gia-vang-hom-nay-c425.html
     entity: GOLD_SJC_BAR
+    variables: [24H:SJC_BAR:BUY:I, 24H:SJC_BAR:SELL:I, 24H:USDVND:BUY:I, 24H:USDVND:SELL:I]
     schedule: every 2 hours
     purpose: production
     licence: cần xác nhận; trang tổng hợp
     use_rights: pending_review
-    locale: vi-VN
+    release_info:
+      publication_time: {from: fetch_time}     # khối giá không ghi giờ cập nhật
+    release_calendar: {kind: none}
+    freshness_sla: P2D
+    extraction_profile:
+      kind: html_table                # khối div dạng thẻ, không phải <table>: khai báo bộ chọn dòng và ô
+      rows: "div.cate-24h-kd-ex-rate__items div.cate-24h-kd-ex-rate__slide-items > div"
+      cells: {box: "xpath:ancestor::div[contains(@class,'cate-24h-kd-ex-rate__items')]//h2", label: "span.title", buy: "span.buy:not(.sell) strong", sell: "span.sell strong"}
+      locale: en-US                   # '141,100' dấu phẩy ngăn nghìn
+      missing_markers: {"-": missing}
+    mapping:
+      time: {from: release_publication_time, frequency: I, market_timezone: Asia/Ho_Chi_Minh}
+      values:
+        - {select: {box: "Giá vàng", label: "SJC"}, field: buy, series_key: "24H:SJC_BAR:BUY:I", source_unit: vnd_per_luong, source_multiplier: 3, measure: value}
+        - {select: {box: "Giá vàng", label: "SJC"}, field: sell, series_key: "24H:SJC_BAR:SELL:I", source_unit: vnd_per_luong, source_multiplier: 3, measure: value}
+        - {select: {box: "Tỷ giá", label: "USD"}, field: buy, series_key: "24H:USDVND:BUY:I", source_unit: vnd_per_usd, source_multiplier: 0, measure: value}
+        - {select: {box: "Tỷ giá", label: "USD"}, field: sell, series_key: "24H:USDVND:SELL:I", source_unit: vnd_per_usd, source_multiplier: 0, measure: value}
     verified: V
-    notes: SJC mua 141,400 / bán 144,400 (nghìn đồng/lượng) có ngay trong HTML tĩnh; nguồn phụ khi SJC/PNJ headless hỏng.
+    notes: >-
+      Có ngay trong HTML tĩnh; nguồn phụ khi PNJ/DOJI headless hỏng. Đọc lại 30/09/2026: khối 'Giá vàng'
+      SJC mua 141,100 bán 144,100 (nghìn đồng/lượng), khối 'Tỷ giá' USD mua 25,750 bán 26,160; ghi nguồn giavang.net.
 
   # ── Tỷ giá ─────────────────────────────────────────────────────────────
   - id: vn-vcb-fx-xml
@@ -609,3 +684,39 @@ sources:
       Số kiểu Mỹ '25,760.00' dù là nguồn Việt Nam (locale en-US, bẫy T7). Giới hạn 1 request/5 phút
       nên lịch 'hourly' là đủ. Nhiều lần công bố trong ngày: chênh vàng lấy tỷ giá đúng thời điểm và
       đúng phía (mua hoặc bán), VN-03.
+
+  # ── Nguồn thử cho kịch bản nghiệm thu 27 bước (06 mục 6), KHÔNG phải dữ liệu thật ──────
+  - id: eval-brent-feed-b
+    publisher: Đội Data Agent (nguồn thử có kiểm soát)
+    title: Brent feed B (dữ liệu thử)
+    connector: http-file
+    format: csv
+    sample_urls:
+      # bucket eval-fixtures cho phép đọc ẩn danh trong cụm (NOP-99); v1 rồi thay bằng v2 ở bước 4
+      - http://minio:9000/eval-fixtures/brent-feed-b.csv
+    entity: BRENT_SPOT
+    variables: [FIXTURE:BRENT_FEED_B:D]
+    schedule: daily
+    purpose: evaluation
+    promotion_mode: manual
+    licence: "dữ liệu thử do đội tạo; giá v1 lấy từ EIA RBRTE 01–14/09/2026"
+    use_rights: internal_analysis
+    release_info:
+      publication_time: {from: fetch_time}
+    release_calendar: {kind: none}
+    freshness_sla: P30D
+    extraction_profile:
+      kind: csv
+      delimiter: ","
+      header_row: 1
+      locale: en-US
+      missing_markers: {}
+    mapping:
+      time: {column: "date", format: "%Y-%m-%d", frequency: D, market_timezone: America/New_York}
+      values:
+        - {column: "price", series_key: "FIXTURE:BRENT_FEED_B:D", measure: value}
+    verified: U
+    notes: >-
+      v1: cột date, price (giá EIA spot 01–14/09/2026). v2 (bước 4): period, settle, chg, pct; 15/09 settle = 107,46.
+      Kỳ vọng: v2 đổi dấu hiệu cấu trúc → chặn nạp → đề xuất mapping → người sửa thành
+      settle → FIXTURE:BRENT_FEED_B:FUT_M1:D (settlement_price). Mọi màn hiện nhãn "dữ liệu thử".
