@@ -25,12 +25,12 @@ from libs.shared.storage_ownership import V2_STRUCTURED_SOURCE_ERROR
 log = logging.getLogger(__name__)
 
 
-async def reject_v2_structured_document(postgres: Any, data_id: str) -> None:
+async def reject_v2_structured_document(postgres: Any, data_id: str, tenant_id: str) -> None:
     """409 before anything is queued when the document belongs to a V2
     structured source — the Silver/Gold consumers refuse it too, but a
     silently skipped job reads as "stuck" in Data Layers, while a 409 tells the
     steward why (NOP-163)."""
-    if await is_v2_structured_document(postgres, data_id):
+    if await is_v2_structured_document(postgres, data_id, tenant_id):
         raise HTTPException(
             status_code=409,
             detail=(
@@ -218,7 +218,7 @@ async def promote_document(
 ) -> dict[str, Any]:
     tenant_id = ctx["tenant_id"]
     if target in ("silver", "gold"):
-        await reject_v2_structured_document(postgres, data_id)
+        await reject_v2_structured_document(postgres, data_id, tenant_id or str(record.get("tenant_id", "")))
     if target == "silver":
         await kafka_producer.produce(
             topic=ing_cfg.KAFKA_TOPIC_SILVER,

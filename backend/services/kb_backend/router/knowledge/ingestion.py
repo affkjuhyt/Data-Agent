@@ -252,7 +252,7 @@ async def promote_to_silver(
 
     record = await _fetch_kbdata_or_404(postgres, ctx["tenant_id"], ctx["role_id"], data_id)
     log.info("POST /ingestion/promote/%s/silver tenant=%s", data_id, ctx["tenant_id"])
-    await reject_v2_structured_document(postgres, data_id)
+    await reject_v2_structured_document(postgres, data_id, ctx["tenant_id"])
 
     stage = await _active_stage(mongo, data_id)
     if stage:
@@ -312,7 +312,7 @@ async def promote_to_gold(
         )
 
     log.info("POST /ingestion/promote/%s/gold tenant=%s", data_id, ctx["tenant_id"])
-    await reject_v2_structured_document(postgres, data_id)
+    await reject_v2_structured_document(postgres, data_id, ctx["tenant_id"])
 
     stage = await _active_stage(mongo, data_id)
     if stage:

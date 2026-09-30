@@ -71,7 +71,7 @@ async def promote_to_silver(
     approved_by: str,
     emitter: PipelineEventEmitter = NULL_EMITTER,
 ) -> dict[str, Any]:
-    if await is_v2_structured_document(postgres, data_id):
+    if await is_v2_structured_document(postgres, data_id, tenant_id):
         # Checked before anything is written (Mongo log, pipeline stamp): a V2
         # structured source's numbers belong to series_extractor, and whatever
         # queued this (a stale button, a replayed event, an old crawler build)

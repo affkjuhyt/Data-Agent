@@ -133,7 +133,7 @@ async def propose_structured_table(
     job_id: str,
     tenant_id: str,
 ) -> None:
-    if await is_v2_structured_document(postgres, data_id):
+    if await is_v2_structured_document(postgres, data_id, tenant_id):
         # kb_backend already answers 409; this catches a replayed or stale
         # event. A V2 structured source's numbers never become a
         # `kb_structured` table (NOP-163) — fail the job so the review screen

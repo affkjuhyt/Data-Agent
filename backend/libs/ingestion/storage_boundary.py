@@ -32,16 +32,16 @@ def _as_uuid(value: Any) -> uuid.UUID | None:
         return None
 
 
-async def is_v2_structured_document(postgres: Any, data_id: str) -> bool:
+async def is_v2_structured_document(postgres: Any, data_id: str, tenant_id: str) -> bool:
     """True when the document was crawled from a source whose active config has
     an `extraction_profile`. The source's *current* config decides, not the one
     in force when the document was crawled: adding a profile moves the source's
     numbers to `series_extractor` from then on, including a re-promote of a
-    document it produced earlier."""
+    document it produced earlier. The read is scoped to the caller's tenant."""
     data_uuid = _as_uuid(data_id)
     if data_uuid is None:
         return False
-    async with postgres.get_client() as session:
+    async with postgres.get_client(tenant_id=tenant_id) as session:
         metadata = await session.scalar(
             sa_select(KBDataORM.doc_metadata).where(KBDataORM.data_id == data_uuid).limit(1)
         )

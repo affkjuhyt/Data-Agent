@@ -233,7 +233,7 @@ async def promote_to_gold(
         # into the knowledge base.
         log.info("Gold skipped: data_id=%s purpose=%s stays at Silver", data_id, purpose)
         return {"data_id": data_id, "layer": Tier.SILVER.value, "skipped": f"purpose_{purpose}"}
-    if await is_v2_structured_document(postgres, data_id):
+    if await is_v2_structured_document(postgres, data_id, tenant_id):
         # Same boundary as the Silver consumer: a V2 structured source never
         # reaches embeddings, whichever path queued this.
         log.info("Gold skipped: data_id=%s belongs to a V2 structured source", data_id)

@@ -88,14 +88,16 @@ class _Session:
 class _Postgres:
     def __init__(self, *answers: Any) -> None:
         self.session = _Session(list(answers))
+        self.scoped_to: list[str | None] = []
 
     @asynccontextmanager
     async def get_client(self, tenant_id: str | None = None) -> Any:
+        self.scoped_to.append(tenant_id)
         yield self.session
 
 
 def _lookup(postgres: _Postgres, data_id: str = DATA_ID) -> bool:
-    return asyncio.run(storage_boundary.is_v2_structured_document(postgres, data_id))
+    return asyncio.run(storage_boundary.is_v2_structured_document(postgres, data_id, TENANT_ID))
 
 
 def test_a_document_crawled_from_a_profiled_source_is_v2_structured() -> None:
@@ -104,6 +106,8 @@ def test_a_document_crawled_from_a_profiled_source_is_v2_structured() -> None:
         {"extraction_profile": PINK_SHEET_PROFILE},
     )
     assert _lookup(postgres) is True
+    # Read on a tenant-scoped session, never one that sees every tenant's documents.
+    assert postgres.scoped_to == [TENANT_ID]
 
 
 def test_a_document_from_a_plain_document_source_is_not() -> None:
