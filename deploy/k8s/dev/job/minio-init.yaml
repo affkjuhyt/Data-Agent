@@ -41,9 +41,12 @@ spec:
       enableServiceLinks: false
       containers:
       - name: minio-init
-        # minio/mc is no longer pullable from Docker Hub; the pinned server
-        # image (database/minio.yaml) ships the same mc client.
+        # minio/mc is no longer pullable from Docker Hub; the server image
+        # (database/minio.yaml) ships the same mc client. quay.io now answers
+        # 401 to anonymous pulls, and `:latest` defaults to pullPolicy Always,
+        # so reuse the copy the MinIO server already pulled onto the node.
         image: quay.io/minio/minio:latest
+        imagePullPolicy: IfNotPresent
         command:
         - sh
         - -c
