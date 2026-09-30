@@ -14,7 +14,7 @@ import os
 from typing import Any, List, Optional
 
 from qdrant_client import AsyncQdrantClient
-from qdrant_client.models import Distance, VectorParams, Filter, FieldCondition, MatchValue
+from qdrant_client.models import Distance, FieldCondition, Filter, MatchValue, VectorParams
 
 from libs.shared.embeddings import aembed_one
 

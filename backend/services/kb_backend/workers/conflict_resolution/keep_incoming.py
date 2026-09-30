@@ -6,8 +6,16 @@ from typing import Any
 
 from sqlalchemy import update as sa_update
 
-from libs.database_connector.postgres_connector import PostgresClient
 from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import KBTextBlockORM
+from libs.database_connector.postgres_connector import PostgresClient
+from libs.ingestion import config as cfg
+from libs.ingestion import conflict_store
+from libs.ingestion.gold import (
+    _commit_chunk_atomic,
+    canonicalize_chunk_entities,
+    remap_chunk_relationships,
+)
+from libs.ingestion.stage_chain import StageChain
 from services.kb_backend.workers.conflict_resolution.models import (
     KEEP_INCOMING,
     BatchContext,
@@ -18,14 +26,6 @@ from services.kb_backend.workers.conflict_resolution.state import (
     _conflict_ids,
     _mark_batch_resolved,
 )
-from libs.ingestion.gold import (
-    _commit_chunk_atomic,
-    canonicalize_chunk_entities,
-    remap_chunk_relationships,
-)
-from libs.ingestion import config as cfg
-from libs.ingestion import conflict_store
-from libs.ingestion.stage_chain import StageChain
 
 
 async def _rollback_mark_payload_committed(mongo: Any, tenant_id: str, conflict_id: str) -> None:

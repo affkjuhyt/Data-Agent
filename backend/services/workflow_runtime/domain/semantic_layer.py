@@ -25,7 +25,6 @@ from cachetools import TTLCache
 
 from libs.semantic import (
     Aggregation,
-    ambiguity,
     AnalyticalSlots,
     InvalidMetricDefinition,
     MetricDefinition,
@@ -34,6 +33,7 @@ from libs.semantic import (
     MetricResolver,
     MetricStatus,
     TimeGrain,
+    ambiguity,
     build_catalog,
     compile_metric,
     definition_summary,

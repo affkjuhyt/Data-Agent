@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, cast
 import json
 import logging
 import random
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
+from typing import Any, cast
 
 import litellm
 
@@ -75,6 +75,7 @@ class LLM:
         self, node: Node, k: int | None = None, agents: list[dict[str, Any]] | None = None
     ) -> list[ChildThought]:
         import asyncio
+
         from services.workflow_runtime.application.orchestrator import config
         k = k or self.branching
         messages = build_messages(

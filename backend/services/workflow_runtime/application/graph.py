@@ -1,22 +1,33 @@
-from typing import Any, Callable
 import json
 import logging
 from collections import defaultdict
-from langgraph.graph import StateGraph, START, END
-from services.workflow_runtime.application.nodes.context.metadata_injector import metadata_injector_node
-from services.workflow_runtime.application.nodes.model_harness.human_approval import human_approval_node
+from typing import Any, Callable
+
+from langgraph.graph import END, START, StateGraph
+
+from services.workflow_runtime.application.nodes.context.metadata_injector import (
+    metadata_injector_node,
+)
+from services.workflow_runtime.application.nodes.model_harness.human_approval import (
+    human_approval_node,
+)
 from services.workflow_runtime.application.nodes.model_harness.judge import judge_node
-from services.workflow_runtime.application.nodes.model_harness.planner import PLANNER_FALLBACK_REASON, planner_node
+from services.workflow_runtime.application.nodes.model_harness.planner import (
+    PLANNER_FALLBACK_REASON,
+    planner_node,
+)
 from services.workflow_runtime.application.nodes.model_harness.reranker import reranker_node
 from services.workflow_runtime.application.nodes.model_harness.responder import responder_node
 from services.workflow_runtime.application.nodes.model_harness.rrf_ranking import rrf_ranking_node
-from services.workflow_runtime.application.nodes.model_harness.visualization import visualization_node
+from services.workflow_runtime.application.nodes.model_harness.visualization import (
+    visualization_node,
+)
 from services.workflow_runtime.application.nodes.sandbox.db_connector import db_connector_node
 from services.workflow_runtime.application.nodes.sandbox.kb_search import kb_search_node
 from services.workflow_runtime.application.nodes.sandbox.mcp import mcp_node
 from services.workflow_runtime.application.nodes.sandbox.tool_executor import tool_executor_node
-from services.workflow_runtime.infrastructure.observability import get_langfuse_client
 from services.workflow_runtime.domain.state import AgentState
+from services.workflow_runtime.infrastructure.observability import get_langfuse_client
 
 logger = logging.getLogger(__name__)
 

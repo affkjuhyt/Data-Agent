@@ -10,8 +10,8 @@ from __future__ import annotations
 import json
 import pathlib
 import sys
-from xml.etree import ElementTree
 from unittest.mock import MagicMock
+from xml.etree import ElementTree
 
 import pytest
 

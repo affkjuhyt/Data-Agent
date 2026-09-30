@@ -33,9 +33,9 @@ from xml.etree import ElementTree
 
 import pytest
 
-from ._paths import RUNTIME_LAYER_DIRS
-
 from libs.shared import untrusted
+
+from ._paths import RUNTIME_LAYER_DIRS
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _RUNTIME_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")

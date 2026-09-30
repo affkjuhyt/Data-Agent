@@ -13,7 +13,6 @@ from libs.database_connector.model_connector import ModelServiceClient
 from libs.database_connector.postgres_connector import PostgresClient
 from libs.ingestion.graph_store import GraphStore
 
-
 SUMMARY_FALLBACK_CHARS = 200
 
 KEEP_EXISTING = ConflictResolution.KEEP_EXISTING.value

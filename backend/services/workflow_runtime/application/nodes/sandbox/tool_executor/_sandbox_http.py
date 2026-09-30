@@ -13,11 +13,11 @@ acquire+exec/query duration. Callers poll GET .../{job_id} with backoff until a
 terminal status. The contract one layer up is unchanged: the agent's tool call
 still blocks until a final result.
 """
-from typing import Any
 import asyncio
 import os
 import time
 import weakref
+from typing import Any
 
 import httpx
 

@@ -1,25 +1,36 @@
-from typing import Any
-from datetime import datetime
+import logging
 import os
 import re
 import time
-import logging
+from datetime import datetime
+from typing import Any
+from xml.sax.saxutils import quoteattr
+
 import litellm
 from langchain_core.runnables import RunnableConfig
-from xml.sax.saxutils import quoteattr
 from pydantic import BaseModel, ValidationError  # noqa: F401
 
-from services.workflow_runtime.prompts import PROMPTS_DIR
-from libs.semantic import AnalyticalSlots, merge as merge_slots
+from libs.semantic import AnalyticalSlots
+from libs.semantic import merge as merge_slots
 from libs.semantic.ambiguity import ALL_REASONS as ALL_CLARIFICATION_REASONS
 from libs.semantic.ambiguity import apply_answers as apply_clarification_answers
 from libs.semantic.ambiguity import settle as settle_clarifications
 from libs.shared import untrusted
-from services.workflow_runtime.application.nodes.model_harness.intent import AnalysisType, capability, parse as parse_analysis_type
-from services.workflow_runtime.application.nodes.sandbox.kb_search import discard_speculative_search, start_speculative_search
+from services.workflow_runtime.application.nodes.model_harness.intent import (
+    AnalysisType,
+    capability,
+)
+from services.workflow_runtime.application.nodes.model_harness.intent import (
+    parse as parse_analysis_type,
+)
+from services.workflow_runtime.application.nodes.sandbox.kb_search import (
+    discard_speculative_search,
+    start_speculative_search,
+)
 from services.workflow_runtime.application.nodes.sandbox.tool_executor import TOOL_DEFINITIONS
 from services.workflow_runtime.application.runtime_services import llm_call
 from services.workflow_runtime.domain.state import AgentState
+from services.workflow_runtime.prompts import PROMPTS_DIR
 
 
 class _ToolCall(BaseModel):

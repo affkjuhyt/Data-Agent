@@ -15,9 +15,9 @@ kb_search/RBAC checks run as the REAL user, not as a service default.
 so it skips per-turn extras such as follow-up suggestions (and cannot recurse
 them).
 """
-from typing import Any
 import logging
 import uuid
+from typing import Any
 
 from services.workflow_runtime.application.nodes.sandbox.tool_executor._utils import _get_query
 
@@ -35,7 +35,9 @@ async def _delegate_to_agent_handler(call: dict[str, Any], cfg: dict[str, Any]) 
         # Lazy import: the orchestrator package pulls planner/observability at
         # import time, which must not be a cost of merely importing this
         # handler (tests load it standalone).
-        from services.workflow_runtime.application.orchestrator.executor import agent_client  # noqa: PLC0415
+        from services.workflow_runtime.application.orchestrator.executor import (
+            agent_client,  # noqa: PLC0415
+        )
 
         result_text, _conv_id, _citations = await agent_client.call_agent(
             target_agent,

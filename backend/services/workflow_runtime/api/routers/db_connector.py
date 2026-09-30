@@ -24,7 +24,9 @@ class TestConnectionRequest(BaseModel):
 async def test_connection(body: TestConnectionRequest, x_tenant_id: str = Header(default="", alias="X-Tenant-Id")) -> dict[str, Any]:
     password = body.password
     if not password and body.secret_id:
-        from services.workflow_runtime.infrastructure.warehouse_secrets import resolve_db_connector_password
+        from services.workflow_runtime.infrastructure.warehouse_secrets import (
+            resolve_db_connector_password,
+        )
         password = await resolve_db_connector_password(x_tenant_id, body.secret_id)
         if not password:
             return {"success": False, "error": "Không đọc được mật khẩu đã lưu cho kết nối này"}

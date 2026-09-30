@@ -1,11 +1,15 @@
-from typing import Any
 import asyncio
 import logging
 import pathlib
 import uuid
+from typing import Any
 
 from libs.shared import audit
-from services.workflow_runtime.application.nodes.sandbox.tool_executor._utils import _get_query, _safe_path, audit_ctx
+from services.workflow_runtime.application.nodes.sandbox.tool_executor._utils import (
+    _get_query,
+    _safe_path,
+    audit_ctx,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -96,8 +100,8 @@ async def _grep_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tuple[dict
         else:
             raise FileNotFoundError
     except (FileNotFoundError, Exception):
-        import re
         import fnmatch as _fnmatch
+        import re
         try:
             regex = re.compile(pattern)
         except Exception as e:

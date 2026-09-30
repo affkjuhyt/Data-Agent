@@ -1,4 +1,3 @@
-from typing import Any, cast
 import asyncio
 import base64
 import json
@@ -7,19 +6,24 @@ import pathlib
 import re
 import time
 import uuid
+from typing import Any, cast
 
 import httpx
 import litellm
 
 from libs.shared import aggregation_check, audit
-from services.workflow_runtime.application.nodes.sandbox.tool_executor._sandbox_http import POLL_OVERHEAD_S, shared_client, submit_and_poll
-from services.workflow_runtime.application.runtime_services import llm_call
+from services.workflow_runtime.application.nodes.sandbox.tool_executor._sandbox_http import (
+    POLL_OVERHEAD_S,
+    shared_client,
+    submit_and_poll,
+)
 from services.workflow_runtime.application.nodes.sandbox.tool_executor._utils import (
     _get_query,
     _safe_path,
     _strip_code_block,
     audit_ctx,
 )
+from services.workflow_runtime.application.runtime_services import llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -367,7 +371,10 @@ async def _catalog_schema_text(tenant_id: str, conn_cfg: dict[str, Any], query: 
         return ""
 
     try:
-        from services.workflow_runtime.infrastructure.schema_catalog import format_catalog_context, retrieve_schema_catalog
+        from services.workflow_runtime.infrastructure.schema_catalog import (
+            format_catalog_context,
+            retrieve_schema_catalog,
+        )
 
         hits = await retrieve_schema_catalog(
             tenant_id, query, warehouse_id=warehouse_id, limit=_CATALOG_TOP_K,
@@ -420,7 +427,10 @@ async def _list_tables(
 
     Cached because the table list changes at DDL speed, not per question.
     """
-    from services.workflow_runtime.infrastructure.redis_cache import cache_get_schema, cache_set_schema
+    from services.workflow_runtime.infrastructure.redis_cache import (
+        cache_get_schema,
+        cache_set_schema,
+    )
 
     host, port, database = conn_cfg.get("host", ""), conn_cfg.get("port", 5432), conn_cfg.get("database", "")
     db_schema = _safe_schema(conn_cfg)
@@ -650,9 +660,8 @@ async def _semantic_result(
     lookup against a cached catalog — no LLM call, no database round-trip.
     """
     try:
-        from services.workflow_runtime.domain.semantic_layer import match_question
-
         from libs.semantic import AnalyticalSlots
+        from services.workflow_runtime.domain.semantic_layer import match_question
 
         match = await match_question(
             tenant_id, query, dialect=(conn_cfg.get("type") or "postgres").lower(),

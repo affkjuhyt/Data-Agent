@@ -9,19 +9,31 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing, nullcontext
 from typing import Any
 
-from services.workflow_runtime.api.auth import get_current_user
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from langgraph.types import Command
-from services.workflow_runtime.infrastructure.observability import get_langchain_callback_handler, get_langfuse_client
 
 from libs.shared.auth import require_tenant
+from services.workflow_runtime.api.auth import get_current_user
 from services.workflow_runtime.application.orchestrator import config
-from services.workflow_runtime.application.orchestrator.agent_catalog import fetch_guardrail_config, fetch_published_agents
-from services.workflow_runtime.application.orchestrator.graph import discard_plan_speculation, get_graph
-from services.workflow_runtime.application.orchestrator.planner import create_plan
+from services.workflow_runtime.application.orchestrator.agent_catalog import (
+    fetch_guardrail_config,
+    fetch_published_agents,
+)
+from services.workflow_runtime.application.orchestrator.graph import (
+    discard_plan_speculation,
+    get_graph,
+)
 from services.workflow_runtime.application.orchestrator.nodes.guardrail import run_guardrail
-from services.workflow_runtime.application.orchestrator.schemas import ClarificationResume, OrchestrateRequest
+from services.workflow_runtime.application.orchestrator.planner import create_plan
+from services.workflow_runtime.application.orchestrator.schemas import (
+    ClarificationResume,
+    OrchestrateRequest,
+)
+from services.workflow_runtime.infrastructure.observability import (
+    get_langchain_callback_handler,
+    get_langfuse_client,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

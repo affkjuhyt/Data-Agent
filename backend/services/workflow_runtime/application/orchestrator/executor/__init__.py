@@ -1,3 +1,3 @@
-from .executor import execute_plan, ExecutionResult
+from .executor import ExecutionResult, execute_plan
 
 __all__ = ["execute_plan", "ExecutionResult"]

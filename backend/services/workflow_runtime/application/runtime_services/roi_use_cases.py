@@ -15,9 +15,13 @@ import os
 from typing import Any
 
 import httpx
+
 try:
     from sqlalchemy import select
-    from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import PlatformSettingsORM
+
+    from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
+        PlatformSettingsORM,
+    )
     from libs.database_connector.postgres_connector import client
     from services.workflow_runtime.application.runtime_services import platform_queries
 except Exception:  # pragma: no cover - unit hosts may not install service deps

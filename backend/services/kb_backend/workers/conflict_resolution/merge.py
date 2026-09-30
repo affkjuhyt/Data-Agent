@@ -5,15 +5,32 @@ import uuid
 from typing import Any
 
 from qdrant_client import models as qmodels
-from sqlalchemy import delete as sa_delete, select, update as sa_update
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import select
+from sqlalchemy import update as sa_update
 
-from libs.database_connector.postgres_connector import PostgresClient
 from libs.basemodel.services_databaseconnector.postgres_model import ConflictStatus
 from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBConflictORM,
     KBTextBlockVersionORM,
     KBTextTableORM,
 )
+from libs.database_connector.postgres_connector import PostgresClient
+from libs.ingestion import config as cfg
+from libs.ingestion import conflict_store, llm_client
+from libs.ingestion.gold import (
+    _CRITERION_CONFLICT_TYPE,
+    _CRITERION_SEVERITY,
+    canonicalize_chunk_entities,
+    decide_keep_table,
+    detect_pairwise_conflict,
+    fetch_active_block_version,
+    remap_chunk_relationships,
+    set_conflict_batch_status,
+)
+from libs.ingestion.prompts import MERGE_SYSTEM
+from libs.ingestion.silver import summarize_chunk
+from libs.ingestion.stage_chain import StageChain
 from services.kb_backend.workers.conflict_resolution.models import (
     KEEP_EXISTING,
     MERGE,
@@ -31,21 +48,6 @@ from services.kb_backend.workers.conflict_resolution.state import (
     _mark_batch_resolved,
     _return_batch_to_user,
 )
-from libs.ingestion.gold import (
-    _CRITERION_CONFLICT_TYPE,
-    _CRITERION_SEVERITY,
-    canonicalize_chunk_entities,
-    decide_keep_table,
-    detect_pairwise_conflict,
-    fetch_active_block_version,
-    remap_chunk_relationships,
-    set_conflict_batch_status,
-)
-from libs.ingestion.silver import summarize_chunk
-from libs.ingestion import config as cfg
-from libs.ingestion import conflict_store, llm_client
-from libs.ingestion.prompts import MERGE_SYSTEM
-from libs.ingestion.stage_chain import StageChain
 
 
 async def _summarize_working_content(working_content: str) -> str:

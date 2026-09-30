@@ -7,6 +7,11 @@ from libs.basemodel.services_databaseconnector.postgres_model import ConflictSta
 from libs.database_connector.model_connector import ModelServiceClient
 from libs.database_connector.postgres_connector import PostgresClient, set_current_tenant
 from libs.database_connector.qdrant_connector import QdrantClient as QdrantService
+from libs.ingestion import conflict_store
+from libs.ingestion.gold import set_conflict_batch_status
+from libs.ingestion.graph_store import GraphStore
+from libs.ingestion.log_writer import IngestionLogger
+from libs.ingestion.stage_chain import StageChain
 from services.kb_backend.workers.conflict_resolution.keep_existing import _apply_keep_existing
 from services.kb_backend.workers.conflict_resolution.keep_incoming import _apply_keep_incoming
 from services.kb_backend.workers.conflict_resolution.merge import _apply_merge
@@ -24,11 +29,6 @@ from services.kb_backend.workers.conflict_resolution.state import (
     _load_batch_conflicts,
     _return_batch_to_user,
 )
-from libs.ingestion.gold import set_conflict_batch_status
-from libs.ingestion import conflict_store
-from libs.ingestion.graph_store import GraphStore
-from libs.ingestion.log_writer import IngestionLogger
-from libs.ingestion.stage_chain import StageChain
 
 
 async def resolve_batch(

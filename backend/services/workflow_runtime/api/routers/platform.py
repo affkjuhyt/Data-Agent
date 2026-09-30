@@ -11,9 +11,10 @@ import logging
 import re
 from typing import Any
 
-from services.workflow_runtime.api.auth import get_current_user
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel
+
+from services.workflow_runtime.api.auth import get_current_user
 from services.workflow_runtime.application.runtime_services import platform_queries, service_probes
 
 logger = logging.getLogger(__name__)

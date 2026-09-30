@@ -19,15 +19,18 @@ this module exposes to the agent loop is unchanged: the tool-call still
 blocks until a final result (mục i, "đã chốt mô hình đồng bộ") — only the
 transport underneath changed.
 """
-from typing import Any
 import logging
 import time
 import uuid
+from typing import Any
 
 import httpx
 
 from libs.shared import audit
-from services.workflow_runtime.application.nodes.sandbox.tool_executor._sandbox_http import POLL_OVERHEAD_S, submit_and_poll
+from services.workflow_runtime.application.nodes.sandbox.tool_executor._sandbox_http import (
+    POLL_OVERHEAD_S,
+    submit_and_poll,
+)
 from services.workflow_runtime.application.nodes.sandbox.tool_executor._utils import audit_ctx
 
 logger = logging.getLogger(__name__)

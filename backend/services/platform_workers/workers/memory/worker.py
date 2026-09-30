@@ -22,16 +22,6 @@ import time
 import uuid
 from typing import Any
 
-from services.platform_workers.common import kafka as kafka_factory
-from services.platform_workers.common import llm as llm_client
-from services.platform_workers.common import pg
-from services.platform_workers.common import qdrant as qdrant_factory
-from services.platform_workers.common.settings import (
-    KafkaSettings,
-    LiteLLMSettings,
-    PostgresSettings,
-    QdrantSettings,
-)
 from kafka import KafkaProducer
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -46,6 +36,16 @@ from qdrant_client.models import (
 from tenacity import RetryError, Retrying, stop_after_attempt, wait_chain, wait_fixed
 
 from libs.shared.embeddings import embed_one
+from services.platform_workers.common import kafka as kafka_factory
+from services.platform_workers.common import llm as llm_client
+from services.platform_workers.common import pg
+from services.platform_workers.common import qdrant as qdrant_factory
+from services.platform_workers.common.settings import (
+    KafkaSettings,
+    LiteLLMSettings,
+    PostgresSettings,
+    QdrantSettings,
+)
 
 log = logging.getLogger("platform-workers.memory")
 

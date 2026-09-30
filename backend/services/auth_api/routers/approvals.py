@@ -14,12 +14,12 @@ Flow:
   5. Platform-admin OR tenant-admin of the matching tenant approves via POST endpoints.
   6. On approval: role_id + tenant_id user attributes set in Keycloak, account enabled.
 """
-from typing import Any, cast
-import os
-import urllib.request
-import urllib.parse
 import json
+import os
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
+from typing import Any, cast
 
 import psycopg2
 import psycopg2.extras
@@ -41,7 +41,6 @@ AVAILABLE_ROLES = [
     "ai-engineer",
     "executive-viewer",
     "tenant-admin",
-    "release-manager",
     "data-analyst",
 ]
 

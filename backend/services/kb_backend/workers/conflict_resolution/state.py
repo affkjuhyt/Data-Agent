@@ -5,7 +5,9 @@ import datetime
 import uuid
 from typing import Any
 
-from sqlalchemy import func as sa_func, select, update as sa_update
+from sqlalchemy import func as sa_func
+from sqlalchemy import select
+from sqlalchemy import update as sa_update
 
 from libs.basemodel.services_databaseconnector.postgres_model import ConflictStatus
 from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
@@ -13,6 +15,10 @@ from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm i
     KBConflictORM,
 )
 from libs.database_connector.postgres_connector import PostgresClient
+from libs.ingestion import config as cfg
+from libs.ingestion import conflict_store
+from libs.ingestion.gold import set_conflict_batch_status
+from libs.ingestion.stage_chain import StageChain
 from services.kb_backend.workers.conflict_resolution.models import (
     KEEP_EXISTING,
     KEEP_INCOMING,
@@ -26,10 +32,6 @@ from services.kb_backend.workers.conflict_resolution.models import (
     Conflict,
     ResolverStores,
 )
-from libs.ingestion.gold import set_conflict_batch_status
-from libs.ingestion import config as cfg
-from libs.ingestion import conflict_store
-from libs.ingestion.stage_chain import StageChain
 
 
 def _conflict_ids(conflicts: list[Conflict]) -> list[str]:

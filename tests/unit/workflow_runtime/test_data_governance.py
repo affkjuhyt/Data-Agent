@@ -33,8 +33,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from ._paths import RUNTIME_LAYER_DIRS
-
 from libs.shared import freshness
 from libs.shared.freshness import (
     FRESH,
@@ -48,6 +46,7 @@ from libs.shared.freshness import (
 )
 
 from .._loader import stub_if_missing
+from ._paths import RUNTIME_LAYER_DIRS
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _RUNTIME_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")

@@ -7,7 +7,10 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from libs.basemodel.services_databaseconnector.qdrant_model import CreateCollectionRequest
-from libs.basemodel.services_databaseconnector.shared_model import HealthCheckLoopConfig, RetryConfig
+from libs.basemodel.services_databaseconnector.shared_model import (
+    HealthCheckLoopConfig,
+    RetryConfig,
+)
 from libs.database_connector.kafka_connector import KafkaConsumerClient, KafkaProducerClient
 from libs.database_connector.minio_connector import MinIOClient
 from libs.database_connector.model_connector import ModelServiceClient
@@ -16,15 +19,17 @@ from libs.database_connector.neo4j_connector import Neo4jClient
 from libs.database_connector.postgres_connector import PostgresClient
 from libs.database_connector.qdrant_connector import (
     QdrantClient as QdrantService,
+)
+from libs.database_connector.qdrant_connector import (
     create_collection as qdrant_create_collection,
 )
 from libs.database_connector.redis_connector import RedisClient
-from libs.shared.kb_result_cache import ResultCache
 from libs.ingestion import config as cfg
 from libs.ingestion import conflict_store
 from libs.ingestion.graph_store import GraphStore
 from libs.ingestion.log_writer import IngestionLogger
 from libs.ingestion.stage_chain import StageChain
+from libs.shared.kb_result_cache import ResultCache
 
 if TYPE_CHECKING:
     from libs.ingestion.docling_parser import InlineDoclingParser

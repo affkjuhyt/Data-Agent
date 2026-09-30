@@ -1,30 +1,36 @@
-from typing import Any, Coroutine, cast
 import asyncio
 import json
 import logging
 import re
 import time
 from collections.abc import AsyncIterator
+from typing import Any, Coroutine, cast
 
 from cachetools import LRUCache
-
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
-
 from langgraph.checkpoint.memory import MemorySaver
 
-from services.workflow_runtime.application.config_loader import load_agent_config
-from services.workflow_runtime.infrastructure.db import conversation_owned_by, create_conversation, get_last_slots, get_messages, save_message, save_trace, validate_agent_tenant
-from services.workflow_runtime.infrastructure.redis_cache import (
-    cache_append_messages,
-    cache_get_messages,
-    cache_get_slots,
-    cache_set_messages,
-    cache_set_slots,
-)
-from services.workflow_runtime.domain.transcript_compression import compress_tool_results
-from services.workflow_runtime.application.graph import build_graph
 from libs.shared.auth import require_tenant
+from libs.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
+from services.workflow_runtime.application.config_loader import load_agent_config
+from services.workflow_runtime.application.graph import build_graph
+from services.workflow_runtime.application.nodes.model_harness.responder import (
+    RESPONDER_TOKEN_EVENT,
+)
+from services.workflow_runtime.application.nodes.sandbox.kb_search import discard_speculative_search
+from services.workflow_runtime.application.runtime_services.answer_ready import notify_answer_ready
+from services.workflow_runtime.domain.schemas import RunRequest
+from services.workflow_runtime.domain.transcript_compression import compress_tool_results
+from services.workflow_runtime.infrastructure.db import (
+    conversation_owned_by,
+    create_conversation,
+    get_last_slots,
+    get_messages,
+    save_message,
+    save_trace,
+    validate_agent_tenant,
+)
 from services.workflow_runtime.infrastructure.memory_middleware import (
     _DEV_AGENT_ID,
     apply_memory_policy,
@@ -32,13 +38,21 @@ from services.workflow_runtime.infrastructure.memory_middleware import (
     retrieve_memories,
     retrieve_pending_reminders,
 )
-from services.workflow_runtime.infrastructure.observability import flush_langfuse, get_langchain_callback_handler
-from services.workflow_runtime.application.nodes.model_harness.responder import RESPONDER_TOKEN_EVENT
-from services.workflow_runtime.application.runtime_services.answer_ready import notify_answer_ready
-from services.workflow_runtime.application.nodes.sandbox.kb_search import discard_speculative_search
-from services.workflow_runtime.domain.schemas import RunRequest
-from services.workflow_runtime.infrastructure.workflow_memory import record_workflow_outcome, retrieve_workflow_memory
-from libs.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
+from services.workflow_runtime.infrastructure.observability import (
+    flush_langfuse,
+    get_langchain_callback_handler,
+)
+from services.workflow_runtime.infrastructure.redis_cache import (
+    cache_append_messages,
+    cache_get_messages,
+    cache_get_slots,
+    cache_set_messages,
+    cache_set_slots,
+)
+from services.workflow_runtime.infrastructure.workflow_memory import (
+    record_workflow_outcome,
+    retrieve_workflow_memory,
+)
 
 logger = logging.getLogger(__name__)
 

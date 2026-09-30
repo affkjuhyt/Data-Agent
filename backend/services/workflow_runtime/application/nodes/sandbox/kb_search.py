@@ -1,7 +1,8 @@
-from typing import Any
 import asyncio
 import logging
 import unicodedata
+from typing import Any
+
 import httpx
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, ValidationError
@@ -13,8 +14,8 @@ from libs.shared.service_identity import (
     get_secret,
     mint_service_assertion,
 )
-from services.workflow_runtime.infrastructure.mtls import kb_backend_ssl_context
 from services.workflow_runtime.domain.state import AgentState
+from services.workflow_runtime.infrastructure.mtls import kb_backend_ssl_context
 
 logger = logging.getLogger(__name__)
 

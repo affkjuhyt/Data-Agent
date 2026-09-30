@@ -13,9 +13,9 @@ import sys
 
 import httpx
 import pytest
+import respx
 
 from ._paths import RUNTIME_LAYER_DIRS
-import respx
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")

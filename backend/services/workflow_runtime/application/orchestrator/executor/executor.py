@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-from typing import Any
 import asyncio
 import logging
 import time
 from contextlib import nullcontext
 from dataclasses import dataclass, field
+from typing import Any
 
-from services.workflow_runtime.infrastructure.observability import get_langfuse_client
 from services.workflow_runtime.application.orchestrator.planner.dpts.plan import Plan, Target
 from services.workflow_runtime.application.orchestrator.schemas import TargetResult, TaskResult
-from .task_queue import TaskNode, build_nodes, collect_context
+from services.workflow_runtime.infrastructure.observability import get_langfuse_client
+
 from .agent_client import call_agent
+from .task_queue import TaskNode, build_nodes, collect_context
 
 logger = logging.getLogger(__name__)
 

@@ -1,9 +1,10 @@
-from typing import Any
 import asyncio
 import json
-import os
 import logging
-from dotenv import load_dotenv, find_dotenv
+import os
+from typing import Any
+
+from dotenv import find_dotenv, load_dotenv
 
 load_dotenv(find_dotenv())
 
@@ -58,7 +59,10 @@ DEV_CONFIG = {
 
 async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict[str, Any] | None:
     from libs.database_connector.postgres_connector import client
-    from services.workflow_runtime.infrastructure.mongo_client import load_flow_nodes, load_flow_edges
+    from services.workflow_runtime.infrastructure.mongo_client import (
+        load_flow_edges,
+        load_flow_nodes,
+    )
 
     if not client.is_connected():
         logger.debug("DB not available — using DEV_CONFIG")
@@ -188,7 +192,9 @@ async def _resolve_warehouse_secret(node_cfg: dict[str, Any], tenant_id: str | N
     if not secret_id or not tenant_id:
         return
 
-    from services.workflow_runtime.infrastructure.warehouse_secrets import resolve_snowflake_password
+    from services.workflow_runtime.infrastructure.warehouse_secrets import (
+        resolve_snowflake_password,
+    )
     password = await resolve_snowflake_password(tenant_id, secret_id)
     if password:
         connection["password"] = password
@@ -208,7 +214,9 @@ async def _resolve_db_connector_secrets(node_cfg: dict[str, Any], tenant_id: str
     if not db_connections:
         return
 
-    from services.workflow_runtime.infrastructure.warehouse_secrets import resolve_db_connector_password
+    from services.workflow_runtime.infrastructure.warehouse_secrets import (
+        resolve_db_connector_password,
+    )
 
     async def _resolve(name: str, connection: dict[str, Any]) -> None:
         secret_id = connection.pop("secret_id", "")

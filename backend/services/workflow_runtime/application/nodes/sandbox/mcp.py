@@ -1,7 +1,7 @@
-from typing import Any
 import asyncio
 import logging
 import uuid
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx

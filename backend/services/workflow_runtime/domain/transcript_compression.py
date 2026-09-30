@@ -1,4 +1,5 @@
 from typing import Any
+
 """Transcript compression (sandbox_schema_docs.docx §1.8).
 
 Tier 1 (output truncation) already lives at the point each tool result is

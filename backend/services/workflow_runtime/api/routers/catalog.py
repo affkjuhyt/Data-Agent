@@ -20,9 +20,9 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import text
 
 from services.workflow_runtime.api.auth import get_current_user
-from services.workflow_runtime.infrastructure.config import RRF_K
 from services.workflow_runtime.application.node_registry import NODE_REGISTRY
 from services.workflow_runtime.application.runtime_services import litellm_proxy, platform_queries
+from services.workflow_runtime.infrastructure.config import RRF_K
 
 router = APIRouter()
 
@@ -55,7 +55,8 @@ async def list_agents(caller: dict[str, Any] = Depends(get_current_user)) -> lis
             for r in rows
         ]
     except Exception as e:
-        import logging, traceback
+        import logging
+        import traceback
         logging.getLogger(__name__).error("catalog/agents failed: %s\n%s", e, traceback.format_exc())
         return [{"id": _DEV_AGENT_ID, "name": "Dev Agent", "description": "", "has_published_version": False}]
 

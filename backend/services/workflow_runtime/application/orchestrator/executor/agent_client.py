@@ -70,7 +70,9 @@ async def _run_agent(payload: dict[str, Any], caller: dict[str, Any]) -> Any:
     Lazy import: `runtime_services.conversation_runner` pulls the whole graph
     stack (qdrant, mongo, ...) and must not be a cost of merely importing this
     module (tests load it standalone)."""
-    from services.workflow_runtime.application.runtime_services.conversation_runner import run_conversation_stream
+    from services.workflow_runtime.application.runtime_services.conversation_runner import (
+        run_conversation_stream,
+    )
     from services.workflow_runtime.domain.schemas import RunRequest
 
     req = RunRequest(**payload)

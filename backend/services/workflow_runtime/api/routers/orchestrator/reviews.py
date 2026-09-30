@@ -9,10 +9,19 @@ from fastapi import APIRouter, Depends, HTTPException
 from langgraph.types import Command
 
 from services.workflow_runtime.api.auth import get_current_user
-from services.workflow_runtime.infrastructure.observability import get_langchain_callback_handler, get_langfuse_client
+from services.workflow_runtime.api.routers.orchestrator.stream import (
+    load_pending_session,
+    pending_questions,
+)
 from services.workflow_runtime.application.orchestrator.graph import get_graph
-from services.workflow_runtime.api.routers.orchestrator.stream import load_pending_session, pending_questions
-from services.workflow_runtime.application.orchestrator.schemas import ClarificationResume, OrchestrateResponse
+from services.workflow_runtime.application.orchestrator.schemas import (
+    ClarificationResume,
+    OrchestrateResponse,
+)
+from services.workflow_runtime.infrastructure.observability import (
+    get_langchain_callback_handler,
+    get_langfuse_client,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

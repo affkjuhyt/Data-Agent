@@ -16,15 +16,21 @@ names a directory INSIDE the sandbox, and the host's filesystem, network and
 credentials are simply not there. A command that depended on either was
 reaching outside the isolation the platform claims to have.
 """
-from typing import Any
 import logging
 import uuid
+from typing import Any
 
 import httpx
 
 from libs.shared import audit
-from services.workflow_runtime.application.nodes.sandbox.tool_executor._sandbox_http import POLL_OVERHEAD_S, submit_and_poll
-from services.workflow_runtime.application.nodes.sandbox.tool_executor._utils import _get_query, audit_ctx
+from services.workflow_runtime.application.nodes.sandbox.tool_executor._sandbox_http import (
+    POLL_OVERHEAD_S,
+    submit_and_poll,
+)
+from services.workflow_runtime.application.nodes.sandbox.tool_executor._utils import (
+    _get_query,
+    audit_ctx,
+)
 
 logger = logging.getLogger(__name__)
 

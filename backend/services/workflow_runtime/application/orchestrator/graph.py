@@ -1,27 +1,29 @@
 from __future__ import annotations
 
-from typing import Any
 import asyncio
 import logging
 import os
 import re
 import time
 from contextlib import nullcontext, suppress
+from typing import Any
 
+from langchain_core.callbacks.manager import adispatch_custom_event
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from psycopg_pool import AsyncConnectionPool
 
-from services.workflow_runtime.infrastructure.observability import get_langfuse_client
+from libs.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
 from services.workflow_runtime.application.orchestrator import config
 from services.workflow_runtime.application.orchestrator.agent_catalog import fetch_published_agents
 from services.workflow_runtime.application.orchestrator.executor import execute_plan
-from langchain_core.callbacks.manager import adispatch_custom_event
-
-from services.workflow_runtime.application.orchestrator.executor.agent_client import call_agent_stream, extract_guardrail_cfg
+from services.workflow_runtime.application.orchestrator.executor.agent_client import (
+    call_agent_stream,
+    extract_guardrail_cfg,
+)
 from services.workflow_runtime.application.orchestrator.nodes.input_refine import (
     clarification_payload,
     input_refine_node,
@@ -29,13 +31,23 @@ from services.workflow_runtime.application.orchestrator.nodes.input_refine impor
     run_input_refine,
 )
 from services.workflow_runtime.application.orchestrator.nodes.suggestion import run_suggestion
-from services.workflow_runtime.application.runtime_services.answer_ready import answer_ready_hook
-from services.workflow_runtime.application.orchestrator.planner import create_plan, report_node_failure
+from services.workflow_runtime.application.orchestrator.planner import (
+    create_plan,
+    report_node_failure,
+)
 from services.workflow_runtime.application.orchestrator.schemas import TargetResult, TaskResult
-from libs.shared.guardrail_check import GuardrailCheckError, llm_guardrail_check
-from services.workflow_runtime.application.orchestrator.session_cache import clear_cached_plan, load_cached_plan, save_cached_plan
+from services.workflow_runtime.application.orchestrator.session_cache import (
+    clear_cached_plan,
+    load_cached_plan,
+    save_cached_plan,
+)
 from services.workflow_runtime.application.orchestrator.state import OrchestratorState
-from services.workflow_runtime.application.orchestrator.summary import summarize, synthesis_judge_check
+from services.workflow_runtime.application.orchestrator.summary import (
+    summarize,
+    synthesis_judge_check,
+)
+from services.workflow_runtime.application.runtime_services.answer_ready import answer_ready_hook
+from services.workflow_runtime.infrastructure.observability import get_langfuse_client
 
 logger = logging.getLogger(__name__)
 

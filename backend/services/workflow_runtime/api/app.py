@@ -24,40 +24,8 @@ from libs.shared.logger import setup_logging
 setup_logging("workflow_runtime")
 logger = logging.getLogger(__name__)
 
-from services.workflow_runtime.api.auth import get_current_user
-from services.workflow_runtime.infrastructure.config import CORS_ORIGINS, REDIS_URL
-from services.workflow_runtime.infrastructure.db import close_db, init_db
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from services.workflow_runtime.infrastructure.kafka_producer import close_kafka_producer, init_kafka_producer, produce_event
-from services.workflow_runtime.infrastructure.memory_middleware import close_qdrant, init_qdrant
-from services.workflow_runtime.infrastructure.mongo_client import close_mongo, init_mongo
-from services.workflow_runtime.api.routers.orchestrator import reviews as orch_reviews
-from services.workflow_runtime.api.routers.orchestrator import stream as orch_stream
-from services.workflow_runtime.api.routers.orchestrator import traces as orch_traces
-from services.workflow_runtime.infrastructure.redis_cache import close_redis, init_redis
-from services.workflow_runtime.api.routers import (
-    agents,
-    billing,
-    catalog,
-    canvas,
-    conversations,
-    db_connector,
-    health,
-    llm,
-    platform,
-    reviews,
-    ask_exports,
-    roi_use_cases,
-    sandbox_ops,
-    storage,
-    traces,
-    workflows,
-)
-from services.workflow_runtime.application.runtime_services.conversation_runner import invalidate_graph_version
-from services.workflow_runtime.application.runtime_services.roi_use_cases import scheduler_loop
-from services.workflow_runtime.infrastructure.schema_catalog import close_schema_catalog_qdrant, init_schema_catalog_qdrant
-from services.workflow_runtime.infrastructure.workflow_memory import close_workflow_qdrant, init_workflow_qdrant
 
 from libs.basemodel.services_databaseconnector.shared_model import RetryConfig
 from libs.database_connector.mongo_connector import client as mongo_client
@@ -65,6 +33,50 @@ from libs.database_connector.postgres_connector import client as pg_client
 from libs.database_connector.redis_connector import RedisClient
 from libs.shared.cache_invalidation import run_graph_invalidation_listener
 from libs.shared.observability import setup_observability
+from services.workflow_runtime.api.auth import get_current_user
+from services.workflow_runtime.api.routers import (
+    agents,
+    ask_exports,
+    billing,
+    canvas,
+    catalog,
+    conversations,
+    db_connector,
+    health,
+    llm,
+    platform,
+    reviews,
+    roi_use_cases,
+    sandbox_ops,
+    storage,
+    traces,
+    workflows,
+)
+from services.workflow_runtime.api.routers.orchestrator import reviews as orch_reviews
+from services.workflow_runtime.api.routers.orchestrator import stream as orch_stream
+from services.workflow_runtime.api.routers.orchestrator import traces as orch_traces
+from services.workflow_runtime.application.runtime_services.conversation_runner import (
+    invalidate_graph_version,
+)
+from services.workflow_runtime.application.runtime_services.roi_use_cases import scheduler_loop
+from services.workflow_runtime.infrastructure.config import CORS_ORIGINS, REDIS_URL
+from services.workflow_runtime.infrastructure.db import close_db, init_db
+from services.workflow_runtime.infrastructure.kafka_producer import (
+    close_kafka_producer,
+    init_kafka_producer,
+    produce_event,
+)
+from services.workflow_runtime.infrastructure.memory_middleware import close_qdrant, init_qdrant
+from services.workflow_runtime.infrastructure.mongo_client import close_mongo, init_mongo
+from services.workflow_runtime.infrastructure.redis_cache import close_redis, init_redis
+from services.workflow_runtime.infrastructure.schema_catalog import (
+    close_schema_catalog_qdrant,
+    init_schema_catalog_qdrant,
+)
+from services.workflow_runtime.infrastructure.workflow_memory import (
+    close_workflow_qdrant,
+    init_workflow_qdrant,
+)
 
 
 @asynccontextmanager

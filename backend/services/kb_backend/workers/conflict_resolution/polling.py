@@ -7,14 +7,15 @@ from typing import Any
 from sqlalchemy import select
 
 from libs.basemodel.services_databaseconnector.postgres_model import ConflictStatus
-from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import KBConflictBatchORM
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+    KBConflictBatchORM,
+)
 from libs.database_connector.model_connector import ModelServiceClient
 from libs.database_connector.postgres_connector import PostgresClient
 from libs.database_connector.qdrant_connector import QdrantClient as QdrantService
-from services.kb_backend.workers.conflict_resolution.orchestrator import resolve_batch
 from libs.ingestion import config as cfg
 from libs.ingestion.graph_store import GraphStore
-
+from services.kb_backend.workers.conflict_resolution.orchestrator import resolve_batch
 
 POLL_INTERVAL = int(cfg.__dict__.get("CONFLICT_POLL_INTERVAL", 30))
 AWAITING_BATCH_SCAN_LIMIT = 50

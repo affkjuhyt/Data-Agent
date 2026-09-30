@@ -1,7 +1,7 @@
-from typing import Any
 import asyncio
 import logging
 import uuid
+from typing import Any
 from urllib.parse import quote
 
 import litellm
@@ -90,7 +90,7 @@ async def _calculator_handler(call: dict[str, Any], cfg: dict[str, Any]) -> tupl
         return None, {"tool_name": "calculator", "error": "no expression provided"}
     try:
         from langchain.chains import LLMMathChain  # noqa: PLC0415
-        from langchain_openai import ChatOpenAI    # noqa: PLC0415
+        from langchain_openai import ChatOpenAI  # noqa: PLC0415
         llm = ChatOpenAI(model=cfg.get("planner_model", "planner"),
                          base_url=f"{_LITELLM_BASE}/v1", api_key=_LITELLM_KEY,
                          temperature=0, max_tokens=128)

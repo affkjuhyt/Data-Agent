@@ -60,6 +60,9 @@ TOOL_DEFINITIONS: dict[str, dict[str, Any]] = {
 }
 
 from typing import Any
-from services.workflow_runtime.application.nodes.sandbox.tool_executor.node import tool_executor_node  # noqa: E402
+
+from services.workflow_runtime.application.nodes.sandbox.tool_executor.node import (
+    tool_executor_node,  # noqa: E402
+)
 
 __all__ = ["tool_executor_node", "TOOL_DEFINITIONS"]

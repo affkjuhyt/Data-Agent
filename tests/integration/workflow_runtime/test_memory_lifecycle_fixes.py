@@ -99,6 +99,7 @@ def mc_env(migrated_db, qdrant_container, monkeypatch):
     sys.path[:0] = added
     try:
         import importlib
+
         from workers.memory import worker as mc_main
         importlib.reload(mc_main)
 
@@ -268,6 +269,7 @@ async def mm_env(migrated_db):
     sys.path[:0] = added
     try:
         import importlib
+
         import memory_middleware as mm
         importlib.reload(mm)
 

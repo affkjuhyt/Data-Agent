@@ -14,8 +14,8 @@ using the existing `allowed_tools` allowlist already in tool_executor_node,
 untouched by this module. DEFAULT_PRESET grants both, so agents configured
 before this feature existed keep their current behavior with no migration.
 """
-from typing import Any
 from dataclasses import dataclass, field
+from typing import Any
 
 SANDBOX_TOOLS = {"execute_python", "execute_sql"}
 

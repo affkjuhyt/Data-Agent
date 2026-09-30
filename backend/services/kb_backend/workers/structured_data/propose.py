@@ -10,21 +10,23 @@ spreadsheet with several independent tables needs a follow-up (a
 table-selection review step), not built here."""
 from __future__ import annotations
 
-from typing import Any, Optional, cast
 import json
 import logging
 import re
 import uuid
+from typing import Any, Optional, cast
 
 from sqlalchemy import update as sa_update
 
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+    KBStructuredImportJobORM,
+)
 from libs.database_connector.minio_connector import MinIOClient
 from libs.database_connector.mongo_connector import MongoClient
 from libs.database_connector.postgres_connector import PostgresClient
-from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import KBStructuredImportJobORM
-from libs.ingestion.silver.persistence import _load_kb_data
 from libs.ingestion import config as cfg
 from libs.ingestion import llm_client
+from libs.ingestion.silver.persistence import _load_kb_data
 from libs.ingestion.storage_boundary import is_v2_structured_document
 from libs.shared.storage_ownership import V2_STRUCTURED_SOURCE_ERROR
 

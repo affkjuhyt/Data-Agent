@@ -12,7 +12,6 @@ const ROLE_LABELS: Record<string, string> = {
   'ai-engineer':       'AI Engineer',
   'executive-viewer':  'Executive Viewer',
   'tenant-admin':      'Tenant Admin',
-  'release-manager':   'Release Manager',
   'data-analyst':      'Data Analyst',
 };
 

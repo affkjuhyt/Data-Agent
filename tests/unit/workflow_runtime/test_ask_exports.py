@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import io
 import asyncio
+import io
 import json
 import pathlib
 import sys
@@ -85,6 +85,7 @@ def test_result_rows_route_pages_by_authenticated_tenant(monkeypatch):
     pytest.importorskip("fastapi")
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
+
     from services.workflow_runtime.api.auth import get_current_user
     from services.workflow_runtime.api.routers import ask_exports
 

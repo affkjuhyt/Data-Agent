@@ -14,22 +14,29 @@ generic conversational memory in memory_middleware.py:
     reads or writes it any more: the text_to_sql handler takes its schema from
     the Schema Catalog (schema_catalog.py) or live introspection instead.
 """
+import logging
 import math
 import os
-import logging
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
 from qdrant_client import AsyncQdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
+from qdrant_client.models import (
+    Distance,
+    FieldCondition,
+    Filter,
+    MatchValue,
+    PointStruct,
+    VectorParams,
+)
+from sqlalchemy import select
 
-from libs.database_connector.postgres_connector import client
-from libs.shared.embeddings import aembed_one
 from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
     WorkflowMemoryORM,
 )
+from libs.database_connector.postgres_connector import client
+from libs.shared.embeddings import aembed_one
 
 logger = logging.getLogger(__name__)
 

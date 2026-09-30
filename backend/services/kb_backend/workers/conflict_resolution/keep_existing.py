@@ -1,13 +1,13 @@
 """Keep-existing conflict resolution strategy."""
 from __future__ import annotations
 
+from libs.ingestion.stage_chain import StageChain
 from services.kb_backend.workers.conflict_resolution.models import BatchContext, ResolverStores
 from services.kb_backend.workers.conflict_resolution.state import (
     _close_out_conflicts,
     _conflict_ids,
     _mark_batch_resolved,
 )
-from libs.ingestion.stage_chain import StageChain
 
 
 async def _apply_keep_existing(

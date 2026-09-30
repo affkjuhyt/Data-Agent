@@ -1,5 +1,5 @@
-from typing import Any, cast
 import pathlib
+from typing import Any, cast
 
 
 def _safe_path(path: str, allowed_dir: str) -> tuple[str, str | None]:

@@ -11,7 +11,11 @@ import json
 
 import pytest
 
-from libs.ingestion.silver.parsing import STRUCTURED_TEXT_EXTENSIONS, _pack_blocks, _parse_structured_text
+from libs.ingestion.silver.parsing import (
+    STRUCTURED_TEXT_EXTENSIONS,
+    _pack_blocks,
+    _parse_structured_text,
+)
 
 pytestmark = pytest.mark.unit
 

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Callable
 import asyncio
 import logging
 import uuid
+from typing import Any, Callable
 
 from .candidate_pool import CandidatePool
 from .expanding_queue import ExpandingQueue

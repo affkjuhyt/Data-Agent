@@ -13,9 +13,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from ._paths import RUNTIME_LAYER_DIRS
-
 from libs.shared import audit
+
+from ._paths import RUNTIME_LAYER_DIRS
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
 _SVC_DIR = str(REPO_ROOT / "backend" / "services" / "workflow_runtime")

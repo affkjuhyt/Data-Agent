@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from .conftest import patch_router_store, TENANT_A, TENANT_B, kong_headers, route_table
+from .conftest import TENANT_A, TENANT_B, kong_headers, patch_router_store, route_table
 
 pytestmark = pytest.mark.unit
 

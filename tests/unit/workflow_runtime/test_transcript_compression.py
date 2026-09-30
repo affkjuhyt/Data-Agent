@@ -29,7 +29,7 @@ def _sys_path():
 
 @pytest.mark.unit
 def test_consumed_long_tool_result_is_compressed():
-    from transcript_compression import compress_tool_results, COMPRESS_THRESHOLD, COMPRESS_MARKER
+    from transcript_compression import COMPRESS_MARKER, COMPRESS_THRESHOLD, compress_tool_results
 
     long_content = "x" * (COMPRESS_THRESHOLD + 1)
     messages = [
@@ -47,7 +47,7 @@ def test_consumed_long_tool_result_is_compressed():
 
 @pytest.mark.unit
 def test_short_tool_result_is_not_compressed():
-    from transcript_compression import compress_tool_results, COMPRESS_THRESHOLD
+    from transcript_compression import COMPRESS_THRESHOLD, compress_tool_results
 
     short_content = "x" * (COMPRESS_THRESHOLD - 1)
     messages = [
@@ -64,7 +64,7 @@ def test_short_tool_result_is_not_compressed():
 def test_not_yet_consumed_tool_result_is_left_alone():
     """No assistant message follows — the result hasn't been used to
     produce a response yet, so it must stay intact."""
-    from transcript_compression import compress_tool_results, COMPRESS_THRESHOLD
+    from transcript_compression import COMPRESS_THRESHOLD, compress_tool_results
 
     long_content = "x" * (COMPRESS_THRESHOLD + 1)
     messages = [{"role": "tool", "content": long_content}]
@@ -76,7 +76,7 @@ def test_not_yet_consumed_tool_result_is_left_alone():
 
 @pytest.mark.unit
 def test_error_result_is_never_compressed():
-    from transcript_compression import compress_tool_results, COMPRESS_THRESHOLD
+    from transcript_compression import COMPRESS_THRESHOLD, compress_tool_results
 
     long_content = "x" * (COMPRESS_THRESHOLD + 1)
     messages = [
