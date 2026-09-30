@@ -46,12 +46,18 @@ forbidden_modules =
 # path, and V2 business data never lands in MongoDB (ADR-V2-09, ADR-V2-34).
 # Every new V2 package (services.indicator_api, the series_extractor /
 # semantic_extractor / detector workers) is added to source_modules in the same
-# commit that creates it.
+# commit that creates it. Topic names are strings import-linter cannot see; the
+# source scan in tests/unit/kb_backend/test_v2_storage_boundary.py covers those
+# (NOP-163, libs/shared/storage_ownership.py).
 [importlinter:contract:v2-data-boundary]
 name = V2 packages must not use the v1 structured-KB path or MongoDB
 type = forbidden
 source_modules =
     libs.indicator
+    libs.shared.storage_ownership
+    libs.ingestion.storage_boundary
 forbidden_modules =
     services.kb_structured_data
     libs.database_connector.mongo_connector
+    libs.ingestion.silver
+    libs.ingestion.gold

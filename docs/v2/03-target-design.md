@@ -63,6 +63,30 @@ MongoDB (ADR-V2-38).
 Observation **candidate** (máy trích, chưa duyệt) nằm ở Postgres `ingest`; chỉ bản được duyệt
 (PASS hoặc qua ReviewCase) mới vào ClickHouse. Agent chỉ đọc ClickHouse.
 
+### 2.1 Ranh giới với đường legacy (NOP-163)
+
+| Kho legacy | Chỉ dùng cho | Không bao giờ nhận |
+| --- | --- | --- |
+| Qdrant / KB (Silver → Gold, chunk + embedding) | Tài liệu: PDF, trang web, thông cáo | File của nguồn có cấu trúc V2 |
+| MongoDB | Canvas, Silver staging legacy | Bất kỳ dữ liệu nghiệp vụ V2 nào; không phải nguồn sự thật |
+| Postgres `kb_structured` (`kb_structured_data`) | Bảng tải lên tay ở chế độ `structured_table` | ObservationCandidate / Observation V2 |
+
+**Nguồn có cấu trúc V2** là nguồn mà `KBSourceConfig.config` đang hiệu lực có `extraction_profile`
+(mục 5). File của nguồn này vẫn vào Bronze (bản gốc), nhưng không đi Silver/Gold và không đi
+`kb.structured.propose`: số liệu do `series_extractor` đọc, cắt đoạn sẽ tạo ra một bản số thứ hai
+không đơn vị, không `available_at` (bất biến 4).
+
+Cưỡng chế ở mọi lối vào, không chỉ ở nút bấm:
+
+- `libs/shared/storage_ownership.py`: `is_v2_structured_source`, danh sách topic / module legacy.
+- `libs/ingestion/storage_boundary.py`: tra từ `KBData.metadata.source_id` sang config nguồn.
+- web_crawler: nguồn có profile luôn `promotion_mode = manual`, không tự đẩy Silver.
+- kb_backend: promote Silver/Gold và propose bảng trả **409** `V2_STRUCTURED_SOURCE_LEGACY_PATH`.
+- Consumer Silver, Gold và `kb_structured_data`: tự bỏ qua, để sự kiện phát lại hoặc bản build cũ
+  cũng không lọt.
+- `.importlinter` (`v2-data-boundary`) chặn import; test quét mã nguồn
+  (`tests/unit/kb_backend/test_v2_storage_boundary.py`) chặn tên topic viết cứng trong package V2.
+
 ## 3. STEP 1: Canonical Data Model
 
 ### 3.1 Thời gian (bất biến 8)
@@ -128,7 +152,8 @@ Mở rộng: `Period` thêm D, W, I (intraday), P (kỳ điều hành, lấy t�
   `release_info` (cách đọc ngày công bố), `locale`, `rate_limit`, `follow_link_pattern`,
   `freshness_sla`, `extraction_profile`. Bulk Import đọc các trường này.
 - Artifact: key MinIO theo SHA-256, không ghi đè, không xoá. Re-crawl vẫn được thay **bản tìm kiếm**
-  của KB (hành vi hiện tại) nhưng artifact, release, observation cũ giữ nguyên (ADR-V2-21).
+  của KB (hành vi hiện tại) nhưng artifact, release, observation cũ giữ nguyên (ADR-V2-21). Chỉ tài
+  liệu mới có bản tìm kiếm; nguồn có `extraction_profile` không có (mục 2.1).
 - Release: một dòng `ingest.release` khi hash đổi; `publication_time` đọc theo `release_info`
   (EIA sheet `Contents` → `Release Date`; Pink Sheet "Updated on"; SDMX `PUBLICATION_DATE`; Bộ
   Công Thương: thời điểm hiệu lực trong bài).

@@ -18,6 +18,7 @@ from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm i
 from libs.shared.sql_identifiers import safe_identifier, quote_identifier, UnsafeIdentifier
 from services.kb_backend.dependencies.services import svc
 from services.kb_backend.dependencies.auth import require_perm
+from services.kb_backend.operations.document_ops import reject_v2_structured_document
 from services.kb_backend.pipeline.ingestion import config as cfg
 from services.kb_backend.router.knowledge.ingestion import _fetch_kbdata_or_404
 
@@ -107,6 +108,7 @@ async def propose_structured_table(
         raise HTTPException(status_code=409, detail="Document was not uploaded in structured_table mode")
     if record.get("extension", "").lower() not in ("xlsx", "xls", "csv"):
         raise HTTPException(status_code=409, detail="Only .xlsx, .xls, .csv documents support this")
+    await reject_v2_structured_document(postgres, data_id, ctx["tenant_id"])
 
     job_insert = KBStructuredImportJobInsert(owner_id=data_id, status="proposing", created_by=ctx["user_name"])
     job_res = await postgres.insert(job_insert)

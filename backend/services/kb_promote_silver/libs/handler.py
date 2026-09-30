@@ -54,7 +54,7 @@ def build_silver_handler(runtime: WorkerRuntime) -> Callable[[dict[str, Any]], A
                     await reset_events_for_new_run(db, data_id)
                     emitter = await PipelineEventEmitter.create(db, data_id)
                     try:
-                        await asyncio.wait_for(
+                        result = await asyncio.wait_for(
                             promote_to_silver(
                                 minio=runtime.minio,
                                 postgres=runtime.postgres,
@@ -79,6 +79,11 @@ def build_silver_handler(runtime: WorkerRuntime) -> Callable[[dict[str, Any]], A
                             error=f"timed out after {cfg.SILVER_STAGE_TIMEOUT_SECONDS}s",
                         )
                         raise
+                    if (result or {}).get("skipped"):
+                        # Silver did not run (document deleted mid-run, or it
+                        # belongs to a V2 structured source) — nothing to hand
+                        # to Gold.
+                        return
                     # A scheduled source with promotion_mode=auto needs no human
                     # click for Gold — see maybe_publish_auto_gold's docstring.
                     try:

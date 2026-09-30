@@ -25,6 +25,8 @@ from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm i
 from libs.ingestion.silver.persistence import _load_kb_data
 from libs.ingestion import config as cfg
 from libs.ingestion import llm_client
+from libs.ingestion.storage_boundary import is_v2_structured_document
+from libs.shared.storage_ownership import V2_STRUCTURED_SOURCE_ERROR
 
 log = logging.getLogger(__name__)
 
@@ -131,6 +133,18 @@ async def propose_structured_table(
     job_id: str,
     tenant_id: str,
 ) -> None:
+    if await is_v2_structured_document(postgres, data_id, tenant_id):
+        # kb_backend already answers 409; this catches a replayed or stale
+        # event. A V2 structured source's numbers never become a
+        # `kb_structured` table (NOP-163) — fail the job so the review screen
+        # shows why instead of a proposal that stays "proposing".
+        log.info("structured-propose | skipped data_id=%s: V2 structured source", data_id)
+        await _update_job(
+            postgres, job_id, status="failed",
+            error_message=f"Source has an extraction profile; its numbers use the structured pipeline "
+                          f"[{V2_STRUCTURED_SOURCE_ERROR}]",
+        )
+        return
     try:
         kb_data = await _load_kb_data(postgres, tenant_id=tenant_id, data_id=data_id)
         path: str = kb_data["path"]

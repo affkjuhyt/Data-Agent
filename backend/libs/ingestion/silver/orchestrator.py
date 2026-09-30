@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from libs.basemodel.services_databaseconnector.postgres_model import SourceType, Tier
@@ -24,6 +25,9 @@ from libs.ingestion.log_writer import IngestionLogger
 from libs.ingestion.pipeline_events import NULL_EMITTER, PipelineEventEmitter
 from libs.ingestion.pipeline_status import stamp_pipeline_status
 from libs.ingestion.stage_chain import StageChain
+from libs.ingestion.storage_boundary import is_v2_structured_document
+
+log = logging.getLogger(__name__)
 
 
 async def _parse_source(
@@ -67,6 +71,14 @@ async def promote_to_silver(
     approved_by: str,
     emitter: PipelineEventEmitter = NULL_EMITTER,
 ) -> dict[str, Any]:
+    if await is_v2_structured_document(postgres, data_id, tenant_id):
+        # Checked before anything is written (Mongo log, pipeline stamp): a V2
+        # structured source's numbers belong to series_extractor, and whatever
+        # queued this (a stale button, a replayed event, an old crawler build)
+        # must not cut them into chunks (docs/v2/00 invariant 4).
+        log.info("Silver skipped: data_id=%s belongs to a V2 structured source", data_id)
+        return {"data_id": data_id, "chunks_count": 0, "layer": Tier.BRONZE.value, "skipped": "v2_structured_source"}
+
     database = mongo.get_client()
     logger = IngestionLogger(db=database, data_id=data_id)
     stage_record = StageChain()
