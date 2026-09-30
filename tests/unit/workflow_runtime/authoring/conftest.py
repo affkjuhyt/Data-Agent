@@ -10,6 +10,7 @@ loops) from running.
 from __future__ import annotations
 
 import importlib
+import inspect
 import types
 from typing import Any
 
@@ -68,3 +69,27 @@ def route_table(app: Any) -> set[tuple[str, str]]:
             if method != "HEAD":
                 out.add((method, route.path))
     return out
+
+
+def patch_router_store(monkeypatch: pytest.MonkeyPatch, router: Any, fake: Any, names: Any) -> None:
+    """Replace `names` on a router module with the fake's methods, refusing a fake
+    whose signature has drifted from the real function it stands in for — a
+    stand-in that accepts what the real one rejects hides exactly the wiring
+    bugs these tests exist to catch."""
+    for name in names:
+        real = getattr(router, name)
+        stand_in = getattr(fake, name)
+        real_params = list(inspect.signature(real).parameters.values())
+        fake_params = list(inspect.signature(stand_in).parameters.values())
+        # Positional names may differ (callers pass them by position); keyword-only
+        # names are part of the contract, so they must match.
+        def shape(params: list[inspect.Parameter]) -> list[tuple[Any, bool]]:
+            return [
+                (p.name if p.kind is p.KEYWORD_ONLY else p.kind, p.default is p.empty)
+                for p in params
+            ]
+
+        assert shape(real_params) == shape(fake_params), (
+            f"fake {name}{inspect.signature(stand_in)} != real {name}{inspect.signature(real)}"
+        )
+        monkeypatch.setattr(router, name, stand_in)

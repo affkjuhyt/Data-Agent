@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from .conftest import TENANT_A, TENANT_B, kong_headers, route_table
+from .conftest import patch_router_store, TENANT_A, TENANT_B, kong_headers, route_table
 
 pytestmark = pytest.mark.unit
 
@@ -38,8 +38,7 @@ class FakeCanvasStore:
 def store(fb: types.SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> FakeCanvasStore:
     fake = FakeCanvasStore()
     fake.owner[VERSION_ID] = TENANT_A
-    for name in ("workflow_version_belongs_to", "save_canvas", "load_canvas"):
-        monkeypatch.setattr(fb.canvas, name, getattr(fake, name))
+    patch_router_store(monkeypatch, fb.canvas, fake, ("workflow_version_belongs_to", "save_canvas", "load_canvas"))
     return fake
 
 

@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from .conftest import TENANT_A, TENANT_B, kong_headers, route_table
+from .conftest import patch_router_store, TENANT_A, TENANT_B, kong_headers, route_table
 
 pytestmark = pytest.mark.unit
 
@@ -52,7 +52,7 @@ class FakeAgentStore:
     async def get_agent(self, agent_id: str, tenant_id: str | None = None) -> dict[str, Any] | None:
         return self._visible(agent_id, tenant_id)
 
-    async def list_workflows(self, agent_id: str) -> list[dict[str, Any]]:
+    async def list_workflows(self, agent_id: str, *, tenant_id: str) -> list[dict[str, Any]]:
         return [{"id": uuid.UUID(int=1), "name": "main"}]
 
     async def delete_agent(self, agent_id: str, tenant_id: str | None = None) -> list[str]:
@@ -87,9 +87,9 @@ class FakeAgentStore:
 @pytest.fixture
 def store(fb: types.SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> FakeAgentStore:
     fake = FakeAgentStore()
-    for name in ("create_agent", "list_agents", "get_agent", "list_workflows", "delete_agent",
-                 "save_canvas", "update_agent_draft", "publish_agent", "unpublish_agent"):
-        monkeypatch.setattr(fb.agents, name, getattr(fake, name))
+    patch_router_store(monkeypatch, fb.agents, fake, (
+        "create_agent", "list_agents", "get_agent", "list_workflows", "delete_agent",
+        "save_canvas", "update_agent_draft", "publish_agent", "unpublish_agent"))
     return fake
 
 

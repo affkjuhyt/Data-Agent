@@ -54,7 +54,7 @@ async def api_get_agent(agent_id: str, caller: dict[str, Any] = Depends(get_curr
     agent = await get_agent(agent_id, tenant_id=tenant_id)
     if not agent:
         raise HTTPException(404, "Agent not found")
-    workflows = await list_workflows(agent_id)
+    workflows = await list_workflows(agent_id, tenant_id=tenant_id)
     return {**serialize(agent), "workflows": [serialize(workflow) for workflow in workflows]}
 
 

@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from .conftest import TENANT_A, TENANT_B, kong_headers, route_table
+from .conftest import patch_router_store, TENANT_A, TENANT_B, kong_headers, route_table
 
 pytestmark = pytest.mark.unit
 
@@ -110,8 +110,7 @@ _PATCHED = (
 @pytest.fixture
 def store(fb: types.SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> FakeWorkflowStore:
     fake = FakeWorkflowStore()
-    for name in _PATCHED:
-        monkeypatch.setattr(fb.workflows, name, getattr(fake, name))
+    patch_router_store(monkeypatch, fb.workflows, fake, _PATCHED)
     return fake
 
 
