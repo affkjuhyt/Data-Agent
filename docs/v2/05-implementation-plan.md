@@ -90,7 +90,7 @@ TN = tuần-người còn lại (đã trừ phần lấy từ `feat/add-task` ng
 | P0-05 | Golden set hạt giống + baseline | 30 case từ 06 mục 3; chạy hệ thống hiện tại làm baseline | RS, QA | | Được duyệt | todo |
 | P0-06 | Chốt câu còn chờ | D2–D14 đã chốt 27/09; câu mới phát sinh ghi vào 07 mục 1 | PM | | Xoá khỏi 07 | done (27/09) |
 | P0-09 | Hợp đồng dữ liệu | Pydantic + OpenAPI skeleton `indicator-api` + envelope Kafka | SR1, SR2 | 1 | Các nhánh W2 build được trên stub | todo |
-| S1-01 | Schema Postgres | `registry`, `ingest`, `governance`, `knowledge`; RLS; `version` cho OCC | BE2 | 1 | Migration lên/xuống sạch | doing (schema + role: NOP-147) |
+| S1-01 | Schema Postgres | `registry`, `ingest`, `governance`, `knowledge`; RLS; `version` cho OCC | BE2 | 1 | Migration lên/xuống sạch | doing (schema + role: NOP-147; RLS helper: NOP-148) |
 | S1-02 | ClickHouse `obs` | Bảng 03 mục 3.2, row policy; bộ đọc as-of viết mới trong `indicator_api` (`domains/observation` + `adapters/clickhouse`, ADR-V2-36); bản cũ `libs/indicator/observation.py` đọc schema `ankt.*` không tồn tại, đã xoá 28/09 | SR2, Ops | 1 + 0,5 | Test hai version chưa gộp | todo |
 | FE-00 | Nền frontend | Sinh kiểu từ OpenAPI (script: SR1), TanStack Query, `urlState`, `streamReducer` + frame V2, SSE hộp thư (09 mục 4) | FE1, SR1 | 0,75 + 0,25 | Màn V2 đầu tiên dùng kiểu sinh ra | todo |
 | S2-02 | Artifact bất biến | MinIO theo SHA-256; `_purge_promoted_traces` không đụng artifact/release | DE | 1 | Re-crawl: artifact cũ còn | done 5120e46 |

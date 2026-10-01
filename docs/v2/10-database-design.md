@@ -112,6 +112,30 @@ Schema và role Postgres tạo ở migration `5b7d9f1a3c6e` (NOP-147): role ch�
 trên bảng của schema mình; role khác chỉ có `USAGE`, quyền đọc từng bảng do migration tạo bảng cấp. Mật
 khẩu đặt ở Job `db-init` từ vault, chưa có cho các role V2 (làm cùng NOP-214).
 
+RLS cho bảng V2 (NOP-148): migration tạo bảng gọi helper `libs/shared/tenant_rls.py` ngay sau
+`CREATE TABLE`, không tự viết policy:
+
+```python
+from libs.shared.tenant_rls import enable_tenant_rls
+
+for sql in enable_tenant_rls("ingest", "release"):          # downgrade: disable_tenant_rls
+    op.execute(sql)
+```
+
+Helper bật `ENABLE` + `FORCE ROW LEVEL SECURITY`, `REVOKE ALL ... FROM PUBLIC`, và tạo policy theo từng
+lệnh trên `tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid`: SELECT, INSERT,
+UPDATE (cả USING và WITH CHECK, không chuyển dòng sang tenant khác). DELETE chỉ có policy khi truyền
+`allow_delete=True`; mặc định không xoá được dòng nào (hợp ADR-V2-30). Role làm việc trên mọi tenant
+(`outbox_relay`, `maintenance`) truyền qua `cross_tenant_roles`: có SELECT/UPDATE `USING (true)` chỉ
+cho role đó, không bao giờ có INSERT. Quyền đọc chéo schema vẫn `GRANT SELECT` từng bảng trong cùng
+migration.
+
+Kiểm chứng: `tests/integration/_rls.py` có `as_service(dsn, role, tenant_id)` để chạy query bằng role
+dịch vụ thật, và `rls_violations(dsn)`. Test `tests/integration/workflow_runtime/test_v2_tenant_rls.py`
+chạy sau `alembic upgrade head` và fail nếu bảng nào trong năm schema V2 thiếu `tenant_id NOT NULL`,
+ENABLE, FORCE hoặc policy SELECT. Bảng cố ý dùng chung (ADR-V2-28) phải được thêm tên vào
+`SHARED_V2_TABLES` của test đó, kèm lý do.
+
 Nối với bảng cũ: `ingest.release.artifact_sha256` trỏ object MinIO; `KBData` giữ vai trò bản tìm kiếm
 của KB (ADR-V2-21) và mang thêm `artifact_sha256` để nối về raw. Không FK chéo từ schema V2 vào `public`.
 
