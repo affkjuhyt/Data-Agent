@@ -285,3 +285,49 @@ class TestResolveWarehouseSecret:
         resolve_spy.assert_not_called()
         connection = node_cfg["tool_config"]["execute_sql"]["connection"]
         assert "secret_id" not in connection
+
+
+class TestLoadAgentConfigQuery:
+    """The published-version query must compile. When it did not (no explicit FROM
+    for the AgentsORM -> AgentVersionsORM join), the broad except in
+    load_agent_config turned the InvalidRequestError into DEV_CONFIG for every
+    agent, with only a warning in the log."""
+
+    async def test_query_compiles_and_a_missing_agent_is_none_not_dev_config(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from contextlib import asynccontextmanager
+
+        from sqlalchemy.dialects import postgresql
+
+        compiled: list[str] = []
+
+        class _Result:
+            def fetchone(self) -> None:
+                return None
+
+        class _Session:
+            async def execute(self, stmt):
+                compiled.append(str(stmt.compile(dialect=postgresql.dialect())))
+                return _Result()
+
+        class _Client:
+            def is_connected(self) -> bool:
+                return True
+
+            @asynccontextmanager
+            async def get_client(self, tenant_id=None):
+                yield _Session()
+
+        connector = types.ModuleType("libs.database_connector.postgres_connector")
+        connector.client = _Client()
+        mongo = types.ModuleType("services.workflow_runtime.infrastructure.mongo_client")
+        mongo.load_flow_nodes = AsyncMock(return_value=[])
+        mongo.load_flow_edges = AsyncMock(return_value=[])
+        monkeypatch.setitem(sys.modules, connector.__name__, connector)
+        monkeypatch.setitem(sys.modules, mongo.__name__, mongo)
+
+        result = await config_loader.load_agent_config("agent-1", tenant_id="tenant-1")
+
+        assert result is None
+        assert len(compiled) == 1 and 'FROM "Agents"' in compiled[0].replace("\n", " ")

@@ -134,7 +134,7 @@ async def _resolve_or_create(session: AsyncSession, model_name: str, task_type: 
         )
     )
     if found is not None:
-        return cast(_uuid.UUID, found)
+        return found
     new_id = _uuid.uuid4()
     session.add(
         KBModelORM(

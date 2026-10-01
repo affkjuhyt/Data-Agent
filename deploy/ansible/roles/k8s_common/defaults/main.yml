@@ -36,7 +36,6 @@ manifest_sed_rewrite: 'sed -e "s|image: {{ image_prefix }}/\([a-z0-9_-]*\):{{ im
 manifest_sed: "{{ manifest_sed_rewrite if (image_registry | length) > 0 else 'cat' }}"
 
 image_self_context:
-  - backend/services/model_service
   - backend/services/sandbox_executor
   - backend/services/sandbox_executor/sandbox_runner
   - frontend

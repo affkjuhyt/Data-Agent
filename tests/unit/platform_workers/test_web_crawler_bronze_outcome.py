@@ -31,12 +31,15 @@ class _FakeSession:
         self.added: list[Any] = []
         self.commits = 0
         self.rollbacks = 0
+        self.locked_rows: list[Any] = []
 
     def scalar(self, _stmt: Any) -> Any | None:
         return self.existing
 
-    def get(self, _model: Any, key: Any) -> Any | None:
+    def get(self, _model: Any, key: Any, *, with_for_update: bool = False) -> Any | None:
         if self.existing is not None and key == self.existing.data_id:
+            if with_for_update:
+                self.locked_rows.append(key)
             return self.existing
         return None
 
@@ -115,6 +118,8 @@ def test_changed_file_updates_the_live_document_in_place_and_removes_old_object(
     )
 
     assert data_id == str(DATA_ID)
+    # The metadata merge is read-modify-write, so the row must be locked first.
+    assert session.locked_rows == [DATA_ID]
     assert existing.content_hash == hashlib.sha256(b"changed").hexdigest()
     assert existing.path != f"{TENANT_ID}/bronze/{DATA_ID}/T.csv"
     assert existing.current_tier == "gold"

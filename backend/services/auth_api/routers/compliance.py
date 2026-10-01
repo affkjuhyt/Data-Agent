@@ -9,7 +9,7 @@ and read at ingestion time by the KB worker to gate PII redaction — so togglin
 
 from typing import Any
 from fastapi import APIRouter, Depends, Header, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import ComplianceSettingORM
@@ -147,12 +147,14 @@ def put_settings(
             .values(**values)
             .on_conflict_do_update(
                 index_elements=[ComplianceSettingORM.tenant_id],
-                set_=values,
+                set_={**values, "updated_at": func.now()},
             )
+            .returning(ComplianceSettingORM)
         )
-        session.execute(stmt)
-        session.flush()
-        result = _fetch(session, x_tenant_id)
+        # populate_existing: _fetch above already put this row in the identity map, and
+        # a Core upsert does not refresh it — without this the response is the old row.
+        row = session.scalar(stmt, execution_options={"populate_existing": True})
+        result = _row_to_settings(orm_to_dict(row))
         log.info("compliance_settings_updated", tenant=x_tenant_id, actor=user["user_id"],
                  pii_masking=result["pii_masking"])
         return result

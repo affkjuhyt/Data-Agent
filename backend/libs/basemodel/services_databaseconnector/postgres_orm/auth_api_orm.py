@@ -100,7 +100,7 @@ class ComplianceSettingORM(Base):
     zero_trust: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
     audit_residency: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
     updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=True)
-    updated_by: Mapped[str] = mapped_column(String(128), server_default="", nullable=False)
+    updated_by: Mapped[str | None] = mapped_column(String(128), server_default="", nullable=True)
 
 
 class MicrosoftSSOApprovalORM(Base):

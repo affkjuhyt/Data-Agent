@@ -25,6 +25,8 @@ from typing import Iterator
 
 import psycopg2
 import pytest
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session
 
 from tests.integration._db import reset_database
 
@@ -110,45 +112,50 @@ def mc_env(migrated_db, qdrant_container, monkeypatch):
         qdrant = QdrantClient(url=qdrant_container["url"], check_compatibility=False)
         mc_main.ensure_qdrant_collection(qdrant)
 
-        conn = psycopg2.connect(migrated_db["dsn"])
+        # The worker takes a SQLAlchemy Session (it did take a psycopg2 cursor).
+        engine = create_engine(
+            "postgresql+psycopg2://" + migrated_db["dsn"][len("postgresql://"):]
+        )
+        session = Session(engine)
         tenant_id, agent_id = _seed_tenant_and_agent(migrated_db["dsn"])
 
-        yield mc_main, conn, qdrant, tenant_id, agent_id
+        yield mc_main, session, qdrant, tenant_id, agent_id
 
-        conn.close()
+        session.close()
+        engine.dispose()
     finally:
         for p in added:
             if p in sys.path:
                 sys.path.remove(p)
 
 
-def _active_agent_memories(conn, tenant_id: str) -> list[tuple]:
-    with conn.cursor() as cur:
-        cur.execute(
+def _active_agent_memories(session: Session, tenant_id: str) -> list[tuple]:
+    rows = session.execute(
+        text(
             """SELECT content, fact_key FROM "AgentMemories"
-               WHERE tenant_id=%s AND deleted_at IS NULL ORDER BY created_at""",
-            (tenant_id,),
-        )
-        return cur.fetchall()
+               WHERE tenant_id = :tenant_id AND deleted_at IS NULL ORDER BY created_at"""
+        ),
+        {"tenant_id": tenant_id},
+    )
+    return [tuple(row) for row in rows]
 
 
 def test_catch_all_distinct_facts_do_not_overwrite_each_other(mc_env, monkeypatch):
-    mc_main, conn, qdrant, tenant_id, agent_id = mc_env
+    mc_main, session, qdrant, tenant_id, agent_id = mc_env
     vectors = {"Note A": _E0, "Note B totally unrelated": _E1}
     monkeypatch.setattr(mc_main, "embed", lambda content: vectors[content])
 
-    cur = conn.cursor()
-    mc_main.process_insight(cur, qdrant, tenant_id, agent_id, "user1",
+    mc_main.process_insight(session, qdrant, tenant_id, agent_id, "user1",
                              {"memory_type": "semantic", "action": "add", "importance_score": 0.8,
                               "domain": "general", "fact_key": None, "content": "Note A"},
                              "msg1", 0)
-    mc_main.process_insight(cur, qdrant, tenant_id, agent_id, "user1",
+    mc_main.process_insight(session, qdrant, tenant_id, agent_id, "user1",
                              {"memory_type": "semantic", "action": "add", "importance_score": 0.8,
                               "domain": "general", "fact_key": None, "content": "Note B totally unrelated"},
                              "msg2", 0)
-    conn.commit()
+    session.commit()
 
-    rows = _active_agent_memories(conn, tenant_id)
+    rows = _active_agent_memories(session, tenant_id)
     contents = {r[0] for r in rows}
     assert contents == {"Note A", "Note B totally unrelated"}, (
         "doc §7 gap fix: 2 unrelated catch-all facts must NOT collapse into 1 row"
@@ -158,78 +165,74 @@ def test_catch_all_distinct_facts_do_not_overwrite_each_other(mc_env, monkeypatc
 
 
 def test_catch_all_no_change_for_near_identical_resend(mc_env, monkeypatch):
-    mc_main, conn, qdrant, tenant_id, agent_id = mc_env
+    mc_main, session, qdrant, tenant_id, agent_id = mc_env
     monkeypatch.setattr(mc_main, "embed", lambda content: _E0)
 
-    cur = conn.cursor()
     insight = {"memory_type": "semantic", "action": "add", "importance_score": 0.8,
                "domain": "general", "fact_key": None, "content": "Note A"}
-    mc_main.process_insight(cur, qdrant, tenant_id, agent_id, "user1", insight, "msg1", 0)
-    mc_main.process_insight(cur, qdrant, tenant_id, agent_id, "user1", insight, "msg2", 0)
-    conn.commit()
+    mc_main.process_insight(session, qdrant, tenant_id, agent_id, "user1", insight, "msg1", 0)
+    mc_main.process_insight(session, qdrant, tenant_id, agent_id, "user1", insight, "msg2", 0)
+    session.commit()
 
-    rows = _active_agent_memories(conn, tenant_id)
+    rows = _active_agent_memories(session, tenant_id)
     assert len(rows) == 1, "doc §V: sim>0.95 -> NO_CHANGE, must not create a second row"
 
 
 def test_catch_all_updates_existing_entry_when_revised(mc_env, monkeypatch):
-    mc_main, conn, qdrant, tenant_id, agent_id = mc_env
+    mc_main, session, qdrant, tenant_id, agent_id = mc_env
     vectors = {"Note A original": _E0, "Note A revised": _vec_at_sim(0.9)}
     monkeypatch.setattr(mc_main, "embed", lambda content: vectors[content])
 
-    cur = conn.cursor()
-    mc_main.process_insight(cur, qdrant, tenant_id, agent_id, "user1",
+    mc_main.process_insight(session, qdrant, tenant_id, agent_id, "user1",
                              {"memory_type": "semantic", "action": "add", "importance_score": 0.8,
                               "domain": "general", "fact_key": None, "content": "Note A original"},
                              "msg1", 0)
-    mc_main.process_insight(cur, qdrant, tenant_id, agent_id, "user1",
+    mc_main.process_insight(session, qdrant, tenant_id, agent_id, "user1",
                              {"memory_type": "semantic", "action": "add", "importance_score": 0.8,
                               "domain": "general", "fact_key": None, "content": "Note A revised"},
                              "msg2", 0)
-    conn.commit()
+    session.commit()
 
-    rows = _active_agent_memories(conn, tenant_id)
+    rows = _active_agent_memories(session, tenant_id)
     assert len(rows) == 1, "doc §V: sim in (0.85, 0.95] -> UPDATE same row, not a new one"
     assert rows[0][0] == "Note A revised"
 
 
 def test_catch_all_delete_removes_best_similarity_match(mc_env, monkeypatch):
-    mc_main, conn, qdrant, tenant_id, agent_id = mc_env
+    mc_main, session, qdrant, tenant_id, agent_id = mc_env
     monkeypatch.setattr(mc_main, "embed", lambda content: _E0)
 
-    cur = conn.cursor()
-    mc_main.process_insight(cur, qdrant, tenant_id, agent_id, "user1",
+    mc_main.process_insight(session, qdrant, tenant_id, agent_id, "user1",
                              {"memory_type": "semantic", "action": "add", "importance_score": 0.8,
                               "domain": "general", "fact_key": None, "content": "Note A"},
                              "msg1", 0)
-    mc_main.process_insight(cur, qdrant, tenant_id, agent_id, "user1",
+    mc_main.process_insight(session, qdrant, tenant_id, agent_id, "user1",
                              {"memory_type": "semantic", "action": "delete", "importance_score": 0.5,
                               "domain": "general", "fact_key": None, "content": "Note A"},
                              "msg2", 0)
-    conn.commit()
+    session.commit()
 
-    assert _active_agent_memories(conn, tenant_id) == []
+    assert _active_agent_memories(session, tenant_id) == []
 
 
 def test_catch_all_delete_skips_when_no_confident_match(mc_env, monkeypatch):
     """Doc §V/cancel_future_memory spirit: deleting the wrong fact is worse
     than leaving a stale one — no match above the UPDATE threshold means no-op."""
-    mc_main, conn, qdrant, tenant_id, agent_id = mc_env
+    mc_main, session, qdrant, tenant_id, agent_id = mc_env
     vectors = {"Note A": _E0, "totally unrelated delete request": _E1}
     monkeypatch.setattr(mc_main, "embed", lambda content: vectors[content])
 
-    cur = conn.cursor()
-    mc_main.process_insight(cur, qdrant, tenant_id, agent_id, "user1",
+    mc_main.process_insight(session, qdrant, tenant_id, agent_id, "user1",
                              {"memory_type": "semantic", "action": "add", "importance_score": 0.8,
                               "domain": "general", "fact_key": None, "content": "Note A"},
                              "msg1", 0)
-    mc_main.process_insight(cur, qdrant, tenant_id, agent_id, "user1",
+    mc_main.process_insight(session, qdrant, tenant_id, agent_id, "user1",
                              {"memory_type": "semantic", "action": "delete", "importance_score": 0.5,
                               "domain": "general", "fact_key": None, "content": "totally unrelated delete request"},
                              "msg2", 0)
-    conn.commit()
+    session.commit()
 
-    rows = _active_agent_memories(conn, tenant_id)
+    rows = _active_agent_memories(session, tenant_id)
     assert len(rows) == 1 and rows[0][0] == "Note A"
 
 
@@ -237,22 +240,21 @@ def test_controlled_vocab_fact_key_keeps_single_slot_behavior(mc_env, monkeypatc
     """Regression: non-catch-all fact_key (controlled vocabulary) is a
     canonical single value — must still overwrite in place, unlike the
     catch-all fix above."""
-    mc_main, conn, qdrant, tenant_id, agent_id = mc_env
+    mc_main, session, qdrant, tenant_id, agent_id = mc_env
     vectors = {"PDF": _E0, "Excel": _E1}
     monkeypatch.setattr(mc_main, "embed", lambda content: vectors[content])
 
-    cur = conn.cursor()
-    mc_main.process_insight(cur, qdrant, tenant_id, agent_id, "user1",
+    mc_main.process_insight(session, qdrant, tenant_id, agent_id, "user1",
                              {"memory_type": "semantic", "action": "add", "importance_score": 0.8,
                               "domain": "user_pref", "fact_key": "preferred_report_format", "content": "PDF"},
                              "msg1", 0)
-    mc_main.process_insight(cur, qdrant, tenant_id, agent_id, "user1",
+    mc_main.process_insight(session, qdrant, tenant_id, agent_id, "user1",
                              {"memory_type": "semantic", "action": "add", "importance_score": 0.8,
                               "domain": "user_pref", "fact_key": "preferred_report_format", "content": "Excel"},
                              "msg2", 0)
-    conn.commit()
+    session.commit()
 
-    rows = _active_agent_memories(conn, tenant_id)
+    rows = _active_agent_memories(session, tenant_id)
     assert len(rows) == 1 and rows[0][0] == "Excel"
 
 

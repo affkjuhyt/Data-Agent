@@ -15,6 +15,7 @@ hand in a session factory / cursor and a `publish` callable.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -40,7 +41,10 @@ def _new_event(
         producer=producer,
         topic=topic,
         event_key=key,
-        payload=value,
+        # Round-trip through json with default=str: the JSONB column serialises with
+        # plain json.dumps, so a UUID/datetime/Decimal in an event would raise at flush
+        # and take the caller's whole transaction down with it.
+        payload=json.loads(json.dumps(value, default=str)),
     )
 
 

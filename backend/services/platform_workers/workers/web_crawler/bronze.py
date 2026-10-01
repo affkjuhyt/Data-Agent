@@ -164,7 +164,10 @@ def _update_existing_in_place(
     swaps it for the new version. Extension/path/hash are only rewritten for
     documents that carry bytes (`extension is None` for a web source); the hash is
     written whenever there is one, web sources included."""
-    row = session.get(KBDataORM, _as_uuid(data_id))
+    # FOR UPDATE: the metadata merge below is read-modify-write in Python, and the KB
+    # promote workers stamp this row concurrently — without the lock their stamp can be
+    # overwritten by the copy read here.
+    row = session.get(KBDataORM, _as_uuid(data_id), with_for_update=True)
     if row is None:
         raise ValueError(f"KBData row {data_id} no longer exists")
     base_metadata = {
@@ -270,11 +273,12 @@ def register_http_file_bronze(
             outcome.update(unchanged=True, existing_tier=existing.current_tier)
         return str(existing.data_id)
 
-    in_place = existing is not None and not existing.is_deleted
-    old_path = existing.path if in_place else None
+    live = existing if existing is not None and not existing.is_deleted else None
+    in_place = live is not None
+    old_path = live.path if live is not None else None
     # New content for a live document keeps its data_id; a soft-deleted one
     # still occupies the name, so that case takes the delete-and-insert path.
-    data_id = str(existing.data_id) if in_place else str(uuid.uuid4())
+    data_id = str(live.data_id) if live is not None else str(uuid.uuid4())
     filename = f"{title}.{artifact.extension}"
     # The content hash in the key keeps the old object addressable until the row
     # points at the new one; it is only removed after that commit.
@@ -297,9 +301,9 @@ def register_http_file_bronze(
         "source_id": source_id, "promotion_mode": promotion_mode,
     }
     try:
-        if in_place:
+        if live is not None:
             _update_existing_in_place(
-                session, data_id=data_id, tier=existing.current_tier, added_by=added_by, name=title,
+                session, data_id=data_id, tier=live.current_tier, added_by=added_by, name=title,
                 extension=artifact.extension, path=object_key, content_hash=content_hash,
                 purpose=purpose, doc_metadata=doc_metadata,
             )

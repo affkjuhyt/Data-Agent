@@ -214,20 +214,28 @@ class _RunInfo(TypedDict):
 def _latest_run_by_source(session: Session) -> dict[str, _RunInfo]:
     """Latest KBSourceRun per source (started_at + retry bookkeeping) — one
     query, not N+1, same idea as schema_crawler's _last_crawled_by_warehouse."""
-    latest: dict[str, _RunInfo] = {}
-    rows = session.scalars(
-        select(KBSourceRunORM).order_by(KBSourceRunORM.source_id, KBSourceRunORM.started_at.desc())
+    # DISTINCT ON keeps it one row per source in Postgres; selecting whole ORM rows and
+    # de-duplicating here loaded every run (JSONB included) on each 5s tick.
+    rows = session.execute(
+        select(
+            KBSourceRunORM.source_id,
+            KBSourceRunORM.started_at,
+            KBSourceRunORM.status,
+            KBSourceRunORM.retry_count,
+            KBSourceRunORM.next_retry_at,
+        )
+        .distinct(KBSourceRunORM.source_id)
+        .order_by(KBSourceRunORM.source_id, KBSourceRunORM.started_at.desc())
     )
-    for row in rows:
-        source_id = str(row.source_id)
-        if source_id not in latest:
-            latest[source_id] = {
-                "started_at": row.started_at,
-                "status": row.status,
-                "retry_count": row.retry_count,
-                "next_retry_at": row.next_retry_at,
-            }
-    return latest
+    return {
+        str(row.source_id): {
+            "started_at": row.started_at,
+            "status": row.status,
+            "retry_count": row.retry_count,
+            "next_retry_at": row.next_retry_at,
+        }
+        for row in rows
+    }
 
 
 def _is_due(cron_expr: str, last_run: datetime | None, now: datetime) -> bool:

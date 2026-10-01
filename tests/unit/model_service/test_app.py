@@ -30,6 +30,12 @@ from .._loader import SERVICES
 
 pytestmark = [
     pytest.mark.unit,
+    # Starlette 1.x (what the unpinned image installs) warns when its TestClient
+    # falls back to the `httpx` from requirements-test.txt instead of `httpx2`; the
+    # suite runs with filterwarnings=error. Matched by message, not by
+    # StarletteDeprecationWarning, because older Starlette has no such class and the
+    # filter would then fail to resolve.
+    pytest.mark.filterwarnings("ignore:Using `httpx` with `starlette.testclient` is deprecated"),
 ]
 
 MODEL_SERVICE_DIR = SERVICES / "model_service"

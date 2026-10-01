@@ -93,6 +93,10 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
                         LLMProvidersORM.model_id.label("responder_model"),
                         SystemPromptsORM.content.label("system_prompt"),
                     )
+                    # The first selected column is AgentVersions, so without an explicit
+                    # left side SQLAlchemy cannot tell where the join starts (InvalidRequestError,
+                    # swallowed below into DEV_CONFIG for every agent).
+                    .select_from(AgentsORM)
                     .join(AgentVersionsORM, AgentVersionsORM.id == AgentsORM.published_version_id)
                     .join(LLMProvidersORM, LLMProvidersORM.id == AgentVersionsORM.responder_model_id)
                     .outerjoin(SystemPromptsORM, SystemPromptsORM.id == AgentVersionsORM.system_prompt_id)

@@ -13,6 +13,7 @@ import pathlib
 import sys
 import types
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -158,19 +159,21 @@ class TestCrawlerWrites:
                 "columns": [{"name": "id", "type": "int"}], "row_count": 10}
         unchanged_hash = main.schema_hash(meta["columns"])
 
-        cur = MagicMock()
-        cur.fetchone.return_value = ("row-id", unchanged_hash, "point-id")
+        existing = SimpleNamespace(schema_hash=unchanged_hash, qdrant_point_id="point-id")
+        session = MagicMock()
+        session.scalar.return_value = existing
         qdrant = MagicMock()
         policy = {"owner": "finance", "classification": "confidential",
                   "upstream": ["kafka:orders.cdc"], "freshness_column": "created_at",
                   "freshness_sla_seconds": DAY}
 
-        changed = main.process_table(cur, qdrant, TENANT, WAREHOUSE, meta, policy, NOW, NOW)
+        changed = main.process_table(session, qdrant, TENANT, WAREHOUSE, meta, policy, NOW, NOW)
 
         assert changed is False
-        sql, params = cur.execute.call_args.args
-        assert "data_as_of" in sql and "freshness_sla_seconds" in sql
-        assert NOW in params and DAY in params
+        assert existing.data_as_of == NOW
+        assert existing.freshness_checked_at == NOW
+        assert existing.freshness_sla_seconds == DAY
+        assert existing.last_crawled_at is not None
         # No re-describe, no re-embed: nothing the vector is built from moved.
         qdrant.upsert.assert_not_called()
         qdrant.set_payload.assert_called_once()
@@ -180,12 +183,14 @@ class TestCrawlerWrites:
         from workers.schema_crawler import worker as main
         meta = {"schema_name": "public", "table_name": "orders",
                 "columns": [{"name": "id", "type": "int"}], "row_count": 10}
-        cur = MagicMock()
-        cur.fetchone.return_value = ("row-id", main.schema_hash(meta["columns"]), "point-id")
+        session = MagicMock()
+        session.scalar.return_value = SimpleNamespace(
+            schema_hash=main.schema_hash(meta["columns"]), qdrant_point_id="point-id",
+        )
         qdrant = MagicMock()
         qdrant.set_payload.side_effect = RuntimeError("qdrant down")
 
-        assert main.process_table(cur, qdrant, TENANT, WAREHOUSE, meta, {}, NOW, NOW) is False
+        assert main.process_table(session, qdrant, TENANT, WAREHOUSE, meta, {}, NOW, NOW) is False
 
 
 # ── the watermark query ────────────────────────────────────────────────────
