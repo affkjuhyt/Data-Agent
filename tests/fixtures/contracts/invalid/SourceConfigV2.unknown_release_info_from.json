@@ -1,0 +1,45 @@
+{
+  "model": "SourceConfigV2",
+  "loc": "release_info.publication_time",
+  "data": {
+    "licence": "US government data (EIA), ghi nguồn",
+    "use_rights": "internal_analysis",
+    "purpose": "production",
+    "entity": "BRENT_SPOT",
+    "freshness_sla": "P8D",
+    "release_info": {
+      "publication_time": {
+        "from": "pdf_footer",
+        "sheet": "Contents",
+        "label": "Release Date:",
+        "time": "10:30",
+        "tz": "America/New_York"
+      },
+      "next_release_time": {
+        "from": "xls_cell",
+        "sheet": "Contents",
+        "label": "Next Release Date:",
+        "time": "10:30",
+        "tz": "America/New_York"
+      }
+    },
+    "release_calendar": {
+      "kind": "weekly_after",
+      "weekday": "WED",
+      "time": "10:30",
+      "tz": "America/New_York"
+    },
+    "extraction_profile": {
+      "kind": "xlsx_table",
+      "sheet": "Data 1",
+      "header_row": 3,
+      "locale": "en-US",
+      "missing_markers": {
+        "-": "missing",
+        "--": "missing",
+        "NA": "not_published",
+        "W": "withheld"
+      }
+    }
+  }
+}

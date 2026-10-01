@@ -1,0 +1,9 @@
+{
+  "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b02",
+  "source_id": "5b0c2f1e-8d6a-4c3b-9f7e-2a1d0c9b8e01",
+  "artifact_sha256": "3f2a9c0000000000000000000000000000000000000000000000000000000000",
+  "release_seq": 42,
+  "publication_time": "2026-09-30T10:30:00-04:00",
+  "publication_time_basis": "source_declared",
+  "available_at": "2026-09-30T10:30:00-04:00"
+}

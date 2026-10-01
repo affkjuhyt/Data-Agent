@@ -1,0 +1,8 @@
+{
+  "series_key": "EIA:RBRTE:D",
+  "entity_id": "BRENT_SPOT",
+  "unit": "money",
+  "unit_multiplier": 0,
+  "currency": "USD",
+  "frequency": "D"
+}

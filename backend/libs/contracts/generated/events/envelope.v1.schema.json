@@ -1,0 +1,107 @@
+{
+  "$defs": {
+    "EventType": {
+      "description": "The POC topics of 03 section 13 (forecast.* comes after the POC).",
+      "enum": [
+        "artifact.stored",
+        "source.sla.breached",
+        "extraction.completed",
+        "mapping.proposed",
+        "validation.completed",
+        "review.case.created",
+        "review.approved",
+        "observation.published",
+        "indicator.recomputed",
+        "knowledge.proposal.created",
+        "knowledge.verified",
+        "alert.raised"
+      ],
+      "title": "EventType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "envelope_version": {
+      "const": 1,
+      "default": 1,
+      "enum": [
+        1
+      ],
+      "title": "Envelope Version",
+      "type": "integer"
+    },
+    "event_id": {
+      "format": "uuid",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "event_type": {
+      "$ref": "#/$defs/EventType"
+    },
+    "idempotency_key": {
+      "description": "Consumers apply an event once per key; equals event_id unless the producer derives it from the business operation",
+      "minLength": 1,
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "occurred_at": {
+      "format": "date-time",
+      "title": "Occurred At",
+      "type": "string"
+    },
+    "partition_key": {
+      "description": "Kafka key, i.e. the ordering key",
+      "minLength": 1,
+      "title": "Partition Key",
+      "type": "string"
+    },
+    "payload": {
+      "title": "Payload",
+      "type": "object"
+    },
+    "producer": {
+      "description": "web_crawler, series_extractor, …",
+      "minLength": 1,
+      "title": "Producer",
+      "type": "string"
+    },
+    "schema_version": {
+      "description": "Version of this event type's payload",
+      "minimum": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "tenant_id": {
+      "format": "uuid",
+      "title": "Tenant Id",
+      "type": "string"
+    },
+    "trace_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Trace Id"
+    }
+  },
+  "required": [
+    "event_id",
+    "event_type",
+    "schema_version",
+    "tenant_id",
+    "occurred_at",
+    "producer",
+    "idempotency_key",
+    "partition_key",
+    "payload"
+  ],
+  "title": "EventEnvelope v1",
+  "type": "object",
+  "x-schema-version": 1
+}

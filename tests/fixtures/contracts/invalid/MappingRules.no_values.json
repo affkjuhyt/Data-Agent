@@ -1,0 +1,13 @@
+{
+  "model": "MappingRules",
+  "loc": "values",
+  "data": {
+    "time": {
+      "column": "Date",
+      "format": "excel_serial",
+      "frequency": "D",
+      "market_timezone": "America/New_York"
+    },
+    "values": []
+  }
+}

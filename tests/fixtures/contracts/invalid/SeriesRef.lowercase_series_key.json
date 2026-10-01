@@ -1,0 +1,12 @@
+{
+  "model": "SeriesRef",
+  "loc": "series_key",
+  "data": {
+    "series_key": "eia:rbrte:d",
+    "entity_id": "BRENT_SPOT",
+    "unit": "money",
+    "unit_multiplier": 0,
+    "currency": "USD",
+    "frequency": "D"
+  }
+}

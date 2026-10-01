@@ -1,0 +1,28 @@
+{
+  "additionalProperties": false,
+  "examples": [
+    {
+      "overdue_since": "2026-10-08T10:30:00-04:00",
+      "source_id": "5b0c2f1e-8d6a-4c3b-9f7e-2a1d0c9b8e01"
+    }
+  ],
+  "properties": {
+    "overdue_since": {
+      "format": "date-time",
+      "title": "Overdue Since",
+      "type": "string"
+    },
+    "source_id": {
+      "format": "uuid",
+      "title": "Source Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "source_id",
+    "overdue_since"
+  ],
+  "title": "source.sla.breached payload v1",
+  "type": "object",
+  "x-schema-version": 1
+}

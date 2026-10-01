@@ -158,6 +158,8 @@ exclude = [
     "*/basemodel/*",
     "*/schemas/*",
     "*/schemas.py",
+    # libs/contracts (NOP-150): wire models whose consumers land in later tickets.
+    "*/contracts/*",
     "*/state.py",
 ]
 

@@ -1,0 +1,3306 @@
+{
+  "components": {
+    "schemas": {
+      "ApiQueryRef": {
+        "additionalProperties": false,
+        "description": "A value fetched from an API: the request that returns it again.",
+        "properties": {
+          "kind": {
+            "const": "api_query",
+            "default": "api_query",
+            "enum": [
+              "api_query"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "params": {
+            "title": "Params",
+            "type": "object"
+          },
+          "url": {
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "ApiQueryRef",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "ArtifactStored": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "artifact_sha256": "3f2a9c0000000000000000000000000000000000000000000000000000000000",
+            "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b02",
+            "source_id": "5b0c2f1e-8d6a-4c3b-9f7e-2a1d0c9b8e01"
+          }
+        ],
+        "properties": {
+          "artifact_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Artifact Sha256",
+            "type": "string"
+          },
+          "release_id": {
+            "format": "uuid",
+            "title": "Release Id",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "release_id",
+          "artifact_sha256"
+        ],
+        "title": "ArtifactStored",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "CapabilityRef": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "capability_id": "COMPARE_PERIOD",
+            "version": 1
+          }
+        ],
+        "properties": {
+          "capability_id": {
+            "description": "e.g. COMPARE_PERIOD",
+            "minLength": 1,
+            "title": "Capability Id",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "capability_id",
+          "version"
+        ],
+        "title": "CapabilityRef",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "ChangeKind": {
+        "enum": [
+          "new",
+          "revision"
+        ],
+        "title": "ChangeKind",
+        "type": "string"
+      },
+      "ColumnDiff": {
+        "additionalProperties": false,
+        "description": "Columns by normalised name, against the profile the approved mapping was based on.",
+        "properties": {
+          "added": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Added",
+            "type": "array"
+          },
+          "changed": {
+            "description": "Same name, different dtype or unit guess",
+            "items": {
+              "type": "string"
+            },
+            "title": "Changed",
+            "type": "array"
+          },
+          "removed": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Removed",
+            "type": "array"
+          }
+        },
+        "title": "ColumnDiff",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "ColumnProfile": {
+        "additionalProperties": false,
+        "properties": {
+          "dtype": {
+            "minLength": 1,
+            "title": "Dtype",
+            "type": "string"
+          },
+          "locale_guess": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Locale Guess"
+          },
+          "missing_markers_seen": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Markers Seen",
+            "type": "array"
+          },
+          "name_norm": {
+            "title": "Name Norm",
+            "type": "string"
+          },
+          "name_raw": {
+            "title": "Name Raw",
+            "type": "string"
+          },
+          "null_ratio": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Null Ratio",
+            "type": "number"
+          },
+          "position": {
+            "minimum": 0,
+            "title": "Position",
+            "type": "integer"
+          },
+          "samples": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5,
+            "title": "Samples",
+            "type": "array"
+          },
+          "unit_guess": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Unit Guess"
+          }
+        },
+        "required": [
+          "position",
+          "name_raw",
+          "name_norm",
+          "dtype",
+          "null_ratio"
+        ],
+        "title": "ColumnProfile",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "CsvProfile": {
+        "additionalProperties": false,
+        "properties": {
+          "archive_member": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "File inside a zip (JODI)",
+            "title": "Archive Member"
+          },
+          "delimiter": {
+            "default": ",",
+            "maxLength": 1,
+            "minLength": 1,
+            "title": "Delimiter",
+            "type": "string"
+          },
+          "header_row": {
+            "default": 1,
+            "minimum": 1,
+            "title": "Header Row",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "csv",
+            "enum": [
+              "csv"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "locale": {
+            "description": "en-US, vi-VN, …",
+            "pattern": "^[a-z]{2}-[A-Z]{2}$",
+            "title": "Locale",
+            "type": "string"
+          },
+          "missing_markers": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ObsStatus"
+            },
+            "description": "Source text → status, e.g. {\"NA\": \"not_published\"}",
+            "title": "Missing Markers",
+            "type": "object"
+          },
+          "row_filter": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Row Filter"
+          }
+        },
+        "required": [
+          "locale",
+          "kind"
+        ],
+        "title": "CsvProfile",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "DailyLagCalendar": {
+        "additionalProperties": false,
+        "description": "Period end plus `lag` (LBMA PM: end = midnight London).",
+        "properties": {
+          "kind": {
+            "const": "daily_lag",
+            "enum": [
+              "daily_lag"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "lag": {
+            "default": "PT0S",
+            "description": "ISO-8601 duration, e.g. PT0S",
+            "format": "duration",
+            "title": "Lag",
+            "type": "string"
+          },
+          "tz": {
+            "description": "IANA zone, e.g. America/New_York, Asia/Ho_Chi_Minh, UTC",
+            "pattern": "^(UTC|[A-Z][A-Za-z_]+(/[A-Za-z0-9_+\\-]+)+)$",
+            "title": "Tz",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "tz"
+        ],
+        "title": "DailyLagCalendar",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "DryRunRequest": {
+        "additionalProperties": false,
+        "description": "Read a release with a profile/mapping and show the result. Writes nothing.\n\nA missing `extraction_profile` / `mapping` means the source's current one; a\nmissing `release_id` means its latest release.",
+        "examples": [
+          {
+            "limit": 50,
+            "mapping": {
+              "time": {
+                "column": "Date",
+                "format": "excel_serial",
+                "frequency": "D",
+                "market_timezone": "America/New_York"
+              },
+              "values": [
+                {
+                  "column": "Europe Brent Spot Price FOB (Dollars per Barrel)",
+                  "measure": "value",
+                  "series_key": "EIA:RBRTE:D"
+                }
+              ]
+            },
+            "source_id": "5b0c2f1e-8d6a-4c3b-9f7e-2a1d0c9b8e01"
+          }
+        ],
+        "properties": {
+          "extraction_profile": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "csv": "#/components/schemas/CsvProfile",
+                    "html_table": "#/components/schemas/HtmlTableProfile",
+                    "json_path": "#/components/schemas/JsonPathProfile",
+                    "sdmx": "#/components/schemas/SdmxProfile",
+                    "xlsx_table": "#/components/schemas/XlsxTableProfile",
+                    "xml_path": "#/components/schemas/XmlPathProfile"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/CsvProfile"
+                  },
+                  {
+                    "$ref": "#/components/schemas/XlsxTableProfile"
+                  },
+                  {
+                    "$ref": "#/components/schemas/JsonPathProfile"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SdmxProfile"
+                  },
+                  {
+                    "$ref": "#/components/schemas/HtmlTableProfile"
+                  },
+                  {
+                    "$ref": "#/components/schemas/XmlPathProfile"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Extraction Profile"
+          },
+          "limit": {
+            "default": 100,
+            "maximum": 1000,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "mapping": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MappingRules"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "release_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Release Id"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id"
+        ],
+        "title": "DryRunRequest",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "DryRunResult": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "candidates_preview": [
+              {
+                "artifact_sha256": "3f2a9c0000000000000000000000000000000000000000000000000000000000",
+                "available_at": "2026-09-30T10:30:00-04:00",
+                "change_kind": "new",
+                "event_time_end": "2026-09-23T00:00:00-04:00",
+                "event_time_start": "2026-09-22T00:00:00-04:00",
+                "market_timezone": "America/New_York",
+                "obs_status": "value",
+                "origin": "structured_mapping",
+                "period_code": "2026-09-22",
+                "publication_time": "2026-09-30T10:30:00-04:00",
+                "raw_text": "67.42",
+                "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b02",
+                "series_key": "EIA:RBRTE:D",
+                "source_ref": {
+                  "col": "Europe Brent Spot Price FOB (Dollars per Barrel)",
+                  "kind": "cell",
+                  "row": 9864,
+                  "sheet": "Data 1"
+                },
+                "system_time": "2026-09-30T15:02:11Z",
+                "time_basis": "release_declared",
+                "unit": "usd_per_barrel",
+                "unit_multiplier": 0,
+                "value": "67.42"
+              }
+            ],
+            "parse_errors": [
+              {
+                "error_code": "AMBIGUOUS_NUMBER",
+                "location": {
+                  "col": "Europe Brent Spot Price FOB (Dollars per Barrel)",
+                  "kind": "cell",
+                  "row": 9870,
+                  "sheet": "Data 1"
+                },
+                "message": "'1.234' reads as 1234 or 1.234 under an undeclared locale",
+                "raw_text": "1.234"
+              }
+            ],
+            "profile": {
+              "columns": [
+                {
+                  "dtype": "date",
+                  "missing_markers_seen": [],
+                  "name_norm": "date",
+                  "name_raw": "Date",
+                  "null_ratio": 0.0,
+                  "position": 0,
+                  "samples": [
+                    "46289",
+                    "46290"
+                  ]
+                },
+                {
+                  "dtype": "decimal",
+                  "locale_guess": "en-US",
+                  "missing_markers_seen": [
+                    "NA"
+                  ],
+                  "name_norm": "europe brent spot price fob (dollars per barrel)",
+                  "name_raw": "Europe Brent Spot Price FOB (Dollars per Barrel)",
+                  "null_ratio": 0.001,
+                  "position": 1,
+                  "samples": [
+                    "67.42",
+                    "66.98"
+                  ],
+                  "unit_guess": "usd_per_barrel"
+                }
+              ],
+              "diff_vs_approved": {
+                "added": [],
+                "changed": [],
+                "removed": []
+              },
+              "fingerprint": "9b1e441111111111111111111111111111111111111111111111111111111111"
+            },
+            "release": {
+              "artifact_sha256": "3f2a9c0000000000000000000000000000000000000000000000000000000000",
+              "available_at": "2026-09-30T10:30:00-04:00",
+              "publication_time": "2026-09-30T10:30:00-04:00",
+              "publication_time_basis": "source_declared",
+              "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b02",
+              "release_seq": 42,
+              "source_id": "5b0c2f1e-8d6a-4c3b-9f7e-2a1d0c9b8e01"
+            },
+            "truncated": true
+          }
+        ],
+        "properties": {
+          "candidates_preview": {
+            "items": {
+              "$ref": "#/components/schemas/ObservationCandidate"
+            },
+            "title": "Candidates Preview",
+            "type": "array"
+          },
+          "parse_errors": {
+            "items": {
+              "$ref": "#/components/schemas/ParseError"
+            },
+            "title": "Parse Errors",
+            "type": "array"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/ProfileSummary"
+          },
+          "release": {
+            "$ref": "#/components/schemas/ReleaseRef"
+          },
+          "truncated": {
+            "description": "More candidates than `limit` were read",
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "release",
+          "profile",
+          "candidates_preview",
+          "parse_errors",
+          "truncated"
+        ],
+        "title": "DryRunResult",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "EntityRef": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "entity_id": "BRENT_SPOT"
+          }
+        ],
+        "properties": {
+          "entity_id": {
+            "description": "Stable id, e.g. BRENT_SPOT, GOLD_SJC_BAR",
+            "minLength": 1,
+            "title": "Entity Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_id"
+        ],
+        "title": "EntityRef",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "ErrorBody": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "error": {
+              "code": "VERSION_CONFLICT",
+              "current_version": 4,
+              "details": {},
+              "message": "mapping version 3 was changed by another reviewer"
+            }
+          }
+        ],
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "ErrorBody",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "ErrorCode": {
+        "enum": [
+          "NO_DATA_FOR_PERIOD",
+          "FREQUENCY_NOT_AVAILABLE",
+          "SERIES_NOT_APPROVED",
+          "STALE_SOURCE",
+          "ACCESS_DENIED",
+          "INSUFFICIENT_EVIDENCE",
+          "UNRESOLVED_ENTITY",
+          "VERSION_CONFLICT"
+        ],
+        "title": "ErrorCode",
+        "type": "string"
+      },
+      "ErrorDetail": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "$ref": "#/components/schemas/ErrorCode"
+          },
+          "current_version": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Set on VERSION_CONFLICT so the client can reload and show what changed",
+            "title": "Current Version"
+          },
+          "details": {
+            "title": "Details",
+            "type": "object"
+          },
+          "message": {
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorDetail",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "EventEnvelope": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "envelope_version": 1,
+            "event_id": "0f1e2d3c-4b5a-4968-8776-655443322a07",
+            "event_type": "artifact.stored",
+            "idempotency_key": "0f1e2d3c-4b5a-4968-8776-655443322a07",
+            "occurred_at": "2026-09-30T15:01:58Z",
+            "partition_key": "5b0c2f1e-8d6a-4c3b-9f7e-2a1d0c9b8e01",
+            "payload": {
+              "artifact_sha256": "3f2a9c0000000000000000000000000000000000000000000000000000000000",
+              "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b02",
+              "source_id": "5b0c2f1e-8d6a-4c3b-9f7e-2a1d0c9b8e01"
+            },
+            "producer": "web_crawler",
+            "schema_version": 1,
+            "tenant_id": "a0000000-0000-0000-0000-000000000001",
+            "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+          }
+        ],
+        "properties": {
+          "envelope_version": {
+            "const": 1,
+            "default": 1,
+            "enum": [
+              1
+            ],
+            "title": "Envelope Version",
+            "type": "integer"
+          },
+          "event_id": {
+            "format": "uuid",
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_type": {
+            "$ref": "#/components/schemas/EventType"
+          },
+          "idempotency_key": {
+            "description": "Consumers apply an event once per key; equals event_id unless the producer derives it from the business operation",
+            "minLength": 1,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "partition_key": {
+            "description": "Kafka key, i.e. the ordering key",
+            "minLength": 1,
+            "title": "Partition Key",
+            "type": "string"
+          },
+          "payload": {
+            "title": "Payload",
+            "type": "object"
+          },
+          "producer": {
+            "description": "web_crawler, series_extractor, …",
+            "minLength": 1,
+            "title": "Producer",
+            "type": "string"
+          },
+          "schema_version": {
+            "description": "Version of this event type's payload",
+            "minimum": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "trace_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Trace Id"
+          }
+        },
+        "required": [
+          "event_id",
+          "event_type",
+          "schema_version",
+          "tenant_id",
+          "occurred_at",
+          "producer",
+          "idempotency_key",
+          "partition_key",
+          "payload"
+        ],
+        "title": "EventEnvelope",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "EventType": {
+        "description": "The POC topics of 03 section 13 (forecast.* comes after the POC).",
+        "enum": [
+          "artifact.stored",
+          "source.sla.breached",
+          "extraction.completed",
+          "mapping.proposed",
+          "validation.completed",
+          "review.case.created",
+          "review.approved",
+          "observation.published",
+          "indicator.recomputed",
+          "knowledge.proposal.created",
+          "knowledge.verified",
+          "alert.raised"
+        ],
+        "title": "EventType",
+        "type": "string"
+      },
+      "EvidenceRef": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "artifact_sha256": "9b1e441111111111111111111111111111111111111111111111111111111111",
+            "evidence_id": "1d2c3b4a-5e6f-4a7b-8c9d-0e1f2a3b4c05",
+            "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b02",
+            "source_ref": {
+              "bottom": 352.0,
+              "kind": "page",
+              "left": 72.0,
+              "page_height": 842.0,
+              "page_no": 2,
+              "page_width": 595.0,
+              "quote_id": "q-17",
+              "right": 523.4,
+              "top": 310.5
+            }
+          }
+        ],
+        "properties": {
+          "artifact_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Artifact Sha256",
+            "type": "string"
+          },
+          "evidence_id": {
+            "format": "uuid",
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "release_id": {
+            "format": "uuid",
+            "title": "Release Id",
+            "type": "string"
+          },
+          "source_ref": {
+            "discriminator": {
+              "mapping": {
+                "api_query": "#/components/schemas/ApiQueryRef",
+                "cell": "#/components/schemas/TableCellRef",
+                "json_path": "#/components/schemas/JsonPathRef",
+                "page": "#/components/schemas/PageRef",
+                "xpath": "#/components/schemas/XPathRef"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TableCellRef"
+              },
+              {
+                "$ref": "#/components/schemas/JsonPathRef"
+              },
+              {
+                "$ref": "#/components/schemas/XPathRef"
+              },
+              {
+                "$ref": "#/components/schemas/PageRef"
+              },
+              {
+                "$ref": "#/components/schemas/ApiQueryRef"
+              }
+            ],
+            "title": "Source Ref"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "release_id",
+          "artifact_sha256",
+          "source_ref"
+        ],
+        "title": "EvidenceRef",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "ExtractionCompleted": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b02",
+            "source_id": "5b0c2f1e-8d6a-4c3b-9f7e-2a1d0c9b8e01"
+          }
+        ],
+        "properties": {
+          "release_id": {
+            "format": "uuid",
+            "title": "Release Id",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "release_id"
+        ],
+        "title": "ExtractionCompleted",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "FetchTime": {
+        "additionalProperties": false,
+        "description": "No publication time in the content: the fetch time stands in (time_basis first_seen).",
+        "properties": {
+          "from": {
+            "const": "fetch_time",
+            "enum": [
+              "fetch_time"
+            ],
+            "title": "From",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from"
+        ],
+        "title": "FetchTime",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "HtmlRegexTime": {
+        "additionalProperties": false,
+        "properties": {
+          "format": {
+            "description": "strptime format of the matched text",
+            "minLength": 1,
+            "title": "Format",
+            "type": "string"
+          },
+          "from": {
+            "const": "html_regex",
+            "enum": [
+              "html_regex"
+            ],
+            "title": "From",
+            "type": "string"
+          },
+          "pattern": {
+            "minLength": 1,
+            "title": "Pattern",
+            "type": "string"
+          },
+          "selector": {
+            "minLength": 1,
+            "title": "Selector",
+            "type": "string"
+          },
+          "tz": {
+            "description": "IANA zone, e.g. America/New_York, Asia/Ho_Chi_Minh, UTC",
+            "pattern": "^(UTC|[A-Z][A-Za-z_]+(/[A-Za-z0-9_+\\-]+)+)$",
+            "title": "Tz",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "selector",
+          "pattern",
+          "format",
+          "tz"
+        ],
+        "title": "HtmlRegexTime",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "HtmlTableProfile": {
+        "additionalProperties": false,
+        "description": "CSS selectors for the table, its rows and named cells — also for card-style div blocks.",
+        "properties": {
+          "cells": {
+            "additionalProperties": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "description": "cell name → selector",
+            "minProperties": 1,
+            "title": "Cells",
+            "type": "object"
+          },
+          "kind": {
+            "const": "html_table",
+            "enum": [
+              "html_table"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "locale": {
+            "description": "en-US, vi-VN, …",
+            "pattern": "^[a-z]{2}-[A-Z]{2}$",
+            "title": "Locale",
+            "type": "string"
+          },
+          "missing_markers": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ObsStatus"
+            },
+            "description": "Source text → status, e.g. {\"NA\": \"not_published\"}",
+            "title": "Missing Markers",
+            "type": "object"
+          },
+          "row_filter": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Row Filter"
+          },
+          "rows": {
+            "minLength": 1,
+            "title": "Rows",
+            "type": "string"
+          },
+          "table": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Table"
+          },
+          "unit_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Selector of the unit caption",
+            "title": "Unit Text"
+          }
+        },
+        "required": [
+          "locale",
+          "kind",
+          "rows",
+          "cells"
+        ],
+        "title": "HtmlTableProfile",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "JsonMaxDateTime": {
+        "additionalProperties": false,
+        "description": "The latest date among the rows (LBMA: the largest `d`).",
+        "properties": {
+          "format": {
+            "minLength": 1,
+            "title": "Format",
+            "type": "string"
+          },
+          "from": {
+            "const": "json_max_date",
+            "enum": [
+              "json_max_date"
+            ],
+            "title": "From",
+            "type": "string"
+          },
+          "path": {
+            "description": "JSONPath of the date values",
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "description": "HH:MM, 24h",
+                "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Time"
+          },
+          "tz": {
+            "description": "IANA zone, e.g. America/New_York, Asia/Ho_Chi_Minh, UTC",
+            "pattern": "^(UTC|[A-Z][A-Za-z_]+(/[A-Za-z0-9_+\\-]+)+)$",
+            "title": "Tz",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "path",
+          "format",
+          "tz"
+        ],
+        "title": "JsonMaxDateTime",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "JsonPathProfile": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "json_path",
+            "enum": [
+              "json_path"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "locale": {
+            "description": "en-US, vi-VN, …",
+            "pattern": "^[a-z]{2}-[A-Z]{2}$",
+            "title": "Locale",
+            "type": "string"
+          },
+          "missing_markers": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ObsStatus"
+            },
+            "description": "Source text → status, e.g. {\"NA\": \"not_published\"}",
+            "title": "Missing Markers",
+            "type": "object"
+          },
+          "row_filter": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Row Filter"
+          },
+          "rows": {
+            "description": "JSONPath of the row array, e.g. $.gold.pm",
+            "minLength": 1,
+            "title": "Rows",
+            "type": "string"
+          }
+        },
+        "required": [
+          "locale",
+          "kind",
+          "rows"
+        ],
+        "title": "JsonPathProfile",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "JsonPathRef": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "json_path",
+            "default": "json_path",
+            "enum": [
+              "json_path"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "path": {
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "JsonPathRef",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "MappingProposed": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "mapping_version_id": "3a4b5c6d-7e8f-4a9b-8c0d-1e2f3a4b5c08",
+            "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b02",
+            "source_id": "5b0c2f1e-8d6a-4c3b-9f7e-2a1d0c9b8e01"
+          }
+        ],
+        "properties": {
+          "mapping_version_id": {
+            "format": "uuid",
+            "title": "Mapping Version Id",
+            "type": "string"
+          },
+          "release_id": {
+            "format": "uuid",
+            "title": "Release Id",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "release_id",
+          "mapping_version_id"
+        ],
+        "title": "MappingProposed",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "MappingRules": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "time": {
+              "column": "Date",
+              "format": "excel_serial",
+              "frequency": "D",
+              "market_timezone": "America/New_York"
+            },
+            "values": [
+              {
+                "column": "Europe Brent Spot Price FOB (Dollars per Barrel)",
+                "measure": "value",
+                "series_key": "EIA:RBRTE:D"
+              }
+            ]
+          }
+        ],
+        "properties": {
+          "side_columns": {
+            "description": "Kept in source_ref but never turned into numbers (Vietcombank 'Transfer')",
+            "items": {
+              "type": "string"
+            },
+            "title": "Side Columns",
+            "type": "array"
+          },
+          "time": {
+            "$ref": "#/components/schemas/TimeRule"
+          },
+          "values": {
+            "items": {
+              "$ref": "#/components/schemas/ValueRule"
+            },
+            "minItems": 1,
+            "title": "Values",
+            "type": "array"
+          }
+        },
+        "required": [
+          "time",
+          "values"
+        ],
+        "title": "MappingRules",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "MonthlyDayCalendar": {
+        "additionalProperties": false,
+        "description": "Day `day` of the month after the period end, at `time` (IMF PCPS 10, Pink Sheet 5).",
+        "properties": {
+          "day": {
+            "description": "≤ 28 so every month has the day",
+            "maximum": 28,
+            "minimum": 1,
+            "title": "Day",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "monthly_day",
+            "enum": [
+              "monthly_day"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "time": {
+            "description": "HH:MM, 24h",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+            "title": "Time",
+            "type": "string"
+          },
+          "tz": {
+            "description": "IANA zone, e.g. America/New_York, Asia/Ho_Chi_Minh, UTC",
+            "pattern": "^(UTC|[A-Z][A-Za-z_]+(/[A-Za-z0-9_+\\-]+)+)$",
+            "title": "Tz",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "day",
+          "time",
+          "tz"
+        ],
+        "title": "MonthlyDayCalendar",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "NoCalendar": {
+        "additionalProperties": false,
+        "description": "Cannot be inferred: historical numbers get time_basis first_seen.",
+        "properties": {
+          "kind": {
+            "const": "none",
+            "enum": [
+              "none"
+            ],
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "NoCalendar",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "ObsStatus": {
+        "enum": [
+          "value",
+          "missing",
+          "not_published",
+          "withheld",
+          "confidential"
+        ],
+        "title": "ObsStatus",
+        "type": "string"
+      },
+      "Observation": {
+        "additionalProperties": false,
+        "description": "An effective observation: one row per version in ClickHouse `obs.observation`.",
+        "examples": [
+          {
+            "artifact_sha256": "3f2a9c0000000000000000000000000000000000000000000000000000000000",
+            "available_at": "2026-09-30T10:30:00-04:00",
+            "effective_version": 1,
+            "event_time_end": "2026-09-23T00:00:00-04:00",
+            "event_time_start": "2026-09-22T00:00:00-04:00",
+            "market_timezone": "America/New_York",
+            "obs_status": "value",
+            "publication_time": "2026-09-30T10:30:00-04:00",
+            "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b02",
+            "review_case_id": null,
+            "series_key": "EIA:RBRTE:D",
+            "source_ref": {
+              "col": "Europe Brent Spot Price FOB (Dollars per Barrel)",
+              "kind": "cell",
+              "row": 9864,
+              "sheet": "Data 1"
+            },
+            "system_time": "2026-09-30T15:02:11Z",
+            "unit": "usd_per_barrel",
+            "unit_multiplier": 0,
+            "value": "67.42",
+            "version_kind": "machine"
+          }
+        ],
+        "properties": {
+          "artifact_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Artifact Sha256",
+            "type": "string"
+          },
+          "available_at": {
+            "format": "date-time",
+            "title": "Available At",
+            "type": "string"
+          },
+          "effective_version": {
+            "minimum": 1,
+            "title": "Effective Version",
+            "type": "integer"
+          },
+          "event_time_end": {
+            "format": "date-time",
+            "title": "Event Time End",
+            "type": "string"
+          },
+          "event_time_start": {
+            "format": "date-time",
+            "title": "Event Time Start",
+            "type": "string"
+          },
+          "market_timezone": {
+            "description": "IANA zone, e.g. America/New_York, Asia/Ho_Chi_Minh, UTC",
+            "pattern": "^(UTC|[A-Z][A-Za-z_]+(/[A-Za-z0-9_+\\-]+)+)$",
+            "title": "Market Timezone",
+            "type": "string"
+          },
+          "obs_status": {
+            "$ref": "#/components/schemas/ObsStatus"
+          },
+          "publication_time": {
+            "format": "date-time",
+            "title": "Publication Time",
+            "type": "string"
+          },
+          "release_id": {
+            "format": "uuid",
+            "title": "Release Id",
+            "type": "string"
+          },
+          "review_case_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Review Case Id"
+          },
+          "series_key": {
+            "description": "e.g. EIA:RBRTE:D",
+            "pattern": "^[A-Z0-9][A-Z0-9_.\\-]*(:[A-Z0-9][A-Z0-9_.\\-]*)+$",
+            "title": "Series Key",
+            "type": "string"
+          },
+          "source_ref": {
+            "discriminator": {
+              "mapping": {
+                "api_query": "#/components/schemas/ApiQueryRef",
+                "cell": "#/components/schemas/TableCellRef",
+                "json_path": "#/components/schemas/JsonPathRef",
+                "page": "#/components/schemas/PageRef",
+                "xpath": "#/components/schemas/XPathRef"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TableCellRef"
+              },
+              {
+                "$ref": "#/components/schemas/JsonPathRef"
+              },
+              {
+                "$ref": "#/components/schemas/XPathRef"
+              },
+              {
+                "$ref": "#/components/schemas/PageRef"
+              },
+              {
+                "$ref": "#/components/schemas/ApiQueryRef"
+              }
+            ],
+            "title": "Source Ref"
+          },
+          "system_time": {
+            "format": "date-time",
+            "title": "System Time",
+            "type": "string"
+          },
+          "unit": {
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Unit",
+            "type": "string"
+          },
+          "unit_multiplier": {
+            "default": 0,
+            "maximum": 18,
+            "minimum": -18,
+            "title": "Unit Multiplier",
+            "type": "integer"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "version_kind": {
+            "$ref": "#/components/schemas/VersionKind"
+          }
+        },
+        "required": [
+          "event_time_start",
+          "event_time_end",
+          "market_timezone",
+          "publication_time",
+          "available_at",
+          "system_time",
+          "series_key",
+          "value",
+          "obs_status",
+          "unit",
+          "source_ref",
+          "release_id",
+          "artifact_sha256",
+          "version_kind",
+          "effective_version"
+        ],
+        "title": "Observation",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "ObservationCandidate": {
+        "additionalProperties": false,
+        "description": "A number an extractor proposes, before data quality and review.",
+        "examples": [
+          {
+            "artifact_sha256": "3f2a9c0000000000000000000000000000000000000000000000000000000000",
+            "available_at": "2026-09-30T10:30:00-04:00",
+            "change_kind": "new",
+            "event_time_end": "2026-09-23T00:00:00-04:00",
+            "event_time_start": "2026-09-22T00:00:00-04:00",
+            "market_timezone": "America/New_York",
+            "obs_status": "value",
+            "origin": "structured_mapping",
+            "period_code": "2026-09-22",
+            "publication_time": "2026-09-30T10:30:00-04:00",
+            "raw_text": "67.42",
+            "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b02",
+            "series_key": "EIA:RBRTE:D",
+            "source_ref": {
+              "col": "Europe Brent Spot Price FOB (Dollars per Barrel)",
+              "kind": "cell",
+              "row": 9864,
+              "sheet": "Data 1"
+            },
+            "system_time": "2026-09-30T15:02:11Z",
+            "time_basis": "release_declared",
+            "unit": "usd_per_barrel",
+            "unit_multiplier": 0,
+            "value": "67.42"
+          }
+        ],
+        "properties": {
+          "artifact_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Artifact Sha256",
+            "type": "string"
+          },
+          "available_at": {
+            "format": "date-time",
+            "title": "Available At",
+            "type": "string"
+          },
+          "change_kind": {
+            "$ref": "#/components/schemas/ChangeKind"
+          },
+          "event_time_end": {
+            "format": "date-time",
+            "title": "Event Time End",
+            "type": "string"
+          },
+          "event_time_start": {
+            "format": "date-time",
+            "title": "Event Time Start",
+            "type": "string"
+          },
+          "market_timezone": {
+            "description": "IANA zone, e.g. America/New_York, Asia/Ho_Chi_Minh, UTC",
+            "pattern": "^(UTC|[A-Z][A-Za-z_]+(/[A-Za-z0-9_+\\-]+)+)$",
+            "title": "Market Timezone",
+            "type": "string"
+          },
+          "obs_status": {
+            "$ref": "#/components/schemas/ObsStatus"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/Origin"
+          },
+          "period_code": {
+            "description": "Display spelling of the period: 2026-09-15, 2026-M08, 2026-W38, P:2398/QĐ-BCT",
+            "minLength": 1,
+            "title": "Period Code",
+            "type": "string"
+          },
+          "publication_time": {
+            "format": "date-time",
+            "title": "Publication Time",
+            "type": "string"
+          },
+          "raw_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The source cell as written: '25,760.00', '25.226', '…'",
+            "title": "Raw Text"
+          },
+          "release_id": {
+            "format": "uuid",
+            "title": "Release Id",
+            "type": "string"
+          },
+          "series_key": {
+            "description": "e.g. EIA:RBRTE:D",
+            "pattern": "^[A-Z0-9][A-Z0-9_.\\-]*(:[A-Z0-9][A-Z0-9_.\\-]*)+$",
+            "title": "Series Key",
+            "type": "string"
+          },
+          "source_ref": {
+            "discriminator": {
+              "mapping": {
+                "api_query": "#/components/schemas/ApiQueryRef",
+                "cell": "#/components/schemas/TableCellRef",
+                "json_path": "#/components/schemas/JsonPathRef",
+                "page": "#/components/schemas/PageRef",
+                "xpath": "#/components/schemas/XPathRef"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TableCellRef"
+              },
+              {
+                "$ref": "#/components/schemas/JsonPathRef"
+              },
+              {
+                "$ref": "#/components/schemas/XPathRef"
+              },
+              {
+                "$ref": "#/components/schemas/PageRef"
+              },
+              {
+                "$ref": "#/components/schemas/ApiQueryRef"
+              }
+            ],
+            "title": "Source Ref"
+          },
+          "system_time": {
+            "format": "date-time",
+            "title": "System Time",
+            "type": "string"
+          },
+          "time_basis": {
+            "$ref": "#/components/schemas/TimeBasis"
+          },
+          "unit": {
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Unit",
+            "type": "string"
+          },
+          "unit_multiplier": {
+            "default": 0,
+            "maximum": 18,
+            "minimum": -18,
+            "title": "Unit Multiplier",
+            "type": "integer"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "pattern": "^-?\\d+(\\.\\d+)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "event_time_start",
+          "event_time_end",
+          "market_timezone",
+          "publication_time",
+          "available_at",
+          "system_time",
+          "series_key",
+          "value",
+          "obs_status",
+          "unit",
+          "source_ref",
+          "release_id",
+          "artifact_sha256",
+          "time_basis",
+          "origin",
+          "period_code",
+          "change_kind"
+        ],
+        "title": "ObservationCandidate",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "Origin": {
+        "enum": [
+          "structured_mapping",
+          "document_extraction",
+          "manual_entry"
+        ],
+        "title": "Origin",
+        "type": "string"
+      },
+      "PageRef": {
+        "additionalProperties": false,
+        "description": "A region of a PDF page, in the same top-left-origin points Docling parsing stores.\n\nThe shape is repeated rather than imported from libs.basemodel so the\ncontract stays a leaf package (.importlinter `contracts-is-a-leaf`).",
+        "properties": {
+          "bottom": {
+            "title": "Bottom",
+            "type": "number"
+          },
+          "kind": {
+            "const": "page",
+            "default": "page",
+            "enum": [
+              "page"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "left": {
+            "title": "Left",
+            "type": "number"
+          },
+          "page_height": {
+            "exclusiveMinimum": 0.0,
+            "title": "Page Height",
+            "type": "number"
+          },
+          "page_no": {
+            "minimum": 1,
+            "title": "Page No",
+            "type": "integer"
+          },
+          "page_width": {
+            "exclusiveMinimum": 0.0,
+            "title": "Page Width",
+            "type": "number"
+          },
+          "quote_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Quote Id"
+          },
+          "right": {
+            "title": "Right",
+            "type": "number"
+          },
+          "top": {
+            "title": "Top",
+            "type": "number"
+          }
+        },
+        "required": [
+          "page_no",
+          "left",
+          "top",
+          "right",
+          "bottom",
+          "page_width",
+          "page_height"
+        ],
+        "title": "PageRef",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "ParseError": {
+        "additionalProperties": false,
+        "description": "One value that could not be read. Never guessed: `1.234` with an unknown locale stays an error.",
+        "examples": [
+          {
+            "error_code": "AMBIGUOUS_NUMBER",
+            "location": {
+              "col": "Europe Brent Spot Price FOB (Dollars per Barrel)",
+              "kind": "cell",
+              "row": 9870,
+              "sheet": "Data 1"
+            },
+            "message": "'1.234' reads as 1234 or 1.234 under an undeclared locale",
+            "raw_text": "1.234"
+          }
+        ],
+        "properties": {
+          "error_code": {
+            "$ref": "#/components/schemas/ParseErrorCode"
+          },
+          "location": {
+            "discriminator": {
+              "mapping": {
+                "cell": "#/components/schemas/TableCellRef",
+                "json_path": "#/components/schemas/JsonPathRef",
+                "xpath": "#/components/schemas/XPathRef"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TableCellRef"
+              },
+              {
+                "$ref": "#/components/schemas/JsonPathRef"
+              },
+              {
+                "$ref": "#/components/schemas/XPathRef"
+              }
+            ],
+            "title": "Location"
+          },
+          "message": {
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "raw_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Raw Text"
+          }
+        },
+        "required": [
+          "location",
+          "error_code",
+          "message"
+        ],
+        "title": "ParseError",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "ParseErrorCode": {
+        "enum": [
+          "AMBIGUOUS_NUMBER",
+          "BAD_PERIOD",
+          "UNKNOWN_MARKER",
+          "UNIT_MISMATCH"
+        ],
+        "title": "ParseErrorCode",
+        "type": "string"
+      },
+      "ProfileSummary": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "columns": [
+              {
+                "dtype": "date",
+                "missing_markers_seen": [],
+                "name_norm": "date",
+                "name_raw": "Date",
+                "null_ratio": 0.0,
+                "position": 0,
+                "samples": [
+                  "46289",
+                  "46290"
+                ]
+              },
+              {
+                "dtype": "decimal",
+                "locale_guess": "en-US",
+                "missing_markers_seen": [
+                  "NA"
+                ],
+                "name_norm": "europe brent spot price fob (dollars per barrel)",
+                "name_raw": "Europe Brent Spot Price FOB (Dollars per Barrel)",
+                "null_ratio": 0.001,
+                "position": 1,
+                "samples": [
+                  "67.42",
+                  "66.98"
+                ],
+                "unit_guess": "usd_per_barrel"
+              }
+            ],
+            "diff_vs_approved": {
+              "added": [],
+              "changed": [],
+              "removed": []
+            },
+            "fingerprint": "9b1e441111111111111111111111111111111111111111111111111111111111"
+          }
+        ],
+        "properties": {
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/ColumnProfile"
+            },
+            "title": "Columns",
+            "type": "array"
+          },
+          "diff_vs_approved": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ColumnDiff"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "None when the source has no approved mapping yet"
+          },
+          "fingerprint": {
+            "description": "Structure signature: columns sorted by name + declared locale and markers",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Fingerprint",
+            "type": "string"
+          }
+        },
+        "required": [
+          "columns",
+          "fingerprint"
+        ],
+        "title": "ProfileSummary",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "PublicationTimeBasis": {
+        "enum": [
+          "source_declared",
+          "fetch_time"
+        ],
+        "title": "PublicationTimeBasis",
+        "type": "string"
+      },
+      "Purpose": {
+        "enum": [
+          "production",
+          "evaluation"
+        ],
+        "title": "Purpose",
+        "type": "string"
+      },
+      "RateLimit": {
+        "additionalProperties": false,
+        "properties": {
+          "min_interval_s": {
+            "minimum": 1,
+            "title": "Min Interval S",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "min_interval_s"
+        ],
+        "title": "RateLimit",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "ReleaseRef": {
+        "additionalProperties": false,
+        "description": "One new content of a source (14 section 5.1).",
+        "examples": [
+          {
+            "artifact_sha256": "3f2a9c0000000000000000000000000000000000000000000000000000000000",
+            "available_at": "2026-09-30T10:30:00-04:00",
+            "publication_time": "2026-09-30T10:30:00-04:00",
+            "publication_time_basis": "source_declared",
+            "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b02",
+            "release_seq": 42,
+            "source_id": "5b0c2f1e-8d6a-4c3b-9f7e-2a1d0c9b8e01"
+          }
+        ],
+        "properties": {
+          "artifact_sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Artifact Sha256",
+            "type": "string"
+          },
+          "available_at": {
+            "format": "date-time",
+            "title": "Available At",
+            "type": "string"
+          },
+          "publication_time": {
+            "format": "date-time",
+            "title": "Publication Time",
+            "type": "string"
+          },
+          "publication_time_basis": {
+            "$ref": "#/components/schemas/PublicationTimeBasis"
+          },
+          "release_id": {
+            "format": "uuid",
+            "title": "Release Id",
+            "type": "string"
+          },
+          "release_seq": {
+            "minimum": 1,
+            "title": "Release Seq",
+            "type": "integer"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "release_id",
+          "source_id",
+          "artifact_sha256",
+          "release_seq",
+          "publication_time",
+          "publication_time_basis",
+          "available_at"
+        ],
+        "title": "ReleaseRef",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "ReleaseTimes": {
+        "additionalProperties": false,
+        "description": "`release_info` of a source: where to read this release's times.",
+        "properties": {
+          "next_release_time": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "fetch_time": "#/components/schemas/FetchTime",
+                    "html_regex": "#/components/schemas/HtmlRegexTime",
+                    "json_max_date": "#/components/schemas/JsonMaxDateTime",
+                    "sdmx_dataset_attr": "#/components/schemas/SdmxDatasetAttrTime",
+                    "xls_cell": "#/components/schemas/XlsCellTime",
+                    "xml_text": "#/components/schemas/XmlTextTime"
+                  },
+                  "propertyName": "from"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/XlsCellTime"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SdmxDatasetAttrTime"
+                  },
+                  {
+                    "$ref": "#/components/schemas/HtmlRegexTime"
+                  },
+                  {
+                    "$ref": "#/components/schemas/JsonMaxDateTime"
+                  },
+                  {
+                    "$ref": "#/components/schemas/XmlTextTime"
+                  },
+                  {
+                    "$ref": "#/components/schemas/FetchTime"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Release Time"
+          },
+          "publication_time": {
+            "discriminator": {
+              "mapping": {
+                "fetch_time": "#/components/schemas/FetchTime",
+                "html_regex": "#/components/schemas/HtmlRegexTime",
+                "json_max_date": "#/components/schemas/JsonMaxDateTime",
+                "sdmx_dataset_attr": "#/components/schemas/SdmxDatasetAttrTime",
+                "xls_cell": "#/components/schemas/XlsCellTime",
+                "xml_text": "#/components/schemas/XmlTextTime"
+              },
+              "propertyName": "from"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/XlsCellTime"
+              },
+              {
+                "$ref": "#/components/schemas/SdmxDatasetAttrTime"
+              },
+              {
+                "$ref": "#/components/schemas/HtmlRegexTime"
+              },
+              {
+                "$ref": "#/components/schemas/JsonMaxDateTime"
+              },
+              {
+                "$ref": "#/components/schemas/XmlTextTime"
+              },
+              {
+                "$ref": "#/components/schemas/FetchTime"
+              }
+            ],
+            "title": "Publication Time"
+          }
+        },
+        "required": [
+          "publication_time"
+        ],
+        "title": "ReleaseTimes",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "ReviewCaseKind": {
+        "enum": [
+          "SCHEMA_DRIFT",
+          "DQ_BLOCK",
+          "CONFLICT",
+          "EXTRACTION_LOW_CONF"
+        ],
+        "title": "ReviewCaseKind",
+        "type": "string"
+      },
+      "ReviewCaseRef": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "case_id": "2e3f4a5b-6c7d-4e8f-9a0b-1c2d3e4f5a06",
+            "kind": "SCHEMA_DRIFT",
+            "version": 3
+          }
+        ],
+        "properties": {
+          "case_id": {
+            "format": "uuid",
+            "title": "Case Id",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ReviewCaseKind"
+          },
+          "version": {
+            "description": "Send back as expected_version when deciding",
+            "minimum": 1,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "case_id",
+          "kind",
+          "version"
+        ],
+        "title": "ReviewCaseRef",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "SdmxDatasetAttrTime": {
+        "additionalProperties": false,
+        "description": "An attribute of the SDMX DataSet (IMF PUBLICATION_DATE is not in the Header).",
+        "properties": {
+          "attr": {
+            "minLength": 1,
+            "title": "Attr",
+            "type": "string"
+          },
+          "from": {
+            "const": "sdmx_dataset_attr",
+            "enum": [
+              "sdmx_dataset_attr"
+            ],
+            "title": "From",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "attr"
+        ],
+        "title": "SdmxDatasetAttrTime",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "SdmxMessage": {
+        "enum": [
+          "structure_specific",
+          "generic"
+        ],
+        "title": "SdmxMessage",
+        "type": "string"
+      },
+      "SdmxProfile": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "sdmx",
+            "enum": [
+              "sdmx"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "locale": {
+            "description": "en-US, vi-VN, …",
+            "pattern": "^[a-z]{2}-[A-Z]{2}$",
+            "title": "Locale",
+            "type": "string"
+          },
+          "message": {
+            "$ref": "#/components/schemas/SdmxMessage",
+            "default": "structure_specific"
+          },
+          "missing_markers": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ObsStatus"
+            },
+            "description": "Source text → status, e.g. {\"NA\": \"not_published\"}",
+            "title": "Missing Markers",
+            "type": "object"
+          },
+          "row_filter": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Row Filter"
+          }
+        },
+        "required": [
+          "locale",
+          "kind"
+        ],
+        "title": "SdmxProfile",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "SeriesRef": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "currency": "USD",
+            "entity_id": "BRENT_SPOT",
+            "frequency": "D",
+            "series_key": "EIA:RBRTE:D",
+            "unit": "money",
+            "unit_multiplier": 0
+          }
+        ],
+        "properties": {
+          "currency": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Z]{3}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Currency"
+          },
+          "entity_id": {
+            "minLength": 1,
+            "title": "Entity Id",
+            "type": "string"
+          },
+          "frequency": {
+            "pattern": "^[DWMQAIP]$",
+            "title": "Frequency",
+            "type": "string"
+          },
+          "series_key": {
+            "description": "e.g. EIA:RBRTE:D",
+            "pattern": "^[A-Z0-9][A-Z0-9_.\\-]*(:[A-Z0-9][A-Z0-9_.\\-]*)+$",
+            "title": "Series Key",
+            "type": "string"
+          },
+          "unit": {
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Unit",
+            "type": "string"
+          },
+          "unit_multiplier": {
+            "default": 0,
+            "description": "Power of ten, as Quantity.multiplier",
+            "maximum": 18,
+            "minimum": -18,
+            "title": "Unit Multiplier",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "series_key",
+          "entity_id",
+          "unit",
+          "frequency"
+        ],
+        "title": "SeriesRef",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "SourceConfigV2": {
+        "additionalProperties": false,
+        "description": "The V2 keys of a source config. Bulk Import and the form both write through it (NOP-122).\n\nOnly `licence` and `use_rights` apply to every source; a document or\nmanual-upload source has no extraction profile or calendar.",
+        "examples": [
+          {
+            "entity": "BRENT_SPOT",
+            "extraction_profile": {
+              "header_row": 3,
+              "kind": "xlsx_table",
+              "locale": "en-US",
+              "missing_markers": {
+                "-": "missing",
+                "--": "missing",
+                "NA": "not_published",
+                "W": "withheld"
+              },
+              "sheet": "Data 1"
+            },
+            "freshness_sla": "P8D",
+            "licence": "US government data (EIA), ghi nguồn",
+            "purpose": "production",
+            "release_calendar": {
+              "kind": "weekly_after",
+              "time": "10:30",
+              "tz": "America/New_York",
+              "weekday": "WED"
+            },
+            "release_info": {
+              "next_release_time": {
+                "from": "xls_cell",
+                "label": "Next Release Date:",
+                "sheet": "Contents",
+                "time": "10:30",
+                "tz": "America/New_York"
+              },
+              "publication_time": {
+                "from": "xls_cell",
+                "label": "Release Date:",
+                "sheet": "Contents",
+                "time": "10:30",
+                "tz": "America/New_York"
+              }
+            },
+            "use_rights": "internal_analysis"
+          }
+        ],
+        "properties": {
+          "capture_response": {
+            "anyOf": [
+              {
+                "pattern": "^https?://",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "URL of the response a headless crawl captures (LBMA today.json)",
+            "title": "Capture Response"
+          },
+          "entity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Hint for reverse schema, not a mapping",
+            "title": "Entity"
+          },
+          "extraction_profile": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "csv": "#/components/schemas/CsvProfile",
+                    "html_table": "#/components/schemas/HtmlTableProfile",
+                    "json_path": "#/components/schemas/JsonPathProfile",
+                    "sdmx": "#/components/schemas/SdmxProfile",
+                    "xlsx_table": "#/components/schemas/XlsxTableProfile",
+                    "xml_path": "#/components/schemas/XmlPathProfile"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/CsvProfile"
+                  },
+                  {
+                    "$ref": "#/components/schemas/XlsxTableProfile"
+                  },
+                  {
+                    "$ref": "#/components/schemas/JsonPathProfile"
+                  },
+                  {
+                    "$ref": "#/components/schemas/SdmxProfile"
+                  },
+                  {
+                    "$ref": "#/components/schemas/HtmlTableProfile"
+                  },
+                  {
+                    "$ref": "#/components/schemas/XmlPathProfile"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Extraction Profile"
+          },
+          "follow_link_pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Follow Link Pattern"
+          },
+          "freshness_sla": {
+            "anyOf": [
+              {
+                "format": "duration",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "ISO-8601 duration; no new release within it → source.sla.breached",
+            "title": "Freshness Sla"
+          },
+          "licence": {
+            "minLength": 1,
+            "title": "Licence",
+            "type": "string"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/Purpose",
+            "default": "production"
+          },
+          "rate_limit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateLimit"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "release_calendar": {
+            "anyOf": [
+              {
+                "discriminator": {
+                  "mapping": {
+                    "daily_lag": "#/components/schemas/DailyLagCalendar",
+                    "monthly_day": "#/components/schemas/MonthlyDayCalendar",
+                    "none": "#/components/schemas/NoCalendar",
+                    "weekly_after": "#/components/schemas/WeeklyAfterCalendar"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/WeeklyAfterCalendar"
+                  },
+                  {
+                    "$ref": "#/components/schemas/DailyLagCalendar"
+                  },
+                  {
+                    "$ref": "#/components/schemas/MonthlyDayCalendar"
+                  },
+                  {
+                    "$ref": "#/components/schemas/NoCalendar"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Release Calendar"
+          },
+          "release_info": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseTimes"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "use_rights": {
+            "$ref": "#/components/schemas/UseRights"
+          }
+        },
+        "required": [
+          "licence",
+          "use_rights"
+        ],
+        "title": "SourceConfigV2",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "SourceSlaBreached": {
+        "additionalProperties": false,
+        "examples": [
+          {
+            "overdue_since": "2026-10-08T10:30:00-04:00",
+            "source_id": "5b0c2f1e-8d6a-4c3b-9f7e-2a1d0c9b8e01"
+          }
+        ],
+        "properties": {
+          "overdue_since": {
+            "format": "date-time",
+            "title": "Overdue Since",
+            "type": "string"
+          },
+          "source_id": {
+            "format": "uuid",
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "overdue_since"
+        ],
+        "title": "SourceSlaBreached",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "TableCellRef": {
+        "additionalProperties": false,
+        "description": "A cell of a CSV/XLSX sheet, or a row/cell of an HTML table (`col` = the cell name).",
+        "properties": {
+          "col": {
+            "minLength": 1,
+            "title": "Col",
+            "type": "string"
+          },
+          "kind": {
+            "const": "cell",
+            "default": "cell",
+            "enum": [
+              "cell"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "row": {
+            "minimum": 0,
+            "title": "Row",
+            "type": "integer"
+          },
+          "sheet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Sheet"
+          }
+        },
+        "required": [
+          "row",
+          "col"
+        ],
+        "title": "TableCellRef",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "TimeBasis": {
+        "description": "Where `available_at` came from (14 section 7.1).",
+        "enum": [
+          "release_declared",
+          "calendar_inferred",
+          "first_seen",
+          "document_stated"
+        ],
+        "title": "TimeBasis",
+        "type": "string"
+      },
+      "TimeRule": {
+        "additionalProperties": false,
+        "description": "Where the period of each row comes from.\n\nOne selector: a `column` (by header name or 0-based position), a `field`\n(JSON/SDMX), or `from: release_publication_time` for sources that only ever\nshow the current price (PNJ, DOJI, Vietcombank).",
+        "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "enum": [
+                  "period_start",
+                  "period_end"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Which end of the period the date names (EIA weekly: period_end)",
+            "title": "Anchor"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Column"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Field"
+          },
+          "format": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "excel_serial or a strptime format such as %Y-M%m",
+            "title": "Format"
+          },
+          "frequency": {
+            "pattern": "^[DWMQAIP]$",
+            "title": "Frequency",
+            "type": "string"
+          },
+          "from": {
+            "anyOf": [
+              {
+                "const": "release_publication_time",
+                "enum": [
+                  "release_publication_time"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "From"
+          },
+          "market_timezone": {
+            "description": "IANA zone, e.g. America/New_York, Asia/Ho_Chi_Minh, UTC",
+            "pattern": "^(UTC|[A-Z][A-Za-z_]+(/[A-Za-z0-9_+\\-]+)+)$",
+            "title": "Market Timezone",
+            "type": "string"
+          },
+          "session_time": {
+            "anyOf": [
+              {
+                "description": "HH:MM, 24h",
+                "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Clock time of the fixing when the date has none (LBMA PM 15:00)",
+            "title": "Session Time"
+          },
+          "year_from": {
+            "anyOf": [
+              {
+                "const": "fetch_time",
+                "enum": [
+                  "fetch_time"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The date has no year (LBMA today.json '29/09')",
+            "title": "Year From"
+          }
+        },
+        "required": [
+          "frequency",
+          "market_timezone"
+        ],
+        "title": "TimeRule",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "UseRights": {
+        "enum": [
+          "internal_analysis",
+          "pending_review",
+          "blocked"
+        ],
+        "title": "UseRights",
+        "type": "string"
+      },
+      "ValueRule": {
+        "additionalProperties": false,
+        "description": "One value the source publishes, and the series it feeds.\n\nPicked by `column` (table), `field` (JSON row or named HTML cell), `attr`\n(XML attribute), or `select` (row/dimension values: SDMX INDICATOR, the\nproduct name of a price board) — `select` combines with `field`.",
+        "properties": {
+          "attr": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Attr"
+          },
+          "column": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Column"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Field"
+          },
+          "measure": {
+            "minLength": 1,
+            "title": "Measure",
+            "type": "string"
+          },
+          "select": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Select"
+          },
+          "series_key": {
+            "description": "e.g. EIA:RBRTE:D",
+            "pattern": "^[A-Z0-9][A-Z0-9_.\\-]*(:[A-Z0-9][A-Z0-9_.\\-]*)+$",
+            "title": "Series Key",
+            "type": "string"
+          },
+          "source_multiplier": {
+            "anyOf": [
+              {
+                "maximum": 18,
+                "minimum": -18,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Source Multiplier"
+          },
+          "source_unit": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Source Unit"
+          }
+        },
+        "required": [
+          "series_key",
+          "measure"
+        ],
+        "title": "ValueRule",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "VersionKind": {
+        "enum": [
+          "machine",
+          "correction",
+          "override",
+          "revision"
+        ],
+        "title": "VersionKind",
+        "type": "string"
+      },
+      "VersionedWrite": {
+        "additionalProperties": false,
+        "description": "Base of every write DTO on a versioned object.",
+        "examples": [
+          {
+            "expected_version": 3
+          }
+        ],
+        "properties": {
+          "expected_version": {
+            "description": "The `version` the client last read",
+            "minimum": 1,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_version"
+        ],
+        "title": "VersionedWrite",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "Weekday": {
+        "enum": [
+          "MON",
+          "TUE",
+          "WED",
+          "THU",
+          "FRI",
+          "SAT",
+          "SUN"
+        ],
+        "title": "Weekday",
+        "type": "string"
+      },
+      "WeeklyAfterCalendar": {
+        "additionalProperties": false,
+        "description": "First `weekday time tz` at or after the period end (EIA spot, stocks).",
+        "properties": {
+          "kind": {
+            "const": "weekly_after",
+            "enum": [
+              "weekly_after"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "time": {
+            "description": "HH:MM, 24h",
+            "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+            "title": "Time",
+            "type": "string"
+          },
+          "tz": {
+            "description": "IANA zone, e.g. America/New_York, Asia/Ho_Chi_Minh, UTC",
+            "pattern": "^(UTC|[A-Z][A-Za-z_]+(/[A-Za-z0-9_+\\-]+)+)$",
+            "title": "Tz",
+            "type": "string"
+          },
+          "weekday": {
+            "$ref": "#/components/schemas/Weekday"
+          }
+        },
+        "required": [
+          "kind",
+          "weekday",
+          "time",
+          "tz"
+        ],
+        "title": "WeeklyAfterCalendar",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "XPathRef": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "xpath",
+            "default": "xpath",
+            "enum": [
+              "xpath"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "path": {
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "XPathRef",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "XlsCellTime": {
+        "additionalProperties": false,
+        "description": "A labelled cell (EIA `Contents` \"Release Date:\", Pink Sheet \"Updated on …\").",
+        "properties": {
+          "from": {
+            "const": "xls_cell",
+            "enum": [
+              "xls_cell"
+            ],
+            "title": "From",
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Label"
+          },
+          "label_prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Label Prefix"
+          },
+          "sheet": {
+            "minLength": 1,
+            "title": "Sheet",
+            "type": "string"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "description": "HH:MM, 24h",
+                "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Clock time when the cell has a date only",
+            "title": "Time"
+          },
+          "tz": {
+            "anyOf": [
+              {
+                "description": "IANA zone, e.g. America/New_York, Asia/Ho_Chi_Minh, UTC",
+                "pattern": "^(UTC|[A-Z][A-Za-z_]+(/[A-Za-z0-9_+\\-]+)+)$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tz"
+          }
+        },
+        "required": [
+          "from",
+          "sheet"
+        ],
+        "title": "XlsCellTime",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "XlsxTableProfile": {
+        "additionalProperties": false,
+        "description": ".xls and .xlsx.",
+        "properties": {
+          "archive_member": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Archive Member"
+          },
+          "header_row": {
+            "minimum": 1,
+            "title": "Header Row",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "xlsx_table",
+            "enum": [
+              "xlsx_table"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "locale": {
+            "description": "en-US, vi-VN, …",
+            "pattern": "^[a-z]{2}-[A-Z]{2}$",
+            "title": "Locale",
+            "type": "string"
+          },
+          "missing_markers": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ObsStatus"
+            },
+            "description": "Source text → status, e.g. {\"NA\": \"not_published\"}",
+            "title": "Missing Markers",
+            "type": "object"
+          },
+          "row_filter": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Row Filter"
+          },
+          "sheet": {
+            "minLength": 1,
+            "title": "Sheet",
+            "type": "string"
+          },
+          "unit_row": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Unit Row"
+          }
+        },
+        "required": [
+          "locale",
+          "kind",
+          "sheet",
+          "header_row"
+        ],
+        "title": "XlsxTableProfile",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "XmlPathProfile": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "xml_path",
+            "enum": [
+              "xml_path"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "locale": {
+            "description": "en-US, vi-VN, …",
+            "pattern": "^[a-z]{2}-[A-Z]{2}$",
+            "title": "Locale",
+            "type": "string"
+          },
+          "missing_markers": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ObsStatus"
+            },
+            "description": "Source text → status, e.g. {\"NA\": \"not_published\"}",
+            "title": "Missing Markers",
+            "type": "object"
+          },
+          "row_filter": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Row Filter"
+          },
+          "rows": {
+            "description": "XPath of the row elements",
+            "minLength": 1,
+            "title": "Rows",
+            "type": "string"
+          }
+        },
+        "required": [
+          "locale",
+          "kind",
+          "rows"
+        ],
+        "title": "XmlPathProfile",
+        "type": "object",
+        "x-schema-version": 1
+      },
+      "XmlTextTime": {
+        "additionalProperties": false,
+        "properties": {
+          "format": {
+            "minLength": 1,
+            "title": "Format",
+            "type": "string"
+          },
+          "from": {
+            "const": "xml_text",
+            "enum": [
+              "xml_text"
+            ],
+            "title": "From",
+            "type": "string"
+          },
+          "path": {
+            "description": "XPath, e.g. /ExrateList/DateTime",
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "tz": {
+            "description": "IANA zone, e.g. America/New_York, Asia/Ho_Chi_Minh, UTC",
+            "pattern": "^(UTC|[A-Z][A-Za-z_]+(/[A-Za-z0-9_+\\-]+)+)$",
+            "title": "Tz",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "path",
+          "format",
+          "tz"
+        ],
+        "title": "XmlTextTime",
+        "type": "object",
+        "x-schema-version": 1
+      }
+    }
+  },
+  "info": {
+    "description": "Shared wire shapes (libs/contracts, NOP-150). No paths: indicator-api (NOP-162) serves these models under its own routes.",
+    "title": "Data Agent V2 contract",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {}
+}

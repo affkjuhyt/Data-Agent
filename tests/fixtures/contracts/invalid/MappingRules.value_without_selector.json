@@ -1,0 +1,18 @@
+{
+  "model": "MappingRules",
+  "loc": "values.0",
+  "data": {
+    "time": {
+      "column": "Date",
+      "format": "excel_serial",
+      "frequency": "D",
+      "market_timezone": "America/New_York"
+    },
+    "values": [
+      {
+        "series_key": "EIA:RBRTE:D",
+        "measure": "value"
+      }
+    ]
+  }
+}

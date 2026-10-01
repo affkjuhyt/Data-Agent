@@ -1,0 +1,29 @@
+{
+  "model": "ObservationCandidate",
+  "loc": "time_basis",
+  "data": {
+    "event_time_start": "2026-09-22T00:00:00-04:00",
+    "event_time_end": "2026-09-23T00:00:00-04:00",
+    "market_timezone": "America/New_York",
+    "publication_time": "2026-09-30T10:30:00-04:00",
+    "available_at": "2026-09-30T10:30:00-04:00",
+    "system_time": "2026-09-30T15:02:11Z",
+    "series_key": "EIA:RBRTE:D",
+    "value": "67.42",
+    "obs_status": "value",
+    "unit": "usd_per_barrel",
+    "unit_multiplier": 0,
+    "source_ref": {
+      "kind": "cell",
+      "sheet": "Data 1",
+      "row": 9864,
+      "col": "Europe Brent Spot Price FOB (Dollars per Barrel)"
+    },
+    "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b02",
+    "artifact_sha256": "3f2a9c0000000000000000000000000000000000000000000000000000000000",
+    "origin": "structured_mapping",
+    "period_code": "2026-09-22",
+    "raw_text": "67.42",
+    "change_kind": "new"
+  }
+}
