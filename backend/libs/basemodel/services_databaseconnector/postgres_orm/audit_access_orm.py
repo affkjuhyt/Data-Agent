@@ -63,7 +63,7 @@ class DataAccessLogORM(Base):
     # SHA-256 of the original, so identical runs correlate and a specific
     # statement can be proven to have run without keeping its arguments.
     statement_sha256: Mapped[str] = mapped_column(String(64), nullable=False, server_default="")
-    metric_ref: Mapped[str] = mapped_column(String(160), nullable=False, server_default="")
+    metric_ref: Mapped[str] = mapped_column(String(160), nullable=False, server_default="", comment="Semantic metric the query used, as metric_key@version (e.g. revenue_net@3); empty when none.")
 
     # ── outcome ────────────────────────────────────────────────────────────
     row_count: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

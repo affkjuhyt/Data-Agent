@@ -411,7 +411,7 @@ class GraphStore:
                         KBNeo4jNodeORM.tenant_id == _as_uuid(tenant_id),
                         KBNeo4jNodeORM.knowledge_base == knowledge_base,
                         ~sa_exists().where(
-                            sa_or_(
+                            sa_or(
                                 KBNeo4jRelationshipORM.from_node == KBNeo4jNodeORM.node_id,
                                 KBNeo4jRelationshipORM.to_node == KBNeo4jNodeORM.node_id,
                             )

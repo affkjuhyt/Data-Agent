@@ -23,7 +23,6 @@ Source of truth for this view: SQLAlchemy ORM metadata under
 ```mermaid
 erDiagram
   Tenants ||--o{ Members : tenant_id
-  Tenants ||--o{ KeycloakRealmConfigs : tenant_id
   Tenants ||--o{ AuditLogs : tenant_id
   Tenants ||--o{ DataAccessLog : tenant_id
   Tenants ||--o{ PlatformSettings : tenant_id
@@ -60,7 +59,6 @@ erDiagram
   KBWarehouse ||--o{ KBWarehouseConfig : warehouse_id
   KBWarehouse ||--o{ SchemaCatalog : warehouse_id
   Tenants ||--o{ SchemaCatalog : tenant_id
-  Tenants ||--o{ SchemaMemory : tenant_id
 
   Tenants ||--o{ KBSource : tenant_id
   RolePermissions ||--o{ KBSource : role_id
@@ -71,7 +69,6 @@ erDiagram
 
   Tenants ||--o{ KBConnections : tenant_id
   Tenants ||--o{ SystemPrompts : tenant_id
-  Tenants ||--o{ Tools : tenant_id
   Tenants ||--o{ MCP : tenant_id
   Tenants ||--o{ Agents : tenant_id
   LLMProviders ||--o{ Guardrails : guardrail_model_id
@@ -86,8 +83,6 @@ erDiagram
   WorkflowVersions ||--o{ AgentVersions : workflow_version_id
   AgentVersions ||--o{ AgentKB : version_id
   KBConnections ||--o{ AgentKB : kb_connection_id
-  AgentVersions ||--o{ AgentTools : version_id
-  Tools ||--o{ AgentTools : tool_id
   AgentVersions ||--o{ AgentMCP : version_id
   MCP ||--o{ AgentMCP : mcp_id
 

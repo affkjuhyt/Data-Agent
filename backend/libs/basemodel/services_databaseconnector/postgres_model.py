@@ -704,15 +704,6 @@ class GuardrailsInsert(InsertModel):
 
 
 @register("insert")
-class ToolsInsert(InsertModel):
-    name: str
-    description: Optional[str] = None
-    type: str
-    status: str = "active"
-    created_by: Optional[str] = None
-
-
-@register("insert")
 class MCPInsert(TenantInsertModel):
     name: str
     endpoint_url: str
@@ -769,12 +760,6 @@ class AgentVersionsInsert(InsertModel):
 class AgentKBInsert(InsertModel):
     version_id: str
     kb_connection_id: str
-
-
-@register("insert")
-class AgentToolsInsert(InsertModel):
-    version_id: str
-    tool_id: str
 
 
 @register("insert")
@@ -858,11 +843,6 @@ class GuardrailsDelete(BaseModel):
 
 
 @register("delete")
-class ToolsDelete(BaseModel):
-    id: str
-
-
-@register("delete")
 class MCPDelete(TenantModel):
     id: str
 
@@ -896,12 +876,6 @@ class AgentVersionsDelete(BaseModel):
 class AgentKBDelete(BaseModel):
     version_id: str
     kb_connection_id: str
-
-
-@register("delete")
-class AgentToolsDelete(BaseModel):
-    version_id: str
-    tool_id: str
 
 
 @register("delete")

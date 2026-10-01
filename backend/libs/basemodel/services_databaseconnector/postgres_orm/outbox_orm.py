@@ -33,7 +33,7 @@ class OutboxEventORM(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     # Which service's relay owns the row: each relay publishes with its own Kafka
     # principal, so it may only drain the topics that principal is allowed to write.
-    producer: Mapped[str] = mapped_column(String(50), nullable=False)
+    producer: Mapped[str] = mapped_column(String(50), nullable=False, comment="Service that wrote the event (workflow-runtime, kb-backend, kb-promote-silver, kb-promote-gold, web-crawler); that service's relay publishes it.")
     topic: Mapped[str] = mapped_column(String(200), nullable=False)
     event_key: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

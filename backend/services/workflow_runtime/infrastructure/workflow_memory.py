@@ -1,7 +1,7 @@
-"""Workflow Memory + Schema Memory — doc §3.7 (STM_LTM_Memory_Architecture.docx).
+"""Workflow Memory — doc §3.7 (STM_LTM_Memory_Architecture.docx).
 
-These are the two LTM layers specific to a data task platform, on top of the
-generic conversational memory in memory_middleware.py:
+The LTM layer specific to a data task platform, on top of the generic
+conversational memory in memory_middleware.py:
 
   * Workflow Memory — Episodic Memory for data execution context. Written
     after a data tool (text_to_sql, text_to_pandas, ...) finishes; retrieved
@@ -10,9 +10,9 @@ generic conversational memory in memory_middleware.py:
     PostgreSQL holds structured metadata, Qdrant (collection
     "workflow_memory") holds the task_description embedding.
 
-  * Schema Memory — the SchemaMemory table is still migrated, but nothing
-    reads or writes it any more: the text_to_sql handler takes its schema from
-    the Schema Catalog (schema_catalog.py) or live introspection instead.
+  * Schema Memory (doc §3.7) was dropped (migration 9d4f2b7c1e3a): the
+    text_to_sql handler takes its schema from the Schema Catalog
+    (schema_catalog.py) or live introspection instead.
 """
 import logging
 import math

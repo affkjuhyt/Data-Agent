@@ -1,0 +1,1508 @@
+// Data Agent — cấu trúc Postgres `dataagent` (schema public) hiện tại.
+// Mở https://dbdiagram.io/d → dán toàn bộ file này vào ô bên trái.
+//
+// Sinh tự động từ catalog Postgres sau `alembic upgrade head` trên DB trống
+// (head = 4e8a1c6d2b9f), không vẽ tay: bảng, cột, kiểu, default, PK/unique,
+// FK (Ref) và index là đúng như DB. Không sửa tay — sinh lại khi có migration mới.
+// Note của bảng/cột gồm COMMENT trong DB (nghĩa của cột) và những gì DBML không
+// biểu diễn được (CHECK, partial index, GIN, RLS, tham chiếu không có FK).
+
+Project data_agent {
+  database_type: 'PostgreSQL'
+  Note: '''
+**Data Agent — Postgres `dataagent`, schema `public`** (alembic head `4e8a1c6d2b9f`)
+
+- 63 bảng, 76 FK, 37 bảng bật RLS (theo `tenant_id` + `app.tenant_id`).
+- Schema V2 `registry`, `ingest`, `knowledge`, `governance`, `alert` đã tạo (migration `5b7d9f1a3c6e`) nhưng **chưa có bảng** — xem `docs/v2/10-database-design.md`, `docs/v2/14-input-data-db.md`.
+- Không có trong sơ đồ: `kb_structured` (bảng tạo lúc chạy khi import dữ liệu có cấu trúc), `langgraph` (checkpointer tự tạo), `keycloak`, `kong`.
+- Ngoài Postgres: MinIO (raw), Qdrant/Neo4j (bản chiếu dựng lại được), MongoDB, Redis, ClickHouse.
+'''
+}
+
+Table "AgentKB" {
+  "version_id" uuid
+  "kb_connection_id" uuid
+  "inserted_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    ("version_id", "kb_connection_id") [pk]
+  }
+}
+
+Table "AgentMCP" {
+  "version_id" uuid
+  "mcp_id" uuid
+  "inserted_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    ("version_id", "mcp_id") [pk]
+  }
+}
+
+Table "AgentMemories" {
+  "id" uuid [pk]
+  "tenant_id" uuid [not null]
+  "agent_id" uuid [not null]
+  "scope" varchar(20) [not null]
+  "user_ref" varchar(255)
+  "memory_type" varchar(20) [not null]
+  "content" text
+  "embedding_ref" varchar(255)
+  "importance" float8
+  "expires_at" timestamptz
+  "deleted_at" timestamptz
+  "created_at" timestamptz [not null, default: `now()`]
+  "updated_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "domain" varchar(64) [not null, default: 'general']
+  "fact_key" varchar(128)
+
+  indexes {
+    ("tenant_id", "agent_id", "scope", "user_ref", "domain", "fact_key") [unique, name: 'uq_agentmemories_fact']
+    ("agent_id", "scope") [name: 'idx_agentmemories_agent_scope']
+    ("agent_id", "user_ref") [name: 'idx_agentmemories_agent_user_ref']
+    "deleted_at" [name: 'idx_agentmemories_deleted_at', note: 'WHERE (deleted_at IS NULL)']
+    "inserted_at" [name: 'idx_agentmemories_inserted_at_desc', note: 'inserted_at DESC']
+    "tenant_id" [name: 'idx_agentmemories_tenant']
+    ("tenant_id", "agent_id", "user_ref", "domain") [name: 'idx_agentmemories_user_domain']
+    "agent_id" [name: 'ix_AgentMemories_agent_id']
+  }
+
+  Note: '''
+RLS bật (tenant_id = app.tenant_id)
+uq_agentmemories_fact: UNIQUE NULLS NOT DISTINCT (tenant_id, agent_id, scope, user_ref, domain, fact_key)
+'''
+}
+
+Table "AgentTraces" {
+  "id" uuid [pk]
+  "message_id" uuid [not null]
+  "trace_index" smallint [not null]
+  "tool_name" varchar(255) [not null, note: 'LangGraph node name, tool/<name> for a tool call, or responder.']
+  "input" jsonb
+  "output" jsonb
+  "status" varchar(20) [not null]
+  "latency_ms" int
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    ("message_id", "trace_index") [unique, name: 'uq_agent_traces_message_index']
+    "inserted_at" [name: 'idx_agenttraces_inserted_at_desc', note: 'inserted_at DESC']
+    "message_id" [name: 'ix_AgentTraces_message_id']
+  }
+}
+
+Table "AgentVersions" {
+  "id" uuid [pk]
+  "agent_id" uuid [not null]
+  "version" int [not null]
+  "status" varchar(20) [not null]
+  "workflow_version_id" uuid
+  "responder_model_id" uuid
+  "llm_config" jsonb
+  "system_prompt_id" uuid
+  "guardrail_id" uuid
+  "memory_enabled" bool [not null, default: false]
+  "retrieval_config" jsonb
+  "changelog" varchar(512)
+  "created_by" varchar(255)
+  "published_at" timestamptz
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    ("agent_id", "version") [unique, name: 'uq_agent_versions_agent_version']
+    ("agent_id", "status") [name: 'idx_agentversions_agent_status']
+    "inserted_at" [name: 'idx_agentversions_inserted_at_desc', note: 'inserted_at DESC']
+    "agent_id" [name: 'ix_AgentVersions_agent_id']
+  }
+}
+
+Table "Agents" {
+  "id" uuid [pk]
+  "tenant_id" uuid [not null]
+  "name" varchar(255) [not null]
+  "description" varchar(512)
+  "language" varchar(10)
+  "published_version_id" uuid [note: 'AgentVersions.id currently served. The ORM declares this FK but no migration created it. — tham chiếu logic, không có FK → AgentVersions.id']
+  "draft_version_id" uuid [note: 'AgentVersions.id of the editable draft; draft updates find it by AgentVersions.status instead. The ORM declares this FK but no migration created it. — tham chiếu logic, không có FK → AgentVersions.id']
+  "is_active" bool [not null, default: true]
+  "deleted_at" timestamptz
+  "created_by" varchar(255)
+  "created_at" timestamptz [not null, default: `now()`]
+  "updated_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "inserted_at" [name: 'idx_agents_inserted_at_desc', note: 'inserted_at DESC']
+    "tenant_id" [name: 'idx_agents_tenant']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "AuditLogs" {
+  "id" uuid [pk, default: `gen_random_uuid()`]
+  "tenant_id" uuid [not null]
+  "actor" varchar(255) [not null]
+  "actor_type" varchar(20) [not null]
+  "action" varchar(100) [not null]
+  "resource_type" varchar(100)
+  "resource_id" varchar(255)
+  "status" varchar(10) [not null]
+  "metadata" jsonb
+  "ip_address" varchar(50)
+  "source_event_id" text
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "inserted_at" [name: 'idx_audit_logs_inserted_at_desc', note: 'inserted_at DESC']
+    "source_event_id" [name: 'idx_audit_logs_source_event', note: 'WHERE (source_event_id IS NOT NULL)']
+    ("tenant_id", "created_at") [name: 'idx_audit_logs_tenant']
+    "created_at" [name: 'ix_AuditLogs_created_at']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "Conversations" {
+  "id" uuid [pk]
+  "tenant_id" uuid [not null]
+  "user_ref" varchar(255)
+  "channel" varchar(20)
+  "status" varchar(20) [not null, note: 'Set to active on creation and never updated.']
+  "started_at" timestamptz
+  "ended_at" timestamptz
+  "inserted_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "inserted_at" [name: 'idx_conversations_inserted_at_desc', note: 'inserted_at DESC']
+    "tenant_id" [name: 'idx_conversations_tenant']
+    ("tenant_id", "user_ref") [name: 'idx_conversations_tenant_user_ref']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "DataAccessLog" {
+  "id" uuid [pk, default: `gen_random_uuid()`]
+  "event_id" uuid [not null, unique]
+  "tenant_id" uuid [not null]
+  "user_id" varchar(255) [not null]
+  "user_roles" "text[]" [not null, default: `'{}'::text[]`]
+  "auth_source" varchar(64) [not null, default: '']
+  "action" varchar(32) [not null]
+  "decision" varchar(16) [not null]
+  "target" varchar(256) [not null, default: '']
+  "target_objects" "text[]" [not null, default: `'{}'::text[]`]
+  "statement_redacted" text [not null, default: '']
+  "statement_sha256" varchar(64) [not null, default: '']
+  "metric_ref" varchar(160) [not null, default: '', note: 'Semantic metric the query used, as metric_key@version (e.g. revenue_net@3); empty when none.']
+  "row_count" bigint
+  "latency_ms" int
+  "reason" text [not null, default: '']
+  "session_id" varchar(64) [not null, default: '']
+  "agent_id" varchar(64) [not null, default: '']
+  "metadata" jsonb
+  "occurred_at" timestamptz [not null]
+  "inserted_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "target_objects" [name: 'idx_data_access_objects', note: 'USING gin']
+    "statement_sha256" [name: 'idx_data_access_statement']
+    ("tenant_id", "occurred_at") [name: 'idx_data_access_tenant_time', note: 'occurred_at DESC']
+    ("tenant_id", "user_id", "occurred_at") [name: 'idx_data_access_user_time', note: 'occurred_at DESC']
+  }
+
+  Note: '''
+RLS bật (tenant_id = app.tenant_id)
+ck_data_access_decision: CHECK decision IN ('allow', 'deny', 'error')
+ck_data_access_action: CHECK action IN ('sql_query', 'schema_introspect', 'kb_retrieve', 'code_exec')
+'''
+}
+
+Table "EpisodicMemory" {
+  "id" uuid [pk]
+  "tenant_id" uuid [not null]
+  "agent_id" uuid [not null]
+  "user_ref" varchar(255)
+  "domain" varchar(64) [not null, default: 'general']
+  "content" text [not null]
+  "importance_score" float8 [not null, default: '0.5']
+  "embedding_id" varchar(128)
+  "created_at" timestamptz [not null, default: `now()`]
+  "expires_at" timestamptz
+  "status" varchar(16) [not null, default: 'active']
+
+  indexes {
+    "expires_at" [name: 'idx_episodicmemory_expires', note: 'WHERE (expires_at IS NOT NULL)']
+    "tenant_id" [name: 'idx_episodicmemory_tenant']
+    ("user_ref", "created_at") [name: 'idx_episodicmemory_user_time', note: 'created_at DESC']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "FutureMemory" {
+  "id" uuid [pk]
+  "tenant_id" uuid [not null]
+  "agent_id" uuid [not null]
+  "user_ref" varchar(255)
+  "content" text [not null]
+  "execution_time" timestamptz [not null]
+  "recurrence" varchar(64)
+  "status" varchar(16) [not null, default: 'pending']
+  "executed_at" timestamptz
+  "created_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "tenant_id" [name: 'idx_futurememory_tenant']
+    ("user_ref", "status", "execution_time") [name: 'idx_futurememory_user_status_time']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "Guardrails" {
+  "id" uuid [pk]
+  "name" varchar(255) [not null]
+  "type" varchar(50) [not null]
+  "conditions" jsonb [not null]
+  "action" varchar(20) [not null]
+  "priority" int [not null]
+  "guardrail_model_id" uuid
+  "created_by" varchar(255)
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "inserted_at" [name: 'idx_guardrails_inserted_at_desc', note: 'inserted_at DESC']
+  }
+}
+
+Table "KBConflict" {
+  "conflict_id" uuid [pk]
+  "tenant_id" uuid
+  "conflict_type" varchar(64) [not null]
+  "severity" varchar(16) [not null]
+  "batch_id" uuid
+  "status" varchar(32) [not null]
+  "detailed_explanation" text
+  "resolution_instruction" text
+  "resolution_method" varchar(20)
+  "resolved_by" varchar(255)
+  "resolved_at" timestamptz
+  "detected_at" timestamptz [not null, default: `now()`]
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+  "data_id" uuid
+  "from_recheck" bool [not null, default: false]
+
+  indexes {
+    "data_id" [name: 'idx_kbconflict_data_id']
+    "inserted_at" [name: 'idx_kbconflict_inserted_at_desc', note: 'inserted_at DESC']
+    ("tenant_id", "status", "severity") [name: 'idx_kbconflict_tenant_status_severity']
+    "batch_id" [name: 'ix_KBConflict_batch_id']
+    "created_at" [name: 'ix_KBConflict_created_at']
+    "tenant_id" [name: 'ix_KBConflict_tenant_id']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "KBConflictBatch" {
+  "batch_id" uuid [pk]
+  "tenant_id" uuid
+  "batch_title" varchar(512) [not null]
+  "status" varchar(32) [not null]
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+  "existing_block_id" uuid [note: 'tham chiếu logic, không có FK → KBTextBlock.block_id']
+
+  indexes {
+    "inserted_at" [name: 'idx_kbconflictbatch_inserted_at_desc', note: 'inserted_at DESC']
+    ("tenant_id", "existing_block_id") [unique, name: 'idx_kbconflictbatch_open_block', note: 'WHERE (((status)::text <> \'resolved\'::text) AND (is_deleted = false))']
+    "created_at" [name: 'ix_KBConflictBatch_created_at']
+    "tenant_id" [name: 'ix_KBConflictBatch_tenant_id']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "KBConnections" {
+  "id" uuid [pk]
+  "tenant_id" uuid [not null]
+  "name" varchar(255) [not null]
+  "endpoint_url" text [not null]
+  "api_key_ref" varchar(255)
+  "status" varchar(20) [not null]
+  "last_synced_at" timestamptz
+  "created_by" varchar(255)
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "inserted_at" [name: 'idx_kbconnections_inserted_at_desc', note: 'inserted_at DESC']
+    "tenant_id" [name: 'idx_kbconnections_tenant']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "KBData" {
+  "data_id" uuid [pk]
+  "tenant_id" uuid [not null]
+  "role_id" uuid [not null, note: 'Lowest role that may see the document: one of the RolePermissions anchor rows. A viewer sees documents of their own role and every lower one (PLATFORM_ADMIN > AI_ENGINEER > EXECUTIVE > BUSINESS_OPERATOR).']
+  "name" varchar(512) [not null]
+  "extension" varchar(32) [not null]
+  "language" varchar(32) [not null]
+  "source_type" varchar(32) [not null]
+  "added_by" varchar(255) [not null, note: 'Display name of the uploader, not a user id.']
+  "abstract" text [not null, note: 'Short description. The upload UI sends the document name here; web crawls write an empty string.']
+  "metadata" jsonb [not null]
+  "current_tier" varchar(16) [not null, note: 'Furthest medallion tier reached: bronze, silver or gold. Same as the latest KBLifecycleHistory.to_tier.']
+  "path" varchar(1024) [note: 'MinIO object key of the uploaded file. NULL for web-crawled documents.']
+  "added_on" timestamptz [not null, default: `now()`]
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+  "knowledge_base_id" uuid
+  "ingestion_mode" varchar(32) [not null, default: 'document', note: 'document (chunked and embedded) or structured_table (rows imported into kb_structured).']
+  "row_version" uuid [not null, default: `gen_random_uuid()`, note: 'Optimistic-lock token, regenerated on every write; no writer compares it yet.']
+  "updated_at" timestamptz [not null, default: `now()`]
+  "content_hash" varchar(64)
+  "purpose" varchar(16) [not null, default: 'production']
+
+  indexes {
+    "inserted_at" [name: 'idx_kbdata_inserted_at_desc', note: 'inserted_at DESC']
+    ("tenant_id", "current_tier", "inserted_at", "data_id") [name: 'idx_kbdata_keyset']
+    ("tenant_id", "inserted_at", "data_id") [name: 'idx_kbdata_keyset_all']
+    "knowledge_base_id" [name: 'idx_kbdata_knowledge_base_id']
+    ("tenant_id", "content_hash") [name: 'idx_kbdata_tenant_content_hash']
+    ("tenant_id", "name") [unique, name: 'idx_kbdata_tenant_name']
+    ("tenant_id", "purpose") [name: 'idx_kbdata_tenant_purpose']
+    ("tenant_id", "role_id") [name: 'idx_kbdata_tenant_role']
+    ("tenant_id", "source_type") [name: 'idx_kbdata_tenant_source']
+    ("tenant_id", "current_tier") [name: 'idx_kbdata_tenant_tier']
+    "created_at" [name: 'ix_KBData_created_at']
+    "tenant_id" [name: 'ix_KBData_tenant_id']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "KBEntityLookup" {
+  "lookup_id" uuid [pk]
+  "alias_name" varchar(512) [not null]
+  "canonical_name" varchar(512) [not null]
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+  "tenant_id" uuid
+
+  indexes {
+    "alias_name" [name: 'idx_kbentitylookup_alias', type: hash]
+    "inserted_at" [name: 'idx_kbentitylookup_inserted_at_desc', note: 'inserted_at DESC']
+    ("tenant_id", "alias_name") [name: 'idx_kbentitylookup_tenant_alias']
+    "canonical_name" [name: 'ix_KBEntityLookup_canonical_name']
+    "created_at" [name: 'ix_KBEntityLookup_created_at']
+    "tenant_id" [name: 'ix_KBEntityLookup_tenant_id']
+  }
+}
+
+Table "KBExtractionPolicy" {
+  "policy_id" uuid [pk]
+  "tenant_id" uuid [not null]
+  "policy_name" varchar(255) [not null]
+  "policy_type" varchar(64) [not null]
+  "custom_override" text
+  "created_by" varchar(255)
+  "language" varchar(32)
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+  "row_version" uuid [not null, default: `gen_random_uuid()`]
+  "updated_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "inserted_at" [name: 'idx_kbextractionpolicy_inserted_at_desc', note: 'inserted_at DESC']
+    ("tenant_id", "language") [name: 'idx_kbextractionpolicy_tenant_lang']
+    "created_at" [name: 'ix_KBExtractionPolicy_created_at']
+    "tenant_id" [name: 'ix_KBExtractionPolicy_tenant_id']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "KBFilterPolicy" {
+  "policy_id" uuid [pk]
+  "tenant_id" uuid [not null]
+  "policy_name" varchar(255) [not null]
+  "configformat" varchar(64) [not null]
+  "config" jsonb
+  "is_active" bool [not null, default: false]
+  "created_by" varchar(255)
+  "language" varchar(32)
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+  "row_version" uuid [not null, default: `gen_random_uuid()`]
+  "updated_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "inserted_at" [name: 'idx_kbfilterpolicy_inserted_at_desc', note: 'inserted_at DESC']
+    ("tenant_id", "language") [name: 'idx_kbfilterpolicy_tenant_lang']
+    "created_at" [name: 'ix_KBFilterPolicy_created_at']
+    "tenant_id" [name: 'ix_KBFilterPolicy_tenant_id']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "KBKnowledgeBase" {
+  "knowledge_base_id" uuid [pk, default: `gen_random_uuid()`]
+  "tenant_id" uuid [not null]
+  "name" varchar(255) [not null]
+  "description" text
+  "is_active" bool [not null, default: true]
+  "created_by" varchar(255)
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+
+  indexes {
+    "inserted_at" [name: 'idx_kbknowledgebase_inserted_at_desc', note: 'inserted_at DESC']
+    ("tenant_id", "name") [unique, name: 'idx_kbknowledgebase_tenant_name']
+    "created_at" [name: 'ix_KBKnowledgeBase_created_at']
+    "tenant_id" [name: 'ix_KBKnowledgeBase_tenant_id']
+  }
+}
+
+Table "KBLifecycleHistory" {
+  "history_id" uuid [pk]
+  "data_id" uuid [not null]
+  "to_tier" varchar(16) [not null]
+  "from_tier" varchar(16)
+  "approved_by" varchar(255)
+  "notes" text
+  "transitioned_at" timestamptz [not null, default: `now()`]
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+  "pipeline_metadata" jsonb
+
+  indexes {
+    "inserted_at" [name: 'idx_kblifecyclehistory_inserted_at_desc', note: 'inserted_at DESC']
+    "created_at" [name: 'ix_KBLifecycleHistory_created_at']
+    "data_id" [name: 'ix_KBLifecycleHistory_data_id']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "KBModel" {
+  "model_id" uuid [pk]
+  "model_name" varchar(255) [not null]
+  "task_type" varchar(64) [not null]
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+
+  indexes {
+    "inserted_at" [name: 'idx_kbmodel_inserted_at_desc', note: 'inserted_at DESC']
+    "created_at" [name: 'ix_KBModel_created_at']
+    "task_type" [name: 'ix_KBModel_task_type']
+  }
+}
+
+Table "KBModelVersion" {
+  "version_id" int [pk, increment]
+  "model_id" uuid [not null]
+  "version_number" int [not null]
+  "added_by" varchar(255)
+  "config" jsonb
+  "is_active" bool [not null, default: false]
+  "added_on" timestamptz [not null, default: `now()`]
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+
+  indexes {
+    "inserted_at" [name: 'idx_kbmodelversion_inserted_at_desc', note: 'inserted_at DESC']
+    ("model_id", "version_id") [name: 'idx_kbmodelversion_model_version', note: 'WHERE (is_active = true)']
+    "created_at" [name: 'ix_KBModelVersion_created_at']
+  }
+}
+
+Table "KBNeo4jNode" {
+  "node_id" uuid [pk]
+  "node_name" varchar(512) [not null]
+  "node_description" text
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "created_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+  "tenant_id" uuid [note: 'tham chiếu logic, không có FK → Tenants.id']
+  "knowledge_base" varchar(512) [note: 'str(KBData.knowledge_base_id), or the literal \'General Knowledge Base\' when the document has none. Part of the node id hash; no FK.']
+
+  indexes {
+    "inserted_at" [name: 'idx_kbneo4jnode_inserted_at_desc', note: 'inserted_at DESC']
+    ("tenant_id", "knowledge_base") [name: 'idx_kbneo4jnode_tenant_kb']
+    "created_at" [name: 'ix_KBNeo4jNode_created_at']
+  }
+
+  Note: 'Postgres mirror of the Neo4j entity nodes, written by GraphStore alongside Neo4j; used for provenance and as the UI fallback when Neo4j is down.'
+}
+
+Table "KBNeo4jRelationship" {
+  "from_node" uuid
+  "to_node" uuid
+  "score" float8
+  "description" text
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+  "block_id" uuid [note: 'tham chiếu logic, không có FK → KBTextBlock.block_id']
+  "data_id" uuid [note: 'tham chiếu logic, không có FK → KBData.data_id']
+  "tenant_id" uuid [note: 'tham chiếu logic, không có FK → Tenants.id']
+  "knowledge_base" varchar(512) [note: 'str(KBData.knowledge_base_id), or the literal \'General Knowledge Base\' when the document has none; no FK.']
+
+  indexes {
+    ("from_node", "to_node", "block_id") [pk]
+    "block_id" [name: 'idx_kbneo4jrelationship_block']
+    "data_id" [name: 'idx_kbneo4jrelationship_data']
+    "inserted_at" [name: 'idx_kbneo4jrelationship_inserted_at_desc', note: 'inserted_at DESC']
+    ("from_node", "to_node") [name: 'idx_kbneo4jrelationship_pair']
+    ("tenant_id", "knowledge_base") [name: 'idx_kbneo4jrelationship_tenkb']
+    "created_at" [name: 'ix_KBNeo4jRelationship_created_at']
+  }
+
+  Note: 'Postgres mirror of the Neo4j RELATES edges, one row per (from_node, to_node, block_id) so each edge keeps the chunk it came from.'
+}
+
+Table "KBQdrantCollection" {
+  "collection_id" uuid [pk]
+  "connection_id" uuid [not null]
+  "collection_name" varchar(255) [not null]
+  "is_active" bool [not null, default: false]
+  "similarity_metric" varchar(16) [not null]
+  "points_count" int [not null, default: 0]
+  "vector_dimension" int
+  "embedding_model_id" uuid
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+
+  indexes {
+    "inserted_at" [name: 'idx_kbqdrantcollection_inserted_at_desc', note: 'inserted_at DESC']
+    "connection_id" [name: 'ix_KBQdrantCollection_connection_id']
+    "created_at" [name: 'ix_KBQdrantCollection_created_at']
+  }
+
+  Note: '''
+Seeded metadata for Qdrant collections. points_count, vector_dimension and similarity_metric are not kept in sync; the UI reads them live from Qdrant.
+RLS bật (tenant_id = app.tenant_id)
+'''
+}
+
+Table "KBQdrantConnection" {
+  "connection_id" uuid [pk]
+  "tenant_id" uuid [not null]
+  "is_active" bool [not null, default: false]
+  "total_collection" int [not null, default: 0]
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+
+  indexes {
+    "tenant_id" [name: 'idx_kbqdrantconn_tenant_active', note: 'WHERE (is_active = true)']
+    "inserted_at" [name: 'idx_kbqdrantconnection_inserted_at_desc', note: 'inserted_at DESC']
+    "created_at" [name: 'ix_KBQdrantConnection_created_at']
+    "tenant_id" [name: 'ix_KBQdrantConnection_tenant_id']
+  }
+
+  Note: '''
+Ties Qdrant collections to a tenant. Holds no URL: the Qdrant endpoint comes from QDRANT_URL.
+RLS bật (tenant_id = app.tenant_id)
+'''
+}
+
+Table "KBSource" {
+  "source_id" uuid [pk, default: `gen_random_uuid()`]
+  "tenant_id" uuid [not null]
+  "role_id" uuid [not null]
+  "connector_type" varchar(32) [not null]
+  "title" varchar(512) [not null]
+  "publisher" varchar(255)
+  "created_by" varchar(255)
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+
+  indexes {
+    "inserted_at" [name: 'idx_kbsource_inserted_at_desc', note: 'inserted_at DESC']
+    "tenant_id" [name: 'idx_kbsource_tenant']
+    ("tenant_id", "title") [unique, name: 'uq_kbsource_tenant_title_live', note: 'WHERE (is_deleted = false)']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "KBSourceConfig" {
+  "config_id" uuid [pk, default: `gen_random_uuid()`]
+  "source_id" uuid [not null]
+  "version_number" int [not null]
+  "is_active" bool [not null, default: false]
+  "config" jsonb
+  "created_by" varchar(255)
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+  "row_version" uuid [not null, default: `gen_random_uuid()`]
+  "updated_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "source_id" [unique, name: 'idx_kbsourceconfig_source_active', note: 'WHERE (is_active = true)']
+    ("source_id", "version_number") [name: 'idx_kbsourceconfig_source_version']
+  }
+}
+
+Table "KBSourceCrawlQueue" {
+  "queue_id" uuid [pk, default: `gen_random_uuid()`]
+  "source_id" uuid [not null]
+  "tenant_id" uuid [not null]
+  "url" text [not null]
+  "depth" int [not null, default: 0]
+  "discovered_from" text
+  "status" varchar(16) [not null, default: 'pending']
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "inserted_at" [name: 'idx_kbsourcecrawlqueue_inserted_at_desc', note: 'inserted_at DESC']
+    "source_id" [name: 'idx_kbsourcecrawlqueue_source_id']
+    ("source_id", "url") [unique, name: 'idx_kbsourcecrawlqueue_source_url']
+    ("tenant_id", "status") [name: 'idx_kbsourcecrawlqueue_tenant_status']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "KBSourceRun" {
+  "run_id" uuid [pk, default: `gen_random_uuid()`]
+  "source_id" uuid [not null]
+  "status" varchar(16) [not null]
+  "trigger" varchar(16) [not null]
+  "data_ids" jsonb [note: 'JSON array of the KBData.data_id values this run produced; no FK. — tham chiếu logic, không có FK → KBData.data_id (mảng JSON)']
+  "error" text
+  "quality_metrics" jsonb
+  "started_at" timestamptz [not null, default: `now()`]
+  "finished_at" timestamptz
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "retry_count" int [not null, default: 0]
+  "next_retry_at" timestamptz
+
+  indexes {
+    ("source_id", "started_at") [name: 'idx_kbsourcerun_source_started_desc', note: 'started_at DESC']
+  }
+}
+
+Table "KBStructuredImportJob" {
+  "job_id" uuid [pk, default: `gen_random_uuid()`]
+  "owner_id" uuid [not null, note: 'KBData.data_id of the document being imported.']
+  "status" varchar(32) [not null, default: 'proposing']
+  "llm_proposed_schema" jsonb
+  "human_edited_schema" jsonb
+  "sample_rows" jsonb
+  "created_table_name" varchar(255)
+  "error_message" text
+  "created_by" varchar(255)
+  "reviewed_by" varchar(255)
+  "reviewed_at" timestamptz
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+
+  indexes {
+    ("owner_id", "created_at") [name: 'idx_kbstructuredimportjob_owner_created', note: 'created_at DESC']
+    "owner_id" [name: 'ix_KBStructuredImportJob_owner_id']
+  }
+}
+
+Table "KBTable" {
+  "table_id" uuid [pk]
+  "owner_id" uuid [not null, note: 'KBData.data_id of the structured-table document.']
+  "table_name" varchar(255) [not null]
+  "description" text
+  "schema" jsonb
+  "created_by" varchar(255)
+  "created_on" timestamptz [not null, default: `now()`]
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+
+  indexes {
+    "inserted_at" [name: 'idx_kbtable_inserted_at_desc', note: 'inserted_at DESC']
+    "created_at" [name: 'ix_KBTable_created_at']
+    "owner_id" [name: 'ix_KBTable_owner_id']
+    "table_name" [name: 'ix_KBTable_table_name']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "KBTextBlock" {
+  "block_id" uuid [pk]
+  "owner_id" uuid [not null, note: 'KBData.data_id of the document this chunk belongs to.']
+  "block_index" int [not null]
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+
+  indexes {
+    "inserted_at" [name: 'idx_kbtextblock_inserted_at_desc', note: 'inserted_at DESC']
+    ("owner_id", "block_id") [name: 'idx_kbtextblock_owner_block']
+    "created_at" [name: 'ix_KBTextBlock_created_at']
+    "owner_id" [name: 'ix_KBTextBlock_owner_id']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "KBTextBlockVersion" {
+  "version_id" uuid [pk]
+  "block_id" uuid [not null]
+  "version_number" int [not null]
+  "content" text
+  "created_by" varchar(255)
+  "table_involved" bool
+  "embedding_model_id" uuid
+  "payload" jsonb [note: 'Chunk metadata also held in the Qdrant payload (summary, entities, embedding_model_id, knowledge_base, region); only entities is read back from here.']
+  "is_active" bool
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+
+  indexes {
+    ("block_id", "version_number") [name: 'idx_kbtextblockversion_block_version', note: 'WHERE (is_active = true)']
+    `to_tsvector('simple'::regconfig, content)` [name: 'idx_kbtextblockversion_content_fts', note: 'USING gin']
+    "inserted_at" [name: 'idx_kbtextblockversion_inserted_at_desc', note: 'inserted_at DESC']
+    "block_id" [name: 'ix_KBTextBlockVersion_block_id']
+    "created_at" [name: 'ix_KBTextBlockVersion_created_at']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "KBTextTable" {
+  "version_id" uuid [pk]
+  "table_name" varchar(255) [not null]
+  "description" text
+  "data" jsonb
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+  "row_version" uuid [not null, default: `gen_random_uuid()`]
+  "updated_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "inserted_at" [name: 'idx_kbtexttable_inserted_at_desc', note: 'inserted_at DESC']
+    "created_at" [name: 'ix_KBTextTable_created_at']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "KBWarehouse" {
+  "warehouse_id" uuid [pk]
+  "service" varchar(255) [not null, note: 'Warehouse engine as entered (Snowflake, Databricks, Postgres; case varies). The schema crawler normalises it.']
+  "description" text
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+  "tenant_id" uuid
+
+  indexes {
+    "inserted_at" [name: 'idx_kbwarehouse_inserted_at_desc', note: 'inserted_at DESC']
+    "tenant_id" [name: 'idx_kbwarehouse_tenant']
+    "created_at" [name: 'ix_KBWarehouse_created_at']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "KBWarehouseConfig" {
+  "config_id" uuid [pk]
+  "warehouse_id" uuid [not null]
+  "version_number" int [not null]
+  "is_active" bool [not null, default: false]
+  "config" jsonb
+  "created_by" varchar(255)
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+  "is_deleted" bool [not null, default: false]
+  "row_version" uuid [not null, default: `gen_random_uuid()`]
+  "updated_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "inserted_at" [name: 'idx_kbwarehouseconfig_inserted_at_desc', note: 'inserted_at DESC']
+    "warehouse_id" [unique, name: 'idx_kbwarehouseconfig_wh_active', note: 'WHERE (is_active = true)']
+    ("warehouse_id", "version_number") [name: 'idx_kbwarehouseconfig_wh_version']
+    "created_at" [name: 'ix_KBWarehouseConfig_created_at']
+    "warehouse_id" [name: 'ix_KBWarehouseConfig_warehouse_id']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "LLMProviders" {
+  "id" uuid [pk]
+  "name" varchar(255) [not null]
+  "model_id" varchar(255) [not null]
+  "endpoint_url" text [not null]
+  "type" varchar(50) [not null]
+  "is_default" bool [not null, default: false]
+  "max_tokens" int
+  "is_active" bool [not null, default: true]
+  "created_at" timestamptz [not null, default: `now()`]
+  "updated_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "inserted_at" [name: 'idx_llmproviders_inserted_at_desc', note: 'inserted_at DESC']
+    ("type", "is_default") [name: 'idx_llmproviders_type_is_default', note: 'WHERE (is_default = true)']
+  }
+}
+
+Table "MCP" {
+  "id" uuid [pk]
+  "tenant_id" uuid [not null]
+  "name" varchar(255) [not null]
+  "endpoint_url" text [not null]
+  "api_key_ref" varchar(255) [note: 'Despite the name, the bearer token itself: config_loader sends it as auth_token.']
+  "status" varchar(20) [not null]
+  "capabilities" jsonb
+  "created_by" varchar(255)
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "inserted_at" [name: 'idx_mcp_inserted_at_desc', note: 'inserted_at DESC']
+    "tenant_id" [name: 'idx_mcp_tenant']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "Members" {
+  "id" uuid [pk]
+  "tenant_id" uuid [not null]
+  "user_id" varchar(255) [not null]
+  "role_id" smallint [note: 'Never written or read; the role is tenant_role.']
+  "tenant_role" varchar(50) [not null, note: 'admin, editor or viewer. workflow_runtime checks it before creating a conversation.']
+  "is_active" bool [not null, default: true]
+  "joined_at" timestamptz [not null, default: `now()`]
+  "deleted_at" timestamptz
+  "inserted_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    ("tenant_id", "user_id") [unique, name: 'uq_members_tenant_user']
+    "inserted_at" [name: 'idx_members_inserted_at_desc', note: 'inserted_at DESC']
+    "tenant_id" [name: 'idx_members_tenant']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "MemoryPolicy" {
+  "id" uuid [pk]
+  "agent_id" uuid [not null]
+  "action_type" varchar(20) [not null]
+  "condition" jsonb
+  "enabled" bool [not null, default: true]
+  "created_by" varchar(255)
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "agent_id" [name: 'idx_memorypolicy_agent']
+    "inserted_at" [name: 'idx_memorypolicy_inserted_at_desc', note: 'inserted_at DESC']
+  }
+}
+
+Table "MemoryRetentionConfig" {
+  "tenant_id" uuid
+  "domain" varchar(64)
+  "retention_days" int
+  "max_records_per_user" int [not null, default: 500]
+  "updated_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    ("tenant_id", "domain") [pk]
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "Messages" {
+  "id" uuid [pk]
+  "conversation_id" uuid [not null]
+  "role" varchar(20) [not null]
+  "content" jsonb [note: '{"text": <message text>}.']
+  "metadata" jsonb [note: 'Assistant turn context: agent_version_id, language, intent, analysis_type, slots, clarifications, responder_model, pending_options, pending_approval, citations.']
+  "tokens_used" int [note: 'Always 0 so far: no caller passes a token count.']
+  "latency_ms" int
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    ("conversation_id", "created_at") [name: 'idx_messages_conversation_created']
+    "inserted_at" [name: 'idx_messages_inserted_at_desc', note: 'inserted_at DESC']
+    "conversation_id" [name: 'ix_Messages_conversation_id']
+    "created_at" [name: 'ix_Messages_created_at']
+  }
+}
+
+Table "OutboxEvents" {
+  "id" bigint [pk, increment]
+  "producer" varchar(50) [not null, note: 'Service that wrote the event (workflow-runtime, kb-backend, kb-promote-silver, kb-promote-gold, web-crawler); that service\'s relay publishes it.']
+  "topic" varchar(200) [not null]
+  "event_key" varchar(200)
+  "payload" jsonb [not null]
+  "created_at" timestamptz [not null, default: `now()`]
+  "published_at" timestamptz
+  "attempts" int [not null, default: 0]
+  "last_error" text
+  "dead_at" timestamptz
+
+  indexes {
+    ("producer", "id") [name: 'idx_outboxevents_pending', note: 'WHERE ((published_at IS NULL) AND (dead_at IS NULL))']
+  }
+}
+
+Table "PlatformSettings" {
+  "id" uuid [pk]
+  "tenant_id" uuid [not null]
+  "key" varchar(100) [not null]
+  "value" jsonb [not null]
+  "updated_by" varchar(255)
+  "updated_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    ("tenant_id", "key") [unique, name: 'uq_platform_settings_tenant_key']
+    "tenant_id" [name: 'idx_platformsettings_tenant']
+  }
+
+  Note: '''
+Per-tenant settings, key -> jsonb (org_profile, schedules, delivery_channels, delivery_outbox, agent_templates). The platform-wide flags are in platform_settings.
+RLS bật (tenant_id = app.tenant_id)
+'''
+}
+
+Table "RolePermissions" {
+  "id" uuid [pk]
+  "role_id" varchar(50) [not null, note: 'Role name: PLATFORM_ADMIN, AI_ENGINEER, EXECUTIVE or BUSINESS_OPERATOR.']
+  "resource" varchar(100) [not null]
+  "action" varchar(50) [not null]
+  "inserted_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    ("role_id", "resource", "action") [unique, name: 'uq_role_permissions']
+    "inserted_at" [name: 'idx_role_permissions_inserted_at_desc', note: 'inserted_at DESC']
+    "role_id" [name: 'idx_role_permissions_role']
+  }
+
+  Note: 'Permission grants per role (action is a name from kb_backend\'s permission CATALOG), plus one anchor row per role with resource \'_role_anchor\': KBData.role_id and KBSource.role_id point at those anchors.'
+}
+
+Table "SchemaCatalog" {
+  "id" uuid [pk]
+  "tenant_id" uuid [not null]
+  "warehouse_id" uuid [not null]
+  "schema_name" varchar(128) [not null]
+  "table_name" varchar(128) [not null]
+  "columns" jsonb [not null]
+  "row_count" bigint
+  "last_altered" timestamptz
+  "text_description" text [not null]
+  "join_hints" jsonb
+  "schema_hash" varchar(32) [not null]
+  "qdrant_point_id" varchar(128)
+  "last_crawled_at" timestamptz [not null, default: `now()`]
+  "created_at" timestamptz [not null, default: `now()`]
+  "owner" varchar(255)
+  "classification" varchar(32)
+  "upstream" jsonb
+  "freshness_column" varchar(128)
+  "data_as_of" timestamptz
+  "freshness_checked_at" timestamptz
+  "freshness_sla_seconds" int
+
+  indexes {
+    ("tenant_id", "warehouse_id", "schema_name", "table_name") [unique, name: 'uq_schemacatalog_table']
+    ("tenant_id", "data_as_of") [name: 'idx_schemacatalog_freshness', note: 'WHERE (freshness_sla_seconds IS NOT NULL)']
+    ("tenant_id", "warehouse_id") [name: 'idx_schemacatalog_lookup']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "SemanticMetric" {
+  "id" uuid [pk, default: `gen_random_uuid()`]
+  "tenant_id" uuid [not null]
+  "metric_key" varchar(128) [not null]
+  "name" varchar(256) [not null]
+  "description" text [not null, default: '']
+  "owner" varchar(256) [not null]
+  "created_at" timestamptz [not null, default: `now()`]
+  "updated_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    ("tenant_id", "metric_key") [unique, name: 'uq_semantic_metric_key']
+    "tenant_id" [name: 'idx_semantic_metric_tenant']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "SemanticMetricVersion" {
+  "id" uuid [pk, default: `gen_random_uuid()`]
+  "tenant_id" uuid [not null]
+  "metric_id" uuid [not null]
+  "version" int [not null]
+  "status" varchar(16) [not null, default: 'draft']
+  "source_table" varchar(256) [not null]
+  "aggregation" varchar(32) [not null]
+  "expression" varchar(256) [not null]
+  "time_column" varchar(128)
+  "default_grain" varchar(16) [not null, default: 'none']
+  "unit" varchar(64) [not null, default: '']
+  "dimensions" jsonb [not null, default: '[]']
+  "default_filters" jsonb [not null, default: '[]']
+  "approved_by" varchar(256)
+  "approved_at" timestamptz
+  "change_note" text [not null, default: '']
+  "created_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    ("metric_id", "version") [unique, name: 'uq_semantic_metric_version']
+    ("tenant_id", "metric_id", "status") [name: 'idx_semantic_version_lookup']
+    "metric_id" [unique, name: 'uq_semantic_one_approved_version', note: 'WHERE ((status)::text = \'approved\'::text)']
+  }
+
+  Note: '''
+RLS bật (tenant_id = app.tenant_id)
+ck_semantic_version_status: CHECK status IN ('draft', 'approved', 'deprecated')
+ck_semantic_version_grain: CHECK default_grain IN ('none', 'day', 'week', 'month', 'quarter', 'year')
+ck_semantic_version_agg: CHECK aggregation IN ('sum', 'count', 'count_distinct', 'avg', 'min', 'max')
+ck_semantic_version_grain_needs_time: CHECK (((default_grain = 'none') OR (time_column IS NOT NULL)))
+'''
+}
+
+Table "SemanticSynonym" {
+  "id" uuid [pk, default: `gen_random_uuid()`]
+  "tenant_id" uuid [not null]
+  "metric_id" uuid [not null]
+  "term" varchar(256) [not null]
+  "term_normalized" varchar(256) [not null]
+  "locale" varchar(16) [not null, default: 'vi']
+  "is_active" bool [not null, default: true]
+  "created_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    ("tenant_id", "term_normalized") [unique, name: 'uq_semantic_synonym_term']
+    ("tenant_id", "metric_id") [name: 'idx_semantic_synonym_metric']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "SystemPrompts" {
+  "id" uuid [pk]
+  "tenant_id" uuid [not null]
+  "name" varchar(255) [not null]
+  "content" text [not null]
+  "version" int [not null]
+  "is_active" bool [not null, default: true]
+  "created_by" varchar(255)
+  "created_at" timestamptz [not null, default: `now()`]
+  "updated_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "inserted_at" [name: 'idx_systemprompts_inserted_at_desc', note: 'inserted_at DESC']
+    "tenant_id" [name: 'idx_systemprompts_tenant']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "Tenants" {
+  "id" uuid [pk]
+  "name" varchar(255) [not null]
+  "slug" varchar(100) [not null, unique]
+  "data_residency" varchar(20) [not null]
+  "is_active" bool [not null, default: true]
+  "created_at" timestamptz [not null, default: `now()`]
+  "deleted_at" timestamptz
+  "inserted_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "inserted_at" [name: 'idx_tenants_inserted_at_desc', note: 'inserted_at DESC']
+    "created_at" [name: 'ix_Tenants_created_at']
+  }
+}
+
+Table "WorkflowMemory" {
+  "id" uuid [pk]
+  "tenant_id" uuid [not null]
+  "agent_id" uuid [not null]
+  "task_type" varchar(64) [not null]
+  "task_description" text [not null]
+  "param_snapshot" jsonb [not null]
+  "outcome" varchar(16) [not null]
+  "duration_ms" int
+  "qdrant_point_id" varchar(128)
+  "created_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "created_at" [name: 'idx_workflowmemory_created_at_desc', note: 'created_at DESC']
+    ("tenant_id", "agent_id", "task_type") [name: 'idx_workflowmemory_task_type']
+    "tenant_id" [name: 'idx_workflowmemory_tenant']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "WorkflowVersions" {
+  "id" uuid [pk]
+  "workflow_id" uuid [not null]
+  "version" int [not null]
+  "status" varchar(20) [not null]
+  "changelog" varchar(512)
+  "created_by" varchar(255)
+  "created_at" timestamptz [not null, default: `now()`]
+  "published_at" timestamptz
+  "inserted_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    ("workflow_id", "version") [unique, name: 'uq_workflow_versions_workflow_version']
+    "inserted_at" [name: 'idx_workflowversions_inserted_at_desc', note: 'inserted_at DESC']
+    ("workflow_id", "status") [name: 'idx_workflowversions_workflow_status']
+    "workflow_id" [name: 'ix_WorkflowVersions_workflow_id']
+    "workflow_id" [unique, name: 'uq_workflowversions_one_draft', note: 'WHERE ((status)::text = \'draft\'::text)']
+    "workflow_id" [unique, name: 'uq_workflowversions_one_published', note: 'WHERE ((status)::text = \'published\'::text)']
+  }
+}
+
+Table "Workflows" {
+  "id" uuid [pk]
+  "agent_id" uuid [not null]
+  "name" varchar(255) [not null]
+  "description" varchar(512)
+  "is_active" bool [not null, default: true]
+  "created_by" varchar(255)
+  "created_at" timestamptz [not null, default: `now()`]
+  "inserted_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "agent_id" [name: 'idx_workflows_agent']
+    "inserted_at" [name: 'idx_workflows_inserted_at_desc', note: 'inserted_at DESC']
+  }
+}
+
+Table "api_keys" {
+  "id" uuid [pk, default: `gen_random_uuid()`]
+  "tenant_id" uuid [not null]
+  "created_by" varchar(255) [not null]
+  "name" varchar(255) [not null]
+  "key_hash" text [not null, note: 'bcrypt hash of the issued key. auth_api /internal/api-keys/verify checks presented keys against it, found by key_prefix.']
+  "key_prefix" varchar(64) [not null]
+  "scope" varchar(32) [not null]
+  "last_used_at" timestamptz
+  "expires_at" timestamptz
+  "revoked_at" timestamptz
+  "rotated_from" uuid [note: 'tham chiếu logic, không có FK → api_keys.id']
+  "created_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "tenant_id" [name: 'ix_api_keys_tenant']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "compliance_settings" {
+  "tenant_id" varchar(64) [pk, note: 'Tenants.id as text; no FK. — tham chiếu logic, không có FK → Tenants.id (varchar, khác kiểu uuid)']
+  "pii_masking" bool [not null, default: false]
+  "pii_types" text [not null, default: 'EMAIL,PHONE,CCCD,CMND,CREDIT_CARD,IP', note: 'Comma-separated PII types masked when pii_masking is on, e.g. EMAIL,PHONE,CCCD,CMND,CREDIT_CARD,IP.']
+  "residency_region" varchar(32) [not null, default: 'Asia-SE1']
+  "residency_standards" text [not null, default: 'GDPR']
+  "retention_days" int [not null, default: 365]
+  "retention_lock" bool [not null, default: false]
+  "zero_trust" bool [not null, default: false]
+  "audit_residency" bool [not null, default: false]
+  "updated_at" timestamptz [default: `now()`]
+  "updated_by" varchar(128) [default: '']
+}
+
+Table "ip_allowlists" {
+  "id" uuid [pk, default: `gen_random_uuid()`]
+  "tenant_id" uuid [not null]
+  "cidr" varchar(64) [not null]
+  "label" varchar(255)
+  "is_active" bool [not null, default: true]
+  "created_by" varchar(255)
+  "created_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "tenant_id" [name: 'ix_ip_allowlists_tenant']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+Table "key_rotations" {
+  "id" uuid [pk, default: `gen_random_uuid()`]
+  "secret_id" uuid [not null, note: 'secrets_vault row affected: the new row for MANUAL, the same row for SCHEDULED, PANIC and REVEAL.']
+  "triggered_by" varchar(32) [not null, note: 'SCHEDULED, MANUAL, PANIC or REVEAL. A REVEAL row records a secret being shown, not a rotation.']
+  "actor_id" varchar(255)
+  "old_version" int
+  "new_version" int
+  "status" varchar(32)
+  "error" text
+  "access_reason" text
+  "created_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "secret_id" [name: 'ix_key_rotations_secret']
+  }
+
+  Note: 'key_rotations_triggered_by_check: CHECK triggered_by IN (\'SCHEDULED\', \'MANUAL\', \'PANIC\', \'REVEAL\')'
+}
+
+Table "microsoft_sso_approvals" {
+  "id" text [pk, default: `(gen_random_uuid())::text`]
+  "keycloak_user_id" text [not null, unique]
+  "email" text [not null]
+  "display_name" text [not null, default: '']
+  "status" text [not null, default: 'pending']
+  "requested_role" text
+  "requested_tenant_id" text [note: 'tham chiếu logic, không có FK → Tenants.id (text)']
+  "reviewed_by" text
+  "reviewed_at" timestamptz
+  "created_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    ("status", "created_at") [name: 'idx_ms_approvals_status_created']
+  }
+
+  Note: 'ck_ms_approvals_status: CHECK status IN (\'pending\', \'approved\', \'rejected\')'
+}
+
+Table "platform_settings" {
+  "key" varchar(100) [pk]
+  "value" text [not null]
+  "updated_at" timestamptz [not null, default: `now()`]
+
+  Note: 'Platform-wide flags, key -> text (ip_allowlist_mode, vault_panic_mode, vault_auto_rotation, vault_pii_access_log). Per-tenant settings are in PlatformSettings.'
+}
+
+Table "secrets_vault" {
+  "id" uuid [pk, default: `gen_random_uuid()`]
+  "tenant_id" uuid [not null]
+  "key_name" varchar(255) [not null]
+  "key_type" varchar(64) [not null]
+  "algorithm" varchar(64)
+  "realm" varchar(64) [note: 'Free-text grouping label shown in the UI (e.g. FINANCE-INFRA); unrelated to Keycloak realms.']
+  "openbao_path" text [note: 'OpenBao path at write time. Readers recompute the path instead of reading this column.']
+  "version" int [not null, default: 1]
+  "is_active" bool [not null, default: true]
+  "rotation_due_at" timestamptz
+  "last_rotated_at" timestamptz
+  "created_by" varchar(255)
+  "created_at" timestamptz [not null, default: `now()`]
+
+  indexes {
+    "tenant_id" [name: 'ix_secrets_vault_tenant']
+  }
+
+  Note: 'RLS bật (tenant_id = app.tenant_id)'
+}
+
+// ---------- Foreign keys ----------
+Ref "AgentKB_kb_connection_id_fkey": "AgentKB"."kb_connection_id" > "KBConnections"."id"
+Ref "AgentKB_version_id_fkey": "AgentKB"."version_id" > "AgentVersions"."id"
+Ref "AgentMCP_mcp_id_fkey": "AgentMCP"."mcp_id" > "MCP"."id"
+Ref "AgentMCP_version_id_fkey": "AgentMCP"."version_id" > "AgentVersions"."id"
+Ref "AgentMemories_agent_id_fkey": "AgentMemories"."agent_id" > "Agents"."id"
+Ref "AgentMemories_tenant_id_fkey": "AgentMemories"."tenant_id" > "Tenants"."id"
+Ref "AgentTraces_message_id_fkey": "AgentTraces"."message_id" > "Messages"."id"
+Ref "AgentVersions_agent_id_fkey": "AgentVersions"."agent_id" > "Agents"."id"
+Ref "AgentVersions_guardrail_id_fkey": "AgentVersions"."guardrail_id" > "Guardrails"."id"
+Ref "AgentVersions_responder_model_id_fkey": "AgentVersions"."responder_model_id" > "LLMProviders"."id"
+Ref "AgentVersions_system_prompt_id_fkey": "AgentVersions"."system_prompt_id" > "SystemPrompts"."id"
+Ref "AgentVersions_workflow_version_id_fkey": "AgentVersions"."workflow_version_id" > "WorkflowVersions"."id"
+Ref "Agents_tenant_id_fkey": "Agents"."tenant_id" > "Tenants"."id"
+Ref "AuditLogs_tenant_id_fkey": "AuditLogs"."tenant_id" > "Tenants"."id"
+Ref "Conversations_tenant_id_fkey": "Conversations"."tenant_id" > "Tenants"."id"
+Ref "DataAccessLog_tenant_id_fkey": "DataAccessLog"."tenant_id" > "Tenants"."id"
+Ref "EpisodicMemory_agent_id_fkey": "EpisodicMemory"."agent_id" > "Agents"."id"
+Ref "EpisodicMemory_tenant_id_fkey": "EpisodicMemory"."tenant_id" > "Tenants"."id"
+Ref "FutureMemory_agent_id_fkey": "FutureMemory"."agent_id" > "Agents"."id"
+Ref "FutureMemory_tenant_id_fkey": "FutureMemory"."tenant_id" > "Tenants"."id"
+Ref "Guardrails_guardrail_model_id_fkey": "Guardrails"."guardrail_model_id" > "LLMProviders"."id"
+Ref "KBConflict_batch_id_fkey": "KBConflict"."batch_id" > "KBConflictBatch"."batch_id"
+Ref "KBConflict_tenant_id_fkey": "KBConflict"."tenant_id" > "Tenants"."id"
+Ref "fk_kbconflict_data_id": "KBConflict"."data_id" > "KBData"."data_id"
+Ref "KBConflictBatch_tenant_id_fkey": "KBConflictBatch"."tenant_id" > "Tenants"."id"
+Ref "KBConnections_tenant_id_fkey": "KBConnections"."tenant_id" > "Tenants"."id"
+Ref "KBData_role_id_fkey": "KBData"."role_id" > "RolePermissions"."id"
+Ref "KBData_tenant_id_fkey": "KBData"."tenant_id" > "Tenants"."id"
+Ref "fk_kbdata_knowledge_base": "KBData"."knowledge_base_id" > "KBKnowledgeBase"."knowledge_base_id"
+Ref "KBEntityLookup_tenant_id_fkey": "KBEntityLookup"."tenant_id" > "Tenants"."id"
+Ref "KBExtractionPolicy_tenant_id_fkey": "KBExtractionPolicy"."tenant_id" > "Tenants"."id"
+Ref "KBFilterPolicy_tenant_id_fkey": "KBFilterPolicy"."tenant_id" > "Tenants"."id"
+Ref "KBKnowledgeBase_tenant_id_fkey": "KBKnowledgeBase"."tenant_id" > "Tenants"."id"
+Ref "KBLifecycleHistory_data_id_fkey": "KBLifecycleHistory"."data_id" > "KBData"."data_id"
+Ref "KBModelVersion_model_id_fkey": "KBModelVersion"."model_id" > "KBModel"."model_id"
+Ref "KBNeo4jRelationship_from_node_fkey": "KBNeo4jRelationship"."from_node" > "KBNeo4jNode"."node_id"
+Ref "KBNeo4jRelationship_to_node_fkey": "KBNeo4jRelationship"."to_node" > "KBNeo4jNode"."node_id"
+Ref "KBQdrantCollection_connection_id_fkey": "KBQdrantCollection"."connection_id" > "KBQdrantConnection"."connection_id"
+Ref "KBQdrantCollection_embedding_model_id_fkey": "KBQdrantCollection"."embedding_model_id" > "KBModel"."model_id"
+Ref "KBQdrantConnection_tenant_id_fkey": "KBQdrantConnection"."tenant_id" > "Tenants"."id"
+Ref "KBSource_role_id_fkey": "KBSource"."role_id" > "RolePermissions"."id"
+Ref "KBSource_tenant_id_fkey": "KBSource"."tenant_id" > "Tenants"."id"
+Ref "KBSourceConfig_source_id_fkey": "KBSourceConfig"."source_id" > "KBSource"."source_id"
+Ref "KBSourceCrawlQueue_source_id_fkey": "KBSourceCrawlQueue"."source_id" > "KBSource"."source_id"
+Ref "KBSourceCrawlQueue_tenant_id_fkey": "KBSourceCrawlQueue"."tenant_id" > "Tenants"."id"
+Ref "KBSourceRun_source_id_fkey": "KBSourceRun"."source_id" > "KBSource"."source_id"
+Ref "KBStructuredImportJob_owner_id_fkey": "KBStructuredImportJob"."owner_id" > "KBData"."data_id" [delete: cascade]
+Ref "KBTable_owner_id_fkey": "KBTable"."owner_id" > "KBData"."data_id"
+Ref "KBTextBlock_owner_id_fkey": "KBTextBlock"."owner_id" > "KBData"."data_id"
+Ref "KBTextBlockVersion_block_id_fkey": "KBTextBlockVersion"."block_id" > "KBTextBlock"."block_id"
+Ref "KBTextBlockVersion_embedding_model_id_fkey": "KBTextBlockVersion"."embedding_model_id" > "KBModel"."model_id"
+Ref "KBTextTable_version_id_fkey": "KBTextTable"."version_id" > "KBTextBlockVersion"."version_id"
+Ref "fk_kbwarehouse_tenant": "KBWarehouse"."tenant_id" > "Tenants"."id"
+Ref "KBWarehouseConfig_warehouse_id_fkey": "KBWarehouseConfig"."warehouse_id" > "KBWarehouse"."warehouse_id"
+Ref "MCP_tenant_id_fkey": "MCP"."tenant_id" > "Tenants"."id"
+Ref "Members_tenant_id_fkey": "Members"."tenant_id" > "Tenants"."id"
+Ref "MemoryPolicy_agent_id_fkey": "MemoryPolicy"."agent_id" > "Agents"."id"
+Ref "MemoryRetentionConfig_tenant_id_fkey": "MemoryRetentionConfig"."tenant_id" > "Tenants"."id"
+Ref "Messages_conversation_id_fkey": "Messages"."conversation_id" > "Conversations"."id"
+Ref "PlatformSettings_tenant_id_fkey": "PlatformSettings"."tenant_id" > "Tenants"."id"
+Ref "SchemaCatalog_tenant_id_fkey": "SchemaCatalog"."tenant_id" > "Tenants"."id"
+Ref "SchemaCatalog_warehouse_id_fkey": "SchemaCatalog"."warehouse_id" > "KBWarehouse"."warehouse_id"
+Ref "SemanticMetric_tenant_id_fkey": "SemanticMetric"."tenant_id" > "Tenants"."id"
+Ref "SemanticMetricVersion_metric_id_fkey": "SemanticMetricVersion"."metric_id" > "SemanticMetric"."id" [delete: cascade]
+Ref "SemanticMetricVersion_tenant_id_fkey": "SemanticMetricVersion"."tenant_id" > "Tenants"."id"
+Ref "SemanticSynonym_metric_id_fkey": "SemanticSynonym"."metric_id" > "SemanticMetric"."id" [delete: cascade]
+Ref "SemanticSynonym_tenant_id_fkey": "SemanticSynonym"."tenant_id" > "Tenants"."id"
+Ref "SystemPrompts_tenant_id_fkey": "SystemPrompts"."tenant_id" > "Tenants"."id"
+Ref "WorkflowMemory_agent_id_fkey": "WorkflowMemory"."agent_id" > "Agents"."id"
+Ref "WorkflowMemory_tenant_id_fkey": "WorkflowMemory"."tenant_id" > "Tenants"."id"
+Ref "WorkflowVersions_workflow_id_fkey": "WorkflowVersions"."workflow_id" > "Workflows"."id"
+Ref "Workflows_agent_id_fkey": "Workflows"."agent_id" > "Agents"."id"
+Ref "api_keys_tenant_id_fkey": "api_keys"."tenant_id" > "Tenants"."id"
+Ref "ip_allowlists_tenant_id_fkey": "ip_allowlists"."tenant_id" > "Tenants"."id"
+Ref "key_rotations_secret_id_fkey": "key_rotations"."secret_id" > "secrets_vault"."id"
+Ref "secrets_vault_tenant_id_fkey": "secrets_vault"."tenant_id" > "Tenants"."id"
+
+// ---------- Nhóm theo domain ----------
+TableGroup tenant_iam [color: #3b82f6] {
+  "Tenants"
+  "Members"
+  "RolePermissions"
+  "microsoft_sso_approvals"
+  "api_keys"
+  "ip_allowlists"
+  "secrets_vault"
+  "key_rotations"
+  "compliance_settings"
+  Note: 'Tenant, thành viên, phân quyền, SSO, API key, secret, compliance'
+}
+
+TableGroup audit_settings_outbox [color: #64748b] {
+  "AuditLogs"
+  "DataAccessLog"
+  "OutboxEvents"
+  "PlatformSettings"
+  "platform_settings"
+  Note: 'Audit, nhật ký truy cập dữ liệu, cấu hình nền tảng, outbox Kafka'
+}
+
+TableGroup knowledge_base [color: #16a34a] {
+  "KBKnowledgeBase"
+  "KBData"
+  "KBLifecycleHistory"
+  "KBTextBlock"
+  "KBTextBlockVersion"
+  "KBTextTable"
+  "KBTable"
+  "KBStructuredImportJob"
+  "KBConflictBatch"
+  "KBConflict"
+  "KBEntityLookup"
+  "KBFilterPolicy"
+  "KBExtractionPolicy"
+  Note: 'KBData là gốc tài liệu; chunk, version, bảng, import có cấu trúc, conflict toả ra từ đó'
+}
+
+TableGroup sources_crawl [color: #0d9488] {
+  "KBSource"
+  "KBSourceConfig"
+  "KBSourceRun"
+  "KBSourceCrawlQueue"
+  Note: 'Source Registry: nguồn, cấu hình có version, lượt chạy, hàng đợi crawl'
+}
+
+TableGroup index_projections [color: #a855f7] {
+  "KBModel"
+  "KBModelVersion"
+  "KBQdrantConnection"
+  "KBQdrantCollection"
+  "KBNeo4jNode"
+  "KBNeo4jRelationship"
+  Note: 'Model embedding và metadata của các bản chiếu Qdrant / Neo4j'
+}
+
+TableGroup warehouse_semantic [color: #f59e0b] {
+  "KBWarehouse"
+  "KBWarehouseConfig"
+  "SchemaCatalog"
+  "SemanticMetric"
+  "SemanticMetricVersion"
+  "SemanticSynonym"
+  Note: 'Kho dữ liệu vật lý, schema catalog và semantic layer (metric có version)'
+}
+
+TableGroup agent_authoring [color: #ef4444] {
+  "Agents"
+  "AgentVersions"
+  "AgentKB"
+  "AgentMCP"
+  "Workflows"
+  "WorkflowVersions"
+  "MCP"
+  "KBConnections"
+  "Guardrails"
+  "SystemPrompts"
+  "LLMProviders"
+  Note: 'Agent, version, workflow, MCP, guardrail, prompt, LLM provider'
+}
+
+TableGroup conversation_memory [color: #ec4899] {
+  "Conversations"
+  "Messages"
+  "AgentTraces"
+  "AgentMemories"
+  "EpisodicMemory"
+  "FutureMemory"
+  "WorkflowMemory"
+  "MemoryPolicy"
+  "MemoryRetentionConfig"
+  Note: 'Hội thoại, message, trace và các tầng memory của agent'
+}

@@ -2,6 +2,10 @@
 --
 -- Replaces: JWT plugin + jwks-refresher service
 --
+-- On every request carrying an `sk-` API key (X-API-Key, or Bearer sk-...):
+--   verify it at auth_api (cached for api_key_cache_ttl) and inject the same
+--   identity headers as for a JWT. Everything else goes the JWT way below.
+--
 -- On every request:
 --   1. Extract Bearer token
 --   2. Decode JWT header → get kid + alg
@@ -13,6 +17,8 @@
 local http  = require "resty.http"
 local cjson = require "cjson.safe"
 local pkey  = require "resty.openssl.pkey"
+local digest = require "resty.openssl.digest"
+local to_hex = require("resty.string").to_hex
 
 local AeroflowJwks   = {}
 AeroflowJwks.PRIORITY = 1010   -- runs before pre-function (1000) is irrelevant; after rate-limit etc.
@@ -150,6 +156,62 @@ local function verify_rs256(signing_input, sig_b64, pem_str)
   return ok, verr
 end
 
+-- ── API keys ────────────────────────────────────────────────────────────
+
+-- Returns the identity table, nil (key rejected — cached for neg_ttl), or
+-- nil + err (auth_api unreachable — not cached, so the next request retries).
+local function load_api_key_identity(verify_url, gateway_key, key)
+  local httpc = http.new()
+  httpc:set_timeout(5000)
+  local res, err = httpc:request_uri(verify_url, {
+    method  = "POST",
+    body    = cjson.encode({ key = key }),
+    headers = { ["Content-Type"] = "application/json", ["X-Gateway-Key"] = gateway_key },
+  })
+  if not res then return nil, "API key verify HTTP error: " .. (err or "?") end
+  if res.status == 401 then return nil end
+  if res.status ~= 200 then return nil, "API key verify status: " .. res.status end
+  local identity, jerr = cjson.decode(res.body)
+  if not identity then return nil, "API key verify JSON error: " .. (jerr or "") end
+  return identity
+end
+
+local function authenticate_api_key(conf, key)
+  if not conf.api_key_verify_url or not conf.gateway_key or conf.gateway_key == "" then
+    return kong.response.exit(401, { message = "API keys are not enabled" })
+  end
+  -- The cache key is a hash so the raw key never sits in the shared cache.
+  -- It includes the verify URL: the cache is node-wide, and an answer from one
+  -- plugin instance's auth_api must not stand in for another's.
+  local sha = digest.new("sha256")
+  local cache_key = "aeroflow_apikey|" .. conf.api_key_verify_url .. "|" .. to_hex(sha:final(key))
+  local identity, err = kong.cache:get(
+    cache_key,
+    { ttl = conf.api_key_cache_ttl or 60, neg_ttl = 5 },
+    load_api_key_identity, conf.api_key_verify_url, conf.gateway_key, key
+  )
+  if err then
+    kong.log.err("API key verification unavailable: ", err)
+    return kong.response.exit(503, { message = "Authentication service unavailable" })
+  end
+  if not identity then
+    return kong.response.exit(401, { message = "Invalid API key" })
+  end
+
+  local roles = identity.roles or {}
+  kong.service.request.set_header("X-User-Id",      identity.user_id   or "")
+  kong.service.request.set_header("X-User-Email",   "")
+  kong.service.request.set_header("X-User-Name",    identity.user_name or "")
+  kong.service.request.set_header("X-User-Roles",   table.concat(roles, ","))
+  kong.service.request.set_header("X-Tenant-Id",    identity.tenant_id or "")
+  kong.service.request.set_header("X-Role-Id",      roles[1]           or "")
+  kong.service.request.set_header("X-Kong-Verified", "true")
+  kong.service.request.set_header("X-Gateway-Key",  conf.gateway_key)
+  -- The key is a credential for the gateway only, whatever hide_credentials says.
+  kong.service.request.clear_header("X-API-Key")
+  kong.service.request.clear_header("Authorization")
+end
+
 -- ── access handler ──────────────────────────────────────────────────────
 
 function AeroflowJwks:access(conf)
@@ -171,8 +233,16 @@ function AeroflowJwks:access(conf)
   -- present one through the gateway.
   kong.service.request.clear_header("X-Service-Assertion")
 
-  -- 1. Bearer token
+  -- 0. API key. Keys start with sk- and have no dots, so neither form can be
+  -- mistaken for a JWT.
   local auth = kong.request.get_header("Authorization")
+  local api_key = kong.request.get_header("X-API-Key")
+    or (auth and auth:match("^[Bb]earer%s+(sk%-%S+)$"))
+  if api_key then
+    return authenticate_api_key(conf, api_key)
+  end
+
+  -- 1. Bearer token
   if not auth then
     return kong.response.exit(401, { message = "Authorization header missing" })
   end

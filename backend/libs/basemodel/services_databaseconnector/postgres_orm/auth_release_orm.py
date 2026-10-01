@@ -3,7 +3,7 @@ import uuid
 from typing import Optional
 
 from sqlalchemy import (
-    Boolean, DateTime, ForeignKey, Index, Integer, SmallInteger,
+    Boolean, DateTime, ForeignKey, Index, SmallInteger,
     String, Text, UniqueConstraint, func, text,
 )
 from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB
@@ -19,7 +19,6 @@ from libs.basemodel.services_databaseconnector.postgres_orm.base import Base
 class TenantsORM(Base):
     __tablename__ = "Tenants"
     __table_args__ = (
-        Index("idx_tenants_slug", "slug", unique=True),
         Index("idx_tenants_inserted_at_desc", text("inserted_at DESC")),
     )
 
@@ -32,7 +31,6 @@ class TenantsORM(Base):
     deleted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    keycloak_config: Mapped[Optional["KeycloakRealmConfigsORM"]] = relationship(back_populates="tenant", uselist=False)
     audit_logs: Mapped[list["AuditLogsORM"]] = relationship(back_populates="tenant")
     # knowledge_base_orm
     kb_knowledge_bases: Mapped[list["KBKnowledgeBaseORM"]] = relationship(back_populates="tenant")
@@ -46,7 +44,6 @@ class TenantsORM(Base):
     # workflow_orm
     kb_connections: Mapped[list["KBConnectionsORM"]] = relationship(back_populates="tenant")
     system_prompts: Mapped[list["SystemPromptsORM"]] = relationship(back_populates="tenant")
-    tools: Mapped[list["ToolsORM"]] = relationship(back_populates="tenant")
     mcp_servers: Mapped[list["MCPORM"]] = relationship(back_populates="tenant")
     agents: Mapped[list["AgentsORM"]] = relationship(back_populates="tenant")
     agent_memories: Mapped[list["AgentMemoriesORM"]] = relationship(back_populates="tenant")
@@ -54,7 +51,6 @@ class TenantsORM(Base):
     future_memories: Mapped[list["FutureMemoryORM"]] = relationship(back_populates="tenant")
     memory_retention_configs: Mapped[list["MemoryRetentionConfigORM"]] = relationship(back_populates="tenant")
     workflow_memories: Mapped[list["WorkflowMemoryORM"]] = relationship(back_populates="tenant")
-    schema_memories: Mapped[list["SchemaMemoryORM"]] = relationship(back_populates="tenant")
     schema_catalog_entries: Mapped[list["SchemaCatalogORM"]] = relationship(back_populates="tenant")
     conversations: Mapped[list["ConversationsORM"]] = relationship(back_populates="tenant")
 
@@ -66,36 +62,14 @@ class RolePermissionsORM(Base):
         UniqueConstraint("role_id", "resource", "action", name="uq_role_permissions"),
         Index("idx_role_permissions_role", "role_id"),
         Index("idx_role_permissions_inserted_at_desc", text("inserted_at DESC")),
+        {"comment": "Permission grants per role (action is a name from kb_backend's permission CATALOG), plus one anchor row per role with resource '_role_anchor': KBData.role_id and KBSource.role_id point at those anchors."},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    role_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    role_id: Mapped[str] = mapped_column(String(50), nullable=False, comment="Role name: PLATFORM_ADMIN, AI_ENGINEER, EXECUTIVE or BUSINESS_OPERATOR.")
     resource: Mapped[str] = mapped_column(String(100), nullable=False)
     action: Mapped[str] = mapped_column(String(50), nullable=False)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-
-@register("orm")
-class KeycloakRealmConfigsORM(Base):
-    __tablename__ = "KeycloakRealmConfigs"
-    __table_args__ = (
-        Index("idx_keycloakrealmconfigs_inserted_at_desc", text("inserted_at DESC")),
-    )
-
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), primary_key=True)
-    realm_name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
-    keycloak_base_url: Mapped[str] = mapped_column(Text, nullable=False)
-    client_id: Mapped[str] = mapped_column(String(100), nullable=False)
-    client_secret_ref: Mapped[str] = mapped_column(Text, nullable=False)
-    jwks_url: Mapped[str] = mapped_column(Text, nullable=False)
-    token_endpoint: Mapped[str] = mapped_column(Text, nullable=False)
-    token_ttl_seconds: Mapped[int] = mapped_column(Integer, default=900, nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-    tenant: Mapped["TenantsORM"] = relationship(back_populates="keycloak_config")
 
 
 # ─── Auth & Security ──────────────────────────────────────────────────────────
@@ -142,10 +116,10 @@ class MembersORM(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
     user_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    role_id: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)
-    tenant_role: Mapped[str] = mapped_column(String(50), default="viewer", nullable=False)
+    role_id: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True, comment="Never written or read; the role is tenant_role.")
+    tenant_role: Mapped[str] = mapped_column(String(50), default="viewer", nullable=False, comment="admin, editor or viewer. workflow_runtime checks it before creating a conversation.")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
     joined_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     deleted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

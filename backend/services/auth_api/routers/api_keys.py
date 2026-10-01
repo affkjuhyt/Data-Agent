@@ -1,31 +1,38 @@
+import hmac
 from typing import Any
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Path
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import APIKeyORM
 from libs.shared.db_context import get_tenant_session
-from libs.shared.auth import require_role
+from libs.shared.auth import gateway_key, require_role
 try:
     from services.auth_api.domain.api_keys import (
+        SCOPE_ROLES,
         VALID_SCOPES,
+        api_key_matches,
         format_api_key,
         generate_api_key,
         hash_api_key,
+        key_prefix_of,
     )
     from services.auth_api.infrastructure.db import get_session, orm_to_dict
-    from services.auth_api.schemas import APIKeyCreateInput
+    from services.auth_api.schemas import APIKeyCreateInput, APIKeyVerifyInput
 except ModuleNotFoundError:
     from auth_api.domain.api_keys import (
+        SCOPE_ROLES,
         VALID_SCOPES,
+        api_key_matches,
         format_api_key,
         generate_api_key,
         hash_api_key,
+        key_prefix_of,
     )
     from auth_api.infrastructure.db import get_session, orm_to_dict
-    from auth_api.schemas import APIKeyCreateInput
+    from auth_api.schemas import APIKeyCreateInput, APIKeyVerifyInput
 
 router = APIRouter()
 
@@ -154,3 +161,52 @@ def rotate_api_key(
         session.flush()
         session.refresh(new_row)
         return {**format_api_key(orm_to_dict(new_row)), "raw_key": raw_key}
+
+
+# last_used_at is display-only; writing it on every verification would turn
+# each Kong cache miss into a row update.
+_LAST_USED_RESOLUTION = timedelta(minutes=1)
+
+
+@router.post("/internal/api-keys/verify")
+def verify_api_key(
+    body: APIKeyVerifyInput,
+    x_gateway_key: str = Header(default="", alias="X-Gateway-Key"),
+) -> dict[str, Any]:
+    """Who a presented API key acts as — called by Kong's aeroflow-jwks plugin.
+
+    Not under /api/auth, so no Kong route reaches it; the gateway key proves the
+    caller is the plugin. Without a configured gateway key nothing can prove
+    that, so API keys stay disabled rather than open.
+    """
+    expected = gateway_key()
+    if not expected or not hmac.compare_digest(expected, x_gateway_key):
+        raise HTTPException(status_code=401, detail="Gateway key required")
+
+    prefix = key_prefix_of(body.key)
+    if prefix is None:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+    now = datetime.now(UTC)
+    with get_session() as session:
+        candidates = session.scalars(
+            select(APIKeyORM).where(
+                APIKeyORM.key_prefix == prefix,
+                APIKeyORM.revoked_at.is_(None),
+                or_(APIKeyORM.expires_at.is_(None), APIKeyORM.expires_at > now),
+            )
+        ).all()
+        # The prefix has four random letters, so two live keys can share one.
+        row = next((r for r in candidates if api_key_matches(body.key, r.key_hash)), None)
+        if row is None or row.scope not in SCOPE_ROLES:
+            raise HTTPException(status_code=401, detail="Invalid API key")
+        if row.last_used_at is None or now - row.last_used_at >= _LAST_USED_RESOLUTION:
+            row.last_used_at = now
+        return {
+            "key_id": str(row.id),
+            "user_id": f"api-key:{row.id}",
+            "user_name": row.name,
+            "tenant_id": str(row.tenant_id),
+            "scope": row.scope,
+            "roles": [SCOPE_ROLES[row.scope]],
+        }

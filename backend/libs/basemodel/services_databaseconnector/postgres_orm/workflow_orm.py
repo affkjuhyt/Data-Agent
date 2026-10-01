@@ -17,7 +17,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -63,7 +63,7 @@ class KBConnectionsORM(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     endpoint_url: Mapped[str] = mapped_column(Text, nullable=False)
     api_key_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -86,7 +86,7 @@ class SystemPromptsORM(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
@@ -123,29 +123,6 @@ class GuardrailsORM(Base):
 
 
 @register("orm")
-class ToolsORM(Base):
-    __tablename__ = "Tools"
-    __table_args__ = (
-        Index("idx_tools_tenant", "tenant_id"),
-        Index("idx_tools_inserted_at_desc", text("inserted_at DESC")),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
-    scope: Mapped[str] = mapped_column(String(20), nullable=False)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    type: Mapped[str] = mapped_column(String(50), nullable=False)
-    status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
-    created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-    tenant: Mapped["TenantsORM"] = relationship(back_populates="tools")
-    agent_tools: Mapped[list["AgentToolsORM"]] = relationship(back_populates="tool")
-
-
-@register("orm")
 class MCPORM(Base):
     __tablename__ = "MCP"
     __table_args__ = (
@@ -154,10 +131,10 @@ class MCPORM(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     endpoint_url: Mapped[str] = mapped_column(Text, nullable=False)
-    api_key_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    api_key_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="Despite the name, the bearer token itself: config_loader sends it as auth_token.")
     status: Mapped[str] = mapped_column(String(20), default="disconnected", nullable=False)
     capabilities: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -177,7 +154,7 @@ class AgentsORM(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     language: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
@@ -185,11 +162,13 @@ class AgentsORM(Base):
         PGUUID(as_uuid=True),
         ForeignKey("AgentVersions.id", use_alter=True, name="fk_agents_published_version"),
         nullable=True,
+        comment="AgentVersions.id currently served. The ORM declares this FK but no migration created it.",
     )
     draft_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("AgentVersions.id", use_alter=True, name="fk_agents_draft_version"),
         nullable=True,
+        comment="AgentVersions.id of the editable draft; draft updates find it by AgentVersions.status instead. The ORM declares this FK but no migration created it.",
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
     deleted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -229,7 +208,7 @@ class WorkflowsORM(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    agent_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Agents.id"), nullable=False, index=True)
+    agent_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Agents.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
@@ -301,7 +280,6 @@ class AgentVersionsORM(Base):
     system_prompt: Mapped[Optional["SystemPromptsORM"]] = relationship(back_populates="agent_versions")
     guardrail: Mapped[Optional["GuardrailsORM"]] = relationship(back_populates="agent_versions")
     agent_kb: Mapped[list["AgentKBORM"]] = relationship(back_populates="version", cascade="all, delete-orphan")
-    agent_tools: Mapped[list["AgentToolsORM"]] = relationship(back_populates="version", cascade="all, delete-orphan")
     agent_mcp: Mapped[list["AgentMCPORM"]] = relationship(back_populates="version", cascade="all, delete-orphan")
 
 
@@ -317,18 +295,6 @@ class AgentKBORM(Base):
 
     version: Mapped["AgentVersionsORM"] = relationship(back_populates="agent_kb")
     kb_connection: Mapped["KBConnectionsORM"] = relationship(back_populates="agent_kb")
-
-
-@register("orm")
-class AgentToolsORM(Base):
-    __tablename__ = "AgentTools"
-
-    version_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("AgentVersions.id"), primary_key=True)
-    tool_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tools.id"), primary_key=True)
-    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-
-    version: Mapped["AgentVersionsORM"] = relationship(back_populates="agent_tools")
-    tool: Mapped["ToolsORM"] = relationship(back_populates="agent_tools")
 
 
 @register("orm")
@@ -362,7 +328,7 @@ class AgentMemoriesORM(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
     agent_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Agents.id"), nullable=False, index=True)
     scope: Mapped[str] = mapped_column(String(20), nullable=False)
     user_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
@@ -455,7 +421,7 @@ class MemoryPolicyORM(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    agent_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Agents.id"), nullable=False, index=True)
+    agent_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Agents.id"), nullable=False)
     action_type: Mapped[str] = mapped_column(String(20), nullable=False)
     condition: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
@@ -495,39 +461,12 @@ class WorkflowMemoryORM(Base):
 
 
 @register("orm")
-class SchemaMemoryORM(Base):
-    """LTM Schema Memory (doc §3.7) — hand-written catalog of tables/columns.
-
-    Unused: its Admin CRUD API and its reader were removed (the text_to_sql
-    handler reads SchemaCatalogORM or introspects instead). The mapping stays
-    only because the table does, until a migration drops it."""
-    __tablename__ = "SchemaMemory"
-    __table_args__ = (
-        Index("idx_schemamemory_lookup", "tenant_id", "data_source"),
-        UniqueConstraint("tenant_id", "data_source", "table_name", name="uq_schemamemory_table"),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
-    data_source: Mapped[str] = mapped_column(String(64), nullable=False)
-    table_name: Mapped[str] = mapped_column(String(128), nullable=False)
-    column_metadata: Mapped[list] = mapped_column(JSONB, nullable=False)
-    business_description: Mapped[str] = mapped_column(Text, nullable=False)
-    access_roles: Mapped[list[str]] = mapped_column(ARRAY(String), default=list, server_default="{}", nullable=False)
-    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-
-    tenant: Mapped["TenantsORM"] = relationship(back_populates="schema_memories")
-
-
-@register("orm")
 class SchemaCatalogORM(Base):
     """Schema Catalog (sandbox_schema_docs.docx §II) — auto-crawled, LLM-
-    enriched table catalog. Distinct from SchemaMemoryORM above: that one is
-    hand-written by an Admin and read by exact match; this one is written by
-    the schema-crawler-worker background job from Snowflake
-    INFORMATION_SCHEMA + an LLM-generated business description, embedded
-    into the Qdrant "schema_catalog" collection for hybrid (vector +
-    metadata-filter) retrieval before SQL generation.
+    enriched table catalog, written by the schema-crawler-worker background
+    job from Snowflake INFORMATION_SCHEMA + an LLM-generated business
+    description, embedded into the Qdrant "schema_catalog" collection for
+    hybrid (vector + metadata-filter) retrieval before SQL generation.
 
     warehouse_id points at KBWarehouse (basemodel...knowledge_base_orm) —
     the existing per-tenant warehouse-connection record — but is stored as a
@@ -596,10 +535,10 @@ class ConversationsORM(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
     user_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     channel: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, comment="Set to active on creation and never updated.")
     started_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     ended_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -619,9 +558,9 @@ class MessagesORM(Base):
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     conversation_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Conversations.id"), nullable=False, index=True)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
-    content: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    msg_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, nullable=True)
-    tokens_used: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    content: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True, comment="{\"text\": <message text>}.")
+    msg_metadata: Mapped[Optional[dict]] = mapped_column("metadata", JSONB, nullable=True, comment="Assistant turn context: agent_version_id, language, intent, analysis_type, slots, clarifications, responder_model, pending_options, pending_approval, citations.")
+    tokens_used: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="Always 0 so far: no caller passes a token count.")
     latency_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -642,7 +581,7 @@ class AgentTracesORM(Base):
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     message_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Messages.id"), nullable=False, index=True)
     trace_index: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    tool_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    tool_name: Mapped[str] = mapped_column(String(255), nullable=False, comment="LangGraph node name, tool/<name> for a tool call, or responder.")
     input: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     output: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -667,6 +606,7 @@ class PlatformSettingsORM(Base):
     __table_args__ = (
         UniqueConstraint("tenant_id", "key", name="uq_platform_settings_tenant_key"),
         Index("idx_platformsettings_tenant", "tenant_id"),
+        {"comment": "Per-tenant settings, key -> jsonb (org_profile, schedules, delivery_channels, delivery_outbox, agent_templates). The platform-wide flags are in platform_settings."},
     )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)

@@ -17,7 +17,7 @@ class APIKeyORM(Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
     created_by: Mapped[str] = mapped_column(String(255), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    key_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    key_hash: Mapped[str] = mapped_column(Text, nullable=False, comment="bcrypt hash of the issued key. auth_api /internal/api-keys/verify checks presented keys against it, found by key_prefix.")
     key_prefix: Mapped[str] = mapped_column(String(64), nullable=False)
     scope: Mapped[str] = mapped_column(String(32), nullable=False)
     last_used_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -36,8 +36,8 @@ class SecretVaultORM(Base):
     key_name: Mapped[str] = mapped_column(String(255), nullable=False)
     key_type: Mapped[str] = mapped_column(String(64), nullable=False)
     algorithm: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    realm: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-    openbao_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    realm: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, comment="Free-text grouping label shown in the UI (e.g. FINANCE-INFRA); unrelated to Keycloak realms.")
+    openbao_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="OpenBao path at write time. Readers recompute the path instead of reading this column.")
     version: Mapped[int] = mapped_column(Integer, server_default="1", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
     rotation_due_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -66,6 +66,7 @@ class IPAllowlistORM(Base):
 
 class AuthPlatformSettingORM(Base):
     __tablename__ = "platform_settings"
+    __table_args__ = ({"comment": "Platform-wide flags, key -> text (ip_allowlist_mode, vault_panic_mode, vault_auto_rotation, vault_pii_access_log). Per-tenant settings are in PlatformSettings."},)
 
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)
@@ -77,8 +78,8 @@ class KeyRotationORM(Base):
     __table_args__ = (Index("ix_key_rotations_secret", "secret_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
-    secret_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("secrets_vault.id"), nullable=False)
-    triggered_by: Mapped[str] = mapped_column(String(32), nullable=False)
+    secret_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("secrets_vault.id"), nullable=False, comment="secrets_vault row affected: the new row for MANUAL, the same row for SCHEDULED, PANIC and REVEAL.")
+    triggered_by: Mapped[str] = mapped_column(String(32), nullable=False, comment="SCHEDULED, MANUAL, PANIC or REVEAL. A REVEAL row records a secret being shown, not a rotation.")
     actor_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     old_version: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     new_version: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -93,9 +94,9 @@ class KeyRotationORM(Base):
 class ComplianceSettingORM(Base):
     __tablename__ = "compliance_settings"
 
-    tenant_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), primary_key=True, comment="Tenants.id as text; no FK.")
     pii_masking: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
-    pii_types: Mapped[str] = mapped_column(Text, server_default="EMAIL,PHONE,CCCD,CMND,CREDIT_CARD,IP", nullable=False)
+    pii_types: Mapped[str] = mapped_column(Text, server_default="EMAIL,PHONE,CCCD,CMND,CREDIT_CARD,IP", nullable=False, comment="Comma-separated PII types masked when pii_masking is on, e.g. EMAIL,PHONE,CCCD,CMND,CREDIT_CARD,IP.")
     residency_region: Mapped[str] = mapped_column(String(32), server_default="Asia-SE1", nullable=False)
     residency_standards: Mapped[str] = mapped_column(Text, server_default="GDPR", nullable=False)
     retention_days: Mapped[int] = mapped_column(Integer, server_default="365", nullable=False)

@@ -325,6 +325,9 @@ fi
 GATEWAY_KEY_JSON_FIELD=""
 if [ -n "$KONG_GATEWAY_KEY" ]; then
   GATEWAY_KEY_JSON_FIELD=",\"gateway_key\":\"$KONG_GATEWAY_KEY\""
+  # API keys (sk-...) are verified by auth_api, which only answers a caller
+  # holding the gateway key — so they are enabled exactly when that key is set.
+  GATEWAY_KEY_JSON_FIELD="$GATEWAY_KEY_JSON_FIELD,\"api_key_verify_url\":\"http://$AUTH_API_HOST:8200/internal/api-keys/verify\""
 fi
 
 if [ "$SKIP_JWT" = "1" ]; then

@@ -127,7 +127,7 @@ class KBDataORM(Base):
 
     data_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
-    role_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("RolePermissions.id"), nullable=False)
+    role_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("RolePermissions.id"), nullable=False, comment="Lowest role that may see the document: one of the RolePermissions anchor rows. A viewer sees documents of their own role and every lower one (PLATFORM_ADMIN > AI_ENGINEER > EXECUTIVE > BUSINESS_OPERATOR).")
     # The knowledge base (kind of knowledge) this document belongs to. Nullable so
     # documents ingested before knowledge bases existed remain valid.
     knowledge_base_id: Mapped[Optional[uuid.UUID]] = mapped_column(
@@ -137,10 +137,10 @@ class KBDataORM(Base):
     extension: Mapped[str] = mapped_column(String(32), nullable=False)
     language: Mapped[str] = mapped_column(String(32), nullable=False)
     source_type: Mapped[str] = mapped_column(String(32), nullable=False)
-    added_by: Mapped[str] = mapped_column(String(255), nullable=False)
-    abstract: Mapped[str] = mapped_column(Text, nullable=False)
+    added_by: Mapped[str] = mapped_column(String(255), nullable=False, comment="Display name of the uploader, not a user id.")
+    abstract: Mapped[str] = mapped_column(Text, nullable=False, comment="Short description. The upload UI sends the document name here; web crawls write an empty string.")
     doc_metadata: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False)
-    current_tier: Mapped[str] = mapped_column(String(16), default=Tier.BRONZE.value, nullable=False)
+    current_tier: Mapped[str] = mapped_column(String(16), default=Tier.BRONZE.value, nullable=False, comment="Furthest medallion tier reached: bronze, silver or gold. Same as the latest KBLifecycleHistory.to_tier.")
     # 'document' (default, today's RAG/Qdrant path, unchanged) or
     # 'structured_table' (opt-in: LLM proposes a schema from the file, a
     # human reviews it, and only on approval does a real Postgres table get
@@ -149,13 +149,13 @@ class KBDataORM(Base):
     # union per source_type (Document/Image/Video/Web/Warehouse in
     # postgres_model.py) and silently drops any key its Pydantic model
     # doesn't declare.
-    ingestion_mode: Mapped[str] = mapped_column(String(32), default="document", server_default="document", nullable=False)
+    ingestion_mode: Mapped[str] = mapped_column(String(32), default="document", server_default="document", nullable=False, comment="document (chunked and embedded) or structured_table (rows imported into kb_structured).")
     # 'training' | 'production' | 'evaluation' — a steward tags data at
     # ingestion time (Phase D). Non-production data is fully hidden from
     # RAG/search by default (see qdrant_connector.py's _build_qdrant_filters)
     # — visible only through Data Layers/Source Registry directly.
     purpose: Mapped[str] = mapped_column(String(16), default="production", server_default="production", nullable=False)
-    path: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    path: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True, comment="MinIO object key of the uploaded file. NULL for web-crawled documents.")
     # sha256 hex digest of the raw content bytes (or extracted text, for
     # web/rss sources with no stable raw bytes). Lets a re-crawl short-circuit
     # the existing same-name replace when the content genuinely hasn't
@@ -166,7 +166,7 @@ class KBDataORM(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
-    row_version: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), server_default=text("gen_random_uuid()"), default=uuid.uuid4, nullable=False)
+    row_version: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), server_default=text("gen_random_uuid()"), default=uuid.uuid4, nullable=False, comment="Optimistic-lock token, regenerated on every write; no writer compares it yet.")
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     tenant: Mapped["TenantsORM"] = relationship(back_populates="kb_data")
@@ -322,7 +322,7 @@ class KBWarehouseORM(Base):
     # Warehouses are tenant-scoped like every other asset (a tenant only sees and
     # manages its own warehouse connections).
     tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
-    service: Mapped[str] = mapped_column(String(255), nullable=False)
+    service: Mapped[str] = mapped_column(String(255), nullable=False, comment="Warehouse engine as entered (Snowflake, Databricks, Postgres; case varies). The schema crawler normalises it.")
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -424,7 +424,7 @@ class KBSourceRunORM(Base):
     source_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBSource.source_id"), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     trigger: Mapped[str] = mapped_column(String(16), nullable=False)
-    data_ids: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    data_ids: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True, comment="JSON array of the KBData.data_id values this run produced; no FK.")
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     quality_metrics: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     # Retry/backoff for a failed run: the worker's due-check picks up
@@ -479,7 +479,7 @@ class KBTableORM(Base):
     )
 
     table_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    owner_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBData.data_id"), nullable=False, index=True)
+    owner_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBData.data_id"), nullable=False, index=True, comment="KBData.data_id of the structured-table document.")
     table_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     table_schema: Mapped[Optional[dict]] = mapped_column("schema", JSONB, nullable=True)
@@ -507,7 +507,7 @@ class KBStructuredImportJobORM(Base):
     )
 
     job_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    owner_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBData.data_id", ondelete="CASCADE"), nullable=False, index=True)
+    owner_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBData.data_id", ondelete="CASCADE"), nullable=False, index=True, comment="KBData.data_id of the document being imported.")
     # proposing -> proposed -> approved | rejected, or failed at any point
     # before 'proposed' (worker-side error, e.g. Docling/LLM failure).
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="proposing", server_default="proposing")
@@ -535,7 +535,7 @@ class KBTextBlockORM(Base):
     )
 
     block_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    owner_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBData.data_id"), nullable=False, index=True)
+    owner_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBData.data_id"), nullable=False, index=True, comment="KBData.data_id of the document this chunk belongs to.")
     block_index: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -560,7 +560,7 @@ class KBTextBlockVersionORM(Base):
     created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     table_involved: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     embedding_model_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBModel.model_id"), nullable=True)
-    payload: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    payload: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True, comment="Chunk metadata also held in the Qdrant payload (summary, entities, embedding_model_id, knowledge_base, region); only entities is read back from here.")
     is_active: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -598,6 +598,7 @@ class KBQdrantConnectionORM(Base):
     __table_args__ = (
         Index("idx_kbqdrantconn_tenant_active", "tenant_id", postgresql_where=text("is_active = true")),
         Index("idx_kbqdrantconnection_inserted_at_desc", text("inserted_at DESC")),
+        {"comment": "Ties Qdrant collections to a tenant. Holds no URL: the Qdrant endpoint comes from QDRANT_URL."},
     )
 
     connection_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -618,6 +619,7 @@ class KBQdrantCollectionORM(Base):
 
     __table_args__ = (
         Index("idx_kbqdrantcollection_inserted_at_desc", text("inserted_at DESC")),
+        {"comment": "Seeded metadata for Qdrant collections. points_count, vector_dimension and similarity_metric are not kept in sync; the UI reads them live from Qdrant."},
     )
 
     collection_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -642,11 +644,12 @@ class KBNeo4jNodeORM(Base):
 
     __table_args__ = (
         Index("idx_kbneo4jnode_inserted_at_desc", text("inserted_at DESC")),
+        {"comment": "Postgres mirror of the Neo4j entity nodes, written by GraphStore alongside Neo4j; used for provenance and as the UI fallback when Neo4j is down."},
     )
 
     node_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True, index=True)
-    knowledge_base: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    knowledge_base: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, comment="str(KBData.knowledge_base_id), or the literal 'General Knowledge Base' when the document has none. Part of the node id hash; no FK.")
     node_name: Mapped[str] = mapped_column(String(512), nullable=False)
     node_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -674,6 +677,7 @@ class KBNeo4jRelationshipORM(Base):
         Index("idx_kbneo4jrelationship_pair", "from_node", "to_node"),
         Index("idx_kbneo4jrelationship_block", "block_id"),
         Index("idx_kbneo4jrelationship_data", "data_id"),
+        {"comment": "Postgres mirror of the Neo4j RELATES edges, one row per (from_node, to_node, block_id) so each edge keeps the chunk it came from."},
     )
 
     from_node: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBNeo4jNode.node_id"), primary_key=True)
@@ -681,7 +685,7 @@ class KBNeo4jRelationshipORM(Base):
     block_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     data_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True)
     tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True)
-    knowledge_base: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    knowledge_base: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, comment="str(KBData.knowledge_base_id), or the literal 'General Knowledge Base' when the document has none; no FK.")
     score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)

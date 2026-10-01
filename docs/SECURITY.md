@@ -27,6 +27,15 @@ production release. Operational procedures are in [`RUNBOOK.md`](./RUNBOOK.md).
   `GATEWAY_KEY` unset keeps the old, weaker behaviour and logs a warning on every
   request — set it everywhere except a laptop. (`KB_GATEWAY_KEY` is still read as a
   deprecated alias.)
+- **API keys (`sk-…`).** Issued by a `platform-admin` in Settings → API keys and sent as
+  `X-API-Key: sk-…` or `Authorization: Bearer sk-…`. `aeroflow-jwks` sends the key to
+  auth_api's `/internal/api-keys/verify` (no Kong route reaches it; the caller must present
+  the gateway key), which finds it by `key_prefix`, checks the bcrypt hash and refuses a
+  revoked or expired key. The key then acts as its tenant with one role per scope
+  (`full_access` → `ai-engineer`, `read_only` → `executive-viewer`, `admin_platform` →
+  `platform-admin`), `X-User-Id: api-key:<id>`. Kong caches a verified key for
+  `api_key_cache_ttl` (60 s), which is also how long a revoked key can keep working.
+  Enabled exactly when `GATEWAY_KEY` is set (`kong-setup.sh`).
 - **Service-to-service identity.** `workflow-runtime` calls `kb-backend` directly
   (`kb_search` → LightRAG retrieve), so it cannot present a user's Keycloak token. It signs
   an **HMAC assertion** (`backend/libs/shared/service_identity.py`) carrying the real caller's
