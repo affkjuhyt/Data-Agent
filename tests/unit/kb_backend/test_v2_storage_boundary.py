@@ -5,8 +5,9 @@ chunk path (Silver/Gold) or the v1 structured-KB path (`kb.structured.propose`
 
 Every entry point is checked, not just the one a button uses: kb_backend's
 routes refuse with 409, and the Silver, Gold and structured-propose consumers
-refuse again, so a replayed Kafka event or an old crawler build is stopped too.
-The crawler side lives in tests/unit/platform_workers/test_web_crawler_v2_boundary.py.
+refuse again, so a replayed Kafka event is stopped too. The crawler side is
+covered by the integration web-crawler worker test, where Bronze landing and
+auto-promotion are exercised against real migrations.
 """
 
 from __future__ import annotations

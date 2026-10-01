@@ -11,7 +11,6 @@ from sqlalchemy import cast as sa_cast
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import func as sa_func
 from sqlalchemy import select as sa_select
-from sqlalchemy import text as sa_text
 from sqlalchemy import update as sa_update
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -20,6 +19,7 @@ from libs.basemodel.services_databaseconnector.postgres_model import (
     KBLifecycleHistoryInsert,
     Tier,
 )
+from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import ComplianceSettingORM
 from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBConflictBatchORM,
     KBConflictORM,
@@ -492,15 +492,15 @@ async def _record_gold_lifecycle(
 async def _load_pii_policy(postgres: PostgresClient, tenant_id: str) -> list[str]:
     try:
         async with postgres.get_client() as session:
-            result = await session.execute(
-                sa_text("SELECT pii_masking, pii_types FROM compliance_settings WHERE tenant_id = :tid"),
-                {"tid": tenant_id},
+            row = await session.scalar(
+                sa_select(ComplianceSettingORM)
+                .where(ComplianceSettingORM.tenant_id == tenant_id)
+                .limit(1)
             )
-            row = result.mappings().first()
     except Exception as exc:
         log.warning("Gold: PII policy lookup failed tenant=%s: %s — masking disabled", tenant_id, exc)
         return []
-    if not row or not row["pii_masking"]:
+    if not row or not row.pii_masking:
         return []
-    raw = (row["pii_types"] or "").strip()
+    raw = (row.pii_types or "").strip()
     return [segment for segment in (part.strip().upper() for part in raw.split(",")) if segment]

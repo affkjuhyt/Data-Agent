@@ -8,7 +8,18 @@ from dotenv import find_dotenv, load_dotenv
 
 load_dotenv(find_dotenv())
 
-from sqlalchemy import text
+from sqlalchemy import select
+
+from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
+    AgentKBORM,
+    AgentMCPORM,
+    AgentVersionsORM,
+    AgentsORM,
+    KBConnectionsORM,
+    LLMProvidersORM,
+    MCPORM,
+    SystemPromptsORM,
+)
 
 from services.workflow_runtime.prompts import PROMPTS_DIR
 
@@ -71,22 +82,23 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
     try:
         async with client.get_client(tenant_id=tenant_id) as session:
             # 1. Load published agent_version với responder model + system prompt
-            row = (await session.execute(text("""
-                SELECT
-                    av.id                          AS agent_version_id,
-                    av.workflow_version_id,
-                    av.memory_enabled,
-                    av.llm_config,
-                    av.retrieval_config,
-                    lp.model_id                    AS responder_model,
-                    sp.content                     AS system_prompt
-                FROM "Agents" a
-                JOIN "AgentVersions" av  ON av.id = a.published_version_id
-                JOIN "LLMProviders"  lp  ON lp.id = av.responder_model_id
-                LEFT JOIN "SystemPrompts" sp ON sp.id = av.system_prompt_id
-                WHERE a.id = :agent_id
-                  AND a.deleted_at IS NULL
-            """), {"agent_id": agent_id})).fetchone()
+            row = (
+                await session.execute(
+                    select(
+                        AgentVersionsORM.id.label("agent_version_id"),
+                        AgentVersionsORM.workflow_version_id,
+                        AgentVersionsORM.memory_enabled,
+                        AgentVersionsORM.llm_config,
+                        AgentVersionsORM.retrieval_config,
+                        LLMProvidersORM.model_id.label("responder_model"),
+                        SystemPromptsORM.content.label("system_prompt"),
+                    )
+                    .join(AgentVersionsORM, AgentVersionsORM.id == AgentsORM.published_version_id)
+                    .join(LLMProvidersORM, LLMProvidersORM.id == AgentVersionsORM.responder_model_id)
+                    .outerjoin(SystemPromptsORM, SystemPromptsORM.id == AgentVersionsORM.system_prompt_id)
+                    .where(AgentsORM.id == agent_id, AgentsORM.deleted_at.is_(None))
+                )
+            ).fetchone()
 
             if not row:
                 logger.info("no published version for agent=%s", agent_id)
@@ -96,23 +108,25 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
             wv_id            = str(row.workflow_version_id) if row.workflow_version_id else None
 
             # 2. KB connections
-            kb_rows = (await session.execute(text("""
-                SELECT kc.endpoint_url, kc.api_key_ref
-                FROM "AgentKB" ak
-                JOIN "KBConnections" kc ON kc.id = ak.kb_connection_id
-                WHERE ak.version_id = :av_id
-                LIMIT 1
-            """), {"av_id": str(row.agent_version_id)})).fetchall()
+            kb_rows = (
+                await session.execute(
+                    select(KBConnectionsORM.endpoint_url, KBConnectionsORM.api_key_ref)
+                    .join(AgentKBORM, AgentKBORM.kb_connection_id == KBConnectionsORM.id)
+                    .where(AgentKBORM.version_id == row.agent_version_id)
+                    .limit(1)
+                )
+            ).fetchall()
 
             kb_endpoint = kb_rows[0].endpoint_url if kb_rows else DEV_CONFIG["kb_endpoint"]
 
             # 3. MCP endpoints
-            mcp_rows = (await session.execute(text("""
-                SELECT m.name, m.endpoint_url, m.api_key_ref, m.capabilities
-                FROM "AgentMCP" am
-                JOIN "MCP" m ON m.id = am.mcp_id
-                WHERE am.version_id = :av_id
-            """), {"av_id": str(row.agent_version_id)})).fetchall()
+            mcp_rows = (
+                await session.execute(
+                    select(MCPORM.name, MCPORM.endpoint_url, MCPORM.api_key_ref, MCPORM.capabilities)
+                    .join(AgentMCPORM, AgentMCPORM.mcp_id == MCPORM.id)
+                    .where(AgentMCPORM.version_id == row.agent_version_id)
+                )
+            ).fetchall()
 
             mcp_endpoints = [
                 {

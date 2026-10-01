@@ -16,20 +16,19 @@ import pytest
 pytestmark = pytest.mark.unit
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
-ORM_DIR = REPO_ROOT / "backend" / "libs" / "basemodel" / "services_databaseconnector" / "postgres_orm"
 MIGRATIONS = REPO_ROOT / "backend" / "alembic" / "versions"
 
 
 def _orm_cascades() -> set[tuple[str, str]]:
     """(child table, parent reference) for every ondelete=CASCADE in the ORM."""
+    import libs.basemodel.services_databaseconnector.postgres_orm  # noqa: F401
+    from libs.basemodel.services_databaseconnector.postgres_orm.base import Base
+
     cascades = set()
-    for orm_file in ORM_DIR.glob("*.py"):
-        for chunk in orm_file.read_text(encoding="utf-8").split("\nclass ")[1:]:
-            table = re.search(r'__tablename__ = "([^"]+)"', chunk)
-            if not table:
-                continue
-            for parent in re.findall(r'ForeignKey\("([^"]+)",\s*ondelete="CASCADE"\)', chunk):
-                cascades.add((table.group(1), parent))
+    for table in Base.metadata.tables.values():
+        for foreign_key in table.foreign_keys:
+            if foreign_key.ondelete == "CASCADE":
+                cascades.add((table.name, foreign_key.target_fullname))
     return cascades
 
 

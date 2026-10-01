@@ -20,6 +20,7 @@ import logging
 import os
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from kafka import KafkaProducer
@@ -33,12 +34,22 @@ from qdrant_client.models import (
     PointIdsList,
     PointStruct,
 )
+from sqlalchemy import func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.orm import Session, sessionmaker
 from tenacity import RetryError, Retrying, stop_after_attempt, wait_chain, wait_fixed
 
+from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
+    AgentMemoriesORM,
+    EpisodicMemoryORM,
+    FutureMemoryORM,
+    MemoryRetentionConfigORM,
+    MessagesORM,
+)
 from libs.shared.embeddings import embed_one
+from services.platform_workers.common import db as worker_db
 from services.platform_workers.common import kafka as kafka_factory
 from services.platform_workers.common import llm as llm_client
-from services.platform_workers.common import pg
 from services.platform_workers.common import qdrant as qdrant_factory
 from services.platform_workers.common.settings import (
     KafkaSettings,
@@ -152,56 +163,75 @@ def embed(text: str) -> list[float]:
 
 # ─── Postgres helpers ────────────────────────────────────────────────────────
 
-def fetch_turn(cur: Any, conversation_id: str, message_id: str) -> tuple[str | None, str | None]:
+def _parse_dt(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    raise ValueError("datetime value is required")
+
+
+def fetch_turn(session: Session, conversation_id: str, message_id: str) -> tuple[str | None, str | None]:
     """Re-reads the assistant message + the immediately preceding user message.
     Postgres Messages is the source of truth; the Kafka payload is just a pointer."""
-    cur.execute('SELECT content, created_at FROM "Messages" WHERE id = %s', (message_id,))
-    row = cur.fetchone()
+    row = session.execute(
+        select(MessagesORM.content, MessagesORM.created_at).where(MessagesORM.id == message_id)
+    ).one_or_none()
     if not row:
         return None, None
-    assistant_text = (row[0] or {}).get("text", "")
-    cur.execute(
-        """SELECT content FROM "Messages"
-           WHERE conversation_id = %s AND role = 'user' AND created_at <= %s
-           ORDER BY created_at DESC LIMIT 1""",
-        (conversation_id, row[1]),
+    assistant_text = (row.content or {}).get("text", "")
+    urow = session.scalar(
+        select(MessagesORM.content)
+        .where(
+            MessagesORM.conversation_id == conversation_id,
+            MessagesORM.role == "user",
+            MessagesORM.created_at <= row.created_at,
+        )
+        .order_by(MessagesORM.created_at.desc())
+        .limit(1)
     )
-    urow = cur.fetchone()
-    user_text = (urow[0] or {}).get("text", "") if urow else ""
+    user_text = (urow or {}).get("text", "") if urow else ""
     return user_text, assistant_text
 
 
-def get_retention_config(cur: Any, tenant_id: str, domain: str) -> tuple[int | None, int]:
-    cur.execute(
-        'SELECT retention_days, max_records_per_user FROM "MemoryRetentionConfig" WHERE tenant_id=%s AND domain=%s',
-        (tenant_id, domain),
-    )
-    row = cur.fetchone()
+def get_retention_config(session: Session, tenant_id: str, domain: str) -> tuple[int | None, int]:
+    row = session.execute(
+        select(MemoryRetentionConfigORM.retention_days, MemoryRetentionConfigORM.max_records_per_user)
+        .where(MemoryRetentionConfigORM.tenant_id == tenant_id, MemoryRetentionConfigORM.domain == domain)
+    ).one_or_none()
     if not row:
         return DEFAULT_EPISODIC_RETENTION_DAYS, DEFAULT_AGENTMEMORIES_MAX_PER_USER
-    return row[0], row[1]
+    return row.retention_days, row.max_records_per_user
 
 
-def enforce_agent_memories_cap(cur: Any, tenant_id: str, agent_id: str, user_ref: str, domain: str, cap: int) -> None:
-    cur.execute(
-        """SELECT COUNT(*) FROM "AgentMemories"
-           WHERE tenant_id=%s AND agent_id=%s AND user_ref=%s AND domain=%s AND deleted_at IS NULL""",
-        (tenant_id, agent_id, user_ref, domain),
+def enforce_agent_memories_cap(session: Session, tenant_id: str, agent_id: str, user_ref: str, domain: str, cap: int) -> None:
+    count = session.scalar(
+        select(func.count())
+        .select_from(AgentMemoriesORM)
+        .where(
+            AgentMemoriesORM.tenant_id == tenant_id,
+            AgentMemoriesORM.agent_id == agent_id,
+            AgentMemoriesORM.user_ref == user_ref,
+            AgentMemoriesORM.domain == domain,
+            AgentMemoriesORM.deleted_at.is_(None),
+        )
     )
-    count = cur.fetchone()[0]
-    if count <= cap:
+    if int(count or 0) <= cap:
         return
-    over_by = count - cap
-    cur.execute(
-        """UPDATE "AgentMemories" SET deleted_at = now()
-           WHERE id IN (
-             SELECT id FROM "AgentMemories"
-             WHERE tenant_id=%s AND agent_id=%s AND user_ref=%s AND domain=%s AND deleted_at IS NULL
-             ORDER BY importance ASC NULLS FIRST, updated_at ASC
-             LIMIT %s
-           )""",
-        (tenant_id, agent_id, user_ref, domain, over_by),
+    over_by = int(count or 0) - cap
+    victim_ids = (
+        select(AgentMemoriesORM.id)
+        .where(
+            AgentMemoriesORM.tenant_id == tenant_id,
+            AgentMemoriesORM.agent_id == agent_id,
+            AgentMemoriesORM.user_ref == user_ref,
+            AgentMemoriesORM.domain == domain,
+            AgentMemoriesORM.deleted_at.is_(None),
+        )
+        .order_by(AgentMemoriesORM.importance.asc().nulls_first(), AgentMemoriesORM.updated_at.asc())
+        .limit(over_by)
     )
+    session.execute(update(AgentMemoriesORM).where(AgentMemoriesORM.id.in_(victim_ids)).values(deleted_at=func.now()))
     log.info("AgentMemories cap evicted %d rows (tenant=%s domain=%s)", over_by, tenant_id, domain)
 
 
@@ -252,7 +282,7 @@ def _resolve_catch_all_key(qdrant: QdrantClient, vector: list[float], tenant_id:
     return new_key, "ADD"
 
 
-def _delete_catch_all_match(cur: Any, qdrant: QdrantClient, tenant_id: str, agent_id: str, user_ref: str,
+def _delete_catch_all_match(session: Session, qdrant: QdrantClient, tenant_id: str, agent_id: str, user_ref: str,
                              domain: str, content: str) -> None:
     """Best-effort match against the user's catch-all facts (doc §V DELETE
     example) — same spirit as cancel_future_memory()'s fuzzy match. No
@@ -270,10 +300,17 @@ def _delete_catch_all_match(cur: Any, qdrant: QdrantClient, tenant_id: str, agen
         return
 
     fact_key = hit.payload["fact_key"]
-    cur.execute(
-        """UPDATE "AgentMemories" SET deleted_at = now()
-           WHERE tenant_id=%s AND agent_id=%s AND user_ref=%s AND domain=%s AND fact_key=%s AND deleted_at IS NULL""",
-        (tenant_id, agent_id, user_ref, domain, fact_key),
+    session.execute(
+        update(AgentMemoriesORM)
+        .where(
+            AgentMemoriesORM.tenant_id == tenant_id,
+            AgentMemoriesORM.agent_id == agent_id,
+            AgentMemoriesORM.user_ref == user_ref,
+            AgentMemoriesORM.domain == domain,
+            AgentMemoriesORM.fact_key == fact_key,
+            AgentMemoriesORM.deleted_at.is_(None),
+        )
+        .values(deleted_at=func.now())
     )
     try:
         qdrant.delete(QDRANT_COLLECTION, points_selector=PointIdsList(points=[hit.id]))
@@ -281,7 +318,7 @@ def _delete_catch_all_match(cur: Any, qdrant: QdrantClient, tenant_id: str, agen
         log.warning("qdrant delete failed point=%s: %s", hit.id, e)
 
 
-def process_semantic_insight(cur: Any, qdrant: QdrantClient, tenant_id: str, agent_id: str, user_ref: str,
+def process_semantic_insight(session: Session, qdrant: QdrantClient, tenant_id: str, agent_id: str, user_ref: str,
                               insight: dict[str, Any], message_id: str, index: int) -> None:
     domain, base_fact_key = _normalize_fact_key(insight.get("domain") or "", insight.get("fact_key") or "")
     content = (insight.get("content") or "").strip()
@@ -290,13 +327,20 @@ def process_semantic_insight(cur: Any, qdrant: QdrantClient, tenant_id: str, age
 
     if action == "delete":
         if is_catch_all:
-            _delete_catch_all_match(cur, qdrant, tenant_id, agent_id, user_ref, domain, content)
+            _delete_catch_all_match(session, qdrant, tenant_id, agent_id, user_ref, domain, content)
             return
         point_id = _qdrant_point_id(tenant_id, agent_id, user_ref, domain, base_fact_key)
-        cur.execute(
-            """UPDATE "AgentMemories" SET deleted_at = now()
-               WHERE tenant_id=%s AND agent_id=%s AND user_ref=%s AND domain=%s AND fact_key=%s AND deleted_at IS NULL""",
-            (tenant_id, agent_id, user_ref, domain, base_fact_key),
+        session.execute(
+            update(AgentMemoriesORM)
+            .where(
+                AgentMemoriesORM.tenant_id == tenant_id,
+                AgentMemoriesORM.agent_id == agent_id,
+                AgentMemoriesORM.user_ref == user_ref,
+                AgentMemoriesORM.domain == domain,
+                AgentMemoriesORM.fact_key == base_fact_key,
+                AgentMemoriesORM.deleted_at.is_(None),
+            )
+            .values(deleted_at=func.now())
         )
         try:
             qdrant.delete(QDRANT_COLLECTION, points_selector=PointIdsList(points=[point_id]))
@@ -317,10 +361,17 @@ def process_semantic_insight(cur: Any, qdrant: QdrantClient, tenant_id: str, age
         # (which would otherwise silently overwrite an unrelated note).
         fact_key, decision = _resolve_catch_all_key(qdrant, vector, tenant_id, agent_id, domain, message_id, index)
         if decision == "NO_CHANGE":
-            cur.execute(
-                """UPDATE "AgentMemories" SET updated_at = now()
-                   WHERE tenant_id=%s AND agent_id=%s AND user_ref=%s AND domain=%s AND fact_key=%s AND deleted_at IS NULL""",
-                (tenant_id, agent_id, user_ref, domain, fact_key),
+            session.execute(
+                update(AgentMemoriesORM)
+                .where(
+                    AgentMemoriesORM.tenant_id == tenant_id,
+                    AgentMemoriesORM.agent_id == agent_id,
+                    AgentMemoriesORM.user_ref == user_ref,
+                    AgentMemoriesORM.domain == domain,
+                    AgentMemoriesORM.fact_key == fact_key,
+                    AgentMemoriesORM.deleted_at.is_(None),
+                )
+                .values(updated_at=func.now())
             )
             return
     else:
@@ -344,10 +395,17 @@ def process_semantic_insight(cur: Any, qdrant: QdrantClient, tenant_id: str, age
 
         if sim is not None and sim > 0.95:
             # NO_CHANGE — touch updated_at only (doc §V).
-            cur.execute(
-                """UPDATE "AgentMemories" SET updated_at = now()
-                   WHERE tenant_id=%s AND agent_id=%s AND user_ref=%s AND domain=%s AND fact_key=%s AND deleted_at IS NULL""",
-                (tenant_id, agent_id, user_ref, domain, fact_key),
+            session.execute(
+                update(AgentMemoriesORM)
+                .where(
+                    AgentMemoriesORM.tenant_id == tenant_id,
+                    AgentMemoriesORM.agent_id == agent_id,
+                    AgentMemoriesORM.user_ref == user_ref,
+                    AgentMemoriesORM.domain == domain,
+                    AgentMemoriesORM.fact_key == fact_key,
+                    AgentMemoriesORM.deleted_at.is_(None),
+                )
+                .values(updated_at=func.now())
             )
             return
 
@@ -355,14 +413,30 @@ def process_semantic_insight(cur: Any, qdrant: QdrantClient, tenant_id: str, age
 
     # ADD or UPDATE — ON CONFLICT makes this idempotent across retries.
     scope = "user" if user_ref and user_ref != "anonymous" else "global"
-    cur.execute(
-        """INSERT INTO "AgentMemories"
-             (id, tenant_id, agent_id, scope, user_ref, memory_type, domain, fact_key, content, embedding_ref, importance)
-           VALUES (%s, %s, %s, %s, %s, 'semantic', %s, %s, %s, %s, %s)
-           ON CONFLICT (tenant_id, agent_id, scope, user_ref, domain, fact_key)
-           DO UPDATE SET content = EXCLUDED.content, importance = EXCLUDED.importance,
-                         embedding_ref = EXCLUDED.embedding_ref, updated_at = now(), deleted_at = NULL""",
-        (str(uuid.uuid4()), tenant_id, agent_id, scope, user_ref, domain, fact_key, content, point_id, importance),
+    stmt = pg_insert(AgentMemoriesORM).values(
+        id=uuid.uuid4(),
+        tenant_id=tenant_id,
+        agent_id=agent_id,
+        scope=scope,
+        user_ref=user_ref,
+        memory_type="semantic",
+        domain=domain,
+        fact_key=fact_key,
+        content=content,
+        embedding_ref=point_id,
+        importance=importance,
+    )
+    session.execute(
+        stmt.on_conflict_do_update(
+            constraint="uq_agentmemories_fact",
+            set_={
+                "content": stmt.excluded.content,
+                "importance": stmt.excluded.importance,
+                "embedding_ref": stmt.excluded.embedding_ref,
+                "updated_at": func.now(),
+                "deleted_at": None,
+            },
+        )
     )
 
     qdrant.upsert(QDRANT_COLLECTION, points=[PointStruct(
@@ -374,8 +448,8 @@ def process_semantic_insight(cur: Any, qdrant: QdrantClient, tenant_id: str, age
         },
     )])
 
-    _, cap = get_retention_config(cur, tenant_id, domain)
-    enforce_agent_memories_cap(cur, tenant_id, agent_id, user_ref, domain, cap)
+    _, cap = get_retention_config(session, tenant_id, domain)
+    enforce_agent_memories_cap(session, tenant_id, agent_id, user_ref, domain, cap)
 
 
 def _episodic_id(message_id: str, kind: str, index: int) -> str:
@@ -385,52 +459,68 @@ def _episodic_id(message_id: str, kind: str, index: int) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_OID, f"{message_id}|{kind}|{index}"))
 
 
-def process_episodic_past(cur: Any, tenant_id: str, agent_id: str, user_ref: str, insight: dict[str, Any], episodic_id: str) -> None:
+def process_episodic_past(session: Session, tenant_id: str, agent_id: str, user_ref: str, insight: dict[str, Any], episodic_id: str) -> None:
     content = (insight.get("content") or "").strip()
     if not content:
         return
     domain = insight.get("domain") or DEFAULT_DOMAIN
     importance = max(0.0, min(1.0, float(insight.get("importance_score") or 0.5)))
-    retention_days, _ = get_retention_config(cur, tenant_id, domain)
-    cur.execute(
-        """INSERT INTO "EpisodicMemory" (id, tenant_id, agent_id, user_ref, domain, content, importance_score, expires_at)
-           VALUES (%s, %s, %s, %s, %s, %s, %s,
-                   CASE WHEN %s::int IS NULL THEN NULL ELSE now() + (%s || ' days')::interval END)
-           ON CONFLICT (id) DO NOTHING""",
-        (episodic_id, tenant_id, agent_id, user_ref, domain, content, importance, retention_days, retention_days),
+    retention_days, _ = get_retention_config(session, tenant_id, domain)
+    expires_at = None
+    if retention_days is not None:
+        expires_at = datetime.now(timezone.utc) + timedelta(days=retention_days)
+    stmt = pg_insert(EpisodicMemoryORM).values(
+        id=episodic_id,
+        tenant_id=tenant_id,
+        agent_id=agent_id,
+        user_ref=user_ref,
+        domain=domain,
+        content=content,
+        importance_score=importance,
+        expires_at=expires_at,
     )
+    session.execute(stmt.on_conflict_do_nothing(index_elements=[EpisodicMemoryORM.id]))
 
 
-def process_episodic_future(cur: Any, tenant_id: str, agent_id: str, user_ref: str, insight: dict[str, Any], future_id: str) -> None:
+def process_episodic_future(session: Session, tenant_id: str, agent_id: str, user_ref: str, insight: dict[str, Any], future_id: str) -> None:
     content = (insight.get("content") or "").strip()
     execution_time = insight.get("execution_time")
     if not content or not execution_time:
         log.warning("episodic_future insight missing content/execution_time — skipped: %s", insight)
         return
-    cur.execute(
-        """INSERT INTO "FutureMemory" (id, tenant_id, agent_id, user_ref, content, execution_time, recurrence)
-           VALUES (%s, %s, %s, %s, %s, %s, %s)
-           ON CONFLICT (id) DO NOTHING""",
-        (future_id, tenant_id, agent_id, user_ref, content, execution_time, insight.get("recurrence")),
+    stmt = pg_insert(FutureMemoryORM).values(
+        id=future_id,
+        tenant_id=tenant_id,
+        agent_id=agent_id,
+        user_ref=user_ref,
+        content=content,
+        execution_time=_parse_dt(execution_time),
+        recurrence=insight.get("recurrence"),
     )
+    session.execute(stmt.on_conflict_do_nothing(index_elements=[FutureMemoryORM.id]))
 
 
-def cancel_future_memory(cur: Any, tenant_id: str, agent_id: str, user_ref: str, insight: dict[str, Any]) -> None:
+def cancel_future_memory(session: Session, tenant_id: str, agent_id: str, user_ref: str, insight: dict[str, Any]) -> None:
     """Best-effort match against the user's pending reminders (doc §V DELETE example).
     No match -> no-op; ambiguous matches resolve to the soonest one."""
     content = (insight.get("content") or "").strip()
-    cur.execute(
-        """UPDATE "FutureMemory" SET status = 'cancelled'
-           WHERE id = (
-             SELECT id FROM "FutureMemory"
-             WHERE tenant_id=%s AND agent_id=%s AND user_ref=%s AND status='pending' AND content ILIKE %s
-             ORDER BY execution_time ASC LIMIT 1
-           )""",
-        (tenant_id, agent_id, user_ref, f"%{content[:30]}%"),
+    future_id = session.scalar(
+        select(FutureMemoryORM.id)
+        .where(
+            FutureMemoryORM.tenant_id == tenant_id,
+            FutureMemoryORM.agent_id == agent_id,
+            FutureMemoryORM.user_ref == user_ref,
+            FutureMemoryORM.status == "pending",
+            FutureMemoryORM.content.ilike(f"%{content[:30]}%"),
+        )
+        .order_by(FutureMemoryORM.execution_time.asc())
+        .limit(1)
     )
+    if future_id is not None:
+        session.execute(update(FutureMemoryORM).where(FutureMemoryORM.id == future_id).values(status="cancelled"))
 
 
-def process_insight(cur: Any, qdrant: QdrantClient, tenant_id: str, agent_id: str, user_ref: str, insight: dict[str, Any], message_id: str, index: int) -> None:
+def process_insight(session: Session, qdrant: QdrantClient, tenant_id: str, agent_id: str, user_ref: str, insight: dict[str, Any], message_id: str, index: int) -> None:
     memory_type = insight.get("memory_type")
     action = insight.get("action", "add")
 
@@ -445,31 +535,30 @@ def process_insight(cur: Any, qdrant: QdrantClient, tenant_id: str, agent_id: st
         return
 
     if memory_type == "semantic":
-        process_semantic_insight(cur, qdrant, tenant_id, agent_id, user_ref, insight, message_id, index)
+        process_semantic_insight(session, qdrant, tenant_id, agent_id, user_ref, insight, message_id, index)
     elif memory_type == "episodic_past":
         episodic_id = _episodic_id(message_id, "episodic_past", index)
-        process_episodic_past(cur, tenant_id, agent_id, user_ref, insight, episodic_id)
+        process_episodic_past(session, tenant_id, agent_id, user_ref, insight, episodic_id)
     elif memory_type == "episodic_future":
         if action == "delete":
-            cancel_future_memory(cur, tenant_id, agent_id, user_ref, insight)
+            cancel_future_memory(session, tenant_id, agent_id, user_ref, insight)
         else:
             future_id = _episodic_id(message_id, "episodic_future", index)
-            process_episodic_future(cur, tenant_id, agent_id, user_ref, insight, future_id)
+            process_episodic_future(session, tenant_id, agent_id, user_ref, insight, future_id)
     else:
         log.warning("unknown memory_type=%r — insight skipped", memory_type)
 
 
 # ─── Event handling ──────────────────────────────────────────────────────────
 
-def handle_event(conn: Any, qdrant: QdrantClient, event: dict[str, Any]) -> None:
+def handle_event(session: Session, qdrant: QdrantClient, event: dict[str, Any]) -> None:
     tenant_id = event["tenant_id"]
     agent_id = event["agent_id"]
     user_ref = event.get("user_ref") or "anonymous"
     conversation_id = event["conversation_id"]
     message_id = event["message_id"]
 
-    with conn.cursor() as cur:
-        query, response = fetch_turn(cur, conversation_id, message_id)
+    query, response = fetch_turn(session, conversation_id, message_id)
     if response is None:
         log.warning("message_id=%s not found — skipping", message_id)
         return
@@ -482,18 +571,13 @@ def handle_event(conn: Any, qdrant: QdrantClient, event: dict[str, Any]) -> None
     # aborts the whole transaction (InFailedSqlTransaction) until rolled back,
     # which would otherwise brick every remaining insight in this turn and the
     # final commit too.
-    with conn.cursor() as cur:
-        for i, insight in enumerate(insights):
-            savepoint = f"insight_{i}"
-            try:
-                cur.execute(f"SAVEPOINT {savepoint}")
-                process_insight(cur, qdrant, tenant_id, agent_id, user_ref, insight, message_id, i)
-                cur.execute(f"RELEASE SAVEPOINT {savepoint}")
-            except Exception:
-                log.exception("failed to process one insight, skipping it: %s", insight)
-                cur.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
-                cur.execute(f"RELEASE SAVEPOINT {savepoint}")
-    conn.commit()
+    for i, insight in enumerate(insights):
+        try:
+            with session.begin_nested():
+                process_insight(session, qdrant, tenant_id, agent_id, user_ref, insight, message_id, i)
+        except Exception:
+            log.exception("failed to process one insight, skipping it: %s", insight)
+    session.commit()
 
 
 def publish_to_dlq(producer: KafkaProducer, raw_event: Any) -> None:
@@ -506,12 +590,11 @@ def publish_to_dlq(producer: KafkaProducer, raw_event: Any) -> None:
 
 
 class _Loop:
-    """Holds the Postgres connection so the retry path can swap it out."""
+    """Holds the DB session factory used by the retry path."""
 
-    def __init__(self, conn: Any, qdrant: QdrantClient, pg_settings: PostgresSettings) -> None:
-        self.conn = conn
+    def __init__(self, SessionLocal: sessionmaker[Session], qdrant: QdrantClient) -> None:
+        self.SessionLocal = SessionLocal
         self.qdrant = qdrant
-        self.pg_settings = pg_settings
 
     def handle_with_retries(self, event: dict[str, Any], offset: int) -> bool:
         """RETRY_BACKOFFS semantics: attempt, then sleep 1/2/4 s between the
@@ -526,13 +609,13 @@ class _Loop:
             for attempt in retrying:
                 with attempt:
                     try:
-                        handle_event(self.conn, self.qdrant, event)
+                        with self.SessionLocal() as session:
+                            handle_event(session, self.qdrant, event)
                     except Exception as e:
                         log.error(
                             "attempt %d/%d failed for offset=%d: %s",
                             attempt.retry_state.attempt_number, len(RETRY_BACKOFFS), offset, e,
                         )
-                        self.conn = pg.reconnect(self.conn, self.pg_settings)
                         raise
         except RetryError:
             return False
@@ -545,16 +628,14 @@ def run() -> None:
     setup_observability("platform-workers-memory")
 
     kafka_settings = KafkaSettings()
-    pg_settings = PostgresSettings()
-
-    conn = pg.connect(pg_settings)
+    SessionLocal = worker_db.make_session_factory(PostgresSettings())
     consumer = kafka_factory.consumer([TOPIC], GROUP_ID, auto_offset_reset="earliest", settings=kafka_settings)
     assert consumer is not None  # required=True raises instead of returning None
     dlq_producer = kafka_factory.producer(kafka_settings)
 
     qdrant = QdrantClient(url=QDRANT_URL)
     ensure_qdrant_collection(qdrant)
-    loop = _Loop(conn, qdrant, pg_settings)
+    loop = _Loop(SessionLocal, qdrant)
 
     log.info("Consuming from %s ...", TOPIC)
     while True:

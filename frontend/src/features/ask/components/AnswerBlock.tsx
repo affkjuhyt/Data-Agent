@@ -5,19 +5,22 @@
  *   → 7 actions (export, copy) → 8 follow-up chips.
  * Used by the Ask screen (light) and the Playground (dark) through AnswerTheme.
  */
-import { useCallback, useMemo } from 'react';
+import { lazy, Suspense, useCallback, useMemo } from 'react';
 import { Bookmark, Download, Sparkles } from 'lucide-react';
 import { formatTime } from '../../../lib/formatVN';
 import { downloadResultXlsx, fetchResultRows } from '../api';
 import { csvFileName, downloadCsv, toCsv } from '../exportCsv';
 import type { AskMessage, ClarificationReply } from '../types';
-import { ChartRenderer } from './ChartRenderer';
 import { CitationPanel } from './CitationPanel';
 import { ClarificationCard } from './ClarificationCard';
 import { DataGrid } from './DataGrid';
 import { EvidenceStrip, CopyButton } from './EvidenceStrip';
 import { hasEvidence, primaryRun } from './evidenceSummary';
 import { MarkdownContent } from './MarkdownContent';
+
+const ChartRenderer = lazy(() =>
+  import('./ChartRenderer').then(module => ({ default: module.ChartRenderer })),
+);
 
 interface AnswerBlockProps {
   msg: AskMessage;
@@ -91,7 +94,11 @@ export function AnswerBlock({
         />
       )}
 
-      {msg.chartSpecs?.map((spec, i) => <ChartRenderer key={i} spec={spec} />)}
+      {!!msg.chartSpecs?.length && (
+        <Suspense fallback={<div className="ab-card" style={{ minHeight: 180 }} />}>
+          {msg.chartSpecs.map((spec, i) => <ChartRenderer key={i} spec={spec} />)}
+        </Suspense>
+      )}
 
       {showEvidenceStrip && msg.evidence && hasEvidence(msg.evidence) && (
         <EvidenceStrip evidence={msg.evidence} onOpenPanel={onOpenEvidence} />

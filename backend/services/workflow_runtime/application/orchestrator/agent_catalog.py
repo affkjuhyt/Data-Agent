@@ -4,7 +4,13 @@ import logging
 from typing import Any
 
 from cachetools import TTLCache
-from sqlalchemy import text
+from sqlalchemy import select
+
+from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import (
+    AgentsORM,
+    GuardrailsORM,
+    LLMProvidersORM,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,14 +48,18 @@ async def fetch_guardrail_config(tenant_id: str | None = None) -> dict[str, Any]
 
     try:
         async with client.get_client(tenant_id=tenant_id) as session:
-            row = (await session.execute(text("""
-                SELECT g.id, g.conditions,
-                       lp.model_id AS guardrail_model
-                FROM "Guardrails" g
-                LEFT JOIN "LLMProviders" lp ON lp.id = g.guardrail_model_id
-                ORDER BY g.priority DESC
-                LIMIT 1
-            """))).fetchone()
+            row = (
+                await session.execute(
+                    select(
+                        GuardrailsORM.id,
+                        GuardrailsORM.conditions,
+                        LLMProvidersORM.model_id.label("guardrail_model"),
+                    )
+                    .outerjoin(LLMProvidersORM, LLMProvidersORM.id == GuardrailsORM.guardrail_model_id)
+                    .order_by(GuardrailsORM.priority.desc())
+                    .limit(1)
+                )
+            ).fetchone()
 
         if row:
             cond = dict(row.conditions or {})
@@ -91,15 +101,18 @@ async def fetch_published_agents(tenant_id: str) -> list[dict[str, Any]]:
 
     try:
         async with client.get_client(tenant_id=tenant_id) as session:
-            rows = (await session.execute(text("""
-                SELECT a.id, a.name, a.description
-                FROM "Agents" a
-                WHERE a.tenant_id            = :tenant_id
-                  AND a.is_active            = true
-                  AND a.deleted_at           IS NULL
-                  AND a.published_version_id IS NOT NULL
-                ORDER BY a.created_at DESC
-            """), {"tenant_id": tenant_id})).fetchall()
+            rows = (
+                await session.execute(
+                    select(AgentsORM.id, AgentsORM.name, AgentsORM.description)
+                    .where(
+                        AgentsORM.tenant_id == tenant_id,
+                        AgentsORM.is_active.is_(True),
+                        AgentsORM.deleted_at.is_(None),
+                        AgentsORM.published_version_id.is_not(None),
+                    )
+                    .order_by(AgentsORM.created_at.desc())
+                )
+            ).fetchall()
 
         agents = [
             {"id": str(r.id), "name": r.name, "description": r.description or ""}

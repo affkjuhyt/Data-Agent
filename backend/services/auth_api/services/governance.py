@@ -1,12 +1,12 @@
-from typing import Any
-
 from fastapi import HTTPException
-import psycopg2.extras
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
+from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import AuthPlatformSettingORM
 try:
-    from services.auth_api.infrastructure.db import get_db
+    from services.auth_api.infrastructure.db import get_session
 except ModuleNotFoundError:
-    from auth_api.infrastructure.db import get_db
+    from auth_api.infrastructure.db import get_session
 
 GOVERNANCE_KEYS = [
     "vault_auto_rotation",
@@ -15,20 +15,15 @@ GOVERNANCE_KEYS = [
 ]
 
 
-def get_governance_setting(cur: Any, key: str) -> bool:
-    cur.execute("SELECT value FROM platform_settings WHERE key = %s", (key,))
-    row = cur.fetchone()
-    return row["value"].lower() == "true" if row else False
+def get_governance_setting(db: Session, key: str) -> bool:
+    value = db.scalar(select(AuthPlatformSettingORM.value).where(AuthPlatformSettingORM.key == key))
+    return str(value).lower() == "true" if value is not None else False
 
 
 def enforce_vault_not_in_panic_mode() -> None:
-    conn = get_db()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            if get_governance_setting(cur, "vault_panic_mode"):
-                raise HTTPException(
-                    status_code=503,
-                    detail="Vault is in PANIC MODE — all secret access suspended. Disable via governance settings.",
-                )
-    finally:
-        conn.close()
+    with get_session() as session:
+        if get_governance_setting(session, "vault_panic_mode"):
+            raise HTTPException(
+                status_code=503,
+                detail="Vault is in PANIC MODE — all secret access suspended. Disable via governance settings.",
+            )

@@ -115,8 +115,22 @@ service_workloads:
   - auth-api
   - workflow-runtime
   - kb-backend
+  - kb-promote-silver
+  - kb-promote-gold
+  - kb-conflict-resolution
+  - kb-structured-data
   - model-service
   - sandbox-executor
+  - platform-workers-audit
+  - platform-workers-memory
+  - platform-workers-schema-crawler
+  - platform-workers-web-crawler
+  - llm-exporter
+  - langfuse
+  - langfuse-worker
+  - jaeger
+  - prometheus
+  - grafana
   - frontend
 
 migration_jobs: [kong-migration, migrate]

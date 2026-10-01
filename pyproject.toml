@@ -17,6 +17,11 @@ test = [
     "testcontainers[postgres,redis,kafka]>=4.7",
     "httpx>=0.27",
     "requests>=2.31",
+    # kb_backend router imports File/Form routes during unit collection.
+    "python-multipart>=0.0.9",
+    # Unit tests import the shared Kafka connector; service images install it,
+    # so the test extra should too.
+    "aiokafka>=0.10.0",
     "pyaml",
     # Ships the generated OpenAPI models the API server validates against —
     # tests/unit/workflow_runtime/test_k8s_manifests.py checks deploy/k8s/*.yaml field names offline

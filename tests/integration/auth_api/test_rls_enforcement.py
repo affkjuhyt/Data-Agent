@@ -7,7 +7,7 @@ These pin the contract of `backend/alembic/versions/a1b2c3d4e5f6_enable_tenant_r
   * Without `app.tenant_id` set, `app_user` sees nothing (not "everything",
     not an error — quietly empty).
   * Owner/superuser bypass RLS so migrations + admin tasks still work.
-  * The FastAPI dependency `get_tenant_db` rejects malformed tenant headers
+  * The FastAPI dependency `get_tenant_session` rejects malformed tenant headers
     before opening a connection.
 
 If a refactor accidentally drops FORCE or rewrites the policy, the offending
@@ -161,8 +161,8 @@ def test_owner_role_bypasses_rls(auth_api_db):
 
 
 # ─── 5. The FastAPI dependency rejects bad tenant headers early ────────────
-def test_get_tenant_db_rejects_non_uuid_tenant_header(client, headers_factory):
-    """`get_tenant_db` validates the X-Tenant-Id header is a UUID before it
+def test_get_tenant_session_rejects_non_uuid_tenant_header(client, headers_factory):
+    """`get_tenant_session` validates the X-Tenant-Id header is a UUID before it
     even opens a connection. Blocks SQL-injection-via-SET attempts at the
     HTTP boundary, not just at the SET LOCAL call."""
     h = headers_factory(tenant="not-a-uuid; DROP TABLE api_keys; --")
@@ -174,7 +174,7 @@ def test_get_tenant_db_rejects_non_uuid_tenant_header(client, headers_factory):
 # ─── 6. End-to-end via FastAPI route (PoC for the rollout) ─────────────────
 def test_list_via_rls_route_returns_only_caller_tenant(client, headers_factory, auth_api_db):
     """The `/api/auth/api-keys/list-via-rls` route has NO WHERE in its SQL.
-    It relies entirely on RLS + `get_tenant_db` to scope rows. This proves
+    It relies entirely on RLS + `get_tenant_session` to scope rows. This proves
     the wire-up: dependency sets context, RLS filters, route returns clean."""
     _seed_two_tenants(auth_api_db["dsn"])
 

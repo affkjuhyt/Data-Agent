@@ -45,7 +45,16 @@ spec:
         app: platform-workers-web-crawler
         app.kubernetes.io/part-of: dataagent
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
       terminationGracePeriodSeconds: 30
+      automountServiceAccountToken: false
       containers:
       - name: platform-workers-web-crawler
         image: localhost:5000/dataagent/platform-workers:latest
@@ -63,6 +72,13 @@ spec:
           limits:
             cpu: 2000m
             memory: 3Gi
+        securityContext:
+          allowPrivilegeEscalation: false
+          privileged: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
         volumeMounts:
         - name: tmp
           mountPath: /tmp
@@ -74,8 +90,5 @@ spec:
       volumes:
       - name: tmp
         emptyDir: {}
-      securityContext:
-        runAsUser: 0
-        runAsGroup: 0
       enableServiceLinks: false
       serviceAccountName: platform-workers-web-crawler

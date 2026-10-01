@@ -1,10 +1,12 @@
 from typing import Any
 from datetime import datetime, timezone
 
-import psycopg2.extras
 from fastapi import APIRouter, Depends, Header, HTTPException, Path
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-from libs.shared.db_context import get_tenant_db
+from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import APIKeyORM
+from libs.shared.db_context import get_tenant_session
 from libs.shared.auth import require_role
 try:
     from services.auth_api.domain.api_keys import (
@@ -13,7 +15,7 @@ try:
         generate_api_key,
         hash_api_key,
     )
-    from services.auth_api.infrastructure.db import get_db
+    from services.auth_api.infrastructure.db import get_session, orm_to_dict
     from services.auth_api.schemas import APIKeyCreateInput
 except ModuleNotFoundError:
     from auth_api.domain.api_keys import (
@@ -22,7 +24,7 @@ except ModuleNotFoundError:
         generate_api_key,
         hash_api_key,
     )
-    from auth_api.infrastructure.db import get_db
+    from auth_api.infrastructure.db import get_session, orm_to_dict
     from auth_api.schemas import APIKeyCreateInput
 
 router = APIRouter()
@@ -33,28 +35,25 @@ def list_api_keys(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> list[dict[str, Any]]:
-    conn = get_db()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT id, name, key_prefix, scope, created_by, last_used_at, expires_at, revoked_at, rotated_from, created_at FROM api_keys WHERE tenant_id = %s ORDER BY created_at DESC",
-                (x_tenant_id,),
-            )
-            return [format_api_key(r) for r in cur.fetchall()]
-    finally:
-        conn.close()
+    with get_session() as session:
+        rows = session.scalars(
+            select(APIKeyORM)
+            .where(APIKeyORM.tenant_id == x_tenant_id)
+            .order_by(APIKeyORM.created_at.desc())
+        ).all()
+        return [format_api_key(orm_to_dict(r)) for r in rows]
 
 
 @router.get("/api/auth/api-keys/list-via-rls")
 def list_api_keys_via_rls(
-    db: Any = Depends(get_tenant_db),
+    db: Session = Depends(get_tenant_session),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> list[dict[str, Any]]:
     """RLS-only variant — same data, no WHERE clause in SQL.
 
     PoC for the rollout in [P0 #2]: trust Postgres RLS to scope rows by
     tenant rather than relying on every developer to remember `WHERE
-    tenant_id = ...`. The dep `get_tenant_db` opens a connection as
+    tenant_id = ...`. The dep `get_tenant_session` opens an ORM session as
     `app_user` and SETs `app.tenant_id` from the X-Tenant-Id header. The
     SELECT below would return ALL tenants' rows on a superuser connection;
     on app_user it returns only the caller's.
@@ -62,13 +61,8 @@ def list_api_keys_via_rls(
     When all routes have migrated to this pattern, the legacy WHERE-based
     sibling above can be retired.
     """
-    with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute(
-            "SELECT id, name, key_prefix, scope, created_by, last_used_at, "
-            "expires_at, revoked_at, rotated_from, created_at "
-            "FROM api_keys ORDER BY created_at DESC"
-        )
-        return [format_api_key(r) for r in cur.fetchall()]
+    rows = db.scalars(select(APIKeyORM).order_by(APIKeyORM.created_at.desc())).all()
+    return [format_api_key(orm_to_dict(r)) for r in rows]
 
 
 @router.post("/api/auth/api-keys", status_code=201)
@@ -89,18 +83,20 @@ def create_api_key(
         except ValueError:
             raise HTTPException(status_code=422, detail="Invalid expires_at format")
 
-    conn = get_db()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "INSERT INTO api_keys (tenant_id, created_by, name, key_hash, key_prefix, scope, expires_at) VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id, name, key_prefix, scope, created_by, last_used_at, expires_at, revoked_at, rotated_from, created_at",
-                (x_tenant_id, user["user_id"], body.name, key_hash, prefix, body.scope, expires_at),
-            )
-            row = cur.fetchone()
-        conn.commit()
-        return {**format_api_key(row), "raw_key": raw_key}
-    finally:
-        conn.close()
+    with get_session() as session:
+        row = APIKeyORM(
+            tenant_id=x_tenant_id,
+            created_by=user["user_id"],
+            name=body.name,
+            key_hash=key_hash,
+            key_prefix=prefix,
+            scope=body.scope,
+            expires_at=expires_at,
+        )
+        session.add(row)
+        session.flush()
+        session.refresh(row)
+        return {**format_api_key(orm_to_dict(row)), "raw_key": raw_key}
 
 
 @router.post("/api/auth/api-keys/{key_id}/revoke")
@@ -109,21 +105,19 @@ def revoke_api_key(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
-    conn = get_db()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "UPDATE api_keys SET revoked_at = now() WHERE id = %s AND tenant_id = %s AND revoked_at IS NULL RETURNING id, name, key_prefix, scope, created_by, last_used_at, expires_at, revoked_at, rotated_from, created_at",
-                (key_id, x_tenant_id),
+    with get_session() as session:
+        row = session.scalar(
+            select(APIKeyORM).where(
+                APIKeyORM.id == key_id,
+                APIKeyORM.tenant_id == x_tenant_id,
+                APIKeyORM.revoked_at.is_(None),
             )
-            row = cur.fetchone()
-        if not row:
-            conn.rollback()
+        )
+        if row is None:
             raise HTTPException(status_code=404, detail="Key not found or already revoked")
-        conn.commit()
-        return format_api_key(row)
-    finally:
-        conn.close()
+        row.revoked_at = datetime.now(timezone.utc)
+        session.flush()
+        return format_api_key(orm_to_dict(row))
 
 
 @router.post("/api/auth/api-keys/{key_id}/rotate", status_code=201)
@@ -132,24 +126,31 @@ def rotate_api_key(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
-    conn = get_db()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT id, scope, name, expires_at FROM api_keys WHERE id = %s AND tenant_id = %s AND revoked_at IS NULL",
-                (key_id, x_tenant_id),
+    with get_session() as session:
+        old = session.scalar(
+            select(APIKeyORM)
+            .where(
+                APIKeyORM.id == key_id,
+                APIKeyORM.tenant_id == x_tenant_id,
+                APIKeyORM.revoked_at.is_(None),
             )
-            old = cur.fetchone()
-            if not old:
-                raise HTTPException(status_code=404, detail="Key not found or already revoked")
-            cur.execute("UPDATE api_keys SET revoked_at = now() WHERE id = %s", (old["id"],))
-            raw_key, prefix = generate_api_key(old["scope"])
-            cur.execute(
-                "INSERT INTO api_keys (tenant_id, created_by, name, key_hash, key_prefix, scope, expires_at, rotated_from) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id, name, key_prefix, scope, created_by, last_used_at, expires_at, revoked_at, rotated_from, created_at",
-                (x_tenant_id, user["user_id"], old["name"], hash_api_key(raw_key), prefix, old["scope"], old["expires_at"], old["id"]),
-            )
-            new_row = cur.fetchone()
-        conn.commit()
-        return {**format_api_key(new_row), "raw_key": raw_key}
-    finally:
-        conn.close()
+            .with_for_update()
+        )
+        if old is None:
+            raise HTTPException(status_code=404, detail="Key not found or already revoked")
+        old.revoked_at = datetime.now(timezone.utc)
+        raw_key, prefix = generate_api_key(old.scope)
+        new_row = APIKeyORM(
+            tenant_id=x_tenant_id,
+            created_by=user["user_id"],
+            name=old.name,
+            key_hash=hash_api_key(raw_key),
+            key_prefix=prefix,
+            scope=old.scope,
+            expires_at=old.expires_at,
+            rotated_from=old.id,
+        )
+        session.add(new_row)
+        session.flush()
+        session.refresh(new_row)
+        return {**format_api_key(orm_to_dict(new_row)), "raw_key": raw_key}

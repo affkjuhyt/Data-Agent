@@ -54,8 +54,8 @@ async def is_v2_structured_document(postgres: Any, data_id: str, tenant_id: str)
             sa_select(KBSourceConfigORM.config)
             .where(
                 KBSourceConfigORM.source_id == source_uuid,
-                KBSourceConfigORM.is_active == True,  # noqa: E712
-                KBSourceConfigORM.is_deleted == False,  # noqa: E712
+                KBSourceConfigORM.is_active.is_(True),
+                KBSourceConfigORM.is_deleted.is_(False),
             )
             .limit(1)
         )

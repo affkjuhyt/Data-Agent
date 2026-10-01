@@ -5,10 +5,12 @@ write commits — never before, and never batched at the end of a larger functio
 so a step that raises is simply never pushed, and unwind() only ever undoes writes
 that actually happened.
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -16,7 +18,7 @@ RollbackFunc = Callable[..., Awaitable[None]]
 
 
 class StageNode:
-    __slots__ = ("name", "rollback_func", "rollback_args", "rollback_kwargs", "prev")
+    __slots__ = ("name", "prev", "rollback_args", "rollback_func", "rollback_kwargs")
 
     def __init__(
         self,
@@ -24,7 +26,7 @@ class StageNode:
         rollback_func: RollbackFunc | None,
         rollback_args: tuple,
         rollback_kwargs: dict[str, Any],
-        prev: "StageNode | None",
+        prev: StageNode | None,
     ) -> None:
         self.name = name
         self.rollback_func = rollback_func
@@ -49,8 +51,11 @@ class StageChain:
         rollback_kwargs: dict[str, Any] | None = None,
     ) -> None:
         self.tail = StageNode(
-            name=name, rollback_func=rollback_func, rollback_args=rollback_args,
-            rollback_kwargs=rollback_kwargs or {}, prev=self.tail,
+            name=name,
+            rollback_func=rollback_func,
+            rollback_args=rollback_args,
+            rollback_kwargs=rollback_kwargs or {},
+            prev=self.tail,
         )
 
     def names(self) -> list[str]:

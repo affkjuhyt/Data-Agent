@@ -6,9 +6,15 @@ import logging
 import os
 import uuid as _uuid
 
-import asyncpg
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import config as cfg
+
+from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
+    KBModelORM,
+    KBModelVersionORM,
+)
 
 from . import callers as C
 from .registry import Capability, ModelEntry, Registry
@@ -111,38 +117,58 @@ def bootstrap(registry: Registry) -> None:
 
 
 # ── Postgres: resolve each embed/rerank model's UUID by name (create if missing) ──
-async def _resolve_or_create(conn: asyncpg.Connection, model_name: str, task_type: str) -> _uuid.UUID:
-    found = await conn.fetchval(
-        'SELECT model_id FROM "KBModel" WHERE model_name = $1 AND task_type = $2 AND is_deleted = false',
-        model_name, task_type,
+def _async_dsn(dsn: str) -> str:
+    if dsn.startswith("postgresql+asyncpg://"):
+        return dsn
+    if dsn.startswith("postgresql://"):
+        return dsn.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return dsn
+
+
+async def _resolve_or_create(session: AsyncSession, model_name: str, task_type: str) -> _uuid.UUID:
+    found = await session.scalar(
+        select(KBModelORM.model_id).where(
+            KBModelORM.model_name == model_name,
+            KBModelORM.task_type == task_type,
+            KBModelORM.is_deleted.is_(False),
+        )
     )
     if found is not None:
         return cast(_uuid.UUID, found)
     new_id = _uuid.uuid4()
-    async with conn.transaction():
-        await conn.execute(
-            'INSERT INTO "KBModel" (model_id, model_name, task_type) VALUES ($1, $2, $3)',
-            new_id, model_name, task_type,
+    session.add(
+        KBModelORM(
+            model_id=new_id,
+            model_name=model_name,
+            task_type=task_type,
         )
-        await conn.execute(
-            'INSERT INTO "KBModelVersion" (model_id, version_number, is_active, config, added_on) '
-            "VALUES ($1, 1, true, $2, NOW())",
-            new_id, '{"active": true}',
+    )
+    session.add(
+        KBModelVersionORM(
+            model_id=new_id,
+            version_number=1,
+            is_active=True,
+            config={"active": True},
         )
+    )
+    await session.flush()
     log.info("Registry: created KBModel '%s' (%s) + v1 → %s", model_name, task_type, new_id)
     return new_id
 
 
 async def _sync_ids(registry: Registry, dsn: str) -> None:
     """For every registered embed/rerank model, resolve its KBModel UUID by name"""
-    conn = await asyncpg.connect(dsn)
+    engine = create_async_engine(_async_dsn(dsn), pool_pre_ping=True)
+    Session = async_sessionmaker(engine, expire_on_commit=False)
     try:
-        for cap, task in _TASK_BY_CAP.items():
-            for entry in registry.entries(cap):
-                model_id = await _resolve_or_create(conn, entry.name, task)
-                registry.bind_id(entry, model_id)
+        async with Session() as session:
+            async with session.begin():
+                for cap, task in _TASK_BY_CAP.items():
+                    for entry in registry.entries(cap):
+                        model_id = await _resolve_or_create(session, entry.name, task)
+                        registry.bind_id(entry, model_id)
     finally:
-        await conn.close()
+        await engine.dispose()
 
 
 async def sync_with_retry(registry: Registry) -> None:

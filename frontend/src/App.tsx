@@ -7,6 +7,13 @@ import { ForbiddenToast } from './components/shared/ForbiddenToast';
 import { ROUTE_MAP, SINGLE_SCREEN } from './routes';
 import { MODULE_SUB_ITEMS } from './constants';
 
+const RouteLoading = () => (
+  <div className="ui-empty min-h-[320px]">
+    <div className="w-8 h-8 rounded-full border-2 border-[#BFA66A] border-t-[#8A5A00] animate-spin mb-3" />
+    <p className="text-[12px] text-[#5F5F5F]">Đang tải màn hình…</p>
+  </div>
+);
+
 function AppContent() {
   const { activeModule, setActiveModule, subTab } = useAppState();
 
@@ -31,7 +38,11 @@ function AppContent() {
     if ('comingSoon' in entry) {
       return <Placeholder {...entry.comingSoon} />;
     }
-    return <>{entry.render()}</>;
+    return (
+      <React.Suspense fallback={<RouteLoading />}>
+        {entry.render()}
+      </React.Suspense>
+    );
   };
 
   return (

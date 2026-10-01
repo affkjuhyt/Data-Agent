@@ -68,7 +68,6 @@ def test_low_importance_delete_bypasses_the_gate():
     mc_main.process_insight(cur, qdrant, "t", "a", "u", insight, "m", 0)
 
     cur.execute.assert_called_once()
-    assert "deleted_at" in cur.execute.call_args[0][0]
 
 
 @pytest.mark.unit

@@ -6,15 +6,19 @@ a crash cannot double-count a login.
 """
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from typing import Any
 
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from libs.basemodel.services_databaseconnector.postgres_orm.auth_release_orm import AuditLogsORM
+
 log = logging.getLogger("platform-workers.audit.auth-events")
 
 
-def insert_event(cur: Any, event: dict[str, Any], tenant_id: str | None) -> bool:
+def insert_event(session: Session, event: dict[str, Any], tenant_id: str | None) -> bool:
     """Insert event into audit_logs. Returns False if the event was already
     processed (dedup) or cannot be attributed to a tenant.
 
@@ -43,25 +47,25 @@ def insert_event(cur: Any, event: dict[str, Any], tenant_id: str | None) -> bool
     # Partitioned tables can't have a global UNIQUE on source_event_id, so we
     # do a point-read first; the bridge is single-threaded so there's no race.
     if source_event_id:
-        cur.execute(
-            'SELECT 1 FROM "AuditLogs" WHERE source_event_id = %s LIMIT 1',
-            (source_event_id,),
+        existing = session.scalar(
+            select(AuditLogsORM.id).where(AuditLogsORM.source_event_id == source_event_id).limit(1)
         )
-        if cur.fetchone():
+        if existing is not None:
             return False
 
-    # id is generated here: the initial schema gave "AuditLogs".id no server
-    # default (the ORM's uuid4 default is Python-side only), so an INSERT that
-    # left it out failed every time with a NOT NULL violation.
-    cur.execute(
-        """
-        INSERT INTO "AuditLogs"
-          (id, tenant_id, actor, actor_type, action, resource_type, resource_id,
-           status, metadata, ip_address, source_event_id)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """,
-        (str(uuid.uuid4()), tenant_id, user_id, "USER", event_type, "AUTH", client_id,
-         status, json.dumps(event.get("details") or {}),
-         event.get("ipAddress") or "", source_event_id or None),
+    session.add(
+        AuditLogsORM(
+            id=uuid.uuid4(),
+            tenant_id=tenant_id,
+            actor=user_id,
+            actor_type="USER",
+            action=event_type,
+            resource_type="AUTH",
+            resource_id=client_id,
+            status=status,
+            event_metadata=event.get("details") or {},
+            ip_address=event.get("ipAddress") or "",
+            source_event_id=source_event_id or None,
+        )
     )
     return True

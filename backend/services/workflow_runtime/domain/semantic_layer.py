@@ -22,6 +22,13 @@ import logging
 from typing import Any
 
 from cachetools import TTLCache
+from sqlalchemy import select
+
+from libs.basemodel.services_databaseconnector.postgres_orm.semantic_orm import (
+    SemanticMetricORM,
+    SemanticMetricVersionORM,
+    SemanticSynonymORM,
+)
 
 from libs.semantic import (
     Aggregation,
@@ -90,23 +97,6 @@ def _row_to_definition(row: Any) -> MetricDefinition:
     )
 
 
-_METRICS_SQL = """
-SELECT m.metric_key, m.name, m.description, m.owner,
-       v.version, v.status, v.source_table, v.aggregation, v.expression,
-       v.time_column, v.default_grain, v.unit, v.dimensions, v.default_filters
-FROM "SemanticMetric" m
-JOIN "SemanticMetricVersion" v ON v.metric_id = m.id
-WHERE v.status = 'approved'
-"""
-
-_SYNONYMS_SQL = """
-SELECT m.metric_key, s.term
-FROM "SemanticSynonym" s
-JOIN "SemanticMetric" m ON m.id = s.metric_id
-WHERE s.is_active = true
-"""
-
-
 async def _load_resolver(tenant_id: str) -> MetricResolver:
     """Read this tenant's approved metrics and synonyms into a resolver.
 
@@ -115,16 +105,41 @@ async def _load_resolver(tenant_id: str) -> MetricResolver:
     `tenant_isolation` policy does the filtering, so forgetting a predicate here
     cannot leak another tenant's warehouse structure.
     """
-    from sqlalchemy import text
-
     from libs.database_connector.postgres_connector import client
 
     if not client.is_connected():
         return MetricResolver(build_catalog([], {}))
 
     async with client.get_client(tenant_id=tenant_id) as session:
-        metric_rows = (await session.execute(text(_METRICS_SQL))).fetchall()
-        synonym_rows = (await session.execute(text(_SYNONYMS_SQL))).fetchall()
+        metric_rows = (
+            await session.execute(
+                select(
+                    SemanticMetricORM.metric_key,
+                    SemanticMetricORM.name,
+                    SemanticMetricORM.description,
+                    SemanticMetricORM.owner,
+                    SemanticMetricVersionORM.version,
+                    SemanticMetricVersionORM.status,
+                    SemanticMetricVersionORM.source_table,
+                    SemanticMetricVersionORM.aggregation,
+                    SemanticMetricVersionORM.expression,
+                    SemanticMetricVersionORM.time_column,
+                    SemanticMetricVersionORM.default_grain,
+                    SemanticMetricVersionORM.unit,
+                    SemanticMetricVersionORM.dimensions,
+                    SemanticMetricVersionORM.default_filters,
+                )
+                .join(SemanticMetricVersionORM, SemanticMetricVersionORM.metric_id == SemanticMetricORM.id)
+                .where(SemanticMetricVersionORM.status == "approved")
+            )
+        ).fetchall()
+        synonym_rows = (
+            await session.execute(
+                select(SemanticMetricORM.metric_key, SemanticSynonymORM.term)
+                .join(SemanticMetricORM, SemanticMetricORM.id == SemanticSynonymORM.metric_id)
+                .where(SemanticSynonymORM.is_active.is_(True))
+            )
+        ).fetchall()
 
     definitions: list[MetricDefinition] = []
     for row in metric_rows:

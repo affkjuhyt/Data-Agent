@@ -19,10 +19,13 @@ delete them. The AppRole is minted by deploy/ansible/roles/k8s_openbao.
 import asyncio
 import logging
 import os
+import uuid
 from typing import cast
 
 import hvac
-from sqlalchemy import text
+from sqlalchemy import select
+
+from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import SecretVaultORM
 
 logger = logging.getLogger(__name__)
 
@@ -71,14 +74,18 @@ async def _resolve_vault_password(tenant_id: str, secret_id: str, key_type: str)
         return None
 
     try:
+        secret_uuid = uuid.UUID(str(secret_id))
+    except (TypeError, ValueError):
+        logger.warning("invalid secret_id %s for tenant=%s", secret_id, tenant_id)
+        return None
+
+    try:
         async with pg_client.get_client(tenant_id=tenant_id) as session:
-            row = (await session.execute(
-                text(
-                    """SELECT key_name, key_type, is_active FROM secrets_vault
-                       WHERE id = :id AND tenant_id = :tenant_id"""
-                ),
-                {"id": secret_id, "tenant_id": tenant_id},
-            )).fetchone()
+            row = await session.scalar(
+                select(SecretVaultORM)
+                .where(SecretVaultORM.id == secret_uuid, SecretVaultORM.tenant_id == uuid.UUID(str(tenant_id)))
+                .limit(1)
+            )
     except Exception as e:
         logger.warning("secrets_vault lookup failed for %s: %s", secret_id, e)
         return None

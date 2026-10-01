@@ -10,7 +10,6 @@ kept the bridge from ever advancing its cursor.
 
 from __future__ import annotations
 
-import re
 import uuid
 from typing import Any
 
@@ -24,44 +23,18 @@ pytestmark = pytest.mark.unit
 TENANT = "a0000000-0000-0000-0000-000000000001"
 USER = "6516da6c-bbaa-47ac-8c61-abfea8b9362d"
 
-# "AuditLogs" columns that are NOT NULL with no server default in ff9ae8dcd7f7.
-# id gains one in e4a6c8b0d2f1, but the insert must not depend on that
-# migration having run.
-_REQUIRED = {"id", "tenant_id", "actor", "actor_type", "action", "status"}
-
-
-class _Cursor:
+class _Session:
     def __init__(self, existing: set[str] | None = None) -> None:
         self.existing = existing or set()
-        self.executions: list[tuple[str, tuple[Any, ...]]] = []
-        self._row: Any = None
-
-    def __enter__(self) -> _Cursor:
-        return self
-
-    def __exit__(self, *_: Any) -> None:
-        return None
-
-    def execute(self, sql: str, params: tuple[Any, ...]) -> None:
-        self.executions.append((sql, params))
-        self._row = (
-            (1,) if sql.lstrip().startswith("SELECT") and params[0] in self.existing else None
-        )
-
-    def fetchone(self) -> Any:
-        return self._row
-
-    def inserts(self) -> list[tuple[str, tuple[Any, ...]]]:
-        return [(s, p) for s, p in self.executions if "INSERT" in s]
-
-
-class _Conn:
-    def __init__(self, cur: _Cursor) -> None:
-        self.cur = cur
+        self.added: list[Any] = []
         self.commits = 0
 
-    def cursor(self) -> _Cursor:
-        return self.cur
+    def scalar(self, _stmt: Any) -> Any:
+        # The unit test only needs the duplicate branch.
+        return object() if self.existing else None
+
+    def add(self, row: Any) -> None:
+        self.added.append(row)
 
     def commit(self) -> None:
         self.commits += 1
@@ -79,40 +52,35 @@ def _event(event_id: str = "ev-1", user_id: str | None = USER) -> dict[str, Any]
     }
 
 
-def _columns(sql: str) -> list[str]:
-    match = re.search(r'INSERT INTO "AuditLogs"\s*\(([^)]*)\)', sql)
-    assert match, sql
-    return [c.strip() for c in match.group(1).split(",")]
-
-
 class TestInsertEvent:
     def test_the_insert_supplies_every_not_null_column_including_id(self):
-        cur = _Cursor()
-        assert auth_events.insert_event(cur, _event(), TENANT) is True
-        [(sql, params)] = cur.inserts()
-        columns = _columns(sql)
-        assert set(columns) >= _REQUIRED
-        values = dict(zip(columns, params, strict=True))
-        uuid.UUID(values["id"])
-        assert values["tenant_id"] == TENANT
-        assert values["source_event_id"] == "ev-1"
+        session = _Session()
+        assert auth_events.insert_event(session, _event(), TENANT) is True
+        [row] = session.added
+        assert isinstance(row.id, uuid.UUID)
+        assert str(row.tenant_id) == TENANT
+        assert row.actor == USER
+        assert row.actor_type == "USER"
+        assert row.action == "REFRESH_TOKEN"
+        assert row.status == "SUCCESS"
+        assert row.source_event_id == "ev-1"
 
     def test_each_event_gets_its_own_id(self):
-        cur = _Cursor()
-        auth_events.insert_event(cur, _event("a"), TENANT)
-        auth_events.insert_event(cur, _event("b"), TENANT)
-        ids = {dict(zip(_columns(s), p, strict=True))["id"] for s, p in cur.inserts()}
+        session = _Session()
+        auth_events.insert_event(session, _event("a"), TENANT)
+        auth_events.insert_event(session, _event("b"), TENANT)
+        ids = {row.id for row in session.added}
         assert len(ids) == 2
 
     def test_an_event_already_written_is_not_written_again(self):
-        cur = _Cursor(existing={"ev-1"})
-        assert auth_events.insert_event(cur, _event(), TENANT) is False
-        assert cur.inserts() == []
+        session = _Session(existing={"ev-1"})
+        assert auth_events.insert_event(session, _event(), TENANT) is False
+        assert session.added == []
 
     def test_an_event_without_a_tenant_is_skipped_not_raised(self):
-        cur = _Cursor()
-        assert auth_events.insert_event(cur, _event(), None) is False
-        assert cur.executions == []
+        session = _Session()
+        assert auth_events.insert_event(session, _event(), None) is False
+        assert session.added == []
 
 
 class _Admin:
@@ -148,10 +116,9 @@ class TestTenantFromKeycloak:
 
     def test_a_batch_looks_each_user_up_once_and_skips_the_unattributable(self):
         admin = _Admin({USER: {"attributes": {"tenant_id": [TENANT]}}})
-        cur = _Cursor()
-        conn = _Conn(cur)
+        session = _Session()
         events = [_event("a"), _event("b"), _event("c", user_id=None)]
-        written = bridge.write_events(conn, events, lambda u: bridge.user_tenant(admin, u))
+        written = bridge.write_events(session, events, lambda u: bridge.user_tenant(admin, u))
         assert written == 2
         assert admin.lookups == [USER]
-        assert conn.commits == 1
+        assert session.commits == 1

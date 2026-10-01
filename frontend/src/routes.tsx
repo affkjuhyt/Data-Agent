@@ -1,15 +1,27 @@
 import React from 'react';
 
-import AskDataPage from './features/ask/AskDataPage';
-import KnowledgeOpsCenter from './components/knowledge/KnowledgeOpsCenter';
-import AgentPlayground from './components/agent-builder/AgentPlayground';
-import Conversations from './components/agent-builder/Conversations';
-import ReviewCenter from './components/agent-builder/ReviewCenter';
-import SettingsView from './components/Settings/Overview';
-import { AgentRuntimeView } from './components/agent-builder/agents/AgentRuntime';
-import { TraceExplorer } from './components/agent-builder/agents/AgentTraces';
-import { ExecutiveDashboard } from './components/ExecutiveDashboard';
-import WorkflowEngine from './components/agent-builder/workflow/Overview';
+const AskDataPage = React.lazy(() => import('./features/ask/AskDataPage'));
+const KnowledgeOpsCenter = React.lazy(() => import('./components/knowledge/KnowledgeOpsCenter'));
+const AgentPlayground = React.lazy(() => import('./components/agent-builder/AgentPlayground'));
+const Conversations = React.lazy(() => import('./components/agent-builder/Conversations'));
+const ReviewCenter = React.lazy(() => import('./components/agent-builder/ReviewCenter'));
+const SettingsView = React.lazy(() => import('./components/Settings/Overview'));
+const WorkflowEngine = React.lazy(() => import('./components/agent-builder/workflow/Overview'));
+const AgentRuntimeView = React.lazy(() =>
+  import('./components/agent-builder/agents/AgentRuntime').then(module => ({
+    default: module.AgentRuntimeView,
+  })),
+);
+const TraceExplorer = React.lazy(() =>
+  import('./components/agent-builder/agents/AgentTraces').then(module => ({
+    default: module.TraceExplorer,
+  })),
+);
+const ExecutiveDashboard = React.lazy(() =>
+  import('./components/ExecutiveDashboard').then(module => ({
+    default: module.ExecutiveDashboard,
+  })),
+);
 
 interface ComingSoonInfo {
   title: string;

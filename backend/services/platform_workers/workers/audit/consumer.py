@@ -15,11 +15,12 @@ import threading
 import time
 from typing import Any
 
+from services.platform_workers.common import db as worker_db
 from services.platform_workers.common import kafka as kafka_factory
-from services.platform_workers.common import pg
 from services.platform_workers.common.settings import KafkaSettings, KeycloakSettings, PostgresSettings
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.orm import Session, sessionmaker
 
 from services.platform_workers.workers.audit import data_access
 from services.platform_workers.workers.audit.bridge import Bridge
@@ -71,9 +72,8 @@ class BridgeSupervisor:
             self.start()
 
 
-def consume_batch(conn: Any, records: dict[Any, list[Any]], pg_settings: PostgresSettings) -> tuple[Any, bool]:
-    """Write one poll's worth of records. Returns (conn, ok) — ``conn`` may be
-    a fresh connection if the old one failed, and ``ok=False`` means the batch
+def consume_batch(SessionLocal: sessionmaker[Session], records: dict[Any, list[Any]]) -> bool:
+    """Write one poll's worth of records. Returns ``False`` when the batch
     must not be committed to Kafka."""
     for _tp, messages in records.items():
         for msg in messages:
@@ -82,17 +82,16 @@ def consume_batch(conn: Any, records: dict[Any, list[Any]], pg_settings: Postgre
                 log.warning("Skipping non-dict message offset=%d", msg.offset)
                 continue
             try:
-                with conn.cursor() as cur:
-                    inserted = data_access.insert_data_access(cur, event)
-                conn.commit()
+                with SessionLocal() as session:
+                    inserted = data_access.insert_data_access(session, event)
+                    session.commit()
                 if not inserted:
                     log.debug("Skipping duplicate event offset=%d", msg.offset)
             except Exception as db_err:  # noqa: BLE001 — any DB failure stops the batch
                 log.error("DB write failed for event %s: %s", event.get("action"), db_err)
-                conn = pg.reconnect(conn, pg_settings)
                 # stop batch — offsets will NOT be committed; message will be retried
-                return conn, False
-    return conn, True
+                return False
+    return True
 
 
 def run() -> None:
@@ -111,7 +110,7 @@ def run() -> None:
     ))
     supervisor.start()
 
-    conn = pg.connect(pg_settings)
+    SessionLocal = worker_db.make_session_factory(pg_settings)
     consumer = kafka_factory.consumer(
         [settings.data_access_topic], settings.group_id,
         auto_offset_reset="earliest", settings=KafkaSettings(),
@@ -126,7 +125,7 @@ def run() -> None:
             if not records:
                 continue
 
-            conn, ok = consume_batch(conn, records, pg_settings)
+            ok = consume_batch(SessionLocal, records)
             if ok:
                 consumer.commit()
                 log.debug("Committed offsets for %d partitions", len(records))

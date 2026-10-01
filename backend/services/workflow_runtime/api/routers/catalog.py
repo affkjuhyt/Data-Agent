@@ -17,7 +17,9 @@ import os
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import text
+from sqlalchemy import select
+
+from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import AgentsORM, SystemPromptsORM
 
 from services.workflow_runtime.api.auth import get_current_user
 from services.workflow_runtime.application.node_registry import NODE_REGISTRY
@@ -41,15 +43,18 @@ async def list_agents(caller: dict[str, Any] = Depends(get_current_user)) -> lis
         if not client.is_connected():
             raise RuntimeError("db not connected")
         async with client.get_client(tenant_id=tenant_id) as session:
-            rows = (await session.execute(text("""
-                SELECT a.id, a.name, a.description
-                FROM "Agents" a
-                WHERE a.tenant_id            = :tenant_id
-                  AND a.is_active            = true
-                  AND a.deleted_at           IS NULL
-                  AND a.published_version_id IS NOT NULL
-                ORDER BY a.created_at DESC
-            """), {"tenant_id": tenant_id})).fetchall()
+            rows = (
+                await session.execute(
+                    select(AgentsORM.id, AgentsORM.name, AgentsORM.description)
+                    .where(
+                        AgentsORM.tenant_id == tenant_id,
+                        AgentsORM.is_active.is_(True),
+                        AgentsORM.deleted_at.is_(None),
+                        AgentsORM.published_version_id.is_not(None),
+                    )
+                    .order_by(AgentsORM.created_at.desc())
+                )
+            ).fetchall()
         return [
             {"id": str(r.id), "name": r.name, "description": r.description or ""}
             for r in rows
@@ -111,12 +116,20 @@ async def get_system_prompts(caller: dict[str, Any] = Depends(get_current_user))
         if not client.is_connected():
             raise RuntimeError("db not connected")
         async with client.get_client(tenant_id=tenant_id) as session:
-            rows = (await session.execute(text("""
-                SELECT id, tenant_id, name, content, version, is_active
-                FROM "SystemPrompts"
-                WHERE tenant_id = :tenant_id
-                ORDER BY inserted_at DESC
-            """), {"tenant_id": tenant_id})).fetchall()
+            rows = (
+                await session.execute(
+                    select(
+                        SystemPromptsORM.id,
+                        SystemPromptsORM.tenant_id,
+                        SystemPromptsORM.name,
+                        SystemPromptsORM.content,
+                        SystemPromptsORM.version,
+                        SystemPromptsORM.is_active,
+                    )
+                    .where(SystemPromptsORM.tenant_id == tenant_id)
+                    .order_by(SystemPromptsORM.inserted_at.desc())
+                )
+            ).fetchall()
         return [
             {
                 "id": str(r.id),

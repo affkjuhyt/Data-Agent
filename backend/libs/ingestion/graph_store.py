@@ -26,9 +26,10 @@ import uuid
 from neo4j import AsyncDriver
 from sqlalchemy import (
     delete as sa_delete,
+    exists as sa_exists,
     func as sa_func,
+    or_ as sa_or,
     select as sa_select,
-    text,
     tuple_ as sa_tuple,
 )
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -405,12 +406,17 @@ class GraphStore:
         async with self._postgres.get_client() as session:
             try:
                 await session.execute(
-                    text(
-                        'DELETE FROM "KBNeo4jNode" n WHERE n.tenant_id = :tenant_id AND n.knowledge_base = :knowledge_base '
-                        'AND NOT EXISTS (SELECT 1 FROM "KBNeo4jRelationship" r '
-                        'WHERE r.from_node = n.node_id OR r.to_node = n.node_id)'
-                    ),
-                    {"tenant_id": _as_uuid(tenant_id), "knowledge_base": knowledge_base},
+                    sa_delete(KBNeo4jNodeORM)
+                    .where(
+                        KBNeo4jNodeORM.tenant_id == _as_uuid(tenant_id),
+                        KBNeo4jNodeORM.knowledge_base == knowledge_base,
+                        ~sa_exists().where(
+                            sa_or_(
+                                KBNeo4jRelationshipORM.from_node == KBNeo4jNodeORM.node_id,
+                                KBNeo4jRelationshipORM.to_node == KBNeo4jNodeORM.node_id,
+                            )
+                        ),
+                    )
                 )
                 await session.commit()
             except Exception:

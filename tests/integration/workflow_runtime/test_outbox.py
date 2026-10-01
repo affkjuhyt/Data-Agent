@@ -15,9 +15,11 @@ import sys
 from collections.abc import Iterator
 from typing import Any
 
-import psycopg2
 import pytest
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session, sessionmaker
 
+from libs.basemodel.services_databaseconnector.postgres_orm.outbox_orm import OutboxEventORM
 from tests.integration._db import reset_database
 
 pytestmark = pytest.mark.integration
@@ -65,13 +67,18 @@ class Broker:
 
 
 def _rows(dsn: str) -> list[tuple[Any, ...]]:
-    conn = psycopg2.connect(dsn)
-    try:
-        with conn.cursor() as cur:
-            cur.execute('SELECT id, topic, published_at IS NOT NULL, attempts, dead_at IS NOT NULL FROM "OutboxEvents" ORDER BY id')
-            return cur.fetchall()
-    finally:
-        conn.close()
+    SessionLocal = _sync_session_factory(dsn)
+    with SessionLocal() as session:
+        rows = session.scalars(select(OutboxEventORM).order_by(OutboxEventORM.id)).all()
+        return [(row.id, row.topic, row.published_at is not None, row.attempts, row.dead_at is not None) for row in rows]
+
+
+def _sync_session_factory(dsn: str) -> sessionmaker[Session]:
+    return sessionmaker(
+        bind=create_engine(dsn.replace("postgresql://", "postgresql+psycopg2://", 1), future=True),
+        expire_on_commit=False,
+        future=True,
+    )
 
 
 async def _enqueue(pg: Any, topic: str, n: int, *, producer: str = "p1") -> None:
@@ -157,9 +164,9 @@ async def test_an_event_enqueued_in_a_rolled_back_transaction_does_not_exist(pg:
     assert _rows(migrated_db["dsn"]) == []
 
 
-def test_the_synchronous_flavour_has_the_same_claim_and_failure_rules(migrated_db: dict[str, str]) -> None:
-    """The crawler worker uses psycopg2; enqueue_sync commits with the caller's own
-    transaction and drain_sync keeps a failed row pending."""
+def test_the_synchronous_orm_flavour_has_the_same_claim_and_failure_rules(migrated_db: dict[str, str]) -> None:
+    """The crawler worker uses a sync ORM session; rollback hides the event and
+    drain_sync_orm keeps a failed row pending."""
     from libs.shared import outbox
 
     sent: list[str] = []
@@ -170,21 +177,18 @@ def test_the_synchronous_flavour_has_the_same_claim_and_failure_rules(migrated_d
             raise RuntimeError("kafka down")
         sent.append(topic)
 
-    conn = psycopg2.connect(migrated_db["dsn"])
-    try:
-        with conn.cursor() as cur:
-            outbox.enqueue_sync(cur, producer="web-crawler", topic="kb.promote.silver", value={"data_id": "d1"}, key="d1")
-        conn.rollback()  # the caller's transaction failed: the event must not exist
+    SessionLocal = _sync_session_factory(migrated_db["dsn"])
+    with SessionLocal() as session:
+        outbox.enqueue_sync_orm(session, producer="web-crawler", topic="kb.promote.silver", value={"data_id": "d1"}, key="d1")
+        session.rollback()  # the caller's transaction failed: the event must not exist
         assert _rows(migrated_db["dsn"]) == []
 
-        with conn.cursor() as cur:
-            outbox.enqueue_sync(cur, producer="web-crawler", topic="kb.promote.silver", value={"data_id": "d1"}, key="d1")
-        conn.commit()
+    with SessionLocal() as session:
+        outbox.enqueue_sync_orm(session, producer="web-crawler", topic="kb.promote.silver", value={"data_id": "d1"}, key="d1")
+        session.commit()
 
-        assert outbox.drain_sync(conn, publish, producer="web-crawler") == 0
-        assert [r[2] for r in _rows(migrated_db["dsn"])] == [False]
-        fail["on"] = False
-        assert outbox.drain_sync(conn, publish, producer="web-crawler") == 1
-        assert sent == ["kb.promote.silver"]
-    finally:
-        conn.close()
+    assert outbox.drain_sync_orm(SessionLocal, publish, producer="web-crawler") == 0
+    assert [r[2] for r in _rows(migrated_db["dsn"])] == [False]
+    fail["on"] = False
+    assert outbox.drain_sync_orm(SessionLocal, publish, producer="web-crawler") == 1
+    assert sent == ["kb.promote.silver"]

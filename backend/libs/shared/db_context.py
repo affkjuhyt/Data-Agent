@@ -1,4 +1,4 @@
-"""Tenant-scoped DB connection helper.
+"""Tenant-scoped ORM session helper.
 
 Pairs with `backend/alembic/versions/a1b2c3d4e5f6_enable_tenant_rls.py`. After that
 migration, every tenant-scoped table has Row-Level Security enabled with a
@@ -7,9 +7,9 @@ don't set that setting see zero rows.
 
 This module gives services a single, foolproof way to:
 
-    1. open a connection as `app_user` (the role RLS is scoped to)
+    1. open a SQLAlchemy session as `app_user` (the role RLS is scoped to)
     2. set `app.tenant_id` to the tenant from the JWT
-    3. yield the connection, run queries, commit/rollback, close
+    3. yield the session, run ORM queries, commit/rollback, close
 
 The pattern is deliberately context-manager-only — there is no "give me
 a connection and trust me to set it" escape hatch. Trying to provide one
@@ -17,14 +17,13 @@ defeats the point of RLS.
 
 Usage (FastAPI route):
 
-    from libs.shared.db_context import get_tenant_db
+    from libs.shared.db_context import get_tenant_session
 
     @router.get("/things")
-    def list_things(db = Depends(get_tenant_db)):
-        with db.cursor() as cur:
-            cur.execute("SELECT * FROM things")  # no WHERE — RLS scopes it
-            return cur.fetchall()
+    def list_things(db = Depends(get_tenant_session)):
+        return db.scalars(select(ThingORM)).all()  # no tenant WHERE — RLS scopes it
 """
+
 from __future__ import annotations
 
 import os
@@ -32,10 +31,11 @@ import re
 import threading
 import uuid
 from collections.abc import Iterator
-from typing import Any
+from contextlib import contextmanager
 
-from psycopg2 import pool as pg_pool
 from fastapi import Header, HTTPException
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session, sessionmaker
 
 # Connection URL for the app_user role. MUST be distinct from the
 # admin/owner DATABASE_URL. If services share a single DSN, RLS is bypassed
@@ -76,83 +76,50 @@ def _app_dsn() -> str:
     return dsn
 
 
-# ── Connection pool (app_user role) ─────────────────────────────────────────────
-# Pool the app_user connections rather than opening a fresh one per request. RLS
-# safety is preserved because tenant scoping uses SET LOCAL (transaction-lived):
-# it reverts on commit/rollback, and _release() always rolls back before returning
-# the connection, so a pooled connection never carries one tenant's app.tenant_id
-# into the next borrower.
-_POOL_MIN = int(os.environ.get("DB_POOL_MIN", "2"))
-_POOL_MAX = int(os.environ.get("DB_POOL_MAX", "20"))
-
-_app_pool: pg_pool.ThreadedConnectionPool | None = None
-_app_pool_lock = threading.Lock()
+_session_factory: sessionmaker[Session] | None = None
+_session_lock = threading.Lock()
 
 
-def _get_app_pool() -> pg_pool.ThreadedConnectionPool:
-    # Lazy + double-checked: Postgres / APP_DATABASE_URL may not be ready at import.
-    global _app_pool
-    if _app_pool is None:
-        with _app_pool_lock:
-            if _app_pool is None:
-                _app_pool = pg_pool.ThreadedConnectionPool(_POOL_MIN, _POOL_MAX, _app_dsn())
-    return _app_pool
+def _sync_app_url() -> str:
+    dsn = _app_dsn()
+    if dsn.startswith("postgres://"):
+        return dsn.replace("postgres://", "postgresql://", 1)
+    return dsn
 
 
-def _release(pool: pg_pool.ThreadedConnectionPool, conn: Any) -> None:
-    """Return a connection to the pool, rolling back first so no transaction
-    state (incl. SET LOCAL app.tenant_id) leaks to the next borrower."""
+def _get_session_factory() -> sessionmaker[Session]:
+    global _session_factory
+    if _session_factory is None:
+        with _session_lock:
+            if _session_factory is None:
+                engine = create_engine(_sync_app_url(), pool_pre_ping=True, future=True)
+                _session_factory = sessionmaker(bind=engine, expire_on_commit=False, future=True)
+    return _session_factory
+
+
+@contextmanager
+def tenant_session(tenant_id: str) -> Iterator[Session]:
+    session = _get_session_factory()()
     try:
-        conn.rollback()
+        session.execute(
+            text("SELECT set_config('app.tenant_id', :tenant_id, true)"),
+            {"tenant_id": _validated_uuid(tenant_id)},
+        )
+        yield session
+        session.commit()
     except Exception:
-        pass
-    pool.putconn(conn)
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
-def set_tenant_context(conn: Any, tenant_id: str) -> None:
-    """Bind `app.tenant_id` for the lifetime of the current transaction.
-
-    Uses `SET LOCAL` so the setting reverts on COMMIT/ROLLBACK — important
-    when connections come from a pool and may be reused for another tenant.
-
-    `set_config(..., is_local=true)` rather than literal SQL so the tenant_id
-    is bound as a parameter (defense in depth on top of _validated_uuid).
-    """
-    tenant_id = _validated_uuid(tenant_id)
-    with conn.cursor() as cur:
-        cur.execute("SELECT set_config('app.tenant_id', %s, true)", (tenant_id,))
-
-
-def get_tenant_db(
+def get_tenant_session(
     x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
-) -> Iterator[Any]:
-    """FastAPI dependency: yield a tenant-scoped connection per request.
-
-    Reads the tenant from the X-Tenant-Id header that Kong injects after JWT
-    verification (see deploy/docker/kong/plugins/aeroflow-jwks). A request that
-    reaches the service with a missing/invalid tenant header gets 422 — the
-    intent is that Kong always populates this, so it being absent is a
-    config bug, not a user error.
-
-    Use as:
-        @router.get("/x")
-        def handler(db = Depends(get_tenant_db)):
-            ...
-    """
+) -> Iterator[Session]:
     try:
         tenant_id = _validated_uuid(x_tenant_id)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
-
-    pool = _get_app_pool()
-    conn = pool.getconn()
-    conn.autocommit = False
-    try:
-        set_tenant_context(conn, tenant_id)
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        _release(pool, conn)
+    with tenant_session(tenant_id) as session:
+        yield session

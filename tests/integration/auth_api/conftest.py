@@ -211,7 +211,7 @@ def auth_api_app(postgres_container):
     auto-rotation loop — we don't need either for smoke tests.
     """
     os.environ["DATABASE_URL"] = postgres_container["dsn"]
-    # APP_DATABASE_URL is what shared.db_context.get_tenant_db connects to.
+    # APP_DATABASE_URL is what shared.db_context.get_tenant_session connects to.
     # Must be the app_user role for RLS to apply (owner connections bypass
     # FORCE RLS via the superuser bit testcontainers sets on the owner role).
     os.environ["APP_DATABASE_URL"] = _app_user_dsn(postgres_container)

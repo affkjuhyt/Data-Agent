@@ -14,7 +14,6 @@ admin token itself and retries once on 401.
 """
 from __future__ import annotations
 
-import contextlib
 import logging
 import threading
 import time
@@ -22,7 +21,9 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from services.platform_workers.common import pg
+from sqlalchemy.orm import Session, sessionmaker
+
+from services.platform_workers.common import db as worker_db
 from services.platform_workers.common.settings import KeycloakSettings, PostgresSettings
 from keycloak import KeycloakAdmin, KeycloakOpenIDConnection
 from keycloak.exceptions import KeycloakError
@@ -99,24 +100,21 @@ def user_tenant(admin: KeycloakAdmin, user_id: str) -> str | None:
     return str(values[0]) if values else None
 
 
-def write_events(
-    conn: Any, events: list[dict[str, Any]], tenant_of: Callable[[str], str | None],
-) -> int:
+def write_events(session: Session, events: list[dict[str, Any]], tenant_of: Callable[[str], str | None]) -> int:
     """Insert a batch in one transaction; returns how many were new."""
     inserted = 0
     tenants: dict[str, str | None] = {}
-    with conn.cursor() as cur:
-        for event in events:
-            user_id = event.get("userId") or ""
-            if user_id not in tenants:
-                tenants[user_id] = tenant_of(user_id)
-            if auth_events.insert_event(cur, event, tenants[user_id]):
-                inserted += 1
-                log.info(
-                    "auth event type=%-30s user=%s",
-                    event.get("type", "?"), event.get("userId", "anonymous"),
-                )
-    conn.commit()
+    for event in events:
+        user_id = event.get("userId") or ""
+        if user_id not in tenants:
+            tenants[user_id] = tenant_of(user_id)
+        if auth_events.insert_event(session, event, tenants[user_id]):
+            inserted += 1
+            log.info(
+                "auth event type=%-30s user=%s",
+                event.get("type", "?"), event.get("userId", "anonymous"),
+            )
+    session.commit()
     return inserted
 
 
@@ -139,17 +137,17 @@ class Bridge:
         self.poll_interval = poll_interval
         self.stop = stop or threading.Event()
         self._admin: KeycloakAdmin | None = None
-        self._conn: Any = None
+        self._SessionLocal: sessionmaker[Session] | None = None
 
     def _get_admin(self) -> KeycloakAdmin:
         if self._admin is None:
             self._admin = keycloak_admin(self.keycloak)
         return self._admin
 
-    def _get_conn(self) -> Any:
-        if self._conn is None:
-            self._conn = pg.connect(self.postgres)
-        return self._conn
+    def _get_session_factory(self) -> sessionmaker[Session]:
+        if self._SessionLocal is None:
+            self._SessionLocal = worker_db.make_session_factory(self.postgres)
+        return self._SessionLocal
 
     def tick(self) -> int:
         """Poll once and persist; returns the number of events written."""
@@ -166,15 +164,9 @@ class Bridge:
 
         admin = self._get_admin()
         try:
-            inserted = write_events(
-                self._get_conn(), new_events, lambda user_id: user_tenant(admin, user_id),
-            )
+            with self._get_session_factory()() as session:
+                inserted = write_events(session, new_events, lambda user_id: user_tenant(admin, user_id))
         except Exception:
-            conn, self._conn = self._conn, None
-            if conn is not None:
-                for step in (conn.rollback, conn.close):
-                    with contextlib.suppress(Exception):
-                        step()
             raise
 
         # Only advance the cursor once the batch is committed: a crash between

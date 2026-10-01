@@ -1,0 +1,216 @@
+<%# Database design review artifact. Render the Mermaid block to inspect the current ORM-level ERD. %>
+
+# Data Agent Database Design
+
+Source of truth for this view: SQLAlchemy ORM metadata under
+`backend/libs/basemodel/services_databaseconnector/postgres_orm`.
+
+## Domain Notes
+
+- Tenant boundary: most operational tables hang from `Tenants.id`; RLS depends on
+  `tenant_id` plus the runtime `app.tenant_id` setting.
+- Knowledge base: `KBData` is the document root; chunks, versions, structured
+  import jobs, tables, conflict records, graph and vector metadata fan out from it.
+- Agent authoring/runtime: `Agents` owns versions and workflows; conversations
+  own messages; messages own traces.
+- Semantic layer: `SemanticMetric` is stable identity; `SemanticMetricVersion`
+  carries versioned formulas; `SemanticSynonym` maps phrases to metrics.
+- Schema discovery: `KBWarehouse` and `SchemaCatalog` describe physical sources;
+  they are separate from semantic business definitions.
+- Audit/outbox: `AuditLogs`, `DataAccessLog`, and `OutboxEvents` are append-style
+  operational records.
+
+```mermaid
+erDiagram
+  Tenants ||--o{ Members : tenant_id
+  Tenants ||--o{ KeycloakRealmConfigs : tenant_id
+  Tenants ||--o{ AuditLogs : tenant_id
+  Tenants ||--o{ DataAccessLog : tenant_id
+  Tenants ||--o{ PlatformSettings : tenant_id
+
+  Tenants ||--o{ KBKnowledgeBase : tenant_id
+  Tenants ||--o{ KBData : tenant_id
+  RolePermissions ||--o{ KBData : role_id
+  KBKnowledgeBase ||--o{ KBData : knowledge_base_id
+  KBData ||--o{ KBLifecycleHistory : data_id
+  KBData ||--o{ KBTextBlock : owner_id
+  KBTextBlock ||--o{ KBTextBlockVersion : block_id
+  KBTextBlockVersion ||--|| KBTextTable : version_id
+  KBData ||--o{ KBTable : owner_id
+  KBData ||--o{ KBStructuredImportJob : owner_id
+  KBData ||--o{ KBConflict : data_id
+  KBConflictBatch ||--o{ KBConflict : batch_id
+  Tenants ||--o{ KBConflictBatch : tenant_id
+  Tenants ||--o{ KBConflict : tenant_id
+
+  Tenants ||--o{ KBFilterPolicy : tenant_id
+  Tenants ||--o{ KBExtractionPolicy : tenant_id
+  Tenants ||--o{ KBEntityLookup : tenant_id
+
+  KBModel ||--o{ KBModelVersion : model_id
+  KBModel ||--o{ KBTextBlockVersion : embedding_model_id
+  Tenants ||--o{ KBQdrantConnection : tenant_id
+  KBQdrantConnection ||--o{ KBQdrantCollection : connection_id
+  KBModel ||--o{ KBQdrantCollection : embedding_model_id
+
+  KBNeo4jNode ||--o{ KBNeo4jRelationship : from_node
+  KBNeo4jNode ||--o{ KBNeo4jRelationship : to_node
+
+  Tenants ||--o{ KBWarehouse : tenant_id
+  KBWarehouse ||--o{ KBWarehouseConfig : warehouse_id
+  KBWarehouse ||--o{ SchemaCatalog : warehouse_id
+  Tenants ||--o{ SchemaCatalog : tenant_id
+  Tenants ||--o{ SchemaMemory : tenant_id
+
+  Tenants ||--o{ KBSource : tenant_id
+  RolePermissions ||--o{ KBSource : role_id
+  KBSource ||--o{ KBSourceConfig : source_id
+  KBSource ||--o{ KBSourceRun : source_id
+  KBSource ||--o{ KBSourceCrawlQueue : source_id
+  Tenants ||--o{ KBSourceCrawlQueue : tenant_id
+
+  Tenants ||--o{ KBConnections : tenant_id
+  Tenants ||--o{ SystemPrompts : tenant_id
+  Tenants ||--o{ Tools : tenant_id
+  Tenants ||--o{ MCP : tenant_id
+  Tenants ||--o{ Agents : tenant_id
+  LLMProviders ||--o{ Guardrails : guardrail_model_id
+  LLMProviders ||--o{ AgentVersions : responder_model_id
+  Agents ||--o{ AgentVersions : agent_id
+  AgentVersions ||--o{ Agents : published_version_id
+  AgentVersions ||--o{ Agents : draft_version_id
+  SystemPrompts ||--o{ AgentVersions : system_prompt_id
+  Guardrails ||--o{ AgentVersions : guardrail_id
+  Agents ||--o{ Workflows : agent_id
+  Workflows ||--o{ WorkflowVersions : workflow_id
+  WorkflowVersions ||--o{ AgentVersions : workflow_version_id
+  AgentVersions ||--o{ AgentKB : version_id
+  KBConnections ||--o{ AgentKB : kb_connection_id
+  AgentVersions ||--o{ AgentTools : version_id
+  Tools ||--o{ AgentTools : tool_id
+  AgentVersions ||--o{ AgentMCP : version_id
+  MCP ||--o{ AgentMCP : mcp_id
+
+  Tenants ||--o{ AgentMemories : tenant_id
+  Agents ||--o{ AgentMemories : agent_id
+  Tenants ||--o{ EpisodicMemory : tenant_id
+  Agents ||--o{ EpisodicMemory : agent_id
+  Tenants ||--o{ FutureMemory : tenant_id
+  Agents ||--o{ FutureMemory : agent_id
+  Tenants ||--o{ MemoryRetentionConfig : tenant_id
+  Agents ||--o{ MemoryPolicy : agent_id
+  Tenants ||--o{ WorkflowMemory : tenant_id
+  Agents ||--o{ WorkflowMemory : agent_id
+
+  Tenants ||--o{ Conversations : tenant_id
+  Conversations ||--o{ Messages : conversation_id
+  Messages ||--o{ AgentTraces : message_id
+
+  Tenants ||--o{ SemanticMetric : tenant_id
+  SemanticMetric ||--o{ SemanticMetricVersion : metric_id
+  Tenants ||--o{ SemanticMetricVersion : tenant_id
+  SemanticMetric ||--o{ SemanticSynonym : metric_id
+  Tenants ||--o{ SemanticSynonym : tenant_id
+
+  Tenants {
+    uuid id PK
+    string slug
+    string data_residency
+  }
+  RolePermissions {
+    uuid id PK
+    string role_id
+    string resource
+    string action
+  }
+  KBData {
+    uuid data_id PK
+    uuid tenant_id FK
+    uuid role_id FK
+    uuid knowledge_base_id FK
+    string current_tier
+    string ingestion_mode
+    string purpose
+    boolean is_deleted
+  }
+  KBTextBlock {
+    uuid block_id PK
+    uuid owner_id FK
+    int block_index
+    boolean is_deleted
+  }
+  KBTextBlockVersion {
+    uuid version_id PK
+    uuid block_id FK
+    int version_number
+    uuid embedding_model_id FK
+    boolean is_active
+  }
+  KBSource {
+    uuid source_id PK
+    uuid tenant_id FK
+    uuid role_id FK
+    string connector_type
+    string title
+  }
+  KBWarehouse {
+    uuid warehouse_id PK
+    uuid tenant_id FK
+    string service
+  }
+  SchemaCatalog {
+    uuid id PK
+    uuid tenant_id FK
+    uuid warehouse_id FK
+    string schema_name
+    string table_name
+    string schema_hash
+  }
+  Agents {
+    uuid id PK
+    uuid tenant_id FK
+    uuid published_version_id FK
+    uuid draft_version_id FK
+  }
+  AgentVersions {
+    uuid id PK
+    uuid agent_id FK
+    int version
+    string status
+  }
+  Workflows {
+    uuid id PK
+    uuid agent_id FK
+  }
+  WorkflowVersions {
+    uuid id PK
+    uuid workflow_id FK
+    int version
+    string status
+  }
+  Conversations {
+    uuid id PK
+    uuid tenant_id FK
+    string status
+  }
+  Messages {
+    uuid id PK
+    uuid conversation_id FK
+    string role
+  }
+  SemanticMetric {
+    uuid id PK
+    uuid tenant_id FK
+    string metric_key
+    string owner
+  }
+  SemanticMetricVersion {
+    uuid id PK
+    uuid tenant_id FK
+    uuid metric_id FK
+    int version
+    string status
+    string aggregation
+    string expression
+  }
+```

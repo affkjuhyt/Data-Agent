@@ -21,13 +21,15 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Any, cast
 
-import psycopg2
-import psycopg2.extras
 from fastapi import APIRouter, Depends, HTTPException, Path
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import MicrosoftSSOApprovalORM
+from libs.basemodel.services_databaseconnector.postgres_orm.auth_release_orm import TenantsORM
 from libs.shared.auth import get_current_user
-from services.auth_api.auth_core import get_db
+from services.auth_api.infrastructure.db import get_session, orm_to_dict
 
 router = APIRouter()
 
@@ -178,22 +180,18 @@ def get_me(user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
     - MS SSO user rejected → rejected
     """
     user_id = user["user_id"]
-    conn    = get_db()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT status, created_at FROM microsoft_sso_approvals WHERE keycloak_user_id = %s",
-                (user_id,),
-            )
-            row = cur.fetchone()
-    finally:
-        conn.close()
+    with get_session() as session:
+        row = session.scalar(
+            select(MicrosoftSSOApprovalORM).where(MicrosoftSSOApprovalORM.keycloak_user_id == user_id)
+        )
 
     if row:
-        if row["status"] == "approved":
+        if row.status == "approved":
             return {"status": "active"}
-        return {"status": row["status"] if row["status"] != "pending" else "pending_approval",
-                "since": row["created_at"].isoformat()}
+        return {
+            "status": row.status if row.status != "pending" else "pending_approval",
+            "since": row.created_at.isoformat(),
+        }
 
     # Not in DB — first time. Check if MS SSO user.
     is_ms, _email, _name = _is_microsoft_sso_user(user_id)
@@ -227,28 +225,28 @@ def submit_profile(body: ProfileBody, user: dict[str, Any] = Depends(get_current
     if not is_ms:
         raise HTTPException(status_code=403, detail="Not a Microsoft SSO user")
 
-    conn = get_db()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                """
-                INSERT INTO microsoft_sso_approvals
-                  (keycloak_user_id, email, display_name, requested_role, requested_tenant_id)
-                VALUES (%s, %s, %s, %s, %s)
-                ON CONFLICT (keycloak_user_id) DO UPDATE
-                  SET requested_role      = EXCLUDED.requested_role,
-                      requested_tenant_id = EXCLUDED.requested_tenant_id,
-                      status              = 'pending'
-                  WHERE microsoft_sso_approvals.status <> 'approved'
-                RETURNING status, created_at
-                """,
-                (user_id, email, name,
-                 body.requested_role, body.requested_tenant_id.strip()),
+    with get_session() as session:
+        stmt = (
+            pg_insert(MicrosoftSSOApprovalORM)
+            .values(
+                keycloak_user_id=user_id,
+                email=email,
+                display_name=name,
+                requested_role=body.requested_role,
+                requested_tenant_id=body.requested_tenant_id.strip(),
             )
-            inserted = cur.fetchone()
-        conn.commit()
-    finally:
-        conn.close()
+            .on_conflict_do_update(
+                index_elements=[MicrosoftSSOApprovalORM.keycloak_user_id],
+                set_={
+                    "requested_role": body.requested_role,
+                    "requested_tenant_id": body.requested_tenant_id.strip(),
+                    "status": "pending",
+                },
+                where=MicrosoftSSOApprovalORM.status != "approved",
+            )
+            .returning(MicrosoftSSOApprovalORM.status, MicrosoftSSOApprovalORM.created_at)
+        )
+        inserted = session.execute(stmt).mappings().one_or_none()
 
     # No row back: the conflict guard refused, because the user is already approved.
     # Re-submitting must not flip an approved account back to pending and disable it.
@@ -274,15 +272,13 @@ def get_available_roles(_user: dict[str, Any] = Depends(get_current_user)) -> di
 @router.get("/api/auth/me/tenants")
 def get_available_tenants(_user: dict[str, Any] = Depends(get_current_user)) -> list[dict[str, Any]]:
     """Return the list of active tenants for SSO profile setup."""
-    conn = get_db()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                'SELECT id, name, slug FROM "Tenants" WHERE is_active = true AND deleted_at IS NULL ORDER BY name'
-            )
-            return [{"id": str(r["id"]), "name": r["name"], "slug": r["slug"]} for r in cur.fetchall()]
-    finally:
-        conn.close()
+    with get_session() as session:
+        rows = session.scalars(
+            select(TenantsORM)
+            .where(TenantsORM.is_active.is_(True), TenantsORM.deleted_at.is_(None))
+            .order_by(TenantsORM.name)
+        ).all()
+        return [{"id": str(row.id), "name": row.name, "slug": row.slug} for row in rows]
 
 
 @router.get("/api/auth/approvals")
@@ -307,36 +303,14 @@ def list_approvals(
     if status not in valid:
         raise HTTPException(status_code=422, detail=f"status must be one of {valid}")
 
-    conn = get_db()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            if is_platform_admin:
-                # See everything
-                if status == "all":
-                    cur.execute(
-                        "SELECT * FROM microsoft_sso_approvals ORDER BY created_at DESC LIMIT 500"
-                    )
-                else:
-                    cur.execute(
-                        "SELECT * FROM microsoft_sso_approvals WHERE status = %s ORDER BY created_at DESC LIMIT 500",
-                        (status,),
-                    )
-            else:
-                # tenant-admin: restrict to their tenant
-                tenant_id = user.get("tenant_id", "")
-                if status == "all":
-                    cur.execute(
-                        "SELECT * FROM microsoft_sso_approvals WHERE requested_tenant_id = %s ORDER BY created_at DESC LIMIT 500",
-                        (tenant_id,),
-                    )
-                else:
-                    cur.execute(
-                        "SELECT * FROM microsoft_sso_approvals WHERE status = %s AND requested_tenant_id = %s ORDER BY created_at DESC LIMIT 500",
-                        (status, tenant_id),
-                    )
-            return [dict(r) for r in cur.fetchall()]
-    finally:
-        conn.close()
+    with get_session() as session:
+        stmt = select(MicrosoftSSOApprovalORM)
+        if status != "all":
+            stmt = stmt.where(MicrosoftSSOApprovalORM.status == status)
+        if not is_platform_admin:
+            stmt = stmt.where(MicrosoftSSOApprovalORM.requested_tenant_id == user.get("tenant_id", ""))
+        rows = session.scalars(stmt.order_by(MicrosoftSSOApprovalORM.created_at.desc()).limit(500)).all()
+        return [orm_to_dict(row) for row in rows]
 
 
 @router.post("/api/auth/approvals/{user_id}/approve")
@@ -348,19 +322,20 @@ def approve_user(
     Approve a pending MS SSO user.
     Assigns requested role + tenant to Keycloak user and enables their account.
     """
-    conn = get_db()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT * FROM microsoft_sso_approvals WHERE keycloak_user_id = %s AND status = 'pending' FOR UPDATE",
-                (user_id,),
+    with get_session() as session:
+        row = session.scalar(
+            select(MicrosoftSSOApprovalORM)
+            .where(
+                MicrosoftSSOApprovalORM.keycloak_user_id == user_id,
+                MicrosoftSSOApprovalORM.status == "pending",
             )
-            row = cur.fetchone()
+            .with_for_update()
+        )
 
         if not row:
             raise HTTPException(status_code=404, detail="Pending approval not found")
 
-        if not _can_approve(actor, row["requested_tenant_id"] or ""):
+        if not _can_approve(actor, row.requested_tenant_id or ""):
             raise HTTPException(
                 status_code=403,
                 detail="Only platform-admin or tenant-admin of the matching tenant can approve",
@@ -370,22 +345,13 @@ def approve_user(
         # we never commit, keeping DB and Keycloak in sync.
         _assign_kc_user_role_tenant(
             user_id,
-            row["requested_role"]      or "",
-            row["requested_tenant_id"] or "",
+            row.requested_role or "",
+            row.requested_tenant_id or "",
         )
 
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                UPDATE microsoft_sso_approvals
-                SET status = 'approved', reviewed_by = %s, reviewed_at = now()
-                WHERE keycloak_user_id = %s AND status = 'pending'
-                """,
-                (actor["user_id"], user_id),
-            )
-        conn.commit()
-    finally:
-        conn.close()
+        row.status = "approved"
+        row.reviewed_by = actor["user_id"]
+        row.reviewed_at = datetime.now(timezone.utc)
 
     return {"ok": True, "user_id": user_id, "status": "approved"}
 
@@ -396,35 +362,27 @@ def reject_user(
     actor:   dict[str, Any] = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Reject a pending MS SSO user. Keeps their Keycloak account disabled."""
-    conn = get_db()
-    try:
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT requested_tenant_id FROM microsoft_sso_approvals WHERE keycloak_user_id = %s AND status = 'pending' FOR UPDATE",
-                (user_id,),
+    with get_session() as session:
+        row = session.scalar(
+            select(MicrosoftSSOApprovalORM)
+            .where(
+                MicrosoftSSOApprovalORM.keycloak_user_id == user_id,
+                MicrosoftSSOApprovalORM.status == "pending",
             )
-            row = cur.fetchone()
+            .with_for_update()
+        )
 
         if not row:
             raise HTTPException(status_code=404, detail="Pending approval not found")
 
-        if not _can_approve(actor, row["requested_tenant_id"] or ""):
+        if not _can_approve(actor, row.requested_tenant_id or ""):
             raise HTTPException(
                 status_code=403,
                 detail="Only platform-admin or tenant-admin of the matching tenant can reject",
             )
 
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                UPDATE microsoft_sso_approvals
-                SET status = 'rejected', reviewed_by = %s, reviewed_at = now()
-                WHERE keycloak_user_id = %s AND status = 'pending'
-                """,
-                (actor["user_id"], user_id),
-            )
-        conn.commit()
-    finally:
-        conn.close()
+        row.status = "rejected"
+        row.reviewed_by = actor["user_id"]
+        row.reviewed_at = datetime.now(timezone.utc)
 
     return {"ok": True, "user_id": user_id, "status": "rejected"}

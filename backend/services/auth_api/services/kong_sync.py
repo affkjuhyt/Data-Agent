@@ -1,40 +1,45 @@
 from typing import Any
 
 import httpx
+from sqlalchemy import select
 
+from libs.basemodel.services_databaseconnector.postgres_orm.auth_api_orm import (
+    AuthPlatformSettingORM,
+    IPAllowlistORM,
+)
 try:
     from services.auth_api.infrastructure.config import KONG_ADMIN, PRIVATE_FALLBACK_CIDRS, log
-    from services.auth_api.infrastructure.db import get_db
+    from services.auth_api.infrastructure.db import get_session
 except ModuleNotFoundError:
     from auth_api.infrastructure.config import KONG_ADMIN, PRIVATE_FALLBACK_CIDRS, log
-    from auth_api.infrastructure.db import get_db
+    from auth_api.infrastructure.db import get_session
 
 IP_PROTECTED_SERVICES = ["aeroflow-backend"]
 IP_PROTECTED_ROUTES = ["auth_api-keys-route", "auth_api-secrets-route"]
 
 
 def get_ip_allowlist_mode() -> str:
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT value FROM platform_settings WHERE key = 'ip_allowlist_mode'")
-            row = cur.fetchone()
-            return row[0] if row else "allow_all"
-    finally:
-        conn.close()
+    with get_session() as session:
+        return (
+            session.scalar(
+                select(AuthPlatformSettingORM.value).where(
+                    AuthPlatformSettingORM.key == "ip_allowlist_mode"
+                )
+            )
+            or "allow_all"
+        )
 
 
 def get_active_cidrs(tenant_id: str) -> list[str]:
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "SELECT cidr FROM ip_allowlists WHERE tenant_id = %s AND is_active = true",
-                (tenant_id,),
+    with get_session() as session:
+        return list(
+            session.scalars(
+                select(IPAllowlistORM.cidr).where(
+                    IPAllowlistORM.tenant_id == tenant_id,
+                    IPAllowlistORM.is_active.is_(True),
+                )
             )
-            return [row[0] for row in cur.fetchall()]
-    finally:
-        conn.close()
+        )
 
 
 def upsert_ip_restriction_plugin(scope_url: str, payload: dict[str, Any]) -> None:

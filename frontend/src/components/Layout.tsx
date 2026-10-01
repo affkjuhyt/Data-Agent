@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
 import { useAppState } from '../AppStateContext';
 import { useAuth } from '../lib/AuthProvider';
 import { NAV_ITEMS, MODULE_SUB_ITEMS, SubNavItem } from '../constants';
@@ -65,76 +64,64 @@ const CommandPalette = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
   };
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 bg-black/30 backdrop-blur-[2px] z-[200]"
-          />
-          <motion.div
-            initial={{ opacity: 0, scale: 0.97, y: -10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.97, y: -10 }}
-            transition={{ duration: 0.14, ease: [0.4, 0, 0.2, 1] }}
-            className="fixed top-[14%] left-1/2 -translate-x-1/2 w-full max-w-[600px] px-4 z-[201]"
-          >
-            <div className="bg-white rounded-2xl border border-[#BFA66A] shadow-[0_12px_48px_rgba(0,0,0,0.18)] overflow-hidden">
-              <div className="flex items-center gap-3 px-4 py-3.5 border-b border-[#D8CBAA]">
-                <Search className="w-4 h-4 text-[#555555] shrink-0" />
-                <input
-                  ref={inputRef}
-                  value={query}
-                  onChange={e => setQuery(e.target.value)}
-                  type="text"
-                  placeholder="Tìm phân hệ, agent, trace, workflow, tri thức…"
-                  className="flex-1 bg-transparent text-[14px] text-[#111111] placeholder:text-[#777777] outline-none"
-                />
-                {query && (
-                  <button onClick={() => setQuery('')} className="text-[#777777] hover:text-[#111111]">
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-                <kbd className="px-1.5 py-0.5 text-[10px] bg-[#F4E8C3] border border-[#BFA66A] rounded-md text-[#3F3F3F] font-mono">ESC</kbd>
-              </div>
-
-              <div className="max-h-[380px] overflow-y-auto py-2">
-                {filtered.length === 0 ? (
-                  <div className="py-10 text-center text-sm text-[#5F5F5F]">Không có kết quả cho "{query}"</div>
-                ) : (
-                  filtered.map(group => (
-                    <div key={group.category} className="mb-1">
-                      <div className="px-4 py-1.5 text-[10px] font-bold text-[#5F5F5F] uppercase tracking-widest">
-                        {group.category}
-                      </div>
-                      {group.items.map(item => (
-                        <button
-                          key={item.label}
-                          onClick={() => go(item)}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[#F8EBC4] text-left transition-colors group"
-                        >
-                          <ArrowRight className="w-3.5 h-3.5 text-[#777777] group-hover:text-[#B88719] transition-colors shrink-0" />
-                          <span className="text-[13px] text-[#111111]">{item.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  ))
-                )}
-              </div>
-
-              <div className="px-4 py-2.5 border-t border-[#D8CBAA] flex items-center justify-between bg-[#FCFBF7]">
-                <div className="flex items-center gap-4 text-[10px] text-[#5F5F5F]">
-                  <span><kbd className="font-mono mr-1">↑↓</kbd>navigate</span>
-                  <span><kbd className="font-mono mr-1">↵</kbd>open</span>
-                </div>
-                <span className="text-[10px] text-[#777777]">AeroFlow Search</span>
-              </div>
+    isOpen ? (
+      <>
+        <div onClick={onClose} className="fixed inset-0 bg-black/30 backdrop-blur-[2px] z-[200]" />
+        <div className="fixed top-[14%] left-1/2 -translate-x-1/2 w-full max-w-[600px] px-4 z-[201]">
+          <div className="bg-white rounded-2xl border border-[#BFA66A] shadow-[0_12px_48px_rgba(0,0,0,0.18)] overflow-hidden">
+            <div className="flex items-center gap-3 px-4 py-3.5 border-b border-[#D8CBAA]">
+              <Search className="w-4 h-4 text-[#555555] shrink-0" />
+              <input
+                ref={inputRef}
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                type="text"
+                placeholder="Tìm phân hệ, agent, trace, workflow, tri thức…"
+                className="flex-1 bg-transparent text-[14px] text-[#111111] placeholder:text-[#777777] outline-none"
+              />
+              {query && (
+                <button onClick={() => setQuery('')} className="text-[#777777] hover:text-[#111111]">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+              <kbd className="px-1.5 py-0.5 text-[10px] bg-[#F4E8C3] border border-[#BFA66A] rounded-md text-[#3F3F3F] font-mono">ESC</kbd>
             </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+
+            <div className="max-h-[380px] overflow-y-auto py-2">
+              {filtered.length === 0 ? (
+                <div className="py-10 text-center text-sm text-[#5F5F5F]">Không có kết quả cho "{query}"</div>
+              ) : (
+                filtered.map(group => (
+                  <div key={group.category} className="mb-1">
+                    <div className="px-4 py-1.5 text-[10px] font-bold text-[#5F5F5F] uppercase tracking-widest">
+                      {group.category}
+                    </div>
+                    {group.items.map(item => (
+                      <button
+                        key={item.label}
+                        onClick={() => go(item)}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[#F8EBC4] text-left transition-colors group"
+                      >
+                        <ArrowRight className="w-3.5 h-3.5 text-[#777777] group-hover:text-[#B88719] transition-colors shrink-0" />
+                        <span className="text-[13px] text-[#111111]">{item.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="px-4 py-2.5 border-t border-[#D8CBAA] flex items-center justify-between bg-[#FCFBF7]">
+              <div className="flex items-center gap-4 text-[10px] text-[#5F5F5F]">
+                <span><kbd className="font-mono mr-1">↑↓</kbd>navigate</span>
+                <span><kbd className="font-mono mr-1">↵</kbd>open</span>
+              </div>
+              <span className="text-[10px] text-[#777777]">AeroFlow Search</span>
+            </div>
+          </div>
+        </div>
+      </>
+    ) : null
   );
 };
 
@@ -166,10 +153,7 @@ const LeftRail = () => {
       >
         <item.icon className="w-[18px] h-[18px]" />
         {isActive && (
-          <motion.div
-            layoutId="rail-active"
-            className="absolute right-0 w-[3px] h-5 bg-[#B88719] rounded-l-full"
-          />
+          <div className="absolute right-0 w-[3px] h-5 bg-[#B88719] rounded-l-full" />
         )}
         <span className="pointer-events-none absolute left-full ml-3 whitespace-nowrap rounded-lg bg-[#111111] px-2.5 py-1.5 text-[11px] font-medium text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 z-50">
           {item.label}
@@ -220,11 +204,7 @@ const SecondaryNav = () => {
   const activeSubId = subTab[activeModule] ?? subItems[0].id;
 
   return (
-    <motion.div
-      initial={{ width: 0, opacity: 0 }}
-      animate={{ width: 232, opacity: 1 }}
-      exit={{ width: 0, opacity: 0 }}
-      transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
+    <div
       className="hidden lg:flex flex-col h-full bg-[#FAF7EC] border-r border-[#D6C79F] shrink-0 overflow-hidden"
       style={{ width: 232 }}
     >
@@ -283,7 +263,7 @@ const SecondaryNav = () => {
           </div>
         </div>
       )}
-    </motion.div>
+    </div>
   );
 };
 
@@ -439,21 +419,10 @@ const MobileDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
   const activeSubId = subTab[activeModule];
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="lg:hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-[110]"
-          />
-          <motion.div
-            initial={{ x: '-100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '-100%' }}
-            transition={{ type: 'spring', damping: 28, stiffness: 220 }}
-            className="lg:hidden fixed inset-y-0 left-0 w-80 bg-white border-r border-[#D6C79F] z-[120] flex flex-col shadow-2xl"
-          >
+    isOpen ? (
+      <>
+        <div onClick={onClose} className="lg:hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-[110]" />
+        <div className="lg:hidden fixed inset-y-0 left-0 w-80 bg-white border-r border-[#D6C79F] z-[120] flex flex-col shadow-2xl">
             <div className="h-14 flex items-center justify-between px-4 border-b border-[#D6C79F]">
               <div className="flex items-center gap-2.5">
                 <div className="w-7 h-7 bg-[#111111] rounded-xl flex items-center justify-center">
@@ -542,10 +511,9 @@ const MobileDrawer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => voi
                 Sign out
               </button>
             </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+        </div>
+      </>
+    ) : null
   );
 };
 
@@ -613,13 +581,7 @@ export const AppLayout = ({
     <div className="flex h-screen w-screen overflow-hidden bg-[#FCFBF7] text-[#111111]">
       <LeftRail />
 
-      <AnimatePresence mode="wait">
-        {hasSecondaryNav && (
-          <React.Fragment key={activeTab}>
-            <SecondaryNav />
-          </React.Fragment>
-        )}
-      </AnimatePresence>
+      {hasSecondaryNav && <SecondaryNav key={activeTab} />}
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <TopBar
@@ -627,17 +589,7 @@ export const AppLayout = ({
           onSearchOpen={() => setIsCommandOpen(true)}
         />
         <main className="flex-1 overflow-y-auto custom-scrollbar pb-20 lg:pb-10 p-4 lg:p-8 bg-[#FCFBF7]">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeTab}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.18, ease: [0.4, 0, 0.2, 1] }}
-            >
-              {children}
-            </motion.div>
-          </AnimatePresence>
+          <div key={activeTab}>{children}</div>
         </main>
       </div>
 

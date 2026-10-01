@@ -30,6 +30,17 @@ export default defineConfig(({ mode }) => {
       // both into the same cold-start scan as react itself.
       include: ["motion", "motion/react", "framer-motion"],
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes("node_modules")) return undefined;
+            if (id.includes("lucide-react")) return "vendor-icons";
+            if (id.includes("xlsx")) return "vendor-xlsx";
+          },
+        },
+      },
+    },
     preview: {
       // vite preview validates the incoming Host header by default (DNS
       // rebinding protection) — this is reached via the k8s NodePort

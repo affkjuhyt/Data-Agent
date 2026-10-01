@@ -12,6 +12,7 @@ Pure — no database driver, no network, no service imports — so `libs/` stays
 leaf layer under .importlinter. Storage and caching live in the service that
 uses it (backend/services/workflow_runtime/domain/semantic_layer.py).
 """
+
 from libs.semantic import ambiguity
 from libs.semantic.ambiguity import Question, Reason
 from libs.semantic.compiler import (
@@ -51,8 +52,8 @@ __all__ = [
     "COMPARISONS",
     "DEFAULT_LIMIT",
     "RELATIVE_PERIODS",
-    "AnalyticalSlots",
     "Aggregation",
+    "AnalyticalSlots",
     "CompiledMetric",
     "FilterOp",
     "InvalidMetricDefinition",
@@ -66,14 +67,14 @@ __all__ = [
     "Question",
     "Reason",
     "Resolution",
-    "SlotFilter",
     "SemanticError",
+    "SlotFilter",
     "TimeGrain",
     "UnsupportedRequest",
     "ambiguity",
     "build_catalog",
     "compile_metric",
-    "merge",
     "definition_summary",
+    "merge",
     "normalize",
 ]

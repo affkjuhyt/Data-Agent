@@ -9,7 +9,8 @@ from pathlib import Path
 # image) — make env.py importable regardless of the caller's cwd/PYTHONPATH.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import text
+from sqlalchemy import Column, MetaData, String, Table, func, inspect, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import context
 
@@ -34,6 +35,12 @@ target_metadata = Base.metadata
 # Initial schema revision. If the DB has app tables but no alembic version,
 # stamp to this rev — see _stamp_if_init_scripts_ran below.
 _INITIAL_REVISION = "ff9ae8dcd7f7"
+_alembic_metadata = MetaData()
+_alembic_version = Table(
+    "alembic_version",
+    _alembic_metadata,
+    Column("version_num", String(32), primary_key=True),
+)
 
 log = logging.getLogger("alembic.env")
 
@@ -70,16 +77,11 @@ async def _stamp_if_init_scripts_ran(conn) -> None:
       - Fresh DB → normal upgrade (will create everything from scratch)
     """
     # Does the alembic_version table exist?
-    has_alembic_table = await conn.scalar(text("""
-        SELECT EXISTS (
-            SELECT 1 FROM information_schema.tables
-            WHERE table_schema = 'public' AND table_name = 'alembic_version'
-        )
-    """))
+    has_alembic_table = await conn.run_sync(
+        lambda sync_conn: inspect(sync_conn).has_table("alembic_version")
+    )
     if has_alembic_table:
-        version_count = await conn.scalar(text(
-            "SELECT count(*) FROM alembic_version"
-        ))
+        version_count = await conn.scalar(select(func.count()).select_from(_alembic_version))
         if version_count and version_count > 0:
             log.info("alembic_version present — normal upgrade path")
             return
@@ -92,12 +94,9 @@ async def _stamp_if_init_scripts_ran(conn) -> None:
     # deploy/docker/sql/*.sql does NOT imply the ORM tables (Agents, …) exist —
     # keying on one wrongly stamps the initial revision and skips creating the
     # ORM schema.
-    has_init_schema = await conn.scalar(text("""
-        SELECT EXISTS (
-            SELECT 1 FROM information_schema.tables
-            WHERE table_schema = 'public' AND table_name = 'Tenants'
-        )
-    """))
+    has_init_schema = await conn.run_sync(
+        lambda sync_conn: inspect(sync_conn).has_table("Tenants")
+    )
 
     if not has_init_schema:
         log.info("fresh DB — initial migration will create schema")
@@ -110,12 +109,12 @@ async def _stamp_if_init_scripts_ran(conn) -> None:
     )
     # Create alembic_version table + stamp by hand. Same effect as `alembic
     # stamp <rev>` but inline so we don't need a second container invocation.
-    await conn.execute(text(
-        "CREATE TABLE IF NOT EXISTS alembic_version (version_num varchar(32) PRIMARY KEY)"
-    ))
-    await conn.execute(text(
-        "INSERT INTO alembic_version (version_num) VALUES (:rev) ON CONFLICT DO NOTHING"
-    ), {"rev": _INITIAL_REVISION})
+    await conn.run_sync(lambda sync_conn: _alembic_version.create(sync_conn, checkfirst=True))
+    await conn.execute(
+        pg_insert(_alembic_version)
+        .values(version_num=_INITIAL_REVISION)
+        .on_conflict_do_nothing(index_elements=[_alembic_version.c.version_num])
+    )
 
 
 async def run_migrations_online() -> None:

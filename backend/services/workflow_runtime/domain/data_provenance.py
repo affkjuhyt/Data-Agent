@@ -23,6 +23,9 @@ from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
+from sqlalchemy import func, select
+
+from libs.basemodel.services_databaseconnector.postgres_orm.workflow_orm import SchemaCatalogORM
 from libs.shared import audit
 from libs.shared.freshness import Provenance, TableGovernance, summarize
 
@@ -33,18 +36,6 @@ logger = logging.getLogger(__name__)
 # because one tenant can register several warehouses and the tables in a
 # question belong to exactly one of them.
 #
-# lower(table_name) because extract_tables() lowercases what it finds while
-# Snowflake stores identifiers upper-cased — matching literally would return
-# nothing for every Snowflake warehouse.
-_GOVERNANCE_SQL = """
-SELECT schema_name, table_name, owner, classification, upstream, freshness_column,
-       data_as_of, freshness_checked_at, freshness_sla_seconds, last_crawled_at
-FROM "SchemaCatalog"
-WHERE warehouse_id = :warehouse_id
-  AND lower(table_name) IN :names
-"""
-
-
 def _bare_names(tables: Sequence[str]) -> dict[str, str]:
     """{bare lowercase table name: as written in the SQL}.
 
@@ -78,27 +69,39 @@ async def governance_for_tables(
         return []
 
     try:
-        from sqlalchemy import bindparam, text
-
         from libs.database_connector.postgres_connector import client
 
         if not client.is_connected():
             return []
 
-        stmt = text(_GOVERNANCE_SQL).bindparams(bindparam("names", expanding=True))
         async with client.get_client(tenant_id=tenant_id) as session:
             rows = (
                 await session.execute(
-                    stmt, {"warehouse_id": UUID(str(warehouse_id)), "names": list(lookup)},
+                    select(
+                        SchemaCatalogORM.schema_name,
+                        SchemaCatalogORM.table_name,
+                        SchemaCatalogORM.owner,
+                        SchemaCatalogORM.classification,
+                        SchemaCatalogORM.upstream,
+                        SchemaCatalogORM.freshness_column,
+                        SchemaCatalogORM.data_as_of,
+                        SchemaCatalogORM.freshness_checked_at,
+                        SchemaCatalogORM.freshness_sla_seconds,
+                        SchemaCatalogORM.last_crawled_at,
+                    )
+                    .where(
+                        SchemaCatalogORM.warehouse_id == UUID(str(warehouse_id)),
+                        func.lower(SchemaCatalogORM.table_name).in_(list(lookup)),
+                    )
                 )
-            ).fetchall()
+            ).mappings().all()
     except Exception as e:
         # Governance is annotation on an answer that has already been computed.
         # Losing it must degrade the disclosure, never the answer.
         logger.warning("provenance | governance lookup failed warehouse=%s: %s", warehouse_id, e)
         return []
 
-    return [TableGovernance.from_row(row._mapping) for row in rows]
+    return [TableGovernance.from_row(row) for row in rows]
 
 
 async def provenance_for_sql(

@@ -51,6 +51,7 @@ HEADLESS_WORKERS = {
     "platform-workers-audit",
     "platform-workers-memory",
     "platform-workers-schema-crawler",
+    "platform-workers-web-crawler",
 }
 
 

@@ -6,13 +6,13 @@ Snowflake auth takes ~1-2s, so an interactive agent calling execute_sql
 repeatedly paid that latency on every single tool call. snowflake.connector
 itself is never hit here — `snowflake.connector.connect` is monkeypatched to
 a recorder so these tests run without network/real credentials, same spirit
-as test_sql_guard.py mocking nothing because sqlparse is pure-Python, and
-test_schema_crawler_llm_embed.py using respx instead of a real LLM.
+as test_schema_crawler_llm_embed.py using respx instead of a real LLM.
 """
 from __future__ import annotations
 
 import pathlib
 import sys
+from types import ModuleType
 from unittest.mock import MagicMock
 
 import pytest
@@ -25,6 +25,14 @@ _SVC_DIR = str(REPO_ROOT / "backend" / "services" / "sandbox_executor")
 def _sys_path():
     added = [p for p in (_SVC_DIR,) if p not in sys.path]
     sys.path[:0] = added
+    if "snowflake" not in sys.modules:
+        snowflake = ModuleType("snowflake")
+        connector = ModuleType("snowflake.connector")
+        connector.connect = MagicMock()  # type: ignore[attr-defined]
+        connector.DictCursor = object()  # type: ignore[attr-defined]
+        snowflake.connector = connector  # type: ignore[attr-defined]
+        sys.modules["snowflake"] = snowflake
+        sys.modules["snowflake.connector"] = connector
     sys.modules.pop("snowflake_readonly", None)
     yield
     sys.modules.pop("snowflake_readonly", None)
