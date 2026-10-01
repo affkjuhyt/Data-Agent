@@ -101,9 +101,12 @@ MinIO          raw/{source_id}/{sha256}                (không ghi đè, không 
 Qdrant, Neo4j  bản chiếu từ knowledge.* và chunk KB, dựng lại qua outbox
 ```
 
-Role: `registry_svc`, `ingest_svc`, `governance_svc`, `knowledge_svc` (có thể gộp trong
-`indicator-api` cho POC nhưng vẫn tách role), `obs_writer` (ClickHouse, chỉ INSERT), `obs_reader`
-(agent, chỉ SELECT effective), `maintenance`.
+Role: `registry_svc`, `ingest_svc`, `governance_svc`, `knowledge_svc`, `alert_svc` (có thể gộp trong
+`indicator-api` cho POC nhưng vẫn tách role), `crawler_svc` (web_crawler, ADR-V2-46), `outbox_relay`,
+`maintenance`; `obs_writer` (ClickHouse, chỉ INSERT), `obs_reader` (agent, chỉ SELECT effective).
+Schema và role Postgres tạo ở migration `5b7d9f1a3c6e` (NOP-147): role chủ schema có quyền ghi mặc định
+trên bảng của schema mình; role khác chỉ có `USAGE`, quyền đọc từng bảng do migration tạo bảng cấp. Mật
+khẩu đặt ở Job `db-init` từ vault, chưa có cho các role V2 (làm cùng NOP-214).
 
 Nối với bảng cũ: `ingest.release.artifact_sha256` trỏ object MinIO; `KBData` giữ vai trò bản tìm kiếm
 của KB (ADR-V2-21) và mang thêm `artifact_sha256` để nối về raw. Không FK chéo từ schema V2 vào `public`.

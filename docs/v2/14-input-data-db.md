@@ -675,7 +675,7 @@ Nguồn thử Brent feed B **không** nạp ở đây; nó đi theo kịch bản
 ## 13. Thứ tự migration
 
 ```text
-M0 NOP-147/148   schema, role, RLS helper, btree_gist
+M0 NOP-147/148   schema, role, btree_gist (migration 5b7d9f1a3c6e); RLS helper (NOP-148)
 M1 NOP-117       registry.entity, entity_alias, entity_relation, series, series_source, catalog_change + seed
 M2 NOP-114/124   ingest.artifact, fetch, release, source_state, sla_event, outbox;  KBData.artifact_sha256
 M3 NOP-126       ingest.profile, mapping_version, release_processing
