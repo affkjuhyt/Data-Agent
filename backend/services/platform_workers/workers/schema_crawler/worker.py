@@ -455,6 +455,7 @@ def crawl_all(conn: Any, qdrant: QdrantClient, pending_ddl: dict[tuple[Any, ...]
     with conn.cursor() as cur:
         warehouses = get_active_warehouses(cur)
         last_crawled = _last_crawled_by_warehouse(cur)
+    conn.rollback()
     log.info(
         "crawl_all | %d active warehouse(s) registered across %s",
         len(warehouses), sorted({w["engine"] for w in warehouses}) or "-",
