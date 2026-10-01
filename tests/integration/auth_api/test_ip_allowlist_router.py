@@ -150,28 +150,38 @@ class TestCreate:
         db_conn,
         synced,
     ) -> None:
-        """The handler maps a constraint violation to 409. The migrated schema has
-        no unique (tenant_id, cidr) index — a duplicate is simply stored — so the
-        test adds one to drive that path, as the old psycopg2 test did with a
-        scripted UniqueViolation."""
+        """A second rule with the same CIDR for the same tenant is refused by
+        uq_ip_allowlists_tenant_cidr and answered 409, with nothing stored and Kong
+        not re-synced."""
         _seed_rule(db_conn, cidr="10.0.0.0/8")
-        with db_conn.cursor() as cur:
-            cur.execute(
-                "CREATE UNIQUE INDEX test_uq_ip_allowlists_tenant_cidr ON ip_allowlists (tenant_id, cidr)"
-            )
-        try:
-            resp = migrated_client.post(
-                "/api/auth/ip-allowlists",
-                json={"cidr": "10.0.0.0/8"},
-                headers=headers_factory(),
-            )
-        finally:
-            with db_conn.cursor() as cur:
-                cur.execute("DROP INDEX test_uq_ip_allowlists_tenant_cidr")
+        resp = migrated_client.post(
+            "/api/auth/ip-allowlists",
+            json={"cidr": "10.0.0.0/8"},
+            headers=headers_factory(),
+        )
 
         assert resp.status_code == 409
         assert len(_rules(db_conn)) == 1
         assert synced == []
+
+    def test_the_same_cidr_for_another_tenant_is_allowed(
+        self,
+        migrated_client,
+        headers_factory,
+        db_conn,
+        synced,
+    ) -> None:
+        """Uniqueness is per tenant: two tenants may both allow an office range."""
+        _seed_rule(db_conn, tenant=TENANT_2, cidr="10.0.0.0/8")
+        resp = migrated_client.post(
+            "/api/auth/ip-allowlists",
+            json={"cidr": "10.0.0.0/8"},
+            headers=headers_factory(tenant=TENANT_1),
+        )
+
+        assert resp.status_code == 201, resp.text
+        assert len(_rules(db_conn)) == 2
+        assert synced == [TENANT_1]
 
     def test_an_unknown_tenant_is_not_reported_as_a_duplicate(
         self,

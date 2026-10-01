@@ -50,7 +50,10 @@ class SecretVaultORM(Base):
 
 class IPAllowlistORM(Base):
     __tablename__ = "ip_allowlists"
-    __table_args__ = (Index("ix_ip_allowlists_tenant", "tenant_id"),)
+    __table_args__ = (
+        Index("ix_ip_allowlists_tenant", "tenant_id"),
+        Index("uq_ip_allowlists_tenant_cidr", "tenant_id", "cidr", unique=True),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
     tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
