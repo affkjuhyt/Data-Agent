@@ -1,13 +1,60 @@
-"""SQLAlchemy session factory for platform workers."""
+"""SQLAlchemy session factory for platform workers.
+
+``make_session_factory()`` blocks until Postgres accepts a connection (20
+attempts, 5 s apart — the budget the psycopg2 factory had before the SQLAlchemy
+rewrite). Without the wait a worker that starts before Postgres crashes on its
+first query and only recovers through the pod's restart backoff.
+"""
 from __future__ import annotations
 
-from sqlalchemy import URL, create_engine
+import logging
+
+from sqlalchemy import URL, Engine, create_engine
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
+from tenacity import (
+    RetryError,
+    Retrying,
+    before_sleep_log,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_fixed,
+)
 
 from services.platform_workers.common.settings import PostgresSettings
 
+log = logging.getLogger("platform-workers.db")
 
-def make_session_factory(settings: PostgresSettings | None = None) -> sessionmaker[Session]:
+DEFAULT_ATTEMPTS = 20
+DEFAULT_WAIT_SECONDS = 5
+
+
+def wait_until_ready(
+    engine: Engine, *, attempts: int = DEFAULT_ATTEMPTS, wait_seconds: float = DEFAULT_WAIT_SECONDS,
+) -> None:
+    def _probe() -> None:
+        with engine.connect():
+            pass
+
+    try:
+        Retrying(
+            retry=retry_if_exception_type(OperationalError),
+            wait=wait_fixed(wait_seconds),
+            stop=stop_after_attempt(max(1, attempts)),
+            before_sleep=before_sleep_log(log, logging.WARNING),
+            reraise=False,
+        )(_probe)
+    except RetryError as e:
+        raise RuntimeError("PostgreSQL unavailable after retries") from e
+    log.info("PostgreSQL connected")
+
+
+def make_session_factory(
+    settings: PostgresSettings | None = None,
+    *,
+    attempts: int = DEFAULT_ATTEMPTS,
+    wait_seconds: float = DEFAULT_WAIT_SECONDS,
+) -> sessionmaker[Session]:
     settings = settings or PostgresSettings()
     url = URL.create(
         "postgresql+psycopg2",
@@ -18,4 +65,5 @@ def make_session_factory(settings: PostgresSettings | None = None) -> sessionmak
         database=settings.name,
     )
     engine = create_engine(url, pool_pre_ping=True, future=True)
+    wait_until_ready(engine, attempts=attempts, wait_seconds=wait_seconds)
     return sessionmaker(bind=engine, expire_on_commit=False, future=True)

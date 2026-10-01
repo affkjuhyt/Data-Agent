@@ -1,0 +1,8 @@
+# Pinned to what the image resolved on 2026-10-01 (verified on dev). Unpinned, every
+# rebuild picked up whatever was newest — Starlette 1.x arrived that way and changed
+# TestClient's httpx requirement under the unit suite.
+fastapi==0.142.2
+uvicorn[standard]==0.54.0
+pydantic==2.13.5
+asyncpg==0.31.0
+sqlalchemy==2.0.35

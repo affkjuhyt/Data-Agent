@@ -478,6 +478,27 @@ def _is_due(last_crawled_at: datetime | None) -> bool:
     return (datetime.now(UTC) - last_crawled_at).total_seconds() >= CRAWL_INTERVAL_SECONDS
 
 
+# A warehouse that has never been crawled successfully has no SchemaCatalog rows, so
+# _is_due() says "due" on every POLL_INTERVAL_SECONDS tick: a wrong password or an
+# incomplete config was retried (and logged) every 5s forever. Failures back off
+# exponentially instead, capped at the normal crawl interval. Process-local on purpose:
+# a restart retrying at once is what an operator who just fixed the config wants.
+_FIRST_RETRY_SECONDS = 60
+_failure_backoff: dict[tuple[str, str], tuple[int, datetime]] = {}
+
+
+def _in_backoff(key: tuple[str, str], now: datetime) -> bool:
+    entry = _failure_backoff.get(key)
+    return entry is not None and now < entry[1]
+
+
+def _record_failure(key: tuple[str, str], now: datetime) -> None:
+    failures = _failure_backoff.get(key, (0, now))[0] + 1
+    delay = min(_FIRST_RETRY_SECONDS * 2 ** (failures - 1), CRAWL_INTERVAL_SECONDS)
+    _failure_backoff[key] = (failures, now + timedelta(seconds=delay))
+    log.info("crawl_all | warehouse=%s failed %d time(s), next attempt in %ds", key[1], failures, delay)
+
+
 def crawl_all(SessionLocal: sessionmaker[Session], qdrant: QdrantClient, pending_ddl: dict[tuple[Any, ...], dict[str, Any]] | None = None) -> None:
     """pending_ddl, if given, lets already-due DDL events get processed
     between each warehouse of this cron batch instead of only after the
@@ -487,20 +508,23 @@ def crawl_all(SessionLocal: sessionmaker[Session], qdrant: QdrantClient, pending
     with SessionLocal() as session:
         warehouses = get_active_warehouses(session)
         last_crawled = _last_crawled_by_warehouse(session)
-    log.info(
+    # debug, not info: this runs every POLL_INTERVAL_SECONDS tick.
+    log.debug(
         "crawl_all | %d active warehouse(s) registered across %s",
         len(warehouses), sorted({w["engine"] for w in warehouses}) or "-",
     )
 
     for w in warehouses:
         tenant_id, warehouse_id = str(w["tenant_id"]), str(w["warehouse_id"])
+        key = (tenant_id, warehouse_id)
 
-        if not _is_due(last_crawled.get((tenant_id, warehouse_id))):
+        if not _is_due(last_crawled.get(key)) or _in_backoff(key, datetime.now(UTC)):
             continue
 
         engine = w["engine"]
         conn_params = metadata_dispatch.connection_params(engine, w["config"], warehouse_id)
         if not conn_params:
+            _record_failure(key, datetime.now(UTC))
             continue
         table_names = selected_table_names(w["config"])
         try:
@@ -510,6 +534,9 @@ def crawl_all(SessionLocal: sessionmaker[Session], qdrant: QdrantClient, pending
             )
         except Exception:
             log.exception("crawl_all | warehouse=%s failed", w["warehouse_id"])
+            _record_failure(key, datetime.now(UTC))
+        else:
+            _failure_backoff.pop(key, None)
 
         if pending_ddl is not None:
             process_due_ddl_events(SessionLocal, qdrant, pending_ddl)

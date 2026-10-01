@@ -9,12 +9,8 @@ WORKDIR /app
 # (TEI embed/rerank + vLLM chat via REMOTE_*_URL). No torch, no local weights —
 # the image went from ~3GB (CPU torch + sentence-transformers + downloaded
 # models) to a few tens of MB, and startup no longer needs the network for HF.
-RUN --mount=type=cache,target=/root/.cache/pip pip install \
-        fastapi \
-        "uvicorn[standard]" \
-        pydantic \
-        asyncpg \
-        sqlalchemy==2.0.35
+COPY backend/services/model_service/requirements.txt .
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 
 # Only the ORM models, not the whole of libs: the rest pulls in Kafka, Mongo,
 # Qdrant clients this gateway never uses.

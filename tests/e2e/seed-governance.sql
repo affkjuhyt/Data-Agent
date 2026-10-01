@@ -40,7 +40,9 @@ ON CONFLICT (warehouse_id) DO UPDATE
     SET service = EXCLUDED.service, tenant_id = EXCLUDED.tenant_id, is_deleted = false;
 
 -- config.connection là địa chỉ kho mà crawler thấy từ trong container (dw_host /
--- dw_port ở trên). psql không thay biến bên trong chuỗi $json$, nên host/port
+-- dw_port ở trên). username là crawler_ro — role chỉ-đọc mà db-init đặt mật khẩu từ
+-- POSTGRES_CRAWLER_PASSWORD (create-extra-dbs.sql). Với "admin" thì mật khẩu đó không
+-- bao giờ khớp và crawler lỗi xác thực ở mỗi tick. psql không thay biến bên trong chuỗi $json$, nên host/port
 -- được ghi đè bằng jsonb_set sau khi dựng JSON.
 --
 -- config.governance là phần KHAI BÁO: owner / nhãn / lineage / SLA. Crawler chỉ
@@ -51,7 +53,7 @@ VALUES (:cfg, :warehouse, 1, true, jsonb_set(jsonb_set($json${
   "connection": {
     "host": "postgres",
     "port": 5432,
-    "username": "admin",
+    "username": "crawler_ro",
     "database": "sandbox_dev",
     "schema": "public"
   },

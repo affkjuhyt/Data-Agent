@@ -22,6 +22,8 @@ except ModuleNotFoundError:
     from auth_api.schemas import IPAllowlistCreateInput
     from auth_api.services.kong_sync import get_ip_allowlist_mode, sync_kong_ip_restrictions
 
+_UNIQUE_VIOLATION = "23505"
+
 router = APIRouter()
 
 
@@ -99,7 +101,11 @@ def create_ip_rule(
             session.flush()
             session.refresh(row)
             result = format_ip_allowlist(orm_to_dict(row))
-    except IntegrityError:
+    except IntegrityError as exc:
+        # Only a unique violation is "already exists"; a foreign-key failure (unknown
+        # tenant) must not be reported as a duplicate CIDR.
+        if getattr(exc.orig, "pgcode", None) != _UNIQUE_VIOLATION:
+            raise
         raise HTTPException(status_code=409, detail="CIDR already exists for this tenant")
 
     sync_kong_ip_restrictions(x_tenant_id)

@@ -239,6 +239,107 @@ TENANT_1 = "11111111-1111-1111-1111-111111111111"
 TENANT_2 = "22222222-2222-2222-2222-222222222222"
 
 
+# ─── Migrated schema — the router tests ────────────────────────────────────
+# The router tests below this line assert on what the ORM statements do to real
+# rows (tenant scoping, upserts, FOR UPDATE locks), so they run against the
+# schema the alembic chain builds — a mapped column the migrations never create
+# fails here, not on the cluster. _MINIMAL_SCHEMA above stays for the smoke and
+# RLS tests, which want app_user with a known password.
+_ROUTER_TABLES = (
+    "key_rotations",
+    "secrets_vault",
+    "api_keys",
+    "ip_allowlists",
+    "compliance_settings",
+    "microsoft_sso_approvals",
+)
+
+
+def _at_alembic_head(dsn: str) -> bool:
+    import psycopg2
+
+    from tests.integration._db import alembic_head
+
+    conn = psycopg2.connect(dsn)
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT to_regclass('public.alembic_version') IS NOT NULL")
+            if not cur.fetchone()[0]:
+                return False
+            cur.execute("SELECT version_num FROM alembic_version")
+            row = cur.fetchone()
+            return row is not None and row[0] == alembic_head()
+    finally:
+        conn.close()
+
+
+@pytest.fixture
+def migrated_auth_db(postgres_container) -> dict[str, str]:
+    """The container at alembic head, auth tables empty, TENANT_1/TENANT_2 seeded.
+
+    The chain takes a while, so it runs only when the database is not already at
+    head; otherwise the tables these tests write are emptied. The check is per
+    test because auth_api_db (and other suites' fixtures) reset the same
+    container in between.
+    """
+    import psycopg2
+
+    from tests.integration._db import reset_database, run_alembic
+
+    dsn = postgres_container["dsn"]
+    if not _at_alembic_head(dsn):
+        reset_database(dsn)
+        result = run_alembic(dsn, "upgrade", "head")
+        assert result.returncode == 0, f"alembic upgrade failed:\n{result.stdout}\n{result.stderr}"
+
+    conn = psycopg2.connect(dsn)
+    conn.autocommit = True
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"TRUNCATE {', '.join(_ROUTER_TABLES)}")
+            # Back to the defaults b8c9d0e1f2a3 seeds; tests flip these.
+            cur.execute("DELETE FROM platform_settings")
+            cur.execute(
+                "INSERT INTO platform_settings (key, value) VALUES "
+                "('ip_allowlist_mode', 'allow_all'), ('vault_panic_mode', 'false'), "
+                "('vault_auto_rotation', 'false'), ('vault_pii_access_log', 'false')"
+            )
+            # api_keys / secrets_vault / ip_allowlists reference "Tenants".
+            cur.execute(
+                'INSERT INTO "Tenants" (id, name, slug, data_residency) VALUES '
+                "(%s, 'Tenant One', 'it-tenant-1', 'Asia-SE1'), "
+                "(%s, 'Tenant Two', 'it-tenant-2', 'Asia-SE1') "
+                "ON CONFLICT (id) DO NOTHING",
+                (TENANT_1, TENANT_2),
+            )
+    finally:
+        conn.close()
+    return postgres_container
+
+
+@pytest.fixture
+def migrated_client(auth_api_app, migrated_auth_db) -> Iterator:
+    """TestClient over the migrated schema; server errors come back as 500s."""
+    from fastapi.testclient import TestClient
+
+    with TestClient(auth_api_app, raise_server_exceptions=False) as c:
+        yield c
+
+
+@pytest.fixture
+def db_conn(migrated_auth_db) -> Iterator:
+    """An autocommit superuser connection for seeding and reading rows back."""
+    import psycopg2
+    import psycopg2.extras
+
+    conn = psycopg2.connect(migrated_auth_db["dsn"], cursor_factory=psycopg2.extras.RealDictCursor)
+    conn.autocommit = True
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
 @pytest.fixture
 def headers_factory() -> Callable[..., dict[str, str]]:
     """Produces the headers Kong injects after JWT verification.

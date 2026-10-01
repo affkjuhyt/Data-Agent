@@ -60,13 +60,49 @@ def test_flips_the_origin_so_top_is_above_bottom():
     assert (region["page_no"], region["left"], region["right"]) == (1, 72.0, 354.8)
 
 
+def test_carries_page_dimensions_so_a_viewer_can_scale():
+    [region] = _regions(_Item([_Prov(1, _Bbox(72.0, 700.0, 300.0, 650.0))]), SIZES)
+
+    assert (region["page_width"], region["page_height"]) == (595.0, 842.0)
+
+
+def test_item_without_provenance_yields_nothing():
+    assert _regions(_Item([]), SIZES) == []
+    assert _regions(object(), SIZES) == []
+
+
 def test_page_with_no_recorded_size_is_skipped():
     # Without the page height there is no way to flip the origin, and guessing
     # one would produce a box that looks valid and points somewhere else.
     assert _regions(_Item([_Prov(99, _Bbox(72.0, 700.0, 300.0, 650.0))]), SIZES) == []
 
 
+def test_a_malformed_box_costs_coordinates_not_text():
+    class _Broken(_Bbox):
+        def to_top_left_origin(self, page_height: float):
+            raise ValueError('backend reported a degenerate box')
+
+    assert _regions(_Item([_Prov(1, _Broken(0, 0, 0, 0))]), SIZES) == []
+
+
+def test_an_item_spanning_two_pages_reports_both():
+    item = _Item([
+        _Prov(1, _Bbox(72.0, 200.0, 300.0, 100.0)),
+        _Prov(2, _Bbox(72.0, 800.0, 300.0, 700.0)),
+    ])
+
+    assert [r["page_no"] for r in _regions(item, SIZES)] == [1, 2]
+
+
 # ── _merge_regions: one anchor per chunk ──────────────────────────────────────
+
+def test_no_regions_means_no_anchor():
+    assert _merge_regions([]) is None
+
+
+def test_single_region_passes_through():
+    assert _merge_regions([_region(1, 72, 90, 354, 225)]) == _region(1, 72, 90, 354, 225)
+
 
 def test_boxes_on_one_page_union():
     merged = _merge_regions([
@@ -90,3 +126,11 @@ def test_a_chunk_spanning_pages_anchors_to_where_it_starts():
     assert merged["page_no"] == 1
     assert (merged["top"], merged["bottom"]) == (500, 700)
     assert merged["right"] == 350
+
+
+def test_merge_does_not_mix_page_dimensions():
+    landscape = dict(_region(2, 10, 10, 20, 20), page_width=842.0, page_height=595.0)
+    merged = _merge_regions([landscape, _region(1, 72, 90, 354, 225)])
+
+    assert merged["page_no"] == 1
+    assert (merged["page_width"], merged["page_height"]) == (595.0, 842.0)
