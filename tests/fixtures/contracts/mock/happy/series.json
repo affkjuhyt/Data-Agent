@@ -1,0 +1,26 @@
+[
+  {
+    "series_key": "EIA:RBRTE:D",
+    "entity_id": "BRENT_SPOT",
+    "unit": "usd_per_barrel",
+    "unit_multiplier": 0,
+    "currency": "USD",
+    "frequency": "D"
+  },
+  {
+    "series_key": "EIA:RWTC:D",
+    "entity_id": "WTI_SPOT",
+    "unit": "usd_per_barrel",
+    "unit_multiplier": 0,
+    "currency": "USD",
+    "frequency": "D"
+  },
+  {
+    "series_key": "SJC:SJC_BAR:HCM:SELL:D",
+    "entity_id": "GOLD_SJC_BAR",
+    "unit": "vnd_per_luong",
+    "unit_multiplier": 3,
+    "currency": "VND",
+    "frequency": "D"
+  }
+]

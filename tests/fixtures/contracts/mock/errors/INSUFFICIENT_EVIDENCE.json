@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "INSUFFICIENT_EVIDENCE",
+    "message": "no approved evidence in the requested window",
+    "current_version": null,
+    "details": {}
+  }
+}

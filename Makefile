@@ -8,7 +8,7 @@ PLANTUML_IMAGE ?= plantuml/plantuml:1.2024.8
 DOCKER_RUN_PY = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend:/src $(PY_IMAGE)
 
 .PHONY: help lint type test test-unit test-integration test-changed deadcode frontend-lint frontend-test ci e2e diagrams \
-        deploy fmt bench bench-gate bench-e2e
+        deploy fmt bench bench-gate bench-e2e mock-api
 
 help:  ## List targets
 	@grep -hE '^[a-z0-9-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -30,7 +30,7 @@ UNIT_SUITES ?= workflow_runtime:workflow_runtime kb_backend:kb-backend platform_
                sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker \
                model_service:model_service contracts:kb-backend
 INTEGRATION_SUITES ?= workflow_runtime:workflow_runtime auth_api:auth_api platform_workers:platform-workers \
-                      sandbox_executor:sandbox_executor
+                      sandbox_executor:sandbox_executor contracts:kb-backend
 # The integration sandbox tests start real sandbox-runner containers; the tag
 # differs per host (tests/integration/_sandbox.py), override it to match.
 SANDBOX_RUNNER_IMAGE ?= dataagent/sandbox-runner:latest
@@ -71,6 +71,15 @@ frontend-test:  ## vitest
 	npm --workspace frontend run test
 
 ci: lint type test frontend-lint frontend-test  ## everything CI runs, locally
+
+# In the kb-backend image, where the contracts suite runs (pinned pydantic); it also
+# spares a frontend developer a Python 3.11 environment of their own.
+MOCK_API_PORT ?= 8090
+mock-api:  ## Contract v1 mock API on :8090 for FE/Data/Agent (tests/contract_mock/README.md)
+	docker run --rm -p $(MOCK_API_PORT):$(MOCK_API_PORT) -v "$(PWD):/src" -w /src \
+	  -e PYTHONPATH=/src/backend:/src -e PYTHONDONTWRITEBYTECODE=1 \
+	  $(IMAGE_REGISTRY)/dataagent/kb-backend:latest \
+	  python -m tests.contract_mock --host 0.0.0.0 --port $(MOCK_API_PORT)
 
 # The serving benchmark talks to the GPU host over the LAN and, for
 # --target litellm, to a proxy that may be on localhost — hence --network host

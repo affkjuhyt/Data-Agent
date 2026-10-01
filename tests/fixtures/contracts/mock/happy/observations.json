@@ -1,0 +1,120 @@
+[
+  {
+    "event_time_start": "2026-09-15T00:00:00-04:00",
+    "event_time_end": "2026-09-16T00:00:00-04:00",
+    "market_timezone": "America/New_York",
+    "publication_time": "2026-09-23T10:30:00-04:00",
+    "available_at": "2026-09-23T10:30:00-04:00",
+    "system_time": "2026-09-23T14:32:05Z",
+    "series_key": "EIA:RBRTE:D",
+    "value": "130.80",
+    "obs_status": "value",
+    "unit": "usd_per_barrel",
+    "unit_multiplier": 0,
+    "source_ref": {
+      "kind": "cell",
+      "sheet": "Data 1",
+      "row": 9857,
+      "col": "Europe Brent Spot Price FOB (Dollars per Barrel)"
+    },
+    "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b02",
+    "artifact_sha256": "e6e8c9d500000000000000000000000000000000000000000000000000000000",
+    "version_kind": "machine",
+    "effective_version": 1,
+    "review_case_id": null
+  },
+  {
+    "event_time_start": "2026-09-22T00:00:00-04:00",
+    "event_time_end": "2026-09-23T00:00:00-04:00",
+    "market_timezone": "America/New_York",
+    "publication_time": "2026-09-23T10:30:00-04:00",
+    "available_at": "2026-09-23T10:30:00-04:00",
+    "system_time": "2026-09-23T14:32:05Z",
+    "series_key": "EIA:RBRTE:D",
+    "value": "114.95",
+    "obs_status": "value",
+    "unit": "usd_per_barrel",
+    "unit_multiplier": 0,
+    "source_ref": {
+      "kind": "cell",
+      "sheet": "Data 1",
+      "row": 9862,
+      "col": "Europe Brent Spot Price FOB (Dollars per Barrel)"
+    },
+    "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b02",
+    "artifact_sha256": "e6e8c9d500000000000000000000000000000000000000000000000000000000",
+    "version_kind": "machine",
+    "effective_version": 1,
+    "review_case_id": null
+  },
+  {
+    "event_time_start": "2026-09-22T00:00:00-04:00",
+    "event_time_end": "2026-09-23T00:00:00-04:00",
+    "market_timezone": "America/New_York",
+    "publication_time": "2026-09-30T10:30:00-04:00",
+    "available_at": "2026-09-30T10:30:00-04:00",
+    "system_time": "2026-09-30T14:32:05Z",
+    "series_key": "EIA:RBRTE:D",
+    "value": "114.89",
+    "obs_status": "value",
+    "unit": "usd_per_barrel",
+    "unit_multiplier": 0,
+    "source_ref": {
+      "kind": "cell",
+      "sheet": "Data 1",
+      "row": 9862,
+      "col": "Europe Brent Spot Price FOB (Dollars per Barrel)"
+    },
+    "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b03",
+    "artifact_sha256": "e6e8c9d600000000000000000000000000000000000000000000000000000000",
+    "version_kind": "revision",
+    "effective_version": 2,
+    "review_case_id": null
+  },
+  {
+    "event_time_start": "2026-09-22T00:00:00-04:00",
+    "event_time_end": "2026-09-23T00:00:00-04:00",
+    "market_timezone": "America/New_York",
+    "publication_time": "2026-09-23T10:30:00-04:00",
+    "available_at": "2026-09-23T10:30:00-04:00",
+    "system_time": "2026-09-23T14:32:05Z",
+    "series_key": "EIA:RWTC:D",
+    "value": "110.12",
+    "obs_status": "value",
+    "unit": "usd_per_barrel",
+    "unit_multiplier": 0,
+    "source_ref": {
+      "kind": "cell",
+      "sheet": "Data 1",
+      "row": 10104,
+      "col": "Cushing, OK WTI Spot Price FOB (Dollars per Barrel)"
+    },
+    "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b02",
+    "artifact_sha256": "e6e8c9d500000000000000000000000000000000000000000000000000000000",
+    "version_kind": "machine",
+    "effective_version": 1,
+    "review_case_id": null
+  },
+  {
+    "event_time_start": "2026-09-24T08:30:00+07:00",
+    "event_time_end": "2026-09-24T08:30:00+07:00",
+    "market_timezone": "Asia/Ho_Chi_Minh",
+    "publication_time": "2026-09-24T08:30:00+07:00",
+    "available_at": "2026-09-24T08:31:12+07:00",
+    "system_time": "2026-09-24T01:31:12Z",
+    "series_key": "SJC:SJC_BAR:HCM:SELL:D",
+    "value": "132500",
+    "obs_status": "value",
+    "unit": "vnd_per_luong",
+    "unit_multiplier": 3,
+    "source_ref": {
+      "kind": "xpath",
+      "path": "//table[@id='gold-price']/tr[2]/td[3]"
+    },
+    "release_id": "7c4e9a2b-1f3d-4e5a-8b6c-0d9e8f7a6b04",
+    "artifact_sha256": "5a1c0b7e00000000000000000000000000000000000000000000000000000000",
+    "version_kind": "machine",
+    "effective_version": 1,
+    "review_case_id": null
+  }
+]

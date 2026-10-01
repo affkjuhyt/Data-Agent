@@ -1,0 +1,11 @@
+[
+  {
+    "entity_id": "BRENT_SPOT"
+  },
+  {
+    "entity_id": "WTI_SPOT"
+  },
+  {
+    "entity_id": "GOLD_SJC_BAR"
+  }
+]

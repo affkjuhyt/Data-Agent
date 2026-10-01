@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "SERIES_NOT_APPROVED",
+    "message": "EIA:RWTC:D is not approved yet",
+    "current_version": null,
+    "details": {
+      "series_key": "EIA:RWTC:D"
+    }
+  }
+}
