@@ -90,7 +90,6 @@ async def load_agent_config(agent_id: str, tenant_id: str | None = None) -> dict
                         AgentVersionsORM.workflow_version_id,
                         AgentVersionsORM.memory_enabled,
                         AgentVersionsORM.llm_config,
-                        AgentVersionsORM.retrieval_config,
                         AgentVersionsORM.responder_model,
                         SystemPromptsORM.content.label("system_prompt"),
                     )

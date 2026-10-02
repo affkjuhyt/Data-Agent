@@ -126,7 +126,6 @@ def create_secret(
         except Exception as e:
             log.warning("openbao_write_failed", error=str(e))
             raise HTTPException(status_code=502, detail="Failed to store secret metadata in vault")
-        openbao_path = f"transit/keys/{t_key}"
     else:
         try:
             vault.secrets.kv.v2.create_or_update_secret(
@@ -136,7 +135,6 @@ def create_secret(
         except Exception as e:
             log.warning("openbao_write_failed", error=str(e))
             raise HTTPException(status_code=502, detail="Failed to store secret in vault")
-        openbao_path = f"{VAULT_MOUNT}/data/{path}"
 
     rotation_due = datetime.now(timezone.utc) + timedelta(days=body.rotation_days)
 
@@ -148,7 +146,6 @@ def create_secret(
                 key_type=body.key_type,
                 algorithm=body.algorithm,
                 realm=body.realm,
-                openbao_path=openbao_path,
                 version=1,
                 rotation_due_at=rotation_due,
                 created_by=user["user_id"],
@@ -238,7 +235,6 @@ def rotate_secret(
             except Exception as e:
                 log.warning("transit_rotate_failed", error=str(e))
                 raise HTTPException(status_code=502, detail="Failed to rotate Transit key")
-            openbao_path = f"transit/keys/{t_key}"
         else:
             if not new_value:
                 raise HTTPException(status_code=422, detail="New secret value required for rotation")
@@ -251,7 +247,6 @@ def rotate_secret(
             except Exception as e:
                 log.warning("openbao_rotate_failed", error=str(e))
                 raise HTTPException(status_code=502, detail="Failed to write rotated secret to vault")
-            openbao_path = f"{VAULT_MOUNT}/data/{path}"
 
         rotation_due = datetime.now(timezone.utc) + timedelta(days=90)
 
@@ -262,7 +257,6 @@ def rotate_secret(
             key_type=old.key_type,
             algorithm=old.algorithm,
             realm=old.realm,
-            openbao_path=openbao_path,
             version=new_version,
             rotation_due_at=rotation_due,
             last_rotated_at=datetime.now(timezone.utc),

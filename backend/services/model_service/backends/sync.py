@@ -13,7 +13,6 @@ import config as cfg
 
 from libs.basemodel.services_databaseconnector.postgres_orm.knowledge_base_orm import (
     KBModelORM,
-    KBModelVersionORM,
 )
 
 from . import callers as C
@@ -143,16 +142,8 @@ async def _resolve_or_create(session: AsyncSession, model_name: str, task_type: 
             task_type=task_type,
         )
     )
-    session.add(
-        KBModelVersionORM(
-            model_id=new_id,
-            version_number=1,
-            is_active=True,
-            config={"active": True},
-        )
-    )
     await session.flush()
-    log.info("Registry: created KBModel '%s' (%s) + v1 → %s", model_name, task_type, new_id)
+    log.info("Registry: created KBModel '%s' (%s) → %s", model_name, task_type, new_id)
     return new_id
 
 

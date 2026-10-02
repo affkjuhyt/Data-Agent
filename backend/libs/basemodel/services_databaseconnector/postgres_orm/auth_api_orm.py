@@ -37,7 +37,6 @@ class SecretVaultORM(Base):
     key_type: Mapped[str] = mapped_column(String(64), nullable=False)
     algorithm: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     realm: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, comment="Free-text grouping label shown in the UI (e.g. FINANCE-INFRA); unrelated to Keycloak realms.")
-    openbao_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="OpenBao path at write time. Readers recompute the path instead of reading this column.")
     version: Mapped[int] = mapped_column(Integer, server_default="1", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False)
     rotation_due_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

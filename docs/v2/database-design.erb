@@ -45,8 +45,6 @@ erDiagram
   Tenants ||--o{ KBExtractionPolicy : tenant_id
   Tenants ||--o{ KBEntityLookup : tenant_id
 
-  KBModel ||--o{ KBModelVersion : model_id
-  KBModel ||--o{ KBTextBlockVersion : embedding_model_id
   Tenants ||--o{ KBQdrantConnection : tenant_id
   KBQdrantConnection ||--o{ KBQdrantCollection : connection_id
   KBModel ||--o{ KBQdrantCollection : embedding_model_id
@@ -74,7 +72,6 @@ erDiagram
   AgentVersions ||--o{ Agents : published_version_id
   AgentVersions ||--o{ Agents : draft_version_id
   SystemPrompts ||--o{ AgentVersions : system_prompt_id
-  Guardrails ||--o{ AgentVersions : guardrail_id
   Agents ||--o{ Workflows : agent_id
   Workflows ||--o{ WorkflowVersions : workflow_id
   WorkflowVersions ||--o{ AgentVersions : workflow_version_id
@@ -134,7 +131,6 @@ erDiagram
     uuid version_id PK
     uuid block_id FK
     int version_number
-    uuid embedding_model_id FK
     boolean is_active
   }
   KBSource {

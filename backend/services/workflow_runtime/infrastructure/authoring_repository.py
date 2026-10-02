@@ -241,7 +241,7 @@ async def list_workflows(agent_id: str, *, tenant_id: str) -> list[dict[str, Any
 async def update_agent_draft(agent_id: str, fields: dict[str, Any], tenant_id: str | None = None) -> dict[str, Any]:
     agent_fields = {k: v for k, v in fields.items() if k in ("name", "description")}
     av_fields = {k: v for k, v in fields.items()
-                 if k in ("responder_model", "system_prompt_id", "guardrail_id", "memory_enabled")}
+                 if k in ("responder_model", "system_prompt_id", "memory_enabled")}
 
     async with client.get_client(tenant_id=tenant_id) as session:
         async with _txn(session):
@@ -253,7 +253,7 @@ async def update_agent_draft(agent_id: str, fields: dict[str, Any], tenant_id: s
                 )
             if av_fields:
                 # Cast UUID string fields to UUID
-                uuid_keys = {"system_prompt_id", "guardrail_id"}
+                uuid_keys = {"system_prompt_id"}
                 av_values = {
                     k: (UUID(v) if v else None) if k in uuid_keys else v
                     for k, v in av_fields.items()
@@ -546,10 +546,8 @@ async def publish_agent(agent_id: str, workflow_id: str, kb_connection_id: str |
                 workflow_version_id=wv.id,
                 responder_model=av_draft.responder_model if av_draft else _DEFAULT_RESPONDER_MODEL,
                 system_prompt_id=av_draft.system_prompt_id if av_draft else None,
-                guardrail_id=av_draft.guardrail_id if av_draft else None,
                 memory_enabled=av_draft.memory_enabled if av_draft else False,
                 llm_config=av_draft.llm_config if av_draft else {},
-                retrieval_config=av_draft.retrieval_config if av_draft else {},
                 published_at=func.now(),
             )
             session.add(new_av)

@@ -5,7 +5,6 @@ from typing import Optional
 from sqlalchemy import (
     Boolean,
     DateTime,
-    Float,
     ForeignKey,
     Index,
     Integer,
@@ -20,7 +19,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from libs.basemodel.services_databaseconnector.postgres_model import (
     ConflictStatus,
-    SimilarityMetric,
     Tier,
     register,
 )
@@ -42,31 +40,7 @@ class KBModelORM(Base):
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
 
-    versions: Mapped[list["KBModelVersionORM"]] = relationship(back_populates="model", cascade="all, delete-orphan")
-    text_block_versions: Mapped[list["KBTextBlockVersionORM"]] = relationship(back_populates="embedding_model")
     qdrant_collections: Mapped[list["KBQdrantCollectionORM"]] = relationship(back_populates="embedding_model")
-
-
-@register("orm")
-class KBModelVersionORM(Base):
-    __tablename__ = "KBModelVersion"
-    __table_args__ = (
-        Index("idx_kbmodelversion_model_version", "model_id", "version_id", postgresql_where=text("is_active = true")),
-        Index("idx_kbmodelversion_inserted_at_desc", text("inserted_at DESC")),
-    )
-
-    version_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    model_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBModel.model_id"), nullable=False)
-    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
-    added_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
-    added_on: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
-    inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
-
-    model: Mapped["KBModelORM"] = relationship(back_populates="versions")
 
 
 @register("orm")
@@ -484,7 +458,6 @@ class KBTableORM(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     table_schema: Mapped[Optional[dict]] = mapped_column("schema", JSONB, nullable=True)
     created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    created_on: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
@@ -559,7 +532,6 @@ class KBTextBlockVersionORM(Base):
     content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     table_involved: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
-    embedding_model_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBModel.model_id"), nullable=True)
     payload: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True, comment="Chunk metadata also held in the Qdrant payload (summary, entities, embedding_model_id, knowledge_base, region); only entities is read back from here.")
     is_active: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
@@ -567,7 +539,6 @@ class KBTextBlockVersionORM(Base):
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
 
     block: Mapped["KBTextBlockORM"] = relationship(back_populates="versions")
-    embedding_model: Mapped[Optional["KBModelORM"]] = relationship(back_populates="text_block_versions")
     text_table: Mapped[Optional["KBTextTableORM"]] = relationship(back_populates="version", uselist=False, cascade="all, delete-orphan")
 
 
@@ -604,7 +575,6 @@ class KBQdrantConnectionORM(Base):
     connection_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
-    total_collection: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
@@ -619,16 +589,13 @@ class KBQdrantCollectionORM(Base):
 
     __table_args__ = (
         Index("idx_kbqdrantcollection_inserted_at_desc", text("inserted_at DESC")),
-        {"comment": "Seeded metadata for Qdrant collections. points_count, vector_dimension and similarity_metric are not kept in sync; the UI reads them live from Qdrant."},
+        {"comment": "Ties a tenant's Qdrant collections to their embedding model. Dimension, distance and point count are read live from Qdrant."},
     )
 
     collection_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     connection_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBQdrantConnection.connection_id"), nullable=False, index=True)
     collection_name: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
-    similarity_metric: Mapped[str] = mapped_column(String(16), default=SimilarityMetric.COSINE.value, nullable=False)
-    points_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
-    vector_dimension: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     embedding_model_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("KBModel.model_id"), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -686,8 +653,6 @@ class KBNeo4jRelationshipORM(Base):
     data_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True)
     tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), nullable=True)
     knowledge_base: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, comment="str(KBData.knowledge_base_id), or the literal 'General Knowledge Base' when the document has none; no FK.")
-    score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)

@@ -2,7 +2,7 @@
 // Mở https://dbdiagram.io/d → dán toàn bộ file này vào ô bên trái.
 //
 // Sinh tự động từ catalog Postgres sau `alembic upgrade head` trên DB trống
-// (head = 1d8f3b5a7c9e), không vẽ tay: bảng, cột, kiểu, default, PK/unique,
+// (head = 2e9a4c6b8d0f), không vẽ tay: bảng, cột, kiểu, default, PK/unique,
 // FK (Ref) và index là đúng như DB. Không sửa tay — sinh lại khi có migration mới.
 // Note của bảng/cột gồm COMMENT trong DB (nghĩa của cột) và những gì DBML không
 // biểu diễn được (CHECK, partial index, GIN, RLS, tham chiếu không có FK).
@@ -10,9 +10,9 @@
 Project data_agent {
   database_type: 'PostgreSQL'
   Note: '''
-**Data Agent — Postgres `dataagent`, schema `public`** (alembic head `1d8f3b5a7c9e`)
+**Data Agent — Postgres `dataagent`, schema `public`** (alembic head `2e9a4c6b8d0f`)
 
-- 60 bảng, 72 FK, 36 bảng bật RLS (theo `tenant_id` + `app.tenant_id`).
+- 59 bảng, 69 FK, 36 bảng bật RLS (theo `tenant_id` + `app.tenant_id`).
 - Schema V2 `registry`, `ingest`, `knowledge`, `governance`, `alert` đã tạo (migration `5b7d9f1a3c6e`) nhưng **chưa có bảng** — xem `docs/v2/10-database-design.md`, `docs/v2/14-input-data-db.md`.
 - Không có trong sơ đồ: `kb_structured` (bảng tạo lúc chạy khi import dữ liệu có cấu trúc), `langgraph` (checkpointer tự tạo), `keycloak`, `kong`.
 - Ngoài Postgres: MinIO (raw), Qdrant/Neo4j (bản chiếu dựng lại được), MongoDB, Redis, ClickHouse.
@@ -101,9 +101,7 @@ Table "AgentVersions" {
   "workflow_version_id" uuid
   "llm_config" jsonb
   "system_prompt_id" uuid
-  "guardrail_id" uuid
   "memory_enabled" bool [not null, default: false]
-  "retrieval_config" jsonb
   "changelog" varchar(512)
   "created_by" varchar(255)
   "published_at" timestamptz
@@ -124,7 +122,6 @@ Table "Agents" {
   "tenant_id" uuid [not null]
   "name" varchar(255) [not null]
   "description" varchar(512)
-  "language" varchar(10)
   "published_version_id" uuid [note: 'AgentVersions.id currently served. The ORM declares this FK but no migration created it. — tham chiếu logic, không có FK → AgentVersions.id']
   "draft_version_id" uuid [note: 'AgentVersions.id of the editable draft; draft updates find it by AgentVersions.status instead. The ORM declares this FK but no migration created it. — tham chiếu logic, không có FK → AgentVersions.id']
   "is_active" bool [not null, default: true]
@@ -173,8 +170,6 @@ Table "Conversations" {
   "user_ref" varchar(255)
   "channel" varchar(20)
   "status" varchar(20) [not null, note: 'Set to active on creation and never updated.']
-  "started_at" timestamptz
-  "ended_at" timestamptz
   "inserted_at" timestamptz [not null, default: `now()`]
 
   indexes {
@@ -231,7 +226,6 @@ Table "EpisodicMemory" {
   "domain" varchar(64) [not null, default: 'general']
   "content" text [not null]
   "importance_score" float8 [not null, default: '0.5']
-  "embedding_id" varchar(128)
   "created_at" timestamptz [not null, default: `now()`]
   "expires_at" timestamptz
   "status" varchar(16) [not null, default: 'active']
@@ -519,25 +513,6 @@ Table "KBModel" {
   }
 }
 
-Table "KBModelVersion" {
-  "version_id" int [pk, increment]
-  "model_id" uuid [not null]
-  "version_number" int [not null]
-  "added_by" varchar(255)
-  "config" jsonb
-  "is_active" bool [not null, default: false]
-  "added_on" timestamptz [not null, default: `now()`]
-  "created_at" timestamptz [not null, default: `now()`]
-  "inserted_at" timestamptz [not null, default: `now()`]
-  "is_deleted" bool [not null, default: false]
-
-  indexes {
-    "inserted_at" [name: 'idx_kbmodelversion_inserted_at_desc', note: 'inserted_at DESC']
-    ("model_id", "version_id") [name: 'idx_kbmodelversion_model_version', note: 'WHERE (is_active = true)']
-    "created_at" [name: 'ix_KBModelVersion_created_at']
-  }
-}
-
 Table "KBNeo4jNode" {
   "node_id" uuid [pk]
   "node_name" varchar(512) [not null]
@@ -560,8 +535,6 @@ Table "KBNeo4jNode" {
 Table "KBNeo4jRelationship" {
   "from_node" uuid
   "to_node" uuid
-  "score" float8
-  "description" text
   "created_at" timestamptz [not null, default: `now()`]
   "inserted_at" timestamptz [not null, default: `now()`]
   "is_deleted" bool [not null, default: false]
@@ -588,9 +561,6 @@ Table "KBQdrantCollection" {
   "connection_id" uuid [not null]
   "collection_name" varchar(255) [not null]
   "is_active" bool [not null, default: false]
-  "similarity_metric" varchar(16) [not null]
-  "points_count" int [not null, default: 0]
-  "vector_dimension" int
   "embedding_model_id" uuid
   "created_at" timestamptz [not null, default: `now()`]
   "inserted_at" timestamptz [not null, default: `now()`]
@@ -603,7 +573,7 @@ Table "KBQdrantCollection" {
   }
 
   Note: '''
-Seeded metadata for Qdrant collections. points_count, vector_dimension and similarity_metric are not kept in sync; the UI reads them live from Qdrant.
+Ties a tenant's Qdrant collections to their embedding model. Dimension, distance and point count are read live from Qdrant.
 RLS bật (tenant_id = app.tenant_id)
 '''
 }
@@ -612,7 +582,6 @@ Table "KBQdrantConnection" {
   "connection_id" uuid [pk]
   "tenant_id" uuid [not null]
   "is_active" bool [not null, default: false]
-  "total_collection" int [not null, default: 0]
   "created_at" timestamptz [not null, default: `now()`]
   "inserted_at" timestamptz [not null, default: `now()`]
   "is_deleted" bool [not null, default: false]
@@ -739,7 +708,6 @@ Table "KBTable" {
   "description" text
   "schema" jsonb
   "created_by" varchar(255)
-  "created_on" timestamptz [not null, default: `now()`]
   "created_at" timestamptz [not null, default: `now()`]
   "inserted_at" timestamptz [not null, default: `now()`]
   "is_deleted" bool [not null, default: false]
@@ -779,7 +747,6 @@ Table "KBTextBlockVersion" {
   "content" text
   "created_by" varchar(255)
   "table_involved" bool
-  "embedding_model_id" uuid
   "payload" jsonb [note: 'Chunk metadata also held in the Qdrant payload (summary, entities, embedding_model_id, knowledge_base, region); only entities is read back from here.']
   "is_active" bool
   "created_at" timestamptz [not null, default: `now()`]
@@ -1089,7 +1056,6 @@ Table "Tenants" {
   "id" uuid [pk]
   "name" varchar(255) [not null]
   "slug" varchar(100) [not null, unique]
-  "data_residency" varchar(20) [not null]
   "is_active" bool [not null, default: true]
   "created_at" timestamptz [not null, default: `now()`]
   "deleted_at" timestamptz
@@ -1265,7 +1231,6 @@ Table "secrets_vault" {
   "key_type" varchar(64) [not null]
   "algorithm" varchar(64)
   "realm" varchar(64) [note: 'Free-text grouping label shown in the UI (e.g. FINANCE-INFRA); unrelated to Keycloak realms.']
-  "openbao_path" text [note: 'OpenBao path at write time. Readers recompute the path instead of reading this column.']
   "version" int [not null, default: 1]
   "is_active" bool [not null, default: true]
   "rotation_due_at" timestamptz
@@ -1289,7 +1254,6 @@ Ref "AgentMemories_agent_id_fkey": "AgentMemories"."agent_id" > "Agents"."id"
 Ref "AgentMemories_tenant_id_fkey": "AgentMemories"."tenant_id" > "Tenants"."id"
 Ref "AgentTraces_message_id_fkey": "AgentTraces"."message_id" > "Messages"."id"
 Ref "AgentVersions_agent_id_fkey": "AgentVersions"."agent_id" > "Agents"."id"
-Ref "AgentVersions_guardrail_id_fkey": "AgentVersions"."guardrail_id" > "Guardrails"."id"
 Ref "AgentVersions_system_prompt_id_fkey": "AgentVersions"."system_prompt_id" > "SystemPrompts"."id"
 Ref "AgentVersions_workflow_version_id_fkey": "AgentVersions"."workflow_version_id" > "WorkflowVersions"."id"
 Ref "Agents_tenant_id_fkey": "Agents"."tenant_id" > "Tenants"."id"
@@ -1313,7 +1277,6 @@ Ref "KBExtractionPolicy_tenant_id_fkey": "KBExtractionPolicy"."tenant_id" > "Ten
 Ref "KBFilterPolicy_tenant_id_fkey": "KBFilterPolicy"."tenant_id" > "Tenants"."id"
 Ref "KBKnowledgeBase_tenant_id_fkey": "KBKnowledgeBase"."tenant_id" > "Tenants"."id"
 Ref "KBLifecycleHistory_data_id_fkey": "KBLifecycleHistory"."data_id" > "KBData"."data_id"
-Ref "KBModelVersion_model_id_fkey": "KBModelVersion"."model_id" > "KBModel"."model_id"
 Ref "KBNeo4jRelationship_from_node_fkey": "KBNeo4jRelationship"."from_node" > "KBNeo4jNode"."node_id"
 Ref "KBNeo4jRelationship_to_node_fkey": "KBNeo4jRelationship"."to_node" > "KBNeo4jNode"."node_id"
 Ref "KBQdrantCollection_connection_id_fkey": "KBQdrantCollection"."connection_id" > "KBQdrantConnection"."connection_id"
@@ -1329,7 +1292,6 @@ Ref "KBStructuredImportJob_owner_id_fkey": "KBStructuredImportJob"."owner_id" > 
 Ref "KBTable_owner_id_fkey": "KBTable"."owner_id" > "KBData"."data_id"
 Ref "KBTextBlock_owner_id_fkey": "KBTextBlock"."owner_id" > "KBData"."data_id"
 Ref "KBTextBlockVersion_block_id_fkey": "KBTextBlockVersion"."block_id" > "KBTextBlock"."block_id"
-Ref "KBTextBlockVersion_embedding_model_id_fkey": "KBTextBlockVersion"."embedding_model_id" > "KBModel"."model_id"
 Ref "KBTextTable_version_id_fkey": "KBTextTable"."version_id" > "KBTextBlockVersion"."version_id"
 Ref "fk_kbwarehouse_tenant": "KBWarehouse"."tenant_id" > "Tenants"."id"
 Ref "KBWarehouseConfig_warehouse_id_fkey": "KBWarehouseConfig"."warehouse_id" > "KBWarehouse"."warehouse_id"
@@ -1403,7 +1365,6 @@ TableGroup sources_crawl [color: #0d9488] {
 
 TableGroup index_projections [color: #a855f7] {
   "KBModel"
-  "KBModelVersion"
   "KBQdrantConnection"
   "KBQdrantCollection"
   "KBNeo4jNode"

@@ -1,7 +1,7 @@
 -- Idempotent seed data for dev environment
 
-INSERT INTO "Tenants" (id, name, slug, data_residency, is_active)
-VALUES ('a0000000-0000-0000-0000-000000000001', 'Dev Tenant', 'dev', 'Asia-SE1', true)
+INSERT INTO "Tenants" (id, name, slug, is_active)
+VALUES ('a0000000-0000-0000-0000-000000000001', 'Dev Tenant', 'dev', true)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO "SystemPrompts" (id, tenant_id, name, content, version)

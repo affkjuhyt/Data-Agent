@@ -32,8 +32,8 @@ def _seed_tenant_and_warehouse(dsn: str, selected_tables: list[str] | None = Non
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """INSERT INTO "Tenants" (id, name, slug, data_residency) VALUES (%s, %s, %s, %s)""",
-                (tenant_id, "Crawler Test Tenant", f"crawler-test-{tenant_id[:8]}", "Asia-SE1"),
+                """INSERT INTO "Tenants" (id, name, slug) VALUES (%s, %s, %s)""",
+                (tenant_id, "Crawler Test Tenant", f"crawler-test-{tenant_id[:8]}"),
             )
             cur.execute(
                 """INSERT INTO "KBWarehouse" (warehouse_id, tenant_id, service, description)

@@ -27,8 +27,8 @@ def _seed_kbdata(dsn: str, initial_metadata: dict) -> tuple[str, str]:
     try:
         with conn.cursor() as cur:
             cur.execute(
-                """INSERT INTO "Tenants" (id, name, slug, data_residency) VALUES (%s, %s, %s, %s)""",
-                (tenant_id, "Stamp Test Tenant", f"stamp-test-{tenant_id[:8]}", "Asia-SE1"),
+                """INSERT INTO "Tenants" (id, name, slug) VALUES (%s, %s, %s)""",
+                (tenant_id, "Stamp Test Tenant", f"stamp-test-{tenant_id[:8]}"),
             )
             cur.execute(
                 """INSERT INTO "RolePermissions" (id, role_id, resource, action)

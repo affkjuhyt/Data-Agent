@@ -21,8 +21,8 @@
 
 -- ── Tenants ──────────────────────────────────────────────────────────────────
 
-INSERT INTO "Tenants" (id, name, slug, data_residency, is_active) VALUES
-    ('a0000000-0000-0000-0000-000000000001', 'Dev Tenant', 'dev', 'Asia-SE1', true)
+INSERT INTO "Tenants" (id, name, slug, is_active) VALUES
+    ('a0000000-0000-0000-0000-000000000001', 'Dev Tenant', 'dev', true)
 ON CONFLICT (id) DO NOTHING;
 
 -- ── RolePermissions ──────────────────────────────────────────────────────────
@@ -162,16 +162,16 @@ ON CONFLICT (policy_id) DO NOTHING;
 
 -- ── KBQdrantConnection + Collections ─────────────────────────────────────────
 
-INSERT INTO "KBQdrantConnection" (connection_id, tenant_id, is_active, total_collection) VALUES
-    ('00000000-0000-0001-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', true, 2)
+INSERT INTO "KBQdrantConnection" (connection_id, tenant_id, is_active) VALUES
+    ('00000000-0000-0001-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', true)
 ON CONFLICT (connection_id) DO NOTHING;
 
 INSERT INTO "KBQdrantCollection"
-    (collection_id, connection_id, collection_name, is_active, similarity_metric, points_count, vector_dimension, embedding_model_id) VALUES
+    (collection_id, connection_id, collection_name, is_active, embedding_model_id) VALUES
     ('00000000-0000-0001-0000-000000000002', '00000000-0000-0001-0000-000000000001',
-     'aeroflow_kb_prod',    true,  'cosine', 0, 1024, '00000000-0000-0000-0000-000000000001'),
+     'aeroflow_kb_prod',    true,  '00000000-0000-0000-0000-000000000001'),
     ('00000000-0000-0001-0000-000000000003', '00000000-0000-0001-0000-000000000001',
-     'aeroflow_kb_archive', false, 'cosine', 0, 1024, '00000000-0000-0000-0000-000000000001')
+     'aeroflow_kb_archive', false, '00000000-0000-0000-0000-000000000001')
 ON CONFLICT (collection_id) DO NOTHING;
 
 -- ── KBWarehouse ───────────────────────────────────────────────────────────────

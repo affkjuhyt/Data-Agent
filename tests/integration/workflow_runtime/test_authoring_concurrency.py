@@ -25,8 +25,8 @@ def _seed(dsn: str, statuses: list[str]) -> tuple[str, str, list[str]]:
     conn.autocommit = True
     try:
         with conn.cursor() as cur:
-            cur.execute('INSERT INTO "Tenants" (id, name, slug, data_residency) VALUES (%s,%s,%s,%s)',
-                        (tenant_id, "t", f"t-{tenant_id[:8]}", "Asia-SE1"))
+            cur.execute('INSERT INTO "Tenants" (id, name, slug) VALUES (%s,%s,%s)',
+                        (tenant_id, "t", f"t-{tenant_id[:8]}"))
             cur.execute('INSERT INTO "Agents" (id, tenant_id, name) VALUES (%s,%s,%s)',
                         (agent_id, tenant_id, "a"))
             cur.execute('INSERT INTO "Workflows" (id, agent_id, name) VALUES (%s,%s,%s)',

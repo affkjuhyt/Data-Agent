@@ -90,7 +90,6 @@ class GuardrailsORM(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    agent_versions: Mapped[list["AgentVersionsORM"]] = relationship(back_populates="guardrail")
 
 
 @register("orm")
@@ -128,7 +127,6 @@ class AgentsORM(Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Tenants.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
-    language: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     published_version_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         PGUUID(as_uuid=True),
         ForeignKey("AgentVersions.id", use_alter=True, name="fk_agents_published_version"),
@@ -232,9 +230,7 @@ class AgentVersionsORM(Base):
     responder_model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="LiteLLM model alias (as GET /api/llm-providers lists it, e.g. responder) the agent answers with; NULL = the deployment default.")
     llm_config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     system_prompt_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("SystemPrompts.id"), nullable=True)
-    guardrail_id: Mapped[Optional[uuid.UUID]] = mapped_column(PGUUID(as_uuid=True), ForeignKey("Guardrails.id"), nullable=True)
     memory_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
-    retrieval_config: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     changelog: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     published_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -244,7 +240,6 @@ class AgentVersionsORM(Base):
     agent: Mapped["AgentsORM"] = relationship(back_populates="versions", foreign_keys=[agent_id])
     workflow_version: Mapped[Optional["WorkflowVersionsORM"]] = relationship(back_populates="agent_versions")
     system_prompt: Mapped[Optional["SystemPromptsORM"]] = relationship(back_populates="agent_versions")
-    guardrail: Mapped[Optional["GuardrailsORM"]] = relationship(back_populates="agent_versions")
     agent_kb: Mapped[list["AgentKBORM"]] = relationship(back_populates="version", cascade="all, delete-orphan")
     agent_mcp: Mapped[list["AgentMCPORM"]] = relationship(back_populates="version", cascade="all, delete-orphan")
 
@@ -331,7 +326,6 @@ class EpisodicMemoryORM(Base):
     domain: Mapped[str] = mapped_column(String(64), default="general", server_default="general", nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     importance_score: Mapped[float] = mapped_column(Float, default=0.5, server_default="0.5", nullable=False)
-    embedding_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     expires_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(16), default="active", server_default="active", nullable=False)
@@ -485,8 +479,6 @@ class ConversationsORM(Base):
     user_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     channel: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, comment="Set to active on creation and never updated.")
-    started_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    ended_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     inserted_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     tenant: Mapped["TenantsORM"] = relationship(back_populates="conversations")

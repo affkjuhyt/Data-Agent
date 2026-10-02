@@ -58,7 +58,6 @@ CREATE TABLE IF NOT EXISTS secrets_vault (
     key_type        varchar(64) NOT NULL,
     algorithm       varchar(64),
     realm           varchar(64),
-    openbao_path    text,
     version         int NOT NULL DEFAULT 1,
     is_active       boolean NOT NULL DEFAULT true,
     rotation_due_at timestamptz,
@@ -312,9 +311,9 @@ def migrated_auth_db(postgres_container) -> dict[str, str]:
             )
             # api_keys / secrets_vault / ip_allowlists reference "Tenants".
             cur.execute(
-                'INSERT INTO "Tenants" (id, name, slug, data_residency) VALUES '
-                "(%s, 'Tenant One', 'it-tenant-1', 'Asia-SE1'), "
-                "(%s, 'Tenant Two', 'it-tenant-2', 'Asia-SE1') "
+                'INSERT INTO "Tenants" (id, name, slug) VALUES '
+                "(%s, 'Tenant One', 'it-tenant-1'), "
+                "(%s, 'Tenant Two', 'it-tenant-2') "
                 "ON CONFLICT (id) DO NOTHING",
                 (TENANT_1, TENANT_2),
             )

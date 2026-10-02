@@ -113,8 +113,6 @@ async def list_conversations(
             ConversationsORM.user_ref,
             ConversationsORM.channel,
             ConversationsORM.status,
-            ConversationsORM.started_at,
-            ConversationsORM.ended_at,
             ConversationsORM.inserted_at,
             agg.c.message_count,
             agg.c.last_message_at,
@@ -144,9 +142,7 @@ async def list_conversations(
             ConversationsORM.user_ref.ilike(f"%{pattern}%", escape="\\"),
         ))
 
-    last_activity = func.coalesce(
-        agg.c.last_message_at, ConversationsORM.started_at, ConversationsORM.inserted_at,
-    )
+    last_activity = func.coalesce(agg.c.last_message_at, ConversationsORM.inserted_at)
     page = base.order_by(last_activity.desc(), ConversationsORM.id.desc()).limit(limit).offset(offset)
     total_stmt = select(func.count()).select_from(base.subquery("filtered"))
 
@@ -160,8 +156,9 @@ async def list_conversations(
             "user_ref": r.user_ref,
             "channel": r.channel,
             "status": r.status,
-            "started_at": _iso(r.started_at or r.inserted_at),
-            "ended_at": _iso(r.ended_at),
+            "started_at": _iso(r.inserted_at),
+            # Nothing ends a conversation; the key stays for the UI's type.
+            "ended_at": None,
             "message_count": int(r.message_count or 0),
             "last_message_at": _iso(r.last_message_at),
             "agent_id": str(r.agent_id) if r.agent_id else None,
@@ -377,7 +374,7 @@ async def platform_metrics(tenant_id: str, days: int = 7) -> dict[str, Any]:
     day_ago = now - dt.timedelta(hours=24)
     since = (now - dt.timedelta(days=days - 1)).replace(hour=0, minute=0, second=0, microsecond=0)
 
-    conv_started = func.coalesce(ConversationsORM.started_at, ConversationsORM.inserted_at)
+    conv_started = ConversationsORM.inserted_at
     tenant_conv_ids = select(ConversationsORM.id).where(ConversationsORM.tenant_id == tid)
     tenant_msgs = MessagesORM.conversation_id.in_(tenant_conv_ids)
 

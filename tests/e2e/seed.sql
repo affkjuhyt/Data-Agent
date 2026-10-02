@@ -36,10 +36,10 @@ ON CONFLICT (id) DO NOTHING;
 
 -- responder_model is the LiteLLM alias (litellm wildcard → host ollama).
 INSERT INTO "AgentVersions"(id, agent_id, version, status, responder_model,
-                            workflow_version_id, llm_config, retrieval_config, memory_enabled)
+                            workflow_version_id, llm_config, memory_enabled)
 VALUES ('0000000e-2e00-4000-8000-000000000002', '0000000e-2e00-4000-8000-000000000001',
         1, 'published', 'responder',
-        '0000000e-2e00-4000-8000-000000000004', '{}'::jsonb, '{}'::jsonb, false)
+        '0000000e-2e00-4000-8000-000000000004', '{}'::jsonb, false)
 ON CONFLICT (id) DO NOTHING;
 
 UPDATE "Agents" SET published_version_id = '0000000e-2e00-4000-8000-000000000002'
@@ -49,10 +49,9 @@ WHERE id = '0000000e-2e00-4000-8000-000000000001';
 -- workflow_runtime resolves dbConnections[].secretId → secrets_vault → OpenBao
 -- KV at secret/data/tenants/<tenant>/<key_name>. Never plaintext in the flow.
 INSERT INTO secrets_vault(id, tenant_id, key_name, key_type, algorithm, realm,
-                          openbao_path, version, is_active, created_by)
+                          version, is_active, created_by)
 VALUES ('0000000e-2e00-4000-8000-000000000005', :tenant, 'e2e_dw_password',
         'DB_CONNECTOR_PASSWORD', NULL, NULL,
-        'secret/data/tenants/a0000000-0000-0000-0000-000000000001/e2e_dw_password',
         1, true, 'e2e-seed')
 ON CONFLICT (id) DO UPDATE SET is_active = true, key_type = EXCLUDED.key_type;
 
