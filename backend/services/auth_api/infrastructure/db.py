@@ -69,7 +69,6 @@ def orm_to_dict(instance: Any) -> dict[str, Any]:
 def ensure_settings_table() -> None:
     defaults = {
         "ip_allowlist_mode": "allow_all",
-        "vault_panic_mode": "false",
         "vault_auto_rotation": "false",
         "vault_pii_access_log": "false",
     }

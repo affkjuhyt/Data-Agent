@@ -273,3 +273,17 @@ class TestToggleAndDelete:
         assert resp.status_code == 404
         assert [r["id"] for r in _rules(db_conn)] == [foreign]
         assert synced == []
+
+
+def test_kong_gets_every_tenants_active_cidrs(migrated_client, db_conn) -> None:
+    """Kong's ip-restriction is shared by all tenants. Syncing one tenant's list
+    replaced the others' (and the startup sync, with no tenant, replaced all of
+    them); the gateway now gets the union."""
+    from services.auth_api.services import kong_sync
+
+    _seed_rule(db_conn, tenant=TENANT_1, cidr="10.0.0.0/8")
+    _seed_rule(db_conn, tenant=TENANT_2, cidr="192.168.0.0/16")
+    _seed_rule(db_conn, tenant=TENANT_2, cidr="10.0.0.0/8")
+    _seed_rule(db_conn, tenant=TENANT_2, cidr="172.16.0.0/12", is_active=False)
+
+    assert kong_sync.get_active_cidrs() == ["10.0.0.0/8", "192.168.0.0/16"]

@@ -63,3 +63,25 @@ def test_list_api_keys_runs(migrated_client, headers_factory) -> None:
 
     assert resp.status_code == 200, resp.text
     assert resp.json() == []
+
+
+def test_panic_mode_locks_only_the_tenant_it_was_triggered_for(
+    migrated_client, headers_factory
+) -> None:
+    """Panic used to set one platform-wide flag, so a panic for one tenant
+    answered 503 on every tenant's secret routes."""
+    tenant_1, tenant_2 = headers_factory(tenant=TENANT_1), headers_factory(tenant=TENANT_2)
+
+    assert migrated_client.post("/api/auth/secrets/panic", headers=tenant_1).status_code == 200
+
+    assert migrated_client.get("/api/auth/secrets", headers=tenant_1).status_code == 503
+    assert migrated_client.get("/api/auth/secrets", headers=tenant_2).status_code == 200
+    assert migrated_client.get("/api/auth/secrets/governance", headers=tenant_2).json()[
+        "vault_panic_mode"
+    ] is False
+
+    off = migrated_client.put(
+        "/api/auth/secrets/governance", json={"vault_panic_mode": False}, headers=tenant_1
+    )
+    assert off.json()["vault_panic_mode"] is False
+    assert migrated_client.get("/api/auth/secrets", headers=tenant_1).status_code == 200

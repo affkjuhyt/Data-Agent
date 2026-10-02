@@ -66,7 +66,7 @@ class IPAllowlistORM(Base):
 
 class AuthPlatformSettingORM(Base):
     __tablename__ = "platform_settings"
-    __table_args__ = ({"comment": "Platform-wide flags, key -> text (ip_allowlist_mode, vault_panic_mode, vault_auto_rotation, vault_pii_access_log). Per-tenant settings are in PlatformSettings."},)
+    __table_args__ = ({"comment": "Platform-wide flags, key -> text (ip_allowlist_mode, vault_auto_rotation, vault_pii_access_log). Per-tenant settings are in PlatformSettings; panic mode is per tenant in compliance_settings."},)
 
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)
@@ -103,6 +103,7 @@ class ComplianceSettingORM(Base):
     retention_lock: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
     zero_trust: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
     audit_residency: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False)
+    vault_panic_mode: Mapped[bool] = mapped_column(Boolean, server_default="false", nullable=False, comment="Panic mode for this tenant: its secrets were revoked and its secret routes answer 503 until a platform-admin turns it off.")
     updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=True)
     updated_by: Mapped[str | None] = mapped_column(String(128), server_default="", nullable=True)
 

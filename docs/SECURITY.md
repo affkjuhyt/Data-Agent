@@ -36,6 +36,13 @@ production release. Operational procedures are in [`RUNBOOK.md`](./RUNBOOK.md).
   `platform-admin`), `X-User-Id: api-key:<id>`. Kong caches a verified key for
   `api_key_cache_ttl` (60 s), which is also how long a revoked key can keep working.
   Enabled exactly when `GATEWAY_KEY` is set (`kong-setup.sh`).
+- **IP allowlist.** Rules are kept per tenant (`ip_allowlists`), but Kong's `ip-restriction`
+  plugin is one per service/route, so auth_api pushes the **union** of every tenant's active
+  CIDRs (`kong_sync.get_active_cidrs`). It narrows who can reach the gateway; which tenant a
+  caller acts for is still decided by its token.
+- **Vault panic mode** is per tenant (`compliance_settings.vault_panic_mode`): it revokes that
+  tenant's secrets and answers 503 on that tenant's secret routes only, until a
+  platform-admin turns it off in Settings → Secrets.
 - **Service-to-service identity.** `workflow-runtime` calls `kb-backend` directly
   (`kb_search` → LightRAG retrieve), so it cannot present a user's Keycloak token. It signs
   an **HMAC assertion** (`backend/libs/shared/service_identity.py`) carrying the real caller's

@@ -100,10 +100,15 @@ CREATE TABLE IF NOT EXISTS key_rotations (
     created_at    timestamptz NOT NULL DEFAULT now()
 );
 
+-- Per-tenant security switches; every secret route reads vault_panic_mode.
+CREATE TABLE IF NOT EXISTS compliance_settings (
+    tenant_id        varchar(64) PRIMARY KEY,
+    vault_panic_mode boolean NOT NULL DEFAULT false
+);
+
 -- Default governance settings the routes read on startup
 INSERT INTO platform_settings (key, value) VALUES
     ('ip_allowlist_mode',    'allow_all'),
-    ('vault_panic_mode',     'false'),
     ('vault_auto_rotation',  'false'),
     ('vault_pii_access_log', 'false')
 ON CONFLICT (key) DO NOTHING;
@@ -142,6 +147,7 @@ BEGIN
         SELECT table_name
         FROM information_schema.columns
         WHERE column_name = 'tenant_id'
+          AND data_type = 'uuid'
           AND table_schema = 'public'
     LOOP
         EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON %I TO app_user', tbl);
@@ -301,7 +307,7 @@ def migrated_auth_db(postgres_container) -> dict[str, str]:
             cur.execute("DELETE FROM platform_settings")
             cur.execute(
                 "INSERT INTO platform_settings (key, value) VALUES "
-                "('ip_allowlist_mode', 'allow_all'), ('vault_panic_mode', 'false'), "
+                "('ip_allowlist_mode', 'allow_all'), "
                 "('vault_auto_rotation', 'false'), ('vault_pii_access_log', 'false')"
             )
             # api_keys / secrets_vault / ip_allowlists reference "Tenants".

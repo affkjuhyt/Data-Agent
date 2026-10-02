@@ -18,8 +18,11 @@ try:
     from services.auth_api.schemas import SignPayload, VerifyPayload
     from services.auth_api.services.governance import (
         GOVERNANCE_KEYS,
+        PANIC_MODE_KEY,
         enforce_vault_not_in_panic_mode,
         get_governance_setting,
+        get_panic_mode,
+        set_panic_mode,
     )
 except ModuleNotFoundError:
     from auth_api.domain.secrets import TRANSIT_KEY_TYPES, TRANSIT_MOUNT, build_transit_key_name
@@ -29,8 +32,11 @@ except ModuleNotFoundError:
     from auth_api.schemas import SignPayload, VerifyPayload
     from auth_api.services.governance import (
         GOVERNANCE_KEYS,
+        PANIC_MODE_KEY,
         enforce_vault_not_in_panic_mode,
         get_governance_setting,
+        get_panic_mode,
+        set_panic_mode,
     )
 
 router = APIRouter()
@@ -48,24 +54,35 @@ def _upsert_setting(session: Any, key: str, value: str) -> None:
     session.execute(stmt)
 
 
+def _governance(session: Any, tenant_id: str) -> dict[str, Any]:
+    return {
+        **{key: get_governance_setting(session, key) for key in GOVERNANCE_KEYS},
+        PANIC_MODE_KEY: get_panic_mode(session, tenant_id),
+    }
+
+
 @router.get("/api/auth/secrets/governance")
 def get_governance(
+    x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
     with get_session() as session:
-        return {key: get_governance_setting(session, key) for key in GOVERNANCE_KEYS}
+        return _governance(session, x_tenant_id)
 
 
 @router.put("/api/auth/secrets/governance")
 def set_governance(
     body: dict[str, Any],
+    x_tenant_id: str = Header(..., alias="X-Tenant-Id"),
     user: dict[str, Any] = Depends(require_role("platform-admin")),
 ) -> dict[str, Any]:
     with get_session() as session:
         for key in GOVERNANCE_KEYS:
             if key in body:
                 _upsert_setting(session, key, "true" if body[key] else "false")
-        return {key: get_governance_setting(session, key) for key in GOVERNANCE_KEYS}
+        if PANIC_MODE_KEY in body:
+            set_panic_mode(session, x_tenant_id, bool(body[PANIC_MODE_KEY]))
+        return _governance(session, x_tenant_id)
 
 
 @router.post("/api/auth/secrets/panic", status_code=200)
@@ -94,7 +111,7 @@ def trigger_panic(
                 )
             )
             revoked.append(row.key_name)
-        _upsert_setting(session, "vault_panic_mode", "true")
+        set_panic_mode(session, x_tenant_id, True)
 
     log.warning("vault_panic_triggered", actor=user["user_id"], revoked_count=len(revoked))
     return {"revoked": revoked, "count": len(revoked)}

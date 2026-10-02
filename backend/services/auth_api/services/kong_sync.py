@@ -30,14 +30,22 @@ def get_ip_allowlist_mode() -> str:
         )
 
 
-def get_active_cidrs(tenant_id: str) -> list[str]:
+def get_active_cidrs() -> list[str]:
+    """Every tenant's active CIDRs, de-duplicated.
+
+    Kong's ip-restriction is one plugin per service/route, shared by all
+    tenants. Syncing one tenant's list into it replaced every other tenant's,
+    and the startup sync (no tenant) replaced all of them with the private
+    fallback. The gateway admits the union; which tenant a caller acts for is
+    still decided by its token.
+    """
     with get_session() as session:
         return list(
             session.scalars(
-                select(IPAllowlistORM.cidr).where(
-                    IPAllowlistORM.tenant_id == tenant_id,
-                    IPAllowlistORM.is_active.is_(True),
-                )
+                select(IPAllowlistORM.cidr)
+                .where(IPAllowlistORM.is_active.is_(True))
+                .distinct()
+                .order_by(IPAllowlistORM.cidr)
             )
         )
 
@@ -52,11 +60,13 @@ def upsert_ip_restriction_plugin(scope_url: str, payload: dict[str, Any]) -> Non
 
 
 def sync_kong_ip_restrictions(tenant_id: str) -> None:
+    """Push the allowlist to Kong. `tenant_id` is the tenant whose change
+    triggered the sync ("" at startup), for the log only — see get_active_cidrs."""
     mode = get_ip_allowlist_mode()
     if mode == "allow_all":
         allow = ["0.0.0.0/0", "::/0"]
     else:
-        user_cidrs = get_active_cidrs(tenant_id)
+        user_cidrs = get_active_cidrs()
         allow = user_cidrs if user_cidrs else PRIVATE_FALLBACK_CIDRS
 
     payload = {"name": "ip-restriction", "config": {"allow": allow}}
@@ -69,4 +79,4 @@ def sync_kong_ip_restrictions(tenant_id: str) -> None:
         log.warning("kong_sync_failed", error=str(exc))
         return
 
-    log.info("kong_sync", mode=mode, cidr_count=len(allow))
+    log.info("kong_sync", mode=mode, cidr_count=len(allow), triggered_by_tenant=tenant_id)

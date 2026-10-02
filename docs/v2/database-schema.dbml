@@ -2,7 +2,7 @@
 // Mở https://dbdiagram.io/d → dán toàn bộ file này vào ô bên trái.
 //
 // Sinh tự động từ catalog Postgres sau `alembic upgrade head` trên DB trống
-// (head = 9b6f2c4e8d1a), không vẽ tay: bảng, cột, kiểu, default, PK/unique,
+// (head = 1d8f3b5a7c9e), không vẽ tay: bảng, cột, kiểu, default, PK/unique,
 // FK (Ref) và index là đúng như DB. Không sửa tay — sinh lại khi có migration mới.
 // Note của bảng/cột gồm COMMENT trong DB (nghĩa của cột) và những gì DBML không
 // biểu diễn được (CHECK, partial index, GIN, RLS, tham chiếu không có FK).
@@ -10,7 +10,7 @@
 Project data_agent {
   database_type: 'PostgreSQL'
   Note: '''
-**Data Agent — Postgres `dataagent`, schema `public`** (alembic head `9b6f2c4e8d1a`)
+**Data Agent — Postgres `dataagent`, schema `public`** (alembic head `1d8f3b5a7c9e`)
 
 - 60 bảng, 72 FK, 36 bảng bật RLS (theo `tenant_id` + `app.tenant_id`).
 - Schema V2 `registry`, `ingest`, `knowledge`, `governance`, `alert` đã tạo (migration `5b7d9f1a3c6e`) nhưng **chưa có bảng** — xem `docs/v2/10-database-design.md`, `docs/v2/14-input-data-db.md`.
@@ -1192,6 +1192,7 @@ Table "compliance_settings" {
   "audit_residency" bool [not null, default: false]
   "updated_at" timestamptz [default: `now()`]
   "updated_by" varchar(128) [default: '']
+  "vault_panic_mode" bool [not null, default: false, note: 'Panic mode for this tenant: its secrets were revoked and its secret routes answer 503 until a platform-admin turns it off.']
 }
 
 Table "ip_allowlists" {
@@ -1254,7 +1255,7 @@ Table "platform_settings" {
   "value" text [not null]
   "updated_at" timestamptz [not null, default: `now()`]
 
-  Note: 'Platform-wide flags, key -> text (ip_allowlist_mode, vault_panic_mode, vault_auto_rotation, vault_pii_access_log). Per-tenant settings are in PlatformSettings.'
+  Note: 'Platform-wide flags, key -> text (ip_allowlist_mode, vault_auto_rotation, vault_pii_access_log). Per-tenant settings are in PlatformSettings; panic mode is per tenant in compliance_settings.'
 }
 
 Table "secrets_vault" {
