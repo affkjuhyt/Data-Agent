@@ -15,7 +15,7 @@ import pytest
 
 from libs.contracts import CONTRACT_VERSION
 from libs.contracts.schema_export import GENERATED_DIR, OPENAPI_NAME, render_all, stale_files
-from libs.contracts.v1 import PAYLOAD_MODELS, PUBLIC_MODELS
+from libs.contracts.v1 import OPEN_ENUMS, PARTITION_KEY_FIELD, PAYLOAD_MODELS, PUBLIC_MODELS
 
 from . import compat_fixtures
 
@@ -58,6 +58,23 @@ def test_every_typed_payload_version_has_its_own_schema_file() -> None:
 def test_the_wire_spelling_from_is_published(openapi: dict[str, Any]) -> None:
     time_rule = openapi["components"]["schemas"]["TimeRule"]["properties"]
     assert "from" in time_rule and "from_" not in time_rule
+
+
+@pytest.mark.req("NOP-152")
+def test_only_the_open_enums_are_published_as_open(openapi: dict[str, Any]) -> None:
+    # The compatibility gate lets an x-open-enum grow without a bump; every
+    # other enum is closed, so the flag must sit on exactly OPEN_ENUMS.
+    schemas = openapi["components"]["schemas"]
+    flagged = {name for name, schema in schemas.items() if schema.get("x-open-enum")}
+    assert flagged == {enum.__name__ for enum in OPEN_ENUMS}
+
+
+@pytest.mark.req("NOP-152")
+def test_every_payload_schema_publishes_its_partition_key() -> None:
+    for (event_type, version), _ in PAYLOAD_MODELS.items():
+        path = GENERATED_DIR / "events" / f"{event_type.value}.v{version}.schema.json"
+        schema = json.loads(path.read_text(encoding="utf-8"))
+        assert schema["x-partition-key"] == PARTITION_KEY_FIELD[event_type]
 
 
 def test_compat_fixtures_match_the_current_schema() -> None:

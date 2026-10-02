@@ -1,8 +1,8 @@
 """Fixture pairs for the contract compatibility gate (NOP-152).
 
 Each case is the published `Observation` schema before (base) and after (head)
-one edit, and `expected.json` says what the gate must decide. NOP-150 only
-ships the pairs; the checker and the CI job that run them are NOP-152.
+one edit, and `expected.json` says what the gate must decide. The gate is
+`libs.contracts.compat` (NOP-152); test_compat.py runs it over these pairs.
 
     python -m tests.unit.contracts.compat_fixtures   # rewrite after Observation changes
 """

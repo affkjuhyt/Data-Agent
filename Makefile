@@ -8,7 +8,7 @@ PLANTUML_IMAGE ?= plantuml/plantuml:1.2024.8
 DOCKER_RUN_PY = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend:/src $(PY_IMAGE)
 
 .PHONY: help lint type test test-unit test-integration test-changed deadcode frontend-lint frontend-test ci e2e diagrams \
-        deploy fmt bench bench-gate bench-e2e mock-api
+        deploy fmt bench bench-gate bench-e2e mock-api contract-compat
 
 help:  ## List targets
 	@grep -hE '^[a-z0-9-]+:.*?## ' $(MAKEFILE_LIST) | awk -F':.*?## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -70,7 +70,25 @@ frontend-lint:  ## tsc --noEmit
 frontend-test:  ## vitest
 	npm --workspace frontend run test
 
-ci: lint type test frontend-lint frontend-test  ## everything CI runs, locally
+ci: lint type test frontend-lint frontend-test contract-compat  ## everything CI runs, locally
+
+# Same check as the CI contract-compat job (NOP-152). Locally HEAD is a branch, not
+# a merge commit, so the agreed contract is the one at the merge-base. Exit 2 (the
+# base has no generated/ yet) is a notice, as in CI.
+CONTRACT_BASE ?= origin/main
+CONTRACT_BASE_DIR := .contract-base
+contract-compat:  ## contract compatibility gate against CONTRACT_BASE (libs/contracts/COMPATIBILITY.md)
+	@rm -rf $(CONTRACT_BASE_DIR) && mkdir -p $(CONTRACT_BASE_DIR)
+	@base=$$(git merge-base HEAD $(CONTRACT_BASE)) && \
+	  if git cat-file -e $$base:backend/libs/contracts/generated 2>/dev/null; then \
+	    git archive $$base backend/libs/contracts/generated | tar -x -C $(CONTRACT_BASE_DIR); \
+	  fi
+	@$(DOCKER_RUN_PY) python -m libs.contracts.compat \
+	  --base $(CONTRACT_BASE_DIR)/backend/libs/contracts/generated \
+	  --head backend/libs/contracts/generated; \
+	  code=$$?; rm -rf $(CONTRACT_BASE_DIR); \
+	  if [ $$code -eq 2 ]; then echo "base has no published contract, nothing to compare"; exit 0; fi; \
+	  exit $$code
 
 # In the kb-backend image, where the contracts suite runs (pinned pydantic); it also
 # spares a frontend developer a Python 3.11 environment of their own.

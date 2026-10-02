@@ -246,6 +246,44 @@ jobs:
           name: eval-report-offline
           path: eval-report.json
 
+  contract-compat:
+    # NOP-152: a breaking change to the published contract (libs/contracts/generated)
+    # that raises no version blocks the merge. Rules: libs/contracts/COMPATIBILITY.md.
+    name: Contract · compatibility (BLOCKING)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      # A pull_request checks out the merge commit; its first parent is the base
+      # branch tip it was merged onto, so the diff is exactly what this PR brings
+      # into the base as it stands now.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Published contract of the base branch
+        run: |
+          mkdir -p "$RUNNER_TEMP/base"
+          if git cat-file -e HEAD^1:backend/libs/contracts/generated 2>/dev/null; then
+            git archive HEAD^1 backend/libs/contracts/generated | tar -x -C "$RUNNER_TEMP/base"
+          fi
+      - name: Compare (stdlib only, no install)
+        env:
+          PYTHONPATH: backend
+        run: |
+          set +e
+          python -m libs.contracts.compat \
+            --base "$RUNNER_TEMP/base/backend/libs/contracts/generated" \
+            --head backend/libs/contracts/generated
+          code=$?
+          # 2: the base branch has no published contract yet (before NOP-150 merges).
+          if [ "$code" -eq 2 ]; then
+            echo "::notice::base branch has no libs/contracts/generated, nothing to compare"
+            exit 0
+          fi
+          exit "$code"
+
   frontend-lint:
     name: Frontend · tsc
     runs-on: ubuntu-latest

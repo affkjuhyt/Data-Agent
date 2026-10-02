@@ -54,8 +54,54 @@ bump `SCHEMA_VERSION` của `SeriesRef`, `Observation`, `ObservationCandidate`, 
 4. Nếu `Observation` đổi: `python -m tests.unit.contracts.compat_fixtures` để làm mới fixture của gate.
 5. `make test-unit UNIT_SUITES=contracts:kb-backend`.
 
-Gate CI so `generated/` của nhánh với nhánh gốc và chặn thay đổi breaking không bump version là
-NOP-152; fixture cho gate đó ở `tests/fixtures/contracts/compat/` (`expected.json` ghi kết quả phải ra).
+## Gate CI (NOP-152)
+
+Job `contract-compat` của CI (cục bộ: `make contract-compat`, base mặc định `origin/main`) chạy
+`python -m libs.contracts.compat --base <generated/ của nhánh gốc> --head backend/libs/contracts/generated`.
+Checker chỉ đọc JSON, không import model. Nó so bản đã chốt (`generated/` ở đỉnh nhánh gốc) với
+`generated/` của PR và in mỗi thay đổi bị chặn một dòng, ví dụ:
+
+```
+BLOCKED API Observation.unit: type string -> object (x-schema-version 1 -> 1)
+BLOCKED API Observation.obs_status -> ObsStatus: enum value 'x' added to a closed enum (x-schema-version 1 -> 1)
+BLOCKED event mapping.proposed.v1: partition key source_id -> series_key (payload mapping.proposed.v1 is published: add v2 instead)
+```
+
+| Exit | Nghĩa |
+| --- | --- |
+| 0 | tương thích, hoặc mọi thay đổi breaking đã bump |
+| 1 | có thay đổi bị chặn, hoặc file đầu vào không đọc được |
+| 2 | nhánh gốc chưa có `generated/` (trước khi NOP-150 vào main): chỉ báo, không fail |
+
+Bị chặn thì sửa theo một trong các cách:
+
+- **Model REST**: tăng `SCHEMA_VERSION` của model được nêu. Breaking trong một enum hay def không có
+  version thì được gán cho mọi model dùng nó, và từng model đó phải bump.
+- **Event**: file `<topic>.vN` đã phát hành thì không đổi shape, kể cả khi đã bump `SCHEMA_VERSION`, vì consumer
+  chọn model theo `schema_version` của envelope. Thêm `(topic, N+1)` vào `PAYLOAD_MODELS`.
+- **Xoá** một model hay một file payload: tăng major `CONTRACT_VERSION`.
+- **Nới `pattern`/`format`**: máy không phân biệt được regex mới rộng hơn hay hẹp hơn, nên mọi thay đổi đều bị
+  chặn, trừ khi được khai báo trong `compat-accepted.json`. Mỗi mục khoá đúng chuỗi cũ và chuỗi mới, và chỉ áp
+  cho `pattern`/`format`; reviewer duyệt mục đó trong diff:
+
+  ```json
+  [{"schema": "SeriesRef", "field": "unit", "keyword": "pattern",
+    "from": "^[a-z]+$", "to": "^[a-z0-9]+$", "reason": "đơn vị có chữ số (m3)"}]
+  ```
+
+  `field` là phần sau tên model trong dòng `BLOCKED`. Mục cũ không còn khớp với gì nữa và được dọn khi bump
+  `CONTRACT_VERSION`.
+
+Gate đọc hai thông tin `schema_export` gắn vào `generated/`: `x-open-enum` (enum mở ở trên; độ mở được lấy
+theo **base**, nên không thể vừa mở enum vừa thêm giá trị trong cùng một PR) và `x-partition-key` (khoá phân
+vùng của mỗi payload).
+
+Doc không nói tới chiều required → optional. Gate coi đó là **breaking**: consumer còn model cũ sẽ từ chối
+payload thiếu field đó. Gate bỏ qua `title`, `description`, `examples` và `default`; đổi `default` là đổi nghĩa,
+và người review phải bắt.
+
+Fixture của gate ở `tests/fixtures/contracts/compat/` (`expected.json` ghi kết quả phải ra). Test ở
+`tests/unit/contracts/test_compat.py`.
 
 ## Frontend
 

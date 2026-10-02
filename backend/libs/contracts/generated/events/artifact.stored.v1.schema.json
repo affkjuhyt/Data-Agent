@@ -31,5 +31,6 @@
   ],
   "title": "artifact.stored payload v1",
   "type": "object",
+  "x-partition-key": "source_id",
   "x-schema-version": 1
 }
