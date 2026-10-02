@@ -37,25 +37,30 @@ def _sanitize_trace(data: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(data, dict):
         return data
 
-    result: dict[str, Any] = {}
-    for k, v in list(data.items())[:_MAX_DICT_KEYS]:
-        if k.lower() in _SENSITIVE_KEYS:
-            result[k] = "[REDACTED]"
-        elif isinstance(v, dict):
-            result[k] = _sanitize_trace(v)
-        elif isinstance(v, list):
-            truncated = v[:_MAX_LIST_LEN]
-            result[k] = [
-                _sanitize_trace(i) if isinstance(i, dict) else i
-                for i in truncated
-            ]
-            if len(v) > _MAX_LIST_LEN:
-                result[k].append(f"... (+{len(v) - _MAX_LIST_LEN} items truncated)")
-        elif isinstance(v, str) and len(v) > _MAX_STR_LEN:
-            result[k] = v[:_MAX_STR_LEN] + f"... ({len(v) - _MAX_STR_LEN} chars truncated)"
-        else:
-            result[k] = v
-    return result
+    return {
+        k: "[REDACTED]" if k.lower() in _SENSITIVE_KEYS else _sanitize_value(v)
+        for k, v in list(data.items())[:_MAX_DICT_KEYS]
+    }
+
+
+def _sanitize_value(v: Any) -> Any:
+    if isinstance(v, dict):
+        return _sanitize_trace(v)
+    if isinstance(v, list | tuple):
+        items = [_sanitize_value(i) for i in v[:_MAX_LIST_LEN]]
+        if len(v) > _MAX_LIST_LEN:
+            items.append(f"... (+{len(v) - _MAX_LIST_LEN} items truncated)")
+        return items
+    if isinstance(v, str):
+        if len(v) > _MAX_STR_LEN:
+            return v[:_MAX_STR_LEN] + f"... ({len(v) - _MAX_STR_LEN} chars truncated)"
+        return v
+    if v is None or isinstance(v, bool | int | float):
+        return v
+    # The column is JSONB: a UUID (a retrieved memory's id in the reranker's
+    # output), datetime or Decimal made json.dumps raise, and the exception
+    # aborted the rest of the turn's persistence, memory extraction included.
+    return str(v)
 
 
 logger = logging.getLogger(__name__)
