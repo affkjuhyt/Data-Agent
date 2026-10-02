@@ -12,6 +12,9 @@
 root_packages =
     libs
     services
+# Third-party packages become graph nodes, so a contract can forbid one
+# (indicator-domains-are-pure forbids fastapi and the storage clients).
+include_external_packages = True
 
 [importlinter:contract:basemodel-is-independent]
 name = basemodel (shared data models) must not depend on services
@@ -74,11 +77,40 @@ source_modules =
     libs.contracts
     libs.shared.storage_ownership
     libs.ingestion.storage_boundary
+    services.indicator_api
 forbidden_modules =
     services.kb_backend.workers.structured_data
     libs.database_connector.mongo_connector
     libs.ingestion.silver
     libs.ingestion.gold
+
+# NOP-162. indicator-api's domains/ is plain Python + Pydantic: routes live in
+# api/, I/O in adapters/. A domain module that imports the web framework or a
+# storage client breaks this contract and the CI step that runs it.
+[importlinter:contract:indicator-domains-are-pure]
+name = indicator_api.domains must not depend on FastAPI, storage clients, api/ or adapters/
+type = forbidden
+source_modules =
+    services.indicator_api.domains
+forbidden_modules =
+    fastapi
+    starlette
+    sqlalchemy
+    psycopg2
+    psycopg
+    asyncpg
+    clickhouse_connect
+    kafka
+    aiokafka
+    minio
+    boto3
+    redis
+    pymongo
+    motor
+    qdrant_client
+    services.indicator_api.api
+    services.indicator_api.adapters
+    libs.database_connector
 
 # workflow_runtime is layered (api > application > infrastructure > domain): a lower
 # layer never imports a higher one. application may use infrastructure directly (no

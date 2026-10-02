@@ -28,7 +28,7 @@ type:  ## mypy strict on libs + services (same set as CI python-type)
 IMAGE_REGISTRY ?= localhost:5000
 UNIT_SUITES ?= workflow_runtime:workflow_runtime kb_backend:kb-backend platform_workers:platform-workers \
                sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker \
-               model_service:model_service contracts:kb-backend
+               model_service:model_service contracts:kb-backend indicator_api:indicator-api
 INTEGRATION_SUITES ?= workflow_runtime:workflow_runtime auth_api:auth_api platform_workers:platform-workers \
                       sandbox_executor:sandbox_executor contracts:kb-backend
 # The integration sandbox tests start real sandbox-runner containers; the tag

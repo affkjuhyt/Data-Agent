@@ -140,9 +140,9 @@ There is no shared Secret mounted everywhere. Each workload gets a
 names the code expects — so `kb-backend` gets four keys and never sees
 `GRAFANA_ADMIN_PASSWORD` or the Snowflake crawler password.
 
-`GATEWAY_KEY` and `SERVICE_AUTH_SECRET` go to the four services that import
+`GATEWAY_KEY` and `SERVICE_AUTH_SECRET` go to the services that import
 `libs.shared.auth` (which imports `service_identity`): `auth-api`,
-`kb-backend`, `workflow-runtime` (`GATEWAY_KEY` also to the
+`kb-backend`, `workflow-runtime`, `indicator-api` (`GATEWAY_KEY` also to the
 `setup` and `eval` Jobs). Nothing else needs them, and both fail *silently* when absent — an unset `GATEWAY_KEY` makes
 `X-Kong-Verified` trusted on its own, and a mismatched `SERVICE_AUTH_SECRET`
 makes `kb_search` return no chunks. Check those two first if retrieval goes quiet.
@@ -324,6 +324,7 @@ band. Nothing in `deploy/k8s/` may use it.
 | kb-backend | service | 8000 | **8220** | manifest `command` |
 | model-service | service | 8001 | **8230** | manifest `command` |
 | workflow-runtime | service | 8001 | **8240** | manifest `command` |
+| indicator-api | service | — | **8250** | manifest `command` |
 | sandbox-executor | service | 8500 | **8260** | manifest `command` |
 | llm-exporter | service | 9200 | **8270** | `LISTEN_PORT` in its ConfigMap (runs as `WORKER=llm-exporter` of the platform-workers image) |
 | frontend | service | 3000 | **8280** | manifest `command` (vite `--port`) |
