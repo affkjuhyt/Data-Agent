@@ -179,6 +179,8 @@ jobs:
             python: "3.11"
             install: -r backend/services/sandbox_executor/requirements.txt
             sandbox: true
+            # A real container per test; same split as SUITE_PYTEST_ARGS in tests/run_suites.py.
+            pytest_args: -n 4 --dist loadgroup
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -194,7 +196,7 @@ jobs:
         env:
           OTEL_SDK_DISABLED: "true"
           SANDBOX_RUNNER_IMAGE: sandbox-runner:latest
-        run: pytest -m integration tests/integration/${{ matrix.suite }}
+        run: pytest -m integration ${{ matrix.pytest_args }} tests/integration/${{ matrix.suite }}
 
   eval-gate:
     name: Eval · offline gate (policy + SQL)

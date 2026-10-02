@@ -72,6 +72,16 @@ OTHER_PREFIXES: dict[str, set[tuple[str, str]]] = {
     "model/": {("unit", "workflow_runtime"), ("unit", "model_service")},
 }
 
+# Per-suite pytest flags. sandbox_executor starts a real container per test, so it is
+# spread over 4 xdist workers (161 s -> 64 s, 2026-10-02); tests sharing a fixed
+# Docker resource carry @pytest.mark.xdist_group. Measured and left serial: the
+# workflow_runtime suites — integration gains nothing (each worker starts its own
+# containers) and its sandbox wiring service binds a fixed port; unit has tests
+# that depend on running order.
+SUITE_PYTEST_ARGS: dict[tuple[str, str], list[str]] = {
+    ("integration", "sandbox_executor"): ["-n", "4", "--dist", "loadgroup"],
+}
+
 # Paths with no further meaning to this script: frontend code has its own
 # `make frontend-test`, docs and CI config run no Python.
 IRRELEVANT_PREFIXES = ("docs/", "frontend/", ".github/", ".claude/", "README", "CLAUDE.md")
@@ -175,7 +185,8 @@ def run_suite(suite: Suite, registry: str, pytest_args: str, log_dir: Path) -> t
             ]
         cmd += [
             tag, "python", "-m", "pytest", "-q", "-p", "no:cacheprovider", "-m", suite.kind,
-            *shlex.split(pytest_args), f"tests/{suite.kind}/{suite.name}",
+            *SUITE_PYTEST_ARGS.get((suite.kind, suite.name), []), *shlex.split(pytest_args),
+            f"tests/{suite.kind}/{suite.name}",
         ]
         rc = subprocess.run(cmd, cwd=REPO_ROOT, stdout=out, stderr=subprocess.STDOUT).returncode
     return suite, rc, time.monotonic() - start, log

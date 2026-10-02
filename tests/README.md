@@ -105,9 +105,19 @@ workflow_runtime handler-wiring test runs sandbox_executor's app) lists it in
 sandbox-runner containers from `SANDBOX_RUNNER_IMAGE`
 (default `dataagent/sandbox-runner:latest`, the deploy build).
 
-Every suite shares one session-scoped Postgres container. A test that needs a
-clean database calls `tests.integration._db.reset_database`, which drops every
+Every suite shares one session-scoped Postgres container. A test that needs an
+empty database at alembic head takes the `migrated_db` fixture
+(`tests/integration/conftest.py`): the chain runs once per container, and every
+later test gets a truncate-and-reload of the rows the migrations inserted
+(`tests.integration._db.migrated_database`) — about 0.2 s instead of ~3 s. A
+fingerprint of the schema guards it: after a test that changed the schema (a
+downgrade, its own DDL), the next one migrates from scratch again. A test that
+exercises the migrations themselves starts from `reset_database`, which drops every
 schema and role the migrations created; never hand-roll a `DROP SCHEMA public`.
+
+`sandbox_executor`'s integration suite runs on 4 xdist workers (a real container
+per test). A test that needs a fixed Docker resource (a network name, a port) must
+carry `@pytest.mark.xdist_group("<resource>")` so it never runs beside its twin.
 
 `make test` runs both. We do NOT roll every service's deps into
 `pyproject.toml [test]` — no single environment can hold them all.
