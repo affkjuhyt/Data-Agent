@@ -64,14 +64,28 @@ requirement. Which issue needs which level, and the V2 rules behind the tags:
 ### Python — unit (no Docker inside the tests)
 
 ```bash
-make test-unit                                   # every suite, each in its service image
+make test-changed                                # only the suites your changes since main can affect
+make test-unit                                   # every suite, each in its service image, in parallel
 make test-unit UNIT_SUITES=kb_backend:kb-backend # one suite
 make test-unit PYTEST_ARGS="-k lock -x"          # extra pytest args
+make test TEST_JOBS=1                            # unit + integration, one suite at a time
 ```
 
-Each suite runs as `pytest -m unit tests/unit/<suite>` inside
-`localhost:5000/dataagent/<image>:latest` with `requirements-test.txt`
-installed on top. Outside Docker, the equivalent is a virtualenv holding that
+`tests/run_suites.py` drives all of these. Each suite runs as
+`pytest -m unit tests/unit/<suite>` inside `dataagent-test/<suite>:latest`:
+`localhost:5000/dataagent/<image>:latest` with the test tooling baked in by
+`tests/test-image.Dockerfile`. That image is rebuilt only when the service image or
+a requirements file changes, so a run no longer pays a `pip install` per suite.
+The suites run at the same time and each prints its output whole when it ends,
+followed by a summary with the time each took.
+
+`make test-changed` maps the files changed since `CHANGED_BASE` (default `main`;
+committed, staged, unstaged and untracked) to suites: a service's own suites plus
+every suite that imports it (`SERVICE_SUITES` in `run_suites.py`). Anything under
+`backend/libs`, `backend/alembic` or the shared test fixtures runs everything.
+Before a merge, run `make test` anyway.
+
+Outside Docker, the equivalent is a virtualenv holding that
 service's `requirements.txt` plus `requirements-test.txt` — which is what CI's
 `python-test` matrix does, one job per suite. The host interpreter (3.10) is
 too old for the code (3.11+).

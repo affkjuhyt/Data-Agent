@@ -7,7 +7,7 @@ PY_IMAGE ?= localhost:5000/dataagent/workflow_runtime:latest
 PLANTUML_IMAGE ?= plantuml/plantuml:1.2024.8
 DOCKER_RUN_PY = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend:/src $(PY_IMAGE)
 
-.PHONY: help lint type test test-unit test-integration deadcode frontend-lint frontend-test ci e2e diagrams \
+.PHONY: help lint type test test-unit test-integration test-changed deadcode frontend-lint frontend-test ci e2e diagrams \
         deploy fmt bench bench-gate bench-e2e
 
 help:  ## List targets
@@ -35,35 +35,30 @@ INTEGRATION_SUITES ?= workflow_runtime:workflow_runtime auth_api:auth_api platfo
 # differs per host (tests/integration/_sandbox.py), override it to match.
 SANDBOX_RUNNER_IMAGE ?= dataagent/sandbox-runner:latest
 PYTEST_ARGS ?=
-# --user 0 so pip can install the test tooling; no bytecode and no pytest cache,
-# or the run leaves root-owned files in the checkout.
+TEST_JOBS ?= 0
+CHANGED_BASE ?= main
+# --user 0, no bytecode and no pytest cache: the checkout is mounted, and a run must
+# not leave root-owned files in it.
 DOCKER_RUN_SUITE = docker run --rm --user 0 -v "$(PWD):/src" -w /src -e PYTHONPATH=/src/backend:/src \
                    -e PYTHONDONTWRITEBYTECODE=1 -e OTEL_SDK_DISABLED=true
+# tests/run_suites.py builds each suite's cached test image (the service image plus
+# test tooling, tests/test-image.Dockerfile) and runs the suites in parallel;
+# TEST_JOBS=1 runs them one after another. Every suite runs even when another fails.
+RUN_SUITES = UNIT_SUITES="$(UNIT_SUITES)" INTEGRATION_SUITES="$(INTEGRATION_SUITES)" \
+             IMAGE_REGISTRY="$(IMAGE_REGISTRY)" SANDBOX_RUNNER_IMAGE="$(SANDBOX_RUNNER_IMAGE)" \
+             PYTEST_ARGS="$(PYTEST_ARGS)" python3 tests/run_suites.py --jobs $(TEST_JOBS)
 
-# Every suite runs even when an earlier one fails; the target fails if any did.
-test-unit:  ## pytest unit, one suite per service in that service's image
-	@failed=""; for pair in $(UNIT_SUITES); do suite=$${pair%%:*}; image=$${pair##*:}; \
-	  echo "== unit: $$suite ($(IMAGE_REGISTRY)/dataagent/$$image)"; \
-	  $(DOCKER_RUN_SUITE) $(IMAGE_REGISTRY)/dataagent/$$image:latest sh -c \
-	    "pip install -q -r requirements-test.txt && python -m pytest -q -p no:cacheprovider -m unit $(PYTEST_ARGS) tests/unit/$$suite" \
-	    || failed="$$failed $$suite"; \
-	done; if [ -n "$$failed" ]; then echo "failed unit suites:$$failed"; exit 1; fi
+test-unit:  ## pytest unit, one suite per service in that service's image, in parallel
+	@$(RUN_SUITES) unit
 
-# Testcontainers talks to the host daemon through the mounted socket and reaches
-# the containers it starts over the host network.
-test-integration:  ## pytest integration (testcontainers), one suite per service image
-	@failed=""; for pair in $(INTEGRATION_SUITES); do suite=$${pair%%:*}; image=$${pair##*:}; \
-	  extra=""; [ -f tests/integration/$$suite/requirements.txt ] && extra="-r tests/integration/$$suite/requirements.txt"; \
-	  echo "== integration: $$suite ($(IMAGE_REGISTRY)/dataagent/$$image)"; \
-	  $(DOCKER_RUN_SUITE) --network host -v /var/run/docker.sock:/var/run/docker.sock \
-	    -e TESTCONTAINERS_RYUK_DISABLED=true -e SANDBOX_RUNNER_IMAGE=$(SANDBOX_RUNNER_IMAGE) \
-	    $(IMAGE_REGISTRY)/dataagent/$$image:latest sh -c \
-	    "pip install -q -r requirements-integration.txt $$extra && python -m pytest -q -p no:cacheprovider -m integration $(PYTEST_ARGS) tests/integration/$$suite" \
-	    || failed="$$failed $$suite"; \
-	done; if [ -n "$$failed" ]; then echo "failed integration suites:$$failed"; exit 1; fi
+test-integration:  ## pytest integration (testcontainers), one suite per service image, in parallel
+	@$(RUN_SUITES) integration
 
-test:  ## unit suites then integration suites (same split as CI python-test / python-integration)
-	@$(MAKE) --no-print-directory test-unit && $(MAKE) --no-print-directory test-integration
+test:  ## unit + integration suites, all at once (same suites as CI python-test / python-integration)
+	@$(RUN_SUITES) all
+
+test-changed:  ## only the suites the changes since CHANGED_BASE (default main) can affect
+	@$(RUN_SUITES) changed --base $(CHANGED_BASE)
 
 deadcode:  ## vulture (python) + knip (frontend)
 	$(DOCKER_RUN_PY) sh -c "pip install -q vulture && vulture"
@@ -144,10 +139,12 @@ export $(E2E_FORWARD_VARS)
 
 # The turn test writes its frames to tests/e2e/out/ as root; hand them back.
 e2e:  ## pytest -m e2e against the deployed dev cluster (LAN NodePorts; URLs overridable, credentials from env)
+	@docker build -q --build-arg BASE=$(IMAGE_REGISTRY)/dataagent/workflow_runtime:latest --build-arg SUITE=workflow_runtime \
+	  -f tests/test-image.Dockerfile -t dataagent-test/workflow_runtime:latest . >/dev/null
 	@$(DOCKER_RUN_SUITE) --network host -e LIVE_STACK=1 -e LIVE_KONG_URL=$(E2E_KONG_URL) \
 	  -e LIVE_KEYCLOAK_URL=$(E2E_KEYCLOAK_URL) -e WORKFLOW_RUNTIME_URL=$(E2E_RUNTIME_URL) $(E2E_FORWARD) \
-	  $(IMAGE_REGISTRY)/dataagent/workflow_runtime:latest sh -c \
-	  "pip install -q -r requirements-test.txt && python -m pytest -q -p no:cacheprovider -m e2e $(PYTEST_ARGS) $(E2E_TESTS); \
+	  dataagent-test/workflow_runtime:latest sh -c \
+	  "python -m pytest -q -p no:cacheprovider -m e2e $(PYTEST_ARGS) $(E2E_TESTS); \
 	   rc=\$$?; chown -R $$(id -u):$$(id -g) tests/e2e/out 2>/dev/null; exit \$$rc"
 
 deploy:  ## deploy to the k8s-local inventory (Ansible is the only deploy path)

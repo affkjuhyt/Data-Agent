@@ -1,0 +1,6 @@
+# Only the requirements files go into the context: the code is mounted at run time,
+# so editing it never invalidates the cached pip layer.
+*
+!requirements-test.txt
+!requirements-integration.txt
+!tests/integration/*/requirements.txt

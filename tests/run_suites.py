@@ -1,0 +1,237 @@
+"""Run the per-service pytest suites in their images, in parallel.
+
+`make test-unit`, `make test-integration`, `make test` and `make test-changed` call
+this. Each suite still runs in its own service image (no single image can import
+every service), but:
+
+- the test tooling is baked into a cached image (tests/test-image.Dockerfile)
+  instead of being pip-installed into a fresh container on every run;
+- the suites run at the same time — they share nothing but the Docker daemon
+  (every integration suite starts its own Postgres container on a random port);
+- `changed` runs only the suites that the files changed since a base ref can
+  affect.
+
+Host Python only orchestrates `docker`; no test runs on the host interpreter
+(3.10, the code targets 3.11+). Standard library only, for the same reason.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import shlex
+import subprocess
+import sys
+import tempfile
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# Pass-through of the Makefile defaults so `python3 tests/run_suites.py …` works alone.
+DEFAULT_UNIT = (
+    "workflow_runtime:workflow_runtime kb_backend:kb-backend platform_workers:platform-workers "
+    "sandbox_executor:sandbox_executor auth_api:auth_api kb_worker:kb-worker model_service:model_service"
+)
+DEFAULT_INTEGRATION = (
+    "workflow_runtime:workflow_runtime auth_api:auth_api platform_workers:platform-workers "
+    "sandbox_executor:sandbox_executor"
+)
+
+# Which suites a change under backend/services/<service>/ can break: the suite of
+# that service, plus every suite whose tests import it (measured with grep over
+# tests/, 2026-10-02 — e.g. tests/unit/workflow_runtime loads auth_api, kb_backend,
+# model_service and sandbox_executor modules; the workflow_runtime integration
+# suite runs sandbox_executor's app in-process).
+SERVICE_SUITES: dict[str, set[tuple[str, str]]] = {
+    "auth_api": {("unit", "auth_api"), ("unit", "workflow_runtime"), ("integration", "auth_api")},
+    "kb_backend": {
+        ("unit", "kb_backend"), ("unit", "kb_worker"), ("unit", "workflow_runtime"),
+        ("integration", "workflow_runtime"),
+    },
+    "model_service": {("unit", "model_service"), ("unit", "workflow_runtime")},
+    "platform_workers": {
+        ("unit", "platform_workers"), ("unit", "kb_backend"), ("integration", "platform_workers"),
+    },
+    "sandbox_executor": {
+        ("unit", "sandbox_executor"), ("unit", "workflow_runtime"),
+        ("integration", "sandbox_executor"), ("integration", "workflow_runtime"),
+    },
+    "workflow_runtime": {("unit", "workflow_runtime"), ("integration", "workflow_runtime")},
+}
+
+# Files outside the services that some unit suites read directly (manifests, the
+# frontend's package.json, model/ configs).
+OTHER_PREFIXES: dict[str, set[tuple[str, str]]] = {
+    "deploy/": {("unit", "workflow_runtime"), ("unit", "kb_backend")},
+    "frontend/package": {("unit", "workflow_runtime")},
+    "frontend/vite.config.ts": {("unit", "workflow_runtime")},
+    "frontend/src/App.tsx": {("unit", "workflow_runtime")},
+    "model/": {("unit", "workflow_runtime"), ("unit", "model_service")},
+}
+
+# Paths with no further meaning to this script: frontend code has its own
+# `make frontend-test`, docs and CI config run no Python.
+IRRELEVANT_PREFIXES = ("docs/", "frontend/", ".github/", ".claude/", "README", "CLAUDE.md")
+
+
+@dataclass(frozen=True)
+class Suite:
+    kind: str  # "unit" | "integration"
+    name: str
+    image: str
+
+    @property
+    def label(self) -> str:
+        return f"{self.kind}: {self.name}"
+
+
+def parse_suites(kind: str, spec: str) -> list[Suite]:
+    suites = []
+    for pair in spec.split():
+        name, _, image = pair.partition(":")
+        suites.append(Suite(kind, name, image or name))
+    return suites
+
+
+def suites_for_paths(paths: list[str], every: list[Suite]) -> list[Suite]:
+    """The suites a set of changed paths can affect. Unknown paths under backend/
+    or tests/ select everything: running a suite too many beats missing one."""
+    by_key = {(s.kind, s.name): s for s in every}
+    selected: set[tuple[str, str]] = set()
+    for path in paths:
+        parts = path.split("/")
+        if path.startswith(("tests/unit/", "tests/integration/")) and len(parts) > 3:
+            selected.add((parts[1], parts[2]))
+        elif path.startswith("backend/services/") and parts[2] in SERVICE_SUITES:
+            selected |= SERVICE_SUITES[parts[2]]
+        elif any(path.startswith(prefix) for prefix in OTHER_PREFIXES):
+            for prefix, suites in OTHER_PREFIXES.items():
+                if path.startswith(prefix):
+                    selected |= suites
+        elif path.startswith(IRRELEVANT_PREFIXES):
+            continue
+        elif path.startswith(("backend/", "tests/")) or path in {
+            "pyproject.toml", "requirements-test.txt", "requirements-integration.txt", "Makefile",
+        }:
+            # backend/libs, backend/alembic, shared test fixtures, test tooling.
+            return every
+    return [by_key[key] for key in sorted(selected) if key in by_key]
+
+
+def changed_paths(base: str) -> list[str]:
+    def git(*args: str) -> list[str]:
+        out = subprocess.run(["git", *args], cwd=REPO_ROOT, check=True, capture_output=True, text=True)
+        return [line for line in out.stdout.splitlines() if line]
+
+    # Committed on this branch since it left `base`, plus staged, unstaged and
+    # untracked work: what a feature in progress has touched.
+    paths = set(git("diff", "--name-only", f"{base}...HEAD"))
+    paths |= set(git("diff", "--name-only", "HEAD"))
+    paths |= set(git("ls-files", "--others", "--exclude-standard"))
+    return sorted(paths)
+
+
+def build_test_image(suite: Suite, registry: str) -> str:
+    tag = f"dataagent-test/{suite.name}:latest"
+    subprocess.run(
+        [
+            "docker", "build", "-q",
+            "--build-arg", f"BASE={registry}/dataagent/{suite.image}:latest",
+            "--build-arg", f"SUITE={suite.name}",
+            "-f", "tests/test-image.Dockerfile", "-t", tag, ".",
+        ],
+        cwd=REPO_ROOT, check=True, capture_output=True, text=True,
+    )
+    return tag
+
+
+def run_suite(suite: Suite, registry: str, pytest_args: str, log_dir: Path) -> tuple[Suite, int, float, Path]:
+    log = log_dir / f"{suite.kind}-{suite.name}.log"
+    start = time.monotonic()
+    with log.open("w") as out:
+        try:
+            # Integration and unit suites of one service share the image: build once.
+            tag = build_test_image(suite, registry)
+        except subprocess.CalledProcessError as e:
+            out.write(f"building the test image failed:\n{e.stdout}\n{e.stderr}\n")
+            return suite, 1, time.monotonic() - start, log
+        # --user 0, no bytecode, no pytest cache: the checkout is mounted, and a run
+        # must not leave root-owned files in it.
+        cmd = [
+            "docker", "run", "--rm", "--user", "0", "-v", f"{REPO_ROOT}:/src", "-w", "/src",
+            "-e", "PYTHONPATH=/src/backend:/src", "-e", "PYTHONDONTWRITEBYTECODE=1",
+            "-e", "OTEL_SDK_DISABLED=true",
+        ]
+        if suite.kind == "integration":
+            # Testcontainers talks to the host daemon through the mounted socket and
+            # reaches the containers it starts over the host network.
+            cmd += [
+                "--network", "host", "-v", "/var/run/docker.sock:/var/run/docker.sock",
+                "-e", "TESTCONTAINERS_RYUK_DISABLED=true",
+                "-e", f"SANDBOX_RUNNER_IMAGE={os.environ.get('SANDBOX_RUNNER_IMAGE', 'dataagent/sandbox-runner:latest')}",
+            ]
+        cmd += [
+            tag, "python", "-m", "pytest", "-q", "-p", "no:cacheprovider", "-m", suite.kind,
+            *shlex.split(pytest_args), f"tests/{suite.kind}/{suite.name}",
+        ]
+        rc = subprocess.run(cmd, cwd=REPO_ROOT, stdout=out, stderr=subprocess.STDOUT).returncode
+    return suite, rc, time.monotonic() - start, log
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("mode", choices=["unit", "integration", "all", "changed"])
+    parser.add_argument("--unit-suites", default=os.environ.get("UNIT_SUITES") or DEFAULT_UNIT)
+    parser.add_argument(
+        "--integration-suites", default=os.environ.get("INTEGRATION_SUITES") or DEFAULT_INTEGRATION
+    )
+    parser.add_argument("--base", default="main", help="for `changed`: compare against this ref")
+    parser.add_argument("--jobs", type=int, default=0, help="suites at once; 0 = all of them")
+    parser.add_argument("--registry", default=os.environ.get("IMAGE_REGISTRY") or "localhost:5000")
+    parser.add_argument("--pytest-args", default=os.environ.get("PYTEST_ARGS", ""))
+    args = parser.parse_args()
+
+    unit = parse_suites("unit", args.unit_suites)
+    integration = parse_suites("integration", args.integration_suites)
+    suites = {"unit": unit, "integration": integration}.get(args.mode, unit + integration)
+    if args.mode == "changed":
+        paths = changed_paths(args.base)
+        suites = suites_for_paths(paths, unit + integration)
+        print(f"{len(paths)} path(s) changed since {args.base}; running: "
+              f"{', '.join(s.label for s in suites) or 'nothing'}")
+    if not suites:
+        return 0
+
+    started = time.monotonic()
+    failed: list[Suite] = []
+    timings: list[tuple[Suite, int, float]] = []
+    with tempfile.TemporaryDirectory(prefix="dataagent-tests-") as tmp, ThreadPoolExecutor(
+        max_workers=args.jobs or len(suites)
+    ) as pool:
+        futures = [pool.submit(run_suite, s, args.registry, args.pytest_args, Path(tmp)) for s in suites]
+        # Each suite's output is printed whole when it finishes, never interleaved.
+        for future in as_completed(futures):
+            suite, rc, seconds, log = future.result()
+            timings.append((suite, rc, seconds))
+            print(f"== {suite.label} ({args.registry}/dataagent/{suite.image}) "
+                  f"{'ok' if rc == 0 else 'FAILED'} in {seconds:.0f}s", flush=True)
+            print(log.read_text(), end="", flush=True)
+            if rc != 0:
+                failed.append(suite)
+
+    print("\n== summary")
+    for suite, rc, seconds in sorted(timings, key=lambda t: -t[2]):
+        print(f"  {'ok    ' if rc == 0 else 'FAILED'} {seconds:6.0f}s  {suite.label}")
+    print(f"  wall {time.monotonic() - started:.0f}s")
+    for kind in ("unit", "integration"):
+        names = [s.name for s in failed if s.kind == kind]
+        if names:
+            print(f"failed {kind} suites: {' '.join(names)}")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

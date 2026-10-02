@@ -99,8 +99,7 @@ jobs:
             install: -r deploy/docker/kb-worker/requirements.txt
           - suite: model_service
             python: "3.11"
-            # No requirements.txt: its Dockerfile installs these four inline.
-            install: fastapi "uvicorn[standard]" pydantic asyncpg
+            install: -r backend/services/model_service/requirements.txt
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
