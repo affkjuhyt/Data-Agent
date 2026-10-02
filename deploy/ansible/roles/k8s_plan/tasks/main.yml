@@ -44,9 +44,20 @@
       {{ lookup('ansible.builtin.file', project_dir ~ '/' ~ item ~ '/' ~ img_dockerfile)
          | dockerfile_inputs(item, img_context, img_dockerfile) }}
 
+# images_on_demand (eval) are left out unless images_only names them: no Deployment or
+# deploy-run Job uses them, and eval alone was minutes of pip install on every
+# backend/libs change. Named in images_only they build whether or not their inputs
+# changed since the checkpoint (a cache hit when nothing did), so a skipped change is
+# never lost.
 - name: Select the images whose inputs changed
   ansible.builtin.set_fact:
-    images: "{{ image_catalog | images_to_build(changed_paths, full_deploy | bool) }}"
+    images: >-
+      {{ (image_catalog | images_to_build(changed_paths, full_deploy | bool)
+                        | rejectattr('name', 'in', images_on_demand) | list)
+         + (image_catalog | selectattr('name', 'in', images_on_demand)
+                          | selectattr('name', 'in', images_only_list) | list) }}
+  vars:
+    images_only_list: "{{ images_only.split(',') | map('trim') | reject('equalto', '') | list }}"
 
 - name: Narrow the build list to images_only
   ansible.builtin.set_fact:

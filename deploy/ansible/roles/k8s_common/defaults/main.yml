@@ -35,6 +35,10 @@ image_deploy_prefix: "{{ (image_registry ~ '/') if (image_registry | length) > 0
 manifest_sed_rewrite: 'sed -e "s|image: {{ image_prefix }}/\([a-z0-9_-]*\):{{ image_tag }}|image: {{ image_deploy_prefix }}/\1:{{ image_tag }}|g" -e "s|imagePullPolicy: IfNotPresent|imagePullPolicy: Always|g"'
 manifest_sed: "{{ manifest_sed_rewrite if (image_registry | length) > 0 else 'cat' }}"
 
+# Built only when images_only names them (k8s_plan): images no Deployment and no
+# deploy-run Job uses. eval is the online-eval Job, applied by hand (model/eval/README.md).
+images_on_demand: [eval]
+
 image_self_context:
   - backend/services/sandbox_executor
   - backend/services/sandbox_executor/sandbox_runner
@@ -159,7 +163,8 @@ seed_demo_tenant: a0000000-0000-0000-0000-000000000001
 wait_namespace: 60
 wait_statefulset: 600
 wait_job: 900
-job_poll: 5
+# The Jobs it waits on mostly finish in 3-10 s; a 5 s poll added up to 5 s to each wait.
+job_poll: 2
 wait_rollout: 600
 
 openbao_allow_reset: false

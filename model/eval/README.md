@@ -51,7 +51,9 @@ export LITELLM_BASE_URL=http://localhost:8500 AGENT_ID=<uuid>
 python -m model.eval.run  --tier all --out eval-report.json
 python -m model.eval.gate --report eval-report.json --tier offline --tier online
 
-# or in the stack's own network
+# or in the stack's own network. A deploy does not build the eval image (it is
+# on demand, deploy/ansible README): build it first, then apply the Job.
+(cd deploy/ansible && ansible-playbook -i inventories/k8s-local deploy.yml -e images_only=eval)
 kubectl apply -f deploy/k8s/production/job/eval.yaml
 ```
 
