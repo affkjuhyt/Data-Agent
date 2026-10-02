@@ -41,8 +41,11 @@ uvicorn[standard]==0.30.6
 
 # ── Observability (libs/shared/observability.py) ──
 structlog==24.2.0
-opentelemetry-sdk==1.24.0
-opentelemetry-exporter-otlp-proto-grpc==1.24.0
-opentelemetry-instrumentation-logging==0.45b0
-opentelemetry-instrumentation-httpx==0.45b0
-opentelemetry-instrumentation-requests==0.45b0
+# 0.45b0 instrumentation imported pkg_resources, which current setuptools no longer
+# ships: FastAPI/httpx tracing was skipped at startup with only a warning. Same
+# versions as the workflow_runtime image, so a trace crosses the services intact.
+opentelemetry-sdk==1.45.0
+opentelemetry-exporter-otlp-proto-grpc==1.45.0
+opentelemetry-instrumentation-logging==0.66b0
+opentelemetry-instrumentation-httpx==0.66b0
+opentelemetry-instrumentation-requests==0.66b0
