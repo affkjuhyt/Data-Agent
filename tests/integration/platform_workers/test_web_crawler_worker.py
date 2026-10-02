@@ -26,6 +26,8 @@ pytestmark = pytest.mark.integration
 
 
 def _session_factory(libpq_dsn: str) -> sessionmaker[Session]:
+    """The worker's sessions, as app_user (conftest.app_user_dsn): row-level security
+    applies, as on the cluster. Seeding and assertions use the superuser DSN."""
     return sessionmaker(
         bind=create_engine(libpq_dsn.replace("postgresql://", "postgresql+psycopg2://", 1), future=True),
         expire_on_commit=False,
@@ -83,9 +85,9 @@ def _fake_artifact(url: str):
     )
 
 
-def test_run_source_lands_a_bronze_document(migrated_db, worker_module):
+def test_run_source_lands_a_bronze_document(migrated_db, app_user_dsn, worker_module):
     tenant_id, _role_id, source_id = _seed_tenant_and_source(migrated_db["dsn"], "Regression Test Source")
-    SessionLocal = _session_factory(migrated_db["dsn"])
+    SessionLocal = _session_factory(app_user_dsn)
     conn = psycopg2.connect(migrated_db["dsn"])
     try:
         with patch(
@@ -113,12 +115,12 @@ def test_run_source_lands_a_bronze_document(migrated_db, worker_module):
         conn.close()
 
 
-def test_recrawling_the_same_source_replaces_instead_of_crashing(migrated_db, worker_module):
+def test_recrawling_the_same_source_replaces_instead_of_crashing(migrated_db, app_user_dsn, worker_module):
     """The actual bug: running the same source twice used to crash on
     "KBData_name_key" because the prior document with the same name was
     never removed before the new insert."""
     tenant_id, _role_id, source_id = _seed_tenant_and_source(migrated_db["dsn"], "Recrawled Source")
-    SessionLocal = _session_factory(migrated_db["dsn"])
+    SessionLocal = _session_factory(app_user_dsn)
     conn = psycopg2.connect(migrated_db["dsn"])
     try:
         with patch(
@@ -142,14 +144,14 @@ def test_recrawling_the_same_source_replaces_instead_of_crashing(migrated_db, wo
         conn.close()
 
 
-def test_a_failed_run_is_retried_before_its_next_cron_tick(migrated_db, worker_module):
+def test_a_failed_run_is_retried_before_its_next_cron_tick(migrated_db, app_user_dsn, worker_module):
     """V2: crawl_due_sources must pick a failed source back up once
     next_retry_at has passed, even though its cron isn't due yet — the whole
     point of retry/backoff being separate from the normal schedule."""
     tenant_id, _role_id, source_id = _seed_tenant_and_source(
         migrated_db["dsn"], "Retry Test Source", extra_config={"cron": "0 3 1 1 *"},  # once a year — never "due" here
     )
-    SessionLocal = _session_factory(migrated_db["dsn"])
+    SessionLocal = _session_factory(app_user_dsn)
     conn = psycopg2.connect(migrated_db["dsn"])
     try:
         # A schedule starts with the first run, not at creation (a bulk import
@@ -202,7 +204,7 @@ def test_a_failed_run_is_retried_before_its_next_cron_tick(migrated_db, worker_m
         conn.close()
 
 
-def test_recursive_source_enqueues_and_drains_discovered_links(migrated_db, worker_module):
+def test_recursive_source_enqueues_and_drains_discovered_links(migrated_db, app_user_dsn, worker_module):
     """V2: a `recursive` web_crawl source's own run enqueues its page's
     discovered links, and drain_crawl_queue works through them as their own
     KBSourceRun('recursive') attempts."""
@@ -210,7 +212,7 @@ def test_recursive_source_enqueues_and_drains_discovered_links(migrated_db, work
         migrated_db["dsn"], "Recursive Test Source",
         extra_config={"recursive": True, "max_depth": 1, "same_domain_only": True},
     )
-    SessionLocal = _session_factory(migrated_db["dsn"])
+    SessionLocal = _session_factory(app_user_dsn)
     conn = psycopg2.connect(migrated_db["dsn"])
 
     def _fake_with_links(connector_type, config):
@@ -269,7 +271,7 @@ class _NoopMinio:
         self.removed.append(key)
 
 
-def test_changed_content_updates_a_promoted_document_in_place(migrated_db, worker_module):
+def test_changed_content_updates_a_promoted_document_in_place(migrated_db, app_user_dsn, worker_module):
     """Real Postgres: the UPDATE builds `metadata` with jsonb `-` and `||`
     (a class of statement mocked cursors cannot vouch for). A re-crawl with new
     bytes must keep the row's data_id and tier, strip the previous run's
@@ -281,7 +283,7 @@ def test_changed_content_updates_a_promoted_document_in_place(migrated_db, worke
     tenant_id, _role, source_id = _seed_tenant_and_source(
         migrated_db["dsn"], "Rates", connector_type="http_file", extra_config={"url": "https://example.invalid/rates.xml"},
     )
-    SessionLocal = _session_factory(migrated_db["dsn"])
+    SessionLocal = _session_factory(app_user_dsn)
     versions = iter([b"<rates>1</rates>", b"<rates>2</rates>"])
 
     def fetch(_connector_type, config):
@@ -334,7 +336,7 @@ def test_changed_content_updates_a_promoted_document_in_place(migrated_db, worke
         conn.close()
 
 
-def test_a_v2_structured_source_stays_in_bronze_and_off_the_legacy_paths(migrated_db, worker_module):
+def test_a_v2_structured_source_stays_in_bronze_and_off_the_legacy_paths(migrated_db, app_user_dsn, worker_module):
     """NOP-163 on a real Postgres: an http_file source with an
     `extraction_profile` (the Pink Sheet shape from docs/v2/03 §5) and
     promotion_mode=auto lands its raw file in Bronze, linked to its source, and
@@ -351,7 +353,7 @@ def test_a_v2_structured_source_stays_in_bronze_and_off_the_legacy_paths(migrate
         migrated_db["dsn"], "Pink Sheet", connector_type="http_file",
         extra_config={"url": "https://example.invalid/pink.xlsx", "promotion_mode": "auto", "extraction_profile": profile},
     )
-    SessionLocal = _session_factory(migrated_db["dsn"])
+    SessionLocal = _session_factory(app_user_dsn)
     # A plain document source in the same tenant (the seed helper creates a
     # tenant + role per call, and the role anchor row is unique).
     doc_source = str(uuid.uuid4())

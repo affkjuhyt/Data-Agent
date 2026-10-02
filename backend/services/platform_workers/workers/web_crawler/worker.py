@@ -184,7 +184,7 @@ def get_active_sources(session: Session) -> list[dict[str, Any]]:
     """Every registered, active-config source this worker can crawl — reads
     the registry kb_backend's `/api/knowledge/sources` API owns, the same
     "second reader" relationship schema_crawler has with KBWarehouse."""
-    rows = session.execute(
+    query = (
         select(
             KBSourceORM.source_id,
             KBSourceORM.tenant_id,
@@ -200,8 +200,13 @@ def get_active_sources(session: Session) -> list[dict[str, Any]]:
             KBSourceConfigORM.is_active.is_(True),
             KBSourceConfigORM.is_deleted.is_(False),
         )
-    ).mappings()
-    return [dict(row) for row in rows]
+    )
+    # Row-level security shows one tenant's sources at a time.
+    sources: list[dict[str, Any]] = []
+    for tenant_id in worker_db.tenant_ids(session):
+        worker_db.set_tenant(session, tenant_id)
+        sources += [dict(row) for row in session.execute(query).mappings()]
+    return sources
 
 
 class _RunInfo(TypedDict):
@@ -307,7 +312,7 @@ def run_source(
 
     if run_id is None:
         run_id = str(uuid.uuid4())
-        with SessionLocal() as session:
+        with worker_db.tenant_session(SessionLocal, tenant_id) as session:
             session.add(
                 KBSourceRunORM(
                     run_id=uuid.UUID(run_id),
@@ -331,7 +336,7 @@ def run_source(
     try:
         artifact = connector_fetch(connector_type, fetch_config)
         outcome: dict[str, Any] = {}
-        with SessionLocal() as session:
+        with worker_db.tenant_session(SessionLocal, tenant_id) as session:
             if connector_type in _RAW_BYTES_CONNECTOR_TYPES:
                 data_id = bronze.register_http_file_bronze(
                     session, tenant_id=tenant_id, role_id=role_id, title=title, added_by=added_by, artifact=artifact,
@@ -345,7 +350,7 @@ def run_source(
                 )
         quality_metrics = {**(artifact.extra or {}), **outcome} or None
 
-        with SessionLocal() as session:
+        with worker_db.tenant_session(SessionLocal, tenant_id) as session:
             run_row = session.get(KBSourceRunORM, uuid.UUID(run_id))
             if run_row is not None:
                 run_row.status = "success"
@@ -366,7 +371,7 @@ def run_source(
         log.info("run_source | source=%s (%r) connector=%s -> data_id=%s", source_id, title, connector_type, data_id)
     except Exception as e:
         log.exception("run_source | source=%s (%r) connector=%s failed", source_id, title, connector_type)
-        with SessionLocal() as session:
+        with worker_db.tenant_session(SessionLocal, tenant_id) as session:
             run_row = session.get(KBSourceRunORM, uuid.UUID(run_id))
             if run_row is not None:
                 now = datetime.now(UTC)
@@ -413,33 +418,40 @@ def drain_crawl_queue(SessionLocal: SessionFactory, batch_size: int = 10) -> Non
     """One tick's worth of a `recursive` web_crawl source's discovered-link
     backlog — same loop slot as crawl_due_sources, see
     run()."""
+    rows: list[dict[str, Any]] = []
     with SessionLocal() as session:
-        rows = [
-            dict(row)
-            for row in session.execute(
-                select(
-                    KBSourceCrawlQueueORM.queue_id,
-                    KBSourceCrawlQueueORM.source_id,
-                    KBSourceCrawlQueueORM.tenant_id,
-                    KBSourceCrawlQueueORM.url,
-                    KBSourceCrawlQueueORM.depth,
-                    KBSourceORM.role_id,
-                    KBSourceORM.title,
-                    KBSourceORM.created_by,
-                    KBSourceConfigORM.config,
-                )
-                .join(KBSourceORM, KBSourceORM.source_id == KBSourceCrawlQueueORM.source_id)
-                .join(KBSourceConfigORM, KBSourceConfigORM.source_id == KBSourceORM.source_id)
-                .where(
-                    KBSourceCrawlQueueORM.status == "pending",
-                    KBSourceORM.is_deleted.is_(False),
-                    KBSourceConfigORM.is_active.is_(True),
-                    KBSourceConfigORM.is_deleted.is_(False),
-                )
-                .order_by(KBSourceCrawlQueueORM.inserted_at)
-                .limit(batch_size)
-            ).mappings()
-        ]
+        # Row-level security shows one tenant's queue at a time; the batch is
+        # filled tenant by tenant, oldest link first within each.
+        for tenant_id in worker_db.tenant_ids(session):
+            if len(rows) >= batch_size:
+                break
+            worker_db.set_tenant(session, tenant_id)
+            rows += [
+                dict(row)
+                for row in session.execute(
+                    select(
+                        KBSourceCrawlQueueORM.queue_id,
+                        KBSourceCrawlQueueORM.source_id,
+                        KBSourceCrawlQueueORM.tenant_id,
+                        KBSourceCrawlQueueORM.url,
+                        KBSourceCrawlQueueORM.depth,
+                        KBSourceORM.role_id,
+                        KBSourceORM.title,
+                        KBSourceORM.created_by,
+                        KBSourceConfigORM.config,
+                    )
+                    .join(KBSourceORM, KBSourceORM.source_id == KBSourceCrawlQueueORM.source_id)
+                    .join(KBSourceConfigORM, KBSourceConfigORM.source_id == KBSourceORM.source_id)
+                    .where(
+                        KBSourceCrawlQueueORM.status == "pending",
+                        KBSourceORM.is_deleted.is_(False),
+                        KBSourceConfigORM.is_active.is_(True),
+                        KBSourceConfigORM.is_deleted.is_(False),
+                    )
+                    .order_by(KBSourceCrawlQueueORM.inserted_at)
+                    .limit(batch_size - len(rows))
+                ).mappings()
+            ]
     if rows:
         log.info("drain_crawl_queue | %d pending link(s)", len(rows))
     for row in rows:
@@ -458,7 +470,7 @@ def _run_queue_item(SessionLocal: SessionFactory, row: dict[str, Any]) -> None:
     title = f"{row['title']} — {url}"
 
     run_id = str(uuid.uuid4())
-    with SessionLocal() as session:
+    with worker_db.tenant_session(SessionLocal, tenant_id) as session:
         session.add(
             KBSourceRunORM(
                 run_id=uuid.UUID(run_id),
@@ -478,14 +490,14 @@ def _run_queue_item(SessionLocal: SessionFactory, row: dict[str, Any]) -> None:
     try:
         artifact = connector_fetch("web_crawl", config)
         outcome: dict[str, Any] = {}
-        with SessionLocal() as session:
+        with worker_db.tenant_session(SessionLocal, tenant_id) as session:
             data_id = bronze.register_web_bronze(
                 session, tenant_id=tenant_id, role_id=str(row["role_id"]), title=title, url=url, added_by=added_by,
                 source_id=source_id, promotion_mode=promotion_mode, purpose=purpose,
                 artifact=artifact, outcome=outcome,
             )
         queue_metrics = {**(artifact.extra or {}), **outcome} or None
-        with SessionLocal() as session:
+        with worker_db.tenant_session(SessionLocal, tenant_id) as session:
             run_row = session.get(KBSourceRunORM, uuid.UUID(run_id))
             if run_row is not None:
                 run_row.status = "success"
@@ -506,7 +518,7 @@ def _run_queue_item(SessionLocal: SessionFactory, row: dict[str, Any]) -> None:
         log.info("_run_queue_item | source=%s url=%s depth=%d -> data_id=%s", source_id, url, depth, data_id)
     except Exception as e:
         log.exception("_run_queue_item | source=%s url=%s failed", source_id, url)
-        with SessionLocal() as session:
+        with worker_db.tenant_session(SessionLocal, tenant_id) as session:
             run_row = session.get(KBSourceRunORM, uuid.UUID(run_id))
             if run_row is not None:
                 run_row.status = "failed"

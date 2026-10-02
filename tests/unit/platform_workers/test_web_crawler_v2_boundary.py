@@ -16,6 +16,8 @@ from services.platform_workers.workers.web_crawler import worker as wc
 
 pytestmark = pytest.mark.unit
 
+TENANT = "a0000000-0000-0000-0000-000000000001"
+
 PROFILE = {
     "kind": "csv",
     "series": [{"column": "price", "series_key": "EIA:BRENT:D", "unit": "usd_per_barrel"}],
@@ -47,7 +49,7 @@ def _session_factory() -> MagicMock:
 def _run(config: dict[str, Any]) -> tuple[MagicMock, MagicMock]:
     source = {
         "source_id": "s1",
-        "tenant_id": "t1",
+        "tenant_id": TENANT,
         "role_id": "r1",
         "connector_type": "http_file",
         "title": "EIA Brent",
@@ -78,4 +80,4 @@ def test_a_document_source_still_auto_promotes() -> None:
 
     assert register.call_args.kwargs["promotion_mode"] == "auto"
     publish.assert_called_once()
-    assert publish.call_args.args[1:] == ("d1", "t1")
+    assert publish.call_args.args[1:] == ("d1", TENANT)

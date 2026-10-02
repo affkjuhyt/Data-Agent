@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 
-from sqlalchemy import URL, Engine, create_engine, text
+from sqlalchemy import URL, Engine, create_engine, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 from tenacity import (
@@ -22,6 +24,7 @@ from tenacity import (
     wait_fixed,
 )
 
+from libs.basemodel.services_databaseconnector.postgres_orm.auth_release_orm import TenantsORM
 from services.platform_workers.common.settings import PostgresSettings
 
 log = logging.getLogger("platform-workers.db")
@@ -85,3 +88,18 @@ def set_tenant(session: Session, tenant_id: str | uuid.UUID) -> None:
     """
     session.flush()
     session.execute(_SET_TENANT, {"tenant_id": str(uuid.UUID(str(tenant_id)))})
+
+
+@contextmanager
+def tenant_session(SessionLocal: sessionmaker[Session], tenant_id: str | uuid.UUID) -> Iterator[Session]:
+    """A session scoped to one tenant until its first commit or rollback, which ends
+    the setting: one per unit of work, as the crawlers open them."""
+    with SessionLocal() as session:
+        set_tenant(session, tenant_id)
+        yield session
+
+
+def tenant_ids(session: Session) -> list[str]:
+    """Every tenant's id. "Tenants" has no row-level policy, so app_user sees them
+    all; a worker that scans tenant tables walks them one tenant at a time."""
+    return [str(t) for t in session.scalars(select(TenantsORM.id).order_by(TenantsORM.id))]

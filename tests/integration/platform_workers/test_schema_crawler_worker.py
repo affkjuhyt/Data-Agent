@@ -73,7 +73,7 @@ _FAKE_METADATA = {
 
 
 @pytest.fixture
-def worker(migrated_db, qdrant_container, monkeypatch):
+def worker(migrated_db, app_user_dsn, qdrant_container, monkeypatch):
     """Imports platform_workers/workers/schema_crawler/worker.py the way the
     container does (service dir on sys.path), pointed at the
     migrated test DB + test Qdrant, with Snowflake discovery and the LLM
@@ -111,8 +111,10 @@ def worker(migrated_db, qdrant_container, monkeypatch):
 
         # crawl_all/handle_ddl_event take a session factory (they took a psycopg2
         # connection): each read/write unit opens and closes its own session.
+        # As app_user, so row-level security applies as on the cluster; the
+        # yielded superuser DSN is for seeding and assertions.
         engine = create_engine(
-            "postgresql+psycopg2://" + migrated_db["dsn"][len("postgresql://"):]
+            "postgresql+psycopg2://" + app_user_dsn[len("postgresql://"):]
         )
 
         yield worker_mod, sessionmaker(engine), qdrant, migrated_db["dsn"]

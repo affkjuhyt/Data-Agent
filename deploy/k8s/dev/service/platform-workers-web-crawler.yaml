@@ -21,6 +21,8 @@ data:
   OTEL_SERVICE_NAME: platform-workers-web-crawler
   DB_HOST: postgres.dataagent-database.svc.cluster.local
   DB_PORT: '8300'
+  # NOBYPASSRLS: scans walk the tenants and writes run in a tenant_session (common/db).
+  DB_USER: app_user
   MINIO_BUCKET: knowledge-base
   KAFKA_SASL_USERNAME: web-crawler-worker
   POLL_INTERVAL_SECONDS: '5'

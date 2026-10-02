@@ -119,7 +119,7 @@ def get_active_warehouses(session: Session) -> list[dict[str, Any]]:
     value is skipped with a warning, because crawling a warehouse with the
     wrong driver puts confident nonsense in the catalog.
     """
-    rows = session.execute(
+    query = (
         select(
             KBWarehouseORM.warehouse_id,
             KBWarehouseORM.tenant_id,
@@ -132,7 +132,12 @@ def get_active_warehouses(session: Session) -> list[dict[str, Any]]:
             KBWarehouseConfigORM.is_active.is_(True),
             KBWarehouseConfigORM.is_deleted.is_(False),
         )
-    ).mappings().all()
+    )
+    # Row-level security shows one tenant's warehouses at a time.
+    rows: list[Any] = []
+    for tenant_id in worker_db.tenant_ids(session):
+        worker_db.set_tenant(session, tenant_id)
+        rows += session.execute(query).mappings().all()
 
     supported: list[dict[str, Any]] = []
     for row in rows:
@@ -429,7 +434,7 @@ def crawl_warehouse(
                 )
                 checked_at = datetime.now(UTC)
 
-            with SessionLocal() as session:
+            with worker_db.tenant_session(SessionLocal, tenant_id) as session:
                 if process_table(session, qdrant, tenant_id, warehouse_id, meta, policy, watermark, checked_at):
                     changed += 1
                 session.commit()
@@ -439,7 +444,7 @@ def crawl_warehouse(
 
     if full_crawl:
         try:
-            with SessionLocal() as session:
+            with worker_db.tenant_session(SessionLocal, tenant_id) as session:
                 _cleanup_missing_tables(
                     session, qdrant, tenant_id, warehouse_id, conn_params.get("schema", ""),
                     set(metadata.keys()), cutoff,
@@ -455,14 +460,17 @@ def _last_crawled_by_warehouse(session: Session) -> dict[tuple[str, str], dateti
     runs every POLL_INTERVAL_SECONDS tick (see run()), so an N+1 pattern
     here would mean N extra Postgres round-trips every few seconds for
     every registered warehouse, most of which aren't due yet."""
-    rows = session.execute(
-        select(
-            SchemaCatalogORM.tenant_id,
-            SchemaCatalogORM.warehouse_id,
-            func.max(SchemaCatalogORM.last_crawled_at),
-        ).group_by(SchemaCatalogORM.tenant_id, SchemaCatalogORM.warehouse_id)
-    ).all()
-    return {(str(t), str(w)): last for t, w, last in rows}
+    query = select(
+        SchemaCatalogORM.tenant_id,
+        SchemaCatalogORM.warehouse_id,
+        func.max(SchemaCatalogORM.last_crawled_at),
+    ).group_by(SchemaCatalogORM.tenant_id, SchemaCatalogORM.warehouse_id)
+    # One query per tenant: row-level security shows one tenant's catalog at a time.
+    last: dict[tuple[str, str], datetime] = {}
+    for tenant_id in worker_db.tenant_ids(session):
+        worker_db.set_tenant(session, tenant_id)
+        last.update({(str(t), str(w)): at for t, w, at in session.execute(query).all()})
+    return last
 
 
 def _is_due(last_crawled_at: datetime | None) -> bool:
@@ -554,17 +562,25 @@ def handle_ddl_event(SessionLocal: sessionmaker[Session], qdrant: QdrantClient, 
     warehouse_id = event["warehouse_id"]
     table_name = event["table_name"]
 
+    query = (
+        select(KBWarehouseORM.tenant_id, KBWarehouseConfigORM.config, KBWarehouseORM.service)
+        .join(KBWarehouseConfigORM, KBWarehouseConfigORM.warehouse_id == KBWarehouseORM.warehouse_id)
+        .where(
+            KBWarehouseORM.warehouse_id == warehouse_id,
+            KBWarehouseORM.is_deleted.is_(False),
+            KBWarehouseConfigORM.is_active.is_(True),
+            KBWarehouseConfigORM.is_deleted.is_(False),
+        )
+    )
+    row = None
     with SessionLocal() as session:
-        row = session.execute(
-            select(KBWarehouseORM.tenant_id, KBWarehouseConfigORM.config, KBWarehouseORM.service)
-            .join(KBWarehouseConfigORM, KBWarehouseConfigORM.warehouse_id == KBWarehouseORM.warehouse_id)
-            .where(
-                KBWarehouseORM.warehouse_id == warehouse_id,
-                KBWarehouseORM.is_deleted.is_(False),
-                KBWarehouseConfigORM.is_active.is_(True),
-                KBWarehouseConfigORM.is_deleted.is_(False),
-            )
-        ).one_or_none()
+        # Row-level security: the owner is found by asking each tenant in turn,
+        # still never by believing the event's tenant_id.
+        for candidate in worker_db.tenant_ids(session):
+            worker_db.set_tenant(session, candidate)
+            row = session.execute(query).one_or_none()
+            if row is not None:
+                break
     if not row:
         log.warning("handle_ddl_event | no active warehouse/config for warehouse=%s, skipping", warehouse_id)
         return

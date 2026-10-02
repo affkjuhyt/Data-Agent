@@ -80,7 +80,7 @@ kubectl -n dataagent-service create secret generic platform-workers-memory-secre
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic platform-workers-schema-crawler-secrets \
-  --from-literal=DB_PASSWORD="${POSTGRES_PASSWORD}" \
+  --from-literal=DB_PASSWORD="${APP_USER_PASSWORD}" \
   --from-literal=KAFKA_SASL_PASSWORD="${SCHEMA_CRAWLER_WORKER_KAFKA_PASSWORD}" \
   --from-literal=SNOWFLAKE_CRAWLER_PASSWORD="${SNOWFLAKE_CRAWLER_PASSWORD}" \
   --from-literal=POSTGRES_CRAWLER_PASSWORD="${POSTGRES_CRAWLER_PASSWORD}" \
@@ -88,7 +88,7 @@ kubectl -n dataagent-service create secret generic platform-workers-schema-crawl
   --dry-run=client -o yaml | kubectl apply -f -
 
 kubectl -n dataagent-service create secret generic platform-workers-web-crawler-secrets \
-  --from-literal=DB_PASSWORD="${POSTGRES_PASSWORD}" \
+  --from-literal=DB_PASSWORD="${APP_USER_PASSWORD}" \
   --from-literal=MINIO_URL="${MINIO_URL}" \
   --from-literal=KAFKA_SASL_PASSWORD="${WEB_CRAWLER_WORKER_KAFKA_PASSWORD}" \
   --from-literal=OPENBAO_ROLE_ID="${OPENBAO_ROLE_ID}" \

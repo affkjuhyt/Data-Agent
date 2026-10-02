@@ -22,6 +22,8 @@ data:
   OTEL_SERVICE_NAME: platform-workers-schema-crawler
   DB_HOST: postgres.dataagent-database.svc.cluster.local
   DB_PORT: '8300'
+  # NOBYPASSRLS: scans walk the tenants and writes run in a tenant_session (common/db).
+  DB_USER: app_user
   KAFKA_SASL_USERNAME: schema-crawler-worker
   KAFKA_DDL_TOPIC: ddl.changes
   KAFKA_GROUP_ID: schema-crawler-worker-group
